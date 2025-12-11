@@ -40,9 +40,22 @@ cp -r commands/fpf-*.md "$TARGET_DIR/.claude/commands/"
 if [ "$GLOBAL" = false ]; then
   if [ ! -d "$TARGET_DIR/.fpf" ]; then
     echo "Creating .fpf/ structure..."
-    cp -r templates/.fpf "$TARGET_DIR/"
+    mkdir -p "$TARGET_DIR/.fpf/evidence"
+    mkdir -p "$TARGET_DIR/.fpf/decisions"
+    mkdir -p "$TARGET_DIR/.fpf/sessions"
+    mkdir -p "$TARGET_DIR/.fpf/knowledge/L0"
+    mkdir -p "$TARGET_DIR/.fpf/knowledge/L1"
+    mkdir -p "$TARGET_DIR/.fpf/knowledge/L2"
+    mkdir -p "$TARGET_DIR/.fpf/knowledge/invalid"
+    touch "$TARGET_DIR/.fpf/evidence/.gitkeep"
+    touch "$TARGET_DIR/.fpf/decisions/.gitkeep"
+    touch "$TARGET_DIR/.fpf/sessions/.gitkeep"
+    touch "$TARGET_DIR/.fpf/knowledge/L0/.gitkeep"
+    touch "$TARGET_DIR/.fpf/knowledge/L1/.gitkeep"
+    touch "$TARGET_DIR/.fpf/knowledge/L2/.gitkeep"
+    touch "$TARGET_DIR/.fpf/knowledge/invalid/.gitkeep"
   else
-    echo ".fpf/ already exists, skipping template copy"
+    echo ".fpf/ already exists, skipping structure creation"
   fi
 
   # Check CLAUDE.md

@@ -144,8 +144,8 @@ Phase: DEDUCTION_COMPLETE
 | h3 | [name] | invalid | FAIL: contradicts Y |
 
 ## Next Step
-- `/fpf:3-test` to empirically verify L1 hypotheses
-- `/fpf:1-hypothesize` if all failed, need new approaches
+- `/fpf-3-test` to empirically verify L1 hypotheses
+- `/fpf-1-hypothesize` if all failed, need new approaches
 ```
 
 ## Output Format
@@ -170,10 +170,10 @@ Phase: DEDUCTION_COMPLETE
 - `.fpf/knowledge/invalid/[h3].md` (invalidated)
 
 ### Next Step
-`/fpf:3-test` to empirically verify L1 hypotheses
+`/fpf-3-test` to empirically verify L1 hypotheses
 
 Or if specific concerns:
-`/fpf:3-test --hypothesis [id] --focus [specific assumption]`
+`/fpf-3-test --hypothesis [id] --focus [specific assumption]`
 ```
 
 ## Common Deduction Failures

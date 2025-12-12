@@ -14,7 +14,7 @@ Display current state of FPF reasoning cycle and guide next steps.
 
 ```bash
 if [ ! -d ".fpf" ]; then
-    echo "FPF not initialized. Run /fpf:0-init"
+    echo "FPF not initialized. Run /fpf-0-init"
     exit
 fi
 ```
@@ -72,49 +72,49 @@ Based on session.md `Phase:` field and file counts.
 
 | ID | Name | Level | Next Action |
 |----|------|-------|-------------|
-| [id] | [name] | L0 | needs /fpf:2-check |
-| [id] | [name] | L1 | needs /fpf:3-test |
+| [id] | [name] | L0 | needs /fpf-2-check |
+| [id] | [name] | L1 | needs /fpf-3-test |
 
 ### Suggested Next Step
 
 [Based on phase:]
 
 **If INITIALIZED:**
-→ `/fpf:1-hypothesize <problem>` — Start reasoning cycle
+→ `/fpf-1-hypothesize <problem>` — Start reasoning cycle
 
 **If ABDUCTION_COMPLETE:**
-→ `/fpf:2-check` — Verify logical consistency of hypotheses
+→ `/fpf-2-check` — Verify logical consistency of hypotheses
 
 **If DEDUCTION_COMPLETE:**
-→ `/fpf:3-test` — Internal empirical tests (code, benchmarks)
-→ `/fpf:3-research` — External evidence (web, docs)
+→ `/fpf-3-test` — Internal empirical tests (code, benchmarks)
+→ `/fpf-3-research` — External evidence (web, docs)
 → (can do both, order doesn't matter)
 
 **If INDUCTION_COMPLETE:**
-→ `/fpf:4-audit` — Critical review before deciding
-→ `/fpf:5-decide` — If confident, finalize decision
+→ `/fpf-4-audit` — Critical review before deciding
+→ `/fpf-5-decide` — If confident, finalize decision
 
 **If AUDIT_COMPLETE:**
-→ `/fpf:5-decide` — Finalize decision (if no blockers)
+→ `/fpf-5-decide` — Finalize decision (if no blockers)
 → Address blockers first (if any)
 
 **If DECIDED:**
-→ `/fpf:1-hypothesize <new problem>` — Start new cycle
-→ `/fpf:query <topic>` — Search knowledge base
+→ `/fpf-1-hypothesize <new problem>` — Start new cycle
+→ `/fpf-query <topic>` — Search knowledge base
 
 ### Available Commands
 | Command | Description |
 |---------|-------------|
-| `/fpf:0-init` | Initialize FPF (if not done) |
-| `/fpf:1-hypothesize` | Generate hypotheses |
-| `/fpf:2-check` | Logical verification |
-| `/fpf:3-test` | Internal tests, benchmarks |
-| `/fpf:3-research` | External evidence (web, docs) |
-| `/fpf:4-audit` | WLNK + critical review |
-| `/fpf:5-decide` | Finalize decision |
-| `/fpf:status` | This status view |
-| `/fpf:query` | Search knowledge |
-| `/fpf:decay` | Check evidence freshness |
+| `/fpf-0-init` | Initialize FPF (if not done) |
+| `/fpf-1-hypothesize` | Generate hypotheses |
+| `/fpf-2-check` | Logical verification |
+| `/fpf-3-test` | Internal tests, benchmarks |
+| `/fpf-3-research` | External evidence (web, docs) |
+| `/fpf-4-audit` | WLNK + critical review |
+| `/fpf-5-decide` | Finalize decision |
+| `/fpf-status` | This status view |
+| `/fpf-query` | Search knowledge |
+| `/fpf-decay` | Check evidence freshness |
 ```
 
 ## Quick Status (One-liner)
@@ -127,12 +127,12 @@ FPF: [Phase] | L0:[N] L1:[N] L2:[N] | Next: [command]
 
 Example:
 ```
-FPF: DEDUCTION_COMPLETE | L0:1 L1:2 L2:0 | Next: /fpf:3-test
+FPF: DEDUCTION_COMPLETE | L0:1 L1:2 L2:0 | Next: /fpf-3-test
 ```
 
 ## Warnings to Surface
 
 Always check and report:
-- **Expired evidence**: Run `/fpf:decay` output if any expired
+- **Expired evidence**: Run `/fpf-decay` output if any expired
 - **Low congruence**: Flag external evidence with `congruence: low`
 - **No validity window**: Evidence without `valid_until` dates

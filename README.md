@@ -123,21 +123,21 @@ If you decide to adopt the whole CLAUDE.md, make sure you have configured contex
 
 | # | Command | Phase | Input | Output |
 |---|---------|-------|-------|--------|
-| 0 | `/fpf:0-init` | Setup | — | `.fpf/` structure |
-| 1 | `/fpf:1-hypothesize` | Abduction | Problem statement | Hypotheses in `L0/` |
-| 2 | `/fpf:2-check` | Deduction | L0 hypotheses | Verified in `L1/` |
-| 3a | `/fpf:3-test` | Induction | L1 hypotheses | Internal evidence |
-| 3b | `/fpf:3-research` | Induction | L1 hypotheses | External evidence |
-| 4 | `/fpf:4-audit` | Bias-Audit | All evidence | Risk assessment |
-| 5 | `/fpf:5-decide` | Decision | L2 hypotheses | DRR document |
+| 0 | `/fpf-0-init` | Setup | — | `.fpf/` structure |
+| 1 | `/fpf-1-hypothesize` | Abduction | Problem statement | Hypotheses in `L0/` |
+| 2 | `/fpf-2-check` | Deduction | L0 hypotheses | Verified in `L1/` |
+| 3a | `/fpf-3-test` | Induction | L1 hypotheses | Internal evidence |
+| 3b | `/fpf-3-research` | Induction | L1 hypotheses | External evidence |
+| 4 | `/fpf-4-audit` | Bias-Audit | All evidence | Risk assessment |
+| 5 | `/fpf-5-decide` | Decision | L2 hypotheses | DRR document |
 
 ### Utility Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/fpf:status` | Show current phase and next steps |
-| `/fpf:query <topic>` | Search knowledge base |
-| `/fpf:decay` | Check evidence freshness |
+| `/fpf-status` | Show current phase and next steps |
+| `/fpf-query <topic>` | Search knowledge base |
+| `/fpf-decay` | Check evidence freshness |
 
 ---
 
@@ -193,9 +193,9 @@ If you decide to adopt the whole CLAUDE.md, make sure you have configured contex
 
 | Level | Name | Meaning | How to Reach |
 |-------|------|---------|--------------|
-| **L0** | Observation | Unverified hypothesis or note | `/fpf:1-hypothesize` |
-| **L1** | Reasoned | Passed logical consistency check | `/fpf:2-check` |
-| **L2** | Verified | Empirically tested and confirmed | `/fpf:3-test` or `/fpf:3-research` |
+| **L0** | Observation | Unverified hypothesis or note | `/fpf-1-hypothesize` |
+| **L1** | Reasoned | Passed logical consistency check | `/fpf-2-check` |
+| **L2** | Verified | Empirically tested and confirmed | `/fpf-3-test` or `/fpf-3-research` |
 | **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
 
 ### The WLNK Principle (Weakest Link)
@@ -244,7 +244,7 @@ Evidence expires. Set `valid_until` dates:
 | External docs | 6-12 months |
 | Blog posts | 1-2 years |
 
-Use `/fpf:decay` to check freshness.
+Use `/fpf-decay` to check freshness.
 
 ### Scope
 
@@ -285,7 +285,7 @@ This prevents misapplying knowledge outside its valid context.
 
 ```bash
 # Start the cycle
-/fpf:1-hypothesize "Database selection for user profile service: PostgreSQL vs MongoDB"
+/fpf-1-hypothesize "Database selection for user profile service: PostgreSQL vs MongoDB"
 ```
 
 **Generated hypotheses (L0/):**
@@ -296,7 +296,7 @@ This prevents misapplying knowledge outside its valid context.
 
 ```bash
 # Check logical consistency
-/fpf:2-check
+/fpf-2-check
 ```
 
 **Results:**
@@ -307,8 +307,8 @@ This prevents misapplying knowledge outside its valid context.
 
 ```bash
 # Gather evidence
-/fpf:3-research  # External: PostgreSQL vs MongoDB comparisons
-/fpf:3-test      # Internal: Prototype with sample data
+/fpf-3-research  # External: PostgreSQL vs MongoDB comparisons
+/fpf-3-test      # Internal: Prototype with sample data
 ```
 
 **Evidence created:**
@@ -318,7 +318,7 @@ This prevents misapplying knowledge outside its valid context.
 
 ```bash
 # Critical review
-/fpf:4-audit
+/fpf-4-audit
 ```
 
 **Audit findings:**
@@ -329,7 +329,7 @@ This prevents misapplying knowledge outside its valid context.
 
 ```bash
 # Finalize
-/fpf:5-decide
+/fpf-5-decide
 ```
 
 **Output:** `decisions/DRR-001-database-selection.md`
@@ -341,7 +341,7 @@ This prevents misapplying knowledge outside its valid context.
 **Problem:** "How should we implement caching for our API?"
 
 ```bash
-/fpf:1-hypothesize "Caching strategy for /products API endpoint"
+/fpf-1-hypothesize "Caching strategy for /products API endpoint"
 ```
 
 **Hypotheses:**
@@ -351,14 +351,14 @@ This prevents misapplying knowledge outside its valid context.
 - H3: CDN edge caching
 
 ```bash
-/fpf:2-check
+/fpf-2-check
 ```
 
 H3 fails: Our data is user-specific, CDN won't help → moved to `invalid/`
 
 ```bash
-/fpf:3-test --hypothesis h1
-/fpf:3-test --hypothesis h2
+/fpf-3-test --hypothesis h1
+/fpf-3-test --hypothesis h2
 ```
 
 **Results:**
@@ -367,7 +367,7 @@ H3 fails: Our data is user-specific, CDN won't help → moved to `invalid/`
 - H2: 1ms p99, but memory pressure at scale ⚠
 
 ```bash
-/fpf:4-audit
+/fpf-4-audit
 ```
 
 **WLNK Analysis:**
@@ -376,7 +376,7 @@ H3 fails: Our data is user-specific, CDN won't help → moved to `invalid/`
 - H2 has scope limitation (not valid for >5k RPS)
 
 ```bash
-/fpf:5-decide
+/fpf-5-decide
 ```
 
 **Decision:** Redis (H1) selected. DRR created with full rationale.
@@ -388,7 +388,7 @@ H3 fails: Our data is user-specific, CDN won't help → moved to `invalid/`
 Later, someone asks: "Why did we choose Redis?"
 
 ```bash
-/fpf:query redis caching
+/fpf-query redis caching
 ```
 
 **Output:**
@@ -414,7 +414,7 @@ Later, someone asks: "Why did we choose Redis?"
 A few months later, check if evidence is still valid:
 
 ```bash
-/fpf:decay
+/fpf-decay
 ```
 
 **Output:**
@@ -486,9 +486,9 @@ RECOMMENDATION: [Pick]
 **FPF mode:** When you need persistent, auditable reasoning
 
 ```bash
-/fpf:1-hypothesize "complex problem"
+/fpf-1-hypothesize "complex problem"
 # ... full cycle ...
-/fpf:5-decide
+/fpf-5-decide
 ```
 
 Switch between modes as needed. Use the right tool for the job.
@@ -511,15 +511,15 @@ Switch between modes as needed. Use the right tool for the job.
 
 ### "Old evidence, not sure if valid"
 
-→ Run `/fpf:decay` command. Refresh, deprecate, or waive/delete with justification.
+→ Run `/fpf-decay` command. Refresh, deprecate, or waive/delete with justification.
 
 ### "Audit found blockers"
 
-→ Resolve before `/fpf:5-decide`. Blockers exist for a reason. This is the whole goal of FPF after all — to lead reasoning to consistent decisions!
+→ Resolve before `/fpf-5-decide`. Blockers exist for a reason. This is the whole goal of FPF after all — to lead reasoning to consistent decisions!
 
 ### "Need to revisit old decision"
 
-→ Run `/fpf:query`. Check DRR validity conditions. Start new cycle if needed.
+→ Run `/fpf-query`. Check DRR validity conditions. Start new cycle if needed.
 
 #### Cheat For Passionate And Attentive Minds
 

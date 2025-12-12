@@ -16,7 +16,7 @@ Synthesize the ADI cycle into a **Design Rationale Record (DRR)** — a permanen
 
 Before running this command, ensure:
 - [ ] At least one hypothesis at L1+ status
-- [ ] `/fpf:4-audit` completed (or explicitly skipped for low-stakes decisions)
+- [ ] `/fpf-4-audit` completed (or explicitly skipped for low-stakes decisions)
 - [ ] No unresolved blocker issues
 
 ## Process
@@ -181,7 +181,7 @@ Hypothesis selected: [name]
 
 ---
 
-To start new cycle: `/fpf:1-hypothesize <new problem>`
+To start new cycle: `/fpf-1-hypothesize <new problem>`
 ```
 
 ### 5. Archive and Reset Session
@@ -210,7 +210,7 @@ Problem: (none)
 (none)
 
 ## Next Step
-Run `/fpf:1-hypothesize <problem>` to begin new reasoning cycle.
+Run `/fpf-1-hypothesize <problem>` to begin new reasoning cycle.
 
 ## Previous Cycle
 Completed: [date]
@@ -250,8 +250,8 @@ Ready to implement. Key considerations:
 Knowledge updated:
 - `.fpf/knowledge/L2/[promoted].md`
 
-To start new cycle: `/fpf:1-hypothesize <problem>`
-To query knowledge: `/fpf:query <topic>`
+To start new cycle: `/fpf-1-hypothesize <problem>`
+To query knowledge: `/fpf-query <topic>`
 ```
 
 ## DRR Quality Checklist

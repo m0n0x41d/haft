@@ -17,9 +17,9 @@ You are the **Researcher**. Gather evidence from external sources to verify or r
 
 This phase answers: "What does the outside world know about this?"
 
-## Difference from /fpf:3-test
+## Difference from /fpf-3-test
 
-| /fpf:3-test | /fpf:3-research |
+| /fpf-3-test | /fpf-3-research |
 |-------------|-----------------|
 | Run code, benchmarks | Search web, read docs |
 | Internal evidence | External evidence |
@@ -210,8 +210,8 @@ Phase: RESEARCH_COMPLETE
 | [H2] | 3 | Mixed evidence |
 
 ## Next Step
-- `/fpf:3-test` for internal empirical verification
-- `/fpf:4-audit` if confident in combined evidence
+- `/fpf-3-test` for internal empirical verification
+- `/fpf-4-audit` if confident in combined evidence
 ```
 
 ## Output Format
@@ -250,8 +250,8 @@ Phase: RESEARCH_COMPLETE
 - [Where internal testing is still needed]
 
 ### Recommendation
-- [ ] Sufficient external evidence → proceed to `/fpf:4-audit`
-- [ ] Need internal testing → run `/fpf:3-test`
+- [ ] Sufficient external evidence → proceed to `/fpf-4-audit`
+- [ ] Need internal testing → run `/fpf-3-test`
 - [ ] Need more research → specify what to search
 ```
 
@@ -286,7 +286,7 @@ Phase: RESEARCH_COMPLETE
 - Different use case, some overlap
 - Many constraints differ
 
-⚠️ **Low congruence evidence should be flagged in `/fpf:4-audit`**
+⚠️ **Low congruence evidence should be flagged in `/fpf-4-audit`**
 
 ## Anti-Patterns
 

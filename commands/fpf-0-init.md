@@ -38,18 +38,18 @@ Problem: (none yet)
 (none)
 
 ## Next Step
-Run `/fpf:1-hypothesize <problem>` to begin reasoning cycle.
+Run `/fpf-1-hypothesize <problem>` to begin reasoning cycle.
 
 ## Command Reference
 | # | Command | Phase | Result |
 |---|---------|-------|--------|
-| 1 | `/fpf:1-hypothesize` | Abduction | Generate hypotheses → L0/ |
-| 2 | `/fpf:2-check` | Deduction | Logical verification → L1/ |
-| 3 | `/fpf:3-test` | Induction | Empirical verification → L2/ |
-| 4 | `/fpf:4-audit` | Bias-Audit | Critical assumption review |
-| 5 | `/fpf:5-decide` | Decision | Create DRR, close cycle |
-| S | `/fpf:status` | — | Show current state |
-| Q | `/fpf:query` | — | Search knowledge base |
+| 1 | `/fpf-1-hypothesize` | Abduction | Generate hypotheses → L0/ |
+| 2 | `/fpf-2-check` | Deduction | Logical verification → L1/ |
+| 3 | `/fpf-3-test` | Induction | Empirical verification → L2/ |
+| 4 | `/fpf-4-audit` | Bias-Audit | Critical assumption review |
+| 5 | `/fpf-5-decide` | Decision | Create DRR, close cycle |
+| S | `/fpf-status` | — | Show current state |
+| Q | `/fpf-query` | — | Search knowledge base |
 ```
 
 ### 3. Create .gitignore Entry (if needed)
@@ -81,7 +81,7 @@ Structure created:
   ├── sessions/   (archived cycles)
   └── session.md
 
-Next: /fpf:1-hypothesize <problem statement>
+Next: /fpf-1-hypothesize <problem statement>
 ```
 
-If already initialized, show current state instead (run `/fpf:status` logic).
+If already initialized, show current state instead (run `/fpf-status` logic).

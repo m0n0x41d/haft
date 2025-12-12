@@ -128,8 +128,8 @@ Problem: [problem statement]
 | h3 | [name] | L0 | [risk] |
 
 ## Next Step
-Run `/fpf:2-check` to verify logical consistency.
-Or `/fpf:2-check --hypothesis [id]` for specific hypothesis.
+Run `/fpf-2-check` to verify logical consistency.
+Or `/fpf-2-check --hypothesis [id]` for specific hypothesis.
 ```
 
 ## Output Format
@@ -161,7 +161,7 @@ Or `/fpf:2-check --hypothesis [id]` for specific hypothesis.
 - `.fpf/knowledge/L0/[h2-slug].md`
 - `.fpf/knowledge/L0/[h3-slug].md`
 
-**Next:** `/fpf:2-check` to verify logical consistency
+**Next:** `/fpf-2-check` to verify logical consistency
 ```
 
 ## Anti-Patterns to Avoid

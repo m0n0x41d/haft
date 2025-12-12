@@ -123,7 +123,7 @@ No matches found in knowledge base.
 ### Suggestions
 - Check spelling / try synonyms
 - This topic may not have been investigated yet
-- Start investigation: `/fpf:1-hypothesize "[topic]-related question"`
+- Start investigation: `/fpf-1-hypothesize "[topic]-related question"`
 
 ### Related (fuzzy)
 [If partial matches exist, suggest them]
@@ -133,16 +133,16 @@ No matches found in knowledge base.
 
 ```bash
 # Find everything about caching
-/fpf:query caching
+/fpf-query caching
 
 # Only verified knowledge about auth
-/fpf:query auth --level L2
+/fpf-query auth --level L2
 
 # What do we know about performance?
-/fpf:query performance
+/fpf-query performance
 
 # Check specific technology
-/fpf:query redis
+/fpf-query redis
 ```
 
 ## Integration with Decision Making
@@ -150,9 +150,9 @@ No matches found in knowledge base.
 When making decisions, query first:
 
 ```markdown
-Before: /fpf:1-hypothesize "should we use Redis?"
-Do:     /fpf:query redis
-        /fpf:query caching
+Before: /fpf-1-hypothesize "should we use Redis?"
+Do:     /fpf-query redis
+        /fpf-query caching
         
 [Check if we already have verified knowledge on this topic]
 ```

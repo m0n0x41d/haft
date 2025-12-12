@@ -66,7 +66,7 @@ For each evidence file, determine status:
 
 **refresh**: Update evidence with new data
 ```bash
-/fpf:decay refresh --evidence [file]
+/fpf-decay refresh --evidence [file]
 ```
 - Re-run the test or research
 - Update the evidence file
@@ -74,7 +74,7 @@ For each evidence file, determine status:
 
 **deprecate**: Mark evidence as no longer valid
 ```bash
-/fpf:decay deprecate --evidence [file]
+/fpf-decay deprecate --evidence [file]
 ```
 - Add `deprecated: true` to frontmatter
 - Add `deprecated_reason` and `deprecated_date`
@@ -83,7 +83,7 @@ For each evidence file, determine status:
 
 **waive**: Explicitly accept stale evidence (temporary)
 ```bash
-/fpf:decay waive --evidence [file]
+/fpf-decay waive --evidence [file]
 ```
 - Add `waived_until: [date]` (max 90 days)
 - Add `waived_reason: "[justification]"`
@@ -103,8 +103,8 @@ When evidence expires or is deprecated:
 | [L1/claim2] | L1 | [deprecated evidence] | → L0 (demote) |
 
 ### Recommended Actions
-1. [claim1]: Run `/fpf:3-test` to refresh evidence
-2. [claim2]: Run `/fpf:3-research` for current info
+1. [claim1]: Run `/fpf-3-test` to refresh evidence
+2. [claim2]: Run `/fpf-3-research` for current info
 ```
 
 ## Validity Guidelines
@@ -147,7 +147,7 @@ When evidence expires or is deprecated:
 
 ## Integration with Audit
 
-`/fpf:4-audit` automatically runs decay check and includes results.
+`/fpf-4-audit` automatically runs decay check and includes results.
 
 Evidence issues found in audit:
 - Expired evidence → Blocker (must resolve)

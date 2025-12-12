@@ -201,8 +201,8 @@ Phase: INDUCTION_COMPLETE
 | h2 | [name] | invalid | Failed perf test |
 
 ## Next Step
-- `/fpf:4-audit` for critical review before deciding
-- `/fpf:5-decide` if ready to finalize
+- `/fpf-4-audit` for critical review before deciding
+- `/fpf-5-decide` if ready to finalize
 ```
 
 ## Output Format
@@ -235,9 +235,9 @@ Re-verify IF:
 - [trigger condition]
 
 ### Next Step
-`/fpf:4-audit` — Critical review of remaining assumptions
+`/fpf-4-audit` — Critical review of remaining assumptions
 or
-`/fpf:5-decide` — Finalize decision if confident
+`/fpf-5-decide` — Finalize decision if confident
 ```
 
 ## Test Quality Checklist

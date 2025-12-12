@@ -171,7 +171,7 @@ For external evidence, check context match:
 | [file2] | 2024-12-01 | ⚠️ Expired | Refresh/Deprecate/Waive |
 | [file3] | (none) | ⚠️ No window | Add validity |
 
-Run `/fpf:decay` to see all evidence needing attention.
+Run `/fpf-decay` to see all evidence needing attention.
 ```
 
 ### 6. Final Scrutiny Verdict
@@ -211,8 +211,8 @@ Phase: AUDIT_COMPLETE
 - Evidence gaps: [count]
 
 ## Next Step
-- If blockers: resolve before `/fpf:5-decide`
-- If clear: `/fpf:5-decide` to finalize
+- If blockers: resolve before `/fpf-5-decide`
+- If clear: `/fpf-5-decide` to finalize
 ```
 
 ## Output Format
@@ -241,9 +241,9 @@ Phase: AUDIT_COMPLETE
 ### Recommendation
 [PROCEED / PAUSE / REVISIT]
 
-**If PROCEED:** `/fpf:5-decide`
+**If PROCEED:** `/fpf-5-decide`
 **If PAUSE:** Address [specific blockers]
-**If REVISIT:** `/fpf:1-hypothesize` with new constraints
+**If REVISIT:** `/fpf-1-hypothesize` with new constraints
 ```
 
 ## Audit Smells (Red Flags)

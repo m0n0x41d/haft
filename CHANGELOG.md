@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### ADI Cycle Strictness Documentation
+
+- **Phase strictness clearly documented in README** with visual annotations in the cycle diagram
+- Phases 1→2→3 marked as `(REQUIRED)` in diagram
+- Phase 4 (Audit) marked as `(OPTIONAL - but recommended)`
+- New "Phase Strictness" section explaining:
+  - Sequential enforcement for phases 1-3
+  - When skipping audit is acceptable vs. not recommended
+  - Commands enforce prerequisites and error on invalid transitions
+- Commands Reference table updated with "Required" column and footnotes
+
 #### Phase Gate Enforcement
 
 - **All commands now verify phase prerequisites** before executing

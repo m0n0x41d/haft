@@ -8,17 +8,39 @@ arguments:
 
 # FPF Phase 4: Bias-Audit (Critical Review)
 
+## Phase Gate (MANDATORY)
+
+**STOP. Verify phase before proceeding:**
+
+1. Read `.fpf/session.md`, extract `Phase:` value
+2. Check validity:
+
+| Current Phase | Can Run? | Action |
+|---------------|----------|--------|
+| INDUCTION_COMPLETE | ✅ YES | Proceed |
+| AUDIT_COMPLETE | ✅ YES | Re-audit if needed |
+| Any other | ❌ NO | See below |
+
+**If earlier phase:**
+```
+⛔ BLOCKED: No evidence to audit yet.
+Current phase: [PHASE]
+Complete /fpf-3-test or /fpf-3-research first.
+```
+
+---
+
 ## Your Role
 
 You are the **Scrutineer**. Challenge assumptions, find blind spots, stress-test thinking.
 
-This phase answers: "What are we missing? What could go wrong that we haven't considered?"
+This phase answers: **"What are we missing? What could go wrong that we haven't considered?"**
 
 ## When to Use
 
 - **Required:** Before any decision with significant/irreversible impact
 - **Optional but valuable:** After Induction, before Decide
-- **Can skip:** For low-stakes, easily reversible decisions
+- **Can skip:** For low-stakes, easily reversible decisions (with warning in /fpf-5-decide)
 
 ## Input
 
@@ -42,7 +64,59 @@ cat .fpf/evidence/*.md
 cat .fpf/session.md
 ```
 
-### 2. Assumption Audit
+### 2. WLNK Analysis (Weakest Link)
+
+**CRITICAL: Assurance = min(evidence assurances), NEVER average**
+
+For each hypothesis, calculate effective reliability:
+
+```markdown
+## WLNK Analysis: [Hypothesis Name]
+
+### Evidence Chain
+
+| Evidence | Type | Base R | Congruence | Φ(CL) | R_eff |
+|----------|------|--------|------------|-------|-------|
+| [ev1] | internal | 1.0 | — | 0.00 | 1.00 |
+| [ev2] | external | 1.0 | high | 0.00 | 1.00 |
+| [ev3] | external | 1.0 | medium | 0.15 | 0.85 |
+| [ev4] | external | 0.8 | low | 0.35 | 0.45 |
+
+### Congruence Penalty Reference
+
+| Congruence Level | Φ(CL) Penalty | Meaning |
+|------------------|---------------|---------|
+| High | 0.00 | Direct context match |
+| Medium | 0.15 | Partial context match |
+| Low | 0.35 | Weak context match |
+
+### WLNK Calculation
+
+```
+R_eff(ev1) = 1.0 - 0.00 = 1.00
+R_eff(ev2) = 1.0 - 0.00 = 1.00
+R_eff(ev3) = 1.0 - 0.15 = 0.85
+R_eff(ev4) = 0.8 - 0.35 = 0.45
+
+Hypothesis R_eff = min(1.00, 1.00, 0.85, 0.45) = 0.45
+                   ↑
+                   WEAKEST LINK (ev4: blog post, low congruence)
+```
+
+### Verdict
+
+**Weakest Link:** [ev4] — external evidence with low congruence
+**Effective Assurance:** Capped at R_eff = 0.45
+
+⚠️ **This hypothesis reliability is limited by low-congruence external evidence.**
+
+**Options to improve:**
+1. Find higher-congruence external evidence
+2. Run internal test to replace external evidence
+3. Accept the risk with documented justification
+```
+
+### 3. Assumption Inventory
 
 List ALL assumptions — explicit and implicit:
 
@@ -50,25 +124,30 @@ List ALL assumptions — explicit and implicit:
 ## Assumption Inventory
 
 ### Explicit Assumptions (from hypothesis files)
-| # | Assumption | Tested? | Confidence |
-|---|------------|---------|------------|
-| 1 | [from file] | Yes/No | High/Med/Low |
 
-### Implicit Assumptions (unstated)
-| # | Hidden Assumption | Risk if Wrong |
-|---|-------------------|---------------|
-| 1 | [e.g., "Users have modern browsers"] | [impact] |
-| 2 | [e.g., "Traffic won't 10x suddenly"] | [impact] |
-| 3 | [e.g., "Team can maintain this"] | [impact] |
+| # | Assumption | Source | Tested? | Confidence |
+|---|------------|--------|---------|------------|
+| 1 | [from file] | [hypothesis] | Yes/No | High/Med/Low |
+| 2 | [from file] | [hypothesis] | Yes/No | High/Med/Low |
+
+### Implicit Assumptions (unstated but required)
+
+| # | Hidden Assumption | Why It Matters | Risk if Wrong |
+|---|-------------------|----------------|---------------|
+| 1 | [e.g., "Users have modern browsers"] | [affects X] | [impact] |
+| 2 | [e.g., "Traffic won't 10x suddenly"] | [affects Y] | [impact] |
+| 3 | [e.g., "Team can maintain this"] | [affects Z] | [impact] |
 
 ### Environmental Assumptions
+
 - [ ] Infrastructure stays same
 - [ ] Dependencies remain stable  
 - [ ] Team composition unchanged
 - [ ] Requirements won't shift significantly
+- [ ] Budget constraints hold
 ```
 
-### 3. Bias Check
+### 4. Bias Check
 
 Actively look for cognitive biases:
 
@@ -77,30 +156,41 @@ Actively look for cognitive biases:
 
 ### Confirmation Bias
 Did we design tests that could only confirm, not refute?
-- [Example of potentially biased test]
-- [What counter-evidence would look like]
 
-### Sunk Cost
+- **Risk indicators:** [list any]
+- **Counter-evidence sought?** Yes/No
+- **Mitigation:** [action if needed]
+
+### Sunk Cost Fallacy
 Are we favoring an option because we've invested time in it?
-- Time spent: [X]
-- Would we choose same if starting fresh? 
+
+- **Time invested per hypothesis:** [compare]
+- **Would we choose same if starting fresh?** Yes/No/Uncertain
+- **Mitigation:** [action if needed]
 
 ### Availability Bias
 Are we overweighting recent experiences or familiar patterns?
-- [Pattern we're applying]
-- [Why it might not fit here]
+
+- **Pattern we're applying:** [what]
+- **Why it might not fit:** [reasons]
+- **Mitigation:** [action if needed]
 
 ### Anchoring
 Did early information overly constrain our thinking?
-- First hypothesis was: [X]
-- Did others get fair consideration?
+
+- **First hypothesis was:** [X]
+- **Did others get fair consideration?** Yes/No
+- **Mitigation:** [action if needed]
 
 ### Survivorship Bias
 Are we only looking at successful examples?
-- [What failures might teach us]
+
+- **Failures considered?** Yes/No
+- **What failures might teach us:** [insights]
+- **Mitigation:** [action if needed]
 ```
 
-### 4. Adversarial Analysis
+### 5. Adversarial Analysis
 
 Think like an attacker / skeptic:
 
@@ -108,111 +198,131 @@ Think like an attacker / skeptic:
 ## Adversarial Review
 
 ### "What's the worst that happens if we're wrong?"
-- Technical worst case: [scenario]
-- Business worst case: [scenario]
-- Recovery cost: [estimate]
+
+| Scenario | Impact | Recovery Cost | Likelihood |
+|----------|--------|---------------|------------|
+| Technical failure | [impact] | [cost] | H/M/L |
+| Business impact | [impact] | [cost] | H/M/L |
+| Security issue | [impact] | [cost] | H/M/L |
 
 ### "Who would disagree with this decision?"
-- [Stakeholder 1] might argue: [their view]
-- [Stakeholder 2] might argue: [their view]
-- Are their concerns addressed?
+
+| Stakeholder | Their Likely Objection | Addressed? |
+|-------------|------------------------|------------|
+| [Person/Role 1] | [their view] | Yes/No/Partially |
+| [Person/Role 2] | [their view] | Yes/No/Partially |
 
 ### "What would make us revisit this in 3 months?"
+
 - [Trigger 1]
 - [Trigger 2]
+- [Trigger 3]
 
 ### "What's the cheapest way this fails?"
-- [Failure mode requiring least effort to trigger]
+
+[Failure mode requiring least effort to trigger]
 ```
 
-### 5. Evidence Quality Review
+### 6. Evidence Quality Review
 
 ```markdown
-## Evidence Audit
+## Evidence Quality Audit
 
-### WLNK Check (Weakest Link Analysis)
-**CRITICAL: Assurance = min(evidence assurances), NEVER average**
+### Coverage Check
 
-| Evidence | Source | Level | Congruence |
-|----------|--------|-------|------------|
-| [evidence1] | internal | L2 | — |
-| [evidence2] | external | L1 | high |
-| [evidence3] | external | L2 | low |
-
-**Weakest Link:** [evidence3] — external with low congruence
-**Effective Assurance:** L1 (capped by weakest)
-
-⚠️ WARNING if:
-- Any evidence has `congruence: low` → flag for review
-- Mix of internal/external without congruence assessment
-- Single source of truth for critical claim
-
-### Congruence Warnings
-For external evidence, check context match:
-| Evidence | Source Context | Our Context | Congruence | Penalty |
-|----------|---------------|-------------|------------|---------|
-| [ext1] | "Company X, 100k users" | "Our app, 1k users" | low | ⚠️ Scale mismatch |
-| [ext2] | "Redis official docs" | "Our Redis setup" | high | ✓ Direct match |
-
-### Coverage
-| Key Claim | Evidence Exists? | Quality |
-|-----------|------------------|---------|
-| [claim 1] | Yes/No | Strong/Weak |
-| [claim 2] | Yes/No | Strong/Weak |
-
-### Evidence Gaps
-- [ ] [What we should have tested but didn't]
-- [ ] [What would increase confidence]
+| Key Claim | Evidence Exists? | Quality | Gap? |
+|-----------|------------------|---------|------|
+| [claim 1] | Yes/No | Strong/Weak | ✓/⚠ |
+| [claim 2] | Yes/No | Strong/Weak | ✓/⚠ |
 
 ### Evidence Freshness (Validity Windows)
+
 | Evidence | Valid Until | Status | Action Needed |
 |----------|-------------|--------|---------------|
 | [file1] | 2025-06-01 | ✓ Valid | — |
-| [file2] | 2024-12-01 | ⚠️ Expired | Refresh/Deprecate/Waive |
-| [file3] | (none) | ⚠️ No window | Add validity |
+| [file2] | 2024-12-01 | ⚠ Expired | Refresh/Deprecate |
+| [file3] | (none) | ⚠ No window | Add validity |
 
-Run `/fpf-decay` to see all evidence needing attention.
+**Run `/fpf-decay` for detailed decay analysis.**
+
+### Congruence Warnings
+
+| Evidence | Source Context | Our Context | CL | Issue |
+|----------|---------------|-------------|-----|-------|
+| [ext1] | "Company X, 100k users" | "Our app, 1k users" | Low | ⚠ Scale mismatch |
+| [ext2] | "Redis 7.0" | "Redis 6.2" | Med | Version difference |
+
+### Single Points of Failure
+
+| Critical Claim | # of Supporting Sources | Risk |
+|----------------|------------------------|------|
+| [claim 1] | 1 | ⚠ Single source |
+| [claim 2] | 3 | ✓ Multiple sources |
 ```
 
-### 6. Final Scrutiny Verdict
+### 7. Final Scrutiny Verdict
 
 ```markdown
 ## Audit Verdict
 
-### Blocker Issues
-[Issues that MUST be resolved before deciding]
-- [ ] [Issue 1]
-- [ ] [Issue 2]
+### Blocker Issues (MUST resolve before deciding)
+
+| # | Issue | Severity | Resolution Required |
+|---|-------|----------|---------------------|
+| 1 | [issue] | Blocker | [action needed] |
+| 2 | [issue] | Blocker | [action needed] |
+
+### Warnings (Should address, can proceed with risk acceptance)
+
+| # | Warning | Risk Level | Mitigation |
+|---|---------|------------|------------|
+| 1 | [warning] | High/Med | [plan] |
+| 2 | [warning] | High/Med | [plan] |
 
 ### Accepted Risks
-[Risks we acknowledge and accept]
-- [Risk 1]: Accepted because [reason]
-- [Risk 2]: Mitigated by [plan]
+
+| # | Risk | Accepted Because | Owner |
+|---|------|------------------|-------|
+| 1 | [risk] | [justification] | [who monitors] |
+| 2 | [risk] | [justification] | [who monitors] |
 
 ### Recommendations
-- [ ] Proceed to decision
-- [ ] Need more evidence on: [X]
-- [ ] Revisit hypothesis: [Y]
-- [ ] Add validity conditions: [Z]
+
+- [ ] **PROCEED** — Evidence sufficient, risks acceptable
+- [ ] **PROCEED WITH CAUTION** — Address warnings first
+- [ ] **PAUSE** — Resolve blockers before deciding
+- [ ] **REVISIT** — Need more evidence or new hypotheses
 
 ### Dissenting View
-[If you were arguing AGAINST the leading hypothesis, what would you say?]
+
+**If arguing AGAINST the leading hypothesis, what would you say?**
+
+[Present the strongest counter-argument]
 ```
 
-### 7. Update Session
+### 8. Update Session
 
 ```markdown
 ## Status
 Phase: AUDIT_COMPLETE
 
 ## Audit Summary
-- Blocker issues: [count]
-- Accepted risks: [count]
-- Evidence gaps: [count]
+- **Blockers found:** [count]
+- **Warnings:** [count]
+- **Accepted risks:** [count]
+- **WLNK R_eff:** [lowest value]
+- **Recommendation:** [PROCEED/PAUSE/REVISIT]
+
+## Phase Transitions Log
+| Timestamp | From | To | Trigger |
+|-----------|------|-----|---------|
+| [...] | ... | ... | ... |
+| [now] | INDUCTION_COMPLETE | AUDIT_COMPLETE | /fpf-4-audit |
 
 ## Next Step
-- If blockers: resolve before `/fpf-5-decide`
-- If clear: `/fpf-5-decide` to finalize
+- If PROCEED: `/fpf-5-decide` to finalize decision
+- If blockers: Resolve issues first, then `/fpf-5-decide`
+- If REVISIT: `/fpf-1-hypothesize` with new constraints
 ```
 
 ## Output Format
@@ -221,37 +331,64 @@ Phase: AUDIT_COMPLETE
 ## Audit Complete
 
 ### Summary
-- Hypotheses audited: [N]
-- Blocker issues found: [N]
-- Accepted risks documented: [N]
+
+| Metric | Value |
+|--------|-------|
+| Hypotheses audited | [N] |
+| Blocker issues | [N] |
+| Warnings | [N] |
+| Accepted risks | [N] |
+| Lowest WLNK R_eff | [value] |
+
+### WLNK Results
+
+| Hypothesis | Evidence Count | Weakest Link | R_eff |
+|------------|----------------|--------------|-------|
+| H1: [name] | [N] | [evidence] | [value] |
+| H2: [name] | [N] | [evidence] | [value] |
 
 ### Critical Findings
 
 **Blockers (must resolve):**
 1. [Blocker 1 — what and why]
-2. [Blocker 2 — what and why]
 
-**Risks (acknowledged):**
-1. [Risk 1] — Accepted because [reason]
-2. [Risk 2] — Mitigated by [plan]
+**Warnings (should address):**
+1. [Warning 1] — Mitigation: [plan]
 
 **Blind Spots Identified:**
 - [Previously unconsidered factor]
 
 ### Recommendation
-[PROCEED / PAUSE / REVISIT]
+
+**[PROCEED / PROCEED WITH CAUTION / PAUSE / REVISIT]**
+
+**Reasoning:** [brief justification]
+
+---
 
 **If PROCEED:** `/fpf-5-decide`
-**If PAUSE:** Address [specific blockers]
-**If REVISIT:** `/fpf-1-hypothesize` with new constraints
+**If PAUSE:** Address [specific blockers] first
+**If REVISIT:** `/fpf-1-hypothesize` with [new constraints]
 ```
 
 ## Audit Smells (Red Flags)
 
-| Smell | What It Means |
-|-------|---------------|
-| "No risks identified" | You're not looking hard enough |
-| All assumptions "High confidence" | Overconfidence bias |
-| No dissenting view possible | Groupthink or weak analysis |
-| Evidence all from same source | Single point of failure |
-| No validity conditions | Will be stale without knowing |
+| Smell | What It Means | Action |
+|-------|---------------|--------|
+| "No risks identified" | Not looking hard enough | Dig deeper |
+| All assumptions "High confidence" | Overconfidence bias | Challenge each one |
+| No dissenting view possible | Groupthink or weak analysis | Seek devil's advocate |
+| Evidence all from same source | Single point of failure | Find diverse sources |
+| No validity windows set | Will be stale without knowing | Add validity dates |
+| All external evidence low congruence | May not apply to our context | Get internal evidence |
+| WLNK R_eff < 0.5 | Very weak evidence chain | Strengthen before deciding |
+
+## Common Mistakes to Avoid
+
+| Mistake | Why It's Wrong | Do This Instead |
+|---------|----------------|-----------------|
+| Rubber-stamping | Defeats purpose of audit | Challenge everything |
+| Ignoring WLNK | Overestimates confidence | Always calculate R_eff |
+| Skipping bias check | Blindspots remain | Systematically check each bias |
+| No dissenting view | Echo chamber | Force steel-man counter-argument |
+| Proceeding with blockers | High-risk decision | Resolve blockers first |

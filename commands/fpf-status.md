@@ -14,7 +14,8 @@ Display current state of FPF reasoning cycle and guide next steps.
 
 ```bash
 if [ ! -d ".fpf" ]; then
-    echo "FPF not initialized. Run /fpf-0-init"
+    echo "FPF not initialized."
+    echo "Run /fpf-0-init to set up FPF structure."
     exit
 fi
 ```
@@ -22,16 +23,16 @@ fi
 ### 2. Gather Statistics
 
 ```bash
-# Count epistemes at each level
-L0_COUNT=$(ls .fpf/knowledge/L0/*.md 2>/dev/null | wc -l)
-L1_COUNT=$(ls .fpf/knowledge/L1/*.md 2>/dev/null | wc -l)
-L2_COUNT=$(ls .fpf/knowledge/L2/*.md 2>/dev/null | wc -l)
-INVALID_COUNT=$(ls .fpf/knowledge/invalid/*.md 2>/dev/null | wc -l)
+# Count knowledge at each level
+L0_COUNT=$(find .fpf/knowledge/L0 -name "*.md" 2>/dev/null | wc -l)
+L1_COUNT=$(find .fpf/knowledge/L1 -name "*.md" 2>/dev/null | wc -l)
+L2_COUNT=$(find .fpf/knowledge/L2 -name "*.md" 2>/dev/null | wc -l)
+INVALID_COUNT=$(find .fpf/knowledge/invalid -name "*.md" 2>/dev/null | wc -l)
 
-# Count evidence, decisions, and archived sessions
-EVIDENCE_COUNT=$(ls .fpf/evidence/*.md 2>/dev/null | wc -l)
-DRR_COUNT=$(ls .fpf/decisions/DRR-*.md 2>/dev/null | wc -l)
-SESSIONS_COUNT=$(ls .fpf/sessions/*.md 2>/dev/null | wc -l)
+# Count artifacts
+EVIDENCE_COUNT=$(find .fpf/evidence -name "*.md" 2>/dev/null | wc -l)
+DRR_COUNT=$(find .fpf/decisions -name "DRR-*.md" 2>/dev/null | wc -l)
+SESSIONS_COUNT=$(find .fpf/sessions -name "*.md" 2>/dev/null | wc -l)
 ```
 
 ### 3. Read Session State
@@ -40,9 +41,14 @@ SESSIONS_COUNT=$(ls .fpf/sessions/*.md 2>/dev/null | wc -l)
 cat .fpf/session.md
 ```
 
-### 4. Determine Phase & Next Actions
+Extract: `Phase:`, `Problem:`, Active hypotheses, Last transition
 
-Based on session.md `Phase:` field and file counts.
+### 4. Check for Issues
+
+Scan for:
+- Expired evidence (check `valid_until` dates)
+- Low-congruence external evidence
+- Missing validity windows
 
 ## Output Format
 
@@ -50,89 +56,130 @@ Based on session.md `Phase:` field and file counts.
 ## FPF Status
 
 ### Current Session
-**Phase:** [INITIALIZED / ABDUCTION_COMPLETE / DEDUCTION_COMPLETE / INDUCTION_COMPLETE / AUDIT_COMPLETE / DECIDED]
-**Problem:** [from session.md or "none"]
-**Started:** [timestamp]
+
+| Field | Value |
+|-------|-------|
+| **Phase** | [INITIALIZED / ABDUCTION_COMPLETE / DEDUCTION_COMPLETE / INDUCTION_COMPLETE / AUDIT_COMPLETE / DECIDED] |
+| **Problem** | [problem statement or "none"] |
+| **Started** | [timestamp] |
+| **Last Activity** | [timestamp] |
 
 ### Knowledge Base
+
 | Level | Count | Description |
 |-------|-------|-------------|
-| L0 | [N] | Observations, hypotheses |
-| L1 | [N] | Logically verified |
-| L2 | [N] | Empirically tested |
-| Invalid | [N] | Disproved |
+| **L0** | [N] | Observations, unverified hypotheses |
+| **L1** | [N] | Logically verified (passed deduction) |
+| **L2** | [N] | Empirically tested (passed induction) |
+| **Invalid** | [N] | Disproved (kept for learning) |
 
 ### Artifacts
-- Evidence files: [N]
-- Decisions (DRRs): [N]
-- Archived sessions: [N]
+
+| Type | Count |
+|------|-------|
+| Evidence files | [N] |
+| Decisions (DRRs) | [N] |
+| Archived sessions | [N] |
 
 ### Active Hypotheses
-[If in active cycle, list hypotheses with status]
 
 | ID | Name | Level | Next Action |
 |----|------|-------|-------------|
-| [id] | [name] | L0 | needs /fpf-2-check |
-| [id] | [name] | L1 | needs /fpf-3-test |
+| h1 | [name] | L0 | needs /fpf-2-check |
+| h2 | [name] | L1 | needs /fpf-3-test |
+| h3 | [name] | L2 | ready for decision |
+
+### Issues & Warnings
+
+**Evidence Health:**
+- ✓ Healthy: [N] files
+- ⚠ Expiring soon: [N] files
+- ✗ Expired: [N] files
+- ? No validity: [N] files
+
+Run `/fpf-decay` for detailed report.
+
+### Phase State Machine
+
+```
+Current: ──► [PHASE]
+
+INITIALIZED ──► ABDUCTION_COMPLETE ──► DEDUCTION_COMPLETE
+                                              │
+                    ┌─────────────────────────┤
+                    ▼                         ▼
+            (fpf-3-test)              (fpf-3-research)
+                    │                         │
+                    └──────────┬──────────────┘
+                               ▼
+                    INDUCTION_COMPLETE
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                                 ▼
+      (fpf-4-audit)                    (fpf-5-decide)
+              │                          ⚠ warning
+              ▼                                 │
+      AUDIT_COMPLETE ───────────────────────────┤
+                                                ▼
+                                            DECIDED
+```
 
 ### Suggested Next Step
-
-[Based on phase:]
 
 **If INITIALIZED:**
 → `/fpf-1-hypothesize <problem>` — Start reasoning cycle
 
 **If ABDUCTION_COMPLETE:**
-→ `/fpf-2-check` — Verify logical consistency of hypotheses
+→ `/fpf-2-check` — Verify logical consistency
 
 **If DEDUCTION_COMPLETE:**
-→ `/fpf-3-test` — Internal empirical tests (code, benchmarks)
-→ `/fpf-3-research` — External evidence (web, docs)
-→ (can do both, order doesn't matter)
+→ `/fpf-3-test` — Internal tests, benchmarks
+→ `/fpf-3-research` — External evidence (can do both)
 
 **If INDUCTION_COMPLETE:**
-→ `/fpf-4-audit` — Critical review before deciding
-→ `/fpf-5-decide` — If confident, finalize decision
+→ `/fpf-4-audit` — Critical review (recommended)
+→ `/fpf-5-decide` — Finalize (with warning if no audit)
 
 **If AUDIT_COMPLETE:**
-→ `/fpf-5-decide` — Finalize decision (if no blockers)
-→ Address blockers first (if any)
+→ `/fpf-5-decide` — Finalize decision
 
 **If DECIDED:**
 → `/fpf-1-hypothesize <new problem>` — Start new cycle
-→ `/fpf-query <topic>` — Search knowledge base
+→ `/fpf-query <topic>` — Search knowledge
 
-### Available Commands
-| Command | Description |
-|---------|-------------|
-| `/fpf-0-init` | Initialize FPF (if not done) |
-| `/fpf-1-hypothesize` | Generate hypotheses |
-| `/fpf-2-check` | Logical verification |
-| `/fpf-3-test` | Internal tests, benchmarks |
-| `/fpf-3-research` | External evidence (web, docs) |
-| `/fpf-4-audit` | WLNK + critical review |
-| `/fpf-5-decide` | Finalize decision |
-| `/fpf-status` | This status view |
-| `/fpf-query` | Search knowledge |
-| `/fpf-decay` | Check evidence freshness |
+### Command Reference
+
+| Command | Description | Valid From |
+|---------|-------------|------------|
+| `/fpf-0-init` | Initialize FPF | (any) |
+| `/fpf-1-hypothesize` | Generate hypotheses | INITIALIZED, DECIDED |
+| `/fpf-2-check` | Logical verification | ABDUCTION_COMPLETE |
+| `/fpf-3-test` | Internal tests | DEDUCTION_COMPLETE+ |
+| `/fpf-3-research` | External evidence | DEDUCTION_COMPLETE+ |
+| `/fpf-4-audit` | WLNK + bias review | INDUCTION_COMPLETE |
+| `/fpf-5-decide` | Finalize decision | INDUCTION_COMPLETE*, AUDIT_COMPLETE |
+| `/fpf-status` | This view | (any) |
+| `/fpf-query` | Search knowledge | (any) |
+| `/fpf-decay` | Evidence freshness | (any) |
+| `/fpf-discard` | Abandon cycle | (active cycle) |
+
+*With warning if audit skipped
 ```
 
-## Quick Status (One-liner)
+## Quick Status
 
-If user just needs quick check:
+Single-line format:
 
 ```
-FPF: [Phase] | L0:[N] L1:[N] L2:[N] | Next: [command]
+FPF: [Phase] | L0:[N] L1:[N] L2:[N] | Evidence:[N] | Next: [command]
 ```
 
-Example:
-```
-FPF: DEDUCTION_COMPLETE | L0:1 L1:2 L2:0 | Next: /fpf-3-test
-```
+## Not Initialized
 
-## Warnings to Surface
+```markdown
+## FPF Status
 
-Always check and report:
-- **Expired evidence**: Run `/fpf-decay` output if any expired
-- **Low congruence**: Flag external evidence with `congruence: low`
-- **No validity window**: Evidence without `valid_until` dates
+**Not initialized.**
+
+Run `/fpf-0-init` to set up FPF structure.
+```

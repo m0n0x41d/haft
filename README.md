@@ -1,3 +1,5 @@
+# Crucible Code
+
 ```
  ______     ______     __  __     ______     __     ______     __         ______       
 /\  ___\   /\  == \   /\ \/\ \   /\  ___\   /\ \   /\  == \   /\ \       /\  ___\      
@@ -10,530 +12,377 @@
                      \ \ \____  \ \ \/\ \  \ \ \/\ \ \ \  __\                          
                       \ \_____\  \ \_____\  \ \____-  \ \_____\                        
                        \/_____/   \/_____/   \/____/   \/_____/                        
-
 ```
 
-**First Principles Framework for Claude Code** — structured reasoning with auditable evidence trails.
+**Structured reasoning for Claude Code** — make better decisions, remember why you made them.
 
-## What Is This?
+## The Problem This Solves
 
-A set of slash commands for Claude Code that implement **hypothesis-driven reasoning** with explicit evidence and assurance levels. Based on the [First Principles Framework](https://github.com/ailev/FPF) created by Anatoly Levenchuk.
-You can read more about FPF on its repository README.md file.
+You're deep in a codebase. You need to handle cross-service transactions in a system that's grown beyond the point where distributed transactions are viable. Event choreography? Saga pattern? Outbox with CDC? Each has non-obvious failure modes.
 
-### Okay, what is the actual project exactly?
+Or: you're adding real-time features to an existing app. WebSockets vs SSE vs polling? The "obvious" answer depends on your infrastructure, scale trajectory, and failure tolerance — none of which fit neatly into a Stack Overflow answer.
 
-This project consists of several Claude Code commands and my personal CLAUDE.md file.
-Mainly I am a software engineer, which is the reason why this CLAUDE.md is so influenced by software engineering and design principles.
+Claude gives you *an* answer. It's coherent. But:
 
-But the main part of this repository is the Claude Code commands that try to provide a minimal and partially implemented FPF reasoning workflow for you.
+- **Why** this approach? (You won't remember the reasoning in 3 months)
+- **What alternatives** were considered? (Were there alternatives, or did you anchor on the first idea?)
+- **What evidence** supported it? (Documentation? Benchmarks? Or just pattern-matching from training data?)
+- **When does this decision expire?** (The tradeoffs shift as the system evolves)
 
-However, this thing might help you not only with software architecture. Just install Claude Code and these commands, create a repository with the documents related to your personal or business endeavors, and give it a try.
+FPF gives you a structured way to think through these decisions with Claude as a reasoning partner — not a black-box oracle. You generate hypotheses, verify them, test them, and document *why* you chose what you chose.
 
-All of this is designed with commands and not with subagents, because you MUST be in the loop at every step and act as an external reviewer-transformer and guide for the reasoning process.
-
-#### What is this lame name?
-
-A crucible is a container made of heat-resistant material used for melting and heating substances at very high temperatures to cast valuable and robust things.
-
-FPF itself is the methodology and framework of melting.
-The rails for it, which are attempted to be provided with Claude Code commands, are the crucible for melting.
-The materials you are melting are epistemes, hypotheses that the FPF pushes to become... decisions, which are the valuable and robust things.
-
-Read more below and in the original FPF repo README.md. It is okay and expected that it will take some time to get the idea.
-
-Sorry for being bad at naming things.
-
-## When to Use FPF
-
-### ✅ Use FPF When
-
-| Situation | Why FPF Helps |
-|-----------|---------------|
-| **Architectural decisions** | Long-term consequences need documented rationale |
-| **Multiple viable approaches** | Systematic comparison prevents bias |
-| **Team decisions** | Auditable trail for async review |
-| **Unfamiliar territory** | Structured research reduces risk |
-| **Past decisions revisited** | Evidence helps re-evaluate |
-| **Complex trade-offs** | WLNK analysis surfaces hidden risks |
-
-**Examples:**
-
-- "Should we use Redis or Memcached?"
-- "Microservices vs monolith for this feature?"
-- "Which auth strategy fits our threat model?"
-- "Buy vs build for this component?"
-- "What are the most impactful technical debts in this project and how we can fix it without breaking changes and bloodshed?"
-
-### ❌ Don't Use FPF When
-
-| Situation | What to Do Instead |
-|-----------|---------------------|
-| **Quick fixes** | Just fix it |
-| **Obvious solutions** | Implement directly |
-| **Easily reversible** | Try it, iterate |
-| **Time-critical** | Use inline Decision Framework |
-| **Well-understood patterns** | Apply known patterns |
-
-**Examples:**
-
-- "Fix this null pointer exception" → Just fix
-- "Add a button to the form" → Just add
-- "Update dependency version" → Just update
-- "Debug this bug <PASTEING TRACEBACK>" -> Just paste in CC without fpf commands
-- "Help me build a solo entrepreneur 1 billion dollar business" -> No luck here with such zero effort from your side (perhaps...)
-
-### ⚖️ Decision Heuristic to Kick Off With
-
-```
-Is this decision:
-  - Hard to reverse? → Consider FPF
-  - Affecting >1 sprint of work? → Consider FPF
-  - Involving multiple unknowns? → Consider FPF
-  - Likely to be questioned later? → Consider FPF
-  
-If none of the above → Skip FPF, use inline Decision Framework
-```
-
----
-
-## Installation
+## Quick Start
 
 ```bash
-# Clone the repo
+# 1. Install
 git clone https://github.com/m0n0x41d/crucible-code.git
-
-# Install to your project
+cd crucible-code
 ./install.sh /path/to/your/project
 
-# Install globally
-./install.sh -g
+# 2. Initialize in your project
+cd /path/to/your/project
+# Then in Claude Code:
+/fpf-0-init
 
-# Or manually copy
-cp -r commands/ /path/to/project/.claude/commands/
+# 3. Start reasoning
+/fpf-1-hypothesize "How should we handle state synchronization across browser tabs?"
 ```
 
-Add the FPF section to your `CLAUDE.md` (see CLAUDE.md in this repo), or adopt my whole CLAUDE.md — I believe it will make your workflow better :)
-If you decide to adopt the whole CLAUDE.md, make sure you have configured context7 MCP and PiecesOS with its MCP in Claude Code configs.
+Follow the prompts. Claude guides you through the cycle. You make the calls.
 
----
+## What Is This, Really?
+
+A set of slash commands for Claude Code that implement **hypothesis-driven reasoning**. You generate competing ideas, verify them logically, test them empirically, and document the rationale.
+
+Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by Anatoly Levenchuk.
+
+**The core loop:**
+
+1. Generate multiple hypotheses
+2. Verify them logically
+3. Test them empirically
+4. Audit for blind spots
+5. Decide with full rationale documented
+
+Claude generates. You decide.
+
+### Before/After
+
+| Without FPF | With FPF |
+|-------------|----------|
+| "Let's use the Saga pattern" (first idea that came up) | 3 approaches analyzed with evidence, tradeoffs documented |
+| "Why did we build it this way?" (3 months later) | Check `DRR-001.md` — full rationale preserved |
+| "Is this assumption still valid?" | Run `/fpf-decay` — evidence freshness tracked |
+| Same architectural debates, different meetings | Query knowledge base — past decisions searchable |
+
+## The ADI Cycle
+
+The ADI cycle is **strictly sequential** — each phase builds on the output of the previous one. You cannot skip ahead or reorder phases 1-3.
+
+```
+Problem Statement
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│  1. ABDUCTION (Hypothesize)                  │
+│  Generate 3-5 competing hypotheses           │
+│  Output: L0/ (unverified ideas)              │
+└──────────────────────┬───────────────────────┘
+                       ▼ (REQUIRED)
+┌──────────────────────────────────────────────┐
+│  2. DEDUCTION (Check)                        │
+│  Verify logical consistency                  │
+│  Output: L1/ (logically sound)               │
+└──────────────────────┬───────────────────────┘
+                       │ (REQUIRED)
+          ┌────────────┴────────────┐
+          ▼                         ▼
+   ┌─────────────┐          ┌─────────────┐
+   │  3a. TEST   │          │ 3b. RESEARCH│
+   │  Internal   │          │  External   │
+   │  evidence   │          │  evidence   │
+   └──────┬──────┘          └──────┬──────┘
+          └────────────┬───────────┘
+                       │
+                       ▼ (OPTIONAL - but recommended)
+┌──────────────────────────────────────────────┐
+│  4. AUDIT                                    │
+│  WLNK analysis, bias check, adversarial view │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│  5. DECIDE                                   │
+│  Create DRR, archive session                 │
+│  Output: L2/ (verified), decisions/DRR      │
+└──────────────────────────────────────────────┘
+```
+
+### Phase Strictness
+
+**Phases 1 → 2 → 3: Strictly sequential.** You cannot run `/fpf-2-check` without hypotheses from phase 1. You cannot gather evidence (phase 3) without logically verified hypotheses from phase 2. The commands enforce this — they will error if prerequisites aren't met.
+
+**Phase 4 (Audit): Optional, but recommended.** You can skip directly from phase 3 to `/fpf-5-decide`. This produces a valid Design Rationale Record (DRR). However, skipping audit is generally not recommended — the WLNK analysis and bias check typically take only a few minutes and often catch blind spots that would otherwise ship with your decision.
+
+**When skipping audit is acceptable:**
+- Time-critical decisions where you've already done thorough evidence gathering
+- Simple decisions with clear evidence and no competing hypotheses remaining
+- You've committed to the ADI cycle and want to complete it — better to finish with a DRR than abandon mid-cycle
+
+**When you should NOT skip audit:**
+- Multiple hypotheses survived to phase 3 with similar evidence strength
+- Evidence came primarily from external sources (congruence assessment needed)
+- The decision affects multiple teams or has long-term architectural impact
 
 ## Commands Reference
 
-### Core Cycle Commands
+### Core Cycle
 
-| # | Command | Phase | Input | Output |
-|---|---------|-------|-------|--------|
-| 0 | `/fpf-0-init` | Setup | — | `.fpf/` structure |
-| 1 | `/fpf-1-hypothesize` | Abduction | Problem statement | Hypotheses in `L0/` |
-| 2 | `/fpf-2-check` | Deduction | L0 hypotheses | Verified in `L1/` |
-| 3a | `/fpf-3-test` | Induction | L1 hypotheses | Internal evidence |
-| 3b | `/fpf-3-research` | Induction | L1 hypotheses | External evidence |
-| 4 | `/fpf-4-audit` | Bias-Audit | All evidence | Risk assessment |
-| 5 | `/fpf-5-decide` | Decision | L2 hypotheses | DRR document |
+| Command | Phase | What It Does | Required |
+|---------|-------|--------------|----------|
+| `/fpf-0-init` | Setup | Create `.fpf/` structure | Yes |
+| `/fpf-1-hypothesize` | Abduction | Generate competing hypotheses → `L0/` | Yes |
+| `/fpf-2-check` | Deduction | Verify logical consistency → `L1/` | Yes |
+| `/fpf-3-test` | Induction | Run internal tests, benchmarks | Yes* |
+| `/fpf-3-research` | Induction | Gather external evidence (web, docs) | Yes* |
+| `/fpf-4-audit` | Audit | WLNK analysis, bias check | No** |
+| `/fpf-5-decide` | Decision | Create DRR, finalize | Yes |
 
-### Utility Commands
+*At least one of `/fpf-3-test` or `/fpf-3-research` required before proceeding.
+**Optional but recommended — see [Phase Strictness](#phase-strictness) above.
+
+### Utilities
 
 | Command | Purpose |
 |---------|---------|
 | `/fpf-status` | Show current phase and next steps |
 | `/fpf-query <topic>` | Search knowledge base |
 | `/fpf-decay` | Check evidence freshness |
-
----
-
-## The ADI Cycle
-
-```
-                        ┌────────────────────────────────────────┐
-                        │            Problem Statement           │
-                        └───────────────────┬────────────────────┘
-                                            │
-                                            ▼
-         ┌──────────────────────────────────────────────────────────────┐
-         │                    1. ABDUCTION (Hypothesize)                │
-         │                    Generate competing hypotheses             │
-         │                    Output: L0/ (unverified ideas)            │
-         └───────────────────────────────┬──────────────────────────────┘
-                                         │
-                                         ▼
-         ┌──────────────────────────────────────────────────────────────┐
-         │                    2. DEDUCTION (Check)                      │
-         │                    Verify logical consistency                │
-         │                    Output: L1/ (logically sound)             │
-         └───────────────────────────────┬──────────────────────────────┘
-                                         │
-                          ┌──────────────┴──────────────┐
-                          ▼                             ▼
-         ┌─────────────────────────┐     ┌─────────────────────────┐
-         │   3a. INDUCTION (Test)  │     │ 3b. INDUCTION (Research)│
-         │   Internal evidence     │     │   External evidence     │
-         │   Run code, benchmarks  │     │   Web, docs, papers     │
-         └────────────┬────────────┘     └────────────┬────────────┘
-                      │                               │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-         ┌──────────────────────────────────────────────────────────────┐
-         │                    4. AUDIT (Optional but Recommended)       │
-         │                    WLNK analysis, bias check, congruence     │
-         │                    Output: Risk assessment                   │
-         └───────────────────────────────┬──────────────────────────────┘
-                                         │
-                                         ▼
-         ┌──────────────────────────────────────────────────────────────┐
-         │                    5. DECIDE                                 │
-         │                    Create DRR, archive session               │
-         │                    Output: L2/ (verified), decisions/DRR     │
-         └──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Assurance Levels
-
-| Level | Name | Meaning | How to Reach |
-|-------|------|---------|--------------|
-| **L0** | Observation | Unverified hypothesis or note | `/fpf-1-hypothesize` |
-| **L1** | Reasoned | Passed logical consistency check | `/fpf-2-check` |
-| **L2** | Verified | Empirically tested and confirmed | `/fpf-3-test` or `/fpf-3-research` |
-| **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
-
-### The WLNK Principle (Weakest Link)
-
-**Critical:** Assurance level = minimum of all supporting evidence, NEVER average.
-
-```
-Evidence A: L2 (internal benchmark)
-Evidence B: L2 (official docs)  
-Evidence C: L1 (blog post, low congruence)
-
-Combined Assurance: L1 (limited by weakest)
-```
-
-If you have 10 strong sources and 1 weak source, your assurance is capped by the weak source.
-
----
+| `/fpf-discard` | Abandon cycle, preserve learnings |
 
 ## Key Concepts
 
-### Evidence Types
+### Assurance Levels
 
-| Type | Source | Congruence Needed |
-|------|--------|-------------------|
-| **Internal** | Your tests, benchmarks | No (direct) |
-| **External** | Web, docs, papers | Yes (assess context match) |
+| Level | Name | Meaning | How to Reach |
+|-------|------|---------|--------------|
+| **L0** | Observation | Unverified hypothesis | `/fpf-1-hypothesize` |
+| **L1** | Reasoned | Passed logical check | `/fpf-2-check` |
+| **L2** | Verified | Empirically tested | `/fpf-3-test` or `/fpf-3-research` |
+| **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
 
-### Congruence Levels (for External Evidence)
+### WLNK (Weakest Link)
 
-| Level | Meaning | Example |
-|-------|---------|---------|
-| **High** | Direct match to our context | Same tech, similar scale |
-| **Medium** | Partial match | Same tech, different scale |
-| **Low** | Weak match | Related tech, different context |
+**Critical rule:** Assurance = min(evidence), NEVER average.
 
-Low-congruence evidence is flagged in audit — use with caution.
+```
+Evidence A: L2 (internal benchmark)     → R_eff = 1.0
+Evidence B: L2 (official docs)          → R_eff = 1.0
+Evidence C: L1 (blog, low congruence)   → R_eff = 0.65
 
-### Evidence Validity
-
-Evidence expires. Set `valid_until` dates:
-
-| Evidence Type | Typical Validity |
-|---------------|------------------|
-| Benchmarks | 3-6 months |
-| API tests | Until next version |
-| External docs | 6-12 months |
-| Blog posts | 1-2 years |
-
-Use `/fpf-decay` to check freshness.
-
-### Scope
-
-Every hypothesis and evidence should have scope:
-
-```yaml
-scope:
-  applies_to: "Read-heavy workload, <10k RPS"
-  not_valid_for: "Write-heavy, real-time requirements"
+Combined Assurance: R_eff = 0.65 (capped by weakest)
 ```
 
-This prevents misapplying knowledge outside its valid context.
+One weak piece of evidence caps your entire argument. If you want solid decisions, you need to strengthen — or acknowledge — your weakest link.
 
----
+### Congruence (for External Evidence)
+
+External evidence may not apply to your context. Assess congruence:
+
+| Level | Φ Penalty | Example |
+|-------|-----------|---------|
+| **High** | 0.00 | Same tech, similar scale, similar use case |
+| **Medium** | 0.15 | Same tech, different scale |
+| **Low** | 0.35 | Related tech, very different context |
+
+Formula: `R_eff = R_base - Φ(CL)`
+
+### Transformer Mandate
+
+**Claude generates options. You decide.**
+
+This is non-negotiable. At every decision point, Claude Code presents analysis and waits for your input.
+A system cannot transform itself — external decision-maker always required.
+
+## When to Use FPF
+
+### Use FPF When
+
+- **Architectural decisions** — Long-term consequences need documented rationale
+- **Multiple viable approaches** — Systematic comparison prevents anchoring bias
+- **Team decisions** — Auditable trail for async review and future onboarding
+- **Unfamiliar territory** — Structured research reduces "confident but wrong" outcomes
+- **Decisions you'll need to defend** — Evidence is stored; re-evaluation becomes trivial
+
+### Don't Use FPF When
+
+- **Quick fixes** — Just fix it
+- **Genuinely obvious solutions** — Implement directly. But be honest: is it *actually* obvious, or just familiar? Obvious to whom?
+- **Easily reversible choices** — Try it, iterate, learn
+- **Time-critical situations** — Use Claude's built-in plan mode instead
+- **Well-understood patterns** — Apply known patterns. Same caveat as "obvious" applies.
+
+### Decision Heuristic
+
+```
+Is this decision:
+  □ Hard to reverse?
+  □ Affecting more than a few days of work?
+  □ Involving multiple unknowns?
+  □ Likely to be questioned later?
+
+If any checked → Consider FPF
+If none → Skip FPF, use Claude's plan mode or just decide
+```
+
+## Installation
+
+```bash
+# Clone
+git clone https://github.com/m0n0x41d/crucible-code.git
+cd crucible-code
+
+# Install to specific project
+./install.sh /path/to/your/project
+
+# Or install globally
+./install.sh -g
+
+# Or manually
+cp -r commands/*.md /path/to/project/.claude/commands/
+```
+
+Add the FPF section to your `CLAUDE.md` (see `CLAUDE.md` in this repo for template).
 
 ## Directory Structure
 
+After initialization:
+
 ```
-.fpf/
-├── knowledge/
-│   ├── L0/              # Hypotheses, observations (unverified)
-│   ├── L1/              # Logically verified (not empirically tested)
-│   ├── L2/              # Empirically tested and confirmed
-│   └── invalid/         # Disproved (kept for learning)
-├── evidence/            # Test results, research findings
-├── decisions/           # DRRs (Design Rationale Records)
-├── sessions/            # Archived reasoning cycles
-└── session.md           # Current cycle state
+your-project/
+└── .fpf/
+    ├── knowledge/
+    │   ├── L0/           # Unverified hypotheses
+    │   ├── L1/           # Logically verified
+    │   ├── L2/           # Empirically tested
+    │   └── invalid/      # Disproved (kept for learning)
+    ├── evidence/         # Test results, research findings
+    ├── decisions/        # DRRs (Design Rationale Records)
+    ├── sessions/         # Archived reasoning cycles
+    ├── session.md        # Current cycle state
+    └── config.yaml       # Project settings (optional)
 ```
 
----
+## Example Walkthrough
 
-## Examples
+### Problem: Handling Eventual Consistency
 
-### Example 1: Database Selection
-
-**Problem:** "Should we use PostgreSQL or MongoDB for our new service?"
+Your order service needs to update inventory, notify the warehouse, and send a confirmation email — all reliably. Distributed transactions aren't viable at your scale.
 
 ```bash
-# Start the cycle
-/fpf-1-hypothesize "Database selection for user profile service: PostgreSQL vs MongoDB"
+/fpf-1-hypothesize "How should we handle cross-service coordination for order fulfillment?"
 ```
 
-**Generated hypotheses (L0/):**
+**Claude generates hypotheses:**
 
-- H1: PostgreSQL — relational model fits our structured data
-- H2: MongoDB — flexibility for evolving schema
-- H3: PostgreSQL + JSONB — hybrid approach
+- H1: Saga pattern with orchestrator — Central coordinator manages the workflow
+- H2: Event choreography — Services react to domain events, no coordinator
+- H3: Outbox pattern with CDC — Transactional outbox, Change Data Capture for publishing
 
-```bash
-# Check logical consistency
-/fpf-2-check
-```
-
-**Results:**
-
-- H1: ✓ PASS → L1 (consistent with our data model)
-- H2: ⚠ CONDITIONAL → L0 (need to verify query patterns)
-- H3: ✓ PASS → L1 (addresses flexibility concern)
-
-```bash
-# Gather evidence
-/fpf-3-research  # External: PostgreSQL vs MongoDB comparisons
-/fpf-3-test      # Internal: Prototype with sample data
-```
-
-**Evidence created:**
-
-- `evidence/2025-01-15-postgres-benchmark.md` (internal, L2)
-- `evidence/2025-01-15-mongodb-research.md` (external, congruence: medium)
-
-```bash
-# Critical review
-/fpf-4-audit
-```
-
-**Audit findings:**
-
-- WLNK: MongoDB research has medium congruence (different scale)
-- Gap: No testing of migration path
-- Recommendation: PostgreSQL+JSONB has strongest evidence
-
-```bash
-# Finalize
-/fpf-5-decide
-```
-
-**Output:** `decisions/DRR-001-database-selection.md`
-
----
-
-### Example 2: Caching Strategy
-
-**Problem:** "How should we implement caching for our API?"
-
-```bash
-/fpf-1-hypothesize "Caching strategy for /products API endpoint"
-```
-
-**Hypotheses:**
-
-- H1: Redis with 5min TTL
-- H2: In-memory cache (application level)
-- H3: CDN edge caching
+**You review and approve.** Then:
 
 ```bash
 /fpf-2-check
 ```
 
-H3 fails: Our data is user-specific, CDN won't help → moved to `invalid/`
+Claude checks logical consistency. H1 and H3 pass. H2 has issues: circular dependencies emerge when you trace the event flow. H2 stays L0 with noted concerns.
 
 ```bash
-/fpf-3-test --hypothesis h1
-/fpf-3-test --hypothesis h2
+/fpf-3-research  # Check external evidence
+/fpf-3-test      # Run failure scenario simulations
 ```
 
-**Results:**
-
-- H1: 3ms p99, handles 10k RPS ✓
-- H2: 1ms p99, but memory pressure at scale ⚠
+Evidence gathered. H3 reaches L2 (Postgres + Debezium is well-documented, tested with simulated network partitions). H1 reaches L1 (good in theory, but your team lacks orchestrator experience).
 
 ```bash
 /fpf-4-audit
 ```
 
-**WLNK Analysis:**
-
-- H1 has stronger evidence (tested at expected scale)
-- H2 has scope limitation (not valid for >5k RPS)
+WLNK analysis: H3's weakest evidence is the CDC setup complexity, but it's a known quantity. H1's weakest link is team experience — harder to derisk.
 
 ```bash
 /fpf-5-decide
 ```
 
-**Decision:** Redis (H1) selected. DRR created with full rationale.
+Claude presents the analysis. You choose H3. DRR created:
 
----
+`decisions/DRR-001-order-fulfillment-coordination.md`
 
-### Example 3: Quick Query (No Full Cycle)
+The DRR includes: what you chose, why, what alternatives existed, evidence that supported it, and conditions that would trigger re-evaluation (e.g., "if order volume exceeds 10k/day").
 
-Later, someone asks: "Why did we choose Redis?"
-
-```bash
-/fpf-query redis caching
-```
-
-**Output:**
-
-```
-## Knowledge Query: "redis caching"
-
-### Verified (L2)
-**redis-caching-decision** `.fpf/knowledge/L2/redis-caching.md`
-> Redis selected for /products API caching.
-> Evidence: benchmark evidence/2025-01-15-redis-benchmark.md
-> Decided in: DRR-001
-
-### Related Decisions
-**DRR-001: Caching Strategy** `.fpf/decisions/DRR-001-caching.md`
-> Selected Redis over in-memory due to scale requirements.
-```
-
----
-
-### Example 4: Evidence Decay Check
-
-A few months later, check if evidence is still valid:
+### Six Months Later
 
 ```bash
-/fpf-decay
+/fpf-query "order fulfillment"
 ```
 
-**Output:**
-
-```
-## Evidence Decay Report
-
-**Scanned:** 12 evidence files
-**Healthy:** 8 (valid, >30 days remaining)
-**Warning:** 2 (expiring within 30 days)
-**Expired:** 1 (past valid_until)
-**No window:** 1 (validity not set)
-
-### Action Required
-
-**Immediate (expired):**
-- [ ] `.fpf/evidence/redis-benchmark.md` — refresh (last run 6 months ago)
-
-**Soon (expiring):**
-- [ ] `.fpf/evidence/auth-flow-test.md` — plan refresh by 2025-02-01
-
-### Knowledge Impact
-2 L2 claims may need review if evidence not refreshed.
-```
-
----
+New team member asks why you use the outbox pattern. You point them to the DRR. Full context preserved — not just *what*, but *why* and *when to reconsider*.
 
 ## Core Principles
 
-### 1. Transformer Mandate
+These aren't arbitrary rules — they're what makes the framework actually work:
 
-Claude Code generates options with evidence. **Human (THIS IS YOU) assesses intermediate steps and decides — highlight something, introduce additional context, or push to the next FPF phase right away.**
-A system cannot transform itself — external decision-maker required.
-
-### 2. Evidence Anchoring
-
-Every decision traces back to evidence. No "trust me" allowed.
-
-### 3. Falsifiability
-
-Hypotheses must specify what would disprove them. Unfalsifiable claims are useless.
-
-### 4. WLNK (Weakest Link)
-
-Assurance = min(evidence), it is never average. One weak link spoils everything
-
-### 5. Bounded Validity
-
-Knowledge has scope and expiry. Context matters. Evidence decays.
-
-### 6. Explicit Over Hidden
-
-Assumptions, risks, and limitations are documented, not buried.
-
----
-
-## Integration with Normal Workflow
-
-FPF is **optional**. Your normal Claude Code workflow continues.
-
-**Normal mode:** Inline Decision Framework for quick decisions
-
-```
-DECISION: [What]
-OPTIONS: [A, B]
-RECOMMENDATION: [Pick]
-```
-
-**FPF mode:** When you need persistent, auditable reasoning
-
-```bash
-/fpf-1-hypothesize "complex problem"
-# ... full cycle ...
-/fpf-5-decide
-```
-
-Switch between modes as needed. Use the right tool for the job.
-
----
+1. **Transformer Mandate** — Claude generates options; you decide. A system cannot objectively evaluate its own outputs.
+2. **Evidence Anchoring** — Every decision traces back to specific evidence. No "I just think this is better."
+3. **Falsifiability** — Each hypothesis specifies what would disprove it. If nothing could prove it wrong, it's not useful.
+4. **WLNK (Weakest Link)** — Your argument is only as strong as its weakest evidence. No averaging away uncertainty.
+5. **Bounded Validity** — Knowledge has scope (applies under specific conditions) and expiry (becomes stale). Both are explicit.
+6. **Explicit Over Hidden** — Assumptions get documented, not buried in code comments or forgotten.
 
 ## Troubleshooting
 
-### "Too much overhead for this decision, I am waiting too long while FPF does all this reasoning!"
+### "This is slowing me down"
 
-→ Don't use FPF. Just work as usual with Claude, or adopt inline Decision Framework from CLAUDE.md in this repository.
+Then don't use it. FPF is for decisions that *warrant* the overhead. For quick decisions, just use Claude's built-in plan mode or decide directly.
 
-### "Hypotheses all look the same"
+### "All the hypotheses look the same"
 
-→ Force diversity: require conservative, innovative, and minimal options. The hypotheses look the same because your prompt for the first step was too narrow, with not much explanation and few inputs.
+Force diversity. The commands expect at least one conservative approach, one innovative approach, and one minimal approach. If you're getting samey options, your problem statement might be too narrow — add more context about constraints, tradeoffs, or what you're optimizing for. Between commands, you can chat with Claude normally to explore the space.
 
-### "Evidence from different contexts"
+### "The evidence is from a different context"
 
-→ Assess congruence. Low congruence = treat with caution, verify internally.
+Assess congruence. Evidence from a different scale, tech stack, or domain gets penalized. Low congruence = high penalty to effective assurance. Consider running internal tests to verify external claims in your actual context.
 
-### "Old evidence, not sure if valid"
+### "This evidence is old — is it still valid?"
 
-→ Run `/fpf-decay` command. Refresh, deprecate, or waive/delete with justification.
+Run `/fpf-decay`. You can refresh it, deprecate it, or waive the freshness requirement with justification.
 
 ### "Audit found blockers"
 
-→ Resolve before `/fpf-5-decide`. Blockers exist for a reason. This is the whole goal of FPF after all — to lead reasoning to consistent decisions!
+Resolve them before `/fpf-5-decide`. That's the point of auditing.
 
-### "Need to revisit old decision"
+### "Need to revisit an old decision"
 
-→ Run `/fpf-query`. Check DRR validity conditions. Start new cycle if needed.
+Run `/fpf-query <topic>`. Check the DRR's validity conditions. If they've been triggered, start a new cycle.
 
-#### Cheat For Passionate And Attentive Minds
+## Learning FPF
 
-If you find yourself in a situation where you feel that FPF is great but are still struggling to understand the approach and how to work with it... here is a cheat for you:
+The best way to learn FPF is to use it on itself:
 
-- Clone the original FPF spec repo.
-- Init crucible-code IN it.
-- Start with pure Claude Code commands AND with hypotheses about FPF itself, aiming to learn it.
+1. Clone the original [FPF spec repo](https://github.com/ailev/FPF)
+2. Install crucible-code in it
+3. Run `/fpf-1-hypothesize "What is the core insight of FPF and how should I apply it?"`
 
-Good luck
-
----
+The framework teaches itself through use. A few cycles and it clicks.
 
 ## License
 
-All rights to FPF belong to Anatoly Levenchuk. This project inevitably inherits any licenses associated with FPF.
-This project does not impose any additional proprietary licenses.
+FPF belongs to Anatoly Levenchuk. This project inherits any FPF-associated licenses. No additional proprietary licenses imposed.
+
+## Contributing
+
+Issues and PRs welcome. Focus areas:
+
+- Better examples
+- Edge case handling
+- Documentation clarity

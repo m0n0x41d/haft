@@ -13,7 +13,7 @@ arguments:
 
 ## Purpose
 
-Search project knowledge base for relevant epistemes and decisions.
+Search project knowledge base for relevant epistemes, evidence, and decisions.
 
 ## Input
 
@@ -51,66 +51,113 @@ For each match, extract:
 - Title (from frontmatter or first heading)
 - Status/Level
 - Relevance snippet
+- WLNK R_eff (if available)
+- Validity status
 
 ## Output Format
 
 ```markdown
 ## Knowledge Query: "[topic]"
 
-### Verified Knowledge (L2)
+### Summary
+
+| Category | Matches | Confidence |
+|----------|---------|------------|
+| L2 (Verified) | [N] | High |
+| L1 (Reasoned) | [N] | Medium |
+| L0 (Observations) | [N] | Low |
+| Invalid (Disproved) | [N] | — |
+| Decisions (DRRs) | [N] | — |
+| Evidence | [N] | — |
+
+**Overall confidence for "[topic]":** [High / Medium / Low / None]
+
+---
+
+### Verified Knowledge (L2) — Highest Confidence
+
 [Most reliable — empirically tested]
 
-**[episteme-name]** `.fpf/knowledge/L2/[file].md`
-> [Relevant snippet or summary]
-> Evidence: [linked evidence files]
-> Decided in: [DRR reference if any]
+**[episteme-name]**
+- **File:** `.fpf/knowledge/L2/[file].md`
+- **Summary:** [Relevant snippet or summary]
+- **Evidence:** [linked evidence files]
+- **Decided in:** [DRR reference if any]
+- **Valid until:** [date or "no expiry set"]
 
 ---
 
-### Reasoned Knowledge (L1)  
+### Reasoned Knowledge (L1) — Medium Confidence
+
 [Logically verified, not empirically tested]
 
-**[episteme-name]** `.fpf/knowledge/L1/[file].md`
-> [Relevant snippet]
-> Needs: Empirical verification
+**[episteme-name]**
+- **File:** `.fpf/knowledge/L1/[file].md`
+- **Summary:** [Relevant snippet]
+- **Status:** Passed deduction, awaiting empirical verification
+- **Needs:** `/fpf-3-test` or `/fpf-3-research`
 
 ---
 
-### Observations (L0)
+### Observations (L0) — Low Confidence
+
 [Unverified — treat with caution]
 
-**[episteme-name]** `.fpf/knowledge/L0/[file].md`
-> [Relevant snippet]
-> Status: Hypothesis / Observation
+**[episteme-name]**
+- **File:** `.fpf/knowledge/L0/[file].md`
+- **Summary:** [Relevant snippet]
+- **Status:** Hypothesis / Observation — not yet verified
+- **Needs:** `/fpf-2-check`
+
+---
+
+### Disproved (Invalid) — For Learning
+
+[These were wrong — kept to avoid repeating mistakes]
+
+**[episteme-name]**
+- **File:** `.fpf/knowledge/invalid/[file].md`
+- **Why invalid:** [reason]
+- **Learning:** [what we learned]
 
 ---
 
 ### Related Decisions
 
-**DRR-[NNN]: [title]** `.fpf/decisions/DRR-[NNN].md`
-> [How it relates to query]
+**DRR-[NNN]: [title]**
+- **File:** `.fpf/decisions/DRR-[NNN].md`
+- **Date:** [date]
+- **Relates to query:** [how it relates]
+- **Status:** [ACCEPTED / SUPERSEDED]
 
 ---
 
 ### Related Evidence
 
-**[evidence-name]** `.fpf/evidence/[file].md`
-> [What it tested/showed]
+**[evidence-name]**
+- **File:** `.fpf/evidence/[file].md`
+- **Type:** [internal / external]
+- **Congruence:** [high/medium/low or N/A for internal]
+- **Valid until:** [date]
+- **Finding:** [what it tested/showed]
 
 ---
 
-### Summary
+### Confidence Assessment
 
-| Level | Matches |
-|-------|---------|
-| L2 (Verified) | [N] |
-| L1 (Reasoned) | [N] |
-| L0 (Observations) | [N] |
-| Decisions | [N] |
-| Evidence | [N] |
+**For "[topic]":**
 
-**Confidence for "[topic]":** 
-[High if L2 matches / Medium if L1 / Low if only L0 / None if no matches]
+| Indicator | Status |
+|-----------|--------|
+| L2 matches exist | ✓/✗ |
+| Evidence is fresh | ✓/⚠/✗ |
+| Multiple sources | ✓/✗ |
+| High congruence | ✓/⚠/✗ |
+
+**Verdict:** [High confidence — can rely on this knowledge]
+           [Medium confidence — verify before critical decisions]
+           [Low confidence — needs more investigation]
+           [No knowledge — topic not investigated yet]
 ```
 
 ## No Results
@@ -118,15 +165,28 @@ For each match, extract:
 ```markdown
 ## Knowledge Query: "[topic]"
 
-No matches found in knowledge base.
+**No matches found in knowledge base.**
+
+### What This Means
+
+The topic "[topic]" has not been investigated in this project's FPF knowledge base.
 
 ### Suggestions
-- Check spelling / try synonyms
-- This topic may not have been investigated yet
-- Start investigation: `/fpf-1-hypothesize "[topic]-related question"`
 
-### Related (fuzzy)
-[If partial matches exist, suggest them]
+1. **Check spelling** — Try alternative terms or synonyms
+2. **Broaden search** — Use more general keywords
+3. **Start investigation** — If this is important:
+   ```
+   /fpf-1-hypothesize "[topic]-related question"
+   ```
+
+### Related (Fuzzy Matches)
+
+[If partial matches exist, suggest them:]
+- "[similar-term-1]" — [N] matches
+- "[similar-term-2]" — [N] matches
+
+Try: `/fpf-query [similar-term]`
 ```
 
 ## Usage Examples
@@ -143,18 +203,37 @@ No matches found in knowledge base.
 
 # Check specific technology
 /fpf-query redis
+
+# Find by decision
+/fpf-query database selection
 ```
 
 ## Integration with Decision Making
 
-When making decisions, query first:
+**Before starting new FPF cycle, query first:**
 
 ```markdown
+## Pre-Investigation Check
+
 Before: /fpf-1-hypothesize "should we use Redis?"
 Do:     /fpf-query redis
         /fpf-query caching
-        
+        /fpf-query session storage
+
 [Check if we already have verified knowledge on this topic]
+
+Results:
+- If L2 knowledge exists → May not need full ADI cycle
+- If related DRR exists → Check if still valid, reference it
+- If L1 exists → May only need induction phase
+- If nothing → Full cycle needed
 ```
 
-If L2 knowledge exists → may not need full ADI cycle, just reference existing DRR.
+## Confidence Levels Explained
+
+| Level | Meaning | Action |
+|-------|---------|--------|
+| **High** | L2 knowledge with fresh evidence | Safe to rely on |
+| **Medium** | L1 knowledge or aging L2 | Verify for critical decisions |
+| **Low** | Only L0 or stale evidence | Needs investigation |
+| **None** | No matches | Start fresh investigation |

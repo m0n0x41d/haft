@@ -125,11 +125,13 @@ Problem Statement
 **Phase 4 (Audit): Optional, but recommended.** You can skip directly from phase 3 to `/fpf-5-decide`. This produces a valid Design Rationale Record (DRR). However, skipping audit is generally not recommended — the WLNK analysis and bias check typically take only a few minutes and often catch blind spots that would otherwise ship with your decision.
 
 **When skipping audit is acceptable:**
+
 - Time-critical decisions where you've already done thorough evidence gathering
 - Simple decisions with clear evidence and no competing hypotheses remaining
 - You've committed to the ADI cycle and want to complete it — better to finish with a DRR than abandon mid-cycle
 
 **When you should NOT skip audit:**
+
 - Multiple hypotheses survived to phase 3 with similar evidence strength
 - Evidence came primarily from external sources (congruence assessment needed)
 - The decision affects multiple teams or has long-term architectural impact
@@ -405,5 +407,11 @@ The framework teaches itself through use. A few cycles and it clicks.
 
 ## License
 
-FPF belongs to Anatoly Levenchuk. This project inherits any FPF-associated licenses. No additional proprietary licenses imposed.
+This software is available under the [MIT License](LICENSE).
 
+**Note on Intellectual Property:**
+The **First Principles Framework (FPF)** methodology, concepts, and ontology belong to **Anatoly Levenchuk**. This project is an independent implementation of those concepts for the Claude Code CLI. We claim no ownership over the FPF methodology itself.
+
+## Contributing
+
+Issues are welcome.

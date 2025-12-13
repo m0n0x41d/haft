@@ -85,6 +85,9 @@ This phase answers: **"Does this actually work in practice, in OUR context?"**
 # Read L1 hypotheses to test
 cat .fpf/knowledge/L1/*.md
 
+# Read project context
+cat .fpf/context.md
+
 # Check what assumptions need empirical verification
 grep -A10 "Assumptions" .fpf/knowledge/L1/*.md
 

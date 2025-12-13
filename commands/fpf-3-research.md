@@ -71,6 +71,9 @@ This phase answers: **"What does the outside world know about this?"**
 # Read hypothesis to research
 cat .fpf/knowledge/L1/[hypothesis].md
 
+# Read project context for congruence assessment
+cat .fpf/context.md
+
 # Extract assumptions needing external validation
 grep -A10 "Assumptions" .fpf/knowledge/L1/[hypothesis].md
 

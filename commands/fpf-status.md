@@ -20,30 +20,27 @@ if [ ! -d ".fpf" ]; then
 fi
 ```
 
-### 2. Gather Statistics
+### 2. Gather Statistics (Agentic)
 
-```bash
-# Count knowledge at each level
-L0_COUNT=$(find .fpf/knowledge/L0 -name "*.md" 2>/dev/null | wc -l)
-L1_COUNT=$(find .fpf/knowledge/L1 -name "*.md" 2>/dev/null | wc -l)
-L2_COUNT=$(find .fpf/knowledge/L2 -name "*.md" 2>/dev/null | wc -l)
-INVALID_COUNT=$(find .fpf/knowledge/invalid -name "*.md" 2>/dev/null | wc -l)
+**Do not run a complex shell script.** Use your tools to gather data and compute metrics internally.
 
-# Count artifacts
-EVIDENCE_COUNT=$(find .fpf/evidence -name "*.md" 2>/dev/null | wc -l)
-DRR_COUNT=$(find .fpf/decisions -name "DRR-*.md" 2>/dev/null | wc -l)
-SESSIONS_COUNT=$(find .fpf/sessions -name "*.md" 2>/dev/null | wc -l)
-```
+1.  **Count Files:**
+    - List files in `.fpf/knowledge/L0/`, `L1/`, `L2/`, `invalid/` to get counts.
+    - List files in `.fpf/evidence/`, `.fpf/decisions/`, `.fpf/sessions/`.
 
-### 3. Read Session State
+2.  **Analyze Health & Formality:**
+    - **Read Frontmatter:** Read the first 10 lines of all active hypothesis files (L0, L1, L2) and evidence files.
+    - **Compute Internally:**
+        - **Formality Range:** Find the `formality:` value in hypotheses. Record Min and Max.
+        - **Trust Index:** Count total evidence files. Count how many have `valid_until` dates in the future.
+          - `Trust Index = Valid Evidence / Total Evidence`
+        - **Drift:** Identify L2 hypotheses. Check if their linked evidence files are expired.
+          - `Drift = L2 Hypotheses with Expired Evidence / Total L2 Hypotheses`
 
-```bash
-cat .fpf/session.md
-```
+3.  **Read Session State:**
+    - Read `.fpf/session.md` to get the current Phase, Problem, and active hypothesis list.
 
-Extract: `Phase:`, `Problem:`, Active hypotheses, Last transition
-
-### 4. Check for Issues
+### 3. Check for Issues
 
 Scan for:
 - Expired evidence (check `valid_until` dates)
@@ -63,6 +60,15 @@ Scan for:
 | **Problem** | [problem statement or "none"] |
 | **Started** | [timestamp] |
 | **Last Activity** | [timestamp] |
+
+### Project Health (Current Session)
+
+| Metric | Value |
+|--------|-------|
+| **Min Formality** | [MIN_FORMALITY] |
+| **Max Formality** | [MAX_FORMALITY] |
+| **Trust Index (Fresh Evidence)** | [TRUST_INDEX] (Valid: [VALID_EVIDENCE_COUNT]/[EVIDENCE_COUNT]) |
+| **Drift (L2 Expired Evidence)** | [DRIFT] (L2 Hypotheses with expired evidence: [L2_HYPS_WITH_EXPIRED_EVIDENCE]/[L2_COUNT]) |
 
 ### Knowledge Base
 

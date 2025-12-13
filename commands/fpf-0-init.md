@@ -33,7 +33,42 @@ mkdir -p .fpf/decisions
 mkdir -p .fpf/sessions
 ```
 
-### 3. Create Session File
+### 3. Create Context File (Agentic)
+
+**Do not just create a blank file.**
+
+1.  **Investigate:** Scan the repository for technical signals.
+    - Check `package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, `pom.xml`, `Gemfile`.
+    - Check `Dockerfile`, `docker-compose.yml`, `k8s/`, `.github/workflows`.
+    - Check `README.md` for architecture notes.
+
+2.  **Draft & Interview:**
+    - Present what you found: "I detected Python 3.11 and Django..."
+    - Ask **specific** questions for what you can't see (Scale, Budget, Constraints).
+    - *Example:* "I see this is a web app. What is the target user scale? (<1k, >1M?)"
+
+3.  **Write `.fpf/context.md`:**
+    - Combine your findings and the user's answers.
+
+```markdown
+# Repository Context (A.2.6 Context Slice)
+
+## Tech Stack (Inferred)
+- **Language:** [e.g. Python 3.11]
+- **Frameworks:** [e.g. Django 4.2]
+- **Infra:** [e.g. Docker, AWS]
+
+## Scale & Performance (User-Defined)
+- **Users:** [Value]
+- **Traffic:** [Value]
+- **Latency Target:** [Value]
+
+## Hard Constraints (User-Defined)
+- [Constraint 1]
+- [Constraint 2]
+```
+
+### 4. Create Session File
 
 Create `.fpf/session.md`:
 

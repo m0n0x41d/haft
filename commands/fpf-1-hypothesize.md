@@ -45,6 +45,7 @@ Problem: `$ARGUMENTS.problem`
 ### 1. Load Context
 
 - Read `.fpf/session.md` for any active context
+- Read `.fpf/context.md` for project context (Tech Stack, Scale, Constraints)
 - Read relevant project files to understand constraints
 - Check `.fpf/knowledge/L2/` for verified facts that constrain solution space
 - Check `.fpf/knowledge/invalid/` for approaches already disproven
@@ -94,6 +95,9 @@ type: hypothesis
 created: [timestamp]
 problem: [reference to problem]
 status: L0
+formality: [0-9] # F-Score (0=Sketch, 9=Proof)
+novelty: [Conservative|Novel|Radical]
+complexity: [Low|Medium|High]
 author: Claude (generated), Human (to review)
 scope:
   applies_to: "[conditions where this solution applies]"
@@ -103,13 +107,28 @@ scope:
 
 # Hypothesis: [Clear one-line statement]
 
-## Approach
+## 1. The Method (Design-Time)
+*This is the plan/recipe. (A.15 MethodDescription)*
+
+### Proposed Approach
 [2-3 sentences: what this solution proposes]
 
-## Rationale
+### Rationale
 [Why this might work — the abductive reasoning]
 
-## Plausibility Assessment
+### Implementation Steps
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+### Expected Capability
+- [Capability Claim 1]
+- [Capability Claim 2]
+
+## 2. The Validation (Run-Time)
+*This section tracks the Work performed to verify this.*
+
+### Plausibility Assessment
 
 | Filter | Score | Justification |
 |--------|-------|---------------|
@@ -120,20 +139,16 @@ scope:
 
 **Plausibility Verdict:** [PLAUSIBLE / MARGINAL / IMPLAUSIBLE]
 
-## Scope of Applicability
-
-**This hypothesis applies when:**
-- [Condition 1]
-- [Condition 2]
-
-**This hypothesis does NOT apply when:**
-- [Condition 1]
-- [Condition 2]
-
-## Assumptions
+### Assumptions to Verify
 - [ ] [Assumption 1 — must be true for this to work]
 - [ ] [Assumption 2]
 - [ ] [Assumption 3]
+
+### Required Evidence
+- [ ] **Internal Test:** [Verification test]
+  - **Performer:** [Developer | AI Agent | CI Pipeline]
+- [ ] **Research:** [External validation]
+  - **Performer:** [Developer | AI Agent]
 
 ## Falsification Criteria
 [What evidence would DISPROVE this hypothesis?]

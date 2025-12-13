@@ -5,6 +5,53 @@ All notable changes to Crucible Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-12-13
+
+### Added
+
+#### Repository Context
+
+- **`.fpf/context.md`**: Created by `/fpf-0-init` to define the "Base Slice" (Tech Stack, Scale, Constraints).
+- **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read this file to ground decisions.
+- **CLAUDE.md Update**: Instructions for Claude to check `.fpf/context.md` first.
+
+#### Enhanced Hypothesis Structure
+
+- **Formality (F-Score)**: Added `formality: [0-9]` to hypothesis frontmatter.
+- **NQD Tags**: Added `novelty` and `complexity` to hypothesis frontmatter for diversity tracking.
+- **Strict Method/Work Split**: Hypothesis body restructured into "1. The Method (Design-Time)" and "2. The Validation (Run-Time)" to enforce A.15.
+
+#### Documentation
+
+- **F-Score Definitions**: Added explanation of F0-F9 ranges to README.
+- **TODOs**: Added roadmap items for deeper NQD and Method/Work integration.
+
+## [2.1.0] - 2025-12-13
+
+### Added
+
+#### Agentic Initialization
+
+- **Smart `/fpf-0-init`**: Now scans the repository (package.json, Dockerfile, etc.) to infer tech stack.
+- **Interactive Interview**: Asks the user clarifying questions about Scale, Budget, and Constraints to build a robust Context.
+- **`.fpf/context.md`**: New foundational file that grounds all reasoning in the project's specific reality.
+
+#### Repository Context Integration
+
+- **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read `.fpf/context.md` to make decisions relevant.
+- **CLAUDE.md Update**: Instructions for Claude to check `.fpf/context.md` first.
+
+#### Enhanced Hypothesis Structure
+
+- **Formality (F-Score)**: Added `formality: [0-9]` to hypothesis frontmatter.
+- **NQD Tags**: Added `novelty` and `complexity` to hypothesis frontmatter for diversity tracking.
+- **Strict Method/Work Split**: Hypothesis body restructured into "1. The Method (Design-Time)" and "2. The Validation (Run-Time)" to enforce A.15.
+
+#### Documentation
+
+- **F-Score Definitions**: Added explanation of F0-F9 ranges to README.
+- **Concepts**: Added simple explanations for NQD and Method vs. Work.
+
 ## [2.0.0] - 2025-12-13
 
 ### Added

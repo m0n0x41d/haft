@@ -67,7 +67,8 @@ When reasoning through problems, apply these principles:
 
 ### 2. Investigate the Codebase
 
-- **Check `.fpf/knowledge/` first** — Project knowledge base with verified claims at different assurance levels
+- **Check `.fpf/context.md` first** — Project context, constraints, and tech stack
+- **Check `.fpf/knowledge/`** — Project knowledge base with verified claims at different assurance levels
 - **Check `.context/` directory** — Architectural documentation and design decisions
 - Use Task tool for broader/multi-file exploration (preferred for context efficiency)
 - Explore relevant files and directories

@@ -171,6 +171,16 @@ Problem Statement
 | **L2** | Verified | Empirically tested | `/fpf-3-test` or `/fpf-3-research` |
 | **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
 
+### Formality (F-Score)
+
+Rigor of expression (not truth, but precision).
+
+- **F0-F2 (Sketch):** Rough ideas, whiteboard notes, vague constraints.
+- **F3-F5 (Structured):** Steps, clear constraints, executable code/tests.
+- **F6-F9 (Rigorous):** Formal proofs, math models, machine-checked invariants.
+
+Most engineering work targets **F3-F5**.
+
 ### WLNK (Weakest Link)
 
 **Critical rule:** Assurance = min(evidence), NEVER average.
@@ -184,6 +194,23 @@ Combined Assurance: R_eff = 0.65 (capped by weakest)
 ```
 
 One weak piece of evidence caps your entire argument. If you want solid decisions, you need to strengthen — or acknowledge — your weakest link.
+
+### NQD (Novelty, Quality, Diversity)
+
+We track three metrics to ensure we aren't just guessing:
+
+- **Novelty:** How new is this idea? (Conservative vs. Radical). We want a mix.
+- **Quality:** How likely is it to work? (High complexity = Higher risk).
+- **Diversity:** Are we exploring different *types* of solutions? (e.g. Architectural vs. Operational).
+
+### Method vs. Work
+
+Crucible Code strictly separates the **Plan** from the **Result**.
+
+- **Method (Design-Time):** The recipe. The code you plan to write. The "How-To".
+- **Work (Run-Time):** The cooking. The test results. The logs. The "What Happened".
+
+Hypotheses now define the **Method** (Plan) first, then outline the **Validation** (Work) needed to prove it.
 
 ### Congruence (for External Evidence)
 
@@ -379,10 +406,9 @@ The framework teaches itself through use. A few cycles and it clicks.
 
 FPF belongs to Anatoly Levenchuk. This project inherits any FPF-associated licenses. No additional proprietary licenses imposed.
 
+- Edge case handling
+- Documentation clarity
+
 ## Contributing
 
 Issues and PRs welcome. Focus areas:
-
-- Better examples
-- Edge case handling
-- Documentation clarity

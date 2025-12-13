@@ -407,9 +407,3 @@ The framework teaches itself through use. A few cycles and it clicks.
 
 FPF belongs to Anatoly Levenchuk. This project inherits any FPF-associated licenses. No additional proprietary licenses imposed.
 
-- Edge case handling
-- Documentation clarity
-
-## Contributing
-
-Issues and PRs welcome. Focus areas:

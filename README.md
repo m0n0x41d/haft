@@ -42,7 +42,7 @@ cd crucible-code
 # 2. Initialize in your project
 cd /path/to/your/project
 # Then in Claude Code:
-/fpf-0-init
+/fpf-0-init  # Claude will scan your repo and ask clarifying questions to build project context.
 
 # 3. Start reasoning
 /fpf-1-hypothesize "How should we handle state synchronization across browser tabs?"
@@ -297,6 +297,7 @@ your-project/
     ├── decisions/        # DRRs (Design Rationale Records)
     ├── sessions/         # Archived reasoning cycles
     ├── session.md        # Current cycle state
+    ├── context.md        # Project context, constraints, and tech stack (new in v2.1.0)
     └── config.yaml       # Project settings (optional)
 ```
 

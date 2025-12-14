@@ -5,6 +5,49 @@ All notable changes to Crucible Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-12-14
+
+### Added
+
+#### Multi-Platform Support
+
+- **Four AI coding tools supported**: Claude Code, Cursor, Gemini CLI, Codex CLI
+- **Adapter-based build system**: Source commands in `src/commands/`, platform-specific outputs in `dist/`
+- **Platform adapters**: Transform markdown to platform-specific formats (TOML for Gemini, etc.)
+
+#### Interactive TUI Installer
+
+- **`curl | bash` one-liner install**: `curl -fsSL https://...install.sh | bash -s -- -g`
+- **Interactive platform selection**: Choose which AI tools to install commands for
+- **Global and per-project modes**: `-g` flag for global install, default for project-local
+- **Vim-style navigation**: Arrow keys and j/k for selection
+- **Bash 3.x compatibility**: Works on macOS default shell (no associative arrays)
+
+#### Uninstall Functionality
+
+- **`--uninstall` flag**: Remove installed FPF commands
+- **Auto-detection**: Finds commands in both global and local locations
+- **Platform-specific cleanup**: Only removes selected platforms
+
+#### CI/CD
+
+- **GitHub Actions workflow**: Verifies `dist/` stays in sync with `src/commands/`
+- **Build check on PR/push**: Fails if `./build.sh` produces uncommitted changes
+
+#### Visual Improvements
+
+- **Melted steel gradient**: Red → orange → yellow → white color scheme for ASCII banner
+- **SVG banner for GitHub**: `assets/banner.svg` with same gradient colors
+- **Cleaner TUI**: Simplified instructions, highlighted keys
+
+### Changed
+
+- **Directory structure**: Commands moved from `commands/` to `src/commands/` (source of truth)
+- **Installation targets**: Installer copies from `dist/{platform}/` not source
+- **README**: Updated with new install instructions and SVG banner
+
+---
+
 ## [2.1.0] - 2025-12-13
 
 ### Added

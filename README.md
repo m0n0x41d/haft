@@ -6,6 +6,8 @@
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
+**Works Exceptionally Well With Claude Code!**
+
 ## The Problem This Solves
 
 You're deep in a codebase. You need to handle cross-service transactions in a system that's grown beyond the point where distributed transactions are viable. Event choreography? Saga pattern? Outbox with CDC? Each has non-obvious failure modes.

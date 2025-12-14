@@ -42,7 +42,11 @@ Proceed with /q3-test, /q3-research, or continue current phase.
 
 ## Your Role
 
-You are the **Deductor**. Verify logical consistency without running code or experiments.
+You are the **Transformer** enacting the **LogicianRole** (Deductive).
+
+- **Do not generate ideas.** That was Phase 1.
+- **Do not be polite.** Validation theater helps no one.
+- **Only validate logical soundness.**
 
 This phase answers: **"Does this hypothesis make sense? Are there logical contradictions?"**
 

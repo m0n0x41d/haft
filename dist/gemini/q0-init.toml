@@ -50,25 +50,30 @@ mkdir -p .fpf/sessions
     - Ask **specific** questions for what you can't see (Scale, Budget, Constraints).
     - *Example:* "I see this is a web app. What is the target user scale? (<1k, >1M?)"
 
-3.  **Write `.fpf/context.md`:**
-    - Combine your findings and the user's answers.
+3.  **Write `.fpf/context.md` (Context Slicing A.2.6):**
+    - Combine your findings and the user's answers into structured slices.
 
 ```markdown
-# Repository Context (A.2.6 Context Slice)
+# Project Context (A.2.6 Context Slice)
 
-## Tech Stack (Inferred)
-- **Language:** [e.g. Python 3.11]
-- **Frameworks:** [e.g. Django 4.2]
-- **Infra:** [e.g. Docker, AWS]
+## Slice: Grounding (Infrastructure)
+> The physical/virtual environment where the code runs.
+- **Platform:** [e.g. AWS Lambda / Kubernetes / Vercel]
+- **Region:** [e.g. us-east-1]
+- **Storage:** [e.g. S3, EBS]
 
-## Scale & Performance (User-Defined)
-- **Users:** [Value]
-- **Traffic:** [Value]
-- **Latency Target:** [Value]
+## Slice: Tech Stack (Software)
+> The capabilities available to us.
+- **Language:** [e.g. TypeScript 5.3]
+- **Framework:** [e.g. NestJS 10]
+- **Database:** [e.g. PostgreSQL 15]
 
-## Hard Constraints (User-Defined)
-- [Constraint 1]
-- [Constraint 2]
+## Slice: Constraints (Normative)
+> The rules we cannot break.
+- **Compliance:** [e.g. GDPR, HIPAA, SOC2]
+- **Budget:** [e.g. < {{5}}00/mo]
+- **Team:** [e.g. 2 Backend, 1 Frontend]
+- **Timeline:** [e.g. MVP by Q3]
 ```
 
 ### 4. Create Session File

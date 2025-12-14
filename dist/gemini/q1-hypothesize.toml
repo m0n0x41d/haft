@@ -35,7 +35,9 @@ Complete current cycle with /q5-decide or /q-reset first.
 
 ## Your Role
 
-You are the **Abductor**. Generate multiple competing hypotheses, not one "best" solution.
+You are the **Transformer** enacting the **ExplorerRole** (Abductive).
+
+Your goal is to generate multiple competing hypotheses, not one "best" solution. Explore the solution space.
 
 **Critical:** You generate options. Human decides which to pursue. This is the Transformer Mandate.
 
@@ -45,11 +47,14 @@ Problem: `{{args}}.problem`
 
 ## Process
 
-### 1. Load Context
+### 1. Load Context (A.2.6 Slice Check)
 
 - Read `.fpf/session.md` for any active context
-- Read `.fpf/context.md` for project context (Tech Stack, Scale, Constraints)
-- Read relevant project files to understand constraints
+- Read `.fpf/context.md` for **Context Slices**:
+  - **Slice: Grounding** (Infrastructure constraints)
+  - **Slice: Tech Stack** (Available capabilities)
+  - **Slice: Constraints** (Budget, Team, Compliance)
+- **Constraint Check:** Ensure all hypotheses are compatible with these slices. Flag any deviations as explicit risks.
 - Check `.fpf/knowledge/L2/` for verified facts that constrain solution space
 - Check `.fpf/knowledge/invalid/` for approaches already disproven
 

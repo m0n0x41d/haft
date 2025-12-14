@@ -1,7 +1,7 @@
 #!/bin/bash
-# Crucible Code Installer
+# Quint Code Installer
 # Dynamic TUI for multi-platform installation
-# Usage: curl -fsSL https://raw.githubusercontent.com/user/crucible-code/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/user/quint-code/main/install.sh | bash
 
 set -e
 
@@ -31,7 +31,7 @@ BRIGHT_BLUE='\033[94m'
 # Configuration (using indexed arrays for bash 3.x compatibility)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-REPO_URL="https://github.com/m0n0x41d/crucible-code"
+REPO_URL="https://github.com/m0n0x41d/quint-code"
 BRANCH="main"
 
 # Platform data (parallel arrays)
@@ -85,14 +85,14 @@ print_logo() {
     local DARK_ORANGE='\033[38;5;202m'
     local LIGHT_YELLOW='\033[38;5;228m'
     echo ""
-    cprintln "$RED$BOLD" "   ██████╗██████╗ ██╗   ██╗ ██████╗██╗██████╗ ██╗     ███████╗"
-    cprintln "$DARK_ORANGE$BOLD" "  ██╔════╝██╔══██╗██║   ██║██╔════╝██║██╔══██╗██║     ██╔════╝"
-    cprintln "$ORANGE$BOLD" "  ██║     ██████╔╝██║   ██║██║     ██║██████╔╝██║     █████╗"
-    cprintln "$YELLOW$BOLD" "  ██║     ██╔══██╗██║   ██║██║     ██║██╔══██╗██║     ██╔══╝"
-    cprintln "$LIGHT_YELLOW$BOLD" "  ╚██████╗██║  ██║╚██████╔╝╚██████╗██║██████╔╝███████╗███████╗"
-    cprintln "$WHITE$BOLD" "   ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚═╝╚═════╝ ╚══════╝╚══════╝"
+    cprintln "$RED$BOLD" "    ██████╗ ██╗   ██╗██╗███╗   ██╗████████╗    ██████╗ ██████╗ ██████╗ ███████╗"
+    cprintln "$DARK_ORANGE$BOLD" "   ██╔═══██╗██║   ██║██║████╗  ██║╚══██╔══╝   ██╔════╝██╔═══██╗██╔══██╗██╔════╝"
+    cprintln "$ORANGE$BOLD" "   ██║   ██║██║   ██║██║██╔██╗ ██║   ██║      ██║     ██║   ██║██║  ██║█████╗  "
+    cprintln "$YELLOW$BOLD" "   ██║▄▄ ██║██║   ██║██║██║╚██╗██║   ██║      ██║     ██║   ██║██║  ██║██╔══╝  "
+    cprintln "$LIGHT_YELLOW$BOLD" "   ╚██████╔╝╚██████╔╝██║██║ ╚████║   ██║      ╚██████╗╚██████╔╝██████╔╝███████╗"
+    cprintln "$WHITE$BOLD" "    ╚══▀▀═╝  ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝"
     echo ""
-    cprintln "$DIM" "       First Principles Framework for AI Coding Tools"
+    cprintln "$DIM" "       Distilled First Principles Framework for AI Tools"
     echo ""
 }
 
@@ -299,20 +299,20 @@ download_commands() {
     fi
 
     local local_dist="$script_dir/dist/$platform"
-    local base_url="https://raw.githubusercontent.com/m0n0x41d/crucible-code/$BRANCH/dist/$platform"
+    local base_url="https://raw.githubusercontent.com/m0n0x41d/quint-code/$BRANCH/dist/$platform"
 
     local commands=(
-        "fpf-0-init"
-        "fpf-1-hypothesize"
-        "fpf-2-check"
-        "fpf-3-test"
-        "fpf-3-research"
-        "fpf-4-audit"
-        "fpf-5-decide"
-        "fpf-status"
-        "fpf-query"
-        "fpf-decay"
-        "fpf-discard"
+        "q0-init"
+        "q1-hypothesize"
+        "q2-check"
+        "q3-test"
+        "q3-research"
+        "q4-audit"
+        "q5-decide"
+        "q-status"
+        "q-query"
+        "q-decay"
+        "q-reset"
     )
 
     for cmd in "${commands[@]}"; do
@@ -357,17 +357,17 @@ uninstall_commands() {
     local scope=$(get_platform_scope $index)
 
     local commands=(
-        "fpf-0-init"
-        "fpf-1-hypothesize"
-        "fpf-2-check"
-        "fpf-3-test"
-        "fpf-3-research"
-        "fpf-4-audit"
-        "fpf-5-decide"
-        "fpf-status"
-        "fpf-query"
-        "fpf-decay"
-        "fpf-discard"
+        "q0-init"
+        "q1-hypothesize"
+        "q2-check"
+        "q3-test"
+        "q3-research"
+        "q4-audit"
+        "q5-decide"
+        "q-status"
+        "q-query"
+        "q-decay"
+        "q-reset"
     )
 
     # Always check BOTH local and global locations
@@ -413,7 +413,7 @@ uninstall_commands() {
 
 uninstall_platforms() {
     echo ""
-    cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Crucible Code..."
+    cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
     echo ""
 
     local uninstalled_indices=""
@@ -457,7 +457,7 @@ uninstall_platforms() {
 
 install_platforms() {
     echo ""
-    cprintln "$BRIGHT_WHITE$BOLD" "   Installing Crucible Code..."
+    cprintln "$BRIGHT_WHITE$BOLD" "   Installing Quint Code..."
     echo ""
 
     local any_local=false
@@ -519,10 +519,10 @@ print_success() {
 
     echo ""
     cprintln "$BRIGHT_CYAN$BOLD" "   Get started:"
-    cprintln "$WHITE" "     /fpf-0-init     Initialize FPF in your project"
-    cprintln "$WHITE" "     /fpf-status     Check current state"
+    cprintln "$WHITE" "     /q0-init        Initialize FPF in your project"
+    cprintln "$WHITE" "     /q-status       Check current state"
     echo ""
-    cprintln "$DIM" "   Documentation: https://github.com/m0n0x41d/crucible-code"
+    cprintln "$DIM" "   Documentation: https://github.com/m0n0x41d/quint-code"
     echo ""
 }
 
@@ -531,7 +531,7 @@ print_success() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 print_usage() {
-    echo "Crucible Code Installer"
+    echo "Quint Code Installer"
     echo ""
     echo "Usage:"
     echo "  ./install.sh              Interactive TUI mode"

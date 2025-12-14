@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTERS_DIR="$SCRIPT_DIR/adapters"
 
-echo "Building Crucible Code for all platforms..."
+echo "Building Quint Code for all platforms..."
 echo ""
 
 # Clean dist

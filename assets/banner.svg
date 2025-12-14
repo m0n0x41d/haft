@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 180">
+  <rect width="100%" height="100%" fill="#0d1117"/>
+  <style>
+    .mono { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 14px; font-weight: bold; }
+    .tagline { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #8b949e; }
+  </style>
+
+  <!-- ASCII Art with melted steel gradient -->
+  <text x="20" y="35" class="mono" fill="#ff4444">██████╗██████╗ ██╗   ██╗ ██████╗██╗██████╗ ██╗     ███████╗</text>
+  <text x="20" y="55" class="mono" fill="#ff5f00">██╔════╝██╔══██╗██║   ██║██╔════╝██║██╔══██╗██║     ██╔════╝</text>
+  <text x="20" y="75" class="mono" fill="#ff8700">██║     ██████╔╝██║   ██║██║     ██║██████╔╝██║     █████╗</text>
+  <text x="20" y="95" class="mono" fill="#ffcc00">██║     ██╔══██╗██║   ██║██║     ██║██╔══██╗██║     ██╔══╝</text>
+  <text x="20" y="115" class="mono" fill="#ffff87">╚██████╗██║  ██║╚██████╔╝╚██████╗██║██████╔╝███████╗███████╗</text>
+  <text x="20" y="135" class="mono" fill="#ffffff">╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚═╝╚═════╝ ╚══════╝╚══════╝</text>
+
+  <!-- Tagline -->
+  <text x="20" y="165" class="tagline">First Principles Framework for AI Coding Tools</text>
+</svg>

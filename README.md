@@ -1,20 +1,10 @@
 # Crucible Code
 
-```
- ______     ______     __  __     ______     __     ______     __         ______       
-/\  ___\   /\  == \   /\ \/\ \   /\  ___\   /\ \   /\  == \   /\ \       /\  ___\      
-\ \ \____  \ \  __<   \ \ \_\ \  \ \ \____  \ \ \  \ \  __<   \ \ \____  \ \  __\      
- \ \_____\  \ \_\ \_\  \ \_____\  \ \_____\  \ \_\  \ \_____\  \ \_____\  \ \_____\    
-  \/_____/   \/_/ /_/   \/_____/   \/_____/   \/_/   \/_____/   \/_____/   \/_____/    
-                                                                                       
-                      ______     ______     _____     ______                           
-                     /\  ___\   /\  __ \   /\  __-.  /\  ___\                          
-                     \ \ \____  \ \ \/\ \  \ \ \/\ \ \ \  __\                          
-                      \ \_____\  \ \_____\  \ \____-  \ \_____\                        
-                       \/_____/   \/_____/   \/____/   \/_____/                        
-```
+<p align="center">
+  <img src="assets/banner.svg" alt="Crucible Code" width="600">
+</p>
 
-**Structured reasoning for Claude Code** — make better decisions, remember why you made them.
+**Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
 ## The Problem This Solves
 
@@ -33,18 +23,39 @@ FPF gives you a structured way to think through these decisions with Claude as a
 
 ## Quick Start
 
+### One-liner Install
+
 ```bash
-# 1. Install
+# Global install (recommended for personal use)
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash -s -- -g
+
+# Per-project install (run from project root)
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash
+```
+
+This launches an interactive installer where you select which AI coding tools to install FPF commands for (Claude Code, Cursor, Gemini CLI, Codex CLI).
+
+**Global** installs to `~/.claude/commands/` etc. — available in all projects.
+**Per-project** installs to `./.claude/commands/` — commit to repo for team use.
+
+### Manual Install
+
+```bash
 git clone https://github.com/m0n0x41d/crucible-code.git
 cd crucible-code
-./install.sh /path/to/your/project
+./install.sh                    # Interactive TUI
+./install.sh --claude -g        # Install Claude Code globally
+./install.sh --all              # Install all platforms
+```
 
-# 2. Initialize in your project
+### Initialize in Your Project
+
+```bash
 cd /path/to/your/project
-# Then in Claude Code:
-/fpf-0-init  # Claude will scan your repo and ask clarifying questions to build project context.
+# Then in your AI coding tool:
+/fpf-0-init  # Creates .fpf/ structure and scans your repo
 
-# 3. Start reasoning
+# Start reasoning
 /fpf-1-hypothesize "How should we handle state synchronization across browser tabs?"
 ```
 

@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install
 
 This launches an interactive installer where you select which AI coding tools to install FPF commands for (Claude Code, Cursor, Gemini CLI, Codex CLI).
 
-> **Tip:** Cursor can import `.claude/commands/` directly — install for Claude Code, use in both! In Cursor: Settings → Features → Docs → Project rules directory.
+> **Tip:** Cursor can import `.claude/commands/` directly — install for Claude Code, use in both! In Cursor: Settings → Rules and Commands. The toggle will be right there!
 
 **Global** installs to `~/.claude/commands/` etc. — available in all projects.
 **Per-project** installs to `./.claude/commands/` — commit to repo for team use.

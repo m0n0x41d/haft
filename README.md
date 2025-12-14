@@ -90,6 +90,44 @@ AI generates. You decide.
 | "Is this assumption still valid?" | Run `/q-decay` — evidence freshness tracked |
 | Same architectural debates, different meetings | Query knowledge base — past decisions searchable |
 
+## Why "Quint"?
+
+The name references the **Invariant Quintet** — five properties that FPF requires any valid aggregation or composition to preserve. They're not arbitrary rules; they're formalizations of common-sense engineering realities that hold across domains.
+
+### The Five Invariants
+
+| Invariant | Plain English | Example |
+|-----------|---------------|---------|
+| **IDEM** (Idempotence) | One part alone stays itself | A single hypothesis doesn't magically gain confidence by being the only option |
+| **COMM** (Commutativity) | Order of independent parts doesn't matter | Gathering evidence A then B = gathering B then A (same conclusion) |
+| **LOC** (Locality) | Which worker/machine runs the analysis is irrelevant | Your reasoning should be reproducible regardless of who re-runs it |
+| **WLNK** (Weakest Link) | The whole is only as strong as its weakest part | Your decision confidence = min(evidence confidences), never average |
+| **MONO** (Monotonicity) | Improving a part cannot worsen the whole | Adding better evidence can only help; it can't make your case weaker |
+
+**Mnemonic:** S-O-L-I-D → Same · Order-free · Location-free · Inferior-cap · Don't-regress
+
+### How Quint Code Supports Them
+
+| Invariant | Support Level | Implementation |
+|-----------|---------------|----------------|
+| **WLNK** | ✅ Explicit | R_eff calculations, Φ(CL) penalties, "min(evidence) never average" enforced in `/q4-audit` |
+| **IDEM** | ⚠️ By design | Single items pass through unchanged, but no computational verification |
+| **COMM** | ⚠️ By design | `/q3-test` and `/q3-research` run in any order; min() is commutative |
+| **LOC** | ⚠️ By design | Git-trackable artifacts, reproducible methods documented |
+| **MONO** | ⚠️ By design | L0→L1→L2 progression; invalid knowledge kept (never deleted) |
+
+**Honest assessment:** WLNK is the only invariant with explicit enforcement. The others are *preserved by the design* of the workflow rather than *verified computationally*. For a CLI tool that assists reasoning, this is the right trade-off. Full formal verification would require something closer to a theorem prover.
+
+The 5-step sequence (`q1`–`q5`) maps to the **ADI cycle** (Abduction → Deduction → Induction + Audit → Decision), not directly to the five invariants. But the invariants inform *why* the cycle works: you can't skip steps (MONO), evidence order doesn't matter (COMM), and your conclusion is capped by your weakest evidence (WLNK).
+
+### Why This Matters
+
+Most reasoning failures in software architecture come from violating WLNK: averaging away weak evidence, hiding uncertainty behind confident prose, or treating "mostly sure" as "sure." Quint Code makes WLNK violations visible. The other invariants ensure that the process of getting there is sound.
+
+If you want the full theory: [First Principles Framework specification](https://github.com/ailev/FPF).
+
+So after all, **quint** is a great name for this tool — it is ~5% distilled *quintessence* of FPF, and it tries to follow all *five* invariants 😊.
+
 ## The ADI Cycle
 
 The ADI cycle is **strictly sequential** — each phase builds on the output of the previous one. You cannot skip ahead or reorder phases 1-3.

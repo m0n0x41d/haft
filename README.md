@@ -2,7 +2,9 @@
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
-**Works Exceptionally Well With Claude Code!**
+**Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI
+
+> **Works exceptionally well with Claude Code!**
 
 ## The Problem This Solves
 
@@ -10,14 +12,14 @@ You're deep in a codebase. You need to handle cross-service transactions in a sy
 
 Or: you're adding real-time features to an existing app. WebSockets vs SSE vs polling? The "obvious" answer depends on your infrastructure, scale trajectory, and failure tolerance — none of which fit neatly into a Stack Overflow answer.
 
-Claude gives you *an* answer. It's coherent. But:
+Your AI tool gives you *an* answer. It's coherent. But:
 
 - **Why** this approach? (You won't remember the reasoning in 3 months)
 - **What alternatives** were considered? (Were there alternatives, or did you anchor on the first idea?)
 - **What evidence** supported it? (Documentation? Benchmarks? Or just pattern-matching from training data?)
 - **When does this decision expire?** (The tradeoffs shift as the system evolves)
 
-FPF gives you a structured way to think through these decisions with Claude as a reasoning partner — not a black-box oracle. You generate hypotheses, verify them, test them, and document *why* you chose what you chose.
+FPF gives you a structured way to think through these decisions with your AI tool as a reasoning partner — not a black-box oracle. You generate hypotheses, verify them, test them, and document *why* you chose what you chose.
 
 ## Quick Start
 
@@ -35,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install
 
 This launches an interactive installer where you select which AI coding tools to install FPF commands for (Claude Code, Cursor, Gemini CLI, Codex CLI).
 
-> **Tip:** Cursor can import `.claude/commands/` directly — install for Claude Code, use in both! In Cursor: Settings → Features → Docs → Project rules directory.
+> **Tip:** Cursor can import `.claude/commands/` directly — install for Claude Code, use in both! In Cursor: Settings → Rules and Commands. The toggle will be right there!
 
 **Global** installs to `~/.claude/commands/` etc. — available in all projects.
 **Per-project** installs to `./.claude/commands/` — commit to repo for team use.
@@ -61,11 +63,11 @@ cd /path/to/your/project
 /fpf-1-hypothesize "How should we handle state synchronization across browser tabs?"
 ```
 
-Follow the prompts. Claude guides you through the cycle. You make the calls.
+Follow the prompts. The AI guides you through the cycle. You make the calls.
 
 ## What Is This, Really?
 
-A set of slash commands for Claude Code that implement **hypothesis-driven reasoning**. You generate competing ideas, verify them logically, test them empirically, and document the rationale.
+A set of slash commands for AI coding tools that implement **hypothesis-driven reasoning**. You generate competing ideas, verify them logically, test them empirically, and document the rationale.
 
 Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by Anatoly Levenchuk.
 
@@ -77,7 +79,7 @@ Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by
 4. Audit for blind spots
 5. Decide with full rationale documented
 
-Claude generates. You decide.
+AI generates. You decide.
 
 ### Before/After
 
@@ -241,9 +243,9 @@ Formula: `R_eff = R_base - Φ(CL)`
 
 ### Transformer Mandate
 
-**Claude generates options. You decide.**
+**AI generates options. You decide.**
 
-This is non-negotiable. At every decision point, Claude Code presents analysis and waits for your input.
+This is non-negotiable. At every decision point, the AI presents analysis and waits for your input.
 A system cannot transform itself — external decision-maker always required.
 
 ## When to Use FPF
@@ -261,7 +263,7 @@ A system cannot transform itself — external decision-maker always required.
 - **Quick fixes** — Just fix it
 - **Genuinely obvious solutions** — Implement directly. But be honest: is it *actually* obvious, or just familiar? Obvious to whom?
 - **Easily reversible choices** — Try it, iterate, learn
-- **Time-critical situations** — Use Claude's built-in plan mode instead
+- **Time-critical situations** — Use built-in plan mode instead
 - **Well-understood patterns** — Apply known patterns. Same caveat as "obvious" applies.
 
 ### Decision Heuristic
@@ -274,27 +276,22 @@ Is this decision:
   □ Likely to be questioned later?
 
 If any checked → Consider FPF
-If none → Skip FPF, use Claude's plan mode or just decide
+If none → Skip FPF, use built-in plan mode or just decide
 ```
 
 ## Installation
 
+See [Quick Start](#quick-start) for one-liner install.
+
 ```bash
-# Clone
+# Clone and install
 git clone https://github.com/m0n0x41d/crucible-code.git
 cd crucible-code
-
-# Install to specific project
-./install.sh /path/to/your/project
-
-# Or install globally
-./install.sh -g
-
-# Or manually
-cp -r commands/*.md /path/to/project/.claude/commands/
+./install.sh                    # Interactive TUI
+./install.sh --claude -g        # Claude Code globally
+./install.sh --cursor           # Cursor locally
+./install.sh --all -g           # All platforms globally
 ```
-
-Add the FPF section to your `CLAUDE.md` (see `CLAUDE.md` in this repo for template).
 
 ## Directory Structure
 
@@ -326,7 +323,7 @@ Your order service needs to update inventory, notify the warehouse, and send a c
 /fpf-1-hypothesize "How should we handle cross-service coordination for order fulfillment?"
 ```
 
-**Claude generates hypotheses:**
+**AI generates hypotheses:**
 
 - H1: Saga pattern with orchestrator — Central coordinator manages the workflow
 - H2: Event choreography — Services react to domain events, no coordinator
@@ -338,7 +335,7 @@ Your order service needs to update inventory, notify the warehouse, and send a c
 /fpf-2-check
 ```
 
-Claude checks logical consistency. H1 and H3 pass. H2 has issues: circular dependencies emerge when you trace the event flow. H2 stays L0 with noted concerns.
+The AI checks logical consistency. H1 and H3 pass. H2 has issues: circular dependencies emerge when you trace the event flow. H2 stays L0 with noted concerns.
 
 ```bash
 /fpf-3-research  # Check external evidence
@@ -357,7 +354,7 @@ WLNK analysis: H3's weakest evidence is the CDC setup complexity, but it's a kno
 /fpf-5-decide
 ```
 
-Claude presents the analysis. You choose H3. DRR created:
+The AI presents the analysis. You choose H3. DRR created:
 
 `decisions/DRR-001-order-fulfillment-coordination.md`
 
@@ -375,7 +372,7 @@ New team member asks why you use the outbox pattern. You point them to the DRR. 
 
 These aren't arbitrary rules — they're what makes the framework actually work:
 
-1. **Transformer Mandate** — Claude generates options; you decide. A system cannot objectively evaluate its own outputs.
+1. **Transformer Mandate** — AI generates options; you decide. A system cannot objectively evaluate its own outputs.
 2. **Evidence Anchoring** — Every decision traces back to specific evidence. No "I just think this is better."
 3. **Falsifiability** — Each hypothesis specifies what would disprove it. If nothing could prove it wrong, it's not useful.
 4. **WLNK (Weakest Link)** — Your argument is only as strong as its weakest evidence. No averaging away uncertainty.
@@ -386,11 +383,11 @@ These aren't arbitrary rules — they're what makes the framework actually work:
 
 ### "This is slowing me down"
 
-Then don't use it. FPF is for decisions that *warrant* the overhead. For quick decisions, just use Claude's built-in plan mode or decide directly.
+Then don't use it. FPF is for decisions that *warrant* the overhead. For quick decisions, just use built-in plan mode or decide directly.
 
 ### "All the hypotheses look the same"
 
-Force diversity. The commands expect at least one conservative approach, one innovative approach, and one minimal approach. If you're getting samey options, your problem statement might be too narrow — add more context about constraints, tradeoffs, or what you're optimizing for. Between commands, you can chat with Claude normally to explore the space.
+Force diversity. The commands expect at least one conservative approach, one innovative approach, and one minimal approach. If you're getting samey options, your problem statement might be too narrow — add more context about constraints, tradeoffs, or what you're optimizing for. Between commands, you can chat normally to explore the space.
 
 ### "The evidence is from a different context"
 
@@ -423,7 +420,7 @@ The framework teaches itself through use. A few cycles and it clicks.
 This software is available under the [MIT License](LICENSE).
 
 **Note on Intellectual Property:**
-The **First Principles Framework (FPF)** methodology, concepts, and ontology belong to **Anatoly Levenchuk**. This project is an independent implementation of those concepts for the Claude Code CLI. We claim no ownership over the FPF methodology itself.
+The **First Principles Framework (FPF)** methodology, concepts, and ontology belong to **Anatoly Levenchuk**. This project is an independent implementation of those concepts for AI coding tools. We claim no ownership over the FPF methodology itself.
 
 ## Contributing
 

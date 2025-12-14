@@ -1,8 +1,4 @@
-# Crucible Code
-
-
-  <img src="assets/banner.svg" alt="Crucible Code" width="600">
-
+<img src="assets/banner.svg" alt="Crucible Code" width="600">
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 

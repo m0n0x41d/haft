@@ -5,6 +5,32 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-12-14
+
+### Added: Deep Reasoning Capabilities
+
+#### Context Slicing (A.2.6)
+- **Structured Context:** `.fpf/context.md` is now structured into explicit slices:
+  - **Slice: Grounding** (Infrastructure, Region)
+  - **Slice: Tech Stack** (Language, Frameworks)
+  - **Slice: Constraints** (Compliance, Budget, Team)
+- **Context-Aware Init:** `/q0-init` now scans `package.json`, `Dockerfile`, etc., to auto-populate slices.
+
+#### Explicit Role Injection (A.2)
+- **Role-Swapping Prompts:** Commands now enforce specific FPF roles to prevent "AI drift":
+  - `/q1-hypothesize`: **ExplorerRole** (Creative, Abductive)
+  - `/q2-check`: **LogicianRole** (Strict, Deductive)
+  - `/q4-audit`: **AuditorRole** (Adversarial, Normative)
+
+#### Context Drift Analysis
+- **New Audit Step:** `/q4-audit` now includes a mandatory **Context Drift Check**.
+- **Validation:** Verifies that hypotheses generated in step 1 still match the constraints in step 4 (preventing "works on my machine" architecture).
+
+### Changed
+- **Command Prompts:** Updated `q0`, `q1`, `q2`, `q4` to enforce the new reasoning standards.
+
+---
+
 ## [3.0.0] - 2025-12-14
 
 ### Major Breaking Change: Rebrand to Quint Code

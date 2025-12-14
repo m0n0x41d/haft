@@ -1,9 +1,47 @@
 # Changelog
 
-All notable changes to Crucible Code will be documented in this file.
+All notable changes to Quint Code will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.0] - 2025-12-14
+
+### Major Breaking Change: Rebrand to Quint Code
+
+**Crucible Code is now Quint Code.**
+
+### Why the Name Change?
+
+1.  **Avoid Collision:** "Crucible" is an existing code review tool by Atlassian. We want a distinct identity.
+2.  **Not Just Code:** This tool melts *ideas* and *reasoning*, not just source code.
+3.  **The "Quintessence":** Anatoly Levenchuk described this project as a "distillate of FPF" (~5% of the full framework). It is the *quintessence*—the concentrated essence of the methodology.
+4.  **The Invariant Quintet:** FPF is built on five invariants (IDEM, COMM, LOC, WLNK, MONO). Quint Code enforces a rigid 5-step sequence (`q1`–`q5`) to preserve these invariants in your reasoning.
+
+### Changed
+
+- **Project Name**: `crucible-code` → `quint-code`
+- **Commands Prefix**: `/fpf-*` → `/q*`
+  - `/q0-init`
+  - `/q1-hypothesize`
+  - `/q2-check`
+  - `/q3-test`
+  - `/q3-research`
+  - `/q4-audit`
+  - `/q5-decide`
+- **Utility Commands**:
+  - `/fpf-status` → `/q-status`
+  - `/fpf-query` → `/q-query`
+  - `/fpf-decay` → `/q-decay`
+  - `/fpf-discard` → `/q-reset` (Renamed to avoid tab-completion clash with decay)
+
+### Migration Guide
+
+1. **Delete old commands**: Run the uninstall script or manually delete `~/.claude/commands/fpf-*`.
+2. **Install new commands**: Run `./install.sh`.
+3. **Update mental model**: Think "Quintet" (5 invariants, 5 steps).
+
+---
 
 ## [2.2.0] - 2025-12-14
 
@@ -259,7 +297,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-Initial release of Crucible Code.
+Initial release of Quint Code.
 
 #### Core Commands
 

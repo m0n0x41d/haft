@@ -159,22 +159,22 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - Easily reversible decisions
 - Time-critical situations where overhead isn't justified
 
-**Activation:** Run `/fpf-0-init` to initialize, or `/fpf-1-hypothesize <problem>` to start directly.
+**Activation:** Run `/q0-init` to initialize, or `/q1-hypothesize <problem>` to start directly.
 
 **Commands (in order):**
 
 | # | Command | Phase | What it does |
 |---|---------|-------|--------------|
-| 0 | `/fpf-0-init` | Setup | Initialize `.fpf/` structure |
-| 1 | `/fpf-1-hypothesize` | Abduction | Generate hypotheses → `L0/` |
-| 2 | `/fpf-2-check` | Deduction | Logical verification → `L1/` |
-| 3a | `/fpf-3-test` | Induction | Run tests, benchmarks (internal) |
-| 3b | `/fpf-3-research` | Induction | Web search, docs (external) |
-| 4 | `/fpf-4-audit` | Bias-Audit | WLNK analysis, congruence check |
-| 5 | `/fpf-5-decide` | Decision | Create DRR from winning hypothesis |
-| S | `/fpf-status` | — | Show current state and next steps |
-| Q | `/fpf-query` | — | Search knowledge base |
-| D | `/fpf-decay` | — | Check evidence freshness |
+| 0 | `/q0-init` | Setup | Initialize `.fpf/` structure |
+| 1 | `/q1-hypothesize` | Abduction | Generate hypotheses → `L0/` |
+| 2 | `/q2-check` | Deduction | Logical verification → `L1/` |
+| 3a | `/q3-test` | Induction | Run tests, benchmarks (internal) |
+| 3b | `/q3-research` | Induction | Web search, docs (external) |
+| 4 | `/q4-audit` | Bias-Audit | WLNK analysis, congruence check |
+| 5 | `/q5-decide` | Decision | Create DRR from winning hypothesis |
+| S | `/q-status` | — | Show current state and next steps |
+| Q | `/q-query` | — | Search knowledge base |
+| D | `/q-decay` | — | Check evidence freshness |
 
 **Assurance Levels:**
 - **L0** (Observation): Unverified hypothesis or note

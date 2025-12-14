@@ -1,4 +1,4 @@
-<img src="assets/banner.svg" alt="Crucible Code" width="600">
+<img src="assets/banner.svg" alt="Quint Code" width="600">
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
@@ -27,12 +27,12 @@ FPF gives you a structured way to think through these decisions with your AI too
 
 ##### Global install (recommended for personal use)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash -s -- -g
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash -s -- -g
 ```
 
 ##### Per-project install (run from project root)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 ```
 
 This launches an interactive installer where you select which AI coding tools to install FPF commands for (Claude Code, Cursor, Gemini CLI, Codex CLI).
@@ -45,8 +45,8 @@ This launches an interactive installer where you select which AI coding tools to
 ### Manual Install
 
 ```bash
-git clone https://github.com/m0n0x41d/crucible-code.git
-cd crucible-code
+git clone https://github.com/m0n0x41d/quint-code.git
+cd quint-code
 ./install.sh                    # Interactive TUI
 ./install.sh --claude -g        # Install Claude Code globally
 ./install.sh --all              # Install all platforms
@@ -57,10 +57,10 @@ cd crucible-code
 ```bash
 cd /path/to/your/project
 # Then in your AI coding tool:
-/fpf-0-init  # Creates .fpf/ structure and scans your repo
+/q0-init  # Creates .fpf/ structure and scans your repo
 
 # Start reasoning
-/fpf-1-hypothesize "How should we handle state synchronization across browser tabs?"
+/q1-hypothesize "How should we handle state synchronization across browser tabs?"
 ```
 
 Follow the prompts. The AI guides you through the cycle. You make the calls.
@@ -87,7 +87,7 @@ AI generates. You decide.
 |-------------|----------|
 | "Let's use the Saga pattern" (first idea that came up) | 3 approaches analyzed with evidence, tradeoffs documented |
 | "Why did we build it this way?" (3 months later) | Check `DRR-001.md` — full rationale preserved |
-| "Is this assumption still valid?" | Run `/fpf-decay` — evidence freshness tracked |
+| "Is this assumption still valid?" | Run `/q-decay` — evidence freshness tracked |
 | Same architectural debates, different meetings | Query knowledge base — past decisions searchable |
 
 ## The ADI Cycle
@@ -135,9 +135,9 @@ Problem Statement
 
 ### Phase Strictness
 
-**Phases 1 → 2 → 3: Strictly sequential.** You cannot run `/fpf-2-check` without hypotheses from phase 1. You cannot gather evidence (phase 3) without logically verified hypotheses from phase 2. The commands enforce this — they will error if prerequisites aren't met.
+**Phases 1 → 2 → 3: Strictly sequential.** You cannot run `/q2-check` without hypotheses from phase 1. You cannot gather evidence (phase 3) without logically verified hypotheses from phase 2. The commands enforce this — they will error if prerequisites aren't met.
 
-**Phase 4 (Audit): Optional, but recommended.** You can skip directly from phase 3 to `/fpf-5-decide`. This produces a valid Design Rationale Record (DRR). However, skipping audit is generally not recommended — the WLNK analysis and bias check typically take only a few minutes and often catch blind spots that would otherwise ship with your decision.
+**Phase 4 (Audit): Optional, but recommended.** You can skip directly from phase 3 to `/q5-decide`. This produces a valid Design Rationale Record (DRR). However, skipping audit is generally not recommended — the WLNK analysis and bias check typically take only a few minutes and often catch blind spots that would otherwise ship with your decision.
 
 **When skipping audit is acceptable:**
 
@@ -157,25 +157,25 @@ Problem Statement
 
 | Command | Phase | What It Does | Required |
 |---------|-------|--------------|----------|
-| `/fpf-0-init` | Setup | Create `.fpf/` structure | Yes |
-| `/fpf-1-hypothesize` | Abduction | Generate competing hypotheses → `L0/` | Yes |
-| `/fpf-2-check` | Deduction | Verify logical consistency → `L1/` | Yes |
-| `/fpf-3-test` | Induction | Run internal tests, benchmarks | Yes* |
-| `/fpf-3-research` | Induction | Gather external evidence (web, docs) | Yes* |
-| `/fpf-4-audit` | Audit | WLNK analysis, bias check | No** |
-| `/fpf-5-decide` | Decision | Create DRR, finalize | Yes |
+| `/q0-init` | Setup | Create `.fpf/` structure | Yes |
+| `/q1-hypothesize` | Abduction | Generate competing hypotheses → `L0/` | Yes |
+| `/q2-check` | Deduction | Verify logical consistency → `L1/` | Yes |
+| `/q3-test` | Induction | Run internal tests, benchmarks | Yes* |
+| `/q3-research` | Induction | Gather external evidence (web, docs) | Yes* |
+| `/q4-audit` | Audit | WLNK analysis, bias check | No** |
+| `/q5-decide` | Decision | Create DRR, finalize | Yes |
 
-*At least one of `/fpf-3-test` or `/fpf-3-research` required before proceeding.
+*At least one of `/q3-test` or `/q3-research` required before proceeding.
 **Optional but recommended — see [Phase Strictness](#phase-strictness) above.
 
 ### Utilities
 
 | Command | Purpose |
 |---------|---------|
-| `/fpf-status` | Show current phase and next steps |
-| `/fpf-query <topic>` | Search knowledge base |
-| `/fpf-decay` | Check evidence freshness |
-| `/fpf-discard` | Abandon cycle, preserve learnings |
+| `/q-status` | Show current phase and next steps |
+| `/q-query <topic>` | Search knowledge base |
+| `/q-decay` | Check evidence freshness |
+| `/q-reset` | Abandon cycle, preserve learnings |
 
 ## Key Concepts
 
@@ -183,9 +183,9 @@ Problem Statement
 
 | Level | Name | Meaning | How to Reach |
 |-------|------|---------|--------------|
-| **L0** | Observation | Unverified hypothesis | `/fpf-1-hypothesize` |
-| **L1** | Reasoned | Passed logical check | `/fpf-2-check` |
-| **L2** | Verified | Empirically tested | `/fpf-3-test` or `/fpf-3-research` |
+| **L0** | Observation | Unverified hypothesis | `/q1-hypothesize` |
+| **L1** | Reasoned | Passed logical check | `/q2-check` |
+| **L2** | Verified | Empirically tested | `/q3-test` or `/q3-research` |
 | **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
 
 ### Formality (F-Score)
@@ -222,7 +222,7 @@ We track three metrics to ensure we aren't just guessing:
 
 ### Method vs. Work
 
-Crucible Code strictly separates the **Plan** from the **Result**.
+Quint Code strictly separates the **Plan** from the **Result**.
 
 - **Method (Design-Time):** The recipe. The code you plan to write. The "How-To".
 - **Work (Run-Time):** The cooking. The test results. The logs. The "What Happened".
@@ -285,8 +285,8 @@ See [Quick Start](#quick-start) for one-liner install.
 
 ```bash
 # Clone and install
-git clone https://github.com/m0n0x41d/crucible-code.git
-cd crucible-code
+git clone https://github.com/m0n0x41d/quint-code.git
+cd quint-code
 ./install.sh                    # Interactive TUI
 ./install.sh --claude -g        # Claude Code globally
 ./install.sh --cursor           # Cursor locally
@@ -320,7 +320,7 @@ your-project/
 Your order service needs to update inventory, notify the warehouse, and send a confirmation email — all reliably. Distributed transactions aren't viable at your scale.
 
 ```bash
-/fpf-1-hypothesize "How should we handle cross-service coordination for order fulfillment?"
+/q1-hypothesize "How should we handle cross-service coordination for order fulfillment?"
 ```
 
 **AI generates hypotheses:**
@@ -332,26 +332,26 @@ Your order service needs to update inventory, notify the warehouse, and send a c
 **You review and approve.** Then:
 
 ```bash
-/fpf-2-check
+/q2-check
 ```
 
 The AI checks logical consistency. H1 and H3 pass. H2 has issues: circular dependencies emerge when you trace the event flow. H2 stays L0 with noted concerns.
 
 ```bash
-/fpf-3-research  # Check external evidence
-/fpf-3-test      # Run failure scenario simulations
+/q3-research  # Check external evidence
+/q3-test      # Run failure scenario simulations
 ```
 
 Evidence gathered. H3 reaches L2 (Postgres + Debezium is well-documented, tested with simulated network partitions). H1 reaches L1 (good in theory, but your team lacks orchestrator experience).
 
 ```bash
-/fpf-4-audit
+/q4-audit
 ```
 
 WLNK analysis: H3's weakest evidence is the CDC setup complexity, but it's a known quantity. H1's weakest link is team experience — harder to derisk.
 
 ```bash
-/fpf-5-decide
+/q5-decide
 ```
 
 The AI presents the analysis. You choose H3. DRR created:
@@ -363,7 +363,7 @@ The DRR includes: what you chose, why, what alternatives existed, evidence that 
 ### Six Months Later
 
 ```bash
-/fpf-query "order fulfillment"
+/q-query "order fulfillment"
 ```
 
 New team member asks why you use the outbox pattern. You point them to the DRR. Full context preserved — not just *what*, but *why* and *when to reconsider*.
@@ -395,23 +395,23 @@ Assess congruence. Evidence from a different scale, tech stack, or domain gets p
 
 ### "This evidence is old — is it still valid?"
 
-Run `/fpf-decay`. You can refresh it, deprecate it, or waive the freshness requirement with justification.
+Run `/q-decay`. You can refresh it, deprecate it, or waive the freshness requirement with justification.
 
 ### "Audit found blockers"
 
-Resolve them before `/fpf-5-decide`. That's the point of auditing.
+Resolve them before `/q5-decide`. That's the point of auditing.
 
 ### "Need to revisit an old decision"
 
-Run `/fpf-query <topic>`. Check the DRR's validity conditions. If they've been triggered, start a new cycle.
+Run `/q-query <topic>`. Check the DRR's validity conditions. If they've been triggered, start a new cycle.
 
 ## Learning FPF
 
 The best way to learn FPF is to use it on itself:
 
 1. Clone the original [FPF spec repo](https://github.com/ailev/FPF)
-2. Install crucible-code in it
-3. Run `/fpf-1-hypothesize "What is the core insight of FPF and how should I apply it?"`
+2. Install quint-code in it
+3. Run `/q1-hypothesize "What is the core insight of FPF and how should I apply it?"`
 
 The framework teaches itself through use. A few cycles and it clicks.
 

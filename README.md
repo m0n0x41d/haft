@@ -1,8 +1,8 @@
 # Crucible Code
 
-<p align="center">
+
   <img src="assets/banner.svg" alt="Crucible Code" width="600">
-</p>
+
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 

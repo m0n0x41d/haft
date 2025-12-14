@@ -32,7 +32,11 @@ Complete /q3-test or /q3-research first.
 
 ## Your Role
 
-You are the **Scrutineer**. Challenge assumptions, find blind spots, stress-test thinking.
+You are the **Transformer** enacting the **AuditorRole** (Adversarial).
+
+- **Assume the decision is wrong.** Prove it right.
+- **Find the Weakest Link.** What breaks first?
+- **Check Context Drift.** Do these solutions still fit the current slices?
 
 This phase answers: **"What are we missing? What could go wrong that we haven't considered?"**
 
@@ -64,7 +68,35 @@ cat .fpf/evidence/*.md
 cat .fpf/session.md
 ```
 
-### 2. WLNK Analysis (Weakest Link)
+### 2. Context Drift Analysis (A.2.6 Slice Check)
+
+Verify that hypotheses still fit the project's **Context Slices** (`.fpf/context.md`):
+
+```markdown
+## Context Drift Check
+
+### Slice: Grounding (Infrastructure)
+| Hypothesis | Compatible? | Issues |
+|------------|-------------|--------|
+| H1 | ✓/✗ | [e.g., Requires Lambda but we use K8s] |
+| H2 | ✓/✗ | [e.g., Data sovereignty risk] |
+
+### Slice: Tech Stack
+| Hypothesis | Compatible? | Issues |
+|------------|-------------|--------|
+| H1 | ✓/✗ | [e.g., Requires library not in stack] |
+| H2 | ✓/✗ | [e.g., Incompatible language version] |
+
+### Slice: Constraints
+| Hypothesis | Compatible? | Issues |
+|------------|-------------|--------|
+| H1 | ✓/✗ | [e.g., Violates budget] |
+| H2 | ✓/✗ | [e.g., Team skills gap] |
+
+**Verdict:** [All aligned / Drift detected in H(n)]
+```
+
+### 3. WLNK Analysis (Weakest Link)
 
 **CRITICAL: Assurance = min(evidence assurances), NEVER average**
 
@@ -116,7 +148,7 @@ Hypothesis R_eff = min(1.00, 1.00, 0.85, 0.45) = 0.45
 3. Accept the risk with documented justification
 ```
 
-### 3. Assumption Inventory
+### 4. Assumption Inventory
 
 List ALL assumptions — explicit and implicit:
 
@@ -147,7 +179,7 @@ List ALL assumptions — explicit and implicit:
 - [ ] Budget constraints hold
 ```
 
-### 4. Bias Check
+### 5. Bias Check
 
 Actively look for cognitive biases:
 
@@ -190,7 +222,7 @@ Are we only looking at successful examples?
 - **Mitigation:** [action if needed]
 ```
 
-### 5. Adversarial Analysis
+### 6. Adversarial Analysis
 
 Think like an attacker / skeptic:
 
@@ -223,7 +255,7 @@ Think like an attacker / skeptic:
 [Failure mode requiring least effort to trigger]
 ```
 
-### 6. Evidence Quality Review
+### 7. Evidence Quality Review
 
 ```markdown
 ## Evidence Quality Audit
@@ -260,7 +292,7 @@ Think like an attacker / skeptic:
 | [claim 2] | 3 | ✓ Multiple sources |
 ```
 
-### 7. Final Scrutiny Verdict
+### 8. Final Scrutiny Verdict
 
 ```markdown
 ## Audit Verdict
@@ -300,7 +332,7 @@ Think like an attacker / skeptic:
 [Present the strongest counter-argument]
 ```
 
-### 8. Update Session
+### 9. Update Session
 
 ```markdown
 ## Status

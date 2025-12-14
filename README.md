@@ -217,6 +217,22 @@ Problem Statement
 
 ## Key Concepts
 
+### Deep Reasoning (v3.1)
+
+Quint Code now enforces **Context Slicing** and **Explicit Roles** to prevent "works on my machine" architecture and AI drift.
+
+**1. Context Slicing (A.2.6)**
+Truth depends on where you stand. `q0-init` now scans your repo to generate structured slices:
+- **Slice: Grounding** (Infrastructure, Region)
+- **Slice: Tech Stack** (Language, Frameworks)
+- **Slice: Constraints** (Compliance, Budget)
+
+**2. Explicit Role Injection**
+The AI isn't just a chatbot; it enacts specific FPF roles per phase:
+- **ExplorerRole** (Hypothesize): Creative, divergent.
+- **LogicianRole** (Check): Strict, deductive.
+- **AuditorRole** (Audit): Adversarial, critical.
+
 ### Assurance Levels
 
 | Level | Name | Meaning | How to Reach |

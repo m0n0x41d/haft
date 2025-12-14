@@ -107,6 +107,9 @@ print_instructions() {
     cprint "$RED$BOLD" "q"
     cprintln "$DIM" " Quit"
     echo ""
+    cprint "$YELLOW" "   Tip: "
+    cprintln "$DIM" "Cursor can import .claude/commands/ — install for Claude Code, use in both!"
+    echo ""
 }
 
 print_platform_item() {
@@ -367,23 +370,24 @@ uninstall_commands() {
         "fpf-discard"
     )
 
-    # Check both local and global locations
-    local locations=()
+    # Always check BOTH local and global locations
     local local_path="$TARGET_DIR/$target_path"
     local global_path="$HOME/$target_path"
+    local locations=("$global_path" "$local_path")
 
     # For global-only platforms, only check global
     if [[ "$scope" == "global" ]]; then
         locations=("$global_path")
-    else
-        # Check both, prioritize based on -g flag but search both
-        locations=("$local_path" "$global_path")
     fi
 
     local removed=0
     local removed_from=""
+    local checked_paths=""
 
     for full_target in "${locations[@]}"; do
+        [[ -n "$checked_paths" ]] && checked_paths+=", "
+        checked_paths+="$full_target"
+
         for cmd in "${commands[@]}"; do
             local file="$full_target/${cmd}.${ext}"
             if [[ -f "$file" ]]; then
@@ -399,11 +403,11 @@ uninstall_commands() {
         fi
     done
 
-    # Return count and location
+    # Return count, location, and checked paths
     if [[ $removed -gt 0 ]]; then
-        echo "$removed|$removed_from"
+        echo "$removed|$removed_from|$checked_paths"
     else
-        echo "0|"
+        echo "0||$checked_paths"
     fi
 }
 
@@ -421,8 +425,11 @@ uninstall_platforms() {
 
             local result
             result=$(uninstall_commands $i)
-            local count="${result%%|*}"
-            local location="${result##*|}"
+
+            # Parse result: count|removed_from|checked_paths
+            local count=$(echo "$result" | cut -d'|' -f1)
+            local location=$(echo "$result" | cut -d'|' -f2)
+            local checked=$(echo "$result" | cut -d'|' -f3)
 
             if [[ "$count" -gt 0 ]]; then
                 cprint "$GREEN" "   ✓ "
@@ -432,7 +439,8 @@ uninstall_platforms() {
                 uninstalled_indices="$uninstalled_indices $i"
             else
                 cprint "$YELLOW" "   - "
-                cprintln "$DIM" "$name — no commands found"
+                cprint "$DIM" "$name — no commands found"
+                cprintln "$DIM" " (checked: $checked)"
             fi
         fi
         ((i++))

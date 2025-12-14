@@ -23,15 +23,19 @@ FPF gives you a structured way to think through these decisions with Claude as a
 
 ### One-liner Install
 
+##### Global install (recommended for personal use)
 ```bash
-# Global install (recommended for personal use)
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash -s -- -g
+```
 
-# Per-project install (run from project root)
+##### Per-project install (run from project root)
+```bash
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/crucible-code/main/install.sh | bash
 ```
 
 This launches an interactive installer where you select which AI coding tools to install FPF commands for (Claude Code, Cursor, Gemini CLI, Codex CLI).
+
+> **Tip:** Cursor can import `.claude/commands/` directly — install for Claude Code, use in both! In Cursor: Settings → Features → Docs → Project rules directory.
 
 **Global** installs to `~/.claude/commands/` etc. — available in all projects.
 **Per-project** installs to `./.claude/commands/` — commit to repo for team use.

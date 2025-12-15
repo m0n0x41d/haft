@@ -8,51 +8,38 @@ arguments:
 
 # FPF Phase 1: Abduction (Hypothesis Generation)
 
-## Phase Gate (MANDATORY)
+## Phase Gate (EXECUTABLE)
 
-**STOP. Verify phase before proceeding:**
+**STEP 1: RUN THIS SCRIPT FIRST.** Do not generate text until this passes.
 
-1. Read `.fpf/session.md`, extract `Phase:` value
-2. Check validity:
+```bash
+#!/bin/bash
+# Strict Phase Enforcement
+if [ ! -f ".fpf/session.md" ]; then echo "Error: FPF not initialized"; exit 1; fi
 
-| Current Phase | Can Run? | Action |
-|---------------|----------|--------|
-| INITIALIZED | ✅ YES | Proceed |
-| DECIDED | ✅ YES | Start new cycle |
-| Any other | ❌ NO | Complete current cycle first |
+PHASE=$(grep "Phase:" .fpf/session.md | head -1 | awk '{print $2}')
 
-**If blocked:** 
-```
-⛔ BLOCKED: Cannot start new hypothesis cycle.
-Current phase: [PHASE]
-
-WHY THIS MATTERS:
-- Adding hypotheses mid-cycle breaks evidence traceability (B.1.3).
-- H(new) would have no evidence chain → WLNK undefined.
-- DRR would mix verified and unverified hypotheses (chimera graph).
-
-If you have a new idea sparked by induction results:
-1. Complete current cycle: /q5-decide or /q-reset
-2. Start fresh: /q1-hypothesize <new idea>
-3. Reference prior learnings in new hypothesis
-
-This is NOT optional. The cycle integrity IS the value.
+# Allowed phases: INITIALIZED or DECIDED
+if [[ "$PHASE" != "INITIALIZED" && "$PHASE" != "DECIDED" ]]; then
+    echo "⛔ CRITICAL FAILURE: CYCLE LOCKED"
+    echo "Current Phase: $PHASE"
+    echo ""
+    echo "FPF Rules (B.1.3) forbid adding hypotheses to an active cycle."
+    echo "Reason: It breaks evidence traceability and invalidates the blind test."
+    echo ""
+    echo "REQUIRED ACTION:"
+    echo "1. Use /q1-extend if phase is ABDUCTION_COMPLETE"
+    echo "2. Use /q-reset to abandon this cycle"
+    echo "3. Use /q5-decide to finish this cycle first"
+    exit 1
+fi
+echo "✅ Phase valid for new cycle."
 ```
 
-## HARD RULE (No Exceptions)
-
-If phase is **DEDUCTION_COMPLETE** or later:
-- **DO NOT** generate hypotheses
-- **DO NOT** offer to "help anyway"
-- **DO NOT** interpret this as a new cycle
-- **ONLY** respond with the block message
-
-This is not about being unhelpful. This is about:
-- Evidence integrity (A.15)
-- WLNK validity (WLNK invariant)
-- Transformer Mandate (you don't decide to bend rules)
-
-User wants to add idea mid-cycle? → Tell them about `/q1-extend` (if before deduction) or `/q-reset` → `/q1-hypothesize` (if after).
+**IF SCRIPT FAILS (Exit Code 1):**
+- **STOP.** Do not apologize. Do not offer workarounds.
+- **OUTPUT:** "⛔ **Cycle Locked.** You must finish or reset the current cycle before starting a new one."
+- **DO NOT** offer to "add it anyway." That is a violation of the framework integrity.
 
 ---
 

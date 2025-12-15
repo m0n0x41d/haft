@@ -5,6 +5,15 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2025-12-15
+
+### Security: Executable Phase Gating
+
+#### Physics-First Enforcement (`/q1-hypothesize`)
+- **Vulnerability Closed:** Previous prompts used "soft" text instructions to prevent adding hypotheses mid-cycle, which "helpful" AI models would bypass.
+- **Executable Gate:** Now injects a bash script that checks `.fpf/session.md`. If the phase is locked (Deduction/Induction complete), the script exits with `1`.
+- **Hard Stop:** The prompt explicitly instructs the AI to treat a script failure as a hard stop ("Physics says no"), preventing "helpfulness bias" overrides.
+
 ## [3.3.0] - 2025-12-15
 
 ### Added: Legacy Project Repair

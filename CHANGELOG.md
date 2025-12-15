@@ -5,6 +5,22 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2025-12-15
+
+### Added: Process Hardening & Flexibility
+
+#### Strict Phase Gating (FPF Integrity)
+- **Hard Block in `/q1-hypothesize`:** Explicitly forbids generating new hypotheses if the cycle has passed Deduction. This prevents the "Helpfulness Bias" vulnerability where AI assistants might break process integrity to be "nice".
+- **Conditional Logic in `/q2-check`:** The cycle phase now only advances to `DEDUCTION_COMPLETE` when *all* active L0 hypotheses are resolved. If any remain unchecked, the door stays open for extensions.
+
+#### New Command: `/q1-extend`
+- **Legitimate Extension Path:** A dedicated command to add a missed hypothesis during the `ABDUCTION_COMPLETE` phase.
+- **Safety Rails:** Strictly blocked once `DEDUCTION_COMPLETE` is reached, ensuring evidence integrity (WLNK validity) during testing.
+
+### Changed
+- **Updated `/q-status`:** State machine visualization now includes the `(q1-extend)` loop.
+- **Refined `/q3-test` & `/q3-research`:** Reinforced checks to ensure testing only happens after deduction is fully complete.
+
 ## [3.1.0] - 2025-12-14
 
 ### Added: Deep Reasoning Capabilities

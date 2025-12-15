@@ -111,6 +111,9 @@ Run `/q-decay` for detailed report.
 Current: ──► [PHASE]
 
 INITIALIZED ──► ABDUCTION_COMPLETE ──► DEDUCTION_COMPLETE
+                      │                       │
+                      ▼                       │
+                 (q1-extend)                  │
                                               │
                     ┌─────────────────────────┤
                     ▼                         ▼
@@ -137,6 +140,7 @@ INITIALIZED ──► ABDUCTION_COMPLETE ──► DEDUCTION_COMPLETE
 
 **If ABDUCTION_COMPLETE:**
 → `/q2-check` — Verify logical consistency
+→ `/q1-extend` — Add missed hypothesis (before deduction)
 
 **If DEDUCTION_COMPLETE:**
 → `/q3-test` — Internal tests, benchmarks
@@ -159,6 +163,7 @@ INITIALIZED ──► ABDUCTION_COMPLETE ──► DEDUCTION_COMPLETE
 |---------|-------------|------------|
 | `/q0-init` | Initialize FPF | (any) |
 | `/q1-hypothesize` | Generate hypotheses | INITIALIZED, DECIDED |
+| `/q1-extend` | Add hypothesis | ABDUCTION_COMPLETE |
 | `/q2-check` | Logical verification | ABDUCTION_COMPLETE |
 | `/q3-test` | Internal tests | DEDUCTION_COMPLETE+ |
 | `/q3-research` | External evidence | DEDUCTION_COMPLETE+ |

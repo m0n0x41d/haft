@@ -232,9 +232,19 @@ conditions_needed: |
 
 ### 5. Update Session
 
+**Phase Logic:**
+1. Update `## Active Hypotheses` table with new statuses.
+2. Check if **ANY** hypotheses remain in status `L0` (either not checked yet, or CONDITIONAL).
+3. **If ALL hypotheses are now L1 or invalid:**
+   - Set `Phase: DEDUCTION_COMPLETE`
+   - Log transition in `## Phase Transitions Log`
+4. **If ANY hypothesis remains L0:**
+   - Keep `Phase: ABDUCTION_COMPLETE`
+   - Do NOT log transition.
+
 ```markdown
 ## Status
-Phase: DEDUCTION_COMPLETE
+Phase: [ABDUCTION_COMPLETE / DEDUCTION_COMPLETE]
 
 ## Active Hypotheses
 | ID | Hypothesis | Status | Deduction Result |
@@ -246,13 +256,12 @@ Phase: DEDUCTION_COMPLETE
 ## Phase Transitions Log
 | Timestamp | From | To | Trigger |
 |-----------|------|-----|---------|
-| [...] | ... | ... | ... |
-| [now] | ABDUCTION_COMPLETE | DEDUCTION_COMPLETE | /q2-check |
+| [prev] | ... | ... | ... |
+| [now] | ABDUCTION_COMPLETE | DEDUCTION_COMPLETE | /q2-check (Only if all L0 resolved) |
 
 ## Next Step
-- `/q3-test` to run internal empirical tests
-- `/q3-research` to gather external evidence
-- (Both can be run; order doesn't matter)
+- If DEDUCTION_COMPLETE: `/q3-test` or `/q3-research`
+- If ABDUCTION_COMPLETE: `/q2-check` (for remaining L0) or `/q1-extend`
 ```
 
 ## Output Format
@@ -289,10 +298,8 @@ Phase: DEDUCTION_COMPLETE
 ---
 
 **Next Step:**
-`/q3-test` — Run internal empirical tests (code, benchmarks)
-`/q3-research` — Gather external evidence (docs, papers, web)
-
-Both can be done; they complement each other.
+[If Phase advanced] `/q3-test` — Run internal empirical tests
+[If Phase same] `/q2-check` — Verify remaining hypotheses
 ```
 
 ## Common Deduction Failures

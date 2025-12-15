@@ -29,9 +29,35 @@ arguments:
 **If blocked:** 
 ```
 ⛔ BLOCKED: Cannot start new hypothesis cycle.
-Current phase: [PHASE] 
-Complete current cycle with /q5-decide or /q-reset first.
+Current phase: [PHASE]
+
+WHY THIS MATTERS:
+- Adding hypotheses mid-cycle breaks evidence traceability (B.1.3).
+- H(new) would have no evidence chain → WLNK undefined.
+- DRR would mix verified and unverified hypotheses (chimera graph).
+
+If you have a new idea sparked by induction results:
+1. Complete current cycle: /q5-decide or /q-reset
+2. Start fresh: /q1-hypothesize <new idea>
+3. Reference prior learnings in new hypothesis
+
+This is NOT optional. The cycle integrity IS the value.
 ```
+
+## HARD RULE (No Exceptions)
+
+If phase is **DEDUCTION_COMPLETE** or later:
+- **DO NOT** generate hypotheses
+- **DO NOT** offer to "help anyway"
+- **DO NOT** interpret this as a new cycle
+- **ONLY** respond with the block message
+
+This is not about being unhelpful. This is about:
+- Evidence integrity (A.15)
+- WLNK validity (WLNK invariant)
+- Transformer Mandate (you don't decide to bend rules)
+
+User wants to add idea mid-cycle? → Tell them about `/q1-extend` (if before deduction) or `/q-reset` → `/q1-hypothesize` (if after).
 
 ---
 

@@ -1,28 +1,58 @@
-description = "FPF Initialization"
+description = "FPF Initialization & Repair"
 
 prompt = """
 ---
-description: "Initialize FPF (First Principles Framework) for structured reasoning"
+description: "Initialize or repair FPF (First Principles Framework) structure"
 ---
 
-# FPF Initialization
+# FPF Initialization & Repair
 
 ## What This Does
 
 Creates the `.fpf/` directory structure for systematic hypothesis-driven reasoning.
+**Smart Check:** If FPF is already present but incomplete (e.g., missing `context.md` from older versions), this command will **repair/upgrade** it without overwriting existing data.
 
 ## Process
 
-### 1. Check Existing State
+### 1. Validation & State Check
+
+**Step 1: Execute this diagnostic script to determine the project state:**
 
 ```bash
-if [ -d ".fpf" ]; then
-    echo "FPF already initialized. Showing current state..."
-    # Run /q-status logic instead
+if [ ! -d ".fpf" ]; then
+  echo "STATUS: FRESH"
+else
+  MISSING=""
+  [ ! -f ".fpf/context.md" ] && MISSING="$MISSING context.md"
+  [ ! -f ".fpf/session.md" ] && MISSING="$MISSING session.md"
+  
+  if [ -z "$MISSING" ]; then
+    echo "STATUS: COMPLETE"
+  else
+    echo "STATUS: REPAIR_NEEDED"
+    echo "MISSING:$MISSING"
+  fi
 fi
 ```
 
-If `.fpf/` exists, show current state and exit (do not reinitialize).
+**Step 2: Follow the branch matching the output:**
+
+*   **`STATUS: FRESH`**
+    *   Action: "Initializing FPF..."
+    *   Run **Steps 2, 3, 4, 5** (Full Install).
+
+*   **`STATUS: REPAIR_NEEDED`**
+    *   Action: "⚠️ FPF incomplete. Repairing..."
+    *   **Skip Step 2** (Directory exists).
+    *   **Run Step 3** ONLY IF `context.md` is in MISSING list.
+    *   **Run Step 4** ONLY IF `session.md` is in MISSING list.
+    *   **Run Step 5** (Config check).
+
+*   **`STATUS: COMPLETE`**
+    *   Action: "FPF is up to date."
+    *   **Stop.** Do not overwrite anything. Run `/q-status`.
+
+---
 
 ### 2. Create Directory Structure
 
@@ -36,9 +66,9 @@ mkdir -p .fpf/decisions
 mkdir -p .fpf/sessions
 ```
 
-### 3. Create Context File (Agentic)
+### 3. Create Context File (Repairable)
 
-**Do not just create a blank file.**
+**Trigger:** Only if `STATUS: FRESH` OR (`STATUS: REPAIR_NEEDED` AND `MISSING` contains `context.md`).
 
 1.  **Investigate:** Scan the repository for technical signals.
     - Check `package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, `pom.xml`, `Gemfile`.
@@ -76,7 +106,9 @@ mkdir -p .fpf/sessions
 - **Timeline:** [e.g. MVP by Q3]
 ```
 
-### 4. Create Session File
+### 4. Create Session File (Repairable)
+
+**Trigger:** Only if `STATUS: FRESH` OR (`STATUS: REPAIR_NEEDED` AND `MISSING` contains `session.md`).
 
 Create `.fpf/session.md`:
 
@@ -140,9 +172,11 @@ INITIALIZED ─────────────────► ABDUCTION_COM
 *With warning if audit skipped
 ```
 
-### 4. Create Optional Config File
+### 5. Create Config File (Safe)
 
-Create `.fpf/config.yaml` (optional, for project-level settings):
+**Trigger:** If `.fpf/config.yaml` does not exist (check separately or just run this, as it's safe).
+
+Create `.fpf/config.yaml` if missing:
 
 ```yaml
 # FPF Project Configuration
@@ -176,61 +210,24 @@ audit:
   required_before_decide: false  # If true, blocks /q5-decide without audit
 ```
 
-### 5. Create .gitignore Entry (if needed)
-
-Check if `.fpf/` should be tracked. Typically **YES** — this is valuable project knowledge.
-
-Suggest adding to project `.gitignore` only if user explicitly wants ephemeral FPF:
-```
-# Uncomment to exclude FPF from version control
-# .fpf/
-```
-
 ## Output
 
-Confirm initialization:
-
+**If Fresh:**
 ```
 ✓ FPF initialized.
-
-Structure created:
-  .fpf/
-  ├── knowledge/
-  │   ├── L0/        (observations, hypotheses)
-  │   ├── L1/        (logically verified)
-  │   ├── L2/        (empirically tested)
-  │   └── invalid/   (disproved — kept for learning)
-  ├── evidence/      (test results, research findings)
-  ├── decisions/     (DRRs — Design Rationale Records)
-  ├── sessions/      (archived reasoning cycles)
-  ├── session.md     (current cycle state)
-  └── config.yaml    (project settings — optional)
-
-Assurance Levels:
-  L0 → L1: Pass logical consistency check (/q2-check)
-  L1 → L2: Pass empirical verification (/q3-test or /q3-research)
-  
-Key Principle:
-  Assurance = min(evidence) — weakest link caps everything.
-
-Next: /q1-hypothesize <problem statement>
+[Summary of structure]
 ```
 
-## If Already Initialized
-
-Show current state instead of reinitializing:
-
+**If Repaired:**
 ```
-FPF already initialized.
+✓ FPF repair complete.
+Missing files created: [list]
+Existing files preserved: [list]
+```
 
-Current state:
-  Phase: [current phase]
-  Problem: [current problem or "none"]
-  Hypotheses: L0=[N] L1=[N] L2=[N] Invalid=[N]
-  Evidence: [N] files
-  Decisions: [N] DRRs
-
-Use /q-status for detailed view.
-To start fresh: delete .fpf/ directory and run /q0-init again.
+**If Complete:**
+```
+FPF is already initialized and complete.
+[Status summary]
 ```
 """

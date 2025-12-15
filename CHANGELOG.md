@@ -5,6 +5,15 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2025-12-15
+
+### Added: Legacy Project Repair
+
+#### Smart Initialization (`/q0-init`)
+- **Self-Healing Capability:** The init command now detects incomplete FPF setups (e.g., legacy projects missing `context.md` from v2.x).
+- **Deterministic Diagnostic:** Injects a bash script to verify file existence before deciding actions, preventing AI "hallucinated" skips.
+- **Repair Mode:** If `.fpf/` exists but is incomplete, it triggers a surgical repair (generating only missing files) while preserving existing session data.
+
 ## [3.2.0] - 2025-12-15
 
 ### Added: Process Hardening & Flexibility

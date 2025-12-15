@@ -304,6 +304,7 @@ download_commands() {
     local commands=(
         "q0-init"
         "q1-hypothesize"
+        "q1-extend"
         "q2-check"
         "q3-test"
         "q3-research"
@@ -359,6 +360,7 @@ uninstall_commands() {
     local commands=(
         "q0-init"
         "q1-hypothesize"
+        "q1-extend"
         "q2-check"
         "q3-test"
         "q3-research"

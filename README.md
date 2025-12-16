@@ -67,7 +67,7 @@ Follow the prompts. The AI guides you through the cycle. You make the calls.
 
 ## What Is This, Really?
 
-`quint-mcp` (Multi-platform Core Protocol) is a Go module that provides a robust implementation of the First Principles Framework (FPF) workflow. It serves as the core logic for **hypothesis-driven reasoning**, enabling AI coding tools to:
+`quint-mcp` (Model Context Protocol) is a Go module that provides a robust implementation of the First Principles Framework (FPF) workflow. It serves as the core logic for **hypothesis-driven reasoning**, enabling AI coding tools to:
 
 -   Generate competing ideas
 -   Verify them logically
@@ -81,7 +81,7 @@ Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by
 
 **The FPF Workflow Phases and Core Loop (managed by `quint-mcp`):**
 
-The `quint-mcp` (Multi-platform Core Protocol) project manages the FPF workflow, ensuring a structured approach to problem-solving. Hypotheses move through distinct knowledge levels (L0, L1, L2, Invalid) based on their verification and validation status.
+The `quint-mcp` (Model Context Protocol) project manages the FPF workflow, ensuring a structured approach to problem-solving. Hypotheses move through distinct knowledge levels (L0, L1, L2, Invalid) based on their verification and validation status.
 
 1.  **IDLE**: The initial state, or after a decision is finalized.
 2.  **ABDUCTION (Hypothesize)**: Generate multiple hypotheses. Outputs L0/ (unverified ideas).

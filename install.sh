@@ -28,19 +28,17 @@ BRIGHT_WHITE='\033[97m'
 BRIGHT_BLUE='\033[94m'
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Configuration (using indexed arrays for bash 3.x compatibility)
+# Configuration
 # ═══════════════════════════════════════════════════════════════════════════════
 
 REPO_URL="https://github.com/m0n0x41d/quint-code"
 BRANCH="main"
 
-# Platform data (parallel arrays)
 PLATFORMS=("claude" "cursor" "gemini")
 PLATFORM_NAMES=("Claude Code" "Cursor" "Gemini CLI")
 PLATFORM_PATHS=(".claude/commands" ".cursor/commands" ".gemini/commands")
 PLATFORM_EXT=("md" "md" "toml")
 
-# Selection state (0=false, 1=true)
 SELECTED=(1 0 0)  # Claude selected by default
 
 CURRENT_INDEX=0
@@ -67,7 +65,6 @@ cprintln() {
     printf "${color}%s${RESET}\n" "$*"
 }
 
-# Get platform info by index
 get_platform_name() { echo "${PLATFORM_NAMES[$1]}"; }
 get_platform_path() { echo "${PLATFORM_PATHS[$1]}"; }
 get_platform_ext() { echo "${PLATFORM_EXT[$1]}"; }
@@ -114,21 +111,18 @@ print_platform_item() {
     local name=$(get_platform_name $index)
     local is_current=$([[ $index -eq $CURRENT_INDEX ]] && echo 1 || echo 0)
 
-    # Cursor indicator
     if [[ "$is_current" == "1" ]]; then
         cprint "$BRIGHT_CYAN$BOLD" "   ▸ "
     else
         printf "     "
     fi
 
-    # Checkbox
     if is_selected $index; then
         cprint "$BRIGHT_GREEN$BOLD" "[✓]"
     else
         cprint "$DIM" "[ ]"
     fi
 
-    # Platform name
     if [[ "$is_current" == "1" ]]; then
         cprint "$BRIGHT_WHITE$BOLD" " $name"
     else
@@ -141,20 +135,17 @@ print_platform_item() {
 print_selection() {
     cprintln "$WHITE" "   Select AI coding tools to install FPF commands:"
     echo ""
-
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         print_platform_item $i
         ((i++))
     done
-
     echo ""
 }
 
 print_summary() {
     local count=0
     local platforms_str=""
-
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         if is_selected $i;
@@ -180,44 +171,31 @@ print_summary() {
 
 handle_input() {
     local key
-    # Read from /dev/tty to support curl | bash
     IFS= read -rsn1 key </dev/tty
 
     case "$key" in
-        $''\x1b')  # Escape sequence start
+        $''\x1b')
             local seq
             read -rsn1 -t 1 seq </dev/tty
             if [[ "$seq" == "[" ]]; then
                 read -rsn1 -t 1 seq </dev/tty
                 case "$seq" in
-                    'A') # Up arrow
-                        ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--))
-                        ;; 
-                    'B') # Down arrow
-                        ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++))
-                        ;; 
+                    'A') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
+                    'B') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
                 esac
             fi
             ;; 
-        ' ')  # Space - toggle
+        ' ') 
             if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]; then
                 SELECTED[$CURRENT_INDEX]=0
             else
                 SELECTED[$CURRENT_INDEX]=1
             fi
             ;; 
-        '')  # Enter - confirm
-            return 1
-            ;; 
-        'q'|'Q')  # Quit
-            return 2
-            ;; 
-        'k')  # vim up
-            ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--))
-            ;; 
-        'j')  # vim down
-            ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++))
-            ;; 
+        '') return 1;;
+        'q'|'Q') return 2;;
+        'k') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
+        'j') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
     esac
 
     return 0
@@ -235,14 +213,13 @@ run_tui() {
         print_summary
 
         if ! handle_input; then
-            local result=$?
+            local result=$? 
             show_cursor
             clear_screen
             if [[ $result -eq 2 ]]; then
                 cprintln "$YELLOW" "Installation cancelled."
                 exit 0
             fi
-            # Show logo before installation output
             print_logo
             break
         fi
@@ -271,13 +248,10 @@ download_commands() {
     local platform="${PLATFORMS[$index]}"
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
-    local full_target
-
-    full_target="$TARGET_DIR/$target_path"
+    local full_target="$TARGET_DIR/$target_path"
 
     mkdir -p "$full_target"
 
-    # Determine script location for local installs
     local script_dir=""
     if [[ -n "${BASH_SOURCE[0]}" ]]; then
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -286,26 +260,11 @@ download_commands() {
     local local_dist="$script_dir/dist/$platform"
     local base_url="https://raw.githubusercontent.com/m0n0x41d/quint-code/$BRANCH/dist/$platform"
 
-    local commands=(
-        "q0-init"
-        "q1-hypothesize"
-        "q1-extend"
-        "q2-check"
-        "q3-test"
-        "q3-research"
-        "q4-audit"
-        "q5-decide"
-        "q-status"
-        "q-query"
-        "q-decay"
-        "q-reset"
-    )
+    local commands=("q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" "q-status" "q-query" "q-decay" "q-reset")
 
     for cmd in "${commands[@]}"; do
         local dest="$full_target/${cmd}.${ext}"
         local local_file="$local_dist/${cmd}.${ext}"
-
-        # Try local dist first, then remote
         if [[ -f "$local_file" ]]; then
             cp "$local_file" "$dest"
         else
@@ -317,7 +276,6 @@ download_commands() {
 
 create_fpf_structure() {
     local target="$1"
-
     mkdir -p "$target/.fpf/evidence"
     mkdir -p "$target/.fpf/decisions"
     mkdir -p "$target/.fpf/sessions"
@@ -326,7 +284,6 @@ create_fpf_structure() {
     mkdir -p "$target/.fpf/knowledge/L2"
     mkdir -p "$target/.fpf/knowledge/invalid"
     mkdir -p "$target/.fpf/agents"
-
     touch "$target/.fpf/evidence/.gitkeep"
     touch "$target/.fpf/decisions/.gitkeep"
     touch "$target/.fpf/sessions/.gitkeep"
@@ -341,26 +298,9 @@ uninstall_commands() {
     local platform="${PLATFORMS[$index]}"
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
-
-    local commands=(
-        "q0-init"
-        "q1-hypothesize"
-        "q1-extend"
-        "q2-check"
-        "q3-test"
-        "q3-research"
-        "q4-audit"
-        "q5-decide"
-        "q-status"
-        "q-query"
-        "q-decay"
-        "q-reset"
-    )
-
-    # Check local location only
+    local commands=("q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" "q-status" "q-query" "q-decay" "q-reset")
     local local_path="$TARGET_DIR/$target_path"
     local locations=("$local_path")
-
     local removed=0
     local removed_from=""
     local checked_paths=""
@@ -368,7 +308,6 @@ uninstall_commands() {
     for full_target in "${locations[@]}"; do
         [[ -n "$checked_paths" ]] && checked_paths+=", "
         checked_paths+="$full_target"
-
         for cmd in "${commands[@]}"; do
             local file="$full_target/${cmd}.${ext}"
             if [[ -f "$file" ]]; then
@@ -377,14 +316,11 @@ uninstall_commands() {
                 removed_from="$full_target"
             fi
         done
-
-        # Remove directory if empty
         if [[ -d "$full_target" ]] && [[ -z "$(ls -A "$full_target")" ]]; then
             rmdir "$full_target" 2>/dev/null || true
         fi
     done
 
-    # Return count, location, and checked paths
     if [[ $removed -gt 0 ]]; then
         echo "$removed|$removed_from|$checked_paths"
     else
@@ -396,10 +332,7 @@ generate_mcp_config() {
     local target_dir="$1"
     local config_path="$target_dir/quint-mcp.json"
     local mcp_binary="$target_dir/.fpf/bin/quint-mcp"
-    
-    # Get absolute path
-    local abs_binary
-    abs_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
+    local abs_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
 
     cat <<EOF > "$config_path"
 {
@@ -415,16 +348,10 @@ EOF
     echo "$config_path"
 }
 
-# Install default agent profiles from repo source to target .fpf/agents
 install_agents() {
     local target="$1"
     local agents_dir="$target/.fpf/agents"
     mkdir -p "$agents_dir"
-
-    # Assume we are running from repo root or curl pipe where src is available?
-    # If curl pipe, we might not have source files easily accessible unless we download them.
-    # For now, let's assume local install or minimal bootstrapping. 
-    # To be robust, we should download them if not present.
     
     local script_dir=""
     if [[ -n "${BASH_SOURCE[0]}" ]]; then
@@ -442,19 +369,13 @@ uninstall_platforms() {
     echo ""
     cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
     echo ""
-
     local uninstalled_indices=""
-
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         if is_selected $i;
         then
             local name=$(get_platform_name $i)
-
-            local result
-            result=$(uninstall_commands $i)
-
-            # Parse result: count|removed_from|checked_paths
+            local result=$(uninstall_commands $i)
             local count=$(echo "$result" | cut -d'|' -f1)
             local location=$(echo "$result" | cut -d'|' -f2)
             local checked=$(echo "$result" | cut -d'|' -f3)
@@ -473,7 +394,6 @@ uninstall_platforms() {
         fi
         ((i++))
     done
-
     echo ""
     if [[ -n "$uninstalled_indices" ]]; then
         cprintln "$BRIGHT_GREEN$BOLD" "   Uninstall complete."
@@ -487,55 +407,43 @@ install_platforms() {
     echo ""
     cprintln "$BRIGHT_WHITE$BOLD" "   Installing Quint Code..."
     echo ""
-
     local installed_indices=""
-
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         if is_selected $i;
         then
             local name=$(get_platform_name $i)
-
             (download_commands $i) &
             spinner $! "Installing $name commands"
-
             installed_indices="$installed_indices $i"
         fi
         ((i++))
     done
 
-    # Create .fpf structure
     if [[ ! -d "$TARGET_DIR/.fpf" ]]; then
         (create_fpf_structure "$TARGET_DIR") &
         spinner $! "Creating .fpf/ structure"
     fi
     
     # Install Agents (Local copy if available)
-    if [[ -d ".fpf/agents" ]]; then
+    if [[ -d "src/agents" ]]; then
          (install_agents "$TARGET_DIR") &
          spinner $! "Installing Agent Profiles"
     fi
 
-    # Build MCP Server
     if command -v go >/dev/null 2>&1; then
         cprintln "$DIM" "   Building MCP Server..."
         mkdir -p "$TARGET_DIR/.fpf/bin"
-        
-        # Determine source dir (handle both curl pipe and local run)
         local src_mcp="$TARGET_DIR/src/mcp"
         if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]; then
              src_mcp="$(dirname "${BASH_SOURCE[0]}")/src/mcp"
         fi
 
         if [[ -d "$src_mcp" ]]; then
-            # Initialize go module if needed (e.g. fresh install)
             (cd "$src_mcp" && go mod tidy) &>/dev/null || true
-            
             (cd "$src_mcp" && go build -o "$TARGET_DIR/.fpf/bin/quint-mcp" .) &
             spinner $! "Compiling quint-mcp binary"
-            
-            local config_file
-            config_file=$(generate_mcp_config "$TARGET_DIR")
+            local config_file=$(generate_mcp_config "$TARGET_DIR")
             cprintln "$DIM" "   Generated MCP config: $config_file"
         else
             cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
@@ -550,25 +458,21 @@ install_platforms() {
 
 print_success() {
     local indices="$1"
-
     cprintln "$GREEN" "    ╔══════════════════════════════════════════════════════════╗"
     cprintln "$GREEN" "    ║                                                          ║"
     cprintln "$GREEN" "    ║              ✓  Installation Complete!                   ║"
     cprintln "$GREEN" "    ║                                                          ║"
     cprintln "$GREEN" "    ╚══════════════════════════════════════════════════════════╝"
     echo ""
-
     cprintln "$WHITE" "   Installed for:"
     for i in $indices; do
         local name=$(get_platform_name $i)
         local path=$(get_platform_path $i)
         local loc="$TARGET_DIR/$path"
-
         cprint "$BRIGHT_GREEN" "     ✓ "
         cprint "$WHITE" "$name"
         cprintln "$DIM" " → $loc"
     done
-
     echo ""
     cprintln "$BRIGHT_CYAN$BOLD" "   Get started:"
     cprintln "$WHITE" "     /q0-init        Initialize FPF in your project"
@@ -578,94 +482,29 @@ print_success() {
     echo ""
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CLI Mode (non-interactive)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-print_usage() {
-    echo "Quint Code Installer"
-    echo ""
-    echo "Usage:"
-    echo "  ./install.sh              Interactive TUI mode"
-    echo "  ./install.sh --claude     Install Claude Code only"
-    echo "  ./install.sh --all        Install all platforms"
-    echo "  ./install.sh --uninstall  Uninstall mode"
-    echo ""
-    echo "Platforms:"
-    echo "  --claude    Claude Code (.claude/commands/)"
-    echo "  --cursor    Cursor (.cursor/commands/)"
-    echo "  --gemini    Gemini CLI (.gemini/commands/)"
-    echo ""
-    echo "Options:"
-    echo "  -u, --uninstall  Remove commands instead of installing"
-    echo "  -h, --help       Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  ./install.sh --all             Install all platforms (local)"
-    echo "  ./install.sh --uninstall --all Uninstall all platforms (local)"
-    echo "  ./install.sh -u --cursor       Uninstall Cursor"
-    echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════════════════════════════════════
-
 main() {
     local cli_mode=false
-
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -h|--help)
-                print_usage
-                exit 0
-                ;; 
-            -u|--uninstall)
-                UNINSTALL_MODE=true
-                shift
-                ;; 
-            --claude)
-                cli_mode=true
-                SELECTED[0]=1
-                shift
-                ;; 
-            --cursor)
-                cli_mode=true
-                SELECTED[1]=1
-                shift
-                ;; 
-            --gemini)
-                cli_mode=true
-                SELECTED[2]=1
-                shift
-                ;; 
-            --all)
-                cli_mode=true
-                SELECTED=(1 1 1)
-                shift
-                ;; 
-            *)
-                TARGET_DIR="$1"
-                shift
-                ;; 
+            -h|--help) print_usage; exit 0;;
+            -u|--uninstall) UNINSTALL_MODE=true; shift;;
+            --claude) cli_mode=true; SELECTED[0]=1; shift;;
+            --cursor) cli_mode=true; SELECTED[1]=1; shift;;
+            --gemini) cli_mode=true; SELECTED[2]=1; shift;;
+            --all) cli_mode=true; SELECTED=(1 1 1); shift;;
+            *) TARGET_DIR="$1"; shift;;
         esac
     done
 
-    # Check if running interactively
-    # Run TUI if interactive (either direct terminal or curl|bash with /dev/tty)
     if [[ "$cli_mode" == false ]]; then
         if [[ -t 0 && -t 1 ]] || [[ -c /dev/tty ]]; then
             run_tui
         fi
     fi
 
-    # Check if any platform selected
     local any_selected=false
     for sel in "${SELECTED[@]}"; do
-        if [[ "$sel" == "1" ]]; then
-            any_selected=true
-            break
-        fi
+        if [[ "$sel" == "1" ]]; then any_selected=true; break; fi
     done
 
     if [[ "$any_selected" == false ]]; then

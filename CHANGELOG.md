@@ -5,13 +5,58 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2025-12-16
+
+### Breaking Changes: The `.quint` Migration
+
+**FPF project directory renamed from `.fpf` to `.quint`.**
+
+### Why?
+- **Consistency:** Aligns the hidden directory with the project name "Quint Code".
+- **Clarity:** Reduces confusion between the framework (FPF) and the tool (Quint).
+- **Safety:** Prevents collisions if other tools implement the FPF framework differently.
+
+### Added
+- **MCP Hardening (Role Assignments & Evidence Anchors):**
+  - **Explicit RoleAssignment (A.2.1):** Introduced `RoleAssignment` struct in `src/mcp/fsm.go` to bind `SessionID` (Holder) to `Role` within a `Context`. This prevents role spoofing and tracks agent activity. Updated `src/mcp/main.go` and `src/mcp/server.go` to pass this context.
+  - **Evidence Anchoring for Transitions (A.10):** Implemented `EvidenceStub` in `src/mcp/fsm.go` and integrated it into `fsm.CanTransition`. Critical state transitions (Deduction, Induction, Decision) now require explicit evidence artifacts (URI, Type, Description) as proof of action, satisfying **Evidence Graph Referring**.
+- **Installer & Distribution Improvements:**
+  - **Pre-built Binary Download:** `install.sh` now attempts to download `quint-mcp` binaries directly from GitHub Releases (based on OS/architecture) for a faster, more robust installation. Falls back to `go build` if Go is present and download fails.
+  - **Release Automation:** Added `.github/workflows/release.yml` to automatically build and publish `quint-mcp` binaries for multiple platforms on GitHub tag pushes, ensuring consistent distribution.
+
+### Changed
+- **Directory Structure:**
+  - `.fpf/` → `.quint/`
+  - `src/mcp/.fpf/` → `src/mcp/.quint/`
+- **Database:** `fpf.db` → `quint.db` inside the `.quint/` directory.
+- **Config:** All paths in configuration files and scripts now point to `.quint`.
+
+### Added
+- **Migration Support:** The new `/q-actualize` command handles the migration of existing projects.
+
+### New Command: `/q-actualize`
+
+**Purpose:** Synchronize project state, migrate legacy structures, and reconcile evidence with codebase changes.
+
+#### Capabilities
+- **Migration:** Automatically renames `.fpf` to `.quint` and migrates the database.
+- **Reconciliation:** Scans for "drift" — e.g., code files referenced in evidence that have changed since the evidence was recorded.
+- **Discovery:** Identifies new context (files, tech stack changes) that should be added to `.quint/context.md`.
+
+#### Usage
+```bash
+/q-actualize
+```
+
+---
+
 ## [3.4.0] - 2025-12-15
 
 ### Security: Executable Phase Gating
 
 #### Physics-First Enforcement (`/q1-hypothesize`)
 - **Vulnerability Closed:** Previous prompts used "soft" text instructions to prevent adding hypotheses mid-cycle, which "helpful" AI models would bypass.
-- **Executable Gate:** Now injects a bash script that checks `.fpf/session.md`. If the phase is locked (Deduction/Induction complete), the script exits with `1`.
+- **Executable Gate:** Now injects a bash script that checks `.quint/session.md`. If the phase is locked (Deduction/Induction complete), the script exits with `1`.
 - **Hard Stop:** The prompt explicitly instructs the AI to treat a script failure as a hard stop ("Physics says no"), preventing "helpfulness bias" overrides.
 
 ## [3.3.0] - 2025-12-15
@@ -21,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Smart Initialization (`/q0-init`)
 - **Self-Healing Capability:** The init command now detects incomplete FPF setups (e.g., legacy projects missing `context.md` from v2.x).
 - **Deterministic Diagnostic:** Injects a bash script to verify file existence before deciding actions, preventing AI "hallucinated" skips.
-- **Repair Mode:** If `.fpf/` exists but is incomplete, it triggers a surgical repair (generating only missing files) while preserving existing session data.
+- **Repair Mode:** If `.quint/` exists but is incomplete, it triggers a surgical repair (generating only missing files) while preserving existing session data.
 
 ## [3.2.0] - 2025-12-15
 
@@ -44,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added: Deep Reasoning Capabilities
 
 #### Context Slicing (A.2.6)
-- **Structured Context:** `.fpf/context.md` is now structured into explicit slices:
+- **Structured Context:** `.quint/context.md` is now structured into explicit slices:
   - **Slice: Grounding** (Infrastructure, Region)
   - **Slice: Tech Stack** (Language, Frameworks)
   - **Slice: Constraints** (Compliance, Budget, Team)
@@ -152,9 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Repository Context
 
-- **`.fpf/context.md`**: Created by `/fpf-0-init` to define the "Base Slice" (Tech Stack, Scale, Constraints).
+- **`.quint/context.md`**: Created by `/fpf-0-init` to define the "Base Slice" (Tech Stack, Scale, Constraints).
 - **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read this file to ground decisions.
-- **CLAUDE.md Update**: Instructions for Claude to check `.fpf/context.md` first.
+- **CLAUDE.md Update**: Instructions for Claude to check `.quint/context.md` first.
 
 #### Enhanced Hypothesis Structure
 
@@ -175,12 +220,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Smart `/fpf-0-init`**: Now scans the repository (package.json, Dockerfile, etc.) to infer tech stack.
 - **Interactive Interview**: Asks the user clarifying questions about Scale, Budget, and Constraints to build a robust Context.
-- **`.fpf/context.md`**: New foundational file that grounds all reasoning in the project's specific reality.
+- **`.quint/context.md`**: New foundational file that grounds all reasoning in the project's specific reality.
 
 #### Repository Context Integration
 
-- **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read `.fpf/context.md` to make decisions relevant.
-- **CLAUDE.md Update**: Instructions for Claude to check `.fpf/context.md` first.
+- **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read `.quint/context.md` to make decisions relevant.
+- **CLAUDE.md Update**: Instructions for Claude to check `.quint/context.md` first.
 
 #### Enhanced Hypothesis Structure
 
@@ -255,7 +300,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Project Configuration
 
-- **Optional `.fpf/config.yaml`** for project-level settings
+- **Optional `.quint/config.yaml`** for project-level settings
 - Configurable validity defaults by evidence type
 - Congruence penalty values customizable
 - Epistemic debt thresholds
@@ -415,7 +460,7 @@ Key design decisions:
 
 ### 1.0.0 → 2.0.0
 
-**Session file format changed.** Existing `.fpf/session.md` files should be updated to include:
+**Session file format changed.** Existing `.quint/session.md` files should be updated to include:
 
 - Phase Transitions Log table
 - Valid Phase Transitions diagram reference

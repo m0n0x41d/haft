@@ -514,13 +514,13 @@ main() {
     local cli_mode=false
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -h|--help) print_usage; exit 0;;
-            -u|--uninstall) UNINSTALL_MODE=true; shift;;
-            --claude) cli_mode=true; SELECTED[0]=1; shift;;
-            --cursor) cli_mode=true; SELECTED[1]=1; shift;;
-            --gemini) cli_mode=true; SELECTED[2]=1; shift;;
-            --all) cli_mode=true; SELECTED=(1 1 1); shift;;
-            *) TARGET_DIR="$1"; shift;;
+            -h|--help) print_usage; exit 0;; 
+            -u|--uninstall) UNINSTALL_MODE=true; shift;; 
+            --claude) cli_mode=true; SELECTED[0]=1; shift;; 
+            --cursor) cli_mode=true; SELECTED[1]=1; shift;; 
+            --gemini) cli_mode=true; SELECTED[2]=1; shift;; 
+            --all) cli_mode=true; SELECTED=(1 1 1); shift;; 
+            *) TARGET_DIR="$1"; shift;; 
         esac
     done
 

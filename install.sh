@@ -483,7 +483,16 @@ install_platforms() {
             (download_commands $i) &
             spinner $! "Installing $name commands"
             
-            # Agents are now included in download_commands
+            # Install Agents to Platform Directory (e.g., .claude/agents)
+            # Assumption: All platforms support an 'agents' subdirectory or we create it for structure
+            local platform_root=".${PLATFORMS[$i]}" # e.g. .claude
+            local agents_target="$TARGET_DIR/$platform_root/agents"
+            
+            # Copy agents from src/agents to platform agents dir
+            if [[ -d "src/agents" ]]; then
+                mkdir -p "$agents_target"
+                cp src/agents/*.md "$agents_target/"
+            fi
 
             installed_indices="$installed_indices $i"
         fi
@@ -496,13 +505,13 @@ install_platforms() {
         spinner $! "Creating .quint/ structure"
     fi
     
-    # Internal agent copy for MCP context lookup
-    if [[ -d "src/commands" ]]
+    # Internal agent copy for MCP context lookup (Kernel Knowledge)
+    if [[ -d "src/agents" ]]
     then
          (install_agents_internal "$TARGET_DIR") &
          spinner $! "Caching Agent Profiles in .quint"
     fi
-
+    
     # Attempt to download binary first
     cprintln "$DIM" "   Installing MCP Server..."
     

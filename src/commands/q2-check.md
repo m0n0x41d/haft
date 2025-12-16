@@ -13,12 +13,13 @@ Command: `./src/mcp/quint-mcp`
 
 ## Workflow
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action transition -target DEDUCTION -role Deductor
-```
-If this fails, STOP. (This transitions the system from Abduction -> Deduction).
+### 1. Phase Transition (Tool Use)
+Call the `quint_transition` tool:
+- `role`: "Deductor"
+- `target`: "DEDUCTION"
+- `evidence_type`: "hypothesis_generation_batch"
+- `evidence_uri`: ".quint/knowledge/L0" # Path to the L0 directory
+- `evidence_desc`: "L0 Hypotheses generated during Abduction phase."
 
 ### 2. Analysis
 Read all L0 hypotheses in `.quint/knowledge/L0/`.

@@ -131,25 +131,41 @@ func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *E
 	}
 
 	// 3. Evidence Anchoring (A.10)
-	if evidenceRequired(target) {
-		if evidence == nil || evidence.URI == "" {
-			return false, fmt.Sprintf("Transition to %s requires Evidence Anchor (A.10)", target)
-		}
-		// In a real implementation, we would verify the file exists at evidence.URI
+	if !validateEvidence(f.State.Phase, target, evidence) {
+		return false, fmt.Sprintf("Transition to %s requires valid Evidence Anchor (A.10) from %s", target, f.State.Phase)
 	}
 
 	return true, "OK"
 }
 
-func evidenceRequired(target Phase) bool {
-	// Entering Deduction requires an L0 hypothesis (Abduction -> Deduction)
-	// Entering Induction requires Deductive Analysis (Deduction -> Induction)
-	// Entering Decision requires Validation Results (Induction -> Decision)
-	switch target {
-	case PhaseDeduction, PhaseInduction, PhaseDecision:
-		return true
+// validateEvidence checks the evidence stub based on the transition
+func validateEvidence(fromPhase, toPhase Phase, evidence *EvidenceStub) bool {
+	if evidence == nil || evidence.URI == "" {
+		return false
 	}
-	return false
+
+	switch toPhase {
+	case PhaseDeduction: // Requires L0 hypotheses
+		// Check if evidence.URI points to a non-empty directory
+		info, err := os.Stat(evidence.URI)
+		if err != nil || !info.IsDir() {
+			return false
+		}
+		files, err := os.ReadDir(evidence.URI)
+		if err != nil || len(files) == 0 {
+			return false
+		}
+		return true
+
+	case PhaseInduction: // Requires L1 hypothesis or Deductive Analysis
+		// Check if evidence.URI points to an L1 hypothesis file
+		return strings.Contains(evidence.URI, "knowledge/L1/") && filepath.Ext(evidence.URI) == ".md" // Simplistic check
+	
+	case PhaseDecision: // Requires L2 hypothesis or Inductive Analysis
+		// Check if evidence.URI points to an L2 hypothesis file
+		return strings.Contains(evidence.URI, "knowledge/L2/") && filepath.Ext(evidence.URI) == ".md" // Simplistic check
+	}
+	return true // No specific evidence required for other transitions for now
 }
 
 func isValidRoleForPhase(phase Phase, role Role) bool {

@@ -18,10 +18,10 @@ You do not manage state files directly. You interface with the **Quint MCP Serve
 
 ## Workflow
 
-### 1. State Verification
+### 2. State Verification
 Run:
 ```bash
-./src/mcp/quint-mcp -action check -role Abductor
+.quint/bin/quint-core -action check -role Abductor
 ```
 If this fails, STOP. Report the error.
 

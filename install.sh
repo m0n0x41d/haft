@@ -387,7 +387,7 @@ uninstall_commands() {
 configure_mcp() {
     local target_dir="$1"
     local config_path="$target_dir/.mcp.json" # Project-local config
-    local mcp_binary="$target_dir/.quint/bin/quint-mcp"
+    local mcp_binary="$target_dir/.quint/bin/quint-core"
     
     # Ensure absolute path for binary
     if [[ "$mcp_binary" != /* ]]; then
@@ -395,7 +395,7 @@ configure_mcp() {
     fi
 
     # JSON snippet to merge
-    local server_json="{\"quint-code\":{\"command\":\"$mcp_binary\",\"args\":[],\"env\":{}}}"
+    local server_json="{\"quint-code\":{\"command\":\"$mcp_binary\",\"args\":[\"-mode\",\"mcp-server\"],\"env\":{}}}"
 
     if [[ -f "$config_path" ]]; then
         cprintln "$DIM" "   Merging MCP config into $config_path..."
@@ -434,7 +434,7 @@ with open('$config_path', 'w') as f:
   "mcpServers": {
     "quint-code": {
       "command": "$mcp_binary",
-      "args": [],
+      "args": ["-mode", "mcp-server"],
       "env": {}
     }
   }

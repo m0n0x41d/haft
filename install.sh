@@ -299,12 +299,9 @@ download_commands() {
     fi
 
     local local_dist="$script_dir/dist/$platform"
-    local base_url="https://raw.githubusercontent.com/m0n0x41d/quint-code/$BRANCH/dist/$platform"
-
     local commands=(
         "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
-        "q-status" "q-query" "q-decay" "q-reset"
-        "abductor" "deductor" "inductor" "decider" "auditor"
+        "q-status" "q-query" "q-decay" "q-reset" "q-actualize"
     )
 
     for cmd in "${commands[@]}"; do
@@ -352,7 +349,7 @@ uninstall_commands() {
     local target_path=$(get_platform_path $index)
     local commands=(
         "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
-        "q-status" "q-query" "q-decay" "q-reset"
+        "q-status" "q-query" "q-decay" "q-reset" "q-actualize"
         "abductor" "deductor" "inductor" "decider" "auditor"
     )
     local local_path="$TARGET_DIR/$target_path"
@@ -387,24 +384,63 @@ uninstall_commands() {
     fi
 }
 
-generate_mcp_config() {
+configure_mcp() {
     local target_dir="$1"
-    local config_path="$target_dir/quint-mcp.json"
+    local config_path="$target_dir/.mcp.json" # Project-local config
     local mcp_binary="$target_dir/.quint/bin/quint-mcp"
-    local abs_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
+    
+    # Ensure absolute path for binary
+    if [[ "$mcp_binary" != /* ]]; then
+        mcp_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
+    fi
 
-    cat <<EOF > "$config_path"
+    # JSON snippet to merge
+    local server_json="{\"quint-code\":{\"command\":\"$mcp_binary\",\"args\":[],\"env\":{}}}"
+
+    if [[ -f "$config_path" ]]; then
+        cprintln "$DIM" "   Merging MCP config into $config_path..."
+        
+        # Use python3 to merge JSON reliably without jq
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -c "
+import json
+import os
+
+try:
+    with open('$config_path', 'r') as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+
+if 'mcpServers' not in data:
+    data['mcpServers'] = {}
+
+new_server = json.loads('$server_json')
+data['mcpServers'].update(new_server)
+
+with open('$config_path', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+        else
+            # Fallback if python3 is missing (unlikely on macOS/Linux devs, but safe)
+            cprintln "$YELLOW" "   ⚠ Python3 not found. Cannot merge JSON automatically."
+            cprintln "$WHITE" "   Please add this to $config_path manually:"
+            echo "\"mcpServers\": $server_json"
+        fi
+    else
+        cprintln "$DIM" "   Creating new MCP config at $config_path..."
+        cat <<EOF > "$config_path"
 {
   "mcpServers": {
     "quint-code": {
-      "command": "$abs_binary",
+      "command": "$mcp_binary",
       "args": [],
       "env": {}
     }
   }
 }
 EOF
-    echo "$config_path"
+    fi
 }
 
 install_agents_internal() {
@@ -520,8 +556,7 @@ install_platforms() {
         # This is a bit tricky with spinner since download_mcp_binary is a function
         # We'll just assume it worked if exit code 0
         cprintln "$GREEN" "   ✓ Downloaded pre-built quint-mcp binary"
-        local config_file=$(generate_mcp_config "$TARGET_DIR")
-        cprintln "$DIM" "   Generated MCP config: $config_file"
+        configure_mcp "$TARGET_DIR"
     else
         cprintln "$YELLOW" "   ⚠  Could not download pre-built binary. Falling back to source build..."
         
@@ -539,8 +574,7 @@ install_platforms() {
                 (cd "$src_mcp" && go mod tidy) &>/dev/null || true
                 (cd "$src_mcp" && go build -o "$TARGET_DIR/.quint/bin/quint-mcp" .) &
                 spinner $! "Compiling quint-mcp binary"
-                local config_file=$(generate_mcp_config "$TARGET_DIR")
-                cprintln "$DIM" "   Generated MCP config: $config_file"
+                configure_mcp "$TARGET_DIR"
             else
                 cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
             fi

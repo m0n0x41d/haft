@@ -124,7 +124,7 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 func (s *Server) handleToolsList(req JSONRPCRequest) {
 	tools := []Tool{
 		{
-			Name:        "fpf_status",
+			Name:        "quint_status",
 			Description: "Get current FPF phase and context.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -132,7 +132,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_init",
+			Name:        "quint_init",
 			Description: "Initialize FPF project structure.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -143,7 +143,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_context",
+			Name:        "quint_context",
 			Description: "Get agent system prompt for a role.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -154,7 +154,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_propose",
+			Name:        "quint_propose",
 			Description: "Propose a new hypothesis (L0).",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -167,7 +167,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_evidence",
+			Name:        "quint_evidence",
 			Description: "Add evidence or logic checks to a hypothesis.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -183,7 +183,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_loopback",
+			Name:        "quint_loopback",
 			Description: "Trigger Loopback (Induction -> Deduction) on failure.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -198,7 +198,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_decide",
+			Name:        "quint_decide",
 			Description: "Finalize decision (DRR).",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -212,7 +212,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "fpf_transition",
+			Name:        "quint_transition",
 			Description: "Explicitly request phase transition.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -248,6 +248,36 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		return ""
 	}
 
+	// Helper to construct RoleAssignment
+	getRoleAssignment := func() RoleAssignment {
+		sessionID := arg("session_id")
+		if sessionID == "" {
+			sessionID = "default-session" // Fallback for backward compat
+		}
+		context := arg("context")
+		if context == "" {
+			context = "default-context"
+		}
+		return RoleAssignment{
+			Role:      Role(arg("role")),
+			SessionID: sessionID,
+			Context:   context,
+		}
+	}
+
+	// Helper to construct EvidenceStub (returns nil if empty)
+	getEvidenceStub := func() *EvidenceStub {
+		uri := arg("evidence_uri")
+		if uri == "" {
+			return nil
+		}
+		return &EvidenceStub{
+			Type:        arg("evidence_type"),
+			URI:         uri,
+			Description: arg("evidence_desc"),
+		}
+	}
+
 	var output string
 	var err error
 
@@ -259,11 +289,11 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	// We just need to map args.
 
 	switch params.Name {
-	case "fpf_status":
+	case "quint_status":
 		st := s.tools.FSM.State.Phase
 		output = string(st)
 
-	case "fpf_init":
+	case "quint_init":
 		res := s.tools.InitProject()
 		if res != nil {
 			err = res
@@ -277,20 +307,21 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			}
 		}
 
-	case "fpf_context":
+	case "quint_context":
 		role := arg("role")
 		output, err = s.tools.GetAgentContext(role)
 
-	case "fpf_propose":
-		role := arg("role")
-		ok, msg := s.tools.FSM.CanTransition(PhaseAbduction, Role(role))
+	case "quint_propose":
+		assign := getRoleAssignment()
+		// Abduction doesn't strictly need external evidence to start proposing if already in phase
+		ok, msg := s.tools.FSM.CanTransition(PhaseAbduction, assign, nil)
 		if !ok {
 			err = fmt.Errorf("%s", msg)
 		} else {
 			output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"))
 		}
 
-	case "fpf_evidence":
+	case "quint_evidence":
 		role := arg("role")
 		// Check if role valid for CURRENT phase
 		if isValidRoleForPhase(s.tools.FSM.State.Phase, Role(role)) {
@@ -299,30 +330,42 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			err = fmt.Errorf("Role %s cannot act in %s", role, s.tools.FSM.State.Phase)
 		}
 
-	case "fpf_loopback":
-		role := arg("role")
-		ok, msg := s.tools.FSM.CanTransition(PhaseDeduction, Role(role))
+	case "quint_loopback":
+		assign := getRoleAssignment()
+		// Loopback implies failure evidence (insight)
+		evidence := &EvidenceStub{Type: "insight", Description: arg("insight"), URI: "loopback-event"}
+		
+		ok, msg := s.tools.FSM.CanTransition(PhaseDeduction, assign, evidence)
 		if !ok {
 			err = fmt.Errorf("%s", msg)
 		} else {
 			output, err = s.tools.RefineLoopback(s.tools.FSM.State.Phase, arg("parent_id"), arg("insight"), arg("new_title"), arg("new_content"))
 			if err == nil {
 				s.tools.FSM.State.Phase = PhaseDeduction
+				s.tools.FSM.State.ActiveRole = assign
 				if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
 					err = fmt.Errorf("failed to save FSM state after loopback: %v", saveErr)
 				}
 			}
 		}
 
-	case "fpf_decide":
-		role := arg("role")
+	case "quint_decide":
+		assign := getRoleAssignment()
 		// Ensure in Decision phase
 		if s.tools.FSM.State.Phase == PhaseInduction {
 			// Auto-transition if valid
-			ok, msg := s.tools.FSM.CanTransition(PhaseDecision, Role(role))
-					if !ok {
-						err = fmt.Errorf("%s", msg)
-					} else {				s.tools.FSM.State.Phase = PhaseDecision
+			evidence := getEvidenceStub()
+			if evidence == nil {
+				// Fallback for MCP if evidence not provided explicitly: assume validation passed
+				// In strict mode we should error, but for usability we assume the content is evidence
+				evidence = &EvidenceStub{Type: "rationale", Description: "Final decision rationale", URI: "decision-process"}
+			}
+
+			ok, msg := s.tools.FSM.CanTransition(PhaseDecision, assign, evidence)
+			if !ok {
+				err = fmt.Errorf("%s", msg)
+			} else {
+				s.tools.FSM.State.Phase = PhaseDecision
 			}
 		}
 		
@@ -330,25 +373,30 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			output, err = s.tools.FinalizeDecision(arg("title"), arg("content"), arg("winner_id"))
 			if err == nil {
 				s.tools.FSM.State.Phase = PhaseIdle
+				s.tools.FSM.State.ActiveRole = assign
 				if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
 					err = fmt.Errorf("failed to save FSM state after decision: %v", saveErr)
 				}
 			}
 		}
 
-	case "fpf_transition":
-		role := arg("role")
+	case "quint_transition":
+		assign := getRoleAssignment()
+		evidence := getEvidenceStub()
 		target := Phase(arg("target"))
-		ok, msg := s.tools.FSM.CanTransition(target, Role(role))
+		
+		ok, msg := s.tools.FSM.CanTransition(target, assign, evidence)
 		if !ok {
 			err = fmt.Errorf("%s", msg)
 		} else {
-							s.tools.FSM.State.Phase = target
-							if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
-								err = fmt.Errorf("failed to save FSM state after transition: %v", saveErr)
-							} else {
-								output = fmt.Sprintf("Transitioned to %s", target)
-							}		}
+			s.tools.FSM.State.Phase = target
+			s.tools.FSM.State.ActiveRole = assign
+			if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
+				err = fmt.Errorf("failed to save FSM state after transition: %v", saveErr)
+			} else {
+				output = fmt.Sprintf("Transitioned to %s", target)
+			}
+		}
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

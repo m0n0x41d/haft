@@ -246,6 +246,43 @@ spinner() {
     printf "\r   ${GREEN}✓${RESET} %s\n" "$message"
 }
 
+get_os_arch() {
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch=$(uname -m)
+
+    case "$arch" in
+        x86_64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) arch="unknown" ;;
+    esac
+
+    echo "${os}-${arch}"
+}
+
+download_mcp_binary() {
+    local target_dir="$1"
+    local os_arch=$(get_os_arch)
+    local binary_name="quint-mcp-${os_arch}"
+    
+    # Try to get latest tag if possible, otherwise use 'latest' logic or specific version
+    # Since we can't easily parse JSON with just bash without jq, we might try a direct download 
+    # of a specific version if known, or try 'latest/download' convention.
+    
+    # URL Convention: https://github.com/m0n0x41d/quint-code/releases/latest/download/quint-mcp-darwin-arm64
+    local url="${REPO_URL}/releases/latest/download/${binary_name}"
+    
+    local dest_dir="$target_dir/.quint/bin"
+    mkdir -p "$dest_dir"
+    local dest_file="$dest_dir/quint-mcp"
+
+    if curl -fsSL "$url" -o "$dest_file"; then
+        chmod +x "$dest_file"
+        return 0
+    else
+        return 1
+    fi
+}
+
 download_commands() {
     local index=$1
     local platform="${PLATFORMS[$index]}"
@@ -289,23 +326,23 @@ download_commands() {
     done
 }
 
-create_fpf_structure() {
+create_quint_structure() {
     local target="$1"
-    mkdir -p "$target/.fpf/evidence"
-    mkdir -p "$target/.fpf/decisions"
-    mkdir -p "$target/.fpf/sessions"
-    mkdir -p "$target/.fpf/knowledge/L0"
-    mkdir -p "$target/.fpf/knowledge/L1"
-    mkdir -p "$target/.fpf/knowledge/L2"
-    mkdir -p "$target/.fpf/knowledge/invalid"
-    mkdir -p "$target/.fpf/agents"
-    touch "$target/.fpf/evidence/.gitkeep"
-    touch "$target/.fpf/decisions/.gitkeep"
-    touch "$target/.fpf/sessions/.gitkeep"
-    touch "$target/.fpf/knowledge/L0/.gitkeep"
-    touch "$target/.fpf/knowledge/L1/.gitkeep"
-    touch "$target/.fpf/knowledge/L2/.gitkeep"
-    touch "$target/.fpf/knowledge/invalid/.gitkeep"
+    mkdir -p "$target/.quint/evidence"
+    mkdir -p "$target/.quint/decisions"
+    mkdir -p "$target/.quint/sessions"
+    mkdir -p "$target/.quint/knowledge/L0"
+    mkdir -p "$target/.quint/knowledge/L1"
+    mkdir -p "$target/.quint/knowledge/L2"
+    mkdir -p "$target/.quint/knowledge/invalid"
+    mkdir -p "$target/.quint/agents"
+    touch "$target/.quint/evidence/.gitkeep"
+    touch "$target/.quint/decisions/.gitkeep"
+    touch "$target/.quint/sessions/.gitkeep"
+    touch "$target/.quint/knowledge/L0/.gitkeep"
+    touch "$target/.quint/knowledge/L1/.gitkeep"
+    touch "$target/.quint/knowledge/L2/.gitkeep"
+    touch "$target/.quint/knowledge/invalid/.gitkeep"
 }
 
 uninstall_commands() {
@@ -353,7 +390,7 @@ uninstall_commands() {
 generate_mcp_config() {
     local target_dir="$1"
     local config_path="$target_dir/quint-mcp.json"
-    local mcp_binary="$target_dir/.fpf/bin/quint-mcp"
+    local mcp_binary="$target_dir/.quint/bin/quint-mcp"
     local abs_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
 
     cat <<EOF > "$config_path"
@@ -371,9 +408,9 @@ EOF
 }
 
 install_agents_internal() {
-    # Copies agent profiles to .fpf/agents for MCP use
+    # Copies agent profiles to .quint/agents for MCP use
     local target="$1"
-    local agents_dir="$target/.fpf/agents"
+    local agents_dir="$target/.quint/agents"
     mkdir -p "$agents_dir"
     
     local script_dir=""
@@ -453,41 +490,54 @@ install_platforms() {
         ((i++))
     done
 
-    if [[ ! -d "$TARGET_DIR/.fpf" ]]
+    if [[ ! -d "$TARGET_DIR/.quint" ]]
     then
-        (create_fpf_structure "$TARGET_DIR") &
-        spinner $! "Creating .fpf/ structure"
+        (create_quint_structure "$TARGET_DIR") &
+        spinner $! "Creating .quint/ structure"
     fi
     
     # Internal agent copy for MCP context lookup
     if [[ -d "src/commands" ]]
     then
          (install_agents_internal "$TARGET_DIR") &
-         spinner $! "Caching Agent Profiles in .fpf"
+         spinner $! "Caching Agent Profiles in .quint"
     fi
 
-    if command -v go >/dev/null 2>&1
-    then
-        cprintln "$DIM" "   Building MCP Server..."
-        mkdir -p "$TARGET_DIR/.fpf/bin"
-        local src_mcp="$TARGET_DIR/src/mcp"
-        if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]
-        then
-             src_mcp="$(dirname "${BASH_SOURCE[0]}")/src/mcp"
-        fi
-
-        if [[ -d "$src_mcp" ]]
-        then
-            (cd "$src_mcp" && go mod tidy) &>/dev/null || true
-            (cd "$src_mcp" && go build -o "$TARGET_DIR/.fpf/bin/quint-mcp" .) &
-            spinner $! "Compiling quint-mcp binary"
-            local config_file=$(generate_mcp_config "$TARGET_DIR")
-            cprintln "$DIM" "   Generated MCP config: $config_file"
-        else
-            cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
-        fi
+    # Attempt to download binary first
+    cprintln "$DIM" "   Installing MCP Server..."
+    
+    # Run in background to use spinner
+    if (download_mcp_binary "$TARGET_DIR") >/dev/null 2>&1; then
+        # This is a bit tricky with spinner since download_mcp_binary is a function
+        # We'll just assume it worked if exit code 0
+        cprintln "$GREEN" "   ✓ Downloaded pre-built quint-mcp binary"
+        local config_file=$(generate_mcp_config "$TARGET_DIR")
+        cprintln "$DIM" "   Generated MCP config: $config_file"
     else
-        cprintln "$YELLOW" "   ⚠  Go not found. MCP Server not built. (Install Go to enable FSM enforcement)"
+        cprintln "$YELLOW" "   ⚠  Could not download pre-built binary. Falling back to source build..."
+        
+        if command -v go >/dev/null 2>&1
+        then
+            mkdir -p "$TARGET_DIR/.quint/bin"
+            local src_mcp="$TARGET_DIR/src/mcp"
+            if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]
+            then
+                 src_mcp="$(dirname "${BASH_SOURCE[0]}")/src/mcp"
+            fi
+
+            if [[ -d "$src_mcp" ]]
+            then
+                (cd "$src_mcp" && go mod tidy) &>/dev/null || true
+                (cd "$src_mcp" && go build -o "$TARGET_DIR/.quint/bin/quint-mcp" .) &
+                spinner $! "Compiling quint-mcp binary"
+                local config_file=$(generate_mcp_config "$TARGET_DIR")
+                cprintln "$DIM" "   Generated MCP config: $config_file"
+            else
+                cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
+            fi
+        else
+            cprintln "$YELLOW" "   ⚠  Go not found. MCP Server not built. (Install Go to enable FSM enforcement)"
+        fi
     fi
 
     echo ""

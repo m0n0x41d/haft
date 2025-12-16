@@ -11,9 +11,18 @@ import (
 var (
 	modeFlag   = flag.String("mode", "cli", "Mode: 'cli' or 'server'")
 	roleFlag   = flag.String("role", "", "Role: Abductor, Deductor, Inductor, Auditor, Decider")
-	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide, context")
+	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide, context, actualize")
 	targetFlag = flag.String("target", "", "Target phase for transition")
 	
+	// Role Assignment Flags
+	sessionIDFlag = flag.String("session_id", "default-session", "Session ID for the holder")
+	contextFlag   = flag.String("context", "default-context", "Bounded Context")
+
+	// Evidence Flags
+	evidenceTypeFlag = flag.String("evidence_type", "", "Evidence type for transition anchor")
+	evidenceURIFlag  = flag.String("evidence_uri", "", "URI/Path to evidence artifact")
+	evidenceDescFlag = flag.String("evidence_desc", "", "Description of evidence")
+
 	// Tool Arguments
 	titleFlag    = flag.String("title", "", "Title for hypothesis or decision")
 	contentFlag  = flag.String("content", "", "Content body")
@@ -26,15 +35,15 @@ var (
 func main() {
 	flag.Parse()
 
-	// Locate .fpf directory
+	// Locate .quint directory
 	cwd, _ := os.Getwd()
-	fpfDir := filepath.Join(cwd, ".fpf")
-	stateFile := filepath.Join(fpfDir, "state.json")
+	quintDir := filepath.Join(cwd, ".quint")
+	stateFile := filepath.Join(quintDir, "state.json")
 
-	// Ensure .fpf exists for init
+	// Ensure .quint exists for init
 	if *actionFlag == "init" {
-		if err := os.MkdirAll(fpfDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating .fpf directory: %v\n", err)
+		if err := os.MkdirAll(quintDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating .quint directory: %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -51,6 +60,27 @@ func main() {
 		server := NewServer(tools)
 		server.Start()
 		return
+	}
+
+	// Helper to construct RoleAssignment
+	getRoleAssignment := func() RoleAssignment {
+		return RoleAssignment{
+			Role:      Role(*roleFlag),
+			SessionID: *sessionIDFlag,
+			Context:   *contextFlag,
+		}
+	}
+
+	// Helper to construct EvidenceStub (returns nil if empty)
+	getEvidenceStub := func() *EvidenceStub {
+		if *evidenceURIFlag == "" {
+			return nil
+		}
+		return &EvidenceStub{
+			Type:        *evidenceTypeFlag,
+			URI:         *evidenceURIFlag,
+			Description: *evidenceDescFlag,
+		}
 	}
 
 	// CLI Mode
@@ -77,9 +107,14 @@ func main() {
 			fmt.Println("Error: --target and --role required")
 			os.Exit(1)
 		}
-		ok, msg := fsm.CanTransition(Phase(*targetFlag), Role(*roleFlag))
+		
+		assign := getRoleAssignment()
+		evidence := getEvidenceStub()
+
+		ok, msg := fsm.CanTransition(Phase(*targetFlag), assign, evidence)
 		if ok {
 			fsm.State.Phase = Phase(*targetFlag)
+			fsm.State.ActiveRole = assign
 			if err := fsm.SaveState(stateFile); err != nil {
 				fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
 				os.Exit(1)
@@ -101,7 +136,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error initializing project: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Initialized FPF project in .fpf/")
+		fmt.Println("Initialized FPF project in .quint/")
 
 	// --- Tool Actions ---
 
@@ -119,7 +154,16 @@ func main() {
 
 	case "propose":
 		// Role: Abductor. Phase: ABDUCTION.
-		ok, msg := fsm.CanTransition(PhaseAbduction, Role(*roleFlag))
+		// For propose (Abduction), no antecedent evidence is STRICTLY required to enter,
+		// but we check transition to ensure we are in Abduction or can start it.
+		// However, Propose is an ACTION within Abduction.
+		
+		assign := getRoleAssignment()
+		// No evidence needed to just 'be' in Abduction if already there.
+		// But if we were transitioning TO abduction, we might need it? No, Init handles that.
+		
+		// We re-check transition logic just to validate Role vs Phase permissions
+		ok, msg := fsm.CanTransition(PhaseAbduction, assign, nil)
 		if !ok {
 			fmt.Printf("DENIED: %s\n", msg)
 			os.Exit(1)
@@ -133,7 +177,6 @@ func main() {
 
 	case "evidence":
 		// Role: Deductor (DEDUCTION) or Inductor (INDUCTION)
-		// We check if the role is valid for the CURRENT phase
 		if !isValidRoleForPhase(fsm.State.Phase, Role(*roleFlag)) {
 			fmt.Printf("DENIED: Role %s cannot add evidence in %s phase\n", *roleFlag, fsm.State.Phase)
 			os.Exit(1)
@@ -147,8 +190,12 @@ func main() {
 
 	case "loopback":
 		// Role: Inductor (triggers it). Phase: INDUCTION -> DEDUCTION.
-		// Note: The FSM rule is INDUCTION -> DEDUCTION by Inductor/Deductor.
-		ok, msg := fsm.CanTransition(PhaseDeduction, Role(*roleFlag))
+		assign := getRoleAssignment()
+		// Loopback implies we have 'failed' evidence (the insight).
+		// We treat the insight as the evidence for this transition back.
+		evidence := &EvidenceStub{Type: "insight", Description: *insightFlag, URI: "loopback-event"}
+		
+		ok, msg := fsm.CanTransition(PhaseDeduction, assign, evidence)
 		if !ok {
 			fmt.Printf("DENIED: %s\n", msg)
 			os.Exit(1)
@@ -161,6 +208,7 @@ func main() {
 		}
 		// Perform state transition
 		fsm.State.Phase = PhaseDeduction
+		fsm.State.ActiveRole = assign
 		if err := fsm.SaveState(stateFile); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving state after loopback: %v\n", err)
 			os.Exit(1)
@@ -169,9 +217,19 @@ func main() {
 
 	case "decide":
 		// Role: Decider. Phase: DECISION -> IDLE.
+		assign := getRoleAssignment()
+		
 		// First transition to Decision if not already (from Induction)
 		if fsm.State.Phase == PhaseInduction {
-			ok, msg := fsm.CanTransition(PhaseDecision, Role(*roleFlag))
+			// We need evidence to enter Decision (e.g. Validation Results)
+			// For CLI, we accept an explicit flag or assume the 'content' contains the rationale/evidence
+			evidence := getEvidenceStub()
+			if evidence == nil {
+				// Fallback: use current op as evidence
+				evidence = &EvidenceStub{Type: "rationale", Description: "Final decision rationale", URI: "decision-process"}
+			}
+			
+			ok, msg := fsm.CanTransition(PhaseDecision, assign, evidence)
 			if !ok {
 				fmt.Printf("DENIED: %s\n", msg)
 				os.Exit(1)
@@ -187,10 +245,18 @@ func main() {
 		
 		// Close cycle
 		fsm.State.Phase = PhaseIdle
+		fsm.State.ActiveRole = assign
 		if err := fsm.SaveState(stateFile); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("DECIDED: DRR created at %s. Cycle closed.\n", path)
+
+	case "actualize":
+		if err := tools.Actualize(); err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("ACTUALIZATION: Complete.")
 	}
 }

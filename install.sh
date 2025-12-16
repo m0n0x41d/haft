@@ -157,7 +157,8 @@ print_summary() {
 
     local i=0
     for platform in "${PLATFORMS[@]}"; do
-        if is_selected $i; then
+        if is_selected $i;
+        then
             ((count++))
             [[ -n "$platforms_str" ]] && platforms_str+=", "
             platforms_str+=$(get_platform_name $i)
@@ -183,7 +184,7 @@ handle_input() {
     IFS= read -rsn1 key </dev/tty
 
     case "$key" in
-        $'\x1b')  # Escape sequence start
+        $''\x1b')  # Escape sequence start
             local seq
             read -rsn1 -t 1 seq </dev/tty
             if [[ "$seq" == "[" ]]; then
@@ -191,32 +192,32 @@ handle_input() {
                 case "$seq" in
                     'A') # Up arrow
                         ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--))
-                        ;;
+                        ;; 
                     'B') # Down arrow
                         ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++))
-                        ;;
+                        ;; 
                 esac
             fi
-            ;;
+            ;; 
         ' ')  # Space - toggle
             if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]; then
                 SELECTED[$CURRENT_INDEX]=0
             else
                 SELECTED[$CURRENT_INDEX]=1
             fi
-            ;;
+            ;; 
         '')  # Enter - confirm
             return 1
-            ;;
+            ;; 
         'q'|'Q')  # Quit
             return 2
-            ;;
+            ;; 
         'k')  # vim up
             ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--))
-            ;;
+            ;; 
         'j')  # vim down
             ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++))
-            ;;
+            ;; 
     esac
 
     return 0
@@ -324,6 +325,7 @@ create_fpf_structure() {
     mkdir -p "$target/.fpf/knowledge/L1"
     mkdir -p "$target/.fpf/knowledge/L2"
     mkdir -p "$target/.fpf/knowledge/invalid"
+    mkdir -p "$target/.fpf/agents"
 
     touch "$target/.fpf/evidence/.gitkeep"
     touch "$target/.fpf/decisions/.gitkeep"
@@ -390,6 +392,52 @@ uninstall_commands() {
     fi
 }
 
+generate_mcp_config() {
+    local target_dir="$1"
+    local config_path="$target_dir/quint-mcp.json"
+    local mcp_binary="$target_dir/.fpf/bin/quint-mcp"
+    
+    # Get absolute path
+    local abs_binary
+    abs_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
+
+    cat <<EOF > "$config_path"
+{
+  "mcpServers": {
+    "quint-code": {
+      "command": "$abs_binary",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+EOF
+    echo "$config_path"
+}
+
+# Install default agent profiles from repo source to target .fpf/agents
+install_agents() {
+    local target="$1"
+    local agents_dir="$target/.fpf/agents"
+    mkdir -p "$agents_dir"
+
+    # Assume we are running from repo root or curl pipe where src is available?
+    # If curl pipe, we might not have source files easily accessible unless we download them.
+    # For now, let's assume local install or minimal bootstrapping. 
+    # To be robust, we should download them if not present.
+    
+    local script_dir=""
+    if [[ -n "${BASH_SOURCE[0]}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    
+    local src_agents="$script_dir/src/agents"
+    if [[ -d "$src_agents" ]]; then
+        cp "$src_agents"/*.md "$agents_dir/" 2>/dev/null || true
+        cp "$src_agents"/*.json "$agents_dir/" 2>/dev/null || true
+    fi
+}
+
 uninstall_platforms() {
     echo ""
     cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
@@ -399,7 +447,8 @@ uninstall_platforms() {
 
     local i=0
     for platform in "${PLATFORMS[@]}"; do
-        if is_selected $i; then
+        if is_selected $i;
+        then
             local name=$(get_platform_name $i)
 
             local result
@@ -443,7 +492,8 @@ install_platforms() {
 
     local i=0
     for platform in "${PLATFORMS[@]}"; do
-        if is_selected $i; then
+        if is_selected $i;
+        then
             local name=$(get_platform_name $i)
 
             (download_commands $i) &
@@ -459,6 +509,12 @@ install_platforms() {
         (create_fpf_structure "$TARGET_DIR") &
         spinner $! "Creating .fpf/ structure"
     fi
+    
+    # Install Agents (Local copy if available)
+    if [[ -d ".fpf/agents" ]]; then
+         (install_agents "$TARGET_DIR") &
+         spinner $! "Installing Agent Profiles"
+    fi
 
     # Build MCP Server
     if command -v go >/dev/null 2>&1; then
@@ -472,8 +528,15 @@ install_platforms() {
         fi
 
         if [[ -d "$src_mcp" ]]; then
+            # Initialize go module if needed (e.g. fresh install)
+            (cd "$src_mcp" && go mod tidy) &>/dev/null || true
+            
             (cd "$src_mcp" && go build -o "$TARGET_DIR/.fpf/bin/quint-mcp" .) &
             spinner $! "Compiling quint-mcp binary"
+            
+            local config_file
+            config_file=$(generate_mcp_config "$TARGET_DIR")
+            cprintln "$DIM" "   Generated MCP config: $config_file"
         else
             cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
         fi
@@ -556,35 +619,35 @@ main() {
             -h|--help)
                 print_usage
                 exit 0
-                ;;
+                ;; 
             -u|--uninstall)
                 UNINSTALL_MODE=true
                 shift
-                ;;
+                ;; 
             --claude)
                 cli_mode=true
                 SELECTED[0]=1
                 shift
-                ;;
+                ;; 
             --cursor)
                 cli_mode=true
                 SELECTED[1]=1
                 shift
-                ;;
+                ;; 
             --gemini)
                 cli_mode=true
                 SELECTED[2]=1
                 shift
-                ;;
+                ;; 
             --all)
                 cli_mode=true
                 SELECTED=(1 1 1)
                 shift
-                ;;
+                ;; 
             *)
                 TARGET_DIR="$1"
                 shift
-                ;;
+                ;; 
         esac
     done
 

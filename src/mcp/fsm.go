@@ -96,9 +96,7 @@ func (f *FSM) CanTransition(target Phase, role Role) (bool, string) {
 
 	for _, rule := range valid {
 		if rule.From == f.State.Phase && rule.To == target {
-			if rule.Role == role || (rule.From == PhaseAbduction && role == RoleAbductor) { 
-				// Note: Abductor submits to Deduction, Deductor accepts. 
-				// Simplified: The actor initiating the transition drives it.
+			if rule.Role == role {
 				return true, "OK"
 			}
 		}

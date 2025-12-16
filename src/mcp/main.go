@@ -11,7 +11,7 @@ import (
 var (
 	modeFlag   = flag.String("mode", "cli", "Mode: 'cli' or 'server'")
 	roleFlag   = flag.String("role", "", "Role: Abductor, Deductor, Inductor, Auditor, Decider")
-	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide")
+	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide, context")
 	targetFlag = flag.String("target", "", "Target phase for transition")
 	
 	// Tool Arguments
@@ -33,7 +33,10 @@ func main() {
 
 	// Ensure .fpf exists for init
 	if *actionFlag == "init" {
-		os.MkdirAll(fpfDir, 0755)
+		if err := os.MkdirAll(fpfDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating .fpf directory: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fsm, err := LoadState(stateFile)
@@ -45,8 +48,8 @@ func main() {
 	tools := NewTools(fsm, cwd)
 
 	if *modeFlag == "server" {
-		// TODO: Implement MCP JSON-RPC loop here
-		fmt.Println("MCP Server mode not yet implemented")
+		server := NewServer(tools)
+		server.Start()
 		return
 	}
 
@@ -77,7 +80,10 @@ func main() {
 		ok, msg := fsm.CanTransition(Phase(*targetFlag), Role(*roleFlag))
 		if ok {
 			fsm.State.Phase = Phase(*targetFlag)
-			fsm.SaveState(stateFile)
+			if err := fsm.SaveState(stateFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
+				os.Exit(1)
+			}
 			fmt.Printf("TRANSITION: %s\n", msg)
 			os.Exit(0)
 		} else {
@@ -87,11 +93,29 @@ func main() {
 		
 	case "init":
 		fsm.State.Phase = PhaseAbduction
-		fsm.SaveState(stateFile)
-		tools.InitProject() // Helper to create dirs
+		if err := fsm.SaveState(stateFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
+			os.Exit(1)
+		}
+		if err := tools.InitProject(); err != nil { // Helper to create dirs
+			fmt.Fprintf(os.Stderr, "Error initializing project: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Println("Initialized FPF project in .fpf/")
 
 	// --- Tool Actions ---
+
+	case "context":
+		if *roleFlag == "" {
+			fmt.Println("Error: --role required")
+			os.Exit(1)
+		}
+		ctx, err := tools.GetAgentContext(*roleFlag)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(ctx)
 
 	case "propose":
 		// Role: Abductor. Phase: ABDUCTION.
@@ -114,7 +138,7 @@ func main() {
 			fmt.Printf("DENIED: Role %s cannot add evidence in %s phase\n", *roleFlag, fsm.State.Phase)
 			os.Exit(1)
 		}
-		path, err := tools.ManageEvidence(*targetIDFlag, *typeFlag, *contentFlag, *verdictFlag)
+		path, err := tools.ManageEvidence(fsm.State.Phase, *targetIDFlag, *typeFlag, *contentFlag, *verdictFlag)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
@@ -130,14 +154,17 @@ func main() {
 			os.Exit(1)
 		}
 		// Actually perform the loopback logic
-		childPath, err := tools.RefineLoopback(*targetIDFlag, *insightFlag, *titleFlag, *contentFlag)
+		childPath, err := tools.RefineLoopback(fsm.State.Phase, *targetIDFlag, *insightFlag, *titleFlag, *contentFlag)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
 		}
 		// Perform state transition
 		fsm.State.Phase = PhaseDeduction
-		fsm.SaveState(stateFile)
+		if err := fsm.SaveState(stateFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving state after loopback: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Printf("LOOPBACK: Reset to DEDUCTION. Created refined hypothesis %s\n", childPath)
 
 	case "decide":
@@ -160,7 +187,10 @@ func main() {
 		
 		// Close cycle
 		fsm.State.Phase = PhaseIdle
-		fsm.SaveState(stateFile)
+		if err := fsm.SaveState(stateFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Printf("DECIDED: DRR created at %s. Cycle closed.\n", path)
 	}
 }

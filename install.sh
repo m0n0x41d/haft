@@ -372,7 +372,7 @@ install_agents_internal() {
 
 uninstall_platforms() {
     echo ""
-    cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
+    cprintln "$BRIGHT_GREEN$BOLD" "   Uninstalling Quint Code..."
     echo ""
     local uninstalled_indices=""
     local i=0

@@ -67,7 +67,15 @@ Follow the prompts. The AI guides you through the cycle. You make the calls.
 
 ## What Is This, Really?
 
-A set of slash commands for AI coding tools that implement **hypothesis-driven reasoning** following the **First Principles Framework (FPF)** workflow. You generate competing ideas, verify them logically, test them empirically, manage their lifecycle, and document the rationale.
+`quint-mcp` (Multi-platform Core Protocol) is a Go module that provides a robust implementation of the First Principles Framework (FPF) workflow. It serves as the core logic for **hypothesis-driven reasoning**, enabling AI coding tools to:
+
+-   Generate competing ideas
+-   Verify them logically
+-   Test them empirically
+-   Manage their lifecycle (L0, L1, L2, Invalid)
+-   Document the rationale behind decisions
+
+The various platform-specific installations (Claude Code, Cursor, Gemini CLI, Codex CLI) integrate `quint-mcp`'s functionality through slash commands, acting as a user-friendly interface to this powerful FPF engine.
 
 Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by Anatoly Levenchuk.
 

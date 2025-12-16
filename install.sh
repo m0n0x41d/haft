@@ -117,7 +117,8 @@ print_platform_item() {
         printf "     "
     fi
 
-    if is_selected $index; then
+    if is_selected $index;
+    then
         cprint "$BRIGHT_GREEN$BOLD" "[✓]"
     else
         cprint "$DIM" "[ ]"
@@ -348,7 +349,8 @@ EOF
     echo "$config_path"
 }
 
-install_agents() {
+install_agents_internal() {
+    # Copies agent profiles to .fpf/agents for MCP use
     local target="$1"
     local agents_dir="$target/.fpf/agents"
     mkdir -p "$agents_dir"
@@ -358,33 +360,14 @@ install_agents() {
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     fi
     
-    local src_agents="$script_dir/src/agents"
-    if [[ -d "$src_agents" ]]; then
-        cp "$src_agents"/*.md "$agents_dir/" 2>/dev/null || true
-        cp "$src_agents"/*.json "$agents_dir/" 2>/dev/null || true
-    fi
-}
+    local src_cmds="$script_dir/src/commands"
+    local agents=("abductor" "deductor" "inductor" "decider" "auditor")
 
-install_agents_to_platform() {
-    local index=$1
-    local platform_path=$(get_platform_path $index)
-    local target_cmd_dir="$TARGET_DIR/$platform_path"
-    
-    local script_dir=""
-    if [[ -n "${BASH_SOURCE[0]}" ]]; then
-        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    fi
-    local src_agents="$script_dir/src/agents"
-
-    mkdir -p "$target_cmd_dir"
-    if [[ -d "$src_agents" ]]; then
-        for agent_file in "$src_agents"/*.md; do
-            if [[ -f "$agent_file" ]]; then
-                local filename=$(basename "$agent_file")
-                cp "$agent_file" "$target_cmd_dir/$filename"
-            fi
-        done
-    fi
+    for agent in "${agents[@]}"; do
+        if [[ -f "$src_cmds/$agent.md" ]]; then
+            cp "$src_cmds/$agent.md" "$agents_dir/"
+        fi
+    done
 }
 
 uninstall_platforms() {
@@ -437,11 +420,6 @@ install_platforms() {
             local name=$(get_platform_name $i)
             (download_commands $i) &
             spinner $! "Installing $name commands"
-            
-            # Install agents to platform command dir
-            (install_agents_to_platform $i) &
-            spinner $! "Installing $name agent profiles"
-
             installed_indices="$installed_indices $i"
         fi
         ((i++))
@@ -452,9 +430,9 @@ install_platforms() {
         spinner $! "Creating .fpf/ structure"
     fi
     
-    # Keep installing to .fpf/agents for MCP/backend use as well
-    if [[ -d "src/agents" ]]; then
-         (install_agents "$TARGET_DIR") &
+    # Internal agent copy for MCP context lookup
+    if [[ -d "src/commands" ]]; then
+         (install_agents_internal "$TARGET_DIR") &
          spinner $! "Caching Agent Profiles in .fpf"
     fi
 

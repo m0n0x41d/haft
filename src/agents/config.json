@@ -1,9 +1,0 @@
-{
-  "agents": {
-    "Abductor": ".fpf/agents/abductor.md",
-    "Deductor": ".fpf/agents/deductor.md",
-    "Inductor": ".fpf/agents/inductor.md",
-    "Decider":  ".fpf/agents/decider.md",
-    "Auditor":  ".fpf/agents/auditor.md"
-  }
-}

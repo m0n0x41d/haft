@@ -35,17 +35,15 @@ REPO_URL="https://github.com/m0n0x41d/quint-code"
 BRANCH="main"
 
 # Platform data (parallel arrays)
-PLATFORMS=("claude" "cursor" "gemini" "codex")
-PLATFORM_NAMES=("Claude Code" "Cursor" "Gemini CLI" "Codex CLI")
-PLATFORM_PATHS=(".claude/commands" ".cursor/commands" ".gemini/commands" ".codex/prompts")
-PLATFORM_SCOPE=("local" "local" "local" "global")
-PLATFORM_EXT=("md" "md" "toml" "md")
+PLATFORMS=("claude" "cursor" "gemini")
+PLATFORM_NAMES=("Claude Code" "Cursor" "Gemini CLI")
+PLATFORM_PATHS=(".claude/commands" ".cursor/commands" ".gemini/commands")
+PLATFORM_EXT=("md" "md" "toml")
 
 # Selection state (0=false, 1=true)
-SELECTED=(1 0 0 0)  # Claude selected by default
+SELECTED=(1 0 0)  # Claude selected by default
 
 CURRENT_INDEX=0
-INSTALL_GLOBAL=false
 UNINSTALL_MODE=false
 TARGET_DIR="$(pwd)"
 
@@ -72,7 +70,6 @@ cprintln() {
 # Get platform info by index
 get_platform_name() { echo "${PLATFORM_NAMES[$1]}"; }
 get_platform_path() { echo "${PLATFORM_PATHS[$1]}"; }
-get_platform_scope() { echo "${PLATFORM_SCOPE[$1]}"; }
 get_platform_ext() { echo "${PLATFORM_EXT[$1]}"; }
 is_selected() { [[ "${SELECTED[$1]}" == "1" ]]; }
 
@@ -90,7 +87,7 @@ print_logo() {
     cprintln "$ORANGE$BOLD" "   ██║   ██║██║   ██║██║██╔██╗ ██║   ██║      ██║     ██║   ██║██║  ██║█████╗  "
     cprintln "$YELLOW$BOLD" "   ██║▄▄ ██║██║   ██║██║██║╚██╗██║   ██║      ██║     ██║   ██║██║  ██║██╔══╝  "
     cprintln "$LIGHT_YELLOW$BOLD" "   ╚██████╔╝╚██████╔╝██║██║ ╚████║   ██║      ╚██████╗╚██████╔╝██████╔╝███████╗"
-    cprintln "$WHITE$BOLD" "    ╚══▀▀═╝  ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝"
+    cprintln "$WHITE$BOLD" "    ╚══▀▀═╝  ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚═════╝ ╚══════╝ ╚══════╝"
     echo ""
     cprintln "$DIM" "       Distilled First Principles Framework for AI Tools"
     echo ""
@@ -115,7 +112,6 @@ print_instructions() {
 print_platform_item() {
     local index=$1
     local name=$(get_platform_name $index)
-    local scope=$(get_platform_scope $index)
     local is_current=$([[ $index -eq $CURRENT_INDEX ]] && echo 1 || echo 0)
 
     # Cursor indicator
@@ -137,11 +133,6 @@ print_platform_item() {
         cprint "$BRIGHT_WHITE$BOLD" " $name"
     else
         cprint "$WHITE" " $name"
-    fi
-
-    # Scope badge
-    if [[ "$scope" == "global" ]]; then
-        cprint "$YELLOW$DIM" "  (global only)"
     fi
 
     echo ""
@@ -279,16 +270,9 @@ download_commands() {
     local platform="${PLATFORMS[$index]}"
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
-    local scope=$(get_platform_scope $index)
     local full_target
 
-    if [[ "$scope" == "global" ]]; then
-        full_target="$HOME/$target_path"
-    elif [[ "$INSTALL_GLOBAL" == true ]]; then
-        full_target="$HOME/$target_path"
-    else
-        full_target="$TARGET_DIR/$target_path"
-    fi
+    full_target="$TARGET_DIR/$target_path"
 
     mkdir -p "$full_target"
 
@@ -355,7 +339,6 @@ uninstall_commands() {
     local platform="${PLATFORMS[$index]}"
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
-    local scope=$(get_platform_scope $index)
 
     local commands=(
         "q0-init"
@@ -372,15 +355,9 @@ uninstall_commands() {
         "q-reset"
     )
 
-    # Always check BOTH local and global locations
+    # Check local location only
     local local_path="$TARGET_DIR/$target_path"
-    local global_path="$HOME/$target_path"
-    local locations=("$global_path" "$local_path")
-
-    # For global-only platforms, only check global
-    if [[ "$scope" == "global" ]]; then
-        locations=("$global_path")
-    fi
+    local locations=("$local_path")
 
     local removed=0
     local removed_from=""
@@ -462,33 +439,46 @@ install_platforms() {
     cprintln "$BRIGHT_WHITE$BOLD" "   Installing Quint Code..."
     echo ""
 
-    local any_local=false
     local installed_indices=""
 
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         if is_selected $i; then
             local name=$(get_platform_name $i)
-            local scope=$(get_platform_scope $i)
 
             (download_commands $i) &
             spinner $! "Installing $name commands"
 
             installed_indices="$installed_indices $i"
-
-            if [[ "$scope" == "local" ]]; then
-                any_local=true
-            fi
         fi
         ((i++))
     done
 
-    # Create .fpf structure for local installs
-    if [[ "$any_local" == true && "$INSTALL_GLOBAL" == false ]]; then
-        if [[ ! -d "$TARGET_DIR/.fpf" ]]; then
-            (create_fpf_structure "$TARGET_DIR") &
-            spinner $! "Creating .fpf/ structure"
+    # Create .fpf structure
+    if [[ ! -d "$TARGET_DIR/.fpf" ]]; then
+        (create_fpf_structure "$TARGET_DIR") &
+        spinner $! "Creating .fpf/ structure"
+    fi
+
+    # Build MCP Server
+    if command -v go >/dev/null 2>&1; then
+        cprintln "$DIM" "   Building MCP Server..."
+        mkdir -p "$TARGET_DIR/.fpf/bin"
+        
+        # Determine source dir (handle both curl pipe and local run)
+        local src_mcp="$TARGET_DIR/src/mcp"
+        if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]; then
+             src_mcp="$(dirname "${BASH_SOURCE[0]}")/src/mcp"
         fi
+
+        if [[ -d "$src_mcp" ]]; then
+            (cd "$src_mcp" && go build -o "$TARGET_DIR/.fpf/bin/quint-mcp" .) &
+            spinner $! "Compiling quint-mcp binary"
+        else
+            cprintln "$YELLOW" "   ⚠  Could not find src/mcp source to build server."
+        fi
+    else
+        cprintln "$YELLOW" "   ⚠  Go not found. MCP Server not built. (Install Go to enable FSM enforcement)"
     fi
 
     echo ""
@@ -509,10 +499,7 @@ print_success() {
     for i in $indices; do
         local name=$(get_platform_name $i)
         local path=$(get_platform_path $i)
-        local scope=$(get_platform_scope $i)
         local loc="$TARGET_DIR/$path"
-        [[ "$scope" == "global" ]] && loc="$HOME/$path"
-        [[ "$INSTALL_GLOBAL" == true ]] && loc="$HOME/$path"
 
         cprint "$BRIGHT_GREEN" "     ✓ "
         cprint "$WHITE" "$name"
@@ -539,24 +526,21 @@ print_usage() {
     echo "  ./install.sh              Interactive TUI mode"
     echo "  ./install.sh --claude     Install Claude Code only"
     echo "  ./install.sh --all        Install all platforms"
-    echo "  ./install.sh -g           Install globally"
     echo "  ./install.sh --uninstall  Uninstall mode"
     echo ""
     echo "Platforms:"
     echo "  --claude    Claude Code (.claude/commands/)"
     echo "  --cursor    Cursor (.cursor/commands/)"
     echo "  --gemini    Gemini CLI (.gemini/commands/)"
-    echo "  --codex     Codex CLI (~/.codex/prompts/)"
     echo ""
     echo "Options:"
-    echo "  -g, --global     Install/uninstall from home directory"
     echo "  -u, --uninstall  Remove commands instead of installing"
     echo "  -h, --help       Show this help"
     echo ""
     echo "Examples:"
-    echo "  ./install.sh --all -g          Install all platforms globally"
+    echo "  ./install.sh --all             Install all platforms (local)"
     echo "  ./install.sh --uninstall --all Uninstall all platforms (local)"
-    echo "  ./install.sh -u -g --cursor    Uninstall Cursor globally"
+    echo "  ./install.sh -u --cursor       Uninstall Cursor"
     echo ""
 }
 
@@ -572,10 +556,6 @@ main() {
             -h|--help)
                 print_usage
                 exit 0
-                ;;
-            -g|--global)
-                INSTALL_GLOBAL=true
-                shift
                 ;;
             -u|--uninstall)
                 UNINSTALL_MODE=true
@@ -596,14 +576,9 @@ main() {
                 SELECTED[2]=1
                 shift
                 ;;
-            --codex)
-                cli_mode=true
-                SELECTED[3]=1
-                shift
-                ;;
             --all)
                 cli_mode=true
-                SELECTED=(1 1 1 1)
+                SELECTED=(1 1 1)
                 shift
                 ;;
             *)

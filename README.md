@@ -67,7 +67,7 @@ Follow the prompts. The AI guides you through the cycle. You make the calls.
 
 ## What Is This, Really?
 
-`quint-mcp` (Model Context Protocol) is a Go module that provides a robust implementation of the First Principles Framework (FPF) workflow. It serves as the core logic for **hypothesis-driven reasoning**, enabling AI coding tools to:
+This project offers a **set of slash commands** for AI coding tools that **leverage the `quint-mcp` (Model Context Protocol) Go module** as its core logic for **hypothesis-driven reasoning** following the **First Principles Framework (FPF)** workflow. This powerful combination enables AI coding tools to:
 
 -   Generate competing ideas
 -   Verify them logically
@@ -75,7 +75,7 @@ Follow the prompts. The AI guides you through the cycle. You make the calls.
 -   Manage their lifecycle (L0, L1, L2, Invalid)
 -   Document the rationale behind decisions
 
-The various platform-specific installations (Claude Code, Cursor, Gemini CLI, Codex CLI) integrate `quint-mcp`'s functionality through slash commands, acting as a user-friendly interface to this powerful FPF engine.
+The various platform-specific installations (Claude Code, Cursor, Gemini CLI, Codex CLI) integrate `quint-mcp`'s functionality through these slash commands, acting as a user-friendly interface to this powerful FPF engine.
 
 Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by Anatoly Levenchuk.
 

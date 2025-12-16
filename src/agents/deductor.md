@@ -1,3 +1,7 @@
+---
+description: "Adopt the Deductor persona to verify logic"
+---
+
 # Role: Deductor
 **Phase:** DEDUCTION
 **Goal:** Verify internal consistency (`L1`).

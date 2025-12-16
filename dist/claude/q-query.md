@@ -26,22 +26,22 @@ Search project knowledge base for relevant epistemes, evidence, and decisions.
 
 ```bash
 # Search across all knowledge levels
-grep -r -l -i "$TOPIC" .fpf/knowledge/
+grep -r -l -i "$TOPIC" .quint/knowledge/
 
 # Or filter by level
-grep -r -l -i "$TOPIC" .fpf/knowledge/L2/  # Only verified
+grep -r -l -i "$TOPIC" .quint/knowledge/L2/  # Only verified
 ```
 
 ### 2. Search Decisions
 
 ```bash
-grep -r -l -i "$TOPIC" .fpf/decisions/
+grep -r -l -i "$TOPIC" .quint/decisions/
 ```
 
 ### 3. Search Evidence
 
 ```bash
-grep -r -l -i "$TOPIC" .fpf/evidence/
+grep -r -l -i "$TOPIC" .quint/evidence/
 ```
 
 ### 4. Compile Results
@@ -79,7 +79,7 @@ For each match, extract:
 [Most reliable — empirically tested]
 
 **[episteme-name]**
-- **File:** `.fpf/knowledge/L2/[file].md`
+- **File:** `.quint/knowledge/L2/[file].md`
 - **Summary:** [Relevant snippet or summary]
 - **Evidence:** [linked evidence files]
 - **Decided in:** [DRR reference if any]
@@ -92,7 +92,7 @@ For each match, extract:
 [Logically verified, not empirically tested]
 
 **[episteme-name]**
-- **File:** `.fpf/knowledge/L1/[file].md`
+- **File:** `.quint/knowledge/L1/[file].md`
 - **Summary:** [Relevant snippet]
 - **Status:** Passed deduction, awaiting empirical verification
 - **Needs:** `/q3-test` or `/q3-research`
@@ -104,7 +104,7 @@ For each match, extract:
 [Unverified — treat with caution]
 
 **[episteme-name]**
-- **File:** `.fpf/knowledge/L0/[file].md`
+- **File:** `.quint/knowledge/L0/[file].md`
 - **Summary:** [Relevant snippet]
 - **Status:** Hypothesis / Observation — not yet verified
 - **Needs:** `/q2-check`
@@ -116,7 +116,7 @@ For each match, extract:
 [These were wrong — kept to avoid repeating mistakes]
 
 **[episteme-name]**
-- **File:** `.fpf/knowledge/invalid/[file].md`
+- **File:** `.quint/knowledge/invalid/[file].md`
 - **Why invalid:** [reason]
 - **Learning:** [what we learned]
 
@@ -125,7 +125,7 @@ For each match, extract:
 ### Related Decisions
 
 **DRR-[NNN]: [title]**
-- **File:** `.fpf/decisions/DRR-[NNN].md`
+- **File:** `.quint/decisions/DRR-[NNN].md`
 - **Date:** [date]
 - **Relates to query:** [how it relates]
 - **Status:** [ACCEPTED / SUPERSEDED]
@@ -135,7 +135,7 @@ For each match, extract:
 ### Related Evidence
 
 **[evidence-name]**
-- **File:** `.fpf/evidence/[file].md`
+- **File:** `.quint/evidence/[file].md`
 - **Type:** [internal / external]
 - **Congruence:** [high/medium/low or N/A for internal]
 - **Valid until:** [date]

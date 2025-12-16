@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -20,7 +21,7 @@ type Tools struct {
 
 func NewTools(fsm *FSM, rootDir string) *Tools {
 	// Try to init DB
-	dbPath := filepath.Join(rootDir, ".fpf", "fpf.db")
+	dbPath := filepath.Join(rootDir, ".quint", "quint.db")
 	database, _ := db.New(dbPath) // Ignore error for now if not init
 
 	return &Tools{
@@ -31,7 +32,7 @@ func NewTools(fsm *FSM, rootDir string) *Tools {
 }
 
 func (t *Tools) getFPFDir() string {
-	return filepath.Join(t.RootDir, ".fpf")
+	return filepath.Join(t.RootDir, ".quint")
 }
 
 func (t *Tools) Slugify(title string) string {
@@ -90,7 +91,7 @@ func (t *Tools) InitProject() error {
 	
 	// Init DB
 	if t.DB == nil {
-		dbPath := filepath.Join(t.getFPFDir(), "fpf.db")
+		dbPath := filepath.Join(t.getFPFDir(), "quint.db")
 		database, err := db.New(dbPath)
 		if err != nil {
 			fmt.Printf("Warning: Failed to init DB: %v\n", err)
@@ -266,4 +267,80 @@ func (t *Tools) FinalizeDecision(title, content, winnerID string) (string, error
 	// (Skipping archive logic for brevity, relying on FSM state save)
 
 	return drrPath, nil
+}
+
+// Actualize performs maintenance tasks: migration, reconciliation, discovery.
+func (t *Tools) Actualize() error {
+	// 1. Migration: .fpf -> .quint
+	fpfDir := filepath.Join(t.RootDir, ".fpf")
+	quintDir := t.getFPFDir()
+
+	// Check if legacy .fpf exists
+	if _, err := os.Stat(fpfDir); err == nil {
+		fmt.Println("MIGRATION: Found legacy .fpf directory.")
+		
+		// If .quint also exists, we have a conflict.
+		if _, err := os.Stat(quintDir); err == nil {
+			return fmt.Errorf("migration conflict: both .fpf and .quint exist. Please resolve manually")
+		}
+
+		fmt.Println("MIGRATION: Renaming .fpf -> .quint")
+		if err := os.Rename(fpfDir, quintDir); err != nil {
+			return fmt.Errorf("failed to rename .fpf: %w", err)
+		}
+		fmt.Println("MIGRATION: Success.")
+	}
+
+	// 2. Database Migration: fpf.db -> quint.db
+	legacyDB := filepath.Join(quintDir, "fpf.db")
+	newDB := filepath.Join(quintDir, "quint.db")
+
+	if _, err := os.Stat(legacyDB); err == nil {
+		fmt.Println("MIGRATION: Found legacy fpf.db.")
+		if err := os.Rename(legacyDB, newDB); err != nil {
+			return fmt.Errorf("failed to rename fpf.db: %w", err)
+		}
+		fmt.Println("MIGRATION: Renamed to quint.db.")
+	}
+
+	// 3. Reconciliation (Git Drift)
+	// Check current git commit
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = t.RootDir
+	output, err := cmd.Output()
+	if err == nil {
+		currentCommit := strings.TrimSpace(string(output))
+		lastCommit := t.FSM.State.LastCommit
+
+		if lastCommit == "" {
+			fmt.Printf("RECONCILIATION: Initializing baseline commit to %s\n", currentCommit)
+			t.FSM.State.LastCommit = currentCommit
+			if err := t.FSM.SaveState(filepath.Join(t.getFPFDir(), "state.json")); err != nil {
+				fmt.Printf("Warning: Failed to save state: %v\n", err)
+			}
+		} else if currentCommit != lastCommit {
+			fmt.Printf("RECONCILIATION: Detected changes since %s\n", lastCommit)
+			diffCmd := exec.Command("git", "diff", "--name-status", lastCommit, "HEAD")
+			diffCmd.Dir = t.RootDir
+			diffOutput, err := diffCmd.Output()
+			if err == nil {
+				fmt.Println("Changed files:")
+				fmt.Println(string(diffOutput))
+			} else {
+				fmt.Printf("Warning: Failed to get diff: %v\n", err)
+			}
+			
+			// Update state
+			t.FSM.State.LastCommit = currentCommit
+			if err := t.FSM.SaveState(filepath.Join(t.getFPFDir(), "state.json")); err != nil {
+				fmt.Printf("Warning: Failed to save state: %v\n", err)
+			}
+		} else {
+			fmt.Println("RECONCILIATION: No changes detected (Clean).")
+		}
+	} else {
+		fmt.Println("RECONCILIATION: Not a git repository or git error.")
+	}
+
+	return nil
 }

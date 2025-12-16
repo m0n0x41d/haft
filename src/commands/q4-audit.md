@@ -21,11 +21,11 @@ Run:
 If this fails, STOP.
 
 ### 2. The Audit (Mental Work)
-Read `.fpf/evidence/` and `.fpf/knowledge/L2/`.
+Read `.quint/evidence/` and `.quint/knowledge/L2/`.
 Perform the following checks:
 1.  **WLNK Analysis:** Identify the weakest evidence link for each hypothesis.
 2.  **Bias Check:** Check for Confirmation Bias, Sunk Cost, and Recency Bias.
-3.  **Context Drift:** Ensure hypotheses still match `.fpf/context.md`.
+3.  **Context Drift:** Ensure hypotheses still match `.quint/context.md`.
 
 ### 3. Record Audit (Tool Use)
 You must record the outcome of your audit to proceed.

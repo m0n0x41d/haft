@@ -12,7 +12,7 @@ import (
 
 // Helper to get FPF knowledge path for a level
 func getKnowledgePath(t *testing.T, baseDir, level string) string {
-	return filepath.Join(baseDir, ".fpf", "knowledge", level)
+	return filepath.Join(baseDir, ".quint", "knowledge", level)
 }
 
 // Helper to check if a hypothesis exists in a specific level
@@ -30,8 +30,8 @@ func checkFileExists(t *testing.T, path string) bool {
 
 func TestFullFPFWorkflowIntegration(t *testing.T) {
 	tempDir := t.TempDir()
-	fpfDir := filepath.Join(tempDir, ".fpf")
-	stateFile := filepath.Join(fpfDir, "state.json")
+	quintDir := filepath.Join(tempDir, ".quint")
+	stateFile := filepath.Join(quintDir, "state.json")
 
 	// --- 0. Initialize FPF Project ---
 	t.Run("0_InitProject", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 
 		// Verify DRR file creation
-		drrPattern := filepath.Join(tempDir, ".fpf", "decisions", fmt.Sprintf("DRR-*-%s.md", tools.Slugify("Final Decision")))
+		drrPattern := filepath.Join(tempDir, ".quint", "decisions", fmt.Sprintf("DRR-*-%s.md", tools.Slugify("Final Decision")))
 		matches, err := filepath.Glob(drrPattern)
 		if err != nil {
 			t.Fatalf("Failed to glob for DRR file: %v", err)

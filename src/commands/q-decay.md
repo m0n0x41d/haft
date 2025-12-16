@@ -23,10 +23,10 @@ Evidence has a shelf life. This command helps manage evidence freshness and vali
 
 ```bash
 # Find all evidence files
-find .fpf/evidence -name "*.md" -type f
+find .quint/evidence -name "*.md" -type f
 
 # Extract validity info from frontmatter
-for file in .fpf/evidence/*.md; do
+for file in .quint/evidence/*.md; do
     grep -A1 "valid_until:" "$file"
 done
 ```
@@ -156,16 +156,16 @@ Total Epistemic Debt = sum of all debt
 ### Action Items
 
 **Immediate (expired):**
-- [ ] `.fpf/evidence/[file5].md` — refresh or deprecate
-- [ ] `.fpf/evidence/[file6].md` — deprecate (no longer relevant)
+- [ ] `.quint/evidence/[file5].md` — refresh or deprecate
+- [ ] `.quint/evidence/[file6].md` — deprecate (no longer relevant)
 
 **Soon (expiring within 30 days):**
-- [ ] `.fpf/evidence/[file3].md` — plan refresh by [date]
-- [ ] `.fpf/evidence/[file4].md` — plan refresh by [date]
+- [ ] `.quint/evidence/[file3].md` — plan refresh by [date]
+- [ ] `.quint/evidence/[file4].md` — plan refresh by [date]
 
 **Housekeeping (no validity window):**
-- [ ] `.fpf/evidence/[file7].md` — add valid_until
-- [ ] `.fpf/evidence/[file8].md` — add valid_until
+- [ ] `.quint/evidence/[file7].md` — add valid_until
+- [ ] `.quint/evidence/[file8].md` — add valid_until
 ```
 
 ## Actions

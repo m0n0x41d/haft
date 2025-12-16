@@ -11,4 +11,4 @@ Run:
 ./src/mcp/quint-mcp -action status
 ```
 
-Then list active files in `.fpf/knowledge/`.
+Then list active files in `.quint/knowledge/`.

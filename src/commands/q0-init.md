@@ -18,7 +18,7 @@ Run:
 
 ### 2. Context Discovery
 Scan the repository (files, structure) to understand the project context.
-Create/Update `.fpf/context.md` with:
+Create/Update `.quint/context.md` with:
 - **Slice: Grounding** (OS, Hardware)
 - **Slice: Tech Stack** (Languages, Frameworks)
 - **Slice: Constraints** (Known rules)

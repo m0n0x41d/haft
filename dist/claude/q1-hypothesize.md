@@ -1,311 +1,60 @@
 ---
-description: "Generate hypotheses for a problem (FPF Abduction phase)"
+description: "Start a new reasoning cycle (FPF Phase 1: Abduction)"
 arguments:
   - name: problem
-    description: "Problem statement or question to investigate"
+    description: "The anomaly or problem to solve"
     required: true
 ---
 
-# FPF Phase 1: Abduction (Hypothesis Generation)
-
-## Phase Gate (EXECUTABLE)
-
-**STEP 1: RUN THIS SCRIPT FIRST.** Do not generate text until this passes.
-
-```bash
-#!/bin/bash
-# Strict Phase Enforcement
-if [ ! -f ".fpf/session.md" ]; then echo "Error: FPF not initialized"; exit 1; fi
-
-PHASE=$(grep "Phase:" .fpf/session.md | head -1 | awk '{print $2}')
-
-# Allowed phases: INITIALIZED or DECIDED
-if [[ "$PHASE" != "INITIALIZED" && "$PHASE" != "DECIDED" ]]; then
-    echo "⛔ CRITICAL FAILURE: CYCLE LOCKED"
-    echo "Current Phase: $PHASE"
-    echo ""
-    echo "FPF Rules (B.1.3) forbid adding hypotheses to an active cycle."
-    echo "Reason: It breaks evidence traceability and invalidates the blind test."
-    echo ""
-    echo "REQUIRED ACTION:"
-    echo "1. Use /q1-extend if phase is ABDUCTION_COMPLETE"
-    echo "2. Use /q-reset to abandon this cycle"
-    echo "3. Use /q5-decide to finish this cycle first"
-    exit 1
-fi
-echo "✅ Phase valid for new cycle."
-```
-
-**IF SCRIPT FAILS (Exit Code 1):**
-- **STOP.** Do not apologize. Do not offer workarounds.
-- **OUTPUT:** "⛔ **Cycle Locked.** You must finish or reset the current cycle before starting a new one."
-- **DO NOT** offer to "add it anyway." That is a violation of the framework integrity.
-
----
+# FPF Phase 1: Abduction
 
 ## Your Role
+You are the **Abductor** (Sub-Agent). Your goal is to generate diverse, plausible hypotheses for the stated problem.
 
-You are the **Transformer** enacting the **ExplorerRole** (Abductive).
+## System Interface
+You do not manage state files directly. You interface with the **Quint MCP Server**.
 
-Your goal is to generate multiple competing hypotheses, not one "best" solution. Explore the solution space.
+**Command:** `.quint/bin/quint-mcp` (or just `quint-mcp` if in path)
 
-**Critical:** You generate options. Human decides which to pursue. This is the Transformer Mandate.
+## Workflow
 
-## Input
+### 1. State Verification
+Run:
+```bash
+./src/mcp/quint-mcp -action check -role Abductor
+```
+If this fails, STOP. Report the error.
 
-Problem: `$ARGUMENTS.problem`
+### 2. Context Loading
+Read `.quint/context.md` and `.quint/knowledge/L2` to ground your abduction.
 
-## Process
+### 3. Hypothesis Generation (Mental Sandbox)
+Think about the problem: "$ARGUMENTS.problem"
+Generate 3-5 hypotheses covering:
+- **Conservative** (Low risk, proven)
+- **Innovative** (High reward, novel)
+- **Minimal** (Fastest path)
 
-### 1. Load Context (A.2.6 Slice Check)
+### 4. Persistence (Tool Use)
+For EACH valid hypothesis, execute:
 
-- Read `.fpf/session.md` for any active context
-- Read `.fpf/context.md` for **Context Slices**:
-  - **Slice: Grounding** (Infrastructure constraints)
-  - **Slice: Tech Stack** (Available capabilities)
-  - **Slice: Constraints** (Budget, Team, Compliance)
-- **Constraint Check:** Ensure all hypotheses are compatible with these slices. Flag any deviations as explicit risks.
-- Check `.fpf/knowledge/L2/` for verified facts that constrain solution space
-- Check `.fpf/knowledge/invalid/` for approaches already disproven
-
-### 2. Decompose the Problem
-
-Before generating hypotheses, clarify:
-
-```markdown
-## Problem Decomposition
-
-### Core Question
-[What exactly needs to be decided/solved?]
-
-### Constraints
-- [Technical constraints from codebase]
-- [Business/time constraints if known]
-- [Dependencies on other systems]
-
-### Success Criteria
-- [How will we know a solution works?]
-- [What must be true for success?]
-
-### Out of Scope
-- [What are we NOT solving here?]
+```bash
+./src/mcp/quint-mcp -action propose \
+  -role Abductor \
+  -title "H1: [Title]" \
+  -content "..."
 ```
 
-### 3. Generate Hypotheses
-
-Create **3-5 diverse hypotheses**. 
-
-**MANDATORY DIVERSITY CHECK:**
-- [ ] At least one **conservative/safe** approach (proven patterns, lower risk)
-- [ ] At least one **innovative/novel** approach (newer techniques, higher potential)
-- [ ] At least one **minimal/simple** approach (least complexity, fastest)
-
-For each hypothesis, create a file in `.fpf/knowledge/L0/`:
-
-**Filename:** `[slug]-hypothesis.md`
-
-**Content:**
-
+**Content Format (Markdown body for the flag):**
 ```markdown
----
-id: [slug]
-type: hypothesis
-created: [timestamp]
-problem: [reference to problem]
-status: L0
-formality: [0-9] # F-Score (0=Sketch, 9=Proof)
-novelty: [Conservative|Novel|Radical]
-complexity: [Low|Medium|High]
-author: Claude (generated), Human (to review)
-scope:
-  applies_to: "[conditions where this solution applies]"
-  not_valid_for: "[conditions where this won't work]"
-  scale: "[expected scale/size constraints]"
----
-
-# Hypothesis: [Clear one-line statement]
-
-## 1. The Method (Design-Time)
-*This is the plan/recipe. (A.15 MethodDescription)*
-
-### Proposed Approach
-[2-3 sentences: what this solution proposes]
-
-### Rationale
-[Why this might work — the abductive reasoning]
-
-### Implementation Steps
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
-
-### Expected Capability
-- [Capability Claim 1]
-- [Capability Claim 2]
-
-## 2. The Validation (Run-Time)
-*This section tracks the Work performed to verify this.*
-
-### Plausibility Assessment
-
-| Filter | Score | Justification |
-|--------|-------|---------------|
-| **Simplicity** | High/Med/Low | [Occam's razor — is this the simplest solution?] |
-| **Explanatory Power** | High/Med/Low | [Does it resolve the core problem fully?] |
-| **Consistency** | High/Med/Low | [Compatible with known facts in L2?] |
-| **Falsifiability** | High/Med/Low | [Can we clearly disprove this?] |
-
-**Plausibility Verdict:** [PLAUSIBLE / MARGINAL / IMPLAUSIBLE]
-
-### Assumptions to Verify
-- [ ] [Assumption 1 — must be true for this to work]
-- [ ] [Assumption 2]
-- [ ] [Assumption 3]
-
-### Required Evidence
-- [ ] **Internal Test:** [Verification test]
-  - **Performer:** [Developer | AI Agent | CI Pipeline]
-- [ ] **Research:** [External validation]
-  - **Performer:** [Developer | AI Agent]
-
-## Falsification Criteria
-[What evidence would DISPROVE this hypothesis?]
-- If [X happens], this approach fails
-- If [Y is true], this won't work
-
-## Estimated Effort
-[Rough: hours/days/weeks]
-
-## Weakest Link
-[What's the riskiest assumption or component of this approach?]
+# [Title]
+**Type:** [Conservative/Innovative]
+**Rationale:** [Why this works]
+**Weakest Link:** [What breaks first]
 ```
 
-### 4. Apply Plausibility Filters
+### 5. Handover
+After proposing hypotheses, instruct the user:
+"Abduction complete. Hypotheses registered. Run `/q2-check` to enter Deduction phase."
 
-After generating all hypotheses, rank them:
-
-```markdown
-## Plausibility Ranking
-
-| Hypothesis | Simplicity | Explanatory | Consistency | Falsifiable | Overall |
-|------------|------------|-------------|-------------|-------------|---------|
-| H1: [name] | High | High | High | High | ⭐ Strong |
-| H2: [name] | Med | High | Med | High | Good |
-| H3: [name] | Low | Med | High | Med | Marginal |
-
-**Recommendation for human review:**
-- H1 appears strongest on plausibility filters
-- H2 offers [specific advantage]
-- H3 is worth keeping because [reason] despite lower scores
 ```
-
-### 5. AWAIT HUMAN INPUT
-
-**STOP HERE. Present hypotheses to human for review.**
-
-```markdown
-## Hypotheses Generated — Awaiting Your Review
-
-I've generated [N] hypotheses for: "[problem]"
-
-**Quick Summary:**
-| ID | Hypothesis | Type | Plausibility | Weakest Link |
-|----|------------|------|--------------|--------------|
-| H1 | [name] | Conservative | Strong | [risk] |
-| H2 | [name] | Innovative | Good | [risk] |
-| H3 | [name] | Minimal | Marginal | [risk] |
-
-**Your options:**
-1. **Proceed** → Run `/q2-check` to verify logical consistency
-2. **Refine** → Ask me to adjust/add/remove hypotheses
-3. **Provide context** → Share additional constraints or information
-
-Which hypotheses should we carry forward to deduction phase?
-```
-
-**Wait for human response before updating session.**
-
-### 6. Update Session (After Human Confirms)
-
-Update `.fpf/session.md`:
-
-```markdown
-# FPF Session
-
-## Status
-Phase: ABDUCTION_COMPLETE
-Started: [timestamp]
-Problem: [problem statement]
-
-## Active Hypotheses
-| ID | Hypothesis | Status | Weakest Link | Human Approved |
-|----|------------|--------|--------------|----------------|
-| h1 | [name] | L0 | [risk] | ✓ |
-| h2 | [name] | L0 | [risk] | ✓ |
-| h3 | [name] | L0 | [risk] | ✓ |
-
-## Phase Transitions Log
-| Timestamp | From | To | Trigger |
-|-----------|------|-----|---------|
-| [prev] | — | INITIALIZED | /q0-init |
-| [now] | INITIALIZED | ABDUCTION_COMPLETE | /q1-hypothesize |
-
-## Next Step
-Run `/q2-check` to verify logical consistency.
-Or `/q2-check --hypothesis [id]` for specific hypothesis.
-```
-
-## Output Format
-
-```markdown
-## Hypotheses Generated
-
-**Problem:** [restated problem]
-
-### H1: [Name] (Conservative)
-[One paragraph summary]
-- **Plausibility:** Strong
-- **Weakest link:** [X]
-- **Falsifiable by:** [Y]
-
-### H2: [Name] (Innovative)
-[One paragraph summary]
-- **Plausibility:** Good
-- **Weakest link:** [X]
-- **Falsifiable by:** [Y]
-
-### H3: [Name] (Minimal)
-[One paragraph summary]
-- **Plausibility:** [score]
-- **Weakest link:** [X]
-- **Falsifiable by:** [Y]
-
----
-
-**Files created:**
-- `.fpf/knowledge/L0/[h1-slug].md`
-- `.fpf/knowledge/L0/[h2-slug].md`
-- `.fpf/knowledge/L0/[h3-slug].md`
-
----
-
-**⏸ AWAITING YOUR INPUT**
-
-Review the hypotheses above. You can:
-- Approve all → proceed to `/q2-check`
-- Request modifications → tell me what to change
-- Add constraints → share more context
-
-What would you like to do?
-```
-
-## Common Mistakes to Avoid
-
-| Mistake | Why It's Wrong | Do This Instead |
-|---------|----------------|-----------------|
-| Single "best" solution | Premature optimization without evidence | Generate 3-5 diverse options |
-| All similar approaches | Limits learning, no real comparison | Force diversity: conservative + innovative + minimal |
-| No falsification criteria | Unfalsifiable = untestable = useless | Every hypothesis must have clear disproval conditions |
-| Vague assumptions | Can't verify what isn't concrete | Make assumptions explicit and testable |
-| Proceeding without human review | Violates Transformer Mandate | Always pause for human confirmation |
-| Ignoring L2 knowledge | May contradict verified facts | Check existing knowledge before generating |

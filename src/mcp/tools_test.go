@@ -10,9 +10,9 @@ import (
 // Helper to create a dummy Tools instance for testing
 func setupTools(t *testing.T) (*Tools, *FSM, string) {
 	tempDir := t.TempDir()
-	fpfDir := filepath.Join(tempDir, ".fpf")
-	if err := os.MkdirAll(fpfDir, 0755); err != nil { // Ensure .fpf exists
-		t.Fatalf("Failed to create .fpf directory: %v", err)
+	quintDir := filepath.Join(tempDir, ".quint")
+	if err := os.MkdirAll(quintDir, 0755); err != nil { // Ensure .quint exists
+		t.Fatalf("Failed to create .quint directory: %v", err)
 	}
 
 	fsm := &FSM{State: State{Phase: PhaseIdle}} // Initial FSM state
@@ -59,7 +59,7 @@ func TestInitProject(t *testing.T) {
 	}
 
 	for _, d := range expectedDirs {
-		path := filepath.Join(tempDir, ".fpf", d)
+		path := filepath.Join(tempDir, ".quint", d)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("Directory %s was not created", path)
 		}
@@ -82,7 +82,7 @@ func TestProposeHypothesis(t *testing.T) {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
 
-	expectedFile := filepath.Join(tempDir, ".fpf", "knowledge", "L0", "my-first-hypothesis.md")
+	expectedFile := filepath.Join(tempDir, ".quint", "knowledge", "L0", "my-first-hypothesis.md")
 	if path != expectedFile {
 		t.Errorf("Returned path %q, expected %q", path, expectedFile)
 	}
@@ -102,7 +102,7 @@ func TestProposeHypothesis(t *testing.T) {
 func TestManageEvidence(t *testing.T) {
 	tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-hypo"
-	hypoPath := filepath.Join(tempDir, ".fpf", "knowledge", "L0", hypoID+".md")
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("Hypothesis content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy hypothesis file: %v", err)
 	}
@@ -142,14 +142,14 @@ func TestManageEvidence(t *testing.T) {
 				case PhaseInduction:
 					srcLevel = "L1"
 					// Create dummy L1 hypo for induction tests
-					hypoL1Path := filepath.Join(tempDir, ".fpf", "knowledge", "L1", tt.targetID+".md")
+					hypoL1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", tt.targetID+".md")
 					if err := os.WriteFile(hypoL1Path, []byte("L1 Hypothesis content"), 0644); err != nil {
 						t.Fatalf("Failed to create dummy L1 hypothesis file: %v", err)
 					}
 				case PhaseDeduction: // Use else if for correct logic
 					srcLevel = "L0"
 					// Create dummy L0 hypo for deduction tests
-					hypoL0Path := filepath.Join(tempDir, ".fpf", "knowledge", "L0", tt.targetID+".md")
+					hypoL0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", tt.targetID+".md")
 					if err := os.WriteFile(hypoL0Path, []byte("L0 Hypothesis content"), 0644); err != nil {
 						t.Fatalf("Failed to create dummy L0 hypothesis file: %v", err)
 					}
@@ -173,7 +173,7 @@ func TestManageEvidence(t *testing.T) {
 			
 			// Verify hypothesis move
 			if tt.expectedMove {
-				expectedDestPath := filepath.Join(tempDir, ".fpf", "knowledge", tt.expectedDestLevel, tt.targetID+".md")
+				expectedDestPath := filepath.Join(tempDir, ".quint", "knowledge", tt.expectedDestLevel, tt.targetID+".md")
 				if _, err := os.Stat(expectedDestPath); os.IsNotExist(err) {
 					t.Errorf("Hypothesis %s was not moved to %s. Expected path: %s", tt.targetID, tt.expectedDestLevel, expectedDestPath)
 				}
@@ -181,7 +181,7 @@ func TestManageEvidence(t *testing.T) {
 				// Deductor works on L0, Inductor on L1
 				// sourceLevel is already correctly set by srcLevel in this context
 				// srcLevel is already correctly set by srcLevel in this context
-				srcOldPath := filepath.Join(tempDir, ".fpf", "knowledge", srcLevel, tt.targetID+".md")
+				srcOldPath := filepath.Join(tempDir, ".quint", "knowledge", srcLevel, tt.targetID+".md")
 				if _, err := os.Stat(srcOldPath); err == nil {
 					t.Errorf("Hypothesis %s was not removed from source level %s", tt.targetID, srcLevel)
 				}
@@ -193,7 +193,7 @@ func TestManageEvidence(t *testing.T) {
 func TestRefineLoopback(t *testing.T) {
 	tools, fsm, tempDir := setupTools(t)
 	parentID := "parent-hypo"
-	parentPath := filepath.Join(tempDir, ".fpf", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
+	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
 	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy parent hypothesis file: %v", err)
 	}
@@ -210,13 +210,13 @@ func TestRefineLoopback(t *testing.T) {
 	}
 
 	// Verify parent moved to invalid
-	invalidParentPath := filepath.Join(tempDir, ".fpf", "knowledge", "invalid", parentID+".md")
+	invalidParentPath := filepath.Join(tempDir, ".quint", "knowledge", "invalid", parentID+".md")
 	if _, err := os.Stat(invalidParentPath); os.IsNotExist(err) {
 		t.Errorf("Parent hypothesis %s was not moved to invalid", parentID)
 	}
 
 	// Verify child created in L0
-	expectedChildPath := filepath.Join(tempDir, ".fpf", "knowledge", "L0", "refined-child-hypothesis.md")
+	expectedChildPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", "refined-child-hypothesis.md")
 	if childPath != expectedChildPath {
 		t.Errorf("Returned child path %q, expected %q", childPath, expectedChildPath)
 	}
@@ -225,7 +225,7 @@ func TestRefineLoopback(t *testing.T) {
 	}
 
 	// Verify log file created
-	sessionDir := filepath.Join(tempDir, ".fpf", "sessions")
+	sessionDir := filepath.Join(tempDir, ".quint", "sessions")
 	matches, err := filepath.Glob(filepath.Join(sessionDir, "loopback-*.md"))
 	if err != nil || len(matches) == 0 {
 		t.Errorf("Loopback log file was not created")
@@ -237,7 +237,7 @@ func TestFinalizeDecision(t *testing.T) {
 	fsm.State.Phase = PhaseDecision // Simulate being in Decision phase
 
 	winnerID := "final-winner"
-	winnerPath := filepath.Join(tempDir, ".fpf", "knowledge", "L1", winnerID+".md") // Assume winner is in L1
+	winnerPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", winnerID+".md") // Assume winner is in L1
 	if err := os.WriteFile(winnerPath, []byte("Winner Hypothesis Content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy winner hypothesis file: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestFinalizeDecision(t *testing.T) {
 	}
 
 	// Verify DRR file creation
-	drrPattern := filepath.Join(tempDir, ".fpf", "decisions", fmt.Sprintf("DRR-*-%s.md", tools.Slugify(title)))
+	drrPattern := filepath.Join(tempDir, ".quint", "decisions", fmt.Sprintf("DRR-*-%s.md", tools.Slugify(title)))
 	matches, err := filepath.Glob(drrPattern)
 	if err != nil {
 		t.Fatalf("Failed to glob for DRR file: %v", err)
@@ -272,7 +272,7 @@ func TestFinalizeDecision(t *testing.T) {
 	}
 
 	// Verify winner moved to L2
-	expectedWinnerL2Path := filepath.Join(tempDir, ".fpf", "knowledge", "L2", winnerID+".md")
+	expectedWinnerL2Path := filepath.Join(tempDir, ".quint", "knowledge", "L2", winnerID+".md")
 	if _, err := os.Stat(expectedWinnerL2Path); os.IsNotExist(err) {
 		t.Errorf("Winner hypothesis %s was not moved to L2", winnerID)
 	}

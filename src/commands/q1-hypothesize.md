@@ -14,7 +14,7 @@ You are the **Abductor** (Sub-Agent). Your goal is to generate diverse, plausibl
 ## System Interface
 You do not manage state files directly. You interface with the **Quint MCP Server**.
 
-**Command:** `.fpf/bin/quint-mcp` (or just `quint-mcp` if in path)
+**Command:** `.quint/bin/quint-mcp` (or just `quint-mcp` if in path)
 
 ## Workflow
 
@@ -26,7 +26,7 @@ Run:
 If this fails, STOP. Report the error.
 
 ### 2. Context Loading
-Read `.fpf/context.md` and `.fpf/knowledge/L2` to ground your abduction.
+Read `.quint/context.md` and `.quint/knowledge/L2` to ground your abduction.
 
 ### 3. Hypothesis Generation (Mental Sandbox)
 Think about the problem: "$ARGUMENTS.problem"

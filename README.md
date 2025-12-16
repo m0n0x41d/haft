@@ -57,7 +57,7 @@ cd quint-code
 ```bash
 cd /path/to/your/project
 # Then in your AI coding tool:
-/q0-init  # Creates .fpf/ structure and scans your repo
+/q0-init  # Creates .quint/ structure and scans your repo
 
 # Start reasoning
 /q1-hypothesize "How should we handle state synchronization across browser tabs?"
@@ -211,7 +211,7 @@ The `quint-mcp` project prioritizes code quality and reliability.
 
 | Command | Role | Phase | What It Does | Required |
 |---------|------|-------|--------------|----------|
-| `/q0-init` | Any | Setup | Create `.fpf/` structure | Yes |
+| `/q0-init` | Any | Setup | Create `.quint/` structure | Yes |
 | `/q1-hypothesize` | Abductor | Abduction | Generate competing hypotheses → `L0/` | Yes |
 | `/q2-check` | Deductor | Deduction | Verify logical consistency → `L1/` (on PASS) or `invalid/` (on FAIL/REFINE) | Yes |
 | `/q3-test` | Inductor | Induction | Run internal tests, benchmarks → `L2/` (on PASS) or `invalid/` (on FAIL/REFINE/LOOPBACK) | Yes* |
@@ -369,7 +369,7 @@ After initialization:
 
 ```
 your-project/
-└── .fpf/
+└── .quint/
     ├── knowledge/
     │   ├── L0/           # Hypotheses (Unverified ideas)
     │   ├── L1/           # Hypotheses (Logically sound)

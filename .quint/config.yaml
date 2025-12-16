@@ -1,0 +1,29 @@
+# FPF Project Configuration
+# All values are optional — defaults shown
+
+# Evidence validity defaults (days)
+validity_defaults:
+  internal_benchmark: 90
+  internal_test: 180
+  external_docs: 180
+  external_blog: 365
+  external_paper: 730
+
+# Congruence penalty values (Φ function)
+congruence_penalties:
+  high: 0.00    # Direct applicability
+  medium: 0.15  # Partial context match
+  low: 0.35     # Weak applicability
+
+# Epistemic debt thresholds
+epistemic_debt:
+  warning_days: 30   # Warn when evidence expires within N days
+
+# Hypothesis generation
+hypothesize:
+  min_hypotheses: 3
+  require_diversity: true  # At least one conservative, innovative, minimal
+
+# Audit settings
+audit:
+  required_before_decide: false  # If true, blocks /fpf-5-decide without audit

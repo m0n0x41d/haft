@@ -21,10 +21,10 @@ Run:
 If this fails, STOP. (This transitions the system from Abduction -> Deduction).
 
 ### 2. Analysis
-Read all L0 hypotheses in `.fpf/knowledge/L0/`.
+Read all L0 hypotheses in `.quint/knowledge/L0/`.
 For each:
 - Check internal consistency.
-- Check compliance with `.fpf/context.md`.
+- Check compliance with `.quint/context.md`.
 - Identify the **Necessary Consequence** (If H is true, then X must happen).
 
 ### 3. Action

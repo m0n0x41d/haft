@@ -12,7 +12,7 @@ arguments:
 
 **STOP. Verify phase before proceeding:**
 
-1. Read `.fpf/session.md`, extract `Phase:` value
+1. Read `.quint/session.md`, extract `Phase:` value
 2. Check validity:
 
 | Current Phase | Can Run? | Action |
@@ -58,7 +58,7 @@ New Idea: `$ARGUMENTS.hypothesis`
 
 ### 1. Generate New Hypothesis (L0)
 
-Create **ONE** new hypothesis file in `.fpf/knowledge/L0/`.
+Create **ONE** new hypothesis file in `.quint/knowledge/L0/`.
 
 **Filename:** `[slug]-hypothesis.md`
 
@@ -67,7 +67,7 @@ Create **ONE** new hypothesis file in `.fpf/knowledge/L0/`.
 
 ### 2. Update Session
 
-Update `.fpf/session.md`:
+Update `.quint/session.md`:
 - Add new hypothesis to `## Active Hypotheses` table.
 - Do **NOT** change the Phase (stay in `ABDUCTION_COMPLETE`).
 
@@ -80,7 +80,7 @@ Update `.fpf/session.md`:
 - **Rationale:** [Why was this added late?]
 - **Plausibility:** [Score]
 
-**File created:** `.fpf/knowledge/L0/[slug].md`
+**File created:** `.quint/knowledge/L0/[slug].md`
 
 **Next Step:**
 Resume `/q2-check` for ALL active hypotheses (including this one).

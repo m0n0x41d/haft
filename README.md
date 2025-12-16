@@ -67,17 +67,19 @@ Follow the prompts. The AI guides you through the cycle. You make the calls.
 
 ## What Is This, Really?
 
-A set of slash commands for AI coding tools that implement **hypothesis-driven reasoning**. You generate competing ideas, verify them logically, test them empirically, and document the rationale.
+A set of slash commands for AI coding tools that implement **hypothesis-driven reasoning** following the **First Principles Framework (FPF)** workflow. You generate competing ideas, verify them logically, test them empirically, manage their lifecycle, and document the rationale.
 
 Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by Anatoly Levenchuk.
 
-**The core loop:**
+**The FPF Workflow Phases and Core Loop (managed by `quint-mcp`):**
 
-1. Generate multiple hypotheses
-2. Verify them logically
-3. Test them empirically
-4. Audit for blind spots
-5. Decide with full rationale documented
+The `quint-mcp` (Multi-platform Core Protocol) project manages the FPF workflow, ensuring a structured approach to problem-solving. Hypotheses move through distinct knowledge levels (L0, L1, L2, Invalid) based on their verification and validation status.
+
+1.  **IDLE**: The initial state, or after a decision is finalized.
+2.  **ABDUCTION (Hypothesize)**: Generate multiple hypotheses. Outputs L0/ (unverified ideas).
+3.  **DEDUCTION (Check)**: Verify logical consistency. Moves L0 hypotheses to L1/ (logically sound) or Invalid/ on failure.
+4.  **INDUCTION (Test/Research)**: Test hypotheses empirically. Moves L1 hypotheses to L2/ (empirically tested) or Invalid/ on failure. Loopback to ABDUCTION for refinement is supported.
+5.  **DECISION**: Finalize the decision, archive the session. Moves L2 hypotheses to the final decision and related files.
 
 AI generates. You decide.
 
@@ -114,7 +116,7 @@ The name references the **Invariant Quintet** — five properties that FPF requi
 | **IDEM** | ⚠️ By design | Single items pass through unchanged, but no computational verification |
 | **COMM** | ⚠️ By design | `/q3-test` and `/q3-research` run in any order; min() is commutative |
 | **LOC** | ⚠️ By design | Git-trackable artifacts, reproducible methods documented |
-| **MONO** | ⚠️ By design | L0→L1→L2 progression; invalid knowledge kept (never deleted) |
+| MONO | ✅ Enforced | Hypotheses progress L0→L1→L2. Invalidated hypotheses move to `invalid/` (never deleted) for future learning and historical audit. |
 
 **Honest assessment:** WLNK is the only invariant with explicit enforcement. The others are *preserved by the design* of the workflow rather than *verified computationally*. For a CLI tool that assists reasoning, this is the right trade-off. Full formal verification would require something closer to a theorem prover.
 
@@ -139,21 +141,20 @@ Problem Statement
 ┌──────────────────────────────────────────────┐
 │  1. ABDUCTION (Hypothesize)                  │
 │  Generate 3-5 competing hypotheses           │
-│  Output: L0/ (unverified ideas)              │
+│  Output: L0/ (new hypotheses)                │
 └──────────────────────┬───────────────────────┘
                        ▼ (REQUIRED)
 ┌──────────────────────────────────────────────┐
 │  2. DEDUCTION (Check)                        │
 │  Verify logical consistency                  │
-│  Output: L1/ (logically sound)               │
+│  Output: L0/ -> L1/ (logically sound) or invalid/ (on FAIL/REFINE) │
 └──────────────────────┬───────────────────────┘
                        │ (REQUIRED)
           ┌────────────┴────────────┐
           ▼                         ▼
    ┌─────────────┐          ┌─────────────┐
    │  3a. TEST   │          │ 3b. RESEARCH│
-   │  Internal   │          │  External   │
-   │  evidence   │          │  evidence   │
+   │  Internal   │          │  evidence   │
    └──────┬──────┘          └──────┬──────┘
           └────────────┬───────────┘
                        │
@@ -167,7 +168,7 @@ Problem Statement
 ┌──────────────────────────────────────────────┐
 │  5. DECIDE                                   │
 │  Create DRR, archive session                 │
-│  Output: L2/ (verified), decisions/DRR      │
+│  Output: L2/ (final decision), decisions/DRR, session archived │
 └──────────────────────────────────────────────┘
 ```
 
@@ -189,19 +190,26 @@ Problem Statement
 - Evidence came primarily from external sources (congruence assessment needed)
 - The decision affects multiple teams or has long-term architectural impact
 
+## Testing and Code Quality
+
+The `quint-mcp` project prioritizes code quality and reliability.
+
+- **Comprehensive Testing:** The project includes a suite of unit tests for core FSM logic (`fsm_test.go`) and file system operations (`tools_test.go`). A robust integration test (`integration_test.go`) simulates the entire FPF workflow, ensuring seamless operation across phases and file lifecycle management. All tests are executed using Go's native testing framework.
+- **Static Analysis:** Code quality is continuously maintained and enforced using `golangci-lint`, a popular Go linter aggregator. This ensures adherence to best practices, identifies potential bugs, and improves code readability and maintainability.
+
 ## Commands Reference
 
 ### Core Cycle
 
-| Command | Phase | What It Does | Required |
-|---------|-------|--------------|----------|
-| `/q0-init` | Setup | Create `.fpf/` structure | Yes |
-| `/q1-hypothesize` | Abduction | Generate competing hypotheses → `L0/` | Yes |
-| `/q2-check` | Deduction | Verify logical consistency → `L1/` | Yes |
-| `/q3-test` | Induction | Run internal tests, benchmarks | Yes* |
-| `/q3-research` | Induction | Gather external evidence (web, docs) | Yes* |
-| `/q4-audit` | Audit | WLNK analysis, bias check | No** |
-| `/q5-decide` | Decision | Create DRR, finalize | Yes |
+| Command | Role | Phase | What It Does | Required |
+|---------|------|-------|--------------|----------|
+| `/q0-init` | Any | Setup | Create `.fpf/` structure | Yes |
+| `/q1-hypothesize` | Abductor | Abduction | Generate competing hypotheses → `L0/` | Yes |
+| `/q2-check` | Deductor | Deduction | Verify logical consistency → `L1/` (on PASS) or `invalid/` (on FAIL/REFINE) | Yes |
+| `/q3-test` | Inductor | Induction | Run internal tests, benchmarks → `L2/` (on PASS) or `invalid/` (on FAIL/REFINE/LOOPBACK) | Yes* |
+| `/q3-research` | Inductor | Induction | Gather external evidence (web, docs) → `L2/` (on PASS) or `invalid/` (on FAIL/REFINE/LOOPBACK) | Yes* |
+| `/q4-audit` | Auditor | Audit | WLNK analysis, bias check | No** |
+| `/q5-decide` | Decider | Decision | Create DRR, finalize, archive session | Yes |
 
 *At least one of `/q3-test` or `/q3-research` required before proceeding.
 **Optional but recommended — see [Phase Strictness](#phase-strictness) above.
@@ -237,10 +245,10 @@ The AI isn't just a chatbot; it enacts specific FPF roles per phase:
 
 | Level | Name | Meaning | How to Reach |
 |-------|------|---------|--------------|
-| **L0** | Observation | Unverified hypothesis | `/q1-hypothesize` |
-| **L1** | Reasoned | Passed logical check | `/q2-check` |
-| **L2** | Verified | Empirically tested | `/q3-test` or `/q3-research` |
-| **Invalid** | Disproved | Was wrong — kept for learning | Failed at any stage |
+| **L0** | Observation | Unverified hypothesis | Created by /q1-hypothesize in L0/ |
+| **L1** | Reasoned | Passed logical check | Moved from L0/ to L1/ by /q2-check (on PASS) |
+| **L2** | Verified | Empirically tested | Moved from L1/ to L2/ by /q3-test or /q3-research (on PASS) |
+| **Invalid** | Disproved | Was wrong — kept for learning | Moved from L0/, L1/, or L2/ to invalid/ (on FAIL/REFINE/LOOPBACK) |
 
 ### Formality (F-Score)
 
@@ -355,10 +363,10 @@ After initialization:
 your-project/
 └── .fpf/
     ├── knowledge/
-    │   ├── L0/           # Unverified hypotheses
-    │   ├── L1/           # Logically verified
-    │   ├── L2/           # Empirically tested
-    │   └── invalid/      # Disproved (kept for learning)
+    │   ├── L0/           # Hypotheses (Unverified ideas)
+    │   ├── L1/           # Hypotheses (Logically sound)
+    │   ├── L2/           # Hypotheses (Empirically tested, Verified)
+    │   └── invalid/      # Hypotheses (Disproved, Refined, or Failed - kept for learning)
     ├── evidence/         # Test results, research findings
     ├── decisions/        # DRRs (Design Rationale Records)
     ├── sessions/         # Archived reasoning cycles

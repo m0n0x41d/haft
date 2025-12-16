@@ -92,7 +92,7 @@ print_logo() {
 
 print_instructions() {
     cprint "$DIM" "      "
-    cprint "$CYAN$BOLD" "↑↓/jk"
+    cprint "$CYAN$BOLD" "↑↓/jk" 
     cprint "$DIM" " Navigate  "
     cprint "$WHITE$BOLD" "Space"
     cprint "$DIM" " Toggle  "
@@ -117,8 +117,7 @@ print_platform_item() {
         printf "     "
     fi
 
-    if is_selected $index;
-    then
+    if is_selected $index; then
         cprint "$BRIGHT_GREEN$BOLD" "[✓]"
     else
         cprint "$DIM" "[ ]"
@@ -152,8 +151,8 @@ print_summary() {
         if is_selected $i;
         then
             ((count++))
-            [[ -n "$platforms_str" ]] && platforms_str+=", "
-            platforms_str+=$(get_platform_name $i)
+            [[ -n "$platforms_str" ]] && platforms_str=", "$platforms_str
+            platforms_str+="$(get_platform_name $i)"
         fi
         ((i++))
     done
@@ -175,26 +174,28 @@ handle_input() {
     IFS= read -rsn1 key </dev/tty
 
     case "$key" in
-        $''\x1b')
+        $\'x1b\')
             local seq
             read -rsn1 -t 1 seq </dev/tty
-            if [[ "$seq" == "[" ]]; then
+            if [[ "$seq" == "[" ]]
+            then
                 read -rsn1 -t 1 seq </dev/tty
                 case "$seq" in
                     'A') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
                     'B') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
                 esac
             fi
-            ;; 
+            ;;
         ' ') 
-            if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]; then
+            if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]
+            then
                 SELECTED[$CURRENT_INDEX]=0
             else
                 SELECTED[$CURRENT_INDEX]=1
             fi
-            ;; 
-        '') return 1;; # Enter key
-        'q'|'Q') return 2;; # Quit
+            ;;
+        '') return 1;; 
+        'q'|'Q') return 2;; 
         'k') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
         'j') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
     esac
@@ -214,10 +215,11 @@ run_tui() {
         print_summary
 
         if ! handle_input; then
-            local result=$? 
+            local result=$?
             show_cursor
             clear_screen
-            if [[ $result -eq 2 ]]; then
+            if [[ $result -eq 2 ]]
+            then
                 cprintln "$YELLOW" "Installation cancelled."
                 exit 0
             fi
@@ -254,20 +256,32 @@ download_commands() {
     mkdir -p "$full_target"
 
     local script_dir=""
-    if [[ -n "${BASH_SOURCE[0]}" ]]; then
+    if [[ -n "${BASH_SOURCE[0]}" ]]
+    then
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     fi
 
     local local_dist="$script_dir/dist/$platform"
     local base_url="https://raw.githubusercontent.com/m0n0x41d/quint-code/$BRANCH/dist/$platform"
 
-    local commands=("q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" "q-status" "q-query" "q-decay" "q-reset")
+    local commands=(
+        "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
+        "q-status" "q-query" "q-decay" "q-reset"
+        "abductor" "deductor" "inductor" "decider" "auditor"
+    )
 
     for cmd in "${commands[@]}"; do
         local dest="$full_target/${cmd}.${ext}"
         local local_file="$local_dist/${cmd}.${ext}"
-        if [[ -f "$local_file" ]]; then
+        # Check src/commands for both standard and agent commands
+        local src_cmd_file="$script_dir/src/commands/${cmd}.md"
+
+        if [[ -f "$local_file" ]]
+        then
             cp "$local_file" "$dest"
+        elif [[ -f "$src_cmd_file" ]]
+        then
+            cp "$src_cmd_file" "$dest"
         else
             local url="$base_url/${cmd}.${ext}"
             curl -fsSL "$url" -o "$dest" 2>/dev/null || true
@@ -299,30 +313,37 @@ uninstall_commands() {
     local platform="${PLATFORMS[$index]}"
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
-    local commands=("q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" "q-status" "q-query" "q-decay" "q-reset")
+    local commands=(
+        "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
+        "q-status" "q-query" "q-decay" "q-reset"
+        "abductor" "deductor" "inductor" "decider" "auditor"
+    )
     local local_path="$TARGET_DIR/$target_path"
-    local locations=("$local_path")
+    local locations=($local_path)
     local removed=0
     local removed_from=""
     local checked_paths=""
 
     for full_target in "${locations[@]}"; do
-        [[ -n "$checked_paths" ]] && checked_paths+=", "
+        [[ -n "$checked_paths" ]] && checked_paths+=', '
         checked_paths+="$full_target"
         for cmd in "${commands[@]}"; do
             local file="$full_target/${cmd}.${ext}"
-            if [[ -f "$file" ]]; then
+            if [[ -f "$file" ]]
+            then
                 rm "$file"
                 ((removed++))
                 removed_from="$full_target"
             fi
         done
-        if [[ -d "$full_target" ]] && [[ -z "$(ls -A "$full_target")" ]]; then
+        if [[ -d "$full_target" ]] && [[ -z "$(ls -A "$full_target")" ]]
+        then
             rmdir "$full_target" 2>/dev/null || true
         fi
     done
 
-    if [[ $removed -gt 0 ]]; then
+    if [[ $removed -gt 0 ]]
+    then
         echo "$removed|$removed_from|$checked_paths"
     else
         echo "0||$checked_paths"
@@ -356,7 +377,8 @@ install_agents_internal() {
     mkdir -p "$agents_dir"
     
     local script_dir=""
-    if [[ -n "${BASH_SOURCE[0]}" ]]; then
+    if [[ -n "${BASH_SOURCE[0]}" ]]
+    then
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     fi
     
@@ -364,7 +386,8 @@ install_agents_internal() {
     local agents=("abductor" "deductor" "inductor" "decider" "auditor")
 
     for agent in "${agents[@]}"; do
-        if [[ -f "$src_cmds/$agent.md" ]]; then
+        if [[ -f "$src_cmds/$agent.md" ]]
+        then
             cp "$src_cmds/$agent.md" "$agents_dir/"
         fi
     done
@@ -372,12 +395,12 @@ install_agents_internal() {
 
 uninstall_platforms() {
     echo ""
-    cprintln "$BRIGHT_GREEN$BOLD" "   Uninstalling Quint Code..."
+    cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
     echo ""
     local uninstalled_indices=""
     local i=0
     for platform in "${PLATFORMS[@]}"; do
-        if is_selected $i;
+        if is_selected $i
         then
             local name=$(get_platform_name $i)
             local result=$(uninstall_commands $i)
@@ -385,7 +408,8 @@ uninstall_platforms() {
             local location=$(echo "$result" | cut -d'|' -f2)
             local checked=$(echo "$result" | cut -d'|' -f3)
 
-            if [[ "$count" -gt 0 ]]; then
+            if [[ "$count" -gt 0 ]]
+            then
                 cprint "$GREEN" "   ✓ "
                 cprint "$WHITE" "$name"
                 cprint "$DIM" " — removed $count commands from "
@@ -400,7 +424,8 @@ uninstall_platforms() {
         ((i++))
     done
     echo ""
-    if [[ -n "$uninstalled_indices" ]]; then
+    if [[ -n "$uninstalled_indices" ]]
+    then
         cprintln "$BRIGHT_GREEN$BOLD" "   Uninstall complete."
     else
         cprintln "$YELLOW" "   Nothing to uninstall."
@@ -415,36 +440,44 @@ install_platforms() {
     local installed_indices=""
     local i=0
     for platform in "${PLATFORMS[@]}"; do
-        if is_selected $i;
+        if is_selected $i
         then
             local name=$(get_platform_name $i)
             (download_commands $i) &
             spinner $! "Installing $name commands"
+            
+            # Agents are now included in download_commands
+
             installed_indices="$installed_indices $i"
         fi
         ((i++))
     done
 
-    if [[ ! -d "$TARGET_DIR/.fpf" ]]; then
+    if [[ ! -d "$TARGET_DIR/.fpf" ]]
+    then
         (create_fpf_structure "$TARGET_DIR") &
         spinner $! "Creating .fpf/ structure"
     fi
     
     # Internal agent copy for MCP context lookup
-    if [[ -d "src/commands" ]]; then
+    if [[ -d "src/commands" ]]
+    then
          (install_agents_internal "$TARGET_DIR") &
          spinner $! "Caching Agent Profiles in .fpf"
     fi
 
-    if command -v go >/dev/null 2>&1; then
+    if command -v go >/dev/null 2>&1
+    then
         cprintln "$DIM" "   Building MCP Server..."
         mkdir -p "$TARGET_DIR/.fpf/bin"
         local src_mcp="$TARGET_DIR/src/mcp"
-        if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]; then
+        if [[ ! -d "$src_mcp" && -n "${BASH_SOURCE[0]}" ]]
+        then
              src_mcp="$(dirname "${BASH_SOURCE[0]}")/src/mcp"
         fi
 
-        if [[ -d "$src_mcp" ]]; then
+        if [[ -d "$src_mcp" ]]
+        then
             (cd "$src_mcp" && go mod tidy) &>/dev/null || true
             (cd "$src_mcp" && go build -o "$TARGET_DIR/.fpf/bin/quint-mcp" .) &
             spinner $! "Compiling quint-mcp binary"
@@ -487,30 +520,90 @@ print_success() {
     cprintln "$DIM" "   Documentation: https://github.com/m0n0x41d/quint-code"
     echo ""
 }
+print_usage() {
+    echo "Quint Code Installer"
+    echo ""
+    echo "Usage:"
+    echo "  ./install.sh              Interactive TUI mode"
+    echo "  ./install.sh --claude     Install Claude Code only"
+    echo "  ./install.sh --all        Install all platforms"
+    echo "  ./install.sh --uninstall  Uninstall mode"
+    echo ""
+    echo "Platforms:"
+    echo "  --claude    Claude Code (.claude/commands/)"
+    echo "  --cursor    Cursor (.cursor/commands/)"
+    echo "  --gemini    Gemini CLI (.gemini/commands/)"
+    echo ""
+    echo "Options:"
+    echo "  -u, --uninstall  Remove commands instead of installing"
+    echo "  -h, --help       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  ./install.sh --all             Install all platforms (local)"
+    echo "  ./install.sh --uninstall --all Uninstall all platforms (local)"
+    echo "  ./install.sh -u --cursor       Uninstall Cursor"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════════════════════
 
 main() {
     local cli_mode=false
+
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -h|--help) print_usage; exit 0;; 
-            -u|--uninstall) UNINSTALL_MODE=true; shift;; 
-            --claude) cli_mode=true; SELECTED[0]=1; shift;; 
-            --cursor) cli_mode=true; SELECTED[1]=1; shift;; 
-            --gemini) cli_mode=true; SELECTED[2]=1; shift;; 
-            --all) cli_mode=true; SELECTED=(1 1 1); shift;; 
-            *) TARGET_DIR="$1"; shift;; 
+            -h|--help)
+                print_usage
+                exit 0
+                ;;
+            -u|--uninstall)
+                UNINSTALL_MODE=true
+                shift
+                ;;
+            --claude)
+                cli_mode=true
+                SELECTED[0]=1
+                shift
+                ;;
+            --cursor)
+                cli_mode=true
+                SELECTED[1]=1
+                shift
+                ;;
+            --gemini)
+                cli_mode=true
+                SELECTED[2]=1
+                shift
+                ;;
+            --all)
+                cli_mode=true
+                SELECTED=(1 1 1)
+                shift
+                ;;
+            *)
+                TARGET_DIR="$1"
+                shift
+                ;;
         esac
     done
 
+    # Check if running interactively
+    # Run TUI if interactive (either direct terminal or curl|bash with /dev/tty)
     if [[ "$cli_mode" == false ]]; then
         if [[ -t 0 && -t 1 ]] || [[ -c /dev/tty ]]; then
             run_tui
         fi
     fi
 
+    # Check if any platform selected
     local any_selected=false
     for sel in "${SELECTED[@]}"; do
-        if [[ "$sel" == "1" ]]; then any_selected=true; break; fi
+        if [[ "$sel" == "1" ]]; then
+            any_selected=true
+            break
+        fi
     done
 
     if [[ "$any_selected" == false ]]; then

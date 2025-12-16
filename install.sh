@@ -192,8 +192,8 @@ handle_input() {
                 SELECTED[$CURRENT_INDEX]=1
             fi
             ;; 
-        '') return 1;;
-        'q'|'Q') return 2;;
+        '') return 1;; # Enter key
+        'q'|'Q') return 2;; # Quit
         'k') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
         'j') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
     esac
@@ -365,6 +365,28 @@ install_agents() {
     fi
 }
 
+install_agents_to_platform() {
+    local index=$1
+    local platform_path=$(get_platform_path $index)
+    local target_cmd_dir="$TARGET_DIR/$platform_path"
+    
+    local script_dir=""
+    if [[ -n "${BASH_SOURCE[0]}" ]]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    local src_agents="$script_dir/src/agents"
+
+    mkdir -p "$target_cmd_dir"
+    if [[ -d "$src_agents" ]]; then
+        for agent_file in "$src_agents"/*.md; do
+            if [[ -f "$agent_file" ]]; then
+                local filename=$(basename "$agent_file")
+                cp "$agent_file" "$target_cmd_dir/$filename"
+            fi
+        done
+    fi
+}
+
 uninstall_platforms() {
     echo ""
     cprintln "$BRIGHT_WHITE$BOLD" "   Uninstalling Quint Code..."
@@ -415,6 +437,11 @@ install_platforms() {
             local name=$(get_platform_name $i)
             (download_commands $i) &
             spinner $! "Installing $name commands"
+            
+            # Install agents to platform command dir
+            (install_agents_to_platform $i) &
+            spinner $! "Installing $name agent profiles"
+
             installed_indices="$installed_indices $i"
         fi
         ((i++))
@@ -425,10 +452,10 @@ install_platforms() {
         spinner $! "Creating .fpf/ structure"
     fi
     
-    # Install Agents (Local copy if available)
+    # Keep installing to .fpf/agents for MCP/backend use as well
     if [[ -d "src/agents" ]]; then
          (install_agents "$TARGET_DIR") &
-         spinner $! "Installing Agent Profiles"
+         spinner $! "Caching Agent Profiles in .fpf"
     fi
 
     if command -v go >/dev/null 2>&1; then
@@ -477,6 +504,7 @@ print_success() {
     cprintln "$BRIGHT_CYAN$BOLD" "   Get started:"
     cprintln "$WHITE" "     /q0-init        Initialize FPF in your project"
     cprintln "$WHITE" "     /q-status       Check current state"
+    cprintln "$WHITE" "     /abductor       Adopt Abductor persona"
     echo ""
     cprintln "$DIM" "   Documentation: https://github.com/m0n0x41d/quint-code"
     echo ""

@@ -455,7 +455,7 @@ install_agents_internal() {
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     fi
     
-    local src_cmds="$script_dir/src/commands"
+    local src_cmds="$script_dir/src/agents"
     local agents=("abductor" "deductor" "inductor" "decider" "auditor")
 
     for agent in "${agents[@]}"; do

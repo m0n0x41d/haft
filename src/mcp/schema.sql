@@ -4,10 +4,12 @@
 CREATE TABLE holons (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL, -- 'hypothesis', 'system', 'method', 'capability'
+    kind TEXT, -- 'system' (architecture/code) or 'episteme' (knowledge/docs) - C.3 Kind-CAL
     layer TEXT NOT NULL, -- 'L0', 'L1', 'L2', 'invalid'
     title TEXT NOT NULL,
     content TEXT NOT NULL, -- Markdown content or reference
     context_id TEXT NOT NULL, -- Bounded Context ID
+    scope TEXT, -- Claim Scope (G)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

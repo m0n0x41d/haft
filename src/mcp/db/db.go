@@ -11,6 +11,7 @@ import (
 type Holon struct {
 	ID        string
 	Type      string
+	Kind      string
 	Layer     string
 	Title     string
 	Content   string
@@ -70,9 +71,9 @@ func New(dbPath string) (*DB, error) {
 }
 
 func (d *DB) CreateHolon(h Holon) error {
-	query := `INSERT INTO holons (id, type, layer, title, content, context_id, scope, created_at, updated_at) 
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.conn.Exec(query, h.ID, h.Type, h.Layer, h.Title, h.Content, h.ContextID, h.Scope, time.Now(), time.Now())
+	query := `INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at) 
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := d.conn.Exec(query, h.ID, h.Type, h.Kind, h.Layer, h.Title, h.Content, h.ContextID, h.Scope, time.Now(), time.Now())
 	return err
 }
 

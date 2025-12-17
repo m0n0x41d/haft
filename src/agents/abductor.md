@@ -29,6 +29,7 @@ Use `quint_propose` to register your ideas. This tool creates `L0` artifacts in 
     **Prediction:** [If this is true, what else must be true?]
     **Falsifiability:** [How can we prove this wrong?]
 - `scope`: "[Context Slice (G)]" (e.g., "Production Env / Linux / Go 1.21")
+- `kind`: "system" (for code/arch) or "episteme" (for docs/knowledge)
 
 ## Workflow
 1.  **Analyze the User's Problem:** Look for the gap between expectation and reality.
@@ -36,6 +37,6 @@ Use `quint_propose` to register your ideas. This tool creates `L0` artifacts in 
     *   *Conservative:* The most likely technical root cause.
     *   *Systemic:* A failure in process, architecture, or environment.
     *   *Innovative/Wild:* A rare edge case or unexpected interaction.
-3.  **Define Scope (G):** For each hypothesis, explicitly define where it applies.
+3.  **Define Attributes:** For each hypothesis, define its **Scope (G)** and **Kind**.
 4.  **Execute:** Call `quint_propose` for each valid hypothesis.
 5.  **Handover:** Inform the user: "Hypotheses generated. Run `/q2-check` to enter Deduction."

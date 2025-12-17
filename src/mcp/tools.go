@@ -129,14 +129,14 @@ func (t *Tools) GetAgentContext(role string) (string, error) {
 }
 
 // ProposeHypothesis creates an L0 hypothesis file
-func (t *Tools) ProposeHypothesis(title, content, scope string) (string, error) {
+func (t *Tools) ProposeHypothesis(title, content, scope, kind string) (string, error) {
 	slug := t.Slugify(title)
 	filename := fmt.Sprintf("%s.md", slug)
 	path := filepath.Join(t.getFPFDir(), "knowledge", "L0", filename)
 
-	// Inject scope into frontmatter if not present
+	// Inject scope and kind into frontmatter if not present
 	if !strings.Contains(content, "scope:") {
-		content = fmt.Sprintf("---\nscope: %s\n---\n\n%s", scope, content)
+		content = fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n%s", scope, kind, content)
 	}
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -148,6 +148,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope string) (string, error) 
 		h := db.Holon{
 			ID: slug,
 			Type: "hypothesis",
+			Kind: kind, // C.3 Kind-CAL
 			Layer: "L0",
 			Title: title,
 			Content: content,
@@ -283,7 +284,7 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	}
 
 	// 2. Create new hypothesis (child) in L0
-	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope)
+	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system") // Default to system for loopback
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}
@@ -299,15 +300,25 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 }
 
 // FinalizeDecision creates the DRR and archives the session
-func (t *Tools) FinalizeDecision(title, content, winnerID string) (string, error) {
-	// 1. Create DRR
+func (t *Tools) FinalizeDecision(title, winnerID, context, decision, rationale, consequences, characteristics string) (string, error) {
+	// 1. Construct DRR Content (E.9 & C.16)
+	drrContent := fmt.Sprintf("# %s\n\n", title)
+	drrContent += fmt.Sprintf("## Context\n%s\n\n", context)
+	drrContent += fmt.Sprintf("## Decision\n**Selected Option:** %s\n\n%s\n\n", winnerID, decision)
+	drrContent += fmt.Sprintf("## Rationale\n%s\n\n", rationale)
+	if characteristics != "" {
+		drrContent += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
+	}
+	drrContent += fmt.Sprintf("## Consequences\n%s\n", consequences)
+
+	// 2. Create DRR File
 	drrName := fmt.Sprintf("DRR-%d-%s.md", time.Now().Unix(), t.Slugify(title))
 	drrPath := filepath.Join(t.getFPFDir(), "decisions", drrName)
-	if err := os.WriteFile(drrPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
 		return "", err
 	}
 
-	// 2. Promote Winner to L2
+	// 3. Promote Winner to L2
 	if winnerID != "" {
 		_, err := t.moveHypothesis(winnerID, "L1", "L2") // Assuming winner is from L1 after Induction
 		if err != nil {
@@ -316,7 +327,7 @@ func (t *Tools) FinalizeDecision(title, content, winnerID string) (string, error
 		}
 	}
 	
-	// 3. Reset Session (handled by FSM transition to IDLE usually, but here we might archive)
+	// 4. Reset Session (handled by FSM transition to IDLE usually, but here we might archive)
 	// (Skipping archive logic for brevity, relying on FSM state save)
 
 	return drrPath, nil

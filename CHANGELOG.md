@@ -5,6 +5,26 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2025-12-17
+
+### Added: Architectural Dept Repayment
+
+#### Typed Reasoning (C.3 Kind-CAL)
+- **`quint_propose` Upgrade:** Now requires a `kind` argument (`system` vs `episteme`) to distinguish between architectural changes and knowledge/documentation changes.
+- **Database Schema:** Added `kind` column to `holons` table.
+- **Agent Instruction:** Abductor now explicitly classifies hypotheses.
+
+#### Structured Decision Making (E.9 & C.16)
+- **`quint_decide` Upgrade:** Deprecated the free-form `content` blob in favor of strict E.9 DRR fields:
+  - `context`: Problem frame.
+  - `decision`: The choice made.
+  - `rationale`: Why it was chosen.
+  - `consequences`: Risks and benefits.
+  - `characteristics`: C.16 Characteristic Space metrics (e.g., "Cost: Low").
+- **Agent Instruction:** Decider now enforced to provide structured rationale.
+
+---
+
 ## [4.0.0] - 2025-12-17
 
 ### The Agentic Kernel Update

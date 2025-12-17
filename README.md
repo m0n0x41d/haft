@@ -245,10 +245,13 @@ Truth depends on where you stand. `q0-init` now scans your repo to generate stru
 The AI enacts specific FPF roles: Explorer, Logician, Auditor.
 
 **3. Typed Hypotheses (C.3 Kind-CAL)**
-Hypotheses are now typed as either **System** (code, architecture) or **Episteme** (docs, knowledge), allowing distinct verification logic.
+Hypotheses are typed as **System** or **Episteme**.
+- **Deductor** applies different logic: Structural/Component checks for Systems, Consistency/Clarity checks for Epistemes.
 
-**4. Structured Decisions (E.9)**
-Decisions are recorded as formal **DRRs** with Context, Decision, Rationale, and Consequences fields, backed by a **Characteristic Space** (C.16) of metrics.
+**4. Structured Decisions (E.9 & C.16)**
+Decisions are recorded as formal **DRRs** backed by a **Characteristic Space** (C.16).
+- **Abductor** defines Success Metrics (e.g., "Latency < 50ms").
+- **Inductor** measures and records actuals against them.
 
 ### Assurance Levels
 

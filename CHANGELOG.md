@@ -5,6 +5,19 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.1] - 2025-12-17
+
+### Fixed: Agent Logic Hardening
+
+#### Strict Kind-CAL Logic (C.3)
+- **Deductor Agent:** Now explicitly branches validation logic based on `kind: system` (Architecture/Code) vs `kind: episteme` (Knowledge/Theory).
+- **Impact:** Prevents "Type Erasure" where documentation changes were validated with system logic or vice-versa.
+
+#### Characteristic Space Measurement (C.16)
+- **Abductor Agent:** Now mandated to define **Success Metrics** (Characteristics) in the hypothesis body.
+- **Inductor Agent:** Now mandated to **measure** against those specific metrics and record values in the evidence.
+- **Impact:** Prevents "Retrospective Rationalization" by forcing metrics to be defined *before* testing.
+
 ## [4.1.0] - 2025-12-17
 
 ### Added: Architectural Dept Repayment

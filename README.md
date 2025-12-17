@@ -84,9 +84,9 @@ Based on the [First Principles Framework (FPF)](https://github.com/ailev/FPF) by
 The `quint-mcp` (Model Context Protocol) project manages the FPF workflow, ensuring a structured approach to problem-solving. Hypotheses move through distinct knowledge levels (L0, L1, L2, Invalid) based on their verification and validation status.
 
 1.  **IDLE**: The initial state, or after a decision is finalized.
-2.  **ABDUCTION (Hypothesize)**: Generate multiple hypotheses. Outputs L0/ (unverified ideas).
-3.  **DEDUCTION (Check)**: Verify logical consistency. Moves L0 hypotheses to L1/ (logically sound) or Invalid/ on failure.
-4.  **INDUCTION (Test/Research)**: Test hypotheses empirically. Moves L1 hypotheses to L2/ (empirically tested) or Invalid/ on failure. Loopback to ABDUCTION for refinement is supported.
+2.  **ABDUCTION (Hypothesize)**: Generate multiple hypotheses (L0). Outputs unverified ideas.
+3.  **DEDUCTION (Check)**: Verify logical consistency. Moves L0 hypotheses to L1/ (Substantiated) or Invalid/.
+4.  **INDUCTION (Test/Research)**: Test hypotheses empirically. Moves L1 hypotheses to L2/ (Validated/Axiomatic) or Invalid/. Loopback to ABDUCTION for refinement is supported.
 5.  **DECISION**: Finalize the decision, archive the session. Moves L2 hypotheses to the final decision and related files.
 
 AI generates. You decide.
@@ -230,6 +230,7 @@ The `quint-mcp` project prioritizes code quality and reliability.
 | `/q-query <topic>` | Search knowledge base |
 | `/q-decay` | Check evidence freshness |
 | `/q-reset` | Abandon cycle, preserve learnings |
+| `/q-actualize` | Migrate legacy `.fpf` structure to `.quint` and reconcile state |
 
 ## Key Concepts
 
@@ -245,17 +246,19 @@ Truth depends on where you stand. `q0-init` now scans your repo to generate stru
 
 **2. Explicit Role Injection**
 The AI isn't just a chatbot; it enacts specific FPF roles per phase:
-- **ExplorerRole** (Hypothesize): Creative, divergent.
-- **LogicianRole** (Check): Strict, deductive.
-- **AuditorRole** (Audit): Adversarial, critical.
+- **Abductor** (Hypothesize): Creative, divergent.
+- **Deductor** (Check): Strict, deductive.
+- **Inductor** (Test/Research): Empirical, observational.
+- **Auditor** (Audit): Adversarial, critical.
+- **Decider** (Decision): Strategic, conclusive.
 
 ### Assurance Levels
 
 | Level | Name | Meaning | How to Reach |
 |-------|------|---------|--------------|
 | **L0** | Observation | Unverified hypothesis | Created by /q1-hypothesize in L0/ |
-| **L1** | Reasoned | Passed logical check | Moved from L0/ to L1/ by /q2-check (on PASS) |
-| **L2** | Verified | Empirically tested | Moved from L1/ to L2/ by /q3-test or /q3-research (on PASS) |
+| **L1** | Substantiated | Passed logical check | Moved from L0/ to L1/ by /q2-check (on PASS) |
+| **L2** | Validated | Empirically tested | Moved from L1/ to L2/ by /q3-test or /q3-research (on PASS) |
 | **Invalid** | Disproved | Was wrong — kept for learning | Moved from L0/, L1/, or L2/ to invalid/ (on FAIL/REFINE/LOOPBACK) |
 
 ### Formality (F-Score)

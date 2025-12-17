@@ -5,48 +5,41 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - 2025-12-16
+## [4.0.0] - 2025-12-17
 
-### Breaking Changes: The `.quint` Migration
+### The Agentic Kernel Update
 
-**FPF project directory renamed from `.fpf` to `.quint`.**
+This release fundamentally restructures Quint Code to strictly adhere to the First Principles Framework (FPF) by establishing the MCP server as the authoritative kernel and transforming CLI commands into lightweight entry points for specialized Agents.
 
-### Why?
-- **Consistency:** Aligns the hidden directory with the project name "Quint Code".
-- **Clarity:** Reduces confusion between the framework (FPF) and the tool (Quint).
-- **Safety:** Prevents collisions if other tools implement the FPF framework differently.
+### Breaking Changes
+- **Project Directory:** Renamed from `.fpf` to `.quint` to align with the project name.
+- **Database Schema:** `quint.db` schema updated to enforce FPF invariants.
+  - Added `scope` to `holons` table (Pattern A.2.6).
+  - Added `assurance_level` and `carrier_ref` to `evidence` table (Patterns B.3, A.10).
+- **Command Architecture:** Commands (`/q1`, `/q2`, etc.) no longer contain agent prompts. They now strictly perform a `quint_transition` and instruct the LLM to adopt a persona defined in `.quint/agents/`.
 
 ### Added
-- **MCP Hardening (Role Assignments & Evidence Anchors):**
-  - **Explicit RoleAssignment (A.2.1):** Introduced `RoleAssignment` struct in `src/mcp/fsm.go` to bind `SessionID` (Holder) to `Role` within a `Context`. This prevents role spoofing and tracks agent activity. Updated `src/mcp/main.go` and `src/mcp/server.go` to pass this context.
-  - **Evidence Anchoring for Transitions (A.10):** Implemented `EvidenceStub` in `src/mcp/fsm.go` and integrated it into `fsm.CanTransition`. Critical state transitions (Deduction, Induction, Decision) now require explicit evidence artifacts (URI, Type, Description) as proof of action, satisfying **Evidence Graph Referring**.
-- **Installer & Distribution Improvements:**
-  - **Pre-built Binary Download:** `install.sh` now attempts to download `quint-mcp` binaries directly from GitHub Releases (based on OS/architecture) for a faster, more robust installation. Falls back to `go build` if Go is present and download fails.
-  - **Release Automation:** Added `.github/workflows/release.yml` to automatically build and publish `quint-mcp` binaries for multiple platforms on GitHub tag pushes, ensuring consistent distribution.
+- **Formal Agent Definitions:**
+  - Dedicated agent profiles in `src/agents/`: `abductor.md`, `deductor.md`, `inductor.md`, `decider.md`, `auditor.md`.
+  - Agents now have explicit instructions on how to use MCP tools to satisfy FPF obligations.
+- **MCP Tooling Enhancements:**
+  - **`quint_transition`:** Replaces ad-hoc phase changes. Requires `role`, `target` phase, and `evidence_stub` to validate the transition.
+  - **`quint_propose`:** Now requires `scope` (Claim Scope/G) to prevent scope drift.
+  - **`quint_evidence`:** Now requires `assurance_level` (L0/L1/L2) and `carrier_ref` (Symbol Carrier) to prevent trust inflation and hearsay.
+  - **`quint_loopback`:** Explicit tool for the Induction -> Deduction refinement cycle.
+- **Migration Utility:**
+  - **`/q-actualize`:** New command to migrate legacy `.fpf` projects to `.quint` structure and schema.
 
 ### Changed
-- **Directory Structure:**
-  - `.fpf/` → `.quint/`
-  - `src/mcp/.fpf/` → `src/mcp/.quint/`
-- **Database:** `fpf.db` → `quint.db` inside the `.quint/` directory.
-- **Config:** All paths in configuration files and scripts now point to `.quint`.
+- **Evidence Graph Referring (A.10):** Evidence must now be anchored to a physical file or log (`carrier_ref`). The system no longer accepts "I checked it" as valid evidence; it demands "I checked file X".
+- **Trust & Assurance (B.3):** Verdicts are no longer binary (PASS/FAIL). They are now graded by Assurance Level (L0=Unsubstantiated, L1=Substantiated, L2=Axiomatic/Validated).
+- **Unified Scope Mechanism (A.2.6):** Hypotheses cannot be proposed without an explicit Context Slice (Scope).
+- **Installer:** `install.sh` now sources agents from `src/agents`.
 
-### Added
-- **Migration Support:** The new `/q-actualize` command handles the migration of existing projects.
-
-### New Command: `/q-actualize`
-
-**Purpose:** Synchronize project state, migrate legacy structures, and reconcile evidence with codebase changes.
-
-#### Capabilities
-- **Migration:** Automatically renames `.fpf` to `.quint` and migrates the database.
-- **Reconciliation:** Scans for "drift" — e.g., code files referenced in evidence that have changed since the evidence was recorded.
-- **Discovery:** Identifies new context (files, tech stack changes) that should be added to `.quint/context.md`.
-
-#### Usage
-```bash
-/q-actualize
-```
+### Fixed
+- **Role Spoofing:** `quint_transition` enforces that the `role` matches the valid actors for the current phase.
+- **Logic Gaps:** The **Deductor** agent is now explicitly responsible for deriving "Necessary Consequences" before testing begins.
+- **Hypothesis Zombie State:** The **Auditor** agent includes checks for orphaned L0 hypotheses.
 
 ---
 

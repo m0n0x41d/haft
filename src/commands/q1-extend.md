@@ -56,32 +56,14 @@ New Idea: `$ARGUMENTS.hypothesis`
 
 ## Process
 
-### 1. Generate New Hypothesis (L0)
+### 1. Verification
+Ensure you are in the ABDUCTION phase (check `.quint/state.json`). If not, STOP.
 
-Create **ONE** new hypothesis file in `.quint/knowledge/L0/`.
+### 2. Agent Handoff (Abductor)
+**ACT AS THE ABDUCTOR AGENT.**
+Read and follow instructions in `.quint/agents/abductor.md`.
 
-**Filename:** `[slug]-hypothesis.md`
-
-**Content:** Standard L0 template (same as q1-hypothesize).
-**Important:** Add `tags: [late-addition]` to frontmatter.
-
-### 2. Update Session
-
-Update `.quint/session.md`:
-- Add new hypothesis to `## Active Hypotheses` table.
-- Do **NOT** change the Phase (stay in `ABDUCTION_COMPLETE`).
-
-## Output Format
-
-```markdown
-## Hypothesis Added (Extension)
-
-**Added:** [Name] (L0)
-- **Rationale:** [Why was this added late?]
-- **Plausibility:** [Score]
-
-**File created:** `.quint/knowledge/L0/[slug].md`
-
-**Next Step:**
-Resume `/q2-check` for ALL active hypotheses (including this one).
-```
+**Your immediate task:**
+1. Treat "$ARGUMENTS.hypothesis" as a new L0 candidate.
+2. Use `quint_propose` to register it immediately.
+3. Confirm addition to the user.

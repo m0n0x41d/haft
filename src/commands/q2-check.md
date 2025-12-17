@@ -14,34 +14,20 @@ Use `quint_evidence` to record your findings and `quint_transition` to manage ph
 
 ## Workflow
 
-### 1. Phase Transition (Tool Use)
-Call the `quint_transition` tool:
+### 1. Transition to Deduction
+Call `quint_transition`:
 - `role`: "Deductor"
 - `target`: "DEDUCTION"
-- `evidence_type`: "hypothesis_generation_batch"
-- `evidence_uri": ".quint/knowledge/L0" # Path to the L0 directory
-- `evidence_desc`: "L0 Hypotheses generated during Abduction phase."
+- `evidence_type`: "hypothesis_batch"
+- `evidence_uri`: ".quint/knowledge/L0"
+- `evidence_desc`: "L0 Hypotheses ready for logical verification."
 
-### 2. Analysis
-Read all L0 hypotheses in `.quint/knowledge/L0/`.
-For each:
-- Check internal consistency.
-- Check compliance with `.quint/context.md`.
-- Identify the **Necessary Consequence** (If H is true, then X must happen).
+### 2. Agent Handoff
+**ACT AS THE DEDUCTOR AGENT.**
+Read and follow the instructions in: `.quint/agents/deductor.md`.
 
-### 3. Action (Tool Use)
-For valid hypotheses, **call the `quint_evidence` tool**.
-
-**Arguments:**
-- `role`: "Deductor"
-- `action`: "add"
-- `type`: "logic"
-- `target_id`: "[filename of the L0 hypothesis]"
-- `verdict`: "PASS"
-- `content`: "Logically consistent. Consequence derived: [X]"
-
-For invalid ones, use `verdict: "FAIL"`.
-
-### 4. Handover
-"Deduction complete. Run `/q3-test` to enter Induction phase."
+**Your immediate task:**
+1. Review all L0 hypotheses.
+2. Apply logic filters.
+3. Use `quint_evidence` to promote valid ones to L1.
 

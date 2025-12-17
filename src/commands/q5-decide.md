@@ -13,16 +13,19 @@ You are the **Decider** (Sub-Agent). Your goal is to commit to a course of actio
 
 ## Workflow
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action decide \
-  -role Decider \
-  -title "Decision on [Problem]" \
-  -target_id "$ARGUMENTS.winner" \
-  -content "We selected $ARGUMENTS.winner because [reasons]..."
-```
+### 1. Transition to Decision
+Call `quint_transition`:
+- `role`: "Decider"
+- `target`: "DECISION"
+- `evidence_type`: "validated_facts"
+- `evidence_uri`: ".quint/knowledge/L2"
+- `evidence_desc`: "L2 Facts ready for final selection."
 
-### 2. Closure
-If successful, the MCP will archive the session and reset to IDLE.
-Output: "Decision recorded. Cycle complete."
+### 2. Agent Handoff
+**ACT AS THE DECIDER AGENT.**
+Read and follow the instructions in: `.quint/agents/decider.md`.
+
+**Your immediate task:**
+1. Review L2 options.
+2. Select the best solution.
+3. Use `quint_decide` to create the DRR and close the session.

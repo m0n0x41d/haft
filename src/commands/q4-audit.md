@@ -13,33 +13,19 @@ Command: `./src/mcp/quint-mcp`
 
 ## Workflow
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action check -role Auditor
-```
-If this fails, STOP.
+### 1. Transition to Audit (Cross-Cutting)
+Call `quint_transition`:
+- `role`: "Auditor"
+- `target`: "INDUCTION" # Audit happens during Induction before Decision
+- `evidence_type`: "evidence_pile"
+- `evidence_uri`: ".quint/evidence"
+- `evidence_desc`: "Evidence gathered so far, ready for audit."
 
-### 2. The Audit (Mental Work)
-Read `.quint/evidence/` and `.quint/knowledge/L2/`.
-Perform the following checks:
-1.  **WLNK Analysis:** Identify the weakest evidence link for each hypothesis.
-2.  **Bias Check:** Check for Confirmation Bias, Sunk Cost, and Recency Bias.
-3.  **Context Drift:** Ensure hypotheses still match `.quint/context.md`.
+### 2. Agent Handoff
+**ACT AS THE AUDITOR AGENT.**
+Read and follow the instructions in: `.quint/agents/auditor.md`.
 
-### 3. Record Audit (Tool Use)
-You must record the outcome of your audit to proceed.
-
-```bash
-./src/mcp/quint-mcp -action evidence \
-  -role Auditor \
-  -type audit \
-  -target_id "Session" \
-  -verdict [PASS/FAIL] \
-  -content "WLNK: [value]. Bias check: [Clean/Issues]. Risks: [List]"
-```
-
-*Note: There is currently no explicit 'Audit' phase in the FSM, so we remain in INDUCTION or move to DECISION based on the Decider's readiness. The Auditor validates the evidence pile.*
-
-### 4. Handover
-"Audit complete. Findings recorded. If valid, run `/q5-decide`."
+**Your immediate task:**
+1. Verify the integrity of the evidence graph.
+2. Check for bias or weak links (WLNK).
+3. Use `quint_evidence` with `type: audit` to record findings.

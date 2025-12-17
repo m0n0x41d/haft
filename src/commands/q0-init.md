@@ -11,17 +11,15 @@ You are the **Initializer**.
 ## Workflow
 
 ### 1. Initialize
-Run:
-```bash
-./src/mcp/quint-mcp -action init
-```
+Call `quint_init`:
+- `role`: "Abductor"
 
 ### 2. Context Discovery
-Scan the repository (files, structure) to understand the project context.
+Scan the repository to understand the project context.
 Create/Update `.quint/context.md` with:
 - **Slice: Grounding** (OS, Hardware)
 - **Slice: Tech Stack** (Languages, Frameworks)
 - **Slice: Constraints** (Known rules)
 
 ### 3. Handover
-"Project initialized. Run `/q1-hypothesize <problem>` to start."
+"Project initialized. FPF is active. Run `/q1-hypothesize <problem>` to start the first Abductive Cycle."

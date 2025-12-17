@@ -18,43 +18,21 @@ You do not manage state files directly. You interface with the **Quint MCP Serve
 
 ## Workflow
 
-### 2. State Verification
-Run:
-```bash
-.quint/bin/quint-core -action check -role Abductor
-```
-If this fails, STOP. Report the error.
+### 1. Transition to Abduction
+Call `quint_transition`:
+- `role`: "Abductor"
+- `target`: "ABDUCTION"
+- `evidence_type`: "problem_statement"
+- `evidence_uri`: "problem_context"
+- `evidence_desc`: "User initiated hypothesis cycle for: $ARGUMENTS.problem"
 
-### 2. Context Loading
-Read `.quint/context.md` and `.quint/knowledge/L2` to ground your abduction.
+### 2. Agent Handoff
+**ACT AS THE ABDUCTOR AGENT.**
+Read and follow the instructions in: `.quint/agents/abductor.md`.
 
-### 3. Hypothesis Generation (Mental Sandbox)
-Think about the problem: "$ARGUMENTS.problem"
-Generate 3-5 hypotheses covering:
-- **Conservative** (Low risk, proven)
-- **Innovative** (High reward, novel)
-- **Minimal** (Fastest path)
-
-### 4. Persistence (Tool Use)
-For EACH valid hypothesis, execute:
-
-```bash
-./src/mcp/quint-mcp -action propose \
-  -role Abductor \
-  -title "H1: [Title]" \
-  -content "..."
-```
-
-**Content Format (Markdown body for the flag):**
-```markdown
-# [Title]
-**Type:** [Conservative/Innovative]
-**Rationale:** [Why this works]
-**Weakest Link:** [What breaks first]
-```
-
-### 5. Handover
-After proposing hypotheses, instruct the user:
-"Abduction complete. Hypotheses registered. Run `/q2-check` to enter Deduction phase."
+**Your immediate task:**
+1. Analyze the problem: "$ARGUMENTS.problem"
+2. Generate hypotheses per the Abductor protocol.
+3. Use `quint_propose` to register them.
 
 ```

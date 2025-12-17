@@ -28,6 +28,7 @@ Use `quint_propose` to register your ideas. This tool creates `L0` artifacts in 
     **Rationale:** [Why is this plausible?]
     **Prediction:** [If this is true, what else must be true?]
     **Falsifiability:** [How can we prove this wrong?]
+    **Success Metrics (C.16):** [List key Characteristics to measure, e.g., 'Latency < 50ms', 'Cost: Low']
 - `scope`: "[Context Slice (G)]" (e.g., "Production Env / Linux / Go 1.21")
 - `kind`: "system" (for code/arch) or "episteme" (for docs/knowledge)
 

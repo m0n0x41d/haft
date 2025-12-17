@@ -94,6 +94,26 @@ AI generates. You decide.
 
 The name references the **Invariant Quintet** — five properties that FPF requires any valid aggregation or composition to preserve. They're not arbitrary rules; they're formalizations of common-sense engineering realities that hold across domains.
 
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=m0n0x41d/quint-code&type=date&legend=top-left)](https://www.star-history.com/#m0n0x41d/quint-code&type=date&legend=top-left)
+
+## License
+
+This software is available under the [MIT License](LICENSE).
+
+**Note on Intellectual Property:**
+The **First Principles Framework (FPF)** methodology, concepts, and ontology belong to **Anatoly Levenchuk**. This project is an independent implementation of those concepts for AI coding tools. We claim no ownership over the FPF methodology itself.
+
+## Contributing
+
+Issues are welcome.
+
+---
+
+## Here is more about the internals and the theory behind it.
+
 ### The Five Invariants
 
 | Invariant | Plain English | Example |
@@ -469,13 +489,4 @@ The best way to learn FPF is to use it on itself:
 
 The framework teaches itself through use. A few cycles and it clicks.
 
-## License
 
-This software is available under the [MIT License](LICENSE).
-
-**Note on Intellectual Property:**
-The **First Principles Framework (FPF)** methodology, concepts, and ontology belong to **Anatoly Levenchuk**. This project is an independent implementation of those concepts for AI coding tools. We claim no ownership over the FPF methodology itself.
-
-## Contributing
-
-Issues are welcome.

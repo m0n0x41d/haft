@@ -122,232 +122,488 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 }
 
 func (s *Server) handleToolsList(req JSONRPCRequest) {
+
 	tools := []Tool{
+
 		{
+
 			Name:        "quint_status",
+
 			Description: "Get current FPF phase and context.",
+
 			InputSchema: map[string]interface{}{
+
 				"type": "object",
+
 				"properties": map[string]interface{}{},
+
 			},
+
 		},
+
 		{
+
 			Name:        "quint_init",
+
 			Description: "Initialize FPF project structure.",
+
 			InputSchema: map[string]interface{}{
+
 				"type": "object",
+
 				"properties": map[string]interface{}{
+
 					"role": map[string]string{"type": "string", "description": "Acting role (Abductor)"},
+
 				},
+
 				"required": []string{"role"},
+
 			},
+
 		},
+
 		{
+
 			Name:        "quint_context",
+
 			Description: "Get agent system prompt for a role.",
+
 			InputSchema: map[string]interface{}{
+
 				"type": "object",
+
 				"properties": map[string]interface{}{
+
 					"role": map[string]string{"type": "string", "description": "Abductor, Deductor, Inductor, etc."},
+
 				},
+
 				"required": []string{"role"},
+
 			},
+
 		},
-		{
-			Name:        "quint_propose",
-			Description: "Propose a new hypothesis (L0).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"role":    map[string]string{"type": "string"},
-					"title":   map[string]string{"type": "string"},
-					"content": map[string]string{"type": "string"},
+
+				{
+
+					Name:        "quint_propose",
+
+					Description: "Propose a new hypothesis (L0).",
+
+					InputSchema: map[string]interface{}{
+
+						"type": "object",
+
+						"properties": map[string]interface{}{
+
+							"role":    map[string]string{"type": "string", "description": "Acting role (Abductor)"},
+
+							"title":   map[string]string{"type": "string", "description": "Title of the hypothesis"},
+
+							"content": map[string]string{"type": "string", "description": "Content of the hypothesis"},
+
+							"scope":   map[string]string{"type": "string", "description": "Claim Scope (G) - where this applies (e.g. 'MacOS', 'Python 3.10+')"},
+
+						},
+
+						"required": []string{"role", "title", "content", "scope"},
+
+					},
+
 				},
-				"required": []string{"role", "title", "content"},
-			},
-		},
-		{
-			Name:        "quint_evidence",
-			Description: "Add evidence or logic checks to a hypothesis.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"role":      map[string]string{"type": "string"},
-					"action":    map[string]interface{}{"type": "string", "enum": []interface{}{"add", "check"}},
-					"target_id": map[string]string{"type": "string"},
-					"type":      map[string]interface{}{"type": "string", "enum": []interface{}{"internal", "external", "logic"}},
-					"content":   map[string]string{"type": "string"},
-					"verdict":   map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}},
+
+						{
+
+							Name:        "quint_evidence",
+
+							Description: "Add evidence or logic checks to a hypothesis.",
+
+							InputSchema: map[string]interface{}{
+
+								"type": "object",
+
+								"properties": map[string]interface{}{
+
+									"role":            map[string]string{"type": "string", "description": "Acting role (Deductor/Inductor)"},
+
+									"action":          map[string]interface{}{"type": "string", "enum": []interface{}{"add", "check"}, "description": "Action to perform"},
+
+									"target_id":       map[string]string{"type": "string", "description": "ID of the target hypothesis"},
+
+									"type":            map[string]interface{}{"type": "string", "enum": []interface{}{"internal", "external", "logic"}, "description": "Type of evidence"},
+
+									"content":         map[string]string{"type": "string", "description": "Evidence content or reasoning"},
+
+									"verdict":         map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}, "description": "Verdict on the hypothesis"},
+
+									"assurance_level": map[string]interface{}{"type": "string", "enum": []interface{}{"L0", "L1", "L2"}, "description": "Assurance Level (B.3)"},
+
+									"carrier_ref":     map[string]string{"type": "string", "description": "Reference to the Symbol Carrier (file path, log ID, etc.)"},
+
+									"valid_until":     map[string]string{"type": "string", "description": "Expiration date (YYYY-MM-DD) or duration (e.g. '30d') for this evidence (B.3.4)"},
+
+								},
+
+								"required": []string{"role", "target_id", "content", "verdict", "assurance_level", "carrier_ref"},
+
+							},
+
+						},
+
+				{
+
+					Name:        "quint_loopback",
+
+					Description: "Trigger Loopback (Induction -> Deduction) on failure.",
+
+					InputSchema: map[string]interface{}{
+
+						"type": "object",
+
+						"properties": map[string]interface{}{
+
+							"role":        map[string]string{"type": "string", "description": "Acting role (Inductor)"},
+
+							"parent_id":   map[string]string{"type": "string", "description": "ID of the failed hypothesis"},
+
+							"insight":     map[string]string{"type": "string", "description": "Insight gained from failure"},
+
+							"new_title":   map[string]string{"type": "string", "description": "Title for the refined hypothesis"},
+
+							"new_content": map[string]string{"type": "string", "description": "Content of the refined hypothesis"},
+
+							"scope":       map[string]string{"type": "string", "description": "Claim Scope (G) for the refined hypothesis"},
+
+						},
+
+						"required": []string{"role", "parent_id", "insight", "new_title", "new_content", "scope"},
+
+					},
+
 				},
-				"required": []string{"role", "target_id", "content", "verdict"},
-			},
-		},
-		{
-			Name:        "quint_loopback",
-			Description: "Trigger Loopback (Induction -> Deduction) on failure.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"role":      map[string]string{"type": "string"},
-					"parent_id": map[string]string{"type": "string"},
-					"insight":   map[string]string{"type": "string"},
-					"new_title": map[string]string{"type": "string"},
-					"new_content": map[string]string{"type": "string"},
+
+				{
+
+					Name:        "quint_decide",
+
+					Description: "Finalize decision (DRR).",
+
+					InputSchema: map[string]interface{}{
+
+						"type": "object",
+
+						"properties": map[string]interface{}{
+
+							"role":      map[string]string{"type": "string", "description": "Acting role (Decider)"},
+
+							"title":     map[string]string{"type": "string", "description": "Title of the decision"},
+
+							"winner_id": map[string]string{"type": "string", "description": "ID of the winning hypothesis"},
+
+							"content":   map[string]string{"type": "string", "description": "Final decision content"},
+
+						},
+
+						"required": []string{"role", "title", "winner_id", "content"},
+
+					},
+
 				},
-				"required": []string{"role", "parent_id", "insight", "new_title", "new_content"},
-			},
-		},
-		{
-			Name:        "quint_decide",
-			Description: "Finalize decision (DRR).",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"role":      map[string]string{"type": "string"},
-					"title":     map[string]string{"type": "string"},
-					"winner_id": map[string]string{"type": "string"},
-					"content":   map[string]string{"type": "string"},
+
+				{
+
+					Name:        "quint_transition",
+
+					Description: "Explicitly request phase transition.",
+
+					InputSchema: map[string]interface{}{
+
+						"type": "object",
+
+						"properties": map[string]interface{}{
+
+							"role":          map[string]string{"type": "string", "description": "The role initiating the transition (e.g., Abductor)"},
+
+							"target":        map[string]string{"type": "string", "description": "Target phase (e.g., ABDUCTION, DEDUCTION)"},
+
+							"evidence_type": map[string]string{"type": "string", "description": "Type of evidence (e.g., hypothesis_generation)"},
+
+							"evidence_uri":  map[string]string{"type": "string", "description": "URI/Path to evidence artifact (e.g., .quint/knowledge/L0)"},
+
+							"evidence_desc": map[string]string{"type": "string", "description": "Description of the evidence"},
+
+						},
+
+						"required": []string{"role", "target"},
+
+					},
+
 				},
-				"required": []string{"role", "title", "winner_id", "content"},
-			},
-		},
-		{
-			Name:        "quint_transition",
-			Description: "Explicitly request phase transition.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"role":   map[string]string{"type": "string"},
-					"target": map[string]string{"type": "string"},
-				},
-				"required": []string{"role", "target"},
-			},
-		},
-	}
 
-	s.sendResult(req.ID, map[string]interface{}{
-		"tools": tools,
-	})
-}
-
-func (s *Server) handleToolsCall(req JSONRPCRequest) {
-	var params struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments"`
-	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		s.sendError(req.ID, -32700, "Invalid params")
-		return
-	}
-
-	// Helper to extract string arg
-	arg := func(k string) string {
-		if v, ok := params.Arguments[k].(string); ok {
-			return v
-		}
-		return ""
-	}
-
-	// Helper to construct RoleAssignment
-	getRoleAssignment := func() RoleAssignment {
-		sessionID := arg("session_id")
-		if sessionID == "" {
-			sessionID = "default-session" // Fallback for backward compat
-		}
-		context := arg("context")
-		if context == "" {
-			context = "default-context"
-		}
-		return RoleAssignment{
-			Role:      Role(arg("role")),
-			SessionID: sessionID,
-			Context:   context,
-		}
-	}
-
-	// Helper to construct EvidenceStub (returns nil if empty)
-	getEvidenceStub := func() *EvidenceStub {
-		uri := arg("evidence_uri")
-		if uri == "" {
-			return nil
-		}
-		return &EvidenceStub{
-			Type:        arg("evidence_type"),
-			URI:         uri,
-			Description: arg("evidence_desc"),
-		}
-	}
-
-	var output string
-	var err error
-
-	// Wrap FSM checks inside the tools calls implicitly via shared logic,
-	// or call them here. Since Tools struct handles logic, we delegate.
-	
-	// NOTE: We must instantiate the FSM check here or in Tools. 
-	// The Tools struct we built earlier checks FSM. 
-	// We just need to map args.
-
-	switch params.Name {
-	case "quint_status":
-		st := s.tools.FSM.State.Phase
-		output = string(st)
-
-	case "quint_init":
-		res := s.tools.InitProject()
-		if res != nil {
-			err = res
-		} else {
-			s.tools.FSM.State.Phase = PhaseAbduction
-			saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json")
-			if saveErr != nil {
-				err = fmt.Errorf("failed to save FSM state after init: %v", saveErr)
-			} else {
-				output = "Initialized. Phase: ABDUCTION"
 			}
-		}
 
-	case "quint_context":
-		role := arg("role")
-		output, err = s.tools.GetAgentContext(role)
-
-	case "quint_propose":
-		assign := getRoleAssignment()
-		// Abduction doesn't strictly need external evidence to start proposing if already in phase
-		ok, msg := s.tools.FSM.CanTransition(PhaseAbduction, assign, nil)
-		if !ok {
-			err = fmt.Errorf("%s", msg)
-		} else {
-			output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"))
-		}
-
-	case "quint_evidence":
-		role := arg("role")
-		// Check if role valid for CURRENT phase
-		if isValidRoleForPhase(s.tools.FSM.State.Phase, Role(role)) {
-			output, err = s.tools.ManageEvidence(s.tools.FSM.State.Phase, arg("target_id"), arg("type"), arg("content"), arg("verdict"))
-		} else {
-			err = fmt.Errorf("Role %s cannot act in %s", role, s.tools.FSM.State.Phase)
-		}
-
-	case "quint_loopback":
-		assign := getRoleAssignment()
-		// Loopback implies failure evidence (insight)
-		evidence := &EvidenceStub{Type: "insight", Description: arg("insight"), URI: "loopback-event"}
 		
-		ok, msg := s.tools.FSM.CanTransition(PhaseDeduction, assign, evidence)
-		if !ok {
-			err = fmt.Errorf("%s", msg)
-		} else {
-			output, err = s.tools.RefineLoopback(s.tools.FSM.State.Phase, arg("parent_id"), arg("insight"), arg("new_title"), arg("new_content"))
-			if err == nil {
-				s.tools.FSM.State.Phase = PhaseDeduction
-				s.tools.FSM.State.ActiveRole = assign
-				if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
-					err = fmt.Errorf("failed to save FSM state after loopback: %v", saveErr)
-				}
-			}
+
+			s.sendResult(req.ID, map[string]interface{}{
+
+				"tools": tools,
+
+			})
+
 		}
+
+		
+
+		func (s *Server) handleToolsCall(req JSONRPCRequest) {
+
+			var params struct {
+
+				Name      string                 `json:"name"`
+
+				Arguments map[string]interface{} `json:"arguments"`
+
+			}
+
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+
+				s.sendError(req.ID, -32700, "Invalid params")
+
+				return
+
+			}
+
+		
+
+			// Helper to extract string arg
+
+			arg := func(k string) string {
+
+				if v, ok := params.Arguments[k].(string); ok {
+
+					return v
+
+				}
+
+				return ""
+
+			}
+
+		
+
+			// Helper to construct RoleAssignment
+
+			getRoleAssignment := func() RoleAssignment {
+
+				sessionID := arg("session_id")
+
+				if sessionID == "" {
+
+					sessionID = "default-session" // Fallback for backward compat
+
+				}
+
+				context := arg("context")
+
+				if context == "" {
+
+					context = "default-context"
+
+				}
+
+				return RoleAssignment{
+
+					Role:      Role(arg("role")),
+
+					SessionID: sessionID,
+
+					Context:   context,
+
+				}
+
+			}
+
+		
+
+			// Helper to construct EvidenceStub (returns nil if empty)
+
+			getEvidenceStub := func() *EvidenceStub {
+
+				uri := arg("evidence_uri")
+
+				if uri == "" {
+
+					return nil
+
+				}
+
+				return &EvidenceStub{
+
+					Type:        arg("evidence_type"),
+
+					URI:         uri,
+
+					Description: arg("evidence_desc"),
+
+				}
+
+			}
+
+		
+
+			var output string
+
+			var err error
+
+		
+
+			// Wrap FSM checks inside the tools calls implicitly via shared logic,
+
+			// or call them here. Since Tools struct handles logic, we delegate.
+
+			
+
+			// NOTE: We must instantiate the FSM check here or in Tools. 
+
+			// The Tools struct we built earlier checks FSM. 
+
+			// We just need to map args.
+
+		
+
+			switch params.Name {
+
+			case "quint_status":
+
+				st := s.tools.FSM.State.Phase
+
+				output = string(st)
+
+		
+
+			case "quint_init":
+
+				res := s.tools.InitProject()
+
+				if res != nil {
+
+					err = res
+
+				} else {
+
+					s.tools.FSM.State.Phase = PhaseAbduction
+
+					saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json")
+
+					if saveErr != nil {
+
+						err = fmt.Errorf("failed to save FSM state after init: %v", saveErr)
+
+					} else {
+
+						output = "Initialized. Phase: ABDUCTION"
+
+					}
+
+				}
+
+		
+
+			case "quint_context":
+
+				role := arg("role")
+
+				output, err = s.tools.GetAgentContext(role)
+
+		
+
+			case "quint_propose":
+
+				assign := getRoleAssignment()
+
+				// Abduction doesn't strictly need external evidence to start proposing if already in phase
+
+				ok, msg := s.tools.FSM.CanTransition(PhaseAbduction, assign, nil)
+
+				if !ok {
+
+					err = fmt.Errorf("%s", msg)
+
+				} else {
+
+					output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"))
+
+				}
+
+		
+
+					case "quint_evidence":
+
+		
+
+						role := arg("role")
+
+		
+
+						// Check if role valid for CURRENT phase
+
+		
+
+						if isValidRoleForPhase(s.tools.FSM.State.Phase, Role(role)) {
+
+		
+
+							output, err = s.tools.ManageEvidence(s.tools.FSM.State.Phase, arg("action"), arg("target_id"), arg("type"), arg("content"), arg("verdict"), arg("assurance_level"), arg("carrier_ref"), arg("valid_until"))
+
+		
+
+						} else {
+
+		
+
+							err = fmt.Errorf("Role %s cannot act in %s", role, s.tools.FSM.State.Phase)
+
+		
+
+						}
+
+		
+
+			case "quint_loopback":
+
+				assign := getRoleAssignment()
+
+				// Loopback implies failure evidence (insight)
+
+				evidence := &EvidenceStub{Type: "insight", Description: arg("insight"), URI: "loopback-event"}
+
+				
+
+				ok, msg := s.tools.FSM.CanTransition(PhaseDeduction, assign, evidence)
+
+				if !ok {
+
+					err = fmt.Errorf("%s", msg)
+
+				} else {
+
+					output, err = s.tools.RefineLoopback(s.tools.FSM.State.Phase, arg("parent_id"), arg("insight"), arg("new_title"), arg("new_content"), arg("scope"))
+
+					if err == nil {
+
+						s.tools.FSM.State.Phase = PhaseDeduction
+
+						s.tools.FSM.State.ActiveRole = assign
+
+						if saveErr := s.tools.FSM.SaveState(s.tools.getFPFDir() + "/state.json"); saveErr != nil {
+
+							err = fmt.Errorf("failed to save FSM state after loopback: %v", saveErr)
+
+						}
+
+					}
+
+				}
 
 	case "quint_decide":
 		assign := getRoleAssignment()

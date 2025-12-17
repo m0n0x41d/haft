@@ -129,10 +129,15 @@ func (t *Tools) GetAgentContext(role string) (string, error) {
 }
 
 // ProposeHypothesis creates an L0 hypothesis file
-func (t *Tools) ProposeHypothesis(title, content string) (string, error) {
+func (t *Tools) ProposeHypothesis(title, content, scope string) (string, error) {
 	slug := t.Slugify(title)
 	filename := fmt.Sprintf("%s.md", slug)
 	path := filepath.Join(t.getFPFDir(), "knowledge", "L0", filename)
+
+	// Inject scope into frontmatter if not present
+	if !strings.Contains(content, "scope:") {
+		content = fmt.Sprintf("---\nscope: %s\n---\n\n%s", scope, content)
+	}
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return "", err
@@ -147,6 +152,7 @@ func (t *Tools) ProposeHypothesis(title, content string) (string, error) {
 			Title: title,
 			Content: content,
 			ContextID: "default", // Context handling needed later
+			Scope: scope,
 		}
 		_ = t.DB.CreateHolon(h)
 	}
@@ -154,32 +160,76 @@ func (t *Tools) ProposeHypothesis(title, content string) (string, error) {
 	return path, nil
 }
 
-// ManageEvidence creates an evidence file. 
-// Used by Deductor (logic checks) and Inductor (empirical tests).
-func (t *Tools) ManageEvidence(currentPhase Phase, targetID, evidenceType, content, verdict string) (string, error) {
-	// Logic to move hypothesis file based on phase and verdict
-	var moveErr error
+// ManageEvidence handles evidence operations: add or check.
+func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
+	if action == "check" {
+		if t.DB == nil {
+			return "", fmt.Errorf("DB not initialized")
+		}
+		if targetID == "all" {
+			// TODO: Implement listing all evidence or iterating holons
+			return "Global evidence audit not implemented yet. Please specify a target_id.", nil
+		}
+		evs, err := t.DB.GetEvidence(targetID)
+		if err != nil {
+			return "", err
+		}
+		var report string
+		for _, e := range evs {
+			report += fmt.Sprintf("- [%s] %s (L:%s, Ref:%s): %s\n", e.Verdict, e.Type, e.AssuranceLevel, e.CarrierRef, e.Content)
+		}
+		if report == "" {
+			return "No evidence found for " + targetID, nil
+		}
+		return report, nil
+	}
+
+	// Default to "add" logic
+	
+	// Assurance Level Logic (B.3)
+	// We only promote if the assurance level is sufficient for the transition.
+	shouldPromote := false
+	
 	switch verdict {
 	case "PASS":
+		switch currentPhase {
+		case PhaseDeduction:
+			// L0 -> L1 requires Assurance Level L1 (Substantiated)
+			if assuranceLevel == "L1" || assuranceLevel == "L2" {
+				shouldPromote = true
+			} else {
+				// verdict PASS but assurance L0? This means "Passed checks but weak". Keep in L0.
+				// We do NOT promote.
+				// However, we still record the evidence.
+			}
+		case PhaseInduction:
+			// L1 -> L2 requires Assurance Level L2 (Validated/Axiomatic)
+			if assuranceLevel == "L2" {
+				shouldPromote = true
+			} else {
+				// verdict PASS but assurance L1? Keep in L1.
+			}
+		}
+	case "FAIL":
+		// Fail always demotes to invalid or stays (refutes)
+		// Handled below
+	}
+
+	var moveErr error
+	if verdict == "PASS" && shouldPromote {
 		switch currentPhase {
 		case PhaseDeduction:
 			_, moveErr = t.moveHypothesis(targetID, "L0", "L1")
 		case PhaseInduction:
 			_, moveErr = t.moveHypothesis(targetID, "L1", "L2")
 		}
-	case "FAIL":
+	} else if verdict == "FAIL" || verdict == "REFINE" {
+		// Demotion logic
 		switch currentPhase {
 		case PhaseDeduction:
 			_, moveErr = t.moveHypothesis(targetID, "L0", "invalid")
 		case PhaseInduction:
 			_, moveErr = t.moveHypothesis(targetID, "L1", "invalid")
-		}
-	case "REFINE":
-		switch currentPhase {
-		case PhaseDeduction:
-			_, moveErr = t.moveHypothesis(targetID, "L0", "invalid") // Or to a 'needs_refinement' state
-		case PhaseInduction:
-			_, moveErr = t.moveHypothesis(targetID, "L1", "invalid") // Or to a 'needs_refinement' state
 		}
 	}
 
@@ -192,9 +242,9 @@ func (t *Tools) ManageEvidence(currentPhase Phase, targetID, evidenceType, conte
 	filename := fmt.Sprintf("%s-%s-%s.md", date, evidenceType, targetID)
 	path := filepath.Join(t.getFPFDir(), "evidence", filename)
 
-	// Add Metadata header
-	fullContent := fmt.Sprintf("---\nid: %s\ntype: %s\ntarget: %s\nverdict: %s\ndate: %s\n---\n\n%s", 
-		filename, evidenceType, targetID, verdict, date, content)
+	// Add Metadata header including valid_until
+	fullContent := fmt.Sprintf("---\nid: %s\ntype: %s\ntarget: %s\nverdict: %s\nassurance_level: %s\ncarrier_ref: %s\nvalid_until: %s\ndate: %s\n---\n\n%s", 
+		filename, evidenceType, targetID, verdict, assuranceLevel, carrierRef, validUntil, date, content)
 
 	if err := os.WriteFile(path, []byte(fullContent), 0644); err != nil {
 		return "", err
@@ -202,17 +252,20 @@ func (t *Tools) ManageEvidence(currentPhase Phase, targetID, evidenceType, conte
 
 	// DB Sync
 	if t.DB != nil {
-		_ = t.DB.AddEvidence(filename, targetID, evidenceType, content, verdict)
+		_ = t.DB.AddEvidence(filename, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil)
 		// Link logic needed?
 		_ = t.DB.Link(filename, targetID, "verifiedBy")
 	}
 
+	if !shouldPromote && verdict == "PASS" {
+		return path + " (Evidence recorded, but Assurance Level insufficient for promotion)", nil
+	}
 	return path, nil
 }
 
 // RefineLoopback handles the INDUCTION -> DEDUCTION transition.
 // It marks the parent hypothesis as 'refuted' (or 'needs_refinement') and creates a child hypothesis.
-func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, newContent string) (string, error) {
+func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, newContent, scope string) (string, error) {
 	// Determine parent's current level
 	var parentLevel string
 	switch currentPhase {
@@ -230,7 +283,7 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	}
 
 	// 2. Create new hypothesis (child) in L0
-	childPath, err := t.ProposeHypothesis(newTitle, newContent)
+	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}

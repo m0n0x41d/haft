@@ -23,7 +23,11 @@ type Tools struct {
 func NewTools(fsm *FSM, rootDir string, database *db.DB) *Tools {
 	if database == nil {
 		dbPath := filepath.Join(rootDir, ".quint", "quint.db")
-		database, _ = db.New(dbPath)
+		var err error
+		database, err = db.New(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to open database in NewTools: %v\n", err)
+		}
 	}
 
 	return &Tools{
@@ -56,7 +60,9 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 	}
 
 	if t.DB != nil {
-		_ = t.DB.UpdateHolonLayer(hypothesisID, destLevel)
+		if err := t.DB.UpdateHolonLayer(hypothesisID, destLevel); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update holon layer in DB: %v\n", err)
+		}
 	}
 
 	return destPath, nil
@@ -136,7 +142,9 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 	}
 
 	ledger := fmt.Sprintf(`{"duration_ms": %d}`, end.Sub(start).Milliseconds())
-	_ = t.DB.RecordWork(id, methodName, performer, start, end, ledger)
+	if err := t.DB.RecordWork(id, methodName, performer, start, end, ledger); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to record work in DB: %v\n", err)
+	}
 }
 
 func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string) (string, error) {
@@ -163,7 +171,9 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string)
 			ContextID: "default",
 			Scope:     scope,
 		}
-		_ = t.DB.CreateHolon(h)
+		if err := t.DB.CreateHolon(h); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create holon in DB: %v\n", err)
+		}
 	}
 
 	return path, nil
@@ -278,8 +288,12 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	}
 
 	if t.DB != nil {
-		_ = t.DB.AddEvidence(filename, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil)
-		_ = t.DB.Link(filename, targetID, "verifiedBy")
+		if err := t.DB.AddEvidence(filename, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add evidence to DB: %v\n", err)
+		}
+		if err := t.DB.Link(filename, targetID, "verifiedBy"); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to link evidence in DB: %v\n", err)
+		}
 	}
 
 	if !shouldPromote && verdict == "PASS" {

@@ -45,7 +45,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	var database *db.DB
 	if _, err := os.Stat(dbPath); err == nil {
-		database, _ = db.New(dbPath)
+		database, err = db.New(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to open database: %v\n", err)
+		}
 	}
 
 	var rawDB *sql.DB

@@ -82,7 +82,11 @@ func (s *Server) Start() {
 }
 
 func (s *Server) send(resp JSONRPCResponse) {
-	bytes, _ := json.Marshal(resp)
+	bytes, err := json.Marshal(resp)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to marshal JSON-RPC response: %v\n", err)
+		return
+	}
 	fmt.Printf("%s\n", string(bytes))
 }
 
@@ -254,7 +258,9 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			err = res
 		} else {
 			s.tools.FSM.State.Phase = PhaseAbduction
-			_ = s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json")
+			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+			}
 			output = "Initialized. Phase: ABDUCTION"
 		}
 
@@ -263,17 +269,23 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_propose":
 		s.tools.FSM.State.Phase = PhaseAbduction
-		_ = s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json")
+		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+		}
 		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"))
 
 	case "quint_verify":
 		s.tools.FSM.State.Phase = PhaseDeduction
-		_ = s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json")
+		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+		}
 		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"))
 
 	case "quint_test":
 		s.tools.FSM.State.Phase = PhaseInduction
-		_ = s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json")
+		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+		}
 
 		assLevel := "L2"
 		if arg("verdict") != "PASS" {
@@ -290,7 +302,9 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
-			_ = s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json")
+			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+			}
 		}
 
 	default:

@@ -21,24 +21,26 @@ FPF gives you a structured way to think through these decisions. You generate hy
 
 ## Quick Start
 
-### One-liner Install
+### Install (per-project)
 
-##### Global install (recommended for personal use)
-```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash -s -- -g
-```
-
-##### Per-project install (run from project root)
-```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
-```
-
-### Initialize in Your Project
+Quint Code is installed **per-project** by design. Each project maintains its own knowledge base, evidence, and decision history in `.quint/`. This ensures context isolation — decisions and reasoning are bound to the codebase they belong to.
 
 ```bash
 cd /path/to/your/project
-# Then in your AI coding tool:
-/q0-init  # Scans context and initializes .quint/
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+```
+
+The installer will:
+1. Create `.quint/` directory structure
+2. Install the MCP server binary
+3. Configure `.mcp.json` for your AI tool
+4. Copy slash commands to your selected tools (Claude Code, Cursor, Gemini CLI)
+
+### Initialize
+
+```bash
+# In your AI coding tool:
+/q0-init  # Scans context and initializes knowledge base
 
 # Start reasoning
 /q1-hypothesize "How should we handle state synchronization across browser tabs?"

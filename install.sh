@@ -116,13 +116,39 @@ print_selection() {
 }
 
 handle_input() {
-    local key; IFS= read -rsn1 key </dev/tty
+    local key
+    IFS= read -rsn1 key </dev/tty
     case "$key" in
-        $''\x1b') local seq; read -rsn1 -t 1 seq </dev/tty; if [[ "$seq" == "[" ]]; then read -rsn1 -t 1 seq </dev/tty; case "$seq" in 'A') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));; 'B') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));; esac; fi;;
-        ' ') if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]; then SELECTED[$CURRENT_INDEX]=0; else SELECTED[$CURRENT_INDEX]=1; fi;; 
-        '') return 1;; 'q'|'Q') return 2;;
-        'k') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--));;
-        'j') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++));;
+        $'\x1b')
+            local seq
+            read -rsn1 -t 1 seq </dev/tty
+            if [[ "$seq" == "[" ]]; then
+                read -rsn1 -t 1 seq </dev/tty
+                case "$seq" in
+                    'A') ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--)) ;;
+                    'B') ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++)) ;;
+                esac
+            fi
+            ;;
+        ' ')
+            if [[ "${SELECTED[$CURRENT_INDEX]}" == "1" ]]; then
+                SELECTED[$CURRENT_INDEX]=0
+            else
+                SELECTED[$CURRENT_INDEX]=1
+            fi
+            ;;
+        '')
+            return 1
+            ;;
+        'q'|'Q')
+            return 2
+            ;;
+        'k')
+            ((CURRENT_INDEX > 0)) && ((CURRENT_INDEX--))
+            ;;
+        'j')
+            ((CURRENT_INDEX < ${#PLATFORMS[@]} - 1)) && ((CURRENT_INDEX++))
+            ;;
     esac
     return 0
 }

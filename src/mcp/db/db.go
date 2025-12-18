@@ -65,6 +65,16 @@ func New(dbPath string) (*DB, error) {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (source_id, target_id, relation_type)
 	);
+	CREATE TABLE IF NOT EXISTS characteristics (
+		id TEXT PRIMARY KEY,
+		holon_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		scale TEXT NOT NULL,
+		value TEXT NOT NULL,
+		unit TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(holon_id) REFERENCES holons(id)
+	);
 	CREATE TABLE IF NOT EXISTS work_records (
 		id TEXT PRIMARY KEY,
 		method_ref TEXT NOT NULL,
@@ -93,7 +103,18 @@ func (d *DB) Close() error {
 func (d *DB) CreateHolon(h Holon) error {
 	query := `INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at) 
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.conn.Exec(query, h.ID, h.Type, h.Kind, h.Layer, h.Title, h.Content, h.ContextID, h.Scope, time.Now(), time.Now())
+	var kind, scope interface{}
+	if h.Kind == "" {
+		kind = nil
+	} else {
+		kind = h.Kind
+	}
+	if h.Scope == "" {
+		scope = nil
+	} else {
+		scope = h.Scope
+	}
+	_, err := d.conn.Exec(query, h.ID, h.Type, kind, h.Layer, h.Title, h.Content, h.ContextID, scope, time.Now(), time.Now())
 	return err
 }
 
@@ -111,14 +132,24 @@ func (d *DB) UpdateHolonLayer(id, layer string) error {
 
 func (d *DB) AddEvidence(id, holonID, type_, content, verdict, assuranceLevel, carrierRef, validUntil string) error {
 	query := `INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	// Handle empty validUntil string as NULL
-	var vUntil interface{}
+	// Handle empty strings as NULL
+	var vUntil, aLevel, cRef interface{}
 	if validUntil == "" {
 		vUntil = nil
 	} else {
 		vUntil = validUntil
 	}
-	_, err := d.conn.Exec(query, id, holonID, type_, content, verdict, assuranceLevel, carrierRef, vUntil, time.Now())
+	if assuranceLevel == "" {
+		aLevel = nil
+	} else {
+		aLevel = assuranceLevel
+	}
+	if carrierRef == "" {
+		cRef = nil
+	} else {
+		cRef = carrierRef
+	}
+	_, err := d.conn.Exec(query, id, holonID, type_, content, verdict, aLevel, cRef, vUntil, time.Now())
 	return err
 }
 
@@ -145,6 +176,31 @@ func (d *DB) GetEvidence(holonID string) ([]Evidence, error) {
 	for rows.Next() {
 		var e Evidence
 		var al, cr sql.NullString // Handle potential NULLs for old records
+		if err := rows.Scan(&e.ID, &e.HolonID, &e.Type, &e.Content, &e.Verdict, &al, &cr, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		e.AssuranceLevel = al.String
+		e.CarrierRef = cr.String
+		evidences = append(evidences, e)
+	}
+	return evidences, nil
+}
+
+func (d *DB) GetEvidenceWithCarrier() ([]Evidence, error) {
+	// Query specifically filters for evidence that HAS a carrier reference (NOT NULL and NOT EMPTY)
+	query := `SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, created_at 
+			  FROM evidence 
+			  WHERE carrier_ref IS NOT NULL AND carrier_ref != ''`
+	rows, err := d.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var evidences []Evidence
+	for rows.Next() {
+		var e Evidence
+		var al, cr sql.NullString
 		if err := rows.Scan(&e.ID, &e.HolonID, &e.Type, &e.Content, &e.Verdict, &al, &cr, &e.CreatedAt); err != nil {
 			return nil, err
 		}

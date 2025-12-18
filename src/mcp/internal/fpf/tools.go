@@ -182,25 +182,26 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string)
 func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
-	if verdict == "PASS" {
+	v := strings.ToLower(verdict)
+	if v == "pass" {
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
 			return "", err
 		}
 
 		evidenceContent := fmt.Sprintf("Verification Checks:\n%s", checksJSON)
-		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "PASS", "L1", "internal-logic", ""); err != nil {
+		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "pass", "L1", "internal-logic", ""); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to record verification evidence for %s: %v\n", hypothesisID, err)
 		}
 
 		return fmt.Sprintf("Hypothesis %s promoted to L1", hypothesisID), nil
-	} else if verdict == "FAIL" {
+	} else if v == "fail" {
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Hypothesis %s moved to invalid", hypothesisID), nil
-	} else if verdict == "REFINE" {
+	} else if v == "refine" {
 		return fmt.Sprintf("Hypothesis %s requires refinement (staying in L0)", hypothesisID), nil
 	}
 
@@ -209,7 +210,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	defer t.RecordWork("AuditEvidence", time.Now())
-	_, err := t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "PASS", "L2", "auditor", "")
+	_, err := t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
 	return "Audit recorded for " + hypothesisID, err
 }
 
@@ -238,8 +239,10 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 
 	shouldPromote := false
 
-	switch verdict {
-	case "PASS":
+	normalizedVerdict := strings.ToLower(verdict)
+
+	switch normalizedVerdict {
+	case "pass":
 		switch currentPhase {
 		case PhaseDeduction:
 			if assuranceLevel == "L1" || assuranceLevel == "L2" {
@@ -253,7 +256,7 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	}
 
 	var moveErr error
-	if verdict == "PASS" && shouldPromote {
+	if (normalizedVerdict == "pass") && shouldPromote {
 		switch currentPhase {
 		case PhaseDeduction:
 			_, moveErr = t.MoveHypothesis(targetID, "L0", "L1")
@@ -263,7 +266,7 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 			}
 			_, moveErr = t.MoveHypothesis(targetID, "L1", "L2")
 		}
-	} else if verdict == "FAIL" || verdict == "REFINE" {
+	} else if normalizedVerdict == "fail" || normalizedVerdict == "refine" {
 		switch currentPhase {
 		case PhaseDeduction:
 			_, moveErr = t.MoveHypothesis(targetID, "L0", "invalid")
@@ -281,14 +284,14 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	path := filepath.Join(t.GetFPFDir(), "evidence", filename)
 
 	fullContent := fmt.Sprintf("---\nid: %s\ntype: %s\ntarget: %s\nverdict: %s\nassurance_level: %s\ncarrier_ref: %s\nvalid_until: %s\ndate: %s\n---\n\n%s",
-		filename, evidenceType, targetID, verdict, assuranceLevel, carrierRef, validUntil, date, content)
+		filename, evidenceType, targetID, normalizedVerdict, assuranceLevel, carrierRef, validUntil, date, content)
 
 	if err := os.WriteFile(path, []byte(fullContent), 0644); err != nil {
 		return "", err
 	}
 
 	if t.DB != nil {
-		if err := t.DB.AddEvidence(filename, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil); err != nil {
+		if err := t.DB.AddEvidence(filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, validUntil); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add evidence to DB: %v\n", err)
 		}
 		if err := t.DB.Link(filename, targetID, "verifiedBy"); err != nil {
@@ -458,70 +461,42 @@ func (t *Tools) getHolonTitle(id string) string {
 	return title
 }
 
-func (t *Tools) Actualize() error {
-	fpfDir := filepath.Join(t.RootDir, ".fpf")
-	quintDir := t.GetFPFDir()
-
-	if _, err := os.Stat(fpfDir); err == nil {
-		fmt.Println("MIGRATION: Found legacy .fpf directory.")
-
-		if _, err := os.Stat(quintDir); err == nil {
-			return fmt.Errorf("migration conflict: both .fpf and .quint exist. Please resolve manually")
-		}
-
-		fmt.Println("MIGRATION: Renaming .fpf -> .quint")
-		if err := os.Rename(fpfDir, quintDir); err != nil {
-			return fmt.Errorf("failed to rename .fpf: %w", err)
-		}
-		fmt.Println("MIGRATION: Success.")
-	}
-
-	legacyDB := filepath.Join(quintDir, "fpf.db")
-	newDB := filepath.Join(quintDir, "quint.db")
-
-	if _, err := os.Stat(legacyDB); err == nil {
-		fmt.Println("MIGRATION: Found legacy fpf.db.")
-		if err := os.Rename(legacyDB, newDB); err != nil {
-			return fmt.Errorf("failed to rename fpf.db: %w", err)
-		}
-		fmt.Println("MIGRATION: Renamed to quint.db.")
-	}
-
+func (t *Tools) Reconcile() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = t.RootDir
 	output, err := cmd.Output()
-	if err == nil {
-		currentCommit := strings.TrimSpace(string(output))
-		lastCommit := t.FSM.State.LastCommit
-
-		if lastCommit == "" {
-			fmt.Printf("RECONCILIATION: Initializing baseline commit to %s\n", currentCommit)
-			t.FSM.State.LastCommit = currentCommit
-			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
-				fmt.Printf("Warning: Failed to save state: %v\n", err)
-			}
-		} else if currentCommit != lastCommit {
-			fmt.Printf("RECONCILIATION: Detected changes since %s\n", lastCommit)
-			diffCmd := exec.Command("git", "diff", "--name-status", lastCommit, "HEAD")
-			diffCmd.Dir = t.RootDir
-			diffOutput, err := diffCmd.Output()
-			if err == nil {
-				fmt.Println("Changed files:")
-				fmt.Println(string(diffOutput))
-			} else {
-				fmt.Printf("Warning: Failed to get diff: %v\n", err)
-			}
-
-			t.FSM.State.LastCommit = currentCommit
-			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
-				fmt.Printf("Warning: Failed to save state: %v\n", err)
-			}
-		} else {
-			fmt.Println("RECONCILIATION: No changes detected (Clean).")
-		}
-	} else {
-		fmt.Println("RECONCILIATION: Not a git repository or git error.")
+	if err != nil {
+		return "Not a git repository or git error.", nil
 	}
 
-	return nil
+	currentCommit := strings.TrimSpace(string(output))
+	lastCommit := t.FSM.State.LastCommit
+
+	var result string
+
+	if lastCommit == "" {
+		result = fmt.Sprintf("Initializing baseline commit to %s", currentCommit)
+		t.FSM.State.LastCommit = currentCommit
+		if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+			return "", fmt.Errorf("failed to save state: %w", err)
+		}
+	} else if currentCommit != lastCommit {
+		diffCmd := exec.Command("git", "diff", "--name-status", lastCommit, "HEAD")
+		diffCmd.Dir = t.RootDir
+		diffOutput, err := diffCmd.Output()
+		if err != nil {
+			result = fmt.Sprintf("Detected changes since %s (could not get diff: %v)", lastCommit, err)
+		} else {
+			result = fmt.Sprintf("Detected changes since %s:\n%s", lastCommit, string(diffOutput))
+		}
+
+		t.FSM.State.LastCommit = currentCommit
+		if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+			return "", fmt.Errorf("failed to save state: %w", err)
+		}
+	} else {
+		result = "No changes detected (Clean)."
+	}
+
+	return result, nil
 }

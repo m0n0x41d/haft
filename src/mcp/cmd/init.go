@@ -213,7 +213,9 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 	var config MCPConfig
 
 	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, &config)
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("existing config at %s is not valid JSON: %w", configPath, err)
+		}
 	}
 
 	if config.MCPServers == nil {

@@ -63,3 +63,11 @@ The following items are considered high-priority for moving `quint-code` towards
 - **Broader FPF Concepts:** Longer-term, the engine could be expanded to model more advanced FPF concepts like:
     - **`Γ` (Universal Algebra of Aggregation):** Modeling how systems and epistemes are composed.
     - **Meta-Holon Transition (MHT):** Modeling the emergence of new, coherent wholes.
+
+### Minor: Improve Installation Process
+
+- **Self-Bootstrapping Binary:** Replace shell-based installer with a Go binary that embeds all assets and can bootstrap/update itself. See `tmp/bootstrap.md` for details.
+    - Embed commands via `//go:embed`
+    - `quint-mcp bootstrap` command for installation
+    - `quint-mcp update` for self-updates with checksum verification
+    - Eliminates shell script quirks and external dependencies (curl, tar, python3)

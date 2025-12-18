@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"quint-mcp/db"
 )
 
 // Helper to create a dummy Tools instance for testing
@@ -15,11 +17,19 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 		t.Fatalf("Failed to create .quint directory: %v", err)
 	}
 
-	fsm := &FSM{State: State{Phase: PhaseIdle}} // Initial FSM state
-	tools := NewTools(fsm, tempDir)
+	// Create a dummy DB file
+	dbPath := filepath.Join(quintDir, "quint.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize DB: %v", err)
+	}
+
+	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: database.GetRawDB()} // Initial FSM state with DB
+
+tools := NewTools(fsm, tempDir, database)
 
 	// Initialize the project structure for tools to operate
-	err := tools.InitProject()
+	err = tools.InitProject()
 	if err != nil {
 		t.Fatalf("Failed to initialize project: %v", err)
 	}
@@ -28,7 +38,8 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 }
 
 func TestSlugify(t *testing.T) {
-	tools, _, _ := setupTools(t)
+
+tools, _, _ := setupTools(t)
 	tests := []struct {
 		input    string
 		expected string
@@ -71,13 +82,17 @@ func TestInitProject(t *testing.T) {
 }
 
 func TestProposeHypothesis(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+
+tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseAbduction // Set phase for valid Propose
 
 	title := "My First Hypothesis"
 	content := "This is the content of my hypothesis."
+	scope := "global"
+	kind := "system"
+	rationale := "This is the rationale."
 
-	path, err := tools.ProposeHypothesis(title, content)
+	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -94,13 +109,15 @@ func TestProposeHypothesis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read hypothesis file: %v", err)
 	}
-	if string(readContent) != content {
-		t.Errorf("File content mismatch. Got %q, expected %q", string(readContent), content)
+	expectedContent := fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", scope, kind, title, content, rationale)
+	if string(readContent) != expectedContent {
+		t.Errorf("File content mismatch. Got %q, expected %q", string(readContent), expectedContent)
 	}
 }
 
 func TestManageEvidence(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+
+tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-hypo"
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("Hypothesis content"), 0644); err != nil {
@@ -114,18 +131,19 @@ func TestManageEvidence(t *testing.T) {
 		evidenceType string
 		content     string
 		verdict     string
+		assuranceLevel string // New field
 		expectedMove bool
 		expectedDestLevel string // e.g., "L1", "L2", "invalid"
 		expectErr   bool
 	}{
 		// Deductor (DEDUCTION phase)
-		{"DeductionPass", PhaseDeduction, hypoID, "logic", "Logic check passed.", "PASS", true, "L1", false},
-		{"DeductionFail", PhaseDeduction, hypoID, "logic", "Logic check failed.", "FAIL", true, "invalid", false},
-		{"DeductionRefine", PhaseDeduction, hypoID, "logic", "Needs more refinement.", "REFINE", true, "invalid", false},
+		{"DeductionPass", PhaseDeduction, hypoID, "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
+		{"DeductionFail", PhaseDeduction, hypoID, "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
+		{"DeductionRefine", PhaseDeduction, hypoID, "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
 		
 		// Inductor (INDUCTION phase) - need another hypo in L1
-		{"InductionPass", PhaseInduction, "hypo-L1", "empirical", "Experiment passed.", "PASS", true, "L2", false},
-		{"InductionFail", PhaseInduction, "hypo-L1", "empirical", "Experiment failed.", "FAIL", true, "invalid", false},
+		{"InductionPass", PhaseInduction, "hypo-L1", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
+		{"InductionFail", PhaseInduction, "hypo-L1", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
 	}
 
 	for _, tt := range tests {
@@ -156,7 +174,7 @@ func TestManageEvidence(t *testing.T) {
 				}
 			}
 
-			evidencePath, err := tools.ManageEvidence(tt.currentPhase, tt.targetID, tt.evidenceType, tt.content, tt.verdict)
+			evidencePath, err := tools.ManageEvidence(tt.currentPhase, "add", tt.targetID, tt.evidenceType, tt.content, tt.verdict, tt.assuranceLevel, "file://carrier", "2025-12-31")
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("ManageEvidence() error = %v, expectErr %v", err, tt.expectErr)
@@ -191,7 +209,8 @@ func TestManageEvidence(t *testing.T) {
 }
 
 func TestRefineLoopback(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+
+tools, fsm, tempDir := setupTools(t)
 	parentID := "parent-hypo"
 	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
 	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
@@ -203,8 +222,9 @@ func TestRefineLoopback(t *testing.T) {
 	insight := "New insight from failure"
 	newTitle := "Refined Child Hypothesis"
 	newContent := "This is the refined content."
+	scope := "system"
 
-	childPath, err := tools.RefineLoopback(fsm.State.Phase, parentID, insight, newTitle, newContent)
+	childPath, err := tools.RefineLoopback(fsm.State.Phase, parentID, insight, newTitle, newContent, scope)
 	if err != nil {
 		t.Fatalf("RefineLoopback failed: %v", err)
 	}
@@ -233,7 +253,8 @@ func TestRefineLoopback(t *testing.T) {
 }
 
 func TestFinalizeDecision(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+
+tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseDecision // Simulate being in Decision phase
 
 	winnerID := "final-winner"
@@ -245,7 +266,7 @@ func TestFinalizeDecision(t *testing.T) {
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, content, winnerID)
+	drrPath, err := tools.FinalizeDecision(title, winnerID, "Context", content, "Rationale", "Consequences", "Characteristics")
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -280,4 +301,79 @@ func TestFinalizeDecision(t *testing.T) {
 	if _, err := os.Stat(winnerPath); err == nil {
 		t.Errorf("Winner hypothesis %s was not removed from L1", winnerID)
 	}
+}
+
+func TestVerifyHypothesis(t *testing.T) {
+
+tools, fsm, tempDir := setupTools(t)
+	hypoID := "test-verify-hypo"
+	
+	// Create dummy L0 hypothesis
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
+	if err := os.WriteFile(hypoPath, []byte("L0 content"), 0644); err != nil {
+		t.Fatalf("Failed to create dummy L0 hypothesis: %v", err)
+	}
+
+	// Case 1: PASS -> Promote to L1
+	fsm.State.Phase = PhaseDeduction
+	msg, err := tools.VerifyHypothesis(hypoID, `{"check":"ok"}`, "PASS")
+	if err != nil {
+		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
+	}
+	expectedMsg := fmt.Sprintf("Hypothesis %s promoted to L1", hypoID)
+	if msg != expectedMsg {
+		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")); os.IsNotExist(err) {
+		t.Errorf("Hypothesis not moved to L1")
+	}
+
+	// Case 2: FAIL -> Move to invalid
+	// Setup another L0 hypo
+	hypoID2 := "test-fail-hypo"
+	hypoPath2 := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID2+".md")
+	if err := os.WriteFile(hypoPath2, []byte("L0 content"), 0644); err != nil {
+		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
+	}
+	
+	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL")
+	if err != nil {
+		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
+	}
+	expectedMsgFail := fmt.Sprintf("Hypothesis %s moved to invalid", hypoID2)
+	if msg != expectedMsgFail {
+		t.Errorf("Expected message %q, got %q", expectedMsgFail, msg)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "invalid", hypoID2+".md")); os.IsNotExist(err) {
+		t.Errorf("Hypothesis not moved to invalid")
+	}
+}
+
+func TestAuditEvidence(t *testing.T) {
+
+tools, fsm, _ := setupTools(t)
+	fsm.State.Phase = PhaseDecision // Audit typically happens near decision or end of induction
+	
+	hypoID := "audit-hypo"
+	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself, 
+	// but ManageEvidence might rely on DB. For unit test, we focus on the wrapper call.)
+	
+	// AuditEvidence calls ManageEvidence with PhaseDecision.
+	// ManageEvidence checks DB if action is "check", but here action is "add" (implied).
+	// We need to ensure DB is happy if it checks constraints.
+	
+	// In tools.go, AuditEvidence calls:
+	// t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "PASS", "L2", "auditor", "")
+	
+	msg, err := tools.AuditEvidence(hypoID, "Risk analysis content")
+	if err != nil {
+		t.Errorf("AuditEvidence failed: %v", err)
+	}
+	expectedMsg := "Audit recorded for " + hypoID
+	if msg != expectedMsg {
+		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
+	}
+	
+	// We could verify DB side effects if we exposed DB in tests more directly, 
+	// but for now we verify no error and correct return message.
 }

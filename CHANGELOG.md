@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This release fundamentally restructures Quint Code to strictly adhere to the First Principles Framework (FPF) by establishing the MCP server as the authoritative kernel, implementing Typed Reasoning (Kind-CAL), and transforming CLI commands into lightweight entry points for specialized Personas.
 
-### Breaking Changes
-- **Project Directory:** Renamed from `.fpf` to `.quint` to align with the project name.
+### Breaking Change
+
+- **Project Directory:** Renamed from `.fpf` to `.quint` to align with the project name. How to migrate? Just ask `/q-actualize` to migrate evidences and decisions from `.fpf` to `.quint` and then delete `.fpf` directory.`
 - **Database Schema:** `quint.db` schema updated to enforce FPF invariants.
   - Added `scope` to `holons` table (Pattern A.2.6).
   - Added `cached_r_score` to `holons` table (B.3 Assurance Cache).
@@ -23,6 +24,7 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 - **Decision Structure:** `quint_decide` now requires strict E.9 DRR fields (`context`, `decision`, `rationale`, `consequences`, `characteristics`) instead of a free-form blob.
 
 ### Added
+
 - **Formal Persona Definitions:**
   - Dedicated personas in `src/agents/`: `abductor.md`, `deductor.md`, `inductor.md`, `decider.md`, `auditor.md`.
   - Personas now have explicit instructions on how to use MCP tools to satisfy FPF obligations.
@@ -52,12 +54,14 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 - **Expanded Test Coverage:** Added a dedicated integration test suite (`assurance_integration_test.go`) covering the assurance guard, evidence decay, and audit visualization to improve regression safety.
 
 ### Changed
+
 - **Evidence Graph Referring (A.10):** Evidence must now be anchored to a physical file or log (`carrier_ref`). The system no longer accepts "I checked it" as valid evidence; it demands "I checked file X".
 - **Trust & Assurance (B.3):** Verdicts are no longer binary (PASS/FAIL). They are now graded by Assurance Level (L0=Unsubstantiated, L1=Substantiated, L2=Axiomatic/Validated).
 - **Unified Scope Mechanism (A.2.6):** Hypotheses cannot be proposed without an explicit Context Slice (Scope).
 - **Installer:** `install.sh` now sources personas from `src/agents`.
 
 ### Fixed
+
 - **Cycle Detection:** Implemented proper cycle detection in the assurance calculator to prevent stack overflows on circular dependencies.
 - **Error Handling:** Surfaced previously-silent database and file operation errors, which are now logged as warnings to `stderr`.
 - **Role Spoofing:** `quint_transition` enforces that the `role` matches the valid actors for the current phase.
@@ -73,6 +77,7 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 ### Security: Executable Phase Gating
 
 #### Physics-First Enforcement (`/q1-hypothesize`)
+
 - **Vulnerability Closed:** Previous prompts used "soft" text instructions to prevent adding hypotheses mid-cycle, which "helpful" AI models would bypass.
 - **Executable Gate:** Now injects a bash script that checks `.quint/session.md`. If the phase is locked (Deduction/Induction complete), the script exits with `1`.
 - **Hard Stop:** The prompt explicitly instructs the AI to treat a script failure as a hard stop ("Physics says no"), preventing "helpfulness bias" overrides.
@@ -82,6 +87,7 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 ### Added: Legacy Project Repair
 
 #### Smart Initialization (`/q0-init`)
+
 - **Self-Healing Capability:** The init command now detects incomplete FPF setups (e.g., legacy projects missing `context.md` from v2.x).
 - **Deterministic Diagnostic:** Injects a bash script to verify file existence before deciding actions, preventing AI "hallucinated" skips.
 - **Repair Mode:** If `.quint/` exists but is incomplete, it triggers a surgical repair (generating only missing files) while preserving existing session data.
@@ -91,14 +97,17 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 ### Added: Process Hardening & Flexibility
 
 #### Strict Phase Gating (FPF Integrity)
+
 - **Hard Block in `/q1-hypothesize`:** Explicitly forbids generating new hypotheses if the cycle has passed Deduction. This prevents the "Helpfulness Bias" vulnerability where AI assistants might break process integrity to be "nice".
 - **Conditional Logic in `/q2-check`:** The cycle phase now only advances to `DEDUCTION_COMPLETE` when *all* active L0 hypotheses are resolved. If any remain unchecked, the door stays open for extensions.
 
 #### New Command: `/q1-extend`
+
 - **Legitimate Extension Path:** A dedicated command to add a missed hypothesis during the `ABDUCTION_COMPLETE` phase.
 - **Safety Rails:** Strictly blocked once `DEDUCTION_COMPLETE` is reached, ensuring evidence integrity (WLNK validity) during testing.
 
 ### Changed
+
 - **Updated `/q-status`:** State machine visualization now includes the `(q1-extend)` loop.
 - **Refined `/q3-test` & `/q3-research`:** Reinforced checks to ensure testing only happens after deduction is fully complete.
 
@@ -107,6 +116,7 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 ### Added: Deep Reasoning Capabilities
 
 #### Context Slicing (A.2.6)
+
 - **Structured Context:** `.quint/context.md` is now structured into explicit slices:
   - **Slice: Grounding** (Infrastructure, Region)
   - **Slice: Tech Stack** (Language, Frameworks)
@@ -114,16 +124,19 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 - **Context-Aware Init:** `/q0-init` now scans `package.json`, `Dockerfile`, etc., to auto-populate slices.
 
 #### Explicit Role Injection (A.2)
+
 - **Role-Swapping Prompts:** Commands now enforce specific FPF roles to prevent "AI drift":
   - `/q1-hypothesize`: **ExplorerRole** (Creative, Abductive)
   - `/q2-check`: **LogicianRole** (Strict, Deductive)
   - `/q4-audit`: **AuditorRole** (Adversarial, Normative)
 
 #### Context Drift Analysis
+
 - **New Audit Step:** `/q4-audit` now includes a mandatory **Context Drift Check**.
 - **Validation:** Verifies that hypotheses generated in step 1 still match the constraints in step 4 (preventing "works on my machine" architecture).
 
 ### Changed
+
 - **Command Prompts:** Updated `q0`, `q1`, `q2`, `q4` to enforce the new reasoning standards.
 
 ---
@@ -136,10 +149,10 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 
 ### Why the Name Change?
 
-1.  **Avoid Collision:** "Crucible" is an existing code review tool by Atlassian. We want a distinct identity.
-2.  **Not Just Code:** This tool melts *ideas* and *reasoning*, not just source code.
-3.  **The "Quintessence":** Anatoly Levenchuk described this project as a "distillate of FPF" (~5% of the full framework). It is the *quintessence*—the concentrated essence of the methodology.
-4.  **The Invariant Quintet:** FPF is built on five invariants (IDEM, COMM, LOC, WLNK, MONO). Quint Code enforces a rigid 5-step sequence (`q1`–`q5`) to preserve these invariants in your reasoning.
+1. **Avoid Collision:** "Crucible" is an existing code review tool by Atlassian. We want a distinct identity.
+2. **Not Just Code:** This tool melts *ideas* and *reasoning*, not just source code.
+3. **The "Quintessence":** Anatoly Levenchuk described this project as a "distillate of FPF" (~5% of the full framework). It is the *quintessence*—the concentrated essence of the methodology.
+4. **The Invariant Quintet:** FPF is built on five invariants (IDEM, COMM, LOC, WLNK, MONO). Quint Code enforces a rigid 5-step sequence (`q1`–`q5`) to preserve these invariants in your reasoning.
 
 ### Changed
 

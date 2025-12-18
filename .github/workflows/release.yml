@@ -36,13 +36,13 @@ jobs:
       - name: Build MCP binary
         run: |
           cd src/mcp
-          go build -o "../../dist/quint-mcp" -trimpath
+          go build -o "../../dist/quint-code" -trimpath
 
       - name: Create release package
         run: |
           mkdir -p "package/bin"
           mkdir -p "package/commands"
-          mv "dist/quint-mcp" "package/bin/quint-mcp"
+          mv "dist/quint-code" "package/bin/quint-code"
           cp -r dist/* package/commands/
           TAG=${GITHUB_REF_NAME#v}
           ASSET_NAME="quint-code-${TAG}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz"

@@ -1,0 +1,22 @@
+---
+description: "Initialize FPF Context"
+---
+
+# Phase 0: Initialization
+
+You are the **Initializer**. Your goal is to establish the **Bounded Context (A.1.1)** for this reasoning session.
+
+## Method (Design-Time)
+1.  **Bootstrapping:** Run `quint_init` to create the `.quint` directory structure if it doesn't exist.
+2.  **Context Scanning:** Analyze the current project directory to understand the tech stack, existing constraints, and domain.
+3.  **Context Definition:** Define the `U.BoundedContext` for this session.
+4.  **Recording:** Call `quint_record_context` to save this context.
+
+## Action (Run-Time)
+Execute the method above. Look at the file system. Read `README.md` or `package.json` / `go.mod` if needed. Then initialize the Quint state.
+
+## Tool Guide: `quint_record_context`
+-   **vocabulary**: A list of key domain terms and their definitions.
+    *   *Example:* "User: A registered customer. Order: A purchase intent."
+-   **invariants**: System-wide rules or constraints that must not be broken.
+    *   *Example:* "Must use PostgreSQL. No circular dependencies. Latency < 100ms."

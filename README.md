@@ -2,7 +2,7 @@
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
-**Supports:** Claude Code, Cursor, Gemini CLI
+**Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI
 
 > **Works exceptionally well with Claude Code!**
 
@@ -16,22 +16,52 @@ Quint Code provides the structure to turn AI-assisted development into a rigorou
 
 ## Quick Start
 
-### Install
-
-The installation is **per-project by design**. FPF reasoning is always grounded in a specific **Bounded Context** (Pattern A.1.1)—in this case, your project directory. Quint Code operates within this context to ensure all decisions and evidence are relevant to the work at hand.
+### Step 1: Install the Binary
 
 ```bash
-cd /path/to/your/project
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 ```
 
-The installer will create a `.quint/` directory, install the Quint MCP server, and add slash commands to your AI tool's config directories (e.g., `.claude/`, `.gemini/`).
-
-### Initialize
+Or build from source:
 
 ```bash
-/q0-init   # Scans context and initializes the knowledge base
-/q1-hypothesize "How should we handle state sync across browser tabs?"
+git clone https://github.com/m0n0x41d/quint-code.git
+cd quint-code/src/mcp
+go build -o quint-code .
+sudo mv quint-code /usr/local/bin/
+```
+
+### Step 2: Initialize a Project
+
+```bash
+cd /path/to/your/project
+quint-code init
+```
+
+This creates:
+
+- `.quint/` — knowledge base, evidence, decisions
+- `.mcp.json` — MCP server configuration
+- `~/.claude/commands/` — slash commands (global by default)
+
+**Flags:**
+
+| Flag | MCP Config | Commands |
+|------|-----------|----------|
+| `--claude` (default) | `.mcp.json` | `~/.claude/commands/*.md` |
+| `--cursor` | `.cursor/mcp.json` | `~/.cursor/commands/*.md` |
+| `--gemini` | `~/.gemini/settings.json` | `~/.gemini/commands/*.toml` |
+| `--codex` | `~/.codex/config.toml`* | `~/.codex/prompts/*.md` |
+| `--all` | All of the above | All of the above |
+| `--local` | — | Commands in project dir instead of global |
+
+> **\* Codex CLI limitation:** Codex [doesn't support per-project MCP configuration](https://github.com/openai/codex/issues/2628). Run `quint-code init --codex` in **each project before starting work to switch the active project in global codex mcp config**.
+
+### Step 3: Start Reasoning
+
+```bash
+/q0-init                           # Initialize knowledge base
+/q1-hypothesize "Your problem..."  # Generate hypotheses
 ```
 
 ## How It Works
@@ -40,9 +70,9 @@ Quint Code implements the **[First Principles Framework (FPF)](https://ailev.liv
 
 The core cycle follows three modes of inference:
 
-1.  **Abduction** — Generate competing hypotheses (don't anchor on the first idea).
-2.  **Deduction** — Verify logic and constraints (does the idea make sense?).
-3.  **Induction** — Gather evidence through tests or research (does the idea work in reality?).
+1. **Abduction** — Generate competing hypotheses (don't anchor on the first idea).
+2. **Deduction** — Verify logic and constraints (does the idea make sense?).
+3. **Induction** — Gather evidence through tests or research (does the idea work in reality?).
 
 Then, audit for bias, decide, and document the rationale in a durable record.
 

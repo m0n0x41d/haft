@@ -86,6 +86,10 @@ func (d *DB) GetRawDB() *sql.DB {
 	return d.conn
 }
 
+func (d *DB) Close() error {
+	return d.conn.Close()
+}
+
 func (d *DB) CreateHolon(h Holon) error {
 	query := `INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at) 
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`

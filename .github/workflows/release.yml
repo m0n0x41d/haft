@@ -5,17 +5,21 @@ on:
       - 'v*'
 permissions:
   contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
-    name: Build (${{ matrix.platform.os }}-${{ matrix.platform.arch }})
-    runs-on: ubuntu-latest
+  release:
+    name: Release (${{ matrix.platform.os }}-${{ matrix.platform.arch }})
+    runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
-          - {os: 'linux', arch: 'amd64'}
-          - {os: 'linux', arch: 'arm64'}
-          - {os: 'darwin', arch: 'amd64'}
-          - {os: 'darwin', arch: 'arm64'}
+          - {os: 'linux', arch: 'amd64', runner: 'ubuntu-latest'}
+          - {os: 'linux', arch: 'arm64', runner: 'ubuntu-24.04-arm'}
+          - {os: 'darwin', arch: 'amd64', runner: 'macos-13'}
+          - {os: 'darwin', arch: 'arm64', runner: 'macos-latest'}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,9 +34,6 @@ jobs:
         run: ./build.sh
 
       - name: Build MCP binary
-        env:
-          GOOS: ${{ matrix.platform.os }}
-          GOARCH: ${{ matrix.platform.arch }}
         run: |
           cd src/mcp
           go build -o "../../dist/quint-mcp" -trimpath
@@ -48,26 +49,11 @@ jobs:
           tar -czf "$ASSET_NAME" -C "package" .
           echo "ASSET_NAME=${ASSET_NAME}" >> $GITHUB_ENV
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: quint-code-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
-          path: ${{ env.ASSET_NAME }}
-
-  release:
-    name: Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.tar.gz
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ env.ASSET_NAME }}
+          asset_name: ${{ env.ASSET_NAME }}
+          tag: ${{ github.ref }}
+          overwrite: true

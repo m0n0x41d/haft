@@ -44,6 +44,18 @@ The following items are considered high-priority for moving `quint-code` towards
     -   Embed the complete audit tree from `/q-audit` (with the full `⟨F, G, R⟩` tuples) directly into the DRR markdown file.
     -   Include a summary of the final assurance scores and any waivers or accepted risks.
 
+### 4. Enhance q-actualize Command
+
+**Status:** The command has been redesigned conceptually but requires implementation in the `mcp` binary.
+**Next Step:** Implement the new functionality for `/q-actualize`.
+
+-   **Why:** To actively reconcile the FPF knowledge base with the evolving codebase, identifying context drift, stale evidence, and outdated decisions (Pattern B.4 Observe Phase, B.3.4 Epistemic Debt). This transforms `/q-actualize` into a crucial tool for maintaining a living assurance case.
+-   **Implementation:**
+    -   Implement `git` integration for detecting changed files.
+    -   Develop logic for analyzing context drift by comparing current project config files with `.quint/context.md`.
+    -   Create functions to parse evidence (`carrier_ref`) and decision files to track dependencies.
+    -   Implement recursive traversal (leveraging `assurance/calculator.go`'s logic) to identify stale evidence and outdated decisions.
+    -   Develop a structured output for the actualization report.
 ## Housekeeping & Future Hardening
 
 - **Logging:** Refine the `stderr` warnings into a more structured logging system (e.g., with levels like `INFO`, `WARN`, `ERROR`).

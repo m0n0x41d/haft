@@ -5,74 +5,62 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.1.1] - 2025-12-17
+## [4.0.0] - 2025-12-18
 
-### Fixed: Agent Logic Hardening
+### The Persona-Based Kernel & Kind-CAL Update
 
-#### Strict Kind-CAL Logic (C.3)
-- **Deductor Agent:** Now explicitly branches validation logic based on `kind: system` (Architecture/Code) vs `kind: episteme` (Knowledge/Theory).
-- **Impact:** Prevents "Type Erasure" where documentation changes were validated with system logic or vice-versa.
-
-#### Characteristic Space Measurement (C.16)
-- **Abductor Agent:** Now mandated to define **Success Metrics** (Characteristics) in the hypothesis body.
-- **Inductor Agent:** Now mandated to **measure** against those specific metrics and record values in the evidence.
-- **Impact:** Prevents "Retrospective Rationalization" by forcing metrics to be defined *before* testing.
-
-## [4.1.0] - 2025-12-17
-
-### Added: Architectural Dept Repayment
-
-#### Typed Reasoning (C.3 Kind-CAL)
-- **`quint_propose` Upgrade:** Now requires a `kind` argument (`system` vs `episteme`) to distinguish between architectural changes and knowledge/documentation changes.
-- **Database Schema:** Added `kind` column to `holons` table.
-- **Agent Instruction:** Abductor now explicitly classifies hypotheses.
-
-#### Structured Decision Making (E.9 & C.16)
-- **`quint_decide` Upgrade:** Deprecated the free-form `content` blob in favor of strict E.9 DRR fields:
-  - `context`: Problem frame.
-  - `decision`: The choice made.
-  - `rationale`: Why it was chosen.
-  - `consequences`: Risks and benefits.
-  - `characteristics`: C.16 Characteristic Space metrics (e.g., "Cost: Low").
-- **Agent Instruction:** Decider now enforced to provide structured rationale.
-
----
-
-## [4.0.0] - 2025-12-17
-
-### The Agentic Kernel Update
-
-This release fundamentally restructures Quint Code to strictly adhere to the First Principles Framework (FPF) by establishing the MCP server as the authoritative kernel and transforming CLI commands into lightweight entry points for specialized Agents.
+This release fundamentally restructures Quint Code to strictly adhere to the First Principles Framework (FPF) by establishing the MCP server as the authoritative kernel, implementing Typed Reasoning (Kind-CAL), and transforming CLI commands into lightweight entry points for specialized Personas.
 
 ### Breaking Changes
 - **Project Directory:** Renamed from `.fpf` to `.quint` to align with the project name.
 - **Database Schema:** `quint.db` schema updated to enforce FPF invariants.
   - Added `scope` to `holons` table (Pattern A.2.6).
-  - Added `assurance_level` and `carrier_ref` to `evidence` table (Patterns B.3, A.10).
-- **Command Architecture:** Commands (`/q1`, `/q2`, etc.) no longer contain agent prompts. They now strictly perform a `quint_transition` and instruct the LLM to adopt a persona defined in `.quint/agents/`.
+  - Added `cached_r_score` to `holons` table (B.3 Assurance Cache).
+  - Added `valid_until` to `evidence` table (B.3.4 Evidence Decay).
+  - Added `congruence_level` to `relations` table (B.3 Congruence).
+  - Added `kind` column to `holons` table (Pattern C.3).
+- **Command Architecture:** Commands (`/q1`, `/q2`, etc.) no longer contain internal logic. They now strictly perform a `quint_transition` and instruct the LLM to adopt a Persona defined in `.quint/agents/`.
+- **Decision Structure:** `quint_decide` now requires strict E.9 DRR fields (`context`, `decision`, `rationale`, `consequences`, `characteristics`) instead of a free-form blob.
 
 ### Added
-- **Formal Agent Definitions:**
-  - Dedicated agent profiles in `src/agents/`: `abductor.md`, `deductor.md`, `inductor.md`, `decider.md`, `auditor.md`.
-  - Agents now have explicit instructions on how to use MCP tools to satisfy FPF obligations.
+- **Formal Persona Definitions:**
+  - Dedicated personas in `src/agents/`: `abductor.md`, `deductor.md`, `inductor.md`, `decider.md`, `auditor.md`.
+  - Personas now have explicit instructions on how to use MCP tools to satisfy FPF obligations.
 - **MCP Tooling Enhancements:**
   - **`quint_transition`:** Replaces ad-hoc phase changes. Requires `role`, `target` phase, and `evidence_stub` to validate the transition.
-  - **`quint_propose`:** Now requires `scope` (Claim Scope/G) to prevent scope drift.
-  - **`quint_evidence`:** Now requires `assurance_level` (L0/L1/L2) and `carrier_ref` (Symbol Carrier) to prevent trust inflation and hearsay.
+  - **`quint_propose`:** Now requires `scope` (Claim Scope/G) and `kind` (System vs Episteme) to prevent scope drift and type erasure.
+  - **`quint_evidence`:** Now requires `assurance_level` (L0/L1/L2), `carrier_ref` (Symbol Carrier), and `valid_until` to prevent trust inflation and hearsay.
   - **`quint_loopback`:** Explicit tool for the Induction -> Deduction refinement cycle.
-- **Migration Utility:**
-  - **`/q-actualize`:** New command to migrate legacy `.fpf` projects to `.quint` structure and schema.
+- **Assurance Calculator (B.3):**
+  - **`src/mcp/assurance/`:** New package implementing the Trust & Assurance Calculus.
+  - **Weakest Link (WLNK):** R-score is capped by the lowest R of dependencies.
+  - **Congruence Penalty (CL):** Relations with low congruence reduce effective reliability.
+  - **Evidence Decay:** Expired evidence significantly penalizes R-score.
+  - **Recursive Calculation:** Deep traversal of the dependency graph.
+- **New/Updated Commands:**
+  - **`q-decay`:** Calculates Epistemic Debt and updates R-scores for all holons.
+  - **`q-audit`:** Visualizes the assurance tree with R-scores and penalties.
+  - **`q-actualize`:** New command to migrate legacy `.fpf` projects to `.quint` structure and schema.
+- **Typed Reasoning (C.3 Kind-CAL):**
+  - **Abductor Persona:** Explicitly classifies hypotheses as `system` (Architecture/Code) or `episteme` (Knowledge/Theory).
+  - **Deductor Persona:** Explicitly branches validation logic based on `kind`.
+- **Characteristic Space (C.16):**
+  - **Abductor Persona:** Mandated to define **Success Metrics** (Characteristics) in the hypothesis.
+  - **Inductor Persona:** Mandated to **measure** against those metrics.
+  - **Decider Persona:** Records C.16 metrics in the DRR.
 
 ### Changed
 - **Evidence Graph Referring (A.10):** Evidence must now be anchored to a physical file or log (`carrier_ref`). The system no longer accepts "I checked it" as valid evidence; it demands "I checked file X".
 - **Trust & Assurance (B.3):** Verdicts are no longer binary (PASS/FAIL). They are now graded by Assurance Level (L0=Unsubstantiated, L1=Substantiated, L2=Axiomatic/Validated).
 - **Unified Scope Mechanism (A.2.6):** Hypotheses cannot be proposed without an explicit Context Slice (Scope).
-- **Installer:** `install.sh` now sources agents from `src/agents`.
+- **Installer:** `install.sh` now sources personas from `src/agents`.
 
 ### Fixed
 - **Role Spoofing:** `quint_transition` enforces that the `role` matches the valid actors for the current phase.
-- **Logic Gaps:** The **Deductor** agent is now explicitly responsible for deriving "Necessary Consequences" before testing begins.
-- **Hypothesis Zombie State:** The **Auditor** agent includes checks for orphaned L0 hypotheses.
+- **Logic Gaps:** The **Deductor** persona is now explicitly responsible for deriving "Necessary Consequences" before testing begins.
+- **Hypothesis Zombie State:** The **Auditor** persona includes checks for orphaned L0 hypotheses.
+- **Type Erasure:** Explicit `kind` prevents validating documentation changes with system logic or vice-versa.
+- **Retrospective Rationalization:** Metrics must be defined *before* testing (C.16).
 
 ---
 

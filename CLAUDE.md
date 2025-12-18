@@ -167,9 +167,9 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 |---|---------|-------|--------------|
 | 0 | `/q0-init` | Setup | Initialize `.quint/` structure |
 | 1 | `/q1-hypothesize` | Abduction | Generate hypotheses → `L0/` |
-| 2 | `/q2-check` | Deduction | Logical verification → `L1/` |
-| 3a | `/q3-test` | Induction | Run tests, benchmarks (internal) |
-| 3b | `/q3-research` | Induction | Web search, docs (external) |
+| 1b| `/q1-add` | Abduction | Inject user hypothesis → `L0/` |
+| 2 | `/q2-verify` | Deduction | Logical verification → `L1/` |
+| 3 | `/q3-validate` | Induction | Test (internal) or Research (external) → `L2/` |
 | 4 | `/q4-audit` | Bias-Audit | WLNK analysis, congruence check |
 | 5 | `/q5-decide` | Decision | Create DRR from winning hypothesis |
 | S | `/q-status` | — | Show current state and next steps |

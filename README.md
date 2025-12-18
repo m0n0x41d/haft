@@ -66,7 +66,7 @@ This creates:
 
 ## How It Works
 
-Quint Code implements the **[First Principles Framework (FPF)](https://ailev.livejournal.com/)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.
+Quint Code implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.
 
 The core cycle follows three modes of inference:
 

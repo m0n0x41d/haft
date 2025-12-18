@@ -48,6 +48,8 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
   - **Abductor Persona:** Mandated to define **Success Metrics** (Characteristics) in the hypothesis.
   - **Inductor Persona:** Mandated to **measure** against those metrics.
   - **Decider Persona:** Records C.16 metrics in the DRR.
+- **Configurable Assurance Threshold:** The `AssuranceThreshold` is now configurable in `.quint/state.json` (defaults to `0.8`), allowing projects to set their own quality gate for decisions.
+- **Expanded Test Coverage:** Added a dedicated integration test suite (`assurance_integration_test.go`) covering the assurance guard, evidence decay, and audit visualization to improve regression safety.
 
 ### Changed
 - **Evidence Graph Referring (A.10):** Evidence must now be anchored to a physical file or log (`carrier_ref`). The system no longer accepts "I checked it" as valid evidence; it demands "I checked file X".
@@ -56,6 +58,8 @@ This release fundamentally restructures Quint Code to strictly adhere to the Fir
 - **Installer:** `install.sh` now sources personas from `src/agents`.
 
 ### Fixed
+- **Cycle Detection:** Implemented proper cycle detection in the assurance calculator to prevent stack overflows on circular dependencies.
+- **Error Handling:** Surfaced previously-silent database and file operation errors, which are now logged as warnings to `stderr`.
 - **Role Spoofing:** `quint_transition` enforces that the `role` matches the valid actors for the current phase.
 - **Logic Gaps:** The **Deductor** persona is now explicitly responsible for deriving "Necessary Consequences" before testing begins.
 - **Hypothesis Zombie State:** The **Auditor** persona includes checks for orphaned L0 hypotheses.

@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  release:
+    name: Release (${{ matrix.platform.os }}-${{ matrix.platform.arch }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - {os: 'linux', arch: 'amd64', runner: 'ubuntu-latest'}
+          - {os: 'linux', arch: 'arm64', runner: 'ubuntu-24.04-arm'}
+          - {os: 'darwin', arch: 'arm64', runner: 'macos-latest'}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/mcp/go.sum
+
+      - name: Generate commands
+        run: ./build.sh
+
+      - name: Build MCP binary
+        run: |
+          cd src/mcp
+          go build -o "../../dist/quint-code" -trimpath
+
+      - name: Create release package
+        run: |
+          mkdir -p "package/bin"
+          mkdir -p "package/commands"
+          mv "dist/quint-code" "package/bin/quint-code"
+          cp -r dist/* package/commands/
+          TAG=${GITHUB_REF_NAME#v}
+          ASSET_NAME="quint-code-${TAG}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz"
+          tar -czf "$ASSET_NAME" -C "package" .
+          echo "ASSET_NAME=${ASSET_NAME}" >> $GITHUB_ENV
+
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          {
+            echo "RELEASE_NOTES<<EOF"
+            awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Upload to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ env.ASSET_NAME }}
+          asset_name: ${{ env.ASSET_NAME }}
+          tag: ${{ github.ref }}
+          overwrite: true
+          body: ${{ env.RELEASE_NOTES }}

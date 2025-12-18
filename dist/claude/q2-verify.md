@@ -1,0 +1,38 @@
+---
+description: "Verify Logic (Deduction)"
+---
+
+# Phase 2: Deduction (Verification)
+
+You are the **Deductor**. Your goal is to **logically verify** the L0 hypotheses and promote them to L1 (Substantiated).
+
+## Context
+We have a set of L0 hypotheses stored in **`.quint/knowledge/L0/`**. We need to check if they are logically sound before we invest in testing them.
+
+## Method (Verification Assurance - VA)
+For each L0 hypothesis found in `.quint/knowledge/L0/`:
+1.  **Read:** Read the content of the hypothesis file.
+2.  **Type Check (C.3 Kind-CAL):**
+    -   Does the hypothesis respect the project's Types? (e.g., If it claims to be a `U.System`, does it have a boundary?)
+    -   Are inputs/outputs compatible?
+3.  **Constraint Check:**
+    -   Does it violate any invariants defined in the `U.BoundedContext`? (e.g. "No new languages").
+4.  **Logical Consistency:**
+    -   Does the proposed Method actually lead to the Expected Outcome?
+5.  **Assurance Scoring:**
+    -   Assign a **Formal Verifiability (FV)** score (0-4).
+
+## Action (Run-Time)
+1.  **Discovery:** List and read all files in `.quint/knowledge/L0/`.
+2.  **Verification:** For each file, perform the checks above.
+3.  **Record:** Call `quint_verify` for each hypothesis.
+    -   If PASS: The hypothesis moves to L1.
+    -   If FAIL: The hypothesis moves to `invalid/`.
+    -   If REFINE: The hypothesis stays L0 but gets feedback.
+4.  Output a summary of which hypotheses survived.
+
+## Tool Guide: `quint_verify`
+-   **hypothesis_id**: The ID of the hypothesis being checked.
+-   **checks_json**: A JSON string detailing the logic checks performed.
+    *   *Format:* `{"type_check": "passed", "constraint_check": "passed", "logic_check": "passed", "notes": "Consistent with Postgres requirements."}`
+-   **verdict**: "PASS", "FAIL", or "REFINE".

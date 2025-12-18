@@ -67,8 +67,8 @@ When reasoning through problems, apply these principles:
 
 ### 2. Investigate the Codebase
 
-- **Check `.fpf/context.md` first** — Project context, constraints, and tech stack
-- **Check `.fpf/knowledge/`** — Project knowledge base with verified claims at different assurance levels
+- **Check `.quint/context.md` first** — Project context, constraints, and tech stack
+- **Check `.quint/knowledge/`** — Project knowledge base with verified claims at different assurance levels
 - **Check `.context/` directory** — Architectural documentation and design decisions
 - Use Task tool for broader/multi-file exploration (preferred for context efficiency)
 - Explore relevant files and directories
@@ -165,11 +165,11 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 | # | Command | Phase | What it does |
 |---|---------|-------|--------------|
-| 0 | `/q0-init` | Setup | Initialize `.fpf/` structure |
+| 0 | `/q0-init` | Setup | Initialize `.quint/` structure |
 | 1 | `/q1-hypothesize` | Abduction | Generate hypotheses → `L0/` |
-| 2 | `/q2-check` | Deduction | Logical verification → `L1/` |
-| 3a | `/q3-test` | Induction | Run tests, benchmarks (internal) |
-| 3b | `/q3-research` | Induction | Web search, docs (external) |
+| 1b| `/q1-add` | Abduction | Inject user hypothesis → `L0/` |
+| 2 | `/q2-verify` | Deduction | Logical verification → `L1/` |
+| 3 | `/q3-validate` | Induction | Test (internal) or Research (external) → `L2/` |
 | 4 | `/q4-audit` | Bias-Audit | WLNK analysis, congruence check |
 | 5 | `/q5-decide` | Decision | Create DRR from winning hypothesis |
 | S | `/q-status` | — | Show current state and next steps |
@@ -185,10 +185,10 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 **Key Concepts:**
 - **WLNK (Weakest Link)**: Assurance = min(evidence), never average
 - **Congruence**: External evidence must match our context (high/medium/low)
-- **Validity**: Evidence expires — check with `/fpf-decay`
+- **Validity**: Evidence expires — check with `/q-decay`
 - **Scope**: Knowledge applies within specified conditions only
 
-**State Location:** `.fpf/` directory (git-tracked)
+**State Location:** `.quint/` directory (git-tracked)
 
 **Key Principle:** You (Claude) generate options with evidence. Human decides. This is the Transformer Mandate — a system cannot transform itself.
 
@@ -288,7 +288,7 @@ Invoke via Task tool:
 ## Critical Reminders
 
 1. **Ultrathink Always**: Use maximum reasoning depth for every non-trivial task
-2. **Check Knowledge First**: Read `.fpf/knowledge/` for verified project claims before making assumptions
+2. **Check Knowledge First**: Read `.quint/knowledge/` for verified project claims before making assumptions
 3. **Decision Framework vs FPF**: Quick decisions → inline framework. Complex/persistent → FPF mode
 4. **Use TodoWrite**: For ANY multi-step task, mark complete IMMEDIATELY
 5. **Actually Do Work**: When you say "I will do X", DO X

@@ -19,7 +19,9 @@ The user has presented an anomaly or a design problem.
 ## Action (Run-Time)
 1.  Ask the user for the problem statement if not provided.
 2.  Think through the options.
-3.  Call `quint_propose` for EACH hypothesis to record it in the database.
+3.  Call `quint_propose` for EACH hypothesis.
+    -   *Note:* The tool will store these in **`.quint/knowledge/L0/`**.
+    -   `quint_propose(title, summary, rationale_json)`
 4.  Summarize the generated hypotheses to the user.
 
 ## Tool Guide: `quint_propose`

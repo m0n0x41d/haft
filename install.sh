@@ -228,7 +228,6 @@ create_quint_structure() {
     mkdir -p "$target/$INSTALL_DIR_BASE/knowledge/L1"
     mkdir -p "$target/$INSTALL_DIR_BASE/knowledge/L2"
     mkdir -p "$target/$INSTALL_DIR_BASE/knowledge/invalid"
-    mkdir -p "$target/$INSTALL_DIR_BASE/agents"
     touch "$target/$INSTALL_DIR_BASE/evidence/.gitkeep"
 }
 
@@ -243,7 +242,7 @@ configure_mcp() {
         mcp_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
     fi
 
-    local server_json="{"quint-code":{"command":"$mcp_binary","args":["-mode","server"],"env":{}}}"
+    local server_json='{"quint-code":{"command":"'"$mcp_binary"'","args":["-mode","server"],"env":{}}}'
 
     if [[ -f "$config_path" ]]; then
         cprintln "$DIM" "   Merging MCP config into $config_path..."
@@ -263,7 +262,7 @@ with open('$config_path', 'w') as f: json.dump(data, f, indent=2)
         fi
     else
         cprintln "$DIM" "   Creating new MCP config at $config_path..."
-        echo "{"mcpServers": $server_json}" > "$config_path"
+        echo '{"mcpServers": '"$server_json"'}' > "$config_path"
     fi
 }
 
@@ -285,9 +284,6 @@ install() {
             (cd "$src_dir" && go build -o "$quint_dir/bin/quint-mcp" -trimpath .)
             spinner $! "Compiling quint-mcp binary"
             
-            # Since we built from source, we need to manually place other assets
-            cprintln "$DIM" "   Copying assets from local source..."
-            cp -r src/agents/* "$quint_dir/agents/"
             # Run build.sh to generate commands if not present
             if [[ ! -d "dist" ]]; then ./build.sh; fi
             cp -r dist/* "$quint_dir/commands/"

@@ -65,5 +65,6 @@ jobs:
           file: ${{ env.ASSET_NAME }}
           asset_name: ${{ env.ASSET_NAME }}
           tag: ${{ github.ref }}
+          release_name: ${{ github.ref_name }}
           overwrite: true
           body: ${{ env.RELEASE_NOTES }}

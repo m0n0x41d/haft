@@ -7,60 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0] - 2025-12-18
 
-### MCP Server Architecture
-
-This release introduces the MCP (Model Context Protocol) server as the core of Quint Code, replacing the previous prompt-only approach. The server provides structured tools for AI assistants to interact with the FPF knowledge base.
-
-### Breaking Changes
-
-- **Project Directory:** Renamed from `.fpf` to `.quint`. Migration: run `/q-actualize` to migrate, then delete `.fpf`.
-
 ### Added
 
-- **MCP Server** (`quint-code serve`):
-  - `quint_init` — Initialize project structure and bounded context
-  - `quint_transition` — Phase transitions with role and evidence validation
-  - `quint_propose` — Create hypotheses with scope and kind classification
-  - `quint_evidence` — Record evidence with assurance level, carrier reference, and validity window
-  - `quint_loopback` — Induction → Deduction refinement cycle
-  - `quint_decide` — Create Decision Rationale Records (DRR) with E.9 fields
-  - `quint_status` — Query current cycle state
-  - `quint_query` — Search knowledge base
-  - `quint_audit` — Visualize assurance tree with R-scores
-  - `quint_decay` — Calculate epistemic debt from expired evidence
-  - `quint_actualize` — Reconcile knowledge base with code changes
-  - `quint_reset` — Discard current reasoning cycle
-
-- **CLI** (`quint-code init`):
-  - Project initialization with `.quint/` directory structure
-  - MCP configuration for Claude Code, Cursor, Gemini CLI, Codex CLI
-  - Slash command installation (global or per-project)
-
-- **SQLite Database** (`quint.db`):
-  - `holons` table with `scope`, `kind`, `cached_r_score` columns
-  - `evidence` table with `valid_until` for decay tracking
-  - `relations` table with `congruence_level` for WLNK calculation
-
-- **Assurance Calculator**:
-  - Weakest Link (WLNK) — R-score capped by lowest dependency
-  - Congruence Penalty — Low-congruence relations reduce reliability
-  - Evidence Decay — Expired evidence penalizes R-score
-  - Cycle detection for circular dependencies
-
+- **MCP Server Architecture**:
+  - This release introduces the MCP (Model Context Protocol) server as the core of Quint Code, replacing the previous prompt-only approach. The server provides structured tools for AI assistants to interact with the FPF knowledge base.
+  - The MCP server has been restructured into `cmd` and `internal` packages for better organization and maintainability.
+- **New Commands**:
+  - `/q-audit`: Visualize assurance tree with R-scores.
+  - `/q-decay`: Calculate epistemic debt from expired evidence.
+- **Command Updates**:
+  - `/q-actualize`: Reconcile the knowledge base with recent code changes. This command has been updated for better performance and accuracy.
+- **Renamed Commands**:
+  - `/q2-check` is now `/q2-verify`.
+  - `/q3-research` and `/q3-test` are consolidated into `/q3-validate`.
+  - `/q1-add` has been added for manually adding hypotheses.
+- **SQLite Database (`quint.db`)**:
+  - The project now uses SQLite for deterministic FPF, ensuring consistency and reproducibility.
+  - `holons` table now includes `scope`, `kind`, and `cached_r_score` columns to support advanced FPF features.
+  - `evidence` table now includes a `valid_until` column for evidence decay tracking.
+  - `relations` table now includes a `congruence_level` column for WLNK calculation.
+- **Trust & Assurance Calculator (B.3)**:
+  - Implemented the FPF B.3 standard for calculating trust and assurance.
+  - **Weakest Link (WLNK)**: R-score is now capped by the lowest-scoring dependency in the evidence chain.
+  - **Congruence Penalty**: Low-congruence relations between artifacts now reduce the overall reliability score.
+  - **Evidence Decay**: Expired evidence, as determined by the `valid_until` field, now penalizes the R-score, introducing the concept of "epistemic debt."
+  - **Cycle Detection**: The calculator now detects and flags circular dependencies in the evidence graph.
 - **Typed Reasoning (Kind-CAL)**:
-  - Hypotheses classified as `system` (code/architecture) or `episteme` (knowledge/theory)
-  - Validation logic branches based on kind
-
+  - Hypotheses are now classified by `kind` as either `system` (for code and architecture) or `episteme` (for knowledge and theory).
+  - Validation logic now branches based on the hypothesis kind, allowing for more targeted and relevant analysis.
 - **Characteristic Space (C.16)**:
-  - Success metrics defined before testing
-  - Metrics measured during induction
-  - Results recorded in DRR
+  - Success metrics are now defined upfront, before testing, as part of the `Characteristic Space`.
+  - These metrics are measured during the induction phase (`/q3-validate`).
+  - The results are recorded in the Design Rationale Record (DRR) for full traceability.
+- **CI/CD**:
+  - A new GitHub Actions workflow has been added to automate the build and release process.
+- **Testing**:
+  - Added integration tests for the assurance calculator to ensure correctness and stability.
+- **Error Handling**:
+  - Improved error handling to surface previously-silent errors with warnings.
 
+### Changed
+
+- **Project Directory**: Renamed from `.fpf` to `.quint`. Migration: run `/q-actualize` to migrate, then delete `.fpf`.
 - **Multi-platform Support**:
-  - Claude Code (`.mcp.json`, `~/.claude/commands/`)
-  - Cursor (`.cursor/mcp.json`, `~/.cursor/commands/`)
-  - Gemini CLI (`~/.gemini/settings.json`, `~/.gemini/commands/`)
-  - Codex CLI (`~/.codex/config.toml`, `~/.codex/prompts/`)
+  - Installer now supports Claude Code, Cursor, Gemini CLI, and Codex CLI.
+  - Commands are now sourced from `src/commands/` and built to platform-specific formats in `dist/`.
+
+### Removed
+
+- **Redundant Agents**: Removed legacy standalone agent files for a cleaner codebase.
 
 ---
 

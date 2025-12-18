@@ -5,13 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	// "time" // Unused
+
+	"database/sql" // Added
+
+	"quint-mcp/db"
 )
 
 // CLI Flags
 var (
 	modeFlag   = flag.String("mode", "cli", "Mode: 'cli' or 'server'")
 	roleFlag   = flag.String("role", "", "Role: Abductor, Deductor, Inductor, Auditor, Decider")
-	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide, context, actualize")
+	actionFlag = flag.String("action", "check", "Action: check, transition, init, propose, evidence, loopback, decide, context, actualize, decay, audit")
 	targetFlag = flag.String("target", "", "Target phase for transition")
 	
 	// Role Assignment Flags
@@ -22,6 +27,7 @@ var (
 	evidenceTypeFlag = flag.String("evidence_type", "", "Evidence type for transition anchor")
 	evidenceURIFlag  = flag.String("evidence_uri", "", "URI/Path to evidence artifact")
 	evidenceDescFlag = flag.String("evidence_desc", "", "Description of evidence")
+evidenceHolonFlag = flag.String("evidence_holon", "", "Holon ID for assurance check") // Added for B.3
 
 	// Tool Arguments
 	titleFlag    = flag.String("title", "", "Title for hypothesis or decision")
@@ -30,6 +36,19 @@ var (
 	targetIDFlag = flag.String("target_id", "", "Target ID for evidence (e.g. hypothesis filename)")
 	verdictFlag  = flag.String("verdict", "", "Verdict (PASS/FAIL/REFINE)")
 	insightFlag  = flag.String("insight", "", "Insight for loopback")
+
+	// Extended Argument Flags
+	scopeFlag             = flag.String("scope", "", "Scope for hypothesis (USM)")
+	kindFlag              = flag.String("kind", "system", "Kind for hypothesis (system/episteme)")
+	evidenceActionFlag    = flag.String("evidence_action", "add", "Action for evidence (add/check)")
+	assuranceFlag         = flag.String("assurance", "", "Assurance level (L0/L1/L2)")
+	carrierFlag           = flag.String("carrier", "", "Carrier reference")
+	validUntilFlag        = flag.String("valid_until", "", "Validity expiration")
+	drrContextFlag        = flag.String("drr_context", "", "DRR Context field")
+	drrDecisionFlag       = flag.String("drr_decision", "", "DRR Decision field")
+	drrRationaleFlag      = flag.String("drr_rationale", "", "DRR Rationale field")
+	drrConsequencesFlag   = flag.String("drr_consequences", "", "DRR Consequences field")
+	drrCharacteristicsFlag = flag.String("drr_characteristics", "", "DRR Characteristics field")
 )
 
 func main() {
@@ -39,6 +58,7 @@ func main() {
 	cwd, _ := os.Getwd()
 	quintDir := filepath.Join(cwd, ".quint")
 	stateFile := filepath.Join(quintDir, "state.json")
+	dbPath := filepath.Join(quintDir, "quint.db")
 
 	// Ensure .quint exists for init
 	if *actionFlag == "init" {
@@ -48,13 +68,29 @@ func main() {
 		}
 	}
 
-	fsm, err := LoadState(stateFile)
+	// Initialize DB
+	var database *db.DB
+	if _, err := os.Stat(dbPath); err == nil || *actionFlag == "init" {
+		var err error
+		database, err = db.New(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to init DB: %v\n", err)
+		}
+	}
+
+	// Load State
+	var sqlDB *sql.DB
+	if database != nil {
+		sqlDB = database.GetRawDB()
+	}
+
+	fsm, err := LoadState(stateFile, sqlDB)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading state: %v\n", err)
 		os.Exit(1)
 	}
 
-	tools := NewTools(fsm, cwd)
+	tools := NewTools(fsm, cwd, database)
 
 	if *modeFlag == "server" {
 		server := NewServer(tools)
@@ -66,7 +102,7 @@ func main() {
 	getRoleAssignment := func() RoleAssignment {
 		return RoleAssignment{
 			Role:      Role(*roleFlag),
-			SessionID: *sessionIDFlag,
+				SessionID: *sessionIDFlag,
 			Context:   *contextFlag,
 		}
 	}
@@ -80,6 +116,7 @@ func main() {
 			Type:        *evidenceTypeFlag,
 			URI:         *evidenceURIFlag,
 			Description: *evidenceDescFlag,
+			HolonID:     *evidenceHolonFlag, // B.3 Assurance Check
 		}
 	}
 
@@ -112,7 +149,7 @@ func main() {
 		evidence := getEvidenceStub()
 
 		ok, msg := fsm.CanTransition(Phase(*targetFlag), assign, evidence)
-		if ok {
+		if !ok {
 			fsm.State.Phase = Phase(*targetFlag)
 			fsm.State.ActiveRole = assign
 			if err := fsm.SaveState(stateFile); err != nil {
@@ -153,22 +190,13 @@ func main() {
 		fmt.Println(ctx)
 
 	case "propose":
-		// Role: Abductor. Phase: ABDUCTION.
-		// For propose (Abduction), no antecedent evidence is STRICTLY required to enter,
-		// but we check transition to ensure we are in Abduction or can start it.
-		// However, Propose is an ACTION within Abduction.
-		
 		assign := getRoleAssignment()
-		// No evidence needed to just 'be' in Abduction if already there.
-		// But if we were transitioning TO abduction, we might need it? No, Init handles that.
-		
-		// We re-check transition logic just to validate Role vs Phase permissions
 		ok, msg := fsm.CanTransition(PhaseAbduction, assign, nil)
 		if !ok {
 			fmt.Printf("DENIED: %s\n", msg)
 			os.Exit(1)
 		}
-		path, err := tools.ProposeHypothesis(*titleFlag, *contentFlag)
+		path, err := tools.ProposeHypothesis(*titleFlag, *contentFlag, *scopeFlag, *kindFlag, "{}")
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
@@ -176,12 +204,11 @@ func main() {
 		fmt.Printf("SUCCESS: Created hypothesis %s\n", path)
 
 	case "evidence":
-		// Role: Deductor (DEDUCTION) or Inductor (INDUCTION)
 		if !isValidRoleForPhase(fsm.State.Phase, Role(*roleFlag)) {
 			fmt.Printf("DENIED: Role %s cannot add evidence in %s phase\n", *roleFlag, fsm.State.Phase)
 			os.Exit(1)
 		}
-		path, err := tools.ManageEvidence(fsm.State.Phase, *targetIDFlag, *typeFlag, *contentFlag, *verdictFlag)
+		path, err := tools.ManageEvidence(fsm.State.Phase, *evidenceActionFlag, *targetIDFlag, *typeFlag, *contentFlag, *verdictFlag, *assuranceFlag, *carrierFlag, *validUntilFlag)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
@@ -189,10 +216,7 @@ func main() {
 		fmt.Printf("SUCCESS: Added evidence %s\n", path)
 
 	case "loopback":
-		// Role: Inductor (triggers it). Phase: INDUCTION -> DEDUCTION.
 		assign := getRoleAssignment()
-		// Loopback implies we have 'failed' evidence (the insight).
-		// We treat the insight as the evidence for this transition back.
 		evidence := &EvidenceStub{Type: "insight", Description: *insightFlag, URI: "loopback-event"}
 		
 		ok, msg := fsm.CanTransition(PhaseDeduction, assign, evidence)
@@ -200,13 +224,11 @@ func main() {
 			fmt.Printf("DENIED: %s\n", msg)
 			os.Exit(1)
 		}
-		// Actually perform the loopback logic
-		childPath, err := tools.RefineLoopback(fsm.State.Phase, *targetIDFlag, *insightFlag, *titleFlag, *contentFlag)
+		childPath, err := tools.RefineLoopback(fsm.State.Phase, *targetIDFlag, *insightFlag, *titleFlag, *contentFlag, *scopeFlag)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
 		}
-		// Perform state transition
 		fsm.State.Phase = PhaseDeduction
 		fsm.State.ActiveRole = assign
 		if err := fsm.SaveState(stateFile); err != nil {
@@ -216,19 +238,12 @@ func main() {
 		fmt.Printf("LOOPBACK: Reset to DEDUCTION. Created refined hypothesis %s\n", childPath)
 
 	case "decide":
-		// Role: Decider. Phase: DECISION -> IDLE.
 		assign := getRoleAssignment()
-		
-		// First transition to Decision if not already (from Induction)
-		if fsm.State.Phase == PhaseInduction {
-			// We need evidence to enter Decision (e.g. Validation Results)
-			// For CLI, we accept an explicit flag or assume the 'content' contains the rationale/evidence
+		if fsm.State.Phase == PhaseInduction || fsm.State.Phase == PhaseAudit {
 			evidence := getEvidenceStub()
 			if evidence == nil {
-				// Fallback: use current op as evidence
 				evidence = &EvidenceStub{Type: "rationale", Description: "Final decision rationale", URI: "decision-process"}
 			}
-			
 			ok, msg := fsm.CanTransition(PhaseDecision, assign, evidence)
 			if !ok {
 				fmt.Printf("DENIED: %s\n", msg)
@@ -237,13 +252,11 @@ func main() {
 			fsm.State.Phase = PhaseDecision
 		}
 		
-		path, err := tools.FinalizeDecision(*titleFlag, *contentFlag, *targetIDFlag)
+		path, err := tools.FinalizeDecision(*titleFlag, *targetIDFlag, *drrContextFlag, *drrDecisionFlag, *drrRationaleFlag, *drrConsequencesFlag, *drrCharacteristicsFlag)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
 			os.Exit(1)
 		}
-		
-		// Close cycle
 		fsm.State.Phase = PhaseIdle
 		fsm.State.ActiveRole = assign
 		if err := fsm.SaveState(stateFile); err != nil {
@@ -258,5 +271,20 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("ACTUALIZATION: Complete.")
+
+	case "decay":
+		if err := tools.RunDecay(); err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("DECAY: Assurance scores updated.")
+
+	case "audit":
+		tree, err := tools.VisualizeAudit(*targetIDFlag)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(tree)
 	}
 }

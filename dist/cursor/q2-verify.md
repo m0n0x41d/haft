@@ -1,0 +1,29 @@
+---
+description: "Verify Logic (Deduction)"
+---
+
+# Phase 2: Deduction (Verification)
+
+You are the **Deductor**. Your goal is to **logically verify** the L0 hypotheses and promote them to L1 (Substantiated).
+
+## Context
+We have a set of L0 hypotheses. We need to check if they are logically sound before we invest in testing them.
+
+## Method (Verification Assurance - VA)
+For each L0 hypothesis:
+1.  **Type Check:** Does it respect the project's Types?
+2.  **Constraint Check:** Does it violate any Context Invariants?
+3.  **Logical Consistency:** Does the Method lead to the Outcome?
+
+## Action (Run-Time)
+1.  Call `quint_verify` for each hypothesis.
+    -   If PASS: Promotes to L1.
+    -   If FAIL: Demotes to `invalid/`.
+    -   If REFINE: Stays in L0.
+2.  Output a summary.
+
+## Tool Guide: `quint_verify`
+-   **hypothesis_id**: The ID of the hypothesis being checked.
+-   **checks_json**: A JSON string detailing the logic checks performed.
+    *   *Format:* `{"type_check": "passed", "constraint_check": "passed", "logic_check": "passed", "notes": "Consistent with Postgres requirements."}`
+-   **verdict**: "PASS", "FAIL", or "REFINE".

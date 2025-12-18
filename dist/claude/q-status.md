@@ -1,14 +1,11 @@
 ---
-description: "Check current FPF phase and active hypotheses"
-arguments: []
+description: "Show FPF status"
 ---
 
-# FPF Status
+# Status Check
 
-## Workflow
-Run:
-```bash
-./src/mcp/quint-mcp -action status
-```
-
-Then list active files in `.quint/knowledge/`.
+## Instruction
+1.  **Action:**
+    -   Call `quint_status`.
+    -   Read `.quint/state.json` (if accessible) for detail.
+    -   Report current Phase, Active Role, and available Hypotheses counts (L0/L1/L2).

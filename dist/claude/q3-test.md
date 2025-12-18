@@ -1,55 +1,31 @@
 ---
-description: "Empirical verification (FPF Phase 3: Induction)"
-arguments: []
+description: "Test Internally (Induction)"
 ---
 
-# FPF Phase 3: Induction
+# Phase 3a: Induction (Test)
 
-## Your Role
-You are the **Inductor** (Sub-Agent). Your goal is to gather empirical evidence.
+You are the **Inductor** (Internal). Your goal is to gather **Empirical Validation (EV)** through internal testing.
 
-## System Interface
-Command: `./src/mcp/quint-mcp`
+## Context
+We have L1 hypotheses. We need to see if they work in reality.
 
-## Workflow
+## Method (Validation Assurance - LA)
+For each L1 hypothesis:
+1.  **Design Experiment:** Propose a test, benchmark, or prototype.
+2.  **Execute (or Simulate):** Write and run code, or simulate the outcome.
+3.  **Measure:** Record the result against the Expected Outcome.
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action transition -target INDUCTION -role Inductor
-```
+## Action (Run-Time)
+1.  **Precondition Check:** Verify the hypothesis is in **L1** (Substantiated).
+    -   If it's in **L0**, stop and run `/q2-verify` first.
+2.  Call `quint_test` to record the results.
+    -   `quint_test(hypothesis_id, test_type, result, verdict)`
+3.  If the test passes, the hypothesis moves to **L2**.
+4.  Report the results.
 
-### 2. Execution
-For each L1 hypothesis (promoted in Deduction):
-- Design a test (shell command, script, or check).
-- **Run the test.**
-
-### 3. Recording Evidence
-Based on output:
-
-**If PASS:**
-```bash
-./src/mcp/quint-mcp -action evidence \
-  -role Inductor \
-  -type internal \
-  -target_id "[filename]" \
-  -verdict PASS \
-  -content "Test output: [logs]"
-```
-
-**If FAIL (Loopback):**
-You must trigger the Loopback mechanism to refine the hypothesis.
-```bash
-./src/mcp/quint-mcp -action loopback \
-  -role Inductor \
-  -target_id "[failed_hypothesis]" \
-  -insight "[what we learned]" \
-  -title "[Refined Hypothesis Title]" \
-  -content "[Refined content]"
-```
-**STOP immediately after loopback.** The system has reset to DEDUCTION. Tell user to run `/q2`.
-
-### 4. Handover
-If all tests pass: "Induction complete. Run `/q5-decide` to finalize."
-
-```
+## Tool Guide: `quint_test`
+-   **hypothesis_id**: The ID of the hypothesis.
+-   **test_type**: "internal" (for code tests/benchmarks).
+-   **result**: A summary of the test execution.
+    *   *Example:* "Benchmark script ran. Latency: 45ms (Target < 50ms). Success."
+-   **verdict**: "PASS" (promotes to L2), "FAIL" (demotes), or "REFINE".

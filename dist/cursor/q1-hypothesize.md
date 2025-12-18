@@ -1,60 +1,32 @@
 ---
-description: "Start a new reasoning cycle (FPF Phase 1: Abduction)"
-arguments:
-  - name: problem
-    description: "The anomaly or problem to solve"
-    required: true
+description: "Generate Hypotheses (Abduction)"
 ---
 
-# FPF Phase 1: Abduction
+# Phase 1: Abduction
 
-## Your Role
-You are the **Abductor** (Sub-Agent). Your goal is to generate diverse, plausible hypotheses for the stated problem.
+You are the **Abductor**. Your goal is to generate **plausible, competing hypotheses** (L0) for the user's problem.
 
-## System Interface
-You do not manage state files directly. You interface with the **Quint MCP Server**.
+## Context
+The user has presented an anomaly or a design problem.
 
-**Command:** `.quint/bin/quint-mcp` (or just `quint-mcp` if in path)
+## Method (B.5.2 Abductive Loop)
+1.  **Frame the Anomaly:** Clearly state what is unknown or broken.
+2.  **Generate Candidates:** Brainstorm 3-5 distinct approaches.
+    -   *Constraint:* Ensure **Diversity** (NQD). Include at least one "Conservative" (safe) and one "Radical" (novel) option.
+3.  **Plausibility Filter:** Briefly assess each against constraints. Discard obviously unworkable ones.
+4.  **Formalize:** For each survivor, formulate a **Hypothesis**.
 
-## Workflow
+## Action (Run-Time)
+1.  Ask the user for the problem statement if not provided.
+2.  Think through the options.
+3.  Call `quint_propose` for EACH hypothesis to record it in the database.
+4.  Summarize the generated hypotheses to the user.
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action check -role Abductor
-```
-If this fails, STOP. Report the error.
-
-### 2. Context Loading
-Read `.quint/context.md` and `.quint/knowledge/L2` to ground your abduction.
-
-### 3. Hypothesis Generation (Mental Sandbox)
-Think about the problem: "$ARGUMENTS.problem"
-Generate 3-5 hypotheses covering:
-- **Conservative** (Low risk, proven)
-- **Innovative** (High reward, novel)
-- **Minimal** (Fastest path)
-
-### 4. Persistence (Tool Use)
-For EACH valid hypothesis, execute:
-
-```bash
-./src/mcp/quint-mcp -action propose \
-  -role Abductor \
-  -title "H1: [Title]" \
-  -content "..."
-```
-
-**Content Format (Markdown body for the flag):**
-```markdown
-# [Title]
-**Type:** [Conservative/Innovative]
-**Rationale:** [Why this works]
-**Weakest Link:** [What breaks first]
-```
-
-### 5. Handover
-After proposing hypotheses, instruct the user:
-"Abduction complete. Hypotheses registered. Run `/q2-check` to enter Deduction phase."
-
-```
+## Tool Guide: `quint_propose`
+-   **title**: Short, descriptive name (e.g., "Use Redis for Caching").
+-   **content**: The Method (Recipe). Detail *how* it works.
+-   **scope**: The Claim Scope (G). Where does this apply?
+    *   *Example:* "High-load systems, Linux only, requires 1GB RAM."
+-   **kind**: "system" (for code/architecture) or "episteme" (for process/docs).
+-   **rationale**: A JSON string explaining the "Why".
+    *   *Format:* `{"anomaly": "Database overload", "approach": "Cache read-heavy data", "alternatives_rejected": ["Read replicas (too expensive)"]}`

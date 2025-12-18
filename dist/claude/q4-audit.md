@@ -1,45 +1,25 @@
 ---
-description: "Critical review and bias check (FPF Phase 4: Audit)"
-arguments: []
+description: "Audit Evidence (Trust Calculus)"
 ---
 
-# FPF Phase 4: Bias Audit
+# Phase 4: Audit
 
-## Your Role
-You are the **Auditor** (Sub-Agent). Your goal is to act as an adversary to the current hypotheses, checking for bias, weak links, and context drift.
+You are the **Auditor**. Your goal is to compute the **Effective Reliability (R_eff)** of the L2 hypotheses.
 
-## System Interface
-Command: `./src/mcp/quint-mcp`
+## Context
+We have L2 hypotheses backed by evidence. We must ensure we aren't overconfident.
 
-## Workflow
+## Method (B.3 Trust Calculus)
+For each L2 hypothesis:
+1.  **Identify Weakest Link (WLNK):** `R_raw = min(evidence_scores)`
+2.  **Apply Penalties:** `R_eff = R_raw - Φ(CongruencePenalty)`
+3.  **Bias Check (D.5):** Are we favoring a "Pet Idea"?
 
-### 1. State Verification
-Run:
-```bash
-./src/mcp/quint-mcp -action check -role Auditor
-```
-If this fails, STOP.
+## Action (Run-Time)
+1.  Call `quint_audit` to record the scores.
+2.  Present a **Comparison Table** to the user showing `R_eff`.
 
-### 2. The Audit (Mental Work)
-Read `.quint/evidence/` and `.quint/knowledge/L2/`.
-Perform the following checks:
-1.  **WLNK Analysis:** Identify the weakest evidence link for each hypothesis.
-2.  **Bias Check:** Check for Confirmation Bias, Sunk Cost, and Recency Bias.
-3.  **Context Drift:** Ensure hypotheses still match `.quint/context.md`.
-
-### 3. Record Audit (Tool Use)
-You must record the outcome of your audit to proceed.
-
-```bash
-./src/mcp/quint-mcp -action evidence \
-  -role Auditor \
-  -type audit \
-  -target_id "Session" \
-  -verdict [PASS/FAIL] \
-  -content "WLNK: [value]. Bias check: [Clean/Issues]. Risks: [List]"
-```
-
-*Note: There is currently no explicit 'Audit' phase in the FSM, so we remain in INDUCTION or move to DECISION based on the Decider's readiness. The Auditor validates the evidence pile.*
-
-### 4. Handover
-"Audit complete. Findings recorded. If valid, run `/q5-decide`."
+## Tool Guide: `quint_audit`
+-   **hypothesis_id**: The ID of the hypothesis.
+-   **risks**: A text summary of the WLNK analysis and Bias check.
+    *   *Example:* "Weakest Link: External docs (CL1). Penalty applied. R_eff: Medium. Bias: Low."

@@ -53,9 +53,10 @@ type EvidenceStub struct {
 
 // State represents the persistent state of the FPF session
 type State struct {
-	Phase      Phase          `json:"phase"`
-	ActiveRole RoleAssignment `json:"active_role,omitempty"`
-	LastCommit string         `json:"last_commit,omitempty"`
+	Phase              Phase          `json:"phase"`
+	ActiveRole         RoleAssignment `json:"active_role,omitempty"`
+	LastCommit         string         `json:"last_commit,omitempty"`
+	AssuranceThreshold float64        `json:"assurance_threshold,omitempty"` // B.3: default 0.8
 }
 
 // TransitionRule defines a valid state change
@@ -97,6 +98,14 @@ func (f *FSM) SaveState(path string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+// GetAssuranceThreshold returns the configured threshold, defaulting to 0.8
+func (f *FSM) GetAssuranceThreshold() float64 {
+	if f.State.AssuranceThreshold <= 0 {
+		return 0.8 // Default threshold
+	}
+	return f.State.AssuranceThreshold
 }
 
 // CanTransition checks if a role can move the system to a target phase
@@ -151,15 +160,16 @@ func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *E
 		if evidence == nil || evidence.HolonID == "" {
 			return false, "Transition to Operation requires a specific Holon ID in evidence stub"
 		}
-		
+
 		calc := assurance.New(f.DB)
 		report, err := calc.CalculateReliability(context.Background(), evidence.HolonID)
 		if err != nil {
 			return false, fmt.Sprintf("Failed to calculate assurance: %v", err)
 		}
 
-		if report.FinalScore < 0.8 {
-			return false, fmt.Sprintf("Transition Denied: Reliability (%.2f) is below threshold (0.8). Weakest link: %s", report.FinalScore, report.WeakestLink)
+		threshold := f.GetAssuranceThreshold()
+		if report.FinalScore < threshold {
+			return false, fmt.Sprintf("Transition Denied: Reliability (%.2f) is below threshold (%.2f). Weakest link: %s", report.FinalScore, threshold, report.WeakestLink)
 		}
 	}
 

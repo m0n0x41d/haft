@@ -43,17 +43,12 @@ jobs:
           # Create a directory for the package contents
           mkdir -p "package/bin"
           mkdir -p "package/commands"
-          mkdir -p "package/agents"
-          
+
           # Move the binary into the package
           mv "dist/quint-mcp" "package/bin/quint-mcp"
-          
+
           # Copy generated commands
-          # The dist dir contains subdirs like 'claude', 'gemini'
           cp -r dist/* package/commands/
-          
-          # Copy agent personas
-          cp -r src/agents/* package/agents/
           
           # Create the archive
           export TAG=${GITHUB_REF_NAME#v}

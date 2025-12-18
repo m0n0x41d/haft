@@ -10,6 +10,7 @@ CREATE TABLE holons (
     content TEXT NOT NULL, -- Markdown content or reference
     context_id TEXT NOT NULL, -- Bounded Context ID
     scope TEXT, -- Claim Scope (G)
+    cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0), -- B.3 Assurance Score
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -40,6 +41,7 @@ CREATE TABLE relations (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relation_type TEXT NOT NULL, -- 'verifiedBy', 'componentOf', 'refines', 'performedBy'
+    congruence_level INTEGER DEFAULT 3 CHECK(congruence_level BETWEEN 0 AND 3), -- B.3 Congruence Level
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source_id, target_id, relation_type),
     FOREIGN KEY(source_id) REFERENCES holons(id),

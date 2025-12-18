@@ -36,11 +36,13 @@ func New(dbPath string) (*DB, error) {
 	CREATE TABLE IF NOT EXISTS holons (
 		id TEXT PRIMARY KEY,
 		type TEXT NOT NULL,
+		kind TEXT,
 		layer TEXT NOT NULL,
 		title TEXT NOT NULL,
 		content TEXT NOT NULL,
 		context_id TEXT NOT NULL,
 		scope TEXT,
+		cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -59,8 +61,18 @@ func New(dbPath string) (*DB, error) {
 		source_id TEXT NOT NULL,
 		target_id TEXT NOT NULL,
 		relation_type TEXT NOT NULL,
+		congruence_level INTEGER DEFAULT 3 CHECK(congruence_level BETWEEN 0 AND 3),
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (source_id, target_id, relation_type)
+	);
+	CREATE TABLE IF NOT EXISTS work_records (
+		id TEXT PRIMARY KEY,
+		method_ref TEXT NOT NULL,
+		performer_ref TEXT NOT NULL,
+		started_at DATETIME NOT NULL,
+		ended_at DATETIME,
+		resource_ledger TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
 	if _, err := conn.Exec(schema); err != nil {
@@ -70,10 +82,20 @@ func New(dbPath string) (*DB, error) {
 	return &DB{conn: conn}, nil
 }
 
+func (d *DB) GetRawDB() *sql.DB {
+	return d.conn
+}
+
 func (d *DB) CreateHolon(h Holon) error {
 	query := `INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at) 
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := d.conn.Exec(query, h.ID, h.Type, h.Kind, h.Layer, h.Title, h.Content, h.ContextID, h.Scope, time.Now(), time.Now())
+	return err
+}
+
+func (d *DB) RecordWork(id, methodRef, performerRef string, startedAt, endedAt time.Time, ledger string) error {
+	query := `INSERT INTO work_records (id, method_ref, performer_ref, started_at, ended_at, resource_ledger, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := d.conn.Exec(query, id, methodRef, performerRef, startedAt, endedAt, ledger, time.Now())
 	return err
 }
 
@@ -85,7 +107,14 @@ func (d *DB) UpdateHolonLayer(id, layer string) error {
 
 func (d *DB) AddEvidence(id, holonID, type_, content, verdict, assuranceLevel, carrierRef, validUntil string) error {
 	query := `INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.conn.Exec(query, id, holonID, type_, content, verdict, assuranceLevel, carrierRef, validUntil, time.Now())
+	// Handle empty validUntil string as NULL
+	var vUntil interface{}
+	if validUntil == "" {
+		vUntil = nil
+	} else {
+		vUntil = validUntil
+	}
+	_, err := d.conn.Exec(query, id, holonID, type_, content, verdict, assuranceLevel, carrierRef, vUntil, time.Now())
 	return err
 }
 

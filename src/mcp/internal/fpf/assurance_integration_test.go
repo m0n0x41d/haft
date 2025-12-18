@@ -4,12 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"quint-mcp/internal/fpf"
 	"quint-mcp/assurance"
 	"quint-mcp/db"
+	"quint-mcp/internal/fpf"
 )
 
 func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.DB, string) {
@@ -213,13 +214,9 @@ func TestAuditVisualization_ReturnsTree(t *testing.T) {
 	}
 
 	// Should contain the parent ID
-	if !contains(tree, "parent") {
+	if !strings.Contains(tree, "parent") {
 		t.Errorf("Expected tree to contain 'parent', got: %s", tree)
 	}
 
 	t.Logf("Audit tree:\n%s", tree)
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && (s[:len(substr)] == substr || contains(s[1:], substr)))
 }

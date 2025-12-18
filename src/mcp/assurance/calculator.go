@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -65,7 +66,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		}
 
 		score := 0.0
-		switch verdict {
+		switch strings.ToLower(verdict) {
 		case "pass":
 			score = 1.0
 		case "degrade":

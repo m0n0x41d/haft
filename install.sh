@@ -310,6 +310,7 @@ configure_mcp_all() {
     # Cursor: .cursor/mcp.json in project root
     if [[ "${SELECTED[1]}" == "1" ]]; then
         merge_mcp_config "$target_dir/.cursor/mcp.json" "$mcp_binary" "Cursor"
+        cprintln "$YELLOW" "   ⚠ Make sure quint-code MCP is enabled in Cursor settings!"
     fi
 
     # Gemini CLI: ~/.gemini/settings.json (user-level)
@@ -380,7 +381,7 @@ install() {
     cprintln "$GREEN" "    ║                                                          ║"
     cprintln "$GREEN" "    ╚══════════════════════════════════════════════════════════╝"
     echo ""
-    cprintln "$BRIGHT_CYAN$BOLD" "   Get started by running: ${BOLD}/q0-init${RESET}"
+    printf "   Get started by running: ${WHITE}${BOLD}/q0-init${RESET}\n"
     echo ""
 }
 

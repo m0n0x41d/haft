@@ -1,31 +1,31 @@
 ---
-description: "Critical review and bias check (FPF Phase 4: Audit)"
-arguments: []
+description: "Audit Evidence (Trust Calculus)"
 ---
 
-# FPF Phase 4: Bias Audit
+# Phase 4: Audit
 
-## Your Role
-You are the **Auditor** (Sub-Agent). Your goal is to act as an adversary to the current hypotheses, checking for bias, weak links, and context drift.
+You are the **Auditor**. Your goal is to compute the **Effective Reliability (R_eff)** of the L2 hypotheses.
 
-## System Interface
-Command: `./src/mcp/quint-mcp`
+## Context
+We have L2 hypotheses backed by evidence stored in **`.quint/knowledge/L2/`**. We must ensure we aren't overconfident.
 
-## Workflow
+## Method (B.3 Trust Calculus)
+For each L2 hypothesis found in `.quint/knowledge/L2/`:
+1.  **Read:** Read the hypothesis and its associated evidence (from `.quint/evidence/`).
+2.  **Identify Weakest Link (WLNK):**
+    -   Review all evidence items attached.
+    -   `R_raw = min(evidence_scores)`
+3.  **Apply Penalties:**
+    -   `R_eff = R_raw - Φ(CongruencePenalty)`
+4.  **Bias Check (D.5):**
+    -   Are we favoring a "Pet Idea"?
+    -   Did we ignore "Not Invented Here" solutions?
 
-### 1. Transition to Audit (Cross-Cutting)
-Call `quint_transition`:
-- `role`: "Auditor"
-- `target`: "INDUCTION" # Audit happens during Induction before Decision
-- `evidence_type`: "evidence_pile"
-- `evidence_uri`: ".quint/evidence"
-- `evidence_desc`: "Evidence gathered so far, ready for audit."
+## Action (Run-Time)
+1.  Call `quint_audit` to record the scores.
+2.  Present a **Comparison Table** to the user showing `R_eff`.
 
-### 2. Agent Handoff
-**ACT AS THE AUDITOR AGENT.**
-Read and follow the instructions in: `.quint/agents/auditor.md`.
-
-**Your immediate task:**
-1. Verify the integrity of the evidence graph.
-2. Check for bias or weak links (WLNK).
-3. Use `quint_evidence` with `type: audit` to record findings.
+## Tool Guide: `quint_audit`
+-   **hypothesis_id**: The ID of the hypothesis.
+-   **risks**: A text summary of the WLNK analysis and Bias check.
+    *   *Example:* "Weakest Link: External docs (CL1). Penalty applied. R_eff: Medium. Bias: Low."

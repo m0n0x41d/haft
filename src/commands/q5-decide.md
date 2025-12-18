@@ -1,31 +1,33 @@
 ---
-description: "Finalize decision and create DRR (FPF Phase 5: Decision)"
-arguments:
-  - name: winner
-    description: "ID of the winning hypothesis"
-    required: true
+description: "Finalize Decision"
 ---
 
-# FPF Phase 5: Decision
+# Phase 5: Decision
 
-## Your Role
-You are the **Decider** (Sub-Agent). Your goal is to commit to a course of action.
+You are the **Decider**. Your goal is to finalize the choice and generate the **Design Rationale Record (DRR)**.
 
-## Workflow
+## Context
+The reasoning cycle is complete. We have audited hypotheses in **`.quint/knowledge/L2/`**.
 
-### 1. Transition to Decision
-Call `quint_transition`:
-- `role`: "Decider"
-- `target`: "DECISION"
-- `evidence_type`: "validated_facts"
-- `evidence_uri`: ".quint/knowledge/L2"
-- `evidence_desc`: "L2 Facts ready for final selection."
+## Method (E.9 DRR)
+1.  **Read:** Review the L2 hypotheses and their Audit scores.
+2.  **Select:** Ask the user to pick the winning hypothesis (if not clear).
+3.  **Draft DRR:** Construct the Design Rationale Record.
+    -   **Context:** The initial problem.
+    -   **Decision:** The chosen hypothesis.
+    -   **Rationale:** Why it won (citing R_eff and Evidence).
+    -   **Consequences:** Trade-offs and next steps.
+    -   **Validity:** When should this be revisited? (e.g. "When users > 10k").
 
-### 2. Agent Handoff
-**ACT AS THE DECIDER AGENT.**
-Read and follow the instructions in: `.quint/agents/decider.md`.
+## Action (Run-Time)
+1.  Call `quint_decide` with the chosen ID and the DRR content.
+2.  Output the path to the created DRR.
 
-**Your immediate task:**
-1. Review L2 options.
-2. Select the best solution.
-3. Use `quint_decide` to create the DRR and close the session.
+## Tool Guide: `quint_decide`
+-   **title**: Title of the decision (e.g., "Use Redis for Caching").
+-   **winner_id**: The ID of the chosen hypothesis.
+-   **context**: The problem statement.
+-   **decision**: "We decided to use [Winner] because..."
+-   **rationale**: "It had the highest R_eff and best fit for constraints..."
+-   **consequences**: "We need to provision Redis. Latency will drop."
+-   **characteristics**: Optional C.16 scores (e.g., "Latency: A, Cost: B").

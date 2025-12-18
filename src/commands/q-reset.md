@@ -1,15 +1,10 @@
 ---
-description: "Hard reset of the current FPF cycle"
-arguments: []
+description: "Reset the FPF cycle"
 ---
 
-# FPF Reset
+# Reset Cycle
 
-## Warning
-This will clear the current session state.
-
-## Workflow
-```bash
-./src/mcp/quint-mcp -action init
-```
-(Re-initializing resets the FSM to ABDUCTION or IDLE depending on implementation logic, effectively clearing the current active loop).
+## Instruction
+1.  **Action:**
+    -   Call `quint_transition` to force state to `IDLE` (if supported) or manually advise user to clear `.quint/state.json` if stuck.
+    -   Ideally, use `quint_decide` with a "No Decision / Reset" payload to cleanly archive the current session.

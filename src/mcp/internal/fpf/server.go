@@ -220,6 +220,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"title", "winner_id", "context", "decision", "rationale", "consequences"},
 			},
 		},
+		{
+			Name:        "quint_actualize",
+			Description: "Reconcile the project's FPF state with recent repository changes.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{
@@ -263,6 +271,9 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			}
 			output = "Initialized. Phase: ABDUCTION"
 		}
+
+	case "quint_actualize":
+		output, err = s.tools.Actualize()
 
 	case "quint_record_context":
 		output, err = s.tools.RecordContext(arg("vocabulary"), arg("invariants"))

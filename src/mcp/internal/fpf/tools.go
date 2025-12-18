@@ -461,42 +461,71 @@ func (t *Tools) getHolonTitle(id string) string {
 	return title
 }
 
-func (t *Tools) Reconcile() (string, error) {
+func (t *Tools) Actualize() (string, error) {
+	var report strings.Builder
+	fpfDir := filepath.Join(t.RootDir, ".fpf")
+	quintDir := t.GetFPFDir()
+
+	if _, err := os.Stat(fpfDir); err == nil {
+		report.WriteString("MIGRATION: Found legacy .fpf directory.\n")
+
+		if _, err := os.Stat(quintDir); err == nil {
+			return report.String(), fmt.Errorf("migration conflict: both .fpf and .quint exist. Please resolve manually")
+		}
+
+		report.WriteString("MIGRATION: Renaming .fpf -> .quint\n")
+		if err := os.Rename(fpfDir, quintDir); err != nil {
+			return report.String(), fmt.Errorf("failed to rename .fpf: %w", err)
+		}
+		report.WriteString("MIGRATION: Success.\n")
+	}
+
+	legacyDB := filepath.Join(quintDir, "fpf.db")
+	newDB := filepath.Join(quintDir, "quint.db")
+
+	if _, err := os.Stat(legacyDB); err == nil {
+		report.WriteString("MIGRATION: Found legacy fpf.db.\n")
+		if err := os.Rename(legacyDB, newDB); err != nil {
+			return report.String(), fmt.Errorf("failed to rename fpf.db: %w", err)
+		}
+		report.WriteString("MIGRATION: Renamed to quint.db.\n")
+	}
+
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = t.RootDir
 	output, err := cmd.Output()
-	if err != nil {
-		return "Not a git repository or git error.", nil
-	}
+	if err == nil {
+		currentCommit := strings.TrimSpace(string(output))
+		lastCommit := t.FSM.State.LastCommit
 
-	currentCommit := strings.TrimSpace(string(output))
-	lastCommit := t.FSM.State.LastCommit
+		if lastCommit == "" {
+			report.WriteString(fmt.Sprintf("RECONCILIATION: Initializing baseline commit to %s\n", currentCommit))
+			t.FSM.State.LastCommit = currentCommit
+			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+				report.WriteString(fmt.Sprintf("Warning: Failed to save state: %v\n", err))
+			}
+		} else if currentCommit != lastCommit {
+			report.WriteString(fmt.Sprintf("RECONCILIATION: Detected changes since %s\n", lastCommit))
+			diffCmd := exec.Command("git", "diff", "--name-status", lastCommit, "HEAD")
+			diffCmd.Dir = t.RootDir
+			diffOutput, err := diffCmd.Output()
+			if err == nil {
+				report.WriteString("Changed files:\n")
+				report.WriteString(string(diffOutput))
+			} else {
+				report.WriteString(fmt.Sprintf("Warning: Failed to get diff: %v\n", err))
+			}
 
-	var result string
-
-	if lastCommit == "" {
-		result = fmt.Sprintf("Initializing baseline commit to %s", currentCommit)
-		t.FSM.State.LastCommit = currentCommit
-		if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
-			return "", fmt.Errorf("failed to save state: %w", err)
-		}
-	} else if currentCommit != lastCommit {
-		diffCmd := exec.Command("git", "diff", "--name-status", lastCommit, "HEAD")
-		diffCmd.Dir = t.RootDir
-		diffOutput, err := diffCmd.Output()
-		if err != nil {
-			result = fmt.Sprintf("Detected changes since %s (could not get diff: %v)", lastCommit, err)
+			t.FSM.State.LastCommit = currentCommit
+			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+				report.WriteString(fmt.Sprintf("Warning: Failed to save state: %v\n", err))
+			}
 		} else {
-			result = fmt.Sprintf("Detected changes since %s:\n%s", lastCommit, string(diffOutput))
-		}
-
-		t.FSM.State.LastCommit = currentCommit
-		if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
-			return "", fmt.Errorf("failed to save state: %w", err)
+			report.WriteString("RECONCILIATION: No changes detected (Clean).\n")
 		}
 	} else {
-		result = "No changes detected (Clean)."
+		report.WriteString("RECONCILIATION: Not a git repository or git error.\n")
 	}
 
-	return result, nil
+	return report.String(), nil
 }

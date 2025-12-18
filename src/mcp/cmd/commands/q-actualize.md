@@ -12,35 +12,32 @@ The LLM persona for this command is the **Actualizer**.
 
 ## Instruction
 
-1.  **Identify Baseline for Changes:**
-    -   The Actualizer will first determine the set of recent changes to analyze. It will look for a baseline commit hash in `.quint/state/actualize.log`.
-    -   If the file doesn't exist, it will ask you to choose a baseline: the latest git tag, a specific commit hash, or a time window (e.g., "last 7 days").
-    -   It will then generate a list of all files that have changed between the baseline and the current `HEAD`.
+1.  **Execute Actualization:**
+    -   The Actualizer **MUST** first execute the `quint_actualize` tool.
+    -   This tool will automatically:
+        -   Identify the baseline commit from the FPF state.
+        -   Perform any necessary legacy migrations.
+        -   Generate a report of all file changes since the last actualization.
+        -   Update the FPF state baseline to the current `HEAD`.
 
-2.  **Analyze Context Drift:**
-    -   The Actualizer will check if any core project configuration files (e.g., `package.json`, `go.mod`, `Dockerfile`, `pom.xml`) are in the list of changed files.
-    -   If they are, it will re-run the context analysis logic from `/q0-init` to generate a "current context" summary.
-    -   It will then present a diff between the detected current context and the contents of `.quint/context.md`.
-    -   It will ask you if you want to update the `context.md` file.
+2.  **Analyze Report for Context Drift:**
+    -   Review the `quint_actualize` report for changes to core project configuration files (e.g., `package.json`, `go.mod`, `Dockerfile`, `pom.xml`).
+    -   If these files have changed, re-run the context analysis logic from `/q0-init` to generate a "current context" summary.
+    -   Present a diff between the detected current context and the contents of `.quint/context.md`.
+    -   Ask the user if they want to update the `context.md` file.
 
-3.  **Analyze Evidence Staleness (Epistemic Debt):**
-    -   The Actualizer will scan all evidence files in `.quint/evidence/`.
-    -   For each piece of evidence that has a `carrier_ref` pointing to a file, it will check if that file has been modified in the recent git changes.
-    -   If a referenced file has changed, the evidence will be flagged as **stale**.
-    -   All stale evidence will be compiled into a "Stale Evidence Report," noting which hypotheses or decisions are affected by the potentially decayed evidence.
+3.  **Analyze Report for Evidence Staleness (Epistemic Debt):**
+    -   Cross-reference the list of changed files from the report against the `carrier_ref` of all evidence files in `.quint/evidence/`.
+    -   If a referenced file is in the changed list, flag the evidence as **stale**.
+    -   Compile all stale evidence into a "Stale Evidence Report," noting which hypotheses or decisions are affected.
 
-4.  **Analyze Decision Relevance:**
-    -   The Actualizer will examine all decision records (`DRR*`) in `.quint/decisions/`.
-    -   For each decision, it will trace its justification back through its supporting evidence to the original source files (`carrier_ref`).
-    -   If any of these foundational source files have changed, the decision record will be flagged as **"Potentially Outdated"**.
-    -   All such decisions will be compiled into a "Decisions to Review" report.
+4.  **Analyze Report for Decision Relevance:**
+    -   Trace the justification of all decision records (`DRR*` in `.quint/decisions/`) back to their source evidence and carrier files.
+    -   If any foundational source files appear in the change report, flag the decision record as **"Potentially Outdated"**.
+    -   Compile these into a "Decisions to Review" report.
 
-5.  **Present the Actualization Report:**
-    -   The Actualizer will summarize all findings for you in a clear, actionable report with three sections:
-        -   **Context Drift:** (if any) Shows a diff of `context.md` and prompts for action.
-        -   **Stale Evidence:** Lists all evidence files that need re-validation, suggesting the use of `/q3-validate`.
-        -   **Decisions to Review:** Lists all decisions that may no longer be valid, suggesting a new reasoning cycle (`/q1-hypothesize`) to re-evaluate them.
-
-6.  **Update Baseline:**
-    -   After you have reviewed the report, the Actualizer will ask for confirmation to update the baseline.
-    -   Upon confirmation, it will execute a tool call to write the current `HEAD` commit hash into `.quint/state/actualize.log`, setting the baseline for the next run.
+5.  **Present Findings:**
+    -   Summarize the analysis in a clear, actionable report:
+        -   **Context Drift:** (if any) Diff and prompt for update.
+        -   **Stale Evidence:** List of evidence needing re-validation via `/q3-validate`.
+        -   **Decisions to Review:** List of decisions needing re-evaluation via `/q1-hypothesize`.

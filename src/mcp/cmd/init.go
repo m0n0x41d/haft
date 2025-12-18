@@ -56,18 +56,30 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	quintDir := filepath.Join(cwd, ".quint")
+	dbPath := filepath.Join(quintDir, "quint.db")
+
+	_, quintExists := os.Stat(quintDir)
+	_, dbExists := os.Stat(dbPath)
 
 	fmt.Println("Initializing Quint Code project...")
 
 	if err := createDirectoryStructure(quintDir); err != nil {
 		return fmt.Errorf("failed to create directory structure: %w", err)
 	}
-	fmt.Println("  ✓ Created .quint/ directory structure")
+	if os.IsNotExist(quintExists) {
+		fmt.Println("  ✓ Created .quint/ directory structure")
+	} else {
+		fmt.Println("  ✓ .quint/ directory structure OK")
+	}
 
 	if err := initializeDatabase(quintDir); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
-	fmt.Println("  ✓ Initialized database")
+	if os.IsNotExist(dbExists) {
+		fmt.Println("  ✓ Initialized database")
+	} else {
+		fmt.Println("  ✓ Database OK")
+	}
 
 	binaryPath, err := getBinaryPath()
 	if err != nil {
@@ -114,7 +126,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := configureMCPGemini(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Gemini CLI MCP: %v\n", err)
 		} else {
-			fmt.Println("  ✓ Configured MCP for Gemini CLI (~/.gemini/settings.json)")
+			fmt.Printf("  ✓ Configured MCP for Gemini CLI (project: %s)\n", cwd)
 		}
 		if destPath, count, err := installCommands(cwd, "gemini", initLocal); err != nil {
 			fmt.Printf("  ⚠ Failed to install Gemini commands: %v\n", err)
@@ -127,7 +139,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := configureMCPCodex(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Codex CLI MCP: %v\n", err)
 		} else {
-			fmt.Println("  ✓ Configured MCP for Codex CLI (~/.codex/config.toml)")
+			fmt.Printf("  ✓ Configured MCP for Codex CLI (project: %s)\n", cwd)
 		}
 		// Codex only supports global prompts
 		if destPath, count, err := installCommands(cwd, "codex", false); err != nil {

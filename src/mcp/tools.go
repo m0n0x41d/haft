@@ -199,8 +199,10 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 		}
 		
 		evidenceContent := fmt.Sprintf("Verification Checks:\n%s", checksJSON)
-		_, _ = t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "PASS", "L1", "internal-logic", "")
-		
+		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "PASS", "L1", "internal-logic", ""); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to record verification evidence for %s: %v\n", hypothesisID, err)
+		}
+
 		return fmt.Sprintf("Hypothesis %s promoted to L1", hypothesisID), nil
 	} else if verdict == "FAIL" {
 		_, err := t.moveHypothesis(hypothesisID, "L0", "invalid")
@@ -477,6 +479,7 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 
 rows, err := t.DB.GetRawDB().Query("SELECT source_id, congruence_level FROM relations WHERE target_id = ? AND relation_type = 'componentOf'", holonID)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to query dependencies for %s: %v\n", holonID, err)
 		return tree, nil // Return what we have
 	}
 	defer rows.Close()

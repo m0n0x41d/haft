@@ -113,3 +113,33 @@ func TestCalculateReliability_CLPenalty(t *testing.T) {
 		t.Errorf("Expected score 0.6 (CL penalty), got %f", report.FinalScore)
 	}
 }
+
+func TestCalculateReliability_CycleDetection(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create A→B→C→A cycle via componentOf relations
+	// A contains B, B contains C, C contains A (circular)
+	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e1', 'A', 'pass', ?)", time.Now().Add(24*time.Hour))
+	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e2', 'B', 'pass', ?)", time.Now().Add(24*time.Hour))
+	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e3', 'C', 'pass', ?)", time.Now().Add(24*time.Hour))
+
+	// B is component of A, C is component of B, A is component of C (cycle!)
+	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 3)")
+	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('C', 'B', 'componentOf', 3)")
+	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('A', 'C', 'componentOf', 3)")
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+
+	// Should not error or hang - cycle should be detected and handled gracefully
+	if err != nil {
+		t.Fatalf("CalculateReliability failed on cycle: %v", err)
+	}
+
+	// All have passing evidence, no CL penalty, cycle should not affect final score
+	// Each node has self-score 1.0, and deps also 1.0 (cycle broken by visited check)
+	if report.FinalScore != 1.0 {
+		t.Errorf("Expected score 1.0 (cycle handled gracefully), got %f", report.FinalScore)
+	}
+}

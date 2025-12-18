@@ -27,8 +27,25 @@ func New(db *sql.DB) *Calculator {
 	return &Calculator{DB: db}
 }
 
-// CalculateReliability calculates R for a holon
+// CalculateReliability calculates R for a holon (public API)
 func (c *Calculator) CalculateReliability(ctx context.Context, holonID string) (*AssuranceReport, error) {
+	visited := make(map[string]bool)
+	return c.calculateReliabilityWithVisited(ctx, holonID, visited)
+}
+
+// calculateReliabilityWithVisited is the internal implementation with cycle detection
+func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonID string, visited map[string]bool) (*AssuranceReport, error) {
+	// Cycle detection: if already visited, return neutral score to break cycle
+	if visited[holonID] {
+		return &AssuranceReport{
+			HolonID:    holonID,
+			FinalScore: 1.0, // Neutral - don't penalize for cycle
+			SelfScore:  1.0,
+			Factors:    []string{"Cycle detected, skipping re-evaluation"},
+		}, nil
+	}
+	visited[holonID] = true
+
 	report := &AssuranceReport{HolonID: holonID}
 
 	// 1. Calculate Self Score (based on Evidence)
@@ -104,16 +121,14 @@ func (c *Calculator) CalculateReliability(ctx context.Context, holonID string) (
 		if err := depRows.Scan(&d.id, &d.cl); err != nil {
 			continue
 		}
-		if d.id != holonID { // Simple cycle check
-			deps = append(deps, d)
-		}
+		deps = append(deps, d)
 	}
 	depRows.Close()
 
 	minDepScore := 1.0
 	for _, d := range deps {
-		// Recursive call for dependency
-		depReport, err := c.CalculateReliability(ctx, d.id)
+		// Recursive call for dependency with visited map for cycle detection
+		depReport, err := c.calculateReliabilityWithVisited(ctx, d.id, visited)
 		if err != nil {
 			depReport = &AssuranceReport{FinalScore: 0.0}
 		}
@@ -142,9 +157,10 @@ func (c *Calculator) CalculateReliability(ctx context.Context, holonID string) (
 		report.FinalScore = report.SelfScore
 	}
 
-	// Update cache
-	// We ignore error here as it's a side effect
-	_, _ = c.DB.ExecContext(ctx, "UPDATE holons SET cached_r_score = ? WHERE id = ?", report.FinalScore, holonID)
+	// Update cache (non-critical, log warning on failure)
+	if _, err := c.DB.ExecContext(ctx, "UPDATE holons SET cached_r_score = ? WHERE id = ?", report.FinalScore, holonID); err != nil {
+		report.Factors = append(report.Factors, "Warning: cache update failed")
+	}
 
 	return report, nil
 }

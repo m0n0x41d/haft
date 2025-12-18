@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"quint-mcp"
+	"quint-mcp/db"
 )
 
 // Helper to get FPF knowledge path for a level
@@ -33,13 +34,23 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	quintDir := filepath.Join(tempDir, ".quint")
 	stateFile := filepath.Join(quintDir, "state.json")
 
+	// Create .quint directory and DB
+	if err := os.MkdirAll(quintDir, 0755); err != nil {
+		t.Fatalf("Failed to create .quint directory: %v", err)
+	}
+	dbPath := filepath.Join(quintDir, "quint.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize DB: %v", err)
+	}
+
 	// --- 0. Initialize FPF Project ---
 	t.Run("0_InitProject", func(t *testing.T) {
-		fsm, err := main.LoadState(stateFile)
+		fsm, err := main.LoadState(stateFile, database.GetRawDB())
 		if err != nil {
 			t.Fatalf("Failed to load initial state: %v", err)
 		}
-		tools := main.NewTools(fsm, tempDir)
+		tools := main.NewTools(fsm, tempDir, database)
 
 		fsm.State.Phase = main.PhaseIdle // Ensure idle for init
 		err = tools.InitProject()
@@ -57,11 +68,22 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	})
 
 	// Reload FSM state for subsequent steps
-	fsm, err := main.LoadState(stateFile)
+	fsm, err := main.LoadState(stateFile, database.GetRawDB())
 	if err != nil {
 		t.Fatalf("Failed to load state after init: %v", err)
 	}
-	tools := main.NewTools(fsm, tempDir)
+	tools := main.NewTools(fsm, tempDir, database)
+
+	// Helper for RoleAssignment
+	ra := func(r main.Role) main.RoleAssignment {
+		return main.RoleAssignment{Role: r, SessionID: "test", Context: "test"}
+	}
+
+	// Helper for EvidenceStub
+	ev := func(uri string) *main.EvidenceStub {
+		if uri == "" { return nil }
+		return &main.EvidenceStub{URI: uri, Type: "test"}
+	}
 
 	// --- 1. Propose Hypothesis (Abduction) ---
 	hypo1Title := "Initial Hypothesis"
@@ -73,7 +95,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if fsm.State.Phase != main.PhaseAbduction {
 			t.Fatalf("Expected phase ABDUCTION, got %s", fsm.State.Phase)
 		}
-		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content)
+		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale")
 		if err != nil {
 			t.Fatalf("ProposeHypothesis failed: %v", err)
 		}
@@ -88,7 +110,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	// --- 2. Manage Evidence (Deduction - PASS) ---
 	t.Run("2_ManageEvidence_DeductionPass", func(t *testing.T) {
 		// Transition to DEDUCTION
-		ok, msg := fsm.CanTransition(main.PhaseDeduction, main.RoleDeductor)
+		// Needs L0 evidence (which ProposeHypothesis created)
+		l0Dir := filepath.Join(tempDir, ".quint", "knowledge", "L0")
+		ok, msg := fsm.CanTransition(main.PhaseDeduction, ra(main.RoleDeductor), ev(l0Dir))
 		_ = msg
 		if !ok {
 			t.Fatalf("Failed to transition to DEDUCTION: %s", msg)
@@ -101,7 +125,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		evidenceContent := "Deductive logic check passes."
 		verdict := "PASS"
 		
-		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, hypo1ID, "logic", evidenceContent, verdict)
+		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo1ID, "logic", evidenceContent, verdict, "L1", "logic-carrier", "2025-12-31")
 		if err != nil {
 			t.Fatalf("ManageEvidence (Deduction PASS) failed: %v", err)
 		}
@@ -119,7 +143,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 	// --- 3. Manage Evidence (Induction - PASS) ---
 	t.Run("3_ManageEvidence_InductionPass", func(t *testing.T) {
-		ok, msg := fsm.CanTransition(main.PhaseInduction, main.RoleInductor)
+		// Needs L1 evidence (which Deduction PASS created)
+		l1File := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypo1ID+".md")
+		ok, msg := fsm.CanTransition(main.PhaseInduction, ra(main.RoleInductor), ev(l1File))
 		_ = msg
 		if !ok {
 			t.Fatalf("Failed to transition to INDUCTION: %s", msg)
@@ -137,7 +163,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("Hypothesis %s not found in L1 before Induction PASS test", hypo1ID)
 		}
 		
-		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, hypo1ID, "empirical", evidenceContent, verdict)
+		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo1ID, "empirical", evidenceContent, verdict, "L2", "empirical-carrier", "2025-12-31")
 		if err != nil {
 			t.Fatalf("ManageEvidence (Induction PASS) failed: %v", err)
 		}
@@ -177,7 +203,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		insight := "New insight from empirical failure."
 		
-		childPath, err := tools.RefineLoopback(fsm.State.Phase, loopbackHypoID, insight, hypo2Title, hypo2Content)
+		childPath, err := tools.RefineLoopback(fsm.State.Phase, loopbackHypoID, insight, hypo2Title, hypo2Content, "system")
 		if err != nil {
 			t.Fatalf("RefineLoopback failed: %v", err)
 		}
@@ -216,7 +242,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		verdict := "PASS"
 
 		// hypo2ID is the new child hypothesis, created in L0
-		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, hypo2ID, "logic", evidenceContent, verdict)
+		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo2ID, "logic", evidenceContent, verdict, "L1", "logic-carrier-2", "2025-12-31")
 		if err != nil {
 			t.Fatalf("ManageEvidence (Deduction PASS for refined) failed: %v", err)
 		}
@@ -232,7 +258,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 
 		// Transition to INDUCTION for next step
-		ok, msg := fsm.CanTransition(main.PhaseInduction, main.RoleInductor)
+		// Needs L1 evidence (which Deduction PASS for refined created)
+		l1File := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypo2ID+".md")
+		ok, msg := fsm.CanTransition(main.PhaseInduction, ra(main.RoleInductor), ev(l1File))
 		if !ok {
 			t.Fatalf("Failed to transition to INDUCTION: %s", msg)
 		}
@@ -242,9 +270,33 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 	})
 
+	// --- 4.6. Manage Evidence (Induction - PASS) for the refined hypothesis ---
+	t.Run("4_6_ManageEvidence_InductionPass_Refined", func(t *testing.T) {
+		// FSM should be in INDUCTION (transitioned at end of 4.5)
+		if fsm.State.Phase != main.PhaseInduction {
+			t.Fatalf("Expected phase INDUCTION, got %s", fsm.State.Phase)
+		}
+
+		evidenceContent := "Empirical test results confirm refined hypothesis."
+		verdict := "PASS"
+		
+		// hypo2ID is in L1
+		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo2ID, "empirical", evidenceContent, verdict, "L2", "empirical-carrier-2", "2025-12-31")
+		if err != nil {
+			t.Fatalf("ManageEvidence (Induction PASS refined) failed: %v", err)
+		}
+
+		if !checkHypothesisExists(t, tempDir, "L2", hypo2ID) {
+			t.Errorf("Hypothesis %s not moved to L2 after Induction PASS refined", hypo2ID)
+		}
+		if !checkFileExists(t, evidencePath) {
+			t.Errorf("Evidence file not created")
+		}
+	})
+
 	// --- 5. Finalize Decision (DECISION -> IDLE) ---
 	drrContent := "Final DRR content endorsing the winner."
-	// hypo2ID should now be in L1 after the Deduction Pass (4_5)
+	// hypo2ID should now be in L2 after the Induction Pass (4_6)
 	finalWinnerID := hypo2ID
 
 	t.Run("5_FinalizeDecision", func(t *testing.T) {
@@ -254,7 +306,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 
 		// Transition to DECISION
-		ok, msg := fsm.CanTransition(main.PhaseDecision, main.RoleDecider)
+		// Needs L2 evidence (which Induction PASS created)
+		l2File := filepath.Join(tempDir, ".quint", "knowledge", "L2", finalWinnerID+".md")
+		ok, msg := fsm.CanTransition(main.PhaseDecision, ra(main.RoleDecider), ev(l2File))
 		_ = msg
 		if !ok {
 			t.Fatalf("Failed to transition to DECISION: %s", msg)
@@ -264,7 +318,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
-		path, err := tools.FinalizeDecision("Final Decision", drrContent, finalWinnerID)
+		path, err := tools.FinalizeDecision("Final Decision", finalWinnerID, "Context", "Decision", drrContent, "Consequences", "Characteristics")
 		if err != nil {
 			t.Fatalf("FinalizeDecision failed: %v", err)
 		}

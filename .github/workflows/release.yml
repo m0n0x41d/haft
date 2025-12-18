@@ -18,7 +18,7 @@ jobs:
         platform:
           - {os: 'linux', arch: 'amd64', runner: 'ubuntu-latest'}
           - {os: 'linux', arch: 'arm64', runner: 'ubuntu-24.04-arm'}
-          - {os: 'darwin', arch: 'amd64', runner: 'macos-13'}
+          - {os: 'darwin', arch: 'amd64', runner: 'macos-15-large'}
           - {os: 'darwin', arch: 'arm64', runner: 'macos-latest'}
     steps:
       - name: Checkout code
@@ -49,6 +49,16 @@ jobs:
           tar -czf "$ASSET_NAME" -C "package" .
           echo "ASSET_NAME=${ASSET_NAME}" >> $GITHUB_ENV
 
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          {
+            echo "RELEASE_NOTES<<EOF"
+            awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md
+            echo "EOF"
+          } >> $GITHUB_ENV
+
       - name: Upload to release
         uses: svenstaro/upload-release-action@v2
         with:
@@ -57,3 +67,4 @@ jobs:
           asset_name: ${{ env.ASSET_NAME }}
           tag: ${{ github.ref }}
           overwrite: true
+          body: ${{ env.RELEASE_NOTES }}

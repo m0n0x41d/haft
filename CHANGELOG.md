@@ -7,68 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0] - 2025-12-18
 
-### The Persona-Based Kernel & Kind-CAL Update
+### MCP Server Architecture
 
-This release fundamentally restructures Quint Code to strictly adhere to the First Principles Framework (FPF) by establishing the MCP server as the authoritative kernel, implementing Typed Reasoning (Kind-CAL), and transforming CLI commands into lightweight entry points for specialized Personas.
+This release introduces the MCP (Model Context Protocol) server as the core of Quint Code, replacing the previous prompt-only approach. The server provides structured tools for AI assistants to interact with the FPF knowledge base.
 
-### Breaking Change
+### Breaking Changes
 
-- **Project Directory:** Renamed from `.fpf` to `.quint` to align with the project name. How to migrate? Just ask `/q-actualize` to migrate evidences and decisions from `.fpf` to `.quint` and then delete `.fpf` directory.`
-- **Database Schema:** `quint.db` schema updated to enforce FPF invariants.
-  - Added `scope` to `holons` table (Pattern A.2.6).
-  - Added `cached_r_score` to `holons` table (B.3 Assurance Cache).
-  - Added `valid_until` to `evidence` table (B.3.4 Evidence Decay).
-  - Added `congruence_level` to `relations` table (B.3 Congruence).
-  - Added `kind` column to `holons` table (Pattern C.3).
-- **Command Architecture:** Commands (`/q1`, `/q2`, etc.) no longer contain internal logic. They now strictly perform a `quint_transition` and instruct the LLM to adopt a Persona defined in `.quint/agents/`.
-- **Decision Structure:** `quint_decide` now requires strict E.9 DRR fields (`context`, `decision`, `rationale`, `consequences`, `characteristics`) instead of a free-form blob.
+- **Project Directory:** Renamed from `.fpf` to `.quint`. Migration: run `/q-actualize` to migrate, then delete `.fpf`.
 
 ### Added
 
-- **Formal Persona Definitions:**
-  - Dedicated personas in `src/agents/`: `abductor.md`, `deductor.md`, `inductor.md`, `decider.md`, `auditor.md`.
-  - Personas now have explicit instructions on how to use MCP tools to satisfy FPF obligations.
-- **MCP Tooling Enhancements:**
-  - **`quint_transition`:** Replaces ad-hoc phase changes. Requires `role`, `target` phase, and `evidence_stub` to validate the transition.
-  - **`quint_propose`:** Now requires `scope` (Claim Scope/G) and `kind` (System vs Episteme) to prevent scope drift and type erasure.
-  - **`quint_evidence`:** Now requires `assurance_level` (L0/L1/L2), `carrier_ref` (Symbol Carrier), and `valid_until` to prevent trust inflation and hearsay.
-  - **`quint_loopback`:** Explicit tool for the Induction -> Deduction refinement cycle.
-- **Assurance Calculator (B.3):**
-  - **`src/mcp/assurance/`:** New package implementing the Trust & Assurance Calculus.
-  - **Weakest Link (WLNK):** R-score is capped by the lowest R of dependencies.
-  - **Congruence Penalty (CL):** Relations with low congruence reduce effective reliability.
-  - **Evidence Decay:** Expired evidence significantly penalizes R-score.
-  - **Recursive Calculation:** Deep traversal of the dependency graph.
-- **New/Updated Commands:**
-  - **`q-decay`:** Calculates Epistemic Debt and updates R-scores for all holons.
-  - **`q-audit`:** Visualizes the assurance tree with R-scores and penalties.
-  - **`q-actualize`:** New command to migrate legacy `.fpf` projects to `.quint` structure and schema.
-- **Typed Reasoning (C.3 Kind-CAL):**
-  - **Abductor Persona:** Explicitly classifies hypotheses as `system` (Architecture/Code) or `episteme` (Knowledge/Theory).
-  - **Deductor Persona:** Explicitly branches validation logic based on `kind`.
-- **Characteristic Space (C.16):**
-  - **Abductor Persona:** Mandated to define **Success Metrics** (Characteristics) in the hypothesis.
-  - **Inductor Persona:** Mandated to **measure** against those metrics.
-  - **Decider Persona:** Records C.16 metrics in the DRR.
-- **Configurable Assurance Threshold:** The `AssuranceThreshold` is now configurable in `.quint/state.json` (defaults to `0.8`), allowing projects to set their own quality gate for decisions.
-- **Expanded Test Coverage:** Added a dedicated integration test suite (`assurance_integration_test.go`) covering the assurance guard, evidence decay, and audit visualization to improve regression safety.
+- **MCP Server** (`quint-code serve`):
+  - `quint_init` — Initialize project structure and bounded context
+  - `quint_transition` — Phase transitions with role and evidence validation
+  - `quint_propose` — Create hypotheses with scope and kind classification
+  - `quint_evidence` — Record evidence with assurance level, carrier reference, and validity window
+  - `quint_loopback` — Induction → Deduction refinement cycle
+  - `quint_decide` — Create Decision Rationale Records (DRR) with E.9 fields
+  - `quint_status` — Query current cycle state
+  - `quint_query` — Search knowledge base
+  - `quint_audit` — Visualize assurance tree with R-scores
+  - `quint_decay` — Calculate epistemic debt from expired evidence
+  - `quint_actualize` — Reconcile knowledge base with code changes
+  - `quint_reset` — Discard current reasoning cycle
 
-### Changed
+- **CLI** (`quint-code init`):
+  - Project initialization with `.quint/` directory structure
+  - MCP configuration for Claude Code, Cursor, Gemini CLI, Codex CLI
+  - Slash command installation (global or per-project)
 
-- **Evidence Graph Referring (A.10):** Evidence must now be anchored to a physical file or log (`carrier_ref`). The system no longer accepts "I checked it" as valid evidence; it demands "I checked file X".
-- **Trust & Assurance (B.3):** Verdicts are no longer binary (PASS/FAIL). They are now graded by Assurance Level (L0=Unsubstantiated, L1=Substantiated, L2=Axiomatic/Validated).
-- **Unified Scope Mechanism (A.2.6):** Hypotheses cannot be proposed without an explicit Context Slice (Scope).
-- **Installer:** `install.sh` now sources personas from `src/agents`.
+- **SQLite Database** (`quint.db`):
+  - `holons` table with `scope`, `kind`, `cached_r_score` columns
+  - `evidence` table with `valid_until` for decay tracking
+  - `relations` table with `congruence_level` for WLNK calculation
 
-### Fixed
+- **Assurance Calculator**:
+  - Weakest Link (WLNK) — R-score capped by lowest dependency
+  - Congruence Penalty — Low-congruence relations reduce reliability
+  - Evidence Decay — Expired evidence penalizes R-score
+  - Cycle detection for circular dependencies
 
-- **Cycle Detection:** Implemented proper cycle detection in the assurance calculator to prevent stack overflows on circular dependencies.
-- **Error Handling:** Surfaced previously-silent database and file operation errors, which are now logged as warnings to `stderr`.
-- **Role Spoofing:** `quint_transition` enforces that the `role` matches the valid actors for the current phase.
-- **Logic Gaps:** The **Deductor** persona is now explicitly responsible for deriving "Necessary Consequences" before testing begins.
-- **Hypothesis Zombie State:** The **Auditor** persona includes checks for orphaned L0 hypotheses.
-- **Type Erasure:** Explicit `kind` prevents validating documentation changes with system logic or vice-versa.
-- **Retrospective Rationalization:** Metrics must be defined *before* testing (C.16).
+- **Typed Reasoning (Kind-CAL)**:
+  - Hypotheses classified as `system` (code/architecture) or `episteme` (knowledge/theory)
+  - Validation logic branches based on kind
+
+- **Characteristic Space (C.16)**:
+  - Success metrics defined before testing
+  - Metrics measured during induction
+  - Results recorded in DRR
+
+- **Multi-platform Support**:
+  - Claude Code (`.mcp.json`, `~/.claude/commands/`)
+  - Cursor (`.cursor/mcp.json`, `~/.cursor/commands/`)
+  - Gemini CLI (`~/.gemini/settings.json`, `~/.gemini/commands/`)
+  - Codex CLI (`~/.codex/config.toml`, `~/.codex/prompts/`)
 
 ---
 

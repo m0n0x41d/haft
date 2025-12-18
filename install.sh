@@ -216,7 +216,7 @@ download_and_extract() {
 # Copies commands from the extracted archive to the final destinations
 copy_commands() {
     local source_base="$1"
-    
+
     local i=0
     for platform in "${PLATFORMS[@]}"; do
         if [[ "${SELECTED[$i]}" == "1" ]]; then
@@ -224,20 +224,23 @@ copy_commands() {
             local p_path="${PLATFORM_PATHS[$i]}"
             local p_ext="${PLATFORM_EXTS[$i]}"
             local full_target_path="$TARGET_DIR/$p_path"
-            
-            (
-                mkdir -p "$full_target_path"
-                # The archive contains a 'commands' directory with subdirs for each platform
-                local source_dir="$source_base/commands/$platform"
-                if [[ -d "$source_dir" ]]; then
-                    cp "$source_dir"/*."$p_ext" "$full_target_path/"
+            local source_dir="$source_base/commands/$platform"
+
+            if [[ -d "$source_dir" ]]; then
+                local file_count
+                file_count=$(find "$source_dir" -name "*.$p_ext" 2>/dev/null | wc -l | tr -d ' ')
+                if [[ "$file_count" -gt 0 ]]; then
+                    (
+                        mkdir -p "$full_target_path"
+                        cp "$source_dir"/*."$p_ext" "$full_target_path/"
+                    ) &
+                    spinner $! "Installing commands for $p_name ($file_count files)"
                 else
-                    # Fallback for older archive structure if needed, or just note it.
-                    # In our new release.yml, this structure is guaranteed.
-                    : # No-op, just to show where logic would go
+                    cprintln "$YELLOW" "   ⚠ No .$p_ext files found for $p_name in $source_dir"
                 fi
-            ) & 
-            spinner $! "Installing commands for $p_name"
+            else
+                cprintln "$YELLOW" "   ⚠ Commands directory not found for $p_name: $source_dir"
+            fi
         fi
         ((i++))
     done
@@ -257,21 +260,17 @@ create_quint_structure() {
     touch "$target/$INSTALL_DIR_BASE/evidence/.gitkeep"
 }
 
-# Configures the .mcp.json file
-configure_mcp() {
-    local target_dir="$1"
-    local config_path="$target_dir/.mcp.json"
-    local mcp_binary="$target_dir/$INSTALL_DIR_BASE/bin/quint-mcp"
-    
-    # Ensure absolute path for binary in config
-    if [[ "$mcp_binary" != /* ]]; then
-        mcp_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
-    fi
+# Merges MCP server config into a JSON file
+# Args: $1 = config_path, $2 = mcp_binary_path, $3 = platform_name
+merge_mcp_config() {
+    local config_path="$1"
+    local mcp_binary="$2"
+    local platform_name="$3"
 
     local server_json='{"quint-code":{"command":"'"$mcp_binary"'","args":["-mode","server"],"env":{}}}'
 
     if [[ -f "$config_path" ]]; then
-        cprintln "$DIM" "   Merging MCP config into $config_path..."
+        cprintln "$DIM" "   Merging MCP config for $platform_name into $config_path..."
         if command -v python3 >/dev/null 2>&1; then
             python3 -c "
 import json, os
@@ -284,11 +283,61 @@ data['mcpServers'].update(new_server)
 with open('$config_path', 'w') as f: json.dump(data, f, indent=2)
 "
         else
-            cprintln "$YELLOW" "   ⚠ Python3 not found. Cannot merge JSON. Please add manually."
+            cprintln "$YELLOW" "   ⚠ Python3 not found. Cannot merge JSON for $platform_name. Please add manually."
         fi
     else
-        cprintln "$DIM" "   Creating new MCP config at $config_path..."
+        cprintln "$DIM" "   Creating new MCP config for $platform_name at $config_path..."
+        mkdir -p "$(dirname "$config_path")"
         echo '{"mcpServers": '"$server_json"'}' > "$config_path"
+    fi
+}
+
+# Configures MCP for each selected platform
+configure_mcp_all() {
+    local target_dir="$1"
+    local mcp_binary="$target_dir/$INSTALL_DIR_BASE/bin/quint-mcp"
+
+    # Ensure absolute path for binary in config
+    if [[ "$mcp_binary" != /* ]]; then
+        mcp_binary="$(cd "$(dirname "$mcp_binary")" && pwd)/$(basename "$mcp_binary")"
+    fi
+
+    # Claude Code: .mcp.json in project root
+    if [[ "${SELECTED[0]}" == "1" ]]; then
+        merge_mcp_config "$target_dir/.mcp.json" "$mcp_binary" "Claude Code"
+    fi
+
+    # Cursor: .cursor/mcp.json in project root
+    if [[ "${SELECTED[1]}" == "1" ]]; then
+        merge_mcp_config "$target_dir/.cursor/mcp.json" "$mcp_binary" "Cursor"
+    fi
+
+    # Gemini CLI: ~/.gemini/settings.json (user-level)
+    if [[ "${SELECTED[2]}" == "1" ]]; then
+        local gemini_config="$HOME/.gemini/settings.json"
+        cprintln "$DIM" "   Configuring MCP for Gemini CLI in $gemini_config..."
+        if command -v python3 >/dev/null 2>&1; then
+            mkdir -p "$HOME/.gemini"
+            python3 -c "
+import json, os
+config_path = '$gemini_config'
+mcp_binary = '$mcp_binary'
+try:
+    with open(config_path, 'r') as f: data = json.load(f)
+except Exception: data = {}
+if 'mcpServers' not in data: data['mcpServers'] = {}
+data['mcpServers']['quint-code'] = {
+    'command': mcp_binary,
+    'args': ['-mode', 'server'],
+    'env': {},
+    'timeout': 30000
+}
+with open(config_path, 'w') as f: json.dump(data, f, indent=2)
+print('   ✓ Gemini CLI MCP configured')
+"
+        else
+            cprintln "$YELLOW" "   ⚠ Python3 not found. Cannot configure Gemini CLI MCP. Please add manually."
+        fi
     fi
 }
 
@@ -322,7 +371,7 @@ install() {
     fi
     
     copy_commands "$quint_dir"
-    configure_mcp "$TARGET_DIR"
+    configure_mcp_all "$TARGET_DIR"
 
     echo ""
     cprintln "$GREEN" "    ╔══════════════════════════════════════════════════════════╗"

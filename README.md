@@ -8,43 +8,43 @@
 
 ## The Problem
 
-Your AI tool gives you *an* answer. But why this approach? What alternatives were considered? What evidence supported it? When does the decision expire?
+Your AI coding assistant gives you an answer. It looks right. But in three months, will you remember *why* it was the right choice? What alternatives were considered? What evidence was there? Was the decision based on a solid foundation or a statistical fluke?
 
-Quint Code gives you a structured way to reason through decisions — generate hypotheses, verify them, and document *why* you chose what you chose.
+Unauditable AI suggestions create a debt of hidden risk.
+
+Quint Code provides the structure to turn AI-assisted development into a rigorous, auditable reasoning process. It's decision hygiene for the age of AI.
 
 ## Quick Start
 
 ### Install
 
-The installation is only **per-project**. Why? Because quint-codes mcp server manages Bounded Contexts, well... Per context.
-And by the high-scope contexts we are taking the directory. It can be github repo, it can be just a directory with
-documents and other assets you are performing you studyings on.
+The installation is **per-project by design**. FPF reasoning is always grounded in a specific **Bounded Context** (Pattern A.1.1)—in this case, your project directory. Quint Code operates within this context to ensure all decisions and evidence are relevant to the work at hand.
 
 ```bash
 cd /path/to/your/project
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 ```
 
-The installer will create `.quint/`, installs the MCP server, and add slash commands for your AI tool using their configd irectories (e.g. `.claude`` and so on).
+The installer will create a `.quint/` directory, install the Quint MCP server, and add slash commands to your AI tool's config directories (e.g., `.claude/`, `.gemini/`).
 
 ### Initialize
 
 ```bash
-/q0-init   # Scans context and initializes knowledge base
+/q0-init   # Scans context and initializes the knowledge base
 /q1-hypothesize "How should we handle state sync across browser tabs?"
 ```
 
 ## How It Works
 
-Quint Code implements the **[First Principles Framework (FPF)](https://ailev.livejournal.com/)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning.
+Quint Code implements the **[First Principles Framework (FPF)](https://ailev.livejournal.com/)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.
 
-The core cycle: **Abduction → Deduction → Induction**
+The core cycle follows three modes of inference:
 
-1. **Abduction** — Generate competing hypotheses (don't anchor on the first idea)
-2. **Deduction** — Verify logic and constraints (does it even make sense?)
-3. **Induction** — Gather evidence through tests or research (prove it works)
+1.  **Abduction** — Generate competing hypotheses (don't anchor on the first idea).
+2.  **Deduction** — Verify logic and constraints (does the idea make sense?).
+3.  **Induction** — Gather evidence through tests or research (does the idea work in reality?).
 
-Then audit for bias, decide, and document the rationale.
+Then, audit for bias, decide, and document the rationale in a durable record.
 
 See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
@@ -52,14 +52,18 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 | Command | What It Does |
 |---------|--------------|
-| `/q0-init` | Initialize `.quint/` and record context |
-| `/q1-hypothesize` | Generate hypotheses |
-| `/q2-verify` | Verify logic, promote to L1 |
-| `/q3-validate` | Test or research, promote to L2 |
-| `/q4-audit` | Bias check and trust scoring |
-| `/q5-decide` | Finalize and create Design Rationale Record |
-| `/q-status` | Show current state |
-| `/q-decay` | Check for expired evidence |
+| `/q0-init` | Initialize `.quint/` and record the Bounded Context. |
+| `/q1-hypothesize` | Generate L0 hypotheses for a problem. |
+| `/q1-add` | Manually add your own L0 hypothesis. |
+| `/q2-verify` | Verify logic and constraints, promoting claims from L0 to L1. |
+| `/q3-validate` | Gather empirical evidence, promoting claims from L1 to L2. |
+| `/q4-audit` | Run an assurance audit and calculate trust scores. |
+| `/q5-decide` | Select the winning hypothesis and create a Design Rationale Record. |
+| `/q-status` | Show the current state of the reasoning cycle. |
+| `/q-query` | Search the project's knowledge base. |
+| `/q-decay` | Check for and report expired evidence (Epistemic Debt). |
+| `/q-actualize` | Reconcile the knowledge base with recent code changes. |
+| `/q-reset` | Discard the current reasoning cycle. |
 
 ## Documentation
 

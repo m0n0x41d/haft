@@ -62,18 +62,28 @@ The AI can recommend, but architectural decisions flow through human judgment. T
 
 ### WLNK (Weakest Link Principle)
 
-System assurance equals the minimum of its evidence assurance levels, never the average.
+**FPF Pattern:** B.1 Invariant Quintet
 
-If you have three pieces of evidence at L2, L2, and L0 — your claim is L0.
+The assurance of a claim is never an average of its evidence; it is a reflection of its most fragile dependency.
 
-### Congruence
+If you have three pieces of evidence supporting a hypothesis—two with high reliability (`R=0.9`) and one with low reliability (`R=0.2`)—the effective reliability of your claim is not the average. It is capped by the weakest link: `R=0.2`. Quint Code's assurance calculator strictly enforces this conservative principle, preventing trust inflation and ensuring that weak points in an argument are always visible.
 
-External evidence (documentation, benchmarks, research) must be evaluated for how well it matches your specific context:
+### Congruence (CL)
 
-- **High**: Direct match to your tech stack, scale, and constraints
-- **Medium**: Similar but not identical context
-- **Low**: General principle, may not apply
+**FPF Pattern:** B.3 Trust & Assurance Calculus
+
+External evidence (documentation, benchmarks, research) is only valuable if it is relevant to your specific situation. The **Congruence Level (CL)** is a rating of how well that external evidence matches your project's **Bounded Context**.
+
+- **High (CL3):** A benchmark run on the exact same hardware, OS, and software versions as your production environment.
+- **Medium (CL2):** A benchmark run on a similar, but not identical, configuration.
+- **Low (CL1):** A general architectural principle described in a blog post.
+
+Quint's assurance calculator applies a **Congruence Penalty** based on the CL, reducing the effective reliability of evidence that isn't a perfect match for your context.
 
 ### Validity (Evidence Decay)
 
-Evidence expires. A benchmark from 2 years ago may not reflect current library performance. Use `/q-decay` to check freshness and flag stale evidence for re-validation.
+**FPF Pattern:** B.3.4 Evidence Decay & Epistemic Debt
+
+Evidence is perishable. A performance benchmark from two years ago is less trustworthy than one from last week because the context (libraries, hardware, compilers) has likely changed.
+
+Every piece of evidence in Quint has a `valid_until` date. The `/q-decay` command scans for expired evidence, and the assurance calculator automatically penalizes the reliability of claims that depend on it. This system makes the "staleness" of knowledge visible and manageable, preventing you from making critical decisions based on outdated information.

@@ -68,17 +68,30 @@ Compute trust scores using:
 ## Commands Reference
 
 | Command | Phase | What It Does |
-|---------|-------|--------------|
-| `/q0-init` | Setup | Initialize `.quint/` and record Bounded Context |
-| `/q1-hypothesize` | Abduction | Generate 3-5 L0 hypotheses |
-| `/q1-add` | Abduction | Inject a user-provided hypothesis into L0 |
-| `/q2-verify` | Deduction | Verify logic/types, promote L0 → L1 |
-| `/q3-validate` | Induction | Run tests or research, promote L1 → L2 |
-| `/q4-audit` | Audit | WLNK analysis and bias check |
-| `/q5-decide` | Decision | Finalize and create DRR |
-| `/q-status` | Utility | Show current phase and state |
-| `/q-query` | Utility | Search knowledge base |
-| `/q-decay` | Maintenance | Check for expired evidence |
+|---|---|
+| `/q0-init` | Setup | Initialize `.quint/` and record the Bounded Context. |
+| `/q1-hypothesize` | Abduction | Generate L0 hypotheses for a problem. |
+| `/q1-add` | Abduction | Manually add your own L0 hypothesis. |
+| `/q2-verify` | Deduction | Verify logic and constraints, promoting claims from L0 to L1. |
+| `/q3-validate` | Induction | Gather empirical evidence, promoting claims from L1 to L2. |
+| `/q4-audit` | Audit | Run an assurance audit and calculate trust scores. |
+| `/q5-decide` | Decision | Select the winning hypothesis and create a Design Rationale Record. |
+| `/q-status` | Utility | Show the current state of the reasoning cycle. |
+| `/q-query` | Utility | Search the project's knowledge base. |
+| `/q-decay` | Maintenance | Check for and report expired evidence (Epistemic Debt). |
+| `/q-actualize` | Maintenance | Reconcile the knowledge base with recent code changes. |
+| `/q-reset` | Utility | Discard the current reasoning cycle. |
+
+### New Maintenance Commands
+
+#### /q-decay (Evidence Decay)
+Over time, the evidence supporting your decisions can become stale. A benchmark from two years ago may not reflect the performance of a library today. This command implements the FPF principle of **Evidence Decay (B.3.4)**. It scans your evidence for expired `valid_until` dates and reports on the project's "Epistemic Debt"—the amount of risk you are carrying from outdated knowledge.
+
+#### /q-actualize (Knowledge Reconciliation)
+This command serves as the **Observe** phase of the FPF's **Canonical Evolution Loop (B.4)**. It reconciles your documented knowledge with the current state of the codebase by:
+1.  **Detecting Context Drift:** Checks if project files (like `package.json`) have changed, potentially making your `context.md` stale.
+2.  **Finding Stale Evidence:** Finds evidence whose `carrier_ref` (the file it points to) has been modified in `git`.
+3.  **Flagging Outdated Decisions:** Identifies decisions whose underlying evidence chain has been impacted by recent code changes.
 
 ## When to Use FPF
 

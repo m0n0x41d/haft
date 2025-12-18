@@ -300,7 +300,7 @@ download_commands() {
 
     local local_dist="$script_dir/dist/$platform"
     local commands=(
-        "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
+        "q0-init" "q1-hypothesize" "q1-add" "q2-verify" "q3-validate" "q4-audit" "q5-decide" 
         "q-status" "q-query" "q-decay" "q-reset" "q-actualize"
     )
 
@@ -348,7 +348,7 @@ uninstall_commands() {
     local ext=$(get_platform_ext $index)
     local target_path=$(get_platform_path $index)
     local commands=(
-        "q0-init" "q1-hypothesize" "q1-extend" "q2-check" "q3-test" "q3-research" "q4-audit" "q5-decide" 
+        "q0-init" "q1-hypothesize" "q1-extend" "q1-add" "q2-check" "q2-verify" "q3-test" "q3-research" "q3-validate" "q4-audit" "q5-decide" 
         "q-status" "q-query" "q-decay" "q-reset" "q-actualize"
         "abductor" "deductor" "inductor" "decider" "auditor"
     )
@@ -357,6 +357,11 @@ uninstall_commands() {
     local removed=0
     local removed_from=""
     local checked_paths=""
+
+    # Also check agents dir for Claude
+    if [[ "$platform" == "claude" ]]; then
+        locations+=("$TARGET_DIR/.claude/agents")
+    fi
 
     for full_target in "${locations[@]}"; do
         [[ -n "$checked_paths" ]] && checked_paths+=', '
@@ -387,7 +392,7 @@ uninstall_commands() {
 configure_mcp() {
     local target_dir="$1"
     local config_path="$target_dir/.mcp.json" # Project-local config
-    local mcp_binary="$target_dir/.quint/bin/quint-core"
+    local mcp_binary="$target_dir/.quint/bin/quint-mcp"
     
     # Ensure absolute path for binary
     if [[ "$mcp_binary" != /* ]]; then
@@ -395,7 +400,7 @@ configure_mcp() {
     fi
 
     # JSON snippet to merge
-    local server_json="{\"quint-code\":{\"command\":\"$mcp_binary\",\"args\":[\"-mode\",\"mcp-server\"],\"env\":{}}}"
+    local server_json="{\"quint-code\":{\"command\":\"$mcp_binary\",\"args\":[\"-mode\",\"server\"],\"env\":{}}}"
 
     if [[ -f "$config_path" ]]; then
         cprintln "$DIM" "   Merging MCP config into $config_path..."
@@ -434,7 +439,7 @@ with open('$config_path', 'w') as f:
   "mcpServers": {
     "quint-code": {
       "command": "$mcp_binary",
-      "args": ["-mode", "mcp-server"],
+      "args": ["-mode", "server"],
       "env": {}
     }
   }
@@ -519,15 +524,13 @@ install_platforms() {
             (download_commands $i) &
             spinner $! "Installing $name commands"
             
-            # Install Agents to Platform Directory (e.g., .claude/agents)
-            # Assumption: All platforms support an 'agents' subdirectory or we create it for structure
-            local platform_root=".${PLATFORMS[$i]}" # e.g. .claude
-            local agents_target="$TARGET_DIR/$platform_root/agents"
-            
-            # Copy agents from src/agents to platform agents dir
-            if [[ -d "src/agents" ]]; then
+            # Install Agents to .claude/agents (Native Subagents)
+            if [[ "${PLATFORMS[$i]}" == "claude" ]]; then
+                local agents_target="$TARGET_DIR/.claude/agents"
                 mkdir -p "$agents_target"
-                cp src/agents/*.md "$agents_target/"
+                if [[ -d "src/agents" ]]; then
+                    cp src/agents/*.md "$agents_target/"
+                fi
             fi
 
             installed_indices="$installed_indices $i"
@@ -541,7 +544,9 @@ install_platforms() {
         spinner $! "Creating .quint/ structure"
     fi
     
-    # Internal agent copy for MCP context lookup (Kernel Knowledge)
+    # Internal agent copy for MCP context lookup (Kernel Knowledge) - OPTIONAL NOW
+    # We still keep this if we want 'quint_context' tool to work, but native agents don't need it.
+    # Let's keep it for backward compat or direct CLI usage.
     if [[ -d "src/agents" ]]
     then
          (install_agents_internal "$TARGET_DIR") &

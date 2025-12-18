@@ -1,3 +1,4 @@
-.quint/bin/
+.quint/
+.mcp.json
 src/mcp/quint-mcp
 quint-mcp.json

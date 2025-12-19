@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Precondition failures logged to audit_log with BLOCKED status.
   - Each error includes actionable suggestion for the user.
 
+- **Command Contracts (FPF Enforcement)**:
+  - All FPF command prompts (q0-q5) now include formal enforcement contracts.
+  - YAML frontmatter with `pre`, `post`, `invariant`, and `required_tools` fields.
+  - RFC 2119 bindings (MUST, MUST NOT, SHALL) for mandatory behaviors.
+  - "Invalid Behaviors" section explicitly lists protocol violations.
+  - "Checkpoint" section with verification checklist before phase transition.
+  - Success/failure path examples with few-shot learning.
+  - "State machine executor" mechanical persona to reduce AI improvisation.
+  - Defense in depth: soft gate (prompts) + hard gate (preconditions).
+
 - **Inline Schema Migrations**:
   - Existing databases automatically upgraded on startup.
   - Adds `parent_id` and `cached_r_score` columns to existing `holons` table.

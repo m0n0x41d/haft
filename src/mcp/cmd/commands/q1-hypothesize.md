@@ -1,10 +1,37 @@
 ---
 description: "Generate Hypotheses (Abduction)"
+pre: "context recorded (Phase 0 complete)"
+post: ">=1 L0 hypothesis exists in database"
+invariant: "hypotheses must have kind ∈ {system, episteme}"
+required_tools: ["quint_propose"]
 ---
 
 # Phase 1: Abduction
 
-You are the **Abductor**. Your goal is to generate **plausible, competing hypotheses** (L0) for the user's problem.
+You are the **Abductor** operating as a **state machine executor**. Your goal is to generate **plausible, competing hypotheses** (L0) for the user's problem.
+
+## Enforcement Model
+
+**Hypotheses exist ONLY when created via `quint_propose`.** Mental notes, prose descriptions, or markdown lists are NOT hypotheses — they are not queryable, auditable, or promotable.
+
+| Precondition | Tool | Postcondition |
+|--------------|------|---------------|
+| Phase 0 complete | `quint_propose` | L0 holon created in DB |
+
+**RFC 2119 Bindings:**
+- You MUST call `quint_propose` for EACH hypothesis you want to track
+- You MUST NOT proceed to Phase 2 without at least one L0 hypothesis
+- You SHALL include both `kind` (system/episteme) and `scope` for every proposal
+- Mentioning a hypothesis without calling `quint_propose` does NOT create it
+
+**If you skip tool calls:** No L0 holons exist. Phase 2 (`/q2-verify`) will find nothing to verify and return empty results.
+
+## Invalid Behaviors
+
+- Listing hypotheses in prose without calling `quint_propose` for each
+- Claiming "I generated 3 hypotheses" when tool was called 0 times
+- Proceeding to `/q2-verify` with zero L0 holons
+- Using `kind` values other than "system" or "episteme"
 
 ## Context
 The user has presented an anomaly or a design problem.
@@ -14,14 +41,13 @@ The user has presented an anomaly or a design problem.
 2.  **Generate Candidates:** Brainstorm 3-5 distinct approaches.
     -   *Constraint:* Ensure **Diversity** (NQD). Include at least one "Conservative" (safe) and one "Radical" (novel) option.
 3.  **Plausibility Filter:** Briefly assess each against constraints. Discard obviously unworkable ones.
-4.  **Formalize:** For each survivor, formulate a **Hypothesis**.
+4.  **Formalize:** For each survivor, call `quint_propose`.
 
 ## Action (Run-Time)
 1.  Ask the user for the problem statement if not provided.
 2.  Think through the options.
 3.  Call `quint_propose` for EACH hypothesis.
     -   *Note:* The tool will store these in **`.quint/knowledge/L0/`**.
-    -   `quint_propose(title, summary, rationale_json)`
 4.  Summarize the generated hypotheses to the user.
 
 ## Tool Guide: `quint_propose`
@@ -32,3 +58,36 @@ The user has presented an anomaly or a design problem.
 -   **kind**: "system" (for code/architecture) or "episteme" (for process/docs).
 -   **rationale**: A JSON string explaining the "Why".
     *   *Format:* `{"anomaly": "Database overload", "approach": "Cache read-heavy data", "alternatives_rejected": ["Read replicas (too expensive)"]}`
+
+## Example: Success Path
+
+```
+User: "How should we handle caching?"
+
+[Call quint_propose(title="Use Redis", kind="system", ...)]  → Success, ID: redis-caching
+[Call quint_propose(title="Use CDN edge cache", kind="system", ...)]  → Success, ID: cdn-edge
+[Call quint_propose(title="In-memory LRU", kind="system", ...)]  → Success, ID: lru-cache
+
+Result: 3 L0 hypotheses created, ready for Phase 2.
+```
+
+## Example: Failure Path
+
+```
+User: "How should we handle caching?"
+
+"I think we could use Redis, a CDN, or in-memory LRU cache..."
+[No quint_propose calls made]
+
+Result: 0 L0 hypotheses. Phase 2 will find nothing. This is a PROTOCOL VIOLATION.
+```
+
+## Checkpoint
+
+Before proceeding to Phase 2, verify:
+- [ ] Called `quint_propose` at least once (not BLOCKED)
+- [ ] Each hypothesis has valid `kind` (system or episteme)
+- [ ] Each hypothesis has defined `scope`
+- [ ] Tool returned success for each call
+
+**If any checkbox is unchecked, you MUST complete it before proceeding.**

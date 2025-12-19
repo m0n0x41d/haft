@@ -404,14 +404,15 @@ func (t *Tools) FinalizeDecision(title, winnerID, decisionContext, decision, rat
 	}
 	body += fmt.Sprintf("## Consequences\n%s\n", consequences)
 
-	timestamp := time.Now().Unix()
-	drrName := fmt.Sprintf("DRR-%d-%s.md", timestamp, t.Slugify(title))
+	now := time.Now()
+	dateStr := now.Format("2006-01-02")
+	drrName := fmt.Sprintf("DRR-%s-%s.md", dateStr, t.Slugify(title))
 	drrPath := filepath.Join(t.GetFPFDir(), "decisions", drrName)
 
 	fields := map[string]string{
 		"type":      "DRR",
 		"winner_id": winnerID,
-		"timestamp": fmt.Sprintf("%d", timestamp),
+		"created":   now.Format(time.RFC3339),
 	}
 
 	if err := WriteWithHash(drrPath, fields, body); err != nil {

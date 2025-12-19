@@ -74,21 +74,92 @@ type FSM struct {
 
 // LoadState reads state from .quint/state.json
 func LoadState(path string, db *sql.DB) (*FSM, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return &FSM{State: State{Phase: PhaseIdle}, DB: db}, nil
+	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: db}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		var state State
+		if err := json.Unmarshal(data, &state); err != nil {
+			return nil, err
+		}
+		fsm.State = state
 	}
 
-	data, err := os.ReadFile(path)
+	return fsm, nil
+}
+
+// GetPhase returns the current phase, deriving from DB if available
+func (f *FSM) GetPhase() Phase {
+	if f.DB != nil {
+		return f.DerivePhase("default")
+	}
+	return f.State.Phase
+}
+
+// DerivePhase computes the current phase from holons data in the database
+func (f *FSM) DerivePhase(contextID string) Phase {
+	if f.DB == nil {
+		return PhaseIdle
+	}
+
+	rows, err := f.DB.QueryContext(context.Background(),
+		"SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer", contextID)
 	if err != nil {
-		return nil, err
+		return PhaseIdle
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var layer string
+		var count int64
+		if err := rows.Scan(&layer, &count); err != nil {
+			continue
+		}
+		counts[layer] = count
 	}
 
-	var state State
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
+	l0 := counts["L0"]
+	l1 := counts["L1"]
+	l2 := counts["L2"]
+	drr := counts["DRR"]
+
+	if l0 == 0 && l1 == 0 && l2 == 0 && drr == 0 {
+		return PhaseIdle
 	}
 
-	return &FSM{State: state, DB: db}, nil
+	row := f.DB.QueryRowContext(context.Background(),
+		"SELECT layer FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1", contextID)
+	var latestLayer string
+	if err := row.Scan(&latestLayer); err != nil {
+		return PhaseIdle
+	}
+
+	switch latestLayer {
+	case "L0":
+		return PhaseAbduction
+	case "L1":
+		if l2 == 0 {
+			return PhaseDeduction
+		}
+		return PhaseInduction
+	case "L2":
+		return PhaseInduction
+	case "DRR":
+		return PhaseDecision
+	}
+
+	if l2 > 0 {
+		return PhaseAudit
+	}
+	if l1 > 0 {
+		return PhaseDeduction
+	}
+	return PhaseAbduction
 }
 
 // SaveState writes state to .quint/state.json
@@ -114,11 +185,13 @@ func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *E
 		return false, "Role is required"
 	}
 
-	if f.State.Phase == target {
-		if isValidRoleForPhase(f.State.Phase, assignment.Role) {
+	currentPhase := f.GetPhase()
+
+	if currentPhase == target {
+		if isValidRoleForPhase(currentPhase, assignment.Role) {
 			return true, "OK"
 		}
-		return false, fmt.Sprintf("Role %s is not active in %s phase", assignment.Role, f.State.Phase)
+		return false, fmt.Sprintf("Role %s is not active in %s phase", assignment.Role, currentPhase)
 	}
 
 	valid := []TransitionRule{
@@ -135,7 +208,7 @@ func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *E
 
 	isValidTransition := false
 	for _, rule := range valid {
-		if rule.From == f.State.Phase && rule.To == target {
+		if rule.From == currentPhase && rule.To == target {
 			if rule.Role == assignment.Role {
 				isValidTransition = true
 				break
@@ -144,11 +217,11 @@ func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *E
 	}
 
 	if !isValidTransition {
-		return false, fmt.Sprintf("Invalid transition: %s -> %s by %s", f.State.Phase, target, assignment.Role)
+		return false, fmt.Sprintf("Invalid transition: %s -> %s by %s", currentPhase, target, assignment.Role)
 	}
 
-	if !validateEvidence(f.State.Phase, target, evidence) {
-		return false, fmt.Sprintf("Transition to %s requires valid Evidence Anchor (A.10) from %s", target, f.State.Phase)
+	if !validateEvidence(currentPhase, target, evidence) {
+		return false, fmt.Sprintf("Transition to %s requires valid Evidence Anchor (A.10) from %s", target, currentPhase)
 	}
 
 	if target == PhaseOperation {

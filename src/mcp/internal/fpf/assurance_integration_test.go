@@ -26,9 +26,15 @@ func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.Store, string) {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
+	rawDB := database.GetRawDB()
+	_, err = rawDB.Exec("INSERT INTO holons (id, type, layer, title, content, context_id) VALUES ('drr-setup', 'decision', 'DRR', 'Setup', 'Content', 'default')")
+	if err != nil {
+		t.Fatalf("Failed to insert DRR holon for phase setup: %v", err)
+	}
+
 	fsm := &fpf.FSM{
 		State: fpf.State{Phase: fpf.PhaseDecision},
-		DB:    database.GetRawDB(),
+		DB:    rawDB,
 	}
 
 	return fsm, database, tempDir

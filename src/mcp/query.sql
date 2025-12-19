@@ -4,8 +4,8 @@
 -- Holon queries
 
 -- name: CreateHolon :exec
-INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetHolon :one
 SELECT * FROM holons WHERE id = ? LIMIT 1;
@@ -24,6 +24,26 @@ UPDATE holons SET layer = ?, updated_at = ? WHERE id = ?;
 
 -- name: UpdateHolonRScore :exec
 UPDATE holons SET cached_r_score = ?, updated_at = ? WHERE id = ?;
+
+-- name: GetHolonsByParent :many
+SELECT * FROM holons WHERE parent_id = ? ORDER BY created_at DESC;
+
+-- name: CountHolonsByLayer :many
+SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer;
+
+-- name: GetLatestHolonByContext :one
+SELECT * FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1;
+
+-- name: GetHolonLineage :many
+WITH RECURSIVE lineage AS (
+    SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id, h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at, 0 as depth
+    FROM holons h WHERE h.id = ?
+    UNION ALL
+    SELECT p.id, p.type, p.kind, p.layer, p.title, p.content, p.context_id, p.scope, p.parent_id, p.cached_r_score, p.created_at, p.updated_at, l.depth + 1
+    FROM holons p
+    INNER JOIN lineage l ON p.id = l.parent_id
+)
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at, depth FROM lineage ORDER BY depth DESC;
 
 -- Evidence queries
 
@@ -64,3 +84,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetCharacteristics :many
 SELECT * FROM characteristics WHERE holon_id = ?;
+
+-- Audit log queries
+
+-- name: InsertAuditLog :exec
+INSERT INTO audit_log (id, tool_name, operation, actor, target_id, input_hash, result, details, context_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetAuditLogByContext :many
+SELECT * FROM audit_log WHERE context_id = ? ORDER BY timestamp DESC;
+
+-- name: GetAuditLogByTarget :many
+SELECT * FROM audit_log WHERE target_id = ? ORDER BY timestamp DESC;
+
+-- name: GetRecentAuditLog :many
+SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?;

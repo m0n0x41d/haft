@@ -52,12 +52,13 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 		tools := fpf.NewTools(fsm, tempDir, database)
 
-		fsm.State.Phase = fpf.PhaseIdle // Ensure idle for init
+		if fsm.GetPhase() != fpf.PhaseIdle {
+			t.Fatalf("Expected initial phase IDLE, got %s", fsm.GetPhase())
+		}
 		err = tools.InitProject()
 		if err != nil {
 			t.Fatalf("InitProject failed: %v", err)
 		}
-		fsm.State.Phase = fpf.PhaseAbduction // Simulate transition in fpf.go
 		if err := fsm.SaveState(stateFile); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
@@ -91,9 +92,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	hypo1ID := tools.Slugify(hypo1Title)
 
 	t.Run("1_ProposeHypothesis", func(t *testing.T) {
-		// Ensure current phase is ABDUCTION
-		if fsm.State.Phase != fpf.PhaseAbduction {
-			t.Fatalf("Expected phase ABDUCTION, got %s", fsm.State.Phase)
+		// Phase should be IDLE before first hypothesis (no holons yet)
+		if fsm.GetPhase() != fpf.PhaseIdle {
+			t.Fatalf("Expected phase IDLE before first proposal, got %s", fsm.GetPhase())
 		}
 		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale")
 		if err != nil {

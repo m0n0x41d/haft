@@ -21,6 +21,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `quint_calculate_r`: Compute R_eff with detailed breakdown (self score, weakest link, decay penalties).
   - `quint_check_decay`: Identify holons with expired evidence (epistemic debt detection).
 
+- **Parent ID Chain (FPF Enforcement)**:
+  - Added `parent_id` foreign key to holons table for L0→L1→L2 progression tracking.
+  - New queries: `GetHolonsByParent`, `GetHolonLineage` for traversing hypothesis chains.
+  - `CreateHolon` now accepts parent_id parameter for linking hypothesis progression.
+  - Enables auditable chain from L2 decision back to original L0 hypothesis.
+
+- **Derived Phase (FPF Enforcement)**:
+  - Phase is now computed from holons.layer data instead of stored in state.json.
+  - New `DerivePhase()` method computes phase from database state.
+  - New `GetPhase()` returns derived phase when DB available, falls back to State.Phase.
+  - Prevents AI bypass of FPF phase controls via direct file manipulation.
+
+- **Audit Logging (FPF Enforcement)**:
+  - New `audit_log` table tracks all MCP tool invocations.
+  - Captures: tool name, operation, actor, target ID, input hash, result, and details.
+  - Instrumented tools: `quint_propose`, `quint_verify`, `quint_decide`, `quint_move`.
+  - Enables detection of FPF bypasses through audit trail analysis.
+  - Context-aware logging supports multi-session isolation.
+
+- **Self-Healing Signed Projections (FPF Enforcement)**:
+  - All hypothesis/evidence/DRR files now include `content_hash` in YAML frontmatter.
+  - New `WriteWithHash()` function adds cryptographic hash (SHA-256 truncated) on write.
+  - New `ValidateFile()` detects tampering by comparing stored vs computed hash.
+  - New `ReadWithValidation()` on Tools automatically detects and logs tampering.
+  - When tampering detected: regenerates file from DB (DB is source of truth).
+  - Tampering events logged to audit_log for violation tracking.
+
+- **DRR Holon Tracking**:
+  - `FinalizeDecision` now creates DRR holon in database (enables derived phase detection).
+  - DRR holons linked to winner hypothesis via parent_id.
+
+- **Tool Preconditions (FPF Enforcement)**:
+  - All MCP tools now validate preconditions before execution.
+  - `quint_propose`: Validates title, content, and kind fields.
+  - `quint_verify`: Confirms hypothesis exists in L0, validates verdict.
+  - `quint_test`: Ensures hypothesis is in L1 (not L0), validates verdict.
+  - `quint_audit`: Confirms hypothesis is in L2 before audit.
+  - `quint_decide`: Requires L2 hypotheses exist, validates winner_id and title.
+  - `quint_calculate_r` / `quint_audit_tree`: Validates holon existence in DB.
+  - Precondition failures logged to audit_log with BLOCKED status.
+  - Each error includes actionable suggestion for the user.
+
+- **Inline Schema Migrations**:
+  - Existing databases automatically upgraded on startup.
+  - Adds `parent_id` and `cached_r_score` columns to existing `holons` table.
+  - Safe to run multiple times (idempotent).
+
 ### Changed
 
 - **Updated FPF Commands**: Commands now leverage new MCP tools for computed data:
@@ -35,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cross-compilation now works for linux/amd64, linux/arm64, darwin/*, windows/amd64.
   - Unblocks single-runner GoReleaser builds.
   - No functional changes to database behavior.
+
+- **FSM Phase Derivation**: `CanTransition()` now uses `GetPhase()` (derived from DB) instead of `State.Phase`.
+  - Phase transitions are validated against actual database state.
+  - Hardens FPF enforcement against state.json manipulation.
 
 ---
 

@@ -10,6 +10,7 @@ CREATE TABLE holons (
     content TEXT NOT NULL,
     context_id TEXT NOT NULL,
     scope TEXT,
+    parent_id TEXT REFERENCES holons(id),
     cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -58,4 +59,17 @@ CREATE TABLE work_records (
     ended_at DATETIME,
     resource_ledger TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE audit_log (
+    id TEXT PRIMARY KEY,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tool_name TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    target_id TEXT,
+    input_hash TEXT,
+    result TEXT NOT NULL,
+    details TEXT,
+    context_id TEXT NOT NULL DEFAULT 'default'
 );

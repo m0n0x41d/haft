@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+type AuditLog struct {
+	ID        string
+	Timestamp sql.NullTime
+	ToolName  string
+	Operation string
+	Actor     string
+	TargetID  sql.NullString
+	InputHash sql.NullString
+	Result    string
+	Details   sql.NullString
+	ContextID string
+}
+
 type Characteristic struct {
 	ID        string
 	HolonID   string
@@ -40,6 +53,7 @@ type Holon struct {
 	Content      string
 	ContextID    string
 	Scope        sql.NullString
+	ParentID     sql.NullString
 	CachedRScore sql.NullFloat64
 	CreatedAt    sql.NullTime
 	UpdatedAt    sql.NullTime

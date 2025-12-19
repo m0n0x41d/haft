@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS holons (
 	content TEXT NOT NULL,
 	context_id TEXT NOT NULL,
 	scope TEXT,
+	parent_id TEXT REFERENCES holons(id),
 	cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -61,6 +62,18 @@ CREATE TABLE IF NOT EXISTS work_records (
 	resource_ledger TEXT,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS audit_log (
+	id TEXT PRIMARY KEY,
+	timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+	tool_name TEXT NOT NULL,
+	operation TEXT NOT NULL,
+	actor TEXT NOT NULL,
+	target_id TEXT,
+	input_hash TEXT,
+	result TEXT NOT NULL,
+	details TEXT,
+	context_id TEXT NOT NULL DEFAULT 'default'
+);
 `
 
 type Store struct {
@@ -78,6 +91,10 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to init schema: %v", err)
 	}
 
+	if err := RunMigrations(conn); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %v", err)
+	}
+
 	return &Store{
 		conn: conn,
 		q:    New(),
@@ -92,7 +109,7 @@ func (s *Store) Close() error {
 	return s.conn.Close()
 }
 
-func (s *Store) CreateHolon(ctx context.Context, id, typ, kind, layer, title, content, contextID, scope string) error {
+func (s *Store) CreateHolon(ctx context.Context, id, typ, kind, layer, title, content, contextID, scope, parentID string) error {
 	now := sql.NullTime{Time: time.Now(), Valid: true}
 	return s.q.CreateHolon(ctx, s.conn, CreateHolonParams{
 		ID:        id,
@@ -103,6 +120,7 @@ func (s *Store) CreateHolon(ctx context.Context, id, typ, kind, layer, title, co
 		Content:   content,
 		ContextID: contextID,
 		Scope:     toNullString(scope),
+		ParentID:  toNullString(parentID),
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -184,6 +202,48 @@ func (s *Store) Link(ctx context.Context, source, target, relType string) error 
 
 func (s *Store) GetComponentsOf(ctx context.Context, targetID string) ([]GetComponentsOfRow, error) {
 	return s.q.GetComponentsOf(ctx, s.conn, targetID)
+}
+
+func (s *Store) GetHolonsByParent(ctx context.Context, parentID string) ([]Holon, error) {
+	return s.q.GetHolonsByParent(ctx, s.conn, toNullString(parentID))
+}
+
+func (s *Store) GetHolonLineage(ctx context.Context, id string) ([]GetHolonLineageRow, error) {
+	return s.q.GetHolonLineage(ctx, s.conn, id)
+}
+
+func (s *Store) CountHolonsByLayer(ctx context.Context, contextID string) ([]CountHolonsByLayerRow, error) {
+	return s.q.CountHolonsByLayer(ctx, s.conn, contextID)
+}
+
+func (s *Store) GetLatestHolonByContext(ctx context.Context, contextID string) (Holon, error) {
+	return s.q.GetLatestHolonByContext(ctx, s.conn, contextID)
+}
+
+func (s *Store) InsertAuditLog(ctx context.Context, id, toolName, operation, actor, targetID, inputHash, result, details, contextID string) error {
+	return s.q.InsertAuditLog(ctx, s.conn, InsertAuditLogParams{
+		ID:        id,
+		ToolName:  toolName,
+		Operation: operation,
+		Actor:     actor,
+		TargetID:  toNullString(targetID),
+		InputHash: toNullString(inputHash),
+		Result:    result,
+		Details:   toNullString(details),
+		ContextID: contextID,
+	})
+}
+
+func (s *Store) GetAuditLogByContext(ctx context.Context, contextID string) ([]AuditLog, error) {
+	return s.q.GetAuditLogByContext(ctx, s.conn, contextID)
+}
+
+func (s *Store) GetAuditLogByTarget(ctx context.Context, targetID string) ([]AuditLog, error) {
+	return s.q.GetAuditLogByTarget(ctx, s.conn, toNullString(targetID))
+}
+
+func (s *Store) GetRecentAuditLog(ctx context.Context, limit int64) ([]AuditLog, error) {
+	return s.q.GetRecentAuditLog(ctx, s.conn, limit)
 }
 
 func toNullString(s string) sql.NullString {

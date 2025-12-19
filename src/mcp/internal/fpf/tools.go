@@ -2,6 +2,9 @@ package fpf
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +15,8 @@ import (
 
 	"quint-mcp/assurance"
 	"quint-mcp/db"
+
+	"github.com/google/uuid"
 )
 
 type Tools struct {
@@ -41,6 +46,27 @@ func (t *Tools) GetFPFDir() string {
 	return filepath.Join(t.RootDir, ".quint")
 }
 
+func (t *Tools) AuditLog(toolName, operation, actor, targetID, result string, input interface{}, details string) {
+	if t.DB == nil {
+		return
+	}
+
+	var inputHash string
+	if input != nil {
+		data, err := json.Marshal(input)
+		if err == nil {
+			hash := sha256.Sum256(data)
+			inputHash = hex.EncodeToString(hash[:8])
+		}
+	}
+
+	id := uuid.New().String()
+	ctx := context.Background()
+	if err := t.DB.InsertAuditLog(ctx, id, toolName, operation, actor, targetID, inputHash, result, details, "default"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to insert audit log: %v\n", err)
+	}
+}
+
 func (t *Tools) Slugify(title string) string {
 	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
 	slug := reg.ReplaceAllString(strings.ToLower(title), "-")
@@ -52,10 +78,12 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 	destPath := filepath.Join(t.GetFPFDir(), "knowledge", destLevel, hypothesisID+".md")
 
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, "not found")
 		return "", fmt.Errorf("hypothesis %s not found in %s", hypothesisID, sourceLevel)
 	}
 
 	if err := os.Rename(srcPath, destPath); err != nil {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, err.Error())
 		return "", fmt.Errorf("failed to move hypothesis from %s to %s: %v", sourceLevel, destLevel, err)
 	}
 
@@ -65,6 +93,7 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 		}
 	}
 
+	t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"from": sourceLevel, "to": destLevel}, "")
 	return destPath, nil
 }
 
@@ -154,17 +183,24 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string)
 	filename := fmt.Sprintf("%s.md", slug)
 	path := filepath.Join(t.GetFPFDir(), "knowledge", "L0", filename)
 
-	fileContent := fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", scope, kind, title, content, rationale)
+	body := fmt.Sprintf("\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
+	fields := map[string]string{
+		"scope": scope,
+		"kind":  kind,
+	}
 
-	if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
+	if err := WriteWithHash(path, fields, body); err != nil {
+		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
 		return "", err
 	}
 
 	if t.DB != nil {
-		if err := t.DB.CreateHolon(context.Background(), slug, "hypothesis", kind, "L0", title, fileContent, "default", scope); err != nil {
+		if err := t.DB.CreateHolon(context.Background(), slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create holon in DB: %v\n", err)
 		}
 	}
+
+	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
 
 	return path, nil
 }
@@ -189,6 +225,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 	if v == "pass" {
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
 			return "", err
 		}
 
@@ -197,14 +234,18 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 			fmt.Fprintf(os.Stderr, "Warning: failed to record verification evidence for %s: %v\n", hypothesisID, err)
 		}
 
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
 		return fmt.Sprintf("Hypothesis %s (kind: %s) promoted to L1", hypothesisID, carrierRef), nil
 	} else if v == "fail" {
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
 			return "", err
 		}
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "invalid"}, "")
 		return fmt.Sprintf("Hypothesis %s moved to invalid", hypothesisID), nil
 	} else if v == "refine" {
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "REFINE", "result": "L0"}, "")
 		return fmt.Sprintf("Hypothesis %s requires refinement (staying in L0)", hypothesisID), nil
 	}
 
@@ -288,10 +329,19 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	filename := fmt.Sprintf("%s-%s-%s.md", date, evidenceType, targetID)
 	path := filepath.Join(t.GetFPFDir(), "evidence", filename)
 
-	fullContent := fmt.Sprintf("---\nid: %s\ntype: %s\ntarget: %s\nverdict: %s\nassurance_level: %s\ncarrier_ref: %s\nvalid_until: %s\ndate: %s\n---\n\n%s",
-		filename, evidenceType, targetID, normalizedVerdict, assuranceLevel, carrierRef, validUntil, date, content)
+	body := fmt.Sprintf("\n%s", content)
+	fields := map[string]string{
+		"id":              filename,
+		"type":            evidenceType,
+		"target":          targetID,
+		"verdict":         normalizedVerdict,
+		"assurance_level": assuranceLevel,
+		"carrier_ref":     carrierRef,
+		"valid_until":     validUntil,
+		"date":            date,
+	}
 
-	if err := os.WriteFile(path, []byte(fullContent), 0644); err != nil {
+	if err := WriteWithHash(path, fields, body); err != nil {
 		return "", err
 	}
 
@@ -345,19 +395,35 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 func (t *Tools) FinalizeDecision(title, winnerID, decisionContext, decision, rationale, consequences, characteristics string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
-	drrContent := fmt.Sprintf("# %s\n\n", title)
-	drrContent += fmt.Sprintf("## Context\n%s\n\n", decisionContext)
-	drrContent += fmt.Sprintf("## Decision\n**Selected Option:** %s\n\n%s\n\n", winnerID, decision)
-	drrContent += fmt.Sprintf("## Rationale\n%s\n\n", rationale)
+	body := fmt.Sprintf("\n# %s\n\n", title)
+	body += fmt.Sprintf("## Context\n%s\n\n", decisionContext)
+	body += fmt.Sprintf("## Decision\n**Selected Option:** %s\n\n%s\n\n", winnerID, decision)
+	body += fmt.Sprintf("## Rationale\n%s\n\n", rationale)
 	if characteristics != "" {
-		drrContent += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
+		body += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
 	}
-	drrContent += fmt.Sprintf("## Consequences\n%s\n", consequences)
+	body += fmt.Sprintf("## Consequences\n%s\n", consequences)
 
-	drrName := fmt.Sprintf("DRR-%d-%s.md", time.Now().Unix(), t.Slugify(title))
+	timestamp := time.Now().Unix()
+	drrName := fmt.Sprintf("DRR-%d-%s.md", timestamp, t.Slugify(title))
 	drrPath := filepath.Join(t.GetFPFDir(), "decisions", drrName)
-	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+
+	fields := map[string]string{
+		"type":      "DRR",
+		"winner_id": winnerID,
+		"timestamp": fmt.Sprintf("%d", timestamp),
+	}
+
+	if err := WriteWithHash(drrPath, fields, body); err != nil {
+		t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "ERROR", map[string]string{"title": title}, err.Error())
 		return "", err
+	}
+
+	if t.DB != nil {
+		drrID := t.Slugify(title)
+		if err := t.DB.CreateHolon(context.Background(), drrID, "DRR", "", "DRR", title, body, "default", "", winnerID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
+		}
 	}
 
 	if winnerID != "" {
@@ -367,6 +433,7 @@ func (t *Tools) FinalizeDecision(title, winnerID, decisionContext, decision, rat
 		}
 	}
 
+	t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "SUCCESS", map[string]string{"title": title, "drr": drrName}, "")
 	return drrPath, nil
 }
 

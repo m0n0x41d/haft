@@ -99,11 +99,43 @@ func (q *Queries) AddRelation(ctx context.Context, db DBTX, arg AddRelationParam
 	return err
 }
 
+const countHolonsByLayer = `-- name: CountHolonsByLayer :many
+SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer
+`
+
+type CountHolonsByLayerRow struct {
+	Layer string
+	Count int64
+}
+
+func (q *Queries) CountHolonsByLayer(ctx context.Context, db DBTX, contextID string) ([]CountHolonsByLayerRow, error) {
+	rows, err := db.QueryContext(ctx, countHolonsByLayer, contextID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountHolonsByLayerRow
+	for rows.Next() {
+		var i CountHolonsByLayerRow
+		if err := rows.Scan(&i.Layer, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createHolon = `-- name: CreateHolon :exec
 
 
-INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHolonParams struct {
@@ -115,6 +147,7 @@ type CreateHolonParams struct {
 	Content   string
 	ContextID string
 	Scope     sql.NullString
+	ParentID  sql.NullString
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
 }
@@ -132,10 +165,87 @@ func (q *Queries) CreateHolon(ctx context.Context, db DBTX, arg CreateHolonParam
 		arg.Content,
 		arg.ContextID,
 		arg.Scope,
+		arg.ParentID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
 	return err
+}
+
+const getAuditLogByContext = `-- name: GetAuditLogByContext :many
+SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log WHERE context_id = ? ORDER BY timestamp DESC
+`
+
+func (q *Queries) GetAuditLogByContext(ctx context.Context, db DBTX, contextID string) ([]AuditLog, error) {
+	rows, err := db.QueryContext(ctx, getAuditLogByContext, contextID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Timestamp,
+			&i.ToolName,
+			&i.Operation,
+			&i.Actor,
+			&i.TargetID,
+			&i.InputHash,
+			&i.Result,
+			&i.Details,
+			&i.ContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAuditLogByTarget = `-- name: GetAuditLogByTarget :many
+SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log WHERE target_id = ? ORDER BY timestamp DESC
+`
+
+func (q *Queries) GetAuditLogByTarget(ctx context.Context, db DBTX, targetID sql.NullString) ([]AuditLog, error) {
+	rows, err := db.QueryContext(ctx, getAuditLogByTarget, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Timestamp,
+			&i.ToolName,
+			&i.Operation,
+			&i.Actor,
+			&i.TargetID,
+			&i.InputHash,
+			&i.Result,
+			&i.Details,
+			&i.ContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getCharacteristics = `-- name: GetCharacteristics :many
@@ -281,7 +391,7 @@ func (q *Queries) GetEvidenceWithCarrier(ctx context.Context, db DBTX) ([]Eviden
 }
 
 const getHolon = `-- name: GetHolon :one
-SELECT id, type, kind, layer, title, content, context_id, scope, cached_r_score, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, error) {
@@ -296,11 +406,77 @@ func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, erro
 		&i.Content,
 		&i.ContextID,
 		&i.Scope,
+		&i.ParentID,
 		&i.CachedRScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getHolonLineage = `-- name: GetHolonLineage :many
+WITH RECURSIVE lineage AS (
+    SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id, h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at, 0 as depth
+    FROM holons h WHERE h.id = ?
+    UNION ALL
+    SELECT p.id, p.type, p.kind, p.layer, p.title, p.content, p.context_id, p.scope, p.parent_id, p.cached_r_score, p.created_at, p.updated_at, l.depth + 1
+    FROM holons p
+    INNER JOIN lineage l ON p.id = l.parent_id
+)
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at, depth FROM lineage ORDER BY depth DESC
+`
+
+type GetHolonLineageRow struct {
+	ID           string
+	Type         string
+	Kind         sql.NullString
+	Layer        string
+	Title        string
+	Content      string
+	ContextID    string
+	Scope        sql.NullString
+	ParentID     sql.NullString
+	CachedRScore sql.NullFloat64
+	CreatedAt    sql.NullTime
+	UpdatedAt    sql.NullTime
+	Depth        int64
+}
+
+func (q *Queries) GetHolonLineage(ctx context.Context, db DBTX, id string) ([]GetHolonLineageRow, error) {
+	rows, err := db.QueryContext(ctx, getHolonLineage, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetHolonLineageRow
+	for rows.Next() {
+		var i GetHolonLineageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Kind,
+			&i.Layer,
+			&i.Title,
+			&i.Content,
+			&i.ContextID,
+			&i.Scope,
+			&i.ParentID,
+			&i.CachedRScore,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getHolonTitle = `-- name: GetHolonTitle :one
@@ -312,6 +488,108 @@ func (q *Queries) GetHolonTitle(ctx context.Context, db DBTX, id string) (string
 	var title string
 	err := row.Scan(&title)
 	return title, err
+}
+
+const getHolonsByParent = `-- name: GetHolonsByParent :many
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at FROM holons WHERE parent_id = ? ORDER BY created_at DESC
+`
+
+func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.NullString) ([]Holon, error) {
+	rows, err := db.QueryContext(ctx, getHolonsByParent, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Holon
+	for rows.Next() {
+		var i Holon
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Kind,
+			&i.Layer,
+			&i.Title,
+			&i.Content,
+			&i.ContextID,
+			&i.Scope,
+			&i.ParentID,
+			&i.CachedRScore,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLatestHolonByContext = `-- name: GetLatestHolonByContext :one
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextID string) (Holon, error) {
+	row := db.QueryRowContext(ctx, getLatestHolonByContext, contextID)
+	var i Holon
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Kind,
+		&i.Layer,
+		&i.Title,
+		&i.Content,
+		&i.ContextID,
+		&i.Scope,
+		&i.ParentID,
+		&i.CachedRScore,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRecentAuditLog = `-- name: GetRecentAuditLog :many
+SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log ORDER BY timestamp DESC LIMIT ?
+`
+
+func (q *Queries) GetRecentAuditLog(ctx context.Context, db DBTX, limit int64) ([]AuditLog, error) {
+	rows, err := db.QueryContext(ctx, getRecentAuditLog, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Timestamp,
+			&i.ToolName,
+			&i.Operation,
+			&i.Actor,
+			&i.TargetID,
+			&i.InputHash,
+			&i.Result,
+			&i.Details,
+			&i.ContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRelationsByTarget = `-- name: GetRelationsByTarget :many
@@ -352,6 +630,40 @@ func (q *Queries) GetRelationsByTarget(ctx context.Context, db DBTX, arg GetRela
 	return items, nil
 }
 
+const insertAuditLog = `-- name: InsertAuditLog :exec
+
+INSERT INTO audit_log (id, tool_name, operation, actor, target_id, input_hash, result, details, context_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertAuditLogParams struct {
+	ID        string
+	ToolName  string
+	Operation string
+	Actor     string
+	TargetID  sql.NullString
+	InputHash sql.NullString
+	Result    string
+	Details   sql.NullString
+	ContextID string
+}
+
+// Audit log queries
+func (q *Queries) InsertAuditLog(ctx context.Context, db DBTX, arg InsertAuditLogParams) error {
+	_, err := db.ExecContext(ctx, insertAuditLog,
+		arg.ID,
+		arg.ToolName,
+		arg.Operation,
+		arg.Actor,
+		arg.TargetID,
+		arg.InputHash,
+		arg.Result,
+		arg.Details,
+		arg.ContextID,
+	)
+	return err
+}
+
 const listAllHolonIDs = `-- name: ListAllHolonIDs :many
 SELECT id FROM holons
 `
@@ -380,7 +692,7 @@ func (q *Queries) ListAllHolonIDs(ctx context.Context, db DBTX) ([]string, error
 }
 
 const listHolonsByLayer = `-- name: ListHolonsByLayer :many
-SELECT id, type, kind, layer, title, content, context_id, scope, cached_r_score, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) ([]Holon, error) {
@@ -401,6 +713,7 @@ func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) 
 			&i.Content,
 			&i.ContextID,
 			&i.Scope,
+			&i.ParentID,
 			&i.CachedRScore,
 			&i.CreatedAt,
 			&i.UpdatedAt,

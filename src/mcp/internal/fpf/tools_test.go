@@ -111,9 +111,24 @@ tools, fsm, tempDir := setupTools(t)
 	if err != nil {
 		t.Fatalf("Failed to read hypothesis file: %v", err)
 	}
-	expectedContent := fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", scope, kind, title, content, rationale)
-	if string(readContent) != expectedContent {
-		t.Errorf("File content mismatch. Got %q, expected %q", string(readContent), expectedContent)
+	contentStr := string(readContent)
+	if !strings.Contains(contentStr, "scope: "+scope) {
+		t.Errorf("Missing scope in frontmatter")
+	}
+	if !strings.Contains(contentStr, "kind: "+kind) {
+		t.Errorf("Missing kind in frontmatter")
+	}
+	if !strings.Contains(contentStr, "content_hash:") {
+		t.Errorf("Missing content_hash in frontmatter")
+	}
+	if !strings.Contains(contentStr, "# Hypothesis: "+title) {
+		t.Errorf("Missing hypothesis title in body")
+	}
+	if !strings.Contains(contentStr, content) {
+		t.Errorf("Missing content in body")
+	}
+	if !strings.Contains(contentStr, "## Rationale") {
+		t.Errorf("Missing rationale section")
 	}
 }
 
@@ -384,7 +399,7 @@ func TestCalculateR(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with evidence
-	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global")
+	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -418,7 +433,7 @@ func TestCalculateR_WithDecay(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with expired evidence
-	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global")
+	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -446,7 +461,7 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with fresh evidence
-	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global")
+	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -474,7 +489,7 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with expired evidence
-	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global")
+	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -505,7 +520,7 @@ func TestVisualizeAudit(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon
-	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global")
+	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}

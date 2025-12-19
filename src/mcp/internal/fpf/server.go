@@ -282,6 +282,22 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		return ""
 	}
 
+	args := make(map[string]string)
+	for k, v := range params.Arguments {
+		if s, ok := v.(string); ok {
+			args[k] = s
+		}
+	}
+
+	if precondErr := s.tools.CheckPreconditions(params.Name, args); precondErr != nil {
+		s.tools.AuditLog(params.Name, "precondition_failed", "agent", "", "BLOCKED", args, precondErr.Error())
+		s.sendResult(req.ID, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: precondErr.Error()}},
+			IsError: true,
+		})
+		return
+	}
+
 	var output string
 	var err error
 

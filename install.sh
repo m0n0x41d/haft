@@ -96,10 +96,11 @@ main() {
         cp "$tmp_dir/bin/$BIN_NAME" "$bin_dir/$BIN_NAME"
         chmod +x "$bin_dir/$BIN_NAME"
 
-        # macOS: clear quarantine attributes so Gatekeeper doesn't kill the binary
+        # macOS: re-sign binary locally to bypass Gatekeeper
+        # Downloaded binaries with foreign ad-hoc signatures get killed
         if [[ "$(uname -s)" == "Darwin" ]]; then
-            xattr -d com.apple.quarantine "$bin_dir/$BIN_NAME" 2>/dev/null || true
-            xattr -d com.apple.provenance "$bin_dir/$BIN_NAME" 2>/dev/null || true
+            codesign --remove-signature "$bin_dir/$BIN_NAME" 2>/dev/null || true
+            codesign -s - "$bin_dir/$BIN_NAME" 2>/dev/null || true
         fi
     else
         printf "${YELLOW}   ⚠ No release found, building from source...${RESET}\n"

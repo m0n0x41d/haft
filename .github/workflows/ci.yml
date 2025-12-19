@@ -50,7 +50,7 @@ jobs:
           cache-dependency-path: src/mcp/go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           working-directory: src/mcp

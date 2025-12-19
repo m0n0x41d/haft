@@ -63,12 +63,33 @@ SELECT * FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != '';
 INSERT INTO relations (source_id, target_id, relation_type, created_at)
 VALUES (?, ?, ?, ?);
 
+-- name: CreateRelation :exec
+INSERT INTO relations (source_id, relation_type, target_id, congruence_level)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(source_id, relation_type, target_id)
+DO UPDATE SET congruence_level = excluded.congruence_level;
+
 -- name: GetRelationsByTarget :many
 SELECT * FROM relations WHERE target_id = ? AND relation_type = ?;
 
 -- name: GetComponentsOf :many
 SELECT source_id, congruence_level FROM relations
 WHERE target_id = ? AND relation_type = 'componentOf';
+
+-- name: GetDependencies :many
+SELECT target_id, relation_type, congruence_level
+FROM relations
+WHERE source_id = ? AND relation_type IN ('componentOf', 'constituentOf');
+
+-- name: GetDependents :many
+SELECT source_id, relation_type, congruence_level
+FROM relations
+WHERE target_id = ? AND relation_type IN ('componentOf', 'constituentOf');
+
+-- name: GetCollectionMembers :many
+SELECT source_id, congruence_level
+FROM relations
+WHERE target_id = ? AND relation_type = 'memberOf';
 
 -- Work record queries
 

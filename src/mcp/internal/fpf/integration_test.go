@@ -98,7 +98,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if fsm.GetPhase() != fpf.PhaseIdle {
 			t.Fatalf("Expected phase IDLE before first proposal, got %s", fsm.GetPhase())
 		}
-		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale")
+		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale", "", nil, 3)
 		if err != nil {
 			t.Fatalf("ProposeHypothesis failed: %v", err)
 		}

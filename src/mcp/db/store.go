@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 	details TEXT,
 	context_id TEXT NOT NULL DEFAULT 'default'
 );
+CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
+CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
 `
 
 type Store struct {
@@ -200,8 +202,21 @@ func (s *Store) Link(ctx context.Context, source, target, relType string) error 
 	})
 }
 
+func (s *Store) CreateRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {
+	return s.q.CreateRelation(ctx, s.conn, CreateRelationParams{
+		SourceID:        sourceID,
+		RelationType:    relationType,
+		TargetID:        targetID,
+		CongruenceLevel: sql.NullInt64{Int64: int64(cl), Valid: true},
+	})
+}
+
 func (s *Store) GetComponentsOf(ctx context.Context, targetID string) ([]GetComponentsOfRow, error) {
 	return s.q.GetComponentsOf(ctx, s.conn, targetID)
+}
+
+func (s *Store) GetDependencies(ctx context.Context, sourceID string) ([]GetDependenciesRow, error) {
+	return s.q.GetDependencies(ctx, s.conn, sourceID)
 }
 
 func (s *Store) GetHolonsByParent(ctx context.Context, parentID string) ([]Holon, error) {

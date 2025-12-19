@@ -73,3 +73,7 @@ CREATE TABLE audit_log (
     details TEXT,
     context_id TEXT NOT NULL DEFAULT 'default'
 );
+
+-- Indexes for WLNK traversal
+CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
+CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);

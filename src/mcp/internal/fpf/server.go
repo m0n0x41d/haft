@@ -151,7 +151,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		},
 		{
 			Name:        "quint_propose",
-			Description: "Propose a new hypothesis (L0).",
+			Description: "Propose a new hypothesis (L0). Optionally declare dependencies and group membership.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -160,6 +160,22 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"scope":     map[string]string{"type": "string", "description": "Scope (G)"},
 					"kind":      map[string]interface{}{"type": "string", "enum": []interface{}{"system", "episteme"}},
 					"rationale": map[string]string{"type": "string", "description": "JSON string of rationale (anomaly, alternatives)"},
+					"decision_context": map[string]string{
+						"type":        "string",
+						"description": "Parent decision/problem ID. Creates MemberOf relation (for grouping alternatives).",
+					},
+					"depends_on": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "IDs of holons this hypothesis depends on. Creates ComponentOf (system) or ConstituentOf (episteme) relations.",
+					},
+					"dependency_cl": map[string]interface{}{
+						"type":        "integer",
+						"minimum":     1,
+						"maximum":     3,
+						"default":     3,
+						"description": "Congruence level for dependencies. CL3=same context, CL2=similar, CL1=different.",
+					},
 				},
 				"required": []string{"title", "content", "scope", "kind", "rationale"},
 			},
@@ -329,7 +345,20 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
-		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"))
+		decisionContext := arg("decision_context")
+		var dependsOn []string
+		if deps, ok := params.Arguments["depends_on"].([]interface{}); ok {
+			for _, d := range deps {
+				if s, ok := d.(string); ok {
+					dependsOn = append(dependsOn, s)
+				}
+			}
+		}
+		dependencyCL := 3
+		if cl, ok := params.Arguments["dependency_cl"].(float64); ok {
+			dependencyCL = int(cl)
+		}
+		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
 		s.tools.FSM.State.Phase = PhaseDeduction

@@ -172,6 +172,30 @@ func (q *Queries) CreateHolon(ctx context.Context, db DBTX, arg CreateHolonParam
 	return err
 }
 
+const createRelation = `-- name: CreateRelation :exec
+INSERT INTO relations (source_id, relation_type, target_id, congruence_level)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(source_id, relation_type, target_id)
+DO UPDATE SET congruence_level = excluded.congruence_level
+`
+
+type CreateRelationParams struct {
+	SourceID        string
+	RelationType    string
+	TargetID        string
+	CongruenceLevel sql.NullInt64
+}
+
+func (q *Queries) CreateRelation(ctx context.Context, db DBTX, arg CreateRelationParams) error {
+	_, err := db.ExecContext(ctx, createRelation,
+		arg.SourceID,
+		arg.RelationType,
+		arg.TargetID,
+		arg.CongruenceLevel,
+	)
+	return err
+}
+
 const getAuditLogByContext = `-- name: GetAuditLogByContext :many
 SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log WHERE context_id = ? ORDER BY timestamp DESC
 `
@@ -283,6 +307,40 @@ func (q *Queries) GetCharacteristics(ctx context.Context, db DBTX, holonID strin
 	return items, nil
 }
 
+const getCollectionMembers = `-- name: GetCollectionMembers :many
+SELECT source_id, congruence_level
+FROM relations
+WHERE target_id = ? AND relation_type = 'memberOf'
+`
+
+type GetCollectionMembersRow struct {
+	SourceID        string
+	CongruenceLevel sql.NullInt64
+}
+
+func (q *Queries) GetCollectionMembers(ctx context.Context, db DBTX, targetID string) ([]GetCollectionMembersRow, error) {
+	rows, err := db.QueryContext(ctx, getCollectionMembers, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCollectionMembersRow
+	for rows.Next() {
+		var i GetCollectionMembersRow
+		if err := rows.Scan(&i.SourceID, &i.CongruenceLevel); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getComponentsOf = `-- name: GetComponentsOf :many
 SELECT source_id, congruence_level FROM relations
 WHERE target_id = ? AND relation_type = 'componentOf'
@@ -303,6 +361,76 @@ func (q *Queries) GetComponentsOf(ctx context.Context, db DBTX, targetID string)
 	for rows.Next() {
 		var i GetComponentsOfRow
 		if err := rows.Scan(&i.SourceID, &i.CongruenceLevel); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDependencies = `-- name: GetDependencies :many
+SELECT target_id, relation_type, congruence_level
+FROM relations
+WHERE source_id = ? AND relation_type IN ('componentOf', 'constituentOf')
+`
+
+type GetDependenciesRow struct {
+	TargetID        string
+	RelationType    string
+	CongruenceLevel sql.NullInt64
+}
+
+func (q *Queries) GetDependencies(ctx context.Context, db DBTX, sourceID string) ([]GetDependenciesRow, error) {
+	rows, err := db.QueryContext(ctx, getDependencies, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDependenciesRow
+	for rows.Next() {
+		var i GetDependenciesRow
+		if err := rows.Scan(&i.TargetID, &i.RelationType, &i.CongruenceLevel); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDependents = `-- name: GetDependents :many
+SELECT source_id, relation_type, congruence_level
+FROM relations
+WHERE target_id = ? AND relation_type IN ('componentOf', 'constituentOf')
+`
+
+type GetDependentsRow struct {
+	SourceID        string
+	RelationType    string
+	CongruenceLevel sql.NullInt64
+}
+
+func (q *Queries) GetDependents(ctx context.Context, db DBTX, targetID string) ([]GetDependentsRow, error) {
+	rows, err := db.QueryContext(ctx, getDependents, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDependentsRow
+	for rows.Next() {
+		var i GetDependentsRow
+		if err := rows.Scan(&i.SourceID, &i.RelationType, &i.CongruenceLevel); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

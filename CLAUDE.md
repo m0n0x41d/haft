@@ -327,6 +327,25 @@ Invoke via Task tool:
 
 **WLNK (Weakest Link)** — R_eff = min(evidence_scores), never average. A chain is only as strong as its weakest link.
 
+### Structural Relations (B.1.1)
+
+Relations are declared during hypothesis creation (Phase 1), not as standalone operations.
+
+**ComponentOf** — System A is physical/functional part of System B.
+- Created via: `quint_propose(..., depends_on=["A"], kind="system")`
+- WLNK effect: `B.R_eff ≤ A.R_eff`
+- Use for: modules, services, subsystems
+
+**ConstituentOf** — Epistemic claim A supports claim B.
+- Created via: `quint_propose(..., depends_on=["A"], kind="episteme")`
+- WLNK effect: `B.R_eff ≤ A.R_eff`
+- Use for: arguments, proofs, documentation
+
+**MemberOf** — A belongs to collection B (non-mereological).
+- Created via: `quint_propose(..., decision_context="B")`
+- No R_eff propagation
+- Use for: grouping alternatives in a decision space
+
 **CL (Congruence Level)** — How well evidence transfers across contexts:
 - CL3: Same context (internal test) — no penalty
 - CL2: Similar context (related project) — minor penalty

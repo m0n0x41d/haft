@@ -51,6 +51,8 @@ The user has presented an anomaly or a design problem.
 4.  Summarize the generated hypotheses to the user.
 
 ## Tool Guide: `quint_propose`
+
+### Required Parameters
 -   **title**: Short, descriptive name (e.g., "Use Redis for Caching").
 -   **content**: The Method (Recipe). Detail *how* it works.
 -   **scope**: The Claim Scope (G). Where does this apply?
@@ -58,6 +60,62 @@ The user has presented an anomaly or a design problem.
 -   **kind**: "system" (for code/architecture) or "episteme" (for process/docs).
 -   **rationale**: A JSON string explaining the "Why".
     *   *Format:* `{"anomaly": "Database overload", "approach": "Cache read-heavy data", "alternatives_rejected": ["Read replicas (too expensive)"]}`
+
+### Optional Parameters (Dependency Modeling)
+-   **decision_context**: ID of parent decision/problem holon.
+    -   Creates `MemberOf` relation (groups alternatives together)
+    -   Example: `"caching-strategy-decision"`
+
+-   **depends_on**: Array of holon IDs this hypothesis depends on.
+    -   Creates `ComponentOf` (if kind=system) or `ConstituentOf` (if kind=episteme)
+    -   Enables WLNK: parent R_eff ≤ dependency R_eff
+    -   Example: `["auth-module", "crypto-library"]`
+
+-   **dependency_cl**: Congruence level for dependencies (1-3, default: 3)
+    -   CL3: Same context (0% penalty)
+    -   CL2: Similar context (10% penalty)
+    -   CL1: Different context (30% penalty)
+
+## Example: Competing Alternatives
+
+```
+# First, create the decision context
+[quint_propose(title="Caching Strategy Decision", kind="episteme", ...)]
+→ Created: caching-strategy-decision
+
+# Then, propose alternatives grouped under it
+[quint_propose(
+    title="Use Redis",
+    kind="system",
+    decision_context="caching-strategy-decision"
+)]
+→ Created: use-redis (MemberOf caching-strategy-decision)
+
+[quint_propose(
+    title="Use CDN Edge Cache",
+    kind="system",
+    decision_context="caching-strategy-decision"
+)]
+→ Created: use-cdn-edge-cache (MemberOf caching-strategy-decision)
+```
+
+## Example: Declaring Dependencies
+
+```
+# Hypothesis that depends on existing holons
+[quint_propose(
+    title="API Gateway with Auth",
+    kind="system",
+    depends_on=["auth-module", "rate-limiter"],
+    dependency_cl=3
+)]
+→ Created: api-gateway-with-auth
+→ Relations: auth-module --componentOf--> api-gateway-with-auth
+             rate-limiter --componentOf--> api-gateway-with-auth
+
+# Now WLNK applies:
+# api-gateway-with-auth.R_eff ≤ min(auth-module.R_eff, rate-limiter.R_eff)
+```
 
 ## Example: Success Path
 

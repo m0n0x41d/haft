@@ -68,7 +68,7 @@ Compute trust scores using:
 ## Commands Reference
 
 | Command | Phase | What It Does |
-|---|---|
+|---|---|---|
 | `/q0-init` | Setup | Initialize `.quint/` and record the Bounded Context. |
 | `/q1-hypothesize` | Abduction | Generate L0 hypotheses for a problem. |
 | `/q1-add` | Abduction | Manually add your own L0 hypothesis. |

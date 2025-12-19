@@ -13,18 +13,16 @@ linters:
     - unused
     - misspell
     - unconvert
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - linters:
+          - staticcheck
+        text: "QF1003"
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  misspell:
-    locale: US
-
-issues:
-  exclude-rules:
-    - linters:
-        - staticcheck
-      text: "QF1003"

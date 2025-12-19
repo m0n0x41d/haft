@@ -300,3 +300,48 @@ Invoke via Task tool:
 9. **No Silent Failures**: Empty catch blocks are bugs
 10. **Be Direct**: "No" is a complete sentence. Disagree when you should.
 11. **Transformer Mandate**: Generate options, human decides. Don't make architectural choices autonomously.
+
+---
+
+## FPF Glossary (Quick Reference)
+
+### Knowledge Layers (Epistemic Status)
+| Layer | Name | Meaning | How to reach |
+|-------|------|---------|--------------|
+| **L0** | Conjecture | Unverified hypothesis | `quint_propose` |
+| **L1** | Substantiated | Logically verified | `quint_verify` PASS |
+| **L2** | Corroborated | Empirically validated | `quint_test` PASS |
+| **invalid** | Falsified | Failed verification/validation | FAIL verdict |
+
+### Core Concepts
+
+**Holon** — A knowledge unit (hypothesis, decision, evidence) stored in `.quint/`. Holons have identity, layer, kind, and assurance scores.
+
+**Kind** — Classification of holon:
+- `system` — Code, architecture, technical implementation
+- `episteme` — Process, documentation, methodology
+
+**Scope (G)** — Where a claim applies. "Redis caching" might have scope "read-heavy endpoints, >1000 RPS".
+
+**R_eff (Effective Reliability)** — Computed trust score (0-1). NOT estimated — must be calculated via `quint_calculate_r`.
+
+**WLNK (Weakest Link)** — R_eff = min(evidence_scores), never average. A chain is only as strong as its weakest link.
+
+**CL (Congruence Level)** — How well evidence transfers across contexts:
+- CL3: Same context (internal test) — no penalty
+- CL2: Similar context (related project) — minor penalty
+- CL1: Different context (external docs) — significant penalty
+
+**DRR (Design Rationale Record)** — Persisted decision with context, rationale, consequences. Created via `quint_decide`.
+
+**Epistemic Debt** — Accumulated staleness when evidence expires. Managed via `/q-decay`.
+
+**Transformer Mandate** — Systems cannot transform themselves. Humans decide; agents document. Autonomous architectural decisions = protocol violation.
+
+### State Machine Phases
+```
+IDLE → ABDUCTION → DEDUCTION → INDUCTION → DECISION → IDLE
+       (q1)         (q2)         (q3)        (q4→q5)
+```
+
+Each phase has preconditions. Skipping phases = blocked tools.

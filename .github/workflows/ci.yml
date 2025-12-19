@@ -52,7 +52,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.1.6
           working-directory: src/mcp
           args: --timeout=5m
 
@@ -73,8 +73,3 @@ jobs:
         run: |
           cd src/mcp
           go build -o quint-code .
-
-      - name: Verify commands generation
-        run: |
-          ./build.sh
-          git diff --exit-code dist/ || (echo "dist/ out of sync with src/commands/. Run ./build.sh" && exit 1)

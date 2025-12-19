@@ -1,6 +1,6 @@
 # The FPF Engine
 
-Quint Code implements the **First Principles Framework (FPF)** — a methodology for structured reasoning developed by [Anatoly Levenchuk](https://ailev.livejournal.com/).
+Quint Code implements the **First Principles Framework (FPF)** — a methodology for structured reasoning developed by [Anatoly Levenchuk](https://github.com/ailev/FPF).
 
 ## The ADI Cycle
 

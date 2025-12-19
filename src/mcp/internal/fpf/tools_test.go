@@ -94,7 +94,7 @@ func TestProposeHypothesis(t *testing.T) {
 	kind := "system"
 	rationale := "This is the rationale."
 
-	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale)
+	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, "", nil, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -543,5 +543,284 @@ func TestVisualizeAudit(t *testing.T) {
 	}
 	if !strings.Contains(result, "R:") {
 		t.Errorf("Expected 'R:' score in output, got: %s", result)
+	}
+}
+
+func TestPropose_WithDecisionContext(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// First create a decision context holon
+	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	// Propose hypothesis with decision_context
+	_, err = tools.ProposeHypothesis(
+		"Use Redis",
+		"Use Redis for caching",
+		"backend",
+		"system",
+		`{"approach": "distributed cache"}`,
+		"caching-decision", // decision_context
+		nil,                // no depends_on
+		3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Verify MemberOf relation was created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE source_id = 'use-redis'
+		AND target_id = 'caching-decision'
+		AND relation_type = 'memberOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 MemberOf relation, got %d", count)
+	}
+}
+
+func TestPropose_WithDependsOn(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create dependency holons first
+	err := tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create auth-module: %v", err)
+	}
+	err = tools.DB.CreateHolon(ctx, "rate-limiter", "hypothesis", "system", "L2", "Rate Limiter", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create rate-limiter: %v", err)
+	}
+
+	// Propose hypothesis with depends_on
+	_, err = tools.ProposeHypothesis(
+		"API Gateway",
+		"Gateway with auth and rate limiting",
+		"external traffic",
+		"system",
+		`{"anomaly": "need unified entry point"}`,
+		"",                                       // no decision_context
+		[]string{"auth-module", "rate-limiter"}, // depends_on
+		3,                                        // CL3
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Verify componentOf relations were created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'api-gateway'
+		AND relation_type = 'componentOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 componentOf relations, got %d", count)
+	}
+}
+
+func TestPropose_CycleDetection(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create holon A
+	err := tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon-a: %v", err)
+	}
+
+	// Create holon B that depends on A
+	_, err = tools.ProposeHypothesis("Holon B", "B depends on A", "global", "system", "{}", "", []string{"holon-a"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for B failed: %v", err)
+	}
+
+	// Now try to create holon C that would create a cycle: A → B → C → A
+	// First add B→C relation manually
+	err = tools.DB.CreateRelation(ctx, "holon-b", "componentOf", "holon-c-temp", 3)
+	if err != nil {
+		// This is okay, C doesn't exist yet
+	}
+
+	// Try to make A depend on B (would create cycle since B already depends on A)
+	// This should be skipped with a warning, not error
+	_, err = tools.ProposeHypothesis("Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "", []string{"holon-b"}, 3)
+	// Should NOT error - cycles are skipped with warning
+	if err != nil {
+		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
+	}
+
+	// The relation should still be created since holon-c-cyclic → holon-b is not itself a cycle
+	// (holon-b → holon-a exists, but holon-a doesn't depend on holon-c-cyclic)
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'holon-c-cyclic'
+		AND source_id = 'holon-b'
+		AND relation_type = 'componentOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	// This should exist since it's not actually a cycle
+	if count != 1 {
+		t.Errorf("Expected 1 componentOf relation for non-cyclic dependency, got %d", count)
+	}
+}
+
+func TestPropose_InvalidDependency(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	fsm.State.Phase = PhaseAbduction
+
+	// Propose hypothesis with non-existent dependency
+	_, err := tools.ProposeHypothesis(
+		"Orphan Hypo",
+		"Depends on non-existent holon",
+		"global",
+		"system",
+		"{}",
+		"",
+		[]string{"does-not-exist", "also-missing"}, // These don't exist
+		3,
+	)
+	// Should NOT error - invalid deps are skipped with warning
+	if err != nil {
+		t.Fatalf("ProposeHypothesis should not error on invalid deps, got: %v", err)
+	}
+
+	// Verify no relations were created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	ctx := context.Background()
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'orphan-hypo'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Expected 0 relations for invalid deps, got %d", count)
+	}
+}
+
+func TestPropose_KindDeterminesRelation(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create a dependency holon
+	err := tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create base-claim: %v", err)
+	}
+
+	// Propose system hypothesis - should create componentOf
+	_, err = tools.ProposeHypothesis("System Hypo", "A system thing", "global", "system", "{}", "", []string{"base-claim"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for system failed: %v", err)
+	}
+
+	// Propose episteme hypothesis - should create constituentOf
+	_, err = tools.ProposeHypothesis("Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "", []string{"base-claim"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
+	}
+
+	rawDB := tools.DB.GetRawDB()
+
+	// Check system → componentOf
+	var componentCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'system-hypo'
+		AND relation_type = 'componentOf'
+	`).Scan(&componentCount)
+	if err != nil {
+		t.Fatalf("Failed to query componentOf: %v", err)
+	}
+	if componentCount != 1 {
+		t.Errorf("Expected 1 componentOf for system kind, got %d", componentCount)
+	}
+
+	// Check episteme → constituentOf
+	var constituentCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'episteme-hypo'
+		AND relation_type = 'constituentOf'
+	`).Scan(&constituentCount)
+	if err != nil {
+		t.Fatalf("Failed to query constituentOf: %v", err)
+	}
+	if constituentCount != 1 {
+		t.Errorf("Expected 1 constituentOf for episteme kind, got %d", constituentCount)
+	}
+}
+
+func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create decision context with low R (failing evidence)
+	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create bad-decision: %v", err)
+	}
+	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add failing evidence: %v", err)
+	}
+
+	// Create good hypothesis that is member of bad decision
+	_, err = tools.ProposeHypothesis(
+		"Good Member",
+		"A good hypothesis",
+		"global",
+		"system",
+		"{}",
+		"bad-decision", // MemberOf the bad decision
+		nil,
+		3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Add passing evidence to good-member
+	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add passing evidence: %v", err)
+	}
+
+	// Calculate R for good-member
+	result, err := tools.CalculateR("good-member")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// MemberOf should NOT propagate R - good-member should have R=1.00
+	// despite bad-decision having R=0.00
+	if !strings.Contains(result, "1.00") {
+		t.Errorf("Expected R=1.00 (MemberOf should not propagate), got: %s", result)
 	}
 }

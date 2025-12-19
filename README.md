@@ -99,6 +99,7 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 - [FPF Engine Details](docs/fpf-engine.md) — ADI cycle, commands, when to use
 - [Architecture](docs/architecture.md) — Internals, knowledge levels, Transformer Mandate
+- [Contributing](CONTRIBUTING.md) — How to contribute
 
 ## License
 

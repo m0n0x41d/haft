@@ -35,7 +35,11 @@ jobs:
       - name: Build MCP binary
         run: |
           cd src/mcp
-          go build -o "../../dist/quint-code" -trimpath
+          VERSION=${GITHUB_REF_NAME#v}
+          COMMIT=${GITHUB_SHA::8}
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-s -w -X quint-mcp/cmd.Version=${VERSION} -X quint-mcp/cmd.Commit=${COMMIT} -X quint-mcp/cmd.BuildDate=${DATE}"
+          go build -o "../../dist/quint-code" -trimpath -ldflags "${LDFLAGS}"
 
       - name: Create release package
         run: |

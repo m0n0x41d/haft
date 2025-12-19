@@ -111,7 +111,7 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	if err != nil {
 		return PhaseIdle
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	counts := make(map[string]int64)
 	for rows.Next() {

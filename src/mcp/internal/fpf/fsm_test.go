@@ -52,7 +52,7 @@ func TestSaveState(t *testing.T) {
 func TestCanTransition(t *testing.T) {
 	// Setup temp dir for dummy evidence
 	tempDir := t.TempDir()
-	
+
 	// Create dummy evidence directories/files
 	// Deduction needs L0 directory
 	l0Dir := filepath.Join(tempDir, "knowledge", "L0")
@@ -80,7 +80,9 @@ func TestCanTransition(t *testing.T) {
 
 	// Helper for EvidenceStub
 	ev := func(uri string) *EvidenceStub {
-		if uri == "" { return nil }
+		if uri == "" {
+			return nil
+		}
 		return &EvidenceStub{URI: uri, Type: "test"}
 	}
 
@@ -97,13 +99,13 @@ func TestCanTransition(t *testing.T) {
 		{"IdleToAbduction", PhaseIdle, PhaseAbduction, RoleAbductor, "any", true, "OK"}, // Evidence not strictly checked for Abduction entry
 		{"AbductionToDeduction", PhaseAbduction, PhaseDeduction, RoleDeductor, l0Dir, true, "OK"},
 		{"DeductionToInduction", PhaseDeduction, PhaseInduction, RoleInductor, l1File, true, "OK"},
-		{"InductionToDeductionLoopback", PhaseInduction, PhaseDeduction, RoleDeductor, l0Dir, true, "OK"}, // Loopback might point to L0 logic? 
-		// Actually loopback usually implies we have failed evidence. 
+		{"InductionToDeductionLoopback", PhaseInduction, PhaseDeduction, RoleDeductor, l0Dir, true, "OK"}, // Loopback might point to L0 logic?
+		// Actually loopback usually implies we have failed evidence.
 		// validateEvidence for Deduction checks if URI is a dir with files.
 		// So l0Dir works.
 		{"InductionToDecision", PhaseInduction, PhaseDecision, RoleDecider, l2File, true, "OK"},
 		{"DecisionToIdle", PhaseDecision, PhaseIdle, RoleDecider, "any", true, "OK"},
-		{"SelfLoopValid", PhaseAbduction, PhaseAbduction, RoleAbductor, "", true, "OK"}, 
+		{"SelfLoopValid", PhaseAbduction, PhaseAbduction, RoleAbductor, "", true, "OK"},
 	}
 
 	for _, tt := range tests {
@@ -149,10 +151,10 @@ func TestCanTransition(t *testing.T) {
 
 func TestIsValidRoleForPhase(t *testing.T) {
 	tests := []struct {
-		name        string
-		phase       Phase
-		role        Role
-		expected    bool
+		name     string
+		phase    Phase
+		role     Role
+		expected bool
 	}{
 		{"IdleAnyRole", PhaseIdle, RoleAbductor, true},
 		{"AbductorInAbduction", PhaseAbduction, RoleAbductor, true},

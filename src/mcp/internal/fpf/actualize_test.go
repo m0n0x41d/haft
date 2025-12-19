@@ -14,7 +14,7 @@ import (
 func TestActualize_GitReconciliation(t *testing.T) {
 	// 1. Setup a temp dir that is also a git repo
 	tempDir := t.TempDir()
-	
+
 	// Initialize git repo
 	runGit := func(args ...string) error {
 		cmd := exec.Command("git", args...)
@@ -54,7 +54,7 @@ func TestActualize_GitReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to init DB: %v", err)
 	}
-	
+
 	fsm := &fpf.FSM{
 		State: fpf.State{Phase: fpf.PhaseIdle},
 		DB:    database.GetRawDB(),
@@ -105,7 +105,7 @@ func TestActualize_GitReconciliation(t *testing.T) {
 
 func TestActualize_LegacyMigration(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create legacy .fpf dir and fpf.db
 	legacyDir := filepath.Join(tempDir, ".fpf")
 	if err := os.MkdirAll(legacyDir, 0755); err != nil {
@@ -120,7 +120,7 @@ func TestActualize_LegacyMigration(t *testing.T) {
 	// We pass nil DB initially to let tools handle it, or create a temporary one if needed by NewTools logic
 	// But Actualize handles .quint creation. Let's see if NewTools fails if .quint doesn't exist.
 	// NewTools attempts to open DB. If it fails, it prints warning but continues.
-	
+
 	fsm := &fpf.FSM{State: fpf.State{Phase: fpf.PhaseIdle}}
 	tools := fpf.NewTools(fsm, tempDir, nil)
 

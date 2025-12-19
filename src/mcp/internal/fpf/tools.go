@@ -19,6 +19,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var slugifyRegex = regexp.MustCompile("[^a-zA-Z0-9]+")
+
 type Tools struct {
 	FSM     *FSM
 	RootDir string
@@ -68,8 +70,7 @@ func (t *Tools) AuditLog(toolName, operation, actor, targetID, result string, in
 }
 
 func (t *Tools) Slugify(title string) string {
-	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
-	slug := reg.ReplaceAllString(strings.ToLower(title), "-")
+	slug := slugifyRegex.ReplaceAllString(strings.ToLower(title), "-")
 	return strings.Trim(slug, "-")
 }
 
@@ -221,8 +222,8 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 		}
 	}
 
-	v := strings.ToLower(verdict)
-	if v == "pass" {
+	switch strings.ToLower(verdict) {
+	case "pass":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
@@ -236,7 +237,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
 		return fmt.Sprintf("Hypothesis %s (kind: %s) promoted to L1", hypothesisID, carrierRef), nil
-	} else if v == "fail" {
+	case "fail":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
@@ -244,12 +245,12 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (stri
 		}
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "invalid"}, "")
 		return fmt.Sprintf("Hypothesis %s moved to invalid", hypothesisID), nil
-	} else if v == "refine" {
+	case "refine":
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "REFINE", "result": "L0"}, "")
 		return fmt.Sprintf("Hypothesis %s requires refinement (staying in L0)", hypothesisID), nil
+	default:
+		return "", fmt.Errorf("unknown verdict: %s", verdict)
 	}
-
-	return "", fmt.Errorf("unknown verdict: %s", verdict)
 }
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
@@ -308,7 +309,7 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 			_, moveErr = t.MoveHypothesis(targetID, "L0", "L1")
 		case PhaseInduction:
 			if _, err := os.Stat(filepath.Join(t.GetFPFDir(), "knowledge", "L0", targetID+".md")); err == nil {
-				return "", fmt.Errorf("Hypothesis %s is still in L0. Run /q2-verify to promote it to L1 before testing.", targetID)
+				return "", fmt.Errorf("hypothesis %s is still in L0: run /q2-verify to promote it to L1 before testing", targetID)
 			}
 			_, moveErr = t.MoveHypothesis(targetID, "L1", "L2")
 		}
@@ -655,7 +656,7 @@ func (t *Tools) CheckDecay() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var result strings.Builder
 	result.WriteString("## Evidence Decay Report\n\n")

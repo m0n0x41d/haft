@@ -28,7 +28,7 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 
 	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: database.GetRawDB()} // Initial FSM state with DB
 
-tools := NewTools(fsm, tempDir, database)
+	tools := NewTools(fsm, tempDir, database)
 
 	// Initialize the project structure for tools to operate
 	err = tools.InitProject()
@@ -41,7 +41,7 @@ tools := NewTools(fsm, tempDir, database)
 
 func TestSlugify(t *testing.T) {
 
-tools, _, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	tests := []struct {
 		input    string
 		expected string
@@ -85,7 +85,7 @@ func TestInitProject(t *testing.T) {
 
 func TestProposeHypothesis(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseAbduction // Set phase for valid Propose
 
 	title := "My First Hypothesis"
@@ -134,7 +134,7 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestManageEvidence(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-hypo"
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("Hypothesis content"), 0644); err != nil {
@@ -142,22 +142,22 @@ tools, fsm, tempDir := setupTools(t)
 	}
 
 	tests := []struct {
-		name        string
-		currentPhase Phase
-		targetID    string
-		evidenceType string
-		content     string
-		verdict     string
-		assuranceLevel string // New field
-		expectedMove bool
+		name              string
+		currentPhase      Phase
+		targetID          string
+		evidenceType      string
+		content           string
+		verdict           string
+		assuranceLevel    string // New field
+		expectedMove      bool
 		expectedDestLevel string // e.g., "L1", "L2", "invalid"
-		expectErr   bool
+		expectErr         bool
 	}{
 		// Deductor (DEDUCTION phase)
 		{"DeductionPass", PhaseDeduction, hypoID, "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
 		{"DeductionFail", PhaseDeduction, hypoID, "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
 		{"DeductionRefine", PhaseDeduction, hypoID, "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
-		
+
 		// Inductor (INDUCTION phase) - need another hypo in L1
 		{"InductionPass", PhaseInduction, "hypo-L1", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
 		{"InductionFail", PhaseInduction, "hypo-L1", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
@@ -170,7 +170,7 @@ tools, fsm, tempDir := setupTools(t)
 
 			// Declare srcLevel outside conditional blocks to have proper scope
 			var srcLevel string
-			
+
 			// Prepare for move if needed (create dummy hypo in source level)
 			if tt.expectedMove {
 				switch tt.currentPhase {
@@ -205,7 +205,7 @@ tools, fsm, tempDir := setupTools(t)
 			if _, err := os.Stat(evidencePath); os.IsNotExist(err) {
 				t.Errorf("Evidence file was not created at %s", evidencePath)
 			}
-			
+
 			// Verify hypothesis move
 			if tt.expectedMove {
 				expectedDestPath := filepath.Join(tempDir, ".quint", "knowledge", tt.expectedDestLevel, tt.targetID+".md")
@@ -227,7 +227,7 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestRefineLoopback(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	parentID := "parent-hypo"
 	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
 	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
@@ -271,7 +271,7 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestFinalizeDecision(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseDecision // Simulate being in Decision phase
 
 	winnerID := "final-winner"
@@ -322,9 +322,9 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestVerifyHypothesis(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-verify-hypo"
-	
+
 	// Create dummy L0 hypothesis
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("L0 content"), 0644); err != nil {
@@ -351,7 +351,7 @@ tools, fsm, tempDir := setupTools(t)
 	if err := os.WriteFile(hypoPath2, []byte("L0 content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
 	}
-	
+
 	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
@@ -367,20 +367,20 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestAuditEvidence(t *testing.T) {
 
-tools, fsm, _ := setupTools(t)
+	tools, fsm, _ := setupTools(t)
 	fsm.State.Phase = PhaseDecision // Audit typically happens near decision or end of induction
-	
+
 	hypoID := "audit-hypo"
-	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself, 
+	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself,
 	// but ManageEvidence might rely on DB. For unit test, we focus on the wrapper call.)
-	
+
 	// AuditEvidence calls ManageEvidence with PhaseDecision.
 	// ManageEvidence checks DB if action is "check", but here action is "add" (implied).
 	// We need to ensure DB is happy if it checks constraints.
-	
+
 	// In tools.go, AuditEvidence calls:
 	// t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "PASS", "L2", "auditor", "")
-	
+
 	msg, err := tools.AuditEvidence(hypoID, "Risk analysis content")
 	if err != nil {
 		t.Errorf("AuditEvidence failed: %v", err)

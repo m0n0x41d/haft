@@ -48,14 +48,6 @@ func extractHashFromFrontmatter(frontmatter string) string {
 	return ""
 }
 
-func addHashToFrontmatter(frontmatter, hash string) string {
-	re := regexp.MustCompile(`(?m)^content_hash:.*$`)
-	if re.MatchString(frontmatter) {
-		return re.ReplaceAllString(frontmatter, "content_hash: "+hash)
-	}
-	return frontmatter + "\ncontent_hash: " + hash
-}
-
 func WriteWithHash(path string, frontmatterFields map[string]string, body string) error {
 	hash := ComputeContentHash(body)
 

@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"quint-mcp/db"
 	"quint-mcp/internal/fpf"
+
+	"github.com/spf13/cobra"
 )
 
 var serveCmd = &cobra.Command{

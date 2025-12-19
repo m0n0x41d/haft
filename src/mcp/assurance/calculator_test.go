@@ -78,7 +78,7 @@ func TestCalculateReliability_WeakestLink(t *testing.T) {
 
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e1', 'A', 'pass', ?)", time.Now().Add(24*time.Hour))
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e2', 'B', 'fail', ?)", time.Now().Add(24*time.Hour))
-	
+
 	// B is component of A
 	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 3)")
 
@@ -100,7 +100,7 @@ func TestCalculateReliability_CLPenalty(t *testing.T) {
 
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e1', 'A', 'pass', ?)", time.Now().Add(24*time.Hour))
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e2', 'B', 'pass', ?)", time.Now().Add(24*time.Hour))
-	
+
 	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 1)")
 
 	calc := New(db)

@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"quint-mcp/db"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -185,7 +186,7 @@ func initializeDatabase(quintDir string) error {
 	if err != nil {
 		return err
 	}
-	database.Close()
+	_ = database.Close()
 	return nil
 }
 
@@ -305,4 +306,3 @@ env = { QUINT_PROJECT_ROOT = "%s" }
 
 	return os.WriteFile(configPath, []byte(updated), 0644)
 }
-

@@ -102,4 +102,4 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 ## License
 
-MIT License. FPF methodology by [Anatoly Levenchuk](https://ailev.livejournal.com/).
+MIT License. FPF methodology by [Anatoly Levenchuk](https://github.com/ailev/FPF).

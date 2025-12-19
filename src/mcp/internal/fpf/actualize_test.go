@@ -50,7 +50,7 @@ func TestActualize_GitReconciliation(t *testing.T) {
 		t.Fatalf("Failed to create .quint dir: %v", err)
 	}
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to init DB: %v", err)
 	}

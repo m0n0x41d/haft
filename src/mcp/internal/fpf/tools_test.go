@@ -1,9 +1,11 @@
 package fpf
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"quint-mcp/db"
@@ -19,7 +21,7 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 
 	// Create a dummy DB file
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
@@ -320,9 +322,8 @@ tools, fsm, tempDir := setupTools(t)
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
-	expectedMsg := fmt.Sprintf("Hypothesis %s promoted to L1", hypoID)
-	if msg != expectedMsg {
-		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
+	if !strings.Contains(msg, "promoted to L1") {
+		t.Errorf("Expected message to contain 'promoted to L1', got %q", msg)
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")); os.IsNotExist(err) {
 		t.Errorf("Hypothesis not moved to L1")
@@ -373,7 +374,159 @@ tools, fsm, _ := setupTools(t)
 	if msg != expectedMsg {
 		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
 	}
-	
-	// We could verify DB side effects if we exposed DB in tests more directly, 
+
+	// We could verify DB side effects if we exposed DB in tests more directly,
 	// but for now we verify no error and correct return message.
+}
+
+func TestCalculateR(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with evidence
+	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add passing evidence
+	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Calculate R
+	result, err := tools.CalculateR("calc-r-test")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// Verify output contains expected elements
+	if !strings.Contains(result, "Reliability Report") {
+		t.Errorf("Expected 'Reliability Report' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "R_eff:") {
+		t.Errorf("Expected 'R_eff:' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "1.00") {
+		t.Errorf("Expected R_eff of 1.00 for passing evidence, got: %s", result)
+	}
+}
+
+func TestCalculateR_WithDecay(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with expired evidence
+	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add expired evidence (past date)
+	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Calculate R
+	result, err := tools.CalculateR("decay-r-test")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// Verify decay is mentioned
+	if !strings.Contains(result, "Decay") || !strings.Contains(result, "expired") {
+		t.Errorf("Expected decay/expired mention in output, got: %s", result)
+	}
+}
+
+func TestCheckDecay_NoExpired(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with fresh evidence
+	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add future-dated evidence
+	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Check decay
+	result, err := tools.CheckDecay()
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+
+	// Should report no expired evidence
+	if !strings.Contains(result, "No expired evidence") {
+		t.Errorf("Expected 'No expired evidence' message, got: %s", result)
+	}
+}
+
+func TestCheckDecay_WithExpired(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with expired evidence
+	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add expired evidence
+	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Check decay
+	result, err := tools.CheckDecay()
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+
+	// Should report the expired evidence
+	if !strings.Contains(result, "stale-holon") {
+		t.Errorf("Expected 'stale-holon' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "Expired evidence") {
+		t.Errorf("Expected 'Expired evidence' count in output, got: %s", result)
+	}
+}
+
+func TestVisualizeAudit(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon
+	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add evidence
+	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Visualize audit
+	result, err := tools.VisualizeAudit("audit-viz-test")
+	if err != nil {
+		t.Fatalf("VisualizeAudit failed: %v", err)
+	}
+
+	// Should contain the holon ID and R score
+	if !strings.Contains(result, "audit-viz-test") {
+		t.Errorf("Expected 'audit-viz-test' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "R:") {
+		t.Errorf("Expected 'R:' score in output, got: %s", result)
+	}
 }

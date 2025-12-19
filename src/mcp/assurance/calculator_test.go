@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
 	// Use cache=shared to share DB across connections in the pool
-	db, err := sql.Open("sqlite3", "file:memdb1?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:memdb1?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}

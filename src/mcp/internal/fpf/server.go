@@ -228,6 +228,36 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{},
 			},
 		},
+		{
+			Name:        "quint_audit_tree",
+			Description: "Visualize the assurance tree for a holon, showing R scores, dependencies, and CL penalties.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"holon_id": map[string]string{"type": "string", "description": "ID of the holon to audit"},
+				},
+				"required": []string{"holon_id"},
+			},
+		},
+		{
+			Name:        "quint_calculate_r",
+			Description: "Calculate the effective reliability (R_eff) for a holon with detailed breakdown.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"holon_id": map[string]string{"type": "string", "description": "ID of the holon"},
+				},
+				"required": []string{"holon_id"},
+			},
+		},
+		{
+			Name:        "quint_check_decay",
+			Description: "Check for expired evidence across all holons. Returns list of holons with stale evidence.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{
@@ -317,6 +347,15 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 			}
 		}
+
+	case "quint_audit_tree":
+		output, err = s.tools.VisualizeAudit(arg("holon_id"))
+
+	case "quint_calculate_r":
+		output, err = s.tools.CalculateR(arg("holon_id"))
+
+	case "quint_check_decay":
+		output, err = s.tools.CheckDecay()
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

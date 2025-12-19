@@ -1,22 +1,33 @@
 # q-decay: Assurance Maintenance
 
 ## Intent
-Calculates **Epistemic Debt (ED)** and updates **Reliability (R)** scores for all holons based on evidence freshness.
+Identifies **Epistemic Debt (ED)** by finding holons with expired evidence that need re-validation.
 
-## Usage
-`quint-mcp --action decay`
+## Action (Run-Time)
+1.  Call `quint_check_decay` to get a report of all holons with expired evidence.
+2.  Review the output - it shows:
+    -   Which holons have stale evidence
+    -   How many evidence items are expired
+    -   How many days overdue
+3.  Present findings to the user with recommendations.
 
-## Description
-This command implements the **Evidence Decay (B.3.4)** pattern. It:
-1.  Iterates through all holons in the system.
-2.  Checks the `valid_until` date of all associated evidence.
-3.  Applies decay penalties to the `R` score if evidence is expired.
-4.  Recalculates the **Weakest Link (WLNK)** score for dependencies.
-5.  Updates the `cached_r_score` in the database.
+## Tool Guide
 
-## Output
--   Updates `cached_r_score` for all holons.
--   Logs significant decay events to stdout.
+### `quint_check_decay`
+Scans all evidence and identifies expired items. Implements **Evidence Decay (B.3.4)**.
+-   *No parameters required.*
+-   *Returns:* Markdown report listing:
+    -   Holons with expired evidence
+    -   Count of expired evidence per holon
+    -   Days overdue
+    -   Recommendation to run `/q3-validate` for affected holons
 
 ## Example
-`quint-mcp --action decay`
+User: `/q-decay`
+
+Agent calls:
+1.  `quint_check_decay()`
+
+If expired evidence is found, recommend:
+-   Run `/q3-validate <hypothesis_id>` to refresh evidence
+-   Or run `/q4-audit <hypothesis_id>` to reassess reliability

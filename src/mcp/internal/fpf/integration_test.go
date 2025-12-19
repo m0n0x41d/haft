@@ -39,7 +39,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to create .quint directory: %v", err)
 	}
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}

@@ -5,6 +5,39 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - Unreleased
+
+### Added
+
+- **sqlc Integration**: Type-safe database queries generated from SQL.
+  - All database operations now use sqlc-generated code with proper type safety.
+  - New `db/store.go` wrapper provides clean API while preserving schema bootstrap.
+  - Added comprehensive test suite for database operations (`db/store_test.go`).
+
+- **GetHolon Query**: Added query to fetch hypothesis metadata by ID (foundation for future Kind-CAL work).
+
+- **New MCP Tools for Trust Calculus (B.3)**:
+  - `quint_audit_tree`: Visualize assurance tree with R scores, dependencies, and CL penalties.
+  - `quint_calculate_r`: Compute R_eff with detailed breakdown (self score, weakest link, decay penalties).
+  - `quint_check_decay`: Identify holons with expired evidence (epistemic debt detection).
+
+### Changed
+
+- **Updated FPF Commands**: Commands now leverage new MCP tools for computed data:
+  - `/q4-audit`: Now calls `quint_calculate_r` and `quint_audit_tree` before recording findings.
+  - `/q5-decide`: Now uses `quint_calculate_r` for final R_eff comparison before decision.
+  - `/q-audit`: Updated to use visualization tools.
+  - `/q-decay`: Updated to use `quint_check_decay` for proactive decay detection.
+  - `/q-status`: Now proactively checks for expired evidence.
+
+- **SQLite Driver Migration**: Replaced CGO-based `mattn/go-sqlite3` with pure Go `modernc.org/sqlite`.
+  - Enables `CGO_ENABLED=0` builds for simplified cross-compilation.
+  - Cross-compilation now works for linux/amd64, linux/arm64, darwin/*, windows/amd64.
+  - Unblocks single-runner GoReleaser builds.
+  - No functional changes to database behavior.
+
+---
+
 ## [4.0.0] - 2025-12-18
 
 ### Added

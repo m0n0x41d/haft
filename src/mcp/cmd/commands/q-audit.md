@@ -3,20 +3,29 @@
 ## Intent
 Visualizes the **Assurance Tree** for a holon, showing dependencies, **Reliability (R)** scores, and **Congruence Level (CL)** penalties.
 
-## Usage
-`quint-mcp --action audit --target_id <holon_id>`
+## Action (Run-Time)
+1.  Call `quint_audit_tree` with `holon_id` to get the visual dependency tree.
+2.  Call `quint_calculate_r` with `holon_id` to get detailed R_eff breakdown.
+3.  Present the results to the user.
 
-## Description
-This command implements the **Trust & Assurance Calculus (B.3)** visualization. It:
-1.  Recursively traverses the dependency graph starting from `<holon_id>`.
-2.  Calculates the `R_score` for each node using the **Weakest Link** principle.
-3.  Displays the tree with:
+## Tool Guide
+
+### `quint_audit_tree`
+Visualizes the assurance tree. Implements **Trust & Assurance Calculus (B.3)**.
+-   **holon_id**: The root holon to audit.
+-   *Returns:* ASCII tree with:
     -   R-scores (e.g., `[R: 0.85]`)
     -   Congruence Levels (e.g., `-- (CL: 2) -->`)
     -   Penalty warnings (e.g., `! Evidence expired`)
 
-## Output
-An ASCII tree representation of the holon's assurance status.
+### `quint_calculate_r`
+Computes R_eff with detailed breakdown.
+-   **holon_id**: The holon to calculate.
+-   *Returns:* Markdown report with R_eff, self score, weakest link, decay penalties.
 
 ## Example
-`quint-mcp --action audit --target_id system-auth`
+User: `/q-audit system-auth`
+
+Agent calls:
+1.  `quint_audit_tree(holon_id: "system-auth")`
+2.  `quint_calculate_r(holon_id: "system-auth")`

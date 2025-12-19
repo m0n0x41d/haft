@@ -181,7 +181,7 @@ func createDirectoryStructure(quintDir string) error {
 
 func initializeDatabase(quintDir string) error {
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return err
 	}

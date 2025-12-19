@@ -1,54 +1,66 @@
 -- query.sql
+-- sqlc queries for FPF database operations
+
+-- Holon queries
+
+-- name: CreateHolon :exec
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetHolon :one
-SELECT * FROM holons
-WHERE id = ? LIMIT 1;
+SELECT * FROM holons WHERE id = ? LIMIT 1;
+
+-- name: GetHolonTitle :one
+SELECT title FROM holons WHERE id = ? LIMIT 1;
+
+-- name: ListAllHolonIDs :many
+SELECT id FROM holons;
 
 -- name: ListHolonsByLayer :many
-SELECT * FROM holons
-WHERE layer = ?
-ORDER BY created_at DESC;
-
--- name: CreateHolon :one
-INSERT INTO holons (id, type, layer, title, content, context_id)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING *;
+SELECT * FROM holons WHERE layer = ? ORDER BY created_at DESC;
 
 -- name: UpdateHolonLayer :exec
-UPDATE holons
-SET layer = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+UPDATE holons SET layer = ?, updated_at = ? WHERE id = ?;
 
--- name: CreateEvidence :one
-INSERT INTO evidence (id, holon_id, type, content, verdict, valid_until)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING *;
+-- name: UpdateHolonRScore :exec
+UPDATE holons SET cached_r_score = ?, updated_at = ? WHERE id = ?;
 
--- name: GetEvidenceForHolon :many
-SELECT * FROM evidence
-WHERE holon_id = ?
-ORDER BY created_at DESC;
+-- Evidence queries
 
--- name: AddCharacteristic :exec
-INSERT INTO characteristics (id, holon_id, name, scale, value, unit)
-VALUES (?, ?, ?, ?, ?, ?);
+-- name: AddEvidence :exec
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- name: GetCharacteristics :many
-SELECT * FROM characteristics
-WHERE holon_id = ?;
+-- name: GetEvidenceByHolon :many
+SELECT * FROM evidence WHERE holon_id = ? ORDER BY created_at DESC;
+
+-- name: GetEvidenceWithCarrier :many
+SELECT * FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != '';
+
+-- Relation queries
 
 -- name: AddRelation :exec
-INSERT INTO relations (source_id, target_id, relation_type)
-VALUES (?, ?, ?);
+INSERT INTO relations (source_id, target_id, relation_type, created_at)
+VALUES (?, ?, ?, ?);
 
--- name: GetLinksFrom :many
-SELECT h.*, r.relation_type
-FROM holons h
-JOIN relations r ON h.id = r.target_id
-WHERE r.source_id = ?;
+-- name: GetRelationsByTarget :many
+SELECT * FROM relations WHERE target_id = ? AND relation_type = ?;
 
--- name: GetLinksTo :many
-SELECT h.*, r.relation_type
-FROM holons h
-JOIN relations r ON h.id = r.source_id
-WHERE r.target_id = ?;
+-- name: GetComponentsOf :many
+SELECT source_id, congruence_level FROM relations
+WHERE target_id = ? AND relation_type = 'componentOf';
+
+-- Work record queries
+
+-- name: RecordWork :exec
+INSERT INTO work_records (id, method_ref, performer_ref, started_at, ended_at, resource_ledger, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- Characteristic queries
+
+-- name: AddCharacteristic :exec
+INSERT INTO characteristics (id, holon_id, name, scale, value, unit, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetCharacteristics :many
+SELECT * FROM characteristics WHERE holon_id = ?;

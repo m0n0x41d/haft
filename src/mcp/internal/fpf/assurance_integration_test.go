@@ -13,7 +13,7 @@ import (
 	"quint-mcp/internal/fpf"
 )
 
-func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.DB, string) {
+func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.Store, string) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
 	if err := os.MkdirAll(quintDir, 0755); err != nil {
@@ -21,7 +21,7 @@ func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.DB, string) {
 	}
 
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}

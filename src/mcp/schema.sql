@@ -3,14 +3,14 @@
 
 CREATE TABLE holons (
     id TEXT PRIMARY KEY,
-    type TEXT NOT NULL, -- 'hypothesis', 'system', 'method', 'capability'
-    kind TEXT, -- 'system' (architecture/code) or 'episteme' (knowledge/docs) - C.3 Kind-CAL
-    layer TEXT NOT NULL, -- 'L0', 'L1', 'L2', 'invalid'
+    type TEXT NOT NULL,
+    kind TEXT,
+    layer TEXT NOT NULL,
     title TEXT NOT NULL,
-    content TEXT NOT NULL, -- Markdown content or reference
-    context_id TEXT NOT NULL, -- Bounded Context ID
-    scope TEXT, -- Claim Scope (G)
-    cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0), -- B.3 Assurance Score
+    content TEXT NOT NULL,
+    context_id TEXT NOT NULL,
+    scope TEXT,
+    cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -18,10 +18,12 @@ CREATE TABLE holons (
 CREATE TABLE evidence (
     id TEXT PRIMARY KEY,
     holon_id TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'test_result', 'formal_proof', 'log'
+    type TEXT NOT NULL,
     content TEXT NOT NULL,
-    verdict TEXT NOT NULL, -- 'pass', 'fail', 'degrade'
-    valid_until DATETIME, -- B.3.4 Evidence Decay
+    verdict TEXT NOT NULL,
+    assurance_level TEXT,
+    carrier_ref TEXT,
+    valid_until DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(holon_id) REFERENCES holons(id)
 );
@@ -29,8 +31,8 @@ CREATE TABLE evidence (
 CREATE TABLE characteristics (
     id TEXT PRIMARY KEY,
     holon_id TEXT NOT NULL,
-    name TEXT NOT NULL, -- 'F', 'G', 'R', 'latency', 'coverage'
-    scale TEXT NOT NULL, -- 'ordinal', 'ratio', 'interval', 'nominal'
+    name TEXT NOT NULL,
+    scale TEXT NOT NULL,
     value TEXT NOT NULL,
     unit TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -40,10 +42,20 @@ CREATE TABLE characteristics (
 CREATE TABLE relations (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL, -- 'verifiedBy', 'componentOf', 'refines', 'performedBy'
-    congruence_level INTEGER DEFAULT 3 CHECK(congruence_level BETWEEN 0 AND 3), -- B.3 Congruence Level
+    relation_type TEXT NOT NULL,
+    congruence_level INTEGER DEFAULT 3 CHECK(congruence_level BETWEEN 0 AND 3),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source_id, target_id, relation_type),
     FOREIGN KEY(source_id) REFERENCES holons(id),
     FOREIGN KEY(target_id) REFERENCES holons(id)
+);
+
+CREATE TABLE work_records (
+    id TEXT PRIMARY KEY,
+    method_ref TEXT NOT NULL,
+    performer_ref TEXT NOT NULL,
+    started_at DATETIME NOT NULL,
+    ended_at DATETIME,
+    resource_ledger TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

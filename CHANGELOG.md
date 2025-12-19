@@ -78,6 +78,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Adds `parent_id` and `cached_r_score` columns to existing `holons` table.
   - Safe to run multiple times (idempotent).
 
+- **CI/CD Pipeline**:
+  - New GitHub Actions workflow (`.github/workflows/ci.yml`) for pull requests.
+  - Triggers on PRs and pushes to `main` and `dev` branches.
+  - Runs tests with race detector and coverage reporting.
+  - Runs `golangci-lint` for code quality (errcheck, govet, staticcheck, unused, misspell).
+  - Verifies build succeeds and `dist/` stays in sync with source.
+  - Added `.golangci.yml` configuration for consistent linting.
+
+- **Pre-commit Hooks**:
+  - Added `.pre-commit-config.yaml` for use with pre-commit tool.
+  - Added `.githooks/pre-commit` for simple git-native hooks (no dependencies).
+  - Hooks include: gofmt, goimports, go build, go test, golangci-lint.
+  - Setup via `./scripts/setup-hooks.sh` or `./scripts/setup-hooks.sh --precommit`.
+  - Also checks: trailing whitespace, end-of-file, yaml syntax, large files, merge conflicts, private keys.
+
 ### Changed
 
 - **Updated FPF Commands**: Commands now leverage new MCP tools for computed data:

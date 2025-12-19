@@ -1,0 +1,45 @@
+version: '3'
+
+vars:
+  BIN_NAME: quint-code
+  BIN_DIR: ~/.local/bin
+  SRC_DIR: src/mcp
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: Run all tests
+    dir: '{{.SRC_DIR}}'
+    cmds:
+      - go test -v ./...
+
+  lint:
+    desc: Run linter (go vet)
+    dir: '{{.SRC_DIR}}'
+    cmds:
+      - go vet ./...
+
+  build:
+    desc: Build binary
+    dir: '{{.SRC_DIR}}'
+    cmds:
+      - go build -o {{.BIN_NAME}} -trimpath .
+    generates:
+      - '{{.BIN_NAME}}'
+
+  install:
+    desc: Build and install to ~/.local/bin
+    dir: '{{.SRC_DIR}}'
+    cmds:
+      - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath .
+      - echo "Installed to {{.BIN_DIR}}/{{.BIN_NAME}}"
+
+  clean:
+    desc: Remove built binary
+    dir: '{{.SRC_DIR}}'
+    cmds:
+      - rm -f {{.BIN_NAME}}

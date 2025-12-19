@@ -112,6 +112,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Phase transitions are validated against actual database state.
   - Hardens FPF enforcement against state.json manipulation.
 
+### Fixed
+
+- **Evidence Decay Bug**: Evidence was stored with `NULL` `valid_until`, making `/q-decay` always report "no expired evidence."
+  - `ManageEvidence` now sets a default 90-day validity period when `validUntil` is empty.
+  - Affects all evidence added via `quint_verify`, `quint_test`, and `quint_audit`.
+
 ---
 
 ## [4.0.0] - 2025-12-18

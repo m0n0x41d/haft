@@ -177,7 +177,7 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 	}
 }
 
-func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string) (string, error) {
+func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
 	slug := t.Slugify(title)
@@ -201,9 +201,93 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string)
 		}
 	}
 
+	ctx := context.Background()
+
+	if decisionContext != "" && t.DB != nil {
+		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: decision_context '%s' not found, skipping MemberOf\n", decisionContext)
+		} else {
+			if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create MemberOf relation: %v\n", err)
+			}
+		}
+	}
+
+	if len(dependsOn) > 0 && t.DB != nil {
+		if dependencyCL < 1 || dependencyCL > 3 {
+			dependencyCL = 3
+		}
+
+		relationType := "componentOf"
+		if kind == "episteme" {
+			relationType = "constituentOf"
+		}
+
+		for _, depID := range dependsOn {
+			if _, err := t.DB.GetHolon(ctx, depID); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: dependency '%s' not found, skipping\n", depID)
+				continue
+			}
+
+			if cyclic, _ := t.wouldCreateCycle(ctx, depID, slug); cyclic {
+				fmt.Fprintf(os.Stderr, "Warning: dependency on '%s' would create cycle, skipping\n", depID)
+				continue
+			}
+
+			if err := t.createRelation(ctx, depID, relationType, slug, dependencyCL); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create %s relation to %s: %v\n",
+					relationType, depID, err)
+			}
+		}
+	}
+
 	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
 
 	return path, nil
+}
+
+func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {
+	if sourceID == targetID {
+		return fmt.Errorf("holon cannot relate to itself")
+	}
+
+	if err := t.DB.CreateRelation(ctx, sourceID, relationType, targetID, cl); err != nil {
+		return err
+	}
+
+	t.AuditLog("quint_propose", "create_relation", "agent", sourceID, "SUCCESS",
+		map[string]string{"relation": relationType, "target": targetID, "cl": fmt.Sprintf("%d", cl)}, "")
+
+	return nil
+}
+
+func (t *Tools) wouldCreateCycle(ctx context.Context, sourceID, targetID string) (bool, error) {
+	visited := make(map[string]bool)
+	return t.isReachable(ctx, targetID, sourceID, visited)
+}
+
+func (t *Tools) isReachable(ctx context.Context, from, to string, visited map[string]bool) (bool, error) {
+	if from == to {
+		return true, nil
+	}
+	if visited[from] {
+		return false, nil
+	}
+	visited[from] = true
+
+	deps, err := t.DB.GetDependencies(ctx, from)
+	if err != nil {
+		return false, err
+	}
+
+	for _, dep := range deps {
+		if reachable, err := t.isReachable(ctx, dep.TargetID, to, visited); err != nil {
+			return false, err
+		} else if reachable {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (string, error) {
@@ -261,6 +345,10 @@ func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 
 func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
 	defer t.RecordWork("ManageEvidence", time.Now())
+
+	if validUntil == "" && action != "check" {
+		validUntil = time.Now().AddDate(0, 0, 90).Format("2006-01-02")
+	}
 	ctx := context.Background()
 
 	if action == "check" {
@@ -379,7 +467,7 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	}
 
 	rationale := fmt.Sprintf(`{"source": "loopback", "parent_id": "%s", "insight": "%s"}`, parentID, insight)
-	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale)
+	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale, "", nil, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}

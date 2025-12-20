@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 var ctx = context.Background()

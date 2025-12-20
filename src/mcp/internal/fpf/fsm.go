@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"quint-mcp/assurance"
+	"github.com/m0n0x41d/quint-code/assurance"
 )
 
 // Phase definitions

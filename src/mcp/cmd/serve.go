@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
 
 	"github.com/spf13/cobra"
 )

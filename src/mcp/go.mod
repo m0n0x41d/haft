@@ -1,4 +1,4 @@
-module quint-mcp
+module github.com/m0n0x41d/quint-code
 
 go 1.24.0
 

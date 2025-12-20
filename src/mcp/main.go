@@ -1,6 +1,6 @@
 package main
 
-import "quint-mcp/cmd"
+import "github.com/m0n0x41d/quint-code/cmd"
 
 func main() {
 	cmd.Execute()

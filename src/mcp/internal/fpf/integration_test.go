@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
 )
 
 // Helper to get FPF knowledge path for a level

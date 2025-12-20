@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"quint-mcp/assurance"
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
+	"github.com/m0n0x41d/quint-code/assurance"
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
 )
 
 func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.Store, string) {

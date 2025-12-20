@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 // Helper to create a dummy Tools instance for testing
@@ -611,9 +611,9 @@ func TestPropose_WithDependsOn(t *testing.T) {
 		"external traffic",
 		"system",
 		`{"anomaly": "need unified entry point"}`,
-		"",                                       // no decision_context
+		"",                                      // no decision_context
 		[]string{"auth-module", "rate-limiter"}, // depends_on
-		3,                                        // CL3
+		3,                                       // CL3
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)

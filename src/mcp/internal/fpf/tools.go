@@ -976,13 +976,13 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	defer waivedRows.Close() //nolint:errcheck
 
 	type waiverInfo struct {
-		EvidenceID       string
-		HolonID          string
-		HolonTitle       string
-		WaivedUntil      string
-		WaivedBy         string
-		Rationale        string
-		DaysUntilExpiry  int
+		EvidenceID      string
+		HolonID         string
+		HolonTitle      string
+		WaivedUntil     string
+		WaivedBy        string
+		Rationale       string
+		DaysUntilExpiry int
 	}
 
 	var activeWaivers []waiverInfo

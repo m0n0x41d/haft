@@ -78,12 +78,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Adds `parent_id` and `cached_r_score` columns to existing `holons` table.
   - Safe to run multiple times (idempotent).
 
+- **Holon Linking in `quint_propose`**:
+  - New `depends_on` parameter to declare dependencies on other holons.
+  - New `decision_context` parameter to group alternatives under a decision.
+  - New `dependency_cl` parameter (1-3) for congruence level of dependencies.
+  - Creates `ComponentOf` relations for system holons, `ConstituentOf` for episteme.
+  - Creates `MemberOf` relations for decision grouping (no R propagation).
+  - Added SQL indexes for efficient WLNK traversal.
+  - Documented structural relations (B.1.1) in CLAUDE.md.
+
 - **CI/CD Pipeline**:
   - New GitHub Actions workflow (`.github/workflows/ci.yml`) for pull requests.
   - Triggers on PRs and pushes to `main` and `dev` branches.
   - Runs tests with race detector and coverage reporting.
   - Runs `golangci-lint` for code quality (errcheck, govet, staticcheck, unused, misspell).
-  - Verifies build succeeds and `dist/` stays in sync with source.
+  - Uses `golangci-lint-action@v7` with golangci-lint v2 config schema.
   - Added `.golangci.yml` configuration for consistent linting.
 
 - **Pre-commit Hooks**:

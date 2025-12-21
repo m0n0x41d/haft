@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `decision_context`: Explains grouping purpose and when to use.
   - `q1-hypothesize.md`: Added "Linking Checklist" before proposing hypotheses.
 
+- **Merged `/q-audit` into `/q-query`**: Simplified command set.
+  - `/q-query` now shows R_eff and dependency trees for found holons.
+  - Removed standalone `/q-audit` utility (redundant with enhanced `/q-query`).
+  - `/q4-audit` (FPF phase) remains unchanged.
+
 - **sqlc Integration**: Type-safe database queries generated from SQL.
   - All database operations now use sqlc-generated code with proper type safety.
   - New `db/store.go` wrapper provides clean API while preserving schema bootstrap.

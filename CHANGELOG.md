@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `quint_test` now accepts L2 hypotheses for evidence refresh (L2 + PASS stays L2 with fresh evidence).
   - Freshness report now shows individual evidence IDs (not just counts) for actionable output.
   - Implements WLNK principle: one expired evidence item = entire holon is STALE.
+  - Natural language support: users can say "waive the benchmark until February" and the agent handles ID resolution.
+  - New documentation: `docs/evidence-freshness.md` — practical guide to managing stale evidence.
   - Updated command documentation: `q-decay.md` and `q3-validate.md`.
 
 - **CI/CD Pipeline**:

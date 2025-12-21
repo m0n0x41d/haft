@@ -80,10 +80,18 @@ External evidence (documentation, benchmarks, research) is only valuable if it i
 
 Quint's assurance calculator applies a **Congruence Penalty** based on the CL, reducing the effective reliability of evidence that isn't a perfect match for your context.
 
-### Validity (Evidence Decay)
+### Validity (Evidence Freshness)
 
 **FPF Pattern:** B.3.4 Evidence Decay & Epistemic Debt
 
-Evidence is perishable. A performance benchmark from two years ago is less trustworthy than one from last week because the context (libraries, hardware, compilers) has likely changed.
+Evidence expires. That benchmark you ran six months ago? The library has been updated twice since then. Your numbers might not be accurate anymore.
 
-Every piece of evidence in Quint has a `valid_until` date. The `/q-decay` command scans for expired evidence, and the assurance calculator automatically penalizes the reliability of claims that depend on it. This system makes the "staleness" of knowledge visible and manageable, preventing you from making critical decisions based on outdated information.
+Every piece of evidence has a `valid_until` date. When evidence expires, the decision it supports becomes **questionable** — not necessarily wrong, just unverified. The `/q-decay` command shows you what's stale and lets you:
+
+- **Refresh** — Re-run tests to get fresh proof
+- **Deprecate** — Downgrade the hypothesis if the decision needs rethinking
+- **Waive** — Accept the risk temporarily with documented rationale
+
+This makes hidden risk visible. You know exactly which decisions are operating on outdated assumptions.
+
+See [Evidence Freshness](evidence-freshness.md) for the full guide.

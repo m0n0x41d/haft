@@ -1,0 +1,28 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - linters:
+          - staticcheck
+        text: "QF1003"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

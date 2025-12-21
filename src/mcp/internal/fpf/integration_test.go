@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
 )
 
 // Helper to get FPF knowledge path for a level
@@ -39,7 +39,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to create .quint directory: %v", err)
 	}
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
@@ -52,12 +52,13 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 		tools := fpf.NewTools(fsm, tempDir, database)
 
-		fsm.State.Phase = fpf.PhaseIdle // Ensure idle for init
+		if fsm.GetPhase() != fpf.PhaseIdle {
+			t.Fatalf("Expected initial phase IDLE, got %s", fsm.GetPhase())
+		}
 		err = tools.InitProject()
 		if err != nil {
 			t.Fatalf("InitProject failed: %v", err)
 		}
-		fsm.State.Phase = fpf.PhaseAbduction // Simulate transition in fpf.go
 		if err := fsm.SaveState(stateFile); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
@@ -81,7 +82,9 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 	// Helper for EvidenceStub
 	ev := func(uri string) *fpf.EvidenceStub {
-		if uri == "" { return nil }
+		if uri == "" {
+			return nil
+		}
 		return &fpf.EvidenceStub{URI: uri, Type: "test"}
 	}
 
@@ -91,11 +94,11 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	hypo1ID := tools.Slugify(hypo1Title)
 
 	t.Run("1_ProposeHypothesis", func(t *testing.T) {
-		// Ensure current phase is ABDUCTION
-		if fsm.State.Phase != fpf.PhaseAbduction {
-			t.Fatalf("Expected phase ABDUCTION, got %s", fsm.State.Phase)
+		// Phase should be IDLE before first hypothesis (no holons yet)
+		if fsm.GetPhase() != fpf.PhaseIdle {
+			t.Fatalf("Expected phase IDLE before first proposal, got %s", fsm.GetPhase())
 		}
-		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale")
+		path, err := tools.ProposeHypothesis(hypo1Title, hypo1Content, "global", "system", "Integration Test Rationale", "", nil, 3)
 		if err != nil {
 			t.Fatalf("ProposeHypothesis failed: %v", err)
 		}
@@ -124,7 +127,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		evidenceContent := "Deductive logic check passes."
 		verdict := "PASS"
-		
+
 		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo1ID, "logic", evidenceContent, verdict, "L1", "logic-carrier", "2025-12-31")
 		if err != nil {
 			t.Fatalf("ManageEvidence (Deduction PASS) failed: %v", err)
@@ -162,7 +165,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if !checkHypothesisExists(t, tempDir, "L1", hypo1ID) {
 			t.Fatalf("Hypothesis %s not found in L1 before Induction PASS test", hypo1ID)
 		}
-		
+
 		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo1ID, "empirical", evidenceContent, verdict, "L2", "empirical-carrier", "2025-12-31")
 		if err != nil {
 			t.Fatalf("ManageEvidence (Induction PASS) failed: %v", err)
@@ -202,7 +205,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		}
 
 		insight := "New insight from empirical failure."
-		
+
 		childPath, err := tools.RefineLoopback(fsm.State.Phase, loopbackHypoID, insight, hypo2Title, hypo2Content, "system")
 		if err != nil {
 			t.Fatalf("RefineLoopback failed: %v", err)
@@ -279,7 +282,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		evidenceContent := "Empirical test results confirm refined hypothesis."
 		verdict := "PASS"
-		
+
 		// hypo2ID is in L1
 		evidencePath, err := tools.ManageEvidence(fsm.State.Phase, "add", hypo2ID, "empirical", evidenceContent, verdict, "L2", "empirical-carrier-2", "2025-12-31")
 		if err != nil {
@@ -318,7 +321,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
-		path, err := tools.FinalizeDecision("Final Decision", finalWinnerID, "Context", "Decision", drrContent, "Consequences", "Characteristics")
+		path, err := tools.FinalizeDecision("Final Decision", finalWinnerID, nil, "Context", "Decision", drrContent, "Consequences", "Characteristics")
 		if err != nil {
 			t.Fatalf("FinalizeDecision failed: %v", err)
 		}
@@ -349,7 +352,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if !found {
 			t.Errorf("Returned DRR path %q does not match any expected pattern %q", path, drrPattern)
 		}
-		
+
 		// Verify winner moved to L2
 		if !checkHypothesisExists(t, tempDir, "L2", finalWinnerID) {
 			t.Errorf("Final winner %s not moved to L2", finalWinnerID)
@@ -360,4 +363,5 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if fsm.State.Phase != fpf.PhaseIdle {
 			t.Errorf("Expected phase IDLE after decision, got %s", fsm.State.Phase)
 		}
-	})}
+	})
+}

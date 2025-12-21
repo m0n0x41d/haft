@@ -8,3 +8,4 @@ sql:
         package: "db"
         out: "db"
         sql_package: "database/sql"
+        emit_methods_with_db_argument: true

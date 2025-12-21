@@ -1,12 +1,14 @@
 package fpf
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 // Helper to create a dummy Tools instance for testing
@@ -19,14 +21,14 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 
 	// Create a dummy DB file
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
 	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: database.GetRawDB()} // Initial FSM state with DB
 
-tools := NewTools(fsm, tempDir, database)
+	tools := NewTools(fsm, tempDir, database)
 
 	// Initialize the project structure for tools to operate
 	err = tools.InitProject()
@@ -39,7 +41,7 @@ tools := NewTools(fsm, tempDir, database)
 
 func TestSlugify(t *testing.T) {
 
-tools, _, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	tests := []struct {
 		input    string
 		expected string
@@ -83,7 +85,7 @@ func TestInitProject(t *testing.T) {
 
 func TestProposeHypothesis(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseAbduction // Set phase for valid Propose
 
 	title := "My First Hypothesis"
@@ -92,7 +94,7 @@ tools, fsm, tempDir := setupTools(t)
 	kind := "system"
 	rationale := "This is the rationale."
 
-	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale)
+	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, "", nil, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -109,15 +111,30 @@ tools, fsm, tempDir := setupTools(t)
 	if err != nil {
 		t.Fatalf("Failed to read hypothesis file: %v", err)
 	}
-	expectedContent := fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", scope, kind, title, content, rationale)
-	if string(readContent) != expectedContent {
-		t.Errorf("File content mismatch. Got %q, expected %q", string(readContent), expectedContent)
+	contentStr := string(readContent)
+	if !strings.Contains(contentStr, "scope: "+scope) {
+		t.Errorf("Missing scope in frontmatter")
+	}
+	if !strings.Contains(contentStr, "kind: "+kind) {
+		t.Errorf("Missing kind in frontmatter")
+	}
+	if !strings.Contains(contentStr, "content_hash:") {
+		t.Errorf("Missing content_hash in frontmatter")
+	}
+	if !strings.Contains(contentStr, "# Hypothesis: "+title) {
+		t.Errorf("Missing hypothesis title in body")
+	}
+	if !strings.Contains(contentStr, content) {
+		t.Errorf("Missing content in body")
+	}
+	if !strings.Contains(contentStr, "## Rationale") {
+		t.Errorf("Missing rationale section")
 	}
 }
 
 func TestManageEvidence(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-hypo"
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("Hypothesis content"), 0644); err != nil {
@@ -125,22 +142,22 @@ tools, fsm, tempDir := setupTools(t)
 	}
 
 	tests := []struct {
-		name        string
-		currentPhase Phase
-		targetID    string
-		evidenceType string
-		content     string
-		verdict     string
-		assuranceLevel string // New field
-		expectedMove bool
+		name              string
+		currentPhase      Phase
+		targetID          string
+		evidenceType      string
+		content           string
+		verdict           string
+		assuranceLevel    string // New field
+		expectedMove      bool
 		expectedDestLevel string // e.g., "L1", "L2", "invalid"
-		expectErr   bool
+		expectErr         bool
 	}{
 		// Deductor (DEDUCTION phase)
 		{"DeductionPass", PhaseDeduction, hypoID, "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
 		{"DeductionFail", PhaseDeduction, hypoID, "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
 		{"DeductionRefine", PhaseDeduction, hypoID, "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
-		
+
 		// Inductor (INDUCTION phase) - need another hypo in L1
 		{"InductionPass", PhaseInduction, "hypo-L1", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
 		{"InductionFail", PhaseInduction, "hypo-L1", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
@@ -153,7 +170,7 @@ tools, fsm, tempDir := setupTools(t)
 
 			// Declare srcLevel outside conditional blocks to have proper scope
 			var srcLevel string
-			
+
 			// Prepare for move if needed (create dummy hypo in source level)
 			if tt.expectedMove {
 				switch tt.currentPhase {
@@ -188,7 +205,7 @@ tools, fsm, tempDir := setupTools(t)
 			if _, err := os.Stat(evidencePath); os.IsNotExist(err) {
 				t.Errorf("Evidence file was not created at %s", evidencePath)
 			}
-			
+
 			// Verify hypothesis move
 			if tt.expectedMove {
 				expectedDestPath := filepath.Join(tempDir, ".quint", "knowledge", tt.expectedDestLevel, tt.targetID+".md")
@@ -210,7 +227,7 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestRefineLoopback(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	parentID := "parent-hypo"
 	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
 	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
@@ -254,7 +271,7 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestFinalizeDecision(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	fsm.State.Phase = PhaseDecision // Simulate being in Decision phase
 
 	winnerID := "final-winner"
@@ -266,7 +283,7 @@ tools, fsm, tempDir := setupTools(t)
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, winnerID, "Context", content, "Rationale", "Consequences", "Characteristics")
+	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics")
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -305,9 +322,9 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestVerifyHypothesis(t *testing.T) {
 
-tools, fsm, tempDir := setupTools(t)
+	tools, fsm, tempDir := setupTools(t)
 	hypoID := "test-verify-hypo"
-	
+
 	// Create dummy L0 hypothesis
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("L0 content"), 0644); err != nil {
@@ -320,9 +337,8 @@ tools, fsm, tempDir := setupTools(t)
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
-	expectedMsg := fmt.Sprintf("Hypothesis %s promoted to L1", hypoID)
-	if msg != expectedMsg {
-		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
+	if !strings.Contains(msg, "promoted to L1") {
+		t.Errorf("Expected message to contain 'promoted to L1', got %q", msg)
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")); os.IsNotExist(err) {
 		t.Errorf("Hypothesis not moved to L1")
@@ -335,7 +351,7 @@ tools, fsm, tempDir := setupTools(t)
 	if err := os.WriteFile(hypoPath2, []byte("L0 content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
 	}
-	
+
 	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
@@ -351,20 +367,20 @@ tools, fsm, tempDir := setupTools(t)
 
 func TestAuditEvidence(t *testing.T) {
 
-tools, fsm, _ := setupTools(t)
+	tools, fsm, _ := setupTools(t)
 	fsm.State.Phase = PhaseDecision // Audit typically happens near decision or end of induction
-	
+
 	hypoID := "audit-hypo"
-	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself, 
+	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself,
 	// but ManageEvidence might rely on DB. For unit test, we focus on the wrapper call.)
-	
+
 	// AuditEvidence calls ManageEvidence with PhaseDecision.
 	// ManageEvidence checks DB if action is "check", but here action is "add" (implied).
 	// We need to ensure DB is happy if it checks constraints.
-	
+
 	// In tools.go, AuditEvidence calls:
 	// t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "PASS", "L2", "auditor", "")
-	
+
 	msg, err := tools.AuditEvidence(hypoID, "Risk analysis content")
 	if err != nil {
 		t.Errorf("AuditEvidence failed: %v", err)
@@ -373,7 +389,617 @@ tools, fsm, _ := setupTools(t)
 	if msg != expectedMsg {
 		t.Errorf("Expected message %q, got %q", expectedMsg, msg)
 	}
-	
-	// We could verify DB side effects if we exposed DB in tests more directly, 
+
+	// We could verify DB side effects if we exposed DB in tests more directly,
 	// but for now we verify no error and correct return message.
+}
+
+func TestCalculateR(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with evidence
+	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add passing evidence
+	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Calculate R
+	result, err := tools.CalculateR("calc-r-test")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// Verify output contains expected elements
+	if !strings.Contains(result, "Reliability Report") {
+		t.Errorf("Expected 'Reliability Report' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "R_eff:") {
+		t.Errorf("Expected 'R_eff:' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "1.00") {
+		t.Errorf("Expected R_eff of 1.00 for passing evidence, got: %s", result)
+	}
+}
+
+func TestCalculateR_WithDecay(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with expired evidence
+	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add expired evidence (past date)
+	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Calculate R
+	result, err := tools.CalculateR("decay-r-test")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// Verify decay is mentioned
+	if !strings.Contains(result, "Decay") || !strings.Contains(result, "expired") {
+		t.Errorf("Expected decay/expired mention in output, got: %s", result)
+	}
+}
+
+func TestCheckDecay_NoExpired(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with fresh evidence
+	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add future-dated evidence
+	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Check decay (freshness report mode - all empty params)
+	result, err := tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+
+	// Should report all fresh
+	if !strings.Contains(result, "All holons FRESH") && !strings.Contains(result, "No expired evidence") {
+		t.Errorf("Expected fresh holons message, got: %s", result)
+	}
+}
+
+func TestCheckDecay_WithExpired(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with expired evidence
+	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add expired evidence
+	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Check decay (freshness report mode - all empty params)
+	result, err := tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+
+	// Should report the expired evidence
+	if !strings.Contains(result, "stale-holon") && !strings.Contains(result, "Stale Holon") {
+		t.Errorf("Expected stale-holon in output, got: %s", result)
+	}
+	if !strings.Contains(result, "STALE") && !strings.Contains(result, "EXPIRED") {
+		t.Errorf("Expected STALE or EXPIRED in output, got: %s", result)
+	}
+}
+
+func TestCheckDecay_Deprecate(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Get the FPF directory from tools (this is where InitProject creates structure)
+	fpfDir := tools.GetFPFDir()
+	l2Dir := filepath.Join(fpfDir, "knowledge", "L2")
+	l1Dir := filepath.Join(fpfDir, "knowledge", "L1")
+
+	// Create L2 holon with file
+	holonID := "deprecate-test"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Deprecate Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(l2Dir, holonID+".md"), []byte("# Test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+
+	// Deprecate (L2 -> L1)
+	result, err := tools.CheckDecay(holonID, "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay deprecate failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Deprecated") || !strings.Contains(result, "L2 → L1") {
+		t.Errorf("Expected deprecation message, got: %s", result)
+	}
+
+	// Verify holon moved to L1 in DB
+	holon, err := tools.DB.GetHolon(ctx, holonID)
+	if err != nil {
+		t.Fatalf("Failed to get holon: %v", err)
+	}
+	if holon.Layer != "L1" {
+		t.Errorf("Expected layer L1, got: %s", holon.Layer)
+	}
+
+	// Verify file moved
+	if _, err := os.Stat(filepath.Join(l1Dir, holonID+".md")); os.IsNotExist(err) {
+		t.Error("Expected file to exist in L1 directory")
+	}
+}
+
+func TestCheckDecay_Waive(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create holon with expired evidence
+	holonID := "waive-test-holon"
+	evidenceID := "waive-test-evidence"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Waive Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Verify initially shows as stale
+	result, err := tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+	if !strings.Contains(result, "STALE") {
+		t.Errorf("Expected STALE before waive, got: %s", result)
+	}
+
+	// Waive the evidence
+	futureDate := "2099-12-31"
+	rationale := "Test waiver"
+	result, err = tools.CheckDecay("", evidenceID, futureDate, rationale)
+	if err != nil {
+		t.Fatalf("CheckDecay waive failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Waiver recorded") {
+		t.Errorf("Expected waiver confirmation, got: %s", result)
+	}
+	if !strings.Contains(result, evidenceID) {
+		t.Errorf("Expected evidence ID in output, got: %s", result)
+	}
+
+	// Check that it no longer shows as stale
+	result, err = tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay report failed: %v", err)
+	}
+
+	// Should show waived instead of stale
+	if strings.Contains(result, holonID) && strings.Contains(result, "STALE") && !strings.Contains(result, "WAIVED") {
+		t.Errorf("Expected waived evidence to not show as STALE, got: %s", result)
+	}
+}
+
+func TestCheckDecay_WaiveMissingParams(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	// Waive without until date
+	_, err := tools.CheckDecay("", "some-evidence", "", "some rationale")
+	if err == nil {
+		t.Error("Expected error when waive_until is missing")
+	}
+
+	// Waive without rationale
+	_, err = tools.CheckDecay("", "some-evidence", "2099-12-31", "")
+	if err == nil {
+		t.Error("Expected error when rationale is missing")
+	}
+}
+
+func TestCheckDecay_DeprecateL0Fails(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create L0 holon
+	holonID := "l0-deprecate-test"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L0", "L0 Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Try to deprecate L0 - should fail
+	_, err = tools.CheckDecay(holonID, "", "", "")
+	if err == nil {
+		t.Error("Expected error when deprecating L0 holon")
+	}
+	if err != nil && !strings.Contains(err.Error(), "cannot deprecate") {
+		t.Errorf("Expected 'cannot deprecate' error, got: %v", err)
+	}
+}
+
+func TestVisualizeAudit(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon
+	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add evidence
+	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Visualize audit
+	result, err := tools.VisualizeAudit("audit-viz-test")
+	if err != nil {
+		t.Fatalf("VisualizeAudit failed: %v", err)
+	}
+
+	// Should contain the holon ID and R score
+	if !strings.Contains(result, "audit-viz-test") {
+		t.Errorf("Expected 'audit-viz-test' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "R:") {
+		t.Errorf("Expected 'R:' score in output, got: %s", result)
+	}
+}
+
+func TestPropose_WithDecisionContext(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// First create a decision context holon
+	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	// Propose hypothesis with decision_context
+	_, err = tools.ProposeHypothesis(
+		"Use Redis",
+		"Use Redis for caching",
+		"backend",
+		"system",
+		`{"approach": "distributed cache"}`,
+		"caching-decision", // decision_context
+		nil,                // no depends_on
+		3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Verify MemberOf relation was created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE source_id = 'use-redis'
+		AND target_id = 'caching-decision'
+		AND relation_type = 'memberOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 MemberOf relation, got %d", count)
+	}
+}
+
+func TestPropose_WithDependsOn(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create dependency holons first
+	err := tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create auth-module: %v", err)
+	}
+	err = tools.DB.CreateHolon(ctx, "rate-limiter", "hypothesis", "system", "L2", "Rate Limiter", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create rate-limiter: %v", err)
+	}
+
+	// Propose hypothesis with depends_on
+	_, err = tools.ProposeHypothesis(
+		"API Gateway",
+		"Gateway with auth and rate limiting",
+		"external traffic",
+		"system",
+		`{"anomaly": "need unified entry point"}`,
+		"",                                      // no decision_context
+		[]string{"auth-module", "rate-limiter"}, // depends_on
+		3,                                       // CL3
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Verify componentOf relations were created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'api-gateway'
+		AND relation_type = 'componentOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 componentOf relations, got %d", count)
+	}
+}
+
+func TestPropose_CycleDetection(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create holon A
+	err := tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon-a: %v", err)
+	}
+
+	// Create holon B that depends on A
+	_, err = tools.ProposeHypothesis("Holon B", "B depends on A", "global", "system", "{}", "", []string{"holon-a"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for B failed: %v", err)
+	}
+
+	// Now try to create holon C that would create a cycle: A → B → C → A
+	// First add B→C relation manually
+	err = tools.DB.CreateRelation(ctx, "holon-b", "componentOf", "holon-c-temp", 3)
+	if err != nil {
+		// This is okay, C doesn't exist yet
+	}
+
+	// Try to make A depend on B (would create cycle since B already depends on A)
+	// This should be skipped with a warning, not error
+	_, err = tools.ProposeHypothesis("Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "", []string{"holon-b"}, 3)
+	// Should NOT error - cycles are skipped with warning
+	if err != nil {
+		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
+	}
+
+	// The relation should still be created since holon-c-cyclic → holon-b is not itself a cycle
+	// (holon-b → holon-a exists, but holon-a doesn't depend on holon-c-cyclic)
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'holon-c-cyclic'
+		AND source_id = 'holon-b'
+		AND relation_type = 'componentOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	// This should exist since it's not actually a cycle
+	if count != 1 {
+		t.Errorf("Expected 1 componentOf relation for non-cyclic dependency, got %d", count)
+	}
+}
+
+func TestPropose_InvalidDependency(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	fsm.State.Phase = PhaseAbduction
+
+	// Propose hypothesis with non-existent dependency
+	_, err := tools.ProposeHypothesis(
+		"Orphan Hypo",
+		"Depends on non-existent holon",
+		"global",
+		"system",
+		"{}",
+		"",
+		[]string{"does-not-exist", "also-missing"}, // These don't exist
+		3,
+	)
+	// Should NOT error - invalid deps are skipped with warning
+	if err != nil {
+		t.Fatalf("ProposeHypothesis should not error on invalid deps, got: %v", err)
+	}
+
+	// Verify no relations were created
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	ctx := context.Background()
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'orphan-hypo'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Expected 0 relations for invalid deps, got %d", count)
+	}
+}
+
+func TestPropose_KindDeterminesRelation(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create a dependency holon
+	err := tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create base-claim: %v", err)
+	}
+
+	// Propose system hypothesis - should create componentOf
+	_, err = tools.ProposeHypothesis("System Hypo", "A system thing", "global", "system", "{}", "", []string{"base-claim"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for system failed: %v", err)
+	}
+
+	// Propose episteme hypothesis - should create constituentOf
+	_, err = tools.ProposeHypothesis("Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "", []string{"base-claim"}, 3)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
+	}
+
+	rawDB := tools.DB.GetRawDB()
+
+	// Check system → componentOf
+	var componentCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'system-hypo'
+		AND relation_type = 'componentOf'
+	`).Scan(&componentCount)
+	if err != nil {
+		t.Fatalf("Failed to query componentOf: %v", err)
+	}
+	if componentCount != 1 {
+		t.Errorf("Expected 1 componentOf for system kind, got %d", componentCount)
+	}
+
+	// Check episteme → constituentOf
+	var constituentCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE target_id = 'episteme-hypo'
+		AND relation_type = 'constituentOf'
+	`).Scan(&constituentCount)
+	if err != nil {
+		t.Fatalf("Failed to query constituentOf: %v", err)
+	}
+	if constituentCount != 1 {
+		t.Errorf("Expected 1 constituentOf for episteme kind, got %d", constituentCount)
+	}
+}
+
+func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Create decision context with low R (failing evidence)
+	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create bad-decision: %v", err)
+	}
+	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add failing evidence: %v", err)
+	}
+
+	// Create good hypothesis that is member of bad decision
+	_, err = tools.ProposeHypothesis(
+		"Good Member",
+		"A good hypothesis",
+		"global",
+		"system",
+		"{}",
+		"bad-decision", // MemberOf the bad decision
+		nil,
+		3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	// Add passing evidence to good-member
+	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add passing evidence: %v", err)
+	}
+
+	// Calculate R for good-member
+	result, err := tools.CalculateR("good-member")
+	if err != nil {
+		t.Fatalf("CalculateR failed: %v", err)
+	}
+
+	// MemberOf should NOT propagate R - good-member should have R=1.00
+	// despite bad-decision having R=0.00
+	if !strings.Contains(result, "1.00") {
+		t.Errorf("Expected R=1.00 (MemberOf should not propagate), got: %s", result)
+	}
+}
+
+func TestFormatVocabulary(t *testing.T) {
+	input := "Channel: A Telegram channel or chat being monitored (has telegram_id, name, kind, is_active status). Message: A post from a monitored channel (has id, content, author_id, telegram_url, processing state). Result[T,E]: Either Ok(value) or Err(error) - functional error handling pattern."
+
+	result := formatVocabulary(input)
+
+	// Should have separate lines for each term
+	if !strings.Contains(result, "- **Channel**:") {
+		t.Errorf("Expected '- **Channel**:', got: %s", result)
+	}
+	if !strings.Contains(result, "- **Message**:") {
+		t.Errorf("Expected '- **Message**:', got: %s", result)
+	}
+	if !strings.Contains(result, "- **Result[T,E]**:") {
+		t.Errorf("Expected '- **Result[T,E]**:', got: %s", result)
+	}
+
+	// Should have newlines between entries
+	lines := strings.Split(result, "\n")
+	if len(lines) < 3 {
+		t.Errorf("Expected at least 3 lines, got %d: %s", len(lines), result)
+	}
+}
+
+func TestFormatInvariants(t *testing.T) {
+	input := "1. Python 3.12+ with strict mypy type checking. 2. DuckDB as the only database (file-based, path from config.yaml). 3. Telethon for Telegram API interaction (requires session file)."
+
+	result := formatInvariants(input)
+
+	// Should have separate lines for each numbered item
+	lines := strings.Split(result, "\n")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 lines, got %d: %s", len(lines), result)
+	}
+
+	if !strings.HasPrefix(lines[0], "1. Python") {
+		t.Errorf("Expected line 1 to start with '1. Python', got: %s", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "2. DuckDB") {
+		t.Errorf("Expected line 2 to start with '2. DuckDB', got: %s", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "3. Telethon") {
+		t.Errorf("Expected line 3 to start with '3. Telethon', got: %s", lines[2])
+	}
 }

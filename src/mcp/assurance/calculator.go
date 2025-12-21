@@ -55,7 +55,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var totalScore, count float64
 	for rows.Next() {
@@ -78,7 +78,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		// Evidence Decay Logic
 		if validUntil != nil && time.Now().After(*validUntil) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
-			score = 0.1 // Penalty for expiration, not zero but close
+			score = 0.1                // Penalty for expiration, not zero but close
 			report.DecayPenalty += 0.9 // Track how much was lost
 		}
 		totalScore += score
@@ -124,7 +124,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		}
 		deps = append(deps, d)
 	}
-	depRows.Close()
+	_ = depRows.Close()
 
 	minDepScore := 1.0
 	for _, d := range deps {

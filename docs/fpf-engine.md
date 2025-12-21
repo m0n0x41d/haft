@@ -82,10 +82,19 @@ Compute trust scores using:
 | `/q-actualize` | Maintenance | Reconcile the knowledge base with recent code changes. |
 | `/q-reset` | Utility | Discard the current reasoning cycle. |
 
-### New Maintenance Commands
+### Maintenance Commands
 
-#### /q-decay (Evidence Decay)
-Over time, the evidence supporting your decisions can become stale. A benchmark from two years ago may not reflect the performance of a library today. This command implements the FPF principle of **Evidence Decay (B.3.4)**. It scans your evidence for expired `valid_until` dates and reports on the project's "Epistemic Debt"—the amount of risk you are carrying from outdated knowledge.
+#### /q-decay (Evidence Freshness)
+
+Evidence expires. A benchmark from six months ago might not reflect current performance. `/q-decay` shows you what's stale and gives you three options:
+
+- **Refresh** — Re-run tests to get fresh evidence
+- **Deprecate** — Downgrade the hypothesis if the decision needs rethinking
+- **Waive** — Accept the risk temporarily with documented rationale
+
+You can speak naturally: "waive the benchmark until February, we'll re-test after launch."
+
+See [Evidence Freshness](evidence-freshness.md) for the full guide.
 
 #### /q-actualize (Knowledge Reconciliation)
 This command serves as the **Observe** phase of the FPF's **Canonical Evolution Loop (B.4)**. It reconciles your documented knowledge with the current state of the codebase by:

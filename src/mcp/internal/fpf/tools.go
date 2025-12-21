@@ -2,6 +2,9 @@ package fpf
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,21 +13,25 @@ import (
 	"strings"
 	"time"
 
-	"quint-mcp/assurance"
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/assurance"
+	"github.com/m0n0x41d/quint-code/db"
+
+	"github.com/google/uuid"
 )
+
+var slugifyRegex = regexp.MustCompile("[^a-zA-Z0-9]+")
 
 type Tools struct {
 	FSM     *FSM
 	RootDir string
-	DB      *db.DB
+	DB      *db.Store
 }
 
-func NewTools(fsm *FSM, rootDir string, database *db.DB) *Tools {
+func NewTools(fsm *FSM, rootDir string, database *db.Store) *Tools {
 	if database == nil {
 		dbPath := filepath.Join(rootDir, ".quint", "quint.db")
 		var err error
-		database, err = db.New(dbPath)
+		database, err = db.NewStore(dbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to open database in NewTools: %v\n", err)
 		}
@@ -41,9 +48,29 @@ func (t *Tools) GetFPFDir() string {
 	return filepath.Join(t.RootDir, ".quint")
 }
 
+func (t *Tools) AuditLog(toolName, operation, actor, targetID, result string, input interface{}, details string) {
+	if t.DB == nil {
+		return
+	}
+
+	var inputHash string
+	if input != nil {
+		data, err := json.Marshal(input)
+		if err == nil {
+			hash := sha256.Sum256(data)
+			inputHash = hex.EncodeToString(hash[:8])
+		}
+	}
+
+	id := uuid.New().String()
+	ctx := context.Background()
+	if err := t.DB.InsertAuditLog(ctx, id, toolName, operation, actor, targetID, inputHash, result, details, "default"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to insert audit log: %v\n", err)
+	}
+}
+
 func (t *Tools) Slugify(title string) string {
-	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
-	slug := reg.ReplaceAllString(strings.ToLower(title), "-")
+	slug := slugifyRegex.ReplaceAllString(strings.ToLower(title), "-")
 	return strings.Trim(slug, "-")
 }
 
@@ -52,19 +79,22 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 	destPath := filepath.Join(t.GetFPFDir(), "knowledge", destLevel, hypothesisID+".md")
 
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, "not found")
 		return "", fmt.Errorf("hypothesis %s not found in %s", hypothesisID, sourceLevel)
 	}
 
 	if err := os.Rename(srcPath, destPath); err != nil {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, err.Error())
 		return "", fmt.Errorf("failed to move hypothesis from %s to %s: %v", sourceLevel, destLevel, err)
 	}
 
 	if t.DB != nil {
-		if err := t.DB.UpdateHolonLayer(hypothesisID, destLevel); err != nil {
+		if err := t.DB.UpdateHolonLayer(context.Background(), hypothesisID, destLevel); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to update holon layer in DB: %v\n", err)
 		}
 	}
 
+	t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"from": sourceLevel, "to": destLevel}, "")
 	return destPath, nil
 }
 
@@ -92,7 +122,7 @@ func (t *Tools) InitProject() error {
 
 	if t.DB == nil {
 		dbPath := filepath.Join(t.GetFPFDir(), "quint.db")
-		database, err := db.New(dbPath)
+		database, err := db.NewStore(dbPath)
 		if err != nil {
 			fmt.Printf("Warning: Failed to init DB: %v\n", err)
 		} else {
@@ -104,13 +134,82 @@ func (t *Tools) InitProject() error {
 }
 
 func (t *Tools) RecordContext(vocabulary, invariants string) (string, error) {
-	content := fmt.Sprintf("# Bounded Context\n\n## Vocabulary\n%s\n\n## Invariants\n%s\n", vocabulary, invariants)
+	// Normalize vocabulary: "Term1: Def1. Term2: Def2." → "- **Term1**: Def1.\n- **Term2**: Def2."
+	vocabFormatted := formatVocabulary(vocabulary)
+
+	// Normalize invariants: "1. Item1. 2. Item2." → "1. Item1.\n2. Item2."
+	invFormatted := formatInvariants(invariants)
+
+	content := fmt.Sprintf("# Bounded Context\n\n## Vocabulary\n\n%s\n\n## Invariants\n\n%s\n", vocabFormatted, invFormatted)
 	path := filepath.Join(t.GetFPFDir(), "context.md")
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+func formatVocabulary(vocab string) string {
+	// Pattern: "Term: definition." or "Term: definition" followed by another "Term:"
+	// Split on pattern where a new term definition starts
+	termPattern := regexp.MustCompile(`([A-Z][a-zA-Z0-9_\[\],<>]+):\s*`)
+	matches := termPattern.FindAllStringSubmatchIndex(vocab, -1)
+
+	if len(matches) == 0 {
+		return vocab // No terms found, return as-is
+	}
+
+	var lines []string
+	for i, match := range matches {
+		termStart := match[2]
+		termEnd := match[3]
+		defStart := match[1]
+
+		var defEnd int
+		if i+1 < len(matches) {
+			defEnd = matches[i+1][0]
+		} else {
+			defEnd = len(vocab)
+		}
+
+		term := vocab[termStart:termEnd]
+		def := strings.TrimSpace(vocab[defStart:defEnd])
+
+		lines = append(lines, fmt.Sprintf("- **%s**: %s", term, def))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func formatInvariants(inv string) string {
+	// Pattern: "1. ...", "2. ...", etc. possibly all on one line
+	numPattern := regexp.MustCompile(`(\d+)\.\s+`)
+	matches := numPattern.FindAllStringSubmatchIndex(inv, -1)
+
+	if len(matches) == 0 {
+		return inv // No numbered items found, return as-is
+	}
+
+	var lines []string
+	for i, match := range matches {
+		numStart := match[2]
+		numEnd := match[3]
+		contentStart := match[1]
+
+		var contentEnd int
+		if i+1 < len(matches) {
+			contentEnd = matches[i+1][0]
+		} else {
+			contentEnd = len(inv)
+		}
+
+		num := inv[numStart:numEnd]
+		content := strings.TrimSpace(inv[contentStart:contentEnd])
+
+		lines = append(lines, fmt.Sprintf("%s. %s", num, content))
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (t *Tools) GetAgentContext(role string) (string, error) {
@@ -142,70 +241,169 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 	}
 
 	ledger := fmt.Sprintf(`{"duration_ms": %d}`, end.Sub(start).Milliseconds())
-	if err := t.DB.RecordWork(id, methodName, performer, start, end, ledger); err != nil {
+	if err := t.DB.RecordWork(context.Background(), id, methodName, performer, start, end, ledger); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to record work in DB: %v\n", err)
 	}
 }
 
-func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string) (string, error) {
+func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
 	slug := t.Slugify(title)
 	filename := fmt.Sprintf("%s.md", slug)
 	path := filepath.Join(t.GetFPFDir(), "knowledge", "L0", filename)
 
-	fileContent := fmt.Sprintf("---\nscope: %s\nkind: %s\n---\n\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", scope, kind, title, content, rationale)
+	body := fmt.Sprintf("\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
+	fields := map[string]string{
+		"scope": scope,
+		"kind":  kind,
+	}
 
-	if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
+	if err := WriteWithHash(path, fields, body); err != nil {
+		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
 		return "", err
 	}
 
 	if t.DB != nil {
-		h := db.Holon{
-			ID:        slug,
-			Type:      "hypothesis",
-			Kind:      kind,
-			Layer:     "L0",
-			Title:     title,
-			Content:   fileContent,
-			ContextID: "default",
-			Scope:     scope,
-		}
-		if err := t.DB.CreateHolon(h); err != nil {
+		if err := t.DB.CreateHolon(context.Background(), slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create holon in DB: %v\n", err)
 		}
 	}
 
+	ctx := context.Background()
+
+	if decisionContext != "" && t.DB != nil {
+		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: decision_context '%s' not found, skipping MemberOf\n", decisionContext)
+		} else {
+			if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create MemberOf relation: %v\n", err)
+			}
+		}
+	}
+
+	if len(dependsOn) > 0 && t.DB != nil {
+		if dependencyCL < 1 || dependencyCL > 3 {
+			dependencyCL = 3
+		}
+
+		relationType := "componentOf"
+		if kind == "episteme" {
+			relationType = "constituentOf"
+		}
+
+		for _, depID := range dependsOn {
+			if _, err := t.DB.GetHolon(ctx, depID); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: dependency '%s' not found, skipping\n", depID)
+				continue
+			}
+
+			if cyclic, _ := t.wouldCreateCycle(ctx, depID, slug); cyclic {
+				fmt.Fprintf(os.Stderr, "Warning: dependency on '%s' would create cycle, skipping\n", depID)
+				continue
+			}
+
+			if err := t.createRelation(ctx, depID, relationType, slug, dependencyCL); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create %s relation to %s: %v\n",
+					relationType, depID, err)
+			}
+		}
+	}
+
+	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
+
 	return path, nil
+}
+
+func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {
+	if sourceID == targetID {
+		return fmt.Errorf("holon cannot relate to itself")
+	}
+
+	if err := t.DB.CreateRelation(ctx, sourceID, relationType, targetID, cl); err != nil {
+		return err
+	}
+
+	t.AuditLog("quint_propose", "create_relation", "agent", sourceID, "SUCCESS",
+		map[string]string{"relation": relationType, "target": targetID, "cl": fmt.Sprintf("%d", cl)}, "")
+
+	return nil
+}
+
+func (t *Tools) wouldCreateCycle(ctx context.Context, sourceID, targetID string) (bool, error) {
+	visited := make(map[string]bool)
+	return t.isReachable(ctx, targetID, sourceID, visited)
+}
+
+func (t *Tools) isReachable(ctx context.Context, from, to string, visited map[string]bool) (bool, error) {
+	if from == to {
+		return true, nil
+	}
+	if visited[from] {
+		return false, nil
+	}
+	visited[from] = true
+
+	deps, err := t.DB.GetDependencies(ctx, from)
+	if err != nil {
+		return false, err
+	}
+
+	for _, dep := range deps {
+		if reachable, err := t.isReachable(ctx, dep.TargetID, to, visited); err != nil {
+			return false, err
+		} else if reachable {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
-	v := strings.ToLower(verdict)
-	if v == "pass" {
+	carrierRef := "internal-logic"
+	if t.DB != nil {
+		holon, err := t.DB.GetHolon(context.Background(), hypothesisID)
+		if err == nil && holon.Kind.Valid {
+			switch holon.Kind.String {
+			case "system":
+				carrierRef = "internal-logic"
+			case "episteme":
+				carrierRef = "formal-logic"
+			}
+		}
+	}
+
+	switch strings.ToLower(verdict) {
+	case "pass":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
 			return "", err
 		}
 
 		evidenceContent := fmt.Sprintf("Verification Checks:\n%s", checksJSON)
-		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "pass", "L1", "internal-logic", ""); err != nil {
+		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "pass", "L1", carrierRef, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to record verification evidence for %s: %v\n", hypothesisID, err)
 		}
 
-		return fmt.Sprintf("Hypothesis %s promoted to L1", hypothesisID), nil
-	} else if v == "fail" {
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
+		return fmt.Sprintf("Hypothesis %s (kind: %s) promoted to L1", hypothesisID, carrierRef), nil
+	case "fail":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
 			return "", err
 		}
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "invalid"}, "")
 		return fmt.Sprintf("Hypothesis %s moved to invalid", hypothesisID), nil
-	} else if v == "refine" {
+	case "refine":
+		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "REFINE", "result": "L0"}, "")
 		return fmt.Sprintf("Hypothesis %s requires refinement (staying in L0)", hypothesisID), nil
+	default:
+		return "", fmt.Errorf("unknown verdict: %s", verdict)
 	}
-
-	return "", fmt.Errorf("unknown verdict: %s", verdict)
 }
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
@@ -216,6 +414,12 @@ func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 
 func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
 	defer t.RecordWork("ManageEvidence", time.Now())
+
+	if validUntil == "" && action != "check" {
+		validUntil = time.Now().AddDate(0, 0, 90).Format("2006-01-02")
+	}
+	ctx := context.Background()
+
 	if action == "check" {
 		if t.DB == nil {
 			return "", fmt.Errorf("DB not initialized")
@@ -223,13 +427,13 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 		if targetID == "all" {
 			return "Global evidence audit not implemented yet. Please specify a target_id.", nil
 		}
-		ev, err := t.DB.GetEvidence(targetID)
+		ev, err := t.DB.GetEvidence(ctx, targetID)
 		if err != nil {
 			return "", err
 		}
 		var report string
 		for _, e := range ev {
-			report += fmt.Sprintf("- [%s] %s (L:%s, Ref:%s): %s\n", e.Verdict, e.Type, e.AssuranceLevel, e.CarrierRef, e.Content)
+			report += fmt.Sprintf("- [%s] %s (L:%s, Ref:%s): %s\n", e.Verdict, e.Type, e.AssuranceLevel.String, e.CarrierRef.String, e.Content)
 		}
 		if report == "" {
 			return "No evidence found for " + targetID, nil
@@ -262,7 +466,7 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 			_, moveErr = t.MoveHypothesis(targetID, "L0", "L1")
 		case PhaseInduction:
 			if _, err := os.Stat(filepath.Join(t.GetFPFDir(), "knowledge", "L0", targetID+".md")); err == nil {
-				return "", fmt.Errorf("Hypothesis %s is still in L0. Run /q2-verify to promote it to L1 before testing.", targetID)
+				return "", fmt.Errorf("hypothesis %s is still in L0: run /q2-verify to promote it to L1 before testing", targetID)
 			}
 			_, moveErr = t.MoveHypothesis(targetID, "L1", "L2")
 		}
@@ -283,18 +487,27 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	filename := fmt.Sprintf("%s-%s-%s.md", date, evidenceType, targetID)
 	path := filepath.Join(t.GetFPFDir(), "evidence", filename)
 
-	fullContent := fmt.Sprintf("---\nid: %s\ntype: %s\ntarget: %s\nverdict: %s\nassurance_level: %s\ncarrier_ref: %s\nvalid_until: %s\ndate: %s\n---\n\n%s",
-		filename, evidenceType, targetID, normalizedVerdict, assuranceLevel, carrierRef, validUntil, date, content)
+	body := fmt.Sprintf("\n%s", content)
+	fields := map[string]string{
+		"id":              filename,
+		"type":            evidenceType,
+		"target":          targetID,
+		"verdict":         normalizedVerdict,
+		"assurance_level": assuranceLevel,
+		"carrier_ref":     carrierRef,
+		"valid_until":     validUntil,
+		"date":            date,
+	}
 
-	if err := os.WriteFile(path, []byte(fullContent), 0644); err != nil {
+	if err := WriteWithHash(path, fields, body); err != nil {
 		return "", err
 	}
 
 	if t.DB != nil {
-		if err := t.DB.AddEvidence(filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, validUntil); err != nil {
+		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, validUntil); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add evidence to DB: %v\n", err)
 		}
-		if err := t.DB.Link(filename, targetID, "verifiedBy"); err != nil {
+		if err := t.DB.Link(ctx, filename, targetID, "verifiedBy"); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to link evidence in DB: %v\n", err)
 		}
 	}
@@ -323,7 +536,7 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	}
 
 	rationale := fmt.Sprintf(`{"source": "loopback", "parent_id": "%s", "insight": "%s"}`, parentID, insight)
-	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale)
+	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale, "", nil, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}
@@ -337,22 +550,56 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	return childPath, nil
 }
 
-func (t *Tools) FinalizeDecision(title, winnerID, context, decision, rationale, consequences, characteristics string) (string, error) {
+func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
-	drrContent := fmt.Sprintf("# %s\n\n", title)
-	drrContent += fmt.Sprintf("## Context\n%s\n\n", context)
-	drrContent += fmt.Sprintf("## Decision\n**Selected Option:** %s\n\n%s\n\n", winnerID, decision)
-	drrContent += fmt.Sprintf("## Rationale\n%s\n\n", rationale)
+	body := fmt.Sprintf("\n# %s\n\n", title)
+	body += fmt.Sprintf("## Context\n%s\n\n", decisionContext)
+	body += fmt.Sprintf("## Decision\n**Selected Option:** %s\n\n%s\n\n", winnerID, decision)
+	body += fmt.Sprintf("## Rationale\n%s\n\n", rationale)
 	if characteristics != "" {
-		drrContent += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
+		body += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
 	}
-	drrContent += fmt.Sprintf("## Consequences\n%s\n", consequences)
+	body += fmt.Sprintf("## Consequences\n%s\n", consequences)
 
-	drrName := fmt.Sprintf("DRR-%d-%s.md", time.Now().Unix(), t.Slugify(title))
+	now := time.Now()
+	dateStr := now.Format("2006-01-02")
+	drrName := fmt.Sprintf("DRR-%s-%s.md", dateStr, t.Slugify(title))
 	drrPath := filepath.Join(t.GetFPFDir(), "decisions", drrName)
-	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+
+	fields := map[string]string{
+		"type":      "DRR",
+		"winner_id": winnerID,
+		"created":   now.Format(time.RFC3339),
+	}
+
+	if err := WriteWithHash(drrPath, fields, body); err != nil {
+		t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "ERROR", map[string]string{"title": title}, err.Error())
 		return "", err
+	}
+
+	if t.DB != nil {
+		ctx := context.Background()
+		drrID := t.Slugify(title)
+		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", "", winnerID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
+		}
+
+		// Create selects relation: DRR → winner
+		if winnerID != "" {
+			if err := t.createRelation(ctx, drrID, "selects", winnerID, 3); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create selects relation: %v\n", err)
+			}
+		}
+
+		// Create rejects relations: DRR → each rejected alternative
+		for _, rejID := range rejectedIDs {
+			if rejID != "" && rejID != winnerID {
+				if err := t.createRelation(ctx, drrID, "rejects", rejID, 3); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create rejects relation to %s: %v\n", rejID, err)
+				}
+			}
+		}
 	}
 
 	if winnerID != "" {
@@ -362,6 +609,7 @@ func (t *Tools) FinalizeDecision(title, winnerID, context, decision, rationale, 
 		}
 	}
 
+	t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "SUCCESS", map[string]string{"title": title, "drr": drrName}, "")
 	return drrPath, nil
 }
 
@@ -371,26 +619,17 @@ func (t *Tools) RunDecay() error {
 		return fmt.Errorf("DB not initialized")
 	}
 
-	rows, err := t.DB.GetRawDB().Query("SELECT id FROM holons")
+	ctx := context.Background()
+	ids, err := t.DB.ListAllHolonIDs(ctx)
 	if err != nil {
 		return err
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return err
-		}
-		ids = append(ids, id)
 	}
 
 	calc := assurance.New(t.DB.GetRawDB())
 	updatedCount := 0
 
 	for _, id := range ids {
-		_, err := calc.CalculateReliability(context.Background(), id)
+		_, err := calc.CalculateReliability(ctx, id)
 		if err != nil {
 			fmt.Printf("Error calculating R for %s: %v\n", id, err)
 			continue
@@ -417,7 +656,8 @@ func (t *Tools) VisualizeAudit(rootID string) (string, error) {
 }
 
 func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calculator) (string, error) {
-	report, err := calc.CalculateReliability(context.Background(), holonID)
+	ctx := context.Background()
+	report, err := calc.CalculateReliability(ctx, holonID)
 	if err != nil {
 		return "", err
 	}
@@ -431,21 +671,36 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 		}
 	}
 
-	rows, err := t.DB.GetRawDB().Query("SELECT source_id, congruence_level FROM relations WHERE target_id = ? AND relation_type = 'componentOf'", holonID)
+	// Show componentOf/constituentOf dependencies (these propagate WLNK)
+	components, err := t.DB.GetComponentsOf(ctx, holonID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to query dependencies for %s: %v\n", holonID, err)
 		return tree, nil
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var depID string
-		var cl int
-		if err := rows.Scan(&depID, &cl); err == nil {
-			clStr := fmt.Sprintf("CL:%d", cl)
-			tree += fmt.Sprintf("%s  --(%s)-->\n", indent, clStr)
-			subTree, _ := t.buildAuditTree(depID, level+1, calc)
-			tree += subTree
+	for _, c := range components {
+		cl := int64(3)
+		if c.CongruenceLevel.Valid {
+			cl = c.CongruenceLevel.Int64
+		}
+		clStr := fmt.Sprintf("CL:%d", cl)
+		tree += fmt.Sprintf("%s  --(%s)-->\n", indent, clStr)
+		subTree, _ := t.buildAuditTree(c.SourceID, level+1, calc)
+		tree += subTree
+	}
+
+	// Show memberOf relations (alternatives grouped under decision context)
+	// Note: memberOf does NOT propagate R, shown for visibility only
+	members, err := t.DB.GetCollectionMembers(ctx, holonID)
+	if err == nil && len(members) > 0 {
+		tree += fmt.Sprintf("%s  [members]\n", indent)
+		for _, m := range members {
+			memberReport, mErr := calc.CalculateReliability(ctx, m.SourceID)
+			if mErr != nil {
+				tree += fmt.Sprintf("%s    - %s (error)\n", indent, m.SourceID)
+				continue
+			}
+			tree += fmt.Sprintf("%s    - [%s R:%.2f] %s\n", indent, m.SourceID, memberReport.FinalScore, t.getHolonTitle(m.SourceID))
 		}
 	}
 
@@ -453,9 +708,9 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 }
 
 func (t *Tools) getHolonTitle(id string) string {
-	var title string
-	_ = t.DB.GetRawDB().QueryRow("SELECT title FROM holons WHERE id = ?", id).Scan(&title)
-	if title == "" {
+	ctx := context.Background()
+	title, err := t.DB.GetHolonTitle(ctx, id)
+	if err != nil || title == "" {
 		return id
 	}
 	return title
@@ -528,4 +783,256 @@ func (t *Tools) Actualize() (string, error) {
 	}
 
 	return report.String(), nil
+}
+
+func (t *Tools) GetHolon(id string) (db.Holon, error) {
+	if t.DB == nil {
+		return db.Holon{}, fmt.Errorf("DB not initialized")
+	}
+	return t.DB.GetHolon(context.Background(), id)
+}
+
+func (t *Tools) CalculateR(holonID string) (string, error) {
+	defer t.RecordWork("CalculateR", time.Now())
+	if t.DB == nil {
+		return "", fmt.Errorf("DB not initialized")
+	}
+
+	calc := assurance.New(t.DB.GetRawDB())
+	report, err := calc.CalculateReliability(context.Background(), holonID)
+	if err != nil {
+		return "", err
+	}
+
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("## Reliability Report: %s\n\n", holonID))
+	result.WriteString(fmt.Sprintf("**R_eff: %.2f**\n", report.FinalScore))
+	result.WriteString(fmt.Sprintf("- Self Score: %.2f\n", report.SelfScore))
+	if report.WeakestLink != "" {
+		result.WriteString(fmt.Sprintf("- Weakest Link: %s\n", report.WeakestLink))
+	}
+	if report.DecayPenalty > 0 {
+		result.WriteString(fmt.Sprintf("- Decay Penalty: %.2f\n", report.DecayPenalty))
+	}
+	if len(report.Factors) > 0 {
+		result.WriteString("\n**Factors:**\n")
+		for _, f := range report.Factors {
+			result.WriteString(fmt.Sprintf("- %s\n", f))
+		}
+	}
+
+	return result.String(), nil
+}
+
+func (t *Tools) CheckDecay(deprecate, waiveID, waiveUntil, waiveRationale string) (string, error) {
+	defer t.RecordWork("CheckDecay", time.Now())
+	if t.DB == nil {
+		return "", fmt.Errorf("DB not initialized")
+	}
+
+	switch {
+	case deprecate != "":
+		return t.deprecateHolon(deprecate)
+	case waiveID != "":
+		if waiveUntil == "" || waiveRationale == "" {
+			return "", fmt.Errorf("waive requires both --until and --rationale parameters")
+		}
+		return t.createWaiver(waiveID, waiveUntil, waiveRationale)
+	default:
+		return t.generateFreshnessReport()
+	}
+}
+
+func (t *Tools) deprecateHolon(holonID string) (string, error) {
+	ctx := context.Background()
+	holon, err := t.DB.GetHolon(ctx, holonID)
+	if err != nil {
+		return "", fmt.Errorf("holon not found: %s", holonID)
+	}
+
+	var newLayer string
+	switch holon.Layer {
+	case "L2":
+		newLayer = "L1"
+	case "L1":
+		newLayer = "L0"
+	default:
+		return "", fmt.Errorf("cannot deprecate %s from %s (only L2 and L1 can be deprecated)", holonID, holon.Layer)
+	}
+
+	if _, err := t.MoveHypothesis(holonID, holon.Layer, newLayer); err != nil {
+		return "", err
+	}
+
+	t.AuditLog("quint_check_decay", "deprecate", "user", holonID, "SUCCESS",
+		map[string]string{"from": holon.Layer, "to": newLayer}, "Evidence expired, holon deprecated")
+
+	return fmt.Sprintf("Deprecated: %s %s → %s\n\nThis decision now requires re-evaluation.\nNext step: Run /q1-hypothesize to explore alternatives.", holonID, holon.Layer, newLayer), nil
+}
+
+func (t *Tools) createWaiver(evidenceID, until, rationale string) (string, error) {
+	ctx := context.Background()
+
+	_, err := t.DB.GetEvidenceByID(ctx, evidenceID)
+	if err != nil {
+		return "", fmt.Errorf("evidence not found: %s", evidenceID)
+	}
+
+	untilTime, err := time.Parse("2006-01-02", until)
+	if err != nil {
+		untilTime, err = time.Parse(time.RFC3339, until)
+		if err != nil {
+			return "", fmt.Errorf("invalid date format: %s (use YYYY-MM-DD or RFC3339)", until)
+		}
+	}
+
+	if untilTime.Before(time.Now()) {
+		return "", fmt.Errorf("waive_until must be a future date")
+	}
+
+	id := uuid.New().String()
+	if err := t.DB.CreateWaiver(ctx, id, evidenceID, "user", untilTime, rationale); err != nil {
+		return "", fmt.Errorf("failed to create waiver: %v", err)
+	}
+
+	t.AuditLog("quint_check_decay", "waive", "user", evidenceID, "SUCCESS",
+		map[string]string{"until": until, "rationale": rationale}, "")
+
+	return fmt.Sprintf(`Waiver recorded:
+- Evidence: %s
+- Waived until: %s
+- Rationale: %s
+
+⚠️ This evidence returns to EXPIRED status after %s.
+   Set a reminder to run /q3-validate before then.`, evidenceID, until, rationale, until), nil
+}
+
+func (t *Tools) generateFreshnessReport() (string, error) {
+	ctx := context.Background()
+	rawDB := t.DB.GetRawDB()
+
+	rows, err := rawDB.QueryContext(ctx, `
+		SELECT
+			e.id as evidence_id,
+			e.holon_id,
+			h.title,
+			h.layer,
+			e.type as evidence_type,
+			CAST(JULIANDAY('now') - JULIANDAY(substr(e.valid_until, 1, 10)) AS INTEGER) as days_overdue
+		FROM evidence e
+		JOIN holons h ON e.holon_id = h.id
+		LEFT JOIN (
+			SELECT evidence_id, MAX(waived_until) as latest_waiver
+			FROM waivers
+			GROUP BY evidence_id
+		) w ON e.id = w.evidence_id
+		WHERE e.valid_until IS NOT NULL
+		  AND substr(e.valid_until, 1, 10) < date('now')
+		  AND (w.latest_waiver IS NULL OR w.latest_waiver < datetime('now'))
+		ORDER BY h.id, days_overdue DESC
+	`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close() //nolint:errcheck
+
+	type evidenceInfo struct {
+		ID          string
+		Type        string
+		DaysOverdue int
+	}
+
+	staleHolons := make(map[string][]evidenceInfo)
+	holonTitles := make(map[string]string)
+	holonLayers := make(map[string]string)
+
+	for rows.Next() {
+		var evidenceID, holonID, title, layer, evidenceType string
+		var daysOverdue int
+		if err := rows.Scan(&evidenceID, &holonID, &title, &layer, &evidenceType, &daysOverdue); err != nil {
+			continue
+		}
+		holonTitles[holonID] = title
+		holonLayers[holonID] = layer
+		staleHolons[holonID] = append(staleHolons[holonID], evidenceInfo{
+			ID:          evidenceID,
+			Type:        evidenceType,
+			DaysOverdue: daysOverdue,
+		})
+	}
+
+	waivedRows, err := rawDB.QueryContext(ctx, `
+		SELECT w.evidence_id, e.holon_id, h.title, w.waived_until, w.waived_by, w.rationale,
+		       CAST(JULIANDAY(w.waived_until) - JULIANDAY('now') AS INTEGER) as days_until_expiry
+		FROM waivers w
+		JOIN evidence e ON w.evidence_id = e.id
+		JOIN holons h ON e.holon_id = h.id
+		WHERE w.waived_until > datetime('now')
+		ORDER BY w.waived_until ASC
+	`)
+	if err != nil {
+		return "", err
+	}
+	defer waivedRows.Close() //nolint:errcheck
+
+	type waiverInfo struct {
+		EvidenceID      string
+		HolonID         string
+		HolonTitle      string
+		WaivedUntil     string
+		WaivedBy        string
+		Rationale       string
+		DaysUntilExpiry int
+	}
+
+	var activeWaivers []waiverInfo
+	for waivedRows.Next() {
+		var info waiverInfo
+		if err := waivedRows.Scan(&info.EvidenceID, &info.HolonID, &info.HolonTitle, &info.WaivedUntil, &info.WaivedBy, &info.Rationale, &info.DaysUntilExpiry); err != nil {
+			continue
+		}
+		activeWaivers = append(activeWaivers, info)
+	}
+
+	var result strings.Builder
+	result.WriteString("## Evidence Freshness Report\n\n")
+
+	if len(staleHolons) == 0 {
+		result.WriteString("### All holons FRESH ✓\n\nNo expired evidence found.\n")
+	} else {
+		result.WriteString(fmt.Sprintf("### STALE (%d holons require action)\n\n", len(staleHolons)))
+
+		for holonID, evidenceItems := range staleHolons {
+			result.WriteString(fmt.Sprintf("#### %s (%s)\n", holonTitles[holonID], holonLayers[holonID]))
+			result.WriteString("| ID | Type | Status | Details |\n")
+			result.WriteString("|-----|------|--------|--------|\n")
+			for _, item := range evidenceItems {
+				result.WriteString(fmt.Sprintf("| %s | %s | EXPIRED | %d days overdue |\n", item.ID, item.Type, item.DaysOverdue))
+			}
+			result.WriteString("\nActions:\n")
+			result.WriteString(fmt.Sprintf("  → /q3-validate %s (refresh)\n", holonID))
+			result.WriteString(fmt.Sprintf("  → /q-decay --deprecate %s (downgrade)\n", holonID))
+			result.WriteString("  → /q-decay --waive <evidence_id> --until <date> --rationale \"...\"\n\n")
+		}
+	}
+
+	if len(activeWaivers) > 0 {
+		result.WriteString("---\n\n### WAIVED (temporary risk acceptance)\n\n")
+		result.WriteString("| Holon | Evidence | Waived Until | By | Rationale |\n")
+		result.WriteString("|-------|----------|--------------|----|-----------|\n")
+		for _, w := range activeWaivers {
+			waivedUntilShort := w.WaivedUntil
+			if len(waivedUntilShort) > 10 {
+				waivedUntilShort = waivedUntilShort[:10]
+			}
+			result.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n", w.HolonTitle, w.EvidenceID, waivedUntilShort, w.WaivedBy, w.Rationale))
+		}
+		for _, w := range activeWaivers {
+			if w.DaysUntilExpiry <= 30 {
+				result.WriteString(fmt.Sprintf("\n⚠️ Waiver for %s expires in %d days\n", w.EvidenceID, w.DaysUntilExpiry))
+			}
+		}
+	}
+
+	return result.String(), nil
 }

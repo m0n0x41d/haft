@@ -64,6 +64,17 @@ This creates:
 /q1-hypothesize "Your problem..."  # Generate hypotheses
 ```
 
+### Recommended: Add FPF Context to Your Agent Rules
+
+For best results, we highly recommend using the [`CLAUDE.md`](CLAUDE.md) from this repository as a reference for your own project's agent instructions. It's optimized for software engineering work with FPF.
+
+At minimum, copy the **FPF Glossary** section to your:
+- `CLAUDE.md` (Claude Code)
+- `.cursorrules` or `AGENTS.md` (Cursor)
+- Agent system prompts (other tools)
+
+This helps the AI understand FPF concepts like L0/L1/L2 layers, WLNK, R_eff, and the Transformer Mandate without re-explanation each session.
+
 ## How It Works
 
 Quint Code implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.

@@ -1,0 +1,57 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-commit checks..."
+
+# Check if we have Go files staged
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+
+if [ -n "$STAGED_GO_FILES" ]; then
+    echo "Checking Go files..."
+
+    # Format check
+    echo "  → gofmt"
+    UNFORMATTED=$(gofmt -l $STAGED_GO_FILES 2>/dev/null || true)
+    if [ -n "$UNFORMATTED" ]; then
+        echo "ERROR: The following files need formatting (run 'gofmt -w'):"
+        echo "$UNFORMATTED"
+        exit 1
+    fi
+
+    # Build check
+    echo "  → go build"
+    (cd src/mcp && go build -o /dev/null .) || {
+        echo "ERROR: Build failed"
+        exit 1
+    }
+
+    # Test check
+    echo "  → go test"
+    (cd src/mcp && go test ./... -short) || {
+        echo "ERROR: Tests failed"
+        exit 1
+    }
+
+    # Lint check (if golangci-lint is installed)
+    if command -v golangci-lint &> /dev/null; then
+        echo "  → golangci-lint"
+        (cd src/mcp && golangci-lint run --config .golangci.yml) || {
+            echo "ERROR: Linting failed"
+            exit 1
+        }
+    fi
+fi
+
+# Check if command files changed
+STAGED_CMD_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '^src/commands/' || true)
+
+if [ -n "$STAGED_CMD_FILES" ]; then
+    echo "Checking command files sync..."
+    ./build.sh
+    if ! git diff --exit-code dist/ > /dev/null 2>&1; then
+        echo "ERROR: dist/ out of sync. Run ./build.sh and stage the changes."
+        exit 1
+    fi
+fi
+
+echo "All checks passed!"

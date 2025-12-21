@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
+
 	"github.com/spf13/cobra"
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
 )
 
 var serveCmd = &cobra.Command{
@@ -43,9 +44,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	stateFile := filepath.Join(quintDir, "state.json")
 	dbPath := filepath.Join(quintDir, "quint.db")
 
-	var database *db.DB
+	var database *db.Store
 	if _, err := os.Stat(dbPath); err == nil {
-		database, err = db.New(dbPath)
+		database, err = db.NewStore(dbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to open database: %v\n", err)
 		}

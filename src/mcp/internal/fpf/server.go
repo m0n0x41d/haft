@@ -151,15 +151,31 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		},
 		{
 			Name:        "quint_propose",
-			Description: "Propose a new hypothesis (L0).",
+			Description: "Propose a new hypothesis (L0). IMPORTANT: Consider depends_on for dependencies and decision_context for grouping alternatives.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"title":     map[string]string{"type": "string", "description": "Title"},
 					"content":   map[string]string{"type": "string", "description": "Description"},
-					"scope":     map[string]string{"type": "string", "description": "Scope (G)"},
-					"kind":      map[string]interface{}{"type": "string", "enum": []interface{}{"system", "episteme"}},
-					"rationale": map[string]string{"type": "string", "description": "JSON string of rationale (anomaly, alternatives)"},
+					"scope":     map[string]string{"type": "string", "description": "Scope (G) - where this hypothesis applies"},
+					"kind":      map[string]interface{}{"type": "string", "enum": []interface{}{"system", "episteme"}, "description": "system=code/architecture, episteme=process/methodology"},
+					"rationale": map[string]string{"type": "string", "description": "JSON: {anomaly, approach, alternatives_rejected}"},
+					"decision_context": map[string]string{
+						"type":        "string",
+						"description": "Parent decision ID to GROUP competing alternatives. Does NOT affect R_eff. Use when multiple hypotheses solve the same problem. Example: 'caching-decision' groups 'redis-caching' and 'cdn-edge'. Creates MemberOf relation.",
+					},
+					"depends_on": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "IDs of holons this hypothesis REQUIRES to work. CRITICAL: Affects R_eff via WLNK - if dependency has low R, this inherits that ceiling. Use when: (1) builds on another hypothesis, (2) needs another to function, (3) dependency failure invalidates this. Leave empty for independent hypotheses. Creates ComponentOf/ConstituentOf.",
+					},
+					"dependency_cl": map[string]interface{}{
+						"type":        "integer",
+						"minimum":     1,
+						"maximum":     3,
+						"default":     3,
+						"description": "Congruence level for dependencies. CL3=same context (no penalty), CL2=similar (10% penalty), CL1=different (30% penalty).",
+					},
 				},
 				"required": []string{"title", "content", "scope", "kind", "rationale"},
 			},
@@ -209,8 +225,13 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"title":           map[string]string{"type": "string"},
-					"winner_id":       map[string]string{"type": "string"},
+					"title":     map[string]string{"type": "string"},
+					"winner_id": map[string]string{"type": "string"},
+					"rejected_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "IDs of rejected L2 alternatives",
+					},
 					"context":         map[string]string{"type": "string"},
 					"decision":        map[string]string{"type": "string"},
 					"rationale":       map[string]string{"type": "string"},
@@ -226,6 +247,53 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "quint_audit_tree",
+			Description: "Visualize the assurance tree for a holon, showing R scores, dependencies, and CL penalties.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"holon_id": map[string]string{"type": "string", "description": "ID of the holon to audit"},
+				},
+				"required": []string{"holon_id"},
+			},
+		},
+		{
+			Name:        "quint_calculate_r",
+			Description: "Calculate the effective reliability (R_eff) for a holon with detailed breakdown.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"holon_id": map[string]string{"type": "string", "description": "ID of the holon"},
+				},
+				"required": []string{"holon_id"},
+			},
+		},
+		{
+			Name:        "quint_check_decay",
+			Description: "Check evidence freshness and manage stale decisions. Without parameters: shows freshness report. With deprecate: downgrades hypothesis. With waive: records temporary risk acceptance.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"deprecate": map[string]string{
+						"type":        "string",
+						"description": "Hypothesis ID to deprecate (L2→L1 or L1→L0)",
+					},
+					"waive_id": map[string]string{
+						"type":        "string",
+						"description": "Evidence ID to waive",
+					},
+					"waive_until": map[string]string{
+						"type":        "string",
+						"description": "ISO date until which waiver is valid (required with waive_id)",
+					},
+					"waive_rationale": map[string]string{
+						"type":        "string",
+						"description": "Reason for accepting stale evidence (required with waive_id)",
+					},
+				},
 			},
 		},
 	}
@@ -250,6 +318,22 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			return v
 		}
 		return ""
+	}
+
+	args := make(map[string]string)
+	for k, v := range params.Arguments {
+		if s, ok := v.(string); ok {
+			args[k] = s
+		}
+	}
+
+	if precondErr := s.tools.CheckPreconditions(params.Name, args); precondErr != nil {
+		s.tools.AuditLog(params.Name, "precondition_failed", "agent", "", "BLOCKED", args, precondErr.Error())
+		s.sendResult(req.ID, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: precondErr.Error()}},
+			IsError: true,
+		})
+		return
 	}
 
 	var output string
@@ -283,7 +367,20 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
-		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"))
+		decisionContext := arg("decision_context")
+		var dependsOn []string
+		if deps, ok := params.Arguments["depends_on"].([]interface{}); ok {
+			for _, d := range deps {
+				if s, ok := d.(string); ok {
+					dependsOn = append(dependsOn, s)
+				}
+			}
+		}
+		dependencyCL := 3
+		if cl, ok := params.Arguments["dependency_cl"].(float64); ok {
+			dependencyCL = int(cl)
+		}
+		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
 		s.tools.FSM.State.Phase = PhaseDeduction
@@ -310,13 +407,30 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_decide":
 		s.tools.FSM.State.Phase = PhaseDecision
-		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
+		var rejectedIDs []string
+		if rids, ok := params.Arguments["rejected_ids"].([]interface{}); ok {
+			for _, r := range rids {
+				if s, ok := r.(string); ok {
+					rejectedIDs = append(rejectedIDs, s)
+				}
+			}
+		}
+		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
 			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 			}
 		}
+
+	case "quint_audit_tree":
+		output, err = s.tools.VisualizeAudit(arg("holon_id"))
+
+	case "quint_calculate_r":
+		output, err = s.tools.CalculateR(arg("holon_id"))
+
+	case "quint_check_decay":
+		output, err = s.tools.CheckDecay(arg("deprecate"), arg("waive_id"), arg("waive_until"), arg("waive_rationale"))
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

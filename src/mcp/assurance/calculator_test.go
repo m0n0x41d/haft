@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
 	// Use cache=shared to share DB across connections in the pool
-	db, err := sql.Open("sqlite3", "file:memdb1?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:memdb1?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestCalculateReliability_WeakestLink(t *testing.T) {
 
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e1', 'A', 'pass', ?)", time.Now().Add(24*time.Hour))
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e2', 'B', 'fail', ?)", time.Now().Add(24*time.Hour))
-	
+
 	// B is component of A
 	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 3)")
 
@@ -100,7 +100,7 @@ func TestCalculateReliability_CLPenalty(t *testing.T) {
 
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e1', 'A', 'pass', ?)", time.Now().Add(24*time.Hour))
 	_, _ = db.Exec("INSERT INTO evidence (id, holon_id, verdict, valid_until) VALUES ('e2', 'B', 'pass', ?)", time.Now().Add(24*time.Hour))
-	
+
 	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 1)")
 
 	calc := New(db)

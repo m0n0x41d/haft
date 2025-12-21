@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"quint-mcp/assurance"
-	"quint-mcp/db"
-	"quint-mcp/internal/fpf"
+	"github.com/m0n0x41d/quint-code/assurance"
+	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/fpf"
 )
 
-func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.DB, string) {
+func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.Store, string) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
 	if err := os.MkdirAll(quintDir, 0755); err != nil {
@@ -21,14 +21,20 @@ func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.DB, string) {
 	}
 
 	dbPath := filepath.Join(quintDir, "quint.db")
-	database, err := db.New(dbPath)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
+	rawDB := database.GetRawDB()
+	_, err = rawDB.Exec("INSERT INTO holons (id, type, layer, title, content, context_id) VALUES ('drr-setup', 'decision', 'DRR', 'Setup', 'Content', 'default')")
+	if err != nil {
+		t.Fatalf("Failed to insert DRR holon for phase setup: %v", err)
+	}
+
 	fsm := &fpf.FSM{
 		State: fpf.State{Phase: fpf.PhaseDecision},
-		DB:    database.GetRawDB(),
+		DB:    rawDB,
 	}
 
 	return fsm, database, tempDir

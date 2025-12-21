@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [main, dev]
+    branches: [main]  # Only after merge to main
 
 concurrency:
   group: ci-${{ github.ref }}

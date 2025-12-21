@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"quint-mcp/assurance"
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/assurance"
+	"github.com/m0n0x41d/quint-code/db"
 
 	"github.com/google/uuid"
 )

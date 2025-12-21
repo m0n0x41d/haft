@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 func TestCheckPreconditions_Propose(t *testing.T) {

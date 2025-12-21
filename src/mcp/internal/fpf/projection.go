@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"quint-mcp/db"
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 type TamperingEvent struct {

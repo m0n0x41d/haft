@@ -74,6 +74,17 @@ CREATE TABLE audit_log (
     context_id TEXT NOT NULL DEFAULT 'default'
 );
 
+CREATE TABLE waivers (
+    id TEXT PRIMARY KEY,
+    evidence_id TEXT NOT NULL,
+    waived_by TEXT NOT NULL,
+    waived_until DATETIME NOT NULL,
+    rationale TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(evidence_id) REFERENCES evidence(id)
+);
+
 -- Indexes for WLNK traversal
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
+CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);

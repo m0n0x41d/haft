@@ -196,6 +196,88 @@ func (q *Queries) CreateRelation(ctx context.Context, db DBTX, arg CreateRelatio
 	return err
 }
 
+const createWaiver = `-- name: CreateWaiver :exec
+
+INSERT INTO waivers (id, evidence_id, waived_by, waived_until, rationale, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type CreateWaiverParams struct {
+	ID          string
+	EvidenceID  string
+	WaivedBy    string
+	WaivedUntil time.Time
+	Rationale   string
+	CreatedAt   sql.NullTime
+}
+
+// Waiver queries
+func (q *Queries) CreateWaiver(ctx context.Context, db DBTX, arg CreateWaiverParams) error {
+	_, err := db.ExecContext(ctx, createWaiver,
+		arg.ID,
+		arg.EvidenceID,
+		arg.WaivedBy,
+		arg.WaivedUntil,
+		arg.Rationale,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const getActiveWaiverForEvidence = `-- name: GetActiveWaiverForEvidence :one
+SELECT id, evidence_id, waived_by, waived_until, rationale, created_at FROM waivers
+WHERE evidence_id = ? AND waived_until > datetime('now')
+ORDER BY waived_until DESC LIMIT 1
+`
+
+func (q *Queries) GetActiveWaiverForEvidence(ctx context.Context, db DBTX, evidenceID string) (Waiver, error) {
+	row := db.QueryRowContext(ctx, getActiveWaiverForEvidence, evidenceID)
+	var i Waiver
+	err := row.Scan(
+		&i.ID,
+		&i.EvidenceID,
+		&i.WaivedBy,
+		&i.WaivedUntil,
+		&i.Rationale,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAllActiveWaivers = `-- name: GetAllActiveWaivers :many
+SELECT id, evidence_id, waived_by, waived_until, rationale, created_at FROM waivers WHERE waived_until > datetime('now') ORDER BY waived_until ASC
+`
+
+func (q *Queries) GetAllActiveWaivers(ctx context.Context, db DBTX) ([]Waiver, error) {
+	rows, err := db.QueryContext(ctx, getAllActiveWaivers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Waiver
+	for rows.Next() {
+		var i Waiver
+		if err := rows.Scan(
+			&i.ID,
+			&i.EvidenceID,
+			&i.WaivedBy,
+			&i.WaivedUntil,
+			&i.Rationale,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAuditLogByContext = `-- name: GetAuditLogByContext :many
 SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log WHERE context_id = ? ORDER BY timestamp DESC
 `
@@ -481,6 +563,27 @@ func (q *Queries) GetEvidenceByHolon(ctx context.Context, db DBTX, holonID strin
 	return items, nil
 }
 
+const getEvidenceByID = `-- name: GetEvidenceByID :one
+SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at FROM evidence WHERE id = ? LIMIT 1
+`
+
+func (q *Queries) GetEvidenceByID(ctx context.Context, db DBTX, id string) (Evidence, error) {
+	row := db.QueryRowContext(ctx, getEvidenceByID, id)
+	var i Evidence
+	err := row.Scan(
+		&i.ID,
+		&i.HolonID,
+		&i.Type,
+		&i.Content,
+		&i.Verdict,
+		&i.AssuranceLevel,
+		&i.CarrierRef,
+		&i.ValidUntil,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getEvidenceWithCarrier = `-- name: GetEvidenceWithCarrier :many
 SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != ''
 `
@@ -743,6 +846,40 @@ func (q *Queries) GetRelationsByTarget(ctx context.Context, db DBTX, arg GetRela
 			&i.TargetID,
 			&i.RelationType,
 			&i.CongruenceLevel,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getWaiversByEvidence = `-- name: GetWaiversByEvidence :many
+SELECT id, evidence_id, waived_by, waived_until, rationale, created_at FROM waivers WHERE evidence_id = ? ORDER BY created_at DESC
+`
+
+func (q *Queries) GetWaiversByEvidence(ctx context.Context, db DBTX, evidenceID string) ([]Waiver, error) {
+	rows, err := db.QueryContext(ctx, getWaiversByEvidence, evidenceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Waiver
+	for rows.Next() {
+		var i Waiver
+		if err := rows.Scan(
+			&i.ID,
+			&i.EvidenceID,
+			&i.WaivedBy,
+			&i.WaivedUntil,
+			&i.Rationale,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

@@ -114,22 +114,33 @@ func (t *Tools) checkTestPreconditions(args map[string]string) error {
 	}
 
 	l1Path := filepath.Join(t.GetFPFDir(), "knowledge", "L1", hypoID+".md")
-	if _, err := os.Stat(l1Path); os.IsNotExist(err) {
+	l2Path := filepath.Join(t.GetFPFDir(), "knowledge", "L2", hypoID+".md")
+	l1Exists := false
+	l2Exists := false
+
+	if _, err := os.Stat(l1Path); err == nil {
+		l1Exists = true
+	}
+	if _, err := os.Stat(l2Path); err == nil {
+		l2Exists = true
+	}
+
+	if !l1Exists && !l2Exists {
 		if t.DB != nil {
 			ctx := context.Background()
 			holon, err := t.DB.GetHolon(ctx, hypoID)
-			if err != nil || holon.Layer != "L1" {
+			if err != nil || (holon.Layer != "L1" && holon.Layer != "L2") {
 				return &PreconditionError{
 					Tool:       "quint_test",
-					Condition:  fmt.Sprintf("hypothesis '%s' not found in L1", hypoID),
-					Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first",
+					Condition:  fmt.Sprintf("hypothesis '%s' not found in L1 or L2", hypoID),
+					Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first. L2 hypotheses can also be tested to refresh evidence.",
 				}
 			}
 		} else {
 			return &PreconditionError{
 				Tool:       "quint_test",
-				Condition:  fmt.Sprintf("hypothesis '%s' not found in L1", hypoID),
-				Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first",
+				Condition:  fmt.Sprintf("hypothesis '%s' not found in L1 or L2", hypoID),
+				Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first. L2 hypotheses can also be tested to refresh evidence.",
 			}
 		}
 	}

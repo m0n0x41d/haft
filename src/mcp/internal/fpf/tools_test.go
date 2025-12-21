@@ -472,15 +472,15 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
 
-	// Check decay
-	result, err := tools.CheckDecay()
+	// Check decay (freshness report mode - all empty params)
+	result, err := tools.CheckDecay("", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay failed: %v", err)
 	}
 
-	// Should report no expired evidence
-	if !strings.Contains(result, "No expired evidence") {
-		t.Errorf("Expected 'No expired evidence' message, got: %s", result)
+	// Should report all fresh
+	if !strings.Contains(result, "All holons FRESH") && !strings.Contains(result, "No expired evidence") {
+		t.Errorf("Expected fresh holons message, got: %s", result)
 	}
 }
 
@@ -500,18 +500,152 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
 
-	// Check decay
-	result, err := tools.CheckDecay()
+	// Check decay (freshness report mode - all empty params)
+	result, err := tools.CheckDecay("", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay failed: %v", err)
 	}
 
 	// Should report the expired evidence
-	if !strings.Contains(result, "stale-holon") {
-		t.Errorf("Expected 'stale-holon' in output, got: %s", result)
+	if !strings.Contains(result, "stale-holon") && !strings.Contains(result, "Stale Holon") {
+		t.Errorf("Expected stale-holon in output, got: %s", result)
 	}
-	if !strings.Contains(result, "Expired evidence") {
-		t.Errorf("Expected 'Expired evidence' count in output, got: %s", result)
+	if !strings.Contains(result, "STALE") && !strings.Contains(result, "EXPIRED") {
+		t.Errorf("Expected STALE or EXPIRED in output, got: %s", result)
+	}
+}
+
+func TestCheckDecay_Deprecate(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Get the FPF directory from tools (this is where InitProject creates structure)
+	fpfDir := tools.GetFPFDir()
+	l2Dir := filepath.Join(fpfDir, "knowledge", "L2")
+	l1Dir := filepath.Join(fpfDir, "knowledge", "L1")
+
+	// Create L2 holon with file
+	holonID := "deprecate-test"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Deprecate Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(l2Dir, holonID+".md"), []byte("# Test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+
+	// Deprecate (L2 -> L1)
+	result, err := tools.CheckDecay(holonID, "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay deprecate failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Deprecated") || !strings.Contains(result, "L2 → L1") {
+		t.Errorf("Expected deprecation message, got: %s", result)
+	}
+
+	// Verify holon moved to L1 in DB
+	holon, err := tools.DB.GetHolon(ctx, holonID)
+	if err != nil {
+		t.Fatalf("Failed to get holon: %v", err)
+	}
+	if holon.Layer != "L1" {
+		t.Errorf("Expected layer L1, got: %s", holon.Layer)
+	}
+
+	// Verify file moved
+	if _, err := os.Stat(filepath.Join(l1Dir, holonID+".md")); os.IsNotExist(err) {
+		t.Error("Expected file to exist in L1 directory")
+	}
+}
+
+func TestCheckDecay_Waive(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create holon with expired evidence
+	holonID := "waive-test-holon"
+	evidenceID := "waive-test-evidence"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Waive Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Verify initially shows as stale
+	result, err := tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay failed: %v", err)
+	}
+	if !strings.Contains(result, "STALE") {
+		t.Errorf("Expected STALE before waive, got: %s", result)
+	}
+
+	// Waive the evidence
+	futureDate := "2099-12-31"
+	rationale := "Test waiver"
+	result, err = tools.CheckDecay("", evidenceID, futureDate, rationale)
+	if err != nil {
+		t.Fatalf("CheckDecay waive failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Waiver recorded") {
+		t.Errorf("Expected waiver confirmation, got: %s", result)
+	}
+	if !strings.Contains(result, evidenceID) {
+		t.Errorf("Expected evidence ID in output, got: %s", result)
+	}
+
+	// Check that it no longer shows as stale
+	result, err = tools.CheckDecay("", "", "", "")
+	if err != nil {
+		t.Fatalf("CheckDecay report failed: %v", err)
+	}
+
+	// Should show waived instead of stale
+	if strings.Contains(result, holonID) && strings.Contains(result, "STALE") && !strings.Contains(result, "WAIVED") {
+		t.Errorf("Expected waived evidence to not show as STALE, got: %s", result)
+	}
+}
+
+func TestCheckDecay_WaiveMissingParams(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	// Waive without until date
+	_, err := tools.CheckDecay("", "some-evidence", "", "some rationale")
+	if err == nil {
+		t.Error("Expected error when waive_until is missing")
+	}
+
+	// Waive without rationale
+	_, err = tools.CheckDecay("", "some-evidence", "2099-12-31", "")
+	if err == nil {
+		t.Error("Expected error when rationale is missing")
+	}
+}
+
+func TestCheckDecay_DeprecateL0Fails(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create L0 holon
+	holonID := "l0-deprecate-test"
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L0", "L0 Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Try to deprecate L0 - should fail
+	_, err = tools.CheckDecay(holonID, "", "", "")
+	if err == nil {
+		t.Error("Expected error when deprecating L0 holon")
+	}
+	if err != nil && !strings.Contains(err.Error(), "cannot deprecate") {
+		t.Errorf("Expected 'cannot deprecate' error, got: %v", err)
 	}
 }
 

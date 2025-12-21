@@ -722,52 +722,214 @@ func (t *Tools) CalculateR(holonID string) (string, error) {
 	return result.String(), nil
 }
 
-func (t *Tools) CheckDecay() (string, error) {
+func (t *Tools) CheckDecay(deprecate, waiveID, waiveUntil, waiveRationale string) (string, error) {
 	defer t.RecordWork("CheckDecay", time.Now())
 	if t.DB == nil {
 		return "", fmt.Errorf("DB not initialized")
 	}
 
+	switch {
+	case deprecate != "":
+		return t.deprecateHolon(deprecate)
+	case waiveID != "":
+		if waiveUntil == "" || waiveRationale == "" {
+			return "", fmt.Errorf("waive requires both --until and --rationale parameters")
+		}
+		return t.createWaiver(waiveID, waiveUntil, waiveRationale)
+	default:
+		return t.generateFreshnessReport()
+	}
+}
+
+func (t *Tools) deprecateHolon(holonID string) (string, error) {
+	ctx := context.Background()
+	holon, err := t.DB.GetHolon(ctx, holonID)
+	if err != nil {
+		return "", fmt.Errorf("holon not found: %s", holonID)
+	}
+
+	var newLayer string
+	switch holon.Layer {
+	case "L2":
+		newLayer = "L1"
+	case "L1":
+		newLayer = "L0"
+	default:
+		return "", fmt.Errorf("cannot deprecate %s from %s (only L2 and L1 can be deprecated)", holonID, holon.Layer)
+	}
+
+	if _, err := t.MoveHypothesis(holonID, holon.Layer, newLayer); err != nil {
+		return "", err
+	}
+
+	t.AuditLog("quint_check_decay", "deprecate", "user", holonID, "SUCCESS",
+		map[string]string{"from": holon.Layer, "to": newLayer}, "Evidence expired, holon deprecated")
+
+	return fmt.Sprintf("Deprecated: %s %s → %s\n\nThis decision now requires re-evaluation.\nNext step: Run /q1-hypothesize to explore alternatives.", holonID, holon.Layer, newLayer), nil
+}
+
+func (t *Tools) createWaiver(evidenceID, until, rationale string) (string, error) {
+	ctx := context.Background()
+
+	_, err := t.DB.GetEvidenceByID(ctx, evidenceID)
+	if err != nil {
+		return "", fmt.Errorf("evidence not found: %s", evidenceID)
+	}
+
+	untilTime, err := time.Parse("2006-01-02", until)
+	if err != nil {
+		untilTime, err = time.Parse(time.RFC3339, until)
+		if err != nil {
+			return "", fmt.Errorf("invalid date format: %s (use YYYY-MM-DD or RFC3339)", until)
+		}
+	}
+
+	if untilTime.Before(time.Now()) {
+		return "", fmt.Errorf("waive_until must be a future date")
+	}
+
+	id := uuid.New().String()
+	if err := t.DB.CreateWaiver(ctx, id, evidenceID, "user", untilTime, rationale); err != nil {
+		return "", fmt.Errorf("failed to create waiver: %v", err)
+	}
+
+	t.AuditLog("quint_check_decay", "waive", "user", evidenceID, "SUCCESS",
+		map[string]string{"until": until, "rationale": rationale}, "")
+
+	return fmt.Sprintf(`Waiver recorded:
+- Evidence: %s
+- Waived until: %s
+- Rationale: %s
+
+⚠️ This evidence returns to EXPIRED status after %s.
+   Set a reminder to run /q3-validate before then.`, evidenceID, until, rationale, until), nil
+}
+
+func (t *Tools) generateFreshnessReport() (string, error) {
 	ctx := context.Background()
 	rawDB := t.DB.GetRawDB()
 
 	rows, err := rawDB.QueryContext(ctx, `
-		SELECT e.holon_id, h.title, COUNT(*) as expired_count,
-		       MAX(JULIANDAY('now') - JULIANDAY(substr(e.valid_until, 1, 10))) as max_days_overdue
+		SELECT
+			e.id as evidence_id,
+			e.holon_id,
+			h.title,
+			h.layer,
+			e.type as evidence_type,
+			CAST(JULIANDAY('now') - JULIANDAY(substr(e.valid_until, 1, 10)) AS INTEGER) as days_overdue
 		FROM evidence e
 		JOIN holons h ON e.holon_id = h.id
+		LEFT JOIN (
+			SELECT evidence_id, MAX(waived_until) as latest_waiver
+			FROM waivers
+			GROUP BY evidence_id
+		) w ON e.id = w.evidence_id
 		WHERE e.valid_until IS NOT NULL
 		  AND substr(e.valid_until, 1, 10) < date('now')
-		GROUP BY e.holon_id
-		ORDER BY max_days_overdue DESC
+		  AND (w.latest_waiver IS NULL OR w.latest_waiver < datetime('now'))
+		ORDER BY h.id, days_overdue DESC
 	`)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var result strings.Builder
-	result.WriteString("## Evidence Decay Report\n\n")
-
-	count := 0
-	for rows.Next() {
-		var holonID, title string
-		var expiredCount int
-		var daysOverdue float64
-		if err := rows.Scan(&holonID, &title, &expiredCount, &daysOverdue); err != nil {
-			continue
-		}
-		count++
-		result.WriteString(fmt.Sprintf("### %s (%s)\n", title, holonID))
-		result.WriteString(fmt.Sprintf("- Expired evidence: %d\n", expiredCount))
-		result.WriteString(fmt.Sprintf("- Max days overdue: %.0f\n\n", daysOverdue))
+	type evidenceInfo struct {
+		ID          string
+		Type        string
+		DaysOverdue int
 	}
 
-	if count == 0 {
-		result.WriteString("No expired evidence found. All holons are fresh.\n")
+	staleHolons := make(map[string][]evidenceInfo)
+	holonTitles := make(map[string]string)
+	holonLayers := make(map[string]string)
+
+	for rows.Next() {
+		var evidenceID, holonID, title, layer, evidenceType string
+		var daysOverdue int
+		if err := rows.Scan(&evidenceID, &holonID, &title, &layer, &evidenceType, &daysOverdue); err != nil {
+			continue
+		}
+		holonTitles[holonID] = title
+		holonLayers[holonID] = layer
+		staleHolons[holonID] = append(staleHolons[holonID], evidenceInfo{
+			ID:          evidenceID,
+			Type:        evidenceType,
+			DaysOverdue: daysOverdue,
+		})
+	}
+
+	waivedRows, err := rawDB.QueryContext(ctx, `
+		SELECT w.evidence_id, e.holon_id, h.title, w.waived_until, w.waived_by, w.rationale,
+		       CAST(JULIANDAY(w.waived_until) - JULIANDAY('now') AS INTEGER) as days_until_expiry
+		FROM waivers w
+		JOIN evidence e ON w.evidence_id = e.id
+		JOIN holons h ON e.holon_id = h.id
+		WHERE w.waived_until > datetime('now')
+		ORDER BY w.waived_until ASC
+	`)
+	if err != nil {
+		return "", err
+	}
+	defer waivedRows.Close() //nolint:errcheck
+
+	type waiverInfo struct {
+		EvidenceID       string
+		HolonID          string
+		HolonTitle       string
+		WaivedUntil      string
+		WaivedBy         string
+		Rationale        string
+		DaysUntilExpiry  int
+	}
+
+	var activeWaivers []waiverInfo
+	for waivedRows.Next() {
+		var info waiverInfo
+		if err := waivedRows.Scan(&info.EvidenceID, &info.HolonID, &info.HolonTitle, &info.WaivedUntil, &info.WaivedBy, &info.Rationale, &info.DaysUntilExpiry); err != nil {
+			continue
+		}
+		activeWaivers = append(activeWaivers, info)
+	}
+
+	var result strings.Builder
+	result.WriteString("## Evidence Freshness Report\n\n")
+
+	if len(staleHolons) == 0 {
+		result.WriteString("### All holons FRESH ✓\n\nNo expired evidence found.\n")
 	} else {
-		result.WriteString(fmt.Sprintf("---\n**Total holons with expired evidence: %d**\n", count))
-		result.WriteString("\nRecommendation: Run `/q3-validate` to refresh evidence for affected holons.\n")
+		result.WriteString(fmt.Sprintf("### STALE (%d holons require action)\n\n", len(staleHolons)))
+
+		for holonID, evidenceItems := range staleHolons {
+			result.WriteString(fmt.Sprintf("#### %s (%s)\n", holonTitles[holonID], holonLayers[holonID]))
+			result.WriteString("| ID | Type | Status | Details |\n")
+			result.WriteString("|-----|------|--------|--------|\n")
+			for _, item := range evidenceItems {
+				result.WriteString(fmt.Sprintf("| %s | %s | EXPIRED | %d days overdue |\n", item.ID, item.Type, item.DaysOverdue))
+			}
+			result.WriteString("\nActions:\n")
+			result.WriteString(fmt.Sprintf("  → /q3-validate %s (refresh)\n", holonID))
+			result.WriteString(fmt.Sprintf("  → /q-decay --deprecate %s (downgrade)\n", holonID))
+			result.WriteString("  → /q-decay --waive <evidence_id> --until <date> --rationale \"...\"\n\n")
+		}
+	}
+
+	if len(activeWaivers) > 0 {
+		result.WriteString("---\n\n### WAIVED (temporary risk acceptance)\n\n")
+		result.WriteString("| Holon | Evidence | Waived Until | By | Rationale |\n")
+		result.WriteString("|-------|----------|--------------|----|-----------|\n")
+		for _, w := range activeWaivers {
+			waivedUntilShort := w.WaivedUntil
+			if len(waivedUntilShort) > 10 {
+				waivedUntilShort = waivedUntilShort[:10]
+			}
+			result.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n", w.HolonTitle, w.EvidenceID, waivedUntilShort, w.WaivedBy, w.Rationale))
+		}
+		for _, w := range activeWaivers {
+			if w.DaysUntilExpiry <= 30 {
+				result.WriteString(fmt.Sprintf("\n⚠️ Waiver for %s expires in %d days\n", w.EvidenceID, w.DaysUntilExpiry))
+			}
+		}
 	}
 
 	return result.String(), nil

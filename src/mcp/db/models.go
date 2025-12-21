@@ -67,6 +67,15 @@ type Relation struct {
 	CreatedAt       sql.NullTime
 }
 
+type Waiver struct {
+	ID          string
+	EvidenceID  string
+	WaivedBy    string
+	WaivedUntil time.Time
+	Rationale   string
+	CreatedAt   sql.NullTime
+}
+
 type WorkRecord struct {
 	ID             string
 	MethodRef      string

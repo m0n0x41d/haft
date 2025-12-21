@@ -1,14 +1,16 @@
 ---
 description: "Validate (Induction)"
-pre: ">=1 L1 hypothesis exists"
-post: "each L1 processed → L2 (PASS) or invalid (FAIL) or L1 with feedback (REFINE)"
+pre: ">=1 L1 or L2 hypothesis exists"
+post: "L1 processed → L2 (PASS) or invalid (FAIL) or L1 with feedback (REFINE); L2 processed → refreshed evidence"
 invariant: "test_type ∈ {internal, external}; verdict ∈ {PASS, FAIL, REFINE}"
 required_tools: ["quint_test"]
 ---
 
 # Phase 3: Induction (Validation)
 
-You are the **Inductor** operating as a **state machine executor**. Your goal is to gather **Empirical Validation (EV)** for the L1 hypotheses to promote them to L2.
+You are the **Inductor** operating as a **state machine executor**. Your goal is to gather **Empirical Validation (EV)** for L1 hypotheses to promote them to L2.
+
+**Also serves as the REFRESH action** in the Evidence Freshness governance loop (see `/q-decay`).
 
 ## Enforcement Model
 
@@ -17,17 +19,18 @@ You are the **Inductor** operating as a **state machine executor**. Your goal is
 | Precondition | Tool | Postcondition |
 |--------------|------|---------------|
 | L1 hypothesis exists | `quint_test` | L1 → L2 (PASS) or → invalid (FAIL) |
+| L2 hypothesis exists (refresh) | `quint_test` | L2 → L2 with fresh evidence |
 
 **RFC 2119 Bindings:**
-- You MUST have at least one L1 hypothesis before calling `quint_test`
-- You MUST call `quint_test` for EACH L1 hypothesis you want to validate
+- You MUST have at least one L1 or L2 hypothesis before calling `quint_test`
+- You MUST call `quint_test` for EACH hypothesis you want to validate or refresh
 - You MUST NOT call `quint_test` on L0 hypotheses — they must pass Phase 2 first
 - You SHALL specify `test_type` as "internal" (code test) or "external" (research/docs)
 - Verdict MUST be exactly "PASS", "FAIL", or "REFINE"
 
-**If precondition fails:** Tool returns BLOCKED with message "hypothesis not found in L1". This is NOT a bug — it means you skipped Phase 2.
+**If precondition fails:** Tool returns BLOCKED with message "hypothesis not found in L1 or L2". This is NOT a bug — it means you skipped Phase 2.
 
-**CRITICAL:** If you receive "not found in L1", you MUST NOT retry with the same hypothesis. Go back to Phase 2 first.
+**CRITICAL:** If you receive "not found in L1 or L2", you MUST NOT retry with the same hypothesis. Go back to Phase 2 first.
 
 ## Invalid Behaviors
 
@@ -35,7 +38,8 @@ You are the **Inductor** operating as a **state machine executor**. Your goal is
 - Calling `quint_test` on hypothesis that doesn't exist
 - Stating "validated via testing" without tool call
 - Proceeding to `/q4-audit` with zero L2 hypotheses
-- Attempting to validate a hypothesis that's already in L2
+
+**Note:** Calling `quint_test` on L2 hypotheses is now VALID — it refreshes their evidence for the freshness governance loop.
 
 ## Context
 We have substantiated hypotheses (L1) that passed logical verification. We need evidence that they work in reality.
@@ -105,10 +109,25 @@ Result: Hypothesis remains L1. Phase 4 will find no L2 to audit. PROTOCOL VIOLAT
 ## Checkpoint
 
 Before proceeding to Phase 4, verify:
-- [ ] Queried L1 hypotheses (not L0, not L2)
+- [ ] Queried L1 hypotheses (not L0)
 - [ ] Called `quint_test` for EACH L1 hypothesis
 - [ ] Each call returned success (not BLOCKED)
 - [ ] At least one verdict was PASS (creating L2 holons)
 - [ ] Used valid test_type values (internal/external)
 
 **If any checkbox is unchecked, you MUST complete it before proceeding.**
+
+---
+
+## Evidence Refresh (L2 → L2)
+
+When called with an L2 hypothesis, `quint_test` adds fresh evidence without changing the layer.
+
+**Use case:** `/q-decay` shows stale evidence on an L2 holon. Run `/q3-validate <hypothesis_id>` to refresh.
+
+| Current Layer | Verdict | Outcome |
+|---------------|---------|---------|
+| L1 | PASS | Promotes to L2 |
+| L1 | FAIL | Stays L1 |
+| L2 | PASS | Stays L2, fresh evidence added |
+| L2 | FAIL | Stays L2, failure recorded, consider `/q-decay --deprecate` |

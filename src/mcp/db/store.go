@@ -74,8 +74,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
 	details TEXT,
 	context_id TEXT NOT NULL DEFAULT 'default'
 );
+CREATE TABLE IF NOT EXISTS waivers (
+	id TEXT PRIMARY KEY,
+	evidence_id TEXT NOT NULL,
+	waived_by TEXT NOT NULL,
+	waived_until DATETIME NOT NULL,
+	rationale TEXT NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY(evidence_id) REFERENCES evidence(id)
+);
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
+CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);
 `
 
 type Store struct {
@@ -259,6 +269,29 @@ func (s *Store) GetAuditLogByTarget(ctx context.Context, targetID string) ([]Aud
 
 func (s *Store) GetRecentAuditLog(ctx context.Context, limit int64) ([]AuditLog, error) {
 	return s.q.GetRecentAuditLog(ctx, s.conn, limit)
+}
+
+func (s *Store) CreateWaiver(ctx context.Context, id, evidenceID, waivedBy string, waivedUntil time.Time, rationale string) error {
+	return s.q.CreateWaiver(ctx, s.conn, CreateWaiverParams{
+		ID:          id,
+		EvidenceID:  evidenceID,
+		WaivedBy:    waivedBy,
+		WaivedUntil: waivedUntil,
+		Rationale:   rationale,
+		CreatedAt:   sql.NullTime{Time: time.Now(), Valid: true},
+	})
+}
+
+func (s *Store) GetActiveWaiverForEvidence(ctx context.Context, evidenceID string) (Waiver, error) {
+	return s.q.GetActiveWaiverForEvidence(ctx, s.conn, evidenceID)
+}
+
+func (s *Store) GetAllActiveWaivers(ctx context.Context) ([]Waiver, error) {
+	return s.q.GetAllActiveWaivers(ctx, s.conn)
+}
+
+func (s *Store) GetEvidenceByID(ctx context.Context, id string) (Evidence, error) {
+	return s.q.GetEvidenceByID(ctx, s.conn, id)
 }
 
 func toNullString(s string) sql.NullString {

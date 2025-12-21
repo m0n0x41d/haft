@@ -120,3 +120,23 @@ SELECT * FROM audit_log WHERE target_id = ? ORDER BY timestamp DESC;
 
 -- name: GetRecentAuditLog :many
 SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?;
+
+-- Waiver queries
+
+-- name: CreateWaiver :exec
+INSERT INTO waivers (id, evidence_id, waived_by, waived_until, rationale, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetActiveWaiverForEvidence :one
+SELECT * FROM waivers
+WHERE evidence_id = ? AND waived_until > datetime('now')
+ORDER BY waived_until DESC LIMIT 1;
+
+-- name: GetWaiversByEvidence :many
+SELECT * FROM waivers WHERE evidence_id = ? ORDER BY created_at DESC;
+
+-- name: GetAllActiveWaivers :many
+SELECT * FROM waivers WHERE waived_until > datetime('now') ORDER BY waived_until ASC;
+
+-- name: GetEvidenceByID :one
+SELECT * FROM evidence WHERE id = ? LIMIT 1;

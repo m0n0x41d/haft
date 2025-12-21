@@ -268,10 +268,27 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		},
 		{
 			Name:        "quint_check_decay",
-			Description: "Check for expired evidence across all holons. Returns list of holons with stale evidence.",
+			Description: "Check evidence freshness and manage stale decisions. Without parameters: shows freshness report. With deprecate: downgrades hypothesis. With waive: records temporary risk acceptance.",
 			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
+				"type": "object",
+				"properties": map[string]interface{}{
+					"deprecate": map[string]string{
+						"type":        "string",
+						"description": "Hypothesis ID to deprecate (L2→L1 or L1→L0)",
+					},
+					"waive_id": map[string]string{
+						"type":        "string",
+						"description": "Evidence ID to waive",
+					},
+					"waive_until": map[string]string{
+						"type":        "string",
+						"description": "ISO date until which waiver is valid (required with waive_id)",
+					},
+					"waive_rationale": map[string]string{
+						"type":        "string",
+						"description": "Reason for accepting stale evidence (required with waive_id)",
+					},
+				},
 			},
 		},
 	}
@@ -400,7 +417,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.CalculateR(arg("holon_id"))
 
 	case "quint_check_decay":
-		output, err = s.tools.CheckDecay()
+		output, err = s.tools.CheckDecay(arg("deprecate"), arg("waive_id"), arg("waive_until"), arg("waive_rationale"))
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

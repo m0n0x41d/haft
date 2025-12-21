@@ -87,6 +87,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added SQL indexes for efficient WLNK traversal.
   - Documented structural relations (B.1.1) in CLAUDE.md.
 
+- **Evidence Freshness Management (FPF B.3.4)**:
+  - New `waivers` table for tracking temporary risk acceptance with full audit trail.
+  - `quint_check_decay` now supports three modes:
+    - **Report mode** (default): Shows freshness report with STALE/FRESH/WAIVED holons.
+    - **Deprecate mode**: Downgrades hypothesis (L2→L1 or L1→L0) when evidence is terminally stale.
+    - **Waive mode**: Records explicit risk acceptance with rationale and expiration date.
+  - `quint_test` now accepts L2 hypotheses for evidence refresh (L2 + PASS stays L2 with fresh evidence).
+  - Freshness report now shows individual evidence IDs (not just counts) for actionable output.
+  - Implements WLNK principle: one expired evidence item = entire holon is STALE.
+  - Updated command documentation: `q-decay.md` and `q3-validate.md`.
+
 - **CI/CD Pipeline**:
   - New GitHub Actions workflow (`.github/workflows/ci.yml`) for pull requests.
   - Triggers on PRs and pushes to `main` and `dev` branches.

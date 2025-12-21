@@ -127,6 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ManageEvidence` now sets a default 90-day validity period when `validUntil` is empty.
   - Affects all evidence added via `quint_verify`, `quint_test`, and `quint_audit`.
 
+- **Go Module Import Paths**: Standardized import paths to use the correct module name across all packages. (PR #16, @blib)
+
 ---
 
 ## [4.0.0] - 2025-12-18

@@ -321,7 +321,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
-		path, err := tools.FinalizeDecision("Final Decision", finalWinnerID, "Context", "Decision", drrContent, "Consequences", "Characteristics")
+		path, err := tools.FinalizeDecision("Final Decision", finalWinnerID, nil, "Context", "Decision", drrContent, "Consequences", "Characteristics")
 		if err != nil {
 			t.Fatalf("FinalizeDecision failed: %v", err)
 		}

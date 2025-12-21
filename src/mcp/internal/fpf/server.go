@@ -225,8 +225,13 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"title":           map[string]string{"type": "string"},
-					"winner_id":       map[string]string{"type": "string"},
+					"title":     map[string]string{"type": "string"},
+					"winner_id": map[string]string{"type": "string"},
+					"rejected_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "IDs of rejected L2 alternatives",
+					},
 					"context":         map[string]string{"type": "string"},
 					"decision":        map[string]string{"type": "string"},
 					"rationale":       map[string]string{"type": "string"},
@@ -402,7 +407,15 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_decide":
 		s.tools.FSM.State.Phase = PhaseDecision
-		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
+		var rejectedIDs []string
+		if rids, ok := params.Arguments["rejected_ids"].([]interface{}); ok {
+			for _, r := range rids {
+				if s, ok := r.(string); ok {
+					rejectedIDs = append(rejectedIDs, s)
+				}
+			}
+		}
+		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
 			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {

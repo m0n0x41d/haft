@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **DRR Linking (FPF E.9)**: Decision records now create graph relations to hypotheses.
+  - `quint_decide` accepts new `rejected_ids` parameter for rejected alternatives.
+  - Creates `selects` relation: DRR → winner hypothesis.
+  - Creates `rejects` relations: DRR → each rejected alternative.
+  - Enables queries: "What alternatives were considered for this DRR?"
+
 - **sqlc Integration**: Type-safe database queries generated from SQL.
   - All database operations now use sqlc-generated code with proper type safety.
   - New `db/store.go` wrapper provides clean API while preserving schema bootstrap.

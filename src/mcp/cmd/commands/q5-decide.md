@@ -72,6 +72,7 @@ Computes R_eff for comparison.
 Finalizes the decision and creates the DRR.
 -   **title**: Title of the decision (e.g., "Use Redis for Caching").
 -   **winner_id**: The ID of the chosen hypothesis.
+-   **rejected_ids**: Array of IDs of rejected L2 alternatives (creates `rejects` relations).
 -   **context**: The problem statement.
 -   **decision**: "We decided to use [Winner] because..."
 -   **rationale**: "It had the highest R_eff and best fit for constraints..."
@@ -95,10 +96,21 @@ Presenting comparison:
 
 [User responds: "redis-caching"]
 
-[Call quint_decide(winner_id="redis-caching", title="Use Redis for Caching", ...)]
+[Call quint_decide(
+    title="Use Redis for Caching",
+    winner_id="redis-caching",
+    rejected_ids=["cdn-edge"],
+    context="...",
+    decision="...",
+    rationale="...",
+    consequences="..."
+)]
 → DRR created at .quint/decisions/DRR-XXXX-use-redis-for-caching.md
+→ Relations created:
+  - DRR --selects--> redis-caching
+  - DRR --rejects--> cdn-edge
 
-Result: Decision recorded. Ready for implementation.
+Result: Decision recorded with full audit trail. Ready for implementation.
 ```
 
 ## Example: Failure Path (Transformer Mandate Violation)

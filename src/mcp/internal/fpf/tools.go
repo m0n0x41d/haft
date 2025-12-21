@@ -481,7 +481,7 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	return childPath, nil
 }
 
-func (t *Tools) FinalizeDecision(title, winnerID, decisionContext, decision, rationale, consequences, characteristics string) (string, error) {
+func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
 	body := fmt.Sprintf("\n# %s\n\n", title)
@@ -510,9 +510,26 @@ func (t *Tools) FinalizeDecision(title, winnerID, decisionContext, decision, rat
 	}
 
 	if t.DB != nil {
+		ctx := context.Background()
 		drrID := t.Slugify(title)
-		if err := t.DB.CreateHolon(context.Background(), drrID, "DRR", "", "DRR", title, body, "default", "", winnerID); err != nil {
+		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", "", winnerID); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
+		}
+
+		// Create selects relation: DRR → winner
+		if winnerID != "" {
+			if err := t.createRelation(ctx, drrID, "selects", winnerID, 3); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create selects relation: %v\n", err)
+			}
+		}
+
+		// Create rejects relations: DRR → each rejected alternative
+		for _, rejID := range rejectedIDs {
+			if rejID != "" && rejID != winnerID {
+				if err := t.createRelation(ctx, drrID, "rejects", rejID, 3); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create rejects relation to %s: %v\n", rejID, err)
+				}
+			}
 		}
 	}
 

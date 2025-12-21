@@ -283,7 +283,7 @@ func TestFinalizeDecision(t *testing.T) {
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, winnerID, "Context", content, "Rationale", "Consequences", "Characteristics")
+	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics")
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}

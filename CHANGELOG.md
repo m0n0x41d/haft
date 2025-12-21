@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Creates `rejects` relations: DRR → each rejected alternative.
   - Enables queries: "What alternatives were considered for this DRR?"
 
+- **Context Markdown Formatting**: `quint_record_context` now normalizes input to proper markdown.
+  - Vocabulary entries formatted as definition list (`- **Term**: definition`).
+  - Invariants formatted as numbered list with line breaks.
+
+- **Audit Tree Shows MemberOf Relations**: `quint_audit_tree` now displays `memberOf` groupings.
+  - Decision context alternatives are shown under `[members]` section.
+  - Member R scores displayed for comparison (no WLNK propagation per FPF spec).
+
+- **Improved Tool Descriptions**: `quint_propose` parameters now have actionable descriptions.
+  - `depends_on`: Explains WLNK impact and when to use.
+  - `decision_context`: Explains grouping purpose and when to use.
+  - `q1-hypothesize.md`: Added "Linking Checklist" before proposing hypotheses.
+
 - **sqlc Integration**: Type-safe database queries generated from SQL.
   - All database operations now use sqlc-generated code with proper type safety.
   - New `db/store.go` wrapper provides clean API while preserving schema bootstrap.

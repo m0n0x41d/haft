@@ -151,30 +151,30 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		},
 		{
 			Name:        "quint_propose",
-			Description: "Propose a new hypothesis (L0). Optionally declare dependencies and group membership.",
+			Description: "Propose a new hypothesis (L0). IMPORTANT: Consider depends_on for dependencies and decision_context for grouping alternatives.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"title":     map[string]string{"type": "string", "description": "Title"},
 					"content":   map[string]string{"type": "string", "description": "Description"},
-					"scope":     map[string]string{"type": "string", "description": "Scope (G)"},
-					"kind":      map[string]interface{}{"type": "string", "enum": []interface{}{"system", "episteme"}},
-					"rationale": map[string]string{"type": "string", "description": "JSON string of rationale (anomaly, alternatives)"},
+					"scope":     map[string]string{"type": "string", "description": "Scope (G) - where this hypothesis applies"},
+					"kind":      map[string]interface{}{"type": "string", "enum": []interface{}{"system", "episteme"}, "description": "system=code/architecture, episteme=process/methodology"},
+					"rationale": map[string]string{"type": "string", "description": "JSON: {anomaly, approach, alternatives_rejected}"},
 					"decision_context": map[string]string{
 						"type":        "string",
-						"description": "Parent decision/problem ID. Creates MemberOf relation (for grouping alternatives).",
+						"description": "Parent decision ID to GROUP competing alternatives. Does NOT affect R_eff. Use when multiple hypotheses solve the same problem. Example: 'caching-decision' groups 'redis-caching' and 'cdn-edge'. Creates MemberOf relation.",
 					},
 					"depends_on": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "IDs of holons this hypothesis depends on. Creates ComponentOf (system) or ConstituentOf (episteme) relations.",
+						"description": "IDs of holons this hypothesis REQUIRES to work. CRITICAL: Affects R_eff via WLNK - if dependency has low R, this inherits that ceiling. Use when: (1) builds on another hypothesis, (2) needs another to function, (3) dependency failure invalidates this. Leave empty for independent hypotheses. Creates ComponentOf/ConstituentOf.",
 					},
 					"dependency_cl": map[string]interface{}{
 						"type":        "integer",
 						"minimum":     1,
 						"maximum":     3,
 						"default":     3,
-						"description": "Congruence level for dependencies. CL3=same context, CL2=similar, CL1=different.",
+						"description": "Congruence level for dependencies. CL3=same context (no penalty), CL2=similar (10% penalty), CL1=different (30% penalty).",
 					},
 				},
 				"required": []string{"title", "content", "scope", "kind", "rationale"},

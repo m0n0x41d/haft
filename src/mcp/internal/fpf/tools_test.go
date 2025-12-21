@@ -958,3 +958,48 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 		t.Errorf("Expected R=1.00 (MemberOf should not propagate), got: %s", result)
 	}
 }
+
+func TestFormatVocabulary(t *testing.T) {
+	input := "Channel: A Telegram channel or chat being monitored (has telegram_id, name, kind, is_active status). Message: A post from a monitored channel (has id, content, author_id, telegram_url, processing state). Result[T,E]: Either Ok(value) or Err(error) - functional error handling pattern."
+
+	result := formatVocabulary(input)
+
+	// Should have separate lines for each term
+	if !strings.Contains(result, "- **Channel**:") {
+		t.Errorf("Expected '- **Channel**:', got: %s", result)
+	}
+	if !strings.Contains(result, "- **Message**:") {
+		t.Errorf("Expected '- **Message**:', got: %s", result)
+	}
+	if !strings.Contains(result, "- **Result[T,E]**:") {
+		t.Errorf("Expected '- **Result[T,E]**:', got: %s", result)
+	}
+
+	// Should have newlines between entries
+	lines := strings.Split(result, "\n")
+	if len(lines) < 3 {
+		t.Errorf("Expected at least 3 lines, got %d: %s", len(lines), result)
+	}
+}
+
+func TestFormatInvariants(t *testing.T) {
+	input := "1. Python 3.12+ with strict mypy type checking. 2. DuckDB as the only database (file-based, path from config.yaml). 3. Telethon for Telegram API interaction (requires session file)."
+
+	result := formatInvariants(input)
+
+	// Should have separate lines for each numbered item
+	lines := strings.Split(result, "\n")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 lines, got %d: %s", len(lines), result)
+	}
+
+	if !strings.HasPrefix(lines[0], "1. Python") {
+		t.Errorf("Expected line 1 to start with '1. Python', got: %s", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "2. DuckDB") {
+		t.Errorf("Expected line 2 to start with '2. DuckDB', got: %s", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "3. Telethon") {
+		t.Errorf("Expected line 3 to start with '3. Telethon', got: %s", lines[2])
+	}
+}

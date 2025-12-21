@@ -43,12 +43,34 @@ The user has presented an anomaly or a design problem.
 3.  **Plausibility Filter:** Briefly assess each against constraints. Discard obviously unworkable ones.
 4.  **Formalize:** For each survivor, call `quint_propose`.
 
+## Before Calling quint_propose: Linking Checklist
+
+**For EACH hypothesis, explicitly answer these questions:**
+
+| Question | If YES | If NO |
+|----------|--------|-------|
+| Are there multiple alternatives for the same problem? | Create parent decision first, then use `decision_context` for all alternatives | Skip `decision_context` |
+| Does this hypothesis REQUIRE another holon to work? | Add to `depends_on` (affects R_eff via WLNK!) | Leave `depends_on` empty |
+| Would failure of another holon invalidate this one? | Add that holon to `depends_on` | Leave empty |
+
+**Examples of when to use `depends_on`:**
+- "Health Check Endpoint" depends on "Background Task Fix" (can't check what doesn't work)
+- "API Gateway" depends on "Auth Module" (gateway needs auth to function)
+- "Performance Optimization" depends on "Baseline Metrics" (can't optimize without baseline)
+
+**Examples of when to use `decision_context`:**
+- "Redis Caching" and "CDN Edge Cache" are alternatives → group under "Caching Decision"
+- "JWT Auth" and "Session Auth" are alternatives → group under "Auth Strategy Decision"
+
+**CRITICAL:** If you skip linking, the audit tree will show isolated nodes and R_eff won't reflect true dependencies!
+
 ## Action (Run-Time)
 1.  Ask the user for the problem statement if not provided.
 2.  Think through the options.
-3.  Call `quint_propose` for EACH hypothesis.
+3.  **If proposing multiple alternatives:** Create parent decision holon FIRST.
+4.  Call `quint_propose` for EACH hypothesis, setting `decision_context` and `depends_on` as needed.
     -   *Note:* The tool will store these in **`.quint/knowledge/L0/`**.
-4.  Summarize the generated hypotheses to the user.
+5.  Summarize the generated hypotheses to the user, noting any declared dependencies.
 
 ## Tool Guide: `quint_propose`
 
@@ -147,5 +169,7 @@ Before proceeding to Phase 2, verify:
 - [ ] Each hypothesis has valid `kind` (system or episteme)
 - [ ] Each hypothesis has defined `scope`
 - [ ] Tool returned success for each call
+- [ ] If multiple alternatives exist: they share the same `decision_context`
+- [ ] If dependencies exist: they are declared in `depends_on`
 
 **If any checkbox is unchecked, you MUST complete it before proceeding.**

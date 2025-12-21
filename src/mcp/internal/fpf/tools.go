@@ -134,13 +134,82 @@ func (t *Tools) InitProject() error {
 }
 
 func (t *Tools) RecordContext(vocabulary, invariants string) (string, error) {
-	content := fmt.Sprintf("# Bounded Context\n\n## Vocabulary\n%s\n\n## Invariants\n%s\n", vocabulary, invariants)
+	// Normalize vocabulary: "Term1: Def1. Term2: Def2." → "- **Term1**: Def1.\n- **Term2**: Def2."
+	vocabFormatted := formatVocabulary(vocabulary)
+
+	// Normalize invariants: "1. Item1. 2. Item2." → "1. Item1.\n2. Item2."
+	invFormatted := formatInvariants(invariants)
+
+	content := fmt.Sprintf("# Bounded Context\n\n## Vocabulary\n\n%s\n\n## Invariants\n\n%s\n", vocabFormatted, invFormatted)
 	path := filepath.Join(t.GetFPFDir(), "context.md")
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+func formatVocabulary(vocab string) string {
+	// Pattern: "Term: definition." or "Term: definition" followed by another "Term:"
+	// Split on pattern where a new term definition starts
+	termPattern := regexp.MustCompile(`([A-Z][a-zA-Z0-9_\[\],<>]+):\s*`)
+	matches := termPattern.FindAllStringSubmatchIndex(vocab, -1)
+
+	if len(matches) == 0 {
+		return vocab // No terms found, return as-is
+	}
+
+	var lines []string
+	for i, match := range matches {
+		termStart := match[2]
+		termEnd := match[3]
+		defStart := match[1]
+
+		var defEnd int
+		if i+1 < len(matches) {
+			defEnd = matches[i+1][0]
+		} else {
+			defEnd = len(vocab)
+		}
+
+		term := vocab[termStart:termEnd]
+		def := strings.TrimSpace(vocab[defStart:defEnd])
+
+		lines = append(lines, fmt.Sprintf("- **%s**: %s", term, def))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func formatInvariants(inv string) string {
+	// Pattern: "1. ...", "2. ...", etc. possibly all on one line
+	numPattern := regexp.MustCompile(`(\d+)\.\s+`)
+	matches := numPattern.FindAllStringSubmatchIndex(inv, -1)
+
+	if len(matches) == 0 {
+		return inv // No numbered items found, return as-is
+	}
+
+	var lines []string
+	for i, match := range matches {
+		numStart := match[2]
+		numEnd := match[3]
+		contentStart := match[1]
+
+		var contentEnd int
+		if i+1 < len(matches) {
+			contentEnd = matches[i+1][0]
+		} else {
+			contentEnd = len(inv)
+		}
+
+		num := inv[numStart:numEnd]
+		content := strings.TrimSpace(inv[contentStart:contentEnd])
+
+		lines = append(lines, fmt.Sprintf("%s. %s", num, content))
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (t *Tools) GetAgentContext(role string) (string, error) {
@@ -602,6 +671,7 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 		}
 	}
 
+	// Show componentOf/constituentOf dependencies (these propagate WLNK)
 	components, err := t.DB.GetComponentsOf(ctx, holonID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to query dependencies for %s: %v\n", holonID, err)
@@ -617,6 +687,21 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 		tree += fmt.Sprintf("%s  --(%s)-->\n", indent, clStr)
 		subTree, _ := t.buildAuditTree(c.SourceID, level+1, calc)
 		tree += subTree
+	}
+
+	// Show memberOf relations (alternatives grouped under decision context)
+	// Note: memberOf does NOT propagate R, shown for visibility only
+	members, err := t.DB.GetCollectionMembers(ctx, holonID)
+	if err == nil && len(members) > 0 {
+		tree += fmt.Sprintf("%s  [members]\n", indent)
+		for _, m := range members {
+			memberReport, mErr := calc.CalculateReliability(ctx, m.SourceID)
+			if mErr != nil {
+				tree += fmt.Sprintf("%s    - %s (error)\n", indent, m.SourceID)
+				continue
+			}
+			tree += fmt.Sprintf("%s    - [%s R:%.2f] %s\n", indent, m.SourceID, memberReport.FinalScore, t.getHolonTitle(m.SourceID))
+		}
 	}
 
 	return tree, nil

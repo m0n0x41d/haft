@@ -225,6 +225,10 @@ func (s *Store) GetComponentsOf(ctx context.Context, targetID string) ([]GetComp
 	return s.q.GetComponentsOf(ctx, s.conn, targetID)
 }
 
+func (s *Store) GetCollectionMembers(ctx context.Context, targetID string) ([]GetCollectionMembersRow, error) {
+	return s.q.GetCollectionMembers(ctx, s.conn, targetID)
+}
+
 func (s *Store) GetDependencies(ctx context.Context, sourceID string) ([]GetDependenciesRow, error) {
 	return s.q.GetDependencies(ctx, s.conn, sourceID)
 }

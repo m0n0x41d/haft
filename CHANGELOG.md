@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Smart Defaults for Evidence Validity**: `quint_test` now sets `valid_until` based on test type.
+  - `internal` tests (code/unit tests): 90 days validity.
+  - `external` research (docs/APIs): 60 days validity.
+  - Ensures decay triggers appropriately — external sources expire sooner.
+
 ### Changed
 
 - **FSM State Migrated to SQLite (FPF Governance)**: Session state now stored in `fpf_state` table.

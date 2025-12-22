@@ -342,8 +342,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	switch params.Name {
 	case "quint_status":
-		st := s.tools.FSM.State.Phase
-		output = string(st)
+		output, err = s.tools.GetStatus()
 
 	case "quint_init":
 		res := s.tools.InitProject()

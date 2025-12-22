@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase Gates & Role Enforcement (FPF Governance)**:
+  - New `roles.go` with implicit role system — roles derived from tool name, not passed by agent.
+  - New roles: `Initializer`, `Observer`, `Maintainer` (added to existing ADI roles).
+  - Phase gates block mutation tools in wrong phases:
+    - `quint_init`, `quint_record_context`: IDLE only.
+    - `quint_propose`: IDLE, ABDUCTION, DEDUCTION, INDUCTION (regression allowed).
+    - `quint_verify`: ABDUCTION, DEDUCTION.
+    - `quint_test`: DEDUCTION, INDUCTION (L2 refresh bypasses gate).
+    - `quint_audit`: INDUCTION, AUDIT.
+    - `quint_decide`: AUDIT, DECISION.
+  - Read-only tools (`quint_status`, `quint_calculate_r`, `quint_audit_tree`) allowed in any phase.
+  - L2 refresh: `quint_test` on L2 holons bypasses phase gate (evidence refresh anytime).
+  - Audit log now records actual role (e.g., "Abductor") instead of generic "agent".
+  - Enhanced `quint_status`: shows phase, expected role, knowledge counts, next action guidance.
+  - Comprehensive test coverage for phase gates and role mappings.
+
 - **Smart Defaults for Evidence Validity**: `quint_test` now sets `valid_until` based on test type.
   - `internal` tests (code/unit tests): 90 days validity.
   - `external` research (docs/APIs): 60 days validity.

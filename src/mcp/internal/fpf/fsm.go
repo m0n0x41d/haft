@@ -25,16 +25,7 @@ const (
 	PhaseOperation Phase = "OPERATION"
 )
 
-// Role definitions
-type Role string
-
-const (
-	RoleAbductor Role = "Abductor"
-	RoleDeductor Role = "Deductor"
-	RoleInductor Role = "Inductor"
-	RoleAuditor  Role = "Auditor"
-	RoleDecider  Role = "Decider"
-)
+// Role type is defined in roles.go
 
 // RoleAssignment binds a Holder (SessionID) to a Role within a Context
 type RoleAssignment struct {

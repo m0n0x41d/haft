@@ -48,9 +48,17 @@ func (t *Tools) GetFPFDir() string {
 	return filepath.Join(t.RootDir, ".quint")
 }
 
+// AuditLog records an audit entry. The actor is derived from the tool name
+// using GetRoleForTool to ensure proper role traceability.
 func (t *Tools) AuditLog(toolName, operation, actor, targetID, result string, input interface{}, details string) {
 	if t.DB == nil {
 		return
+	}
+
+	// Derive role from tool name (implicit role enforcement)
+	// If actor is "agent" (legacy) or empty, use the implicit role
+	if actor == "" || actor == "agent" {
+		actor = string(GetRoleForTool(toolName))
 	}
 
 	var inputHash string
@@ -1035,4 +1043,99 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	}
 
 	return result.String(), nil
+}
+
+// GetStatus returns the current FPF status with enhanced output for agent parsing.
+func (t *Tools) GetStatus() (string, error) {
+	phase := t.FSM.GetPhase()
+
+	var sb strings.Builder
+
+	// Parseable header
+	sb.WriteString(fmt.Sprintf("PHASE: %s\n", phase))
+	sb.WriteString(fmt.Sprintf("EXPECTED_ROLE: %s\n\n", GetExpectedRole(phase)))
+
+	// Knowledge counts from filesystem
+	l0 := t.countHolons("L0")
+	l1 := t.countHolons("L1")
+	l2 := t.countHolons("L2")
+	drr := t.countDRRs()
+
+	sb.WriteString("## Knowledge\n")
+	sb.WriteString(fmt.Sprintf("- L0 (Conjecture): %d\n", l0))
+	sb.WriteString(fmt.Sprintf("- L1 (Substantiated): %d\n", l1))
+	sb.WriteString(fmt.Sprintf("- L2 (Corroborated): %d\n", l2))
+	if drr > 0 {
+		sb.WriteString(fmt.Sprintf("- DRR (Decisions): %d\n", drr))
+	}
+	sb.WriteString("\n")
+
+	// Next action guidance
+	sb.WriteString("## Next\n")
+	sb.WriteString(t.getNextAction(phase, l0, l1, l2))
+
+	return sb.String(), nil
+}
+
+// countHolons counts markdown files in a knowledge layer directory.
+func (t *Tools) countHolons(layer string) int {
+	dir := filepath.Join(t.GetFPFDir(), "knowledge", layer)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") && f.Name() != ".gitkeep" {
+			count++
+		}
+	}
+	return count
+}
+
+// countDRRs counts decision records in the decisions directory.
+func (t *Tools) countDRRs() int {
+	dir := filepath.Join(t.GetFPFDir(), "decisions")
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") && strings.HasPrefix(f.Name(), "DRR-") {
+			count++
+		}
+	}
+	return count
+}
+
+// getNextAction returns guidance for the next step based on current phase.
+func (t *Tools) getNextAction(phase Phase, l0, l1, l2 int) string {
+	switch phase {
+	case PhaseIdle:
+		return "→ /q0-init or /q1-hypothesize\n"
+	case PhaseAbduction:
+		if l0 > 0 {
+			return fmt.Sprintf("→ %d L0 ready for /q2-verify\n", l0)
+		}
+		return "→ /q1-hypothesize to generate hypotheses\n"
+	case PhaseDeduction:
+		if l1 > 0 {
+			return fmt.Sprintf("→ %d L1 ready for /q3-validate\n", l1)
+		}
+		return "→ /q2-verify to check logic\n"
+	case PhaseInduction:
+		if l2 > 0 {
+			return fmt.Sprintf("→ %d L2 ready for /q4-audit\n", l2)
+		}
+		return "→ /q3-validate to gather evidence\n"
+	case PhaseAudit:
+		return "→ /q4-audit then /q5-decide\n"
+	case PhaseDecision:
+		return "→ /q5-decide to finalize\n"
+	case PhaseOperation:
+		return "→ In operation\n"
+	default:
+		return ""
+	}
 }

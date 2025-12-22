@@ -29,16 +29,13 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: src/mcp/go.sum
 
-      - name: Generate commands
-        run: ./build.sh
-
       - name: Build MCP binary
         run: |
           cd src/mcp
           VERSION=${GITHUB_REF_NAME#v}
           COMMIT=${GITHUB_SHA::8}
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          LDFLAGS="-s -w -X quint-mcp/cmd.Version=${VERSION} -X quint-mcp/cmd.Commit=${COMMIT} -X quint-mcp/cmd.BuildDate=${DATE}"
+          LDFLAGS="-s -w -X github.com/m0n0x41d/quint-code/cmd.Version=${VERSION} -X github.com/m0n0x41d/quint-code/cmd.Commit=${COMMIT} -X github.com/m0n0x41d/quint-code/cmd.BuildDate=${DATE}"
           go build -o "../../dist/quint-code" -trimpath -ldflags "${LDFLAGS}"
 
       - name: Create release package
@@ -46,7 +43,7 @@ jobs:
           mkdir -p "package/bin"
           mkdir -p "package/commands"
           mv "dist/quint-code" "package/bin/quint-code"
-          cp -r dist/* package/commands/
+          cp -r src/mcp/cmd/commands/* package/commands/
           TAG=${GITHUB_REF_NAME#v}
           ASSET_NAME="quint-code-${TAG}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz"
           tar -czf "$ASSET_NAME" -C "package" .

@@ -149,9 +149,22 @@ This creates:
 /q1-hypothesize "Your problem..."  # Generate hypotheses
 ```
 
-> **Pro tip:** For best results, see [Advanced Setup](docs/advanced.md#agent-configuration) to optimize your AI's understanding of the reasoning process.
+Here is a library of some [workflow examples](docs/workflow_example/) that might help you kick off with probing.
 
-## How It Works
+But really, it would be better to hack into it straight away and feel the flow. Shash commands have a numeric prefix for your convenience.
+
+### Recommended: Add FPF Context to Your Agent Rules
+
+For best results, we highly recommend using the [`CLAUDE.md`](CLAUDE.md) from this repository as a reference for your own project's agent instructions. It's optimized for software engineering work with FPF.
+
+At minimum, copy the **FPF Glossary** section to your:
+- `CLAUDE.md` (Claude Code)
+- `.cursorrules` or `AGENTS.md` (Cursor)
+- Agent system prompts (other tools)
+
+This helps the AI understand FPF concepts like L0/L1/L2 layers, WLNK, R_eff, and the Transformer Mandate without re-explanation each session.
+
+## How Quint Code Works
 
 Quint Code implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.
 
@@ -184,6 +197,7 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 ## Documentation
 
+- [Workflow Examples](docs/workflow_example/) — Step-by-step walkthroughs
 - [Quick Reference](docs/fpf-engine.md) — Commands and workflow
 - [Advanced: FPF Deep Dive](docs/advanced.md) — Theory, glossary, tuning
 - [Architecture](docs/architecture.md) — How it works under the hood

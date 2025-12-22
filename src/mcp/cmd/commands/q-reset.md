@@ -6,5 +6,5 @@ description: "Reset the FPF cycle"
 
 ## Instruction
 1.  **Action:**
-    -   Call `quint_transition` to force state to `IDLE` (if supported) or manually advise user to clear `.quint/state.json` if stuck.
-    -   Ideally, use `quint_decide` with a "No Decision / Reset" payload to cleanly archive the current session.
+    -   Use `quint_decide` with a "No Decision / Reset" payload to cleanly archive the current session and return to IDLE.
+    -   State is managed in SQLite (`quint.db`) and cannot be manually modified.

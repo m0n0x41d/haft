@@ -4,48 +4,85 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/m0n0x41d/quint-code/db"
 )
 
 func TestLoadState(t *testing.T) {
 	tempDir := t.TempDir()
-	stateFile := filepath.Join(tempDir, "state.json")
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer database.Close()
 
 	// Test loading non-existent state (should initialize to IDLE)
-	fsm, err := LoadState(stateFile, nil)
+	fsm, err := LoadState("default", database.GetRawDB())
 	if err != nil {
-		t.Fatalf("LoadState failed for non-existent file: %v", err)
+		t.Fatalf("LoadState failed: %v", err)
 	}
 	if fsm.State.Phase != PhaseIdle {
 		t.Errorf("Expected initial phase to be IDLE, got %s", fsm.State.Phase)
 	}
 
-	// Test loading existing state
+	// Test saving and loading state
 	fsm.State.Phase = PhaseAbduction
-	if err := fsm.SaveState(stateFile); err != nil {
+	fsm.State.ActiveRole = RoleAssignment{Role: RoleAbductor, SessionID: "sess1", Context: "ctx1"}
+	if err := fsm.SaveState("default"); err != nil {
 		t.Fatalf("SaveState failed: %v", err)
 	}
 
-	fsm2, err := LoadState(stateFile, nil)
+	fsm2, err := LoadState("default", database.GetRawDB())
 	if err != nil {
-		t.Fatalf("LoadState failed for existing file: %v", err)
+		t.Fatalf("LoadState failed for existing state: %v", err)
 	}
-	if fsm2.State.Phase != PhaseAbduction {
-		t.Errorf("Expected loaded phase to be ABDUCTION, got %s", fsm2.State.Phase)
+	if fsm2.State.ActiveRole.Role != RoleAbductor {
+		t.Errorf("Expected loaded role to be Abductor, got %s", fsm2.State.ActiveRole.Role)
+	}
+	if fsm2.State.ActiveRole.SessionID != "sess1" {
+		t.Errorf("Expected loaded session ID to be sess1, got %s", fsm2.State.ActiveRole.SessionID)
 	}
 }
 
 func TestSaveState(t *testing.T) {
 	tempDir := t.TempDir()
-	stateFile := filepath.Join(tempDir, "state.json")
+	dbPath := filepath.Join(tempDir, "test.db")
 
-	fsm := &FSM{State: State{Phase: PhaseDeduction}}
-	err := fsm.SaveState(stateFile)
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer database.Close()
+
+	fsm := &FSM{
+		State: State{Phase: PhaseDeduction, AssuranceThreshold: 0.75, LastCommit: "abc123"},
+		DB:    database.GetRawDB(),
+	}
+	err = fsm.SaveState("default")
 	if err != nil {
 		t.Fatalf("SaveState failed: %v", err)
 	}
 
-	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		t.Errorf("State file was not created")
+	// Verify data was written
+	fsm2, err := LoadState("default", database.GetRawDB())
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+	if fsm2.State.AssuranceThreshold != 0.75 {
+		t.Errorf("Expected threshold 0.75, got %f", fsm2.State.AssuranceThreshold)
+	}
+	if fsm2.State.LastCommit != "abc123" {
+		t.Errorf("Expected last commit abc123, got %s", fsm2.State.LastCommit)
+	}
+}
+
+func TestSaveStateWithoutDB(t *testing.T) {
+	fsm := &FSM{State: State{Phase: PhaseDeduction}, DB: nil}
+	err := fsm.SaveState("default")
+	if err == nil {
+		t.Fatalf("Expected SaveState to fail without DB")
 	}
 }
 

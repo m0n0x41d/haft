@@ -84,6 +84,16 @@ CREATE TABLE waivers (
     FOREIGN KEY(evidence_id) REFERENCES evidence(id)
 );
 
+CREATE TABLE fpf_state (
+    context_id TEXT PRIMARY KEY,
+    active_role TEXT,
+    active_session_id TEXT,
+    active_role_context TEXT,
+    last_commit TEXT,
+    assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for WLNK traversal
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);

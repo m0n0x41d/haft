@@ -756,7 +756,7 @@ func (t *Tools) Actualize() (string, error) {
 		if lastCommit == "" {
 			report.WriteString(fmt.Sprintf("RECONCILIATION: Initializing baseline commit to %s\n", currentCommit))
 			t.FSM.State.LastCommit = currentCommit
-			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+			if err := t.FSM.SaveState("default"); err != nil {
 				report.WriteString(fmt.Sprintf("Warning: Failed to save state: %v\n", err))
 			}
 		} else if currentCommit != lastCommit {
@@ -772,7 +772,7 @@ func (t *Tools) Actualize() (string, error) {
 			}
 
 			t.FSM.State.LastCommit = currentCommit
-			if err := t.FSM.SaveState(filepath.Join(t.GetFPFDir(), "state.json")); err != nil {
+			if err := t.FSM.SaveState("default"); err != nil {
 				report.WriteString(fmt.Sprintf("Warning: Failed to save state: %v\n", err))
 			}
 		} else {

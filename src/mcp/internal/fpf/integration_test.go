@@ -32,7 +32,7 @@ func checkFileExists(t *testing.T, path string) bool {
 func TestFullFPFWorkflowIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
-	stateFile := filepath.Join(quintDir, "state.json")
+	contextID := "default"
 
 	// Create .quint directory and DB
 	if err := os.MkdirAll(quintDir, 0755); err != nil {
@@ -46,7 +46,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 	// --- 0. Initialize FPF Project ---
 	t.Run("0_InitProject", func(t *testing.T) {
-		fsm, err := fpf.LoadState(stateFile, database.GetRawDB())
+		fsm, err := fpf.LoadState(contextID, database.GetRawDB())
 		if err != nil {
 			t.Fatalf("Failed to load initial state: %v", err)
 		}
@@ -59,17 +59,13 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InitProject failed: %v", err)
 		}
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
-		}
-
-		if !checkFileExists(t, stateFile) {
-			t.Errorf("state.json not created")
 		}
 	})
 
 	// Reload FSM state for subsequent steps
-	fsm, err := fpf.LoadState(stateFile, database.GetRawDB())
+	fsm, err := fpf.LoadState(contextID, database.GetRawDB())
 	if err != nil {
 		t.Fatalf("Failed to load state after init: %v", err)
 	}
@@ -121,7 +117,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("Failed to transition to DEDUCTION: %s", msg)
 		}
 		fsm.State.Phase = fpf.PhaseDeduction
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
@@ -154,7 +150,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("Failed to transition to INDUCTION: %s", msg)
 		}
 		fsm.State.Phase = fpf.PhaseInduction
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
@@ -200,7 +196,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		// Transition FSM to INDUCTION before loopback
 		fsm.State.Phase = fpf.PhaseInduction
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
@@ -213,7 +209,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		// Manually update FSM state in test as RefineLoopback in tools.go doesn't do it
 		fsm.State.Phase = fpf.PhaseDeduction
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
@@ -268,7 +264,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("Failed to transition to INDUCTION: %s", msg)
 		}
 		fsm.State.Phase = fpf.PhaseInduction
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 	})
@@ -317,7 +313,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 			t.Fatalf("Failed to transition to DECISION: %s", msg)
 		}
 		fsm.State.Phase = fpf.PhaseDecision
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 
@@ -328,7 +324,7 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 
 		// Manually update FSM state in test as FinalizeDecision in tools.go doesn't do it
 		fsm.State.Phase = fpf.PhaseIdle
-		if err := fsm.SaveState(stateFile); err != nil {
+		if err := fsm.SaveState(contextID); err != nil {
 			t.Fatalf("SaveState failed: %v", err)
 		}
 

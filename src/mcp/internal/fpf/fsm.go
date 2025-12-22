@@ -3,11 +3,11 @@ package fpf
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/quint-code/assurance"
 )
@@ -72,21 +72,47 @@ type FSM struct {
 	DB    *sql.DB
 }
 
-// LoadState reads state from .quint/state.json
-func LoadState(path string, db *sql.DB) (*FSM, error) {
-	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: db}
+// LoadState reads state from fpf_state table in SQLite
+func LoadState(contextID string, db *sql.DB) (*FSM, error) {
+	fsm := &FSM{
+		State: State{
+			Phase:              PhaseIdle,
+			AssuranceThreshold: 0.8,
+		},
+		DB: db,
+	}
 
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
+	if db == nil {
+		return fsm, nil
+	}
 
-		var state State
-		if err := json.Unmarshal(data, &state); err != nil {
-			return nil, err
+	row := db.QueryRow(`
+		SELECT active_role, active_session_id, active_role_context, last_commit, assurance_threshold
+		FROM fpf_state WHERE context_id = ?`, contextID)
+
+	var activeRole, activeSessionID, activeRoleContext, lastCommit sql.NullString
+	var threshold sql.NullFloat64
+
+	err := row.Scan(&activeRole, &activeSessionID, &activeRoleContext, &lastCommit, &threshold)
+	if err == sql.ErrNoRows {
+		return fsm, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load state: %w", err)
+	}
+
+	if activeRole.Valid {
+		fsm.State.ActiveRole = RoleAssignment{
+			Role:      Role(activeRole.String),
+			SessionID: activeSessionID.String,
+			Context:   activeRoleContext.String,
 		}
-		fsm.State = state
+	}
+	if lastCommit.Valid {
+		fsm.State.LastCommit = lastCommit.String
+	}
+	if threshold.Valid {
+		fsm.State.AssuranceThreshold = threshold.Float64
 	}
 
 	return fsm, nil
@@ -162,13 +188,34 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	return PhaseAbduction
 }
 
-// SaveState writes state to .quint/state.json
-func (f *FSM) SaveState(path string) error {
-	data, err := json.MarshalIndent(f.State, "", "  ")
-	if err != nil {
-		return err
+// SaveState writes state to fpf_state table in SQLite
+func (f *FSM) SaveState(contextID string) error {
+	if f.DB == nil {
+		return fmt.Errorf("database connection required for SaveState")
 	}
-	return os.WriteFile(path, data, 0644)
+
+	_, err := f.DB.Exec(`
+		INSERT INTO fpf_state (context_id, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(context_id) DO UPDATE SET
+			active_role = excluded.active_role,
+			active_session_id = excluded.active_session_id,
+			active_role_context = excluded.active_role_context,
+			last_commit = excluded.last_commit,
+			assurance_threshold = excluded.assurance_threshold,
+			updated_at = excluded.updated_at`,
+		contextID,
+		string(f.State.ActiveRole.Role),
+		f.State.ActiveRole.SessionID,
+		f.State.ActiveRole.Context,
+		f.State.LastCommit,
+		f.State.AssuranceThreshold,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+	return nil
 }
 
 // GetAssuranceThreshold returns the configured threshold, defaulting to 0.8

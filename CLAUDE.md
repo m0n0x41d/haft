@@ -179,7 +179,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 **Assurance Levels:**
 
 - **L0** (Observation): Unverified hypothesis or note
-- **L1** (Reasoned): Passed logical consistency check
+- **L1** (Substantiated): Passed logical consistency check
 - **L2** (Verified): Empirically tested and confirmed
 - **Invalid**: Disproved claims (kept for learning)
 

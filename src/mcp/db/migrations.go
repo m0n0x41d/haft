@@ -24,6 +24,19 @@ var migrations = []struct {
 		description: "Add cached_r_score to holons for trust calculus",
 		sql:         `ALTER TABLE holons ADD COLUMN cached_r_score REAL DEFAULT 0.0`,
 	},
+	{
+		version:     3,
+		description: "Add fpf_state table for FSM state (replaces state.json)",
+		sql: `CREATE TABLE IF NOT EXISTS fpf_state (
+			context_id TEXT PRIMARY KEY,
+			active_role TEXT,
+			active_session_id TEXT,
+			active_role_context TEXT,
+			last_commit TEXT,
+			assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+	},
 }
 
 // RunMigrations applies all pending migrations to the database.

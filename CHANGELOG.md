@@ -5,6 +5,22 @@ All notable changes to Quint Code will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **FSM State Migrated to SQLite (FPF Governance)**: Session state now stored in `fpf_state` table.
+  - Eliminates `state.json` file — agent cannot read/manipulate FSM state directly.
+  - New `LoadState(contextID, db)` and `SaveState(contextID)` APIs use SQLite.
+  - Added migration #3 for existing databases.
+  - Enforces Transformer Mandate: state is opaque to the agent.
+
+### Removed
+
+- **state.json file**: FSM state no longer persisted to JSON file.
+  - All state (active role, last commit, assurance threshold) now in SQLite.
+  - Documentation updated to reflect SQLite-only state management.
+
 ## [4.1.0]
 
 ### Added

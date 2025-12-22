@@ -205,8 +205,7 @@ func TestAuditVisualization_ReturnsTree(t *testing.T) {
 	_, _ = rawDB.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('child', 'parent', 'componentOf', 3)")
 
 	// Create tools and call VisualizeAudit
-	stateFile := filepath.Join(tempDir, ".quint", "state.json")
-	fsm, _ := fpf.LoadState(stateFile, rawDB)
+	fsm, _ := fpf.LoadState("default", rawDB)
 	tools := fpf.NewTools(fsm, tempDir, database)
 
 	tree, err := tools.VisualizeAudit("parent")

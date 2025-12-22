@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-This project implements the **First Principles Framework (FPF)** methodology.
+This project implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** methodology.
 The FPF concepts, ontology, and intellectual property belong to **Anatoly Levenchuk**.
 This license covers only the software implementation (CLI commands and scripts) provided in this repository.
 Usage of FPF concepts within this tool constitutes a "derivative work" for educational and practical engineering purposes.

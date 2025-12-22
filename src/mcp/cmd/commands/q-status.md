@@ -6,10 +6,9 @@ description: "Show FPF status"
 
 ## Action (Run-Time)
 1.  Call `quint_status` to get the current phase.
-2.  Read `.quint/state.json` (if accessible) for additional detail.
-3.  Count hypotheses in each layer by listing `.quint/knowledge/L0/`, `L1/`, `L2/`.
-4.  **Proactive check:** Call `quint_check_decay` to surface any expired evidence.
-5.  Report to user:
+2.  Count hypotheses in each layer by listing `.quint/knowledge/L0/`, `L1/`, `L2/`.
+3.  **Proactive check:** Call `quint_check_decay` to surface any expired evidence.
+4.  Report to user:
     -   Current Phase
     -   Active Role (if any)
     -   Hypothesis counts (L0/L1/L2)

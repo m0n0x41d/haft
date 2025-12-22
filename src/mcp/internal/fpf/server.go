@@ -350,7 +350,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			err = res
 		} else {
 			s.tools.FSM.State.Phase = PhaseAbduction
-			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 			}
 			output = "Initialized. Phase: ABDUCTION"
@@ -364,7 +364,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_propose":
 		s.tools.FSM.State.Phase = PhaseAbduction
-		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
 		decisionContext := arg("decision_context")
@@ -384,14 +384,14 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_verify":
 		s.tools.FSM.State.Phase = PhaseDeduction
-		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
 		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"))
 
 	case "quint_test":
 		s.tools.FSM.State.Phase = PhaseInduction
-		if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
 
@@ -418,7 +418,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
-			if saveErr := s.tools.FSM.SaveState(s.tools.GetFPFDir() + "/state.json"); saveErr != nil {
+			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 			}
 		}

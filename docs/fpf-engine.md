@@ -1,10 +1,10 @@
 # The FPF Engine
 
-Quint Code implements the **First Principles Framework (FPF)** — a methodology for structured reasoning developed by [Anatoly Levenchuk](https://github.com/ailev/FPF).
+Quint Code implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** — a methodology for structured reasoning developed by Anatoly Levenchuk.
 
 ## The ADI Cycle
 
-The workflow follows the Canonical Reasoning Cycle (Pattern B.5), consisting of three inference modes:
+The workflow follows three inference modes:
 
 ### 1. Abduction (`/q1-hypothesize`)
 
@@ -62,7 +62,7 @@ Compute trust scores using:
 ### 5. Decision (`/q5-decide`)
 
 - Select the winning hypothesis
-- Generate a **Design Rationale Record (DRR)** (Pattern E.9)
+- Generate a **Design Rationale Record (DRR)**
 - DRR captures: decision, alternatives considered, evidence, and expiry conditions
 
 ## Commands Reference
@@ -117,5 +117,4 @@ This command serves as the **Observe** phase of the FPF's **Canonical Evolution 
 
 ## Further Reading
 
-- [Anatoly Levenchuk's work on Systems Thinking](https://ailev.livejournal.com/)
-- FPF Specification (Patterns A.13, B.5, E.9, E.14)
+- [FPF Repository](https://github.com/ailev/FPF)

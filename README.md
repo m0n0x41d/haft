@@ -6,13 +6,98 @@
 
 > **Works exceptionally well with Claude Code!**
 
-## The Problem
+## What Quint Does
 
-Your AI coding assistant gives you an answer. It looks right. But in three months, will you remember *why* it was the right choice? What alternatives were considered? What evidence was there? Was the decision based on a solid foundation or a statistical fluke?
+### 1. Makes You and AI Think Structurally
+Instead of jumping to conclusions and solutions, your AI generates competing hypotheses, checks them logically, tests against evidence, then you decide. Everything is in your plain sight. 
 
-Unauditable AI suggestions create a debt of hidden risk.
+### 2. Preserves Every Decision And Related Evidence
+No more archaeology in chat history. Decisions live in `.quint/` —
+queryable, auditable, yours.
 
-Quint Code provides the structure to turn AI-assisted development into a rigorous, auditable reasoning process. It's decision hygiene for the age of AI.
+---
+
+### Example: Handling Payment Confirmations
+
+Your checkout works. Stripe charges the card.
+But three weeks later, finance finds $12,000 in "ghost payments" —
+customers charged but never got access.
+
+The webhook endpoint returned 200. Logs look clean.
+What went wrong?
+
+#### Without Quint
+
+Your AI suggests: *"Just add a webhook endpoint that activates the subscription"*
+
+You ship it. It works in testing. Production looks fine.
+
+Until it doesn't. Webhooks fail silently. Your endpoint timed out during a DB hiccup. Stripe retried, you processed it twice. A network blip ate three webhooks completely.
+
+Now you're debugging production with no record of why you built it this way.
+
+#### With Quint
+
+```bash
+$ q1 hypothesize "handle stripe payment confirmation"
+```
+
+AI generates competing approaches:
+
+| # | Approach | Risk | Recovery |
+|---|----------|------|----------|
+| H1 | Webhook-only | Silent failures, no detection | None without manual audit |
+| H2 | Webhook + sync processing | Timeout = lost event, retries = duplicates | Stripe retry (3 days) |
+| H3 | Webhook → Queue + Polling backup | Complex, two code paths | Self-healing |
+
+```bash
+$ q2 verify
+```
+
+AI checks each hypothesis:
+- **H1 fails:** "No mechanism detects missed webhooks"
+- **H2 partial:** "Idempotency key needed, still misses network failures"
+- **H3 passes:** "Polling catches what webhooks miss, queue handles spikes"
+
+```bash
+$ q5 decide
+```
+
+```
+Decision: H3 — Async queue + 15-min polling reconciliation
+
+Rationale:
+- Webhook acknowledges immediately (200 in <100ms)
+- Background job processes with idempotency check
+- Polling job catches silent failures
+- Accepted tradeoff: 15-min max delay for edge cases
+
+Evidence: Stripe docs recommend polling backup.
+Review trigger: If webhook success rate drops below 99%
+```
+
+#### 3 weeks later
+
+Finance asks: *"Why do we poll every 15 minutes? Can we remove it?"*
+
+```bash
+$ q query "payment confirmation architecture"
+```
+
+```
+Decision: 2024-01-15 — H3 selected over webhook-only
+
+Key evidence:
+- Stripe admits webhook delivery "not guaranteed"
+- Polling catches ~0.3% of transactions (measured)
+- Removing polling = ~$400/month in silent failures
+
+Recommendation: Keep polling. Document in runbook.
+```
+
+**The decision context survives. No archaeology needed.**
+
+---
 
 ## Quick Start
 
@@ -64,16 +149,7 @@ This creates:
 /q1-hypothesize "Your problem..."  # Generate hypotheses
 ```
 
-### Recommended: Add FPF Context to Your Agent Rules
-
-For best results, we highly recommend using the [`CLAUDE.md`](CLAUDE.md) from this repository as a reference for your own project's agent instructions. It's optimized for software engineering work with FPF.
-
-At minimum, copy the **FPF Glossary** section to your:
-- `CLAUDE.md` (Claude Code)
-- `.cursorrules` or `AGENTS.md` (Cursor)
-- Agent system prompts (other tools)
-
-This helps the AI understand FPF concepts like L0/L1/L2 layers, WLNK, R_eff, and the Transformer Mandate without re-explanation each session.
+> **Pro tip:** For best results, see [Advanced Setup](docs/advanced.md#agent-configuration) to optimize your AI's understanding of the reasoning process.
 
 ## How It Works
 
@@ -93,25 +169,25 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 | Command | What It Does |
 |---------|--------------|
-| `/q0-init` | Initialize `.quint/` and record the Bounded Context. |
-| `/q1-hypothesize` | Generate L0 hypotheses for a problem. |
-| `/q1-add` | Manually add your own L0 hypothesis. |
-| `/q2-verify` | Verify logic and constraints, promoting claims from L0 to L1. |
-| `/q3-validate` | Gather empirical evidence, promoting claims from L1 to L2. |
-| `/q4-audit` | Run an assurance audit and calculate trust scores. |
-| `/q5-decide` | Select the winning hypothesis and create a Design Rationale Record. |
+| `/q0-init` | Initialize `.quint/` and record project context. |
+| `/q1-hypothesize` | Generate competing ideas for a problem. |
+| `/q1-add` | Manually add your own hypothesis. |
+| `/q2-verify` | Check logic and constraints — does it make sense? |
+| `/q3-validate` | Test against evidence — does it actually work? |
+| `/q4-audit` | Check for bias and calculate confidence scores. |
+| `/q5-decide` | Pick the winner, record the rationale. |
 | `/q-status` | Show the current state of the reasoning cycle. |
 | `/q-query` | Search the project's knowledge base. |
-| `/q-decay` | Check for and report expired evidence (Epistemic Debt). |
+| `/q-decay` | Find evidence that's gone stale and needs refresh. |
 | `/q-actualize` | Reconcile the knowledge base with recent code changes. |
 | `/q-reset` | Discard the current reasoning cycle. |
 
 ## Documentation
 
-- [FPF Engine Details](docs/fpf-engine.md) — ADI cycle, commands, when to use
-- [Architecture](docs/architecture.md) — Internals, knowledge levels, Transformer Mandate
-- [Contributing](CONTRIBUTING.md) — How to contribute
+- [Quick Reference](docs/fpf-engine.md) — Commands and workflow
+- [Advanced: FPF Deep Dive](docs/advanced.md) — Theory, glossary, tuning
+- [Architecture](docs/architecture.md) — How it works under the hood
 
 ## License
 
-MIT License. FPF methodology by [Anatoly Levenchuk](https://github.com/ailev/FPF).
+MIT License. FPF methodology by Anatoly Levenchuk.

@@ -41,7 +41,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	quintDir := filepath.Join(cwd, ".quint")
-	stateFile := filepath.Join(quintDir, "state.json")
 	dbPath := filepath.Join(quintDir, "quint.db")
 
 	var database *db.Store
@@ -57,7 +56,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rawDB = database.GetRawDB()
 	}
 
-	fsm, err := fpf.LoadState(stateFile, rawDB)
+	fsm, err := fpf.LoadState("default", rawDB)
 	if err != nil {
 		return fmt.Errorf("failed to load state: %w", err)
 	}

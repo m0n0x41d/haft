@@ -1,6 +1,6 @@
 # Architecture
 
-## Surface vs. Grounding (Pattern E.14)
+## Surface vs. Grounding
 
 Quint Code strictly separates the **User Experience** from the **Assurance Layer**.
 
@@ -56,21 +56,17 @@ The AI can recommend, but architectural decisions flow through human judgment. T
 | Level | Name | Meaning | Promotion Path |
 |-------|------|---------|----------------|
 | L0 | Observation | Unverified hypothesis or note | → `/q2-verify` |
-| L1 | Reasoned | Passed logical consistency check | → `/q3-validate` |
+| L1 | Substantiated | Passed logical consistency check | → `/q3-validate` |
 | L2 | Verified | Empirically tested and confirmed | Terminal |
 | Invalid | Disproved | Failed verification (kept for learning) | Terminal |
 
 ### WLNK (Weakest Link Principle)
-
-**FPF Pattern:** B.1 Invariant Quintet
 
 The assurance of a claim is never an average of its evidence; it is a reflection of its most fragile dependency.
 
 If you have three pieces of evidence supporting a hypothesis—two with high reliability (`R=0.9`) and one with low reliability (`R=0.2`)—the effective reliability of your claim is not the average. It is capped by the weakest link: `R=0.2`. Quint Code's assurance calculator strictly enforces this conservative principle, preventing trust inflation and ensuring that weak points in an argument are always visible.
 
 ### Congruence (CL)
-
-**FPF Pattern:** B.3 Trust & Assurance Calculus
 
 External evidence (documentation, benchmarks, research) is only valuable if it is relevant to your specific situation. The **Congruence Level (CL)** is a rating of how well that external evidence matches your project's **Bounded Context**.
 
@@ -81,8 +77,6 @@ External evidence (documentation, benchmarks, research) is only valuable if it i
 Quint's assurance calculator applies a **Congruence Penalty** based on the CL, reducing the effective reliability of evidence that isn't a perfect match for your context.
 
 ### Validity (Evidence Freshness)
-
-**FPF Pattern:** B.3.4 Evidence Decay & Epistemic Debt
 
 Evidence expires. That benchmark you ran six months ago? The library has been updated twice since then. Your numbers might not be accurate anymore.
 

@@ -1,6 +1,6 @@
 # Quint Code Roadmap
 
-This document outlines the future development focus for `quint-code`, prioritizing improvements that deepen its adherence to the First Principles Framework (FPF) and enhance its robustness and utility.
+This document outlines the future development focus for `quint-code`, prioritizing improvements that deepen its adherence to the [First Principles Framework (FPF)](https://github.com/ailev/FPF) and enhance its robustness and utility.
 
 ## Future Focus: Deepening FPF Integration
 

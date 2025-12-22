@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 type JSONRPCRequest struct {
@@ -400,7 +401,8 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			assLevel = "L1"
 		}
 
-		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, "test-runner", "")
+		validUntil := computeValidUntil(arg("test_type"))
+		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, "test-runner", validUntil)
 
 	case "quint_audit":
 		output, err = s.tools.AuditEvidence(arg("hypothesis_id"), arg("risks"))
@@ -446,4 +448,20 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			Content: []ContentItem{{Type: "text", Text: output}},
 		})
 	}
+}
+
+// computeValidUntil returns evidence validity period based on test type.
+// Internal tests (code/unit tests) are tied to codebase → 90 days.
+// External research (docs/APIs) changes faster → 60 days.
+func computeValidUntil(testType string) string {
+	var days int
+	switch testType {
+	case "internal":
+		days = 90
+	case "external":
+		days = 60
+	default:
+		days = 90
+	}
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
 }

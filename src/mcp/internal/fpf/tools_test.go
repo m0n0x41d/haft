@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/quint-code/db"
 )
@@ -1001,5 +1002,62 @@ func TestFormatInvariants(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[2], "3. Telethon") {
 		t.Errorf("Expected line 3 to start with '3. Telethon', got: %s", lines[2])
+	}
+}
+
+func TestManageEvidence_ValidUntilDefault(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	// Create a hypothesis in L1
+	hypoID := "valid-until-test-hypo"
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
+	if err := os.WriteFile(hypoPath, []byte("Test hypothesis content"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	// Create holon in DB
+	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Set FSM phase to Induction
+	fsm.State.Phase = PhaseInduction
+
+	// Call ManageEvidence with EMPTY validUntil (like quint_test does)
+	_, err = tools.ManageEvidence(PhaseInduction, "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
+	if err != nil {
+		t.Fatalf("ManageEvidence failed: %v", err)
+	}
+
+	// Query evidence from DB
+	evidence, err := tools.DB.GetEvidence(ctx, hypoID)
+	if err != nil {
+		t.Fatalf("GetEvidence failed: %v", err)
+	}
+
+	if len(evidence) == 0 {
+		t.Fatal("No evidence found in DB")
+	}
+
+	e := evidence[0]
+	t.Logf("Evidence ID: %s", e.ID)
+	t.Logf("ValidUntil.Valid: %v", e.ValidUntil.Valid)
+	if e.ValidUntil.Valid {
+		t.Logf("ValidUntil.Time: %v", e.ValidUntil.Time)
+	}
+
+	if !e.ValidUntil.Valid {
+		t.Error("BUG CONFIRMED: valid_until is NULL in DB despite ManageEvidence setting default!")
+	} else {
+		// Should be ~90 days from now
+		expectedMin := time.Now().AddDate(0, 0, 85)
+		expectedMax := time.Now().AddDate(0, 0, 95)
+		if e.ValidUntil.Time.Before(expectedMin) || e.ValidUntil.Time.After(expectedMax) {
+			t.Errorf("valid_until %v is not ~90 days from now", e.ValidUntil.Time)
+		} else {
+			t.Logf("OK: valid_until correctly set to %v (~90 days from now)", e.ValidUntil.Time)
+		}
 	}
 }

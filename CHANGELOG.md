@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize` then proceeds to Phase 1
 - **Installer cleanup**: `quint-code init` now removes deprecated commands (`q0-init`, `q-status`, `q-decay`, `q-actualize`) before installing new ones
 
+### Changed
+
+- **Internalize status**: Renamed `CURRENT` to `READY` for clearer semantics when no changes detected
+
 ### Added
 
 - **`quint_reset` tool**: Proper cycle reset without creating fake decisions

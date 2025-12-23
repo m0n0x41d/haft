@@ -40,7 +40,7 @@ Call `quint_internalize`. The tool handles everything:
 
 | Field | Meaning |
 |-------|---------|
-| Status | `INITIALIZED` (new), `UPDATED` (refreshed), `CURRENT` (no changes) |
+| Status | `INITIALIZED` (new), `UPDATED` (refreshed), `READY` (no changes) |
 | Phase | Current FSM phase: IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION |
 | Role | Expected role: Observer, Abductor, Deductor, Inductor, Auditor, Decider |
 | Context Changes | What was updated (if any) |
@@ -62,7 +62,7 @@ quint_internalize
     +-> Status: UPDATED
     |   +-> Review changes, then continue current phase
     |
-    +-> Status: CURRENT
+    +-> Status: READY
         +-> Phase: IDLE -> /q1-hypothesize
         +-> Phase: ABDUCTION -> /q1-hypothesize or /q2-verify
         +-> Phase: DEDUCTION -> /q2-verify or /q3-validate
@@ -104,7 +104,7 @@ Next Action: -> /q1-hypothesize to generate hypotheses
 
 === QUINT INTERNALIZE ===
 
-Status: CURRENT
+Status: READY
 Phase: DEDUCTION
 Role: Deductor
 Context: default

@@ -1048,7 +1048,7 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 
 // InternalizeResult contains the output from quint_internalize.
 type InternalizeResult struct {
-	Status            string            // INITIALIZED, UPDATED, CURRENT
+	Status            string            // INITIALIZED, UPDATED, READY
 	Phase             string            // IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION
 	Role              string            // Observer, Initializer, Abductor, etc.
 	ContextID         string            // Current bounded context identifier
@@ -1133,7 +1133,7 @@ func (t *Tools) Internalize() (string, error) {
 			result.Status = "UPDATED"
 			result.ContextChanges = signals
 		} else {
-			result.Status = "CURRENT"
+			result.Status = "READY"
 		}
 	}
 

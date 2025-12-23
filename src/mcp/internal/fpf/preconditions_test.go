@@ -364,14 +364,19 @@ func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string) {
 
 func TestCheckPhaseGate_Blocked(t *testing.T) {
 	tests := []struct {
-		name      string
-		tool      string
-		phase     Phase
+		name        string
+		tool        string
+		phase       Phase
 		wantBlocked bool
 	}{
-		// quint_init only in IDLE
-		{"init_blocked_in_abduction", "quint_init", PhaseAbduction, true},
-		{"init_allowed_in_idle", "quint_init", PhaseIdle, false},
+		// quint_internalize - allowed anywhere (no gate)
+		{"internalize_allowed_in_idle", "quint_internalize", PhaseIdle, false},
+		{"internalize_allowed_in_abduction", "quint_internalize", PhaseAbduction, false},
+		{"internalize_allowed_in_audit", "quint_internalize", PhaseAudit, false},
+
+		// quint_search - allowed anywhere (no gate)
+		{"search_allowed_in_idle", "quint_search", PhaseIdle, false},
+		{"search_allowed_in_audit", "quint_search", PhaseAudit, false},
 
 		// quint_verify in ABDUCTION or DEDUCTION
 		{"verify_blocked_in_idle", "quint_verify", PhaseIdle, true},
@@ -388,10 +393,6 @@ func TestCheckPhaseGate_Blocked(t *testing.T) {
 		{"audit_blocked_in_idle", "quint_audit", PhaseIdle, true},
 		{"audit_allowed_in_induction", "quint_audit", PhaseInduction, false},
 		{"audit_blocked_in_decision", "quint_audit", PhaseDecision, true},
-
-		// quint_status - allowed anywhere (no gate)
-		{"status_allowed_in_idle", "quint_status", PhaseIdle, false},
-		{"status_allowed_in_audit", "quint_status", PhaseAudit, false},
 	}
 
 	for _, tt := range tests {
@@ -501,7 +502,7 @@ func TestL1PromotionRequiresCorrectPhase(t *testing.T) {
 	}
 }
 
-func TestRecordContextPreconditions(t *testing.T) {
+func TestSearchPreconditions(t *testing.T) {
 	tools, _ := setupToolsWithPhase(t, PhaseIdle)
 
 	tests := []struct {
@@ -510,34 +511,40 @@ func TestRecordContextPreconditions(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid record_context",
+			name: "valid search",
 			args: map[string]string{
-				"vocabulary": "Term1: Definition1",
-				"invariants": "1. Rule1",
+				"query": "authentication",
 			},
 			wantErr: false,
 		},
 		{
-			name: "missing vocabulary",
+			name: "missing query",
+			args: map[string]string{},
+			wantErr: true,
+		},
+		{
+			name: "empty query",
 			args: map[string]string{
-				"invariants": "1. Rule1",
+				"query": "",
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing invariants",
+			name: "search with filters",
 			args: map[string]string{
-				"vocabulary": "Term1: Definition1",
+				"query":        "caching",
+				"layer_filter": "L2",
+				"scope":        "decisions",
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tools.CheckPreconditions("quint_record_context", tt.args)
+			err := tools.CheckPreconditions("quint_search", tt.args)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("CheckPreconditions(quint_record_context) error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("CheckPreconditions(quint_search) error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

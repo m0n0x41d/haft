@@ -145,7 +145,7 @@ This creates:
 ### Step 3: Start Reasoning
 
 ```bash
-/q0-init                           # Initialize knowledge base
+/q-internalize                     # Orient yourself (init if needed)
 /q1-hypothesize "Your problem..."  # Generate hypotheses
 ```
 
@@ -169,18 +169,18 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 
 | Command | What It Does |
 |---------|--------------|
-| `/q0-init` | Initialize `.quint/` and record project context. |
+| `/q-internalize` | **Start here.** Initialize, update context, show state. |
 | `/q1-hypothesize` | Generate competing ideas for a problem. |
 | `/q1-add` | Manually add your own hypothesis. |
 | `/q2-verify` | Check logic and constraints — does it make sense? |
 | `/q3-validate` | Test against evidence — does it actually work? |
 | `/q4-audit` | Check for bias and calculate confidence scores. |
 | `/q5-decide` | Pick the winner, record the rationale. |
-| `/q-status` | Show the current state of the reasoning cycle. |
+| `/q-resolve` | Record decision outcome (implemented/abandoned/superseded). |
 | `/q-query` | Search the project's knowledge base. |
-| `/q-decay` | Find evidence that's gone stale and needs refresh. |
-| `/q-actualize` | Reconcile the knowledge base with recent code changes. |
 | `/q-reset` | Discard the current reasoning cycle. |
+
+**Note:** `/q-internalize` replaces the old `/q0-init`, `/q-status`, `/q-actualize`, and `/q-decay` commands. It's your single entry point for every session.
 
 ## Documentation
 

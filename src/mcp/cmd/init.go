@@ -147,11 +147,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ⚠ Failed to install Codex prompts: %v\n", err)
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
-			fmt.Println("    Note: Use /prompts:q0-init to invoke")
+			fmt.Println("    Note: Use /prompts:q-internalize to invoke")
 		}
 	}
 
-	fmt.Println("\nInitialization complete! Run /q0-init to start.")
+	fmt.Println("\nInitialization complete! Run /q-internalize to start.")
 	return nil
 }
 

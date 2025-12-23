@@ -1,6 +1,6 @@
 ---
 description: "Generate Hypotheses (Abduction)"
-pre: "context recorded (Phase 0 complete)"
+pre: "project initialized (via quint_internalize or directly)"
 post: ">=1 L0 hypothesis exists in database"
 invariant: "hypotheses must have kind ∈ {system, episteme}"
 required_tools: ["quint_propose"]
@@ -16,7 +16,7 @@ You are the **Abductor** operating as a **state machine executor**. Your goal is
 
 | Precondition | Tool | Postcondition |
 |--------------|------|---------------|
-| Phase 0 complete | `quint_propose` | L0 holon created in DB |
+| Project initialized | `quint_propose` | L0 holon created in DB |
 
 **RFC 2119 Bindings:**
 - You MUST call `quint_propose` for EACH hypothesis you want to track

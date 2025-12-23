@@ -17,9 +17,14 @@ const (
 // ToolRole maps tool name → role (static, deterministic).
 // Role is implicit - derived from tool name, not passed by agent.
 var ToolRole = map[string]Role{
-	// Initialization
-	"quint_init":           RoleInitializer,
-	"quint_record_context": RoleInitializer,
+	// Unified Entry Point (replaces quint_init, quint_status, quint_actualize, quint_check_decay)
+	"quint_internalize": RoleObserver,
+
+	// Search
+	"quint_search": RoleObserver,
+
+	// Decision Resolution (reconciliation, same category as internalize)
+	"quint_resolve": RoleObserver,
 
 	// ADI Cycle
 	"quint_propose": RoleAbductor,
@@ -29,23 +34,24 @@ var ToolRole = map[string]Role{
 	"quint_decide":  RoleDecider,
 
 	// Maintenance
-	"quint_reset":       RoleMaintainer,
-	"quint_check_decay": RoleMaintainer,
-	"quint_actualize":   RoleMaintainer,
+	"quint_reset": RoleMaintainer,
 
 	// Read-only
-	"quint_status":      RoleObserver,
 	"quint_calculate_r": RoleObserver,
 	"quint_audit_tree":  RoleObserver,
-	"quint_query":       RoleObserver,
 }
 
 // ToolPhaseGate maps tool name → allowed phases.
 // nil = no restriction (any phase allowed).
 var ToolPhaseGate = map[string][]Phase{
-	// Initialization - only IDLE
-	"quint_init":           {PhaseIdle},
-	"quint_record_context": {PhaseIdle},
+	// Unified entry point - allowed in any phase
+	"quint_internalize": nil,
+
+	// Search - allowed in any phase (read-only)
+	"quint_search": nil,
+
+	// Decision resolution - allowed in any phase (reconciliation)
+	"quint_resolve": nil,
 
 	// Abduction - allows regression from later phases (DED, IND)
 	// Blocked in AUDIT and DECISION to prevent disruption during finalization
@@ -65,12 +71,8 @@ var ToolPhaseGate = map[string][]Phase{
 
 	// No phase gate (nil = allowed anytime)
 	"quint_reset":       nil,
-	"quint_check_decay": nil,
-	"quint_actualize":   nil,
-	"quint_status":      nil,
 	"quint_calculate_r": nil,
 	"quint_audit_tree":  nil,
-	"quint_query":       nil,
 }
 
 // GetRoleForTool returns the role associated with a tool.

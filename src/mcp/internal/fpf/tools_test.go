@@ -1061,3 +1061,523 @@ func TestManageEvidence_ValidUntilDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestInternalize_FirstCall(t *testing.T) {
+	tempDir := t.TempDir()
+	// Do NOT create .quint - let Internalize do it
+	dbPath := filepath.Join(tempDir, ".quint", "quint.db")
+	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
+
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Status: INITIALIZED") {
+		t.Errorf("First call should return INITIALIZED, got: %s", result)
+	}
+	if !strings.Contains(result, "Phase: ABDUCTION") {
+		t.Errorf("Phase should be ABDUCTION after init, got: %s", result)
+	}
+
+	// Verify .quint was created
+	if _, err := os.Stat(filepath.Join(tempDir, ".quint")); os.IsNotExist(err) {
+		t.Error(".quint directory should be created")
+	}
+
+	// Verify DB was initialized
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Error("quint.db should be created")
+	}
+}
+
+func TestInternalize_SubsequentCall(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	// First call - sets up everything
+	_, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("First Internalize() error = %v", err)
+	}
+
+	// Second call - should return CURRENT
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Second Internalize() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Status: CURRENT") {
+		t.Errorf("Subsequent call should return CURRENT, got: %s", result)
+	}
+}
+
+func TestInternalize_LayerCounts(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+
+	// Create some L0 holons
+	l0Dir := filepath.Join(tempDir, ".quint", "knowledge", "L0")
+	os.WriteFile(filepath.Join(l0Dir, "hypo1.md"), []byte("test"), 0644)
+	os.WriteFile(filepath.Join(l0Dir, "hypo2.md"), []byte("test"), 0644)
+
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() error = %v", err)
+	}
+
+	if !strings.Contains(result, "L0 (Conjecture): 2") {
+		t.Errorf("Should show 2 L0 holons, got: %s", result)
+	}
+}
+
+func TestSearch_NoResults(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	result, err := tools.Search("xyznonexistentquery", "", "", "", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if !strings.Contains(result, "No results found") {
+		t.Errorf("Should return 'No results found', got: %s", result)
+	}
+}
+
+func TestSearch_WithResults(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	// Create a holon that will be indexed
+	ctx := context.Background()
+	tools.DB.CreateHolon(ctx, "search-test-holon", "hypothesis", "system", "L0",
+		"Authentication Decision", "How to handle user authentication", "default", "", "")
+
+	// Search for it
+	result, err := tools.Search("authentication", "", "", "", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if strings.Contains(result, "No results found") {
+		t.Errorf("Should find results, got: %s", result)
+	}
+	if !strings.Contains(result, "Authentication Decision") {
+		t.Errorf("Should find 'Authentication Decision', got: %s", result)
+	}
+}
+
+func TestSearch_EmptyQuery(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	_, err := tools.Search("", "", "", "", 10)
+	if err == nil {
+		t.Error("Empty query should return error")
+	}
+}
+
+func TestSearch_NoDB(t *testing.T) {
+	tempDir := t.TempDir()
+	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
+
+	_, err := tools.Search("test", "", "", "", 10)
+	if err == nil {
+		t.Error("Search without DB should return error")
+	}
+	if !strings.Contains(err.Error(), "database not initialized") {
+		t.Errorf("Should mention database not initialized, got: %v", err)
+	}
+}
+
+func TestSearch_LayerFilter(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create holons in different layers
+	tools.DB.CreateHolon(ctx, "l0-holon", "hypothesis", "system", "L0",
+		"L0 Test Holon", "Content for L0", "default", "", "")
+	tools.DB.CreateHolon(ctx, "l2-holon", "hypothesis", "system", "L2",
+		"L2 Test Holon", "Content for L2", "default", "", "")
+
+	// Search with L2 filter
+	result, err := tools.Search("Test Holon", "", "L2", "", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if strings.Contains(result, "L0 Test Holon") {
+		t.Errorf("L2 filter should exclude L0 holons, got: %s", result)
+	}
+}
+
+func TestSearch_SpecialCharacters(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon with hyphenated title
+	tools.DB.CreateHolon(ctx, "special-char-holon", "hypothesis", "system", "L0",
+		"Redis-backed Cache Strategy", "Use redis-cluster for caching", "default", "", "")
+
+	// Search with hyphenated query (previously would cause FTS5 parse error)
+	result, err := tools.Search("redis-backed", "", "", "", 10)
+	if err != nil {
+		t.Fatalf("Search with hyphens should not error: %v", err)
+	}
+
+	if strings.Contains(result, "No results found") {
+		t.Errorf("Should find hyphenated content, got: %s", result)
+	}
+}
+
+func TestResolve_Implemented(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR holon
+	err := tools.DB.CreateHolon(ctx, "DRR-test-decision", "DRR", "system", "DRR",
+		"Test Decision", "Decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Resolve as implemented
+	input := ResolveInput{
+		DecisionID: "DRR-test-decision",
+		Resolution: "implemented",
+		Reference:  "commit:abc1234",
+	}
+	result, err := tools.Resolve(input)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	if !strings.Contains(result, "implemented") {
+		t.Errorf("Should confirm implemented status, got: %s", result)
+	}
+	if !strings.Contains(result, "commit:abc1234") {
+		t.Errorf("Should include reference, got: %s", result)
+	}
+
+	// Verify evidence was created
+	evidence, err := tools.DB.GetEvidence(ctx, "DRR-test-decision")
+	if err != nil {
+		t.Fatalf("GetEvidence() error = %v", err)
+	}
+	if len(evidence) == 0 {
+		t.Error("Expected evidence to be created")
+	}
+	if evidence[0].Type != "implementation" {
+		t.Errorf("Evidence type should be 'implementation', got: %s", evidence[0].Type)
+	}
+}
+
+func TestResolve_Abandoned(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR holon
+	err := tools.DB.CreateHolon(ctx, "DRR-abandoned-test", "DRR", "system", "DRR",
+		"Abandoned Decision", "Decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Resolve as abandoned
+	input := ResolveInput{
+		DecisionID: "DRR-abandoned-test",
+		Resolution: "abandoned",
+		Notes:      "Requirements changed",
+	}
+	result, err := tools.Resolve(input)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	if !strings.Contains(result, "abandoned") {
+		t.Errorf("Should confirm abandoned status, got: %s", result)
+	}
+
+	// Verify evidence was created
+	evidence, err := tools.DB.GetEvidence(ctx, "DRR-abandoned-test")
+	if err != nil {
+		t.Fatalf("GetEvidence() error = %v", err)
+	}
+	if len(evidence) == 0 {
+		t.Error("Expected evidence to be created")
+	}
+	if evidence[0].Type != "abandonment" {
+		t.Errorf("Evidence type should be 'abandonment', got: %s", evidence[0].Type)
+	}
+}
+
+func TestResolve_Superseded(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create old DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-old-decision", "DRR", "system", "DRR",
+		"Old Decision", "Old decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create old DRR: %v", err)
+	}
+
+	// Create new DRR that supersedes old
+	err = tools.DB.CreateHolon(ctx, "DRR-new-decision", "DRR", "system", "DRR",
+		"New Decision", "New decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create new DRR: %v", err)
+	}
+
+	// Resolve old as superseded
+	input := ResolveInput{
+		DecisionID:   "DRR-old-decision",
+		Resolution:   "superseded",
+		SupersededBy: "DRR-new-decision",
+		Notes:        "Better approach found",
+	}
+	result, err := tools.Resolve(input)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	if !strings.Contains(result, "superseded") {
+		t.Errorf("Should confirm superseded status, got: %s", result)
+	}
+	if !strings.Contains(result, "DRR-new-decision") {
+		t.Errorf("Should mention replacement DRR, got: %s", result)
+	}
+}
+
+func TestResolve_InvalidDecision(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	// Try to resolve non-existent decision
+	input := ResolveInput{
+		DecisionID: "DRR-does-not-exist",
+		Resolution: "implemented",
+		Reference:  "commit:abc1234",
+	}
+	_, err := tools.Resolve(input)
+	if err == nil {
+		t.Error("Should error on non-existent decision")
+	}
+}
+
+func TestResolve_InvalidResolution(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR holon
+	err := tools.DB.CreateHolon(ctx, "DRR-invalid-res", "DRR", "system", "DRR",
+		"Test Decision", "Decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Try invalid resolution type
+	input := ResolveInput{
+		DecisionID: "DRR-invalid-res",
+		Resolution: "invalid_type",
+	}
+	_, err = tools.Resolve(input)
+	if err == nil {
+		t.Error("Should error on invalid resolution type")
+	}
+}
+
+func TestResolve_MissingRequiredParams(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR holon
+	err := tools.DB.CreateHolon(ctx, "DRR-missing-params", "DRR", "system", "DRR",
+		"Test Decision", "Decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// implemented without reference
+	input := ResolveInput{
+		DecisionID: "DRR-missing-params",
+		Resolution: "implemented",
+	}
+	_, err = tools.Resolve(input)
+	if err == nil {
+		t.Error("implemented should require reference")
+	}
+
+	// abandoned without notes
+	input = ResolveInput{
+		DecisionID: "DRR-missing-params",
+		Resolution: "abandoned",
+	}
+	_, err = tools.Resolve(input)
+	if err == nil {
+		t.Error("abandoned should require notes")
+	}
+
+	// superseded without superseded_by
+	input = ResolveInput{
+		DecisionID: "DRR-missing-params",
+		Resolution: "superseded",
+	}
+	_, err = tools.Resolve(input)
+	if err == nil {
+		t.Error("superseded should require superseded_by")
+	}
+}
+
+func TestSearch_StatusFilterOpen(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create open DRR (no resolution evidence)
+	err := tools.DB.CreateHolon(ctx, "DRR-open-test", "DRR", "system", "DRR",
+		"Open Decision", "Pending resolution", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create open DRR: %v", err)
+	}
+
+	// Create resolved DRR (with implementation evidence)
+	err = tools.DB.CreateHolon(ctx, "DRR-resolved-test", "DRR", "system", "DRR",
+		"Resolved Decision", "Already implemented", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create resolved DRR: %v", err)
+	}
+	err = tools.DB.AddEvidence(ctx, "impl-evidence", "DRR-resolved-test", "implementation",
+		"Implemented in commit abc123", "pass", "L2", "developer", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Search for open decisions
+	result, err := tools.Search("Decision", "", "", "open", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Open Decision") {
+		t.Errorf("Should find open decision, got: %s", result)
+	}
+	if strings.Contains(result, "Resolved Decision") {
+		t.Errorf("Should NOT find resolved decision with open filter, got: %s", result)
+	}
+}
+
+func TestSearch_StatusFilterImplemented(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create implemented DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-impl-search", "DRR", "system", "DRR",
+		"Implemented Decision", "Already done", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+	err = tools.DB.AddEvidence(ctx, "impl-evidence-2", "DRR-impl-search", "implementation",
+		"Done", "pass", "L2", "developer", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Search for implemented decisions
+	result, err := tools.Search("Decision", "", "", "implemented", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Implemented Decision") {
+		t.Errorf("Should find implemented decision, got: %s", result)
+	}
+}
+
+func TestInternalize_ShowsOpenDecisions(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create an open DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-open-internalize", "DRR", "system", "DRR",
+		"Pending Decision", "Awaiting resolution", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Internalize and check output
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Open Decisions") || !strings.Contains(result, "Pending Decision") {
+		t.Errorf("Should show open decision in internalize output, got: %s", result)
+	}
+}
+
+func TestGetOpenDecisions(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create open DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-get-open", "DRR", "system", "DRR",
+		"Open for Query", "Test", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	decisions, err := tools.GetOpenDecisions(ctx)
+	if err != nil {
+		t.Fatalf("GetOpenDecisions() error = %v", err)
+	}
+
+	if len(decisions) == 0 {
+		t.Error("Expected at least one open decision")
+	}
+
+	found := false
+	for _, d := range decisions {
+		if d.ID == "DRR-get-open" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find DRR-get-open in open decisions")
+	}
+}
+
+func TestGetResolvedDecisions(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create and resolve a DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-get-resolved", "DRR", "system", "DRR",
+		"Resolved for Query", "Test", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Add resolution evidence
+	err = tools.DB.AddEvidence(ctx, "impl-get-resolved", "DRR-get-resolved", "implementation",
+		"Done", "pass", "L2", "dev", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	decisions, err := tools.GetResolvedDecisions(ctx, "implemented", 10)
+	if err != nil {
+		t.Fatalf("GetResolvedDecisions() error = %v", err)
+	}
+
+	found := false
+	for _, d := range decisions {
+		if d.ID == "DRR-get-resolved" {
+			found = true
+			if d.Resolution != "implemented" {
+				t.Errorf("Expected resolution 'implemented', got: %s", d.Resolution)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected to find DRR-get-resolved in resolved decisions")
+	}
+}

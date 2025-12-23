@@ -135,3 +135,17 @@ Before proceeding to implementation, verify:
 - [ ] DRR file created successfully
 
 **If any checkbox is unchecked, you MUST complete it before proceeding.**
+
+## After Implementation
+
+Once the decision is implemented (or abandoned/superseded), close the lifecycle with `/q-resolve`:
+
+```
+quint_resolve(
+    decision_id="DRR-auth-jwt",
+    resolution="implemented",
+    reference="pr:42"
+)
+```
+
+This creates evidence linking the plan (DRR) to reality (implementation). Use `quint_internalize` to see open decisions awaiting resolution.

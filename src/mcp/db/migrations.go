@@ -37,6 +37,75 @@ var migrations = []struct {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 	},
+	{
+		version:     4,
+		description: "Add FTS5 tables for full-text search and populate from existing data",
+		sql: `
+			-- Create FTS5 virtual tables
+			CREATE VIRTUAL TABLE IF NOT EXISTS holons_fts USING fts5(
+				id,
+				title,
+				content,
+				content='holons',
+				content_rowid='rowid'
+			);
+
+			CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
+				id,
+				content,
+				content='evidence',
+				content_rowid='rowid'
+			);
+
+			-- Populate FTS from existing holons
+			INSERT INTO holons_fts(holons_fts) VALUES('rebuild');
+
+			-- Populate FTS from existing evidence
+			INSERT INTO evidence_fts(evidence_fts) VALUES('rebuild');
+
+			-- Create triggers for holons (IF NOT EXISTS not supported for triggers in older SQLite)
+			DROP TRIGGER IF EXISTS holons_ai;
+			CREATE TRIGGER holons_ai AFTER INSERT ON holons BEGIN
+				INSERT INTO holons_fts(rowid, id, title, content)
+				VALUES (new.rowid, new.id, new.title, new.content);
+			END;
+
+			DROP TRIGGER IF EXISTS holons_ad;
+			CREATE TRIGGER holons_ad AFTER DELETE ON holons BEGIN
+				INSERT INTO holons_fts(holons_fts, rowid, id, title, content)
+				VALUES('delete', old.rowid, old.id, old.title, old.content);
+			END;
+
+			DROP TRIGGER IF EXISTS holons_au;
+			CREATE TRIGGER holons_au AFTER UPDATE ON holons BEGIN
+				INSERT INTO holons_fts(holons_fts, rowid, id, title, content)
+				VALUES('delete', old.rowid, old.id, old.title, old.content);
+				INSERT INTO holons_fts(rowid, id, title, content)
+				VALUES (new.rowid, new.id, new.title, new.content);
+			END;
+
+			-- Create triggers for evidence
+			DROP TRIGGER IF EXISTS evidence_ai;
+			CREATE TRIGGER evidence_ai AFTER INSERT ON evidence BEGIN
+				INSERT INTO evidence_fts(rowid, id, content)
+				VALUES (new.rowid, new.id, new.content);
+			END;
+
+			DROP TRIGGER IF EXISTS evidence_ad;
+			CREATE TRIGGER evidence_ad AFTER DELETE ON evidence BEGIN
+				INSERT INTO evidence_fts(evidence_fts, rowid, id, content)
+				VALUES('delete', old.rowid, old.id, old.content);
+			END;
+
+			DROP TRIGGER IF EXISTS evidence_au;
+			CREATE TRIGGER evidence_au AFTER UPDATE ON evidence BEGIN
+				INSERT INTO evidence_fts(evidence_fts, rowid, id, content)
+				VALUES('delete', old.rowid, old.id, old.content);
+				INSERT INTO evidence_fts(rowid, id, content)
+				VALUES (new.rowid, new.id, new.content);
+			END;
+		`,
+	},
 }
 
 // RunMigrations applies all pending migrations to the database.

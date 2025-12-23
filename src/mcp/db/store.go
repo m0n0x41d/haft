@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -86,6 +87,58 @@ CREATE TABLE IF NOT EXISTS waivers (
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);
+
+-- FTS5 virtual tables for full-text search
+CREATE VIRTUAL TABLE IF NOT EXISTS holons_fts USING fts5(
+	id,
+	title,
+	content,
+	content='holons',
+	content_rowid='rowid'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
+	id,
+	content,
+	content='evidence',
+	content_rowid='rowid'
+);
+
+-- Triggers to keep FTS in sync with holons
+CREATE TRIGGER IF NOT EXISTS holons_ai AFTER INSERT ON holons BEGIN
+	INSERT INTO holons_fts(rowid, id, title, content)
+	VALUES (new.rowid, new.id, new.title, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS holons_ad AFTER DELETE ON holons BEGIN
+	INSERT INTO holons_fts(holons_fts, rowid, id, title, content)
+	VALUES('delete', old.rowid, old.id, old.title, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS holons_au AFTER UPDATE ON holons BEGIN
+	INSERT INTO holons_fts(holons_fts, rowid, id, title, content)
+	VALUES('delete', old.rowid, old.id, old.title, old.content);
+	INSERT INTO holons_fts(rowid, id, title, content)
+	VALUES (new.rowid, new.id, new.title, new.content);
+END;
+
+-- Triggers to keep FTS in sync with evidence
+CREATE TRIGGER IF NOT EXISTS evidence_ai AFTER INSERT ON evidence BEGIN
+	INSERT INTO evidence_fts(rowid, id, content)
+	VALUES (new.rowid, new.id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS evidence_ad AFTER DELETE ON evidence BEGIN
+	INSERT INTO evidence_fts(evidence_fts, rowid, id, content)
+	VALUES('delete', old.rowid, old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS evidence_au AFTER UPDATE ON evidence BEGIN
+	INSERT INTO evidence_fts(evidence_fts, rowid, id, content)
+	VALUES('delete', old.rowid, old.id, old.content);
+	INSERT INTO evidence_fts(rowid, id, content)
+	VALUES (new.rowid, new.id, new.content);
+END;
 `
 
 type Store struct {
@@ -303,4 +356,267 @@ func toNullString(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+// SearchResult represents a single search hit.
+type SearchResult struct {
+	ID        string
+	Type      string // "holon" or "evidence"
+	Title     string
+	Snippet   string
+	Layer     string
+	RScore    float64
+	UpdatedAt time.Time
+}
+
+// sanitizeFTS5Query escapes special FTS5 characters to prevent query parse errors.
+// FTS5 treats - * " ( ) etc. as operators. We wrap in quotes for phrase matching.
+func sanitizeFTS5Query(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return query
+	}
+	escaped := strings.ReplaceAll(query, `"`, `""`)
+	return `"` + escaped + `"`
+}
+
+// Search performs full-text search across holons and evidence.
+// scope: "holons", "evidence", "all"
+// layerFilter: "L0", "L1", "L2", "" (all layers)
+func (s *Store) Search(ctx context.Context, query, scope, layerFilter, statusFilter string, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	safeQuery := sanitizeFTS5Query(query)
+	var results []SearchResult
+
+	// Search holons
+	if scope == "holons" || scope == "all" || scope == "" {
+		holonResults, err := s.searchHolons(ctx, safeQuery, layerFilter, statusFilter, limit)
+		if err != nil {
+			return nil, fmt.Errorf("holon search failed: %w", err)
+		}
+		results = append(results, holonResults...)
+	}
+
+	// Search evidence
+	if scope == "evidence" || scope == "all" || scope == "" {
+		evidenceResults, err := s.searchEvidence(ctx, safeQuery, limit)
+		if err != nil {
+			return nil, fmt.Errorf("evidence search failed: %w", err)
+		}
+		results = append(results, evidenceResults...)
+	}
+
+	// Limit total results
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
+}
+
+func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilter string, limit int) ([]SearchResult, error) {
+	var sqlQuery string
+	var args []interface{}
+
+	if statusFilter != "" {
+		if statusFilter == "open" {
+			sqlQuery = `
+				SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+				       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+				FROM holons_fts
+				JOIN holons h ON holons_fts.id = h.id
+				WHERE holons_fts MATCH ?
+				  AND (h.type = 'DRR' OR h.layer = 'DRR')
+				  AND NOT EXISTS (
+				      SELECT 1 FROM evidence e
+				      WHERE e.holon_id = h.id
+				        AND e.type IN ('implementation', 'abandonment', 'supersession')
+				  )
+				ORDER BY rank
+				LIMIT ?
+			`
+			args = []interface{}{query, limit}
+		} else {
+			evidenceType := map[string]string{
+				"implemented": "implementation",
+				"abandoned":   "abandonment",
+				"superseded":  "supersession",
+			}[statusFilter]
+			if evidenceType == "" {
+				evidenceType = statusFilter
+			}
+			sqlQuery = `
+				SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+				       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+				FROM holons_fts
+				JOIN holons h ON holons_fts.id = h.id
+				WHERE holons_fts MATCH ?
+				  AND (h.type = 'DRR' OR h.layer = 'DRR')
+				  AND EXISTS (
+				      SELECT 1 FROM evidence e
+				      WHERE e.holon_id = h.id
+				        AND e.type = ?
+				  )
+				ORDER BY rank
+				LIMIT ?
+			`
+			args = []interface{}{query, evidenceType, limit}
+		}
+	} else if layerFilter != "" {
+		sqlQuery = `
+			SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+			FROM holons_fts
+			JOIN holons h ON holons_fts.id = h.id
+			WHERE holons_fts MATCH ?
+			  AND h.layer = ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		args = []interface{}{query, layerFilter, limit}
+	} else {
+		sqlQuery = `
+			SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+			FROM holons_fts
+			JOIN holons h ON holons_fts.id = h.id
+			WHERE holons_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		args = []interface{}{query, limit}
+	}
+
+	rows, err := s.conn.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		var updatedAt sql.NullTime
+		var rScore sql.NullFloat64
+		if err := rows.Scan(&r.ID, &r.Title, &r.Layer, &rScore, &updatedAt, &r.Snippet); err != nil {
+			continue
+		}
+		r.Type = "holon"
+		if rScore.Valid {
+			r.RScore = rScore.Float64
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		}
+		results = append(results, r)
+	}
+
+	return results, rows.Err()
+}
+
+func (s *Store) searchEvidence(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	sqlQuery := `
+		SELECT e.id, e.holon_id, e.type, e.created_at,
+		       snippet(evidence_fts, 1, '**', '**', '...', 32) as snippet
+		FROM evidence_fts
+		JOIN evidence e ON evidence_fts.id = e.id
+		WHERE evidence_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?
+	`
+
+	rows, err := s.conn.QueryContext(ctx, sqlQuery, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		var holonID, evidenceType string
+		var createdAt sql.NullTime
+		if err := rows.Scan(&r.ID, &holonID, &evidenceType, &createdAt, &r.Snippet); err != nil {
+			continue
+		}
+		r.Type = "evidence"
+		r.Title = fmt.Sprintf("%s for %s", evidenceType, holonID)
+		if createdAt.Valid {
+			r.UpdatedAt = createdAt.Time
+		}
+		results = append(results, r)
+	}
+
+	return results, rows.Err()
+}
+
+// GetRecentHolons returns the N most recently updated holons.
+func (s *Store) GetRecentHolons(ctx context.Context, limit int) ([]Holon, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT id, type, kind, layer, title, content, context_id, scope, parent_id,
+		       cached_r_score, created_at, updated_at
+		FROM holons
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var holons []Holon
+	for rows.Next() {
+		var h Holon
+		if err := rows.Scan(&h.ID, &h.Type, &h.Kind, &h.Layer, &h.Title, &h.Content,
+			&h.ContextID, &h.Scope, &h.ParentID, &h.CachedRScore, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			continue
+		}
+		holons = append(holons, h)
+	}
+
+	return holons, rows.Err()
+}
+
+// GetDecayingEvidence returns evidence expiring within daysAhead days.
+func (s *Store) GetDecayingEvidence(ctx context.Context, daysAhead int) ([]Evidence, error) {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT e.id, e.holon_id, e.type, e.content, e.verdict, e.assurance_level,
+		       e.carrier_ref, e.valid_until, e.created_at
+		FROM evidence e
+		LEFT JOIN (
+			SELECT evidence_id, MAX(waived_until) as latest_waiver
+			FROM waivers
+			GROUP BY evidence_id
+		) w ON e.id = w.evidence_id
+		WHERE e.valid_until IS NOT NULL
+		  AND date(e.valid_until) BETWEEN date('now') AND date('now', '+' || ? || ' days')
+		  AND (w.latest_waiver IS NULL OR w.latest_waiver < datetime('now'))
+		ORDER BY e.valid_until ASC
+	`, daysAhead)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var evidence []Evidence
+	for rows.Next() {
+		var e Evidence
+		if err := rows.Scan(&e.ID, &e.HolonID, &e.Type, &e.Content, &e.Verdict,
+			&e.AssuranceLevel, &e.CarrierRef, &e.ValidUntil, &e.CreatedAt); err != nil {
+			continue
+		}
+		evidence = append(evidence, e)
+	}
+
+	return evidence, rows.Err()
 }

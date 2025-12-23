@@ -69,38 +69,36 @@ Compute trust scores using:
 
 | Command | Phase | What It Does |
 |---|---|---|
-| `/q0-init` | Setup | Initialize `.quint/` and record the Bounded Context. |
+| `/q-internalize` | Entry | **Start here.** Initialize, update context, show state, surface issues. |
 | `/q1-hypothesize` | Abduction | Generate L0 hypotheses for a problem. |
 | `/q1-add` | Abduction | Manually add your own L0 hypothesis. |
 | `/q2-verify` | Deduction | Verify logic and constraints, promoting claims from L0 to L1. |
 | `/q3-validate` | Induction | Gather empirical evidence, promoting claims from L1 to L2. |
 | `/q4-audit` | Audit | Run an assurance audit and calculate trust scores. |
 | `/q5-decide` | Decision | Select the winning hypothesis and create a Design Rationale Record. |
-| `/q-status` | Utility | Show the current state of the reasoning cycle. |
+| `/q-resolve` | Resolution | Record decision outcome (implemented, abandoned, superseded). |
 | `/q-query` | Utility | Search the project's knowledge base. |
-| `/q-decay` | Maintenance | Check for and report expired evidence (Epistemic Debt). |
-| `/q-actualize` | Maintenance | Reconcile the knowledge base with recent code changes. |
 | `/q-reset` | Utility | Discard the current reasoning cycle. |
 
-### Maintenance Commands
+### Entry Point: /q-internalize
 
-#### /q-decay (Evidence Freshness)
+Start every session with `/q-internalize`. It handles:
 
-Evidence expires. A benchmark from six months ago might not reflect current performance. `/q-decay` shows you what's stale and gives you three options:
+- **Initialization**: Creates `.quint/` structure if needed
+- **Context refresh**: Detects and updates stale project context
+- **State loading**: Shows current phase, knowledge counts, recent work
+- **Issue surfacing**: Decaying evidence, open decisions pending resolution
+- **Guidance**: Phase-appropriate next action suggestions
 
-- **Refresh** — Re-run tests to get fresh evidence
-- **Deprecate** — Downgrade the hypothesis if the decision needs rethinking
-- **Waive** — Accept the risk temporarily with documented rationale
+### Decision Resolution: /q-resolve
 
-You can speak naturally: "waive the benchmark until February, we'll re-test after launch."
+Decisions are plans. Reality is what happens. `/q-resolve` bridges the gap:
 
-See [Evidence Freshness](evidence-freshness.md) for the full guide.
+- **Implemented**: Link to commit, PR, or file where the decision was realized
+- **Abandoned**: Record why the decision was dropped
+- **Superseded**: Link to the newer decision that replaced this one
 
-#### /q-actualize (Knowledge Reconciliation)
-This command serves as the **Observe** phase of the FPF's **Canonical Evolution Loop (B.4)**. It reconciles your documented knowledge with the current state of the codebase by:
-1.  **Detecting Context Drift:** Checks if project files (like `package.json`) have changed, potentially making your `context.md` stale.
-2.  **Finding Stale Evidence:** Finds evidence whose `carrier_ref` (the file it points to) has been modified in `git`.
-3.  **Flagging Outdated Decisions:** Identifies decisions whose underlying evidence chain has been impacted by recent code changes.
+Use `quint_search` with `status_filter="open"` to find decisions awaiting resolution.
 
 ## When to Use FPF
 

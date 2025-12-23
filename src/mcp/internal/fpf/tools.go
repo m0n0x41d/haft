@@ -3,6 +3,7 @@ package fpf
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1045,6 +1046,387 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	return result.String(), nil
 }
 
+// InternalizeResult contains the output from quint_internalize.
+type InternalizeResult struct {
+	Status            string            // INITIALIZED, UPDATED, CURRENT
+	Phase             string            // IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION
+	Role              string            // Observer, Initializer, Abductor, etc.
+	ContextID         string            // Current bounded context identifier
+	ContextChanges    []string          // What changed (if INITIALIZED or UPDATED)
+	LayerCounts       map[string]int    // {"L0": 5, "L1": 3, "L2": 1}
+	RecentHolons      []HolonSummary    // Last N holons
+	DecayWarnings     []DecayWarning    // Evidence expiring soon
+	OpenDecisions     []DecisionSummary // Decisions awaiting resolution
+	ResolvedDecisions []DecisionSummary // Recently resolved decisions
+	NextAction        string            // Phase-appropriate suggestion
+}
+
+// HolonSummary is a brief view of a holon for status display.
+type HolonSummary struct {
+	ID        string
+	Title     string
+	Layer     string
+	Kind      string
+	RScore    float64
+	UpdatedAt time.Time
+}
+
+// DecayWarning represents evidence that is expiring soon.
+type DecayWarning struct {
+	EvidenceID string
+	HolonID    string
+	HolonTitle string
+	ExpiresAt  time.Time
+	DaysLeft   int
+}
+
+// Internalize is the unified entry point for FPF sessions.
+// It handles initialization, context updates, decay checking, and status in one call.
+func (t *Tools) Internalize() (string, error) {
+	defer t.RecordWork("Internalize", time.Now())
+
+	result := InternalizeResult{
+		Phase:       string(t.FSM.GetPhase()),
+		Role:        string(GetExpectedRole(t.FSM.GetPhase())),
+		LayerCounts: make(map[string]int),
+	}
+
+	// 1. Check if initialized
+	if !t.IsInitialized() {
+		if err := t.InitProject(); err != nil {
+			return "", fmt.Errorf("initialization failed: %w", err)
+		}
+		result.Status = "INITIALIZED"
+		result.ContextChanges = []string{"Created .quint/ structure"}
+
+		// Auto-analyze project and record context
+		ctx, err := t.AnalyzeProject()
+		if err != nil {
+			result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: auto-analysis failed: %v", err))
+		} else if ctx.Vocabulary != "" || ctx.Invariants != "" {
+			if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
+				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to record context: %v", err))
+			} else {
+				result.ContextChanges = append(result.ContextChanges, "Auto-generated context from project analysis")
+			}
+		}
+
+		// Set phase to ABDUCTION after init
+		t.FSM.State.Phase = PhaseAbduction
+		if err := t.FSM.SaveState("default"); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", err)
+		}
+		result.Phase = string(PhaseAbduction)
+		result.Role = string(GetExpectedRole(PhaseAbduction))
+	} else {
+		// 2. Check staleness
+		stale, signals := t.IsContextStale()
+		if stale {
+			ctx, err := t.AnalyzeProject()
+			if err != nil {
+				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: re-analysis failed: %v", err))
+			} else if ctx.Vocabulary != "" || ctx.Invariants != "" {
+				if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
+					result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to update context: %v", err))
+				}
+			}
+			result.Status = "UPDATED"
+			result.ContextChanges = signals
+		} else {
+			result.Status = "CURRENT"
+		}
+	}
+
+	// 3. Load knowledge state
+	result.ContextID = "default"
+	result.LayerCounts["L0"] = t.countHolons("L0")
+	result.LayerCounts["L1"] = t.countHolons("L1")
+	result.LayerCounts["L2"] = t.countHolons("L2")
+	result.LayerCounts["DRR"] = t.countDRRs()
+
+	// 4. Get recent holons
+	if t.DB != nil {
+		ctx := context.Background()
+		holons, err := t.DB.GetRecentHolons(ctx, 10)
+		if err == nil {
+			for _, h := range holons {
+				summary := HolonSummary{
+					ID:    h.ID,
+					Title: h.Title,
+					Layer: h.Layer,
+				}
+				if h.Kind.Valid {
+					summary.Kind = h.Kind.String
+				}
+				if h.CachedRScore.Valid {
+					summary.RScore = h.CachedRScore.Float64
+				}
+				if h.UpdatedAt.Valid {
+					summary.UpdatedAt = h.UpdatedAt.Time
+				}
+				result.RecentHolons = append(result.RecentHolons, summary)
+			}
+		}
+
+		// 5. Check decay (evidence expiring within 7 days)
+		evidence, err := t.DB.GetDecayingEvidence(ctx, 7)
+		if err == nil {
+			for _, e := range evidence {
+				warning := DecayWarning{
+					EvidenceID: e.ID,
+					HolonID:    e.HolonID,
+				}
+				if e.ValidUntil.Valid {
+					warning.ExpiresAt = e.ValidUntil.Time
+					warning.DaysLeft = int(time.Until(e.ValidUntil.Time).Hours() / 24)
+				}
+				// Get holon title
+				if title, err := t.DB.GetHolonTitle(ctx, e.HolonID); err == nil {
+					warning.HolonTitle = title
+				}
+				result.DecayWarnings = append(result.DecayWarnings, warning)
+			}
+		}
+
+		// 6. Load decision status
+		openDecisions, err := t.GetOpenDecisions(ctx)
+		if err == nil {
+			result.OpenDecisions = openDecisions
+		}
+		resolvedDecisions, err := t.GetRecentResolvedDecisions(ctx, 5)
+		if err == nil {
+			result.ResolvedDecisions = resolvedDecisions
+		}
+	}
+
+	// 7. Generate next action guidance
+	result.NextAction = t.getNextAction(t.FSM.GetPhase(), result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
+
+	// Format output
+	return t.formatInternalizeOutput(result), nil
+}
+
+func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
+	var sb strings.Builder
+
+	sb.WriteString("=== QUINT INTERNALIZE ===\n\n")
+	sb.WriteString(fmt.Sprintf("Status: %s\n", r.Status))
+	sb.WriteString(fmt.Sprintf("Phase: %s\n", r.Phase))
+	sb.WriteString(fmt.Sprintf("Role: %s\n", r.Role))
+	sb.WriteString(fmt.Sprintf("Context: %s\n\n", r.ContextID))
+
+	if len(r.ContextChanges) > 0 {
+		sb.WriteString("Context Changes:\n")
+		for _, c := range r.ContextChanges {
+			sb.WriteString(fmt.Sprintf("  - %s\n", c))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Knowledge State:\n")
+	sb.WriteString(fmt.Sprintf("  L0 (Conjecture): %d\n", r.LayerCounts["L0"]))
+	sb.WriteString(fmt.Sprintf("  L1 (Substantiated): %d\n", r.LayerCounts["L1"]))
+	sb.WriteString(fmt.Sprintf("  L2 (Corroborated): %d\n", r.LayerCounts["L2"]))
+	if r.LayerCounts["DRR"] > 0 {
+		sb.WriteString(fmt.Sprintf("  DRRs: %d\n", r.LayerCounts["DRR"]))
+	}
+	sb.WriteString("\n")
+
+	if len(r.RecentHolons) > 0 {
+		sb.WriteString("Recent Holons:\n")
+		for _, h := range r.RecentHolons {
+			age := formatAge(h.UpdatedAt)
+			sb.WriteString(fmt.Sprintf("  - %s [%s] R=%.2f - %s\n", h.ID, h.Layer, h.RScore, age))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(r.DecayWarnings) > 0 {
+		sb.WriteString("⚠ Attention Required:\n")
+		for _, w := range r.DecayWarnings {
+			sb.WriteString(fmt.Sprintf("  - Evidence \"%s\" for \"%s\" expires in %d days\n",
+				w.EvidenceID, w.HolonTitle, w.DaysLeft))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(r.OpenDecisions) > 0 {
+		sb.WriteString("⚠ Open Decisions (awaiting resolution):\n")
+		for _, d := range r.OpenDecisions {
+			age := formatAge(d.CreatedAt)
+			sb.WriteString(fmt.Sprintf("  - %s: %s (%s)\n", d.ID, d.Title, age))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(r.ResolvedDecisions) > 0 {
+		sb.WriteString("Recent Resolutions:\n")
+		for _, d := range r.ResolvedDecisions {
+			age := formatAge(d.ResolvedAt)
+			sb.WriteString(fmt.Sprintf("  - %s: %s [%s] %s\n", d.ID, d.Title, d.Resolution, age))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("Next Action: %s", r.NextAction))
+
+	return sb.String()
+}
+
+func formatAge(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	d := time.Since(t)
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+}
+
+// IsInitialized checks if .quint/ directory exists.
+func (t *Tools) IsInitialized() bool {
+	_, err := os.Stat(t.GetFPFDir())
+	return err == nil
+}
+
+// ProjectContext holds auto-analyzed project information.
+type ProjectContext struct {
+	Vocabulary string
+	Invariants string
+	TechStack  []string
+}
+
+// AnalyzeProject scans the project to extract context automatically.
+func (t *Tools) AnalyzeProject() (ProjectContext, error) {
+	ctx := ProjectContext{}
+	var vocab []string
+	var invariants []string
+
+	// Check go.mod
+	goModPath := filepath.Join(t.RootDir, "go.mod")
+	if content, err := os.ReadFile(goModPath); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Go")
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "module ") {
+				modName := strings.TrimPrefix(line, "module ")
+				vocab = append(vocab, fmt.Sprintf("Module: %s", strings.TrimSpace(modName)))
+			}
+		}
+		invariants = append(invariants, "Go module project")
+	}
+
+	// Check package.json
+	pkgPath := filepath.Join(t.RootDir, "package.json")
+	if _, err := os.Stat(pkgPath); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Node.js")
+		invariants = append(invariants, "Node.js project")
+	}
+
+	// Check for common directories
+	if _, err := os.Stat(filepath.Join(t.RootDir, "src")); err == nil {
+		vocab = append(vocab, "src: Source code directory")
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "internal")); err == nil {
+		vocab = append(vocab, "internal: Private Go packages")
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "cmd")); err == nil {
+		vocab = append(vocab, "cmd: Command-line entry points")
+	}
+
+	ctx.Vocabulary = strings.Join(vocab, ". ")
+	ctx.Invariants = strings.Join(invariants, ". ")
+
+	return ctx, nil
+}
+
+// IsContextStale checks if context.md is stale relative to project files.
+func (t *Tools) IsContextStale() (bool, []string) {
+	var signals []string
+
+	contextPath := filepath.Join(t.GetFPFDir(), "context.md")
+	contextInfo, err := os.Stat(contextPath)
+	if err != nil {
+		return false, nil // No context yet, not stale
+	}
+	contextMod := contextInfo.ModTime()
+
+	// Check go.mod
+	goModPath := filepath.Join(t.RootDir, "go.mod")
+	if info, err := os.Stat(goModPath); err == nil {
+		if info.ModTime().After(contextMod) {
+			signals = append(signals, "go.mod modified since last context update")
+		}
+	}
+
+	// Check package.json
+	pkgPath := filepath.Join(t.RootDir, "package.json")
+	if info, err := os.Stat(pkgPath); err == nil {
+		if info.ModTime().After(contextMod) {
+			signals = append(signals, "package.json modified since last context update")
+		}
+	}
+
+	// Check if context is older than 7 days
+	if time.Since(contextMod) > 7*24*time.Hour {
+		signals = append(signals, fmt.Sprintf("Context is %d days old", int(time.Since(contextMod).Hours()/24)))
+	}
+
+	return len(signals) > 0, signals
+}
+
+// Search performs full-text search across the knowledge base.
+func (t *Tools) Search(query, scope, layerFilter, statusFilter string, limit int) (string, error) {
+	defer t.RecordWork("Search", time.Now())
+
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+	}
+
+	if query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+
+	ctx := context.Background()
+	results, err := t.DB.Search(ctx, query, scope, layerFilter, statusFilter, limit)
+	if err != nil {
+		return "", fmt.Errorf("search failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		return fmt.Sprintf("No results found for: %s", query), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Search Results for: %s\n\n", query))
+	sb.WriteString(fmt.Sprintf("Found %d results\n\n", len(results)))
+
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("### %d. %s\n", i+1, r.Title))
+		sb.WriteString(fmt.Sprintf("- **ID:** %s\n", r.ID))
+		sb.WriteString(fmt.Sprintf("- **Type:** %s\n", r.Type))
+		if r.Layer != "" {
+			sb.WriteString(fmt.Sprintf("- **Layer:** %s\n", r.Layer))
+		}
+		if r.RScore > 0 {
+			sb.WriteString(fmt.Sprintf("- **R_eff:** %.2f\n", r.RScore))
+		}
+		if !r.UpdatedAt.IsZero() {
+			sb.WriteString(fmt.Sprintf("- **Updated:** %s\n", formatAge(r.UpdatedAt)))
+		}
+		if r.Snippet != "" {
+			sb.WriteString(fmt.Sprintf("- **Snippet:** %s\n", r.Snippet))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String(), nil
+}
+
 // GetStatus returns the current FPF status with enhanced output for agent parsing.
 func (t *Tools) GetStatus() (string, error) {
 	phase := t.FSM.GetPhase()
@@ -1113,7 +1495,7 @@ func (t *Tools) countDRRs() int {
 func (t *Tools) getNextAction(phase Phase, l0, l1, l2 int) string {
 	switch phase {
 	case PhaseIdle:
-		return "→ /q0-init or /q1-hypothesize\n"
+		return "→ /q-internalize or /q1-hypothesize\n"
 	case PhaseAbduction:
 		if l0 > 0 {
 			return fmt.Sprintf("→ %d L0 ready for /q2-verify\n", l0)
@@ -1138,4 +1520,303 @@ func (t *Tools) getNextAction(phase Phase, l0, l1, l2 int) string {
 	default:
 		return ""
 	}
+}
+
+// ResolveInput defines the input for resolving a decision.
+type ResolveInput struct {
+	DecisionID   string `json:"decision_id"`
+	Resolution   string `json:"resolution"`
+	Reference    string `json:"reference"`
+	SupersededBy string `json:"superseded_by"`
+	Notes        string `json:"notes"`
+	ValidUntil   string `json:"valid_until"`
+}
+
+// DecisionSummary represents a decision with its resolution status.
+type DecisionSummary struct {
+	ID         string
+	Title      string
+	CreatedAt  time.Time
+	Resolution string
+	ResolvedAt time.Time
+	Notes      string
+	Reference  string
+}
+
+// Resolve records the outcome of a decision: implemented, abandoned, or superseded.
+func (t *Tools) Resolve(input ResolveInput) (string, error) {
+	defer t.RecordWork("Resolve", time.Now())
+
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+	}
+
+	ctx := context.Background()
+
+	// 1. Validate decision exists and is correct type
+	holon, err := t.DB.GetHolon(ctx, input.DecisionID)
+	if err != nil {
+		return "", fmt.Errorf("decision not found: %s", input.DecisionID)
+	}
+	if holon.Type != "DRR" && holon.Layer != "DRR" {
+		return "", fmt.Errorf("holon %s is not a decision (type=%s, layer=%s)", input.DecisionID, holon.Type, holon.Layer)
+	}
+
+	// 2. Validate resolution type
+	validResolutions := map[string]bool{
+		"implemented": true,
+		"abandoned":   true,
+		"superseded":  true,
+	}
+	if !validResolutions[input.Resolution] {
+		return "", fmt.Errorf("invalid resolution: %s (must be: implemented, abandoned, superseded)", input.Resolution)
+	}
+
+	// 3. Validate resolution-specific requirements
+	switch input.Resolution {
+	case "implemented":
+		if input.Reference == "" {
+			return "", fmt.Errorf("reference required for 'implemented' resolution (e.g., commit:SHA, pr:NUM)")
+		}
+	case "superseded":
+		if input.SupersededBy == "" {
+			return "", fmt.Errorf("superseded_by required for 'superseded' resolution")
+		}
+		superseding, err := t.DB.GetHolon(ctx, input.SupersededBy)
+		if err != nil {
+			return "", fmt.Errorf("superseding decision not found: %s", input.SupersededBy)
+		}
+		if superseding.Type != "DRR" && superseding.Layer != "DRR" {
+			return "", fmt.Errorf("superseding holon %s is not a decision", input.SupersededBy)
+		}
+	case "abandoned":
+		if input.Notes == "" {
+			return "", fmt.Errorf("notes (reason) required for 'abandoned' resolution")
+		}
+	}
+
+	// 4. Check for existing resolution
+	evidences, _ := t.DB.GetEvidence(ctx, input.DecisionID)
+	for _, e := range evidences {
+		if e.Type == "implementation" || e.Type == "abandonment" || e.Type == "supersession" {
+			return "", fmt.Errorf("decision already resolved (evidence: %s, type: %s)", e.ID, e.Type)
+		}
+	}
+
+	// 5. Create resolution evidence
+	evidenceID := uuid.New().String()
+	var evidenceType, content, carrierRef string
+
+	switch input.Resolution {
+	case "implemented":
+		evidenceType = "implementation"
+		content = input.Notes
+		if content == "" {
+			content = "Decision implemented"
+		}
+		carrierRef = input.Reference
+
+	case "abandoned":
+		evidenceType = "abandonment"
+		content = input.Notes
+		carrierRef = ""
+
+	case "superseded":
+		evidenceType = "supersession"
+		content = input.Notes
+		if content == "" {
+			content = fmt.Sprintf("Superseded by %s", input.SupersededBy)
+		}
+		carrierRef = "superseded_by:" + input.SupersededBy
+
+		// Create SupersededBy relation
+		if err := t.DB.CreateRelation(ctx, input.DecisionID, "SupersededBy", input.SupersededBy, 3); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create SupersededBy relation: %v\n", err)
+		}
+	}
+
+	err = t.DB.AddEvidence(ctx,
+		evidenceID,
+		input.DecisionID,
+		evidenceType,
+		content,
+		"PASS",
+		"",
+		carrierRef,
+		input.ValidUntil,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create evidence: %v", err)
+	}
+
+	// 6. Audit log
+	t.AuditLog("quint_resolve", "resolve_decision",
+		string(t.FSM.State.ActiveRole.Role),
+		input.DecisionID, "SUCCESS", input, "")
+
+	// 7. Format output
+	result := fmt.Sprintf("Decision '%s' resolved as: %s", holon.Title, input.Resolution)
+	switch input.Resolution {
+	case "implemented":
+		result += fmt.Sprintf("\nReference: %s", input.Reference)
+	case "abandoned":
+		result += fmt.Sprintf("\nReason: %s", input.Notes)
+	case "superseded":
+		result += fmt.Sprintf("\nSuperseded by: %s", input.SupersededBy)
+	}
+
+	return result, nil
+}
+
+// GetOpenDecisions returns decisions that have not been resolved.
+func (t *Tools) GetOpenDecisions(ctx context.Context) ([]DecisionSummary, error) {
+	if t.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	query := `
+		SELECT h.id, h.title, h.created_at
+		FROM holons h
+		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
+		AND NOT EXISTS (
+			SELECT 1 FROM evidence e
+			WHERE e.holon_id = h.id
+			AND e.type IN ('implementation', 'abandonment', 'supersession')
+		)
+		ORDER BY h.created_at DESC
+	`
+	rows, err := t.DB.GetRawDB().QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []DecisionSummary
+	for rows.Next() {
+		var d DecisionSummary
+		var createdAt sql.NullTime
+		if err := rows.Scan(&d.ID, &d.Title, &createdAt); err != nil {
+			continue
+		}
+		if createdAt.Valid {
+			d.CreatedAt = createdAt.Time
+		}
+		d.Resolution = "open"
+		results = append(results, d)
+	}
+	return results, nil
+}
+
+// GetResolvedDecisions returns decisions with a specific resolution status.
+func (t *Tools) GetResolvedDecisions(ctx context.Context, resolution string, limit int) ([]DecisionSummary, error) {
+	if t.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	evidenceType := map[string]string{
+		"implemented": "implementation",
+		"abandoned":   "abandonment",
+		"superseded":  "supersession",
+	}[resolution]
+
+	if evidenceType == "" {
+		return nil, fmt.Errorf("invalid resolution filter: %s", resolution)
+	}
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `
+		SELECT h.id, h.title, h.created_at, e.type, e.created_at as resolved_at, e.content, e.carrier_ref
+		FROM holons h
+		JOIN evidence e ON e.holon_id = h.id
+		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
+		AND e.type = ?
+		ORDER BY e.created_at DESC
+		LIMIT ?
+	`
+	rows, err := t.DB.GetRawDB().QueryContext(ctx, query, evidenceType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []DecisionSummary
+	for rows.Next() {
+		var d DecisionSummary
+		var createdAt, resolvedAt sql.NullTime
+		var evidenceType string
+		var carrierRef sql.NullString
+		if err := rows.Scan(&d.ID, &d.Title, &createdAt, &evidenceType, &resolvedAt, &d.Notes, &carrierRef); err != nil {
+			continue
+		}
+		if createdAt.Valid {
+			d.CreatedAt = createdAt.Time
+		}
+		if resolvedAt.Valid {
+			d.ResolvedAt = resolvedAt.Time
+		}
+		if carrierRef.Valid {
+			d.Reference = carrierRef.String
+		}
+		d.Resolution = resolution
+		results = append(results, d)
+	}
+	return results, nil
+}
+
+// GetRecentResolvedDecisions returns recently resolved decisions of any type.
+func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]DecisionSummary, error) {
+	if t.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	if limit <= 0 {
+		limit = 5
+	}
+
+	query := `
+		SELECT h.id, h.title, h.created_at, e.type, e.created_at as resolved_at, e.content, e.carrier_ref
+		FROM holons h
+		JOIN evidence e ON e.holon_id = h.id
+		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
+		AND e.type IN ('implementation', 'abandonment', 'supersession')
+		ORDER BY e.created_at DESC
+		LIMIT ?
+	`
+	rows, err := t.DB.GetRawDB().QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	evidenceToResolution := map[string]string{
+		"implementation": "implemented",
+		"abandonment":    "abandoned",
+		"supersession":   "superseded",
+	}
+
+	var results []DecisionSummary
+	for rows.Next() {
+		var d DecisionSummary
+		var createdAt, resolvedAt sql.NullTime
+		var evidenceType string
+		var carrierRef sql.NullString
+		if err := rows.Scan(&d.ID, &d.Title, &createdAt, &evidenceType, &resolvedAt, &d.Notes, &carrierRef); err != nil {
+			continue
+		}
+		if createdAt.Valid {
+			d.CreatedAt = createdAt.Time
+		}
+		if resolvedAt.Valid {
+			d.ResolvedAt = resolvedAt.Time
+		}
+		if carrierRef.Valid {
+			d.Reference = carrierRef.String
+		}
+		d.Resolution = evidenceToResolution[evidenceType]
+		results = append(results, d)
+	}
+	return results, nil
 }

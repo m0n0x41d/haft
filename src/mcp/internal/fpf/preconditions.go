@@ -57,10 +57,10 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 
 	// 2. Tool-specific validation
 	switch toolName {
-	case "quint_init":
-		return t.checkInitPreconditions(args)
-	case "quint_record_context":
-		return t.checkRecordContextPreconditions(args)
+	case "quint_internalize":
+		return nil // No preconditions - can always be called
+	case "quint_search":
+		return t.checkSearchPreconditions(args)
 	case "quint_propose":
 		return t.checkProposePreconditions(args)
 	case "quint_verify":
@@ -117,26 +117,13 @@ func (t *Tools) getHolonLayer(holonID string) (string, error) {
 	return "", fmt.Errorf("holon %s not found", holonID)
 }
 
-// checkInitPreconditions validates quint_init parameters.
-func (t *Tools) checkInitPreconditions(args map[string]string) error {
-	// quint_init has no required parameters
-	return nil
-}
-
-// checkRecordContextPreconditions validates quint_record_context parameters.
-func (t *Tools) checkRecordContextPreconditions(args map[string]string) error {
-	if args["vocabulary"] == "" {
+// checkSearchPreconditions validates quint_search parameters.
+func (t *Tools) checkSearchPreconditions(args map[string]string) error {
+	if args["query"] == "" {
 		return &PreconditionError{
-			Tool:       "quint_record_context",
-			Condition:  "vocabulary is required",
-			Suggestion: "Provide key terms and their definitions",
-		}
-	}
-	if args["invariants"] == "" {
-		return &PreconditionError{
-			Tool:       "quint_record_context",
-			Condition:  "invariants is required",
-			Suggestion: "Provide system rules and constraints",
+			Tool:       "quint_search",
+			Condition:  "query is required",
+			Suggestion: "Provide search terms",
 		}
 	}
 	return nil
@@ -340,7 +327,7 @@ func (t *Tools) checkCalculateRPreconditions(args map[string]string) error {
 		return &PreconditionError{
 			Tool:       "quint_calculate_r",
 			Condition:  "database not initialized",
-			Suggestion: "Run /q0-init to initialize the project first",
+			Suggestion: "Run /q-internalize to initialize the project first",
 		}
 	}
 
@@ -371,7 +358,7 @@ func (t *Tools) checkAuditTreePreconditions(args map[string]string) error {
 		return &PreconditionError{
 			Tool:       "quint_audit_tree",
 			Condition:  "database not initialized",
-			Suggestion: "Run /q0-init to initialize the project first",
+			Suggestion: "Run /q-internalize to initialize the project first",
 		}
 	}
 

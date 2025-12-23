@@ -7,13 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Removed `/q0-init` phase**: Initialization is now automatic via `/q-internalize`
+- **Removed tools**: `quint_init`, `quint_record_context`, `quint_status`, `quint_actualize`, `quint_check_decay` are no longer exposed as MCP tools
+- **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize` then proceeds to Phase 1
+
+### Added
+
+- **DRR Lifecycle Tracking**: Complete decision lifecycle management
+  - **`quint_resolve` tool**: Record decision outcomes (implemented, abandoned, superseded)
+    - `implemented`: Links to commit, PR, or file reference
+    - `abandoned`: Records reason for dropping the decision
+    - `superseded`: Links to replacement decision with SupersededBy relation
+  - **Decision status in `/q-internalize`**: Shows open decisions awaiting resolution and recent resolutions
+  - **`status_filter` in `quint_search`**: Filter decisions by status (open, implemented, abandoned, superseded)
+  - **`/q-resolve` command**: New command prompt for recording decision outcomes
+  - Bridges the gap between decisions (plans) and reality (implementation)
+
+- **`/q-internalize` command**: Unified entry point replacing 4 separate commands
+  - Automatically initializes new projects (no separate init step)
+  - Detects stale context and updates it (no manual re-recording)
+  - Surfaces decaying evidence (no separate decay check)
+  - Provides phase-appropriate guidance
+  - Safe to call in any phase (Observer role)
+
+- **`quint_search` tool**: Full-text search across knowledge base
+  - FTS5-powered search across holons and evidence
+  - Scope filtering: holons, evidence, or all
+  - Layer filtering: L0, L1, L2, or all
+  - Returns highlighted snippets with relevance ranking
+  - Available in any phase (read-only)
+
+- **Context staleness detection**: Automatic detection of project changes
+  - Monitors go.mod, package.json modification times
+  - Detects changes over 7 days old
+  - Prompts context refresh when stale
+
+- **FTS5 database tables**: `holons_fts`, `evidence_fts` for search
+  - New database migration (#4) adds FTS5 virtual tables
+  - Triggers keep FTS in sync with main tables
+  - Existing data populated on migration
+
+### Removed
+
+- `q0-init.md` — absorbed into `q-internalize.md`
+- `q-status.md` — absorbed into `q-internalize.md`
+- `q-actualize.md` — replaced by `q-internalize.md`
+- `q-decay.md` — absorbed into `q-internalize.md`
+
+### Changed
+
+- **Simplified workflow**: Session starts with `quint_internalize`, not multi-step init
+- **Phase gates**: `quint_internalize` and `quint_search` allowed in all phases
+- **`/q1-hypothesize`**: No longer requires "Phase 0 complete" precondition; naturally transitions IDLE -> ABDUCTION
+
+---
+
+## [4.2.0] - Unreleased (Phase Gates)
+
 ### Added
 
 - **Phase Gates & Role Enforcement (FPF Governance)**:
   - New `roles.go` with implicit role system — roles derived from tool name, not passed by agent.
   - New roles: `Initializer`, `Observer`, `Maintainer` (added to existing ADI roles).
   - Phase gates block mutation tools in wrong phases:
-    - `quint_init`, `quint_record_context`: IDLE only.
     - `quint_propose`: IDLE, ABDUCTION, DEDUCTION, INDUCTION (regression allowed).
     - `quint_verify`: ABDUCTION, DEDUCTION.
     - `quint_test`: DEDUCTION, INDUCTION (L2 refresh bypasses gate).

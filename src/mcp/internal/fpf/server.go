@@ -123,31 +123,42 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 func (s *Server) handleToolsList(req JSONRPCRequest) {
 	tools := []Tool{
 		{
-			Name:        "quint_status",
-			Description: "Get current FPF phase and context.",
+			Name:        "quint_internalize",
+			Description: "Unified entry point for FPF sessions. Initializes project if needed, checks for stale context, loads knowledge state, surfaces decaying evidence, and provides phase-appropriate guidance. Call this at the start of every session.",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
 			},
 		},
 		{
-			Name:        "quint_init",
-			Description: "Initialize FPF project structure.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
-		},
-		{
-			Name:        "quint_record_context",
-			Description: "Record the Bounded Context (A.1.1).",
+			Name:        "quint_search",
+			Description: "Full-text search across the knowledge base. Search holons and evidence by keywords.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"vocabulary": map[string]string{"type": "string", "description": "Key terms"},
-					"invariants": map[string]string{"type": "string", "description": "System rules"},
+					"query":         map[string]string{"type": "string", "description": "Search terms"},
+					"scope":         map[string]string{"type": "string", "description": "Scope: 'holons', 'evidence', 'all' (default: 'all')"},
+					"layer_filter":  map[string]string{"type": "string", "description": "Filter by layer: 'L0', 'L1', 'L2', or empty for all"},
+					"status_filter": map[string]string{"type": "string", "description": "Filter decisions by status: 'open', 'implemented', 'abandoned', 'superseded'"},
+					"limit":         map[string]interface{}{"type": "integer", "description": "Max results (default: 10, max: 50)"},
 				},
-				"required": []string{"vocabulary", "invariants"},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "quint_resolve",
+			Description: "Resolve a decision (DRR) by recording its outcome: implemented, abandoned, or superseded.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"decision_id":   map[string]string{"type": "string", "description": "ID of the decision holon to resolve"},
+					"resolution":    map[string]interface{}{"type": "string", "enum": []interface{}{"implemented", "abandoned", "superseded"}, "description": "Resolution type"},
+					"reference":     map[string]string{"type": "string", "description": "Implementation reference (required for 'implemented'): commit:SHA, pr:NUM, file:PATH"},
+					"superseded_by": map[string]string{"type": "string", "description": "ID of replacing decision (required for 'superseded')"},
+					"notes":         map[string]string{"type": "string", "description": "Explanation or description (required for 'abandoned')"},
+					"valid_until":   map[string]string{"type": "string", "description": "Optional: when to re-verify implementation (RFC3339 format)"},
+				},
+				"required": []string{"decision_id", "resolution"},
 			},
 		},
 		{
@@ -243,14 +254,6 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
-			Name:        "quint_actualize",
-			Description: "Reconcile the project's FPF state with recent repository changes.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
-			},
-		},
-		{
 			Name:        "quint_audit_tree",
 			Description: "Visualize the assurance tree for a holon, showing R scores, dependencies, and CL penalties.",
 			InputSchema: map[string]interface{}{
@@ -270,31 +273,6 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"holon_id": map[string]string{"type": "string", "description": "ID of the holon"},
 				},
 				"required": []string{"holon_id"},
-			},
-		},
-		{
-			Name:        "quint_check_decay",
-			Description: "Check evidence freshness and manage stale decisions. Without parameters: shows freshness report. With deprecate: downgrades hypothesis. With waive: records temporary risk acceptance.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"deprecate": map[string]string{
-						"type":        "string",
-						"description": "Hypothesis ID to deprecate (L2→L1 or L1→L0)",
-					},
-					"waive_id": map[string]string{
-						"type":        "string",
-						"description": "Evidence ID to waive",
-					},
-					"waive_until": map[string]string{
-						"type":        "string",
-						"description": "ISO date until which waiver is valid (required with waive_id)",
-					},
-					"waive_rationale": map[string]string{
-						"type":        "string",
-						"description": "Reason for accepting stale evidence (required with waive_id)",
-					},
-				},
 			},
 		},
 	}
@@ -341,26 +319,26 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	var err error
 
 	switch params.Name {
-	case "quint_status":
-		output, err = s.tools.GetStatus()
+	case "quint_internalize":
+		output, err = s.tools.Internalize()
 
-	case "quint_init":
-		res := s.tools.InitProject()
-		if res != nil {
-			err = res
-		} else {
-			s.tools.FSM.State.Phase = PhaseAbduction
-			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
-			}
-			output = "Initialized. Phase: ABDUCTION"
+	case "quint_search":
+		limit := 10
+		if l, ok := params.Arguments["limit"].(float64); ok {
+			limit = int(l)
 		}
+		output, err = s.tools.Search(arg("query"), arg("scope"), arg("layer_filter"), arg("status_filter"), limit)
 
-	case "quint_actualize":
-		output, err = s.tools.Actualize()
-
-	case "quint_record_context":
-		output, err = s.tools.RecordContext(arg("vocabulary"), arg("invariants"))
+	case "quint_resolve":
+		input := ResolveInput{
+			DecisionID:   arg("decision_id"),
+			Resolution:   arg("resolution"),
+			Reference:    arg("reference"),
+			SupersededBy: arg("superseded_by"),
+			Notes:        arg("notes"),
+			ValidUntil:   arg("valid_until"),
+		}
+		output, err = s.tools.Resolve(input)
 
 	case "quint_propose":
 		s.tools.FSM.State.Phase = PhaseAbduction
@@ -429,9 +407,6 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_calculate_r":
 		output, err = s.tools.CalculateR(arg("holon_id"))
-
-	case "quint_check_decay":
-		output, err = s.tools.CheckDecay(arg("deprecate"), arg("waive_id"), arg("waive_until"), arg("waive_rationale"))
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

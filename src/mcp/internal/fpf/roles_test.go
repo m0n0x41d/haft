@@ -9,9 +9,9 @@ func TestGetRoleForTool(t *testing.T) {
 		tool string
 		want Role
 	}{
-		// Initialization
-		{"quint_init", RoleInitializer},
-		{"quint_record_context", RoleInitializer},
+		// Unified entry point
+		{"quint_internalize", RoleObserver},
+		{"quint_search", RoleObserver},
 		// ADI Cycle
 		{"quint_propose", RoleAbductor},
 		{"quint_verify", RoleDeductor},
@@ -20,10 +20,7 @@ func TestGetRoleForTool(t *testing.T) {
 		{"quint_decide", RoleDecider},
 		// Maintenance
 		{"quint_reset", RoleMaintainer},
-		{"quint_check_decay", RoleMaintainer},
-		{"quint_actualize", RoleMaintainer},
 		// Read-only
-		{"quint_status", RoleObserver},
 		{"quint_calculate_r", RoleObserver},
 		{"quint_audit_tree", RoleObserver},
 		// Unknown tool defaults to Observer
@@ -46,16 +43,16 @@ func TestGetAllowedPhases(t *testing.T) {
 		wantNil bool
 		want    []Phase
 	}{
+		// Unified entry point - allowed in any phase
+		{"quint_internalize", true, nil},
+		{"quint_search", true, nil},
 		// Phase-gated tools
-		{"quint_init", false, []Phase{PhaseIdle}},
-		{"quint_record_context", false, []Phase{PhaseIdle}},
 		{"quint_propose", false, []Phase{PhaseIdle, PhaseAbduction, PhaseDeduction, PhaseInduction}},
 		{"quint_verify", false, []Phase{PhaseAbduction, PhaseDeduction}},
 		{"quint_test", false, []Phase{PhaseDeduction, PhaseInduction}},
 		{"quint_audit", false, []Phase{PhaseInduction, PhaseAudit}},
 		{"quint_decide", false, []Phase{PhaseAudit, PhaseDecision}},
 		// No phase gate (nil)
-		{"quint_status", true, nil},
 		{"quint_calculate_r", true, nil},
 		{"quint_reset", true, nil},
 	}
@@ -85,10 +82,14 @@ func TestIsPhaseAllowed(t *testing.T) {
 		phase   Phase
 		allowed bool
 	}{
-		// quint_init - only IDLE
-		{"init_in_idle", "quint_init", PhaseIdle, true},
-		{"init_in_abduction", "quint_init", PhaseAbduction, false},
-		{"init_in_deduction", "quint_init", PhaseDeduction, false},
+		// quint_internalize - allowed in any phase
+		{"internalize_in_idle", "quint_internalize", PhaseIdle, true},
+		{"internalize_in_abduction", "quint_internalize", PhaseAbduction, true},
+		{"internalize_in_decision", "quint_internalize", PhaseDecision, true},
+
+		// quint_search - allowed in any phase
+		{"search_in_idle", "quint_search", PhaseIdle, true},
+		{"search_in_audit", "quint_search", PhaseAudit, true},
 
 		// quint_propose - IDLE, ABD, DED, IND (regression allowed)
 		{"propose_in_idle", "quint_propose", PhaseIdle, true},
@@ -121,8 +122,6 @@ func TestIsPhaseAllowed(t *testing.T) {
 		{"decide_in_idle", "quint_decide", PhaseIdle, false},
 
 		// No phase gate - allowed anywhere
-		{"status_in_idle", "quint_status", PhaseIdle, true},
-		{"status_in_audit", "quint_status", PhaseAudit, true},
 		{"calculate_r_in_any", "quint_calculate_r", PhaseDecision, true},
 	}
 

@@ -140,3 +140,72 @@ SELECT * FROM waivers WHERE waived_until > datetime('now') ORDER BY waived_until
 
 -- name: GetEvidenceByID :one
 SELECT * FROM evidence WHERE id = ? LIMIT 1;
+
+-- Active holon queries (exclude holons in resolved decisions)
+-- NOTE: Decisions are holons with type='DRR' or layer='DRR'.
+-- Resolution is tracked via evidence records of type 'implementation'/'abandonment'/'supersession'.
+-- DRRs create 'selects' relations to winner hypotheses and 'rejects' relations to rejected ones.
+
+-- name: GetActiveRecentHolons :many
+-- Returns holons not belonging to resolved decisions, most recent first.
+-- A holon is "active" if it's not selected/rejected by a resolved DRR.
+SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
+       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND NOT EXISTS (
+    -- Check if holon is selected or rejected by a RESOLVED DRR
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+ORDER BY h.updated_at DESC
+LIMIT ?;
+
+-- name: CountActiveHolonsByLayer :many
+-- Counts holons by layer, excluding those selected/rejected by resolved DRRs.
+SELECT h.layer, COUNT(*) as count
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND NOT EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+GROUP BY h.layer;
+
+-- name: CountArchivedHolonsByLayer :many
+-- Counts holons by layer that ARE selected/rejected by resolved DRRs (archived).
+SELECT h.layer, COUNT(*) as count
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+GROUP BY h.layer;

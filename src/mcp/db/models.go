@@ -44,6 +44,16 @@ type Evidence struct {
 	CreatedAt      sql.NullTime
 }
 
+type FpfState struct {
+	ContextID          string
+	ActiveRole         sql.NullString
+	ActiveSessionID    sql.NullString
+	ActiveRoleContext  sql.NullString
+	LastCommit         sql.NullString
+	AssuranceThreshold sql.NullFloat64
+	UpdatedAt          sql.NullTime
+}
+
 type Holon struct {
 	ID           string
 	Type         string

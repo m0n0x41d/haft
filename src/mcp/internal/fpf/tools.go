@@ -1053,8 +1053,9 @@ type InternalizeResult struct {
 	Role              string            // Observer, Initializer, Abductor, etc.
 	ContextID         string            // Current bounded context identifier
 	ContextChanges    []string          // What changed (if INITIALIZED or UPDATED)
-	LayerCounts       map[string]int    // {"L0": 5, "L1": 3, "L2": 1}
-	RecentHolons      []HolonSummary    // Last N holons
+	LayerCounts       map[string]int    // Active holons: {"L0": 5, "L1": 3, "L2": 1}
+	ArchivedCounts    map[string]int    // Holons in resolved decisions (historical)
+	RecentHolons      []HolonSummary    // Last N active holons (not in resolved decisions)
 	DecayWarnings     []DecayWarning    // Evidence expiring soon
 	OpenDecisions     []DecisionSummary // Decisions awaiting resolution
 	ResolvedDecisions []DecisionSummary // Recently resolved decisions
@@ -1137,17 +1138,45 @@ func (t *Tools) Internalize() (string, error) {
 		}
 	}
 
-	// 3. Load knowledge state
+	// 3. Load knowledge state (active holons - not in resolved decisions)
 	result.ContextID = "default"
-	result.LayerCounts["L0"] = t.countHolons("L0")
-	result.LayerCounts["L1"] = t.countHolons("L1")
-	result.LayerCounts["L2"] = t.countHolons("L2")
-	result.LayerCounts["DRR"] = t.countDRRs()
+	result.ArchivedCounts = make(map[string]int)
 
-	// 4. Get recent holons
 	if t.DB != nil {
 		ctx := context.Background()
-		holons, err := t.DB.GetRecentHolons(ctx, 10)
+
+		// Get active holon counts from database
+		activeCounts, err := t.DB.CountActiveHolonsByLayer(ctx)
+		if err == nil {
+			for _, c := range activeCounts {
+				result.LayerCounts[c.Layer] = int(c.Count)
+			}
+		} else {
+			// Fallback to file-based counting
+			result.LayerCounts["L0"] = t.countHolons("L0")
+			result.LayerCounts["L1"] = t.countHolons("L1")
+			result.LayerCounts["L2"] = t.countHolons("L2")
+		}
+
+		// Get archived holon counts
+		archivedCounts, err := t.DB.CountArchivedHolonsByLayer(ctx)
+		if err == nil {
+			for _, c := range archivedCounts {
+				result.ArchivedCounts[c.Layer] = int(c.Count)
+			}
+		}
+	} else {
+		// Fallback to file-based counting if no DB
+		result.LayerCounts["L0"] = t.countHolons("L0")
+		result.LayerCounts["L1"] = t.countHolons("L1")
+		result.LayerCounts["L2"] = t.countHolons("L2")
+	}
+	result.LayerCounts["DRR"] = t.countDRRs()
+
+	// 4. Get recent ACTIVE holons (not in resolved decisions)
+	if t.DB != nil {
+		ctx := context.Background()
+		holons, err := t.DB.GetActiveRecentHolons(ctx, 10)
 		if err == nil {
 			for _, h := range holons {
 				summary := HolonSummary{
@@ -1223,17 +1252,23 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("Knowledge State:\n")
+	sb.WriteString("Knowledge State (Active):\n")
 	sb.WriteString(fmt.Sprintf("  L0 (Conjecture): %d\n", r.LayerCounts["L0"]))
 	sb.WriteString(fmt.Sprintf("  L1 (Substantiated): %d\n", r.LayerCounts["L1"]))
 	sb.WriteString(fmt.Sprintf("  L2 (Corroborated): %d\n", r.LayerCounts["L2"]))
 	if r.LayerCounts["DRR"] > 0 {
 		sb.WriteString(fmt.Sprintf("  DRRs: %d\n", r.LayerCounts["DRR"]))
 	}
+
+	// Show archived counts if any exist
+	totalArchived := r.ArchivedCounts["L0"] + r.ArchivedCounts["L1"] + r.ArchivedCounts["L2"]
+	if totalArchived > 0 {
+		sb.WriteString(fmt.Sprintf("  (Archived: %d holons in resolved decisions)\n", totalArchived))
+	}
 	sb.WriteString("\n")
 
 	if len(r.RecentHolons) > 0 {
-		sb.WriteString("Recent Holons:\n")
+		sb.WriteString("Recent Active Holons:\n")
 		for _, h := range r.RecentHolons {
 			age := formatAge(h.UpdatedAt)
 			sb.WriteString(fmt.Sprintf("  - %s [%s] R=%.2f - %s\n", h.ID, h.Layer, h.RScore, age))

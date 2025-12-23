@@ -1101,24 +1101,32 @@ func TestInternalize_SubsequentCall(t *testing.T) {
 		t.Fatalf("First Internalize() error = %v", err)
 	}
 
-	// Second call - should return CURRENT
+	// Second call - should return READY (context is fresh, nothing changed)
 	result, err := tools.Internalize()
 	if err != nil {
 		t.Fatalf("Second Internalize() error = %v", err)
 	}
 
-	if !strings.Contains(result, "Status: CURRENT") {
-		t.Errorf("Subsequent call should return CURRENT, got: %s", result)
+	if !strings.Contains(result, "Status: READY") {
+		t.Errorf("Subsequent call should return READY, got: %s", result)
 	}
 }
 
 func TestInternalize_LayerCounts(t *testing.T) {
-	tools, _, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
-	// Create some L0 holons
-	l0Dir := filepath.Join(tempDir, ".quint", "knowledge", "L0")
-	os.WriteFile(filepath.Join(l0Dir, "hypo1.md"), []byte("test"), 0644)
-	os.WriteFile(filepath.Join(l0Dir, "hypo2.md"), []byte("test"), 0644)
+	// Create some L0 holons in the database
+	err := tools.DB.CreateHolon(ctx, "layer-count-hypo1", "hypothesis", "system", "L0",
+		"Test Hypo 1", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+	err = tools.DB.CreateHolon(ctx, "layer-count-hypo2", "hypothesis", "system", "L0",
+		"Test Hypo 2", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
 
 	result, err := tools.Internalize()
 	if err != nil {
@@ -1127,6 +1135,78 @@ func TestInternalize_LayerCounts(t *testing.T) {
 
 	if !strings.Contains(result, "L0 (Conjecture): 2") {
 		t.Errorf("Should show 2 L0 holons, got: %s", result)
+	}
+}
+
+func TestInternalize_ArchivedHolons(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR (decision)
+	err := tools.DB.CreateHolon(ctx, "DRR-archive-test", "DRR", "system", "DRR",
+		"Archive Test Decision", "Decision content", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Create an L2 holon that was selected by this decision
+	err = tools.DB.CreateHolon(ctx, "archived-hypo", "hypothesis", "system", "L2",
+		"Archived Hypothesis", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create hypothesis: %v", err)
+	}
+
+	// Create a 'selects' relation: DRR → winner hypothesis
+	// (This is how FinalizeDecision creates relations)
+	// Signature: CreateRelation(sourceID, relationType, targetID, cl)
+	err = tools.DB.CreateRelation(ctx, "DRR-archive-test", "selects", "archived-hypo", 3)
+	if err != nil {
+		t.Fatalf("Failed to create selects relation: %v", err)
+	}
+
+	// Create an L0 holon that's NOT part of any decision (should be active)
+	err = tools.DB.CreateHolon(ctx, "active-hypo", "hypothesis", "system", "L0",
+		"Active Hypothesis", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create active hypothesis: %v", err)
+	}
+
+	// Before resolution: archived-hypo should be in active count (decision is open)
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() error = %v", err)
+	}
+
+	if !strings.Contains(result, "L2 (Corroborated): 1") {
+		t.Errorf("Before resolution, L2 holon should be active, got: %s", result)
+	}
+
+	// Resolve the decision (add implementation evidence)
+	err = tools.DB.AddEvidence(ctx, "resolve-evidence", "DRR-archive-test", "implementation",
+		"Implemented via commit:abc123", "pass", "L2", "commit:abc123", "")
+	if err != nil {
+		t.Fatalf("Failed to add resolution evidence: %v", err)
+	}
+
+	// After resolution: archived-hypo should be in archived count, not active
+	result, err = tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() after resolution error = %v", err)
+	}
+
+	// L2 should now be 0 (archived-hypo is in resolved decision)
+	if !strings.Contains(result, "L2 (Corroborated): 0") {
+		t.Errorf("After resolution, L2 holon should be archived, got: %s", result)
+	}
+
+	// Should show archived count
+	if !strings.Contains(result, "Archived: 1 holons in resolved decisions") {
+		t.Errorf("Should show 1 archived holon, got: %s", result)
+	}
+
+	// L0 should still be 1 (active-hypo is not in any decision)
+	if !strings.Contains(result, "L0 (Conjecture): 1") {
+		t.Errorf("L0 holon should still be active, got: %s", result)
 	}
 }
 

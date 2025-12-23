@@ -298,6 +298,24 @@ func (s *Store) CountHolonsByLayer(ctx context.Context, contextID string) ([]Cou
 	return s.q.CountHolonsByLayer(ctx, s.conn, contextID)
 }
 
+// CountActiveHolonsByLayer returns counts by layer, excluding holons in resolved decisions.
+func (s *Store) CountActiveHolonsByLayer(ctx context.Context) ([]CountActiveHolonsByLayerRow, error) {
+	return s.q.CountActiveHolonsByLayer(ctx, s.conn)
+}
+
+// CountArchivedHolonsByLayer returns counts by layer for holons in resolved decisions.
+func (s *Store) CountArchivedHolonsByLayer(ctx context.Context) ([]CountArchivedHolonsByLayerRow, error) {
+	return s.q.CountArchivedHolonsByLayer(ctx, s.conn)
+}
+
+// GetActiveRecentHolons returns recent holons not belonging to resolved decisions.
+func (s *Store) GetActiveRecentHolons(ctx context.Context, limit int) ([]Holon, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	return s.q.GetActiveRecentHolons(ctx, s.conn, int64(limit))
+}
+
 func (s *Store) GetLatestHolonByContext(ctx context.Context, contextID string) (Holon, error) {
 	return s.q.GetLatestHolonByContext(ctx, s.conn, contextID)
 }

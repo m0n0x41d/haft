@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Session/Decision Scoping for Holons**: Holons are now filtered by decision resolution status in `quint_internalize`
+  - **Active holons**: Hypotheses not selected/rejected by any resolved DRR (shown in counts and recent holons)
+  - **Archived holons**: Hypotheses selected/rejected by resolved DRRs (hidden from active view, count shown separately)
+  - New SQL queries: `GetActiveRecentHolons`, `CountActiveHolonsByLayer`, `CountArchivedHolonsByLayer`
+  - `InternalizeResult` now includes `ArchivedCounts` field
+  - Output shows "Knowledge State (Active)" with "(Archived: N holons in resolved decisions)" when applicable
+  - "Recent Active Holons" section only shows holons from open investigations
+  - Fixes issue where old hypotheses from previous sessions polluted current context
+
 ### Breaking Changes
 
 - **Removed `/q0-init` phase**: Initialization is now automatic via `/q-internalize`

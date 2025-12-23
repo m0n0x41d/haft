@@ -99,6 +99,104 @@ func (q *Queries) AddRelation(ctx context.Context, db DBTX, arg AddRelationParam
 	return err
 }
 
+const countActiveHolonsByLayer = `-- name: CountActiveHolonsByLayer :many
+SELECT h.layer, COUNT(*) as count
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND NOT EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+GROUP BY h.layer
+`
+
+type CountActiveHolonsByLayerRow struct {
+	Layer string
+	Count int64
+}
+
+// Counts holons by layer, excluding those selected/rejected by resolved DRRs.
+func (q *Queries) CountActiveHolonsByLayer(ctx context.Context, db DBTX) ([]CountActiveHolonsByLayerRow, error) {
+	rows, err := db.QueryContext(ctx, countActiveHolonsByLayer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountActiveHolonsByLayerRow
+	for rows.Next() {
+		var i CountActiveHolonsByLayerRow
+		if err := rows.Scan(&i.Layer, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countArchivedHolonsByLayer = `-- name: CountArchivedHolonsByLayer :many
+SELECT h.layer, COUNT(*) as count
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+GROUP BY h.layer
+`
+
+type CountArchivedHolonsByLayerRow struct {
+	Layer string
+	Count int64
+}
+
+// Counts holons by layer that ARE selected/rejected by resolved DRRs (archived).
+func (q *Queries) CountArchivedHolonsByLayer(ctx context.Context, db DBTX) ([]CountArchivedHolonsByLayerRow, error) {
+	rows, err := db.QueryContext(ctx, countArchivedHolonsByLayer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountArchivedHolonsByLayerRow
+	for rows.Next() {
+		var i CountArchivedHolonsByLayerRow
+		if err := rows.Scan(&i.Layer, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countHolonsByLayer = `-- name: CountHolonsByLayer :many
 SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer
 `
@@ -222,6 +320,72 @@ func (q *Queries) CreateWaiver(ctx context.Context, db DBTX, arg CreateWaiverPar
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const getActiveRecentHolons = `-- name: GetActiveRecentHolons :many
+
+SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
+       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND NOT EXISTS (
+    -- Check if holon is selected or rejected by a RESOLVED DRR
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+ORDER BY h.updated_at DESC
+LIMIT ?
+`
+
+// Active holon queries (exclude holons in resolved decisions)
+// NOTE: Decisions are holons with type='DRR' or layer='DRR'.
+// Resolution is tracked via evidence records of type 'implementation'/'abandonment'/'supersession'.
+// DRRs create 'selects' relations to winner hypotheses and 'rejects' relations to rejected ones.
+// Returns holons not belonging to resolved decisions, most recent first.
+// A holon is "active" if it's not selected/rejected by a resolved DRR.
+func (q *Queries) GetActiveRecentHolons(ctx context.Context, db DBTX, limit int64) ([]Holon, error) {
+	rows, err := db.QueryContext(ctx, getActiveRecentHolons, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Holon
+	for rows.Next() {
+		var i Holon
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Kind,
+			&i.Layer,
+			&i.Title,
+			&i.Content,
+			&i.ContextID,
+			&i.Scope,
+			&i.ParentID,
+			&i.CachedRScore,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getActiveWaiverForEvidence = `-- name: GetActiveWaiverForEvidence :one

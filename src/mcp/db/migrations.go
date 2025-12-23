@@ -106,6 +106,42 @@ var migrations = []struct {
 			END;
 		`,
 	},
+	{
+		version:     5,
+		description: "Auto-resolve legacy reset DRRs that were incorrectly created as decisions",
+		sql: `
+			-- Find reset DRRs (by pattern in content) and mark them as resolved
+			-- These were created by the old q-reset skill which abused quint_decide
+			-- Note: Must drop/recreate trigger to avoid FTS5 issues with INSERT...SELECT
+			DROP TRIGGER IF EXISTS evidence_ai;
+
+			INSERT INTO evidence (id, holon_id, type, content, verdict, created_at)
+			SELECT
+				'migration-cleanup-' || id,
+				id,
+				'abandonment',
+				'Migrated: reset session marker, not a real decision. See quint_reset tool.',
+				'PASS',
+				CURRENT_TIMESTAMP
+			FROM holons
+			WHERE (type = 'DRR' OR layer = 'DRR')
+			AND content LIKE '%No Decision%Reset%'
+			AND NOT EXISTS (
+				SELECT 1 FROM evidence e
+				WHERE e.holon_id = holons.id
+				AND e.type IN ('implementation', 'abandonment', 'supersession')
+			);
+
+			-- Rebuild FTS index to include new evidence
+			INSERT INTO evidence_fts(evidence_fts) VALUES('rebuild');
+
+			-- Recreate the trigger
+			CREATE TRIGGER evidence_ai AFTER INSERT ON evidence BEGIN
+				INSERT INTO evidence_fts(rowid, id, content)
+				VALUES (new.rowid, new.id, new.content);
+			END;
+		`,
+	},
 }
 
 // RunMigrations applies all pending migrations to the database.

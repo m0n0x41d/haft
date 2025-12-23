@@ -1820,3 +1820,44 @@ func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]De
 	}
 	return results, nil
 }
+
+// ResetCycle ends the current FPF session and returns to IDLE.
+// This is an operational action, NOT a decision - no DRR is created.
+// Records session state in audit_log for traceability.
+func (t *Tools) ResetCycle(reason string) (string, error) {
+	defer t.RecordWork("ResetCycle", time.Now())
+
+	if reason == "" {
+		reason = "user requested reset"
+	}
+
+	currentPhase := t.FSM.GetPhase()
+
+	var stateSummary strings.Builder
+	stateSummary.WriteString(fmt.Sprintf("Phase at reset: %s\n", currentPhase))
+	stateSummary.WriteString(fmt.Sprintf("L0: %d, L1: %d, L2: %d, DRR: %d\n",
+		t.countHolons("L0"), t.countHolons("L1"), t.countHolons("L2"), t.countDRRs()))
+
+	if t.DB != nil {
+		ctx := context.Background()
+		openDecisions, err := t.GetOpenDecisions(ctx)
+		if err == nil && len(openDecisions) > 0 {
+			stateSummary.WriteString(fmt.Sprintf("Open decisions: %d\n", len(openDecisions)))
+			for _, d := range openDecisions {
+				stateSummary.WriteString(fmt.Sprintf("  - %s\n", d.ID))
+			}
+		}
+	}
+
+	t.AuditLog("quint_reset", "cycle_reset", "agent", "", "SUCCESS",
+		map[string]string{"reason": reason, "from_phase": string(currentPhase)},
+		stateSummary.String())
+
+	t.FSM.State.Phase = PhaseIdle
+	if err := t.FSM.SaveState("default"); err != nil {
+		return "", fmt.Errorf("failed to save state: %w", err)
+	}
+
+	return fmt.Sprintf("Cycle reset to IDLE.\nPrevious phase: %s\nReason: %s\n\n%s",
+		currentPhase, reason, stateSummary.String()), nil
+}

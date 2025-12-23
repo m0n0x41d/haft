@@ -275,6 +275,17 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"holon_id"},
 			},
 		},
+		{
+			Name:        "quint_reset",
+			Description: "Reset FPF cycle to IDLE state. Records session end in audit log without creating DRR. Use when ending a session without making a decision.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"reason": map[string]string{"type": "string", "description": "Why the cycle is being reset (e.g., 'pivoting to different problem', 'session complete')"},
+				},
+				"required": []string{},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{
@@ -407,6 +418,9 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_calculate_r":
 		output, err = s.tools.CalculateR(arg("holon_id"))
+
+	case "quint_reset":
+		output, err = s.tools.ResetCycle(arg("reason"))
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

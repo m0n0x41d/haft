@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`quint_reset` tool**: Proper cycle reset without creating fake decisions
+  - Transitions FSM to IDLE state
+  - Records session state in audit log (not as DRR)
+  - Shows layer counts and open decisions at reset time
+  - Migration #5 auto-resolves legacy reset DRRs created by old `/q-reset` skill
+  - Fixes UX issue where session markers appeared as "Open Decisions"
+
 - **DRR Lifecycle Tracking**: Complete decision lifecycle management
   - **`quint_resolve` tool**: Record decision outcomes (implemented, abandoned, superseded)
     - `implemented`: Links to commit, PR, or file reference

@@ -1581,3 +1581,164 @@ func TestGetResolvedDecisions(t *testing.T) {
 		t.Error("Expected to find DRR-get-resolved in resolved decisions")
 	}
 }
+
+func TestResetCycle_Basic(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+
+	result, err := tools.ResetCycle("test reset")
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	// Verify output contains expected information
+	if !strings.Contains(result, "Cycle reset to IDLE") {
+		t.Errorf("Should confirm reset to IDLE, got: %s", result)
+	}
+	if !strings.Contains(result, "Previous phase:") {
+		t.Errorf("Should show previous phase, got: %s", result)
+	}
+	if !strings.Contains(result, "test reset") {
+		t.Errorf("Should show reason, got: %s", result)
+	}
+
+	// Verify FSM state is now IDLE
+	if fsm.State.Phase != PhaseIdle {
+		t.Errorf("FSM phase should be IDLE, got: %s", fsm.State.Phase)
+	}
+}
+
+func TestResetCycle_DefaultReason(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	fsm.State.Phase = PhaseDeduction
+
+	result, err := tools.ResetCycle("") // Empty reason
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	if !strings.Contains(result, "user requested reset") {
+		t.Errorf("Should use default reason, got: %s", result)
+	}
+}
+
+func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
+	tools, fsm, _ := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseDecision
+
+	// Create an open DRR
+	err := tools.DB.CreateHolon(ctx, "DRR-open-during-reset", "DRR", "system", "DRR",
+		"Open Decision", "Pending", "default", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	result, err := tools.ResetCycle("ending session")
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	// Should mention open decisions in output
+	if !strings.Contains(result, "Open decisions:") || !strings.Contains(result, "DRR-open-during-reset") {
+		t.Errorf("Should list open decisions, got: %s", result)
+	}
+}
+
+func TestResetCycle_ShowsLayerCounts(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	fsm.State.Phase = PhaseInduction
+
+	// Create some holons in different layers
+	l0Dir := filepath.Join(tempDir, ".quint", "knowledge", "L0")
+	l1Dir := filepath.Join(tempDir, ".quint", "knowledge", "L1")
+	os.WriteFile(filepath.Join(l0Dir, "hypo1.md"), []byte("test"), 0644)
+	os.WriteFile(filepath.Join(l0Dir, "hypo2.md"), []byte("test"), 0644)
+	os.WriteFile(filepath.Join(l1Dir, "hypo3.md"), []byte("test"), 0644)
+
+	result, err := tools.ResetCycle("session complete")
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	// Should show layer counts
+	if !strings.Contains(result, "L0: 2") {
+		t.Errorf("Should show L0 count of 2, got: %s", result)
+	}
+	if !strings.Contains(result, "L1: 1") {
+		t.Errorf("Should show L1 count of 1, got: %s", result)
+	}
+}
+
+func TestResetCycle_NoDRRCreated(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseAbduction
+
+	// Count DRRs before reset
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	beforeFiles, _ := os.ReadDir(decisionsDir)
+	beforeCount := 0
+	for _, f := range beforeFiles {
+		if strings.HasPrefix(f.Name(), "DRR-") {
+			beforeCount++
+		}
+	}
+
+	// Reset
+	_, err := tools.ResetCycle("testing no DRR")
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	// Count DRRs after reset
+	afterFiles, _ := os.ReadDir(decisionsDir)
+	afterCount := 0
+	for _, f := range afterFiles {
+		if strings.HasPrefix(f.Name(), "DRR-") {
+			afterCount++
+		}
+	}
+
+	if afterCount != beforeCount {
+		t.Errorf("ResetCycle should NOT create DRR files. Before: %d, After: %d", beforeCount, afterCount)
+	}
+
+	// Also check DB for DRR holons
+	rawDB := tools.DB.GetRawDB()
+	var drrCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM holons
+		WHERE type = 'DRR' OR layer = 'DRR'
+	`).Scan(&drrCount)
+	if err != nil {
+		t.Fatalf("Failed to query DRRs: %v", err)
+	}
+	if drrCount != 0 {
+		t.Errorf("ResetCycle should NOT create DRR holons. Found: %d", drrCount)
+	}
+}
+
+func TestResetCycle_AuditLogEntry(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	_, err := tools.ResetCycle("audit log test")
+	if err != nil {
+		t.Fatalf("ResetCycle() error = %v", err)
+	}
+
+	// Check audit log for reset entry
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM audit_log
+		WHERE operation = 'cycle_reset'
+		AND tool_name = 'quint_reset'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query audit_log: %v", err)
+	}
+	if count == 0 {
+		t.Error("Expected audit_log entry for cycle_reset")
+	}
+}

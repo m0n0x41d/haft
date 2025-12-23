@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Removed `/q0-init` phase**: Initialization is now automatic via `/q-internalize`
 - **Removed tools**: `quint_init`, `quint_record_context`, `quint_status`, `quint_actualize`, `quint_check_decay` are no longer exposed as MCP tools
 - **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize` then proceeds to Phase 1
+- **Installer cleanup**: `quint-code init` now removes deprecated commands (`q0-init`, `q-status`, `q-decay`, `q-actualize`) before installing new ones
 
 ### Added
 

@@ -22,6 +22,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 
 	var destDir string
 	var transformer func(string, string) (string, string)
+	var ext string
 
 	switch platform {
 	case "claude":
@@ -31,6 +32,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".claude", "commands")
 		}
 		transformer = transformClaude
+		ext = ".md"
 	case "cursor":
 		if local {
 			destDir = filepath.Join(projectRoot, ".cursor", "commands")
@@ -38,6 +40,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".cursor", "commands")
 		}
 		transformer = transformCursor
+		ext = ".md"
 	case "gemini":
 		if local {
 			destDir = filepath.Join(projectRoot, ".gemini", "commands")
@@ -45,10 +48,12 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".gemini", "commands")
 		}
 		transformer = transformGemini
+		ext = ".toml"
 	case "codex":
 		// Codex only supports global prompts in ~/.codex/prompts/
 		destDir = filepath.Join(homeDir, ".codex", "prompts")
 		transformer = transformCodex
+		ext = ".md"
 	default:
 		return "", 0, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -56,6 +61,8 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", 0, err
 	}
+
+	cleanupOldCommands(destDir, ext)
 
 	count := 0
 	for _, entry := range entries {
@@ -84,6 +91,20 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 	}
 
 	return displayPath, count, nil
+}
+
+var deprecatedCommands = []string{
+	"q0-init",
+	"q-status",
+	"q-decay",
+	"q-actualize",
+}
+
+func cleanupOldCommands(destDir string, ext string) {
+	for _, cmd := range deprecatedCommands {
+		path := filepath.Join(destDir, cmd+ext)
+		os.Remove(path) // ignore error - file may not exist
+	}
 }
 
 func transformClaude(filename, content string) (string, string) {

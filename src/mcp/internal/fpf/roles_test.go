@@ -120,6 +120,7 @@ func TestIsPhaseAllowed(t *testing.T) {
 		{"decide_in_audit", "quint_decide", PhaseAudit, true},
 		{"decide_in_decision", "quint_decide", PhaseDecision, true},
 		{"decide_in_idle", "quint_decide", PhaseIdle, false},
+		{"decide_in_induction", "quint_decide", PhaseInduction, false},
 
 		// No phase gate - allowed anywhere
 		{"calculate_r_in_any", "quint_calculate_r", PhaseDecision, true},

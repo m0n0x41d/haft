@@ -309,11 +309,34 @@ func (s *Store) CountArchivedHolonsByLayer(ctx context.Context) ([]CountArchived
 }
 
 // GetActiveRecentHolons returns recent holons not belonging to resolved decisions.
+// Uses active_holons view (migration v6) as single source of truth.
 func (s *Store) GetActiveRecentHolons(ctx context.Context, limit int) ([]Holon, error) {
 	if limit <= 0 {
 		limit = 10
 	}
-	return s.q.GetActiveRecentHolons(ctx, s.conn, int64(limit))
+	activeHolons, err := s.q.GetActiveRecentHolons(ctx, s.conn, int64(limit))
+	if err != nil {
+		return nil, err
+	}
+	// Convert ActiveHolon (from view) to Holon (identical structure)
+	holons := make([]Holon, len(activeHolons))
+	for i, ah := range activeHolons {
+		holons[i] = Holon{
+			ID:           ah.ID,
+			Type:         ah.Type,
+			Kind:         ah.Kind,
+			Layer:        ah.Layer,
+			Title:        ah.Title,
+			Content:      ah.Content,
+			ContextID:    ah.ContextID,
+			Scope:        ah.Scope,
+			ParentID:     ah.ParentID,
+			CachedRScore: ah.CachedRScore,
+			CreatedAt:    ah.CreatedAt,
+			UpdatedAt:    ah.UpdatedAt,
+		}
+	}
+	return holons, nil
 }
 
 func (s *Store) GetLatestHolonByContext(ctx context.Context, contextID string) (Holon, error) {

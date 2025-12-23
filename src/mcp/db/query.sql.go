@@ -100,23 +100,11 @@ func (q *Queries) AddRelation(ctx context.Context, db DBTX, arg AddRelationParam
 }
 
 const countActiveHolonsByLayer = `-- name: CountActiveHolonsByLayer :many
-SELECT h.layer, COUNT(*) as count
-FROM holons h
-WHERE h.layer NOT IN ('DRR', 'invalid')
-  AND h.type != 'DRR'
-  AND NOT EXISTS (
-    SELECT 1 FROM relations r
-    INNER JOIN holons drr ON drr.id = r.source_id
-    WHERE r.target_id = h.id
-      AND r.relation_type IN ('selects', 'rejects')
-      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
-      AND EXISTS (
-          SELECT 1 FROM evidence e
-          WHERE e.holon_id = drr.id
-          AND e.type IN ('implementation', 'abandonment', 'supersession')
-      )
-)
-GROUP BY h.layer
+SELECT layer, COUNT(*) as count
+FROM active_holons
+WHERE layer NOT IN ('DRR', 'invalid')
+  AND type != 'DRR'
+GROUP BY layer
 `
 
 type CountActiveHolonsByLayerRow struct {
@@ -124,7 +112,7 @@ type CountActiveHolonsByLayerRow struct {
 	Count int64
 }
 
-// Counts holons by layer, excluding those selected/rejected by resolved DRRs.
+// Counts working holons by layer, using active_holons view.
 func (q *Queries) CountActiveHolonsByLayer(ctx context.Context, db DBTX) ([]CountActiveHolonsByLayerRow, error) {
 	rows, err := db.QueryContext(ctx, countActiveHolonsByLayer)
 	if err != nil {
@@ -174,6 +162,8 @@ type CountArchivedHolonsByLayerRow struct {
 }
 
 // Counts holons by layer that ARE selected/rejected by resolved DRRs (archived).
+// INVERSE of active_holons VIEW logic. If active_holons definition changes,
+// update this query accordingly. See migration v6.
 func (q *Queries) CountArchivedHolonsByLayer(ctx context.Context, db DBTX) ([]CountArchivedHolonsByLayerRow, error) {
 	rows, err := db.QueryContext(ctx, countArchivedHolonsByLayer)
 	if err != nil {
@@ -324,25 +314,12 @@ func (q *Queries) CreateWaiver(ctx context.Context, db DBTX, arg CreateWaiverPar
 
 const getActiveRecentHolons = `-- name: GetActiveRecentHolons :many
 
-SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
-       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at
-FROM holons h
-WHERE h.layer NOT IN ('DRR', 'invalid')
-  AND h.type != 'DRR'
-  AND NOT EXISTS (
-    -- Check if holon is selected or rejected by a RESOLVED DRR
-    SELECT 1 FROM relations r
-    INNER JOIN holons drr ON drr.id = r.source_id
-    WHERE r.target_id = h.id
-      AND r.relation_type IN ('selects', 'rejects')
-      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
-      AND EXISTS (
-          SELECT 1 FROM evidence e
-          WHERE e.holon_id = drr.id
-          AND e.type IN ('implementation', 'abandonment', 'supersession')
-      )
-)
-ORDER BY h.updated_at DESC
+SELECT id, type, kind, layer, title, content, context_id,
+       scope, parent_id, cached_r_score, created_at, updated_at
+FROM active_holons
+WHERE layer NOT IN ('DRR', 'invalid')
+  AND type != 'DRR'
+ORDER BY updated_at DESC
 LIMIT ?
 `
 
@@ -350,17 +327,20 @@ LIMIT ?
 // NOTE: Decisions are holons with type='DRR' or layer='DRR'.
 // Resolution is tracked via evidence records of type 'implementation'/'abandonment'/'supersession'.
 // DRRs create 'selects' relations to winner hypotheses and 'rejects' relations to rejected ones.
-// Returns holons not belonging to resolved decisions, most recent first.
-// A holon is "active" if it's not selected/rejected by a resolved DRR.
-func (q *Queries) GetActiveRecentHolons(ctx context.Context, db DBTX, limit int64) ([]Holon, error) {
+//
+// The active_holons VIEW (migration v6) defines "active" = not selected/rejected by resolved DRR.
+// Queries below use the view and add layer filters as needed.
+// Returns working holons (L0/L1/L2) not belonging to resolved decisions.
+// Uses active_holons view + excludes DRR/invalid layers for display purposes.
+func (q *Queries) GetActiveRecentHolons(ctx context.Context, db DBTX, limit int64) ([]ActiveHolon, error) {
 	rows, err := db.QueryContext(ctx, getActiveRecentHolons, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Holon
+	var items []ActiveHolon
 	for rows.Next() {
-		var i Holon
+		var i ActiveHolon
 		if err := rows.Scan(
 			&i.ID,
 			&i.Type,

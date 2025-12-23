@@ -117,14 +117,18 @@ func (f *FSM) GetPhase() Phase {
 	return f.State.Phase
 }
 
-// DerivePhase computes the current phase from holons data in the database
+// DerivePhase computes the current phase from ACTIVE holons in the database.
+// Active holons are defined by the active_holons VIEW (migration v6).
+// This ensures single source of truth for holon visibility logic.
 func (f *FSM) DerivePhase(contextID string) Phase {
 	if f.DB == nil {
 		return PhaseIdle
 	}
 
+	// Count active holons by layer using the active_holons view
 	rows, err := f.DB.QueryContext(context.Background(),
-		"SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer", contextID)
+		"SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer",
+		contextID)
 	if err != nil {
 		return PhaseIdle
 	}
@@ -149,8 +153,10 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 		return PhaseIdle
 	}
 
+	// Get most recent active holon's layer
 	row := f.DB.QueryRowContext(context.Background(),
-		"SELECT layer FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1", contextID)
+		"SELECT layer FROM active_holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1",
+		contextID)
 	var latestLayer string
 	if err := row.Scan(&latestLayer); err != nil {
 		return PhaseIdle

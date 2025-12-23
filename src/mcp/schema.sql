@@ -98,3 +98,23 @@ CREATE TABLE fpf_state (
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);
+
+-- Active holons: not selected/rejected by a resolved DRR
+-- A DRR is "resolved" if it has implementation/abandonment/supersession evidence
+-- Used by: DerivePhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
+CREATE VIEW active_holons AS
+SELECT h.*
+FROM holons h
+WHERE h.layer NOT IN ('invalid')
+  AND NOT EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+  );

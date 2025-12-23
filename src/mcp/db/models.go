@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+type ActiveHolon struct {
+	ID           string
+	Type         string
+	Kind         sql.NullString
+	Layer        string
+	Title        string
+	Content      string
+	ContextID    string
+	Scope        sql.NullString
+	ParentID     sql.NullString
+	CachedRScore sql.NullFloat64
+	CreatedAt    sql.NullTime
+	UpdatedAt    sql.NullTime
+}
+
 type AuditLog struct {
 	ID        string
 	Timestamp sql.NullTime

@@ -1104,7 +1104,7 @@ func (t *Tools) Internalize() (string, error) {
 		ctx, err := t.AnalyzeProject()
 		if err != nil {
 			result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: auto-analysis failed: %v", err))
-		} else if ctx.Vocabulary != "" || ctx.Invariants != "" {
+		} else {
 			if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
 				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to record context: %v", err))
 			} else {
@@ -1126,7 +1126,7 @@ func (t *Tools) Internalize() (string, error) {
 			ctx, err := t.AnalyzeProject()
 			if err != nil {
 				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: re-analysis failed: %v", err))
-			} else if ctx.Vocabulary != "" || ctx.Invariants != "" {
+			} else {
 				if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
 					result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to update context: %v", err))
 				}
@@ -1362,6 +1362,56 @@ func (t *Tools) AnalyzeProject() (ProjectContext, error) {
 		invariants = append(invariants, "Node.js project")
 	}
 
+	// Check Python markers
+	pythonMarkers := []string{"requirements.txt", "pyproject.toml", "setup.py", "Pipfile"}
+	for _, marker := range pythonMarkers {
+		if _, err := os.Stat(filepath.Join(t.RootDir, marker)); err == nil {
+			ctx.TechStack = append(ctx.TechStack, "Python")
+			invariants = append(invariants, "Python project")
+			break
+		}
+	}
+
+	// Check Rust (Cargo.toml)
+	if _, err := os.Stat(filepath.Join(t.RootDir, "Cargo.toml")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Rust")
+		invariants = append(invariants, "Rust project")
+	}
+
+	// Check Java/Kotlin (Maven or Gradle)
+	if _, err := os.Stat(filepath.Join(t.RootDir, "pom.xml")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Java (Maven)")
+		invariants = append(invariants, "Maven project")
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "build.gradle")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Java/Kotlin (Gradle)")
+		invariants = append(invariants, "Gradle project")
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "build.gradle.kts")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Kotlin (Gradle KTS)")
+		invariants = append(invariants, "Gradle Kotlin DSL project")
+	}
+
+	// Check Ruby (Gemfile)
+	if _, err := os.Stat(filepath.Join(t.RootDir, "Gemfile")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Ruby")
+		invariants = append(invariants, "Ruby project")
+	}
+
+	// Check Make-based build
+	if _, err := os.Stat(filepath.Join(t.RootDir, "Makefile")); err == nil {
+		ctx.TechStack = append(ctx.TechStack, "Make")
+		invariants = append(invariants, "Make-based build")
+	}
+
+	// Fallback: if git repo but no recognized markers
+	if len(ctx.TechStack) == 0 {
+		if _, err := os.Stat(filepath.Join(t.RootDir, ".git")); err == nil {
+			ctx.TechStack = append(ctx.TechStack, "Unknown")
+			invariants = append(invariants, "Git repository (unknown project type)")
+		}
+	}
+
 	// Check for common directories
 	if _, err := os.Stat(filepath.Join(t.RootDir, "src")); err == nil {
 		vocab = append(vocab, "src: Source code directory")
@@ -1386,7 +1436,8 @@ func (t *Tools) IsContextStale() (bool, []string) {
 	contextPath := filepath.Join(t.GetFPFDir(), "context.md")
 	contextInfo, err := os.Stat(contextPath)
 	if err != nil {
-		return false, nil // No context yet, not stale
+		// context.md doesn't exist - needs to be created
+		return true, []string{"No context.md found, creating initial context"}
 	}
 	contextMod := contextInfo.ModTime()
 

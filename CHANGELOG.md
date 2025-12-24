@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dependency Discovery & Linking**: Automatic detection of semantic dependencies in hypotheses
+  - **Active Suggestions**: When `quint_propose` creates a hypothesis, FTS5 semantic search detects related existing holons (DRRs, L1, L2) and suggests `depends_on` links
+  - **`quint_link` tool**: Add dependencies after creation without re-proposing. Creates ComponentOf (system) or ConstituentOf (episteme) relations
+  - **FTS5 OR queries**: New `SearchOR()` for word-level matching (vs phrase matching)
+  - Output shows "⚠️ POTENTIAL DEPENDENCIES DETECTED" with ranked suggestions
+  - Updated `/q1-hypothesize` skill with "Post-Creation Linking" section
+
+- **`quint_implement` tool**: Transform DRR contracts into implementation directives
+  - Programs agent's internal planning with invariants, anti-patterns, acceptance criteria
+  - **WLNK for constraints**: Inherits constraints from dependency chain (not just R_eff)
+  - Returns structured prompt for agent to execute with TodoWrite
+  - New `/q-implement` command for triggering implementation phase
+  - Validates acceptance criteria before `quint_resolve` allows "implemented" resolution
+
 ### Changed
 
 - **Phase Gates Removed**: All phase gates removed from FPF tools

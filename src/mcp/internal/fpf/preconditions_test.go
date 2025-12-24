@@ -362,143 +362,143 @@ func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string) {
 	return tools, tempDir
 }
 
-func TestCheckPhaseGate_Blocked(t *testing.T) {
+// TestNoPhaseGates verifies that all tools are allowed in any phase.
+// Phase gates were removed - semantic preconditions are sufficient.
+// See roles.go for design decision.
+func TestNoPhaseGates(t *testing.T) {
+	tools, tempDir := setupToolsWithPhase(t, PhaseIdle)
+
+	// Create test holons in appropriate layers
+	l0HypoID := "l0-test"
+	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", l0HypoID+".md")
+	os.WriteFile(l0Path, []byte("L0 content"), 0644)
+
+	l1HypoID := "l1-test"
+	l1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", l1HypoID+".md")
+	os.WriteFile(l1Path, []byte("L1 content"), 0644)
+
+	l2HypoID := "l2-test"
+	l2Path := filepath.Join(tempDir, ".quint", "knowledge", "L2", l2HypoID+".md")
+	os.WriteFile(l2Path, []byte("L2 content"), 0644)
+
 	tests := []struct {
-		name        string
-		tool        string
-		phase       Phase
-		wantBlocked bool
+		name    string
+		tool    string
+		args    map[string]string
+		wantErr bool
+		errMsg  string
 	}{
-		// quint_internalize - allowed anywhere (no gate)
-		{"internalize_allowed_in_idle", "quint_internalize", PhaseIdle, false},
-		{"internalize_allowed_in_abduction", "quint_internalize", PhaseAbduction, false},
-		{"internalize_allowed_in_audit", "quint_internalize", PhaseAudit, false},
-
-		// quint_search - allowed anywhere (no gate)
-		{"search_allowed_in_idle", "quint_search", PhaseIdle, false},
-		{"search_allowed_in_audit", "quint_search", PhaseAudit, false},
-
-		// quint_verify in ABDUCTION or DEDUCTION
-		{"verify_blocked_in_idle", "quint_verify", PhaseIdle, true},
-		{"verify_allowed_in_abduction", "quint_verify", PhaseAbduction, false},
-		{"verify_blocked_in_audit", "quint_verify", PhaseAudit, true},
-
-		// quint_propose - allowed in IDLE, ABD, DED, IND; blocked in AUDIT, DECISION
-		{"propose_allowed_in_idle", "quint_propose", PhaseIdle, false},
-		{"propose_allowed_in_deduction", "quint_propose", PhaseDeduction, false},
-		{"propose_blocked_in_audit", "quint_propose", PhaseAudit, true},
-		{"propose_blocked_in_decision", "quint_propose", PhaseDecision, true},
-
-		// quint_audit - only in INDUCTION or AUDIT
-		{"audit_blocked_in_idle", "quint_audit", PhaseIdle, true},
-		{"audit_allowed_in_induction", "quint_audit", PhaseInduction, false},
-		{"audit_blocked_in_decision", "quint_audit", PhaseDecision, true},
+		{
+			name: "propose allowed in any phase",
+			tool: "quint_propose",
+			args: map[string]string{
+				"title":   "Test",
+				"content": "Content",
+				"kind":    "system",
+			},
+			wantErr: false,
+		},
+		{
+			name: "verify allowed - checks L0 existence",
+			tool: "quint_verify",
+			args: map[string]string{
+				"hypothesis_id": l0HypoID,
+				"checks_json":   "{}",
+				"verdict":       "PASS",
+			},
+			wantErr: false,
+		},
+		{
+			name: "test allowed on L1",
+			tool: "quint_test",
+			args: map[string]string{
+				"hypothesis_id": l1HypoID,
+				"test_type":     "internal",
+				"result":        "Pass",
+				"verdict":       "PASS",
+			},
+			wantErr: false,
+		},
+		{
+			name: "test allowed on L2 (refresh)",
+			tool: "quint_test",
+			args: map[string]string{
+				"hypothesis_id": l2HypoID,
+				"test_type":     "internal",
+				"result":        "Refreshed",
+				"verdict":       "PASS",
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tools, _ := setupToolsWithPhase(t, tt.phase)
-			err := tools.checkPhaseGate(tt.tool)
-
-			isBlocked := err != nil
-			if isBlocked != tt.wantBlocked {
-				t.Errorf("checkPhaseGate(%q) in phase %s: blocked=%v, want blocked=%v (err=%v)",
-					tt.tool, tt.phase, isBlocked, tt.wantBlocked, err)
+			err := tools.CheckPreconditions(tt.tool, tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckPreconditions(%s) error = %v, wantErr %v", tt.tool, err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestProposeRegression(t *testing.T) {
-	// quint_propose should be allowed in DEDUCTION and INDUCTION (regression case)
-	phases := []Phase{PhaseIdle, PhaseAbduction, PhaseDeduction, PhaseInduction}
+// TestSemanticPreconditionsEnforced verifies that semantic checks still work.
+// These are the real guards - not phase gates.
+func TestSemanticPreconditionsEnforced(t *testing.T) {
+	tools, tempDir := setupToolsWithPhase(t, PhaseIdle)
 
-	for _, phase := range phases {
-		t.Run(string(phase), func(t *testing.T) {
-			tools, _ := setupToolsWithPhase(t, phase)
+	// Create an L0 holon only
+	l0HypoID := "l0-only"
+	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", l0HypoID+".md")
+	os.WriteFile(l0Path, []byte("L0 content"), 0644)
 
-			args := map[string]string{
-				"title":     "Test Hypothesis",
-				"content":   "Description",
-				"kind":      "system",
-				"scope":     "global",
-				"rationale": "{}",
-			}
+	tests := []struct {
+		name    string
+		tool    string
+		args    map[string]string
+		wantErr bool
+	}{
+		{
+			name: "verify rejects non-L0 hypothesis",
+			tool: "quint_verify",
+			args: map[string]string{
+				"hypothesis_id": "non-existent",
+				"checks_json":   "{}",
+				"verdict":       "PASS",
+			},
+			wantErr: true,
+		},
+		{
+			name: "test rejects L0 hypothesis (must be L1 or L2)",
+			tool: "quint_test",
+			args: map[string]string{
+				"hypothesis_id": l0HypoID,
+				"test_type":     "internal",
+				"result":        "Test",
+				"verdict":       "PASS",
+			},
+			wantErr: true,
+		},
+		{
+			name: "test rejects non-existent hypothesis",
+			tool: "quint_test",
+			args: map[string]string{
+				"hypothesis_id": "non-existent",
+				"test_type":     "internal",
+				"result":        "Test",
+				"verdict":       "PASS",
+			},
+			wantErr: true,
+		},
+	}
 
-			err := tools.CheckPreconditions("quint_propose", args)
-			if err != nil {
-				t.Errorf("quint_propose should be allowed in %s phase, got error: %v", phase, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tools.CheckPreconditions(tt.tool, tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckPreconditions(%s) error = %v, wantErr %v", tt.tool, err, tt.wantErr)
 			}
 		})
-	}
-
-	// Should be blocked in AUDIT and DECISION
-	blockedPhases := []Phase{PhaseAudit, PhaseDecision}
-	for _, phase := range blockedPhases {
-		t.Run("blocked_in_"+string(phase), func(t *testing.T) {
-			tools, _ := setupToolsWithPhase(t, phase)
-
-			args := map[string]string{
-				"title":     "Test Hypothesis",
-				"content":   "Description",
-				"kind":      "system",
-				"scope":     "global",
-				"rationale": "{}",
-			}
-
-			err := tools.CheckPreconditions("quint_propose", args)
-			if err == nil {
-				t.Errorf("quint_propose should be BLOCKED in %s phase", phase)
-			}
-		})
-	}
-}
-
-func TestL2RefreshBypassesPhaseGate(t *testing.T) {
-	tools, tempDir := setupToolsWithPhase(t, PhaseIdle) // Start in IDLE
-
-	// Create an L2 holon
-	l2HypoID := "l2-refresh-test"
-	l2Path := filepath.Join(tempDir, ".quint", "knowledge", "L2", l2HypoID+".md")
-	if err := os.WriteFile(l2Path, []byte("L2 content"), 0644); err != nil {
-		t.Fatalf("Failed to create L2 hypothesis: %v", err)
-	}
-
-	// quint_test on L2 should bypass phase gate (allowed even in IDLE)
-	args := map[string]string{
-		"hypothesis_id": l2HypoID,
-		"test_type":     "internal",
-		"result":        "Refreshed test results",
-		"verdict":       "PASS",
-	}
-
-	err := tools.CheckPreconditions("quint_test", args)
-	if err != nil {
-		t.Errorf("quint_test on L2 should bypass phase gate, got error: %v", err)
-	}
-}
-
-func TestL1PromotionRequiresCorrectPhase(t *testing.T) {
-	tools, tempDir := setupToolsWithPhase(t, PhaseIdle) // Wrong phase for L1 promotion
-
-	// Create an L1 holon
-	l1HypoID := "l1-promotion-test"
-	l1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", l1HypoID+".md")
-	if err := os.WriteFile(l1Path, []byte("L1 content"), 0644); err != nil {
-		t.Fatalf("Failed to create L1 hypothesis: %v", err)
-	}
-
-	// quint_test on L1 should require DEDUCTION or INDUCTION phase
-	args := map[string]string{
-		"hypothesis_id": l1HypoID,
-		"test_type":     "internal",
-		"result":        "Test results",
-		"verdict":       "PASS",
-	}
-
-	err := tools.CheckPreconditions("quint_test", args)
-	if err == nil {
-		t.Error("quint_test on L1 in IDLE phase should be blocked by phase gate")
 	}
 }
 

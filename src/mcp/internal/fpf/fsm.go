@@ -119,7 +119,10 @@ func (f *FSM) GetPhase() Phase {
 
 // DerivePhase computes the current phase from ACTIVE holons in the database.
 // Active holons are defined by the active_holons VIEW (migration v6).
-// This ensures single source of truth for holon visibility logic.
+//
+// DESIGN: This is INFORMATIONAL ONLY - used for status display in quint_internalize.
+// It does NOT gate any operations. Semantic preconditions handle validation.
+// See roles.go for the design decision on removing phase gates.
 func (f *FSM) DerivePhase(contextID string) Phase {
 	if f.DB == nil {
 		return PhaseIdle
@@ -149,60 +152,13 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	l2 := counts["L2"]
 	drr := counts["DRR"]
 
-	if l0 == 0 && l1 == 0 && l2 == 0 && drr == 0 {
-		return PhaseIdle
+	// Simple phase derivation based on what exists.
+	// No complex "recent L0" or timestamp logic needed since phase is informational only.
+	if drr > 0 {
+		return PhaseDecision
 	}
-
-	// Get most recent active holon's layer and timestamp
-	row := f.DB.QueryRowContext(context.Background(),
-		"SELECT layer FROM active_holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1",
-		contextID)
-	var latestLayer string
-	if err := row.Scan(&latestLayer); err != nil {
-		return PhaseIdle
-	}
-
-	// If there are L0 holons in the CURRENT cycle (newer than latest L2),
-	// stay in ABDUCTION/DEDUCTION to allow verification to complete.
-	// This fixes the bug where promoting one L0→L1 would block
-	// verification of sibling L0s in the same decision context,
-	// while still allowing progress when old L0s exist from previous sessions.
-	if l0 > 0 && l2 > 0 {
-		// Check if any L0 is newer than the most recent L2
-		var recentL0Count int64
-		checkRow := f.DB.QueryRowContext(context.Background(), `
-			SELECT COUNT(*) FROM active_holons a
-			WHERE a.context_id = ? AND a.layer = 'L0'
-			AND a.updated_at > (
-				SELECT MAX(updated_at) FROM active_holons
-				WHERE context_id = ? AND layer = 'L2'
-			)`, contextID, contextID)
-		if err := checkRow.Scan(&recentL0Count); err == nil && recentL0Count > 0 {
-			if l1 > 0 {
-				return PhaseDeduction // Have L1s, can verify remaining recent L0s
-			}
-			return PhaseAbduction // Only recent L0s, still generating hypotheses
-		}
-		// All L0s are older than latest L2 (orphans from past sessions)
-		// Override latestLayer to prevent old L0 from controlling phase
-		if latestLayer == "L0" {
-			latestLayer = "L2"
-		}
-	} else if l0 > 0 && l2 == 0 {
-		// No L2s yet, stay in early phases
-		if l1 > 0 {
-			return PhaseDeduction
-		}
-		return PhaseAbduction
-	}
-
-	switch latestLayer {
-	case "L0":
-		return PhaseAbduction
-	case "L1":
-		return PhaseDeduction // No recent L0s, but can still do deduction work
-	case "L2":
-		// Check if audit was performed (any L2 has audit_report evidence)
+	if l2 > 0 {
+		// Check if any L2 has audit_report evidence
 		var hasAudit bool
 		auditRow := f.DB.QueryRowContext(context.Background(), `
 			SELECT EXISTS(
@@ -215,17 +171,14 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 			return PhaseAudit
 		}
 		return PhaseInduction
-	case "DRR":
-		return PhaseDecision
-	}
-
-	if l2 > 0 {
-		return PhaseAudit
 	}
 	if l1 > 0 {
 		return PhaseDeduction
 	}
-	return PhaseAbduction
+	if l0 > 0 {
+		return PhaseAbduction
+	}
+	return PhaseIdle
 }
 
 // SaveState writes state to fpf_state table in SQLite

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Phase Gates Removed**: All phase gates removed from FPF tools
+  - Phase gates were redundant — semantic preconditions already enforce layer requirements
+  - `quint_verify` checks "hypothesis in L0", `quint_test` checks "L1 or L2", etc.
+  - Fixes batch operation failures (verifying/testing multiple hypotheses in one session)
+  - `DerivePhase()` simplified to informational display only (used in `/q-internalize` status)
+  - See git history: 0690a2c → 443be87 → 4a84ce0 for the "whack-a-mole" pattern this fixes
+  - **Breaking**: Tools no longer blocked by phase — only by holon layer requirements
+
 ### Added
 
 - **Session/Decision Scoping for Holons**: Holons are now filtered by decision resolution status in `quint_internalize`

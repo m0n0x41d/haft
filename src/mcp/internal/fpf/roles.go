@@ -43,33 +43,26 @@ var ToolRole = map[string]Role{
 
 // ToolPhaseGate maps tool name → allowed phases.
 // nil = no restriction (any phase allowed).
+//
+// DESIGN DECISION: All phase gates removed.
+// Semantic preconditions in preconditions.go provide sufficient validation:
+// - quint_verify checks "hypothesis must be in L0"
+// - quint_test checks "hypothesis must be in L1 or L2"
+// - quint_audit checks "hypothesis must be in L2"
+// - quint_decide checks "at least one L2 must exist"
+//
+// Phase gates were redundant and caused batch operation failures.
+// DerivePhase remains for informational purposes (quint_internalize status).
+// See: git history for 0690a2c, 443be87, 4a84ce0 for the whack-a-mole pattern.
 var ToolPhaseGate = map[string][]Phase{
-	// Unified entry point - allowed in any phase
 	"quint_internalize": nil,
-
-	// Search - allowed in any phase (read-only)
-	"quint_search": nil,
-
-	// Decision resolution - allowed in any phase (reconciliation)
-	"quint_resolve": nil,
-
-	// Abduction - allows regression from later phases (DED, IND)
-	// Blocked in AUDIT and DECISION to prevent disruption during finalization
-	"quint_propose": {PhaseIdle, PhaseAbduction, PhaseDeduction, PhaseInduction},
-
-	// Deduction
-	"quint_verify": {PhaseAbduction, PhaseDeduction},
-
-	// Induction - L1 promotion checked here; L2 refresh bypasses in preconditions
-	"quint_test": {PhaseDeduction, PhaseInduction},
-
-	// Audit
-	"quint_audit": {PhaseInduction, PhaseAudit},
-
-	// Decision
-	"quint_decide": {PhaseAudit, PhaseDecision},
-
-	// No phase gate (nil = allowed anytime)
+	"quint_search":      nil,
+	"quint_resolve":     nil,
+	"quint_propose":     nil,
+	"quint_verify":      nil,
+	"quint_test":        nil,
+	"quint_audit":       nil,
+	"quint_decide":      nil,
 	"quint_reset":       nil,
 	"quint_calculate_r": nil,
 	"quint_audit_tree":  nil,

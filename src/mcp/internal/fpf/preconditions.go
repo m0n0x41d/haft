@@ -17,45 +17,12 @@ func (e *PreconditionError) Error() string {
 	return fmt.Sprintf("Precondition failed for %s: %s. Suggestion: %s", e.Tool, e.Condition, e.Suggestion)
 }
 
-// checkPhaseGate verifies tool can run in current phase.
-// Returns nil if allowed, PreconditionError if blocked.
-func (t *Tools) checkPhaseGate(toolName string) error {
-	allowedPhases := GetAllowedPhases(toolName)
-
-	// nil = no restriction
-	if allowedPhases == nil {
-		return nil
-	}
-
-	currentPhase := t.FSM.GetPhase()
-
-	if IsPhaseAllowed(toolName, currentPhase) {
-		return nil
-	}
-
-	return &PreconditionError{
-		Tool:       toolName,
-		Condition:  fmt.Sprintf("current phase is %s", currentPhase),
-		Suggestion: fmt.Sprintf("Allowed phases: %v", allowedPhases),
-	}
-}
-
 // CheckPreconditions is the unified entry point for all precondition checks.
-// It checks phase gates first, then tool-specific validation.
+// Validates tool-specific semantic requirements (holon existence, valid args).
+//
+// DESIGN: No phase gates. Semantic preconditions are sufficient.
+// See roles.go for the design decision on removing phase gates.
 func (t *Tools) CheckPreconditions(toolName string, args map[string]string) error {
-	// Special case: quint_test on L2 bypasses phase gate (refresh scenario)
-	if toolName == "quint_test" {
-		if bypass, err := t.shouldBypassPhaseGateForL2Refresh(args); err == nil && bypass {
-			return t.checkTestPreconditions(args)
-		}
-	}
-
-	// 1. Phase gate (universal, checked first)
-	if err := t.checkPhaseGate(toolName); err != nil {
-		return err
-	}
-
-	// 2. Tool-specific validation
 	switch toolName {
 	case "quint_internalize":
 		return nil // No preconditions - can always be called
@@ -78,22 +45,6 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 	default:
 		return nil
 	}
-}
-
-// shouldBypassPhaseGateForL2Refresh checks if this is an L2 refresh scenario.
-// L2 refresh (re-testing existing L2 holons) is allowed in any phase.
-func (t *Tools) shouldBypassPhaseGateForL2Refresh(args map[string]string) (bool, error) {
-	hypoID := args["hypothesis_id"]
-	if hypoID == "" {
-		return false, nil
-	}
-
-	layer, err := t.getHolonLayer(hypoID)
-	if err != nil {
-		return false, err
-	}
-
-	return layer == "L2", nil
 }
 
 // getHolonLayer determines which layer a holon is in.

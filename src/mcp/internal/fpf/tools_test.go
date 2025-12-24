@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/m0n0x41d/quint-code/db"
 )
 
@@ -284,7 +285,7 @@ func TestFinalizeDecision(t *testing.T) {
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics")
+	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics", "")
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -1213,7 +1214,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 func TestSearch_NoResults(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	result, err := tools.Search("xyznonexistentquery", "", "", "", 10)
+	result, err := tools.Search("xyznonexistentquery", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1232,7 +1233,7 @@ func TestSearch_WithResults(t *testing.T) {
 		"Authentication Decision", "How to handle user authentication", "default", "", "")
 
 	// Search for it
-	result, err := tools.Search("authentication", "", "", "", 10)
+	result, err := tools.Search("authentication", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1248,7 +1249,7 @@ func TestSearch_WithResults(t *testing.T) {
 func TestSearch_EmptyQuery(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	_, err := tools.Search("", "", "", "", 10)
+	_, err := tools.Search("", "", "", "", "", 10)
 	if err == nil {
 		t.Error("Empty query should return error")
 	}
@@ -1259,7 +1260,7 @@ func TestSearch_NoDB(t *testing.T) {
 	fsm := &FSM{State: State{Phase: PhaseIdle}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	_, err := tools.Search("test", "", "", "", 10)
+	_, err := tools.Search("test", "", "", "", "", 10)
 	if err == nil {
 		t.Error("Search without DB should return error")
 	}
@@ -1279,7 +1280,7 @@ func TestSearch_LayerFilter(t *testing.T) {
 		"L2 Test Holon", "Content for L2", "default", "", "")
 
 	// Search with L2 filter
-	result, err := tools.Search("Test Holon", "", "L2", "", 10)
+	result, err := tools.Search("Test Holon", "", "L2", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1298,7 +1299,7 @@ func TestSearch_SpecialCharacters(t *testing.T) {
 		"Redis-backed Cache Strategy", "Use redis-cluster for caching", "default", "", "")
 
 	// Search with hyphenated query (previously would cause FTS5 parse error)
-	result, err := tools.Search("redis-backed", "", "", "", 10)
+	result, err := tools.Search("redis-backed", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search with hyphens should not error: %v", err)
 	}
@@ -1530,7 +1531,7 @@ func TestSearch_StatusFilterOpen(t *testing.T) {
 	}
 
 	// Search for open decisions
-	result, err := tools.Search("Decision", "", "", "open", 10)
+	result, err := tools.Search("Decision", "", "", "open", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1560,7 +1561,7 @@ func TestSearch_StatusFilterImplemented(t *testing.T) {
 	}
 
 	// Search for implemented decisions
-	result, err := tools.Search("Decision", "", "", "implemented", 10)
+	result, err := tools.Search("Decision", "", "", "implemented", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1820,5 +1821,493 @@ func TestResetCycle_AuditLogEntry(t *testing.T) {
 	}
 	if count == 0 {
 		t.Error("Expected audit_log entry for cycle_reset")
+	}
+}
+
+// Tests for quint_implement
+
+func TestImplement_BasicContract(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR with contract
+	contractJSON := `{"invariants":["Cache must be transparent","TTL configurable"],"anti_patterns":["No hardcoded TTL","No silent failures"],"acceptance_criteria":["Cache hit skips DB","Write invalidates cache"],"affected_scope":["internal/cache/*.go"]}`
+
+	drrID := "test-implement-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"Test Implementation", "Test DRR for implement", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Write DRR markdown file with contract in frontmatter
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: Test Implementation
+contract: %s
+created: 2025-01-01T00:00:00Z
+content_hash: abc123
+---
+
+# Test Implementation
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	// Call Implement
+	result, err := tools.Implement(drrID)
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	// Verify output contains key sections
+	if !strings.Contains(result, "# IMPLEMENTATION DIRECTIVE") {
+		t.Error("Missing IMPLEMENTATION DIRECTIVE header")
+	}
+	if !strings.Contains(result, "Test Implementation") {
+		t.Error("Missing task title")
+	}
+	if !strings.Contains(result, "Cache must be transparent") {
+		t.Error("Missing invariant")
+	}
+	if !strings.Contains(result, "No hardcoded TTL") {
+		t.Error("Missing anti-pattern")
+	}
+	if !strings.Contains(result, "Cache hit skips DB") {
+		t.Error("Missing acceptance criteria")
+	}
+	if !strings.Contains(result, "internal/cache/*.go") {
+		t.Error("Missing affected scope")
+	}
+	if !strings.Contains(result, "quint_resolve") {
+		t.Error("Missing resolve instruction")
+	}
+}
+
+func TestImplement_NoContract(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a DRR without contract
+	drrID := "no-contract-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"No Contract DRR", "Test", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Call Implement - should fail
+	_, err = tools.Implement(drrID)
+	if err == nil {
+		t.Error("Expected error for DRR without contract")
+	}
+	if !strings.Contains(err.Error(), "no implementation contract") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestImplement_NotFound(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	_, err := tools.Implement("nonexistent-drr")
+	if err == nil {
+		t.Error("Expected error for nonexistent DRR")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestImplement_NotDRR(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a regular hypothesis, not a DRR
+	err := tools.DB.CreateHolon(ctx, "regular-hypo", "hypothesis", "system", "L0",
+		"Regular Hypothesis", "Not a DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	_, err = tools.Implement("regular-hypo")
+	if err == nil {
+		t.Error("Expected error for non-DRR holon")
+	}
+	if !strings.Contains(err.Error(), "not a DRR") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestImplement_InheritedConstraints(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	// Create parent DRR with contract
+	parentContract := `{"invariants":["Parent invariant"],"anti_patterns":["Parent anti-pattern"]}`
+	parentID := "parent-drr"
+	err := tools.DB.CreateHolon(ctx, parentID, "DRR", "system", "DRR",
+		"Parent Decision", "Parent", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create parent DRR: %v", err)
+	}
+
+	// Write parent DRR file
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	parentPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", parentID))
+	parentContent := fmt.Sprintf(`---
+title: Parent Decision
+contract: %s
+content_hash: abc123
+---
+# Parent Decision
+`, parentContract)
+	os.WriteFile(parentPath, []byte(parentContent), 0644)
+
+	// Create child DRR with its own contract
+	childContract := `{"invariants":["Child invariant"],"anti_patterns":["Child anti-pattern"],"acceptance_criteria":["Child criteria"]}`
+	childID := "child-drr"
+	err = tools.DB.CreateHolon(ctx, childID, "DRR", "system", "DRR",
+		"Child Decision", "Child", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create child DRR: %v", err)
+	}
+
+	// Create dependency relation: child -> parent
+	err = tools.DB.CreateRelation(ctx, childID, "Selects", parentID, 3)
+	if err != nil {
+		t.Fatalf("Failed to create relation: %v", err)
+	}
+
+	// Write child DRR file
+	childPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", childID))
+	childContent := fmt.Sprintf(`---
+title: Child Decision
+contract: %s
+content_hash: def456
+---
+# Child Decision
+`, childContract)
+	os.WriteFile(childPath, []byte(childContent), 0644)
+
+	// Call Implement on child
+	result, err := tools.Implement(childID)
+	if err != nil {
+		t.Fatalf("Implement() error = %v", err)
+	}
+
+	// Should contain both child's own constraints
+	if !strings.Contains(result, "Child invariant") {
+		t.Error("Missing child invariant")
+	}
+	if !strings.Contains(result, "Child anti-pattern") {
+		t.Error("Missing child anti-pattern")
+	}
+
+	// And inherited constraints from parent
+	if !strings.Contains(result, "Parent invariant") {
+		t.Error("Missing inherited parent invariant")
+	}
+	if !strings.Contains(result, "Parent anti-pattern") {
+		t.Error("Missing inherited parent anti-pattern")
+	}
+
+	// Should have warning about inherited constraints
+	if !strings.Contains(result, "Inherited") {
+		t.Error("Missing inheritance indicator")
+	}
+}
+
+func TestImplement_NoDB(t *testing.T) {
+	tempDir := t.TempDir()
+	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
+
+	_, err := tools.Implement("any-drr")
+	if err == nil {
+		t.Error("Expected error when DB not initialized")
+	}
+	if !strings.Contains(err.Error(), "database not initialized") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestImplement_FullFilenameID(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	// Create DRR with slugified ID (as quint_decide does)
+	slugifiedID := "redis-cache-with-monitoring"
+	contractJSON := `{"invariants":["Cache transparent"],"acceptance_criteria":["Works"]}`
+
+	err := tools.DB.CreateHolon(ctx, slugifiedID, "DRR", "system", "DRR",
+		"Redis Cache with Monitoring", "Test", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// Write DRR file with dated filename
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-12-24-%s.md", slugifiedID))
+	drrContent := fmt.Sprintf(`---
+title: Redis Cache with Monitoring
+contract: %s
+content_hash: abc123
+---
+# Redis Cache with Monitoring
+`, contractJSON)
+	os.WriteFile(drrPath, []byte(drrContent), 0644)
+
+	// Call Implement with FULL filename (what agent typically uses)
+	fullFilenameID := "DRR-2025-12-24-redis-cache-with-monitoring"
+	result, err := tools.Implement(fullFilenameID)
+	if err != nil {
+		t.Fatalf("Implement() with full filename ID should work, got error: %v", err)
+	}
+
+	if !strings.Contains(result, "Cache transparent") {
+		t.Error("Missing invariant in output")
+	}
+
+	// Also verify short ID still works
+	result2, err := tools.Implement(slugifiedID)
+	if err != nil {
+		t.Fatalf("Implement() with short ID should work, got error: %v", err)
+	}
+
+	if !strings.Contains(result2, "Cache transparent") {
+		t.Error("Missing invariant in output for short ID")
+	}
+}
+
+func TestLinkHolons_Basic(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id1 := uuid.New().String()
+	id2 := uuid.New().String()
+
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+
+	result, err := tools.LinkHolons(id1, id2, 3)
+	if err != nil {
+		t.Fatalf("LinkHolons failed: %v", err)
+	}
+
+	if !strings.Contains(result, "✅ Linked") {
+		t.Error("Missing success indicator")
+	}
+	if !strings.Contains(result, "componentOf") {
+		t.Error("Expected componentOf relation for system kind")
+	}
+	if !strings.Contains(result, "WLNK now applies") {
+		t.Error("Missing WLNK explanation")
+	}
+
+	deps, err := tools.DB.GetDependencies(ctx, id1)
+	if err != nil {
+		t.Fatalf("GetDependencies failed: %v", err)
+	}
+	if len(deps) != 1 || deps[0].TargetID != id2 {
+		t.Error("Relation not created correctly")
+	}
+}
+
+func TestLinkHolons_EpistemeKind(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id1 := uuid.New().String()
+	id2 := uuid.New().String()
+
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "episteme", "L0", "Episteme Source", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+
+	result, err := tools.LinkHolons(id1, id2, 3)
+	if err != nil {
+		t.Fatalf("LinkHolons failed: %v", err)
+	}
+
+	if !strings.Contains(result, "constituentOf") {
+		t.Error("Expected constituentOf relation for episteme kind")
+	}
+}
+
+func TestLinkHolons_SourceNotFound(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id2 := uuid.New().String()
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+
+	_, err := tools.LinkHolons("nonexistent", id2, 3)
+	if err == nil {
+		t.Error("Expected error for nonexistent source")
+	}
+	if !strings.Contains(err.Error(), "source holon") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestLinkHolons_TargetNotFound(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id1 := uuid.New().String()
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
+
+	_, err := tools.LinkHolons(id1, "nonexistent", 3)
+	if err == nil {
+		t.Error("Expected error for nonexistent target")
+	}
+	if !strings.Contains(err.Error(), "target holon") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestLinkHolons_CyclePrevention(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id1 := uuid.New().String()
+	id2 := uuid.New().String()
+
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "A", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "B", "content", "default", "", "")
+
+	_, err := tools.LinkHolons(id1, id2, 3)
+	if err != nil {
+		t.Fatalf("First link failed: %v", err)
+	}
+
+	_, err = tools.LinkHolons(id2, id1, 3)
+	if err == nil {
+		t.Error("Expected error for cycle creation")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+func TestLinkHolons_NoDB(t *testing.T) {
+	tempDir := t.TempDir()
+	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
+
+	_, err := tools.LinkHolons("a", "b", 3)
+	if err == nil {
+		t.Error("Expected error when DB is nil")
+	}
+	if !strings.Contains(err.Error(), "database not initialized") {
+		t.Errorf("Wrong error: %v", err)
+	}
+}
+
+func TestLinkHolons_CLValidation(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	id1 := uuid.New().String()
+	id2 := uuid.New().String()
+
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target", "content", "default", "", "")
+
+	_, err := tools.LinkHolons(id1, id2, 0)
+	if err != nil {
+		t.Fatalf("LinkHolons with CL=0 should default to 3: %v", err)
+	}
+
+	deps, _ := tools.DB.GetDependencies(ctx, id1)
+	if len(deps) != 1 || deps[0].CongruenceLevel.Int64 != 3 {
+		t.Errorf("Expected CL=3 (default), got %d", deps[0].CongruenceLevel.Int64)
+	}
+}
+
+func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
+	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "DRR"), 0755)
+
+	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
+		"Redis Cache Layer", "Implement caching with Redis", "default", "src/cache/*", "")
+
+	result, err := tools.ProposeHypothesis(
+		"Token Bucket Rate Limiter using Redis",
+		"Implement rate limiting that stores counters in Redis",
+		"src/api/*", "system",
+		`{"anomaly": "API abuse", "approach": "Token bucket"}`,
+		"", nil, 3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	if !strings.Contains(result, "POTENTIAL DEPENDENCIES DETECTED") {
+		t.Error("Expected dependency suggestion when FTS5 matches 'redis'")
+	}
+	if !strings.Contains(result, "redis-cache-drr") {
+		t.Error("Expected redis-cache-drr to be suggested")
+	}
+	if !strings.Contains(result, "quint_link") {
+		t.Error("Expected quint_link suggestion")
+	}
+	if !strings.Contains(result, "ranked by relevance") {
+		t.Error("Expected FTS5-based ranking message")
+	}
+}
+
+func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
+
+	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
+		"Redis Cache", "Redis caching", "default", "", "")
+
+	result, err := tools.ProposeHypothesis(
+		"Rate Limiter using Redis",
+		"Implement rate limiting with Redis",
+		"src/api/*", "system",
+		`{"anomaly": "test"}`,
+		"", []string{"redis-cache-drr"}, 3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	if strings.Contains(result, "POTENTIAL DEPENDENCIES DETECTED") {
+		t.Error("Should not show suggestions when depends_on is already provided")
+	}
+}
+
+func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+
+	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
+
+	result, err := tools.ProposeHypothesis(
+		"Standalone Feature XYZ",
+		"Something completely unrelated to existing holons",
+		"src/xyz/*", "system",
+		`{"anomaly": "test"}`,
+		"", nil, 3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	if strings.Contains(result, "POTENTIAL DEPENDENCIES DETECTED") {
+		t.Error("Should not show suggestions when no keywords match")
 	}
 }

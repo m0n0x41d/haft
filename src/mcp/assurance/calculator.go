@@ -50,20 +50,22 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	report := &AssuranceReport{HolonID: holonID}
 
 	// 1. Calculate Self Score (based on Evidence)
-	// B.3.4: Check for expired evidence
-	rows, err := c.DB.QueryContext(ctx, "SELECT verdict, valid_until FROM evidence WHERE holon_id = ?", holonID)
+	// B.3.4: Check for expired evidence + evidence source CL penalty
+	rows, err := c.DB.QueryContext(ctx, "SELECT type, verdict, valid_until FROM evidence WHERE holon_id = ?", holonID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var totalScore, count float64
+	var minScore float64 = 1.0 // WLNK: track weakest evidence
+	var hasEvidence bool
 	for rows.Next() {
-		var verdict string
+		var evidenceType, verdict string
 		var validUntil *time.Time
-		if err := rows.Scan(&verdict, &validUntil); err != nil {
+		if err := rows.Scan(&evidenceType, &verdict, &validUntil); err != nil {
 			continue
 		}
+		hasEvidence = true
 
 		score := 0.0
 		switch strings.ToLower(verdict) {
@@ -75,18 +77,29 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			score = 0.0
 		}
 
+		// Evidence Source CL Penalty (B.3: external evidence has lower congruence)
+		// internal/audit_report → CL3 (0%), external → CL2 (10%)
+		clPenalty := evidenceTypeToCLPenalty(evidenceType)
+		if clPenalty > 0 {
+			score = math.Max(0, score-clPenalty)
+			report.Factors = append(report.Factors, "External evidence CL2 penalty applied")
+		}
+
 		// Evidence Decay Logic
 		if validUntil != nil && time.Now().After(*validUntil) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
 			score = 0.1                // Penalty for expiration, not zero but close
 			report.DecayPenalty += 0.9 // Track how much was lost
 		}
-		totalScore += score
-		count++
+
+		// WLNK: weakest evidence determines self score
+		if score < minScore {
+			minScore = score
+		}
 	}
 
-	if count > 0 {
-		report.SelfScore = totalScore / count // Or other aggregation logic
+	if hasEvidence {
+		report.SelfScore = minScore // WLNK: weakest evidence determines score
 	} else {
 		report.SelfScore = 0.0 // L0: Unsubstantiated
 		report.Factors = append(report.Factors, "No evidence found (L0)")
@@ -176,5 +189,22 @@ func calculateCLPenalty(cl int) float64 {
 		return 0.4
 	default:
 		return 0.9
+	}
+}
+
+// evidenceTypeToCLPenalty maps evidence source type to congruence penalty.
+// internal/audit_report = CL3 (same context, no penalty)
+// external = CL2 (similar context, 10% penalty)
+// research = CL1 (different context, 40% penalty)
+func evidenceTypeToCLPenalty(evidenceType string) float64 {
+	switch strings.ToLower(evidenceType) {
+	case "internal", "audit_report":
+		return 0.0 // CL3: same context
+	case "external":
+		return 0.1 // CL2: similar context
+	case "research":
+		return 0.4 // CL1: different context
+	default:
+		return 0.0 // Unknown type, no penalty
 	}
 }

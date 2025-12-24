@@ -406,6 +406,7 @@ type SearchResult struct {
 	Title     string
 	Snippet   string
 	Layer     string
+	Scope     string // affected_scope for DRRs (JSON array of file patterns)
 	RScore    float64
 	UpdatedAt time.Time
 }
@@ -419,6 +420,43 @@ func sanitizeFTS5Query(query string) string {
 	}
 	escaped := strings.ReplaceAll(query, `"`, `""`)
 	return `"` + escaped + `"`
+}
+
+// buildFTS5ORQuery splits text into words and builds an OR query for FTS5.
+// Returns words joined with OR, each word quoted for safety.
+// Filters short words (<3 chars) and limits to 10 terms.
+func buildFTS5ORQuery(text string) string {
+	words := strings.Fields(strings.ToLower(text))
+	var terms []string
+	seen := make(map[string]bool)
+
+	for _, w := range words {
+		clean := strings.Trim(w, ".,;:!?\"'()[]{}") // Remove punctuation
+		if len(clean) < 3 || seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		escaped := strings.ReplaceAll(clean, `"`, `""`)
+		terms = append(terms, `"`+escaped+`"`)
+		if len(terms) >= 10 {
+			break
+		}
+	}
+
+	if len(terms) == 0 {
+		return ""
+	}
+	return strings.Join(terms, " OR ")
+}
+
+// SearchOR performs full-text search using OR of individual words.
+// Better for semantic matching where any word match is relevant.
+func (s *Store) SearchOR(ctx context.Context, text, scope, layerFilter, statusFilter string, limit int) ([]SearchResult, error) {
+	orQuery := buildFTS5ORQuery(text)
+	if orQuery == "" {
+		return nil, nil
+	}
+	return s.searchHolonsRaw(ctx, orQuery, layerFilter, statusFilter, limit)
 }
 
 // Search performs full-text search across holons and evidence.
@@ -468,7 +506,7 @@ func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilt
 	if statusFilter != "" {
 		if statusFilter == "open" {
 			sqlQuery = `
-				SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+				SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
 				       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
 				FROM holons_fts
 				JOIN holons h ON holons_fts.id = h.id
@@ -493,7 +531,7 @@ func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilt
 				evidenceType = statusFilter
 			}
 			sqlQuery = `
-				SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+				SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
 				       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
 				FROM holons_fts
 				JOIN holons h ON holons_fts.id = h.id
@@ -511,7 +549,7 @@ func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilt
 		}
 	} else if layerFilter != "" {
 		sqlQuery = `
-			SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+			SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
 			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
 			FROM holons_fts
 			JOIN holons h ON holons_fts.id = h.id
@@ -523,7 +561,7 @@ func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilt
 		args = []interface{}{query, layerFilter, limit}
 	} else {
 		sqlQuery = `
-			SELECT h.id, h.title, h.layer, h.cached_r_score, h.updated_at,
+			SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
 			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
 			FROM holons_fts
 			JOIN holons h ON holons_fts.id = h.id
@@ -545,8 +583,81 @@ func (s *Store) searchHolons(ctx context.Context, query, layerFilter, statusFilt
 		var r SearchResult
 		var updatedAt sql.NullTime
 		var rScore sql.NullFloat64
-		if err := rows.Scan(&r.ID, &r.Title, &r.Layer, &rScore, &updatedAt, &r.Snippet); err != nil {
+		var scope sql.NullString
+		if err := rows.Scan(&r.ID, &r.Title, &r.Layer, &scope, &rScore, &updatedAt, &r.Snippet); err != nil {
 			continue
+		}
+		if scope.Valid {
+			r.Scope = scope.String
+		}
+		r.Type = "holon"
+		if rScore.Valid {
+			r.RScore = rScore.Float64
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		}
+		results = append(results, r)
+	}
+
+	return results, rows.Err()
+}
+
+// searchHolonsRaw executes a raw FTS5 query without sanitization.
+// Used for pre-built queries like OR queries.
+func (s *Store) searchHolonsRaw(ctx context.Context, rawQuery, layerFilter, statusFilter string, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	var sqlQuery string
+	var args []interface{}
+
+	if layerFilter != "" {
+		sqlQuery = `
+			SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
+			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+			FROM holons_fts
+			JOIN holons h ON holons_fts.id = h.id
+			WHERE holons_fts MATCH ?
+			  AND h.layer = ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		args = []interface{}{rawQuery, layerFilter, limit}
+	} else {
+		sqlQuery = `
+			SELECT h.id, h.title, h.layer, h.scope, h.cached_r_score, h.updated_at,
+			       snippet(holons_fts, 2, '**', '**', '...', 32) as snippet
+			FROM holons_fts
+			JOIN holons h ON holons_fts.id = h.id
+			WHERE holons_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		args = []interface{}{rawQuery, limit}
+	}
+
+	rows, err := s.conn.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		var updatedAt sql.NullTime
+		var rScore sql.NullFloat64
+		var scope sql.NullString
+		if err := rows.Scan(&r.ID, &r.Title, &r.Layer, &scope, &rScore, &updatedAt, &r.Snippet); err != nil {
+			continue
+		}
+		if scope.Valid {
+			r.Scope = scope.String
 		}
 		r.Type = "holon"
 		if rScore.Valid {

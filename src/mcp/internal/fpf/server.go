@@ -136,11 +136,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"query":         map[string]string{"type": "string", "description": "Search terms"},
-					"scope":         map[string]string{"type": "string", "description": "Scope: 'holons', 'evidence', 'all' (default: 'all')"},
-					"layer_filter":  map[string]string{"type": "string", "description": "Filter by layer: 'L0', 'L1', 'L2', or empty for all"},
-					"status_filter": map[string]string{"type": "string", "description": "Filter decisions by status: 'open', 'implemented', 'abandoned', 'superseded'"},
-					"limit":         map[string]interface{}{"type": "integer", "description": "Max results (default: 10, max: 50)"},
+					"query":                map[string]string{"type": "string", "description": "Search terms"},
+					"scope":                map[string]string{"type": "string", "description": "Scope: 'holons', 'evidence', 'all' (default: 'all')"},
+					"layer_filter":         map[string]string{"type": "string", "description": "Filter by layer: 'L0', 'L1', 'L2', or empty for all"},
+					"status_filter":        map[string]string{"type": "string", "description": "Filter decisions by status: 'open', 'implemented', 'abandoned', 'superseded'"},
+					"affected_scope_filter": map[string]string{"type": "string", "description": "Filter DRRs by affected file path (matches against affected_scope patterns)"},
+					"limit":                map[string]interface{}{"type": "integer", "description": "Max results (default: 10, max: 50)"},
 				},
 				"required": []string{"query"},
 			},
@@ -156,9 +157,40 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"reference":     map[string]string{"type": "string", "description": "Implementation reference (required for 'implemented'): commit:SHA, pr:NUM, file:PATH"},
 					"superseded_by": map[string]string{"type": "string", "description": "ID of replacing decision (required for 'superseded')"},
 					"notes":         map[string]string{"type": "string", "description": "Explanation or description (required for 'abandoned')"},
-					"valid_until":   map[string]string{"type": "string", "description": "Optional: when to re-verify implementation (RFC3339 format)"},
+					"valid_until":        map[string]string{"type": "string", "description": "Optional: when to re-verify implementation (RFC3339 format)"},
+					"criteria_verified": map[string]interface{}{"type": "boolean", "description": "Set to true to confirm acceptance criteria are verified (required when DRR has acceptance_criteria)", "default": false},
 				},
 				"required": []string{"decision_id", "resolution"},
+			},
+		},
+		{
+			Name:        "quint_implement",
+			Description: "Transform a finalized DRR into an implementation directive. Returns a structured prompt that programs your internal planning capabilities with invariants, constraints, and acceptance criteria from the decision and its dependencies.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"decision_id": map[string]string{"type": "string", "description": "ID of the DRR to implement"},
+				},
+				"required": []string{"decision_id"},
+			},
+		},
+		{
+			Name:        "quint_link",
+			Description: "Add dependency between existing holons. Use after creating a hypothesis to link it to existing decisions/hypotheses. Creates ComponentOf (system) or ConstituentOf (episteme) relation. WLNK applies after linking.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_id": map[string]string{"type": "string", "description": "ID of the holon that DEPENDS on target"},
+					"target_id": map[string]string{"type": "string", "description": "ID of the holon being depended upon"},
+					"congruence_level": map[string]interface{}{
+						"type":        "integer",
+						"minimum":     1,
+						"maximum":     3,
+						"default":     3,
+						"description": "CL3=same context, CL2=similar, CL1=different",
+					},
+				},
+				"required": []string{"source_id", "target_id"},
 			},
 		},
 		{
@@ -249,6 +281,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"rationale":       map[string]string{"type": "string"},
 					"consequences":    map[string]string{"type": "string"},
 					"characteristics": map[string]string{"type": "string"},
+					"contract": map[string]interface{}{
+						"type":        "string",
+						"description": "JSON object with implementation contract: {invariants: [], anti_patterns: [], acceptance_criteria: [], affected_scope: []}",
+					},
 				},
 				"required": []string{"title", "winner_id", "context", "decision", "rationale", "consequences"},
 			},
@@ -338,18 +374,33 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if l, ok := params.Arguments["limit"].(float64); ok {
 			limit = int(l)
 		}
-		output, err = s.tools.Search(arg("query"), arg("scope"), arg("layer_filter"), arg("status_filter"), limit)
+		output, err = s.tools.Search(arg("query"), arg("scope"), arg("layer_filter"), arg("status_filter"), arg("affected_scope_filter"), limit)
 
 	case "quint_resolve":
+		criteriaVerified := false
+		if cv, ok := params.Arguments["criteria_verified"].(bool); ok {
+			criteriaVerified = cv
+		}
 		input := ResolveInput{
-			DecisionID:   arg("decision_id"),
-			Resolution:   arg("resolution"),
-			Reference:    arg("reference"),
-			SupersededBy: arg("superseded_by"),
-			Notes:        arg("notes"),
-			ValidUntil:   arg("valid_until"),
+			DecisionID:       arg("decision_id"),
+			Resolution:       arg("resolution"),
+			Reference:        arg("reference"),
+			SupersededBy:     arg("superseded_by"),
+			Notes:            arg("notes"),
+			ValidUntil:       arg("valid_until"),
+			CriteriaVerified: criteriaVerified,
 		}
 		output, err = s.tools.Resolve(input)
+
+	case "quint_implement":
+		output, err = s.tools.Implement(arg("decision_id"))
+
+	case "quint_link":
+		cl := 3
+		if clVal, ok := params.Arguments["congruence_level"].(float64); ok {
+			cl = int(clVal)
+		}
+		output, err = s.tools.LinkHolons(arg("source_id"), arg("target_id"), cl)
 
 	case "quint_propose":
 		s.tools.FSM.State.Phase = PhaseAbduction
@@ -405,7 +456,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 				}
 			}
 		}
-		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"))
+		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"))
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
 			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {

@@ -22,10 +22,25 @@ import (
 
 var slugifyRegex = regexp.MustCompile("[^a-zA-Z0-9]+")
 
+type DependencySuggestion struct {
+	HolonID string
+	Title   string
+	Type    string
+	Layer   string
+}
+
 type Tools struct {
 	FSM     *FSM
 	RootDir string
 	DB      *db.Store
+}
+
+// Contract represents the implementation contract for a DRR
+type Contract struct {
+	Invariants         []string `json:"invariants,omitempty"`
+	AntiPatterns       []string `json:"anti_patterns,omitempty"`
+	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty"`
+	AffectedScope      []string `json:"affected_scope,omitempty"`
 }
 
 func NewTools(fsm *FSM, rootDir string, database *db.Store) *Tools {
@@ -255,6 +270,40 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 	}
 }
 
+func (t *Tools) suggestDependencies(title, content string) []DependencySuggestion {
+	if t.DB == nil {
+		return nil
+	}
+
+	ctx := context.Background()
+
+	searchText := title
+	if len(content) > 200 {
+		searchText += " " + content[:200]
+	} else if len(content) > 0 {
+		searchText += " " + content
+	}
+
+	results, err := t.DB.SearchOR(ctx, searchText, "holons", "", "", 10)
+	if err != nil {
+		return nil
+	}
+
+	var suggestions []DependencySuggestion
+	for _, r := range results {
+		if r.Layer == "DRR" || r.Layer == "L2" || r.Layer == "L1" {
+			suggestions = append(suggestions, DependencySuggestion{
+				HolonID: r.ID,
+				Title:   r.Title,
+				Type:    r.Type,
+				Layer:   r.Layer,
+			})
+		}
+	}
+
+	return suggestions
+}
+
 func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
@@ -321,7 +370,28 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
 
-	return path, nil
+	var warningBlock string
+	if len(dependsOn) == 0 && t.DB != nil {
+		suggestions := t.suggestDependencies(title, content)
+		if len(suggestions) > 0 {
+			var sb strings.Builder
+			sb.WriteString("\n\n⚠️ POTENTIAL DEPENDENCIES DETECTED\n\n")
+			sb.WriteString("Related holons found (ranked by relevance):\n")
+			for _, s := range suggestions {
+				sb.WriteString(fmt.Sprintf("  • %s [%s] %s\n",
+					s.HolonID, s.Layer, s.Title))
+			}
+			sb.WriteString("\nConsider linking with:\n")
+			sb.WriteString(fmt.Sprintf("  quint_link(source_id=\"%s\", target_id=\"<id>\")\n", slug))
+			sb.WriteString("\nThis enables:\n")
+			sb.WriteString("  - WLNK applies to R_eff\n")
+			sb.WriteString("  - Invariants inherited from dependency\n")
+			sb.WriteString("  - Audit trail of architectural coupling\n")
+			warningBlock = sb.String()
+		}
+	}
+
+	return path + warningBlock, nil
 }
 
 func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {
@@ -366,6 +436,63 @@ func (t *Tools) isReachable(ctx context.Context, from, to string, visited map[st
 		}
 	}
 	return false, nil
+}
+
+func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
+	defer t.RecordWork("LinkHolons", time.Now())
+
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+	}
+
+	ctx := context.Background()
+
+	// 1. Validate source exists
+	source, err := t.DB.GetHolon(ctx, sourceID)
+	if err != nil {
+		return "", fmt.Errorf("source holon '%s' not found", sourceID)
+	}
+
+	// 2. Validate target exists
+	_, err = t.DB.GetHolon(ctx, targetID)
+	if err != nil {
+		return "", fmt.Errorf("target holon '%s' not found", targetID)
+	}
+
+	// 3. Check for cycles
+	if cyclic, _ := t.wouldCreateCycle(ctx, sourceID, targetID); cyclic {
+		return "", fmt.Errorf("link would create dependency cycle")
+	}
+
+	// 4. Determine relation type from source's kind
+	relationType := "componentOf"
+	if source.Kind.Valid && source.Kind.String == "episteme" {
+		relationType = "constituentOf"
+	}
+
+	// 5. Create relation (upsert)
+	if cl < 1 || cl > 3 {
+		cl = 3
+	}
+	if err := t.createRelation(ctx, sourceID, relationType, targetID, cl); err != nil {
+		return "", fmt.Errorf("failed to create link: %w", err)
+	}
+
+	// 6. Recalculate R_eff for target
+	calc := assurance.New(t.DB.GetRawDB())
+	report, _ := calc.CalculateReliability(ctx, targetID)
+	newR := 0.0
+	if report != nil {
+		newR = report.FinalScore
+	}
+
+	// 7. Audit
+	t.AuditLog("quint_link", "link_holons", "", targetID, "SUCCESS",
+		map[string]string{"source": sourceID, "relation": relationType, "cl": fmt.Sprintf("%d", cl)}, "")
+
+	return fmt.Sprintf("✅ Linked: %s --%s--> %s\n   New R_eff for %s: %.2f\n\n"+
+		"WLNK now applies: %s.R_eff ≤ %s.R_eff",
+		sourceID, relationType, targetID, targetID, newR, targetID, sourceID), nil
 }
 
 func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (string, error) {
@@ -559,8 +686,16 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 	return childPath, nil
 }
 
-func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics string) (string, error) {
+func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
+
+	// Parse contract if provided
+	var contract Contract
+	if contractJSON != "" {
+		if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
+			return "", fmt.Errorf("invalid contract JSON: %w", err)
+		}
+	}
 
 	body := fmt.Sprintf("\n# %s\n\n", title)
 	body += fmt.Sprintf("## Context\n%s\n\n", decisionContext)
@@ -569,7 +704,40 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	if characteristics != "" {
 		body += fmt.Sprintf("### Characteristic Space (C.16)\n%s\n\n", characteristics)
 	}
-	body += fmt.Sprintf("## Consequences\n%s\n", consequences)
+	body += fmt.Sprintf("## Consequences\n%s\n\n", consequences)
+
+	// Add contract section if provided
+	if contractJSON != "" {
+		body += "## Implementation Contract\n\n"
+		if len(contract.Invariants) > 0 {
+			body += "### Invariants (MUST remain true)\n"
+			for _, inv := range contract.Invariants {
+				body += fmt.Sprintf("- %s\n", inv)
+			}
+			body += "\n"
+		}
+		if len(contract.AntiPatterns) > 0 {
+			body += "### Anti-Patterns (MUST NOT happen)\n"
+			for _, ap := range contract.AntiPatterns {
+				body += fmt.Sprintf("- %s\n", ap)
+			}
+			body += "\n"
+		}
+		if len(contract.AcceptanceCriteria) > 0 {
+			body += "### Acceptance Criteria\n"
+			for _, ac := range contract.AcceptanceCriteria {
+				body += fmt.Sprintf("- [ ] %s\n", ac)
+			}
+			body += "\n"
+		}
+		if len(contract.AffectedScope) > 0 {
+			body += "### Affected Scope\n"
+			for _, scope := range contract.AffectedScope {
+				body += fmt.Sprintf("- `%s`\n", scope)
+			}
+			body += "\n"
+		}
+	}
 
 	now := time.Now()
 	dateStr := now.Format("2006-01-02")
@@ -581,16 +749,26 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 		"winner_id": winnerID,
 		"created":   now.Format(time.RFC3339),
 	}
+	if contractJSON != "" {
+		fields["contract"] = contractJSON
+	}
 
 	if err := WriteWithHash(drrPath, fields, body); err != nil {
 		t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "ERROR", map[string]string{"title": title}, err.Error())
 		return "", err
 	}
 
+	// Prepare scope for DB (affected_scope as JSON array)
+	var scopeForDB string
+	if len(contract.AffectedScope) > 0 {
+		scopeBytes, _ := json.Marshal(contract.AffectedScope)
+		scopeForDB = string(scopeBytes)
+	}
+
 	if t.DB != nil {
 		ctx := context.Background()
 		drrID := t.Slugify(title)
-		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", "", winnerID); err != nil {
+		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", scopeForDB, winnerID); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
 		}
 
@@ -1466,7 +1644,7 @@ func (t *Tools) IsContextStale() (bool, []string) {
 }
 
 // Search performs full-text search across the knowledge base.
-func (t *Tools) Search(query, scope, layerFilter, statusFilter string, limit int) (string, error) {
+func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFilter string, limit int) (string, error) {
 	defer t.RecordWork("Search", time.Now())
 
 	if t.DB == nil {
@@ -1481,6 +1659,11 @@ func (t *Tools) Search(query, scope, layerFilter, statusFilter string, limit int
 	results, err := t.DB.Search(ctx, query, scope, layerFilter, statusFilter, limit)
 	if err != nil {
 		return "", fmt.Errorf("search failed: %w", err)
+	}
+
+	// Filter by affected_scope if provided
+	if affectedScopeFilter != "" {
+		results = filterByAffectedScope(results, affectedScopeFilter)
 	}
 
 	if len(results) == 0 {
@@ -1511,6 +1694,52 @@ func (t *Tools) Search(query, scope, layerFilter, statusFilter string, limit int
 	}
 
 	return sb.String(), nil
+}
+
+// filterByAffectedScope filters search results by matching a file path against affected_scope patterns.
+// The affectedScopeFilter is a file path, and each result's Scope contains a JSON array of glob patterns.
+func filterByAffectedScope(results []db.SearchResult, affectedScopeFilter string) []db.SearchResult {
+	var filtered []db.SearchResult
+
+	for _, r := range results {
+		if r.Scope == "" {
+			continue
+		}
+
+		// Parse the scope as JSON array of patterns
+		var patterns []string
+		if err := json.Unmarshal([]byte(r.Scope), &patterns); err != nil {
+			// Not a JSON array, try as a single pattern
+			patterns = []string{r.Scope}
+		}
+
+		// Check if the filter path matches any pattern
+		for _, pattern := range patterns {
+			// Try glob match
+			matched, err := filepath.Match(pattern, affectedScopeFilter)
+			if err == nil && matched {
+				filtered = append(filtered, r)
+				break
+			}
+
+			// Also check if the pattern is a prefix (for directory patterns like "src/mcp/*")
+			if strings.HasSuffix(pattern, "/*") || strings.HasSuffix(pattern, "/**") {
+				prefix := strings.TrimSuffix(strings.TrimSuffix(pattern, "/*"), "/**")
+				if strings.HasPrefix(affectedScopeFilter, prefix) {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+
+			// Direct substring check for simple patterns
+			if strings.Contains(affectedScopeFilter, pattern) || strings.Contains(pattern, affectedScopeFilter) {
+				filtered = append(filtered, r)
+				break
+			}
+		}
+	}
+
+	return filtered
 }
 
 // GetStatus returns the current FPF status with enhanced output for agent parsing.
@@ -1610,12 +1839,13 @@ func (t *Tools) getNextAction(phase Phase, l0, l1, l2 int) string {
 
 // ResolveInput defines the input for resolving a decision.
 type ResolveInput struct {
-	DecisionID   string `json:"decision_id"`
-	Resolution   string `json:"resolution"`
-	Reference    string `json:"reference"`
-	SupersededBy string `json:"superseded_by"`
-	Notes        string `json:"notes"`
-	ValidUntil   string `json:"valid_until"`
+	DecisionID       string `json:"decision_id"`
+	Resolution       string `json:"resolution"`
+	Reference        string `json:"reference"`
+	SupersededBy     string `json:"superseded_by"`
+	Notes            string `json:"notes"`
+	ValidUntil       string `json:"valid_until"`
+	CriteriaVerified bool   `json:"criteria_verified"`
 }
 
 // DecisionSummary represents a decision with its resolution status.
@@ -1627,6 +1857,280 @@ type DecisionSummary struct {
 	ResolvedAt time.Time
 	Notes      string
 	Reference  string
+}
+
+// getDRRContract reads the contract from a DRR markdown file.
+func (t *Tools) getDRRContract(decisionID string) (*Contract, error) {
+	decisionsDir := filepath.Join(t.GetFPFDir(), "decisions")
+
+	// Find DRR file by pattern: DRR-*-{decisionID}.md
+	pattern := filepath.Join(decisionsDir, fmt.Sprintf("DRR-*-%s.md", decisionID))
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return nil, nil // No DRR file found, not an error
+	}
+
+	// Read the file
+	content, err := os.ReadFile(matches[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DRR file: %w", err)
+	}
+
+	// Parse frontmatter using existing function
+	frontmatter, _, hasFM := parseFrontmatter(string(content))
+	if !hasFM {
+		return nil, nil // No valid frontmatter
+	}
+
+	// Extract contract JSON from frontmatter
+	// Format: contract: {"invariants":...}
+	contractPrefix := "contract: "
+	for _, line := range strings.Split(frontmatter, "\n") {
+		if strings.HasPrefix(line, contractPrefix) {
+			contractJSON := strings.TrimPrefix(line, contractPrefix)
+			var contract Contract
+			if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
+				return nil, nil // Invalid contract JSON
+			}
+			return &contract, nil
+		}
+	}
+
+	return nil, nil // No contract in frontmatter
+}
+
+// ConstraintSource tracks where a constraint came from
+type ConstraintSource struct {
+	DRRID       string
+	DRRTitle    string
+	Constraints []string
+}
+
+// InheritedConstraints holds constraints from dependency chain
+type InheritedConstraints struct {
+	Invariants   []ConstraintSource
+	AntiPatterns []ConstraintSource
+}
+
+// DRRInfo holds loaded DRR data for implementation
+type DRRInfo struct {
+	ID         string
+	Title      string
+	Contract   *Contract
+	DependsOn  []string
+	WinnerID   string
+}
+
+// Implement transforms a DRR into an implementation directive that programs the agent.
+func (t *Tools) Implement(drrID string) (string, error) {
+	defer t.RecordWork("Implement", time.Now())
+
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+	}
+
+	// Normalize DRR ID: strip "DRR-YYYY-MM-DD-" prefix if present
+	normalizedID := drrID
+	if strings.HasPrefix(drrID, "DRR-") {
+		// Pattern: DRR-2025-12-24-actual-id -> actual-id
+		parts := strings.SplitN(drrID, "-", 5) // DRR, YYYY, MM, DD, rest
+		if len(parts) == 5 {
+			normalizedID = parts[4]
+		}
+	}
+
+	// Load the DRR
+	drr, err := t.loadDRRInfo(normalizedID)
+	if err != nil {
+		// Try original ID as fallback
+		drr, err = t.loadDRRInfo(drrID)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if drr.Contract == nil {
+		return "", fmt.Errorf("DRR %s has no implementation contract - nothing to implement", drrID)
+	}
+
+	// Collect inherited constraints from dependency chain
+	inherited := t.collectInheritedConstraints(drr.DependsOn, make(map[string]bool))
+
+	// Format the implementation directive
+	return t.formatImplementDirective(drr, inherited), nil
+}
+
+// loadDRRInfo loads DRR metadata including contract and dependencies
+func (t *Tools) loadDRRInfo(drrID string) (*DRRInfo, error) {
+	ctx := context.Background()
+
+	// Get holon from DB
+	holon, err := t.DB.GetHolon(ctx, drrID)
+	if err != nil {
+		return nil, fmt.Errorf("DRR not found: %s", drrID)
+	}
+
+	if holon.Type != "DRR" && holon.Layer != "DRR" {
+		return nil, fmt.Errorf("holon %s is not a DRR (type=%s, layer=%s)", drrID, holon.Type, holon.Layer)
+	}
+
+	// Load contract from markdown file
+	contract, _ := t.getDRRContract(drrID)
+
+	// Get dependencies via relations (query by source_id to find what this DRR depends on)
+	var dependsOn []string
+	var winnerID string
+
+	rows, err := t.DB.GetRawDB().QueryContext(ctx,
+		`SELECT target_id, relation_type FROM relations WHERE source_id = ?`, drrID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var targetID, relType string
+			if err := rows.Scan(&targetID, &relType); err == nil {
+				if relType == "Selects" {
+					winnerID = targetID
+					// The winner's dependencies become our dependencies
+					dependsOn = append(dependsOn, targetID)
+				} else if relType == "ComponentOf" || relType == "ConstituentOf" {
+					dependsOn = append(dependsOn, targetID)
+				}
+			}
+		}
+	}
+
+	return &DRRInfo{
+		ID:        drrID,
+		Title:     holon.Title,
+		Contract:  contract,
+		DependsOn: dependsOn,
+		WinnerID:  winnerID,
+	}, nil
+}
+
+// collectInheritedConstraints recursively collects constraints from dependency chain
+func (t *Tools) collectInheritedConstraints(depIDs []string, visited map[string]bool) InheritedConstraints {
+	var result InheritedConstraints
+
+	for _, depID := range depIDs {
+		if visited[depID] {
+			continue // Prevent cycles
+		}
+		visited[depID] = true
+
+		dep, err := t.loadDRRInfo(depID)
+		if err != nil || dep.Contract == nil {
+			continue
+		}
+
+		if len(dep.Contract.Invariants) > 0 {
+			result.Invariants = append(result.Invariants, ConstraintSource{
+				DRRID:       depID,
+				DRRTitle:    dep.Title,
+				Constraints: dep.Contract.Invariants,
+			})
+		}
+
+		if len(dep.Contract.AntiPatterns) > 0 {
+			result.AntiPatterns = append(result.AntiPatterns, ConstraintSource{
+				DRRID:       depID,
+				DRRTitle:    dep.Title,
+				Constraints: dep.Contract.AntiPatterns,
+			})
+		}
+
+		// Recurse into dependencies of dependencies
+		deeper := t.collectInheritedConstraints(dep.DependsOn, visited)
+		result.Invariants = append(result.Invariants, deeper.Invariants...)
+		result.AntiPatterns = append(result.AntiPatterns, deeper.AntiPatterns...)
+	}
+
+	return result
+}
+
+// formatImplementDirective formats the implementation directive prompt
+func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstraints) string {
+	var sb strings.Builder
+
+	sb.WriteString("# IMPLEMENTATION DIRECTIVE\n\n")
+
+	// Task section
+	sb.WriteString("## Task\n\n")
+	sb.WriteString(fmt.Sprintf("Implement: **%s**\n", drr.Title))
+	sb.WriteString(fmt.Sprintf("Decision: %s\n", drr.ID))
+	if len(drr.Contract.AffectedScope) > 0 {
+		sb.WriteString(fmt.Sprintf("Scope: %s\n", strings.Join(drr.Contract.AffectedScope, ", ")))
+	}
+	sb.WriteString("\n")
+
+	// Instructions
+	sb.WriteString("## Instructions\n\n")
+	sb.WriteString("Using your internal TODO/planning capabilities, implement this task.\n\n")
+	sb.WriteString("If project context is insufficient, conduct preliminary investigation first.\n\n")
+
+	// Invariants section
+	if len(drr.Contract.Invariants) > 0 || len(inherited.Invariants) > 0 {
+		sb.WriteString("## Invariants to Implement\n\n")
+		sb.WriteString("These MUST be true in your implementation:\n\n")
+
+		if len(drr.Contract.Invariants) > 0 {
+			sb.WriteString("### This decision:\n")
+			for i, inv := range drr.Contract.Invariants {
+				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, inv))
+			}
+			sb.WriteString("\n")
+		}
+
+		for _, src := range inherited.Invariants {
+			sb.WriteString(fmt.Sprintf("### Inherited from %s:\n", src.DRRID))
+			for _, inv := range src.Constraints {
+				sb.WriteString(fmt.Sprintf("- %s\n", inv))
+			}
+			sb.WriteString("\n")
+		}
+
+		if len(inherited.Invariants) > 0 {
+			sb.WriteString("⚠️ Inherited constraints come from dependency chain — violating them breaks the foundation.\n\n")
+		}
+	}
+
+	// Final Verification section (anti-patterns)
+	if len(drr.Contract.AntiPatterns) > 0 || len(inherited.AntiPatterns) > 0 {
+		sb.WriteString("## Final Verification\n\n")
+		sb.WriteString("Your LAST todo items must verify these constraints were NOT violated:\n\n")
+
+		if len(drr.Contract.AntiPatterns) > 0 {
+			sb.WriteString("### This decision:\n")
+			for _, ap := range drr.Contract.AntiPatterns {
+				sb.WriteString(fmt.Sprintf("- [ ] %s\n", ap))
+			}
+			sb.WriteString("\n")
+		}
+
+		for _, src := range inherited.AntiPatterns {
+			sb.WriteString(fmt.Sprintf("### Inherited from %s:\n", src.DRRID))
+			for _, ap := range src.Constraints {
+				sb.WriteString(fmt.Sprintf("- [ ] %s\n", ap))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	// Acceptance Criteria section
+	if len(drr.Contract.AcceptanceCriteria) > 0 {
+		sb.WriteString("## Acceptance Criteria\n\n")
+		sb.WriteString("Before calling quint_resolve, verify:\n\n")
+		for _, ac := range drr.Contract.AcceptanceCriteria {
+			sb.WriteString(fmt.Sprintf("- [ ] %s\n", ac))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Completion instruction
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("When complete: `quint_resolve %s implemented criteria_verified=true`\n", drr.ID))
+
+	return sb.String()
 }
 
 // Resolve records the outcome of a decision: implemented, abandoned, or superseded.
@@ -1659,10 +2163,22 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 	}
 
 	// 3. Validate resolution-specific requirements
+	var contract *Contract
 	switch input.Resolution {
 	case "implemented":
 		if input.Reference == "" {
 			return "", fmt.Errorf("reference required for 'implemented' resolution (e.g., commit:SHA, pr:NUM)")
+		}
+		// Check for acceptance criteria
+		contract, _ = t.getDRRContract(input.DecisionID)
+		if contract != nil && len(contract.AcceptanceCriteria) > 0 && !input.CriteriaVerified {
+			var criteriaList strings.Builder
+			criteriaList.WriteString("This decision has acceptance criteria that must be verified:\n\n")
+			for i, criterion := range contract.AcceptanceCriteria {
+				criteriaList.WriteString(fmt.Sprintf("%d. %s\n", i+1, criterion))
+			}
+			criteriaList.WriteString("\nTo resolve, set criteria_verified=true after confirming these criteria are met.")
+			return "", fmt.Errorf("acceptance criteria not verified:\n%s", criteriaList.String())
 		}
 	case "superseded":
 		if input.SupersededBy == "" {

@@ -3,7 +3,7 @@ description: "Generate Hypotheses (Abduction)"
 pre: "project initialized (via quint_internalize or directly)"
 post: ">=1 L0 hypothesis exists in database"
 invariant: "hypotheses must have kind ∈ {system, episteme}"
-required_tools: ["quint_propose"]
+required_tools: ["quint_propose", "quint_link"]
 ---
 
 # Phase 1: Abduction
@@ -138,6 +138,32 @@ The user has presented an anomaly or a design problem.
 # Now WLNK applies:
 # api-gateway-with-auth.R_eff ≤ min(auth-module.R_eff, rate-limiter.R_eff)
 ```
+
+## Post-Creation Linking
+
+If `quint_propose` outputs "⚠️ POTENTIAL DEPENDENCIES DETECTED" and you missed `depends_on`, use `quint_link` to add the dependency after creation:
+
+```
+# After propose shows suggestions:
+⚠️ POTENTIAL DEPENDENCIES DETECTED
+Your hypothesis mentions concepts from existing holons:
+  • "redis" → redis-cache-drr [DRR] Redis Cache
+
+# Link the dependency:
+[quint_link(source_id="my-new-hypothesis", target_id="redis-cache-drr")]
+→ ✅ Linked: my-new-hypothesis --componentOf--> redis-cache-drr
+→ WLNK now applies: redis-cache-drr.R_eff ≤ my-new-hypothesis.R_eff
+```
+
+**When to use `quint_link`:**
+- You see dependency suggestions after propose
+- You realize a dependency later in the conversation
+- You want to add a dependency without re-proposing
+
+**Parameters:**
+- `source_id`: The holon that DEPENDS on the target
+- `target_id`: The holon being depended upon
+- `congruence_level` (optional, default: 3): CL3=same context, CL2=similar, CL1=different
 
 ## Example: Success Path
 

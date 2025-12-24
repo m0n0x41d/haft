@@ -76,6 +76,7 @@ Compute trust scores using:
 | `/q3-validate` | Induction | Gather empirical evidence, promoting claims from L1 to L2. |
 | `/q4-audit` | Audit | Run an assurance audit and calculate trust scores. |
 | `/q5-decide` | Decision | Select the winning hypothesis and create a Design Rationale Record. |
+| `/q-implement` | Implementation | Transform DRR into implementation directive with constraints. |
 | `/q-resolve` | Resolution | Record decision outcome (implemented, abandoned, superseded). |
 | `/q-query` | Utility | Search the project's knowledge base. |
 | `/q-reset` | Utility | Discard the current reasoning cycle. |
@@ -99,6 +100,92 @@ Decisions are plans. Reality is what happens. `/q-resolve` bridges the gap:
 - **Superseded**: Link to the newer decision that replaced this one
 
 Use `quint_search` with `status_filter="open"` to find decisions awaiting resolution.
+
+## Dependency Discovery
+
+When you propose a hypothesis, Quint Code automatically searches for related existing holons using FTS5 semantic matching.
+
+### How It Works
+
+1. You call `/q1-hypothesize` with "Rate limiting using Redis"
+2. `quint_propose` extracts keywords and searches existing DRRs, L1, L2 holons
+3. If matches found, output shows:
+
+```
+⚠️ POTENTIAL DEPENDENCIES DETECTED
+
+Related holons found (ranked by relevance):
+  • redis-cache-drr [DRR] Redis Cache Layer
+  • redis-connection [L2] Redis Connection Pool
+
+Consider linking with:
+  quint_link(source_id="rate-limiter", target_id="redis-cache-drr")
+```
+
+### Post-Creation Linking
+
+If you missed `depends_on` during creation, use `quint_link`:
+
+```
+quint_link(source_id="my-hypothesis", target_id="existing-drr")
+```
+
+This creates:
+- **ComponentOf** relation (for `kind=system`)
+- **ConstituentOf** relation (for `kind=episteme`)
+- **WLNK applies**: Your hypothesis inherits the R_eff ceiling from dependencies
+
+### Why This Matters
+
+- **Architectural coupling visible**: Dependencies are tracked, not implicit
+- **WLNK propagation**: If a dependency fails, dependent hypotheses are affected
+- **Inherited constraints**: Implementation inherits invariants from dependencies
+
+## Implementation Phase
+
+After a decision (DRR) is created, `/q-implement` transforms it into executable work.
+
+### How It Works
+
+1. DRR includes a **contract** with:
+   - Invariants (MUST be true)
+   - Anti-patterns (MUST NOT happen)
+   - Acceptance criteria (verify before closing)
+   - Affected scope (files/modules impacted)
+
+2. `/q-implement` returns an **implementation directive** that programs your planning:
+
+```markdown
+## Invariants to Implement
+- Cache misses must fall through to DB transparently
+- TTL must be configurable per entity type
+
+## Inherited from redis-connection-drr:
+- Connection pool must be bounded
+- Reconnection must be exponential backoff
+
+## Final Verification
+Before calling quint_resolve, verify:
+- [ ] No hardcoded TTL values
+- [ ] Connection pool limits respected
+```
+
+3. You implement using your normal workflow (TodoWrite, etc.)
+
+4. When done, call `quint_resolve` with `criteria_verified=true`
+
+### WLNK for Constraints
+
+Dependencies propagate not just R_eff but also constraints:
+
+```
+DRR-jwt-auth (invariant: "tokens stateless")
+    ↓ depends_on
+DRR-cache-redis
+    → Must also satisfy: "tokens stateless"
+```
+
+This ensures architectural decisions cascade correctly.
 
 ## When to Use FPF
 

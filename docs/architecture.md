@@ -51,6 +51,51 @@ A system cannot transform itself. This is why:
 
 The AI can recommend, but architectural decisions flow through human judgment. This isn't a limitation; it's the design.
 
+## State Model: Repository as Bounded Context
+
+The source of truth is the repository itself — not an in-memory FSM variable:
+
+- `.quint/knowledge/L0/`, `L1/`, `L2/` — hypothesis files
+- `.quint/quint.db` — SQLite with relations and evidence
+- `.quint/decisions/` — finalized DRRs
+
+The FSM phase shown in `/q-internalize` is a **projection** of this state, not an independent variable. It's computed from what exists, not stored separately.
+
+### Semantic Preconditions vs Phase Gates
+
+Traditional state machines gate operations by phase: "you're in DEDUCTION, so you can't call decide()". This creates sync problems — the FSM can drift from reality.
+
+Quint uses **semantic preconditions** instead. Each command checks actual artifacts:
+
+| Command | Checks | Blocks if |
+|---------|--------|-----------|
+| `quint_verify` | hypothesis exists in L0 | not found in L0 |
+| `quint_test` | hypothesis in L1 or L2 | still in L0 |
+| `quint_audit` | hypothesis in L2 | not in L2 |
+| `quint_decide` | at least one L2 exists | no L2 holons |
+
+### What You Can and Can't Do
+
+**Cannot do (logically invalid):**
+- Verify a hypothesis that doesn't exist
+- Test something that hasn't been verified
+- Decide without any validated options
+
+**Can do freely:**
+- Multiple `propose` in a row
+- Verify hypotheses in any order
+- Re-test L2 to refresh evidence
+- Work on multiple decision contexts in parallel
+
+### Why This Design
+
+1. **No sync issues** — can't have "FSM thinks X, files say Y"
+2. **Multiple sessions** — all agents see the same files, no state conflicts
+3. **Git-friendly** — `git reset` resets "state" too (because state IS the files)
+4. **Idempotent** — preconditions always check current reality, not cached assumptions
+
+This is "functional core" applied to state management: the state is immutable snapshots in the filesystem, the FSM phase is a derived view.
+
 ## Knowledge Assurance Levels
 
 | Level | Name | Meaning | Promotion Path |

@@ -399,7 +399,6 @@ func toNullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
-// SearchResult represents a single search hit.
 type SearchResult struct {
 	ID        string
 	Type      string // "holon" or "evidence"
@@ -708,7 +707,6 @@ func (s *Store) searchEvidence(ctx context.Context, query string, limit int) ([]
 	return results, rows.Err()
 }
 
-// GetRecentHolons returns the N most recently updated holons.
 func (s *Store) GetRecentHolons(ctx context.Context, limit int) ([]Holon, error) {
 	if limit <= 0 {
 		limit = 10
@@ -739,7 +737,6 @@ func (s *Store) GetRecentHolons(ctx context.Context, limit int) ([]Holon, error)
 	return holons, rows.Err()
 }
 
-// GetDecayingEvidence returns evidence expiring within daysAhead days.
 func (s *Store) GetDecayingEvidence(ctx context.Context, daysAhead int) ([]Evidence, error) {
 	rows, err := s.conn.QueryContext(ctx, `
 		SELECT e.id, e.holon_id, e.type, e.content, e.verdict, e.assurance_level,

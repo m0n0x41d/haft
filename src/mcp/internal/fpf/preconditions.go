@@ -47,9 +47,7 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 	}
 }
 
-// getHolonLayer determines which layer a holon is in.
 func (t *Tools) getHolonLayer(holonID string) (string, error) {
-	// Check filesystem first
 	for _, layer := range []string{"L0", "L1", "L2", "invalid"} {
 		path := filepath.Join(t.GetFPFDir(), "knowledge", layer, holonID+".md")
 		if _, err := os.Stat(path); err == nil {
@@ -57,7 +55,6 @@ func (t *Tools) getHolonLayer(holonID string) (string, error) {
 		}
 	}
 
-	// Fallback to database
 	if t.DB != nil {
 		holon, err := t.DB.GetHolon(context.Background(), holonID)
 		if err == nil {
@@ -68,7 +65,6 @@ func (t *Tools) getHolonLayer(holonID string) (string, error) {
 	return "", fmt.Errorf("holon %s not found", holonID)
 }
 
-// checkSearchPreconditions validates quint_search parameters.
 func (t *Tools) checkSearchPreconditions(args map[string]string) error {
 	if args["query"] == "" {
 		return &PreconditionError{

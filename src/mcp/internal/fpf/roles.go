@@ -1,6 +1,5 @@
 package fpf
 
-// Role definitions - expanded from fsm.go
 type Role string
 
 const (

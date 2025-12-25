@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// AssuranceReport contains details of the reliability calculation for AI explanation
 type AssuranceReport struct {
 	HolonID      string
 	FinalScore   float64
@@ -18,25 +17,21 @@ type AssuranceReport struct {
 	Factors      []string // Textual explanations for AI
 }
 
-// Calculator handles assurance logic
 type Calculator struct {
 	DB *sql.DB
 }
 
-// New creates a new Calculator
 func New(db *sql.DB) *Calculator {
 	return &Calculator{DB: db}
 }
 
-// CalculateReliability calculates R for a holon (public API)
 func (c *Calculator) CalculateReliability(ctx context.Context, holonID string) (*AssuranceReport, error) {
 	visited := make(map[string]bool)
 	return c.calculateReliabilityWithVisited(ctx, holonID, visited)
 }
 
-// calculateReliabilityWithVisited is the internal implementation with cycle detection
 func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonID string, visited map[string]bool) (*AssuranceReport, error) {
-	// Cycle detection: if already visited, return neutral score to break cycle
+	// Cycle detection: return neutral (1.0) to break cycle without penalizing
 	if visited[holonID] {
 		return &AssuranceReport{
 			HolonID:    holonID,
@@ -141,7 +136,6 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 
 	minDepScore := 1.0
 	for _, d := range deps {
-		// Recursive call for dependency with visited map for cycle detection
 		depReport, err := c.calculateReliabilityWithVisited(ctx, d.id, visited)
 		if err != nil {
 			depReport = &AssuranceReport{FinalScore: 0.0}
@@ -171,7 +165,6 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		report.FinalScore = report.SelfScore
 	}
 
-	// Update cache (non-critical, log warning on failure)
 	if _, err := c.DB.ExecContext(ctx, "UPDATE holons SET cached_r_score = ? WHERE id = ?", report.FinalScore, holonID); err != nil {
 		report.Factors = append(report.Factors, "Warning: cache update failed")
 	}

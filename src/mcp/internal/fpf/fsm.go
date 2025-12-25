@@ -12,7 +12,6 @@ import (
 	"github.com/m0n0x41d/quint-code/assurance"
 )
 
-// Phase definitions
 type Phase string
 
 const (
@@ -25,16 +24,12 @@ const (
 	PhaseOperation Phase = "OPERATION"
 )
 
-// Role type is defined in roles.go
-
-// RoleAssignment binds a Holder (SessionID) to a Role within a Context
 type RoleAssignment struct {
 	Role      Role   `json:"role"`
 	SessionID string `json:"session_id"`
 	Context   string `json:"context"`
 }
 
-// EvidenceStub represents the anchor required for a transition
 type EvidenceStub struct {
 	Type        string `json:"type"`
 	URI         string `json:"uri"`
@@ -42,7 +37,6 @@ type EvidenceStub struct {
 	HolonID     string `json:"holon_id"`
 }
 
-// State represents the persistent state of the FPF session
 type State struct {
 	Phase              Phase          `json:"phase"`
 	ActiveRole         RoleAssignment `json:"active_role,omitempty"`
@@ -50,20 +44,17 @@ type State struct {
 	AssuranceThreshold float64        `json:"assurance_threshold,omitempty"`
 }
 
-// TransitionRule defines a valid state change
 type TransitionRule struct {
 	From Phase
 	To   Phase
 	Role Role
 }
 
-// FSM manages the state transitions
 type FSM struct {
 	State State
 	DB    *sql.DB
 }
 
-// LoadState reads state from fpf_state table in SQLite
 func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	fsm := &FSM{
 		State: State{
@@ -109,7 +100,6 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	return fsm, nil
 }
 
-// GetPhase returns the current phase, deriving from DB if available
 func (f *FSM) GetPhase() Phase {
 	if f.DB != nil {
 		return f.DerivePhase("default")
@@ -128,7 +118,6 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 		return PhaseIdle
 	}
 
-	// Count active holons by layer using the active_holons view
 	rows, err := f.DB.QueryContext(context.Background(),
 		"SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer",
 		contextID)
@@ -152,13 +141,11 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	l2 := counts["L2"]
 	drr := counts["DRR"]
 
-	// Simple phase derivation based on what exists.
-	// No complex "recent L0" or timestamp logic needed since phase is informational only.
+	// Phase is informational only - no complex timestamp logic needed
 	if drr > 0 {
 		return PhaseDecision
 	}
 	if l2 > 0 {
-		// Check if any L2 has audit_report evidence
 		var hasAudit bool
 		auditRow := f.DB.QueryRowContext(context.Background(), `
 			SELECT EXISTS(
@@ -181,7 +168,6 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	return PhaseIdle
 }
 
-// SaveState writes state to fpf_state table in SQLite
 func (f *FSM) SaveState(contextID string) error {
 	if f.DB == nil {
 		return fmt.Errorf("database connection required for SaveState")
@@ -211,7 +197,6 @@ func (f *FSM) SaveState(contextID string) error {
 	return nil
 }
 
-// GetAssuranceThreshold returns the configured threshold, defaulting to 0.8
 func (f *FSM) GetAssuranceThreshold() float64 {
 	if f.State.AssuranceThreshold <= 0 {
 		return 0.8
@@ -219,7 +204,6 @@ func (f *FSM) GetAssuranceThreshold() float64 {
 	return f.State.AssuranceThreshold
 }
 
-// CanTransition checks if a role can move the system to a target phase
 func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *EvidenceStub) (bool, string) {
 	if assignment.Role == "" {
 		return false, "Role is required"

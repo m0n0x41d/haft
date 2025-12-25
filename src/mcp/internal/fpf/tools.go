@@ -447,30 +447,26 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 
 	ctx := context.Background()
 
-	// 1. Validate source exists
 	source, err := t.DB.GetHolon(ctx, sourceID)
 	if err != nil {
 		return "", fmt.Errorf("source holon '%s' not found", sourceID)
 	}
 
-	// 2. Validate target exists
 	_, err = t.DB.GetHolon(ctx, targetID)
 	if err != nil {
 		return "", fmt.Errorf("target holon '%s' not found", targetID)
 	}
 
-	// 3. Check for cycles
 	if cyclic, _ := t.wouldCreateCycle(ctx, sourceID, targetID); cyclic {
 		return "", fmt.Errorf("link would create dependency cycle")
 	}
 
-	// 4. Determine relation type from source's kind
+	// system → componentOf, episteme → constituentOf
 	relationType := "componentOf"
 	if source.Kind.Valid && source.Kind.String == "episteme" {
 		relationType = "constituentOf"
 	}
 
-	// 5. Create relation (upsert)
 	if cl < 1 || cl > 3 {
 		cl = 3
 	}
@@ -478,7 +474,6 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		return "", fmt.Errorf("failed to create link: %w", err)
 	}
 
-	// 6. Recalculate R_eff for target
 	calc := assurance.New(t.DB.GetRawDB())
 	report, _ := calc.CalculateReliability(ctx, targetID)
 	newR := 0.0
@@ -486,7 +481,6 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		newR = report.FinalScore
 	}
 
-	// 7. Audit
 	t.AuditLog("quint_link", "link_holons", "", targetID, "SUCCESS",
 		map[string]string{"source": sourceID, "relation": relationType, "cl": fmt.Sprintf("%d", cl)}, "")
 
@@ -689,7 +683,6 @@ func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, 
 func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
-	// Parse contract if provided
 	var contract Contract
 	if contractJSON != "" {
 		if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
@@ -706,7 +699,6 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 	body += fmt.Sprintf("## Consequences\n%s\n\n", consequences)
 
-	// Add contract section if provided
 	if contractJSON != "" {
 		body += "## Implementation Contract\n\n"
 		if len(contract.Invariants) > 0 {
@@ -758,7 +750,6 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 		return "", err
 	}
 
-	// Prepare scope for DB (affected_scope as JSON array)
 	var scopeForDB string
 	if len(contract.AffectedScope) > 0 {
 		scopeBytes, _ := json.Marshal(contract.AffectedScope)
@@ -772,14 +763,12 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
 		}
 
-		// Create selects relation: DRR → winner
 		if winnerID != "" {
 			if err := t.createRelation(ctx, drrID, "selects", winnerID, 3); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to create selects relation: %v\n", err)
 			}
 		}
 
-		// Create rejects relations: DRR → each rejected alternative
 		for _, rejID := range rejectedIDs {
 			if rejID != "" && rejID != winnerID {
 				if err := t.createRelation(ctx, drrID, "rejects", rejID, 3); err != nil {
@@ -1224,7 +1213,6 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	return result.String(), nil
 }
 
-// InternalizeResult contains the output from quint_internalize.
 type InternalizeResult struct {
 	Status            string            // INITIALIZED, UPDATED, READY
 	Phase             string            // IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION
@@ -1240,7 +1228,6 @@ type InternalizeResult struct {
 	NextAction        string            // Phase-appropriate suggestion
 }
 
-// HolonSummary is a brief view of a holon for status display.
 type HolonSummary struct {
 	ID        string
 	Title     string
@@ -1250,7 +1237,6 @@ type HolonSummary struct {
 	UpdatedAt time.Time
 }
 
-// DecayWarning represents evidence that is expiring soon.
 type DecayWarning struct {
 	EvidenceID string
 	HolonID    string
@@ -1270,7 +1256,6 @@ func (t *Tools) Internalize() (string, error) {
 		LayerCounts: make(map[string]int),
 	}
 
-	// 1. Check if initialized
 	if !t.IsInitialized() {
 		if err := t.InitProject(); err != nil {
 			return "", fmt.Errorf("initialization failed: %w", err)
@@ -1298,7 +1283,6 @@ func (t *Tools) Internalize() (string, error) {
 		result.Phase = string(PhaseAbduction)
 		result.Role = string(GetExpectedRole(PhaseAbduction))
 	} else {
-		// 2. Check staleness
 		stale, signals := t.IsContextStale()
 		if stale {
 			ctx, err := t.AnalyzeProject()
@@ -1316,27 +1300,23 @@ func (t *Tools) Internalize() (string, error) {
 		}
 	}
 
-	// 3. Load knowledge state (active holons - not in resolved decisions)
 	result.ContextID = "default"
 	result.ArchivedCounts = make(map[string]int)
 
 	if t.DB != nil {
 		ctx := context.Background()
 
-		// Get active holon counts from database
 		activeCounts, err := t.DB.CountActiveHolonsByLayer(ctx)
 		if err == nil {
 			for _, c := range activeCounts {
 				result.LayerCounts[c.Layer] = int(c.Count)
 			}
 		} else {
-			// Fallback to file-based counting
 			result.LayerCounts["L0"] = t.countHolons("L0")
 			result.LayerCounts["L1"] = t.countHolons("L1")
 			result.LayerCounts["L2"] = t.countHolons("L2")
 		}
 
-		// Get archived holon counts
 		archivedCounts, err := t.DB.CountArchivedHolonsByLayer(ctx)
 		if err == nil {
 			for _, c := range archivedCounts {
@@ -1344,14 +1324,12 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 	} else {
-		// Fallback to file-based counting if no DB
 		result.LayerCounts["L0"] = t.countHolons("L0")
 		result.LayerCounts["L1"] = t.countHolons("L1")
 		result.LayerCounts["L2"] = t.countHolons("L2")
 	}
 	result.LayerCounts["DRR"] = t.countDRRs()
 
-	// 4. Get recent ACTIVE holons (not in resolved decisions)
 	if t.DB != nil {
 		ctx := context.Background()
 		holons, err := t.DB.GetActiveRecentHolons(ctx, 10)
@@ -1375,7 +1353,7 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 
-		// 5. Check decay (evidence expiring within 7 days)
+		// Surface evidence expiring within 7 days
 		evidence, err := t.DB.GetDecayingEvidence(ctx, 7)
 		if err == nil {
 			for _, e := range evidence {
@@ -1387,7 +1365,6 @@ func (t *Tools) Internalize() (string, error) {
 					warning.ExpiresAt = e.ValidUntil.Time
 					warning.DaysLeft = int(time.Until(e.ValidUntil.Time).Hours() / 24)
 				}
-				// Get holon title
 				if title, err := t.DB.GetHolonTitle(ctx, e.HolonID); err == nil {
 					warning.HolonTitle = title
 				}
@@ -1395,7 +1372,6 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 
-		// 6. Load decision status
 		openDecisions, err := t.GetOpenDecisions(ctx)
 		if err == nil {
 			result.OpenDecisions = openDecisions
@@ -1406,10 +1382,7 @@ func (t *Tools) Internalize() (string, error) {
 		}
 	}
 
-	// 7. Generate next action guidance
 	result.NextAction = t.getNextAction(t.FSM.GetPhase(), result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
-
-	// Format output
 	return t.formatInternalizeOutput(result), nil
 }
 
@@ -2143,7 +2116,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 
 	ctx := context.Background()
 
-	// 1. Validate decision exists and is correct type
 	holon, err := t.DB.GetHolon(ctx, input.DecisionID)
 	if err != nil {
 		return "", fmt.Errorf("decision not found: %s", input.DecisionID)
@@ -2152,7 +2124,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		return "", fmt.Errorf("holon %s is not a decision (type=%s, layer=%s)", input.DecisionID, holon.Type, holon.Layer)
 	}
 
-	// 2. Validate resolution type
 	validResolutions := map[string]bool{
 		"implemented": true,
 		"abandoned":   true,
@@ -2162,7 +2133,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		return "", fmt.Errorf("invalid resolution: %s (must be: implemented, abandoned, superseded)", input.Resolution)
 	}
 
-	// 3. Validate resolution-specific requirements
 	var contract *Contract
 	switch input.Resolution {
 	case "implemented":
@@ -2197,7 +2167,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		}
 	}
 
-	// 4. Check for existing resolution
 	evidences, _ := t.DB.GetEvidence(ctx, input.DecisionID)
 	for _, e := range evidences {
 		if e.Type == "implementation" || e.Type == "abandonment" || e.Type == "supersession" {
@@ -2205,7 +2174,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		}
 	}
 
-	// 5. Create resolution evidence
 	evidenceID := uuid.New().String()
 	var evidenceType, content, carrierRef string
 
@@ -2251,12 +2219,10 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		return "", fmt.Errorf("failed to create evidence: %v", err)
 	}
 
-	// 6. Audit log
 	t.AuditLog("quint_resolve", "resolve_decision",
 		string(t.FSM.State.ActiveRole.Role),
 		input.DecisionID, "SUCCESS", input, "")
 
-	// 7. Format output
 	result := fmt.Sprintf("Decision '%s' resolved as: %s", holon.Title, input.Resolution)
 	switch input.Resolution {
 	case "implemented":

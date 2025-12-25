@@ -19,7 +19,15 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 	schema := `
 	CREATE TABLE holons (id TEXT PRIMARY KEY, cached_r_score REAL DEFAULT 0.0);
-	CREATE TABLE evidence (id TEXT PRIMARY KEY, holon_id TEXT, type TEXT, verdict TEXT, valid_until DATETIME);
+	CREATE TABLE evidence (
+		id TEXT PRIMARY KEY,
+		holon_id TEXT,
+		type TEXT,
+		verdict TEXT,
+		valid_until DATETIME,
+		is_stale INTEGER DEFAULT 0,
+		stale_reason TEXT
+	);
 	CREATE TABLE relations (source_id TEXT, target_id TEXT, relation_type TEXT, congruence_level INTEGER);
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -196,5 +204,106 @@ func TestCalculateReliability_MixedEvidenceWLNK(t *testing.T) {
 	// WLNK: min(1.0 internal, 0.9 external) = 0.9
 	if report.FinalScore != 0.9 {
 		t.Errorf("Expected score 0.9 (WLNK on mixed evidence), got %f", report.FinalScore)
+	}
+}
+
+// ============================================
+// CODE CHANGE AWARENESS TESTS (v5.0.0)
+// ============================================
+
+func TestCalculateReliability_StaleEvidence(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Insert stale evidence for holon A
+	_, err := db.Exec(`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, is_stale, stale_reason)
+		VALUES ('e1', 'A', 'internal', 'pass', ?, 1, 'carrier file changed')`, time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	// Stale evidence should get 0.2 score (heavy penalty)
+	if report.FinalScore != 0.2 {
+		t.Errorf("Expected score 0.2 (stale penalty), got %f", report.FinalScore)
+	}
+
+	// Check staleness was recorded in report
+	if report.StalePenalty != 0.8 {
+		t.Errorf("Expected StalePenalty 0.8, got %f", report.StalePenalty)
+	}
+
+	// Check stale evidence ID was recorded
+	if len(report.StaleEvidence) != 1 || report.StaleEvidence[0] != "e1" {
+		t.Errorf("Expected StaleEvidence ['e1'], got %v", report.StaleEvidence)
+	}
+
+	// Check factor was recorded
+	hasStaleReason := false
+	for _, f := range report.Factors {
+		if f == "Evidence stale: carrier file changed" {
+			hasStaleReason = true
+			break
+		}
+	}
+	if !hasStaleReason {
+		t.Errorf("Expected stale reason in factors, got %v", report.Factors)
+	}
+}
+
+func TestCalculateReliability_StaleAndFreshEvidence(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Insert fresh evidence (e1) and stale evidence (e2) for holon A
+	_, _ = db.Exec(`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, is_stale)
+		VALUES ('e1', 'A', 'internal', 'pass', ?, 0)`, time.Now().Add(24*time.Hour))
+	_, _ = db.Exec(`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, is_stale, stale_reason)
+		VALUES ('e2', 'A', 'internal', 'pass', ?, 1, 'file changed')`, time.Now().Add(24*time.Hour))
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	// WLNK: min(1.0 fresh, 0.2 stale) = 0.2
+	if report.FinalScore != 0.2 {
+		t.Errorf("Expected score 0.2 (WLNK with stale), got %f", report.FinalScore)
+	}
+}
+
+func TestCalculateReliability_StalePropagatesToDependents(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// A has fresh evidence, B has stale evidence, B is component of A
+	_, _ = db.Exec(`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, is_stale)
+		VALUES ('e1', 'A', 'internal', 'pass', ?, 0)`, time.Now().Add(24*time.Hour))
+	_, _ = db.Exec(`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, is_stale, stale_reason)
+		VALUES ('e2', 'B', 'internal', 'pass', ?, 1, 'file changed')`, time.Now().Add(24*time.Hour))
+
+	// B is component of A
+	_, _ = db.Exec("INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('B', 'A', 'componentOf', 3)")
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	// A.self = 1.0, B.self = 0.2 (stale), WLNK → A.final = 0.2
+	if report.FinalScore != 0.2 {
+		t.Errorf("Expected score 0.2 (stale propagates via WLNK), got %f", report.FinalScore)
+	}
+
+	// WeakestLink should be B
+	if report.WeakestLink != "B" {
+		t.Errorf("Expected WeakestLink 'B', got '%s'", report.WeakestLink)
 	}
 }

@@ -489,18 +489,21 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		sourceID, relationType, targetID, targetID, newR, targetID, sourceID), nil
 }
 
-func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict string) (string, error) {
+func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
-	carrierRef := "internal-logic"
-	if t.DB != nil {
-		holon, err := t.DB.GetHolon(context.Background(), hypothesisID)
-		if err == nil && holon.Kind.Valid {
-			switch holon.Kind.String {
-			case "system":
-				carrierRef = "internal-logic"
-			case "episteme":
-				carrierRef = "formal-logic"
+	carrierRef := carrierFiles
+	if carrierRef == "" {
+		carrierRef = "internal-logic"
+		if t.DB != nil {
+			holon, err := t.DB.GetHolon(context.Background(), hypothesisID)
+			if err == nil && holon.Kind.Valid {
+				switch holon.Kind.String {
+				case "system":
+					carrierRef = "internal-logic"
+				case "episteme":
+					carrierRef = "formal-logic"
+				}
 			}
 		}
 	}
@@ -634,11 +637,29 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	}
 
 	if t.DB != nil {
-		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, validUntil); err != nil {
+		// Get current commit for carrier_commit tracking (v5.0.0)
+		carrierCommit := ""
+		if currentHead, err := t.getCurrentHead(); err == nil {
+			carrierCommit = currentHead
+		}
+
+		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, carrierCommit, validUntil); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to add evidence to DB: %v\n", err)
 		}
 		if err := t.DB.Link(ctx, filename, targetID, "verifiedBy"); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to link evidence in DB: %v\n", err)
+		}
+
+		// Clear stale flags on successful re-validation (v5.0.0)
+		if normalizedVerdict == "pass" {
+			if err := t.DB.ClearAllEvidenceStaleForHolon(ctx, targetID); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to clear stale evidence: %v\n", err)
+			}
+			if err := t.DB.ClearHolonReverification(ctx, targetID); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to clear reverification flag: %v\n", err)
+			}
+			// Recalculate R_eff after clearing staleness
+			t.recalculateHolonR(ctx, targetID)
 		}
 	}
 
@@ -1226,6 +1247,10 @@ type InternalizeResult struct {
 	OpenDecisions     []DecisionSummary // Decisions awaiting resolution
 	ResolvedDecisions []DecisionSummary // Recently resolved decisions
 	NextAction        string            // Phase-appropriate suggestion
+	// Code Change Awareness (v5.0.0)
+	CodeChanges         *CodeChangeDetectionResult
+	StaleEvidenceCount  int64
+	ReverificationCount int64
 }
 
 type HolonSummary struct {
@@ -1302,6 +1327,25 @@ func (t *Tools) Internalize() (string, error) {
 
 	result.ContextID = "default"
 	result.ArchivedCounts = make(map[string]int)
+
+	// Code Change Detection (v5.0.0)
+	if t.DB != nil && t.isGitRepo() {
+		ctx := context.Background()
+		codeChanges, err := t.detectCodeChanges(ctx)
+		if err != nil {
+			result.ContextChanges = append(result.ContextChanges,
+				fmt.Sprintf("Warning: code change detection failed: %v", err))
+		} else if codeChanges != nil && len(codeChanges.Impacts) > 0 {
+			result.CodeChanges = codeChanges
+			result.ContextChanges = append(result.ContextChanges,
+				fmt.Sprintf("Detected %d code change impacts across %d files",
+					len(codeChanges.Impacts), len(codeChanges.ChangedFiles)))
+		}
+
+		// Get staleness counts for summary
+		result.StaleEvidenceCount, _ = t.DB.CountStaleEvidence(ctx)
+		result.ReverificationCount, _ = t.DB.CountHolonsNeedingReverification(ctx)
+	}
 
 	if t.DB != nil {
 		ctx := context.Background()
@@ -1434,6 +1478,36 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 				w.EvidenceID, w.HolonTitle, w.DaysLeft))
 		}
 		sb.WriteString("\n")
+	}
+
+	// Code Change Warnings (v5.0.0)
+	if r.StaleEvidenceCount > 0 || r.ReverificationCount > 0 {
+		sb.WriteString("🔴 CODE CHANGE IMPACTS:\n")
+		if r.StaleEvidenceCount > 0 {
+			sb.WriteString(fmt.Sprintf("  - %d evidence records marked stale\n", r.StaleEvidenceCount))
+		}
+		if r.ReverificationCount > 0 {
+			sb.WriteString(fmt.Sprintf("  - %d holons need re-verification\n", r.ReverificationCount))
+		}
+		if r.CodeChanges != nil && len(r.CodeChanges.Impacts) > 0 {
+			sb.WriteString("  Details:\n")
+			shown := 0
+			for _, impact := range r.CodeChanges.Impacts {
+				if shown >= 5 {
+					sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(r.CodeChanges.Impacts)-5))
+					break
+				}
+				if impact.File != "" {
+					sb.WriteString(fmt.Sprintf("    - %s: %s → %s [%s]\n",
+						impact.File, impact.HolonID, impact.HolonTitle, impact.HolonLayer))
+				} else {
+					sb.WriteString(fmt.Sprintf("    - %s [%s]: %s\n",
+						impact.HolonID, impact.HolonLayer, impact.Reason))
+				}
+				shown++
+			}
+		}
+		sb.WriteString("  Use quint_test or quint_verify to clear stale flags after re-validation.\n\n")
 	}
 
 	if len(r.OpenDecisions) > 0 {
@@ -1894,12 +1968,574 @@ type DRRInfo struct {
 	WinnerID   string
 }
 
+// ============================================
+// CODE CHANGE AWARENESS TYPES (v5.0.0)
+// ============================================
+
+// CodeChangeImpact represents the impact of a code change
+type CodeChangeImpact struct {
+	Type        string  // "evidence_stale" | "propagated"
+	File        string  // Changed file path
+	EvidenceID  string  // Affected evidence ID
+	HolonID     string  // Affected holon ID
+	HolonTitle  string  // Holon title for display
+	HolonLayer  string  // L0/L1/L2/DRR
+	PreviousR   float64 // R_eff before change
+	Reason      string  // Human-readable reason
+}
+
+// CodeChangeDetectionResult holds all detection results
+type CodeChangeDetectionResult struct {
+	FromCommit    string
+	ToCommit      string
+	ChangedFiles  []string
+	Impacts       []CodeChangeImpact
+	TotalStale    int
+	TotalAffected int
+}
+
+// ImplementationWarnings holds all warnings for quint_implement
+type ImplementationWarnings struct {
+	StaleEvidence    []StaleEvidenceWarning
+	ChangedFiles     []ChangedFileWarning
+	DependencyIssues []DependencyIssueWarning
+}
+
+// StaleEvidenceWarning represents stale evidence in dependency chain
+type StaleEvidenceWarning struct {
+	EvidenceID string
+	CarrierRef string
+	HolonID    string
+	HolonTitle string
+	HolonLayer string
+	StaleSince time.Time
+	Reason     string
+}
+
+// ChangedFileWarning represents a file that changed since DRR creation
+type ChangedFileWarning struct {
+	FilePath    string
+	CommitCount int
+}
+
+// DependencyIssueWarning represents a problematic dependency
+type DependencyIssueWarning struct {
+	HolonID    string
+	HolonTitle string
+	Layer      string
+	REff       float64
+	Reason     string
+}
+
+// HasAny returns true if there are any warnings
+func (w *ImplementationWarnings) HasAny() bool {
+	return len(w.StaleEvidence) > 0 ||
+		len(w.ChangedFiles) > 0 ||
+		len(w.DependencyIssues) > 0
+}
+
+// ============================================
+// GIT INTEGRATION (v5.0.0)
+// ============================================
+
+// isGitRepo checks if the root directory is a git repository
+func (t *Tools) isGitRepo() bool {
+	gitDir := filepath.Join(t.RootDir, ".git")
+	info, err := os.Stat(gitDir)
+	return err == nil && info.IsDir()
+}
+
+// getCurrentHead returns the current HEAD commit hash
+func (t *Tools) getCurrentHead() (string, error) {
+	if !t.isGitRepo() {
+		return "", fmt.Errorf("not a git repository")
+	}
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = t.RootDir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse failed: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getChangedFiles returns files changed between two commits
+func (t *Tools) getChangedFiles(fromCommit, toCommit string) ([]string, error) {
+	cmd := exec.Command("git", "diff", "--name-only", fromCommit, toCommit)
+	cmd.Dir = t.RootDir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var files []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
+// getFileHash returns SHA256 hash of file contents
+func (t *Tools) getFileHash(filePath string) (string, error) {
+	fullPath := filepath.Join(t.RootDir, filePath)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(content)
+	return hex.EncodeToString(hash[:]), nil
+}
+
+// ============================================
+// CODE CHANGE DETECTION LOGIC (v5.0.0)
+// ============================================
+
+// detectCodeChanges detects code changes and marks affected evidence as stale
+func (t *Tools) detectCodeChanges(ctx context.Context) (*CodeChangeDetectionResult, error) {
+	result := &CodeChangeDetectionResult{}
+
+	// Skip if not a git repo
+	if !t.isGitRepo() {
+		return nil, nil
+	}
+
+	// Skip if no DB
+	if t.DB == nil {
+		return nil, nil
+	}
+
+	// 1. Get last known commit
+	lastCommit, _, err := t.DB.GetLastCommit(ctx, "default")
+	if err != nil || lastCommit == "" {
+		// No previous commit recorded — check each evidence's carrier_commit (v5.0.0)
+		currentHead, err := t.getCurrentHead()
+		if err != nil {
+			return nil, nil // Silent fail for non-git repos
+		}
+		// On first run, check carrier_commit instead of skipping
+		result, err := t.detectStaleEvidenceByCarrierCommit(ctx, currentHead)
+		// Save baseline for future incremental checks
+		t.DB.UpdateLastCommit(ctx, "default", currentHead)
+		return result, err
+	}
+
+	// 2. Get current HEAD
+	currentHead, err := t.getCurrentHead()
+	if err != nil {
+		return nil, nil
+	}
+
+	result.FromCommit = lastCommit
+	result.ToCommit = currentHead
+
+	// No changes
+	if currentHead == lastCommit {
+		return nil, nil
+	}
+
+	// 3. Get changed files
+	changedFiles, err := t.getChangedFiles(lastCommit, currentHead)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get changed files: %w", err)
+	}
+
+	if len(changedFiles) == 0 {
+		t.DB.UpdateLastCommit(ctx, "default", currentHead)
+		return nil, nil
+	}
+
+	result.ChangedFiles = changedFiles
+
+	// 4. Find affected evidence for each changed file
+	affectedHolons := make(map[string]bool)
+
+	for _, file := range changedFiles {
+		// Search for evidence with carrier_ref matching this file
+		evidenceList, err := t.DB.GetEvidenceByCarrierPattern(ctx, "%"+file+"%")
+		if err != nil {
+			continue
+		}
+
+		for _, e := range evidenceList {
+			// Skip already stale
+			if e.IsStale.Valid && e.IsStale.Int64 == 1 {
+				continue
+			}
+
+			// Get holon's current R for reporting
+			holon, _ := t.DB.GetHolon(ctx, e.HolonID)
+			previousR := 0.0
+			if holon.CachedRScore.Valid {
+				previousR = holon.CachedRScore.Float64
+			}
+
+			// Mark evidence as stale
+			shortFrom := lastCommit
+			if len(shortFrom) > 7 {
+				shortFrom = shortFrom[:7]
+			}
+			shortTo := currentHead
+			if len(shortTo) > 7 {
+				shortTo = shortTo[:7]
+			}
+			reason := fmt.Sprintf("carrier file '%s' changed (%s → %s)",
+				file, shortFrom, shortTo)
+
+			if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to mark evidence stale: %v\n", err)
+				continue
+			}
+
+			// Record impact
+			result.Impacts = append(result.Impacts, CodeChangeImpact{
+				Type:       "evidence_stale",
+				File:       file,
+				EvidenceID: e.ID,
+				HolonID:    e.HolonID,
+				HolonTitle: e.HolonTitle,
+				HolonLayer: e.HolonLayer,
+				PreviousR:  previousR,
+				Reason:     reason,
+			})
+
+			result.TotalStale++
+			affectedHolons[e.HolonID] = true
+		}
+	}
+
+	// 5. Mark affected holons as needing reverification
+	for holonID := range affectedHolons {
+		reason := "evidence became stale due to code changes"
+		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to mark holon for reverification: %v\n", err)
+		}
+		result.TotalAffected++
+	}
+
+	// 6. Propagate staleness through WLNK chain
+	propagated := t.propagateStalenessToDependent(ctx, affectedHolons)
+	result.Impacts = append(result.Impacts, propagated...)
+
+	// 7. Recalculate R_eff for all affected holons
+	for holonID := range affectedHolons {
+		t.recalculateHolonR(ctx, holonID)
+	}
+
+	// 8. Update last commit
+	t.DB.UpdateLastCommit(ctx, "default", currentHead)
+
+	return result, nil
+}
+
+// propagateStalenessToDependent marks holons that depend on stale holons
+func (t *Tools) propagateStalenessToDependent(ctx context.Context, staleHolons map[string]bool) []CodeChangeImpact {
+	var impacts []CodeChangeImpact
+
+	for staleID := range staleHolons {
+		// Find holons that depend ON this stale holon
+		dependents, err := t.DB.GetDependents(ctx, staleID)
+		if err != nil {
+			continue
+		}
+
+		for _, dep := range dependents {
+			// Skip if already marked
+			if staleHolons[dep.SourceID] {
+				continue
+			}
+
+			holon, err := t.DB.GetHolon(ctx, dep.SourceID)
+			if err != nil {
+				continue
+			}
+
+			previousR := 0.0
+			if holon.CachedRScore.Valid {
+				previousR = holon.CachedRScore.Float64
+			}
+
+			reason := fmt.Sprintf("depends on stale holon '%s'", staleID)
+			t.DB.MarkHolonNeedsReverification(ctx, dep.SourceID, reason)
+
+			impacts = append(impacts, CodeChangeImpact{
+				Type:       "propagated",
+				HolonID:    dep.SourceID,
+				HolonTitle: holon.Title,
+				HolonLayer: holon.Layer,
+				PreviousR:  previousR,
+				Reason:     reason,
+			})
+
+			// Mark for cascade
+			staleHolons[dep.SourceID] = true
+		}
+	}
+
+	return impacts
+}
+
+// recalculateHolonR triggers R_eff recalculation for a holon
+func (t *Tools) recalculateHolonR(ctx context.Context, holonID string) {
+	calc := assurance.New(t.DB.GetRawDB())
+	report, err := calc.CalculateReliability(ctx, holonID)
+	if err == nil && report != nil {
+		t.DB.UpdateHolonRScore(ctx, holonID, report.FinalScore)
+	}
+}
+
+// fileChangedBetween checks if a file changed between two commits
+func (t *Tools) fileChangedBetween(fromCommit, toCommit, filePath string) (bool, error) {
+	changedFiles, err := t.getChangedFiles(fromCommit, toCommit)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range changedFiles {
+		if f == filePath || strings.HasSuffix(f, "/"+filePath) || strings.HasPrefix(filePath, f) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// detectStaleEvidenceByCarrierCommit checks each evidence's carrier_commit vs current HEAD (v5.0.0)
+// Used on first internalize when no last_commit baseline exists.
+func (t *Tools) detectStaleEvidenceByCarrierCommit(ctx context.Context, currentHead string) (*CodeChangeDetectionResult, error) {
+	result := &CodeChangeDetectionResult{ToCommit: currentHead}
+	affectedHolons := make(map[string]bool)
+
+	// Get all evidence with carrier_commit
+	allEvidence, err := t.DB.GetEvidenceWithCarrierCommit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, e := range allEvidence {
+		if !e.CarrierCommit.Valid || e.CarrierCommit.String == "" {
+			continue
+		}
+		if !e.CarrierRef.Valid || e.CarrierRef.String == "" {
+			continue
+		}
+
+		carrierCommit := e.CarrierCommit.String
+		carrierRef := e.CarrierRef.String
+
+		// Skip if evidence was created at current HEAD
+		if carrierCommit == currentHead {
+			continue
+		}
+
+		// Check if file changed between evidence creation and now
+		changed, err := t.fileChangedBetween(carrierCommit, currentHead, carrierRef)
+		if err != nil || !changed {
+			continue
+		}
+
+		// Get holon's current R for reporting
+		holon, _ := t.DB.GetHolon(ctx, e.HolonID)
+		previousR := 0.0
+		if holon.CachedRScore.Valid {
+			previousR = holon.CachedRScore.Float64
+		}
+
+		// Mark evidence as stale
+		shortFrom := carrierCommit
+		if len(shortFrom) > 7 {
+			shortFrom = shortFrom[:7]
+		}
+		shortTo := currentHead
+		if len(shortTo) > 7 {
+			shortTo = shortTo[:7]
+		}
+		reason := fmt.Sprintf("carrier changed since evidence creation (%s → %s)", shortFrom, shortTo)
+
+		if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to mark evidence stale: %v\n", err)
+			continue
+		}
+
+		// Record impact
+		result.Impacts = append(result.Impacts, CodeChangeImpact{
+			Type:       "evidence_stale",
+			File:       carrierRef,
+			EvidenceID: e.ID,
+			HolonID:    e.HolonID,
+			HolonTitle: e.HolonTitle,
+			HolonLayer: e.HolonLayer,
+			PreviousR:  previousR,
+			Reason:     reason,
+		})
+
+		result.TotalStale++
+		affectedHolons[e.HolonID] = true
+	}
+
+	// Mark affected holons as needing reverification
+	for holonID := range affectedHolons {
+		reason := "evidence became stale due to code changes"
+		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to mark holon for reverification: %v\n", err)
+		}
+		result.TotalAffected++
+	}
+
+	// Propagate staleness through WLNK chain
+	propagated := t.propagateStalenessToDependent(ctx, affectedHolons)
+	result.Impacts = append(result.Impacts, propagated...)
+
+	// Recalculate R_eff for all affected holons
+	for holonID := range affectedHolons {
+		t.recalculateHolonR(ctx, holonID)
+	}
+
+	return result, nil
+}
+
+// collectImplementationWarnings gathers warnings about stale evidence in dependency chain
+func (t *Tools) collectImplementationWarnings(ctx context.Context, drrID string, dependsOn []string) *ImplementationWarnings {
+	warnings := &ImplementationWarnings{}
+
+	// Check for stale evidence in this DRR and its dependencies
+	holonsToCheck := append([]string{drrID}, dependsOn...)
+	visited := make(map[string]bool)
+
+	var checkHolon func(holonID string, depth int)
+	checkHolon = func(holonID string, depth int) {
+		if depth > 10 || visited[holonID] {
+			return
+		}
+		visited[holonID] = true
+
+		// Get stale evidence for this holon
+		staleEvidence, err := t.DB.GetStaleEvidenceByHolon(ctx, holonID)
+		if err == nil && len(staleEvidence) > 0 {
+			holon, _ := t.DB.GetHolon(ctx, holonID)
+			for _, e := range staleEvidence {
+				carrierRef := ""
+				if e.CarrierRef.Valid {
+					carrierRef = e.CarrierRef.String
+				}
+				var staleSince time.Time
+				if e.StaleSince.Valid {
+					staleSince = e.StaleSince.Time
+				}
+				reason := ""
+				if e.StaleReason.Valid {
+					reason = e.StaleReason.String
+				}
+
+				warnings.StaleEvidence = append(warnings.StaleEvidence, StaleEvidenceWarning{
+					EvidenceID: e.ID,
+					CarrierRef: carrierRef,
+					HolonID:    holonID,
+					HolonTitle: holon.Title,
+					HolonLayer: holon.Layer,
+					StaleSince: staleSince,
+					Reason:     reason,
+				})
+			}
+		}
+
+		// Check if holon needs reverification
+		holon, err := t.DB.GetHolon(ctx, holonID)
+		if err == nil {
+			if holon.NeedsReverification.Valid && holon.NeedsReverification.Int64 == 1 {
+				reason := ""
+				if holon.ReverificationReason.Valid {
+					reason = holon.ReverificationReason.String
+				}
+				rEff := 0.0
+				if holon.CachedRScore.Valid {
+					rEff = holon.CachedRScore.Float64
+				}
+				warnings.DependencyIssues = append(warnings.DependencyIssues, DependencyIssueWarning{
+					HolonID:    holonID,
+					HolonTitle: holon.Title,
+					Layer:      holon.Layer,
+					REff:       rEff,
+					Reason:     reason,
+				})
+			}
+		}
+
+		// Check dependencies of this holon
+		deps, err := t.DB.GetDependencies(ctx, holonID)
+		if err == nil {
+			for _, dep := range deps {
+				checkHolon(dep.TargetID, depth+1)
+			}
+		}
+	}
+
+	for _, holonID := range holonsToCheck {
+		checkHolon(holonID, 0)
+	}
+
+	return warnings
+}
+
+// formatImplementationWarnings formats warnings for output
+func (t *Tools) formatImplementationWarnings(warnings *ImplementationWarnings) string {
+	if !warnings.HasAny() {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n## ⚠️ WARNINGS\n\n")
+	sb.WriteString("**Evidence in the dependency chain has become stale due to code changes.**\n\n")
+	sb.WriteString("Review these issues before proceeding:\n\n")
+
+	if len(warnings.StaleEvidence) > 0 {
+		sb.WriteString("### Stale Evidence\n")
+		for _, w := range warnings.StaleEvidence {
+			sb.WriteString(fmt.Sprintf("- **%s** [%s]: `%s`\n",
+				w.HolonTitle, w.HolonLayer, w.CarrierRef))
+			if w.Reason != "" {
+				sb.WriteString(fmt.Sprintf("  - Reason: %s\n", w.Reason))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(warnings.DependencyIssues) > 0 {
+		sb.WriteString("### Holons Needing Re-verification\n")
+		for _, w := range warnings.DependencyIssues {
+			sb.WriteString(fmt.Sprintf("- **%s** [%s] R_eff=%.2f\n",
+				w.HolonTitle, w.Layer, w.REff))
+			if w.Reason != "" {
+				sb.WriteString(fmt.Sprintf("  - %s\n", w.Reason))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("### Recommended Actions\n\n")
+	sb.WriteString("1. Review the changed carrier files\n")
+	sb.WriteString("2. Re-run tests: `quint_test holon-id internal \"re-verification\" PASS`\n")
+	sb.WriteString("3. Or acknowledge stale state if changes are compatible\n\n")
+	sb.WriteString("---\n")
+
+	return sb.String()
+}
+
 // Implement transforms a DRR into an implementation directive that programs the agent.
 func (t *Tools) Implement(drrID string) (string, error) {
 	defer t.RecordWork("Implement", time.Now())
 
 	if t.DB == nil {
 		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+	}
+
+	// Run code change detection before implementation (v5.0.0)
+	// This ensures any changed carrier files are detected and evidence marked stale
+	ctx := context.Background()
+	if _, err := t.detectCodeChanges(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: code change detection failed: %v\n", err)
 	}
 
 	// Normalize DRR ID: strip "DRR-YYYY-MM-DD-" prefix if present
@@ -1929,8 +2565,18 @@ func (t *Tools) Implement(drrID string) (string, error) {
 	// Collect inherited constraints from dependency chain
 	inherited := t.collectInheritedConstraints(drr.DependsOn, make(map[string]bool))
 
+	// Collect warnings about stale evidence (v5.0.0)
+	warnings := t.collectImplementationWarnings(ctx, normalizedID, drr.DependsOn)
+	warningsText := t.formatImplementationWarnings(warnings)
+
 	// Format the implementation directive
-	return t.formatImplementDirective(drr, inherited), nil
+	directive := t.formatImplementDirective(drr, inherited)
+
+	// Prepend warnings if any exist
+	if warningsText != "" {
+		return warningsText + "\n" + directive, nil
+	}
+	return directive, nil
 }
 
 // loadDRRInfo loads DRR metadata including contract and dependencies
@@ -1961,11 +2607,11 @@ func (t *Tools) loadDRRInfo(drrID string) (*DRRInfo, error) {
 		for rows.Next() {
 			var targetID, relType string
 			if err := rows.Scan(&targetID, &relType); err == nil {
-				if relType == "Selects" {
+				if relType == "selects" {
 					winnerID = targetID
 					// The winner's dependencies become our dependencies
 					dependsOn = append(dependsOn, targetID)
-				} else if relType == "ComponentOf" || relType == "ConstituentOf" {
+				} else if relType == "componentOf" || relType == "constituentOf" {
 					dependsOn = append(dependsOn, targetID)
 				}
 			}
@@ -2205,6 +2851,12 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		}
 	}
 
+	// Get current commit for carrier_commit tracking
+	carrierCommit := ""
+	if currentHead, headErr := t.getCurrentHead(); headErr == nil {
+		carrierCommit = currentHead
+	}
+
 	err = t.DB.AddEvidence(ctx,
 		evidenceID,
 		input.DecisionID,
@@ -2213,6 +2865,7 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		"PASS",
 		"",
 		carrierRef,
+		carrierCommit,
 		input.ValidUntil,
 	)
 	if err != nil {

@@ -335,7 +335,7 @@ func TestVerifyHypothesis(t *testing.T) {
 
 	// Case 1: PASS -> Promote to L1
 	fsm.State.Phase = PhaseDeduction
-	msg, err := tools.VerifyHypothesis(hypoID, `{"check":"ok"}`, "PASS")
+	msg, err := tools.VerifyHypothesis(hypoID, `{"check":"ok"}`, "PASS", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestVerifyHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
 	}
 
-	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL")
+	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestCalculateR(t *testing.T) {
 	}
 
 	// Add passing evidence
-	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestCalculateR_WithDecay(t *testing.T) {
 	}
 
 	// Add expired evidence (past date)
-	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 	}
 
 	// Add future-dated evidence
-	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 	}
 
 	// Add expired evidence
-	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -662,7 +662,7 @@ func TestVisualizeAudit(t *testing.T) {
 	}
 
 	// Add evidence
-	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -922,7 +922,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create bad-decision: %v", err)
 	}
-	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add failing evidence: %v", err)
 	}
@@ -943,7 +943,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	}
 
 	// Add passing evidence to good-member
-	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add passing evidence: %v", err)
 	}
@@ -1184,7 +1184,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// Resolve the decision (add implementation evidence)
 	err = tools.DB.AddEvidence(ctx, "resolve-evidence", "DRR-archive-test", "implementation",
-		"Implemented via commit:abc123", "pass", "L2", "commit:abc123", "")
+		"Implemented via commit:abc123", "pass", "L2", "commit:abc123", "", "")
 	if err != nil {
 		t.Fatalf("Failed to add resolution evidence: %v", err)
 	}
@@ -1525,7 +1525,7 @@ func TestSearch_StatusFilterOpen(t *testing.T) {
 		t.Fatalf("Failed to create resolved DRR: %v", err)
 	}
 	err = tools.DB.AddEvidence(ctx, "impl-evidence", "DRR-resolved-test", "implementation",
-		"Implemented in commit abc123", "pass", "L2", "developer", "2099-12-31")
+		"Implemented in commit abc123", "pass", "L2", "developer", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -1555,7 +1555,7 @@ func TestSearch_StatusFilterImplemented(t *testing.T) {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
 	err = tools.DB.AddEvidence(ctx, "impl-evidence-2", "DRR-impl-search", "implementation",
-		"Done", "pass", "L2", "developer", "2099-12-31")
+		"Done", "pass", "L2", "developer", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -1638,7 +1638,7 @@ func TestGetResolvedDecisions(t *testing.T) {
 
 	// Add resolution evidence
 	err = tools.DB.AddEvidence(ctx, "impl-get-resolved", "DRR-get-resolved", "implementation",
-		"Done", "pass", "L2", "dev", "2099-12-31")
+		"Done", "pass", "L2", "dev", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -1979,7 +1979,7 @@ content_hash: abc123
 	}
 
 	// Create dependency relation: child -> parent
-	err = tools.DB.CreateRelation(ctx, childID, "Selects", parentID, 3)
+	err = tools.DB.CreateRelation(ctx, childID, "selects", parentID, 3)
 	if err != nil {
 		t.Fatalf("Failed to create relation: %v", err)
 	}
@@ -2309,5 +2309,87 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 
 	if strings.Contains(result, "POTENTIAL DEPENDENCIES DETECTED") {
 		t.Error("Should not show suggestions when no keywords match")
+	}
+}
+
+// ============================================
+// CODE CHANGE AWARENESS TESTS (v5.0.0)
+// ============================================
+
+func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	hypoID := "stale-test-hypo"
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
+	if err := os.WriteFile(hypoPath, []byte("# L1 Hypothesis\nContent here"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Test", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	if err := tools.DB.AddEvidence(ctx, "stale-evidence-1", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "src/main.go"); err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	if err := tools.DB.MarkEvidenceStale(ctx, "stale-evidence-1", "carrier file changed"); err != nil {
+		t.Fatalf("Failed to mark evidence stale: %v", err)
+	}
+
+	stale, _ := tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
+	if len(stale) != 1 {
+		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
+	}
+
+	fsm.State.Phase = PhaseInduction
+	_, err := tools.ManageEvidence(PhaseInduction, "add", hypoID, "test_result", "Re-validated test", "PASS", "L2", "file://carrier", "2025-12-31")
+	if err != nil {
+		t.Fatalf("ManageEvidence failed: %v", err)
+	}
+
+	stale, _ = tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
+	if len(stale) != 0 {
+		t.Errorf("Expected 0 stale evidence after PASS re-validation, got %d", len(stale))
+	}
+}
+
+func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	hypoID := "stale-fail-hypo"
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
+	if err := os.WriteFile(hypoPath, []byte("# L1 Hypothesis\nContent here"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Fail Test", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	if err := tools.DB.AddEvidence(ctx, "stale-evidence-2", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "src/main.go"); err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	if err := tools.DB.MarkEvidenceStale(ctx, "stale-evidence-2", "carrier file changed"); err != nil {
+		t.Fatalf("Failed to mark evidence stale: %v", err)
+	}
+
+	stale, _ := tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
+	if len(stale) != 1 {
+		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
+	}
+
+	fsm.State.Phase = PhaseInduction
+	_, err := tools.ManageEvidence(PhaseInduction, "add", hypoID, "test_result", "Failed test", "FAIL", "L2", "file://carrier", "2025-12-31")
+	if err != nil {
+		t.Fatalf("ManageEvidence failed: %v", err)
+	}
+
+	stale, _ = tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
+	if len(stale) != 1 {
+		t.Errorf("Expected 1 stale evidence to remain after FAIL verdict, got %d", len(stale))
 	}
 }

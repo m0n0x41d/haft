@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS holons (
 	scope TEXT,
 	parent_id TEXT REFERENCES holons(id),
 	cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
+	needs_reverification INTEGER DEFAULT 0,
+	reverification_reason TEXT,
+	reverification_since DATETIME,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -33,6 +36,11 @@ CREATE TABLE IF NOT EXISTS evidence (
 	verdict TEXT NOT NULL,
 	assurance_level TEXT,
 	carrier_ref TEXT,
+	carrier_hash TEXT,
+	carrier_commit TEXT,
+	is_stale INTEGER DEFAULT 0,
+	stale_reason TEXT,
+	stale_since DATETIME,
 	valid_until DATETIME,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -223,7 +231,7 @@ func (s *Store) RecordWork(ctx context.Context, id, methodRef, performerRef stri
 	})
 }
 
-func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel, carrierRef, validUntil string) error {
+func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel, carrierRef, carrierCommit, validUntil string) error {
 	var vUntil sql.NullTime
 	if validUntil != "" {
 		t, err := time.Parse(time.RFC3339, validUntil)
@@ -243,6 +251,7 @@ func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verd
 		Verdict:        verdict,
 		AssuranceLevel: toNullString(assuranceLevel),
 		CarrierRef:     toNullString(carrierRef),
+		CarrierCommit:  toNullString(carrierCommit),
 		ValidUntil:     vUntil,
 		CreatedAt:      sql.NullTime{Time: time.Now(), Valid: true},
 	})
@@ -254,6 +263,10 @@ func (s *Store) GetEvidence(ctx context.Context, holonID string) ([]Evidence, er
 
 func (s *Store) GetEvidenceWithCarrier(ctx context.Context) ([]Evidence, error) {
 	return s.q.GetEvidenceWithCarrier(ctx, s.conn)
+}
+
+func (s *Store) GetEvidenceWithCarrierCommit(ctx context.Context) ([]GetEvidenceWithCarrierCommitRow, error) {
+	return s.q.GetEvidenceWithCarrierCommit(ctx, s.conn)
 }
 
 func (s *Store) Link(ctx context.Context, source, target, relType string) error {
@@ -768,4 +781,104 @@ func (s *Store) GetDecayingEvidence(ctx context.Context, daysAhead int) ([]Evide
 	}
 
 	return evidence, rows.Err()
+}
+
+// ============================================
+// CODE CHANGE AWARENESS METHODS (v5.0.0)
+// ============================================
+
+// MarkEvidenceStale marks evidence as stale with reason
+func (s *Store) MarkEvidenceStale(ctx context.Context, evidenceID, reason string) error {
+	return s.q.MarkEvidenceStale(ctx, s.conn, MarkEvidenceStaleParams{
+		StaleReason: toNullString(reason),
+		ID:          evidenceID,
+	})
+}
+
+// ClearEvidenceStale clears stale flag from evidence
+func (s *Store) ClearEvidenceStale(ctx context.Context, evidenceID string) error {
+	return s.q.ClearEvidenceStale(ctx, s.conn, evidenceID)
+}
+
+// ClearAllEvidenceStaleForHolon clears stale flags for all evidence of a holon
+func (s *Store) ClearAllEvidenceStaleForHolon(ctx context.Context, holonID string) error {
+	return s.q.ClearAllEvidenceStaleForHolon(ctx, s.conn, holonID)
+}
+
+// GetStaleEvidenceByHolon returns all stale evidence for a holon
+func (s *Store) GetStaleEvidenceByHolon(ctx context.Context, holonID string) ([]Evidence, error) {
+	return s.q.GetStaleEvidenceByHolon(ctx, s.conn, holonID)
+}
+
+// CountStaleEvidence returns count of all stale evidence
+func (s *Store) CountStaleEvidence(ctx context.Context) (int64, error) {
+	return s.q.CountStaleEvidence(ctx, s.conn)
+}
+
+// GetAllStaleEvidence returns all stale evidence with holon context
+func (s *Store) GetAllStaleEvidence(ctx context.Context) ([]GetAllStaleEvidenceRow, error) {
+	return s.q.GetAllStaleEvidence(ctx, s.conn)
+}
+
+// MarkHolonNeedsReverification flags a holon as needing re-verification
+func (s *Store) MarkHolonNeedsReverification(ctx context.Context, holonID, reason string) error {
+	return s.q.MarkHolonNeedsReverification(ctx, s.conn, MarkHolonNeedsReverificationParams{
+		ReverificationReason: toNullString(reason),
+		ID:                   holonID,
+	})
+}
+
+// ClearHolonReverification clears the reverification flag
+func (s *Store) ClearHolonReverification(ctx context.Context, holonID string) error {
+	return s.q.ClearHolonReverification(ctx, s.conn, holonID)
+}
+
+// GetHolonsNeedingReverification returns all flagged holons
+func (s *Store) GetHolonsNeedingReverification(ctx context.Context) ([]Holon, error) {
+	return s.q.GetHolonsNeedingReverification(ctx, s.conn)
+}
+
+// CountHolonsNeedingReverification returns count of flagged holons
+func (s *Store) CountHolonsNeedingReverification(ctx context.Context) (int64, error) {
+	return s.q.CountHolonsNeedingReverification(ctx, s.conn)
+}
+
+// UpdateLastCommit records the last processed git commit
+func (s *Store) UpdateLastCommit(ctx context.Context, contextID, commitHash string) error {
+	return s.q.UpdateLastCommit(ctx, s.conn, UpdateLastCommitParams{
+		LastCommit: toNullString(commitHash),
+		ContextID:  contextID,
+	})
+}
+
+// GetLastCommit returns the last processed git commit
+func (s *Store) GetLastCommit(ctx context.Context, contextID string) (string, time.Time, error) {
+	row, err := s.q.GetLastCommit(ctx, s.conn, contextID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	var commitAt time.Time
+	if row.LastCommitAt.Valid {
+		commitAt = row.LastCommitAt.Time
+	}
+	return row.LastCommit.String, commitAt, nil
+}
+
+// GetEvidenceByCarrierPattern finds all evidence referencing files matching a pattern
+func (s *Store) GetEvidenceByCarrierPattern(ctx context.Context, pattern string) ([]GetEvidenceByCarrierPatternRow, error) {
+	return s.q.GetEvidenceByCarrierPattern(ctx, s.conn, toNullString(pattern))
+}
+
+// GetDependents returns holons that depend on the given holon
+func (s *Store) GetDependents(ctx context.Context, holonID string) ([]GetDependentsRow, error) {
+	return s.q.GetDependents(ctx, s.conn, holonID)
+}
+
+// UpdateHolonRScore updates the cached R score for a holon
+func (s *Store) UpdateHolonRScore(ctx context.Context, holonID string, score float64) error {
+	return s.q.UpdateHolonRScore(ctx, s.conn, UpdateHolonRScoreParams{
+		CachedRScore: sql.NullFloat64{Float64: score, Valid: true},
+		UpdatedAt:    sql.NullTime{Time: time.Now(), Valid: true},
+		ID:           holonID,
+	})
 }

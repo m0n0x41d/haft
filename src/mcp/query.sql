@@ -48,14 +48,28 @@ SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cach
 -- Evidence queries
 
 -- name: AddEvidence :exec
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetEvidenceByHolon :many
 SELECT * FROM evidence WHERE holon_id = ? ORDER BY created_at DESC;
 
 -- name: GetEvidenceWithCarrier :many
 SELECT * FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != '';
+
+-- name: GetEvidenceWithCarrierCommit :many
+SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
+       e.assurance_level, e.carrier_ref, e.carrier_commit,
+       e.is_stale, e.stale_reason, e.stale_since,
+       e.valid_until, e.created_at,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.carrier_commit IS NOT NULL
+  AND e.carrier_commit != ''
+  AND e.carrier_ref IS NOT NULL
+  AND e.carrier_ref != ''
+  AND e.is_stale = 0;
 
 -- Relation queries
 
@@ -189,3 +203,88 @@ WHERE h.layer NOT IN ('DRR', 'invalid')
       )
 )
 GROUP BY h.layer;
+
+-- ============================================
+-- CODE CHANGE AWARENESS QUERIES (v5.0.0)
+-- ============================================
+
+-- name: MarkEvidenceStale :exec
+UPDATE evidence
+SET is_stale = 1,
+    stale_reason = ?,
+    stale_since = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ClearEvidenceStale :exec
+UPDATE evidence
+SET is_stale = 0,
+    stale_reason = NULL,
+    stale_since = NULL
+WHERE id = ?;
+
+-- name: ClearAllEvidenceStaleForHolon :exec
+UPDATE evidence
+SET is_stale = 0,
+    stale_reason = NULL,
+    stale_since = NULL
+WHERE holon_id = ?;
+
+-- name: GetStaleEvidenceByHolon :many
+SELECT * FROM evidence
+WHERE holon_id = ? AND is_stale = 1;
+
+-- name: CountStaleEvidence :one
+SELECT COUNT(*) as count FROM evidence WHERE is_stale = 1;
+
+-- name: GetAllStaleEvidence :many
+SELECT e.id, e.holon_id, e.type, e.carrier_ref,
+       e.is_stale, e.stale_reason, e.stale_since,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
+ORDER BY e.stale_since DESC;
+
+-- name: MarkHolonNeedsReverification :exec
+UPDATE holons
+SET needs_reverification = 1,
+    reverification_reason = ?,
+    reverification_since = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ClearHolonReverification :exec
+UPDATE holons
+SET needs_reverification = 0,
+    reverification_reason = NULL,
+    reverification_since = NULL
+WHERE id = ?;
+
+-- name: GetHolonsNeedingReverification :many
+SELECT * FROM holons
+WHERE needs_reverification = 1
+ORDER BY reverification_since DESC;
+
+-- name: CountHolonsNeedingReverification :one
+SELECT COUNT(*) as count FROM holons WHERE needs_reverification = 1;
+
+-- name: UpdateLastCommit :exec
+UPDATE fpf_state
+SET last_commit = ?,
+    last_commit_at = CURRENT_TIMESTAMP
+WHERE context_id = ?;
+
+-- name: GetLastCommit :one
+SELECT last_commit, last_commit_at
+FROM fpf_state
+WHERE context_id = ?;
+
+-- name: GetEvidenceByCarrierPattern :many
+SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
+       e.assurance_level, e.carrier_ref, e.carrier_hash, e.carrier_commit,
+       e.is_stale, e.stale_reason, e.stale_since,
+       e.valid_until, e.created_at,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.carrier_ref LIKE ?
+  AND e.is_stale = 0;

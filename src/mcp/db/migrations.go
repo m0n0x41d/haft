@@ -167,6 +167,32 @@ var migrations = []struct {
 			  );
 		`,
 	},
+	{
+		version:     7,
+		description: "Code Change Awareness: staleness tracking for evidence and holons",
+		sql:         "", // Applied as individual statements below
+	},
+}
+
+// migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
+// SQLite requires these to be executed individually.
+var migration7Statements = []string{
+	// Evidence staleness tracking
+	"ALTER TABLE evidence ADD COLUMN carrier_hash TEXT",
+	"ALTER TABLE evidence ADD COLUMN carrier_commit TEXT",
+	"ALTER TABLE evidence ADD COLUMN is_stale INTEGER DEFAULT 0",
+	"ALTER TABLE evidence ADD COLUMN stale_reason TEXT",
+	"ALTER TABLE evidence ADD COLUMN stale_since DATETIME",
+	// Holon reverification tracking
+	"ALTER TABLE holons ADD COLUMN needs_reverification INTEGER DEFAULT 0",
+	"ALTER TABLE holons ADD COLUMN reverification_reason TEXT",
+	"ALTER TABLE holons ADD COLUMN reverification_since DATETIME",
+	// Git state tracking
+	"ALTER TABLE fpf_state ADD COLUMN last_commit_at DATETIME",
+	// Indexes for performance
+	"CREATE INDEX IF NOT EXISTS idx_evidence_carrier ON evidence(carrier_ref)",
+	"CREATE INDEX IF NOT EXISTS idx_evidence_stale ON evidence(is_stale)",
+	"CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverification)",
 }
 
 // RunMigrations applies all pending migrations to the database.
@@ -188,9 +214,20 @@ func RunMigrations(conn *sql.DB) error {
 			continue
 		}
 
-		_, execErr := conn.Exec(m.sql)
-		if execErr != nil && !isDuplicateColumnError(execErr) {
-			return fmt.Errorf("migration %d (%s) failed: %w", m.version, m.description, execErr)
+		// Special handling for migration 7 (Code Change Awareness)
+		if m.version == 7 {
+			for _, stmt := range migration7Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.sql != "" {
+			_, execErr := conn.Exec(m.sql)
+			if execErr != nil && !isDuplicateColumnError(execErr) {
+				return fmt.Errorf("migration %d (%s) failed: %w", m.version, m.description, execErr)
+			}
 		}
 
 		if _, err := conn.Exec("INSERT INTO schema_version (version) VALUES (?)", m.version); err != nil {

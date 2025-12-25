@@ -9,107 +9,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Dependency Discovery & Linking**: Automatic detection of semantic dependencies in hypotheses
-  - **Active Suggestions**: When `quint_propose` creates a hypothesis, FTS5 semantic search detects related existing holons (DRRs, L1, L2) and suggests `depends_on` links
-  - **`quint_link` tool**: Add dependencies after creation without re-proposing. Creates ComponentOf (system) or ConstituentOf (episteme) relations
-  - **FTS5 OR queries**: New `SearchOR()` for word-level matching (vs phrase matching)
+- **Code Change Awareness (v5.0.0)**: Automatic staleness detection when carrier files change
+  - **Git Integration**: Tracks commits between sessions via `fpf_state.last_commit`
+  - **Evidence Staleness**: When carrier files change, evidence referencing them is marked stale
+  - **Carrier Commit Tracking**: Evidence stores `carrier_commit` (git HEAD at creation time)
+  - **First-Run Detection**: On first internalize, checks each evidence's `carrier_commit` vs current HEAD (no more skipped first run)
+  - **Proactive Detection in `/q-implement`**: Runs `detectCodeChanges` before showing directive
+  - **WLNK Propagation**: Staleness propagates through dependency chain
+  - **R_eff Impact**: Stale evidence scores 0.2 (vs 1.0 for fresh)
+  - **Implementation Warnings**: `quint_implement` surfaces stale evidence before implementation
+  - **Clear on Re-validation**: `quint_test`/`quint_verify` with PASS clears stale flags
+  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.stale_since`, `evidence.carrier_commit`, `holons.needs_reverification`
+  - Schema migration v7 adds staleness tracking columns
+
+- **Dependency Discovery & Linking**: Automatic detection of semantic dependencies
+  - **Active Suggestions**: `quint_propose` uses FTS5 semantic search to detect related holons and suggests `depends_on` links
+  - **`quint_link` tool**: Add dependencies after creation without re-proposing
+  - **FTS5 OR queries**: New `SearchOR()` for word-level matching
   - Output shows "⚠️ POTENTIAL DEPENDENCIES DETECTED" with ranked suggestions
-  - Updated `/q1-hypothesize` skill with "Post-Creation Linking" section
 
 - **`quint_implement` tool**: Transform DRR contracts into implementation directives
   - Programs agent's internal planning with invariants, anti-patterns, acceptance criteria
-  - **WLNK for constraints**: Inherits constraints from dependency chain (not just R_eff)
+  - **WLNK for constraints**: Inherits constraints from dependency chain
   - Returns structured prompt for agent to execute with TodoWrite
-  - New `/q-implement` command for triggering implementation phase
   - Validates acceptance criteria before `quint_resolve` allows "implemented" resolution
+
+- **Session/Decision Scoping for Holons**: Filter holons by decision resolution status
+  - **Active holons**: Not selected/rejected by resolved DRRs (shown in counts)
+  - **Archived holons**: Selected/rejected by resolved DRRs (hidden, count shown separately)
+  - New SQL queries: `GetActiveRecentHolons`, `CountActiveHolonsByLayer`, `CountArchivedHolonsByLayer`
+
+- **`quint_reset` tool**: Proper cycle reset without fake decisions
+  - Transitions FSM to IDLE, records in audit log
+  - Migration #5 auto-resolves legacy reset DRRs
+
+- **DRR Lifecycle Tracking**: Complete decision lifecycle management
+  - **`quint_resolve` tool**: Record outcomes (implemented, abandoned, superseded)
+  - **Decision status in `/q-internalize`**: Shows open decisions and recent resolutions
+  - **`status_filter` in `quint_search`**: Filter by status
+
+- **`/q-internalize` command**: Unified entry point replacing 4 commands
+  - Auto-initializes new projects, detects stale context, surfaces decaying evidence
+  - Safe to call in any phase (Observer role)
+
+- **`quint_search` tool**: FTS5-powered search across knowledge base
+  - Scope/layer filtering, highlighted snippets, relevance ranking
+
+- **Context staleness detection**: Monitors go.mod, package.json modification times
+
+- **FTS5 database tables**: `holons_fts`, `evidence_fts` with sync triggers
 
 ### Changed
 
-- **Phase Gates Removed**: All phase gates removed from FPF tools
-  - Phase gates were redundant — semantic preconditions already enforce layer requirements
-  - `quint_verify` checks "hypothesis in L0", `quint_test` checks "L1 or L2", etc.
-  - Fixes batch operation failures (verifying/testing multiple hypotheses in one session)
-  - `DerivePhase()` simplified to informational display only (used in `/q-internalize` status)
-  - See git history: 0690a2c → 443be87 → 4a84ce0 for the "whack-a-mole" pattern this fixes
-  - **Breaking**: Tools no longer blocked by phase — only by holon layer requirements
+- **Phase Gates Removed**: Tools no longer blocked by phase — only by holon layer requirements
+  - Fixes batch operation failures (verifying/testing multiple hypotheses)
+  - `DerivePhase()` simplified to informational display only
 
-### Added
+- **Internalize status**: Renamed `CURRENT` to `READY`
 
-- **Session/Decision Scoping for Holons**: Holons are now filtered by decision resolution status in `quint_internalize`
-  - **Active holons**: Hypotheses not selected/rejected by any resolved DRR (shown in counts and recent holons)
-  - **Archived holons**: Hypotheses selected/rejected by resolved DRRs (hidden from active view, count shown separately)
-  - New SQL queries: `GetActiveRecentHolons`, `CountActiveHolonsByLayer`, `CountArchivedHolonsByLayer`
-  - `InternalizeResult` now includes `ArchivedCounts` field
-  - Output shows "Knowledge State (Active)" with "(Archived: N holons in resolved decisions)" when applicable
-  - "Recent Active Holons" section only shows holons from open investigations
-  - Fixes issue where old hypotheses from previous sessions polluted current context
+- **Simplified workflow**: Session starts with `quint_internalize`, not multi-step init
+
+- **`/q1-hypothesize`**: No longer requires "Phase 0 complete" precondition
 
 ### Breaking Changes
 
-- **Removed `/q0-init` phase**: Initialization is now automatic via `/q-internalize`
-- **Removed tools**: `quint_init`, `quint_record_context`, `quint_status`, `quint_actualize`, `quint_check_decay` are no longer exposed as MCP tools
-- **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize` then proceeds to Phase 1
-- **Installer cleanup**: `quint-code init` now removes deprecated commands (`q0-init`, `q-status`, `q-decay`, `q-actualize`) before installing new ones
-
-### Changed
-
-- **Internalize status**: Renamed `CURRENT` to `READY` for clearer semantics when no changes detected
-
-### Added
-
-- **`quint_reset` tool**: Proper cycle reset without creating fake decisions
-  - Transitions FSM to IDLE state
-  - Records session state in audit log (not as DRR)
-  - Shows layer counts and open decisions at reset time
-  - Migration #5 auto-resolves legacy reset DRRs created by old `/q-reset` skill
-  - Fixes UX issue where session markers appeared as "Open Decisions"
-
-- **DRR Lifecycle Tracking**: Complete decision lifecycle management
-  - **`quint_resolve` tool**: Record decision outcomes (implemented, abandoned, superseded)
-    - `implemented`: Links to commit, PR, or file reference
-    - `abandoned`: Records reason for dropping the decision
-    - `superseded`: Links to replacement decision with SupersededBy relation
-  - **Decision status in `/q-internalize`**: Shows open decisions awaiting resolution and recent resolutions
-  - **`status_filter` in `quint_search`**: Filter decisions by status (open, implemented, abandoned, superseded)
-  - **`/q-resolve` command**: New command prompt for recording decision outcomes
-  - Bridges the gap between decisions (plans) and reality (implementation)
-
-- **`/q-internalize` command**: Unified entry point replacing 4 separate commands
-  - Automatically initializes new projects (no separate init step)
-  - Detects stale context and updates it (no manual re-recording)
-  - Surfaces decaying evidence (no separate decay check)
-  - Provides phase-appropriate guidance
-  - Safe to call in any phase (Observer role)
-
-- **`quint_search` tool**: Full-text search across knowledge base
-  - FTS5-powered search across holons and evidence
-  - Scope filtering: holons, evidence, or all
-  - Layer filtering: L0, L1, L2, or all
-  - Returns highlighted snippets with relevance ranking
-  - Available in any phase (read-only)
-
-- **Context staleness detection**: Automatic detection of project changes
-  - Monitors go.mod, package.json modification times
-  - Detects changes over 7 days old
-  - Prompts context refresh when stale
-
-- **FTS5 database tables**: `holons_fts`, `evidence_fts` for search
-  - New database migration (#4) adds FTS5 virtual tables
-  - Triggers keep FTS in sync with main tables
-  - Existing data populated on migration
+- **Removed `/q0-init` phase**: Initialization is automatic via `/q-internalize`
+- **Removed tools**: `quint_init`, `quint_record_context`, `quint_status`, `quint_actualize`, `quint_check_decay`
+- **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize`
+- **Installer cleanup**: `quint-code init` removes deprecated commands before installing
 
 ### Removed
 
-- `q0-init.md` — absorbed into `q-internalize.md`
-- `q-status.md` — absorbed into `q-internalize.md`
-- `q-actualize.md` — replaced by `q-internalize.md`
-- `q-decay.md` — absorbed into `q-internalize.md`
-
-### Changed
-
-- **Simplified workflow**: Session starts with `quint_internalize`, not multi-step init
-- **Phase gates**: `quint_internalize` and `quint_search` allowed in all phases
-- **`/q1-hypothesize`**: No longer requires "Phase 0 complete" precondition; naturally transitions IDLE -> ABDUCTION
+- `q0-init.md`, `q-status.md`, `q-actualize.md`, `q-decay.md` — absorbed into `q-internalize.md`
 
 ---
 

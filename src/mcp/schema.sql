@@ -12,6 +12,9 @@ CREATE TABLE holons (
     scope TEXT,
     parent_id TEXT REFERENCES holons(id),
     cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
+    needs_reverification INTEGER DEFAULT 0,
+    reverification_reason TEXT,
+    reverification_since DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -24,6 +27,11 @@ CREATE TABLE evidence (
     verdict TEXT NOT NULL,
     assurance_level TEXT,
     carrier_ref TEXT,
+    carrier_hash TEXT,
+    carrier_commit TEXT,
+    is_stale INTEGER DEFAULT 0,
+    stale_reason TEXT,
+    stale_since DATETIME,
     valid_until DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(holon_id) REFERENCES holons(id)
@@ -90,6 +98,7 @@ CREATE TABLE fpf_state (
     active_session_id TEXT,
     active_role_context TEXT,
     last_commit TEXT,
+    last_commit_at DATETIME,
     assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -98,6 +107,11 @@ CREATE TABLE fpf_state (
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);
+
+-- Indexes for Code Change Awareness
+CREATE INDEX IF NOT EXISTS idx_evidence_carrier ON evidence(carrier_ref);
+CREATE INDEX IF NOT EXISTS idx_evidence_stale ON evidence(is_stale) WHERE is_stale = 1;
+CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverification) WHERE needs_reverification = 1;
 
 -- Active holons: not selected/rejected by a resolved DRR
 -- A DRR is "resolved" if it has implementation/abandonment/supersession evidence

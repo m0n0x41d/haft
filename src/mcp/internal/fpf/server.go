@@ -233,6 +233,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"hypothesis_id": map[string]string{"type": "string"},
 					"checks_json":   map[string]string{"type": "string", "description": "JSON of checks"},
 					"verdict":       map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}},
+					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that this verification is based on. These files will be tracked for changes - if they change, the evidence becomes stale. Extract from hypothesis scope or files you examined. Example: 'src/cache.py,src/api/routes.py'"},
 				},
 				"required": []string{"hypothesis_id", "checks_json", "verdict"},
 			},
@@ -247,6 +248,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"test_type":     map[string]string{"type": "string", "description": "internal or research"},
 					"result":        map[string]string{"type": "string", "description": "Test output/findings"},
 					"verdict":       map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}},
+					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that were tested. These files will be tracked for changes - if they change, the evidence becomes stale. For internal tests: files covered by tests. For external research: leave empty or use source URL. Example: 'src/database/repository.py,src/database/queries.py'"},
 				},
 				"required": []string{"hypothesis_id", "test_type", "result", "verdict"},
 			},
@@ -427,7 +429,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
 		}
-		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"))
+		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_test":
 		s.tools.FSM.State.Phase = PhaseInduction
@@ -440,8 +442,13 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			assLevel = "L1"
 		}
 
+		carrierFiles := arg("carrier_files")
+		if carrierFiles == "" {
+			carrierFiles = "test-runner"
+		}
+
 		validUntil := computeValidUntil(arg("test_type"))
-		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, "test-runner", validUntil)
+		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, carrierFiles, validUntil)
 
 	case "quint_audit":
 		output, err = s.tools.AuditEvidence(arg("hypothesis_id"), arg("risks"))

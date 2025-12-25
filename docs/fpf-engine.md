@@ -71,7 +71,6 @@ Compute trust scores using:
 |---|---|---|
 | `/q-internalize` | Entry | **Start here.** Initialize, update context, show state, surface issues. |
 | `/q1-hypothesize` | Abduction | Generate L0 hypotheses for a problem. |
-| `/q1-add` | Abduction | Manually add your own L0 hypothesis. |
 | `/q2-verify` | Deduction | Verify logic and constraints, promoting claims from L0 to L1. |
 | `/q3-validate` | Induction | Gather empirical evidence, promoting claims from L1 to L2. |
 | `/q4-audit` | Audit | Run an assurance audit and calculate trust scores. |

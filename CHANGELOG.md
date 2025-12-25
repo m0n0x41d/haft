@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`/q1-add` command**: Deprecated as redundant — `quint_propose` handles both agent and user hypotheses
+
 ### Added
 
 - **Code Change Awareness (v5.0.0)**: Automatic staleness detection when carrier files change

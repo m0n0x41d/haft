@@ -171,7 +171,6 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 |---------|--------------|
 | `/q-internalize` | **Start here.** Initialize, update context, show state. |
 | `/q1-hypothesize` | Generate competing ideas for a problem. |
-| `/q1-add` | Manually add your own hypothesis. |
 | `/q2-verify` | Check logic and constraints — does it make sense? |
 | `/q3-validate` | Test against evidence — does it actually work? |
 | `/q4-audit` | Check for bias and calculate confidence scores. |

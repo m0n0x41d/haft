@@ -763,7 +763,8 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 		"created":   now.Format(time.RFC3339),
 	}
 	if contractJSON != "" {
-		fields["contract"] = contractJSON
+		compactContract, _ := json.Marshal(contract)
+		fields["contract"] = string(compactContract)
 	}
 
 	if err := WriteWithHash(drrPath, fields, body); err != nil {

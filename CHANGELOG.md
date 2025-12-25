@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`/q1-add` command**: Deprecated as redundant — `quint_propose` handles both agent and user hypotheses
 
+### Fixed
+
+- **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
+
 ### Added
 
 - **Code Change Awareness (v5.0.0)**: Automatic staleness detection when carrier files change

@@ -124,7 +124,7 @@ func (t *Tools) InitProject() error {
 		dbPath := filepath.Join(t.GetFPFDir(), "quint.db")
 		database, err := db.NewStore(dbPath)
 		if err != nil {
-			fmt.Printf("Warning: Failed to init DB: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to init DB: %v\n", err)
 		} else {
 			t.DB = database
 		}
@@ -605,7 +605,7 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	if winnerID != "" {
 		_, err := t.MoveHypothesis(winnerID, "L1", "L2")
 		if err != nil {
-			fmt.Printf("WARNING: Failed to move winner hypothesis %s to L2: %v\n", winnerID, err)
+			fmt.Fprintf(os.Stderr, "WARNING: Failed to move winner hypothesis %s to L2: %v\n", winnerID, err)
 		}
 	}
 
@@ -631,13 +631,13 @@ func (t *Tools) RunDecay() error {
 	for _, id := range ids {
 		_, err := calc.CalculateReliability(ctx, id)
 		if err != nil {
-			fmt.Printf("Error calculating R for %s: %v\n", id, err)
+			fmt.Fprintf(os.Stderr, "Error calculating R for %s: %v\n", id, err)
 			continue
 		}
 		updatedCount++
 	}
 
-	fmt.Printf("Decay update complete. Processed %d holons.\n", updatedCount)
+	fmt.Fprintf(os.Stderr, "Decay update complete. Processed %d holons.\n", updatedCount)
 	return nil
 }
 

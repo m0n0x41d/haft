@@ -98,6 +98,7 @@ var deprecatedCommands = []string{
 	"q-status",
 	"q-decay",
 	"q-actualize",
+	"q1-add",
 }
 
 func cleanupOldCommands(destDir string, ext string) {

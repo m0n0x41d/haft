@@ -1296,9 +1296,9 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 				result.WriteString(fmt.Sprintf("| %s | %s | EXPIRED | %d days overdue |\n", item.ID, item.Type, item.DaysOverdue))
 			}
 			result.WriteString("\nActions:\n")
-			result.WriteString(fmt.Sprintf("  → /q3-validate %s (refresh)\n", holonID))
-			result.WriteString(fmt.Sprintf("  → /q-decay --deprecate %s (downgrade)\n", holonID))
-			result.WriteString("  → /q-decay --waive <evidence_id> --until <date> --rationale \"...\"\n\n")
+			result.WriteString(fmt.Sprintf("  → /q3-validate %s (refresh evidence)\n", holonID))
+			result.WriteString("  → Deprecate: downgrade holon if decision needs rethinking\n")
+			result.WriteString("  → Waive: accept risk temporarily with documented rationale\n\n")
 		}
 	}
 

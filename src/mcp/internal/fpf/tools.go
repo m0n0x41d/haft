@@ -406,9 +406,24 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 	return path + warningBlock, nil
 }
 
+var validRelationTypes = map[string]bool{
+	"componentOf":   true,
+	"constituentOf": true,
+	"memberOf":      true,
+	"selects":       true,
+	"rejects":       true,
+	"closes":        true,
+	"verifiedBy":    true,
+	"dependsOn":     true,
+}
+
 func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {
 	if sourceID == targetID {
 		return fmt.Errorf("holon cannot relate to itself")
+	}
+
+	if !validRelationTypes[relationType] {
+		return fmt.Errorf("invalid relation type: %s", relationType)
 	}
 
 	if err := t.DB.CreateRelation(ctx, sourceID, relationType, targetID, cl); err != nil {

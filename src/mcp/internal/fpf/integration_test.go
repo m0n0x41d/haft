@@ -1,6 +1,7 @@
 package fpf_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"github.com/m0n0x41d/quint-code/db"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
 )
+
+var ctx = context.Background()
 
 // Helper to get FPF knowledge path for a level
 func getKnowledgePath(t *testing.T, baseDir, level string) string {
@@ -184,11 +187,10 @@ func TestFullFPFWorkflowIntegration(t *testing.T) {
 	hypo2ID := tools.Slugify(hypo2Title)
 
 	t.Run("4_RefineLoopback", func(t *testing.T) {
-		// First, move the L2 hypothesis back to L1 for the loopback test
-		// In a real scenario, this would be a different hypothesis being refined,
-		// but for integration testing, we simulate it.
-		// So we create a new hypothesis in L1 to be refined.
 		loopbackHypoID := "loopback-candidate"
+		if err := database.CreateHolon(ctx, loopbackHypoID, "hypothesis", "system", "L1", "Loopback Candidate", "Content", "default", "", ""); err != nil {
+			t.Fatalf("Failed to create loopback holon in DB: %v", err)
+		}
 		loopbackHypoPath := filepath.Join(getKnowledgePath(t, tempDir, "L1"), loopbackHypoID+".md")
 		if err := os.WriteFile(loopbackHypoPath, []byte("Loopback candidate content"), 0644); err != nil {
 			t.Fatalf("Failed to create loopback hypothesis file: %v", err)

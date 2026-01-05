@@ -3,8 +3,6 @@ package fpf
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 type PreconditionError struct {
@@ -48,21 +46,14 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 }
 
 func (t *Tools) getHolonLayer(holonID string) (string, error) {
-	for _, layer := range []string{"L0", "L1", "L2", "invalid"} {
-		path := filepath.Join(t.GetFPFDir(), "knowledge", layer, holonID+".md")
-		if _, err := os.Stat(path); err == nil {
-			return layer, nil
-		}
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
 	}
-
-	if t.DB != nil {
-		holon, err := t.DB.GetHolon(context.Background(), holonID)
-		if err == nil {
-			return holon.Layer, nil
-		}
+	holon, err := t.DB.GetHolon(context.Background(), holonID)
+	if err != nil {
+		return "", fmt.Errorf("holon %s not found", holonID)
 	}
-
-	return "", fmt.Errorf("holon %s not found", holonID)
+	return holon.Layer, nil
 }
 
 func (t *Tools) checkSearchPreconditions(args map[string]string) error {
@@ -111,12 +102,28 @@ func (t *Tools) checkVerifyPreconditions(args map[string]string) error {
 		}
 	}
 
-	l0Path := filepath.Join(t.GetFPFDir(), "knowledge", "L0", hypoID+".md")
-	if _, err := os.Stat(l0Path); os.IsNotExist(err) {
+	if t.DB == nil {
 		return &PreconditionError{
 			Tool:       "quint_verify",
-			Condition:  fmt.Sprintf("hypothesis '%s' not found in L0", hypoID),
-			Suggestion: "Run /q1-hypothesize first to create a hypothesis, or check the hypothesis ID",
+			Condition:  "database not initialized",
+			Suggestion: "Run /q-internalize first",
+		}
+	}
+
+	holon, err := t.DB.GetHolon(context.Background(), hypoID)
+	if err != nil {
+		return &PreconditionError{
+			Tool:       "quint_verify",
+			Condition:  fmt.Sprintf("hypothesis '%s' not found", hypoID),
+			Suggestion: "Run /q1-hypothesize first to create a hypothesis",
+		}
+	}
+
+	if holon.Layer != "L0" {
+		return &PreconditionError{
+			Tool:       "quint_verify",
+			Condition:  fmt.Sprintf("hypothesis '%s' is in %s, not L0", hypoID, holon.Layer),
+			Suggestion: "quint_verify only works on L0 hypotheses",
 		}
 	}
 
@@ -142,44 +149,36 @@ func (t *Tools) checkTestPreconditions(args map[string]string) error {
 		}
 	}
 
-	l0Path := filepath.Join(t.GetFPFDir(), "knowledge", "L0", hypoID+".md")
-	if _, err := os.Stat(l0Path); err == nil {
+	if t.DB == nil {
 		return &PreconditionError{
 			Tool:       "quint_test",
-			Condition:  fmt.Sprintf("hypothesis '%s' is still in L0", hypoID),
-			Suggestion: "Run /q2-verify first to promote the hypothesis to L1 before testing",
+			Condition:  "database not initialized",
+			Suggestion: "Run /q-internalize first",
 		}
 	}
 
-	l1Path := filepath.Join(t.GetFPFDir(), "knowledge", "L1", hypoID+".md")
-	l2Path := filepath.Join(t.GetFPFDir(), "knowledge", "L2", hypoID+".md")
-	l1Exists := false
-	l2Exists := false
-
-	if _, err := os.Stat(l1Path); err == nil {
-		l1Exists = true
-	}
-	if _, err := os.Stat(l2Path); err == nil {
-		l2Exists = true
+	holon, err := t.DB.GetHolon(context.Background(), hypoID)
+	if err != nil {
+		return &PreconditionError{
+			Tool:       "quint_test",
+			Condition:  fmt.Sprintf("hypothesis '%s' not found", hypoID),
+			Suggestion: "Create and verify a hypothesis first",
+		}
 	}
 
-	if !l1Exists && !l2Exists {
-		if t.DB != nil {
-			ctx := context.Background()
-			holon, err := t.DB.GetHolon(ctx, hypoID)
-			if err != nil || (holon.Layer != "L1" && holon.Layer != "L2") {
-				return &PreconditionError{
-					Tool:       "quint_test",
-					Condition:  fmt.Sprintf("hypothesis '%s' not found in L1 or L2", hypoID),
-					Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first. L2 hypotheses can also be tested to refresh evidence.",
-				}
-			}
-		} else {
-			return &PreconditionError{
-				Tool:       "quint_test",
-				Condition:  fmt.Sprintf("hypothesis '%s' not found in L1 or L2", hypoID),
-				Suggestion: "Ensure hypothesis exists and has been verified (L0 -> L1) first. L2 hypotheses can also be tested to refresh evidence.",
-			}
+	if holon.Layer == "L0" {
+		return &PreconditionError{
+			Tool:       "quint_test",
+			Condition:  fmt.Sprintf("hypothesis '%s' is still in L0", hypoID),
+			Suggestion: "Run /q2-verify first to promote to L1 before testing",
+		}
+	}
+
+	if holon.Layer != "L1" && holon.Layer != "L2" {
+		return &PreconditionError{
+			Tool:       "quint_test",
+			Condition:  fmt.Sprintf("hypothesis '%s' is in %s, expected L1 or L2", hypoID, holon.Layer),
+			Suggestion: "quint_test works on L1 (new tests) or L2 (refresh evidence)",
 		}
 	}
 
@@ -262,6 +261,22 @@ func (t *Tools) checkDecidePreconditions(args map[string]string) error {
 				Tool:       "quint_decide",
 				Condition:  "no L2 hypotheses found",
 				Suggestion: "Complete the ADI cycle: propose (L0) -> verify (L1) -> test (L2) before deciding",
+			}
+		}
+
+		winner, err := t.DB.GetHolon(ctx, winnerID)
+		if err != nil {
+			return &PreconditionError{
+				Tool:       "quint_decide",
+				Condition:  fmt.Sprintf("winner '%s' not found", winnerID),
+				Suggestion: "Specify an existing holon ID as winner",
+			}
+		}
+		if winner.Layer != "L2" {
+			return &PreconditionError{
+				Tool:       "quint_decide",
+				Condition:  fmt.Sprintf("winner '%s' is in %s, not L2", winnerID, winner.Layer),
+				Suggestion: "Complete the ADI cycle: verify (L1) -> test (L2) before deciding",
 			}
 		}
 	}

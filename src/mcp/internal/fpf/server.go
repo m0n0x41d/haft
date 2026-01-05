@@ -326,6 +326,18 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{},
 			},
 		},
+		{
+			Name:        "quint_compact",
+			Description: "Compact old archived holons to reduce database size. Removes evidence, characteristics, and detailed content while preserving holon metadata and decision links for audit trail.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"mode":           map[string]string{"type": "string", "description": "Operation mode: 'preview' (default) shows what would be compacted, 'execute' performs compaction"},
+					"retention_days": map[string]string{"type": "integer", "description": "Days after decision resolution before a holon is eligible for compaction (default: 90)"},
+				},
+				"required": []string{},
+			},
+		},
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{
@@ -481,6 +493,13 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	case "quint_reset":
 		output, err = s.tools.ResetCycle(arg("reason"))
+
+	case "quint_compact":
+		retentionDays := int64(90)
+		if rd, ok := params.Arguments["retention_days"].(float64); ok {
+			retentionDays = int64(rd)
+		}
+		output, err = s.tools.Compact(arg("mode"), retentionDays)
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

@@ -48,8 +48,8 @@ SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cach
 -- Evidence queries
 
 -- name: AddEvidence :exec
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_commit, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetEvidenceByHolon :many
 SELECT * FROM evidence WHERE holon_id = ? ORDER BY created_at DESC;
@@ -205,6 +205,57 @@ WHERE h.layer NOT IN ('DRR', 'invalid')
 GROUP BY h.layer;
 
 -- ============================================
+-- COMPACTION QUERIES (v5.1.0)
+-- ============================================
+
+-- name: GetArchivedHolonsForCompaction :many
+-- Returns archived holons older than retention_days after decision resolution.
+-- These are candidates for compaction (content summarization, evidence deletion).
+-- sqlc: arg(retention_days) type: int64
+SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
+       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at,
+       drr.id as decision_id, drr.title as decision_title,
+       r.relation_type as decision_outcome,
+       MAX(e.created_at) as resolved_at
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(sqlc.arg(retention_days) AS INTEGER)
+GROUP BY h.id
+ORDER BY resolved_at ASC;
+
+-- name: CompactHolonContent :exec
+UPDATE holons
+SET content = '[COMPACTED]',
+    scope = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: DeleteEvidenceForHolon :exec
+DELETE FROM evidence WHERE holon_id = ?;
+
+-- name: DeleteCharacteristicsForHolon :exec
+DELETE FROM characteristics WHERE holon_id = ?;
+
+-- name: DeleteWaiversForHolon :exec
+DELETE FROM waivers WHERE evidence_id IN (SELECT id FROM evidence WHERE holon_id = ?);
+
+-- name: CountCompactableHolons :one
+SELECT COUNT(*) as count
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(sqlc.arg(retention_days) AS INTEGER);
+
+-- ============================================
 -- CODE CHANGE AWARENESS QUERIES (v5.0.0)
 -- ============================================
 
@@ -245,6 +296,22 @@ SELECT e.id, e.holon_id, e.type, e.carrier_ref,
 FROM evidence e
 JOIN active_holons h ON e.holon_id = h.id
 WHERE e.is_stale = 1
+ORDER BY e.stale_since DESC;
+
+-- name: CountArchivedStaleEvidence :one
+SELECT COUNT(*) as count FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
+  AND h.id NOT IN (SELECT id FROM active_holons);
+
+-- name: GetArchivedStaleEvidence :many
+SELECT e.id, e.holon_id, e.type, e.carrier_ref,
+       e.is_stale, e.stale_reason, e.stale_since,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
+  AND h.id NOT IN (SELECT id FROM active_holons)
 ORDER BY e.stale_since DESC;
 
 -- name: MarkHolonNeedsReverification :exec

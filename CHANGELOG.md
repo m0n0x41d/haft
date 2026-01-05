@@ -19,13 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Orphan decision context after reset**: Decision contexts (L0 holons grouping alternatives) remained active after decision. Now `quint_decide` creates `closes` relation to archive decision contexts automatically.
 
-- **Stale warnings for archived holons**: Archived holons (selected/rejected by decisions) incorrectly appeared in stale evidence warnings. All stale-related queries now filter by `active_holons` view:
-  - `CountStaleEvidence`
-  - `GetAllStaleEvidence`
-  - `CountHolonsNeedingReverification`
-  - `GetHolonsNeedingReverification`
-  - `CountHolonsByLayer` (for preconditions)
-  - `generateFreshnessReport`
+- **Stale warnings for archived holons**: Archived holons (selected/rejected by decisions) no longer trigger action warnings. Stale evidence for active holons filtered via `active_holons` view. Archived stale evidence now shown as informational:
+  - New queries: `CountArchivedStaleEvidence`, `GetArchivedStaleEvidence`
+  - `quint_internalize` shows archived stale count (no action needed)
+  - `generateFreshnessReport` includes "ARCHIVED" section for visibility
 
 - **active_holons view timing**: L2 hypotheses were only excluded after DRR resolution. Now excluded immediately after `selects`/`rejects` relation is created (Migration 8). Simplified to exclude any holon with `selects`/`rejects`/`closes` relation (Migration 9).
 
@@ -48,17 +45,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Migration 8: Fix active_holons to exclude L2s immediately after decision
   - Migration 9: Simplify active_holons with `closes` relation support
 
-- **Code Change Awareness (v5.0.0)**: Automatic staleness detection when carrier files change
-  - **Git Integration**: Tracks commits between sessions via `fpf_state.last_commit`
-  - **Evidence Staleness**: When carrier files change, evidence referencing them is marked stale
-  - **Carrier Commit Tracking**: Evidence stores `carrier_commit` (git HEAD at creation time)
-  - **First-Run Detection**: On first internalize, checks each evidence's `carrier_commit` vs current HEAD (no more skipped first run)
+- **Database Compaction (v5.1.0)**: `quint_compact` tool for managing database size
+  - **Preview mode** (default): Shows archived holons eligible for compaction
+  - **Execute mode**: Performs compaction, removing verbose data
+  - **Retention period**: Configurable days after decision resolution (default 90)
+  - **What's removed**: Evidence records, characteristics, waivers, detailed content
+  - **What's preserved**: Holon ID/title/type/layer, relations, audit log
+  - Compacted holons marked with `[COMPACTED]` content
+  - New queries: `GetArchivedHolonsForCompaction`, `CountCompactableHolons`, `CompactHolonContent`
+
+- **Code Change Awareness (v5.0.0 → v5.1.0)**: Automatic staleness detection when carrier files change
+  - **Hash-Based Detection (v5.1.0)**: Content hash comparison replaces commit-based detection
+    - SHA256 hashes computed for each carrier file (16-char hex per file)
+    - Format: `"file1:abc123def456,file2:789abc012def"` (sorted for consistent comparison)
+    - Works with uncommitted changes, rebases, amends, force pushes
+    - No git dependency required for staleness detection
+    - Legacy migration: evidence without stored hash gets baseline computed on first check
+  - **Evidence Staleness**: When carrier file content changes, evidence is marked stale
+  - **Carrier Hash Tracking**: Evidence stores `carrier_hash` (content hash at creation time)
+  - **Carrier Commit Tracking**: `carrier_commit` kept for audit trail (metadata only, not used for staleness)
   - **Proactive Detection in `/q-implement`**: Runs `detectCodeChanges` before showing directive
   - **WLNK Propagation**: Staleness propagates through dependency chain
   - **R_eff Impact**: Stale evidence scores 0.2 (vs 1.0 for fresh)
   - **Implementation Warnings**: `quint_implement` surfaces stale evidence before implementation
   - **Clear on Re-validation**: `quint_test`/`quint_verify` with PASS clears stale flags
-  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.stale_since`, `evidence.carrier_commit`, `holons.needs_reverification`
+  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.stale_since`, `evidence.carrier_hash`, `evidence.carrier_commit`, `holons.needs_reverification`
   - Schema migration v7 adds staleness tracking columns
 
 - **Dependency Discovery & Linking**: Automatic detection of semantic dependencies

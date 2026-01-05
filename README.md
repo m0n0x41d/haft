@@ -4,8 +4,6 @@
 
 **Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI
 
-> **Works exceptionally well with Claude Code!**
-
 ## What Quint Does
 
 ### 1. Makes You and AI Think Structurally

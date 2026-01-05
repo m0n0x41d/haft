@@ -40,6 +40,10 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 		return t.checkCalculateRPreconditions(args)
 	case "quint_audit_tree":
 		return t.checkAuditTreePreconditions(args)
+	case "quint_link":
+		return t.checkLinkPreconditions(args)
+	case "quint_implement":
+		return t.checkImplementPreconditions(args)
 	default:
 		return nil
 	}
@@ -330,6 +334,98 @@ func (t *Tools) checkAuditTreePreconditions(args map[string]string) error {
 			Tool:       "quint_audit_tree",
 			Condition:  "holon_id is required",
 			Suggestion: "Specify which holon to visualize the audit tree for",
+		}
+	}
+
+	return nil
+}
+
+func (t *Tools) checkLinkPreconditions(args map[string]string) error {
+	sourceID := args["source_id"]
+	targetID := args["target_id"]
+
+	if sourceID == "" {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  "source_id is required",
+			Suggestion: "Specify the source holon ID",
+		}
+	}
+	if targetID == "" {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  "target_id is required",
+			Suggestion: "Specify the target holon ID",
+		}
+	}
+	if sourceID == targetID {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  "source_id and target_id cannot be the same",
+			Suggestion: "Holons cannot link to themselves",
+		}
+	}
+
+	if t.DB == nil {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  "database not initialized",
+			Suggestion: "Run /q-internalize first",
+		}
+	}
+
+	ctx := context.Background()
+	if _, err := t.DB.GetHolon(ctx, sourceID); err != nil {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  fmt.Sprintf("source holon '%s' not found", sourceID),
+			Suggestion: "Create the source holon first with quint_propose",
+		}
+	}
+	if _, err := t.DB.GetHolon(ctx, targetID); err != nil {
+		return &PreconditionError{
+			Tool:       "quint_link",
+			Condition:  fmt.Sprintf("target holon '%s' not found", targetID),
+			Suggestion: "Create the target holon first with quint_propose",
+		}
+	}
+
+	return nil
+}
+
+func (t *Tools) checkImplementPreconditions(args map[string]string) error {
+	decisionID := args["decision_id"]
+	if decisionID == "" {
+		return &PreconditionError{
+			Tool:       "quint_implement",
+			Condition:  "decision_id is required",
+			Suggestion: "Specify the DRR to implement",
+		}
+	}
+
+	if t.DB == nil {
+		return &PreconditionError{
+			Tool:       "quint_implement",
+			Condition:  "database not initialized",
+			Suggestion: "Run /q-internalize first",
+		}
+	}
+
+	ctx := context.Background()
+	drr, err := t.DB.GetHolon(ctx, decisionID)
+	if err != nil {
+		return &PreconditionError{
+			Tool:       "quint_implement",
+			Condition:  fmt.Sprintf("decision '%s' not found", decisionID),
+			Suggestion: "Create a decision first with quint_decide",
+		}
+	}
+
+	if drr.Type != "DRR" && drr.Layer != "DRR" {
+		return &PreconditionError{
+			Tool:       "quint_implement",
+			Condition:  fmt.Sprintf("'%s' is not a DRR (type=%s, layer=%s)", decisionID, drr.Type, drr.Layer),
+			Suggestion: "quint_implement only works on Decision Records",
 		}
 	}
 

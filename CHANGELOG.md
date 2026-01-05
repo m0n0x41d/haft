@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`quint_decide` winner validation**: Now validates that `winner_id` actually exists and is in L2 layer before creating DRR. Prevents invalid decisions with non-existent or unpromoted hypotheses.
 
+- **`quint_link` preconditions**: Added parameter validation (source_id, target_id required, self-link prevention), DB initialization check, and holon existence validation. Returns `PreconditionError` with actionable suggestions.
+
+- **`quint_implement` preconditions**: Added decision_id validation, DB check, and DRR type verification. Prevents calls with non-existent or non-DRR holons.
+
+- **Relation type validation**: `createRelation()` now validates relation types against allowed set (`componentOf`, `constituentOf`, `memberOf`, `selects`, `rejects`, `closes`, `verifiedBy`, `dependsOn`). Invalid types rejected with error.
+
 - **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
 
 - **Phase stuck at DECISION after `quint_decide`**: DerivePhase incorrectly counted DRRs as pending work. Now DRRs are excluded from phase calculation (they're results, not pending work).

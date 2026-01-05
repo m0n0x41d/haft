@@ -55,15 +55,15 @@ This helps the AI understand FPF concepts without re-explanation each session.
 
 **Bounded Context** — The vocabulary and constraints of your project. Recorded in `.quint/context.md`.
 
-**Epistemic Debt** — Accumulated staleness when evidence expires. Managed via `/q-decay`.
+**Epistemic Debt** — Accumulated staleness when evidence expires. Surfaced by `/q-internalize`.
 
 **Transformer Mandate** — Systems cannot transform themselves. AI generates options; humans decide. Autonomous architectural decisions = protocol violation.
 
 ### State Machine
 
 ```
-IDLE → ABDUCTION → DEDUCTION → INDUCTION → DECISION → IDLE
-       (q1)         (q2)         (q3)        (q4→q5)
+IDLE → ABDUCTION → DEDUCTION → INDUCTION → AUDIT → DECISION → IDLE
+       (q1)         (q2)         (q3)        (q4)    (q5)
 ```
 
 Each phase has preconditions. Skipping phases blocks the next tool.
@@ -98,8 +98,8 @@ Evidence expires. That benchmark from six months ago? The library has been updat
 
 Every piece of evidence has a `valid_until` date. When evidence expires, the decision it supports becomes **questionable** — not necessarily wrong, just unverified.
 
-The `/q-decay` command shows what's stale and offers three options:
-- **Refresh** — Re-run tests to get fresh evidence
+`/q-internalize` surfaces stale evidence proactively. When staleness is detected, you have three options:
+- **Refresh** — Re-run tests via `/q3-validate` to get fresh evidence
 - **Deprecate** — Downgrade the hypothesis if the decision needs rethinking
 - **Waive** — Accept the risk temporarily with documented rationale
 

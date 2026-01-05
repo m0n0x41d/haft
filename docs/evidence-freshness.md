@@ -20,13 +20,13 @@ Quint Code makes this visible instead of hiding it.
 
 ## Checking Your Evidence
 
-Run `/q-decay` to see what's stale:
+Run `/q-internalize` to see what's stale — it surfaces decaying evidence proactively:
 
 ```
-/q-decay
+/q-internalize
 ```
 
-You'll get a freshness report showing which holons have expired evidence:
+The "Attention Required" section shows which holons have expired evidence:
 
 ```
 ## Evidence Freshness Report
@@ -117,13 +117,7 @@ The agent sees the freshness report and understands context. When you say "waive
 "Waive the security audit until the 15th with rationale: re-audit scheduled"
 ```
 
-If you want to be explicit, you can:
-
-```
-/q-decay --waive ev-benchmark-2024-06-15 --until 2025-02-01 --rationale "Migration pending"
-```
-
-But natural language works fine.
+Natural language through the conversation works best — the agent finds the right evidence ID and handles it for you.
 
 ## The WLNK Principle
 
@@ -138,14 +132,14 @@ Think of it like a chain. Three strong links and one rusted link? The chain brea
 ### Weekly Maintenance
 
 ```
-/q-decay                    # What's stale?
+/q-internalize              # Check for stale evidence
 # For each item: refresh, deprecate, or waive
 ```
 
 ### Before a Release
 
 ```
-/q-decay                    # Check for stale decisions
+/q-internalize              # Check for stale decisions
 # Either refresh evidence or explicitly waive with rationale
 # Waivers become part of release documentation
 ```
@@ -155,7 +149,7 @@ Think of it like a chain. Three strong links and one rusted link? The chain brea
 Dependency update? API change? Security advisory?
 
 ```
-/q-decay                    # What's affected?
+/q-internalize              # What's affected?
 # Deprecate obsolete decisions
 # Start new hypothesis cycle for replacements
 ```
@@ -174,7 +168,7 @@ You can always answer: "Who waived what and why?"
 ## Summary
 
 - Evidence expires. This is normal.
-- `/q-decay` shows you what's stale.
+- `/q-internalize` surfaces stale evidence proactively.
 - **Refresh** if the decision is still right, you just need new proof.
 - **Deprecate** if the decision needs rethinking.
 - **Waive** if you accept the risk temporarily (with documented rationale).

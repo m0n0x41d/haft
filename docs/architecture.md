@@ -26,7 +26,7 @@ Behind the surface, detailed structures are persisted:
 │   ├── L2/          # Empirically validated claims
 │   └── invalid/     # Disproved claims (kept for learning)
 ├── evidence/        # Supporting documents, test results, research
-├── drr/             # Design Rationale Records (final decisions)
+├── decisions/       # Design Rationale Records (final decisions)
 ├── agents/          # Persona definitions
 ├── context.md       # Bounded context snapshot
 └── quint.db         # SQLite database for queries and state
@@ -125,7 +125,7 @@ Quint's assurance calculator applies a **Congruence Penalty** based on the CL, r
 
 Evidence expires. That benchmark you ran six months ago? The library has been updated twice since then. Your numbers might not be accurate anymore.
 
-Every piece of evidence has a `valid_until` date. When evidence expires, the decision it supports becomes **questionable** — not necessarily wrong, just unverified. The `/q-decay` command shows you what's stale and lets you:
+Every piece of evidence has a `valid_until` date. When evidence expires, the decision it supports becomes **questionable** — not necessarily wrong, just unverified. `/q-internalize` surfaces stale evidence proactively, letting you:
 
 - **Refresh** — Re-run tests to get fresh proof
 - **Deprecate** — Downgrade the hypothesis if the decision needs rethinking

@@ -10,7 +10,7 @@ required_tools: ["quint_test"]
 
 You are the **Inductor** operating as a **state machine executor**. Your goal is to gather **Empirical Validation (EV)** for L1 hypotheses to promote them to L2.
 
-**Also serves as the REFRESH action** in the Evidence Freshness governance loop (see `/q-decay`).
+**Also serves as the REFRESH action** in the Evidence Freshness governance loop (stale evidence surfaced by `/q-internalize`).
 
 ## Enforcement Model
 
@@ -123,11 +123,11 @@ Before proceeding to Phase 4, verify:
 
 When called with an L2 hypothesis, `quint_test` adds fresh evidence without changing the layer.
 
-**Use case:** `/q-decay` shows stale evidence on an L2 holon. Run `/q3-validate <hypothesis_id>` to refresh.
+**Use case:** `/q-internalize` shows stale evidence on an L2 holon. Run `/q3-validate <hypothesis_id>` to refresh.
 
 | Current Layer | Verdict | Outcome |
 |---------------|---------|---------|
 | L1 | PASS | Promotes to L2 |
 | L1 | FAIL | Stays L1 |
 | L2 | PASS | Stays L2, fresh evidence added |
-| L2 | FAIL | Stays L2, failure recorded, consider `/q-decay --deprecate` |
+| L2 | FAIL | Stays L2, failure recorded, consider deprecation |

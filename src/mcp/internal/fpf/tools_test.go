@@ -135,13 +135,8 @@ func TestProposeHypothesis(t *testing.T) {
 }
 
 func TestManageEvidence(t *testing.T) {
-
 	tools, fsm, tempDir := setupTools(t)
-	hypoID := "test-hypo"
-	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
-	if err := os.WriteFile(hypoPath, []byte("Hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy hypothesis file: %v", err)
-	}
+	ctx := context.Background()
 
 	tests := []struct {
 		name              string
@@ -150,42 +145,40 @@ func TestManageEvidence(t *testing.T) {
 		evidenceType      string
 		content           string
 		verdict           string
-		assuranceLevel    string // New field
+		assuranceLevel    string
 		expectedMove      bool
-		expectedDestLevel string // e.g., "L1", "L2", "invalid"
+		expectedDestLevel string
 		expectErr         bool
 	}{
-		// Deductor (DEDUCTION phase)
-		{"DeductionPass", PhaseDeduction, hypoID, "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
-		{"DeductionFail", PhaseDeduction, hypoID, "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
-		{"DeductionRefine", PhaseDeduction, hypoID, "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
-
-		// Inductor (INDUCTION phase) - need another hypo in L1
-		{"InductionPass", PhaseInduction, "hypo-L1", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
-		{"InductionFail", PhaseInduction, "hypo-L1", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
+		{"DeductionPass", PhaseDeduction, "test-hypo-pass", "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
+		{"DeductionFail", PhaseDeduction, "test-hypo-fail", "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
+		{"DeductionRefine", PhaseDeduction, "test-hypo-refine", "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
+		{"InductionPass", PhaseInduction, "hypo-L1-pass", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
+		{"InductionFail", PhaseInduction, "hypo-L1-fail", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Ensure FSM is in correct phase
 			fsm.State.Phase = tt.currentPhase
 
-			// Declare srcLevel outside conditional blocks to have proper scope
 			var srcLevel string
 
-			// Prepare for move if needed (create dummy hypo in source level)
 			if tt.expectedMove {
 				switch tt.currentPhase {
 				case PhaseInduction:
 					srcLevel = "L1"
-					// Create dummy L1 hypo for induction tests
+					if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", "L1", "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
+						t.Fatalf("Failed to create holon in DB: %v", err)
+					}
 					hypoL1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", tt.targetID+".md")
 					if err := os.WriteFile(hypoL1Path, []byte("L1 Hypothesis content"), 0644); err != nil {
 						t.Fatalf("Failed to create dummy L1 hypothesis file: %v", err)
 					}
-				case PhaseDeduction: // Use else if for correct logic
+				case PhaseDeduction:
 					srcLevel = "L0"
-					// Create dummy L0 hypo for deduction tests
+					if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", "L0", "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
+						t.Fatalf("Failed to create holon in DB: %v", err)
+					}
 					hypoL0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", tt.targetID+".md")
 					if err := os.WriteFile(hypoL0Path, []byte("L0 Hypothesis content"), 0644); err != nil {
 						t.Fatalf("Failed to create dummy L0 hypothesis file: %v", err)
@@ -228,15 +221,19 @@ func TestManageEvidence(t *testing.T) {
 }
 
 func TestRefineLoopback(t *testing.T) {
-
 	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+
 	parentID := "parent-hypo"
-	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md") // Assume L1 for Induction -> Deduction
+	if err := tools.DB.CreateHolon(ctx, parentID, "hypothesis", "system", "L1", "Parent Hypothesis", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create parent holon in DB: %v", err)
+	}
+	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md")
 	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy parent hypothesis file: %v", err)
 	}
 
-	fsm.State.Phase = PhaseInduction // Simulate coming from Induction
+	fsm.State.Phase = PhaseInduction
 
 	insight := "New insight from failure"
 	newTitle := "Refined Child Hypothesis"
@@ -272,12 +269,15 @@ func TestRefineLoopback(t *testing.T) {
 }
 
 func TestFinalizeDecision(t *testing.T) {
-
 	tools, fsm, tempDir := setupTools(t)
-	fsm.State.Phase = PhaseDecision // Simulate being in Decision phase
+	ctx := context.Background()
+	fsm.State.Phase = PhaseDecision
 
 	winnerID := "final-winner"
-	winnerPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", winnerID+".md") // Assume winner is in L1
+	if err := tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L1", "Final Winner", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create winner holon in DB: %v", err)
+	}
+	winnerPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", winnerID+".md")
 	if err := os.WriteFile(winnerPath, []byte("Winner Hypothesis Content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy winner hypothesis file: %v", err)
 	}
@@ -323,17 +323,18 @@ func TestFinalizeDecision(t *testing.T) {
 }
 
 func TestVerifyHypothesis(t *testing.T) {
-
 	tools, fsm, tempDir := setupTools(t)
-	hypoID := "test-verify-hypo"
+	ctx := context.Background()
 
-	// Create dummy L0 hypothesis
+	hypoID := "test-verify-hypo"
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L0", "Test Verify", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon in DB: %v", err)
+	}
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
 	if err := os.WriteFile(hypoPath, []byte("L0 content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy L0 hypothesis: %v", err)
 	}
 
-	// Case 1: PASS -> Promote to L1
 	fsm.State.Phase = PhaseDeduction
 	msg, err := tools.VerifyHypothesis(hypoID, `{"check":"ok"}`, "PASS", "")
 	if err != nil {
@@ -346,9 +347,10 @@ func TestVerifyHypothesis(t *testing.T) {
 		t.Errorf("Hypothesis not moved to L1")
 	}
 
-	// Case 2: FAIL -> Move to invalid
-	// Setup another L0 hypo
 	hypoID2 := "test-fail-hypo"
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L0", "Test Fail", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon in DB: %v", err)
+	}
 	hypoPath2 := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID2+".md")
 	if err := os.WriteFile(hypoPath2, []byte("L0 content"), 0644); err != nil {
 		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)

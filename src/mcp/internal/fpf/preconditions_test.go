@@ -1,6 +1,7 @@
 package fpf
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,9 +9,17 @@ import (
 	"github.com/m0n0x41d/quint-code/db"
 )
 
+func createTestHolon(t *testing.T, store *db.Store, id, layer string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := store.CreateHolon(ctx, id, "hypothesis", "system", layer, "Test "+id, "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create test holon %s: %v", id, err)
+	}
+}
+
 func TestCheckPreconditions_Propose(t *testing.T) {
 	// Use PhaseIdle - quint_propose is allowed in IDLE
-	tools, _ := setupToolsWithPhase(t, PhaseIdle)
+	tools, _, _ := setupToolsWithPhase(t, PhaseIdle)
 
 	tests := []struct {
 		name    string
@@ -72,14 +81,12 @@ func TestCheckPreconditions_Propose(t *testing.T) {
 }
 
 func TestCheckPreconditions_Verify(t *testing.T) {
-	// quint_verify requires ABDUCTION or DEDUCTION phase
-	tools, tempDir := setupToolsWithPhase(t, PhaseAbduction)
+	tools, tempDir, store := setupToolsWithPhase(t, PhaseAbduction)
 
 	hypoID := "test-hypo"
+	createTestHolon(t, store, hypoID, "L0")
 	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
-	if err := os.WriteFile(l0Path, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test hypothesis: %v", err)
-	}
+	os.WriteFile(l0Path, []byte("test content"), 0644)
 
 	tests := []struct {
 		name    string
@@ -134,20 +141,17 @@ func TestCheckPreconditions_Verify(t *testing.T) {
 }
 
 func TestCheckPreconditions_Test(t *testing.T) {
-	// quint_test requires DEDUCTION or INDUCTION phase
-	tools, tempDir := setupToolsWithPhase(t, PhaseDeduction)
+	tools, tempDir, store := setupToolsWithPhase(t, PhaseDeduction)
 
 	l0HypoID := "l0-hypo"
+	createTestHolon(t, store, l0HypoID, "L0")
 	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", l0HypoID+".md")
-	if err := os.WriteFile(l0Path, []byte("L0 content"), 0644); err != nil {
-		t.Fatalf("Failed to create L0 hypothesis: %v", err)
-	}
+	os.WriteFile(l0Path, []byte("L0 content"), 0644)
 
 	l1HypoID := "l1-hypo"
+	createTestHolon(t, store, l1HypoID, "L1")
 	l1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", l1HypoID+".md")
-	if err := os.WriteFile(l1Path, []byte("L1 content"), 0644); err != nil {
-		t.Fatalf("Failed to create L1 hypothesis: %v", err)
-	}
+	os.WriteFile(l1Path, []byte("L1 content"), 0644)
 
 	tests := []struct {
 		name    string
@@ -338,9 +342,8 @@ func TestPreconditionError_Format(t *testing.T) {
 }
 
 // setupToolsWithPhase creates a Tools instance with a specific phase.
-// Note: FSM.DB is set to nil so GetPhase() returns State.Phase directly
-// instead of deriving from DB contents. This allows testing phase gates in isolation.
-func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string) {
+// Returns tools, tempDir, and store for creating test holons in DB.
+func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string, *db.Store) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
 	os.MkdirAll(filepath.Join(quintDir, "knowledge", "L0"), 0755)
@@ -354,30 +357,30 @@ func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string) {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
-	// FSM.DB = nil so GetPhase() returns State.Phase directly
-	// (not derived from DB contents)
 	fsm := &FSM{State: State{Phase: phase}, DB: nil}
 	tools := NewTools(fsm, tempDir, store)
 
-	return tools, tempDir
+	return tools, tempDir, store
 }
 
 // TestNoPhaseGates verifies that all tools are allowed in any phase.
 // Phase gates were removed - semantic preconditions are sufficient.
 // See roles.go for design decision.
 func TestNoPhaseGates(t *testing.T) {
-	tools, tempDir := setupToolsWithPhase(t, PhaseIdle)
+	tools, tempDir, store := setupToolsWithPhase(t, PhaseIdle)
 
-	// Create test holons in appropriate layers
 	l0HypoID := "l0-test"
+	createTestHolon(t, store, l0HypoID, "L0")
 	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", l0HypoID+".md")
 	os.WriteFile(l0Path, []byte("L0 content"), 0644)
 
 	l1HypoID := "l1-test"
+	createTestHolon(t, store, l1HypoID, "L1")
 	l1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", l1HypoID+".md")
 	os.WriteFile(l1Path, []byte("L1 content"), 0644)
 
 	l2HypoID := "l2-test"
+	createTestHolon(t, store, l2HypoID, "L2")
 	l2Path := filepath.Join(tempDir, ".quint", "knowledge", "L2", l2HypoID+".md")
 	os.WriteFile(l2Path, []byte("L2 content"), 0644)
 
@@ -445,10 +448,10 @@ func TestNoPhaseGates(t *testing.T) {
 // TestSemanticPreconditionsEnforced verifies that semantic checks still work.
 // These are the real guards - not phase gates.
 func TestSemanticPreconditionsEnforced(t *testing.T) {
-	tools, tempDir := setupToolsWithPhase(t, PhaseIdle)
+	tools, tempDir, store := setupToolsWithPhase(t, PhaseIdle)
 
-	// Create an L0 holon only
 	l0HypoID := "l0-only"
+	createTestHolon(t, store, l0HypoID, "L0")
 	l0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", l0HypoID+".md")
 	os.WriteFile(l0Path, []byte("L0 content"), 0644)
 
@@ -503,7 +506,7 @@ func TestSemanticPreconditionsEnforced(t *testing.T) {
 }
 
 func TestSearchPreconditions(t *testing.T) {
-	tools, _ := setupToolsWithPhase(t, PhaseIdle)
+	tools, _, _ := setupToolsWithPhase(t, PhaseIdle)
 
 	tests := []struct {
 		name    string

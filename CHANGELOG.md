@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **DB as Source of Truth (Architecture Fix)**: Database is now the authoritative source for holon state, filesystem is projection
+  - `getHolonLayer()` queries DB only (removed filesystem fallback that caused desync)
+  - `MoveHypothesis()` updates DB first, then moves file (file failure is non-fatal warning)
+  - Precondition checks (`checkVerifyPreconditions`, `checkTestPreconditions`) validate against DB
+
+- **`quint_decide` winner validation**: Now validates that `winner_id` actually exists and is in L2 layer before creating DRR. Prevents invalid decisions with non-existent or unpromoted hypotheses.
+
 - **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
 
 - **Phase stuck at DECISION after `quint_decide`**: DerivePhase incorrectly counted DRRs as pending work. Now DRRs are excluded from phase calculation (they're results, not pending work).

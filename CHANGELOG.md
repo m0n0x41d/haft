@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Relation type validation**: `createRelation()` now validates relation types against allowed set (`componentOf`, `constituentOf`, `memberOf`, `selects`, `rejects`, `closes`, `verifiedBy`, `dependsOn`). Invalid types rejected with error.
 
+### Documentation
+
+- **README.md**: Added missing `/q-implement` and `/q-audit` commands to command table
+- **Deprecated `/q-decay` references**: Updated all documentation to use `/q-internalize` instead:
+  - `docs/advanced.md`: Epistemic debt now surfaced by `/q-internalize`
+  - `docs/architecture.md`: Evidence freshness section updated
+  - `docs/evidence-freshness.md`: Complete rewrite to use `/q-internalize`
+- **State machine diagram**: Added explicit AUDIT phase to state machine diagrams
+- **Directory structure fix**: Changed `drr/` to `decisions/` in architecture.md (matches actual implementation)
+- **Relation direction convention (FIX-7)**: Added documentation in `docs/fpf-engine.md` explaining source→target semantics for all relation types
+
 - **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
 
 - **Phase stuck at DECISION after `quint_decide`**: DerivePhase incorrectly counted DRRs as pending work. Now DRRs are excluded from phase calculation (they're results, not pending work).

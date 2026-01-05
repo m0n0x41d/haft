@@ -38,8 +38,8 @@ Now you're debugging production with no record of why you built it this way.
 
 #### With Quint
 
-```bash
-$ q1 hypothesize "handle stripe payment confirmation"
+```
+You: /q1-hypothesize handle stripe payment confirmation
 ```
 
 AI generates competing approaches:
@@ -50,8 +50,8 @@ AI generates competing approaches:
 | H2 | Webhook + sync processing | Timeout = lost event, retries = duplicates | Stripe retry (3 days) |
 | H3 | Webhook → Queue + Polling backup | Complex, two code paths | Self-healing |
 
-```bash
-$ q2 verify
+```
+You: /q2-verify
 ```
 
 AI checks each hypothesis:
@@ -59,8 +59,14 @@ AI checks each hypothesis:
 - **H2 partial:** "Idempotency key needed, still misses network failures"
 - **H3 passes:** "Polling catches what webhooks miss, queue handles spikes"
 
-```bash
-$ q5 decide
+```
+You: /q5-decide
+
+AI: Which hypothesis should we proceed with?
+
+You: H3
+
+AI: Decision recorded.
 ```
 
 ```
@@ -80,8 +86,8 @@ Review trigger: If webhook success rate drops below 99%
 
 Finance asks: *"Why do we poll every 15 minutes? Can we remove it?"*
 
-```bash
-$ q query "payment confirmation architecture"
+```
+You: /q-query payment confirmation architecture
 ```
 
 ```
@@ -144,7 +150,9 @@ This creates:
 
 ### Step 3: Start Reasoning
 
-```bash
+In your AI chat (Claude Code, Cursor, etc.):
+
+```
 /q-internalize                     # Orient yourself (init if needed)
 /q1-hypothesize "Your problem..."  # Generate hypotheses
 ```

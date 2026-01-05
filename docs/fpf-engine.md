@@ -134,6 +134,23 @@ This creates:
 - **ConstituentOf** relation (for `kind=episteme`)
 - **WLNK applies**: Your hypothesis inherits the R_eff ceiling from dependencies
 
+### Relation Direction Convention
+
+All relations follow **source → target** direction:
+
+| Relation | Meaning | Example |
+|----------|---------|---------|
+| `componentOf` | Source is part of target | `cache-layer componentOf api-service` |
+| `constituentOf` | Source supports/argues for target | `benchmark-results constituentOf performance-claim` |
+| `memberOf` | Source belongs to collection target | `option-a memberOf decision-context` |
+| `dependsOn` | Source depends on target | `feature-x dependsOn library-y` |
+| `verifiedBy` | Source is verified by target | `hypothesis verifiedBy test-evidence` |
+| `selects` | Source selects target (DRR picks winner) | `drr selects winning-hypothesis` |
+| `rejects` | Source rejects target (DRR rejects loser) | `drr rejects losing-hypothesis` |
+| `closes` | Source closes target (resolution) | `implementation closes drr` |
+
+**Semantic meaning:** Read as "source `relation` target" — e.g., "cache-layer is componentOf api-service".
+
 ### Why This Matters
 
 - **Architectural coupling visible**: Dependencies are tracked, not implicit

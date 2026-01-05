@@ -175,7 +175,9 @@ See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
 | `/q3-validate` | Test against evidence — does it actually work? |
 | `/q4-audit` | Check for bias and calculate confidence scores. |
 | `/q5-decide` | Pick the winner, record the rationale. |
+| `/q-implement` | Transform decision into implementation directive with constraints. |
 | `/q-resolve` | Record decision outcome (implemented/abandoned/superseded). |
+| `/q-audit` | Quick assurance visualization for any holon. |
 | `/q-query` | Search the project's knowledge base. |
 | `/q-reset` | Discard the current reasoning cycle. |
 

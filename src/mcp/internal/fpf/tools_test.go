@@ -1172,14 +1172,16 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 		t.Fatalf("Failed to create active hypothesis: %v", err)
 	}
 
-	// Before resolution: archived-hypo should be in active count (decision is open)
+	// After selects relation: archived-hypo should immediately be excluded from active count
+	// (New behavior: L2s are excluded immediately after decision, not after resolution)
 	result, err := tools.Internalize()
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
 
-	if !strings.Contains(result, "L2 (Corroborated): 1") {
-		t.Errorf("Before resolution, L2 holon should be active, got: %s", result)
+	// L2 should be 0 immediately after decision (selects relation exists)
+	if !strings.Contains(result, "L2 (Corroborated): 0") {
+		t.Errorf("After decision, L2 holon should be excluded from active count, got: %s", result)
 	}
 
 	// Resolve the decision (add implementation evidence)
@@ -1189,15 +1191,15 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 		t.Fatalf("Failed to add resolution evidence: %v", err)
 	}
 
-	// After resolution: archived-hypo should be in archived count, not active
+	// After resolution: still excluded (unchanged)
 	result, err = tools.Internalize()
 	if err != nil {
 		t.Fatalf("Internalize() after resolution error = %v", err)
 	}
 
-	// L2 should now be 0 (archived-hypo is in resolved decision)
+	// L2 should still be 0
 	if !strings.Contains(result, "L2 (Corroborated): 0") {
-		t.Errorf("After resolution, L2 holon should be archived, got: %s", result)
+		t.Errorf("After resolution, L2 holon should still be excluded, got: %s", result)
 	}
 
 	// Should show archived count

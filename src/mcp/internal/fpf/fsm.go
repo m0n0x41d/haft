@@ -51,8 +51,9 @@ type TransitionRule struct {
 }
 
 type FSM struct {
-	State State
-	DB    *sql.DB
+	State      State
+	DB         *sql.DB
+	ForcePhase Phase // If set (non-empty), GetPhase returns this instead of deriving. Used for testing.
 }
 
 func LoadState(contextID string, db *sql.DB) (*FSM, error) {
@@ -101,6 +102,9 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 }
 
 func (f *FSM) GetPhase() Phase {
+	if f.ForcePhase != "" {
+		return f.ForcePhase
+	}
 	if f.DB != nil {
 		return f.DerivePhase("default")
 	}
@@ -139,12 +143,11 @@ func (f *FSM) DerivePhase(contextID string) Phase {
 	l0 := counts["L0"]
 	l1 := counts["L1"]
 	l2 := counts["L2"]
-	drr := counts["DRR"]
+	// DRR count is NOT used for phase derivation.
+	// DRRs are results of decisions, not pending work.
+	// Open DRRs are shown separately in quint_internalize.
 
-	// Phase is informational only - no complex timestamp logic needed
-	if drr > 0 {
-		return PhaseDecision
-	}
+	// Phase is informational only - based on active hypothesis layers
 	if l2 > 0 {
 		var hasAudit bool
 		auditRow := f.DB.QueryRowContext(context.Background(), `

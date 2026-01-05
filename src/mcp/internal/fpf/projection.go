@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/logger"
 )
 
 type TamperingEvent struct {
@@ -113,7 +114,7 @@ func (t *Tools) ReadWithValidation(path string) (string, *TamperingEvent, error)
 	if t.DB != nil {
 		regenerated, regErr := t.regenerateFromDB(path)
 		if regErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to regenerate %s from DB: %v\n", path, regErr)
+			logger.Warn().Err(regErr).Str("path", path).Msg("failed to regenerate from DB")
 		} else if regenerated {
 			event.Regenerated = true
 			t.AuditLog("projection_validate", "file_regenerated", "system", path, "SUCCESS", nil, "File regenerated from database")

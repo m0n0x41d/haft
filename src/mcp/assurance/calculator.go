@@ -9,14 +9,14 @@ import (
 )
 
 type AssuranceReport struct {
-	HolonID        string
-	FinalScore     float64
-	SelfScore      float64 // Score based on own evidence
-	WeakestLink    string  // ID of the dependency pulling the score down
-	DecayPenalty   float64
-	StalePenalty   float64  // Penalty from stale evidence (v5.0.0)
-	StaleEvidence  []string // IDs of stale evidence
-	Factors        []string // Textual explanations for AI
+	HolonID       string
+	FinalScore    float64
+	SelfScore     float64 // Score based on own evidence
+	WeakestLink   string  // ID of the dependency pulling the score down
+	DecayPenalty  float64
+	StalePenalty  float64  // Penalty from stale evidence (v5.0.0)
+	StaleEvidence []string // IDs of stale evidence
+	Factors       []string // Textual explanations for AI
 }
 
 type Calculator struct {
@@ -93,8 +93,8 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			}
 			report.Factors = append(report.Factors, "Evidence stale: "+reason)
 			report.StaleEvidence = append(report.StaleEvidence, evidenceID)
-			score = 0.2                 // Stale evidence is unreliable but not completely worthless
-			report.StalePenalty += 0.8  // Track staleness impact
+			score = 0.2                // Stale evidence is unreliable but not completely worthless
+			report.StalePenalty += 0.8 // Track staleness impact
 		}
 
 		// Evidence Decay Logic (time-based expiration)

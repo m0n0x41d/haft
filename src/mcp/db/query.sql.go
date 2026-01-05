@@ -229,7 +229,7 @@ func (q *Queries) CountArchivedHolonsByLayer(ctx context.Context, db DBTX) ([]Co
 }
 
 const countHolonsByLayer = `-- name: CountHolonsByLayer :many
-SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer
+SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer
 `
 
 type CountHolonsByLayerRow struct {
@@ -261,7 +261,7 @@ func (q *Queries) CountHolonsByLayer(ctx context.Context, db DBTX, contextID str
 }
 
 const countHolonsNeedingReverification = `-- name: CountHolonsNeedingReverification :one
-SELECT COUNT(*) as count FROM holons WHERE needs_reverification = 1
+SELECT COUNT(*) as count FROM active_holons WHERE needs_reverification = 1
 `
 
 func (q *Queries) CountHolonsNeedingReverification(ctx context.Context, db DBTX) (int64, error) {
@@ -272,7 +272,9 @@ func (q *Queries) CountHolonsNeedingReverification(ctx context.Context, db DBTX)
 }
 
 const countStaleEvidence = `-- name: CountStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence WHERE is_stale = 1
+SELECT COUNT(*) as count FROM evidence e
+JOIN active_holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
 `
 
 func (q *Queries) CountStaleEvidence(ctx context.Context, db DBTX) (int64, error) {
@@ -505,7 +507,7 @@ SELECT e.id, e.holon_id, e.type, e.carrier_ref,
        e.is_stale, e.stale_reason, e.stale_since,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
-JOIN holons h ON e.holon_id = h.id
+JOIN active_holons h ON e.holon_id = h.id
 WHERE e.is_stale = 1
 ORDER BY e.stale_since DESC
 `
@@ -1203,20 +1205,20 @@ func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.N
 }
 
 const getHolonsNeedingReverification = `-- name: GetHolonsNeedingReverification :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM holons
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM active_holons
 WHERE needs_reverification = 1
 ORDER BY reverification_since DESC
 `
 
-func (q *Queries) GetHolonsNeedingReverification(ctx context.Context, db DBTX) ([]Holon, error) {
+func (q *Queries) GetHolonsNeedingReverification(ctx context.Context, db DBTX) ([]ActiveHolon, error) {
 	rows, err := db.QueryContext(ctx, getHolonsNeedingReverification)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Holon
+	var items []ActiveHolon
 	for rows.Next() {
-		var i Holon
+		var i ActiveHolon
 		if err := rows.Scan(
 			&i.ID,
 			&i.Type,

@@ -227,9 +227,6 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 		Command: binaryPath,
 		Args:    []string{"serve"},
 		Cwd:     projectRoot,
-		Env: map[string]string{
-			"QUINT_PROJECT_ROOT": projectRoot,
-		},
 	}
 
 	if timeout, ok := extraFields["timeout"].(int); ok {

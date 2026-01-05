@@ -29,7 +29,7 @@ UPDATE holons SET cached_r_score = ?, updated_at = ? WHERE id = ?;
 SELECT * FROM holons WHERE parent_id = ? ORDER BY created_at DESC;
 
 -- name: CountHolonsByLayer :many
-SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer;
+SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer;
 
 -- name: GetLatestHolonByContext :one
 SELECT * FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1;
@@ -234,14 +234,16 @@ SELECT * FROM evidence
 WHERE holon_id = ? AND is_stale = 1;
 
 -- name: CountStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence WHERE is_stale = 1;
+SELECT COUNT(*) as count FROM evidence e
+JOIN active_holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1;
 
 -- name: GetAllStaleEvidence :many
 SELECT e.id, e.holon_id, e.type, e.carrier_ref,
        e.is_stale, e.stale_reason, e.stale_since,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
-JOIN holons h ON e.holon_id = h.id
+JOIN active_holons h ON e.holon_id = h.id
 WHERE e.is_stale = 1
 ORDER BY e.stale_since DESC;
 
@@ -260,12 +262,12 @@ SET needs_reverification = 0,
 WHERE id = ?;
 
 -- name: GetHolonsNeedingReverification :many
-SELECT * FROM holons
+SELECT * FROM active_holons
 WHERE needs_reverification = 1
 ORDER BY reverification_since DESC;
 
 -- name: CountHolonsNeedingReverification :one
-SELECT COUNT(*) as count FROM holons WHERE needs_reverification = 1;
+SELECT COUNT(*) as count FROM active_holons WHERE needs_reverification = 1;
 
 -- name: UpdateLastCommit :exec
 UPDATE fpf_state

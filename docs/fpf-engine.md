@@ -118,7 +118,7 @@ Related holons found (ranked by relevance):
   • redis-connection [L2] Redis Connection Pool
 
 Consider linking with:
-  quint_link(source_id="rate-limiter", target_id="redis-cache-drr")
+  quint_link(source_id="redis-cache-drr", target_id="rate-limiter")
 ```
 
 ### Post-Creation Linking
@@ -126,30 +126,36 @@ Consider linking with:
 If you missed `depends_on` during creation, use `quint_link`:
 
 ```
-quint_link(source_id="my-hypothesis", target_id="existing-drr")
+quint_link(source_id="redis-cache", target_id="my-api")
 ```
 
-This creates:
-- **ComponentOf** relation (for `kind=system`)
-- **ConstituentOf** relation (for `kind=episteme`)
-- **WLNK applies**: Your hypothesis inherits the R_eff ceiling from dependencies
+This creates `redis-cache componentOf my-api` — the dependency becomes a component of your holon.
+
+**Important:** The source is the thing being depended ON, target is the thing that HAS the dependency. This matches `depends_on` semantics: `quint_propose(id="my-api", depends_on=["redis-cache"])` creates the same relation.
+
+Relation type is determined by source holon's kind:
+- **system** source → `componentOf`
+- **episteme** source → `constituentOf`
+
+WLNK applies: your holon inherits the R_eff ceiling from its components.
 
 ### Relation Direction Convention
 
 All relations follow **source → target** direction:
 
-| Relation | Meaning | Example |
-|----------|---------|---------|
-| `componentOf` | Source is part of target | `cache-layer componentOf api-service` |
-| `constituentOf` | Source supports/argues for target | `benchmark-results constituentOf performance-claim` |
-| `memberOf` | Source belongs to collection target | `option-a memberOf decision-context` |
-| `dependsOn` | Source depends on target | `feature-x dependsOn library-y` |
-| `verifiedBy` | Source is verified by target | `hypothesis verifiedBy test-evidence` |
-| `selects` | Source selects target (DRR picks winner) | `drr selects winning-hypothesis` |
-| `rejects` | Source rejects target (DRR rejects loser) | `drr rejects losing-hypothesis` |
-| `closes` | Source closes target (resolution) | `implementation closes drr` |
+| Relation | Meaning | Example | Created By |
+|----------|---------|---------|------------|
+| `componentOf` | Source is part of target | `cache-layer componentOf api-service` | `depends_on`, `quint_link` |
+| `constituentOf` | Source supports/argues for target | `benchmark-results constituentOf performance-claim` | `depends_on`, `quint_link` |
+| `memberOf` | Source belongs to collection target | `option-a memberOf decision-context` | `decision_context` param |
+| `verifiedBy` | Source is verified by target | `hypothesis verifiedBy test-evidence` | `quint_test` |
+| `selects` | Source selects target (DRR picks winner) | `drr selects winning-hypothesis` | `quint_decide` |
+| `rejects` | Source rejects target (DRR rejects loser) | `drr rejects losing-hypothesis` | `quint_decide` |
+| `closes` | Source closes target (resolution) | `drr closes decision-context` | `quint_decide`, `quint_resolve` |
 
 **Semantic meaning:** Read as "source `relation` target" — e.g., "cache-layer is componentOf api-service".
+
+**Note:** `dependsOn` relation type exists for manual use via `quint_link(relation_type="dependsOn")` but is semantically different from mereological relations. Use `componentOf`/`constituentOf` for WLNK-propagating dependencies.
 
 ### Why This Matters
 

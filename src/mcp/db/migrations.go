@@ -172,6 +172,50 @@ var migrations = []struct {
 		description: "Code Change Awareness: staleness tracking for evidence and holons",
 		sql:         "", // Applied as individual statements below
 	},
+	{
+		version:     8,
+		description: "Fix active_holons view: exclude selected/rejected L2 immediately after decision (not after resolution)",
+		sql: `
+			-- Drop and recreate the view with corrected logic
+			-- Previously: excluded L2 only after DRR had resolution evidence
+			-- Now: excluded L2 immediately after selects/rejects relation from DRR
+			DROP VIEW IF EXISTS active_holons;
+			CREATE VIEW active_holons AS
+			SELECT h.*
+			FROM holons h
+			WHERE h.layer NOT IN ('invalid')
+			  AND NOT EXISTS (
+			    SELECT 1 FROM relations r
+			    INNER JOIN holons drr ON drr.id = r.source_id
+			    WHERE r.target_id = h.id
+			      AND r.relation_type IN ('selects', 'rejects')
+			      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+			  );
+		`,
+	},
+	{
+		version:     9,
+		description: "Simplify active_holons: exclude any holon with selects/rejects/closes relation (no DRR join needed)",
+		sql: `
+			-- Simplified active_holons view
+			-- Excludes holons that are targets of selects/rejects/closes relations
+			-- This covers:
+			--   - Selected winner hypotheses (DRR --selects--> winner)
+			--   - Rejected alternative hypotheses (DRR --rejects--> loser)
+			--   - Closed decision contexts (DRR --closes--> context)
+			-- No need to check if source is DRR - these relation types are only created by quint_decide
+			DROP VIEW IF EXISTS active_holons;
+			CREATE VIEW active_holons AS
+			SELECT h.*
+			FROM holons h
+			WHERE h.layer NOT IN ('invalid')
+			  AND NOT EXISTS (
+			    SELECT 1 FROM relations r
+			    WHERE r.target_id = h.id
+			      AND r.relation_type IN ('selects', 'rejects', 'closes')
+			  );
+		`,
+	},
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.

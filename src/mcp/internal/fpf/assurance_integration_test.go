@@ -33,8 +33,9 @@ func setupAssuranceTestEnv(t *testing.T) (*fpf.FSM, *db.Store, string) {
 	}
 
 	fsm := &fpf.FSM{
-		State: fpf.State{Phase: fpf.PhaseDecision},
-		DB:    rawDB,
+		State:      fpf.State{Phase: fpf.PhaseDecision},
+		DB:         rawDB,
+		ForcePhase: fpf.PhaseDecision, // Force phase for testing, bypasses DerivePhase
 	}
 
 	return fsm, database, tempDir

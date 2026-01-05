@@ -16,6 +16,7 @@ import (
 
 	"github.com/m0n0x41d/quint-code/assurance"
 	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/logger"
 
 	"github.com/google/uuid"
 )
@@ -49,7 +50,7 @@ func NewTools(fsm *FSM, rootDir string, database *db.Store) *Tools {
 		var err error
 		database, err = db.NewStore(dbPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to open database in NewTools: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to open database in NewTools")
 		}
 	}
 
@@ -89,7 +90,7 @@ func (t *Tools) AuditLog(toolName, operation, actor, targetID, result string, in
 	id := uuid.New().String()
 	ctx := context.Background()
 	if err := t.DB.InsertAuditLog(ctx, id, toolName, operation, actor, targetID, inputHash, result, details, "default"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to insert audit log: %v\n", err)
+		logger.Warn().Err(err).Msg("failed to insert audit log")
 	}
 }
 
@@ -103,6 +104,9 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 	destPath := filepath.Join(t.GetFPFDir(), "knowledge", destLevel, hypothesisID+".md")
 
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		if _, destErr := os.Stat(destPath); destErr == nil {
+			return destPath, nil
+		}
 		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, "not found")
 		return "", fmt.Errorf("hypothesis %s not found in %s", hypothesisID, sourceLevel)
 	}
@@ -114,7 +118,7 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (str
 
 	if t.DB != nil {
 		if err := t.DB.UpdateHolonLayer(context.Background(), hypothesisID, destLevel); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update holon layer in DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to update holon layer in DB")
 		}
 	}
 
@@ -266,7 +270,7 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 
 	ledger := fmt.Sprintf(`{"duration_ms": %d}`, end.Sub(start).Milliseconds())
 	if err := t.DB.RecordWork(context.Background(), id, methodName, performer, start, end, ledger); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to record work in DB: %v\n", err)
+		logger.Warn().Err(err).Msg("failed to record work in DB")
 	}
 }
 
@@ -324,7 +328,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	if t.DB != nil {
 		if err := t.DB.CreateHolon(context.Background(), slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to create holon in DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to create holon in DB")
 		}
 	}
 
@@ -332,10 +336,10 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	if decisionContext != "" && t.DB != nil {
 		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: decision_context '%s' not found, skipping MemberOf\n", decisionContext)
+			logger.Warn().Str("decision_context", decisionContext).Msg("decision_context not found, skipping MemberOf")
 		} else {
 			if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to create MemberOf relation: %v\n", err)
+				logger.Warn().Err(err).Msg("failed to create MemberOf relation")
 			}
 		}
 	}
@@ -352,18 +356,17 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 		for _, depID := range dependsOn {
 			if _, err := t.DB.GetHolon(ctx, depID); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: dependency '%s' not found, skipping\n", depID)
+				logger.Warn().Str("dependency", depID).Msg("dependency not found, skipping")
 				continue
 			}
 
 			if cyclic, _ := t.wouldCreateCycle(ctx, depID, slug); cyclic {
-				fmt.Fprintf(os.Stderr, "Warning: dependency on '%s' would create cycle, skipping\n", depID)
+				logger.Warn().Str("dependency", depID).Msg("dependency would create cycle, skipping")
 				continue
 			}
 
 			if err := t.createRelation(ctx, depID, relationType, slug, dependencyCL); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to create %s relation to %s: %v\n",
-					relationType, depID, err)
+				logger.Warn().Err(err).Str("relation_type", relationType).Str("target", depID).Msg("failed to create relation")
 			}
 		}
 	}
@@ -407,6 +410,22 @@ func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targ
 		map[string]string{"relation": relationType, "target": targetID, "cl": fmt.Sprintf("%d", cl)}, "")
 
 	return nil
+}
+
+// getDecisionContext returns the decision context ID for a hypothesis (via memberOf relation).
+// Returns empty string if no decision context is found.
+func (t *Tools) getDecisionContext(ctx context.Context, holonID string) string {
+	if t.DB == nil {
+		return ""
+	}
+	var targetID string
+	err := t.DB.GetRawDB().QueryRowContext(ctx,
+		`SELECT target_id FROM relations WHERE source_id = ? AND relation_type = 'memberOf' LIMIT 1`,
+		holonID).Scan(&targetID)
+	if err != nil {
+		return ""
+	}
+	return targetID
 }
 
 func (t *Tools) wouldCreateCycle(ctx context.Context, sourceID, targetID string) (bool, error) {
@@ -518,7 +537,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 
 		evidenceContent := fmt.Sprintf("Verification Checks:\n%s", checksJSON)
 		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "pass", "L1", carrierRef, ""); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to record verification evidence for %s: %v\n", hypothesisID, err)
+			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
@@ -644,19 +663,19 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 		}
 
 		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, carrierCommit, validUntil); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to add evidence to DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to add evidence to DB")
 		}
 		if err := t.DB.Link(ctx, filename, targetID, "verifiedBy"); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to link evidence in DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to link evidence in DB")
 		}
 
 		// Clear stale flags on successful re-validation (v5.0.0)
 		if normalizedVerdict == "pass" {
 			if err := t.DB.ClearAllEvidenceStaleForHolon(ctx, targetID); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to clear stale evidence: %v\n", err)
+				logger.Warn().Err(err).Msg("failed to clear stale evidence")
 			}
 			if err := t.DB.ClearHolonReverification(ctx, targetID); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to clear reverification flag: %v\n", err)
+				logger.Warn().Err(err).Msg("failed to clear reverification flag")
 			}
 			// Recalculate R_eff after clearing staleness
 			t.recalculateHolonR(ctx, targetID)
@@ -782,20 +801,35 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 		ctx := context.Background()
 		drrID := t.Slugify(title)
 		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", scopeForDB, winnerID); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to create DRR holon in DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to create DRR holon in DB")
 		}
 
 		if winnerID != "" {
 			if err := t.createRelation(ctx, drrID, "selects", winnerID, 3); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to create selects relation: %v\n", err)
+				logger.Warn().Err(err).Msg("failed to create selects relation")
 			}
 		}
 
 		for _, rejID := range rejectedIDs {
 			if rejID != "" && rejID != winnerID {
 				if err := t.createRelation(ctx, drrID, "rejects", rejID, 3); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to create rejects relation to %s: %v\n", rejID, err)
+					logger.Warn().Err(err).Str("rejected_id", rejID).Msg("failed to create rejects relation")
 				}
+			}
+		}
+
+		// Close decision contexts that alternatives were members of
+		closedContexts := make(map[string]bool)
+		allHypotheses := append([]string{winnerID}, rejectedIDs...)
+		for _, hypID := range allHypotheses {
+			if hypID == "" {
+				continue
+			}
+			if dcID := t.getDecisionContext(ctx, hypID); dcID != "" && !closedContexts[dcID] {
+				if err := t.createRelation(ctx, drrID, "closes", dcID, 3); err != nil {
+					logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to create closes relation")
+				}
+				closedContexts[dcID] = true
 			}
 		}
 	}
@@ -872,7 +906,7 @@ func (t *Tools) buildAuditTree(holonID string, level int, calc *assurance.Calcul
 	// Show componentOf/constituentOf dependencies (these propagate WLNK)
 	components, err := t.DB.GetComponentsOf(ctx, holonID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to query dependencies for %s: %v\n", holonID, err)
+		logger.Warn().Err(err).Str("holon_id", holonID).Msg("failed to query dependencies")
 		return tree, nil
 	}
 
@@ -1118,7 +1152,7 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 			e.type as evidence_type,
 			CAST(JULIANDAY('now') - JULIANDAY(substr(e.valid_until, 1, 10)) AS INTEGER) as days_overdue
 		FROM evidence e
-		JOIN holons h ON e.holon_id = h.id
+		JOIN active_holons h ON e.holon_id = h.id
 		LEFT JOIN (
 			SELECT evidence_id, MAX(waived_until) as latest_waiver
 			FROM waivers
@@ -1164,7 +1198,7 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 		       CAST(JULIANDAY(w.waived_until) - JULIANDAY('now') AS INTEGER) as days_until_expiry
 		FROM waivers w
 		JOIN evidence e ON w.evidence_id = e.id
-		JOIN holons h ON e.holon_id = h.id
+		JOIN active_holons h ON e.holon_id = h.id
 		WHERE w.waived_until > datetime('now')
 		ORDER BY w.waived_until ASC
 	`)
@@ -1304,7 +1338,7 @@ func (t *Tools) Internalize() (string, error) {
 		// Set phase to ABDUCTION after init
 		t.FSM.State.Phase = PhaseAbduction
 		if err := t.FSM.SaveState("default"); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to save state")
 		}
 		result.Phase = string(PhaseAbduction)
 		result.Role = string(GetExpectedRole(PhaseAbduction))
@@ -1962,11 +1996,11 @@ type InheritedConstraints struct {
 
 // DRRInfo holds loaded DRR data for implementation
 type DRRInfo struct {
-	ID         string
-	Title      string
-	Contract   *Contract
-	DependsOn  []string
-	WinnerID   string
+	ID        string
+	Title     string
+	Contract  *Contract
+	DependsOn []string
+	WinnerID  string
 }
 
 // ============================================
@@ -1975,14 +2009,14 @@ type DRRInfo struct {
 
 // CodeChangeImpact represents the impact of a code change
 type CodeChangeImpact struct {
-	Type        string  // "evidence_stale" | "propagated"
-	File        string  // Changed file path
-	EvidenceID  string  // Affected evidence ID
-	HolonID     string  // Affected holon ID
-	HolonTitle  string  // Holon title for display
-	HolonLayer  string  // L0/L1/L2/DRR
-	PreviousR   float64 // R_eff before change
-	Reason      string  // Human-readable reason
+	Type       string  // "evidence_stale" | "propagated"
+	File       string  // Changed file path
+	EvidenceID string  // Affected evidence ID
+	HolonID    string  // Affected holon ID
+	HolonTitle string  // Holon title for display
+	HolonLayer string  // L0/L1/L2/DRR
+	PreviousR  float64 // R_eff before change
+	Reason     string  // Human-readable reason
 }
 
 // CodeChangeDetectionResult holds all detection results
@@ -2188,7 +2222,7 @@ func (t *Tools) detectCodeChanges(ctx context.Context) (*CodeChangeDetectionResu
 				file, shortFrom, shortTo)
 
 			if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to mark evidence stale: %v\n", err)
+				logger.Warn().Err(err).Msg("failed to mark evidence stale")
 				continue
 			}
 
@@ -2213,7 +2247,7 @@ func (t *Tools) detectCodeChanges(ctx context.Context) (*CodeChangeDetectionResu
 	for holonID := range affectedHolons {
 		reason := "evidence became stale due to code changes"
 		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to mark holon for reverification: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to mark holon for reverification")
 		}
 		result.TotalAffected++
 	}
@@ -2356,7 +2390,7 @@ func (t *Tools) detectStaleEvidenceByCarrierCommit(ctx context.Context, currentH
 		reason := fmt.Sprintf("carrier changed since evidence creation (%s → %s)", shortFrom, shortTo)
 
 		if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to mark evidence stale: %v\n", err)
+			logger.Warn().Err(err).Str("evidence_id", e.ID).Msg("failed to mark evidence stale")
 			continue
 		}
 
@@ -2380,7 +2414,7 @@ func (t *Tools) detectStaleEvidenceByCarrierCommit(ctx context.Context, currentH
 	for holonID := range affectedHolons {
 		reason := "evidence became stale due to code changes"
 		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to mark holon for reverification: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to mark holon for reverification")
 		}
 		result.TotalAffected++
 	}
@@ -2536,7 +2570,7 @@ func (t *Tools) Implement(drrID string) (string, error) {
 	// This ensures any changed carrier files are detected and evidence marked stale
 	ctx := context.Background()
 	if _, err := t.detectCodeChanges(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: code change detection failed: %v\n", err)
+		logger.Warn().Err(err).Msg("code change detection failed")
 	}
 
 	// Normalize DRR ID: strip "DRR-YYYY-MM-DD-" prefix if present
@@ -2848,7 +2882,7 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 
 		// Create SupersededBy relation
 		if err := t.DB.CreateRelation(ctx, input.DecisionID, "SupersededBy", input.SupersededBy, 3); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to create SupersededBy relation: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to create SupersededBy relation")
 		}
 	}
 

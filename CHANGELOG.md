@@ -15,7 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
 
+- **Phase stuck at DECISION after `quint_decide`**: DerivePhase incorrectly counted DRRs as pending work. Now DRRs are excluded from phase calculation (they're results, not pending work).
+
+- **Orphan decision context after reset**: Decision contexts (L0 holons grouping alternatives) remained active after decision. Now `quint_decide` creates `closes` relation to archive decision contexts automatically.
+
+- **Stale warnings for archived holons**: Archived holons (selected/rejected by decisions) incorrectly appeared in stale evidence warnings. All stale-related queries now filter by `active_holons` view:
+  - `CountStaleEvidence`
+  - `GetAllStaleEvidence`
+  - `CountHolonsNeedingReverification`
+  - `GetHolonsNeedingReverification`
+  - `CountHolonsByLayer` (for preconditions)
+  - `generateFreshnessReport`
+
+- **active_holons view timing**: L2 hypotheses were only excluded after DRR resolution. Now excluded immediately after `selects`/`rejects` relation is created (Migration 8). Simplified to exclude any holon with `selects`/`rejects`/`closes` relation (Migration 9).
+
+### Changed
+
+- **MCP config simplified**: Removed redundant `QUINT_PROJECT_ROOT` env var from JSON configs — `cwd` field is sufficient (Codex TOML still uses env var as it doesn't support cwd)
+
 ### Added
+
+- **Decision Context Archiving**: `quint_decide` now automatically closes decision contexts
+  - New `closes` relation type: DRR → decision_context
+  - `getDecisionContext()` helper finds memberOf relations for hypotheses
+  - Decision contexts become inactive immediately after decision (not after resolution)
+
+- **File Logging**: Structured zerolog output to `~/.quint-code/logs/<project>.log`
+  - Automatic log rotation (10MB max, keeps 3 backups)
+  - Includes tool calls, errors, and staleness detection events
+
+- **Schema Migrations**:
+  - Migration 8: Fix active_holons to exclude L2s immediately after decision
+  - Migration 9: Simplify active_holons with `closes` relation support
 
 - **Code Change Awareness (v5.0.0)**: Automatic staleness detection when carrier files change
   - **Git Integration**: Tracks commits between sessions via `fpf_state.last_commit`

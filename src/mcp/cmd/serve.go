@@ -8,6 +8,7 @@ import (
 
 	"github.com/m0n0x41d/quint-code/db"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
+	"github.com/m0n0x41d/quint-code/logger"
 
 	"github.com/spf13/cobra"
 )
@@ -40,6 +41,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if err := logger.Init(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize logger: %v\n", err)
+	}
+	defer logger.Close()
+
 	quintDir := filepath.Join(cwd, ".quint")
 	dbPath := filepath.Join(quintDir, "quint.db")
 
@@ -47,7 +53,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(dbPath); err == nil {
 		database, err = db.NewStore(dbPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to open database: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to open database")
 		}
 	}
 

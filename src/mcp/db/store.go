@@ -833,8 +833,8 @@ func (s *Store) ClearHolonReverification(ctx context.Context, holonID string) er
 	return s.q.ClearHolonReverification(ctx, s.conn, holonID)
 }
 
-// GetHolonsNeedingReverification returns all flagged holons
-func (s *Store) GetHolonsNeedingReverification(ctx context.Context) ([]Holon, error) {
+// GetHolonsNeedingReverification returns all active holons flagged for reverification
+func (s *Store) GetHolonsNeedingReverification(ctx context.Context) ([]ActiveHolon, error) {
 	return s.q.GetHolonsNeedingReverification(ctx, s.conn)
 }
 

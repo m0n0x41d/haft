@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/m0n0x41d/quint-code/logger"
 )
 
 type JSONRPCRequest struct {
@@ -85,7 +87,7 @@ func (s *Server) Start() {
 func (s *Server) send(resp JSONRPCResponse) {
 	bytes, err := json.Marshal(resp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to marshal JSON-RPC response: %v\n", err)
+		logger.Error().Err(err).Msg("failed to marshal JSON-RPC response")
 		return
 	}
 	fmt.Printf("%s\n", string(bytes))
@@ -136,12 +138,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"query":                map[string]string{"type": "string", "description": "Search terms"},
-					"scope":                map[string]string{"type": "string", "description": "Scope: 'holons', 'evidence', 'all' (default: 'all')"},
-					"layer_filter":         map[string]string{"type": "string", "description": "Filter by layer: 'L0', 'L1', 'L2', or empty for all"},
-					"status_filter":        map[string]string{"type": "string", "description": "Filter decisions by status: 'open', 'implemented', 'abandoned', 'superseded'"},
+					"query":                 map[string]string{"type": "string", "description": "Search terms"},
+					"scope":                 map[string]string{"type": "string", "description": "Scope: 'holons', 'evidence', 'all' (default: 'all')"},
+					"layer_filter":          map[string]string{"type": "string", "description": "Filter by layer: 'L0', 'L1', 'L2', or empty for all"},
+					"status_filter":         map[string]string{"type": "string", "description": "Filter decisions by status: 'open', 'implemented', 'abandoned', 'superseded'"},
 					"affected_scope_filter": map[string]string{"type": "string", "description": "Filter DRRs by affected file path (matches against affected_scope patterns)"},
-					"limit":                map[string]interface{}{"type": "integer", "description": "Max results (default: 10, max: 50)"},
+					"limit":                 map[string]interface{}{"type": "integer", "description": "Max results (default: 10, max: 50)"},
 				},
 				"required": []string{"query"},
 			},
@@ -152,12 +154,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"decision_id":   map[string]string{"type": "string", "description": "ID of the decision holon to resolve"},
-					"resolution":    map[string]interface{}{"type": "string", "enum": []interface{}{"implemented", "abandoned", "superseded"}, "description": "Resolution type"},
-					"reference":     map[string]string{"type": "string", "description": "Implementation reference (required for 'implemented'): commit:SHA, pr:NUM, file:PATH"},
-					"superseded_by": map[string]string{"type": "string", "description": "ID of replacing decision (required for 'superseded')"},
-					"notes":         map[string]string{"type": "string", "description": "Explanation or description (required for 'abandoned')"},
-					"valid_until":        map[string]string{"type": "string", "description": "Optional: when to re-verify implementation (RFC3339 format)"},
+					"decision_id":       map[string]string{"type": "string", "description": "ID of the decision holon to resolve"},
+					"resolution":        map[string]interface{}{"type": "string", "enum": []interface{}{"implemented", "abandoned", "superseded"}, "description": "Resolution type"},
+					"reference":         map[string]string{"type": "string", "description": "Implementation reference (required for 'implemented'): commit:SHA, pr:NUM, file:PATH"},
+					"superseded_by":     map[string]string{"type": "string", "description": "ID of replacing decision (required for 'superseded')"},
+					"notes":             map[string]string{"type": "string", "description": "Explanation or description (required for 'abandoned')"},
+					"valid_until":       map[string]string{"type": "string", "description": "Optional: when to re-verify implementation (RFC3339 format)"},
 					"criteria_verified": map[string]interface{}{"type": "boolean", "description": "Set to true to confirm acceptance criteria are verified (required when DRR has acceptance_criteria)", "default": false},
 				},
 				"required": []string{"decision_id", "resolution"},
@@ -407,7 +409,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	case "quint_propose":
 		s.tools.FSM.State.Phase = PhaseAbduction
 		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+			logger.Warn().Err(saveErr).Msg("failed to save state")
 		}
 		decisionContext := arg("decision_context")
 		var dependsOn []string
@@ -427,14 +429,14 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	case "quint_verify":
 		s.tools.FSM.State.Phase = PhaseDeduction
 		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+			logger.Warn().Err(saveErr).Msg("failed to save state")
 		}
 		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_test":
 		s.tools.FSM.State.Phase = PhaseInduction
 		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+			logger.Warn().Err(saveErr).Msg("failed to save state")
 		}
 
 		assLevel := "L2"
@@ -467,7 +469,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if err == nil {
 			s.tools.FSM.State.Phase = PhaseIdle
 			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to save state: %v\n", saveErr)
+				logger.Warn().Err(saveErr).Msg("failed to save state")
 			}
 		}
 

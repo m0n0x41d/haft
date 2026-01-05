@@ -231,7 +231,7 @@ func (s *Store) RecordWork(ctx context.Context, id, methodRef, performerRef stri
 	})
 }
 
-func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel, carrierRef, carrierCommit, validUntil string) error {
+func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel, carrierRef, carrierHash, carrierCommit, validUntil string) error {
 	var vUntil sql.NullTime
 	if validUntil != "" {
 		t, err := time.Parse(time.RFC3339, validUntil)
@@ -251,6 +251,7 @@ func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verd
 		Verdict:        verdict,
 		AssuranceLevel: toNullString(assuranceLevel),
 		CarrierRef:     toNullString(carrierRef),
+		CarrierHash:    toNullString(carrierHash),
 		CarrierCommit:  toNullString(carrierCommit),
 		ValidUntil:     vUntil,
 		CreatedAt:      sql.NullTime{Time: time.Now(), Valid: true},
@@ -818,6 +819,39 @@ func (s *Store) CountStaleEvidence(ctx context.Context) (int64, error) {
 // GetAllStaleEvidence returns all stale evidence with holon context
 func (s *Store) GetAllStaleEvidence(ctx context.Context) ([]GetAllStaleEvidenceRow, error) {
 	return s.q.GetAllStaleEvidence(ctx, s.conn)
+}
+
+func (s *Store) CountArchivedStaleEvidence(ctx context.Context) (int64, error) {
+	return s.q.CountArchivedStaleEvidence(ctx, s.conn)
+}
+
+func (s *Store) GetArchivedStaleEvidence(ctx context.Context) ([]GetArchivedStaleEvidenceRow, error) {
+	return s.q.GetArchivedStaleEvidence(ctx, s.conn)
+}
+
+func (s *Store) CountCompactableHolons(ctx context.Context, retentionDays int64) (int64, error) {
+	return s.q.CountCompactableHolons(ctx, s.conn, retentionDays)
+}
+
+func (s *Store) GetArchivedHolonsForCompaction(ctx context.Context, retentionDays int64) ([]GetArchivedHolonsForCompactionRow, error) {
+	return s.q.GetArchivedHolonsForCompaction(ctx, s.conn, retentionDays)
+}
+
+func (s *Store) CompactHolon(ctx context.Context, holonID string) error {
+	// Waivers reference evidence, must delete first
+	if err := s.q.DeleteWaiversForHolon(ctx, s.conn, holonID); err != nil {
+		return fmt.Errorf("delete waivers: %w", err)
+	}
+	if err := s.q.DeleteEvidenceForHolon(ctx, s.conn, holonID); err != nil {
+		return fmt.Errorf("delete evidence: %w", err)
+	}
+	if err := s.q.DeleteCharacteristicsForHolon(ctx, s.conn, holonID); err != nil {
+		return fmt.Errorf("delete characteristics: %w", err)
+	}
+	if err := s.q.CompactHolonContent(ctx, s.conn, holonID); err != nil {
+		return fmt.Errorf("compact content: %w", err)
+	}
+	return nil
 }
 
 // MarkHolonNeedsReverification flags a holon as needing re-verification

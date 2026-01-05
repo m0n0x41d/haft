@@ -407,7 +407,7 @@ func TestCalculateR(t *testing.T) {
 	}
 
 	// Add passing evidence
-	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e1", "calc-r-test", "test", "Test passed", "pass", "L1", "test-runner", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestCalculateR_WithDecay(t *testing.T) {
 	}
 
 	// Add expired evidence (past date)
-	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, "e-expired", "decay-r-test", "test", "Old test", "pass", "L1", "test-runner", "", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 	}
 
 	// Add future-dated evidence
-	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-fresh", "fresh-holon", "test", "Fresh test", "pass", "L2", "test-runner", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 	}
 
 	// Add expired evidence
-	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, "e-stale", "stale-holon", "test", "Old test", "pass", "L2", "test-runner", "", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "", "2020-01-01")
+	err = tools.DB.AddEvidence(ctx, evidenceID, holonID, "test", "Old test", "pass", "L2", "test-runner", "", "", "2020-01-01")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -662,7 +662,7 @@ func TestVisualizeAudit(t *testing.T) {
 	}
 
 	// Add evidence
-	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-viz", "audit-viz-test", "test", "Test", "pass", "L2", "test-runner", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -922,7 +922,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create bad-decision: %v", err)
 	}
-	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-bad", "bad-decision", "test", "Failed", "fail", "L1", "test", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add failing evidence: %v", err)
 	}
@@ -943,7 +943,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	}
 
 	// Add passing evidence to good-member
-	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "", "2099-12-31")
+	err = tools.DB.AddEvidence(ctx, "e-good", "good-member", "test", "Passed", "pass", "L1", "test", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add passing evidence: %v", err)
 	}
@@ -1186,7 +1186,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// Resolve the decision (add implementation evidence)
 	err = tools.DB.AddEvidence(ctx, "resolve-evidence", "DRR-archive-test", "implementation",
-		"Implemented via commit:abc123", "pass", "L2", "commit:abc123", "", "")
+		"Implemented via commit:abc123", "pass", "L2", "commit:abc123", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to add resolution evidence: %v", err)
 	}
@@ -1527,7 +1527,7 @@ func TestSearch_StatusFilterOpen(t *testing.T) {
 		t.Fatalf("Failed to create resolved DRR: %v", err)
 	}
 	err = tools.DB.AddEvidence(ctx, "impl-evidence", "DRR-resolved-test", "implementation",
-		"Implemented in commit abc123", "pass", "L2", "developer", "", "2099-12-31")
+		"Implemented in commit abc123", "pass", "L2", "developer", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -1557,7 +1557,7 @@ func TestSearch_StatusFilterImplemented(t *testing.T) {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
 	err = tools.DB.AddEvidence(ctx, "impl-evidence-2", "DRR-impl-search", "implementation",
-		"Done", "pass", "L2", "developer", "", "2099-12-31")
+		"Done", "pass", "L2", "developer", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -1640,7 +1640,7 @@ func TestGetResolvedDecisions(t *testing.T) {
 
 	// Add resolution evidence
 	err = tools.DB.AddEvidence(ctx, "impl-get-resolved", "DRR-get-resolved", "implementation",
-		"Done", "pass", "L2", "dev", "", "2099-12-31")
+		"Done", "pass", "L2", "dev", "", "", "2099-12-31")
 	if err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
@@ -2332,7 +2332,7 @@ func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	if err := tools.DB.AddEvidence(ctx, "stale-evidence-1", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "src/main.go"); err != nil {
+	if err := tools.DB.AddEvidence(ctx, "stale-evidence-1", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "", "src/main.go"); err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
 
@@ -2371,7 +2371,7 @@ func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	if err := tools.DB.AddEvidence(ctx, "stale-evidence-2", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "src/main.go"); err != nil {
+	if err := tools.DB.AddEvidence(ctx, "stale-evidence-2", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "", "src/main.go"); err != nil {
 		t.Fatalf("Failed to add evidence: %v", err)
 	}
 

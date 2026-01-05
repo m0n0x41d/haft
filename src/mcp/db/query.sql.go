@@ -43,8 +43,8 @@ func (q *Queries) AddCharacteristic(ctx context.Context, db DBTX, arg AddCharact
 
 const addEvidence = `-- name: AddEvidence :exec
 
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_commit, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type AddEvidenceParams struct {
@@ -55,6 +55,7 @@ type AddEvidenceParams struct {
 	Verdict        string
 	AssuranceLevel sql.NullString
 	CarrierRef     sql.NullString
+	CarrierHash    sql.NullString
 	CarrierCommit  sql.NullString
 	ValidUntil     sql.NullTime
 	CreatedAt      sql.NullTime
@@ -70,6 +71,7 @@ func (q *Queries) AddEvidence(ctx context.Context, db DBTX, arg AddEvidenceParam
 		arg.Verdict,
 		arg.AssuranceLevel,
 		arg.CarrierRef,
+		arg.CarrierHash,
 		arg.CarrierCommit,
 		arg.ValidUntil,
 		arg.CreatedAt,
@@ -137,6 +139,19 @@ WHERE id = ?
 
 func (q *Queries) ClearHolonReverification(ctx context.Context, db DBTX, id string) error {
 	_, err := db.ExecContext(ctx, clearHolonReverification, id)
+	return err
+}
+
+const compactHolonContent = `-- name: CompactHolonContent :exec
+UPDATE holons
+SET content = '[COMPACTED]',
+    scope = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+func (q *Queries) CompactHolonContent(ctx context.Context, db DBTX, id string) error {
+	_, err := db.ExecContext(ctx, compactHolonContent, id)
 	return err
 }
 
@@ -226,6 +241,39 @@ func (q *Queries) CountArchivedHolonsByLayer(ctx context.Context, db DBTX) ([]Co
 		return nil, err
 	}
 	return items, nil
+}
+
+const countArchivedStaleEvidence = `-- name: CountArchivedStaleEvidence :one
+SELECT COUNT(*) as count FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
+  AND h.id NOT IN (SELECT id FROM active_holons)
+`
+
+func (q *Queries) CountArchivedStaleEvidence(ctx context.Context, db DBTX) (int64, error) {
+	row := db.QueryRowContext(ctx, countArchivedStaleEvidence)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCompactableHolons = `-- name: CountCompactableHolons :one
+SELECT COUNT(*) as count
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(?1 AS INTEGER)
+`
+
+func (q *Queries) CountCompactableHolons(ctx context.Context, db DBTX, retentionDays int64) (int64, error) {
+	row := db.QueryRowContext(ctx, countCompactableHolons, retentionDays)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countHolonsByLayer = `-- name: CountHolonsByLayer :many
@@ -374,6 +422,33 @@ func (q *Queries) CreateWaiver(ctx context.Context, db DBTX, arg CreateWaiverPar
 		arg.Rationale,
 		arg.CreatedAt,
 	)
+	return err
+}
+
+const deleteCharacteristicsForHolon = `-- name: DeleteCharacteristicsForHolon :exec
+DELETE FROM characteristics WHERE holon_id = ?
+`
+
+func (q *Queries) DeleteCharacteristicsForHolon(ctx context.Context, db DBTX, holonID string) error {
+	_, err := db.ExecContext(ctx, deleteCharacteristicsForHolon, holonID)
+	return err
+}
+
+const deleteEvidenceForHolon = `-- name: DeleteEvidenceForHolon :exec
+DELETE FROM evidence WHERE holon_id = ?
+`
+
+func (q *Queries) DeleteEvidenceForHolon(ctx context.Context, db DBTX, holonID string) error {
+	_, err := db.ExecContext(ctx, deleteEvidenceForHolon, holonID)
+	return err
+}
+
+const deleteWaiversForHolon = `-- name: DeleteWaiversForHolon :exec
+DELETE FROM waivers WHERE evidence_id IN (SELECT id FROM evidence WHERE holon_id = ?)
+`
+
+func (q *Queries) DeleteWaiversForHolon(ctx context.Context, db DBTX, holonID string) error {
+	_, err := db.ExecContext(ctx, deleteWaiversForHolon, holonID)
 	return err
 }
 
@@ -533,6 +608,146 @@ func (q *Queries) GetAllStaleEvidence(ctx context.Context, db DBTX) ([]GetAllSta
 	var items []GetAllStaleEvidenceRow
 	for rows.Next() {
 		var i GetAllStaleEvidenceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.HolonID,
+			&i.Type,
+			&i.CarrierRef,
+			&i.IsStale,
+			&i.StaleReason,
+			&i.StaleSince,
+			&i.HolonTitle,
+			&i.HolonLayer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getArchivedHolonsForCompaction = `-- name: GetArchivedHolonsForCompaction :many
+
+SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
+       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at,
+       drr.id as decision_id, drr.title as decision_title,
+       r.relation_type as decision_outcome,
+       MAX(e.created_at) as resolved_at
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(?1 AS INTEGER)
+GROUP BY h.id
+ORDER BY resolved_at ASC
+`
+
+type GetArchivedHolonsForCompactionRow struct {
+	ID              string
+	Type            string
+	Kind            sql.NullString
+	Layer           string
+	Title           string
+	Content         string
+	ContextID       string
+	Scope           sql.NullString
+	ParentID        sql.NullString
+	CachedRScore    sql.NullFloat64
+	CreatedAt       sql.NullTime
+	UpdatedAt       sql.NullTime
+	DecisionID      string
+	DecisionTitle   string
+	DecisionOutcome string
+	ResolvedAt      interface{}
+}
+
+// ============================================
+// COMPACTION QUERIES (v5.1.0)
+// ============================================
+// Returns archived holons older than retention_days after decision resolution.
+// These are candidates for compaction (content summarization, evidence deletion).
+// sqlc: arg(retention_days) type: int64
+func (q *Queries) GetArchivedHolonsForCompaction(ctx context.Context, db DBTX, retentionDays int64) ([]GetArchivedHolonsForCompactionRow, error) {
+	rows, err := db.QueryContext(ctx, getArchivedHolonsForCompaction, retentionDays)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetArchivedHolonsForCompactionRow
+	for rows.Next() {
+		var i GetArchivedHolonsForCompactionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Kind,
+			&i.Layer,
+			&i.Title,
+			&i.Content,
+			&i.ContextID,
+			&i.Scope,
+			&i.ParentID,
+			&i.CachedRScore,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DecisionID,
+			&i.DecisionTitle,
+			&i.DecisionOutcome,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getArchivedStaleEvidence = `-- name: GetArchivedStaleEvidence :many
+SELECT e.id, e.holon_id, e.type, e.carrier_ref,
+       e.is_stale, e.stale_reason, e.stale_since,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.is_stale = 1
+  AND h.id NOT IN (SELECT id FROM active_holons)
+ORDER BY e.stale_since DESC
+`
+
+type GetArchivedStaleEvidenceRow struct {
+	ID          string
+	HolonID     string
+	Type        string
+	CarrierRef  sql.NullString
+	IsStale     sql.NullInt64
+	StaleReason sql.NullString
+	StaleSince  sql.NullTime
+	HolonTitle  string
+	HolonLayer  string
+}
+
+func (q *Queries) GetArchivedStaleEvidence(ctx context.Context, db DBTX) ([]GetArchivedStaleEvidenceRow, error) {
+	rows, err := db.QueryContext(ctx, getArchivedStaleEvidence)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetArchivedStaleEvidenceRow
+	for rows.Next() {
+		var i GetArchivedStaleEvidenceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.HolonID,

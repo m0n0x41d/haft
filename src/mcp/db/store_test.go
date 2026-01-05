@@ -81,7 +81,7 @@ func TestStore_EvidenceCRUD(t *testing.T) {
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "")
 
-	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", "internal-logic", "", "")
+	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", "internal-logic", "", "", "")
 	if err != nil {
 		t.Fatalf("AddEvidence failed: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestStore_MarkEvidenceStale(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L1", "Test", "Content", "ctx", "", "")
-	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Tests pass", "pass", "L1", "internal", "", "src/main.go")
+	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Tests pass", "pass", "L1", "internal", "", "", "src/main.go")
 
 	err = store.MarkEvidenceStale(ctx, "e1", "carrier file changed")
 	if err != nil {
@@ -306,7 +306,7 @@ func TestStore_ClearEvidenceStale(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L1", "Test", "Content", "ctx", "", "")
-	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Tests pass", "pass", "L1", "internal", "", "src/main.go")
+	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Tests pass", "pass", "L1", "internal", "", "", "src/main.go")
 	_ = store.MarkEvidenceStale(ctx, "e1", "carrier file changed")
 
 	err = store.ClearEvidenceStale(ctx, "e1")
@@ -336,8 +336,8 @@ func TestStore_ClearAllEvidenceStaleForHolon(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L1", "Test", "Content", "ctx", "", "")
-	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Test 1", "pass", "L1", "internal", "", "src/a.go")
-	_ = store.AddEvidence(ctx, "e2", "h1", "test_result", "Test 2", "pass", "L1", "internal", "", "src/b.go")
+	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Test 1", "pass", "L1", "internal", "", "", "src/a.go")
+	_ = store.AddEvidence(ctx, "e2", "h1", "test_result", "Test 2", "pass", "L1", "internal", "", "", "src/b.go")
 	_ = store.MarkEvidenceStale(ctx, "e1", "file changed")
 	_ = store.MarkEvidenceStale(ctx, "e2", "file changed")
 
@@ -371,8 +371,8 @@ func TestStore_GetAllStaleEvidence(t *testing.T) {
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L1", "Test1", "Content", "ctx", "", "")
 	_ = store.CreateHolon(ctx, "h2", "hypothesis", "system", "L1", "Test2", "Content", "ctx", "", "")
-	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Test 1", "pass", "L1", "internal", "", "")
-	_ = store.AddEvidence(ctx, "e2", "h2", "test_result", "Test 2", "pass", "L1", "internal", "", "")
+	_ = store.AddEvidence(ctx, "e1", "h1", "test_result", "Test 1", "pass", "L1", "internal", "", "", "")
+	_ = store.AddEvidence(ctx, "e2", "h2", "test_result", "Test 2", "pass", "L1", "internal", "", "", "")
 	_ = store.MarkEvidenceStale(ctx, "e1", "reason1")
 	_ = store.MarkEvidenceStale(ctx, "e2", "reason2")
 

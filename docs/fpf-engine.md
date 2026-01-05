@@ -98,64 +98,70 @@ Decisions are plans. Reality is what happens. `/q-resolve` bridges the gap:
 - **Abandoned**: Record why the decision was dropped
 - **Superseded**: Link to the newer decision that replaced this one
 
-Use `quint_search` with `status_filter="open"` to find decisions awaiting resolution.
+To find decisions awaiting resolution, run `/q-query` or ask: *"What decisions are still open?"*
 
 ## Dependency Discovery
 
-When you propose a hypothesis, Quint Code automatically searches for related existing holons using FTS5 semantic matching.
+When you propose a hypothesis, Quint Code automatically searches for related existing knowledge.
 
 ### How It Works
 
-1. You call `/q1-hypothesize` with "Rate limiting using Redis"
-2. `quint_propose` extracts keywords and searches existing DRRs, L1, L2 holons
-3. If matches found, output shows:
+1. You run `/q1-hypothesize` with your problem
+2. The system searches existing decisions and hypotheses for related concepts
+3. If matches found, you'll see suggestions:
 
 ```
 ⚠️ POTENTIAL DEPENDENCIES DETECTED
 
-Related holons found (ranked by relevance):
-  • redis-cache-drr [DRR] Redis Cache Layer
-  • redis-connection [L2] Redis Connection Pool
+Related holons found:
+  • Redis Cache Layer [DRR]
+  • Redis Connection Pool [L2]
 
-Consider linking with:
-  quint_link(source_id="redis-cache-drr", target_id="rate-limiter")
+You might want to link your new hypothesis to these.
 ```
 
-### Post-Creation Linking
+### Declaring Dependencies
 
-If you missed `depends_on` during creation, use `quint_link`:
+When creating hypotheses, tell the agent about dependencies:
 
 ```
-quint_link(source_id="redis-cache", target_id="my-api")
+User: Generate hypotheses for rate limiting.
+      This will depend on our existing Redis cache decision.
+
+Agent: [Creates hypothesis with dependency on redis-cache-drr]
+       Your new hypothesis inherits the reliability score from Redis cache.
 ```
 
-This creates `redis-cache componentOf my-api` — the dependency becomes a component of your holon.
+If you forgot to mention dependencies during creation, just say:
 
-**Important:** The source is the thing being depended ON, target is the thing that HAS the dependency. This matches `depends_on` semantics: `quint_propose(id="my-api", depends_on=["redis-cache"])` creates the same relation.
+```
+User: Link my rate-limiter hypothesis to the redis-cache decision.
 
-Relation type is determined by source holon's kind:
-- **system** source → `componentOf`
-- **episteme** source → `constituentOf`
+Agent: Linked. Rate-limiter's reliability is now capped by redis-cache's score.
+```
 
-WLNK applies: your holon inherits the R_eff ceiling from its components.
+### Why Dependencies Matter
 
-### Relation Direction Convention
+Dependencies enable **WLNK (Weakest Link)** — your hypothesis can't be more reliable than its dependencies. If your API depends on an auth module with R=0.7, your API's reliability is capped at 0.7.
 
-All relations follow **source → target** direction:
+This makes architectural coupling visible:
+- **System** dependencies become "components" (cache-layer is part of api-service)
+- **Epistemic** dependencies become "constituents" (benchmark supports claim)
 
-| Relation | Meaning | Example | Created By |
-|----------|---------|---------|------------|
-| `componentOf` | Source is part of target | `cache-layer componentOf api-service` | `depends_on`, `quint_link` |
-| `constituentOf` | Source supports/argues for target | `benchmark-results constituentOf performance-claim` | `depends_on`, `quint_link` |
-| `memberOf` | Source belongs to collection target | `option-a memberOf decision-context` | `decision_context` param |
-| `verifiedBy` | Source is verified by target | `hypothesis verifiedBy test-evidence` | `quint_test` |
-| `selects` | Source selects target (DRR picks winner) | `drr selects winning-hypothesis` | `quint_decide` |
-| `rejects` | Source rejects target (DRR rejects loser) | `drr rejects losing-hypothesis` | `quint_decide` |
-| `closes` | Source closes target (resolution) | `drr closes decision-context` | `quint_decide`, `quint_resolve` |
+### How Relations Work
 
-**Semantic meaning:** Read as "source `relation` target" — e.g., "cache-layer is componentOf api-service".
+Relations flow **source → target**:
 
-**Note:** `dependsOn` relation type exists for manual use via `quint_link(relation_type="dependsOn")` but is semantically different from mereological relations. Use `componentOf`/`constituentOf` for WLNK-propagating dependencies.
+| Relation | What It Means | Example |
+|----------|--------------|---------|
+| `componentOf` | Part of a system | cache-layer is part of api-service |
+| `constituentOf` | Supports a claim | benchmark supports performance-claim |
+| `memberOf` | Belongs to group | option-A belongs to caching-decision |
+| `selects` | Decision picks winner | DRR selects redis-caching |
+| `rejects` | Decision rejects loser | DRR rejects memcached |
+| `closes` | Resolves context | implementation closes DRR |
+
+You don't need to remember these — just describe what depends on what, and the agent handles the rest.
 
 ### Why This Matters
 
@@ -175,26 +181,32 @@ After a decision (DRR) is created, `/q-implement` transforms it into executable 
    - Acceptance criteria (verify before closing)
    - Affected scope (files/modules impacted)
 
-2. `/q-implement` returns an **implementation directive** that programs your planning:
+2. `/q-implement` returns an **implementation directive** — a checklist for the work:
 
 ```markdown
 ## Invariants to Implement
 - Cache misses must fall through to DB transparently
 - TTL must be configurable per entity type
 
-## Inherited from redis-connection-drr:
+## Inherited from Redis Connection decision:
 - Connection pool must be bounded
 - Reconnection must be exponential backoff
 
 ## Final Verification
-Before calling quint_resolve, verify:
+Before closing, verify:
 - [ ] No hardcoded TTL values
 - [ ] Connection pool limits respected
 ```
 
-3. You implement using your normal workflow (TodoWrite, etc.)
+3. You implement the feature normally.
 
-4. When done, call `quint_resolve` with `criteria_verified=true`
+4. When done, run `/q-resolve` to close the decision:
+
+```
+User: Mark the caching decision as implemented, linked to PR #42.
+
+Agent: Decision closed. Evidence recorded linking DRR to implementation.
+```
 
 ### WLNK for Constraints
 

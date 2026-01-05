@@ -69,10 +69,10 @@ Quint uses **semantic preconditions** instead. Each command checks actual artifa
 
 | Command | Checks | Blocks if |
 |---------|--------|-----------|
-| `quint_verify` | hypothesis exists in L0 | not found in L0 |
-| `quint_test` | hypothesis in L1 or L2 | still in L0 |
-| `quint_audit` | hypothesis in L2 | not in L2 |
-| `quint_decide` | at least one L2 exists | no L2 holons |
+| `/q2-verify` | hypothesis exists in L0 | not found in L0 |
+| `/q3-validate` | hypothesis in L1 or L2 | still in L0 |
+| `/q4-audit` | hypothesis in L2 | not in L2 |
+| `/q5-decide` | at least one L2 exists | no L2 holons |
 
 ### What You Can and Can't Do
 
@@ -82,7 +82,7 @@ Quint uses **semantic preconditions** instead. Each command checks actual artifa
 - Decide without any validated options
 
 **Can do freely:**
-- Multiple `propose` in a row
+- Generate multiple hypotheses in a row
 - Verify hypotheses in any order
 - Re-test L2 to refresh evidence
 - Work on multiple decision contexts in parallel

@@ -100,29 +100,38 @@ func (t *Tools) Slugify(title string) string {
 }
 
 func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (string, error) {
+	ctx := context.Background()
+
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	holon, err := t.DB.GetHolon(ctx, hypothesisID)
+	if err != nil {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR",
+			map[string]string{"from": sourceLevel, "to": destLevel}, "not found in database")
+		return "", fmt.Errorf("hypothesis %s not found", hypothesisID)
+	}
+
+	if holon.Layer != sourceLevel {
+		return "", fmt.Errorf("hypothesis %s is in %s, not %s", hypothesisID, holon.Layer, sourceLevel)
+	}
+
+	if err := t.DB.UpdateHolonLayer(ctx, hypothesisID, destLevel); err != nil {
+		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR",
+			map[string]string{"from": sourceLevel, "to": destLevel}, err.Error())
+		return "", fmt.Errorf("failed to update layer in database: %w", err)
+	}
+
 	srcPath := filepath.Join(t.GetFPFDir(), "knowledge", sourceLevel, hypothesisID+".md")
 	destPath := filepath.Join(t.GetFPFDir(), "knowledge", destLevel, hypothesisID+".md")
 
-	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		if _, destErr := os.Stat(destPath); destErr == nil {
-			return destPath, nil
-		}
-		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, "not found")
-		return "", fmt.Errorf("hypothesis %s not found in %s", hypothesisID, sourceLevel)
-	}
-
 	if err := os.Rename(srcPath, destPath); err != nil {
-		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"from": sourceLevel, "to": destLevel}, err.Error())
-		return "", fmt.Errorf("failed to move hypothesis from %s to %s: %v", sourceLevel, destLevel, err)
+		logger.Warn().Err(err).Str("holon", hypothesisID).Msg("file move failed, DB already updated")
 	}
 
-	if t.DB != nil {
-		if err := t.DB.UpdateHolonLayer(context.Background(), hypothesisID, destLevel); err != nil {
-			logger.Warn().Err(err).Msg("failed to update holon layer in DB")
-		}
-	}
-
-	t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"from": sourceLevel, "to": destLevel}, "")
+	t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "SUCCESS",
+		map[string]string{"from": sourceLevel, "to": destLevel}, "")
 	return destPath, nil
 }
 

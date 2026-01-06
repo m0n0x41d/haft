@@ -1215,8 +1215,8 @@ func TestInternalize_FirstCall(t *testing.T) {
 	if !strings.Contains(result, "Status: INITIALIZED") {
 		t.Errorf("First call should return INITIALIZED, got: %s", result)
 	}
-	if !strings.Contains(result, "Phase: ABDUCTION") {
-		t.Errorf("Phase should be ABDUCTION after init, got: %s", result)
+	if !strings.Contains(result, "Session Phase: IDLE") {
+		t.Errorf("Phase should be IDLE after init (user decides next step), got: %s", result)
 	}
 
 	// Verify .quint was created

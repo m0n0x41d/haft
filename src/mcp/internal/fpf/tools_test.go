@@ -471,7 +471,13 @@ func TestVerifyHypothesis(t *testing.T) {
 	}
 
 	fsm.State.Phase = PhaseDeduction
-	msg, err := tools.VerifyHypothesis(hypoID, `{"check":"ok"}`, "PASS", "")
+	passJSON := `{
+		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type is correct"},
+		"constraint_check": {"verdict": "PASS", "evidence": ["constraint-ref"], "reasoning": "Constraints satisfied"},
+		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"},
+		"overall_verdict": "PASS"
+	}`
+	msg, err := tools.VerifyHypothesis(hypoID, passJSON, "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
@@ -491,13 +497,18 @@ func TestVerifyHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
 	}
 
-	msg, err = tools.VerifyHypothesis(hypoID2, `{"check":"bad"}`, "FAIL", "")
+	failJSON := `{
+		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type ok"},
+		"constraint_check": {"verdict": "FAIL", "evidence": ["constraint-ref"], "reasoning": "Constraint violated"},
+		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic ok"},
+		"overall_verdict": "FAIL"
+	}`
+	msg, err = tools.VerifyHypothesis(hypoID2, failJSON, "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
 	}
-	expectedMsgFail := fmt.Sprintf("Hypothesis %s moved to invalid", hypoID2)
-	if msg != expectedMsgFail {
-		t.Errorf("Expected message %q, got %q", expectedMsgFail, msg)
+	if !strings.Contains(msg, "VERIFICATION FAILED") {
+		t.Errorf("Expected message to contain 'VERIFICATION FAILED', got %q", msg)
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "invalid", hypoID2+".md")); os.IsNotExist(err) {
 		t.Errorf("Hypothesis not moved to invalid")

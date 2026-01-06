@@ -15,7 +15,7 @@ You are the **Observer**. This is your entry point for every session.
 Bring your mental model in sync with:
 1. **Project structure** - code, dependencies, architecture
 2. **Knowledge base** - hypotheses, evidence, decisions
-3. **Current phase** - where you are in the ADI cycle
+3. **Current stage** - where each decision context is in the ADI cycle
 
 ## When to Use
 
@@ -41,11 +41,10 @@ Call `quint_internalize`. The tool handles everything:
 | Field | Meaning |
 |-------|---------|
 | Status | `INITIALIZED` (new), `UPDATED` (refreshed), `READY` (no changes) |
-| Phase | Current FSM phase: IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION |
-| Role | Expected role: Observer, Abductor, Deductor, Inductor, Auditor, Decider |
+| Active Decision Contexts | Open contexts with their derived stages (max 3) |
+| Context Stage | Per-context: EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE |
 | Context Changes | What was updated (if any) |
 | Knowledge State | Holon counts by layer (L0/L1/L2/DRR) |
-| Active Decision Contexts | **v5.0.0**: Open decision contexts with their stages (max 3 active) |
 | Recent Holons | Quick context on recent work |
 | Attention Required | Decaying evidence, open decisions pending resolution |
 | Open Decisions | Decisions awaiting resolution (use `/q-resolve` to close) |
@@ -58,18 +57,18 @@ Call `quint_internalize`. The tool handles everything:
 quint_internalize
     |
     +-> Status: INITIALIZED
-    |   +-> Proceed to /q1-hypothesize (IDLE -> ABDUCTION)
+    |   +-> No contexts exist -> /q1-hypothesize to start
     |
     +-> Status: UPDATED
-    |   +-> Review changes, then continue current phase
+    |   +-> Review changes, continue with active contexts
     |
     +-> Status: READY
-        +-> Phase: IDLE -> /q1-hypothesize
-        +-> Phase: ABDUCTION -> /q1-hypothesize or /q2-verify
-        +-> Phase: DEDUCTION -> /q2-verify or /q3-validate
-        +-> Phase: INDUCTION -> /q3-validate or /q4-audit
-        +-> Phase: AUDIT -> /q4-audit or /q5-decide
-        +-> Phase: DECISION -> /q5-decide
+        +-> For each active context, stage determines next action:
+            +-> EMPTY -> /q1-hypothesize (add hypotheses)
+            +-> NEEDS_VERIFICATION -> /q2-verify (verify L0)
+            +-> NEEDS_VALIDATION -> /q3-validate (test L1)
+            +-> NEEDS_AUDIT -> /q4-audit (audit L2)
+            +-> READY_TO_DECIDE -> /q5-decide (finalize)
 ```
 
 ## Examples
@@ -82,20 +81,16 @@ quint_internalize
 === QUINT INTERNALIZE ===
 
 Status: INITIALIZED
-Phase: ABDUCTION
-Role: Abductor
 Context: default
+
+Active Decision Contexts (0/3):
+  No active contexts.
 
 Context Changes:
   - Created .quint/ structure
   - Auto-generated context from project analysis
 
-Knowledge State:
-  L0 (Conjecture): 0
-  L1 (Substantiated): 0
-  L2 (Corroborated): 0
-
-Next Action: -> /q1-hypothesize to generate hypotheses
+Next Action: -> /q1-hypothesize to create first decision context
 ```
 
 ### Continuing Session
@@ -106,19 +101,18 @@ Next Action: -> /q1-hypothesize to generate hypotheses
 === QUINT INTERNALIZE ===
 
 Status: READY
-Phase: DEDUCTION
-Role: Deductor
 Context: default
 
-Knowledge State:
-  L0 (Conjecture): 3
-  L1 (Substantiated): 2
-  L2 (Corroborated): 0
-  DRRs: 2
-
 Active Decision Contexts (2/3):
-  - dc-auth-strategy: Auth Strategy (3 hypotheses) [Hypotheses need verification]
-  - dc-caching: Caching Strategy (2 hypotheses) [Ready for decision]
+  [dc-auth-strategy] "Auth Strategy"
+    Stage: NEEDS_VERIFICATION
+    Hypotheses: 3 (L0: 2, L1: 1)
+    Next: /q2-verify
+
+  [dc-caching] "Caching Strategy"
+    Stage: READY_TO_DECIDE
+    Hypotheses: 2 (L2: 2, audited)
+    Next: /q5-decide
 
 Recent Holons:
   - jwt-auth [L1] R=0.45 - 2h ago
@@ -131,7 +125,7 @@ Open Decisions (awaiting resolution):
 Recent Resolutions:
   - DRR-auth-jwt: JWT Authentication [implemented] 2d ago
 
-Next Action: -> 2 L1 ready for /q3-validate
+Next Action: -> dc-caching ready for /q5-decide
 ```
 
 ### Stale Context Detected
@@ -142,17 +136,16 @@ Next Action: -> 2 L1 ready for /q3-validate
 === QUINT INTERNALIZE ===
 
 Status: UPDATED
-Phase: ABDUCTION
-Role: Abductor
 Context: default
+
+Active Decision Contexts (1/3):
+  [dc-api-design] "API Design"
+    Stage: NEEDS_VERIFICATION
+    Hypotheses: 2 (L0: 2)
+    Next: /q2-verify
 
 Context Changes:
   - go.mod modified since last context update
-
-Knowledge State:
-  L0 (Conjecture): 2
-  L1 (Substantiated): 1
-  L2 (Corroborated): 0
 
 Next Action: -> 2 L0 ready for /q2-verify
 ```

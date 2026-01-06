@@ -160,10 +160,6 @@ func createDirectoryStructure(quintDir string) error {
 		"evidence",
 		"decisions",
 		"sessions",
-		"knowledge/L0",
-		"knowledge/L1",
-		"knowledge/L2",
-		"knowledge/invalid",
 		"agents",
 	}
 

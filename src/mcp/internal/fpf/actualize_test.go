@@ -56,7 +56,7 @@ func TestActualize_GitReconciliation(t *testing.T) {
 	}
 
 	fsm := &fpf.FSM{
-		State: fpf.State{Phase: fpf.PhaseIdle},
+		State: fpf.State{},
 		DB:    database.GetRawDB(),
 	}
 	tools := fpf.NewTools(fsm, tempDir, database)
@@ -121,7 +121,7 @@ func TestActualize_LegacyMigration(t *testing.T) {
 	// But Actualize handles .quint creation. Let's see if NewTools fails if .quint doesn't exist.
 	// NewTools attempts to open DB. If it fails, it prints warning but continues.
 
-	fsm := &fpf.FSM{State: fpf.State{Phase: fpf.PhaseIdle}}
+	fsm := &fpf.FSM{State: fpf.State{}}
 	tools := fpf.NewTools(fsm, tempDir, nil)
 
 	// Run Actualize

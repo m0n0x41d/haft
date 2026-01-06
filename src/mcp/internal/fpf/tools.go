@@ -382,6 +382,10 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
 
+	if err := t.FSM.SetPhase(PhaseAbduction); err != nil {
+		logger.Warn().Err(err).Msg("failed to set phase to ABDUCTION")
+	}
+
 	var warningBlock string
 	if len(dependsOn) == 0 && t.DB != nil {
 		suggestions := t.suggestDependencies(title, content)
@@ -603,6 +607,11 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 		}
 
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
+
+		if err := t.FSM.SetPhase(PhaseDeduction); err != nil {
+			logger.Warn().Err(err).Msg("failed to set phase to DEDUCTION")
+		}
+
 		return fmt.Sprintf("Hypothesis %s (kind: %s) promoted to L1", hypothesisID, carrierRef), nil
 	case "fail":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
@@ -623,7 +632,15 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	defer t.RecordWork("AuditEvidence", time.Now())
 	_, err := t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
-	return "Audit recorded for " + hypothesisID, err
+	if err != nil {
+		return "", err
+	}
+
+	if setErr := t.FSM.SetPhase(PhaseAudit); setErr != nil {
+		logger.Warn().Err(setErr).Msg("failed to set phase to AUDIT")
+	}
+
+	return "Audit recorded for " + hypothesisID, nil
 }
 
 func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
@@ -952,6 +969,11 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 
 	t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "SUCCESS", map[string]string{"title": title, "drr": drrName}, "")
+
+	if err := t.FSM.SetPhase(PhaseIdle); err != nil {
+		logger.Warn().Err(err).Msg("failed to set phase to IDLE")
+	}
+
 	return drrPath, nil
 }
 
@@ -1388,7 +1410,8 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 
 type InternalizeResult struct {
 	Status            string            // INITIALIZED, UPDATED, READY
-	Phase             string            // IDLE, ABDUCTION, DEDUCTION, INDUCTION, AUDIT, DECISION
+	Phase             string            // Session phase (explicit, set by tools)
+	SuggestedPhase    string            // Derived from knowledge state (informational)
 	Role              string            // Observer, Initializer, Abductor, etc.
 	ContextID         string            // Current bounded context identifier
 	ContextChanges    []string          // What changed (if INITIALIZED or UPDATED)
@@ -1428,10 +1451,14 @@ type DecayWarning struct {
 func (t *Tools) Internalize() (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
 
+	sessionPhase := t.FSM.GetPhase()
+	suggestedPhase := t.FSM.GetSuggestedPhase("default")
+
 	result := InternalizeResult{
-		Phase:       string(t.FSM.GetPhase()),
-		Role:        string(GetExpectedRole(t.FSM.GetPhase())),
-		LayerCounts: make(map[string]int),
+		Phase:          string(sessionPhase),
+		SuggestedPhase: string(suggestedPhase),
+		Role:           string(GetExpectedRole(sessionPhase)),
+		LayerCounts:    make(map[string]int),
 	}
 
 	if !t.IsInitialized() {
@@ -1453,13 +1480,13 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 
-		// Set phase to ABDUCTION after init
-		t.FSM.State.Phase = PhaseAbduction
-		if err := t.FSM.SaveState("default"); err != nil {
-			logger.Warn().Err(err).Msg("failed to save state")
+		// Set phase to IDLE after init (user decides next step)
+		if err := t.FSM.SetPhase(PhaseIdle); err != nil {
+			logger.Warn().Err(err).Msg("failed to set phase")
 		}
-		result.Phase = string(PhaseAbduction)
-		result.Role = string(GetExpectedRole(PhaseAbduction))
+		result.Phase = string(PhaseIdle)
+		result.SuggestedPhase = string(t.FSM.GetSuggestedPhase("default"))
+		result.Role = string(GetExpectedRole(PhaseIdle))
 	} else {
 		stale, signals := t.IsContextStale()
 		if stale {
@@ -1589,7 +1616,10 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 
 	sb.WriteString("=== QUINT INTERNALIZE ===\n\n")
 	sb.WriteString(fmt.Sprintf("Status: %s\n", r.Status))
-	sb.WriteString(fmt.Sprintf("Phase: %s\n", r.Phase))
+	sb.WriteString(fmt.Sprintf("Session Phase: %s\n", r.Phase))
+	if r.SuggestedPhase != "" && r.SuggestedPhase != r.Phase {
+		sb.WriteString(fmt.Sprintf("Suggested Phase: %s (based on knowledge state)\n", r.SuggestedPhase))
+	}
 	sb.WriteString(fmt.Sprintf("Role: %s\n", r.Role))
 	sb.WriteString(fmt.Sprintf("Context: %s\n\n", r.ContextID))
 
@@ -3319,9 +3349,8 @@ func (t *Tools) ResetCycle(reason string) (string, error) {
 		map[string]string{"reason": reason, "from_phase": string(currentPhase)},
 		stateSummary.String())
 
-	t.FSM.State.Phase = PhaseIdle
-	if err := t.FSM.SaveState("default"); err != nil {
-		return "", fmt.Errorf("failed to save state: %w", err)
+	if err := t.FSM.SetPhase(PhaseIdle); err != nil {
+		return "", fmt.Errorf("failed to set phase: %w", err)
 	}
 
 	return fmt.Sprintf("Cycle reset to IDLE.\nPrevious phase: %s\nReason: %s\n\n%s",

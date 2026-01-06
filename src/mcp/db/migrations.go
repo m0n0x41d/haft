@@ -146,66 +146,14 @@ var migrations = []struct {
 		version:     6,
 		description: "Add active_holons view for single source of truth on holon visibility",
 		sql: `
-			-- Active holons: not selected/rejected by a resolved DRR
-			-- A DRR is "resolved" if it has implementation/abandonment/supersession evidence
-			-- Used by: GetSuggestedPhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
-			CREATE VIEW IF NOT EXISTS active_holons AS
-			SELECT h.*
-			FROM holons h
-			WHERE h.layer NOT IN ('invalid')
-			  AND NOT EXISTS (
-			    SELECT 1 FROM relations r
-			    INNER JOIN holons drr ON drr.id = r.source_id
-			    WHERE r.target_id = h.id
-			      AND r.relation_type IN ('selects', 'rejects')
-			      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
-			      AND EXISTS (
-			          SELECT 1 FROM evidence e
-			          WHERE e.holon_id = drr.id
-			          AND e.type IN ('implementation', 'abandonment', 'supersession')
-			      )
-			  );
-		`,
-	},
-	{
-		version:     7,
-		description: "Code Change Awareness: staleness tracking for evidence and holons",
-		sql:         "", // Applied as individual statements below
-	},
-	{
-		version:     8,
-		description: "Fix active_holons view: exclude selected/rejected L2 immediately after decision (not after resolution)",
-		sql: `
-			-- Drop and recreate the view with corrected logic
-			-- Previously: excluded L2 only after DRR had resolution evidence
-			-- Now: excluded L2 immediately after selects/rejects relation from DRR
-			DROP VIEW IF EXISTS active_holons;
-			CREATE VIEW active_holons AS
-			SELECT h.*
-			FROM holons h
-			WHERE h.layer NOT IN ('invalid')
-			  AND NOT EXISTS (
-			    SELECT 1 FROM relations r
-			    INNER JOIN holons drr ON drr.id = r.source_id
-			    WHERE r.target_id = h.id
-			      AND r.relation_type IN ('selects', 'rejects')
-			      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
-			  );
-		`,
-	},
-	{
-		version:     9,
-		description: "Simplify active_holons: exclude any holon with selects/rejects/closes relation (no DRR join needed)",
-		sql: `
-			-- Simplified active_holons view
-			-- Excludes holons that are targets of selects/rejects/closes relations
-			-- This covers:
+			-- Active holons: not targets of selects/rejects/closes relations
+			-- These relation types are only created by quint_decide, so no DRR check needed.
+			-- Covers:
 			--   - Selected winner hypotheses (DRR --selects--> winner)
 			--   - Rejected alternative hypotheses (DRR --rejects--> loser)
 			--   - Closed decision contexts (DRR --closes--> context)
-			-- No need to check if source is DRR - these relation types are only created by quint_decide
-			DROP VIEW IF EXISTS active_holons;
-			CREATE VIEW active_holons AS
+			-- Used by: GetSuggestedPhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
+			CREATE VIEW IF NOT EXISTS active_holons AS
 			SELECT h.*
 			FROM holons h
 			WHERE h.layer NOT IN ('invalid')
@@ -215,6 +163,11 @@ var migrations = []struct {
 			      AND r.relation_type IN ('selects', 'rejects', 'closes')
 			  );
 		`,
+	},
+	{
+		version:     7,
+		description: "Code Change Awareness: staleness tracking for evidence and holons",
+		sql:         "", // Applied as individual statements below
 	},
 }
 

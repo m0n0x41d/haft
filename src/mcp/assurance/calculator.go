@@ -55,7 +55,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var minScore float64 = 1.0 // WLNK: track weakest evidence
+	minScore := 1.0 // WLNK: track weakest evidence
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string

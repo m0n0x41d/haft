@@ -947,7 +947,7 @@ func (s *Store) GetOpenContexts(ctx context.Context, contextID string) ([]Contex
 	rows, err := s.conn.QueryContext(ctx, `
 		SELECT id, title, content, context_status, created_at, updated_at
 		FROM holons
-		WHERE type = 'context' AND context_status = 'open' AND context_id = ?
+		WHERE type = 'decision_context' AND context_status = 'open' AND context_id = ?
 		ORDER BY updated_at DESC`,
 		contextID)
 	if err != nil {
@@ -982,7 +982,7 @@ func (s *Store) CountOpenContexts(ctx context.Context, contextID string) (int64,
 	var count int64
 	err := s.conn.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM holons
-		WHERE type = 'context' AND context_status = 'open' AND context_id = ?`,
+		WHERE type = 'decision_context' AND context_status = 'open' AND context_id = ?`,
 		contextID).Scan(&count)
 	return count, err
 }
@@ -991,7 +991,7 @@ func (s *Store) CountOpenContexts(ctx context.Context, contextID string) (int64,
 func (s *Store) CloseContext(ctx context.Context, id string) error {
 	_, err := s.conn.ExecContext(ctx, `
 		UPDATE holons SET context_status = 'closed', updated_at = ?
-		WHERE id = ? AND type = 'context'`,
+		WHERE id = ? AND type = 'decision_context'`,
 		time.Now(), id)
 	return err
 }
@@ -1000,7 +1000,7 @@ func (s *Store) CloseContext(ctx context.Context, id string) error {
 func (s *Store) AbandonContext(ctx context.Context, id string) error {
 	_, err := s.conn.ExecContext(ctx, `
 		UPDATE holons SET context_status = 'abandoned', updated_at = ?
-		WHERE id = ? AND type = 'context'`,
+		WHERE id = ? AND type = 'decision_context'`,
 		time.Now(), id)
 	return err
 }
@@ -1074,7 +1074,7 @@ func (s *Store) GetContextByID(ctx context.Context, id string) (ContextSummary, 
 	err := s.conn.QueryRowContext(ctx, `
 		SELECT id, title, content, context_status, created_at, updated_at
 		FROM holons
-		WHERE id = ? AND type = 'context'`,
+		WHERE id = ? AND type = 'decision_context'`,
 		id).Scan(&c.ID, &c.Title, &c.Content, &status, &createdAt, &updatedAt)
 	if err != nil {
 		return c, err
@@ -1098,7 +1098,7 @@ func (s *Store) GetHypothesisContext(ctx context.Context, hypothesisID string) (
 		SELECT r.target_id
 		FROM relations r
 		JOIN holons h ON r.target_id = h.id
-		WHERE r.source_id = ? AND r.relation_type = 'memberOf' AND h.type = 'context'
+		WHERE r.source_id = ? AND r.relation_type = 'memberOf' AND h.type = 'decision_context'
 		LIMIT 1`,
 		hypothesisID).Scan(&contextID)
 	if err == sql.ErrNoRows {

@@ -932,51 +932,6 @@ type ContextSummary struct {
 	UpdatedAt time.Time
 }
 
-// GetOpenContexts returns all open decision contexts
-func (s *Store) GetOpenContexts(ctx context.Context, contextID string) ([]ContextSummary, error) {
-	rows, err := s.conn.QueryContext(ctx, `
-		SELECT id, title, content, context_status, created_at, updated_at
-		FROM holons
-		WHERE type = 'decision_context' AND context_status = 'open' AND context_id = ?
-		ORDER BY updated_at DESC`,
-		contextID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var contexts []ContextSummary
-	for rows.Next() {
-		var c ContextSummary
-		var status sql.NullString
-		var createdAt, updatedAt sql.NullTime
-		if err := rows.Scan(&c.ID, &c.Title, &c.Content, &status, &createdAt, &updatedAt); err != nil {
-			continue
-		}
-		if status.Valid {
-			c.Status = status.String
-		}
-		if createdAt.Valid {
-			c.CreatedAt = createdAt.Time
-		}
-		if updatedAt.Valid {
-			c.UpdatedAt = updatedAt.Time
-		}
-		contexts = append(contexts, c)
-	}
-	return contexts, rows.Err()
-}
-
-// CountOpenContexts returns count of open decision contexts
-func (s *Store) CountOpenContexts(ctx context.Context, contextID string) (int64, error) {
-	var count int64
-	err := s.conn.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM holons
-		WHERE type = 'decision_context' AND context_status = 'open' AND context_id = ?`,
-		contextID).Scan(&count)
-	return count, err
-}
-
 // CloseContext marks a context as closed (decision made)
 func (s *Store) CloseContext(ctx context.Context, id string) error {
 	_, err := s.conn.ExecContext(ctx, `

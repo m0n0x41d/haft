@@ -94,6 +94,7 @@ CREATE TABLE waivers (
 
 CREATE TABLE fpf_state (
     context_id TEXT PRIMARY KEY,
+    phase TEXT DEFAULT 'IDLE',
     active_role TEXT,
     active_session_id TEXT,
     active_role_context TEXT,
@@ -115,7 +116,7 @@ CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverificat
 
 -- Active holons: not selected/rejected by a resolved DRR
 -- A DRR is "resolved" if it has implementation/abandonment/supersession evidence
--- Used by: DerivePhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
+-- Used by: GetSuggestedPhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
 CREATE VIEW active_holons AS
 SELECT h.*
 FROM holons h

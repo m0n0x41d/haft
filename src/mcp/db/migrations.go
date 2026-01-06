@@ -148,7 +148,7 @@ var migrations = []struct {
 		sql: `
 			-- Active holons: not selected/rejected by a resolved DRR
 			-- A DRR is "resolved" if it has implementation/abandonment/supersession evidence
-			-- Used by: DerivePhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
+			-- Used by: GetSuggestedPhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
 			CREATE VIEW IF NOT EXISTS active_holons AS
 			SELECT h.*
 			FROM holons h
@@ -215,6 +215,11 @@ var migrations = []struct {
 			      AND r.relation_type IN ('selects', 'rejects', 'closes')
 			  );
 		`,
+	},
+	{
+		version:     10,
+		description: "Add explicit phase column to fpf_state (phase is session state, not derived from knowledge)",
+		sql:         `ALTER TABLE fpf_state ADD COLUMN phase TEXT DEFAULT 'IDLE'`,
 	},
 }
 

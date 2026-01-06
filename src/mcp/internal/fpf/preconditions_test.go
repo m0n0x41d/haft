@@ -1,7 +1,6 @@
 package fpf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,15 +10,13 @@ import (
 
 func createTestHolon(t *testing.T, store *db.Store, id, layer string) {
 	t.Helper()
-	ctx := context.Background()
 	if err := store.CreateHolon(ctx, id, "hypothesis", "system", layer, "Test "+id, "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create test holon %s: %v", id, err)
 	}
 }
 
 func TestCheckPreconditions_Propose(t *testing.T) {
-	// Use PhaseIdle - quint_propose is allowed in IDLE
-	tools, _, _ := setupToolsWithPhase(t, PhaseIdle)
+	tools, _, _ := setupPreconditionTools(t)
 
 	tests := []struct {
 		name    string
@@ -81,7 +78,7 @@ func TestCheckPreconditions_Propose(t *testing.T) {
 }
 
 func TestCheckPreconditions_Verify(t *testing.T) {
-	tools, tempDir, store := setupToolsWithPhase(t, PhaseAbduction)
+	tools, tempDir, store := setupPreconditionTools(t)
 
 	hypoID := "test-hypo"
 	createTestHolon(t, store, hypoID, "L0")
@@ -141,7 +138,7 @@ func TestCheckPreconditions_Verify(t *testing.T) {
 }
 
 func TestCheckPreconditions_Test(t *testing.T) {
-	tools, tempDir, store := setupToolsWithPhase(t, PhaseDeduction)
+	tools, tempDir, store := setupPreconditionTools(t)
 
 	l0HypoID := "l0-hypo"
 	createTestHolon(t, store, l0HypoID, "L0")
@@ -211,7 +208,7 @@ func TestCheckPreconditions_Decide(t *testing.T) {
 	store, _ := db.NewStore(dbPath)
 	defer store.Close()
 
-	fsm := &FSM{State: State{Phase: PhaseDecision}}
+	fsm := &FSM{State: State{}}
 	tools := NewTools(fsm, tempDir, store)
 
 	tests := []struct {
@@ -280,7 +277,7 @@ func TestCheckPreconditions_CalculateR(t *testing.T) {
 
 	store.CreateHolon(ctx, "existing-holon", "hypothesis", "system", "L0", "Test", "Content", "default", "", "")
 
-	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	fsm := &FSM{State: State{}}
 	tools := NewTools(fsm, tempDir, store)
 
 	tests := []struct {
@@ -341,9 +338,9 @@ func TestPreconditionError_Format(t *testing.T) {
 	}
 }
 
-// setupToolsWithPhase creates a Tools instance with a specific phase.
+// setupPreconditionTools creates a Tools instance for testing preconditions.
 // Returns tools, tempDir, and store for creating test holons in DB.
-func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string, *db.Store) {
+func setupPreconditionTools(t *testing.T) (*Tools, string, *db.Store) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
 	os.MkdirAll(filepath.Join(quintDir, "knowledge", "L0"), 0755)
@@ -357,17 +354,17 @@ func setupToolsWithPhase(t *testing.T, phase Phase) (*Tools, string, *db.Store) 
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
-	fsm := &FSM{State: State{Phase: phase}, DB: nil}
+	fsm := &FSM{State: State{}, DB: nil}
 	tools := NewTools(fsm, tempDir, store)
 
 	return tools, tempDir, store
 }
 
-// TestNoPhaseGates verifies that all tools are allowed in any phase.
+// TestNoPhaseGates verifies that all tools are allowed regardless of state.
 // Phase gates were removed - semantic preconditions are sufficient.
 // See roles.go for design decision.
 func TestNoPhaseGates(t *testing.T) {
-	tools, tempDir, store := setupToolsWithPhase(t, PhaseIdle)
+	tools, tempDir, store := setupPreconditionTools(t)
 
 	l0HypoID := "l0-test"
 	createTestHolon(t, store, l0HypoID, "L0")
@@ -392,7 +389,7 @@ func TestNoPhaseGates(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "propose allowed in any phase",
+			name: "propose allowed",
 			tool: "quint_propose",
 			args: map[string]string{
 				"title":   "Test",
@@ -448,7 +445,7 @@ func TestNoPhaseGates(t *testing.T) {
 // TestSemanticPreconditionsEnforced verifies that semantic checks still work.
 // These are the real guards - not phase gates.
 func TestSemanticPreconditionsEnforced(t *testing.T) {
-	tools, tempDir, store := setupToolsWithPhase(t, PhaseIdle)
+	tools, tempDir, store := setupPreconditionTools(t)
 
 	l0HypoID := "l0-only"
 	createTestHolon(t, store, l0HypoID, "L0")
@@ -506,7 +503,7 @@ func TestSemanticPreconditionsEnforced(t *testing.T) {
 }
 
 func TestSearchPreconditions(t *testing.T) {
-	tools, _, _ := setupToolsWithPhase(t, PhaseIdle)
+	tools, _, _ := setupPreconditionTools(t)
 
 	tests := []struct {
 		name    string

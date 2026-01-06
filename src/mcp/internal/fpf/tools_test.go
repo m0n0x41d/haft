@@ -28,7 +28,7 @@ func setupTools(t *testing.T) (*Tools, *FSM, string) {
 		t.Fatalf("Failed to initialize DB: %v", err)
 	}
 
-	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: database.GetRawDB()} // Initial FSM state with DB
+	fsm := &FSM{State: State{}, DB: database.GetRawDB()} // Initial FSM state with DB
 
 	tools := NewTools(fsm, tempDir, database)
 
@@ -68,9 +68,9 @@ func TestSlugify(t *testing.T) {
 func TestInitProject(t *testing.T) {
 	_, _, tempDir := setupTools(t) // setupTools already calls InitProject
 
+	// v5.0.0: hypotheses are DB-only, no knowledge/ directories
 	expectedDirs := []string{
-		"evidence", "decisions", "sessions",
-		"knowledge/L0", "knowledge/L1", "knowledge/L2", "knowledge/invalid",
+		"evidence", "decisions", "sessions", "agents",
 	}
 
 	for _, d := range expectedDirs {
@@ -83,12 +83,20 @@ func TestInitProject(t *testing.T) {
 			t.Errorf(".gitkeep file in %s was not created", path)
 		}
 	}
+
+	// Verify knowledge directories are NOT created
+	knowledgeDirs := []string{"knowledge/L0", "knowledge/L1", "knowledge/L2", "knowledge/invalid"}
+	for _, d := range knowledgeDirs {
+		path := filepath.Join(tempDir, ".quint", d)
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("Directory %s should not exist (DB-only hypotheses)", path)
+		}
+	}
 }
 
 func TestProposeHypothesis(t *testing.T) {
-
-	tools, fsm, tempDir := setupTools(t)
-	fsm.State.Phase = PhaseAbduction // Set phase for valid Propose
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	title := "My First Hypothesis"
 	content := "This is the content of my hypothesis."
@@ -96,51 +104,50 @@ func TestProposeHypothesis(t *testing.T) {
 	kind := "system"
 	rationale := "This is the rationale."
 
-	path, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, "", nil, 3)
+	holonID, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, "", nil, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
 
-	expectedFile := filepath.Join(tempDir, ".quint", "knowledge", "L0", "my-first-hypothesis.md")
-	if path != expectedFile {
-		t.Errorf("Returned path %q, expected %q", path, expectedFile)
-	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("Hypothesis file was not created at %s", path)
+	// v5.0.0: returns holon ID, not file path
+	expectedID := "my-first-hypothesis"
+	if holonID != expectedID {
+		t.Errorf("Returned holon ID %q, expected %q", holonID, expectedID)
 	}
 
-	readContent, err := os.ReadFile(path)
+	// Verify hypothesis exists in DB with correct attributes
+	holon, err := tools.DB.GetHolon(ctx, expectedID)
 	if err != nil {
-		t.Fatalf("Failed to read hypothesis file: %v", err)
+		t.Fatalf("Failed to get holon from DB: %v", err)
 	}
-	contentStr := string(readContent)
-	if !strings.Contains(contentStr, "scope: "+scope) {
-		t.Errorf("Missing scope in frontmatter")
+	if holon.Layer != "L0" {
+		t.Errorf("Expected layer L0, got %s", holon.Layer)
 	}
-	if !strings.Contains(contentStr, "kind: "+kind) {
-		t.Errorf("Missing kind in frontmatter")
+	if holon.Kind.String != kind {
+		t.Errorf("Expected kind %s, got %s", kind, holon.Kind.String)
 	}
-	if !strings.Contains(contentStr, "content_hash:") {
-		t.Errorf("Missing content_hash in frontmatter")
+	if holon.Scope.String != scope {
+		t.Errorf("Expected scope %s, got %s", scope, holon.Scope.String)
 	}
-	if !strings.Contains(contentStr, "# Hypothesis: "+title) {
-		t.Errorf("Missing hypothesis title in body")
+	if holon.Title != title {
+		t.Errorf("Expected title %q, got %q", title, holon.Title)
 	}
-	if !strings.Contains(contentStr, content) {
-		t.Errorf("Missing content in body")
+	if !strings.Contains(holon.Content, content) {
+		t.Errorf("Content should contain %q", content)
 	}
-	if !strings.Contains(contentStr, "## Rationale") {
-		t.Errorf("Missing rationale section")
+	if !strings.Contains(holon.Content, "## Rationale") {
+		t.Errorf("Content should contain rationale section")
 	}
 }
 
 func TestManageEvidence(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
 	tests := []struct {
 		name              string
-		currentPhase      Phase
+		operation         string // "verification" or "validation"
+		srcLevel          string // L0 for verification, L1 for validation
 		targetID          string
 		evidenceType      string
 		content           string
@@ -150,43 +157,23 @@ func TestManageEvidence(t *testing.T) {
 		expectedDestLevel string
 		expectErr         bool
 	}{
-		{"DeductionPass", PhaseDeduction, "test-hypo-pass", "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
-		{"DeductionFail", PhaseDeduction, "test-hypo-fail", "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
-		{"DeductionRefine", PhaseDeduction, "test-hypo-refine", "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
-		{"InductionPass", PhaseInduction, "hypo-L1-pass", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
-		{"InductionFail", PhaseInduction, "hypo-L1-fail", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
+		{"VerificationPass", "verification", "L0", "test-hypo-pass", "logic", "Logic check passed.", "PASS", "L1", true, "L1", false},
+		{"VerificationFail", "verification", "L0", "test-hypo-fail", "logic", "Logic check failed.", "FAIL", "L1", true, "invalid", false},
+		{"VerificationRefine", "verification", "L0", "test-hypo-refine", "logic", "Needs more refinement.", "REFINE", "L1", true, "invalid", false},
+		{"ValidationPass", "validation", "L1", "hypo-L1-pass", "empirical", "Experiment passed.", "PASS", "L2", true, "L2", false},
+		{"ValidationFail", "validation", "L1", "hypo-L1-fail", "empirical", "Experiment failed.", "FAIL", "L2", true, "invalid", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fsm.State.Phase = tt.currentPhase
-
-			var srcLevel string
-
+			// v5.0.0: hypotheses are DB-only, no file creation
 			if tt.expectedMove {
-				switch tt.currentPhase {
-				case PhaseInduction:
-					srcLevel = "L1"
-					if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", "L1", "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
-						t.Fatalf("Failed to create holon in DB: %v", err)
-					}
-					hypoL1Path := filepath.Join(tempDir, ".quint", "knowledge", "L1", tt.targetID+".md")
-					if err := os.WriteFile(hypoL1Path, []byte("L1 Hypothesis content"), 0644); err != nil {
-						t.Fatalf("Failed to create dummy L1 hypothesis file: %v", err)
-					}
-				case PhaseDeduction:
-					srcLevel = "L0"
-					if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", "L0", "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
-						t.Fatalf("Failed to create holon in DB: %v", err)
-					}
-					hypoL0Path := filepath.Join(tempDir, ".quint", "knowledge", "L0", tt.targetID+".md")
-					if err := os.WriteFile(hypoL0Path, []byte("L0 Hypothesis content"), 0644); err != nil {
-						t.Fatalf("Failed to create dummy L0 hypothesis file: %v", err)
-					}
+				if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", tt.srcLevel, "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
+					t.Fatalf("Failed to create holon in DB: %v", err)
 				}
 			}
 
-			evidencePath, err := tools.ManageEvidence(tt.currentPhase, "add", tt.targetID, tt.evidenceType, tt.content, tt.verdict, tt.assuranceLevel, "file://carrier", "2025-12-31")
+			evidencePath, err := tools.ManageEvidence(tt.operation, "add", tt.targetID, tt.evidenceType, tt.content, tt.verdict, tt.assuranceLevel, "file://carrier", "2025-12-31")
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("ManageEvidence() error = %v, expectErr %v", err, tt.expectErr)
@@ -196,24 +183,19 @@ func TestManageEvidence(t *testing.T) {
 				return
 			}
 
-			// Verify evidence file creation
+			// Verify evidence file creation (evidence still goes to files)
 			if _, err := os.Stat(evidencePath); os.IsNotExist(err) {
 				t.Errorf("Evidence file was not created at %s", evidencePath)
 			}
 
-			// Verify hypothesis move
+			// Verify hypothesis layer change in DB (not file move)
 			if tt.expectedMove {
-				expectedDestPath := filepath.Join(tempDir, ".quint", "knowledge", tt.expectedDestLevel, tt.targetID+".md")
-				if _, err := os.Stat(expectedDestPath); os.IsNotExist(err) {
-					t.Errorf("Hypothesis %s was not moved to %s. Expected path: %s", tt.targetID, tt.expectedDestLevel, expectedDestPath)
+				holon, err := tools.DB.GetHolon(ctx, tt.targetID)
+				if err != nil {
+					t.Fatalf("Failed to get holon from DB: %v", err)
 				}
-				// Also check it's gone from source level
-				// Deductor works on L0, Inductor on L1
-				// sourceLevel is already correctly set by srcLevel in this context
-				// srcLevel is already correctly set by srcLevel in this context
-				srcOldPath := filepath.Join(tempDir, ".quint", "knowledge", srcLevel, tt.targetID+".md")
-				if _, err := os.Stat(srcOldPath); err == nil {
-					t.Errorf("Hypothesis %s was not removed from source level %s", tt.targetID, srcLevel)
+				if holon.Layer != tt.expectedDestLevel {
+					t.Errorf("Hypothesis %s layer = %s, want %s", tt.targetID, holon.Layer, tt.expectedDestLevel)
 				}
 			}
 		})
@@ -221,46 +203,48 @@ func TestManageEvidence(t *testing.T) {
 }
 
 func TestRefineLoopback(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
 
+	// v5.0.0: hypotheses are DB-only
 	parentID := "parent-hypo"
 	if err := tools.DB.CreateHolon(ctx, parentID, "hypothesis", "system", "L1", "Parent Hypothesis", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create parent holon in DB: %v", err)
 	}
-	parentPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", parentID+".md")
-	if err := os.WriteFile(parentPath, []byte("Parent Hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy parent hypothesis file: %v", err)
-	}
-
-	fsm.State.Phase = PhaseInduction
 
 	insight := "New insight from failure"
 	newTitle := "Refined Child Hypothesis"
 	newContent := "This is the refined content."
 	scope := "system"
 
-	childPath, err := tools.RefineLoopback(fsm.State.Phase, parentID, insight, newTitle, newContent, scope)
+	childID, err := tools.RefineLoopback("L1", parentID, insight, newTitle, newContent, scope)
 	if err != nil {
 		t.Fatalf("RefineLoopback failed: %v", err)
 	}
 
-	// Verify parent moved to invalid
-	invalidParentPath := filepath.Join(tempDir, ".quint", "knowledge", "invalid", parentID+".md")
-	if _, err := os.Stat(invalidParentPath); os.IsNotExist(err) {
-		t.Errorf("Parent hypothesis %s was not moved to invalid", parentID)
+	// Verify parent moved to invalid in DB
+	parentHolon, err := tools.DB.GetHolon(ctx, parentID)
+	if err != nil {
+		t.Fatalf("Failed to get parent holon: %v", err)
+	}
+	if parentHolon.Layer != "invalid" {
+		t.Errorf("Parent hypothesis layer = %s, want invalid", parentHolon.Layer)
 	}
 
-	// Verify child created in L0
-	expectedChildPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", "refined-child-hypothesis.md")
-	if childPath != expectedChildPath {
-		t.Errorf("Returned child path %q, expected %q", childPath, expectedChildPath)
+	// Verify child created in L0 (returns holon ID, not path)
+	expectedChildID := "refined-child-hypothesis"
+	if childID != expectedChildID {
+		t.Errorf("Returned child ID %q, expected %q", childID, expectedChildID)
 	}
-	if _, err := os.Stat(childPath); os.IsNotExist(err) {
-		t.Errorf("Child hypothesis file was not created at %s", childPath)
+	childHolon, err := tools.DB.GetHolon(ctx, expectedChildID)
+	if err != nil {
+		t.Fatalf("Failed to get child holon: %v", err)
+	}
+	if childHolon.Layer != "L0" {
+		t.Errorf("Child hypothesis layer = %s, want L0", childHolon.Layer)
 	}
 
-	// Verify log file created
+	// Verify log file created (sessions still use files)
 	sessionDir := filepath.Join(tempDir, ".quint", "sessions")
 	matches, err := filepath.Glob(filepath.Join(sessionDir, "loopback-*.md"))
 	if err != nil || len(matches) == 0 {
@@ -269,17 +253,13 @@ func TestRefineLoopback(t *testing.T) {
 }
 
 func TestFinalizeDecision(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseDecision
 
+	// v5.0.0: hypotheses are DB-only
 	winnerID := "final-winner"
-	if err := tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L1", "Final Winner", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Final Winner", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create winner holon in DB: %v", err)
-	}
-	winnerPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", winnerID+".md")
-	if err := os.WriteFile(winnerPath, []byte("Winner Hypothesis Content"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy winner hypothesis file: %v", err)
 	}
 
 	title := "Final Project Decision"
@@ -290,7 +270,7 @@ func TestFinalizeDecision(t *testing.T) {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
 
-	// Verify DRR file creation
+	// Verify DRR file creation (decisions still go to files)
 	drrPattern := filepath.Join(tempDir, ".quint", "decisions", fmt.Sprintf("DRR-*-%s.md", tools.Slugify(title)))
 	matches, err := filepath.Glob(drrPattern)
 	if err != nil {
@@ -311,21 +291,21 @@ func TestFinalizeDecision(t *testing.T) {
 		t.Errorf("Returned DRR path %q does not match any expected pattern %q", drrPath, drrPattern)
 	}
 
-	// Verify winner moved to L2
-	expectedWinnerL2Path := filepath.Join(tempDir, ".quint", "knowledge", "L2", winnerID+".md")
-	if _, err := os.Stat(expectedWinnerL2Path); os.IsNotExist(err) {
-		t.Errorf("Winner hypothesis %s was not moved to L2", winnerID)
+	// Verify DRR exists in DB
+	dateStr := drrPath[len(filepath.Join(tempDir, ".quint", "decisions", "DRR-")):len(filepath.Join(tempDir, ".quint", "decisions", "DRR-"))+10]
+	drrID := fmt.Sprintf("DRR-%s-%s", dateStr, tools.Slugify(title))
+	drrHolon, err := tools.DB.GetHolon(ctx, drrID)
+	if err != nil {
+		t.Fatalf("DRR not found in DB: %v", err)
 	}
-	// Verify it's gone from L1
-	if _, err := os.Stat(winnerPath); err == nil {
-		t.Errorf("Winner hypothesis %s was not removed from L1", winnerID)
+	if drrHolon.Layer != "DRR" {
+		t.Errorf("DRR layer = %s, want DRR", drrHolon.Layer)
 	}
 }
 
 func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseDecision
 
 	// Create a decision context
 	dcID := "test-decision-context"
@@ -333,14 +313,10 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
-	// Create a hypothesis that belongs to the decision context
+	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-in-closed-dc"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Hypothesis in Closed DC", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Closed DC", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
-	}
-	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
-	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
 	}
 
 	// Create memberOf relation (hypothesis belongs to decision context)
@@ -378,18 +354,13 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 }
 
 func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseDecision
 
-	// Create a hypothesis
+	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-already-in-drr"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Already Used Hypothesis", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Already Used Hypothesis", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
-	}
-	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
-	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
 	}
 
 	// Create an existing open DRR that selects this hypothesis
@@ -420,18 +391,13 @@ func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
 }
 
 func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseDecision
 
-	// Create a hypothesis
+	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-in-resolved-drr"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Hypothesis in Resolved DRR", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Resolved DRR", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
-	}
-	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
-	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
 	}
 
 	// Create an existing DRR that selects this hypothesis
@@ -458,19 +424,15 @@ func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
 }
 
 func TestVerifyHypothesis(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// v5.0.0: hypotheses are DB-only
 	hypoID := "test-verify-hypo"
 	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L0", "Test Verify", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
-	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID+".md")
-	if err := os.WriteFile(hypoPath, []byte("L0 content"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy L0 hypothesis: %v", err)
-	}
 
-	fsm.State.Phase = PhaseDeduction
 	passJSON := `{
 		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type is correct"},
 		"constraint_check": {"verdict": "PASS", "evidence": ["constraint-ref"], "reasoning": "Constraints satisfied"},
@@ -484,17 +446,18 @@ func TestVerifyHypothesis(t *testing.T) {
 	if !strings.Contains(msg, "promoted to L1") {
 		t.Errorf("Expected message to contain 'promoted to L1', got %q", msg)
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")); os.IsNotExist(err) {
-		t.Errorf("Hypothesis not moved to L1")
+	// Verify layer change in DB
+	holon, err := tools.DB.GetHolon(ctx, hypoID)
+	if err != nil {
+		t.Fatalf("Failed to get holon: %v", err)
+	}
+	if holon.Layer != "L1" {
+		t.Errorf("Hypothesis layer = %s, want L1", holon.Layer)
 	}
 
 	hypoID2 := "test-fail-hypo"
 	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L0", "Test Fail", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
-	}
-	hypoPath2 := filepath.Join(tempDir, ".quint", "knowledge", "L0", hypoID2+".md")
-	if err := os.WriteFile(hypoPath2, []byte("L0 content"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy L0 hypothesis 2: %v", err)
 	}
 
 	failJSON := `{
@@ -510,8 +473,13 @@ func TestVerifyHypothesis(t *testing.T) {
 	if !strings.Contains(msg, "VERIFICATION FAILED") {
 		t.Errorf("Expected message to contain 'VERIFICATION FAILED', got %q", msg)
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, ".quint", "knowledge", "invalid", hypoID2+".md")); os.IsNotExist(err) {
-		t.Errorf("Hypothesis not moved to invalid")
+	// Verify layer change in DB
+	holon2, err := tools.DB.GetHolon(ctx, hypoID2)
+	if err != nil {
+		t.Fatalf("Failed to get holon: %v", err)
+	}
+	if holon2.Layer != "invalid" {
+		t.Errorf("Hypothesis layer = %s, want invalid", holon2.Layer)
 	}
 }
 
@@ -725,20 +693,9 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 }
 
 func TestAuditEvidence(t *testing.T) {
-
-	tools, fsm, _ := setupTools(t)
-	fsm.State.Phase = PhaseDecision // Audit typically happens near decision or end of induction
+	tools, _, _ := setupTools(t)
 
 	hypoID := "audit-hypo"
-	// Create dummy L1 or L2 hypothesis (Audit doesn't strictly check existence in file system for the call itself,
-	// but ManageEvidence might rely on DB. For unit test, we focus on the wrapper call.)
-
-	// AuditEvidence calls ManageEvidence with PhaseDecision.
-	// ManageEvidence checks DB if action is "check", but here action is "add" (implied).
-	// We need to ensure DB is happy if it checks constraints.
-
-	// In tools.go, AuditEvidence calls:
-	// t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "PASS", "L2", "auditor", "")
 
 	msg, err := tools.AuditEvidence(hypoID, "Risk analysis content")
 	if err != nil {
@@ -878,19 +835,11 @@ func TestCheckDecay_Deprecate(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	// Get the FPF directory from tools (this is where InitProject creates structure)
-	fpfDir := tools.GetFPFDir()
-	l2Dir := filepath.Join(fpfDir, "knowledge", "L2")
-	l1Dir := filepath.Join(fpfDir, "knowledge", "L1")
-
-	// Create L2 holon with file
+	// v5.0.0: hypotheses are DB-only
 	holonID := "deprecate-test"
 	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Deprecate Test", "Content", "ctx", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(l2Dir, holonID+".md"), []byte("# Test"), 0644); err != nil {
-		t.Fatalf("Failed to write file: %v", err)
 	}
 
 	// Deprecate (L2 -> L1)
@@ -910,11 +859,6 @@ func TestCheckDecay_Deprecate(t *testing.T) {
 	}
 	if holon.Layer != "L1" {
 		t.Errorf("Expected layer L1, got: %s", holon.Layer)
-	}
-
-	// Verify file moved
-	if _, err := os.Stat(filepath.Join(l1Dir, holonID+".md")); os.IsNotExist(err) {
-		t.Error("Expected file to exist in L1 directory")
 	}
 }
 
@@ -1040,9 +984,8 @@ func TestVisualizeAudit(t *testing.T) {
 }
 
 func TestPropose_WithDecisionContext(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// First create a decision context holon
 	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
@@ -1083,9 +1026,8 @@ func TestPropose_WithDecisionContext(t *testing.T) {
 }
 
 func TestPropose_WithDependsOn(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// Create dependency holons first
 	err := tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
@@ -1129,9 +1071,8 @@ func TestPropose_WithDependsOn(t *testing.T) {
 }
 
 func TestPropose_CycleDetection(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// Create holon A
 	err := tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
@@ -1180,8 +1121,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 }
 
 func TestPropose_InvalidDependency(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
-	fsm.State.Phase = PhaseAbduction
+	tools, _, _ := setupTools(t)
 
 	// Propose hypothesis with non-existent dependency
 	_, err := tools.ProposeHypothesis(
@@ -1216,9 +1156,8 @@ func TestPropose_InvalidDependency(t *testing.T) {
 }
 
 func TestPropose_KindDeterminesRelation(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// Create a dependency holon
 	err := tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
@@ -1270,9 +1209,8 @@ func TestPropose_KindDeterminesRelation(t *testing.T) {
 }
 
 func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// Create decision context with low R (failing evidence)
 	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
@@ -1364,27 +1302,18 @@ func TestFormatInvariants(t *testing.T) {
 }
 
 func TestManageEvidence_ValidUntilDefault(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	// Create a hypothesis in L1
+	// v5.0.0: hypotheses are DB-only
 	hypoID := "valid-until-test-hypo"
-	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
-	if err := os.WriteFile(hypoPath, []byte("Test hypothesis content"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
-	}
-
-	// Create holon in DB
 	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	// Set FSM phase to Induction
-	fsm.State.Phase = PhaseInduction
-
 	// Call ManageEvidence with EMPTY validUntil (like quint_test does)
-	_, err = tools.ManageEvidence(PhaseInduction, "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
+	_, err = tools.ManageEvidence("validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
 	}
@@ -1424,7 +1353,7 @@ func TestInternalize_FirstCall(t *testing.T) {
 	tempDir := t.TempDir()
 	// Do NOT create .quint - let Internalize do it
 	dbPath := filepath.Join(tempDir, ".quint", "quint.db")
-	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
 	result, err := tools.Internalize()
@@ -1435,8 +1364,8 @@ func TestInternalize_FirstCall(t *testing.T) {
 	if !strings.Contains(result, "Status: INITIALIZED") {
 		t.Errorf("First call should return INITIALIZED, got: %s", result)
 	}
-	if !strings.Contains(result, "Session Phase: IDLE") {
-		t.Errorf("Phase should be IDLE after init (user decides next step), got: %s", result)
+	if !strings.Contains(result, "Session Phase: EMPTY") {
+		t.Errorf("Phase should be EMPTY after init (no hypotheses yet), got: %s", result)
 	}
 
 	// Verify .quint was created
@@ -1616,7 +1545,7 @@ func TestSearch_EmptyQuery(t *testing.T) {
 
 func TestSearch_NoDB(t *testing.T) {
 	tempDir := t.TempDir()
-	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
 	_, err := tools.Search("test", "", "", "", "", 10)
@@ -2023,35 +1952,29 @@ func TestGetResolvedDecisions(t *testing.T) {
 }
 
 func TestResetCycle_Basic(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 
-	result, err := tools.ResetCycle("test reset")
+	result, err := tools.ResetCycle("test reset", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
 
 	// Verify output contains expected information
-	if !strings.Contains(result, "Cycle reset to IDLE") {
-		t.Errorf("Should confirm reset to IDLE, got: %s", result)
+	if !strings.Contains(result, "Cycle reset") {
+		t.Errorf("Should confirm reset, got: %s", result)
 	}
-	if !strings.Contains(result, "Previous phase:") {
-		t.Errorf("Should show previous phase, got: %s", result)
+	if !strings.Contains(result, "Previous stage:") {
+		t.Errorf("Should show previous stage, got: %s", result)
 	}
 	if !strings.Contains(result, "test reset") {
 		t.Errorf("Should show reason, got: %s", result)
 	}
-
-	// Verify FSM state is now IDLE
-	if fsm.State.Phase != PhaseIdle {
-		t.Errorf("FSM phase should be IDLE, got: %s", fsm.State.Phase)
-	}
 }
 
 func TestResetCycle_DefaultReason(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
-	fsm.State.Phase = PhaseDeduction
+	tools, _, _ := setupTools(t)
 
-	result, err := tools.ResetCycle("") // Empty reason
+	result, err := tools.ResetCycle("", "", false) // Empty reason
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2062,9 +1985,8 @@ func TestResetCycle_DefaultReason(t *testing.T) {
 }
 
 func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
-	tools, fsm, _ := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseDecision
 
 	// Create an open DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-open-during-reset", "DRR", "system", "DRR",
@@ -2073,7 +1995,7 @@ func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
 
-	result, err := tools.ResetCycle("ending session")
+	result, err := tools.ResetCycle("ending session", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2085,17 +2007,15 @@ func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
 }
 
 func TestResetCycle_ShowsLayerCounts(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
-	fsm.State.Phase = PhaseInduction
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
-	// Create some holons in different layers
-	l0Dir := filepath.Join(tempDir, ".quint", "knowledge", "L0")
-	l1Dir := filepath.Join(tempDir, ".quint", "knowledge", "L1")
-	os.WriteFile(filepath.Join(l0Dir, "hypo1.md"), []byte("test"), 0644)
-	os.WriteFile(filepath.Join(l0Dir, "hypo2.md"), []byte("test"), 0644)
-	os.WriteFile(filepath.Join(l1Dir, "hypo3.md"), []byte("test"), 0644)
+	// v5.0.0: hypotheses are DB-only
+	tools.DB.CreateHolon(ctx, "hypo1", "hypothesis", "system", "L0", "Hypo 1", "Content", "default", "", "")
+	tools.DB.CreateHolon(ctx, "hypo2", "hypothesis", "system", "L0", "Hypo 2", "Content", "default", "", "")
+	tools.DB.CreateHolon(ctx, "hypo3", "hypothesis", "system", "L1", "Hypo 3", "Content", "default", "", "")
 
-	result, err := tools.ResetCycle("session complete")
+	result, err := tools.ResetCycle("session complete", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2110,9 +2030,8 @@ func TestResetCycle_ShowsLayerCounts(t *testing.T) {
 }
 
 func TestResetCycle_NoDRRCreated(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
-	fsm.State.Phase = PhaseAbduction
 
 	// Count DRRs before reset
 	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
@@ -2125,7 +2044,7 @@ func TestResetCycle_NoDRRCreated(t *testing.T) {
 	}
 
 	// Reset
-	_, err := tools.ResetCycle("testing no DRR")
+	_, err := tools.ResetCycle("testing no DRR", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2162,7 +2081,7 @@ func TestResetCycle_AuditLogEntry(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	_, err := tools.ResetCycle("audit log test")
+	_, err := tools.ResetCycle("audit log test", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2384,7 +2303,7 @@ content_hash: def456
 
 func TestImplement_NoDB(t *testing.T) {
 	tempDir := t.TempDir()
-	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
 	_, err := tools.Implement("any-drr")
@@ -2557,7 +2476,7 @@ func TestLinkHolons_CyclePrevention(t *testing.T) {
 
 func TestLinkHolons_NoDB(t *testing.T) {
 	tempDir := t.TempDir()
-	fsm := &FSM{State: State{Phase: PhaseIdle}}
+	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
 	_, err := tools.LinkHolons("a", "b", 3)
@@ -2676,15 +2595,11 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 // ============================================
 
 func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// v5.0.0: hypotheses are DB-only
 	hypoID := "stale-test-hypo"
-	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
-	if err := os.WriteFile(hypoPath, []byte("# L1 Hypothesis\nContent here"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
-	}
-
 	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Test", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -2702,8 +2617,7 @@ func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
 		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
 	}
 
-	fsm.State.Phase = PhaseInduction
-	_, err := tools.ManageEvidence(PhaseInduction, "add", hypoID, "test_result", "Re-validated test", "PASS", "L2", "file://carrier", "2025-12-31")
+	_, err := tools.ManageEvidence("validation", "add", hypoID, "test_result", "Re-validated test", "PASS", "L2", "file://carrier", "2025-12-31")
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
 	}
@@ -2715,15 +2629,11 @@ func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
 }
 
 func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
-	tools, fsm, tempDir := setupTools(t)
+	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// v5.0.0: hypotheses are DB-only
 	hypoID := "stale-fail-hypo"
-	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
-	if err := os.WriteFile(hypoPath, []byte("# L1 Hypothesis\nContent here"), 0644); err != nil {
-		t.Fatalf("Failed to create hypothesis file: %v", err)
-	}
-
 	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Fail Test", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -2741,8 +2651,7 @@ func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
 		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
 	}
 
-	fsm.State.Phase = PhaseInduction
-	_, err := tools.ManageEvidence(PhaseInduction, "add", hypoID, "test_result", "Failed test", "FAIL", "L2", "file://carrier", "2025-12-31")
+	_, err := tools.ManageEvidence("validation", "add", hypoID, "test_result", "Failed test", "FAIL", "L2", "file://carrier", "2025-12-31")
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
 	}
@@ -2750,5 +2659,256 @@ func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
 	stale, _ = tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
 	if len(stale) != 1 {
 		t.Errorf("Expected 1 stale evidence to remain after FAIL verdict, got %d", len(stale))
+	}
+}
+
+func TestGetOrCreateDecisionContext_CreatesNew(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, err := tools.GetOrCreateDecisionContext("Caching Strategy", "backend services")
+	if err != nil {
+		t.Fatalf("GetOrCreateDecisionContext failed: %v", err)
+	}
+
+	if dcID != "dc-caching-strategy" {
+		t.Errorf("Expected dc-caching-strategy, got %s", dcID)
+	}
+
+	holon, err := tools.DB.GetHolon(ctx, dcID)
+	if err != nil {
+		t.Fatalf("Failed to get created context: %v", err)
+	}
+	if holon.Type != "decision_context" {
+		t.Errorf("Expected type 'decision_context', got %s", holon.Type)
+	}
+}
+
+func TestGetOrCreateDecisionContext_ReturnsExisting(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	err := tools.DB.CreateHolon(ctx, "dc-existing", "decision_context", "system", "L0", "Existing Context", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+
+	dcID, err := tools.GetOrCreateDecisionContext("Existing", "scope")
+	if err != nil {
+		t.Fatalf("GetOrCreateDecisionContext failed: %v", err)
+	}
+
+	if dcID != "dc-existing" {
+		t.Errorf("Expected dc-existing, got %s", dcID)
+	}
+}
+
+func TestGetOrCreateDecisionContext_Max3Limit(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	for i := 1; i <= 3; i++ {
+		id := fmt.Sprintf("dc-context-%d", i)
+		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("Context %d", i), "Content", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context %d: %v", i, err)
+		}
+	}
+
+	_, err := tools.GetOrCreateDecisionContext("Fourth Context", "scope")
+	if err == nil {
+		t.Errorf("Expected error when creating 4th context, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum 3 active") {
+		t.Errorf("Expected 'maximum 3 active' error, got: %v", err)
+	}
+}
+
+func TestGetActiveDecisionContexts_ReturnsActive(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	err := tools.DB.CreateHolon(ctx, "dc-active-1", "decision_context", "system", "L0", "Active 1", "Content", "default", "scope1", "")
+	if err != nil {
+		t.Fatalf("Failed to create context 1: %v", err)
+	}
+	err = tools.DB.CreateHolon(ctx, "dc-active-2", "decision_context", "system", "L0", "Active 2", "Content", "default", "scope2", "")
+	if err != nil {
+		t.Fatalf("Failed to create context 2: %v", err)
+	}
+
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+
+	if len(contexts) != 2 {
+		t.Errorf("Expected 2 active contexts, got %d", len(contexts))
+	}
+}
+
+func TestGetActiveDecisionContexts_ExcludesClosed(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	err := tools.DB.CreateHolon(ctx, "dc-closed-test", "decision_context", "system", "L0", "Closed Context", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+	err = tools.DB.CreateHolon(ctx, "closing-drr", "decision", "system", "DRR", "Closing DRR", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	rawDB := tools.DB.GetRawDB()
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO relations (source_id, target_id, relation_type, congruence_level) VALUES ('closing-drr', 'dc-closed-test', 'closes', 3)`)
+	if err != nil {
+		t.Fatalf("Failed to create closes relation: %v", err)
+	}
+
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+
+	for _, c := range contexts {
+		if c.ID == "dc-closed-test" {
+			t.Errorf("Closed context dc-closed-test should not appear in active contexts")
+		}
+	}
+}
+
+func TestProposeHypothesis_AutoCreatesContext(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	_, err := tools.ProposeHypothesis(
+		"Auto Context Test",
+		"Testing auto context creation",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		"", // no decision_context - should auto-create
+		nil,
+		3,
+	)
+	if err != nil {
+		t.Fatalf("ProposeHypothesis failed: %v", err)
+	}
+
+	_, err = tools.DB.GetHolon(ctx, "dc-test-scope")
+	if err != nil {
+		t.Errorf("Expected auto-created context dc-test-scope to exist: %v", err)
+	}
+
+	rawDB := tools.DB.GetRawDB()
+	var count int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM relations
+		WHERE source_id = 'auto-context-test'
+		AND target_id = 'dc-test-scope'
+		AND relation_type = 'memberOf'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query relations: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 MemberOf relation to auto-created context, got %d", count)
+	}
+}
+
+func TestResetCycle_AbandonContext(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	err := tools.DB.CreateHolon(ctx, "dc-abandon-test", "decision_context", "system", "L0", "Abandon Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+
+	result, err := tools.ResetCycle("testing abandon", "dc-abandon-test", false)
+	if err != nil {
+		t.Fatalf("ResetCycle failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Abandoned context: dc-abandon-test") {
+		t.Errorf("Expected abandon message in result, got: %s", result)
+	}
+
+	// Verify context is not in active contexts
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+	for _, c := range contexts {
+		if c.ID == "dc-abandon-test" {
+			t.Errorf("Abandoned context should not appear in active contexts")
+		}
+	}
+}
+
+func TestResetCycle_AbandonAll(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	for i := 1; i <= 2; i++ {
+		id := fmt.Sprintf("dc-all-test-%d", i)
+		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("All Test %d", i), "Content", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context %d: %v", i, err)
+		}
+	}
+
+	result, err := tools.ResetCycle("abandon all test", "", true)
+	if err != nil {
+		t.Fatalf("ResetCycle failed: %v", err)
+	}
+
+	if !strings.Contains(result, "Abandoned 2 contexts") {
+		t.Errorf("Expected 'Abandoned 2 contexts' in result, got: %s", result)
+	}
+
+	// Verify no active contexts
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+	if len(contexts) != 0 {
+		t.Errorf("Expected 0 active contexts after abandon_all, got %d", len(contexts))
+	}
+}
+
+func TestFinalizeDecision_ClosesContext(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	err := tools.DB.CreateHolon(ctx, "dc-finalize-close", "decision_context", "system", "L0", "Finalize Close Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+
+	err = tools.DB.CreateHolon(ctx, "winner-hypo", "hypothesis", "system", "L2", "Winner", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create winner: %v", err)
+	}
+
+	if err := tools.createRelation(ctx, "winner-hypo", "memberOf", "dc-finalize-close", 3); err != nil {
+		t.Fatalf("Failed to create memberOf relation: %v", err)
+	}
+
+	_, err = tools.FinalizeDecision("Close Context Test", "winner-hypo", nil, "Test", "Decision", "Rationale", "Consequences", "", "")
+	if err != nil {
+		t.Fatalf("FinalizeDecision failed: %v", err)
+	}
+
+	// Verify context is closed (not in active contexts)
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+	for _, c := range contexts {
+		if c.ID == "dc-finalize-close" {
+			t.Errorf("Closed context should not appear in active contexts")
+		}
 	}
 }

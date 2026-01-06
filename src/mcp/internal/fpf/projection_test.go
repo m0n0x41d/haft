@@ -173,7 +173,7 @@ func TestReadWithValidation_Tampered(t *testing.T) {
 	}
 	defer store.Close()
 
-	fsm := &FSM{State: State{Phase: PhaseAbduction}}
+	fsm := &FSM{State: State{}}
 	tools := NewTools(fsm, tempDir, store)
 
 	path := filepath.Join(l0Dir, "test-hypo.md")

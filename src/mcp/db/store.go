@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS holons (
 	needs_reverification INTEGER DEFAULT 0,
 	reverification_reason TEXT,
 	reverification_since DATETIME,
+	context_status TEXT DEFAULT NULL,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -915,4 +916,193 @@ func (s *Store) UpdateHolonRScore(ctx context.Context, holonID string, score flo
 		UpdatedAt:    sql.NullTime{Time: time.Now(), Valid: true},
 		ID:           holonID,
 	})
+}
+
+// ============================================
+// DECISION CONTEXT METHODS (v5.0.0)
+// ============================================
+
+// ContextSummary represents a decision context with its hypotheses
+type ContextSummary struct {
+	ID        string
+	Title     string
+	Content   string
+	Status    string // open, closed, abandoned
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// CreateContext creates a new decision context holon
+func (s *Store) CreateContext(ctx context.Context, id, title, content, contextID string) error {
+	now := sql.NullTime{Time: time.Now(), Valid: true}
+	_, err := s.conn.ExecContext(ctx, `
+		INSERT INTO holons (id, type, kind, layer, title, content, context_id, context_status, created_at, updated_at)
+		VALUES (?, 'context', 'decision', 'context', ?, ?, ?, 'open', ?, ?)`,
+		id, title, content, contextID, now.Time, now.Time)
+	return err
+}
+
+// GetOpenContexts returns all open decision contexts
+func (s *Store) GetOpenContexts(ctx context.Context, contextID string) ([]ContextSummary, error) {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT id, title, content, context_status, created_at, updated_at
+		FROM holons
+		WHERE type = 'context' AND context_status = 'open' AND context_id = ?
+		ORDER BY updated_at DESC`,
+		contextID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contexts []ContextSummary
+	for rows.Next() {
+		var c ContextSummary
+		var status sql.NullString
+		var createdAt, updatedAt sql.NullTime
+		if err := rows.Scan(&c.ID, &c.Title, &c.Content, &status, &createdAt, &updatedAt); err != nil {
+			continue
+		}
+		if status.Valid {
+			c.Status = status.String
+		}
+		if createdAt.Valid {
+			c.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			c.UpdatedAt = updatedAt.Time
+		}
+		contexts = append(contexts, c)
+	}
+	return contexts, rows.Err()
+}
+
+// CountOpenContexts returns count of open decision contexts
+func (s *Store) CountOpenContexts(ctx context.Context, contextID string) (int64, error) {
+	var count int64
+	err := s.conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM holons
+		WHERE type = 'context' AND context_status = 'open' AND context_id = ?`,
+		contextID).Scan(&count)
+	return count, err
+}
+
+// CloseContext marks a context as closed (decision made)
+func (s *Store) CloseContext(ctx context.Context, id string) error {
+	_, err := s.conn.ExecContext(ctx, `
+		UPDATE holons SET context_status = 'closed', updated_at = ?
+		WHERE id = ? AND type = 'context'`,
+		time.Now(), id)
+	return err
+}
+
+// AbandonContext marks a context as abandoned
+func (s *Store) AbandonContext(ctx context.Context, id string) error {
+	_, err := s.conn.ExecContext(ctx, `
+		UPDATE holons SET context_status = 'abandoned', updated_at = ?
+		WHERE id = ? AND type = 'context'`,
+		time.Now(), id)
+	return err
+}
+
+// GetHypothesesInContext returns all hypotheses belonging to a context via memberOf relation
+func (s *Store) GetHypothesesInContext(ctx context.Context, contextID string) ([]Holon, error) {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id, h.scope,
+		       h.parent_id, h.cached_r_score, h.created_at, h.updated_at
+		FROM holons h
+		JOIN relations r ON h.id = r.source_id
+		WHERE r.target_id = ? AND r.relation_type = 'memberOf'
+		ORDER BY h.layer, h.updated_at DESC`,
+		contextID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var holons []Holon
+	for rows.Next() {
+		var h Holon
+		if err := rows.Scan(&h.ID, &h.Type, &h.Kind, &h.Layer, &h.Title, &h.Content,
+			&h.ContextID, &h.Scope, &h.ParentID, &h.CachedRScore, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			continue
+		}
+		holons = append(holons, h)
+	}
+	return holons, rows.Err()
+}
+
+// GetOrphanHypotheses returns hypotheses not belonging to any context
+func (s *Store) GetOrphanHypotheses(ctx context.Context) ([]Holon, error) {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id, h.scope,
+		       h.parent_id, h.cached_r_score, h.created_at, h.updated_at
+		FROM holons h
+		WHERE h.type = 'hypothesis'
+		  AND h.layer NOT IN ('invalid')
+		  AND NOT EXISTS (
+		      SELECT 1 FROM relations r
+		      WHERE r.source_id = h.id AND r.relation_type = 'memberOf'
+		  )
+		  AND NOT EXISTS (
+		      SELECT 1 FROM relations r
+		      WHERE r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+		  )
+		ORDER BY h.updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var holons []Holon
+	for rows.Next() {
+		var h Holon
+		if err := rows.Scan(&h.ID, &h.Type, &h.Kind, &h.Layer, &h.Title, &h.Content,
+			&h.ContextID, &h.Scope, &h.ParentID, &h.CachedRScore, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			continue
+		}
+		holons = append(holons, h)
+	}
+	return holons, rows.Err()
+}
+
+// GetContextByID returns a context by its ID
+func (s *Store) GetContextByID(ctx context.Context, id string) (ContextSummary, error) {
+	var c ContextSummary
+	var status sql.NullString
+	var createdAt, updatedAt sql.NullTime
+	err := s.conn.QueryRowContext(ctx, `
+		SELECT id, title, content, context_status, created_at, updated_at
+		FROM holons
+		WHERE id = ? AND type = 'context'`,
+		id).Scan(&c.ID, &c.Title, &c.Content, &status, &createdAt, &updatedAt)
+	if err != nil {
+		return c, err
+	}
+	if status.Valid {
+		c.Status = status.String
+	}
+	if createdAt.Valid {
+		c.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		c.UpdatedAt = updatedAt.Time
+	}
+	return c, nil
+}
+
+// GetHypothesisContext returns the context ID for a hypothesis (via memberOf relation)
+func (s *Store) GetHypothesisContext(ctx context.Context, hypothesisID string) (string, error) {
+	var contextID string
+	err := s.conn.QueryRowContext(ctx, `
+		SELECT r.target_id
+		FROM relations r
+		JOIN holons h ON r.target_id = h.id
+		WHERE r.source_id = ? AND r.relation_type = 'memberOf' AND h.type = 'context'
+		LIMIT 1`,
+		hypothesisID).Scan(&contextID)
+	if err == sql.ErrNoRows {
+		return "", nil // no context
+	}
+	return contextID, err
 }

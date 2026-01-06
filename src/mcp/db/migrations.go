@@ -169,6 +169,11 @@ var migrations = []struct {
 		description: "Code Change Awareness: staleness tracking for evidence and holons",
 		sql:         "", // Applied as individual statements below
 	},
+	{
+		version:     8,
+		description: "Decision Contexts: add context_status to holons and update active_holons view",
+		sql:         "", // Applied as individual statements below (migration8Statements)
+	},
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
@@ -190,6 +195,35 @@ var migration7Statements = []string{
 	"CREATE INDEX IF NOT EXISTS idx_evidence_carrier ON evidence(carrier_ref)",
 	"CREATE INDEX IF NOT EXISTS idx_evidence_stale ON evidence(is_stale)",
 	"CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverification)",
+}
+
+// migration8Statements contains the statements for Decision Contexts support.
+// SQLite requires ALTER TABLE to be executed individually.
+var migration8Statements = []string{
+	// Add context_status to holons (for context holons)
+	// Values: 'open', 'closed', 'abandoned' (NULL for non-context holons)
+	"ALTER TABLE holons ADD COLUMN context_status TEXT DEFAULT NULL",
+
+	// Index for fast context queries
+	"CREATE INDEX IF NOT EXISTS idx_holons_context_status ON holons(context_status)",
+
+	// Index for memberOf relations (hypothesis → context)
+	"CREATE INDEX IF NOT EXISTS idx_relations_memberof ON relations(target_id, relation_type)",
+
+	// Update active_holons view to handle contexts
+	// Contexts are shown separately, not in active_holons
+	"DROP VIEW IF EXISTS active_holons",
+	`CREATE VIEW active_holons AS
+	SELECT h.*
+	FROM holons h
+	WHERE h.layer NOT IN ('invalid')
+	  AND h.type != 'context'
+	  AND (h.context_status IS NULL OR h.context_status = 'open')
+	  AND NOT EXISTS (
+	    SELECT 1 FROM relations r
+	    WHERE r.target_id = h.id
+	      AND r.relation_type IN ('selects', 'rejects', 'closes')
+	  )`,
 }
 
 // RunMigrations applies all pending migrations to the database.
@@ -214,6 +248,15 @@ func RunMigrations(conn *sql.DB) error {
 		// Special handling for migration 7 (Code Change Awareness)
 		if m.version == 7 {
 			for _, stmt := range migration7Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 8 {
+			// Special handling for migration 8 (Decision Contexts)
+			for _, stmt := range migration8Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)

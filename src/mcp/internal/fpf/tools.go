@@ -44,6 +44,36 @@ type Contract struct {
 	AffectedScope      []string `json:"affected_scope,omitempty"`
 }
 
+// CheckResult represents a single verification check with explicit verdict and evidence
+type CheckResult struct {
+	Verdict   string   `json:"verdict"`   // PASS or FAIL
+	Evidence  []string `json:"evidence"`  // Concrete refs: "file.go:42", "test output: X"
+	Reasoning string   `json:"reasoning"` // Why this verdict
+}
+
+// VerifyResult is structured input for quint_verify (L0 -> L1)
+type VerifyResult struct {
+	TypeCheck       CheckResult `json:"type_check"`
+	ConstraintCheck CheckResult `json:"constraint_check"`
+	LogicCheck      CheckResult `json:"logic_check"`
+	OverallVerdict  string      `json:"overall_verdict"` // PASS or FAIL
+	Risks           []string    `json:"risks,omitempty"` // Identified risks even if PASS
+}
+
+// Observation represents a single observation during validation
+type Observation struct {
+	Description string   `json:"description"` // What was observed
+	Evidence    []string `json:"evidence"`    // Concrete refs
+	Supports    bool     `json:"supports"`    // Does this support hypothesis?
+}
+
+// TestResult is structured input for quint_test (L1 -> L2)
+type TestResult struct {
+	Observations   []Observation `json:"observations"`
+	OverallVerdict string        `json:"overall_verdict"` // PASS or FAIL
+	Reasoning      string        `json:"reasoning"`       // Why this verdict
+}
+
 func NewTools(fsm *FSM, rootDir string, database *db.Store) *Tools {
 	if database == nil {
 		dbPath := filepath.Join(rootDir, ".quint", "quint.db")
@@ -574,8 +604,21 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		sourceID, relationType, targetID, targetID, newR, targetID, sourceID), nil
 }
 
-func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
+func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
+
+	var result VerifyResult
+	if err := json.Unmarshal([]byte(verifyJSON), &result); err != nil {
+		return "", fmt.Errorf("invalid verify_json: %w", err)
+	}
+
+	if err := t.validateVerifyResult(result); err != nil {
+		return "", fmt.Errorf("incomplete justification: %w", err)
+	}
+
+	if warning := t.checkDuplicateHypothesis(hypothesisID); warning != "" {
+		result.Risks = append(result.Risks, warning)
+	}
 
 	carrierRef := carrierFiles
 	if carrierRef == "" {
@@ -593,16 +636,17 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 		}
 	}
 
-	switch strings.ToLower(verdict) {
-	case "pass":
+	evidenceJSON, _ := json.MarshalIndent(result, "", "  ")
+
+	switch strings.ToUpper(result.OverallVerdict) {
+	case "PASS":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
-			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
 		}
 
-		evidenceContent := fmt.Sprintf("Verification Checks:\n%s", checksJSON)
-		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", evidenceContent, "pass", "L1", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
@@ -612,21 +656,216 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			logger.Warn().Err(err).Msg("failed to set phase to DEDUCTION")
 		}
 
-		return fmt.Sprintf("Hypothesis %s (kind: %s) promoted to L1", hypothesisID, carrierRef), nil
-	case "fail":
+		var output strings.Builder
+		output.WriteString(fmt.Sprintf("✅ Hypothesis %s promoted to L1\n\n", hypothesisID))
+		if len(result.Risks) > 0 {
+			output.WriteString("⚠️ Risks identified:\n")
+			for _, r := range result.Risks {
+				output.WriteString(fmt.Sprintf("  - %s\n", r))
+			}
+		}
+		return output.String(), nil
+
+	case "FAIL":
 		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
-			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": verdict}, err.Error())
+			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
 		}
+
+		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
+			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
+		}
+
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "invalid"}, "")
-		return fmt.Sprintf("Hypothesis %s moved to invalid", hypothesisID), nil
-	case "refine":
-		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "REFINE", "result": "L0"}, "")
-		return fmt.Sprintf("Hypothesis %s requires refinement (staying in L0)", hypothesisID), nil
+
+		var output strings.Builder
+		output.WriteString(fmt.Sprintf("⚠️ VERIFICATION FAILED: %s moved to invalid\n\n", hypothesisID))
+		output.WriteString("Options:\n")
+		output.WriteString("  - /q1-hypothesize — create refined hypothesis\n")
+		output.WriteString("  - Address the issues and propose a new hypothesis\n\n")
+		output.WriteString("Failure reasons recorded for audit.\n")
+		return output.String(), nil
+
 	default:
-		return "", fmt.Errorf("unknown verdict: %s", verdict)
+		return "", fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", result.OverallVerdict)
 	}
+}
+
+func (t *Tools) validateVerifyResult(r VerifyResult) error {
+	checks := []struct {
+		name  string
+		check CheckResult
+	}{
+		{"type_check", r.TypeCheck},
+		{"constraint_check", r.ConstraintCheck},
+		{"logic_check", r.LogicCheck},
+	}
+
+	for _, c := range checks {
+		if c.check.Verdict == "" {
+			return fmt.Errorf("%s: missing verdict", c.name)
+		}
+		verdict := strings.ToUpper(c.check.Verdict)
+		if verdict != "PASS" && verdict != "FAIL" {
+			return fmt.Errorf("%s: verdict must be PASS or FAIL, got: %s", c.name, c.check.Verdict)
+		}
+		if len(c.check.Evidence) == 0 {
+			return fmt.Errorf("%s: verdict requires at least one evidence reference", c.name)
+		}
+		if c.check.Reasoning == "" {
+			return fmt.Errorf("%s: missing reasoning", c.name)
+		}
+	}
+
+	if r.OverallVerdict == "" {
+		return fmt.Errorf("missing overall_verdict")
+	}
+	verdict := strings.ToUpper(r.OverallVerdict)
+	if verdict != "PASS" && verdict != "FAIL" {
+		return fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", r.OverallVerdict)
+	}
+
+	return nil
+}
+
+func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
+	if t.DB == nil {
+		return ""
+	}
+
+	ctx := context.Background()
+
+	current, err := t.DB.GetHolon(ctx, hypothesisID)
+	if err != nil || current.Title == "" {
+		return ""
+	}
+
+	rows, err := t.DB.GetRawDB().QueryContext(ctx, `
+		SELECT id, title FROM holons
+		WHERE layer = 'invalid'
+		AND title = ?
+		AND id != ?
+	`, current.Title, hypothesisID)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var matches []string
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err == nil {
+			matches = append(matches, id)
+		}
+	}
+
+	if len(matches) > 0 {
+		return fmt.Sprintf("Similar hypothesis previously failed: %v. Ensure this version addresses the failure reasons.", matches)
+	}
+	return ""
+}
+
+func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFiles string) (string, error) {
+	defer t.RecordWork("ValidateHypothesis", time.Now())
+
+	var result TestResult
+	if err := json.Unmarshal([]byte(testJSON), &result); err != nil {
+		return "", fmt.Errorf("invalid test_json: %w", err)
+	}
+
+	if err := t.validateTestResult(result); err != nil {
+		return "", fmt.Errorf("incomplete justification: %w", err)
+	}
+
+	carrierRef := carrierFiles
+	if carrierRef == "" {
+		carrierRef = "test-runner"
+	}
+
+	evidenceJSON, _ := json.MarshalIndent(result, "", "  ")
+	validUntil := computeValidUntil(testType)
+
+	switch strings.ToUpper(result.OverallVerdict) {
+	case "PASS":
+		if _, err := t.ManageEvidence(PhaseInduction, "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
+			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
+			return "", err
+		}
+
+		t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L2"}, "")
+
+		if err := t.FSM.SetPhase(PhaseInduction); err != nil {
+			logger.Warn().Err(err).Msg("failed to set phase to INDUCTION")
+		}
+
+		var output strings.Builder
+		output.WriteString(fmt.Sprintf("✅ Hypothesis %s validated (L2)\n\n", hypothesisID))
+		output.WriteString(fmt.Sprintf("Test type: %s\n", testType))
+		output.WriteString(fmt.Sprintf("Observations: %d\n", len(result.Observations)))
+		return output.String(), nil
+
+	case "FAIL":
+		if _, err := t.ManageEvidence(PhaseInduction, "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
+			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
+			return "", err
+		}
+
+		t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "L1"}, "")
+
+		var output strings.Builder
+		output.WriteString(fmt.Sprintf("⚠️ VALIDATION FAILED: %s remains at L1\n\n", hypothesisID))
+		output.WriteString("Options:\n")
+		output.WriteString("  - /q1-hypothesize — create refined hypothesis\n")
+		output.WriteString("  - Address the issues and re-run /q3-validate\n\n")
+		output.WriteString("Failure reasons recorded for audit.\n")
+		return output.String(), nil
+
+	default:
+		return "", fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", result.OverallVerdict)
+	}
+}
+
+func computeValidUntil(testType string) string {
+	var days int
+	switch testType {
+	case "internal":
+		days = 90
+	case "research", "external":
+		days = 60
+	default:
+		days = 90
+	}
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
+}
+
+func (t *Tools) validateTestResult(r TestResult) error {
+	if len(r.Observations) == 0 {
+		return fmt.Errorf("at least one observation is required")
+	}
+
+	for i, obs := range r.Observations {
+		if obs.Description == "" {
+			return fmt.Errorf("observation[%d]: missing description", i)
+		}
+		if len(obs.Evidence) == 0 {
+			return fmt.Errorf("observation[%d]: requires at least one evidence reference", i)
+		}
+	}
+
+	if r.OverallVerdict == "" {
+		return fmt.Errorf("missing overall_verdict")
+	}
+	verdict := strings.ToUpper(r.OverallVerdict)
+	if verdict != "PASS" && verdict != "FAIL" {
+		return fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", r.OverallVerdict)
+	}
+
+	if r.Reasoning == "" {
+		return fmt.Errorf("missing reasoning")
+	}
+
+	return nil
 }
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {

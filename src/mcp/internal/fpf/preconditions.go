@@ -49,17 +49,6 @@ func (t *Tools) CheckPreconditions(toolName string, args map[string]string) erro
 	}
 }
 
-func (t *Tools) getHolonLayer(holonID string) (string, error) {
-	if t.DB == nil {
-		return "", fmt.Errorf("database not initialized")
-	}
-	holon, err := t.DB.GetHolon(context.Background(), holonID)
-	if err != nil {
-		return "", fmt.Errorf("holon %s not found", holonID)
-	}
-	return holon.Layer, nil
-}
-
 func (t *Tools) checkSearchPreconditions(args map[string]string) error {
 	if args["query"] == "" {
 		return &PreconditionError{

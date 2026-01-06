@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/m0n0x41d/quint-code/logger"
 )
@@ -234,11 +232,21 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"hypothesis_id": map[string]string{"type": "string"},
-					"checks_json":   map[string]string{"type": "string", "description": "JSON of checks"},
-					"verdict":       map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}},
+					"verify_json": map[string]string{
+						"type": "string",
+						"description": `JSON object with structured verification result:
+{
+  "type_check": {"verdict": "PASS|FAIL", "evidence": ["ref1", "ref2"], "reasoning": "..."},
+  "constraint_check": {"verdict": "PASS|FAIL", "evidence": [...], "reasoning": "..."},
+  "logic_check": {"verdict": "PASS|FAIL", "evidence": [...], "reasoning": "..."},
+  "overall_verdict": "PASS|FAIL",
+  "risks": ["optional risk notes"]
+}
+ALL verdicts (PASS and FAIL) require at least one evidence reference.`,
+					},
 					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that this verification is based on. These files will be tracked for changes - if they change, the evidence becomes stale. Extract from hypothesis scope or files you examined. Example: 'src/cache.py,src/api/routes.py'"},
 				},
-				"required": []string{"hypothesis_id", "checks_json", "verdict"},
+				"required": []string{"hypothesis_id", "verify_json"},
 			},
 		},
 		{
@@ -249,11 +257,21 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"hypothesis_id": map[string]string{"type": "string"},
 					"test_type":     map[string]string{"type": "string", "description": "internal or research"},
-					"result":        map[string]string{"type": "string", "description": "Test output/findings"},
-					"verdict":       map[string]interface{}{"type": "string", "enum": []interface{}{"PASS", "FAIL", "REFINE"}},
+					"test_json": map[string]string{
+						"type": "string",
+						"description": `JSON object with structured test result:
+{
+  "observations": [
+    {"description": "what was observed", "evidence": ["ref1", "ref2"], "supports": true/false}
+  ],
+  "overall_verdict": "PASS|FAIL",
+  "reasoning": "why this verdict"
+}
+Each observation requires at least one evidence reference.`,
+					},
 					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that were tested. These files will be tracked for changes - if they change, the evidence becomes stale. For internal tests: files covered by tests. For external research: leave empty or use source URL. Example: 'src/database/repository.py,src/database/queries.py'"},
 				},
-				"required": []string{"hypothesis_id", "test_type", "result", "verdict"},
+				"required": []string{"hypothesis_id", "test_type", "test_json"},
 			},
 		},
 		{
@@ -440,28 +458,10 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
-		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
+		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("verify_json"), arg("carrier_files"))
 
 	case "quint_test":
-		verdict := strings.ToUpper(arg("verdict"))
-		assLevel := "L2"
-		if verdict != "PASS" {
-			assLevel = "L1"
-		}
-
-		carrierFiles := arg("carrier_files")
-		if carrierFiles == "" {
-			carrierFiles = "test-runner"
-		}
-
-		validUntil := computeValidUntil(arg("test_type"))
-		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, carrierFiles, validUntil)
-
-		if err == nil && verdict == "PASS" {
-			if setErr := s.tools.FSM.SetPhase(PhaseInduction); setErr != nil {
-				logger.Warn().Err(setErr).Msg("failed to set phase to INDUCTION")
-			}
-		}
+		output, err = s.tools.ValidateHypothesis(arg("hypothesis_id"), arg("test_type"), arg("test_json"), arg("carrier_files"))
 
 	case "quint_audit":
 		output, err = s.tools.AuditEvidence(arg("hypothesis_id"), arg("risks"))
@@ -509,18 +509,3 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	}
 }
 
-// computeValidUntil returns evidence validity period based on test type.
-// Internal tests (code/unit tests) are tied to codebase → 90 days.
-// External research (docs/APIs) changes faster → 60 days.
-func computeValidUntil(testType string) string {
-	var days int
-	switch testType {
-	case "internal":
-		days = 90
-	case "external":
-		days = 60
-	default:
-		days = 90
-	}
-	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
-}

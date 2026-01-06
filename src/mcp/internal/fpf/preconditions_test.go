@@ -1,12 +1,15 @@
 package fpf
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/m0n0x41d/quint-code/db"
 )
+
+var ctx = context.Background()
 
 func createTestHolon(t *testing.T, store *db.Store, id, layer string) {
 	t.Helper()

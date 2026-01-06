@@ -1,16 +1,12 @@
 package fpf
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
-
-	"github.com/m0n0x41d/quint-code/db"
-	"github.com/m0n0x41d/quint-code/logger"
 )
 
 type TamperingEvent struct {
@@ -111,100 +107,5 @@ func (t *Tools) ReadWithValidation(path string) (string, *TamperingEvent, error)
 		"actual_hash":   actualHash,
 	}, "Content hash mismatch detected")
 
-	if t.DB != nil {
-		regenerated, regErr := t.regenerateFromDB(path)
-		if regErr != nil {
-			logger.Warn().Err(regErr).Str("path", path).Msg("failed to regenerate from DB")
-		} else if regenerated {
-			event.Regenerated = true
-			t.AuditLog("projection_validate", "file_regenerated", "system", path, "SUCCESS", nil, "File regenerated from database")
-			newContent, _, _, _, _ := ValidateFile(path)
-			return newContent, event, nil
-		}
-	}
-
 	return content, event, nil
-}
-
-func (t *Tools) regenerateFromDB(path string) (bool, error) {
-	if t.DB == nil {
-		return false, fmt.Errorf("DB not initialized")
-	}
-
-	holonID := extractHolonIDFromPath(path)
-	if holonID == "" {
-		return false, nil
-	}
-
-	ctx := context.Background()
-	holon, err := t.DB.GetHolon(ctx, holonID)
-	if err != nil {
-		return false, err
-	}
-
-	layer := extractLayerFromPath(path)
-	if layer == "" || layer != holon.Layer {
-		return false, nil
-	}
-
-	body := fmt.Sprintf("\n# Hypothesis: %s\n\n%s", holon.Title, holon.Content)
-
-	fields := map[string]string{
-		"scope": holon.Scope.String,
-		"kind":  holon.Kind.String,
-	}
-
-	if err := WriteWithHash(path, fields, body); err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
-func extractHolonIDFromPath(path string) string {
-	re := regexp.MustCompile(`/knowledge/L[012]/([^/]+)\.md$`)
-	matches := re.FindStringSubmatch(path)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-
-	re = regexp.MustCompile(`/knowledge/invalid/([^/]+)\.md$`)
-	matches = re.FindStringSubmatch(path)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-
-	return ""
-}
-
-func extractLayerFromPath(path string) string {
-	re := regexp.MustCompile(`/knowledge/(L[012]|invalid)/`)
-	matches := re.FindStringSubmatch(path)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-	return ""
-}
-
-func RegenerateHolonFile(store *db.Store, holonID, fpfDir string) error {
-	if store == nil {
-		return fmt.Errorf("DB not initialized")
-	}
-
-	ctx := context.Background()
-	holon, err := store.GetHolon(ctx, holonID)
-	if err != nil {
-		return fmt.Errorf("holon not found: %w", err)
-	}
-
-	path := fmt.Sprintf("%s/knowledge/%s/%s.md", fpfDir, holon.Layer, holonID)
-
-	body := fmt.Sprintf("\n# Hypothesis: %s\n\n%s", holon.Title, holon.Content)
-
-	fields := map[string]string{
-		"scope": holon.Scope.String,
-		"kind":  holon.Kind.String,
-	}
-
-	return WriteWithHash(path, fields, body)
 }

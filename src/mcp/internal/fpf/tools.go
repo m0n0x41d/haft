@@ -452,6 +452,44 @@ func (t *Tools) getDecisionContext(ctx context.Context, holonID string) string {
 	return targetID
 }
 
+func (t *Tools) isDecisionContextClosed(ctx context.Context, dcID string) string {
+	if t.DB == nil || dcID == "" {
+		return ""
+	}
+	var drrID string
+	err := t.DB.GetRawDB().QueryRowContext(ctx,
+		`SELECT source_id FROM relations WHERE target_id = ? AND relation_type = 'closes' LIMIT 1`,
+		dcID).Scan(&drrID)
+	if err != nil {
+		return ""
+	}
+	return drrID
+}
+
+func (t *Tools) isHypothesisInOpenDRR(ctx context.Context, hypID string) string {
+	if t.DB == nil || hypID == "" {
+		return ""
+	}
+	var drrID string
+	err := t.DB.GetRawDB().QueryRowContext(ctx,
+		`SELECT r.source_id FROM relations r
+		 JOIN holons h ON h.id = r.source_id
+		 WHERE r.target_id = ?
+		   AND r.relation_type IN ('selects', 'rejects')
+		   AND h.type = 'DRR'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM evidence e
+		       WHERE e.holon_id = h.id
+		       AND e.type IN ('implementation', 'abandonment', 'supersession')
+		   )
+		 LIMIT 1`,
+		hypID).Scan(&drrID)
+	if err != nil {
+		return ""
+	}
+	return drrID
+}
+
 func (t *Tools) wouldCreateCycle(ctx context.Context, sourceID, targetID string) (bool, error) {
 	visited := make(map[string]bool)
 	return t.isReachable(ctx, targetID, sourceID, visited)
@@ -754,6 +792,24 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	if contractJSON != "" {
 		if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
 			return "", fmt.Errorf("invalid contract JSON: %w", err)
+		}
+	}
+
+	// Preconditions
+	if t.DB != nil {
+		ctx := context.Background()
+		for _, hypID := range append([]string{winnerID}, rejectedIDs...) {
+			if hypID == "" {
+				continue
+			}
+			if dcID := t.getDecisionContext(ctx, hypID); dcID != "" {
+				if conflictingDRR := t.isDecisionContextClosed(ctx, dcID); conflictingDRR != "" {
+					return "", fmt.Errorf("BLOCKED: decision_context '%s' already closed by DRR '%s'", dcID, conflictingDRR)
+				}
+			}
+			if conflictingDRR := t.isHypothesisInOpenDRR(ctx, hypID); conflictingDRR != "" {
+				return "", fmt.Errorf("BLOCKED: hypothesis '%s' already used in open DRR '%s'", hypID, conflictingDRR)
+			}
 		}
 	}
 

@@ -322,6 +322,141 @@ func TestFinalizeDecision(t *testing.T) {
 	}
 }
 
+func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseDecision
+
+	// Create a decision context
+	dcID := "test-decision-context"
+	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Decision Context", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	// Create a hypothesis that belongs to the decision context
+	hypID := "hyp-in-closed-dc"
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Hypothesis in Closed DC", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create hypothesis: %v", err)
+	}
+	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
+	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	// Create memberOf relation (hypothesis belongs to decision context)
+	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
+		`INSERT INTO relations (source_id, relation_type, target_id, congruence_level) VALUES (?, 'memberOf', ?, 3)`,
+		hypID, dcID); err != nil {
+		t.Fatalf("Failed to create memberOf relation: %v", err)
+	}
+
+	// Create a DRR that closes the decision context
+	closingDRRID := "existing-drr"
+	if err := tools.DB.CreateHolon(ctx, closingDRRID, "DRR", "", "DRR", "Existing DRR", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create closing DRR: %v", err)
+	}
+	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
+		`INSERT INTO relations (source_id, relation_type, target_id, congruence_level) VALUES (?, 'closes', ?, 3)`,
+		closingDRRID, dcID); err != nil {
+		t.Fatalf("Failed to create closes relation: %v", err)
+	}
+
+	// Try to create a new DRR with the hypothesis - should be BLOCKED
+	_, err := tools.FinalizeDecision("New Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	if err == nil {
+		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("Expected error to contain 'BLOCKED', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), dcID) {
+		t.Errorf("Expected error to mention decision_context ID %q, got: %v", dcID, err)
+	}
+	if !strings.Contains(err.Error(), closingDRRID) {
+		t.Errorf("Expected error to mention conflicting DRR ID %q, got: %v", closingDRRID, err)
+	}
+}
+
+func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseDecision
+
+	// Create a hypothesis
+	hypID := "hyp-already-in-drr"
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Already Used Hypothesis", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create hypothesis: %v", err)
+	}
+	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
+	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	// Create an existing open DRR that selects this hypothesis
+	existingDRRID := "existing-open-drr"
+	if err := tools.DB.CreateHolon(ctx, existingDRRID, "DRR", "", "DRR", "Existing Open DRR", "Content without status", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create existing DRR: %v", err)
+	}
+	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
+		`INSERT INTO relations (source_id, relation_type, target_id, congruence_level) VALUES (?, 'selects', ?, 3)`,
+		existingDRRID, hypID); err != nil {
+		t.Fatalf("Failed to create selects relation: %v", err)
+	}
+
+	// Try to create a new DRR with the same hypothesis - should be BLOCKED
+	_, err := tools.FinalizeDecision("Another Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	if err == nil {
+		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("Expected error to contain 'BLOCKED', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), hypID) {
+		t.Errorf("Expected error to mention hypothesis ID %q, got: %v", hypID, err)
+	}
+	if !strings.Contains(err.Error(), existingDRRID) {
+		t.Errorf("Expected error to mention conflicting DRR ID %q, got: %v", existingDRRID, err)
+	}
+}
+
+func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
+	tools, fsm, tempDir := setupTools(t)
+	ctx := context.Background()
+	fsm.State.Phase = PhaseDecision
+
+	// Create a hypothesis
+	hypID := "hyp-in-resolved-drr"
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L1", "Hypothesis in Resolved DRR", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create hypothesis: %v", err)
+	}
+	hypPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypID+".md")
+	if err := os.WriteFile(hypPath, []byte("Hypothesis content"), 0644); err != nil {
+		t.Fatalf("Failed to create hypothesis file: %v", err)
+	}
+
+	// Create an existing DRR that selects this hypothesis
+	resolvedDRRID := "resolved-drr"
+	if err := tools.DB.CreateHolon(ctx, resolvedDRRID, "DRR", "", "DRR", "Resolved DRR", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create resolved DRR: %v", err)
+	}
+	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
+		`INSERT INTO relations (source_id, relation_type, target_id, congruence_level) VALUES (?, 'selects', ?, 3)`,
+		resolvedDRRID, hypID); err != nil {
+		t.Fatalf("Failed to create selects relation: %v", err)
+	}
+
+	// Mark the DRR as resolved by adding implementation evidence
+	if err := tools.DB.AddEvidence(ctx, "ev-impl", resolvedDRRID, "implementation", "commit:abc123", "PASS", "", "commit:abc123", "", "", ""); err != nil {
+		t.Fatalf("Failed to add implementation evidence: %v", err)
+	}
+
+	// Now creating a new DRR with the same hypothesis should succeed (no blocking)
+	_, err := tools.FinalizeDecision("New Decision After Resolution", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	if err != nil {
+		t.Fatalf("Expected FinalizeDecision to succeed for resolved DRR, got error: %v", err)
+	}
+}
+
 func TestVerifyHypothesis(t *testing.T) {
 	tools, fsm, tempDir := setupTools(t)
 	ctx := context.Background()

@@ -70,13 +70,13 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	}
 
 	row := db.QueryRow(`
-		SELECT active_role, active_session_id, active_role_context, last_commit, assurance_threshold
+		SELECT phase, active_role, active_session_id, active_role_context, last_commit, assurance_threshold
 		FROM fpf_state WHERE context_id = ?`, contextID)
 
-	var activeRole, activeSessionID, activeRoleContext, lastCommit sql.NullString
+	var phase, activeRole, activeSessionID, activeRoleContext, lastCommit sql.NullString
 	var threshold sql.NullFloat64
 
-	err := row.Scan(&activeRole, &activeSessionID, &activeRoleContext, &lastCommit, &threshold)
+	err := row.Scan(&phase, &activeRole, &activeSessionID, &activeRoleContext, &lastCommit, &threshold)
 	if err == sql.ErrNoRows {
 		return fsm, nil
 	}
@@ -84,6 +84,9 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 		return nil, fmt.Errorf("failed to load state: %w", err)
 	}
 
+	if phase.Valid && phase.String != "" {
+		fsm.State.Phase = Phase(phase.String)
+	}
 	if activeRole.Valid {
 		fsm.State.ActiveRole = RoleAssignment{
 			Role:      Role(activeRole.String),
@@ -105,19 +108,35 @@ func (f *FSM) GetPhase() Phase {
 	if f.ForcePhase != "" {
 		return f.ForcePhase
 	}
-	if f.DB != nil {
-		return f.DerivePhase("default")
-	}
 	return f.State.Phase
 }
 
-// DerivePhase computes the current phase from ACTIVE holons in the database.
+func (f *FSM) SetPhase(phase Phase) error {
+	f.State.Phase = phase
+	if f.DB == nil {
+		return nil
+	}
+	_, err := f.DB.Exec(`
+		INSERT INTO fpf_state (context_id, phase, updated_at)
+		VALUES ('default', ?, ?)
+		ON CONFLICT(context_id) DO UPDATE SET
+			phase = excluded.phase,
+			updated_at = excluded.updated_at`,
+		string(phase), time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set phase: %w", err)
+	}
+	return nil
+}
+
+// GetSuggestedPhase computes a suggested phase from ACTIVE holons in the database.
 // Active holons are defined by the active_holons VIEW (migration v6).
 //
 // DESIGN: This is INFORMATIONAL ONLY - used for status display in quint_internalize.
 // It does NOT gate any operations. Semantic preconditions handle validation.
-// See roles.go for the design decision on removing phase gates.
-func (f *FSM) DerivePhase(contextID string) Phase {
+// The actual phase is stored explicitly and set by tools via SetPhase().
+func (f *FSM) GetSuggestedPhase(contextID string) Phase {
 	if f.DB == nil {
 		return PhaseIdle
 	}
@@ -177,9 +196,10 @@ func (f *FSM) SaveState(contextID string) error {
 	}
 
 	_, err := f.DB.Exec(`
-		INSERT INTO fpf_state (context_id, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO fpf_state (context_id, phase, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(context_id) DO UPDATE SET
+			phase = excluded.phase,
 			active_role = excluded.active_role,
 			active_session_id = excluded.active_session_id,
 			active_role_context = excluded.active_role_context,
@@ -187,6 +207,7 @@ func (f *FSM) SaveState(contextID string) error {
 			assurance_threshold = excluded.assurance_threshold,
 			updated_at = excluded.updated_at`,
 		contextID,
+		string(f.State.Phase),
 		string(f.State.ActiveRole.Role),
 		f.State.ActiveRole.SessionID,
 		f.State.ActiveRole.Context,

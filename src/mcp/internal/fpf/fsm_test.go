@@ -86,6 +86,59 @@ func TestSaveStateWithoutDB(t *testing.T) {
 	}
 }
 
+func TestSetPhase(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer database.Close()
+
+	fsm, err := LoadState("default", database.GetRawDB())
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+
+	// Initial phase should be IDLE
+	if fsm.GetPhase() != PhaseIdle {
+		t.Errorf("Expected initial phase IDLE, got %s", fsm.GetPhase())
+	}
+
+	// Set phase to ABDUCTION
+	if err := fsm.SetPhase(PhaseAbduction); err != nil {
+		t.Fatalf("SetPhase failed: %v", err)
+	}
+
+	// GetPhase should return new phase
+	if fsm.GetPhase() != PhaseAbduction {
+		t.Errorf("Expected phase ABDUCTION after SetPhase, got %s", fsm.GetPhase())
+	}
+
+	// Load fresh FSM - phase should persist
+	fsm2, err := LoadState("default", database.GetRawDB())
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+	if fsm2.GetPhase() != PhaseAbduction {
+		t.Errorf("Expected phase ABDUCTION after reload, got %s", fsm2.GetPhase())
+	}
+}
+
+func TestSetPhaseWithoutDB(t *testing.T) {
+	fsm := &FSM{State: State{Phase: PhaseIdle}, DB: nil}
+
+	// SetPhase without DB should succeed (updates in-memory state only)
+	if err := fsm.SetPhase(PhaseDeduction); err != nil {
+		t.Errorf("SetPhase without DB should succeed, got error: %v", err)
+	}
+
+	if fsm.GetPhase() != PhaseDeduction {
+		t.Errorf("Expected phase DEDUCTION, got %s", fsm.GetPhase())
+	}
+}
+
 func TestCanTransition(t *testing.T) {
 	// Setup temp dir for dummy evidence
 	tempDir := t.TempDir()

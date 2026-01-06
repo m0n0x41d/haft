@@ -616,10 +616,6 @@ func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) 
 		return "", fmt.Errorf("incomplete justification: %w", err)
 	}
 
-	if warning := t.checkDuplicateHypothesis(hypothesisID); warning != "" {
-		result.Risks = append(result.Risks, warning)
-	}
-
 	carrierRef := carrierFiles
 	if carrierRef == "" {
 		carrierRef = "internal-logic"
@@ -634,6 +630,10 @@ func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) 
 				}
 			}
 		}
+	}
+
+	if warning := t.checkDuplicateHypothesis(hypothesisID); warning != "" {
+		result.Risks = append(result.Risks, warning)
 	}
 
 	evidenceJSON, _ := json.MarshalIndent(result, "", "  ")
@@ -742,7 +742,7 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 	}
 
 	rows, err := t.DB.GetRawDB().QueryContext(ctx, `
-		SELECT id, title FROM holons
+		SELECT id FROM holons
 		WHERE layer = 'invalid'
 		AND title = ?
 		AND id != ?
@@ -754,10 +754,14 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 
 	var matches []string
 	for rows.Next() {
-		var id, title string
-		if err := rows.Scan(&id, &title); err == nil {
+		var id string
+		if err := rows.Scan(&id); err == nil {
 			matches = append(matches, id)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		logger.Warn().Err(err).Msg("error iterating duplicate hypothesis rows")
+		return ""
 	}
 
 	if len(matches) > 0 {

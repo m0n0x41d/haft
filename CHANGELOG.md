@@ -7,182 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-
-- **`/q1-add` command**: Deprecated as redundant — `quint_propose` handles both agent and user hypotheses
-
-### Fixed
-
-- **DB as Source of Truth (Architecture Fix)**: Database is now the authoritative source for holon state, filesystem is projection
-  - `getHolonLayer()` queries DB only (removed filesystem fallback that caused desync)
-  - `MoveHypothesis()` updates DB first, then moves file (file failure is non-fatal warning)
-  - Precondition checks (`checkVerifyPreconditions`, `checkTestPreconditions`) validate against DB
-
-- **`quint_decide` winner validation**: Now validates that `winner_id` actually exists and is in L2 layer before creating DRR. Prevents invalid decisions with non-existent or unpromoted hypotheses.
-
-- **`quint_link` preconditions**: Added parameter validation (source_id, target_id required, self-link prevention), DB initialization check, and holon existence validation. Returns `PreconditionError` with actionable suggestions.
-
-- **`quint_implement` preconditions**: Added decision_id validation, DB check, and DRR type verification. Prevents calls with non-existent or non-DRR holons.
-
-- **Relation type validation**: `createRelation()` now validates relation types against allowed set (`componentOf`, `constituentOf`, `memberOf`, `selects`, `rejects`, `closes`, `verifiedBy`, `dependsOn`). Invalid types rejected with error.
-
-### Documentation
-
-- **README.md**: Added missing `/q-implement` and `/q-audit` commands to command table
-- **Deprecated `/q-decay` references**: Updated all documentation to use `/q-internalize` instead:
-  - `docs/advanced.md`: Epistemic debt now surfaced by `/q-internalize`
-  - `docs/architecture.md`: Evidence freshness section updated
-  - `docs/evidence-freshness.md`: Complete rewrite to use `/q-internalize`
-- **State machine diagram**: Added explicit AUDIT phase to state machine diagrams
-- **Directory structure fix**: Changed `drr/` to `decisions/` in architecture.md (matches actual implementation)
-- **Relation direction convention (FIX-7)**: Added documentation in `docs/fpf-engine.md` explaining source→target semantics for all relation types
-
-- **Contract JSON parsing in `quint_implement`**: Multi-line JSON in frontmatter caused parsing failure. Now compacts JSON before writing to ensure single-line format in YAML frontmatter.
-
-- **Phase stuck at DECISION after `quint_decide`**: DerivePhase incorrectly counted DRRs as pending work. Now DRRs are excluded from phase calculation (they're results, not pending work).
-
-- **Orphan decision context after reset**: Decision contexts (L0 holons grouping alternatives) remained active after decision. Now `quint_decide` creates `closes` relation to archive decision contexts automatically.
-
-- **Stale warnings for archived holons**: Archived holons (selected/rejected by decisions) no longer trigger action warnings. Stale evidence for active holons filtered via `active_holons` view. Archived stale evidence now shown as informational:
-  - New queries: `CountArchivedStaleEvidence`, `GetArchivedStaleEvidence`
-  - `quint_internalize` shows archived stale count (no action needed)
-  - `generateFreshnessReport` includes "ARCHIVED" section for visibility
-
-- **active_holons view timing**: L2 hypotheses were only excluded after DRR resolution. Now excluded immediately after `selects`/`rejects` relation is created (Migration 8). Simplified to exclude any holon with `selects`/`rejects`/`closes` relation (Migration 9).
-
-### Changed
-
-- **MCP config simplified**: Removed redundant `QUINT_PROJECT_ROOT` env var from JSON configs — `cwd` field is sufficient (Codex TOML still uses env var as it doesn't support cwd)
-
 ### Added
 
-- **Decision Context Archiving**: `quint_decide` now automatically closes decision contexts
-  - New `closes` relation type: DRR → decision_context
-  - `getDecisionContext()` helper finds memberOf relations for hypotheses
-  - Decision contexts become inactive immediately after decision (not after resolution)
+- **Decision Contexts**: Groups of hypotheses for specific decisions
+  - **Context-based workflow**: Each decision has its own context with up to 3 active contexts allowed
+  - **Context stage**: Derived per-context state (EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE)
+  - **Auto-creation**: `quint_propose` auto-creates decision context if none provided
+  - **Context closure**: `quint_decide` automatically closes context (sets `context_status='closed'`)
+  - **Context abandonment**: `quint_reset` supports `context_id` and `abandon_all` parameters
+  - **Active context listing**: `/q-internalize` shows active decision contexts with hypothesis counts
+  - New DB fields: `holons.context_status` (open/closed/abandoned)
+  - New DB methods: `CreateContext`, `GetOpenContexts`, `CloseContext`, `AbandonContext`
+  - Schema migration v11: adds `context_status` column and indexes
 
-- **File Logging**: Structured zerolog output to `~/.quint-code/logs/<project>.log`
-  - Automatic log rotation (10MB max, keeps 3 backups)
-  - Includes tool calls, errors, and staleness detection events
+- **DB-only Hypotheses**: Hypotheses no longer projected to filesystem
+  - `quint_propose` returns holon ID (slug) instead of file path
+  - `MoveHypothesis` updates DB layer only (no file operations)
+  - `InitProject` no longer creates `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+  - Existing hypotheses become queryable via DB, not filesystem
 
-- **Schema Migrations**:
-  - Migration 8: Fix active_holons to exclude L2s immediately after decision
-  - Migration 9: Simplify active_holons with `closes` relation support
-
-- **Database Compaction (v5.1.0)**: `quint_compact` tool for managing database size
+- **Database Compaction**: `quint_compact` tool for managing database size
   - **Preview mode** (default): Shows archived holons eligible for compaction
   - **Execute mode**: Performs compaction, removing verbose data
   - **Retention period**: Configurable days after decision resolution (default 90)
   - **What's removed**: Evidence records, characteristics, waivers, detailed content
   - **What's preserved**: Holon ID/title/type/layer, relations, audit log
   - Compacted holons marked with `[COMPACTED]` content
-  - New queries: `GetArchivedHolonsForCompaction`, `CountCompactableHolons`, `CompactHolonContent`
 
-- **Code Change Awareness (v5.0.0 → v5.1.0)**: Automatic staleness detection when carrier files change
-  - **Hash-Based Detection (v5.1.0)**: Content hash comparison replaces commit-based detection
-    - SHA256 hashes computed for each carrier file (16-char hex per file)
-    - Format: `"file1:abc123def456,file2:789abc012def"` (sorted for consistent comparison)
-    - Works with uncommitted changes, rebases, amends, force pushes
-    - No git dependency required for staleness detection
-    - Legacy migration: evidence without stored hash gets baseline computed on first check
+- **Code Change Awareness**: Automatic staleness detection when carrier files change
+  - **Hash-Based Detection**: Content hash comparison (SHA256, 16-char hex per file)
+  - Works with uncommitted changes, rebases, amends, force pushes
+  - No git dependency required for staleness detection
   - **Evidence Staleness**: When carrier file content changes, evidence is marked stale
-  - **Carrier Hash Tracking**: Evidence stores `carrier_hash` (content hash at creation time)
-  - **Carrier Commit Tracking**: `carrier_commit` kept for audit trail (metadata only, not used for staleness)
-  - **Proactive Detection in `/q-implement`**: Runs `detectCodeChanges` before showing directive
   - **WLNK Propagation**: Staleness propagates through dependency chain
   - **R_eff Impact**: Stale evidence scores 0.2 (vs 1.0 for fresh)
-  - **Implementation Warnings**: `quint_implement` surfaces stale evidence before implementation
   - **Clear on Re-validation**: `quint_test`/`quint_verify` with PASS clears stale flags
-  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.stale_since`, `evidence.carrier_hash`, `evidence.carrier_commit`, `holons.needs_reverification`
-  - Schema migration v7 adds staleness tracking columns
+  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.carrier_hash`
 
 - **Dependency Discovery & Linking**: Automatic detection of semantic dependencies
-  - **Active Suggestions**: `quint_propose` uses FTS5 semantic search to detect related holons and suggests `depends_on` links
-  - **`quint_link` tool**: Add dependencies after creation without re-proposing
-  - **FTS5 OR queries**: New `SearchOR()` for word-level matching
-  - Output shows "⚠️ POTENTIAL DEPENDENCIES DETECTED" with ranked suggestions
+  - `quint_propose` uses FTS5 semantic search to detect related holons
+  - `quint_link` tool: Add dependencies after creation without re-proposing
+  - Output shows "POTENTIAL DEPENDENCIES DETECTED" with suggestions
 
 - **`quint_implement` tool**: Transform DRR contracts into implementation directives
   - Programs agent's internal planning with invariants, anti-patterns, acceptance criteria
   - **WLNK for constraints**: Inherits constraints from dependency chain
-  - Returns structured prompt for agent to execute with TodoWrite
   - Validates acceptance criteria before `quint_resolve` allows "implemented" resolution
 
-- **Session/Decision Scoping for Holons**: Filter holons by decision resolution status
-  - **Active holons**: Not selected/rejected by resolved DRRs (shown in counts)
-  - **Archived holons**: Selected/rejected by resolved DRRs (hidden, count shown separately)
-  - New SQL queries: `GetActiveRecentHolons`, `CountActiveHolonsByLayer`, `CountArchivedHolonsByLayer`
-
-- **`quint_reset` tool**: Proper cycle reset without fake decisions
-  - Transitions FSM to IDLE, records in audit log
-  - Migration #5 auto-resolves legacy reset DRRs
+- **`/q-internalize` command**: Unified entry point replacing init/status/decay commands
+  - Auto-initializes new projects, detects stale context, surfaces decaying evidence
+  - Shows active decision contexts with stages and hypothesis counts
+  - Safe to call in any phase (Observer role)
 
 - **DRR Lifecycle Tracking**: Complete decision lifecycle management
   - **`quint_resolve` tool**: Record outcomes (implemented, abandoned, superseded)
   - **Decision status in `/q-internalize`**: Shows open decisions and recent resolutions
   - **`status_filter` in `quint_search`**: Filter by status
 
-- **`/q-internalize` command**: Unified entry point replacing 4 commands
-  - Auto-initializes new projects, detects stale context, surfaces decaying evidence
-  - Safe to call in any phase (Observer role)
-
-- **`quint_search` tool**: FTS5-powered search across knowledge base
-  - Scope/layer filtering, highlighted snippets, relevance ranking
-
-- **Context staleness detection**: Monitors go.mod, package.json modification times
-
-- **FTS5 database tables**: `holons_fts`, `evidence_fts` with sync triggers
-
-### Changed
-
-- **Phase Gates Removed**: Tools no longer blocked by phase — only by holon layer requirements
-  - Fixes batch operation failures (verifying/testing multiple hypotheses)
-  - `DerivePhase()` simplified to informational display only
-
-- **Internalize status**: Renamed `CURRENT` to `READY`
-
-- **Simplified workflow**: Session starts with `quint_internalize`, not multi-step init
-
-- **`/q1-hypothesize`**: No longer requires "Phase 0 complete" precondition
-
-### Breaking Changes
-
-- **Removed `/q0-init` phase**: Initialization is automatic via `/q-internalize`
-- **Removed tools**: `quint_init`, `quint_record_context`, `quint_status`, `quint_actualize`, `quint_check_decay`
-- **Phase numbering**: "Phase 0" no longer exists; workflow starts with `/q-internalize`
-- **Installer cleanup**: `quint-code init` removes deprecated commands before installing
-
-### Removed
-
-- `q0-init.md`, `q-status.md`, `q-actualize.md`, `q-decay.md` — absorbed into `q-internalize.md`
-
----
-
-## [4.2.0] - Unreleased (Phase Gates)
-
-### Added
+- **File Logging**: Structured zerolog output to `~/.quint-code/logs/<project>.log`
+  - Automatic log rotation (10MB max, keeps 3 backups)
 
 - **Phase Gates & Role Enforcement (FPF Governance)**:
   - New `roles.go` with implicit role system — roles derived from tool name, not passed by agent.
   - New roles: `Initializer`, `Observer`, `Maintainer` (added to existing ADI roles).
-  - Phase gates block mutation tools in wrong phases:
-    - `quint_propose`: IDLE, ABDUCTION, DEDUCTION, INDUCTION (regression allowed).
-    - `quint_verify`: ABDUCTION, DEDUCTION.
-    - `quint_test`: DEDUCTION, INDUCTION (L2 refresh bypasses gate).
-    - `quint_audit`: INDUCTION, AUDIT.
-    - `quint_decide`: AUDIT, DECISION.
-  - Read-only tools (`quint_status`, `quint_calculate_r`, `quint_audit_tree`) allowed in any phase.
-  - L2 refresh: `quint_test` on L2 holons bypasses phase gate (evidence refresh anytime).
-  - Audit log now records actual role (e.g., "Abductor") instead of generic "agent".
-  - Enhanced `quint_status`: shows phase, expected role, knowledge counts, next action guidance.
-  - Comprehensive test coverage for phase gates and role mappings.
+  - Phase gates block mutation tools in wrong phases
+  - Read-only tools allowed in any phase
+  - L2 refresh: `quint_test` on L2 holons bypasses phase gate
+  - Audit log now records actual role instead of generic "agent"
 
-- **Smart Defaults for Evidence Validity**: `quint_test` now sets `valid_until` based on test type.
-  - `internal` tests (code/unit tests): 90 days validity.
-  - `external` research (docs/APIs): 60 days validity.
-  - Ensures decay triggers appropriately — external sources expire sooner.
+- **Smart Defaults for Evidence Validity**: `quint_test` sets `valid_until` based on test type
+  - `internal` tests: 90 days validity
+  - `external` research: 60 days validity
 
 ### Changed
+
+- **Global Phase Removed**: Stage is now derived per-context, not global
+  - Removed `Phase` type and constants (`PhaseIdle`, `PhaseAbduction`, etc.)
+  - Removed `GetPhase()`, `SetPhase()`, `GetSuggestedPhase()`
+  - Removed `ToolPhaseGate` map
+  - `DerivePhase()` simplified to informational display only
+  - Tools no longer blocked by phase — only by holon layer requirements
+
+- **`quint_reset` Enhanced**: Now supports context abandonment
+  - `context_id` parameter: Abandon specific context
+  - `abandon_all` parameter: Abandon all open contexts
+  - Default (no params): End session without abandoning contexts
 
 - **FSM State Migrated to SQLite (FPF Governance)**: Session state now stored in `fpf_state` table.
   - Eliminates `state.json` file — agent cannot read/manipulate FSM state directly.
@@ -190,11 +99,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added migration #3 for existing databases.
   - Enforces Transformer Mandate: state is opaque to the agent.
 
+- **MCP config simplified**: Removed redundant `QUINT_PROJECT_ROOT` env var
+
+### Fixed
+
+- **DB as Source of Truth**: Database is now the authoritative source for holon state
+  - `getHolonLayer()` queries DB only (removed filesystem fallback)
+  - `MoveHypothesis()` updates DB only (no file operations)
+  - Precondition checks validate against DB
+
+- **`quint_decide` winner validation**: Validates `winner_id` exists and is in L2 layer
+
+- **`quint_link` preconditions**: Parameter validation, self-link prevention, holon existence check
+
+- **`quint_implement` preconditions**: Decision ID validation, DRR type verification
+
+- **Relation type validation**: `createRelation()` validates against allowed set
+
+- **Type mismatch in DB methods**: Fixed `type = 'context'` to `type = 'decision_context'` in store.go
+
 ### Removed
 
+- **`/q1-add` command**: Redundant — `quint_propose` handles both agent and user hypotheses
+- **Filesystem projection**: No more `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+- **Global phase**: Stage is now per-context
+- **Deprecated git-based staleness detection**: Replaced by hash-based detection
+- **Unused code cleanup**: Removed `getChangedFiles`, `fileChangedBetween`, `carrierRefContainsFile`, `detectStaleEvidenceByCarrierCommit`
 - **state.json file**: FSM state no longer persisted to JSON file.
   - All state (active role, last commit, assurance threshold) now in SQLite.
   - Documentation updated to reflect SQLite-only state management.
+
+### Breaking Changes
+
+- **No more `knowledge/` filesystem structure** — hypotheses are DB-only
+- **Global phase removed** — stage is per-context (derived from hypothesis layers)
+- **`quint_propose` requires context** — auto-creates if not specified
+- **`quint_reset` signature changed** — now accepts `(reason, contextID, abandonAll)`
+- **Existing hypotheses become orphans** — need assignment to contexts or archive
+
+### Documentation
+
+- **q-internalize.md**: Updated with Active Decision Contexts field
+- **q1-hypothesize.md**: Updated for DB-only hypotheses and auto-context creation
+- **q-reset.md**: Updated with context abandonment parameters
+
+---
 
 ## [4.1.0]
 
@@ -808,6 +757,20 @@ Key design decisions:
 ---
 
 ## Upgrade Notes
+
+### 4.x → 5.0.0
+
+**Breaking changes:**
+
+1. **Hypotheses are DB-only** — no more `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+2. **Global phase removed** — stage is now per-context
+3. **`quint_reset` signature changed** — now accepts `(reason, contextID, abandonAll)`
+
+**Migration:**
+
+1. Run `/q-internalize` to initialize decision contexts
+2. Existing hypotheses will work but are "orphans" (not in any context)
+3. Use `quint_propose` with `context_id` to assign to contexts, or let auto-creation handle it
 
 ### 1.0.0 → 2.0.0
 

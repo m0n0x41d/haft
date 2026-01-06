@@ -15,6 +15,7 @@ CREATE TABLE holons (
     needs_reverification INTEGER DEFAULT 0,
     reverification_reason TEXT,
     reverification_since DATETIME,
+    context_status TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,7 +95,6 @@ CREATE TABLE waivers (
 
 CREATE TABLE fpf_state (
     context_id TEXT PRIMARY KEY,
-    phase TEXT DEFAULT 'IDLE',
     active_role TEXT,
     active_session_id TEXT,
     active_role_context TEXT,
@@ -114,22 +114,20 @@ CREATE INDEX IF NOT EXISTS idx_evidence_carrier ON evidence(carrier_ref);
 CREATE INDEX IF NOT EXISTS idx_evidence_stale ON evidence(is_stale) WHERE is_stale = 1;
 CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverification) WHERE needs_reverification = 1;
 
--- Active holons: not selected/rejected by a resolved DRR
--- A DRR is "resolved" if it has implementation/abandonment/supersession evidence
--- Used by: GetSuggestedPhase (fsm.go), GetActiveRecentHolons, CountActiveHolonsByLayer
+-- Indexes for Decision Contexts (v5.0.0)
+CREATE INDEX IF NOT EXISTS idx_holons_context_status ON holons(context_status);
+CREATE INDEX IF NOT EXISTS idx_relations_memberof ON relations(target_id, relation_type);
+
+-- Active holons: excludes contexts (shown separately) and closed/abandoned items
+-- Used by: GetActiveRecentHolons, CountActiveHolonsByLayer
 CREATE VIEW active_holons AS
 SELECT h.*
 FROM holons h
 WHERE h.layer NOT IN ('invalid')
+  AND h.type != 'decision_context'
+  AND (h.context_status IS NULL OR h.context_status = 'open')
   AND NOT EXISTS (
     SELECT 1 FROM relations r
-    INNER JOIN holons drr ON drr.id = r.source_id
     WHERE r.target_id = h.id
-      AND r.relation_type IN ('selects', 'rejects')
-      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
-      AND EXISTS (
-          SELECT 1 FROM evidence e
-          WHERE e.holon_id = drr.id
-          AND e.type IN ('implementation', 'abandonment', 'supersession')
-      )
+      AND r.relation_type IN ('selects', 'rejects', 'closes')
   );

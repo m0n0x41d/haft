@@ -70,13 +70,13 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	}
 
 	row := db.QueryRow(`
-		SELECT phase, active_role, active_session_id, active_role_context, last_commit, assurance_threshold
+		SELECT active_role, active_session_id, active_role_context, last_commit, assurance_threshold
 		FROM fpf_state WHERE context_id = ?`, contextID)
 
-	var phase, activeRole, activeSessionID, activeRoleContext, lastCommit sql.NullString
+	var activeRole, activeSessionID, activeRoleContext, lastCommit sql.NullString
 	var threshold sql.NullFloat64
 
-	err := row.Scan(&phase, &activeRole, &activeSessionID, &activeRoleContext, &lastCommit, &threshold)
+	err := row.Scan(&activeRole, &activeSessionID, &activeRoleContext, &lastCommit, &threshold)
 	if err == sql.ErrNoRows {
 		return fsm, nil
 	}
@@ -84,9 +84,8 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 		return nil, fmt.Errorf("failed to load state: %w", err)
 	}
 
-	if phase.Valid && phase.String != "" {
-		fsm.State.Phase = Phase(phase.String)
-	}
+	// Phase is derived from active holons via GetSuggestedPhase(), not persisted
+	// This aligns with v6 direction where phase is per-context, not global
 	if activeRole.Valid {
 		fsm.State.ActiveRole = RoleAssignment{
 			Role:      Role(activeRole.String),
@@ -112,21 +111,10 @@ func (f *FSM) GetPhase() Phase {
 }
 
 func (f *FSM) SetPhase(phase Phase) error {
+	// Phase is in-memory only (session state), not persisted to DB.
+	// This aligns with v6 direction where phase is derived per-context.
+	// Phase gates are already removed (see roles.go) - this is purely informational.
 	f.State.Phase = phase
-	if f.DB == nil {
-		return nil
-	}
-	_, err := f.DB.Exec(`
-		INSERT INTO fpf_state (context_id, phase, updated_at)
-		VALUES ('default', ?, ?)
-		ON CONFLICT(context_id) DO UPDATE SET
-			phase = excluded.phase,
-			updated_at = excluded.updated_at`,
-		string(phase), time.Now().UTC(),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to set phase: %w", err)
-	}
 	return nil
 }
 
@@ -195,11 +183,12 @@ func (f *FSM) SaveState(contextID string) error {
 		return fmt.Errorf("database connection required for SaveState")
 	}
 
+	// Phase is not persisted - it's in-memory session state only.
+	// See SetPhase() comment for design rationale.
 	_, err := f.DB.Exec(`
-		INSERT INTO fpf_state (context_id, phase, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO fpf_state (context_id, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(context_id) DO UPDATE SET
-			phase = excluded.phase,
 			active_role = excluded.active_role,
 			active_session_id = excluded.active_session_id,
 			active_role_context = excluded.active_role_context,
@@ -207,7 +196,6 @@ func (f *FSM) SaveState(contextID string) error {
 			assurance_threshold = excluded.assurance_threshold,
 			updated_at = excluded.updated_at`,
 		contextID,
-		string(f.State.Phase),
 		string(f.State.ActiveRole.Role),
 		f.State.ActiveRole.SessionID,
 		f.State.ActiveRole.Context,

@@ -216,11 +216,6 @@ var migrations = []struct {
 			  );
 		`,
 	},
-	{
-		version:     10,
-		description: "Add explicit phase column to fpf_state (phase is session state, not derived from knowledge)",
-		sql:         `ALTER TABLE fpf_state ADD COLUMN phase TEXT DEFAULT 'IDLE'`,
-	},
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.

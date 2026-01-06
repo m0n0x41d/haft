@@ -111,18 +111,19 @@ func TestSetPhase(t *testing.T) {
 		t.Fatalf("SetPhase failed: %v", err)
 	}
 
-	// GetPhase should return new phase
+	// GetPhase should return new phase (in-memory)
 	if fsm.GetPhase() != PhaseAbduction {
 		t.Errorf("Expected phase ABDUCTION after SetPhase, got %s", fsm.GetPhase())
 	}
 
-	// Load fresh FSM - phase should persist
+	// Load fresh FSM - phase does NOT persist (in-memory only)
+	// This aligns with v6 direction where phase is derived per-context.
 	fsm2, err := LoadState("default", database.GetRawDB())
 	if err != nil {
 		t.Fatalf("LoadState failed: %v", err)
 	}
-	if fsm2.GetPhase() != PhaseAbduction {
-		t.Errorf("Expected phase ABDUCTION after reload, got %s", fsm2.GetPhase())
+	if fsm2.GetPhase() != PhaseIdle {
+		t.Errorf("Expected phase IDLE after reload (phase is session-only), got %s", fsm2.GetPhase())
 	}
 }
 

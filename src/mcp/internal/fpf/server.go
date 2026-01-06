@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/m0n0x41d/quint-code/logger"
@@ -439,20 +440,12 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
-		s.tools.FSM.State.Phase = PhaseDeduction
-		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			logger.Warn().Err(saveErr).Msg("failed to save state")
-		}
 		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_test":
-		s.tools.FSM.State.Phase = PhaseInduction
-		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			logger.Warn().Err(saveErr).Msg("failed to save state")
-		}
-
+		verdict := strings.ToUpper(arg("verdict"))
 		assLevel := "L2"
-		if arg("verdict") != "PASS" {
+		if verdict != "PASS" {
 			assLevel = "L1"
 		}
 
@@ -464,11 +457,16 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		validUntil := computeValidUntil(arg("test_type"))
 		output, err = s.tools.ManageEvidence(PhaseInduction, "add", arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), assLevel, carrierFiles, validUntil)
 
+		if err == nil && verdict == "PASS" {
+			if setErr := s.tools.FSM.SetPhase(PhaseInduction); setErr != nil {
+				logger.Warn().Err(setErr).Msg("failed to set phase to INDUCTION")
+			}
+		}
+
 	case "quint_audit":
 		output, err = s.tools.AuditEvidence(arg("hypothesis_id"), arg("risks"))
 
 	case "quint_decide":
-		s.tools.FSM.State.Phase = PhaseDecision
 		var rejectedIDs []string
 		if rids, ok := params.Arguments["rejected_ids"].([]interface{}); ok {
 			for _, r := range rids {
@@ -478,12 +476,6 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			}
 		}
 		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"))
-		if err == nil {
-			s.tools.FSM.State.Phase = PhaseIdle
-			if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-				logger.Warn().Err(saveErr).Msg("failed to save state")
-			}
-		}
 
 	case "quint_audit_tree":
 		output, err = s.tools.VisualizeAudit(arg("holon_id"))

@@ -515,6 +515,215 @@ func TestVerifyHypothesis(t *testing.T) {
 	}
 }
 
+func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	tests := []struct {
+		name        string
+		json        string
+		errContains string
+	}{
+		{
+			name:        "invalid JSON",
+			json:        `{not valid json}`,
+			errContains: "invalid verify_json",
+		},
+		{
+			name:        "missing type_check verdict",
+			json:        `{"type_check": {"evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			errContains: "type_check: missing verdict",
+		},
+		{
+			name:        "invalid verdict value",
+			json:        `{"type_check": {"verdict": "MAYBE", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			errContains: "type_check: verdict must be PASS or FAIL",
+		},
+		{
+			name:        "missing evidence",
+			json:        `{"type_check": {"verdict": "PASS", "evidence": [], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			errContains: "type_check: verdict requires at least one evidence reference",
+		},
+		{
+			name:        "missing reasoning",
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": ""}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			errContains: "type_check: missing reasoning",
+		},
+		{
+			name:        "missing overall_verdict",
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			errContains: "missing overall_verdict",
+		},
+		{
+			name:        "invalid overall_verdict",
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "UNKNOWN"}`,
+			errContains: "overall_verdict must be PASS or FAIL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tools.VerifyHypothesis("any-id", tt.json, "")
+			if err == nil {
+				t.Errorf("Expected error containing %q, got nil", tt.errContains)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("Expected error containing %q, got %q", tt.errContains, err.Error())
+			}
+		})
+	}
+}
+
+func TestValidateHypothesis(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	hypoID := "test-validate-hypo"
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Validate", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon in DB: %v", err)
+	}
+	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
+	if err := os.MkdirAll(filepath.Dir(hypoPath), 0755); err != nil {
+		t.Fatalf("Failed to create L1 dir: %v", err)
+	}
+	if err := os.WriteFile(hypoPath, []byte("L1 content"), 0644); err != nil {
+		t.Fatalf("Failed to create L1 hypothesis file: %v", err)
+	}
+
+	passJSON := `{
+		"observations": [
+			{"description": "Test passed", "evidence": ["test output: OK"], "supports": true}
+		],
+		"overall_verdict": "PASS",
+		"reasoning": "All tests passed successfully"
+	}`
+	msg, err := tools.ValidateHypothesis(hypoID, "internal", passJSON, "")
+	if err != nil {
+		t.Errorf("ValidateHypothesis(PASS) failed: %v", err)
+	}
+	if !strings.Contains(msg, "validated (L2)") {
+		t.Errorf("Expected message to contain 'validated (L2)', got %q", msg)
+	}
+
+	hypoID2 := "test-validate-fail"
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "Test Validate Fail", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon in DB: %v", err)
+	}
+	hypoPath2 := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID2+".md")
+	if err := os.WriteFile(hypoPath2, []byte("L1 content"), 0644); err != nil {
+		t.Fatalf("Failed to create L1 hypothesis file: %v", err)
+	}
+
+	failJSON := `{
+		"observations": [
+			{"description": "Test failed with error", "evidence": ["error: connection refused"], "supports": false}
+		],
+		"overall_verdict": "FAIL",
+		"reasoning": "Integration test failed due to connectivity issues"
+	}`
+	msg, err = tools.ValidateHypothesis(hypoID2, "internal", failJSON, "")
+	if err != nil {
+		t.Errorf("ValidateHypothesis(FAIL) failed: %v", err)
+	}
+	if !strings.Contains(msg, "VALIDATION FAILED") {
+		t.Errorf("Expected message to contain 'VALIDATION FAILED', got %q", msg)
+	}
+}
+
+func TestValidateHypothesis_ValidationErrors(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	tests := []struct {
+		name        string
+		json        string
+		errContains string
+	}{
+		{
+			name:        "invalid JSON",
+			json:        `{not valid}`,
+			errContains: "invalid test_json",
+		},
+		{
+			name:        "no observations",
+			json:        `{"observations": [], "overall_verdict": "PASS", "reasoning": "why"}`,
+			errContains: "at least one observation is required",
+		},
+		{
+			name:        "missing observation description",
+			json:        `{"observations": [{"evidence": ["ref"], "supports": true}], "overall_verdict": "PASS", "reasoning": "why"}`,
+			errContains: "observation[0]: missing description",
+		},
+		{
+			name:        "missing observation evidence",
+			json:        `{"observations": [{"description": "desc", "evidence": [], "supports": true}], "overall_verdict": "PASS", "reasoning": "why"}`,
+			errContains: "observation[0]: requires at least one evidence reference",
+		},
+		{
+			name:        "missing overall_verdict",
+			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "reasoning": "why"}`,
+			errContains: "missing overall_verdict",
+		},
+		{
+			name:        "invalid overall_verdict",
+			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "overall_verdict": "MAYBE", "reasoning": "why"}`,
+			errContains: "overall_verdict must be PASS or FAIL",
+		},
+		{
+			name:        "missing reasoning",
+			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "overall_verdict": "PASS"}`,
+			errContains: "missing reasoning",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tools.ValidateHypothesis("any-id", "internal", tt.json, "")
+			if err == nil {
+				t.Errorf("Expected error containing %q, got nil", tt.errContains)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("Expected error containing %q, got %q", tt.errContains, err.Error())
+			}
+		})
+	}
+}
+
+func TestCheckDuplicateHypothesis(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	if err := tools.DB.CreateHolon(ctx, "failed-hypo-1", "hypothesis", "system", "invalid", "Duplicate Title", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create invalid holon: %v", err)
+	}
+
+	if err := tools.DB.CreateHolon(ctx, "new-hypo", "hypothesis", "system", "L0", "Duplicate Title", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create L0 holon: %v", err)
+	}
+
+	warning := tools.checkDuplicateHypothesis("new-hypo")
+	if warning == "" {
+		t.Error("Expected duplicate warning, got empty string")
+	}
+	if !strings.Contains(warning, "failed-hypo-1") {
+		t.Errorf("Expected warning to contain 'failed-hypo-1', got %q", warning)
+	}
+
+	if err := tools.DB.CreateHolon(ctx, "unique-hypo", "hypothesis", "system", "L0", "Unique Title", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create unique holon: %v", err)
+	}
+
+	warning = tools.checkDuplicateHypothesis("unique-hypo")
+	if warning != "" {
+		t.Errorf("Expected no warning for unique title, got %q", warning)
+	}
+
+	warning = tools.checkDuplicateHypothesis("nonexistent-id")
+	if warning != "" {
+		t.Errorf("Expected no warning for nonexistent id, got %q", warning)
+	}
+}
+
 func TestAuditEvidence(t *testing.T) {
 
 	tools, fsm, _ := setupTools(t)

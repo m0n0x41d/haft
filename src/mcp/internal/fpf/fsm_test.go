@@ -131,7 +131,7 @@ func TestGetContextStage(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a decision context
-	err = database.CreateContext(ctx, "test-context", "Test Context", "Test content", "default")
+	err = database.CreateHolon(ctx, "test-context", "decision_context", "system", "L0", "Test Context", "Test content", "default", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}

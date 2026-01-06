@@ -932,16 +932,6 @@ type ContextSummary struct {
 	UpdatedAt time.Time
 }
 
-// CreateContext creates a new decision context holon
-func (s *Store) CreateContext(ctx context.Context, id, title, content, contextID string) error {
-	now := sql.NullTime{Time: time.Now(), Valid: true}
-	_, err := s.conn.ExecContext(ctx, `
-		INSERT INTO holons (id, type, kind, layer, title, content, context_id, context_status, created_at, updated_at)
-		VALUES (?, 'context', 'decision', 'context', ?, ?, ?, 'open', ?, ?)`,
-		id, title, content, contextID, now.Time, now.Time)
-	return err
-}
-
 // GetOpenContexts returns all open decision contexts
 func (s *Store) GetOpenContexts(ctx context.Context, contextID string) ([]ContextSummary, error) {
 	rows, err := s.conn.QueryContext(ctx, `

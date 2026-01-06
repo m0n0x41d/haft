@@ -51,7 +51,7 @@ var ToolRole = map[string]Role{
 // - quint_decide checks "at least one L2 must exist"
 //
 // Phase gates were redundant and caused batch operation failures.
-// DerivePhase remains for informational purposes (quint_internalize status).
+// GetSuggestedPhase remains for informational purposes (quint_internalize status).
 // See: git history for 0690a2c, 443be87, 4a84ce0 for the whack-a-mole pattern.
 var ToolPhaseGate = map[string][]Phase{
 	"quint_internalize": nil,

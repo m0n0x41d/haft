@@ -67,9 +67,10 @@ The user has presented an anomaly or a design problem.
 ## Action (Run-Time)
 1.  Ask the user for the problem statement if not provided.
 2.  Think through the options.
-3.  **If proposing multiple alternatives:** Create parent decision holon FIRST.
+3.  **If proposing multiple alternatives:** Provide `decision_context` to group them.
+    -   *Note (v5.0.0):* Decision contexts are auto-created if not provided. The system will create one based on the hypothesis scope.
 4.  Call `quint_propose` for EACH hypothesis, setting `decision_context` and `depends_on` as needed.
-    -   *Note:* The tool will store these in **`.quint/knowledge/L0/`**.
+    -   *Note:* Hypotheses are stored in the database (no file projection).
 5.  Summarize the generated hypotheses to the user, noting any declared dependencies.
 
 ## Tool Guide: `quint_propose`

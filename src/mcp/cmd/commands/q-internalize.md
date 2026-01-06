@@ -45,6 +45,7 @@ Call `quint_internalize`. The tool handles everything:
 | Role | Expected role: Observer, Abductor, Deductor, Inductor, Auditor, Decider |
 | Context Changes | What was updated (if any) |
 | Knowledge State | Holon counts by layer (L0/L1/L2/DRR) |
+| Active Decision Contexts | **v5.0.0**: Open decision contexts with their stages (max 3 active) |
 | Recent Holons | Quick context on recent work |
 | Attention Required | Decaying evidence, open decisions pending resolution |
 | Open Decisions | Decisions awaiting resolution (use `/q-resolve` to close) |
@@ -114,6 +115,10 @@ Knowledge State:
   L1 (Substantiated): 2
   L2 (Corroborated): 0
   DRRs: 2
+
+Active Decision Contexts (2/3):
+  - dc-auth-strategy: Auth Strategy (3 hypotheses) [Hypotheses need verification]
+  - dc-caching: Caching Strategy (2 hypotheses) [Ready for decision]
 
 Recent Holons:
   - jwt-auth [L1] R=0.45 - 2h ago

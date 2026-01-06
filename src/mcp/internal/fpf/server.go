@@ -438,10 +438,6 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.LinkHolons(arg("source_id"), arg("target_id"), cl)
 
 	case "quint_propose":
-		s.tools.FSM.State.Phase = PhaseAbduction
-		if saveErr := s.tools.FSM.SaveState("default"); saveErr != nil {
-			logger.Warn().Err(saveErr).Msg("failed to save state")
-		}
 		decisionContext := arg("decision_context")
 		var dependsOn []string
 		if deps, ok := params.Arguments["depends_on"].([]interface{}); ok {
@@ -484,7 +480,11 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.CalculateR(arg("holon_id"))
 
 	case "quint_reset":
-		output, err = s.tools.ResetCycle(arg("reason"))
+		abandonAll := false
+		if aa, ok := params.Arguments["abandon_all"].(bool); ok {
+			abandonAll = aa
+		}
+		output, err = s.tools.ResetCycle(arg("reason"), arg("context_id"), abandonAll)
 
 	case "quint_compact":
 		retentionDays := int64(90)
@@ -508,4 +508,3 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		})
 	}
 }
-

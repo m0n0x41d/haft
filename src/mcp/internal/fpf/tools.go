@@ -129,40 +129,33 @@ func (t *Tools) Slugify(title string) string {
 	return strings.Trim(slug, "-")
 }
 
-func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) (string, error) {
+func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) error {
 	ctx := context.Background()
 
 	if t.DB == nil {
-		return "", fmt.Errorf("database not initialized")
+		return fmt.Errorf("database not initialized")
 	}
 
 	holon, err := t.DB.GetHolon(ctx, hypothesisID)
 	if err != nil {
 		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR",
 			map[string]string{"from": sourceLevel, "to": destLevel}, "not found in database")
-		return "", fmt.Errorf("hypothesis %s not found", hypothesisID)
+		return fmt.Errorf("hypothesis %s not found", hypothesisID)
 	}
 
 	if holon.Layer != sourceLevel {
-		return "", fmt.Errorf("hypothesis %s is in %s, not %s", hypothesisID, holon.Layer, sourceLevel)
+		return fmt.Errorf("hypothesis %s is in %s, not %s", hypothesisID, holon.Layer, sourceLevel)
 	}
 
 	if err := t.DB.UpdateHolonLayer(ctx, hypothesisID, destLevel); err != nil {
 		t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "ERROR",
 			map[string]string{"from": sourceLevel, "to": destLevel}, err.Error())
-		return "", fmt.Errorf("failed to update layer in database: %w", err)
-	}
-
-	srcPath := filepath.Join(t.GetFPFDir(), "knowledge", sourceLevel, hypothesisID+".md")
-	destPath := filepath.Join(t.GetFPFDir(), "knowledge", destLevel, hypothesisID+".md")
-
-	if err := os.Rename(srcPath, destPath); err != nil {
-		logger.Warn().Err(err).Str("holon", hypothesisID).Msg("file move failed, DB already updated")
+		return fmt.Errorf("failed to update layer in database: %w", err)
 	}
 
 	t.AuditLog("quint_move", "move_hypothesis", "agent", hypothesisID, "SUCCESS",
 		map[string]string{"from": sourceLevel, "to": destLevel}, "")
-	return destPath, nil
+	return nil
 }
 
 func (t *Tools) InitProject() error {
@@ -170,10 +163,6 @@ func (t *Tools) InitProject() error {
 		"evidence",
 		"decisions",
 		"sessions",
-		"knowledge/L0",
-		"knowledge/L1",
-		"knowledge/L2",
-		"knowledge/invalid",
 		"agents",
 	}
 
@@ -350,37 +339,42 @@ func (t *Tools) suggestDependencies(title, content string) []DependencySuggestio
 func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
-	slug := t.Slugify(title)
-	filename := fmt.Sprintf("%s.md", slug)
-	path := filepath.Join(t.GetFPFDir(), "knowledge", "L0", filename)
-
-	body := fmt.Sprintf("\n# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
-	fields := map[string]string{
-		"scope": scope,
-		"kind":  kind,
-	}
-
-	if err := WriteWithHash(path, fields, body); err != nil {
-		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
-		return "", err
-	}
-
-	if t.DB != nil {
-		if err := t.DB.CreateHolon(context.Background(), slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
-			logger.Warn().Err(err).Msg("failed to create holon in DB")
-		}
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
 	}
 
 	ctx := context.Background()
 
-	if decisionContext != "" && t.DB != nil {
-		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
-			logger.Warn().Str("decision_context", decisionContext).Msg("decision_context not found, skipping MemberOf")
-		} else {
-			if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
-				logger.Warn().Err(err).Msg("failed to create MemberOf relation")
-			}
+	// v5.0.0: Every hypothesis must belong to a decision context
+	// If none provided, auto-create based on title
+	if decisionContext == "" {
+		contextTitle := title // Use hypothesis title as context title
+		if scope != "" {
+			contextTitle = scope // Use scope if provided
 		}
+		dcID, err := t.GetOrCreateDecisionContext(contextTitle, scope)
+		if err != nil {
+			return "", fmt.Errorf("failed to ensure decision context: %w", err)
+		}
+		decisionContext = dcID
+	} else {
+		// Validate provided context exists
+		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
+			return "", fmt.Errorf("decision_context %q not found", decisionContext)
+		}
+	}
+
+	slug := t.Slugify(title)
+	body := fmt.Sprintf("# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
+
+	if err := t.DB.CreateHolon(ctx, slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
+		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
+		return "", fmt.Errorf("failed to create hypothesis in database: %w", err)
+	}
+
+	// Link hypothesis to decision context
+	if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
+		logger.Warn().Err(err).Msg("failed to create MemberOf relation")
 	}
 
 	if len(dependsOn) > 0 && t.DB != nil {
@@ -412,10 +406,6 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
 
-	if err := t.FSM.SetPhase(PhaseAbduction); err != nil {
-		logger.Warn().Err(err).Msg("failed to set phase to ABDUCTION")
-	}
-
 	var warningBlock string
 	if len(dependsOn) == 0 && t.DB != nil {
 		suggestions := t.suggestDependencies(title, content)
@@ -437,7 +427,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 		}
 	}
 
-	return path + warningBlock, nil
+	return slug + warningBlock, nil
 }
 
 var validRelationTypes = map[string]bool{
@@ -468,6 +458,96 @@ func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targ
 		map[string]string{"relation": relationType, "target": targetID, "cl": fmt.Sprintf("%d", cl)}, "")
 
 	return nil
+}
+
+// GetOrCreateDecisionContext ensures a decision context exists for a problem scope.
+// Returns the context ID. Creates one if none exists for this scope.
+func (t *Tools) GetOrCreateDecisionContext(title, scope string) (string, error) {
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+	ctx := context.Background()
+
+	// Generate context ID from title
+	contextID := "dc-" + t.Slugify(title)
+
+	// Check if context already exists
+	_, err := t.DB.GetHolon(ctx, contextID)
+	if err == nil {
+		// Context exists, return it
+		return contextID, nil
+	}
+
+	// Check active context count (max 3)
+	var activeCount int
+	err = t.DB.GetRawDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM holons
+		 WHERE type = 'decision_context'
+		 AND id NOT IN (
+		     SELECT target_id FROM relations WHERE relation_type = 'closes'
+		 )`).Scan(&activeCount)
+	if err != nil {
+		return "", fmt.Errorf("failed to count active contexts: %w", err)
+	}
+	if activeCount >= 3 {
+		return "", fmt.Errorf("BLOCKED: maximum 3 active decision contexts allowed (have %d). Complete or abandon existing contexts first", activeCount)
+	}
+
+	// Create new decision context
+	content := fmt.Sprintf("# Decision Context: %s\n\nScope: %s\n\nHypotheses will be grouped under this context for decision-making.", title, scope)
+	if err := t.DB.CreateHolon(ctx, contextID, "decision_context", "system", "L0", title, content, "default", scope, ""); err != nil {
+		return "", fmt.Errorf("failed to create decision context: %w", err)
+	}
+
+	t.AuditLog("quint_propose", "create_decision_context", "agent", contextID, "SUCCESS",
+		map[string]string{"title": title, "scope": scope}, "")
+
+	return contextID, nil
+}
+
+// GetActiveDecisionContexts returns all unclosed decision contexts with their stages.
+func (t *Tools) GetActiveDecisionContexts(ctx context.Context) ([]DecisionContextSummary, error) {
+	if t.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	rows, err := t.DB.GetRawDB().QueryContext(ctx, `
+		SELECT h.id, h.title, COALESCE(h.scope, '') as scope
+		FROM holons h
+		WHERE h.type = 'decision_context'
+		AND (h.context_status IS NULL OR h.context_status = 'open')
+		AND h.id NOT IN (
+		    SELECT target_id FROM relations WHERE relation_type = 'closes'
+		)
+		ORDER BY h.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contexts []DecisionContextSummary
+	for rows.Next() {
+		var dc DecisionContextSummary
+		if err := rows.Scan(&dc.ID, &dc.Title, &dc.Scope); err != nil {
+			continue
+		}
+
+		// Get stage for this context
+		dc.Stage = t.FSM.GetContextStage(dc.ID)
+
+		// Count hypotheses in this context (ignore error - 0 is acceptable default)
+		_ = t.DB.GetRawDB().QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM relations r
+			JOIN holons h ON h.id = r.source_id
+			WHERE r.target_id = ? AND r.relation_type = 'memberOf'
+			AND h.type = 'hypothesis'
+		`, dc.ID).Scan(&dc.HypothesisCount)
+
+		contexts = append(contexts, dc)
+	}
+
+	return contexts, nil
 }
 
 // getDecisionContext returns the decision context ID for a hypothesis (via memberOf relation).
@@ -640,21 +720,17 @@ func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) 
 
 	switch strings.ToUpper(result.OverallVerdict) {
 	case "PASS":
-		_, err := t.MoveHypothesis(hypothesisID, "L0", "L1")
+		err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence("verification", "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
-
-		if err := t.FSM.SetPhase(PhaseDeduction); err != nil {
-			logger.Warn().Err(err).Msg("failed to set phase to DEDUCTION")
-		}
 
 		var output strings.Builder
 		output.WriteString(fmt.Sprintf("✅ Hypothesis %s promoted to L1\n\n", hypothesisID))
@@ -667,13 +743,13 @@ func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) 
 		return output.String(), nil
 
 	case "FAIL":
-		_, err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
+		err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence(PhaseDeduction, "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence("verification", "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
@@ -792,16 +868,12 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFile
 
 	switch strings.ToUpper(result.OverallVerdict) {
 	case "PASS":
-		if _, err := t.ManageEvidence(PhaseInduction, "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
 		}
 
 		t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L2"}, "")
-
-		if err := t.FSM.SetPhase(PhaseInduction); err != nil {
-			logger.Warn().Err(err).Msg("failed to set phase to INDUCTION")
-		}
 
 		var output strings.Builder
 		output.WriteString(fmt.Sprintf("✅ Hypothesis %s validated (L2)\n\n", hypothesisID))
@@ -810,7 +882,7 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFile
 		return output.String(), nil
 
 	case "FAIL":
-		if _, err := t.ManageEvidence(PhaseInduction, "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
 		}
@@ -874,19 +946,16 @@ func (t *Tools) validateTestResult(r TestResult) error {
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	defer t.RecordWork("AuditEvidence", time.Now())
-	_, err := t.ManageEvidence(PhaseDecision, "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
+	_, err := t.ManageEvidence("audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
 	if err != nil {
 		return "", err
-	}
-
-	if setErr := t.FSM.SetPhase(PhaseAudit); setErr != nil {
-		logger.Warn().Err(setErr).Msg("failed to set phase to AUDIT")
 	}
 
 	return "Audit recorded for " + hypothesisID, nil
 }
 
-func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
+func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
+	// operation: "verification" (L0→L1) or "validation" (L1→L2)
 	defer t.RecordWork("ManageEvidence", time.Now())
 
 	if validUntil == "" && action != "check" {
@@ -921,12 +990,12 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 
 	switch normalizedVerdict {
 	case "pass":
-		switch currentPhase {
-		case PhaseDeduction:
+		switch operation {
+		case "verification":
 			if assuranceLevel == "L1" || assuranceLevel == "L2" {
 				shouldPromote = true
 			}
-		case PhaseInduction:
+		case "validation":
 			if assuranceLevel == "L2" {
 				shouldPromote = true
 			}
@@ -935,21 +1004,22 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 
 	var moveErr error
 	if (normalizedVerdict == "pass") && shouldPromote {
-		switch currentPhase {
-		case PhaseDeduction:
-			_, moveErr = t.MoveHypothesis(targetID, "L0", "L1")
-		case PhaseInduction:
-			if _, err := os.Stat(filepath.Join(t.GetFPFDir(), "knowledge", "L0", targetID+".md")); err == nil {
+		switch operation {
+		case "verification":
+			moveErr = t.MoveHypothesis(targetID, "L0", "L1")
+		case "validation":
+			holon, err := t.DB.GetHolon(context.Background(), targetID)
+			if err == nil && holon.Layer == "L0" {
 				return "", fmt.Errorf("hypothesis %s is still in L0: run /q2-verify to promote it to L1 before testing", targetID)
 			}
-			_, moveErr = t.MoveHypothesis(targetID, "L1", "L2")
+			moveErr = t.MoveHypothesis(targetID, "L1", "L2")
 		}
 	} else if normalizedVerdict == "fail" || normalizedVerdict == "refine" {
-		switch currentPhase {
-		case PhaseDeduction:
-			_, moveErr = t.MoveHypothesis(targetID, "L0", "invalid")
-		case PhaseInduction:
-			_, moveErr = t.MoveHypothesis(targetID, "L1", "invalid")
+		switch operation {
+		case "verification":
+			moveErr = t.MoveHypothesis(targetID, "L0", "invalid")
+		case "validation":
+			moveErr = t.MoveHypothesis(targetID, "L1", "invalid")
 		}
 	}
 
@@ -1013,20 +1083,16 @@ func (t *Tools) ManageEvidence(currentPhase Phase, action, targetID, evidenceTyp
 	return path, nil
 }
 
-func (t *Tools) RefineLoopback(currentPhase Phase, parentID, insight, newTitle, newContent, scope string) (string, error) {
+func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newContent, scope string) (string, error) {
+	// sourceLayer: "L1" for induction loopback, "L0" for deduction loopback
 	defer t.RecordWork("RefineLoopback", time.Now())
 
-	var parentLevel string
-	switch currentPhase {
-	case PhaseInduction:
-		parentLevel = "L1"
-	case PhaseDeduction:
-		parentLevel = "L0"
-	default:
-		return "", fmt.Errorf("loopback not applicable from phase %s", currentPhase)
+	parentLevel := sourceLayer
+	if parentLevel != "L0" && parentLevel != "L1" {
+		return "", fmt.Errorf("loopback not applicable from layer %s (must be L0 or L1)", sourceLayer)
 	}
 
-	if _, err := t.MoveHypothesis(parentID, parentLevel, "invalid"); err != nil {
+	if err := t.MoveHypothesis(parentID, parentLevel, "invalid"); err != nil {
 		return "", fmt.Errorf("failed to move parent hypothesis to invalid: %v", err)
 	}
 
@@ -1172,6 +1238,10 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 				if err := t.createRelation(ctx, drrID, "closes", dcID, 3); err != nil {
 					logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to create closes relation")
 				}
+				// Update context_status to 'closed'
+				if err := t.DB.CloseContext(ctx, dcID); err != nil {
+					logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to close context status")
+				}
 				closedContexts[dcID] = true
 			}
 		}
@@ -1205,17 +1275,13 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 
 	if winnerID != "" {
-		_, err := t.MoveHypothesis(winnerID, "L1", "L2")
+		err := t.MoveHypothesis(winnerID, "L1", "L2")
 		if err != nil {
 			fmt.Printf("WARNING: Failed to move winner hypothesis %s to L2: %v\n", winnerID, err)
 		}
 	}
 
 	t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "SUCCESS", map[string]string{"title": title, "drr": drrName}, "")
-
-	if err := t.FSM.SetPhase(PhaseIdle); err != nil {
-		logger.Warn().Err(err).Msg("failed to set phase to IDLE")
-	}
 
 	return drrPath, nil
 }
@@ -1467,7 +1533,7 @@ func (t *Tools) deprecateHolon(holonID string) (string, error) {
 		return "", fmt.Errorf("cannot deprecate %s from %s (only L2 and L1 can be deprecated)", holonID, holon.Layer)
 	}
 
-	if _, err := t.MoveHypothesis(holonID, holon.Layer, newLayer); err != nil {
+	if err := t.MoveHypothesis(holonID, holon.Layer, newLayer); err != nil {
 		return "", err
 	}
 
@@ -1665,11 +1731,22 @@ type InternalizeResult struct {
 	OpenDecisions     []DecisionSummary // Decisions awaiting resolution
 	ResolvedDecisions []DecisionSummary // Recently resolved decisions
 	NextAction        string            // Phase-appropriate suggestion
+	// v5.0.0: Decision Contexts
+	ActiveContexts []DecisionContextSummary // Active (unclosed) decision contexts
 	// Code Change Awareness (v5.0.0)
 	CodeChanges                *CodeChangeDetectionResult
 	StaleEvidenceCount         int64
 	ArchivedStaleEvidenceCount int64 // Informational: stale evidence for archived holons
 	ReverificationCount        int64
+}
+
+// DecisionContextSummary represents an active decision context
+type DecisionContextSummary struct {
+	ID              string
+	Title           string
+	Scope           string
+	Stage           ContextStage
+	HypothesisCount int
 }
 
 type HolonSummary struct {
@@ -1694,14 +1771,16 @@ type DecayWarning struct {
 func (t *Tools) Internalize() (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
 
-	sessionPhase := t.FSM.GetPhase()
-	suggestedPhase := t.FSM.GetSuggestedPhase("default")
+	// Context stage is now derived per-context, not stored globally
+	contextStage := t.FSM.GetContextStage("default")
+	description, nextAction := GetContextStageDescription(contextStage)
 
 	result := InternalizeResult{
-		Phase:          string(sessionPhase),
-		SuggestedPhase: string(suggestedPhase),
-		Role:           string(GetExpectedRole(sessionPhase)),
+		Phase:          string(contextStage),
+		SuggestedPhase: description,
+		Role:           string(RoleObserver),
 		LayerCounts:    make(map[string]int),
+		NextAction:     nextAction,
 	}
 
 	if !t.IsInitialized() {
@@ -1723,13 +1802,9 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 
-		// Set phase to IDLE after init (user decides next step)
-		if err := t.FSM.SetPhase(PhaseIdle); err != nil {
-			logger.Warn().Err(err).Msg("failed to set phase")
-		}
-		result.Phase = string(PhaseIdle)
-		result.SuggestedPhase = string(t.FSM.GetSuggestedPhase("default"))
-		result.Role = string(GetExpectedRole(PhaseIdle))
+		result.Phase = string(StageEmpty)
+		result.SuggestedPhase = "No hypotheses yet"
+		result.Role = string(RoleObserver)
 	} else {
 		stale, signals := t.IsContextStale()
 		if stale {
@@ -1848,9 +1923,15 @@ func (t *Tools) Internalize() (string, error) {
 		if err == nil {
 			result.ResolvedDecisions = resolvedDecisions
 		}
+
+		// v5.0.0: Get active decision contexts
+		activeContexts, err := t.GetActiveDecisionContexts(ctx)
+		if err == nil {
+			result.ActiveContexts = activeContexts
+		}
 	}
 
-	result.NextAction = t.getNextAction(t.FSM.GetPhase(), result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
+	result.NextAction = t.getNextAction(contextStage, result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
 	return t.formatInternalizeOutput(result), nil
 }
 
@@ -1888,6 +1969,19 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 		sb.WriteString(fmt.Sprintf("  (Archived: %d holons in resolved decisions)\n", totalArchived))
 	}
 	sb.WriteString("\n")
+
+	// v5.0.0: Active Decision Contexts
+	if len(r.ActiveContexts) > 0 {
+		sb.WriteString(fmt.Sprintf("Active Decision Contexts (%d/3):\n", len(r.ActiveContexts)))
+		for _, dc := range r.ActiveContexts {
+			desc, _ := GetContextStageDescription(dc.Stage)
+			sb.WriteString(fmt.Sprintf("  - %s: %s (%d hypotheses) [%s]\n",
+				dc.ID, dc.Title, dc.HypothesisCount, desc))
+		}
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("No active decision contexts. Use /q1-hypothesize to start.\n\n")
+	}
 
 	if len(r.RecentHolons) > 0 {
 		sb.WriteString("Recent Active Holons:\n")
@@ -2222,13 +2316,13 @@ func filterByAffectedScope(results []db.SearchResult, affectedScopeFilter string
 
 // GetStatus returns the current FPF status with enhanced output for agent parsing.
 func (t *Tools) GetStatus() (string, error) {
-	phase := t.FSM.GetPhase()
+	stage := t.FSM.GetContextStage("default")
 
 	var sb strings.Builder
 
 	// Parseable header
-	sb.WriteString(fmt.Sprintf("PHASE: %s\n", phase))
-	sb.WriteString(fmt.Sprintf("EXPECTED_ROLE: %s\n\n", GetExpectedRole(phase)))
+	sb.WriteString(fmt.Sprintf("STAGE: %s\n", stage))
+	sb.WriteString(fmt.Sprintf("ROLE: %s\n\n", RoleObserver))
 
 	// Knowledge counts from filesystem
 	l0 := t.countHolons("L0")
@@ -2247,23 +2341,24 @@ func (t *Tools) GetStatus() (string, error) {
 
 	// Next action guidance
 	sb.WriteString("## Next\n")
-	sb.WriteString(t.getNextAction(phase, l0, l1, l2))
+	sb.WriteString(t.getNextAction(stage, l0, l1, l2))
 
 	return sb.String(), nil
 }
 
 // countHolons counts markdown files in a knowledge layer directory.
 func (t *Tools) countHolons(layer string) int {
-	dir := filepath.Join(t.GetFPFDir(), "knowledge", layer)
-	files, err := os.ReadDir(dir)
-	if err != nil {
+	// v5.0.0: hypotheses are DB-only
+	if t.DB == nil {
 		return 0
 	}
-	count := 0
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") && f.Name() != ".gitkeep" {
-			count++
-		}
+	var count int
+	err := t.DB.GetRawDB().QueryRow(
+		`SELECT COUNT(*) FROM holons WHERE layer = ? AND type = 'hypothesis'`,
+		layer,
+	).Scan(&count)
+	if err != nil {
+		return 0
 	}
 	return count
 }
@@ -2284,32 +2379,28 @@ func (t *Tools) countDRRs() int {
 	return count
 }
 
-// getNextAction returns guidance for the next step based on current phase.
-func (t *Tools) getNextAction(phase Phase, l0, l1, l2 int) string {
-	switch phase {
-	case PhaseIdle:
-		return "→ /q-internalize or /q1-hypothesize\n"
-	case PhaseAbduction:
+// getNextAction returns guidance for the next step based on context stage.
+func (t *Tools) getNextAction(stage ContextStage, l0, l1, l2 int) string {
+	switch stage {
+	case StageEmpty:
+		return "→ /q1-hypothesize to start reasoning\n"
+	case StageNeedsVerify:
 		if l0 > 0 {
 			return fmt.Sprintf("→ %d L0 ready for /q2-verify\n", l0)
 		}
 		return "→ /q1-hypothesize to generate hypotheses\n"
-	case PhaseDeduction:
+	case StageNeedsValidation:
 		if l1 > 0 {
 			return fmt.Sprintf("→ %d L1 ready for /q3-validate\n", l1)
 		}
 		return "→ /q2-verify to check logic\n"
-	case PhaseInduction:
+	case StageNeedsAudit:
 		if l2 > 0 {
 			return fmt.Sprintf("→ %d L2 ready for /q4-audit\n", l2)
 		}
 		return "→ /q3-validate to gather evidence\n"
-	case PhaseAudit:
-		return "→ /q4-audit then /q5-decide\n"
-	case PhaseDecision:
+	case StageReadyToDecide:
 		return "→ /q5-decide to finalize\n"
-	case PhaseOperation:
-		return "→ In operation\n"
 	default:
 		return ""
 	}
@@ -2491,37 +2582,6 @@ func (t *Tools) getCurrentHead() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// getChangedFiles returns files changed between two commits
-func (t *Tools) getChangedFiles(fromCommit, toCommit string) ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", fromCommit, toCommit)
-	cmd.Dir = t.RootDir
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git diff failed: %w", err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var files []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
-// getFileHash returns SHA256 hash of file contents
-func (t *Tools) getFileHash(filePath string) (string, error) {
-	fullPath := filepath.Join(t.RootDir, filePath)
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", err
-	}
-	hash := sha256.Sum256(content)
-	return hex.EncodeToString(hash[:]), nil
-}
-
 // ============================================
 // CODE CHANGE DETECTION LOGIC (v5.1.0)
 // ============================================
@@ -2596,50 +2656,6 @@ func (t *Tools) recalculateHolonR(ctx context.Context, holonID string) {
 	if err == nil && report != nil {
 		t.DB.UpdateHolonRScore(ctx, holonID, report.FinalScore)
 	}
-}
-
-// fileChangedBetween checks if any file in carrierRef changed between two commits.
-// carrierRef can be comma-separated (e.g., "config.py,vault.py").
-// Returns (changed, changedFiles, error) where changedFiles lists which specific files changed.
-func (t *Tools) fileChangedBetween(fromCommit, toCommit, carrierRef string) (bool, []string, error) {
-	changedFiles, err := t.getChangedFiles(fromCommit, toCommit)
-	if err != nil {
-		return false, nil, err
-	}
-
-	// Split comma-separated carrier refs
-	carrierPaths := strings.Split(carrierRef, ",")
-	var matchedFiles []string
-
-	for _, carrierPath := range carrierPaths {
-		carrierPath = strings.TrimSpace(carrierPath)
-		if carrierPath == "" {
-			continue
-		}
-		for _, f := range changedFiles {
-			if f == carrierPath || strings.HasSuffix(f, "/"+carrierPath) || strings.HasPrefix(carrierPath, f) {
-				matchedFiles = append(matchedFiles, carrierPath)
-				break
-			}
-		}
-	}
-
-	return len(matchedFiles) > 0, matchedFiles, nil
-}
-
-// carrierRefContainsFile checks if a comma-separated carrier_ref contains a specific file path.
-// Uses exact matching or suffix/prefix matching for path variations.
-func carrierRefContainsFile(carrierRef, file string) bool {
-	for _, path := range strings.Split(carrierRef, ",") {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if path == file || strings.HasSuffix(path, "/"+file) || strings.HasPrefix(file, path+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 // hashCarrierFiles returns "file1:hash1,file2:hash2" (sorted, 16-char hex each).
@@ -2797,101 +2813,6 @@ func (t *Tools) detectStaleEvidenceByHash(ctx context.Context) (*CodeChangeDetec
 	// Mark affected holons as needing reverification
 	for holonID := range affectedHolons {
 		reason := "evidence became stale due to carrier file changes"
-		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
-			logger.Warn().Err(err).Msg("failed to mark holon for reverification")
-		}
-		result.TotalAffected++
-	}
-
-	// Propagate staleness through WLNK chain
-	propagated := t.propagateStalenessToDependent(ctx, affectedHolons)
-	result.Impacts = append(result.Impacts, propagated...)
-
-	// Recalculate R_eff for all affected holons
-	for holonID := range affectedHolons {
-		t.recalculateHolonR(ctx, holonID)
-	}
-
-	return result, nil
-}
-
-// detectStaleEvidenceByCarrierCommit checks each evidence's carrier_commit vs current HEAD (v5.0.0)
-// DEPRECATED: Use detectStaleEvidenceByHash instead. Kept for migration period.
-// Used on first internalize when no last_commit baseline exists.
-func (t *Tools) detectStaleEvidenceByCarrierCommit(ctx context.Context, currentHead string) (*CodeChangeDetectionResult, error) {
-	result := &CodeChangeDetectionResult{ToCommit: currentHead}
-	affectedHolons := make(map[string]bool)
-
-	// Get all evidence with carrier_commit
-	allEvidence, err := t.DB.GetEvidenceWithCarrierCommit(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, e := range allEvidence {
-		if !e.CarrierCommit.Valid || e.CarrierCommit.String == "" {
-			continue
-		}
-		if !e.CarrierRef.Valid || e.CarrierRef.String == "" {
-			continue
-		}
-
-		carrierCommit := e.CarrierCommit.String
-		carrierRef := e.CarrierRef.String
-
-		// Skip if evidence was created at current HEAD
-		if carrierCommit == currentHead {
-			continue
-		}
-
-		// Check if any file in carrier_ref changed between evidence creation and now
-		changed, changedFiles, err := t.fileChangedBetween(carrierCommit, currentHead, carrierRef)
-		if err != nil || !changed {
-			continue
-		}
-
-		// Get holon's current R for reporting
-		holon, _ := t.DB.GetHolon(ctx, e.HolonID)
-		previousR := 0.0
-		if holon.CachedRScore.Valid {
-			previousR = holon.CachedRScore.Float64
-		}
-
-		// Mark evidence as stale with specific files that changed
-		shortFrom := carrierCommit
-		if len(shortFrom) > 7 {
-			shortFrom = shortFrom[:7]
-		}
-		shortTo := currentHead
-		if len(shortTo) > 7 {
-			shortTo = shortTo[:7]
-		}
-		reason := fmt.Sprintf("carrier changed: %s (%s → %s)", strings.Join(changedFiles, ", "), shortFrom, shortTo)
-
-		if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
-			logger.Warn().Err(err).Str("evidence_id", e.ID).Msg("failed to mark evidence stale")
-			continue
-		}
-
-		// Record impact
-		result.Impacts = append(result.Impacts, CodeChangeImpact{
-			Type:       "evidence_stale",
-			File:       strings.Join(changedFiles, ", "),
-			EvidenceID: e.ID,
-			HolonID:    e.HolonID,
-			HolonTitle: e.HolonTitle,
-			HolonLayer: e.HolonLayer,
-			PreviousR:  previousR,
-			Reason:     reason,
-		})
-
-		result.TotalStale++
-		affectedHolons[e.HolonID] = true
-	}
-
-	// Mark affected holons as needing reverification
-	for holonID := range affectedHolons {
-		reason := "evidence became stale due to code changes"
 		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
 			logger.Warn().Err(err).Msg("failed to mark holon for reverification")
 		}
@@ -3563,41 +3484,85 @@ func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]De
 // ResetCycle ends the current FPF session and returns to IDLE.
 // This is an operational action, NOT a decision - no DRR is created.
 // Records session state in audit_log for traceability.
-func (t *Tools) ResetCycle(reason string) (string, error) {
+// Note: With context-based stage, reset is now primarily for audit logging.
+// Context management is done via decision contexts, not global phase.
+func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, error) {
 	defer t.RecordWork("ResetCycle", time.Now())
 
 	if reason == "" {
 		reason = "user requested reset"
 	}
 
-	currentPhase := t.FSM.GetPhase()
+	ctx := context.Background()
+	var sb strings.Builder
 
-	var stateSummary strings.Builder
-	stateSummary.WriteString(fmt.Sprintf("Phase at reset: %s\n", currentPhase))
-	stateSummary.WriteString(fmt.Sprintf("L0: %d, L1: %d, L2: %d, DRR: %d\n",
+	// Handle context abandonment
+	if contextID != "" {
+		if t.DB == nil {
+			return "", fmt.Errorf("database not initialized")
+		}
+		if err := t.DB.AbandonContext(ctx, contextID); err != nil {
+			return "", fmt.Errorf("failed to abandon context %s: %w", contextID, err)
+		}
+		t.AuditLog("quint_reset", "abandon_context", "agent", contextID, "SUCCESS",
+			map[string]string{"reason": reason}, "")
+		sb.WriteString(fmt.Sprintf("Abandoned context: %s\n", contextID))
+		sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
+		return sb.String(), nil
+	}
+
+	if abandonAll {
+		if t.DB == nil {
+			return "", fmt.Errorf("database not initialized")
+		}
+		contexts, err := t.GetActiveDecisionContexts(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to get active contexts: %w", err)
+		}
+		if len(contexts) == 0 {
+			return "No active contexts to abandon.\n", nil
+		}
+		var abandoned []string
+		for _, c := range contexts {
+			if err := t.DB.AbandonContext(ctx, c.ID); err != nil {
+				logger.Warn().Err(err).Str("context_id", c.ID).Msg("failed to abandon context")
+				continue
+			}
+			abandoned = append(abandoned, c.ID)
+		}
+		t.AuditLog("quint_reset", "abandon_all_contexts", "agent", "", "SUCCESS",
+			map[string]string{"reason": reason, "count": fmt.Sprintf("%d", len(abandoned))}, "")
+		sb.WriteString(fmt.Sprintf("Abandoned %d contexts:\n", len(abandoned)))
+		for _, id := range abandoned {
+			sb.WriteString(fmt.Sprintf("  - %s\n", id))
+		}
+		sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
+		return sb.String(), nil
+	}
+
+	// Default: end session without abandoning contexts
+	currentStage := t.FSM.GetContextStage("default")
+
+	sb.WriteString(fmt.Sprintf("Stage at reset: %s\n", currentStage))
+	sb.WriteString(fmt.Sprintf("L0: %d, L1: %d, L2: %d, DRR: %d\n",
 		t.countHolons("L0"), t.countHolons("L1"), t.countHolons("L2"), t.countDRRs()))
 
 	if t.DB != nil {
-		ctx := context.Background()
 		openDecisions, err := t.GetOpenDecisions(ctx)
 		if err == nil && len(openDecisions) > 0 {
-			stateSummary.WriteString(fmt.Sprintf("Open decisions: %d\n", len(openDecisions)))
+			sb.WriteString(fmt.Sprintf("Open decisions: %d\n", len(openDecisions)))
 			for _, d := range openDecisions {
-				stateSummary.WriteString(fmt.Sprintf("  - %s\n", d.ID))
+				sb.WriteString(fmt.Sprintf("  - %s\n", d.ID))
 			}
 		}
 	}
 
 	t.AuditLog("quint_reset", "cycle_reset", "agent", "", "SUCCESS",
-		map[string]string{"reason": reason, "from_phase": string(currentPhase)},
-		stateSummary.String())
+		map[string]string{"reason": reason, "from_stage": string(currentStage)},
+		sb.String())
 
-	if err := t.FSM.SetPhase(PhaseIdle); err != nil {
-		return "", fmt.Errorf("failed to set phase: %w", err)
-	}
-
-	return fmt.Sprintf("Cycle reset to IDLE.\nPrevious phase: %s\nReason: %s\n\n%s",
-		currentPhase, reason, stateSummary.String()), nil
+	return fmt.Sprintf("Cycle reset. Session ended.\nPrevious stage: %s\nReason: %s\n\n%s",
+		currentStage, reason, sb.String()), nil
 }
 
 type CompactResult struct {

@@ -1,15 +1,12 @@
 package fpf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/m0n0x41d/quint-code/db"
 )
-
-var ctx = context.Background()
 
 func TestComputeContentHash(t *testing.T) {
 	body := "test content"
@@ -163,8 +160,7 @@ func TestValidateFile_NoHash(t *testing.T) {
 func TestReadWithValidation_Tampered(t *testing.T) {
 	tempDir := t.TempDir()
 	quintDir := filepath.Join(tempDir, ".quint")
-	l0Dir := filepath.Join(quintDir, "knowledge", "L0")
-	os.MkdirAll(l0Dir, 0755)
+	os.MkdirAll(quintDir, 0755)
 
 	dbPath := filepath.Join(quintDir, "quint.db")
 	store, err := db.NewStore(dbPath)
@@ -176,15 +172,11 @@ func TestReadWithValidation_Tampered(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := NewTools(fsm, tempDir, store)
 
-	path := filepath.Join(l0Dir, "test-hypo.md")
-	body := "\n# Hypothesis: Test\n\nOriginal content"
+	path := filepath.Join(quintDir, "test-file.md")
+	body := "\n# Test Content\n\nOriginal content"
 	fields := map[string]string{"scope": "test", "kind": "system"}
 	if err := WriteWithHash(path, fields, body); err != nil {
 		t.Fatalf("WriteWithHash failed: %v", err)
-	}
-
-	if err := store.CreateHolon(ctx, "test-hypo", "hypothesis", "system", "L0", "Test", body, "default", "test", ""); err != nil {
-		t.Fatalf("CreateHolon failed: %v", err)
 	}
 
 	content, err := os.ReadFile(path)
@@ -209,47 +201,6 @@ func TestReadWithValidation_Tampered(t *testing.T) {
 	}
 	if event.ExpectedHash == event.ActualHash {
 		t.Error("Hashes should be different")
-	}
-}
-
-func TestExtractHolonIDFromPath(t *testing.T) {
-	tests := []struct {
-		path     string
-		expected string
-	}{
-		{"/foo/.quint/knowledge/L0/test-hypo.md", "test-hypo"},
-		{"/foo/.quint/knowledge/L1/another.md", "another"},
-		{"/foo/.quint/knowledge/L2/final.md", "final"},
-		{"/foo/.quint/knowledge/invalid/bad.md", "bad"},
-		{"/foo/.quint/decisions/DRR-123.md", ""},
-		{"/foo/other/file.md", ""},
-	}
-
-	for _, tt := range tests {
-		result := extractHolonIDFromPath(tt.path)
-		if result != tt.expected {
-			t.Errorf("extractHolonIDFromPath(%q) = %q, want %q", tt.path, result, tt.expected)
-		}
-	}
-}
-
-func TestExtractLayerFromPath(t *testing.T) {
-	tests := []struct {
-		path     string
-		expected string
-	}{
-		{"/foo/.quint/knowledge/L0/test.md", "L0"},
-		{"/foo/.quint/knowledge/L1/test.md", "L1"},
-		{"/foo/.quint/knowledge/L2/test.md", "L2"},
-		{"/foo/.quint/knowledge/invalid/test.md", "invalid"},
-		{"/foo/.quint/decisions/DRR.md", ""},
-	}
-
-	for _, tt := range tests {
-		result := extractLayerFromPath(tt.path)
-		if result != tt.expected {
-			t.Errorf("extractLayerFromPath(%q) = %q, want %q", tt.path, result, tt.expected)
-		}
 	}
 }
 

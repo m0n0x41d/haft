@@ -4,62 +4,45 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
-
-	"github.com/m0n0x41d/quint-code/assurance"
 )
 
-type Phase string
+// ContextStage represents the derived stage of a decision context.
+// Replaces global Phase - stage is now per-context and derived from hypotheses.
+type ContextStage string
 
 const (
-	PhaseIdle      Phase = "IDLE"
-	PhaseAbduction Phase = "ABDUCTION"
-	PhaseDeduction Phase = "DEDUCTION"
-	PhaseInduction Phase = "INDUCTION"
-	PhaseAudit     Phase = "AUDIT"
-	PhaseDecision  Phase = "DECISION"
-	PhaseOperation Phase = "OPERATION"
+	StageEmpty           ContextStage = "EMPTY"
+	StageNeedsVerify     ContextStage = "NEEDS_VERIFICATION"
+	StageNeedsValidation ContextStage = "NEEDS_VALIDATION"
+	StageNeedsAudit      ContextStage = "NEEDS_AUDIT"
+	StageReadyToDecide   ContextStage = "READY_TO_DECIDE"
 )
 
+// State holds session configuration (not phase - phase is removed).
+type State struct {
+	ActiveRole         RoleAssignment `json:"active_role,omitempty"`
+	LastCommit         string         `json:"last_commit,omitempty"`
+	AssuranceThreshold float64        `json:"assurance_threshold,omitempty"`
+}
+
+// RoleAssignment tracks the current role assignment (kept for audit logging).
 type RoleAssignment struct {
 	Role      Role   `json:"role"`
 	SessionID string `json:"session_id"`
 	Context   string `json:"context"`
 }
 
-type EvidenceStub struct {
-	Type        string `json:"type"`
-	URI         string `json:"uri"`
-	Description string `json:"description"`
-	HolonID     string `json:"holon_id"`
-}
-
-type State struct {
-	Phase              Phase          `json:"phase"`
-	ActiveRole         RoleAssignment `json:"active_role,omitempty"`
-	LastCommit         string         `json:"last_commit,omitempty"`
-	AssuranceThreshold float64        `json:"assurance_threshold,omitempty"`
-}
-
-type TransitionRule struct {
-	From Phase
-	To   Phase
-	Role Role
-}
-
+// FSM holds state configuration. Global phase removed - use GetContextStage for per-context stage.
 type FSM struct {
-	State      State
-	DB         *sql.DB
-	ForcePhase Phase // If set (non-empty), GetPhase returns this instead of deriving. Used for testing.
+	State State
+	DB    *sql.DB
 }
 
+// LoadState loads session state from database.
 func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	fsm := &FSM{
 		State: State{
-			Phase:              PhaseIdle,
 			AssuranceThreshold: 0.8,
 		},
 		DB: db,
@@ -84,8 +67,6 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 		return nil, fmt.Errorf("failed to load state: %w", err)
 	}
 
-	// Phase is derived from active holons via GetSuggestedPhase(), not persisted
-	// This aligns with v6 direction where phase is per-context, not global
 	if activeRole.Valid {
 		fsm.State.ActiveRole = RoleAssignment{
 			Role:      Role(activeRole.String),
@@ -103,88 +84,12 @@ func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	return fsm, nil
 }
 
-func (f *FSM) GetPhase() Phase {
-	if f.ForcePhase != "" {
-		return f.ForcePhase
-	}
-	return f.State.Phase
-}
-
-func (f *FSM) SetPhase(phase Phase) error {
-	// Phase is in-memory only (session state), not persisted to DB.
-	// This aligns with v6 direction where phase is derived per-context.
-	// Phase gates are already removed (see roles.go) - this is purely informational.
-	f.State.Phase = phase
-	return nil
-}
-
-// GetSuggestedPhase computes a suggested phase from ACTIVE holons in the database.
-// Active holons are defined by the active_holons VIEW (migration v6).
-//
-// DESIGN: This is INFORMATIONAL ONLY - used for status display in quint_internalize.
-// It does NOT gate any operations. Semantic preconditions handle validation.
-// The actual phase is stored explicitly and set by tools via SetPhase().
-func (f *FSM) GetSuggestedPhase(contextID string) Phase {
-	if f.DB == nil {
-		return PhaseIdle
-	}
-
-	rows, err := f.DB.QueryContext(context.Background(),
-		"SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer",
-		contextID)
-	if err != nil {
-		return PhaseIdle
-	}
-	defer rows.Close() //nolint:errcheck
-
-	counts := make(map[string]int64)
-	for rows.Next() {
-		var layer string
-		var count int64
-		if err := rows.Scan(&layer, &count); err != nil {
-			continue
-		}
-		counts[layer] = count
-	}
-
-	l0 := counts["L0"]
-	l1 := counts["L1"]
-	l2 := counts["L2"]
-	// DRR count is NOT used for phase derivation.
-	// DRRs are results of decisions, not pending work.
-	// Open DRRs are shown separately in quint_internalize.
-
-	// Phase is informational only - based on active hypothesis layers
-	if l2 > 0 {
-		var hasAudit bool
-		auditRow := f.DB.QueryRowContext(context.Background(), `
-			SELECT EXISTS(
-				SELECT 1 FROM evidence e
-				JOIN active_holons h ON e.holon_id = h.id
-				WHERE h.context_id = ? AND h.layer = 'L2'
-				AND e.type = 'audit_report'
-			)`, contextID)
-		if err := auditRow.Scan(&hasAudit); err == nil && hasAudit {
-			return PhaseAudit
-		}
-		return PhaseInduction
-	}
-	if l1 > 0 {
-		return PhaseDeduction
-	}
-	if l0 > 0 {
-		return PhaseAbduction
-	}
-	return PhaseIdle
-}
-
+// SaveState persists session state to database.
 func (f *FSM) SaveState(contextID string) error {
 	if f.DB == nil {
 		return fmt.Errorf("database connection required for SaveState")
 	}
 
-	// Phase is not persisted - it's in-memory session state only.
-	// See SetPhase() comment for design rationale.
 	_, err := f.DB.Exec(`
 		INSERT INTO fpf_state (context_id, active_role, active_session_id, active_role_context, last_commit, assurance_threshold, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -209,6 +114,7 @@ func (f *FSM) SaveState(contextID string) error {
 	return nil
 }
 
+// GetAssuranceThreshold returns the configured assurance threshold.
 func (f *FSM) GetAssuranceThreshold() float64 {
 	if f.State.AssuranceThreshold <= 0 {
 		return 0.8
@@ -216,136 +122,81 @@ func (f *FSM) GetAssuranceThreshold() float64 {
 	return f.State.AssuranceThreshold
 }
 
-func (f *FSM) CanTransition(target Phase, assignment RoleAssignment, evidence *EvidenceStub) (bool, string) {
-	if assignment.Role == "" {
-		return false, "Role is required"
+// GetContextStage computes the stage of a decision context from its hypotheses.
+// This replaces global phase - stage is derived per-context, not stored.
+func (f *FSM) GetContextStage(decisionContextID string) ContextStage {
+	if f.DB == nil {
+		return StageEmpty
 	}
 
-	currentPhase := f.GetPhase()
+	rows, err := f.DB.QueryContext(context.Background(), `
+		SELECT h.layer, COUNT(*) as count
+		FROM holons h
+		JOIN relations r ON h.id = r.source_id
+		WHERE r.target_id = ? AND r.relation_type = 'memberOf'
+		  AND h.layer NOT IN ('invalid')
+		GROUP BY h.layer`,
+		decisionContextID)
+	if err != nil {
+		return StageEmpty
+	}
+	defer rows.Close() //nolint:errcheck
 
-	if currentPhase == target {
-		if isValidRoleForPhase(currentPhase, assignment.Role) {
-			return true, "OK"
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var layer string
+		var count int64
+		if err := rows.Scan(&layer, &count); err != nil {
+			continue
 		}
-		return false, fmt.Sprintf("Role %s is not active in %s phase", assignment.Role, currentPhase)
+		counts[layer] = count
 	}
 
-	valid := []TransitionRule{
-		{PhaseIdle, PhaseAbduction, RoleAbductor},
-		{PhaseAbduction, PhaseDeduction, RoleDeductor},
-		{PhaseDeduction, PhaseInduction, RoleInductor},
-		{PhaseInduction, PhaseDeduction, RoleDeductor},
-		{PhaseInduction, PhaseAudit, RoleAuditor},
-		{PhaseInduction, PhaseDecision, RoleDecider},
-		{PhaseAudit, PhaseDecision, RoleDecider},
-		{PhaseDecision, PhaseIdle, RoleDecider},
-		{PhaseDecision, PhaseOperation, RoleDecider},
-	}
+	l0 := counts["L0"]
+	l1 := counts["L1"]
+	l2 := counts["L2"]
 
-	isValidTransition := false
-	for _, rule := range valid {
-		if rule.From == currentPhase && rule.To == target {
-			if rule.Role == assignment.Role {
-				isValidTransition = true
-				break
-			}
+	if l2 > 0 {
+		var allL2Audited bool
+		auditRow := f.DB.QueryRowContext(context.Background(), `
+			SELECT NOT EXISTS(
+				SELECT 1 FROM holons h
+				JOIN relations r ON h.id = r.source_id
+				WHERE r.target_id = ? AND r.relation_type = 'memberOf'
+				  AND h.layer = 'L2'
+				  AND NOT EXISTS (
+				      SELECT 1 FROM evidence e
+				      WHERE e.holon_id = h.id AND e.type = 'audit_report'
+				  )
+			)`, decisionContextID)
+		if err := auditRow.Scan(&allL2Audited); err == nil && allL2Audited && l2 > 0 {
+			return StageReadyToDecide
 		}
+		return StageNeedsAudit
 	}
-
-	if !isValidTransition {
-		return false, fmt.Sprintf("Invalid transition: %s -> %s by %s", currentPhase, target, assignment.Role)
+	if l1 > 0 {
+		return StageNeedsValidation
 	}
-
-	if !validateEvidence(currentPhase, target, evidence) {
-		return false, fmt.Sprintf("Transition to %s requires valid Evidence Anchor (A.10) from %s", target, currentPhase)
+	if l0 > 0 {
+		return StageNeedsVerify
 	}
-
-	if target == PhaseOperation {
-		if evidence == nil || evidence.HolonID == "" {
-			return false, "Transition to Operation requires a specific Holon ID in evidence stub"
-		}
-
-		calc := assurance.New(f.DB)
-		report, err := calc.CalculateReliability(context.Background(), evidence.HolonID)
-		if err != nil {
-			return false, fmt.Sprintf("Failed to calculate assurance: %v", err)
-		}
-
-		threshold := f.GetAssuranceThreshold()
-		if report.FinalScore < threshold {
-			return false, fmt.Sprintf("Transition Denied: Reliability (%.2f) is below threshold (%.2f). Weakest link: %s", report.FinalScore, threshold, report.WeakestLink)
-		}
-	}
-
-	return true, "OK"
+	return StageEmpty
 }
 
-func validateEvidence(fromPhase, toPhase Phase, evidence *EvidenceStub) bool {
-	if evidence == nil || evidence.URI == "" {
-		return false
+// GetContextStageDescription returns a human-readable description and next action for a stage.
+func GetContextStageDescription(stage ContextStage) (description, nextAction string) {
+	switch stage {
+	case StageEmpty:
+		return "No hypotheses yet", "Use /q1-hypothesize to add hypotheses"
+	case StageNeedsVerify:
+		return "Hypotheses need verification", "Use /q2-verify to verify L0 hypotheses"
+	case StageNeedsValidation:
+		return "Hypotheses need validation", "Use /q3-validate to test L1 hypotheses"
+	case StageNeedsAudit:
+		return "L2 hypotheses need audit", "Use /q4-audit to audit L2 hypotheses"
+	case StageReadyToDecide:
+		return "Ready for decision", "Use /q5-decide to finalize decision"
+	default:
+		return "Unknown stage", "Check context status"
 	}
-
-	checkFile := func(path string) bool {
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			return false
-		}
-		content, err := os.ReadFile(path)
-		if err != nil || len(content) == 0 {
-			return false
-		}
-		return true
-	}
-
-	switch toPhase {
-	case PhaseDeduction:
-		info, err := os.Stat(evidence.URI)
-		if err != nil || !info.IsDir() {
-			return false
-		}
-		files, err := os.ReadDir(evidence.URI)
-		if err != nil || len(files) == 0 {
-			return false
-		}
-		return true
-
-	case PhaseInduction:
-		if !strings.Contains(evidence.URI, "knowledge/L1/") || filepath.Ext(evidence.URI) != ".md" {
-			return false
-		}
-		return checkFile(evidence.URI)
-
-	case PhaseAudit:
-		if !strings.Contains(evidence.URI, "knowledge/L2/") || filepath.Ext(evidence.URI) != ".md" {
-			return false
-		}
-		return checkFile(evidence.URI)
-
-	case PhaseDecision:
-		if !strings.Contains(evidence.URI, "knowledge/L2/") || filepath.Ext(evidence.URI) != ".md" {
-			return false
-		}
-		return checkFile(evidence.URI)
-	}
-	return true
-}
-
-func isValidRoleForPhase(phase Phase, role Role) bool {
-	switch phase {
-	case PhaseIdle:
-		return true
-	case PhaseAbduction:
-		return role == RoleAbductor
-	case PhaseDeduction:
-		return role == RoleDeductor
-	case PhaseInduction:
-		return role == RoleInductor
-	case PhaseAudit:
-		return role == RoleAuditor
-	case PhaseDecision:
-		return role == RoleDecider || role == RoleAuditor
-	case PhaseOperation:
-		return role == RoleDecider
-	}
-	return false
 }

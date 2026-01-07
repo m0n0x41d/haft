@@ -37,16 +37,101 @@ You are the **Deductor** operating as a **state machine executor**. Your goal is
 ## Context
 We have a set of L0 hypotheses stored in the database. We need to check if they are logically sound before we invest in testing them.
 
-## Method (Verification Assurance - VA)
-For each L0 hypothesis:
-1.  **Type Check (C.3 Kind-CAL):**
-    -   Does the hypothesis respect the project's Types?
-    -   Are inputs/outputs compatible?
-2.  **Constraint Check:**
-    -   Does it violate any invariants defined in the `U.BoundedContext`?
-3.  **Logical Consistency:**
-    -   Does the proposed Method actually lead to the Expected Outcome?
-4.  **Record via `quint_verify`** with appropriate verdict.
+## Method: The Verification Checklist
+
+For each L0 hypothesis, run these checks:
+
+### Check 1: Type Compatibility
+
+Does the hypothesis fit the project's type system?
+
+| Question | Red Flag |
+|----------|----------|
+| Are inputs/outputs compatible with existing interfaces? | Type mismatches, implicit conversions |
+| Does it introduce new types that conflict with existing ones? | Duplicate domain concepts |
+| Can the types be expressed in the language's type system? | Requires runtime checks for compile-time guarantees |
+
+### Check 2: Constraint Satisfaction
+
+Does the hypothesis violate known constraints?
+
+| Question | Red Flag |
+|----------|----------|
+| Does it break existing invariants? | "Users must have unique emails" violated |
+| Does it exceed resource bounds? | Memory, connections, rate limits |
+| Does it violate security policies? | Auth bypass, data exposure |
+
+### Check 3: Logical Soundness
+
+Does A actually lead to B?
+
+| Question | Red Flag |
+|----------|----------|
+| Is the causal chain complete? | Missing steps in the logic |
+| Are there hidden assumptions? | "Assuming the DB is fast" |
+| Could the same inputs produce different outputs? | Non-determinism |
+
+### Check 4: Derive Testable Predictions
+
+**This is the critical output of Phase 2.** You must produce predictions that Phase 3 can test.
+
+A prediction has three parts:
+1. **IF** — The condition to set up
+2. **THEN** — The observable outcome
+3. **TESTABLE BY** — How to actually test it
+
+| Quality | Example |
+|---------|---------|
+| **BAD** | "It will be faster" |
+| **BAD** | "Users will like it" |
+| **GOOD** | "IF 1000 concurrent requests, THEN p95 < 50ms (testable by: load test with k6)" |
+| **GOOD** | "IF cache miss, THEN DB query executes within 100ms (testable by: integration test with cache disabled)" |
+
+**If you cannot derive predictions, the hypothesis is unfalsifiable and should FAIL.**
+
+## Anti-Patterns
+
+| Pattern | Problem | Fix |
+|---------|---------|-----|
+| **Vague Predictions** | "Performance improves" | Add numbers: "p95 < 50ms" |
+| **Untestable Claims** | "Code is cleaner" | Find measurable proxy: "cyclomatic complexity < 10" |
+| **Skipping Checks** | Only checking types, ignoring constraints | Run all 4 checks explicitly |
+| **No Predictions** | PASS verdict without predictions array | Predictions are REQUIRED for PASS |
+
+## Deductive Output: Predictions (CC-B5.2)
+
+Deduction is not just about checking consistency — it MUST produce **testable predictions**.
+
+> "Deduction turns a plausible idea into a set of precise, **falsifiable claims**." — FPF B.5:4.2
+
+**For each hypothesis, derive:**
+1. What observable outcomes SHOULD occur IF the hypothesis is correct?
+2. What conditions would FALSIFY the hypothesis?
+
+These predictions become the TEST TARGETS for Phase 3.
+
+### Recording Predictions
+
+Include predictions in `checks_json`:
+
+```json
+{
+  "type_check": {"verdict": "PASS", "evidence": [...], "reasoning": "..."},
+  "constraint_check": {"verdict": "PASS", "evidence": [...], "reasoning": "..."},
+  "logic_check": {"verdict": "PASS", "evidence": [...], "reasoning": "..."},
+  "risks": [...],
+  "predictions": [
+    {
+      "id": "P1",
+      "if": "Condition that should trigger the behavior",
+      "then": "Observable outcome that should occur",
+      "testable_by": "How to test this (benchmark, integration test, manual check)"
+    }
+  ]
+}
+```
+
+**If no predictions can be derived, this is a RED FLAG — the hypothesis may be unfalsifiable (CC-B5.2.2 violation).**
 
 ## Action (Run-Time)
 1.  **Discovery:** Query L0 hypotheses from database.
@@ -59,9 +144,22 @@ For each L0 hypothesis:
 
 ## Tool Guide: `quint_verify`
 -   **hypothesis_id**: The ID of the hypothesis being checked.
--   **checks_json**: A JSON string detailing the logic checks performed.
-    *   *Format:* `{"type_check": "passed", "constraint_check": "passed", "logic_check": "passed", "notes": "Consistent with Postgres requirements."}`
+-   **checks_json**: A JSON string with verification results AND predictions.
+    ```json
+    {
+      "type_check": {"verdict": "PASS|FAIL", "evidence": ["ref"], "reasoning": "..."},
+      "constraint_check": {"verdict": "PASS|FAIL", "evidence": ["ref"], "reasoning": "..."},
+      "logic_check": {"verdict": "PASS|FAIL", "evidence": ["ref"], "reasoning": "..."},
+      "risks": ["optional risk notes"],
+      "predictions": [
+        {"id": "P1", "if": "...", "then": "...", "testable_by": "..."}
+      ]
+    }
+    ```
 -   **verdict**: "PASS", "FAIL", or "REFINE".
+-   **carrier_files**: Files this verification is based on.
+
+**Note:** The `predictions` array is CRITICAL — it creates the test targets for Phase 3.
 
 ## Example: Success Path
 

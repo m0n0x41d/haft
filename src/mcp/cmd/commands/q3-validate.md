@@ -44,8 +44,62 @@ You are the **Inductor** operating as a **state machine executor**. Your goal is
 ## Context
 We have substantiated hypotheses (L1) that passed logical verification. We need evidence that they work in reality.
 
-## Method (Agentic Validation Strategy)
-For each L1 hypothesis, choose the best validation strategy:
+## Method: Test-to-Prediction Linking
+
+### Why Linking Matters
+
+Phase 2 produced predictions: "IF X, THEN Y". Phase 3 tests those predictions.
+
+**Without linking:** You run random tests and claim "it works" — this is confirmation bias.
+**With linking:** Each test explicitly targets a prediction — this is falsification.
+
+### The Linking Process
+
+1. **Retrieve predictions** from Phase 2 verification evidence
+2. **Design tests** that target EACH prediction
+3. **Record links** in the result JSON using `tests_prediction`
+
+### Result Format
+
+Each observation must reference which prediction it tests:
+
+```json
+{
+  "observations": [
+    {
+      "tests_prediction": "P1",
+      "description": "Load test with 1000 concurrent users",
+      "evidence": ["k6_output.log:45", "grafana_dashboard_screenshot"],
+      "supports": true
+    }
+  ],
+  "overall_verdict": "PASS",
+  "reasoning": "P1 confirmed: p95=32ms < 50ms threshold"
+}
+```
+
+### What If a Prediction Can't Be Tested?
+
+Document it in `reasoning`. Valid reasons:
+- Environment unavailable (e.g., can't test production load in dev)
+- Cost prohibitive (e.g., would require $10k in cloud resources)
+- Time-boxed (e.g., need 30-day data, only have 7)
+
+**Invalid reasons:**
+- "Seemed obvious" — test it anyway
+- "Too hard to set up" — simplify the test, not skip it
+
+## Anti-Patterns
+
+| Pattern | Problem | Fix |
+|---------|---------|-----|
+| **Unlinked Tests** | "I ran tests and they passed" | Add `tests_prediction` to each observation |
+| **Missing Predictions** | Observations don't cover all P1..Pn | Check prediction list, add missing tests |
+| **Confirmation Bias** | Only testing happy path | Include negative tests: "IF NOT X, THEN NOT Y" |
+| **Wrong Layer** | Calling quint_test on L0 | Run /q2-verify first to get L1 |
+
+## Validation Strategy
+For each L1 hypothesis, choose the best approach:
 
 1.  **Strategy A: Internal Test (Preferred - Highest R)**
     *   *Action:* Write and run a reproduction script, benchmark, or prototype.
@@ -66,8 +120,25 @@ For each L1 hypothesis, choose the best validation strategy:
 ## Tool Guide: `quint_test`
 -   **hypothesis_id**: The ID of the L1 hypothesis.
 -   **test_type**: "internal" (code/test) or "external" (docs/search).
--   **result**: Summary of evidence (e.g., "Script passed, latency 5ms").
+-   **result**: Structured test result (JSON string):
+    ```json
+    {
+      "observations": [
+        {
+          "tests_prediction": "P1",
+          "description": "Ran benchmark, p95=32ms < 50ms threshold",
+          "evidence": ["benchmark_output.log:45", "grafana_dashboard"],
+          "supports": true
+        }
+      ],
+      "overall_verdict": "PASS",
+      "reasoning": "All predictions from Phase 2 confirmed"
+    }
+    ```
 -   **verdict**: "PASS" (promote to L2), "FAIL" (demote), "REFINE".
+-   **carrier_files**: Files that were tested.
+
+**CC-B5.3 Compliance:** Each observation SHOULD specify which prediction it tests.
 
 ## Example: Success Path
 

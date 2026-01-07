@@ -1395,18 +1395,19 @@ func TestFormatInvariants(t *testing.T) {
 	}
 }
 
-func TestManageEvidence_ValidUntilDefault(t *testing.T) {
+func TestManageEvidence_ValidUntilNullByDefault(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	// v5.0.0: hypotheses are DB-only
+	// v5.1.0: valid_until defaults to NULL (perpetual) for code evidence
+	// FPF B.3.4: Code evidence validity is tied to code changes, not time.
 	hypoID := "valid-until-test-hypo"
 	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	// Call ManageEvidence with EMPTY validUntil (like quint_test does)
+	// Call ManageEvidence with EMPTY validUntil - should remain NULL
 	_, err = tools.ManageEvidence("validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
@@ -1425,20 +1426,51 @@ func TestManageEvidence_ValidUntilDefault(t *testing.T) {
 	e := evidence[0]
 	t.Logf("Evidence ID: %s", e.ID)
 	t.Logf("ValidUntil.Valid: %v", e.ValidUntil.Valid)
+
+	// v5.1.0: valid_until SHOULD be NULL (perpetual evidence)
 	if e.ValidUntil.Valid {
-		t.Logf("ValidUntil.Time: %v", e.ValidUntil.Time)
+		t.Errorf("valid_until should be NULL (perpetual), got: %v", e.ValidUntil.Time)
+	} else {
+		t.Log("OK: valid_until is NULL (perpetual evidence per FPF B.3.4)")
+	}
+}
+
+func TestManageEvidence_ValidUntilExplicit(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// When valid_until is explicitly set, it should be honored
+	hypoID := "valid-until-explicit-hypo"
+	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
 	}
 
+	// Call ManageEvidence with explicit validUntil
+	explicitDate := "2025-06-15"
+	_, err = tools.ManageEvidence("validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", explicitDate)
+	if err != nil {
+		t.Fatalf("ManageEvidence failed: %v", err)
+	}
+
+	evidence, err := tools.DB.GetEvidence(ctx, hypoID)
+	if err != nil {
+		t.Fatalf("GetEvidence failed: %v", err)
+	}
+
+	if len(evidence) == 0 {
+		t.Fatal("No evidence found in DB")
+	}
+
+	e := evidence[0]
 	if !e.ValidUntil.Valid {
-		t.Error("BUG CONFIRMED: valid_until is NULL in DB despite ManageEvidence setting default!")
+		t.Error("valid_until should be set when explicitly provided")
 	} else {
-		// Should be ~90 days from now
-		expectedMin := time.Now().AddDate(0, 0, 85)
-		expectedMax := time.Now().AddDate(0, 0, 95)
-		if e.ValidUntil.Time.Before(expectedMin) || e.ValidUntil.Time.After(expectedMax) {
-			t.Errorf("valid_until %v is not ~90 days from now", e.ValidUntil.Time)
+		expected, _ := time.Parse("2006-01-02", explicitDate)
+		if !e.ValidUntil.Time.Equal(expected) {
+			t.Errorf("valid_until %v does not match expected %v", e.ValidUntil.Time, expected)
 		} else {
-			t.Logf("OK: valid_until correctly set to %v (~90 days from now)", e.ValidUntil.Time)
+			t.Logf("OK: valid_until correctly set to explicit date %v", e.ValidUntil.Time)
 		}
 	}
 }
@@ -2704,76 +2736,10 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 }
 
 // ============================================
-// CODE CHANGE AWARENESS TESTS (v5.0.0)
+// DECISION CONTEXT TESTS (v5.0.0)
 // ============================================
-
-func TestManageEvidence_ClearsStaleOnPass(t *testing.T) {
-	tools, _, _ := setupTools(t)
-	ctx := context.Background()
-
-	// v5.0.0: hypotheses are DB-only
-	hypoID := "stale-test-hypo"
-	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Test", "Content", "default", "", ""); err != nil {
-		t.Fatalf("Failed to create holon: %v", err)
-	}
-
-	if err := tools.DB.AddEvidence(ctx, "stale-evidence-1", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "", "src/main.go"); err != nil {
-		t.Fatalf("Failed to add evidence: %v", err)
-	}
-
-	if err := tools.DB.MarkEvidenceStale(ctx, "stale-evidence-1", "carrier file changed"); err != nil {
-		t.Fatalf("Failed to mark evidence stale: %v", err)
-	}
-
-	stale, _ := tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
-	if len(stale) != 1 {
-		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
-	}
-
-	_, err := tools.ManageEvidence("validation", "add", hypoID, "test_result", "Re-validated test", "PASS", "L2", "file://carrier", "2025-12-31")
-	if err != nil {
-		t.Fatalf("ManageEvidence failed: %v", err)
-	}
-
-	stale, _ = tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
-	if len(stale) != 0 {
-		t.Errorf("Expected 0 stale evidence after PASS re-validation, got %d", len(stale))
-	}
-}
-
-func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
-	tools, _, _ := setupTools(t)
-	ctx := context.Background()
-
-	// v5.0.0: hypotheses are DB-only
-	hypoID := "stale-fail-hypo"
-	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Stale Fail Test", "Content", "default", "", ""); err != nil {
-		t.Fatalf("Failed to create holon: %v", err)
-	}
-
-	if err := tools.DB.AddEvidence(ctx, "stale-evidence-2", hypoID, "test_result", "Old test result", "pass", "L1", "internal", "", "", "src/main.go"); err != nil {
-		t.Fatalf("Failed to add evidence: %v", err)
-	}
-
-	if err := tools.DB.MarkEvidenceStale(ctx, "stale-evidence-2", "carrier file changed"); err != nil {
-		t.Fatalf("Failed to mark evidence stale: %v", err)
-	}
-
-	stale, _ := tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
-	if len(stale) != 1 {
-		t.Fatalf("Expected 1 stale evidence before re-validation, got %d", len(stale))
-	}
-
-	_, err := tools.ManageEvidence("validation", "add", hypoID, "test_result", "Failed test", "FAIL", "L2", "file://carrier", "2025-12-31")
-	if err != nil {
-		t.Fatalf("ManageEvidence failed: %v", err)
-	}
-
-	stale, _ = tools.DB.GetStaleEvidenceByHolon(ctx, hypoID)
-	if len(stale) != 1 {
-		t.Errorf("Expected 1 stale evidence to remain after FAIL verdict, got %d", len(stale))
-	}
-}
+// Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+// Time-based decay via valid_until remains as per FPF spec B.3.4.
 
 func TestGetActiveDecisionContexts_ReturnsActive(t *testing.T) {
 	tools, _, _ := setupTools(t)

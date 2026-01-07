@@ -129,5 +129,12 @@ WHERE h.layer NOT IN ('invalid')
   AND NOT EXISTS (
     SELECT 1 FROM relations r
     WHERE r.target_id = h.id
-      AND r.relation_type IN ('selects', 'rejects', 'closes')
+      AND r.relation_type IN ('rejects', 'closes')
+  )
+  AND NOT EXISTS (
+    -- 'selects' only archives if the DRR is resolved (has implementation/abandonment/supersession evidence)
+    SELECT 1 FROM relations r
+    JOIN evidence e ON e.holon_id = r.source_id AND e.type IN ('implementation', 'abandonment', 'supersession')
+    WHERE r.target_id = h.id
+      AND r.relation_type = 'selects'
   );

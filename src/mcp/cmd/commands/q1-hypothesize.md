@@ -85,9 +85,11 @@ The user has presented an anomaly or a design problem.
     *   *Format:* `{"anomaly": "Database overload", "approach": "Cache read-heavy data", "alternatives_rejected": ["Read replicas (too expensive)"]}`
 
 ### Optional Parameters (Dependency Modeling)
--   **decision_context**: ID of parent decision/problem holon.
+-   **decision_context**: ID of a decision context holon (must be `dc-*` prefix).
     -   Creates `MemberOf` relation (groups alternatives together)
-    -   Example: `"caching-strategy-decision"`
+    -   **IMPORTANT:** Must use `dc-*` ID, not a hypothesis ID
+    -   If omitted, a new decision context is auto-created from the hypothesis title
+    -   Example: `"dc-caching-strategy"` (NOT `"caching-strategy"`)
 
 -   **depends_on**: Array of holon IDs this hypothesis depends on.
     -   Creates `ComponentOf` (if kind=system) or `ConstituentOf` (if kind=episteme)
@@ -101,25 +103,39 @@ The user has presented an anomaly or a design problem.
 
 ## Example: Competing Alternatives
 
+**Pattern:** First hypothesis auto-creates `dc-*` context, subsequent hypotheses join it.
+
 ```
-# First, create the decision context
-[quint_propose(title="Caching Strategy Decision", kind="episteme", ...)]
-→ Created: caching-strategy-decision
+# First hypothesis (no decision_context) → auto-creates dc-use-redis
+[quint_propose(title="Use Redis", kind="system", scope="caching layer", ...)]
+→ Created: use-redis
+→ Auto-created context: dc-use-redis
 
-# Then, propose alternatives grouped under it
-[quint_propose(
-    title="Use Redis",
-    kind="system",
-    decision_context="caching-strategy-decision"
-)]
-→ Created: use-redis (MemberOf caching-strategy-decision)
-
+# Subsequent hypotheses use the dc-* ID (NOT the hypothesis ID!)
 [quint_propose(
     title="Use CDN Edge Cache",
     kind="system",
-    decision_context="caching-strategy-decision"
+    decision_context="dc-use-redis"  ← Use dc-* prefix!
 )]
-→ Created: use-cdn-edge-cache (MemberOf caching-strategy-decision)
+→ Created: use-cdn-edge-cache (MemberOf dc-use-redis)
+
+[quint_propose(
+    title="In-Memory LRU Cache",
+    kind="system",
+    decision_context="dc-use-redis"  ← Same dc-* context
+)]
+→ Created: in-memory-lru-cache (MemberOf dc-use-redis)
+```
+
+**Common Mistake:**
+```
+# WRONG: Using hypothesis ID as decision_context
+decision_context="use-redis"
+→ Error: "use-redis" is type "hypothesis", not decision_context
+
+# CORRECT: Use dc-* prefix
+decision_context="dc-use-redis"
+→ Success
 ```
 
 ## Example: Declaring Dependencies

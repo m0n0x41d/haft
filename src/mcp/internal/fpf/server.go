@@ -195,8 +195,30 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		},
 		{
+			Name:        "quint_context",
+			Description: "Create a decision context for grouping hypotheses. REQUIRED before quint_propose. Returns dc-* ID to use in subsequent propose calls.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]string{
+						"type":        "string",
+						"description": "Decision being made (e.g., 'Database Selection', 'Auth Architecture')",
+					},
+					"scope": map[string]string{
+						"type":        "string",
+						"description": "Affected component/system",
+					},
+					"description": map[string]string{
+						"type":        "string",
+						"description": "Problem statement or context background",
+					},
+				},
+				"required": []string{"title"},
+			},
+		},
+		{
 			Name:        "quint_propose",
-			Description: "Propose a new hypothesis (L0). IMPORTANT: Consider depends_on for dependencies and decision_context for grouping alternatives.",
+			Description: "Propose a new hypothesis (L0). REQUIRES decision_context from quint_context. Use depends_on for dependencies.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -207,7 +229,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"rationale": map[string]string{"type": "string", "description": "JSON: {anomaly, approach, alternatives_rejected}"},
 					"decision_context": map[string]string{
 						"type":        "string",
-						"description": "Parent decision ID to GROUP competing alternatives. Does NOT affect R_eff. Use when multiple hypotheses solve the same problem. Example: 'caching-decision' groups 'redis-caching' and 'cdn-edge'. Creates MemberOf relation.",
+						"description": "REQUIRED. Decision context ID from quint_context (dc-* prefix). Groups hypotheses for the same decision. Create context first with quint_context(title=\"...\").",
 					},
 					"depends_on": map[string]interface{}{
 						"type":        "array",
@@ -222,7 +244,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"description": "Congruence level for dependencies. CL3=same context (no penalty), CL2=similar (10% penalty), CL1=different (30% penalty).",
 					},
 				},
-				"required": []string{"title", "content", "scope", "kind", "rationale"},
+				"required": []string{"title", "content", "scope", "kind", "rationale", "decision_context"},
 			},
 		},
 		{
@@ -232,21 +254,21 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"hypothesis_id": map[string]string{"type": "string"},
-					"verify_json": map[string]string{
+					"checks_json": map[string]string{
 						"type": "string",
-						"description": `JSON object with structured verification result:
+						"description": `JSON object with structured checks:
 {
-  "type_check": {"verdict": "PASS|FAIL", "evidence": ["ref1", "ref2"], "reasoning": "..."},
+  "type_check": {"verdict": "PASS|FAIL", "evidence": ["ref1"], "reasoning": "..."},
   "constraint_check": {"verdict": "PASS|FAIL", "evidence": [...], "reasoning": "..."},
   "logic_check": {"verdict": "PASS|FAIL", "evidence": [...], "reasoning": "..."},
-  "overall_verdict": "PASS|FAIL",
   "risks": ["optional risk notes"]
 }
-ALL verdicts (PASS and FAIL) require at least one evidence reference.`,
+Each check requires at least one evidence reference.`,
 					},
-					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that this verification is based on. These files will be tracked for changes - if they change, the evidence becomes stale. Extract from hypothesis scope or files you examined. Example: 'src/cache.py,src/api/routes.py'"},
+					"verdict":       map[string]string{"type": "string", "description": "Overall verdict: PASS, FAIL, or REFINE"},
+					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths that this verification is based on. Tracked for changes."},
 				},
-				"required": []string{"hypothesis_id", "verify_json"},
+				"required": []string{"hypothesis_id", "checks_json", "verdict"},
 			},
 		},
 		{
@@ -257,33 +279,23 @@ ALL verdicts (PASS and FAIL) require at least one evidence reference.`,
 				"properties": map[string]interface{}{
 					"hypothesis_id": map[string]string{"type": "string"},
 					"test_type":     map[string]string{"type": "string", "description": "internal or research"},
-					"test_json": map[string]string{
-						"type": "string",
-						"description": `JSON object with structured test result:
-{
-  "observations": [
-    {"description": "what was observed", "evidence": ["ref1", "ref2"], "supports": true/false}
-  ],
-  "overall_verdict": "PASS|FAIL",
-  "reasoning": "why this verdict"
-}
-Each observation requires at least one evidence reference.`,
-					},
-					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths (relative to repo root) that were tested. These files will be tracked for changes - if they change, the evidence becomes stale. For internal tests: files covered by tests. For external research: leave empty or use source URL. Example: 'src/database/repository.py,src/database/queries.py'"},
+					"result":        map[string]string{"type": "string", "description": "Test output/findings"},
+					"verdict":       map[string]string{"type": "string", "description": "Overall verdict: PASS, FAIL, or REFINE"},
+					"carrier_files": map[string]string{"type": "string", "description": "Comma-separated file paths tested. Tracked for changes."},
 				},
-				"required": []string{"hypothesis_id", "test_type", "test_json"},
+				"required": []string{"hypothesis_id", "test_type", "result", "verdict"},
 			},
 		},
 		{
 			Name:        "quint_audit",
-			Description: "Record audit/trust score (R_eff).",
+			Description: "Unified audit: visualize assurance tree, calculate R_eff, and optionally record risks. If risks provided, records audit evidence. Always returns tree visualization with R_eff breakdown.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"hypothesis_id": map[string]string{"type": "string"},
-					"risks":         map[string]string{"type": "string", "description": "Risk analysis"},
+					"holon_id": map[string]string{"type": "string", "description": "ID of the holon to audit (hypothesis, decision, or context)"},
+					"risks":    map[string]string{"type": "string", "description": "Optional risk analysis to record as audit evidence"},
 				},
-				"required": []string{"hypothesis_id", "risks"},
+				"required": []string{"holon_id"},
 			},
 		},
 		{
@@ -310,28 +322,6 @@ Each observation requires at least one evidence reference.`,
 					},
 				},
 				"required": []string{"title", "winner_id", "context", "decision", "rationale", "consequences"},
-			},
-		},
-		{
-			Name:        "quint_audit_tree",
-			Description: "Visualize the assurance tree for a holon, showing R scores, dependencies, and CL penalties.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"holon_id": map[string]string{"type": "string", "description": "ID of the holon to audit"},
-				},
-				"required": []string{"holon_id"},
-			},
-		},
-		{
-			Name:        "quint_calculate_r",
-			Description: "Calculate the effective reliability (R_eff) for a holon with detailed breakdown.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"holon_id": map[string]string{"type": "string", "description": "ID of the holon"},
-				},
-				"required": []string{"holon_id"},
 			},
 		},
 		{
@@ -437,6 +427,9 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		}
 		output, err = s.tools.LinkHolons(arg("source_id"), arg("target_id"), cl)
 
+	case "quint_context":
+		output, err = s.tools.CreateContext(arg("title"), arg("scope"), arg("description"))
+
 	case "quint_propose":
 		decisionContext := arg("decision_context")
 		var dependsOn []string
@@ -454,13 +447,13 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
-		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("verify_json"), arg("carrier_files"))
+		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_test":
-		output, err = s.tools.ValidateHypothesis(arg("hypothesis_id"), arg("test_type"), arg("test_json"), arg("carrier_files"))
+		output, err = s.tools.ValidateHypothesis(arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_audit":
-		output, err = s.tools.AuditEvidence(arg("hypothesis_id"), arg("risks"))
+		output, err = s.tools.UnifiedAudit(arg("holon_id"), arg("risks"))
 
 	case "quint_decide":
 		var rejectedIDs []string
@@ -472,12 +465,6 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			}
 		}
 		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"))
-
-	case "quint_audit_tree":
-		output, err = s.tools.VisualizeAudit(arg("holon_id"))
-
-	case "quint_calculate_r":
-		output, err = s.tools.CalculateR(arg("holon_id"))
 
 	case "quint_reset":
 		abandonAll := false

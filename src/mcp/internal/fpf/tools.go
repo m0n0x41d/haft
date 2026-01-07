@@ -1259,7 +1259,7 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 	return childPath, nil
 }
 
-func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string) (string, error) {
+func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string, closeContext bool) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
 	logger.Info().
@@ -1406,22 +1406,24 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 			}
 		}
 
-		// Close decision contexts that alternatives were members of
+		// Close decision contexts that alternatives were members of (only if closeContext=true)
 		closedContexts := make(map[string]bool)
-		allHypotheses := append([]string{winnerID}, rejectedIDs...)
-		for _, hypID := range allHypotheses {
-			if hypID == "" {
-				continue
-			}
-			if dcID := t.getDecisionContext(ctx, hypID); dcID != "" && !closedContexts[dcID] {
-				if err := t.createRelation(ctx, drrID, "closes", dcID, 3); err != nil {
-					logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to create closes relation")
+		if closeContext {
+			allHypotheses := append([]string{winnerID}, rejectedIDs...)
+			for _, hypID := range allHypotheses {
+				if hypID == "" {
+					continue
 				}
-				// Update context_status to 'closed'
-				if err := t.DB.CloseContext(ctx, dcID); err != nil {
-					logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to close context status")
+				if dcID := t.getDecisionContext(ctx, hypID); dcID != "" && !closedContexts[dcID] {
+					if err := t.createRelation(ctx, drrID, "closes", dcID, 3); err != nil {
+						logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to create closes relation")
+					}
+					// Update context_status to 'closed'
+					if err := t.DB.CloseContext(ctx, dcID); err != nil {
+						logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to close context status")
+					}
+					closedContexts[dcID] = true
 				}
-				closedContexts[dcID] = true
 			}
 		}
 

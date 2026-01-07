@@ -300,7 +300,7 @@ Each check requires at least one evidence reference.`,
 		},
 		{
 			Name:        "quint_decide",
-			Description: "Finalize decision (DRR).",
+			Description: "Finalize decision (DRR). Creates a Design Rationale Record from the winning L2 hypothesis. By default, closes the decision context after creating the DRR. Use close_context=false to keep the context open for additional decisions from the same assessment.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -319,6 +319,11 @@ Each check requires at least one evidence reference.`,
 					"contract": map[string]interface{}{
 						"type":        "string",
 						"description": "JSON object with implementation contract: {invariants: [], anti_patterns: [], acceptance_criteria: [], affected_scope: []}",
+					},
+					"close_context": map[string]interface{}{
+						"type":        "boolean",
+						"default":     true,
+						"description": "Whether to close the decision context after creating the DRR. Set to false to allow multiple DRRs from the same context (e.g., when evaluating independent improvements from a single assessment). Default: true.",
 					},
 				},
 				"required": []string{"title", "winner_id", "context", "decision", "rationale", "consequences"},
@@ -464,7 +469,11 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 				}
 			}
 		}
-		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"))
+		closeContext := true
+		if cc, ok := params.Arguments["close_context"].(bool); ok {
+			closeContext = cc
+		}
+		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"), closeContext)
 
 	case "quint_reset":
 		abandonAll := false

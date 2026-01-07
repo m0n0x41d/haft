@@ -71,6 +71,60 @@ quint_internalize
             +-> READY_TO_DECIDE -> /q5-decide (finalize)
 ```
 
+## Context Stage ↔ Reasoning Lifecycle
+
+Understanding WHERE you are in the reasoning cycle, not just WHAT to do next.
+
+### The Four Phases
+
+| Phase | Goal | Input | Output |
+|-------|------|-------|--------|
+| **Explore (Abduction)** | Generate possibilities | Problem/anomaly | Multiple L0 hypotheses |
+| **Shape (Deduction)** | Derive testable predictions | L0 hypotheses | L1 hypotheses with predictions |
+| **Evidence (Induction)** | Test against reality | L1 + predictions | L2 corroborated claims |
+| **Operate** | Monitor deployed decisions | Implemented DRR | Drift alerts, refresh triggers |
+
+### Stage-to-Phase Mapping
+
+| Context Stage | Phase | What's Happening | Next Command |
+|---------------|-------|------------------|--------------|
+| **EMPTY** | pre-Explore | No hypotheses exist | `/q1-hypothesize` |
+| **NEEDS_VERIFICATION** | Explore→Shape | Have L0s, need logical check | `/q2-verify` |
+| **NEEDS_VALIDATION** | Shape→Evidence | Have L1s with predictions, need tests | `/q3-validate` |
+| **NEEDS_AUDIT** | Evidence | Have L2s, need trust calculation | `/q4-audit` |
+| **READY_TO_DECIDE** | pre-Operate | Audited alternatives, ready to choose | `/q5-decide` |
+| **(after DRR)** | Operate | Implemented, monitoring for drift | `/q-resolve` |
+
+### Why You Can't Skip Phases
+
+Each phase produces artifacts the next phase needs:
+
+```
+Phase 1 (Abduction) → L0 hypotheses with falsifiability criteria
+                            ↓
+Phase 2 (Deduction) → L1 hypotheses with testable predictions
+                            ↓
+Phase 3 (Induction) → L2 hypotheses with test results linked to predictions
+                            ↓
+Phase 4 (Audit)     → R_eff scores from WLNK analysis
+                            ↓
+Phase 5 (Decision)  → DRR with rationale and contract
+```
+
+**If you skip Phase 2:** No predictions exist → Phase 3 tests are random → confirmation bias.
+**If you skip Phase 3:** No empirical evidence → Phase 4 has nothing to audit → R_eff=0.
+**If you skip Phase 4:** No trust calculation → Phase 5 decision is ungrounded.
+
+### Quick Reference: What Each Phase Produces
+
+| Phase | Tool | Creates | Used By |
+|-------|------|---------|---------|
+| 1 | `quint_propose` | L0 with `falsifiability` in rationale | Phase 2 |
+| 2 | `quint_verify` | L1 with `predictions` array | Phase 3 |
+| 3 | `quint_test` | L2 with `tests_prediction` links | Phase 4 |
+| 4 | `quint_audit` | R_eff scores, risk analysis | Phase 5 |
+| 5 | `quint_decide` | DRR with contract | Implementation |
+
 ## Examples
 
 ### Fresh Project

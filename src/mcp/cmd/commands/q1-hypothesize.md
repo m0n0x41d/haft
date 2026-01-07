@@ -3,7 +3,7 @@ description: "Generate Hypotheses (Abduction)"
 pre: "project initialized (via quint_internalize or directly)"
 post: ">=1 L0 hypothesis exists in database"
 invariant: "hypotheses must have kind ∈ {system, episteme}"
-required_tools: ["quint_propose", "quint_link"]
+required_tools: ["quint_context", "quint_propose", "quint_link"]
 ---
 
 # Phase 1: Abduction
@@ -16,9 +16,11 @@ You are the **Abductor** operating as a **state machine executor**. Your goal is
 
 | Precondition | Tool | Postcondition |
 |--------------|------|---------------|
-| Project initialized | `quint_propose` | L0 holon created in DB |
+| Project initialized | `quint_context` | Decision context (dc-*) created |
+| Decision context exists | `quint_propose` | L0 holon created in DB |
 
 **RFC 2119 Bindings:**
+- You MUST call `quint_context` FIRST to create a decision context before any `quint_propose`
 - You MUST call `quint_propose` for EACH hypothesis you want to track
 - You MUST NOT proceed to Phase 2 without at least one L0 hypothesis
 - You SHALL include both `kind` (system/episteme) and `scope` for every proposal
@@ -28,6 +30,7 @@ You are the **Abductor** operating as a **state machine executor**. Your goal is
 
 ## Invalid Behaviors
 
+- Calling `quint_propose` without first calling `quint_context`
 - Listing hypotheses in prose without calling `quint_propose` for each
 - Claiming "I generated 3 hypotheses" when tool was called 0 times
 - Proceeding to `/q2-verify` with zero L0 holons
@@ -36,12 +39,65 @@ You are the **Abductor** operating as a **state machine executor**. Your goal is
 ## Context
 The user has presented an anomaly or a design problem.
 
-## Method (B.5.2 Abductive Loop)
-1.  **Frame the Anomaly:** Clearly state what is unknown or broken.
-2.  **Generate Candidates:** Brainstorm 3-5 distinct approaches.
-    -   *Constraint:* Ensure **Diversity** (NQD). Include at least one "Conservative" (safe) and one "Radical" (novel) option.
-3.  **Plausibility Filter:** Briefly assess each against constraints. Discard obviously unworkable ones.
-4.  **Formalize:** For each survivor, call `quint_propose`.
+## Method: The Hypothesis Generation Loop
+
+### Step 1: Frame the Problem
+
+**Goal:** Transform vague concerns into precise, testable problem statements.
+
+A good anomaly statement:
+- Names the specific behavior or gap
+- Quantifies where possible
+- Excludes assumed solutions
+
+| Quality | Example |
+|---------|---------|
+| **BAD** | "The API is slow" |
+| **BAD** | "We need caching" (this is a solution, not a problem) |
+| **GOOD** | "GET /users p95 latency is 450ms, SLA requires <100ms" |
+| **GOOD** | "Memory usage grows 50MB/hour, no apparent leak in profiler" |
+
+**Output:** Anomaly statement for `rationale.anomaly` field.
+
+### Step 2: Generate Multiple Candidates
+
+**Goal:** Create 3-5 distinct approaches. Resist the urge to jump to "the obvious solution."
+
+**Diversity Requirement:** Include at least:
+- One **Conservative** option (proven patterns, minimal change)
+- One **Radical** option (novel approach, higher risk/reward)
+
+**Why diversity matters:** Confirmation bias leads us to validate what we already believe. Multiple hypotheses force genuine evaluation. If you only have one hypothesis, you're not doing abduction — you're rationalizing a decision you already made.
+
+### Step 3: Filter Candidates
+
+**Goal:** Eliminate implausible options BEFORE investing in verification/validation.
+
+For each candidate, answer these questions:
+
+| Filter | Question | Flags |
+|--------|----------|-------|
+| **Parsimony** | Does it add minimum necessary complexity? | New dependencies, config, moving parts |
+| **Explanatory Power** | How much of the anomaly does it explain? | Partial fix vs complete solution |
+| **Consistency** | Does it contradict known constraints? | Existing architecture, team skills, budget |
+| **Falsifiability** | What would PROVE this wrong? | If you can't answer this, the hypothesis is untestable |
+
+**CRITICAL:** The `falsifiability` answers become TEST TARGETS for Phase 3. Write them as conditional predictions:
+- "IF we add Redis, THEN p95 < 50ms under 1000 RPS"
+- "IF memory leak is in module X, THEN disabling X stops growth"
+
+### Step 4: Formalize Survivors
+
+For each candidate that passes filtering, call `quint_propose` with structured rationale.
+
+## Anti-Patterns
+
+| Pattern | Problem | Fix |
+|---------|---------|-----|
+| **Single Hypothesis** | "I'll just propose Redis" | Generate 3+ alternatives first |
+| **Solution as Problem** | anomaly: "We need microservices" | Reframe: what pain does monolith cause? |
+| **Unfalsifiable Claims** | "This will improve UX" | Add metric: "reduce clicks from 5 to 2" |
+| **Skipping Filters** | Proposing without plausibility check | Run all 4 filter questions |
 
 ## Before Calling quint_propose: Linking Checklist
 
@@ -67,9 +123,10 @@ The user has presented an anomaly or a design problem.
 ## Action (Run-Time)
 1.  Ask the user for the problem statement if not provided.
 2.  Think through the options.
-3.  **If proposing multiple alternatives:** Provide `decision_context` to group them.
-    -   *Note (v5.0.0):* Decision contexts are auto-created if not provided. The system will create one based on the hypothesis scope.
-4.  Call `quint_propose` for EACH hypothesis, setting `decision_context` and `depends_on` as needed.
+3.  **ALWAYS create decision context FIRST:** Call `quint_context(title="...")` before any `quint_propose`.
+    -   This returns a `dc-*` ID (e.g., `dc-caching-strategy`)
+    -   Use this ID in ALL subsequent `quint_propose` calls
+4.  Call `quint_propose` for EACH hypothesis, setting `decision_context` to the `dc-*` ID.
     -   *Note:* Hypotheses are stored in the database (no file projection).
 5.  Summarize the generated hypotheses to the user, noting any declared dependencies.
 
@@ -81,14 +138,36 @@ The user has presented an anomaly or a design problem.
 -   **scope**: The Claim Scope (G). Where does this apply?
     *   *Example:* "High-load systems, Linux only, requires 1GB RAM."
 -   **kind**: "system" (for code/architecture) or "episteme" (for process/docs).
--   **rationale**: A JSON string explaining the "Why".
-    *   *Format:* `{"anomaly": "Database overload", "approach": "Cache read-heavy data", "alternatives_rejected": ["Read replicas (too expensive)"]}`
+-   **rationale**: A JSON string explaining the "Why" with plausibility assessment.
 
-### Optional Parameters (Dependency Modeling)
+### rationale Format (Enhanced for CC-B5.2.2)
+
+```json
+{
+  "anomaly": "Database queries taking 500ms+ under load",
+  "approach": "Add Redis caching layer for frequently accessed data",
+  "alternatives_rejected": [
+    "Read replicas (too expensive for current scale)",
+    "Query optimization only (already optimized)"
+  ],
+  "plausibility_assessment": {
+    "parsimony": "PASS - single new component",
+    "explanatory_power": "HIGH - addresses 80% of slow queries",
+    "consistency": "PASS - standard caching pattern",
+    "falsifiability": [
+      "If Redis deployed, then p95 latency < 50ms",
+      "If cache miss, then transparent DB fallback"
+    ]
+  }
+}
+```
+
+**Note:** The `falsifiability` predictions are INPUTS for Phase 3 validation (CC-B5.3).
+
+### Required Parameters (Dependency Modeling)
 -   **decision_context**: ID of a decision context holon (must be `dc-*` prefix).
     -   Creates `MemberOf` relation (groups alternatives together)
-    -   **IMPORTANT:** Must use `dc-*` ID, not a hypothesis ID
-    -   If omitted, a new decision context is auto-created from the hypothesis title
+    -   **REQUIRED:** Must call `quint_context` first to get a `dc-*` ID
     -   Example: `"dc-caching-strategy"` (NOT `"caching-strategy"`)
 
 -   **depends_on**: Array of holon IDs this hypothesis depends on.
@@ -103,38 +182,50 @@ The user has presented an anomaly or a design problem.
 
 ## Example: Competing Alternatives
 
-**Pattern:** First hypothesis auto-creates `dc-*` context, subsequent hypotheses join it.
+**Pattern:** FIRST create decision context, THEN propose hypotheses into it.
 
 ```
-# First hypothesis (no decision_context) → auto-creates dc-use-redis
-[quint_propose(title="Use Redis", kind="system", scope="caching layer", ...)]
-→ Created: use-redis
-→ Auto-created context: dc-use-redis
+# Step 1: Create decision context FIRST
+[quint_context(title="Caching Strategy", scope="caching layer")]
+→ Created: dc-caching-strategy
 
-# Subsequent hypotheses use the dc-* ID (NOT the hypothesis ID!)
+# Step 2: Propose hypotheses using the dc-* ID
+[quint_propose(
+    title="Use Redis",
+    kind="system",
+    decision_context="dc-caching-strategy"
+)]
+→ Created: use-redis (MemberOf dc-caching-strategy)
+
 [quint_propose(
     title="Use CDN Edge Cache",
     kind="system",
-    decision_context="dc-use-redis"  ← Use dc-* prefix!
+    decision_context="dc-caching-strategy"
 )]
-→ Created: use-cdn-edge-cache (MemberOf dc-use-redis)
+→ Created: use-cdn-edge-cache (MemberOf dc-caching-strategy)
 
 [quint_propose(
     title="In-Memory LRU Cache",
     kind="system",
-    decision_context="dc-use-redis"  ← Same dc-* context
+    decision_context="dc-caching-strategy"
 )]
-→ Created: in-memory-lru-cache (MemberOf dc-use-redis)
+→ Created: in-memory-lru-cache (MemberOf dc-caching-strategy)
 ```
 
-**Common Mistake:**
+**Common Mistakes:**
 ```
+# WRONG: Calling quint_propose without quint_context first
+[quint_propose(title="Use Redis", ...)]
+→ Error: decision_context is required
+
 # WRONG: Using hypothesis ID as decision_context
 decision_context="use-redis"
 → Error: "use-redis" is type "hypothesis", not decision_context
 
-# CORRECT: Use dc-* prefix
-decision_context="dc-use-redis"
+# CORRECT: First quint_context, then use dc-* ID
+[quint_context(title="Caching Strategy")]
+→ dc-caching-strategy
+[quint_propose(..., decision_context="dc-caching-strategy")]
 → Success
 ```
 
@@ -187,11 +278,15 @@ Your hypothesis mentions concepts from existing holons:
 ```
 User: "How should we handle caching?"
 
-[Call quint_propose(title="Use Redis", kind="system", ...)]  → Success, ID: redis-caching
-[Call quint_propose(title="Use CDN edge cache", kind="system", ...)]  → Success, ID: cdn-edge
-[Call quint_propose(title="In-memory LRU", kind="system", ...)]  → Success, ID: lru-cache
+# FIRST: Create decision context
+[Call quint_context(title="Caching Strategy")]  → Success, ID: dc-caching-strategy
 
-Result: 3 L0 hypotheses created, ready for Phase 2.
+# THEN: Propose hypotheses into the context
+[Call quint_propose(title="Use Redis", decision_context="dc-caching-strategy", ...)]  → Success
+[Call quint_propose(title="Use CDN edge cache", decision_context="dc-caching-strategy", ...)]  → Success
+[Call quint_propose(title="In-memory LRU", decision_context="dc-caching-strategy", ...)]  → Success
+
+Result: 3 L0 hypotheses created in dc-caching-strategy, ready for Phase 2.
 ```
 
 ## Example: Failure Path
@@ -208,11 +303,12 @@ Result: 0 L0 hypotheses. Phase 2 will find nothing. This is a PROTOCOL VIOLATION
 ## Checkpoint
 
 Before proceeding to Phase 2, verify:
+- [ ] Called `quint_context` first to create decision context
 - [ ] Called `quint_propose` at least once (not BLOCKED)
 - [ ] Each hypothesis has valid `kind` (system or episteme)
 - [ ] Each hypothesis has defined `scope`
 - [ ] Tool returned success for each call
-- [ ] If multiple alternatives exist: they share the same `decision_context`
+- [ ] All hypotheses share the same `decision_context` (dc-* ID)
 - [ ] If dependencies exist: they are declared in `depends_on`
 
 **If any checkbox is unchecked, you MUST complete it before proceeding.**

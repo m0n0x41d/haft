@@ -340,7 +340,16 @@ func (t *Tools) suggestDependencies(title, content string) []DependencySuggestio
 func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
+	logger.Info().
+		Str("title", title).
+		Str("kind", kind).
+		Str("scope", scope).
+		Str("decision_context", decisionContext).
+		Int("dependency_count", len(dependsOn)).
+		Msg("ProposeHypothesis called")
+
 	if t.DB == nil {
+		logger.Error().Msg("ProposeHypothesis: database not initialized")
 		return "", fmt.Errorf("database not initialized")
 	}
 
@@ -364,9 +373,12 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 	body := fmt.Sprintf("# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
 
 	if err := t.DB.CreateHolon(ctx, slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
+		logger.Error().Err(err).Str("slug", slug).Msg("ProposeHypothesis: failed to create holon")
 		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
 		return "", fmt.Errorf("failed to create hypothesis in database: %w", err)
 	}
+
+	logger.Debug().Str("slug", slug).Str("layer", "L0").Msg("ProposeHypothesis: holon created")
 
 	// Link hypothesis to decision context
 	if err := t.createRelation(ctx, slug, "memberOf", decisionContext, 3); err != nil {
@@ -401,6 +413,8 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 	}
 
 	t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "SUCCESS", map[string]string{"title": title, "kind": kind, "scope": scope}, "")
+
+	logger.Info().Str("slug", slug).Str("context", decisionContext).Msg("ProposeHypothesis: completed successfully")
 
 	var warningBlock string
 	if len(dependsOn) == 0 && t.DB != nil {
@@ -461,7 +475,13 @@ func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targ
 func (t *Tools) CreateContext(title, scope, description string) (string, error) {
 	defer t.RecordWork("CreateContext", time.Now())
 
+	logger.Info().
+		Str("title", title).
+		Str("scope", scope).
+		Msg("CreateContext called")
+
 	if t.DB == nil {
+		logger.Error().Msg("CreateContext: database not initialized")
 		return "", fmt.Errorf("database not initialized")
 	}
 	if title == "" {
@@ -502,6 +522,8 @@ func (t *Tools) CreateContext(title, scope, description string) (string, error) 
 
 	t.AuditLog("quint_context", "create_context", "agent", contextID, "SUCCESS",
 		map[string]string{"title": title, "scope": scope}, "")
+
+	logger.Info().Str("context_id", contextID).Msg("CreateContext: completed")
 
 	return fmt.Sprintf("%s\n\n→ Use decision_context=\"%s\" in quint_propose to add hypotheses to this context.", contextID, contextID), nil
 }
@@ -637,7 +659,14 @@ func (t *Tools) isReachable(ctx context.Context, from, to string, visited map[st
 func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 	defer t.RecordWork("LinkHolons", time.Now())
 
+	logger.Info().
+		Str("source_id", sourceID).
+		Str("target_id", targetID).
+		Int("congruence_level", cl).
+		Msg("LinkHolons called")
+
 	if t.DB == nil {
+		logger.Error().Msg("LinkHolons: database not initialized")
 		return "", fmt.Errorf("database not initialized - run quint_internalize first")
 	}
 
@@ -688,8 +717,15 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
+	logger.Info().
+		Str("hypothesis_id", hypothesisID).
+		Str("verdict", verdict).
+		Str("carrier_files", carrierFiles).
+		Msg("VerifyHypothesis called")
+
 	var result VerifyResult
 	if err := json.Unmarshal([]byte(checksJSON), &result); err != nil {
+		logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("VerifyHypothesis: invalid checks_json")
 		return "", fmt.Errorf("invalid checks_json: %w", err)
 	}
 	result.OverallVerdict = verdict
@@ -722,8 +758,10 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 
 	switch strings.ToUpper(result.OverallVerdict) {
 	case "PASS":
+		logger.Debug().Str("hypothesis_id", hypothesisID).Msg("VerifyHypothesis: moving L0 -> L1")
 		err := t.MoveHypothesis(hypothesisID, "L0", "L1")
 		if err != nil {
+			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("VerifyHypothesis: failed to move hypothesis")
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
 		}
@@ -732,6 +770,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
+		logger.Info().Str("hypothesis_id", hypothesisID).Str("result", "L1").Msg("VerifyHypothesis: PASS - promoted to L1")
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
 
 		var output strings.Builder
@@ -745,8 +784,10 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 		return output.String(), nil
 
 	case "FAIL":
+		logger.Debug().Str("hypothesis_id", hypothesisID).Msg("VerifyHypothesis: moving L0 -> invalid")
 		err := t.MoveHypothesis(hypothesisID, "L0", "invalid")
 		if err != nil {
+			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("VerifyHypothesis: failed to move hypothesis")
 			t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
 		}
@@ -755,6 +796,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
+		logger.Info().Str("hypothesis_id", hypothesisID).Str("result", "invalid").Msg("VerifyHypothesis: FAIL - moved to invalid")
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "invalid"}, "")
 
 		var output strings.Builder
@@ -851,7 +893,15 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("ValidateHypothesis", time.Now())
 
+	logger.Info().
+		Str("hypothesis_id", hypothesisID).
+		Str("test_type", testType).
+		Str("verdict", verdict).
+		Str("carrier_files", carrierFiles).
+		Msg("ValidateHypothesis called")
+
 	if result == "" {
+		logger.Error().Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: result is required")
 		return "", fmt.Errorf("result is required")
 	}
 
@@ -870,11 +920,14 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 
 	switch strings.ToUpper(verdict) {
 	case "PASS":
+		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: adding validation evidence")
 		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
+			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
 		}
 
+		logger.Info().Str("hypothesis_id", hypothesisID).Str("result", "L2").Msg("ValidateHypothesis: PASS - promoted to L2")
 		t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L2"}, "")
 
 		var output strings.Builder
@@ -883,11 +936,14 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 		return output.String(), nil
 
 	case "FAIL":
+		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: recording failed validation")
 		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
+			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
 		}
 
+		logger.Info().Str("hypothesis_id", hypothesisID).Str("result", "L1").Msg("ValidateHypothesis: FAIL - remains at L1")
 		t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "FAIL", "result": "L1"}, "")
 
 		var output strings.Builder
@@ -947,18 +1003,30 @@ func (t *Tools) validateTestResult(r TestResult) error {
 
 func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	defer t.RecordWork("AuditEvidence", time.Now())
+
+	logger.Info().Str("hypothesis_id", hypothesisID).Msg("AuditEvidence called")
+
 	_, err := t.ManageEvidence("audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
 	if err != nil {
+		logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("AuditEvidence: failed to add evidence")
 		return "", err
 	}
 
+	logger.Info().Str("hypothesis_id", hypothesisID).Msg("AuditEvidence: completed")
 	return "Audit recorded for " + hypothesisID, nil
 }
 
 // UnifiedAudit combines audit tree visualization, R_eff calculation, and optional risk recording.
 func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 	defer t.RecordWork("UnifiedAudit", time.Now())
+
+	logger.Info().
+		Str("holon_id", holonID).
+		Bool("has_risks", risks != "").
+		Msg("UnifiedAudit called")
+
 	if t.DB == nil {
+		logger.Error().Msg("UnifiedAudit: database not initialized")
 		return "", fmt.Errorf("database not initialized")
 	}
 
@@ -1194,6 +1262,13 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
+	logger.Info().
+		Str("title", title).
+		Str("winner_id", winnerID).
+		Int("rejected_count", len(rejectedIDs)).
+		Bool("has_contract", contractJSON != "").
+		Msg("FinalizeDecision called")
+
 	var contract Contract
 	if contractJSON != "" {
 		if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
@@ -1386,6 +1461,8 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 
 	t.AuditLog("quint_decide", "finalize_decision", "agent", winnerID, "SUCCESS", map[string]string{"title": title, "drr": drrName}, "")
+
+	logger.Info().Str("drr", drrName).Str("winner_id", winnerID).Msg("FinalizeDecision: completed successfully")
 
 	return drrPath, nil
 }
@@ -1886,6 +1963,8 @@ type AffectedScopeWarning struct {
 func (t *Tools) Internalize() (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
 
+	logger.Info().Str("root_dir", t.RootDir).Msg("Internalize called")
+
 	// v5.0.0: Phase is now derived from active decision contexts, not globally
 	// Initialize with defaults, will update after loading active contexts
 	result := InternalizeResult{
@@ -2060,6 +2139,14 @@ func (t *Tools) Internalize() (string, error) {
 	if len(result.ActiveContexts) == 0 {
 		result.NextAction = t.getNextAction(StageEmpty, result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
 	}
+
+	logger.Info().
+		Str("status", result.Status).
+		Int("active_contexts", len(result.ActiveContexts)).
+		Int("decay_warnings", len(result.DecayWarnings)).
+		Int("scope_warnings", len(result.AffectedScopeWarnings)).
+		Msg("Internalize: completed")
+
 	return t.formatInternalizeOutput(result), nil
 }
 
@@ -2420,7 +2507,16 @@ func (t *Tools) IsContextStale() (bool, []string) {
 func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFilter string, limit int) (string, error) {
 	defer t.RecordWork("Search", time.Now())
 
+	logger.Info().
+		Str("query", query).
+		Str("scope", scope).
+		Str("layer_filter", layerFilter).
+		Str("status_filter", statusFilter).
+		Int("limit", limit).
+		Msg("Search called")
+
 	if t.DB == nil {
+		logger.Error().Msg("Search: database not initialized")
 		return "", fmt.Errorf("database not initialized - run quint_internalize first")
 	}
 
@@ -2431,8 +2527,11 @@ func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFil
 	ctx := context.Background()
 	results, err := t.DB.Search(ctx, query, scope, layerFilter, statusFilter, limit)
 	if err != nil {
+		logger.Error().Err(err).Str("query", query).Msg("Search: query failed")
 		return "", fmt.Errorf("search failed: %w", err)
 	}
+
+	logger.Debug().Int("result_count", len(results)).Msg("Search: query executed")
 
 	// Filter by affected_scope if provided
 	if affectedScopeFilter != "" {
@@ -3197,7 +3296,10 @@ func (t *Tools) formatImplementationWarnings(warnings *ImplementationWarnings) s
 func (t *Tools) Implement(drrID string) (string, error) {
 	defer t.RecordWork("Implement", time.Now())
 
+	logger.Info().Str("drr_id", drrID).Msg("Implement called")
+
 	if t.DB == nil {
+		logger.Error().Msg("Implement: database not initialized")
 		return "", fmt.Errorf("database not initialized - run quint_internalize first")
 	}
 
@@ -3462,6 +3564,8 @@ func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstr
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("When complete: `quint_resolve %s implemented criteria_verified=true`\n", drr.ID))
 
+	logger.Info().Str("drr_id", drr.ID).Msg("Implement: directive generated")
+
 	return sb.String()
 }
 
@@ -3469,7 +3573,15 @@ func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstr
 func (t *Tools) Resolve(input ResolveInput) (string, error) {
 	defer t.RecordWork("Resolve", time.Now())
 
+	logger.Info().
+		Str("decision_id", input.DecisionID).
+		Str("resolution", input.Resolution).
+		Str("reference", input.Reference).
+		Bool("criteria_verified", input.CriteriaVerified).
+		Msg("Resolve called")
+
 	if t.DB == nil {
+		logger.Error().Msg("Resolve: database not initialized")
 		return "", fmt.Errorf("database not initialized - run quint_internalize first")
 	}
 
@@ -3602,6 +3714,11 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 	case "superseded":
 		result += fmt.Sprintf("\nSuperseded by: %s", input.SupersededBy)
 	}
+
+	logger.Info().
+		Str("decision_id", input.DecisionID).
+		Str("resolution", input.Resolution).
+		Msg("Resolve: completed successfully")
 
 	return result, nil
 }
@@ -3766,6 +3883,12 @@ func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]De
 // Context management is done via decision contexts, not global phase.
 func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, error) {
 	defer t.RecordWork("ResetCycle", time.Now())
+
+	logger.Info().
+		Str("reason", reason).
+		Str("context_id", contextID).
+		Bool("abandon_all", abandonAll).
+		Msg("ResetCycle called")
 
 	if reason == "" {
 		reason = "user requested reset"

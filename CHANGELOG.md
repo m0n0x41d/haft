@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Context stage**: Derived per-context state (EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE)
   - **Explicit creation required**: `quint_context` must be called first to create a `dc-*` ID
   - **`quint_propose` requires context**: No auto-creation; must provide `decision_context` from `quint_context`
-  - **Context closure**: `quint_decide` automatically closes context (sets `context_status='closed'`)
+  - **Context closure**: `quint_decide` closes context by default (`close_context=true`), or keeps it open for multi-DRR workflows (`close_context=false`)
   - **Context abandonment**: `quint_reset` supports `context_id` and `abandon_all` parameters
   - **Active context listing**: `/q-internalize` shows active decision contexts with hypothesis counts
   - New DB fields: `holons.context_status` (open/closed/abandoned)

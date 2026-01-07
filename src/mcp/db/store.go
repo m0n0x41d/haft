@@ -432,8 +432,36 @@ func sanitizeFTS5Query(query string) string {
 	if query == "" {
 		return query
 	}
-	escaped := strings.ReplaceAll(query, `"`, `""`)
-	return `"` + escaped + `"`
+	if strings.HasPrefix(query, `"`) && strings.HasSuffix(query, `"`) {
+		escaped := strings.ReplaceAll(query[1:len(query)-1], `"`, `""`)
+		return `"` + escaped + `"`
+	}
+	return buildFTS5ANDQuery(query)
+}
+
+func buildFTS5ANDQuery(text string) string {
+	words := strings.Fields(text)
+	var terms []string
+	seen := make(map[string]bool)
+
+	for _, w := range words {
+		clean := strings.Trim(w, ".,;:!?'()[]{}")
+		lower := strings.ToLower(clean)
+		if len(clean) < 2 || seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		escaped := strings.ReplaceAll(clean, `"`, `""`)
+		terms = append(terms, `"`+escaped+`"`)
+		if len(terms) >= 10 {
+			break
+		}
+	}
+
+	if len(terms) == 0 {
+		return ""
+	}
+	return strings.Join(terms, " AND ")
 }
 
 // buildFTS5ORQuery splits text into words and builds an OR query for FTS5.
@@ -786,49 +814,10 @@ func (s *Store) GetDecayingEvidence(ctx context.Context, daysAhead int) ([]Evide
 }
 
 // ============================================
-// CODE CHANGE AWARENESS METHODS (v5.0.0)
+// COMPACTION METHODS (v5.0.0)
 // ============================================
-
-// MarkEvidenceStale marks evidence as stale with reason
-func (s *Store) MarkEvidenceStale(ctx context.Context, evidenceID, reason string) error {
-	return s.q.MarkEvidenceStale(ctx, s.conn, MarkEvidenceStaleParams{
-		StaleReason: toNullString(reason),
-		ID:          evidenceID,
-	})
-}
-
-// ClearEvidenceStale clears stale flag from evidence
-func (s *Store) ClearEvidenceStale(ctx context.Context, evidenceID string) error {
-	return s.q.ClearEvidenceStale(ctx, s.conn, evidenceID)
-}
-
-// ClearAllEvidenceStaleForHolon clears stale flags for all evidence of a holon
-func (s *Store) ClearAllEvidenceStaleForHolon(ctx context.Context, holonID string) error {
-	return s.q.ClearAllEvidenceStaleForHolon(ctx, s.conn, holonID)
-}
-
-// GetStaleEvidenceByHolon returns all stale evidence for a holon
-func (s *Store) GetStaleEvidenceByHolon(ctx context.Context, holonID string) ([]Evidence, error) {
-	return s.q.GetStaleEvidenceByHolon(ctx, s.conn, holonID)
-}
-
-// CountStaleEvidence returns count of all stale evidence
-func (s *Store) CountStaleEvidence(ctx context.Context) (int64, error) {
-	return s.q.CountStaleEvidence(ctx, s.conn)
-}
-
-// GetAllStaleEvidence returns all stale evidence with holon context
-func (s *Store) GetAllStaleEvidence(ctx context.Context) ([]GetAllStaleEvidenceRow, error) {
-	return s.q.GetAllStaleEvidence(ctx, s.conn)
-}
-
-func (s *Store) CountArchivedStaleEvidence(ctx context.Context) (int64, error) {
-	return s.q.CountArchivedStaleEvidence(ctx, s.conn)
-}
-
-func (s *Store) GetArchivedStaleEvidence(ctx context.Context) ([]GetArchivedStaleEvidenceRow, error) {
-	return s.q.GetArchivedStaleEvidence(ctx, s.conn)
-}
+// Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+// Time-based decay via valid_until remains as per FPF spec B.3.4.
 
 func (s *Store) CountCompactableHolons(ctx context.Context, retentionDays int64) (int64, error) {
 	return s.q.CountCompactableHolons(ctx, s.conn, retentionDays)

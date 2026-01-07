@@ -60,7 +60,6 @@ SELECT * FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != '';
 -- name: GetEvidenceWithCarrierCommit :many
 SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
        e.assurance_level, e.carrier_ref, e.carrier_commit,
-       e.is_stale, e.stale_reason, e.stale_since,
        e.valid_until, e.created_at,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
@@ -68,8 +67,7 @@ JOIN holons h ON e.holon_id = h.id
 WHERE e.carrier_commit IS NOT NULL
   AND e.carrier_commit != ''
   AND e.carrier_ref IS NOT NULL
-  AND e.carrier_ref != ''
-  AND e.is_stale = 0;
+  AND e.carrier_ref != '';
 
 -- Relation queries
 
@@ -256,63 +254,11 @@ WHERE h.layer NOT IN ('DRR', 'invalid')
   AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(sqlc.arg(retention_days) AS INTEGER);
 
 -- ============================================
--- CODE CHANGE AWARENESS QUERIES (v5.0.0)
+-- REVERIFICATION QUERIES (v5.0.0)
 -- ============================================
-
--- name: MarkEvidenceStale :exec
-UPDATE evidence
-SET is_stale = 1,
-    stale_reason = ?,
-    stale_since = CURRENT_TIMESTAMP
-WHERE id = ?;
-
--- name: ClearEvidenceStale :exec
-UPDATE evidence
-SET is_stale = 0,
-    stale_reason = NULL,
-    stale_since = NULL
-WHERE id = ?;
-
--- name: ClearAllEvidenceStaleForHolon :exec
-UPDATE evidence
-SET is_stale = 0,
-    stale_reason = NULL,
-    stale_since = NULL
-WHERE holon_id = ?;
-
--- name: GetStaleEvidenceByHolon :many
-SELECT * FROM evidence
-WHERE holon_id = ? AND is_stale = 1;
-
--- name: CountStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence e
-JOIN active_holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1;
-
--- name: GetAllStaleEvidence :many
-SELECT e.id, e.holon_id, e.type, e.carrier_ref,
-       e.is_stale, e.stale_reason, e.stale_since,
-       h.title as holon_title, h.layer as holon_layer
-FROM evidence e
-JOIN active_holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-ORDER BY e.stale_since DESC;
-
--- name: CountArchivedStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence e
-JOIN holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-  AND h.id NOT IN (SELECT id FROM active_holons);
-
--- name: GetArchivedStaleEvidence :many
-SELECT e.id, e.holon_id, e.type, e.carrier_ref,
-       e.is_stale, e.stale_reason, e.stale_since,
-       h.title as holon_title, h.layer as holon_layer
-FROM evidence e
-JOIN holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-  AND h.id NOT IN (SELECT id FROM active_holons)
-ORDER BY e.stale_since DESC;
+-- Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+-- Time-based decay via valid_until remains as per FPF spec B.3.4.
+-- DRR affected_scope tracking uses carrier_ref for implementation warnings.
 
 -- name: MarkHolonNeedsReverification :exec
 UPDATE holons
@@ -349,11 +295,9 @@ WHERE context_id = ?;
 
 -- name: GetEvidenceByCarrierPattern :many
 SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
-       e.assurance_level, e.carrier_ref, e.carrier_hash, e.carrier_commit,
-       e.is_stale, e.stale_reason, e.stale_since,
+       e.assurance_level, e.carrier_ref, e.carrier_commit,
        e.valid_until, e.created_at,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
 JOIN holons h ON e.holon_id = h.id
-WHERE e.carrier_ref LIKE ?
-  AND e.is_stale = 0;
+WHERE e.carrier_ref LIKE ?;

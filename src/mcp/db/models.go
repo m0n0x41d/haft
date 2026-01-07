@@ -23,6 +23,7 @@ type ActiveHolon struct {
 	NeedsReverification  sql.NullInt64
 	ReverificationReason sql.NullString
 	ReverificationSince  sql.NullTime
+	ContextStatus        sql.NullString
 	CreatedAt            sql.NullTime
 	UpdatedAt            sql.NullTime
 }
@@ -92,6 +93,7 @@ type Holon struct {
 	NeedsReverification  sql.NullInt64
 	ReverificationReason sql.NullString
 	ReverificationSince  sql.NullTime
+	ContextStatus        sql.NullString
 	CreatedAt            sql.NullTime
 	UpdatedAt            sql.NullTime
 }

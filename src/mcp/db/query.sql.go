@@ -103,32 +103,6 @@ func (q *Queries) AddRelation(ctx context.Context, db DBTX, arg AddRelationParam
 	return err
 }
 
-const clearAllEvidenceStaleForHolon = `-- name: ClearAllEvidenceStaleForHolon :exec
-UPDATE evidence
-SET is_stale = 0,
-    stale_reason = NULL,
-    stale_since = NULL
-WHERE holon_id = ?
-`
-
-func (q *Queries) ClearAllEvidenceStaleForHolon(ctx context.Context, db DBTX, holonID string) error {
-	_, err := db.ExecContext(ctx, clearAllEvidenceStaleForHolon, holonID)
-	return err
-}
-
-const clearEvidenceStale = `-- name: ClearEvidenceStale :exec
-UPDATE evidence
-SET is_stale = 0,
-    stale_reason = NULL,
-    stale_since = NULL
-WHERE id = ?
-`
-
-func (q *Queries) ClearEvidenceStale(ctx context.Context, db DBTX, id string) error {
-	_, err := db.ExecContext(ctx, clearEvidenceStale, id)
-	return err
-}
-
 const clearHolonReverification = `-- name: ClearHolonReverification :exec
 UPDATE holons
 SET needs_reverification = 0,
@@ -243,20 +217,6 @@ func (q *Queries) CountArchivedHolonsByLayer(ctx context.Context, db DBTX) ([]Co
 	return items, nil
 }
 
-const countArchivedStaleEvidence = `-- name: CountArchivedStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence e
-JOIN holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-  AND h.id NOT IN (SELECT id FROM active_holons)
-`
-
-func (q *Queries) CountArchivedStaleEvidence(ctx context.Context, db DBTX) (int64, error) {
-	row := db.QueryRowContext(ctx, countArchivedStaleEvidence)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countCompactableHolons = `-- name: CountCompactableHolons :one
 SELECT COUNT(*) as count
 FROM holons h
@@ -314,19 +274,6 @@ SELECT COUNT(*) as count FROM active_holons WHERE needs_reverification = 1
 
 func (q *Queries) CountHolonsNeedingReverification(ctx context.Context, db DBTX) (int64, error) {
 	row := db.QueryRowContext(ctx, countHolonsNeedingReverification)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countStaleEvidence = `-- name: CountStaleEvidence :one
-SELECT COUNT(*) as count FROM evidence e
-JOIN active_holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-`
-
-func (q *Queries) CountStaleEvidence(ctx context.Context, db DBTX) (int64, error) {
-	row := db.QueryRowContext(ctx, countStaleEvidence)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -577,61 +524,6 @@ func (q *Queries) GetAllActiveWaivers(ctx context.Context, db DBTX) ([]Waiver, e
 	return items, nil
 }
 
-const getAllStaleEvidence = `-- name: GetAllStaleEvidence :many
-SELECT e.id, e.holon_id, e.type, e.carrier_ref,
-       e.is_stale, e.stale_reason, e.stale_since,
-       h.title as holon_title, h.layer as holon_layer
-FROM evidence e
-JOIN active_holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-ORDER BY e.stale_since DESC
-`
-
-type GetAllStaleEvidenceRow struct {
-	ID          string
-	HolonID     string
-	Type        string
-	CarrierRef  sql.NullString
-	IsStale     sql.NullInt64
-	StaleReason sql.NullString
-	StaleSince  sql.NullTime
-	HolonTitle  string
-	HolonLayer  string
-}
-
-func (q *Queries) GetAllStaleEvidence(ctx context.Context, db DBTX) ([]GetAllStaleEvidenceRow, error) {
-	rows, err := db.QueryContext(ctx, getAllStaleEvidence)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetAllStaleEvidenceRow
-	for rows.Next() {
-		var i GetAllStaleEvidenceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.HolonID,
-			&i.Type,
-			&i.CarrierRef,
-			&i.IsStale,
-			&i.StaleReason,
-			&i.StaleSince,
-			&i.HolonTitle,
-			&i.HolonLayer,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getArchivedHolonsForCompaction = `-- name: GetArchivedHolonsForCompaction :many
 
 SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
@@ -702,62 +594,6 @@ func (q *Queries) GetArchivedHolonsForCompaction(ctx context.Context, db DBTX, r
 			&i.DecisionTitle,
 			&i.DecisionOutcome,
 			&i.ResolvedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getArchivedStaleEvidence = `-- name: GetArchivedStaleEvidence :many
-SELECT e.id, e.holon_id, e.type, e.carrier_ref,
-       e.is_stale, e.stale_reason, e.stale_since,
-       h.title as holon_title, h.layer as holon_layer
-FROM evidence e
-JOIN holons h ON e.holon_id = h.id
-WHERE e.is_stale = 1
-  AND h.id NOT IN (SELECT id FROM active_holons)
-ORDER BY e.stale_since DESC
-`
-
-type GetArchivedStaleEvidenceRow struct {
-	ID          string
-	HolonID     string
-	Type        string
-	CarrierRef  sql.NullString
-	IsStale     sql.NullInt64
-	StaleReason sql.NullString
-	StaleSince  sql.NullTime
-	HolonTitle  string
-	HolonLayer  string
-}
-
-func (q *Queries) GetArchivedStaleEvidence(ctx context.Context, db DBTX) ([]GetArchivedStaleEvidenceRow, error) {
-	rows, err := db.QueryContext(ctx, getArchivedStaleEvidence)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetArchivedStaleEvidenceRow
-	for rows.Next() {
-		var i GetArchivedStaleEvidenceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.HolonID,
-			&i.Type,
-			&i.CarrierRef,
-			&i.IsStale,
-			&i.StaleReason,
-			&i.StaleSince,
-			&i.HolonTitle,
-			&i.HolonLayer,
 		); err != nil {
 			return nil, err
 		}
@@ -1022,14 +858,12 @@ func (q *Queries) GetDependents(ctx context.Context, db DBTX, targetID string) (
 
 const getEvidenceByCarrierPattern = `-- name: GetEvidenceByCarrierPattern :many
 SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
-       e.assurance_level, e.carrier_ref, e.carrier_hash, e.carrier_commit,
-       e.is_stale, e.stale_reason, e.stale_since,
+       e.assurance_level, e.carrier_ref, e.carrier_commit,
        e.valid_until, e.created_at,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
 JOIN holons h ON e.holon_id = h.id
 WHERE e.carrier_ref LIKE ?
-  AND e.is_stale = 0
 `
 
 type GetEvidenceByCarrierPatternRow struct {
@@ -1040,11 +874,7 @@ type GetEvidenceByCarrierPatternRow struct {
 	Verdict        string
 	AssuranceLevel sql.NullString
 	CarrierRef     sql.NullString
-	CarrierHash    sql.NullString
 	CarrierCommit  sql.NullString
-	IsStale        sql.NullInt64
-	StaleReason    sql.NullString
-	StaleSince     sql.NullTime
 	ValidUntil     sql.NullTime
 	CreatedAt      sql.NullTime
 	HolonTitle     string
@@ -1068,11 +898,7 @@ func (q *Queries) GetEvidenceByCarrierPattern(ctx context.Context, db DBTX, carr
 			&i.Verdict,
 			&i.AssuranceLevel,
 			&i.CarrierRef,
-			&i.CarrierHash,
 			&i.CarrierCommit,
-			&i.IsStale,
-			&i.StaleReason,
-			&i.StaleSince,
 			&i.ValidUntil,
 			&i.CreatedAt,
 			&i.HolonTitle,
@@ -1204,7 +1030,6 @@ func (q *Queries) GetEvidenceWithCarrier(ctx context.Context, db DBTX) ([]Eviden
 const getEvidenceWithCarrierCommit = `-- name: GetEvidenceWithCarrierCommit :many
 SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
        e.assurance_level, e.carrier_ref, e.carrier_commit,
-       e.is_stale, e.stale_reason, e.stale_since,
        e.valid_until, e.created_at,
        h.title as holon_title, h.layer as holon_layer
 FROM evidence e
@@ -1213,7 +1038,6 @@ WHERE e.carrier_commit IS NOT NULL
   AND e.carrier_commit != ''
   AND e.carrier_ref IS NOT NULL
   AND e.carrier_ref != ''
-  AND e.is_stale = 0
 `
 
 type GetEvidenceWithCarrierCommitRow struct {
@@ -1225,9 +1049,6 @@ type GetEvidenceWithCarrierCommitRow struct {
 	AssuranceLevel sql.NullString
 	CarrierRef     sql.NullString
 	CarrierCommit  sql.NullString
-	IsStale        sql.NullInt64
-	StaleReason    sql.NullString
-	StaleSince     sql.NullTime
 	ValidUntil     sql.NullTime
 	CreatedAt      sql.NullTime
 	HolonTitle     string
@@ -1252,9 +1073,6 @@ func (q *Queries) GetEvidenceWithCarrierCommit(ctx context.Context, db DBTX) ([]
 			&i.AssuranceLevel,
 			&i.CarrierRef,
 			&i.CarrierCommit,
-			&i.IsStale,
-			&i.StaleReason,
-			&i.StaleSince,
 			&i.ValidUntil,
 			&i.CreatedAt,
 			&i.HolonTitle,
@@ -1274,7 +1092,7 @@ func (q *Queries) GetEvidenceWithCarrierCommit(ctx context.Context, db DBTX) ([]
 }
 
 const getHolon = `-- name: GetHolon :one
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, error) {
@@ -1294,6 +1112,7 @@ func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, erro
 		&i.NeedsReverification,
 		&i.ReverificationReason,
 		&i.ReverificationSince,
+		&i.ContextStatus,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1377,7 +1196,7 @@ func (q *Queries) GetHolonTitle(ctx context.Context, db DBTX, id string) (string
 }
 
 const getHolonsByParent = `-- name: GetHolonsByParent :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM holons WHERE parent_id = ? ORDER BY created_at DESC
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE parent_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.NullString) ([]Holon, error) {
@@ -1403,6 +1222,7 @@ func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.N
 			&i.NeedsReverification,
 			&i.ReverificationReason,
 			&i.ReverificationSince,
+			&i.ContextStatus,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1420,7 +1240,7 @@ func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.N
 }
 
 const getHolonsNeedingReverification = `-- name: GetHolonsNeedingReverification :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM active_holons
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM active_holons
 WHERE needs_reverification = 1
 ORDER BY reverification_since DESC
 `
@@ -1448,6 +1268,7 @@ func (q *Queries) GetHolonsNeedingReverification(ctx context.Context, db DBTX) (
 			&i.NeedsReverification,
 			&i.ReverificationReason,
 			&i.ReverificationSince,
+			&i.ContextStatus,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1483,7 +1304,7 @@ func (q *Queries) GetLastCommit(ctx context.Context, db DBTX, contextID string) 
 }
 
 const getLatestHolonByContext = `-- name: GetLatestHolonByContext :one
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextID string) (Holon, error) {
@@ -1503,6 +1324,7 @@ func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextI
 		&i.NeedsReverification,
 		&i.ReverificationReason,
 		&i.ReverificationSince,
+		&i.ContextStatus,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1570,49 +1392,6 @@ func (q *Queries) GetRelationsByTarget(ctx context.Context, db DBTX, arg GetRela
 			&i.TargetID,
 			&i.RelationType,
 			&i.CongruenceLevel,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getStaleEvidenceByHolon = `-- name: GetStaleEvidenceByHolon :many
-SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence
-WHERE holon_id = ? AND is_stale = 1
-`
-
-func (q *Queries) GetStaleEvidenceByHolon(ctx context.Context, db DBTX, holonID string) ([]Evidence, error) {
-	rows, err := db.QueryContext(ctx, getStaleEvidenceByHolon, holonID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Evidence
-	for rows.Next() {
-		var i Evidence
-		if err := rows.Scan(
-			&i.ID,
-			&i.HolonID,
-			&i.Type,
-			&i.Content,
-			&i.Verdict,
-			&i.AssuranceLevel,
-			&i.CarrierRef,
-			&i.CarrierHash,
-			&i.CarrierCommit,
-			&i.IsStale,
-			&i.StaleReason,
-			&i.StaleSince,
-			&i.ValidUntil,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1724,7 +1503,7 @@ func (q *Queries) ListAllHolonIDs(ctx context.Context, db DBTX) ([]string, error
 }
 
 const listHolonsByLayer = `-- name: ListHolonsByLayer :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) ([]Holon, error) {
@@ -1750,6 +1529,7 @@ func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) 
 			&i.NeedsReverification,
 			&i.ReverificationReason,
 			&i.ReverificationSince,
+			&i.ContextStatus,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1766,29 +1546,8 @@ func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) 
 	return items, nil
 }
 
-const markEvidenceStale = `-- name: MarkEvidenceStale :exec
-
-UPDATE evidence
-SET is_stale = 1,
-    stale_reason = ?,
-    stale_since = CURRENT_TIMESTAMP
-WHERE id = ?
-`
-
-type MarkEvidenceStaleParams struct {
-	StaleReason sql.NullString
-	ID          string
-}
-
-// ============================================
-// CODE CHANGE AWARENESS QUERIES (v5.0.0)
-// ============================================
-func (q *Queries) MarkEvidenceStale(ctx context.Context, db DBTX, arg MarkEvidenceStaleParams) error {
-	_, err := db.ExecContext(ctx, markEvidenceStale, arg.StaleReason, arg.ID)
-	return err
-}
-
 const markHolonNeedsReverification = `-- name: MarkHolonNeedsReverification :exec
+
 UPDATE holons
 SET needs_reverification = 1,
     reverification_reason = ?,
@@ -1801,6 +1560,12 @@ type MarkHolonNeedsReverificationParams struct {
 	ID                   string
 }
 
+// ============================================
+// REVERIFICATION QUERIES (v5.0.0)
+// ============================================
+// Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+// Time-based decay via valid_until remains as per FPF spec B.3.4.
+// DRR affected_scope tracking uses carrier_ref for implementation warnings.
 func (q *Queries) MarkHolonNeedsReverification(ctx context.Context, db DBTX, arg MarkHolonNeedsReverificationParams) error {
 	_, err := db.ExecContext(ctx, markHolonNeedsReverification, arg.ReverificationReason, arg.ID)
 	return err

@@ -916,7 +916,9 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 		"overall_verdict": verdict,
 	}
 	evidenceJSON, _ := json.MarshalIndent(evidenceData, "", "  ")
-	validUntil := computeValidUntil(testType)
+	// FPF B.3.4: valid_until defaults to NULL (perpetual) for code evidence.
+	// Code validity is tied to code changes (DRR affected_scope), not time.
+	validUntil := "" // Empty = NULL in DB
 
 	switch strings.ToUpper(verdict) {
 	case "PASS":
@@ -959,18 +961,10 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 	}
 }
 
-func computeValidUntil(testType string) string {
-	var days int
-	switch testType {
-	case "internal":
-		days = 90
-	case "research", "external":
-		days = 60
-	default:
-		days = 90
-	}
-	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
-}
+// computeValidUntil removed in v5.1.0.
+// FPF B.3.4: valid_until defaults to NULL (perpetual) for code evidence.
+// Time-based decay only applies when valid_until is explicitly set.
+// Code evidence validity is tied to code changes (DRR affected_scope), not arbitrary time periods.
 
 func (t *Tools) validateTestResult(r TestResult) error {
 	if len(r.Observations) == 0 {
@@ -1086,9 +1080,9 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 	// operation: "verification" (L0→L1) or "validation" (L1→L2)
 	defer t.RecordWork("ManageEvidence", time.Now())
 
-	if validUntil == "" && action != "check" {
-		validUntil = time.Now().AddDate(0, 0, 90).Format("2006-01-02")
-	}
+	// FPF B.3.4: valid_until is optional. NULL = perpetual evidence.
+	// Only set if explicitly provided. Code evidence validity is tied to
+	// code changes (DRR affected_scope), not arbitrary time periods.
 	ctx := context.Background()
 
 	if action == "check" {
@@ -1197,15 +1191,11 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 			logger.Warn().Err(err).Msg("failed to link evidence in DB")
 		}
 
-		// Clear stale flags on successful re-validation (v5.0.0)
+		// Clear reverification flag on successful re-validation
 		if normalizedVerdict == "pass" {
-			if err := t.DB.ClearAllEvidenceStaleForHolon(ctx, targetID); err != nil {
-				logger.Warn().Err(err).Msg("failed to clear stale evidence")
-			}
 			if err := t.DB.ClearHolonReverification(ctx, targetID); err != nil {
 				logger.Warn().Err(err).Msg("failed to clear reverification flag")
 			}
-			// Recalculate R_eff after clearing staleness
 			t.recalculateHolonR(ctx, targetID)
 		}
 	}
@@ -1890,13 +1880,6 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 		}
 	}
 
-	archivedCount, _ := t.DB.CountArchivedStaleEvidence(ctx)
-	if archivedCount > 0 {
-		result.WriteString("\n---\n\n### ARCHIVED (informational, no action needed)\n\n")
-		result.WriteString(fmt.Sprintf("%d stale evidence records in archived holons.\n", archivedCount))
-		result.WriteString("These holons are part of resolved decisions and don't require action.\n")
-	}
-
 	return result.String(), nil
 }
 
@@ -1916,11 +1899,6 @@ type InternalizeResult struct {
 	NextAction        string            // Phase-appropriate suggestion
 	// v5.0.0: Decision Contexts
 	ActiveContexts []DecisionContextSummary // Active (unclosed) decision contexts
-	// Code Change Awareness (v5.0.0)
-	CodeChanges                *CodeChangeDetectionResult
-	StaleEvidenceCount         int64
-	ArchivedStaleEvidenceCount int64 // Informational: stale evidence for archived holons
-	ReverificationCount        int64
 	// Affected Scope Warnings (v5.1.0)
 	AffectedScopeWarnings []AffectedScopeWarning
 }
@@ -2023,21 +2001,9 @@ func (t *Tools) Internalize() (string, error) {
 	// Code Change Detection (v5.0.0)
 	if t.DB != nil && t.isGitRepo() {
 		ctx := context.Background()
-		codeChanges, err := t.detectCodeChanges(ctx)
-		if err != nil {
-			result.ContextChanges = append(result.ContextChanges,
-				fmt.Sprintf("Warning: code change detection failed: %v", err))
-		} else if codeChanges != nil && len(codeChanges.Impacts) > 0 {
-			result.CodeChanges = codeChanges
-			result.ContextChanges = append(result.ContextChanges,
-				fmt.Sprintf("Detected %d code change impacts across %d files",
-					len(codeChanges.Impacts), len(codeChanges.ChangedFiles)))
-		}
-
-		// Get staleness counts for summary
-		result.StaleEvidenceCount, _ = t.DB.CountStaleEvidence(ctx)
-		result.ArchivedStaleEvidenceCount, _ = t.DB.CountArchivedStaleEvidence(ctx)
-		result.ReverificationCount, _ = t.DB.CountHolonsNeedingReverification(ctx)
+		// NOTE: Carrier-file staleness detection removed per DRR-2026-01-07.
+		// DRR affected_scope warnings are populated below via checkAffectedScopeChanges.
+		_ = ctx // Context used below
 	}
 
 	if t.DB != nil {
@@ -2262,46 +2228,7 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 		sb.WriteString("\n")
 	}
 
-	// Code Change Warnings (v5.0.0)
-	// Exclude archived holons from active counts - they don't need action
-	activeStaleCount := r.StaleEvidenceCount - r.ArchivedStaleEvidenceCount
-	if activeStaleCount < 0 {
-		activeStaleCount = 0
-	}
-
-	if activeStaleCount > 0 || r.ReverificationCount > 0 {
-		sb.WriteString("🔴 CODE CHANGE IMPACTS:\n")
-		if activeStaleCount > 0 {
-			sb.WriteString(fmt.Sprintf("  - %d evidence records marked stale\n", activeStaleCount))
-		}
-		if r.ReverificationCount > 0 {
-			sb.WriteString(fmt.Sprintf("  - %d holons need re-verification\n", r.ReverificationCount))
-		}
-		if r.CodeChanges != nil && len(r.CodeChanges.Impacts) > 0 {
-			sb.WriteString("  Details:\n")
-			shown := 0
-			for _, impact := range r.CodeChanges.Impacts {
-				if shown >= 5 {
-					sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(r.CodeChanges.Impacts)-5))
-					break
-				}
-				if impact.File != "" {
-					sb.WriteString(fmt.Sprintf("    - %s: %s → %s [%s]\n",
-						impact.File, impact.HolonID, impact.HolonTitle, impact.HolonLayer))
-				} else {
-					sb.WriteString(fmt.Sprintf("    - %s [%s]: %s\n",
-						impact.HolonID, impact.HolonLayer, impact.Reason))
-				}
-				shown++
-			}
-		}
-		sb.WriteString("  Use quint_test or quint_verify to clear stale flags after re-validation.\n\n")
-	}
-
-	if r.ArchivedStaleEvidenceCount > 0 {
-		sb.WriteString(fmt.Sprintf("ℹ Archived holons: %d stale evidence records (no action needed)\n\n", r.ArchivedStaleEvidenceCount))
-	}
-
+	// DRR Affected Scope Warnings (code changed since decision was made)
 	if len(r.AffectedScopeWarnings) > 0 {
 		sb.WriteString("🔴 AFFECTED SCOPE CHANGED:\n")
 		grouped := make(map[string][]AffectedScopeWarning)
@@ -2854,20 +2781,8 @@ type CodeChangeDetectionResult struct {
 
 // ImplementationWarnings holds all warnings for quint_implement
 type ImplementationWarnings struct {
-	StaleEvidence    []StaleEvidenceWarning
 	ChangedFiles     []ChangedFileWarning
 	DependencyIssues []DependencyIssueWarning
-}
-
-// StaleEvidenceWarning represents stale evidence in dependency chain
-type StaleEvidenceWarning struct {
-	EvidenceID string
-	CarrierRef string
-	HolonID    string
-	HolonTitle string
-	HolonLayer string
-	StaleSince time.Time
-	Reason     string
 }
 
 // ChangedFileWarning represents a file that changed since DRR creation
@@ -2887,8 +2802,7 @@ type DependencyIssueWarning struct {
 
 // HasAny returns true if there are any warnings
 func (w *ImplementationWarnings) HasAny() bool {
-	return len(w.StaleEvidence) > 0 ||
-		len(w.ChangedFiles) > 0 ||
+	return len(w.ChangedFiles) > 0 ||
 		len(w.DependencyIssues) > 0
 }
 
@@ -2928,61 +2842,10 @@ func (t *Tools) getCurrentHead() (string, error) {
 // - Works with uncommitted changes
 // - No issues with rebase/amend/force-push
 // - Direct content comparison, not commit history
+// NOTE: Carrier-file staleness detection removed per DRR-2026-01-07-remove-carrier-file-staleness.
+// DRR affected_scope tracking is handled separately in checkAffectedScopeChanges.
 func (t *Tools) detectCodeChanges(ctx context.Context) (*CodeChangeDetectionResult, error) {
-	// Skip if no DB
-	if t.DB == nil {
-		return nil, nil
-	}
-
-	// Use hash-based detection (v5.1.0)
-	return t.detectStaleEvidenceByHash(ctx)
-}
-
-// propagateStalenessToDependent marks holons that depend on stale holons
-func (t *Tools) propagateStalenessToDependent(ctx context.Context, staleHolons map[string]bool) []CodeChangeImpact {
-	var impacts []CodeChangeImpact
-
-	for staleID := range staleHolons {
-		// Find holons that depend ON this stale holon
-		dependents, err := t.DB.GetDependents(ctx, staleID)
-		if err != nil {
-			continue
-		}
-
-		for _, dep := range dependents {
-			// Skip if already marked
-			if staleHolons[dep.SourceID] {
-				continue
-			}
-
-			holon, err := t.DB.GetHolon(ctx, dep.SourceID)
-			if err != nil {
-				continue
-			}
-
-			previousR := 0.0
-			if holon.CachedRScore.Valid {
-				previousR = holon.CachedRScore.Float64
-			}
-
-			reason := fmt.Sprintf("depends on stale holon '%s'", staleID)
-			t.DB.MarkHolonNeedsReverification(ctx, dep.SourceID, reason)
-
-			impacts = append(impacts, CodeChangeImpact{
-				Type:       "propagated",
-				HolonID:    dep.SourceID,
-				HolonTitle: holon.Title,
-				HolonLayer: holon.Layer,
-				PreviousR:  previousR,
-				Reason:     reason,
-			})
-
-			// Mark for cascade
-			staleHolons[dep.SourceID] = true
-		}
-	}
-
-	return impacts
+	return nil, nil
 }
 
 // recalculateHolonR triggers R_eff recalculation for a holon
@@ -3071,107 +2934,10 @@ func diffCarrierHashes(oldHash, newHash string) []string {
 	return changed
 }
 
-func (t *Tools) detectStaleEvidenceByHash(ctx context.Context) (*CodeChangeDetectionResult, error) {
-	result := &CodeChangeDetectionResult{}
-	affectedHolons := make(map[string]bool)
-
-	allEvidence, err := t.DB.GetEvidenceWithCarrier(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, e := range allEvidence {
-		if !e.CarrierRef.Valid || e.CarrierRef.String == "" {
-			continue
-		}
-		// Skip already stale
-		if e.IsStale.Valid && e.IsStale.Int64 == 1 {
-			continue
-		}
-
-		carrierRef := e.CarrierRef.String
-		storedHash := ""
-		if e.CarrierHash.Valid {
-			storedHash = e.CarrierHash.String
-		}
-
-		// Compute current hash
-		currentHash := t.hashCarrierFiles(carrierRef)
-
-		// If no stored hash, this is legacy evidence - compute and store baseline
-		if storedHash == "" {
-			// Update evidence with current hash as baseline
-			_, err := t.DB.GetRawDB().ExecContext(ctx,
-				"UPDATE evidence SET carrier_hash = ? WHERE id = ?",
-				currentHash, e.ID)
-			if err != nil {
-				logger.Warn().Err(err).Str("evidence_id", e.ID).Msg("failed to update carrier_hash baseline")
-			}
-			continue
-		}
-
-		// Compare hashes
-		changedFiles := diffCarrierHashes(storedHash, currentHash)
-		if len(changedFiles) == 0 {
-			continue
-		}
-
-		// Get holon's current R for reporting
-		holon, _ := t.DB.GetHolon(ctx, e.HolonID)
-		previousR := 0.0
-		if holon.CachedRScore.Valid {
-			previousR = holon.CachedRScore.Float64
-		}
-
-		// Mark evidence as stale
-		reason := fmt.Sprintf("carrier content changed: %s", strings.Join(changedFiles, ", "))
-		if err := t.DB.MarkEvidenceStale(ctx, e.ID, reason); err != nil {
-			logger.Warn().Err(err).Str("evidence_id", e.ID).Msg("failed to mark evidence stale")
-			continue
-		}
-
-		// Record impact
-		result.Impacts = append(result.Impacts, CodeChangeImpact{
-			Type:       "evidence_stale",
-			File:       strings.Join(changedFiles, ", "),
-			EvidenceID: e.ID,
-			HolonID:    e.HolonID,
-			HolonTitle: holon.Title,
-			HolonLayer: holon.Layer,
-			PreviousR:  previousR,
-			Reason:     reason,
-		})
-
-		result.TotalStale++
-		affectedHolons[e.HolonID] = true
-	}
-
-	// Mark affected holons as needing reverification
-	for holonID := range affectedHolons {
-		reason := "evidence became stale due to carrier file changes"
-		if err := t.DB.MarkHolonNeedsReverification(ctx, holonID, reason); err != nil {
-			logger.Warn().Err(err).Msg("failed to mark holon for reverification")
-		}
-		result.TotalAffected++
-	}
-
-	// Propagate staleness through WLNK chain
-	propagated := t.propagateStalenessToDependent(ctx, affectedHolons)
-	result.Impacts = append(result.Impacts, propagated...)
-
-	// Recalculate R_eff for all affected holons
-	for holonID := range affectedHolons {
-		t.recalculateHolonR(ctx, holonID)
-	}
-
-	return result, nil
-}
-
-// collectImplementationWarnings gathers warnings about stale evidence in dependency chain
+// collectImplementationWarnings gathers warnings about dependency issues
 func (t *Tools) collectImplementationWarnings(ctx context.Context, drrID string, dependsOn []string) *ImplementationWarnings {
 	warnings := &ImplementationWarnings{}
 
-	// Check for stale evidence in this DRR and its dependencies
 	holonsToCheck := append([]string{drrID}, dependsOn...)
 	visited := make(map[string]bool)
 
@@ -3181,36 +2947,6 @@ func (t *Tools) collectImplementationWarnings(ctx context.Context, drrID string,
 			return
 		}
 		visited[holonID] = true
-
-		// Get stale evidence for this holon
-		staleEvidence, err := t.DB.GetStaleEvidenceByHolon(ctx, holonID)
-		if err == nil && len(staleEvidence) > 0 {
-			holon, _ := t.DB.GetHolon(ctx, holonID)
-			for _, e := range staleEvidence {
-				carrierRef := ""
-				if e.CarrierRef.Valid {
-					carrierRef = e.CarrierRef.String
-				}
-				var staleSince time.Time
-				if e.StaleSince.Valid {
-					staleSince = e.StaleSince.Time
-				}
-				reason := ""
-				if e.StaleReason.Valid {
-					reason = e.StaleReason.String
-				}
-
-				warnings.StaleEvidence = append(warnings.StaleEvidence, StaleEvidenceWarning{
-					EvidenceID: e.ID,
-					CarrierRef: carrierRef,
-					HolonID:    holonID,
-					HolonTitle: holon.Title,
-					HolonLayer: holon.Layer,
-					StaleSince: staleSince,
-					Reason:     reason,
-				})
-			}
-		}
 
 		// Check if holon needs reverification
 		holon, err := t.DB.GetHolon(ctx, holonID)
@@ -3258,20 +2994,7 @@ func (t *Tools) formatImplementationWarnings(warnings *ImplementationWarnings) s
 
 	var sb strings.Builder
 	sb.WriteString("\n## ⚠️ WARNINGS\n\n")
-	sb.WriteString("**Evidence in the dependency chain has become stale due to code changes.**\n\n")
 	sb.WriteString("Review these issues before proceeding:\n\n")
-
-	if len(warnings.StaleEvidence) > 0 {
-		sb.WriteString("### Stale Evidence\n")
-		for _, w := range warnings.StaleEvidence {
-			sb.WriteString(fmt.Sprintf("- **%s** [%s]: `%s`\n",
-				w.HolonTitle, w.HolonLayer, w.CarrierRef))
-			if w.Reason != "" {
-				sb.WriteString(fmt.Sprintf("  - Reason: %s\n", w.Reason))
-			}
-		}
-		sb.WriteString("\n")
-	}
 
 	if len(warnings.DependencyIssues) > 0 {
 		sb.WriteString("### Holons Needing Re-verification\n")
@@ -3286,9 +3009,8 @@ func (t *Tools) formatImplementationWarnings(warnings *ImplementationWarnings) s
 	}
 
 	sb.WriteString("### Recommended Actions\n\n")
-	sb.WriteString("1. Review the changed carrier files\n")
-	sb.WriteString("2. Re-run tests: `quint_test holon-id internal \"re-verification\" PASS`\n")
-	sb.WriteString("3. Or acknowledge stale state if changes are compatible\n\n")
+	sb.WriteString("1. Re-run tests: `quint_test holon-id internal \"re-verification\" PASS`\n")
+	sb.WriteString("2. Or proceed if the changes don't affect this decision\n\n")
 	sb.WriteString("---\n")
 
 	return sb.String()

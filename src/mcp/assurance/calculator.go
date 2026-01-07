@@ -9,14 +9,12 @@ import (
 )
 
 type AssuranceReport struct {
-	HolonID       string
-	FinalScore    float64
-	SelfScore     float64 // Score based on own evidence
-	WeakestLink   string  // ID of the dependency pulling the score down
-	DecayPenalty  float64
-	StalePenalty  float64  // Penalty from stale evidence (v5.0.0)
-	StaleEvidence []string // IDs of stale evidence
-	Factors       []string // Textual explanations for AI
+	HolonID      string
+	FinalScore   float64
+	SelfScore    float64  // Score based on own evidence
+	WeakestLink  string   // ID of the dependency pulling the score down
+	DecayPenalty float64
+	Factors      []string // Textual explanations for AI
 }
 
 type Calculator struct {
@@ -47,9 +45,9 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	report := &AssuranceReport{HolonID: holonID}
 
 	// 1. Calculate Self Score (based on Evidence)
-	// B.3.4: Check for expired/stale evidence + evidence source CL penalty
+	// B.3.4: Check for expired evidence + evidence source CL penalty
 	rows, err := c.DB.QueryContext(ctx,
-		"SELECT id, type, verdict, valid_until, is_stale, stale_reason FROM evidence WHERE holon_id = ?", holonID)
+		"SELECT id, type, verdict, valid_until FROM evidence WHERE holon_id = ?", holonID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,12 +58,11 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
 		var validUntil *time.Time
-		var isStale *int64
-		var staleReason *string
-		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &isStale, &staleReason); err != nil {
+		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil); err != nil {
 			continue
 		}
 		hasEvidence = true
+		_ = evidenceID // Used for potential future logging
 
 		score := 0.0
 		switch strings.ToLower(verdict) {
@@ -85,19 +82,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			report.Factors = append(report.Factors, "External evidence CL2 penalty applied")
 		}
 
-		// Evidence Staleness (v5.0.0): carrier file changed
-		if isStale != nil && *isStale == 1 {
-			reason := "unknown reason"
-			if staleReason != nil && *staleReason != "" {
-				reason = *staleReason
-			}
-			report.Factors = append(report.Factors, "Evidence stale: "+reason)
-			report.StaleEvidence = append(report.StaleEvidence, evidenceID)
-			score = 0.2                // Stale evidence is unreliable but not completely worthless
-			report.StalePenalty += 0.8 // Track staleness impact
-		}
-
-		// Evidence Decay Logic (time-based expiration)
+		// Evidence Decay Logic (B.3.4: time-based expiration)
 		if validUntil != nil && time.Now().After(*validUntil) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
 			score = 0.1                // Penalty for expiration, not zero but close

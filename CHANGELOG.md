@@ -12,12 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Decision Contexts**: Groups of hypotheses for specific decisions
   - **Context-based workflow**: Each decision has its own context with up to 3 active contexts allowed
   - **Context stage**: Derived per-context state (EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE)
-  - **Auto-creation**: `quint_propose` auto-creates decision context if none provided
+  - **Explicit creation required**: `quint_context` must be called first to create a `dc-*` ID
+  - **`quint_propose` requires context**: No auto-creation; must provide `decision_context` from `quint_context`
   - **Context closure**: `quint_decide` automatically closes context (sets `context_status='closed'`)
   - **Context abandonment**: `quint_reset` supports `context_id` and `abandon_all` parameters
   - **Active context listing**: `/q-internalize` shows active decision contexts with hypothesis counts
   - New DB fields: `holons.context_status` (open/closed/abandoned)
-  - New DB methods: `CreateContext`, `GetOpenContexts`, `CloseContext`, `AbandonContext`
+  - New DB methods: `CreateContext`, `CloseContext`, `AbandonContext`
   - Schema migration v11: adds `context_status` column and indexes
 
 - **DB-only Hypotheses**: Hypotheses no longer projected to filesystem
@@ -57,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/q-internalize` command**: Unified entry point replacing init/status/decay commands
   - Auto-initializes new projects, detects stale context, surfaces decaying evidence
   - Shows active decision contexts with stages and hypothesis counts
+  - **Affected scope warnings**: Detects file changes in open DRRs since decision finalization
   - Safe to call in any phase (Observer role)
 
 - **DRR Lifecycle Tracking**: Complete decision lifecycle management
@@ -80,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `external` research: 60 days validity
 
 ### Changed
+
+- **`quint_audit` Expanded Scope**: Now accepts L0 decision contexts and DRRs (not just L2 hypotheses)
+  - Audit on decision context: Shows tree of all hypotheses in the context
+  - Audit on DRR: Shows winner, rejected alternatives, and their evidence chains
 
 - **Global Phase Removed**: Stage is now derived per-context, not global
   - Removed `Phase` type and constants (`PhaseIdle`, `PhaseAbduction`, etc.)
@@ -133,14 +139,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **No more `knowledge/` filesystem structure** — hypotheses are DB-only
 - **Global phase removed** — stage is per-context (derived from hypothesis layers)
-- **`quint_propose` requires context** — auto-creates if not specified
+- **`quint_propose` requires context** — no auto-creation; must call `quint_context` first
 - **`quint_reset` signature changed** — now accepts `(reason, contextID, abandonAll)`
 - **Existing hypotheses become orphans** — need assignment to contexts or archive
 
 ### Documentation
 
-- **q-internalize.md**: Updated with Active Decision Contexts field
-- **q1-hypothesize.md**: Updated for DB-only hypotheses and auto-context creation
+- **q-internalize.md**: Updated with Active Decision Contexts, lifecycle mapping, and Context Stage ↔ Reasoning Lifecycle section
+- **q1-hypothesize.md**: Self-contained documentation with falsifiability examples, anti-patterns, and Method section
+- **q2-verify.md**: Self-contained with predictions flow, anti-patterns, and verification examples
+- **q3-validate.md**: Self-contained with tests_prediction linking, anti-patterns, and validation examples
+- **q-implement.md**: Critical file change handling documentation
+  - "File Change Warnings Are NOT Suggestions" section with mandatory verification steps
+  - "What Counts as Significant Change" classification table
+  - "Deletions Are NEVER Cosmetic" rule with examples
+  - "The Cosmetic Checklist" (5 verification checkboxes)
+  - Anti-patterns: dismissing warnings, mislabeling structural as cosmetic
 - **q-reset.md**: Updated with context abandonment parameters
 
 ---
@@ -770,7 +784,7 @@ Key design decisions:
 
 1. Run `/q-internalize` to initialize decision contexts
 2. Existing hypotheses will work but are "orphans" (not in any context)
-3. Use `quint_propose` with `context_id` to assign to contexts, or let auto-creation handle it
+3. Create contexts explicitly with `quint_context` before calling `quint_propose`
 
 ### 1.0.0 → 2.0.0
 

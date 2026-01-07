@@ -35,15 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **What's preserved**: Holon ID/title/type/layer, relations, audit log
   - Compacted holons marked with `[COMPACTED]` content
 
-- **Code Change Awareness**: Automatic staleness detection when carrier files change
-  - **Hash-Based Detection**: Content hash comparison (SHA256, 16-char hex per file)
-  - Works with uncommitted changes, rebases, amends, force pushes
-  - No git dependency required for staleness detection
-  - **Evidence Staleness**: When carrier file content changes, evidence is marked stale
-  - **WLNK Propagation**: Staleness propagates through dependency chain
-  - **R_eff Impact**: Stale evidence scores 0.2 (vs 1.0 for fresh)
-  - **Clear on Re-validation**: `quint_test`/`quint_verify` with PASS clears stale flags
-  - New DB fields: `evidence.is_stale`, `evidence.stale_reason`, `evidence.carrier_hash`
+- **DRR Affected Scope Tracking**: Implementation change detection via file hashes
+  - `affected_scope` in DRR contract specifies files covered by decision
+  - File hashes captured at decision time
+  - `/q-internalize` warns when affected files change after decision finalization
+  - Prompts re-evaluation or `quint_resolve` acknowledgment
 
 - **Dependency Discovery & Linking**: Automatic detection of semantic dependencies
   - `quint_propose` uses FTS5 semantic search to detect related holons
@@ -77,11 +73,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - L2 refresh: `quint_test` on L2 holons bypasses phase gate
   - Audit log now records actual role instead of generic "agent"
 
-- **Smart Defaults for Evidence Validity**: `quint_test` sets `valid_until` based on test type
-  - `internal` tests: 90 days validity
-  - `external` research: 60 days validity
+- **FTS5 AND-based Search**: `quint_search` now uses token-based AND matching by default
+  - Unquoted queries split into tokens joined with AND (all terms must match)
+  - Quoted queries still perform exact phrase search
+  - Fixes search failing to find holons when query terms exist but not in exact sequence
 
 ### Changed
+
+- **Evidence valid_until Now Optional**: Per FPF B.3.4, valid_until defaults to NULL (perpetual)
+  - Code evidence validity tied to code changes (DRR affected_scope), not arbitrary time periods
+  - NULL valid_until = perpetual evidence (no decay)
+  - Explicit valid_until still triggers decay when expired
+  - Removed `computeValidUntil()` function with arbitrary 90/60 day defaults
+  - Removed forced 90-day default in `ManageEvidence()`
 
 - **`quint_audit` Expanded Scope**: Now accepts L0 decision contexts and DRRs (not just L2 hypotheses)
   - Audit on decision context: Shows tree of all hypotheses in the context
@@ -129,7 +133,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/q1-add` command**: Redundant — `quint_propose` handles both agent and user hypotheses
 - **Filesystem projection**: No more `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
 - **Global phase**: Stage is now per-context
-- **Deprecated git-based staleness detection**: Replaced by hash-based detection
+- **Carrier-file staleness detection**: Removed hash-based staleness in favor of time-based decay only
+  - Removed `is_stale`, `stale_reason`, `stale_since` from evidence tracking
+  - Removed `MarkEvidenceStale`, `ClearEvidenceStale`, `ClearAllEvidenceStaleForHolon`
+  - Removed `GetStaleEvidenceByHolon`, `CountStaleEvidence`, `GetAllStaleEvidence`
+  - Removed `CountArchivedStaleEvidence`, `GetArchivedStaleEvidence`
+  - Time-based decay via `valid_until` remains per FPF B.3.4
+  - DRR `affected_scope` tracking provides implementation change warnings
 - **Unused code cleanup**: Removed `getChangedFiles`, `fileChangedBetween`, `carrierRefContainsFile`, `detectStaleEvidenceByCarrierCommit`
 - **state.json file**: FSM state no longer persisted to JSON file.
   - All state (active role, last commit, assurance threshold) now in SQLite.

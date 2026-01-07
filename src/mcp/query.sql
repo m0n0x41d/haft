@@ -301,3 +301,31 @@ SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
 FROM evidence e
 JOIN holons h ON e.holon_id = h.id
 WHERE e.carrier_ref LIKE ?;
+
+-- ============================================
+-- PREDICTIONS QUERIES (v5.1.0)
+-- ============================================
+
+-- name: AddPrediction :exec
+INSERT INTO predictions (id, holon_id, content)
+VALUES (?, ?, ?);
+
+-- name: GetPredictionsByHolon :many
+SELECT id, holon_id, content, covered, covered_by, created_at
+FROM predictions
+WHERE holon_id = ?;
+
+-- name: GetUncoveredPredictions :many
+SELECT id, holon_id, content, created_at
+FROM predictions
+WHERE holon_id = ? AND covered = 0;
+
+-- name: MarkPredictionCovered :exec
+UPDATE predictions
+SET covered = 1, covered_by = ?
+WHERE id = ?;
+
+-- name: CountUncoveredPredictions :one
+SELECT COUNT(*) as count
+FROM predictions
+WHERE holon_id = ? AND covered = 0;

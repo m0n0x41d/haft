@@ -57,15 +57,17 @@ type VerifyResult struct {
 	TypeCheck       CheckResult `json:"type_check"`
 	ConstraintCheck CheckResult `json:"constraint_check"`
 	LogicCheck      CheckResult `json:"logic_check"`
-	OverallVerdict  string      `json:"overall_verdict"` // PASS or FAIL
-	Risks           []string    `json:"risks,omitempty"` // Identified risks even if PASS
+	OverallVerdict  string      `json:"overall_verdict"`  // PASS or FAIL
+	Risks           []string    `json:"risks,omitempty"`  // Identified risks even if PASS
+	Predictions     []string    `json:"predictions"`      // Testable predictions for L1 (required for PASS)
 }
 
 // Observation represents a single observation during validation
 type Observation struct {
-	Description string   `json:"description"` // What was observed
-	Evidence    []string `json:"evidence"`    // Concrete refs
-	Supports    bool     `json:"supports"`    // Does this support hypothesis?
+	Description     string   `json:"description"`                // What was observed
+	Evidence        []string `json:"evidence"`                   // Concrete refs
+	Supports        bool     `json:"supports"`                   // Does this support hypothesis?
+	TestsPrediction string   `json:"tests_prediction,omitempty"` // Which prediction this tests (e.g., "P1")
 }
 
 // TestResult is structured input for quint_test (L1 -> L2)
@@ -770,13 +772,29 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
+		if t.DB != nil && len(result.Predictions) > 0 {
+			ctx := context.Background()
+			for i, pred := range result.Predictions {
+				predID := fmt.Sprintf("%s-pred-%d", hypothesisID, i+1)
+				if err := t.DB.AddPrediction(ctx, predID, hypothesisID, pred); err != nil {
+					logger.Warn().Err(err).Str("prediction_id", predID).Msg("failed to store prediction")
+				}
+			}
+			logger.Info().Int("count", len(result.Predictions)).Str("hypothesis_id", hypothesisID).Msg("stored predictions")
+		}
+
 		logger.Info().Str("hypothesis_id", hypothesisID).Str("result", "L1").Msg("VerifyHypothesis: PASS - promoted to L1")
 		t.AuditLog("quint_verify", "verify_hypothesis", "agent", hypothesisID, "SUCCESS", map[string]string{"verdict": "PASS", "result": "L1"}, "")
 
 		var output strings.Builder
 		output.WriteString(fmt.Sprintf("✅ Hypothesis %s promoted to L1\n\n", hypothesisID))
+		output.WriteString(fmt.Sprintf("📋 Predictions (%d):\n", len(result.Predictions)))
+		for i, pred := range result.Predictions {
+			output.WriteString(fmt.Sprintf("  P%d: %s\n", i+1, pred))
+		}
+		output.WriteString("\nThese predictions must be validated in /q3-validate.\n")
 		if len(result.Risks) > 0 {
-			output.WriteString("⚠️ Risks identified:\n")
+			output.WriteString("\n⚠️ Risks identified:\n")
 			for _, r := range result.Risks {
 				output.WriteString(fmt.Sprintf("  - %s\n", r))
 			}
@@ -846,6 +864,10 @@ func (t *Tools) validateVerifyResult(r VerifyResult) error {
 		return fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", r.OverallVerdict)
 	}
 
+	if verdict == "PASS" && len(r.Predictions) == 0 {
+		return fmt.Errorf("L1 requires at least one testable prediction (FPF B.5)")
+	}
+
 	return nil
 }
 
@@ -905,6 +927,11 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 		return "", fmt.Errorf("result is required")
 	}
 
+	var testResult TestResult
+	if err := json.Unmarshal([]byte(result), &testResult); err != nil {
+		logger.Warn().Err(err).Msg("result is not structured TestResult, treating as legacy format")
+	}
+
 	carrierRef := carrierFiles
 	if carrierRef == "" {
 		carrierRef = "test-runner"
@@ -916,12 +943,52 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 		"overall_verdict": verdict,
 	}
 	evidenceJSON, _ := json.MarshalIndent(evidenceData, "", "  ")
-	// FPF B.3.4: valid_until defaults to NULL (perpetual) for code evidence.
-	// Code validity is tied to code changes (DRR affected_scope), not time.
-	validUntil := "" // Empty = NULL in DB
+	validUntil := ""
 
 	switch strings.ToUpper(verdict) {
 	case "PASS":
+		ctx := context.Background()
+
+		if t.DB != nil {
+			predictions, err := t.DB.GetPredictionsByHolon(ctx, hypothesisID)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to get predictions")
+			}
+
+			if len(predictions) > 0 {
+				coveredPreds := make(map[string]bool)
+				for _, obs := range testResult.Observations {
+					if obs.TestsPrediction != "" && obs.Supports {
+						coveredPreds[obs.TestsPrediction] = true
+					}
+				}
+
+				for _, pred := range predictions {
+					predNum := strings.TrimPrefix(pred.ID, hypothesisID+"-pred-")
+					predKey := fmt.Sprintf("P%s", predNum)
+					isCovered := pred.Covered.Valid && pred.Covered.Int64 == 1
+					if coveredPreds[predKey] && !isCovered {
+						if err := t.DB.MarkPredictionCovered(ctx, pred.ID, ""); err != nil {
+							logger.Warn().Err(err).Str("prediction_id", pred.ID).Msg("failed to mark prediction covered")
+						}
+					}
+				}
+
+				uncovered, err := t.DB.GetUncoveredPredictions(ctx, hypothesisID)
+				if err != nil {
+					logger.Warn().Err(err).Msg("failed to check uncovered predictions")
+				}
+				if len(uncovered) > 0 {
+					var uncoveredList []string
+					for _, u := range uncovered {
+						uncoveredList = append(uncoveredList, u.Content)
+					}
+					t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "BLOCKED", map[string]string{"reason": "uncovered_predictions"}, "")
+					return "", fmt.Errorf("L1→L2 blocked: %d uncovered predictions. Add observations with tests_prediction field: %v", len(uncovered), uncoveredList)
+				}
+			}
+		}
+
 		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: adding validation evidence")
 		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
 			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")

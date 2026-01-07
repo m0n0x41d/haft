@@ -1040,3 +1040,34 @@ func (s *Store) GetHypothesisContext(ctx context.Context, hypothesisID string) (
 	}
 	return contextID, err
 }
+
+// ============================================
+// PREDICTIONS METHODS (v5.1.0)
+// ============================================
+
+func (s *Store) AddPrediction(ctx context.Context, id, holonID, content string) error {
+	return s.q.AddPrediction(ctx, s.conn, AddPredictionParams{
+		ID:      id,
+		HolonID: holonID,
+		Content: content,
+	})
+}
+
+func (s *Store) GetPredictionsByHolon(ctx context.Context, holonID string) ([]Prediction, error) {
+	return s.q.GetPredictionsByHolon(ctx, s.conn, holonID)
+}
+
+func (s *Store) GetUncoveredPredictions(ctx context.Context, holonID string) ([]GetUncoveredPredictionsRow, error) {
+	return s.q.GetUncoveredPredictions(ctx, s.conn, holonID)
+}
+
+func (s *Store) MarkPredictionCovered(ctx context.Context, predictionID, evidenceID string) error {
+	return s.q.MarkPredictionCovered(ctx, s.conn, MarkPredictionCoveredParams{
+		CoveredBy: toNullString(evidenceID),
+		ID:        predictionID,
+	})
+}
+
+func (s *Store) CountUncoveredPredictions(ctx context.Context, holonID string) (int64, error) {
+	return s.q.CountUncoveredPredictions(ctx, s.conn, holonID)
+}

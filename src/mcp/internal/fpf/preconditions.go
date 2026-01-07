@@ -188,30 +188,30 @@ func (t *Tools) checkTestPreconditions(args map[string]string) error {
 }
 
 func (t *Tools) checkAuditPreconditions(args map[string]string) error {
-	hypoID := args["hypothesis_id"]
-	if hypoID == "" {
+	holonID := args["holon_id"]
+	if holonID == "" {
 		return &PreconditionError{
 			Tool:       "quint_audit",
-			Condition:  "hypothesis_id is required",
-			Suggestion: "Specify which hypothesis to audit",
+			Condition:  "holon_id is required",
+			Suggestion: "Specify which holon to audit",
 		}
 	}
 
 	if t.DB != nil {
 		ctx := context.Background()
-		holon, err := t.DB.GetHolon(ctx, hypoID)
+		holon, err := t.DB.GetHolon(ctx, holonID)
 		if err != nil {
 			return &PreconditionError{
 				Tool:       "quint_audit",
-				Condition:  fmt.Sprintf("hypothesis '%s' not found", hypoID),
-				Suggestion: "Ensure hypothesis exists in the database",
+				Condition:  fmt.Sprintf("holon '%s' not found", holonID),
+				Suggestion: "Ensure holon exists in the database",
 			}
 		}
-		if holon.Layer != "L2" {
+		if holon.Layer != "L2" && holon.Layer != "DRR" && holon.Layer != "L0" {
 			return &PreconditionError{
 				Tool:       "quint_audit",
-				Condition:  fmt.Sprintf("hypothesis '%s' is in %s, not L2", hypoID, holon.Layer),
-				Suggestion: "Only L2 (validated) hypotheses can be audited for final decision",
+				Condition:  fmt.Sprintf("holon '%s' is in %s", holonID, holon.Layer),
+				Suggestion: "Audit is available for L2 hypotheses, DRRs, and decision contexts (L0)",
 			}
 		}
 	}

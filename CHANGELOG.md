@@ -78,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Quoted queries still perform exact phrase search
   - Fixes search failing to find holons when query terms exist but not in exact sequence
 
+- **Predictions Tracking (FPF B.5)**: Testable predictions linked from L1 to L2
+  - `quint_verify` now requires `predictions` array for PASS verdict
+  - Predictions stored in `predictions` table, linked to L1 hypothesis
+  - `quint_test` validates prediction coverage via `tests_prediction` field in observations
+  - L1→L2 promotion blocked if any prediction is uncovered
+  - Closes reasoning chain: predictions → observations → audit trail
+  - Schema migration v9: adds `predictions` table
+
 ### Changed
 
 - **Evidence valid_until Now Optional**: Per FPF B.3.4, valid_until defaults to NULL (perpetual)

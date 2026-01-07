@@ -93,6 +93,17 @@ CREATE TABLE waivers (
     FOREIGN KEY(evidence_id) REFERENCES evidence(id)
 );
 
+CREATE TABLE predictions (
+    id TEXT PRIMARY KEY,
+    holon_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    covered INTEGER DEFAULT 0,
+    covered_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(holon_id) REFERENCES holons(id),
+    FOREIGN KEY(covered_by) REFERENCES evidence(id)
+);
+
 CREATE TABLE fpf_state (
     context_id TEXT PRIMARY KEY,
     active_role TEXT,

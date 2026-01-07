@@ -79,6 +79,26 @@ func (q *Queries) AddEvidence(ctx context.Context, db DBTX, arg AddEvidenceParam
 	return err
 }
 
+const addPrediction = `-- name: AddPrediction :exec
+
+INSERT INTO predictions (id, holon_id, content)
+VALUES (?, ?, ?)
+`
+
+type AddPredictionParams struct {
+	ID      string
+	HolonID string
+	Content string
+}
+
+// ============================================
+// PREDICTIONS QUERIES (v5.1.0)
+// ============================================
+func (q *Queries) AddPrediction(ctx context.Context, db DBTX, arg AddPredictionParams) error {
+	_, err := db.ExecContext(ctx, addPrediction, arg.ID, arg.HolonID, arg.Content)
+	return err
+}
+
 const addRelation = `-- name: AddRelation :exec
 
 INSERT INTO relations (source_id, target_id, relation_type, created_at)
@@ -274,6 +294,19 @@ SELECT COUNT(*) as count FROM active_holons WHERE needs_reverification = 1
 
 func (q *Queries) CountHolonsNeedingReverification(ctx context.Context, db DBTX) (int64, error) {
 	row := db.QueryRowContext(ctx, countHolonsNeedingReverification)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUncoveredPredictions = `-- name: CountUncoveredPredictions :one
+SELECT COUNT(*) as count
+FROM predictions
+WHERE holon_id = ? AND covered = 0
+`
+
+func (q *Queries) CountUncoveredPredictions(ctx context.Context, db DBTX, holonID string) (int64, error) {
+	row := db.QueryRowContext(ctx, countUncoveredPredictions, holonID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1331,6 +1364,42 @@ func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextI
 	return i, err
 }
 
+const getPredictionsByHolon = `-- name: GetPredictionsByHolon :many
+SELECT id, holon_id, content, covered, covered_by, created_at
+FROM predictions
+WHERE holon_id = ?
+`
+
+func (q *Queries) GetPredictionsByHolon(ctx context.Context, db DBTX, holonID string) ([]Prediction, error) {
+	rows, err := db.QueryContext(ctx, getPredictionsByHolon, holonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Prediction
+	for rows.Next() {
+		var i Prediction
+		if err := rows.Scan(
+			&i.ID,
+			&i.HolonID,
+			&i.Content,
+			&i.Covered,
+			&i.CoveredBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRecentAuditLog = `-- name: GetRecentAuditLog :many
 SELECT id, timestamp, tool_name, operation, actor, target_id, input_hash, result, details, context_id FROM audit_log ORDER BY timestamp DESC LIMIT ?
 `
@@ -1392,6 +1461,47 @@ func (q *Queries) GetRelationsByTarget(ctx context.Context, db DBTX, arg GetRela
 			&i.TargetID,
 			&i.RelationType,
 			&i.CongruenceLevel,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUncoveredPredictions = `-- name: GetUncoveredPredictions :many
+SELECT id, holon_id, content, created_at
+FROM predictions
+WHERE holon_id = ? AND covered = 0
+`
+
+type GetUncoveredPredictionsRow struct {
+	ID        string
+	HolonID   string
+	Content   string
+	CreatedAt sql.NullTime
+}
+
+func (q *Queries) GetUncoveredPredictions(ctx context.Context, db DBTX, holonID string) ([]GetUncoveredPredictionsRow, error) {
+	rows, err := db.QueryContext(ctx, getUncoveredPredictions, holonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUncoveredPredictionsRow
+	for rows.Next() {
+		var i GetUncoveredPredictionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.HolonID,
+			&i.Content,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1568,6 +1678,22 @@ type MarkHolonNeedsReverificationParams struct {
 // DRR affected_scope tracking uses carrier_ref for implementation warnings.
 func (q *Queries) MarkHolonNeedsReverification(ctx context.Context, db DBTX, arg MarkHolonNeedsReverificationParams) error {
 	_, err := db.ExecContext(ctx, markHolonNeedsReverification, arg.ReverificationReason, arg.ID)
+	return err
+}
+
+const markPredictionCovered = `-- name: MarkPredictionCovered :exec
+UPDATE predictions
+SET covered = 1, covered_by = ?
+WHERE id = ?
+`
+
+type MarkPredictionCoveredParams struct {
+	CoveredBy sql.NullString
+	ID        string
+}
+
+func (q *Queries) MarkPredictionCovered(ctx context.Context, db DBTX, arg MarkPredictionCoveredParams) error {
+	_, err := db.ExecContext(ctx, markPredictionCovered, arg.CoveredBy, arg.ID)
 	return err
 }
 

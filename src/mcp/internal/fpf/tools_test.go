@@ -465,7 +465,8 @@ func TestVerifyHypothesis(t *testing.T) {
 	passJSON := `{
 		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type is correct"},
 		"constraint_check": {"verdict": "PASS", "evidence": ["constraint-ref"], "reasoning": "Constraints satisfied"},
-		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"}
+		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"},
+		"predictions": ["Test prediction one", "Test prediction two"]
 	}`
 	msg, err := tools.VerifyHypothesis(hypoID, passJSON, "PASS", "")
 	if err != nil {
@@ -551,9 +552,15 @@ func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 		},
 		{
 			name:        "invalid overall_verdict",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "predictions": ["P1"]}`,
 			verdict:     "UNKNOWN",
 			errContains: "overall_verdict must be PASS or FAIL",
+		},
+		{
+			name:        "missing predictions for PASS",
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "predictions": []}`,
+			verdict:     "PASS",
+			errContains: "L1 requires at least one testable prediction",
 		},
 	}
 
@@ -612,6 +619,65 @@ func TestValidateHypothesis(t *testing.T) {
 	}
 	if !strings.Contains(msg, "VALIDATION FAILED") {
 		t.Errorf("Expected message to contain 'VALIDATION FAILED', got %q", msg)
+	}
+}
+
+func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	hypoID := "test-predict-coverage"
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Prediction Coverage", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon in DB: %v", err)
+	}
+
+	if err := tools.DB.AddPrediction(ctx, hypoID+"-pred-1", hypoID, "Prediction one"); err != nil {
+		t.Fatalf("Failed to add prediction: %v", err)
+	}
+	if err := tools.DB.AddPrediction(ctx, hypoID+"-pred-2", hypoID, "Prediction two"); err != nil {
+		t.Fatalf("Failed to add prediction: %v", err)
+	}
+
+	resultNoP2 := `{
+		"observations": [
+			{"description": "Observed P1 works", "evidence": ["test.log"], "supports": true, "tests_prediction": "P1"}
+		],
+		"overall_verdict": "PASS",
+		"reasoning": "P1 validated but P2 not covered"
+	}`
+	_, err := tools.ValidateHypothesis(hypoID, "internal", resultNoP2, "PASS", "")
+	if err == nil {
+		t.Error("Expected error for uncovered prediction, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "uncovered predictions") {
+		t.Errorf("Expected 'uncovered predictions' error, got: %v", err)
+	}
+
+	resultBothCovered := `{
+		"observations": [
+			{"description": "Observed P1 works", "evidence": ["test.log"], "supports": true, "tests_prediction": "P1"},
+			{"description": "Observed P2 works", "evidence": ["test2.log"], "supports": true, "tests_prediction": "P2"}
+		],
+		"overall_verdict": "PASS",
+		"reasoning": "Both predictions validated"
+	}`
+	hypoID2 := "test-predict-all-covered"
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "All Covered", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+	if err := tools.DB.AddPrediction(ctx, hypoID2+"-pred-1", hypoID2, "Prediction one"); err != nil {
+		t.Fatalf("Failed to add prediction: %v", err)
+	}
+	if err := tools.DB.AddPrediction(ctx, hypoID2+"-pred-2", hypoID2, "Prediction two"); err != nil {
+		t.Fatalf("Failed to add prediction: %v", err)
+	}
+
+	msg, err := tools.ValidateHypothesis(hypoID2, "internal", resultBothCovered, "PASS", "")
+	if err != nil {
+		t.Errorf("Expected success when all predictions covered, got: %v", err)
+	}
+	if !strings.Contains(msg, "validated (L2)") {
+		t.Errorf("Expected 'validated (L2)', got: %q", msg)
 	}
 }
 

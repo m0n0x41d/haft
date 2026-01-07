@@ -174,6 +174,26 @@ var migrations = []struct {
 		description: "Decision Contexts: add context_status to holons and update active_holons view",
 		sql:         "", // Applied as individual statements below (migration8Statements)
 	},
+	{
+		version:     9,
+		description: "Predictions tracking: add predictions table for L1-L2 enforcement",
+		sql:         "", // Applied as individual statements below (migration9Statements)
+	},
+}
+
+var migration9Statements = []string{
+	`CREATE TABLE IF NOT EXISTS predictions (
+		id TEXT PRIMARY KEY,
+		holon_id TEXT NOT NULL,
+		content TEXT NOT NULL,
+		covered INTEGER DEFAULT 0,
+		covered_by TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(holon_id) REFERENCES holons(id),
+		FOREIGN KEY(covered_by) REFERENCES evidence(id)
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_predictions_holon ON predictions(holon_id)",
+	"CREATE INDEX IF NOT EXISTS idx_predictions_uncovered ON predictions(holon_id) WHERE covered = 0",
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
@@ -259,6 +279,15 @@ func RunMigrations(conn *sql.DB) error {
 			for _, stmt := range migration8Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 9 {
+			// Special handling for migration 9 (Predictions)
+			for _, stmt := range migration9Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
 					}
 				}

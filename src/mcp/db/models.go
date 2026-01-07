@@ -98,6 +98,15 @@ type Holon struct {
 	UpdatedAt            sql.NullTime
 }
 
+type Prediction struct {
+	ID        string
+	HolonID   string
+	Content   string
+	Covered   sql.NullInt64
+	CoveredBy sql.NullString
+	CreatedAt sql.NullTime
+}
+
 type Relation struct {
 	SourceID        string
 	TargetID        string

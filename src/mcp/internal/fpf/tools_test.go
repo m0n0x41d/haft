@@ -294,7 +294,7 @@ func TestFinalizeDecision(t *testing.T) {
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics", "")
+	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics", "", true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 	}
 
 	// Try to create a new DRR with the hypothesis - should be BLOCKED
-	_, err := tools.FinalizeDecision("New Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	_, err := tools.FinalizeDecision("New Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err == nil {
 		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
 	}
@@ -404,7 +404,7 @@ func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
 	}
 
 	// Try to create a new DRR with the same hypothesis - should be BLOCKED
-	_, err := tools.FinalizeDecision("Another Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	_, err := tools.FinalizeDecision("Another Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err == nil {
 		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
 	}
@@ -446,7 +446,7 @@ func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
 	}
 
 	// Now creating a new DRR with the same hypothesis should succeed (no blocking)
-	_, err := tools.FinalizeDecision("New Decision After Resolution", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "")
+	_, err := tools.FinalizeDecision("New Decision After Resolution", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err != nil {
 		t.Fatalf("Expected FinalizeDecision to succeed for resolved DRR, got error: %v", err)
 	}
@@ -3031,7 +3031,7 @@ func TestFinalizeDecision_ClosesContext(t *testing.T) {
 		t.Fatalf("Failed to create memberOf relation: %v", err)
 	}
 
-	_, err = tools.FinalizeDecision("Close Context Test", "winner-hypo", nil, "Test", "Decision", "Rationale", "Consequences", "", "")
+	_, err = tools.FinalizeDecision("Close Context Test", "winner-hypo", nil, "Test", "Decision", "Rationale", "Consequences", "", "", true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -3044,6 +3044,70 @@ func TestFinalizeDecision_ClosesContext(t *testing.T) {
 	for _, c := range contexts {
 		if c.ID == "dc-finalize-close" {
 			t.Errorf("Closed context should not appear in active contexts")
+		}
+	}
+}
+
+func TestFinalizeDecision_CloseContextFalse_KeepsContextOpen(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID := "dc-multi-drr-test"
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Multi-DRR Test Context", "", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	hyp1ID := "hyp-multi-drr-1"
+	err = tools.DB.CreateHolon(ctx, hyp1ID, "hypothesis", "system", "L2", "First Improvement", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create first hypothesis: %v", err)
+	}
+	if err := tools.createRelation(ctx, hyp1ID, "memberOf", dcID, 3); err != nil {
+		t.Fatalf("Failed to create memberOf relation for hyp1: %v", err)
+	}
+
+	hyp2ID := "hyp-multi-drr-2"
+	err = tools.DB.CreateHolon(ctx, hyp2ID, "hypothesis", "system", "L2", "Second Improvement", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create second hypothesis: %v", err)
+	}
+	if err := tools.createRelation(ctx, hyp2ID, "memberOf", dcID, 3); err != nil {
+		t.Fatalf("Failed to create memberOf relation for hyp2: %v", err)
+	}
+
+	_, err = tools.FinalizeDecision("First DRR", hyp1ID, nil, "Test", "Decision 1", "Rationale 1", "Consequences 1", "", "", false)
+	if err != nil {
+		t.Fatalf("First FinalizeDecision with closeContext=false failed: %v", err)
+	}
+
+	contexts, err := tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed: %v", err)
+	}
+	found := false
+	for _, c := range contexts {
+		if c.ID == dcID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Context %s should still be active after closeContext=false", dcID)
+	}
+
+	_, err = tools.FinalizeDecision("Second DRR", hyp2ID, nil, "Test", "Decision 2", "Rationale 2", "Consequences 2", "", "", true)
+	if err != nil {
+		t.Fatalf("Second FinalizeDecision with closeContext=true failed: %v", err)
+	}
+
+	contexts, err = tools.GetActiveDecisionContexts(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveDecisionContexts failed after second DRR: %v", err)
+	}
+	for _, c := range contexts {
+		if c.ID == dcID {
+			t.Errorf("Context %s should be closed after closeContext=true", dcID)
 		}
 	}
 }
@@ -3230,7 +3294,7 @@ func TestFinalizeDecision_StoresAffectedHashes(t *testing.T) {
 	tools.createRelation(ctx, winnerID, "memberOf", dcID, 3)
 
 	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, testFile)
-	drrPath, err := tools.FinalizeDecision("Store Hash Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON)
+	drrPath, err := tools.FinalizeDecision("Store Hash Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -3280,7 +3344,7 @@ func TestFinalizeDecision_AffectedScopeWithClassRef(t *testing.T) {
 	// Use file:class format in affected_scope
 	scopeRef := "src/calculator.py:Calculator"
 	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, scopeRef)
-	drrPath, err := tools.FinalizeDecision("Class Ref Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON)
+	drrPath, err := tools.FinalizeDecision("Class Ref Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}

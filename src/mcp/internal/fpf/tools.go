@@ -38,10 +38,11 @@ type Tools struct {
 
 // Contract represents the implementation contract for a DRR
 type Contract struct {
-	Invariants         []string `json:"invariants,omitempty"`
-	AntiPatterns       []string `json:"anti_patterns,omitempty"`
-	AcceptanceCriteria []string `json:"acceptance_criteria,omitempty"`
-	AffectedScope      []string `json:"affected_scope,omitempty"`
+	Invariants         []string          `json:"invariants,omitempty"`
+	AntiPatterns       []string          `json:"anti_patterns,omitempty"`
+	AcceptanceCriteria []string          `json:"acceptance_criteria,omitempty"`
+	AffectedScope      []string          `json:"affected_scope,omitempty"`
+	AffectedHashes     map[string]string `json:"affected_hashes,omitempty"` // file -> hash at decision time
 }
 
 // CheckResult represents a single verification check with explicit verdict and evidence
@@ -345,23 +346,18 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	ctx := context.Background()
 
-	// v5.0.0: Every hypothesis must belong to a decision context
-	// If none provided, auto-create based on title
+	// decision_context is REQUIRED - must be created explicitly via quint_context first
 	if decisionContext == "" {
-		contextTitle := title // Use hypothesis title as context title
-		if scope != "" {
-			contextTitle = scope // Use scope if provided
-		}
-		dcID, err := t.GetOrCreateDecisionContext(contextTitle, scope)
-		if err != nil {
-			return "", fmt.Errorf("failed to ensure decision context: %w", err)
-		}
-		decisionContext = dcID
-	} else {
-		// Validate provided context exists
-		if _, err := t.DB.GetHolon(ctx, decisionContext); err != nil {
-			return "", fmt.Errorf("decision_context %q not found", decisionContext)
-		}
+		return "", fmt.Errorf("decision_context is required. Create one first with quint_context(title=\"Your Decision Title\")")
+	}
+
+	// Validate provided context exists AND is correct type
+	holon, err := t.DB.GetHolon(ctx, decisionContext)
+	if err != nil {
+		return "", fmt.Errorf("decision_context %q not found. Create it first with quint_context", decisionContext)
+	}
+	if holon.Type != "decision_context" {
+		return "", fmt.Errorf("%q is type %q, not decision_context. Use quint_context to create a proper context, then use the dc-* ID it returns", decisionContext, holon.Type)
 	}
 
 	slug := t.Slugify(title)
@@ -460,49 +456,54 @@ func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targ
 	return nil
 }
 
-// GetOrCreateDecisionContext ensures a decision context exists for a problem scope.
-// Returns the context ID. Creates one if none exists for this scope.
-func (t *Tools) GetOrCreateDecisionContext(title, scope string) (string, error) {
+// CreateContext explicitly creates a decision context for grouping hypotheses.
+// This is the only way to create a context (no auto-creation in propose).
+func (t *Tools) CreateContext(title, scope, description string) (string, error) {
+	defer t.RecordWork("CreateContext", time.Now())
+
 	if t.DB == nil {
 		return "", fmt.Errorf("database not initialized")
 	}
-	ctx := context.Background()
+	if title == "" {
+		return "", fmt.Errorf("title is required")
+	}
 
-	// Generate context ID from title
+	ctx := context.Background()
 	contextID := "dc-" + t.Slugify(title)
 
 	// Check if context already exists
-	_, err := t.DB.GetHolon(ctx, contextID)
-	if err == nil {
-		// Context exists, return it
-		return contextID, nil
+	if _, err := t.DB.GetHolon(ctx, contextID); err == nil {
+		return "", fmt.Errorf("decision context %q already exists. Use this ID in quint_propose or choose a different title", contextID)
 	}
 
 	// Check active context count (max 3)
-	var activeCount int
-	err = t.DB.GetRawDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM holons
-		 WHERE type = 'decision_context'
-		 AND id NOT IN (
-		     SELECT target_id FROM relations WHERE relation_type = 'closes'
-		 )`).Scan(&activeCount)
+	activeContexts, err := t.GetActiveDecisionContexts(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to count active contexts: %w", err)
+		return "", fmt.Errorf("failed to get active contexts: %w", err)
 	}
-	if activeCount >= 3 {
-		return "", fmt.Errorf("BLOCKED: maximum 3 active decision contexts allowed (have %d). Complete or abandon existing contexts first", activeCount)
+	if len(activeContexts) >= 3 {
+		var contextList strings.Builder
+		for _, c := range activeContexts {
+			contextList.WriteString(fmt.Sprintf("\n  - %s: %s", c.ID, c.Title))
+		}
+		return "", fmt.Errorf("BLOCKED: maximum 3 active decision contexts allowed (have %d).\n\nActive contexts:%s\n\n⚠️ USER ACTION REQUIRED: Ask user whether to:\n  1. Use an existing context (pass one of the dc-* IDs above to quint_propose)\n  2. Complete a context via /q5-decide\n  3. Abandon a context via /q-reset with context_id parameter", len(activeContexts), contextList.String())
 	}
 
-	// Create new decision context
-	content := fmt.Sprintf("# Decision Context: %s\n\nScope: %s\n\nHypotheses will be grouped under this context for decision-making.", title, scope)
+	// Build content
+	content := fmt.Sprintf("# Decision Context: %s\n\nScope: %s\n", title, scope)
+	if description != "" {
+		content += fmt.Sprintf("\n## Problem Statement\n\n%s\n", description)
+	}
+	content += "\nHypotheses will be grouped under this context for decision-making."
+
 	if err := t.DB.CreateHolon(ctx, contextID, "decision_context", "system", "L0", title, content, "default", scope, ""); err != nil {
 		return "", fmt.Errorf("failed to create decision context: %w", err)
 	}
 
-	t.AuditLog("quint_propose", "create_decision_context", "agent", contextID, "SUCCESS",
+	t.AuditLog("quint_context", "create_context", "agent", contextID, "SUCCESS",
 		map[string]string{"title": title, "scope": scope}, "")
 
-	return contextID, nil
+	return fmt.Sprintf("%s\n\n→ Use decision_context=\"%s\" in quint_propose to add hypotheses to this context.", contextID, contextID), nil
 }
 
 // GetActiveDecisionContexts returns all unclosed decision contexts with their stages.
@@ -684,13 +685,14 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		sourceID, relationType, targetID, targetID, newR, targetID, sourceID), nil
 }
 
-func (t *Tools) VerifyHypothesis(hypothesisID, verifyJSON, carrierFiles string) (string, error) {
+func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
 	var result VerifyResult
-	if err := json.Unmarshal([]byte(verifyJSON), &result); err != nil {
-		return "", fmt.Errorf("invalid verify_json: %w", err)
+	if err := json.Unmarshal([]byte(checksJSON), &result); err != nil {
+		return "", fmt.Errorf("invalid checks_json: %w", err)
 	}
+	result.OverallVerdict = verdict
 
 	if err := t.validateVerifyResult(result); err != nil {
 		return "", fmt.Errorf("incomplete justification: %w", err)
@@ -846,16 +848,11 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 	return ""
 }
 
-func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFiles string) (string, error) {
+func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("ValidateHypothesis", time.Now())
 
-	var result TestResult
-	if err := json.Unmarshal([]byte(testJSON), &result); err != nil {
-		return "", fmt.Errorf("invalid test_json: %w", err)
-	}
-
-	if err := t.validateTestResult(result); err != nil {
-		return "", fmt.Errorf("incomplete justification: %w", err)
+	if result == "" {
+		return "", fmt.Errorf("result is required")
 	}
 
 	carrierRef := carrierFiles
@@ -863,10 +860,15 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFile
 		carrierRef = "test-runner"
 	}
 
-	evidenceJSON, _ := json.MarshalIndent(result, "", "  ")
+	evidenceData := map[string]interface{}{
+		"test_type":       testType,
+		"result":          result,
+		"overall_verdict": verdict,
+	}
+	evidenceJSON, _ := json.MarshalIndent(evidenceData, "", "  ")
 	validUntil := computeValidUntil(testType)
 
-	switch strings.ToUpper(result.OverallVerdict) {
+	switch strings.ToUpper(verdict) {
 	case "PASS":
 		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
@@ -878,7 +880,6 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFile
 		var output strings.Builder
 		output.WriteString(fmt.Sprintf("✅ Hypothesis %s validated (L2)\n\n", hypothesisID))
 		output.WriteString(fmt.Sprintf("Test type: %s\n", testType))
-		output.WriteString(fmt.Sprintf("Observations: %d\n", len(result.Observations)))
 		return output.String(), nil
 
 	case "FAIL":
@@ -898,7 +899,7 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, testJSON, carrierFile
 		return output.String(), nil
 
 	default:
-		return "", fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", result.OverallVerdict)
+		return "", fmt.Errorf("overall_verdict must be PASS or FAIL, got: %s", verdict)
 	}
 }
 
@@ -952,6 +953,65 @@ func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	}
 
 	return "Audit recorded for " + hypothesisID, nil
+}
+
+// UnifiedAudit combines audit tree visualization, R_eff calculation, and optional risk recording.
+func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
+	defer t.RecordWork("UnifiedAudit", time.Now())
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	if holonID == "" {
+		return "", fmt.Errorf("holon_id is required")
+	}
+
+	var result strings.Builder
+
+	// 1. Calculate R_eff with detailed breakdown
+	calc := assurance.New(t.DB.GetRawDB())
+	report, err := calc.CalculateReliability(context.Background(), holonID)
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate reliability: %w", err)
+	}
+
+	result.WriteString(fmt.Sprintf("# Audit Report: %s\n\n", holonID))
+	result.WriteString(fmt.Sprintf("**R_eff: %.2f**\n", report.FinalScore))
+	result.WriteString(fmt.Sprintf("- Self Score: %.2f\n", report.SelfScore))
+	if report.WeakestLink != "" {
+		result.WriteString(fmt.Sprintf("- Weakest Link: %s\n", report.WeakestLink))
+	}
+	if report.DecayPenalty > 0 {
+		result.WriteString(fmt.Sprintf("- Decay Penalty: %.2f\n", report.DecayPenalty))
+	}
+	if len(report.Factors) > 0 {
+		result.WriteString("\n**Factors:**\n")
+		for _, f := range report.Factors {
+			result.WriteString(fmt.Sprintf("- %s\n", f))
+		}
+	}
+
+	// 2. Build audit tree
+	result.WriteString("\n## Assurance Tree\n\n```\n")
+	tree, err := t.buildAuditTree(holonID, 0, calc)
+	if err != nil {
+		result.WriteString(fmt.Sprintf("(Unable to build tree: %v)\n", err))
+	} else {
+		result.WriteString(tree)
+	}
+	result.WriteString("```\n")
+
+	// 3. If risks provided, record audit evidence
+	if risks != "" {
+		_, err := t.ManageEvidence("audit", "add", holonID, "audit_report", risks, "pass", "L2", "auditor", "")
+		if err != nil {
+			result.WriteString(fmt.Sprintf("\n⚠️ Failed to record audit: %v\n", err))
+		} else {
+			result.WriteString("\n✓ Audit evidence recorded\n")
+		}
+	}
+
+	return result.String(), nil
 }
 
 func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
@@ -1012,14 +1072,19 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 			if err == nil && holon.Layer == "L0" {
 				return "", fmt.Errorf("hypothesis %s is still in L0: run /q2-verify to promote it to L1 before testing", targetID)
 			}
-			moveErr = t.MoveHypothesis(targetID, "L1", "L2")
+			if err == nil && holon.Layer == "L1" {
+				moveErr = t.MoveHypothesis(targetID, "L1", "L2")
+			}
 		}
 	} else if normalizedVerdict == "fail" || normalizedVerdict == "refine" {
 		switch operation {
 		case "verification":
 			moveErr = t.MoveHypothesis(targetID, "L0", "invalid")
 		case "validation":
-			moveErr = t.MoveHypothesis(targetID, "L1", "invalid")
+			holon, err := t.DB.GetHolon(context.Background(), targetID)
+			if err == nil && holon.Layer == "L1" {
+				moveErr = t.MoveHypothesis(targetID, "L1", "invalid")
+			}
 		}
 	}
 
@@ -1092,12 +1157,27 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 		return "", fmt.Errorf("loopback not applicable from layer %s (must be L0 or L1)", sourceLayer)
 	}
 
+	// Get parent's decision context for the child
+	var decisionContext string
+	if t.DB != nil {
+		ctx := context.Background()
+		rawDB := t.DB.GetRawDB()
+		err := rawDB.QueryRowContext(ctx, `
+			SELECT target_id FROM relations
+			WHERE source_id = ? AND relation_type = 'memberOf'
+			LIMIT 1
+		`, parentID).Scan(&decisionContext)
+		if err != nil {
+			return "", fmt.Errorf("failed to get parent's decision context: parent %s has no decision context", parentID)
+		}
+	}
+
 	if err := t.MoveHypothesis(parentID, parentLevel, "invalid"); err != nil {
 		return "", fmt.Errorf("failed to move parent hypothesis to invalid: %v", err)
 	}
 
 	rationale := fmt.Sprintf(`{"source": "loopback", "parent_id": "%s", "insight": "%s"}`, parentID, insight)
-	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale, "", nil, 3)
+	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale, decisionContext, nil, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}
@@ -1118,6 +1198,30 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	if contractJSON != "" {
 		if err := json.Unmarshal([]byte(contractJSON), &contract); err != nil {
 			return "", fmt.Errorf("invalid contract JSON: %w", err)
+		}
+		// Compute hashes for affected_scope files at decision time
+		// affected_scope can contain file:class or file:method references, extract just the file path
+		if len(contract.AffectedScope) > 0 {
+			contract.AffectedHashes = make(map[string]string)
+			for _, scopeRef := range contract.AffectedScope {
+				scopeRef = strings.TrimSpace(scopeRef)
+				if scopeRef == "" {
+					continue
+				}
+				// Extract file path from "file:class" or "file:method" format
+				filePath := scopeRef
+				if colonIdx := strings.Index(scopeRef, ":"); colonIdx > 0 {
+					filePath = scopeRef[:colonIdx]
+				}
+				fullPath := filepath.Join(t.RootDir, filePath)
+				content, err := os.ReadFile(fullPath)
+				if err != nil {
+					contract.AffectedHashes[filePath] = "_missing_"
+					continue
+				}
+				hash := sha256.Sum256(content)
+				contract.AffectedHashes[filePath] = hex.EncodeToString(hash[:8])
+			}
 		}
 	}
 
@@ -1246,14 +1350,14 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 			}
 		}
 
-		// Close orphaned L0/L1 hypotheses in closed decision contexts
+		// Close all orphaned hypotheses (L0/L1/L2) in closed decision contexts
 		for dcID := range closedContexts {
 			rows, err := t.DB.GetRawDB().QueryContext(ctx, `
 				SELECT r.source_id FROM relations r
 				JOIN holons h ON h.id = r.source_id
 				WHERE r.target_id = ?
 				  AND r.relation_type = 'memberOf'
-				  AND h.layer IN ('L0', 'L1')
+				  AND h.layer IN ('L0', 'L1', 'L2')
 			`, dcID)
 			if err != nil {
 				logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to query orphaned hypotheses")
@@ -1267,7 +1371,7 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 				if err := t.createRelation(ctx, drrID, "closes", orphanID, 3); err != nil {
 					logger.Warn().Err(err).Str("orphan_id", orphanID).Msg("failed to close orphaned hypothesis")
 				} else {
-					logger.Info().Str("orphan_id", orphanID).Msg("closed orphaned L0/L1 hypothesis")
+					logger.Info().Str("orphan_id", orphanID).Msg("closed orphaned hypothesis")
 				}
 			}
 			rows.Close()
@@ -1738,6 +1842,8 @@ type InternalizeResult struct {
 	StaleEvidenceCount         int64
 	ArchivedStaleEvidenceCount int64 // Informational: stale evidence for archived holons
 	ReverificationCount        int64
+	// Affected Scope Warnings (v5.1.0)
+	AffectedScopeWarnings []AffectedScopeWarning
 }
 
 // DecisionContextSummary represents an active decision context
@@ -1766,21 +1872,28 @@ type DecayWarning struct {
 	DaysLeft   int
 }
 
+type AffectedScopeWarning struct {
+	DecisionID    string
+	DecisionTitle string
+	FilePath      string
+	ChangeType    string // "modified", "removed"
+	OldHash       string
+	NewHash       string
+}
+
 // Internalize is the unified entry point for FPF sessions.
 // It handles initialization, context updates, decay checking, and status in one call.
 func (t *Tools) Internalize() (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
 
-	// Context stage is now derived per-context, not stored globally
-	contextStage := t.FSM.GetContextStage("default")
-	description, nextAction := GetContextStageDescription(contextStage)
-
+	// v5.0.0: Phase is now derived from active decision contexts, not globally
+	// Initialize with defaults, will update after loading active contexts
 	result := InternalizeResult{
-		Phase:          string(contextStage),
-		SuggestedPhase: description,
+		Phase:          string(StageEmpty),
+		SuggestedPhase: "No hypotheses yet",
 		Role:           string(RoleObserver),
 		LayerCounts:    make(map[string]int),
-		NextAction:     nextAction,
+		NextAction:     "→ /q1-hypothesize to start reasoning",
 	}
 
 	if !t.IsInitialized() {
@@ -1918,21 +2031,80 @@ func (t *Tools) Internalize() (string, error) {
 		openDecisions, err := t.GetOpenDecisions(ctx)
 		if err == nil {
 			result.OpenDecisions = openDecisions
+			// v5.1.0: Check affected scope for open decisions
+			for _, d := range openDecisions {
+				warnings := t.checkDecisionAffectedScope(d.ID, d.Title)
+				result.AffectedScopeWarnings = append(result.AffectedScopeWarnings, warnings...)
+			}
 		}
 		resolvedDecisions, err := t.GetRecentResolvedDecisions(ctx, 5)
 		if err == nil {
 			result.ResolvedDecisions = resolvedDecisions
 		}
 
-		// v5.0.0: Get active decision contexts
+		// v5.0.0: Get active decision contexts and derive phase from them
 		activeContexts, err := t.GetActiveDecisionContexts(ctx)
 		if err == nil {
 			result.ActiveContexts = activeContexts
+			// Derive session phase from active contexts
+			if len(activeContexts) > 0 {
+				// Use the most advanced stage among active contexts
+				mostAdvancedStage := t.getMostAdvancedStage(activeContexts)
+				result.Phase = string(mostAdvancedStage)
+				result.SuggestedPhase, result.NextAction = GetContextStageDescription(mostAdvancedStage)
+			}
 		}
 	}
 
-	result.NextAction = t.getNextAction(contextStage, result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
+	// Fallback next action based on layer counts if no active contexts
+	if len(result.ActiveContexts) == 0 {
+		result.NextAction = t.getNextAction(StageEmpty, result.LayerCounts["L0"], result.LayerCounts["L1"], result.LayerCounts["L2"])
+	}
 	return t.formatInternalizeOutput(result), nil
+}
+
+func (t *Tools) checkDecisionAffectedScope(drrID, drrTitle string) []AffectedScopeWarning {
+	var warnings []AffectedScopeWarning
+
+	contract, err := t.getDRRContract(drrID)
+	if err != nil || contract == nil {
+		return warnings
+	}
+
+	if len(contract.AffectedHashes) == 0 {
+		return warnings
+	}
+
+	for file, oldHash := range contract.AffectedHashes {
+		if oldHash == "_missing_" {
+			continue
+		}
+		fullPath := filepath.Join(t.RootDir, file)
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			warnings = append(warnings, AffectedScopeWarning{
+				DecisionID:    drrID,
+				DecisionTitle: drrTitle,
+				FilePath:      file,
+				ChangeType:    "removed",
+				OldHash:       oldHash,
+			})
+			continue
+		}
+		hash := sha256.Sum256(content)
+		currentHash := hex.EncodeToString(hash[:8])
+		if currentHash != oldHash {
+			warnings = append(warnings, AffectedScopeWarning{
+				DecisionID:    drrID,
+				DecisionTitle: drrTitle,
+				FilePath:      file,
+				ChangeType:    "modified",
+				OldHash:       oldHash,
+				NewHash:       currentHash,
+			})
+		}
+	}
+	return warnings
 }
 
 func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
@@ -2002,10 +2174,16 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 	}
 
 	// Code Change Warnings (v5.0.0)
-	if r.StaleEvidenceCount > 0 || r.ReverificationCount > 0 {
+	// Exclude archived holons from active counts - they don't need action
+	activeStaleCount := r.StaleEvidenceCount - r.ArchivedStaleEvidenceCount
+	if activeStaleCount < 0 {
+		activeStaleCount = 0
+	}
+
+	if activeStaleCount > 0 || r.ReverificationCount > 0 {
 		sb.WriteString("🔴 CODE CHANGE IMPACTS:\n")
-		if r.StaleEvidenceCount > 0 {
-			sb.WriteString(fmt.Sprintf("  - %d evidence records marked stale\n", r.StaleEvidenceCount))
+		if activeStaleCount > 0 {
+			sb.WriteString(fmt.Sprintf("  - %d evidence records marked stale\n", activeStaleCount))
 		}
 		if r.ReverificationCount > 0 {
 			sb.WriteString(fmt.Sprintf("  - %d holons need re-verification\n", r.ReverificationCount))
@@ -2033,6 +2211,29 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 
 	if r.ArchivedStaleEvidenceCount > 0 {
 		sb.WriteString(fmt.Sprintf("ℹ Archived holons: %d stale evidence records (no action needed)\n\n", r.ArchivedStaleEvidenceCount))
+	}
+
+	if len(r.AffectedScopeWarnings) > 0 {
+		sb.WriteString("🔴 AFFECTED SCOPE CHANGED:\n")
+		grouped := make(map[string][]AffectedScopeWarning)
+		for _, w := range r.AffectedScopeWarnings {
+			grouped[w.DecisionID] = append(grouped[w.DecisionID], w)
+		}
+		for drrID, warnings := range grouped {
+			title := warnings[0].DecisionTitle
+			sb.WriteString(fmt.Sprintf("  %s (%s):\n", drrID, title))
+			for _, w := range warnings {
+				if w.ChangeType == "removed" {
+					sb.WriteString(fmt.Sprintf("    - %s: file removed\n", w.FilePath))
+				} else {
+					sb.WriteString(fmt.Sprintf("    - %s: modified (was %s, now %s)\n", w.FilePath, w.OldHash, w.NewHash))
+				}
+			}
+		}
+		sb.WriteString("  → Check changes with 'git diff', then either:\n")
+		sb.WriteString("    • /q-implement — if changes don't invalidate decision, proceed with implementation\n")
+		sb.WriteString("    • /q-resolve abandoned — if changes make decision obsolete\n")
+		sb.WriteString("    • /q1-hypothesize — start fresh if requirements changed\n\n")
 	}
 
 	if len(r.OpenDecisions) > 0 {
@@ -2316,7 +2517,14 @@ func filterByAffectedScope(results []db.SearchResult, affectedScopeFilter string
 
 // GetStatus returns the current FPF status with enhanced output for agent parsing.
 func (t *Tools) GetStatus() (string, error) {
-	stage := t.FSM.GetContextStage("default")
+	// v5.0.0: Derive stage from active decision contexts
+	stage := StageEmpty
+	if t.DB != nil {
+		ctx := context.Background()
+		if activeContexts, err := t.GetActiveDecisionContexts(ctx); err == nil && len(activeContexts) > 0 {
+			stage = t.getMostAdvancedStage(activeContexts)
+		}
+	}
 
 	var sb strings.Builder
 
@@ -2379,6 +2587,26 @@ func (t *Tools) countDRRs() int {
 	return count
 }
 
+// getMostAdvancedStage returns the most advanced stage among active contexts.
+// Stage progression: EMPTY < NEEDS_VERIFY < NEEDS_VALIDATION < NEEDS_AUDIT < READY_TO_DECIDE
+func (t *Tools) getMostAdvancedStage(contexts []DecisionContextSummary) ContextStage {
+	stagePriority := map[ContextStage]int{
+		StageEmpty:          0,
+		StageNeedsVerify:    1,
+		StageNeedsValidation: 2,
+		StageNeedsAudit:     3,
+		StageReadyToDecide:  4,
+	}
+
+	maxStage := StageEmpty
+	for _, c := range contexts {
+		if stagePriority[c.Stage] > stagePriority[maxStage] {
+			maxStage = c.Stage
+		}
+	}
+	return maxStage
+}
+
 // getNextAction returns guidance for the next step based on context stage.
 func (t *Tools) getNextAction(stage ContextStage, l0, l1, l2 int) string {
 	switch stage {
@@ -2432,11 +2660,18 @@ type DecisionSummary struct {
 func (t *Tools) getDRRContract(decisionID string) (*Contract, error) {
 	decisionsDir := filepath.Join(t.GetFPFDir(), "decisions")
 
-	// Find DRR file by pattern: DRR-*-{decisionID}.md
-	pattern := filepath.Join(decisionsDir, fmt.Sprintf("DRR-*-%s.md", decisionID))
+	normalizedID := decisionID
+	if strings.HasPrefix(decisionID, "DRR-") {
+		parts := strings.SplitN(decisionID, "-", 5)
+		if len(parts) == 5 {
+			normalizedID = parts[4]
+		}
+	}
+
+	pattern := filepath.Join(decisionsDir, fmt.Sprintf("DRR-*-%s.md", normalizedID))
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
-		return nil, nil // No DRR file found, not an error
+		return nil, nil
 	}
 
 	// Read the file
@@ -2997,19 +3232,62 @@ func (t *Tools) Implement(drrID string) (string, error) {
 		return "", fmt.Errorf("DRR %s has no implementation contract - nothing to implement", drrID)
 	}
 
+	// Check if affected_scope files changed since decision (v5.1.0)
+	var affectedScopeWarnings []string
+	if drr.Contract.AffectedHashes != nil && len(drr.Contract.AffectedHashes) > 0 {
+		for file, oldHash := range drr.Contract.AffectedHashes {
+			fullPath := filepath.Join(t.RootDir, file)
+			content, err := os.ReadFile(fullPath)
+			if err != nil {
+				if oldHash != "_missing_" {
+					affectedScopeWarnings = append(affectedScopeWarnings,
+						fmt.Sprintf("⚠️ %s: file removed since decision", file))
+				}
+				continue
+			}
+			hash := sha256.Sum256(content)
+			currentHash := hex.EncodeToString(hash[:8])
+			if currentHash != oldHash {
+				affectedScopeWarnings = append(affectedScopeWarnings,
+					fmt.Sprintf("⚠️ %s: content changed since decision (was %s, now %s)", file, oldHash, currentHash))
+			}
+		}
+	}
+
 	// Collect inherited constraints from dependency chain
 	inherited := t.collectInheritedConstraints(drr.DependsOn, make(map[string]bool))
 
 	// Collect warnings about stale evidence (v5.0.0)
-	warnings := t.collectImplementationWarnings(ctx, normalizedID, drr.DependsOn)
+	// Include winner hypothesis in checks - evidence is attached to winner, not DRR
+	dependsOnWithWinner := drr.DependsOn
+	if drr.WinnerID != "" {
+		dependsOnWithWinner = append([]string{drr.WinnerID}, dependsOnWithWinner...)
+	}
+	warnings := t.collectImplementationWarnings(ctx, normalizedID, dependsOnWithWinner)
 	warningsText := t.formatImplementationWarnings(warnings)
+
+	// Add affected_scope warnings (v5.1.0)
+	var allWarnings strings.Builder
+	if len(affectedScopeWarnings) > 0 {
+		allWarnings.WriteString("# ⚠️ AFFECTED SCOPE CHANGED\n\n")
+		allWarnings.WriteString("The following files changed since this decision was made:\n\n")
+		for _, w := range affectedScopeWarnings {
+			allWarnings.WriteString(fmt.Sprintf("  %s\n", w))
+		}
+		allWarnings.WriteString("\n**Action required:** Re-verify the decision is still valid before implementing.\n")
+		allWarnings.WriteString("Run `/q2-verify` on the winning hypothesis or create a new decision.\n\n")
+	}
+	if warningsText != "" {
+		allWarnings.WriteString(warningsText)
+		allWarnings.WriteString("\n")
+	}
 
 	// Format the implementation directive
 	directive := t.formatImplementDirective(drr, inherited)
 
 	// Prepend warnings if any exist
-	if warningsText != "" {
-		return warningsText + "\n" + directive, nil
+	if allWarnings.Len() > 0 {
+		return allWarnings.String() + "\n" + directive, nil
 	}
 	return directive, nil
 }
@@ -3541,7 +3819,11 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 	}
 
 	// Default: end session without abandoning contexts
-	currentStage := t.FSM.GetContextStage("default")
+	// v5.0.0: Derive stage from active contexts
+	currentStage := StageEmpty
+	if activeContexts, err := t.GetActiveDecisionContexts(ctx); err == nil && len(activeContexts) > 0 {
+		currentStage = t.getMostAdvancedStage(activeContexts)
+	}
 
 	sb.WriteString(fmt.Sprintf("Stage at reset: %s\n", currentStage))
 	sb.WriteString(fmt.Sprintf("L0: %d, L1: %d, L2: %d, DRR: %d\n",

@@ -78,6 +78,38 @@ Finalizes the decision and creates the DRR.
 -   **rationale**: "It had the highest R_eff and best fit for constraints..."
 -   **consequences**: "We need to provision Redis. Latency will drop."
 -   **characteristics**: Optional C.16 scores.
+-   **close_context**: (Optional, default: true) Whether to close the decision context after creating the DRR. Set to `false` when creating multiple independent DRRs from the same assessment session.
+
+## Multi-DRR Contexts
+
+When evaluating multiple **independent** improvements from a single assessment (not competing alternatives), use `close_context=false` to keep the context open:
+
+```
+[Call quint_decide(
+    title="First Improvement",
+    winner_id="improvement-1",
+    close_context=false,  // Keep context open
+    ...
+)]
+→ DRR created, context remains open
+
+[Call quint_decide(
+    title="Second Improvement",
+    winner_id="improvement-2",
+    close_context=true,   // Close after last DRR (or omit for default)
+    ...
+)]
+→ DRR created, context now closed
+```
+
+**When to use `close_context=false`:**
+- Dogfooding assessments producing multiple unrelated fixes
+- Architecture reviews with independent recommendations
+- Any situation where hypotheses are parallel improvements, not competing alternatives
+
+**When to use default (`close_context=true`):**
+- Standard decision between competing alternatives (pick one winner)
+- Single DRR per decision context (most common case)
 
 ## Example: Success Path
 

@@ -2,6 +2,8 @@ package fpf
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/m0n0x41d/quint-code/db"
 )
+
+func (t *Tools) computeFileHash(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "_missing_"
+	}
+	hash := sha256.Sum256(content)
+	return hex.EncodeToString(hash[:8])
+}
 
 // Helper to create a dummy Tools instance for testing
 func setupTools(t *testing.T) (*Tools, *FSM, string) {
@@ -98,13 +109,20 @@ func TestProposeHypothesis(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required since v5.0.0)
+	dcID := "dc-test-context"
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Context", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	title := "My First Hypothesis"
 	content := "This is the content of my hypothesis."
 	scope := "global"
 	kind := "system"
 	rationale := "This is the rationale."
 
-	holonID, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, "", nil, 3)
+	holonID, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, dcID, nil, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -206,10 +224,21 @@ func TestRefineLoopback(t *testing.T) {
 	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required for parent hypothesis)
+	dcID := "dc-refine-test"
+	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Refine Test", "Content", "default", "", ""); err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	// v5.0.0: hypotheses are DB-only
 	parentID := "parent-hypo"
 	if err := tools.DB.CreateHolon(ctx, parentID, "hypothesis", "system", "L1", "Parent Hypothesis", "Content", "default", "", ""); err != nil {
 		t.Fatalf("Failed to create parent holon in DB: %v", err)
+	}
+
+	// Link parent to decision context
+	if err := tools.DB.CreateRelation(ctx, parentID, "memberOf", dcID, 3); err != nil {
+		t.Fatalf("Failed to link parent to decision context: %v", err)
 	}
 
 	insight := "New insight from failure"
@@ -436,10 +465,9 @@ func TestVerifyHypothesis(t *testing.T) {
 	passJSON := `{
 		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type is correct"},
 		"constraint_check": {"verdict": "PASS", "evidence": ["constraint-ref"], "reasoning": "Constraints satisfied"},
-		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"},
-		"overall_verdict": "PASS"
+		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"}
 	}`
-	msg, err := tools.VerifyHypothesis(hypoID, passJSON, "")
+	msg, err := tools.VerifyHypothesis(hypoID, passJSON, "PASS", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
@@ -463,10 +491,9 @@ func TestVerifyHypothesis(t *testing.T) {
 	failJSON := `{
 		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type ok"},
 		"constraint_check": {"verdict": "FAIL", "evidence": ["constraint-ref"], "reasoning": "Constraint violated"},
-		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic ok"},
-		"overall_verdict": "FAIL"
+		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic ok"}
 	}`
-	msg, err = tools.VerifyHypothesis(hypoID2, failJSON, "")
+	msg, err = tools.VerifyHypothesis(hypoID2, failJSON, "FAIL", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
 	}
@@ -489,48 +516,50 @@ func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name        string
 		json        string
+		verdict     string
 		errContains string
 	}{
 		{
 			name:        "invalid JSON",
 			json:        `{not valid json}`,
-			errContains: "invalid verify_json",
+			verdict:     "PASS",
+			errContains: "invalid checks_json",
 		},
 		{
 			name:        "missing type_check verdict",
-			json:        `{"type_check": {"evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			json:        `{"type_check": {"evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			verdict:     "PASS",
 			errContains: "type_check: missing verdict",
 		},
 		{
 			name:        "invalid verdict value",
-			json:        `{"type_check": {"verdict": "MAYBE", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			json:        `{"type_check": {"verdict": "MAYBE", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			verdict:     "PASS",
 			errContains: "type_check: verdict must be PASS or FAIL",
 		},
 		{
 			name:        "missing evidence",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": [], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			json:        `{"type_check": {"verdict": "PASS", "evidence": [], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			verdict:     "PASS",
 			errContains: "type_check: verdict requires at least one evidence reference",
 		},
 		{
 			name:        "missing reasoning",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": ""}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "PASS"}`,
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": ""}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			verdict:     "PASS",
 			errContains: "type_check: missing reasoning",
 		},
 		{
-			name:        "missing overall_verdict",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
-			errContains: "missing overall_verdict",
-		},
-		{
 			name:        "invalid overall_verdict",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "overall_verdict": "UNKNOWN"}`,
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
+			verdict:     "UNKNOWN",
 			errContains: "overall_verdict must be PASS or FAIL",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tools.VerifyHypothesis("any-id", tt.json, "")
+			_, err := tools.VerifyHypothesis("any-id", tt.json, tt.verdict, "")
 			if err == nil {
 				t.Errorf("Expected error containing %q, got nil", tt.errContains)
 				return
@@ -558,14 +587,8 @@ func TestValidateHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create L1 hypothesis file: %v", err)
 	}
 
-	passJSON := `{
-		"observations": [
-			{"description": "Test passed", "evidence": ["test output: OK"], "supports": true}
-		],
-		"overall_verdict": "PASS",
-		"reasoning": "All tests passed successfully"
-	}`
-	msg, err := tools.ValidateHypothesis(hypoID, "internal", passJSON, "")
+	passResult := "All tests passed successfully - test output: OK"
+	msg, err := tools.ValidateHypothesis(hypoID, "internal", passResult, "PASS", "")
 	if err != nil {
 		t.Errorf("ValidateHypothesis(PASS) failed: %v", err)
 	}
@@ -582,14 +605,8 @@ func TestValidateHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create L1 hypothesis file: %v", err)
 	}
 
-	failJSON := `{
-		"observations": [
-			{"description": "Test failed with error", "evidence": ["error: connection refused"], "supports": false}
-		],
-		"overall_verdict": "FAIL",
-		"reasoning": "Integration test failed due to connectivity issues"
-	}`
-	msg, err = tools.ValidateHypothesis(hypoID2, "internal", failJSON, "")
+	failResult := "Integration test failed due to connectivity issues - error: connection refused"
+	msg, err = tools.ValidateHypothesis(hypoID2, "internal", failResult, "FAIL", "")
 	if err != nil {
 		t.Errorf("ValidateHypothesis(FAIL) failed: %v", err)
 	}
@@ -603,49 +620,27 @@ func TestValidateHypothesis_ValidationErrors(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		json        string
+		result      string
+		verdict     string
 		errContains string
 	}{
 		{
-			name:        "invalid JSON",
-			json:        `{not valid}`,
-			errContains: "invalid test_json",
-		},
-		{
-			name:        "no observations",
-			json:        `{"observations": [], "overall_verdict": "PASS", "reasoning": "why"}`,
-			errContains: "at least one observation is required",
-		},
-		{
-			name:        "missing observation description",
-			json:        `{"observations": [{"evidence": ["ref"], "supports": true}], "overall_verdict": "PASS", "reasoning": "why"}`,
-			errContains: "observation[0]: missing description",
-		},
-		{
-			name:        "missing observation evidence",
-			json:        `{"observations": [{"description": "desc", "evidence": [], "supports": true}], "overall_verdict": "PASS", "reasoning": "why"}`,
-			errContains: "observation[0]: requires at least one evidence reference",
-		},
-		{
-			name:        "missing overall_verdict",
-			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "reasoning": "why"}`,
-			errContains: "missing overall_verdict",
+			name:        "empty result",
+			result:      "",
+			verdict:     "PASS",
+			errContains: "result is required",
 		},
 		{
 			name:        "invalid overall_verdict",
-			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "overall_verdict": "MAYBE", "reasoning": "why"}`,
+			result:      "some test result",
+			verdict:     "MAYBE",
 			errContains: "overall_verdict must be PASS or FAIL",
-		},
-		{
-			name:        "missing reasoning",
-			json:        `{"observations": [{"description": "desc", "evidence": ["ref"], "supports": true}], "overall_verdict": "PASS"}`,
-			errContains: "missing reasoning",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tools.ValidateHypothesis("any-id", "internal", tt.json, "")
+			_, err := tools.ValidateHypothesis("any-id", "internal", tt.result, tt.verdict, "")
 			if err == nil {
 				t.Errorf("Expected error containing %q, got nil", tt.errContains)
 				return
@@ -983,12 +978,86 @@ func TestVisualizeAudit(t *testing.T) {
 	}
 }
 
+func TestUnifiedAudit_Basic(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon
+	err := tools.DB.CreateHolon(ctx, "unified-audit-test", "hypothesis", "system", "L2", "Unified Audit Test", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Add evidence
+	err = tools.DB.AddEvidence(ctx, "e-unified", "unified-audit-test", "test", "Test result", "pass", "L2", "test-runner", "", "", "2099-12-31")
+	if err != nil {
+		t.Fatalf("Failed to add evidence: %v", err)
+	}
+
+	// Run unified audit without risks
+	result, err := tools.UnifiedAudit("unified-audit-test", "")
+	if err != nil {
+		t.Fatalf("UnifiedAudit failed: %v", err)
+	}
+
+	// Should contain R_eff header
+	if !strings.Contains(result, "R_eff:") {
+		t.Errorf("Expected 'R_eff:' in output, got: %s", result)
+	}
+	// Should contain audit tree
+	if !strings.Contains(result, "Assurance Tree") {
+		t.Errorf("Expected 'Assurance Tree' in output, got: %s", result)
+	}
+	// Should NOT contain audit recorded message (no risks provided)
+	if strings.Contains(result, "Audit evidence recorded") {
+		t.Errorf("Should not have recorded audit when no risks provided")
+	}
+}
+
+func TestUnifiedAudit_WithRisks(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a holon
+	err := tools.DB.CreateHolon(ctx, "unified-audit-risks", "hypothesis", "system", "L2", "Unified Audit Risks", "Content", "ctx", "global", "")
+	if err != nil {
+		t.Fatalf("Failed to create holon: %v", err)
+	}
+
+	// Run unified audit with risks
+	result, err := tools.UnifiedAudit("unified-audit-risks", "Risk: dependency might fail under high load")
+	if err != nil {
+		t.Fatalf("UnifiedAudit failed: %v", err)
+	}
+
+	// Should contain audit recorded message
+	if !strings.Contains(result, "Audit evidence recorded") {
+		t.Errorf("Expected 'Audit evidence recorded' in output, got: %s", result)
+	}
+
+	// Verify evidence was actually recorded
+	ev, err := tools.DB.GetEvidence(ctx, "unified-audit-risks")
+	if err != nil {
+		t.Fatalf("Failed to get evidence: %v", err)
+	}
+	found := false
+	for _, e := range ev {
+		if e.Type == "audit_report" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected audit_report evidence to be recorded")
+	}
+}
+
 func TestPropose_WithDecisionContext(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	// First create a decision context holon
-	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
+	// First create a decision context holon (must be type "decision_context")
+	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision_context", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -1029,8 +1098,14 @@ func TestPropose_WithDependsOn(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	// Create dependency holons first
-	err := tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-api-gateway", "decision_context", "system", "L0", "API Gateway Decision", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	// Create dependency holons
+	err = tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create auth-module: %v", err)
 	}
@@ -1046,7 +1121,7 @@ func TestPropose_WithDependsOn(t *testing.T) {
 		"external traffic",
 		"system",
 		`{"anomaly": "need unified entry point"}`,
-		"",                                      // no decision_context
+		"dc-api-gateway",                        // decision_context required
 		[]string{"auth-module", "rate-limiter"}, // depends_on
 		3,                                       // CL3
 	)
@@ -1074,14 +1149,20 @@ func TestPropose_CycleDetection(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-cycle-test", "decision_context", "system", "L0", "Cycle Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	// Create holon A
-	err := tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon-a: %v", err)
 	}
 
 	// Create holon B that depends on A
-	_, err = tools.ProposeHypothesis("Holon B", "B depends on A", "global", "system", "{}", "", []string{"holon-a"}, 3)
+	_, err = tools.ProposeHypothesis("Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for B failed: %v", err)
 	}
@@ -1095,7 +1176,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 
 	// Try to make A depend on B (would create cycle since B already depends on A)
 	// This should be skipped with a warning, not error
-	_, err = tools.ProposeHypothesis("Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "", []string{"holon-b"}, 3)
+	_, err = tools.ProposeHypothesis("Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3)
 	// Should NOT error - cycles are skipped with warning
 	if err != nil {
 		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
@@ -1122,15 +1203,22 @@ func TestPropose_CycleDetection(t *testing.T) {
 
 func TestPropose_InvalidDependency(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-invalid-dep", "decision_context", "system", "L0", "Invalid Dep Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
 
 	// Propose hypothesis with non-existent dependency
-	_, err := tools.ProposeHypothesis(
+	_, err = tools.ProposeHypothesis(
 		"Orphan Hypo",
 		"Depends on non-existent holon",
 		"global",
 		"system",
 		"{}",
-		"",
+		"dc-invalid-dep",
 		[]string{"does-not-exist", "also-missing"}, // These don't exist
 		3,
 	)
@@ -1142,7 +1230,6 @@ func TestPropose_InvalidDependency(t *testing.T) {
 	// Verify no relations were created
 	rawDB := tools.DB.GetRawDB()
 	var count int
-	ctx := context.Background()
 	err = rawDB.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM relations
 		WHERE target_id = 'orphan-hypo'
@@ -1159,20 +1246,26 @@ func TestPropose_KindDeterminesRelation(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-kind-test", "decision_context", "system", "L0", "Kind Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	// Create a dependency holon
-	err := tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create base-claim: %v", err)
 	}
 
 	// Propose system hypothesis - should create componentOf
-	_, err = tools.ProposeHypothesis("System Hypo", "A system thing", "global", "system", "{}", "", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis("System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for system failed: %v", err)
 	}
 
 	// Propose episteme hypothesis - should create constituentOf
-	_, err = tools.ProposeHypothesis("Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis("Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
 	}
@@ -1213,7 +1306,8 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context with low R (failing evidence)
-	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
+	// v5.0.0: must use type "decision_context" for decision_context param validation
+	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision_context", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
 	if err != nil {
 		t.Fatalf("Failed to create bad-decision: %v", err)
 	}
@@ -2513,6 +2607,12 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-suggestions-test", "decision_context", "system", "L0", "Suggestions Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "DRR"), 0755)
 
@@ -2524,7 +2624,7 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 		"Implement rate limiting that stores counters in Redis",
 		"src/api/*", "system",
 		`{"anomaly": "API abuse", "approach": "Token bucket"}`,
-		"", nil, 3,
+		"dc-suggestions-test", nil, 3,
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2548,6 +2648,12 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 	tools, _, tempDir := setupTools(t)
 	ctx := context.Background()
 
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-no-suggestions", "decision_context", "system", "L0", "No Suggestions Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
 
 	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
@@ -2558,7 +2664,7 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 		"Implement rate limiting with Redis",
 		"src/api/*", "system",
 		`{"anomaly": "test"}`,
-		"", []string{"redis-cache-drr"}, 3,
+		"dc-no-suggestions", []string{"redis-cache-drr"}, 3,
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2571,6 +2677,13 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 
 func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	// Create decision context first (required since v5.0.0)
+	err := tools.DB.CreateHolon(ctx, "dc-no-matches", "decision_context", "system", "L0", "No Matches Test", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
 
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
 
@@ -2579,7 +2692,7 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 		"Something completely unrelated to existing holons",
 		"src/xyz/*", "system",
 		`{"anomaly": "test"}`,
-		"", nil, 3,
+		"dc-no-matches", nil, 3,
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2662,68 +2775,6 @@ func TestManageEvidence_KeepsStaleOnFail(t *testing.T) {
 	}
 }
 
-func TestGetOrCreateDecisionContext_CreatesNew(t *testing.T) {
-	tools, _, _ := setupTools(t)
-	ctx := context.Background()
-
-	dcID, err := tools.GetOrCreateDecisionContext("Caching Strategy", "backend services")
-	if err != nil {
-		t.Fatalf("GetOrCreateDecisionContext failed: %v", err)
-	}
-
-	if dcID != "dc-caching-strategy" {
-		t.Errorf("Expected dc-caching-strategy, got %s", dcID)
-	}
-
-	holon, err := tools.DB.GetHolon(ctx, dcID)
-	if err != nil {
-		t.Fatalf("Failed to get created context: %v", err)
-	}
-	if holon.Type != "decision_context" {
-		t.Errorf("Expected type 'decision_context', got %s", holon.Type)
-	}
-}
-
-func TestGetOrCreateDecisionContext_ReturnsExisting(t *testing.T) {
-	tools, _, _ := setupTools(t)
-	ctx := context.Background()
-
-	err := tools.DB.CreateHolon(ctx, "dc-existing", "decision_context", "system", "L0", "Existing Context", "Content", "default", "", "")
-	if err != nil {
-		t.Fatalf("Failed to create context: %v", err)
-	}
-
-	dcID, err := tools.GetOrCreateDecisionContext("Existing", "scope")
-	if err != nil {
-		t.Fatalf("GetOrCreateDecisionContext failed: %v", err)
-	}
-
-	if dcID != "dc-existing" {
-		t.Errorf("Expected dc-existing, got %s", dcID)
-	}
-}
-
-func TestGetOrCreateDecisionContext_Max3Limit(t *testing.T) {
-	tools, _, _ := setupTools(t)
-	ctx := context.Background()
-
-	for i := 1; i <= 3; i++ {
-		id := fmt.Sprintf("dc-context-%d", i)
-		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("Context %d", i), "Content", "default", "", "")
-		if err != nil {
-			t.Fatalf("Failed to create context %d: %v", i, err)
-		}
-	}
-
-	_, err := tools.GetOrCreateDecisionContext("Fourth Context", "scope")
-	if err == nil {
-		t.Errorf("Expected error when creating 4th context, got nil")
-	}
-	if !strings.Contains(err.Error(), "maximum 3 active") {
-		t.Errorf("Expected 'maximum 3 active' error, got: %v", err)
-	}
-}
-
 func TestGetActiveDecisionContexts_ReturnsActive(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
@@ -2778,42 +2829,126 @@ func TestGetActiveDecisionContexts_ExcludesClosed(t *testing.T) {
 	}
 }
 
-func TestProposeHypothesis_AutoCreatesContext(t *testing.T) {
+func TestProposeHypothesis_RequiresDecisionContext(t *testing.T) {
 	tools, _, _ := setupTools(t)
-	ctx := context.Background()
 
+	// decision_context is now REQUIRED (v5.0.0 refactoring)
 	_, err := tools.ProposeHypothesis(
-		"Auto Context Test",
-		"Testing auto context creation",
+		"Test Hypothesis",
+		"Testing required decision_context",
 		"test scope",
 		"system",
 		`{"anomaly": "test"}`,
-		"", // no decision_context - should auto-create
+		"", // no decision_context - should error
 		nil,
 		3,
 	)
+	if err == nil {
+		t.Fatal("Expected error when decision_context is empty")
+	}
+	if !strings.Contains(err.Error(), "decision_context is required") {
+		t.Errorf("Expected 'decision_context is required' error, got: %v", err)
+	}
+}
+
+func TestCreateContext_Success(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	result, err := tools.CreateContext("Database Selection", "backend services", "Choosing between PostgreSQL and MySQL")
 	if err != nil {
-		t.Fatalf("ProposeHypothesis failed: %v", err)
+		t.Fatalf("CreateContext failed: %v", err)
 	}
 
-	_, err = tools.DB.GetHolon(ctx, "dc-test-scope")
-	if err != nil {
-		t.Errorf("Expected auto-created context dc-test-scope to exist: %v", err)
+	if !strings.Contains(result, "dc-database-selection") {
+		t.Errorf("Expected dc-database-selection in result, got: %s", result)
 	}
 
-	rawDB := tools.DB.GetRawDB()
-	var count int
-	err = rawDB.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM relations
-		WHERE source_id = 'auto-context-test'
-		AND target_id = 'dc-test-scope'
-		AND relation_type = 'memberOf'
-	`).Scan(&count)
+	// Verify context exists in DB
+	holon, err := tools.DB.GetHolon(ctx, "dc-database-selection")
 	if err != nil {
-		t.Fatalf("Failed to query relations: %v", err)
+		t.Fatalf("Failed to get context from DB: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("Expected 1 MemberOf relation to auto-created context, got %d", count)
+	if holon.Type != "decision_context" {
+		t.Errorf("Expected type decision_context, got %s", holon.Type)
+	}
+	if holon.Title != "Database Selection" {
+		t.Errorf("Expected title 'Database Selection', got %s", holon.Title)
+	}
+}
+
+func TestCreateContext_AlreadyExists(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create context first
+	err := tools.DB.CreateHolon(ctx, "dc-existing-context", "decision_context", "system", "L0", "Existing", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+
+	// Try to create same context again
+	_, err = tools.CreateContext("Existing Context", "scope", "")
+	if err == nil {
+		t.Fatal("Expected error when creating duplicate context")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("Expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestCreateContext_Max3Limit(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create 3 contexts
+	for i := 1; i <= 3; i++ {
+		id := fmt.Sprintf("dc-limit-test-%d", i)
+		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("Context %d", i), "Content", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context %d: %v", i, err)
+		}
+	}
+
+	// Try to create 4th
+	_, err := tools.CreateContext("Fourth Context", "scope", "")
+	if err == nil {
+		t.Fatal("Expected error when creating 4th context")
+	}
+	if !strings.Contains(err.Error(), "maximum 3 active") {
+		t.Errorf("Expected 'maximum 3 active' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "USER ACTION REQUIRED") {
+		t.Errorf("Expected USER ACTION REQUIRED in error, got: %v", err)
+	}
+}
+
+func TestProposeHypothesis_DecisionContextTypeValidation(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	// Create a hypothesis (not a decision_context)
+	err := tools.DB.CreateHolon(ctx, "not-a-context", "hypothesis", "system", "L0", "Not A Context", "Content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create hypothesis: %v", err)
+	}
+
+	// Try to use the hypothesis as decision_context - should fail with type validation error
+	_, err = tools.ProposeHypothesis(
+		"Test Hypothesis",
+		"Testing type validation",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		"not-a-context", // This is a hypothesis, not a decision_context
+		nil,
+		3,
+	)
+	if err == nil {
+		t.Error("Expected error when using hypothesis as decision_context")
+	}
+	if err != nil && !strings.Contains(err.Error(), "not decision_context") {
+		t.Errorf("Expected type validation error, got: %v", err)
 	}
 }
 
@@ -2910,5 +3045,376 @@ func TestFinalizeDecision_ClosesContext(t *testing.T) {
 		if c.ID == "dc-finalize-close" {
 			t.Errorf("Closed context should not appear in active contexts")
 		}
+	}
+}
+
+func TestImplement_AffectedScopeHashTracking(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/calculator.go"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	originalContent := "package calculator\nfunc Add(a, b int) int { return a + b }"
+	os.WriteFile(testFilePath, []byte(originalContent), 0644)
+
+	originalHash := "abc12345"
+
+	drrID := "affected-hash-test-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"Affected Hash Test", "Test DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"],"affected_hashes":{"%s":"%s"}}`,
+		testFile, testFile, originalHash)
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: Affected Hash Test
+contract: %s
+content_hash: abc123
+---
+
+# Affected Hash Test
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	modifiedContent := "package calculator\nfunc Add(a, b int) int { return a + b + 0 } // CHANGED"
+	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
+
+	result, err := tools.Implement(drrID)
+	if err != nil {
+		t.Fatalf("Implement() failed: %v", err)
+	}
+
+	if !strings.Contains(result, "AFFECTED SCOPE CHANGED") {
+		t.Error("Missing AFFECTED SCOPE CHANGED warning")
+	}
+	if !strings.Contains(result, testFile) {
+		t.Errorf("Missing affected file in warning: %s", testFile)
+	}
+	if !strings.Contains(result, "content changed since decision") {
+		t.Error("Missing content change description")
+	}
+}
+
+func TestImplement_AffectedScopeNoChange(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/unchanged.go"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	content := "package unchanged\nfunc Nothing() {}"
+	os.WriteFile(testFilePath, []byte(content), 0644)
+
+	fileHash := tools.computeFileHash(testFilePath)
+
+	drrID := "no-change-test-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"No Change Test", "Test DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"],"affected_hashes":{"%s":"%s"}}`,
+		testFile, testFile, fileHash)
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: No Change Test
+contract: %s
+content_hash: abc123
+---
+
+# No Change Test
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	result, err := tools.Implement(drrID)
+	if err != nil {
+		t.Fatalf("Implement() failed: %v", err)
+	}
+
+	if strings.Contains(result, "AFFECTED SCOPE CHANGED") {
+		t.Error("Should NOT show AFFECTED SCOPE CHANGED warning when file unchanged")
+	}
+}
+
+func TestImplement_AffectedScopeFileRemoved(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/removed.go"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	content := "package removed\nfunc WillBeRemoved() {}"
+	os.WriteFile(testFilePath, []byte(content), 0644)
+
+	fileHash := tools.computeFileHash(testFilePath)
+
+	drrID := "remove-test-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"Remove Test", "Test DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"],"affected_hashes":{"%s":"%s"}}`,
+		testFile, testFile, fileHash)
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: Remove Test
+contract: %s
+content_hash: abc123
+---
+
+# Remove Test
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	os.Remove(testFilePath)
+
+	result, err := tools.Implement(drrID)
+	if err != nil {
+		t.Fatalf("Implement() failed: %v", err)
+	}
+
+	if !strings.Contains(result, "AFFECTED SCOPE CHANGED") {
+		t.Error("Missing AFFECTED SCOPE CHANGED warning for removed file")
+	}
+	if !strings.Contains(result, "file removed since decision") {
+		t.Error("Missing file removed description")
+	}
+}
+
+func TestFinalizeDecision_StoresAffectedHashes(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/hashtest.go"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	content := "package hashtest\nfunc Test() {}"
+	os.WriteFile(testFilePath, []byte(content), 0644)
+
+	dcID := "dc-storehash-test"
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Store Hash Test", "", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	winnerID := "storehash-winner"
+	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create winner: %v", err)
+	}
+	tools.createRelation(ctx, winnerID, "memberOf", dcID, 3)
+
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, testFile)
+	drrPath, err := tools.FinalizeDecision("Store Hash Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON)
+	if err != nil {
+		t.Fatalf("FinalizeDecision failed: %v", err)
+	}
+
+	if drrPath == "" {
+		t.Fatal("FinalizeDecision should return DRR path")
+	}
+
+	drrContent, err := os.ReadFile(drrPath)
+	if err != nil {
+		t.Fatalf("Failed to read DRR file: %v", err)
+	}
+
+	if !strings.Contains(string(drrContent), "affected_hashes") {
+		t.Error("DRR file should contain affected_hashes")
+	}
+
+	expectedHash := tools.computeFileHash(testFilePath)
+	if !strings.Contains(string(drrContent), expectedHash) {
+		t.Errorf("DRR file should contain computed hash %s", expectedHash)
+	}
+}
+
+func TestFinalizeDecision_AffectedScopeWithClassRef(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/calculator.py"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	content := "class Calculator:\n    def add(self, a, b): return a + b"
+	os.WriteFile(testFilePath, []byte(content), 0644)
+
+	dcID := "dc-classref-test"
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Class Ref Test", "", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create decision context: %v", err)
+	}
+
+	winnerID := "classref-winner"
+	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create winner: %v", err)
+	}
+	tools.createRelation(ctx, winnerID, "memberOf", dcID, 3)
+
+	// Use file:class format in affected_scope
+	scopeRef := "src/calculator.py:Calculator"
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, scopeRef)
+	drrPath, err := tools.FinalizeDecision("Class Ref Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON)
+	if err != nil {
+		t.Fatalf("FinalizeDecision failed: %v", err)
+	}
+
+	drrContent, err := os.ReadFile(drrPath)
+	if err != nil {
+		t.Fatalf("Failed to read DRR file: %v", err)
+	}
+
+	if !strings.Contains(string(drrContent), "affected_hashes") {
+		t.Error("DRR file should contain affected_hashes")
+	}
+
+	// Hash should be keyed by file path only (without :Calculator)
+	expectedHash := tools.computeFileHash(testFilePath)
+	if !strings.Contains(string(drrContent), expectedHash) {
+		t.Errorf("DRR file should contain computed hash %s", expectedHash)
+	}
+
+	// Should NOT contain _missing_ since file exists
+	if strings.Contains(string(drrContent), "_missing_") {
+		t.Error("DRR should not have _missing_ for existing file")
+	}
+}
+
+func TestImplement_AffectedScopeWithClassRef(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/calculator.py"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	originalContent := "class Calculator:\n    def add(self, a, b): return a + b"
+	os.WriteFile(testFilePath, []byte(originalContent), 0644)
+
+	originalHash := "abc12345"
+
+	drrID := "classref-impl-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"Class Ref Impl Test", "Test DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	// affected_scope has file:class but affected_hashes should have just file path
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["src/calculator.py:Calculator"],"affected_hashes":{"%s":"%s"}}`,
+		testFile, originalHash)
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: Class Ref Impl Test
+contract: %s
+content_hash: abc123
+---
+
+# Class Ref Impl Test
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	// Modify the file
+	modifiedContent := "class Calculator:\n    def add(self, a, b): return a + b  # modified"
+	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
+
+	result, err := tools.Implement(drrID)
+	if err != nil {
+		t.Fatalf("Implement() failed: %v", err)
+	}
+
+	if !strings.Contains(result, "AFFECTED SCOPE CHANGED") {
+		t.Error("Missing AFFECTED SCOPE CHANGED warning")
+	}
+	if !strings.Contains(result, testFile) {
+		t.Errorf("Missing affected file in warning: %s", testFile)
+	}
+}
+
+func TestInternalize_AffectedScopeWarnings(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+	ctx := context.Background()
+
+	testFile := "src/target.py"
+	testFilePath := filepath.Join(tempDir, testFile)
+	os.MkdirAll(filepath.Dir(testFilePath), 0755)
+	originalContent := "class Target:\n    def method(self): pass\n"
+	os.WriteFile(testFilePath, []byte(originalContent), 0644)
+
+	originalHash := tools.computeFileHash(testFilePath)
+
+	drrID := "internalize-affected-test-drr"
+	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
+		"Affected Scope Test", "Test DRR", "default", "", "")
+	if err != nil {
+		t.Fatalf("Failed to create DRR: %v", err)
+	}
+
+	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"],"affected_hashes":{"%s":"%s"}}`,
+		testFile, testFile, originalHash)
+	decisionsDir := filepath.Join(tempDir, ".quint", "decisions")
+	os.MkdirAll(decisionsDir, 0755)
+	drrPath := filepath.Join(decisionsDir, fmt.Sprintf("DRR-2025-01-01-%s.md", drrID))
+	drrContent := fmt.Sprintf(`---
+title: Affected Scope Test
+contract: %s
+content_hash: abc123
+---
+
+# Affected Scope Test
+
+Test content.
+`, contractJSON)
+	if err := os.WriteFile(drrPath, []byte(drrContent), 0644); err != nil {
+		t.Fatalf("Failed to write DRR file: %v", err)
+	}
+
+	modifiedContent := "class Target:\n    # modified\n    def method(self): pass\n"
+	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
+
+	result, err := tools.Internalize()
+	if err != nil {
+		t.Fatalf("Internalize() failed: %v", err)
+	}
+
+	if !strings.Contains(result, "AFFECTED SCOPE CHANGED") {
+		t.Error("Missing AFFECTED SCOPE CHANGED warning in Internalize output")
+	}
+	if !strings.Contains(result, testFile) {
+		t.Errorf("Missing affected file in warning: %s", testFile)
+	}
+	if !strings.Contains(result, "modified") {
+		t.Error("Should indicate file was modified")
 	}
 }

@@ -111,7 +111,7 @@ func TestProposeHypothesis(t *testing.T) {
 
 	// Create decision context first (required since v5.0.0)
 	dcID := "dc-test-context"
-	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Context", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Context", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestProposeHypothesis(t *testing.T) {
 	kind := "system"
 	rationale := "This is the rationale."
 
-	holonID, err := tools.ProposeHypothesis(ctx, title, content, scope, kind, rationale, dcID, nil, 3)
+	holonID, err := tools.ProposeHypothesis(ctx, title, content, scope, kind, rationale, dcID, nil, 3, "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestManageEvidence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// v5.0.0: hypotheses are DB-only, no file creation
 			if tt.expectedMove {
-				if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", tt.srcLevel, "Test "+tt.targetID, "Content", "default", "", ""); err != nil {
+				if err := tools.DB.CreateHolon(ctx, tt.targetID, "hypothesis", "system", tt.srcLevel, "Test "+tt.targetID, "Content", "default", "", "", ""); err != nil {
 					t.Fatalf("Failed to create holon in DB: %v", err)
 				}
 			}
@@ -226,13 +226,13 @@ func TestRefineLoopback(t *testing.T) {
 
 	// Create decision context first (required for parent hypothesis)
 	dcID := "dc-refine-test"
-	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Refine Test", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Refine Test", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	// v5.0.0: hypotheses are DB-only
 	parentID := "parent-hypo"
-	if err := tools.DB.CreateHolon(ctx, parentID, "hypothesis", "system", "L1", "Parent Hypothesis", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, parentID, "hypothesis", "system", "L1", "Parent Hypothesis", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create parent holon in DB: %v", err)
 	}
 
@@ -287,7 +287,7 @@ func TestFinalizeDecision(t *testing.T) {
 
 	// v5.0.0: hypotheses are DB-only
 	winnerID := "final-winner"
-	if err := tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Final Winner", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Final Winner", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create winner holon in DB: %v", err)
 	}
 
@@ -338,13 +338,13 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 
 	// Create a decision context
 	dcID := "test-decision-context"
-	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Decision Context", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "system", "L0", "Test Decision Context", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-in-closed-dc"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Closed DC", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Closed DC", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
 	}
 
@@ -357,7 +357,7 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 
 	// Create a DRR that closes the decision context
 	closingDRRID := "existing-drr"
-	if err := tools.DB.CreateHolon(ctx, closingDRRID, "DRR", "", "DRR", "Existing DRR", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, closingDRRID, "DRR", "", "DRR", "Existing DRR", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create closing DRR: %v", err)
 	}
 	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
@@ -388,13 +388,13 @@ func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
 
 	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-already-in-drr"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Already Used Hypothesis", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Already Used Hypothesis", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
 	}
 
 	// Create an existing open DRR that selects this hypothesis
 	existingDRRID := "existing-open-drr"
-	if err := tools.DB.CreateHolon(ctx, existingDRRID, "DRR", "", "DRR", "Existing Open DRR", "Content without status", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, existingDRRID, "DRR", "", "DRR", "Existing Open DRR", "Content without status", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create existing DRR: %v", err)
 	}
 	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
@@ -425,13 +425,13 @@ func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
 
 	// v5.0.0: hypotheses are DB-only
 	hypID := "hyp-in-resolved-drr"
-	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Resolved DRR", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypID, "hypothesis", "system", "L2", "Hypothesis in Resolved DRR", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
 	}
 
 	// Create an existing DRR that selects this hypothesis
 	resolvedDRRID := "resolved-drr"
-	if err := tools.DB.CreateHolon(ctx, resolvedDRRID, "DRR", "", "DRR", "Resolved DRR", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, resolvedDRRID, "DRR", "", "DRR", "Resolved DRR", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create resolved DRR: %v", err)
 	}
 	if _, err := tools.DB.GetRawDB().ExecContext(ctx,
@@ -458,7 +458,7 @@ func TestVerifyHypothesis(t *testing.T) {
 
 	// v5.0.0: hypotheses are DB-only
 	hypoID := "test-verify-hypo"
-	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L0", "Test Verify", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L0", "Test Verify", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
 
@@ -485,7 +485,7 @@ func TestVerifyHypothesis(t *testing.T) {
 	}
 
 	hypoID2 := "test-fail-hypo"
-	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L0", "Test Fail", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L0", "Test Fail", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
 
@@ -584,7 +584,7 @@ func TestValidateHypothesis(t *testing.T) {
 	ctx := context.Background()
 
 	hypoID := "test-validate-hypo"
-	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Validate", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Validate", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
 	hypoPath := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID+".md")
@@ -605,7 +605,7 @@ func TestValidateHypothesis(t *testing.T) {
 	}
 
 	hypoID2 := "test-validate-fail"
-	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "Test Validate Fail", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "Test Validate Fail", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
 	hypoPath2 := filepath.Join(tempDir, ".quint", "knowledge", "L1", hypoID2+".md")
@@ -628,7 +628,7 @@ func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
 	ctx := context.Background()
 
 	hypoID := "test-predict-coverage"
-	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Prediction Coverage", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Prediction Coverage", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon in DB: %v", err)
 	}
 
@@ -663,7 +663,7 @@ func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
 		"reasoning": "Both predictions validated"
 	}`
 	hypoID2 := "test-predict-all-covered"
-	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "All Covered", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, hypoID2, "hypothesis", "system", "L1", "All Covered", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 	if err := tools.DB.AddPrediction(ctx, hypoID2+"-pred-1", hypoID2, "Prediction one"); err != nil {
@@ -724,11 +724,11 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	if err := tools.DB.CreateHolon(ctx, "failed-hypo-1", "hypothesis", "system", "invalid", "Duplicate Title", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, "failed-hypo-1", "hypothesis", "system", "invalid", "Duplicate Title", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create invalid holon: %v", err)
 	}
 
-	if err := tools.DB.CreateHolon(ctx, "new-hypo", "hypothesis", "system", "L0", "Duplicate Title", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, "new-hypo", "hypothesis", "system", "L0", "Duplicate Title", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create L0 holon: %v", err)
 	}
 
@@ -740,7 +740,7 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 		t.Errorf("Expected warning to contain 'failed-hypo-1', got %q", warning)
 	}
 
-	if err := tools.DB.CreateHolon(ctx, "unique-hypo", "hypothesis", "system", "L0", "Unique Title", "Content", "default", "", ""); err != nil {
+	if err := tools.DB.CreateHolon(ctx, "unique-hypo", "hypothesis", "system", "L0", "Unique Title", "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create unique holon: %v", err)
 	}
 
@@ -779,7 +779,7 @@ func TestCalculateR(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with evidence
-	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "calc-r-test", "hypothesis", "system", "L1", "Test Holon", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -813,7 +813,7 @@ func TestCalculateR_WithDecay(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with expired evidence
-	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "decay-r-test", "hypothesis", "system", "L1", "Decay Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -841,7 +841,7 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with fresh evidence
-	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "fresh-holon", "hypothesis", "system", "L2", "Fresh", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -869,7 +869,7 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon with expired evidence
-	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "stale-holon", "hypothesis", "system", "L2", "Stale Holon", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -901,7 +901,7 @@ func TestCheckDecay_Deprecate(t *testing.T) {
 
 	// v5.0.0: hypotheses are DB-only
 	holonID := "deprecate-test"
-	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Deprecate Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Deprecate Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -933,7 +933,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 	// Create holon with expired evidence
 	holonID := "waive-test-holon"
 	evidenceID := "waive-test-evidence"
-	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Waive Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L2", "Waive Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1002,7 +1002,7 @@ func TestCheckDecay_DeprecateL0Fails(t *testing.T) {
 
 	// Create L0 holon
 	holonID := "l0-deprecate-test"
-	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L0", "L0 Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, holonID, "hypothesis", "system", "L0", "L0 Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1022,7 +1022,7 @@ func TestVisualizeAudit(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon
-	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "audit-viz-test", "hypothesis", "system", "L2", "Audit Viz Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1053,7 +1053,7 @@ func TestUnifiedAudit_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon
-	err := tools.DB.CreateHolon(ctx, "unified-audit-test", "hypothesis", "system", "L2", "Unified Audit Test", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "unified-audit-test", "hypothesis", "system", "L2", "Unified Audit Test", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1089,7 +1089,7 @@ func TestUnifiedAudit_WithRisks(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a holon
-	err := tools.DB.CreateHolon(ctx, "unified-audit-risks", "hypothesis", "system", "L2", "Unified Audit Risks", "Content", "ctx", "global", "")
+	err := tools.DB.CreateHolon(ctx, "unified-audit-risks", "hypothesis", "system", "L2", "Unified Audit Risks", "Content", "ctx", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1127,7 +1127,7 @@ func TestPropose_WithDecisionContext(t *testing.T) {
 	ctx := context.Background()
 
 	// First create a decision context holon (must be type "decision_context")
-	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision_context", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "")
+	err := tools.DB.CreateHolon(ctx, "caching-decision", "decision_context", "episteme", "L0", "Caching Decision", "Content", "default", "backend", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -1143,6 +1143,7 @@ func TestPropose_WithDecisionContext(t *testing.T) {
 		"caching-decision", // decision_context
 		nil,                // no depends_on
 		3,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -1170,17 +1171,17 @@ func TestPropose_WithDependsOn(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-api-gateway", "decision_context", "system", "L0", "API Gateway Decision", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-api-gateway", "decision_context", "system", "L0", "API Gateway Decision", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	// Create dependency holons
-	err = tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "auth-module", "hypothesis", "system", "L2", "Auth Module", "Content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create auth-module: %v", err)
 	}
-	err = tools.DB.CreateHolon(ctx, "rate-limiter", "hypothesis", "system", "L2", "Rate Limiter", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "rate-limiter", "hypothesis", "system", "L2", "Rate Limiter", "Content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create rate-limiter: %v", err)
 	}
@@ -1196,6 +1197,7 @@ func TestPropose_WithDependsOn(t *testing.T) {
 		"dc-api-gateway",                        // decision_context required
 		[]string{"auth-module", "rate-limiter"}, // depends_on
 		3,                                       // CL3
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -1222,19 +1224,19 @@ func TestPropose_CycleDetection(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-cycle-test", "decision_context", "system", "L0", "Cycle Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-cycle-test", "decision_context", "system", "L0", "Cycle Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	// Create holon A
-	err = tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "holon-a", "hypothesis", "system", "L1", "Holon A", "Content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon-a: %v", err)
 	}
 
 	// Create holon B that depends on A
-	_, err = tools.ProposeHypothesis(ctx, "Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3, "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for B failed: %v", err)
 	}
@@ -1248,7 +1250,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 
 	// Try to make A depend on B (would create cycle since B already depends on A)
 	// This should be skipped with a warning, not error
-	_, err = tools.ProposeHypothesis(ctx, "Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3, "")
 	// Should NOT error - cycles are skipped with warning
 	if err != nil {
 		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
@@ -1278,7 +1280,7 @@ func TestPropose_InvalidDependency(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-invalid-dep", "decision_context", "system", "L0", "Invalid Dep Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-invalid-dep", "decision_context", "system", "L0", "Invalid Dep Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -1294,6 +1296,7 @@ func TestPropose_InvalidDependency(t *testing.T) {
 		"dc-invalid-dep",
 		[]string{"does-not-exist", "also-missing"}, // These don't exist
 		3,
+		"",
 	)
 	// Should NOT error - invalid deps are skipped with warning
 	if err != nil {
@@ -1320,25 +1323,25 @@ func TestPropose_KindDeterminesRelation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-kind-test", "decision_context", "system", "L0", "Kind Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-kind-test", "decision_context", "system", "L0", "Kind Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	// Create a dependency holon
-	err = tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "")
+	err = tools.DB.CreateHolon(ctx, "base-claim", "hypothesis", "episteme", "L2", "Base Claim", "Content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create base-claim: %v", err)
 	}
 
 	// Propose system hypothesis - should create componentOf
-	_, err = tools.ProposeHypothesis(ctx, "System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3, "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for system failed: %v", err)
 	}
 
 	// Propose episteme hypothesis - should create constituentOf
-	_, err = tools.ProposeHypothesis(ctx, "Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3, "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
 	}
@@ -1380,7 +1383,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 
 	// Create decision context with low R (failing evidence)
 	// v5.0.0: must use type "decision_context" for decision_context param validation
-	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision_context", "episteme", "L1", "Bad Decision", "Content", "default", "global", "")
+	err := tools.DB.CreateHolon(ctx, "bad-decision", "decision_context", "episteme", "L1", "Bad Decision", "Content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create bad-decision: %v", err)
 	}
@@ -1399,6 +1402,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 		"bad-decision", // MemberOf the bad decision
 		nil,
 		3,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -1475,7 +1479,7 @@ func TestManageEvidence_ValidUntilNullByDefault(t *testing.T) {
 	// v5.1.0: valid_until defaults to NULL (perpetual) for code evidence
 	// FPF B.3.4: Code evidence validity is tied to code changes, not time.
 	hypoID := "valid-until-test-hypo"
-	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1514,7 +1518,7 @@ func TestManageEvidence_ValidUntilExplicit(t *testing.T) {
 
 	// When valid_until is explicitly set, it should be honored
 	hypoID := "valid-until-explicit-hypo"
-	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, hypoID, "hypothesis", "system", "L1", "Test Hypothesis", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1604,12 +1608,12 @@ func TestInternalize_LayerCounts(t *testing.T) {
 
 	// Create some L0 holons in the database
 	err := tools.DB.CreateHolon(ctx, "layer-count-hypo1", "hypothesis", "system", "L0",
-		"Test Hypo 1", "Content", "default", "", "")
+		"Test Hypo 1", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 	err = tools.DB.CreateHolon(ctx, "layer-count-hypo2", "hypothesis", "system", "L0",
-		"Test Hypo 2", "Content", "default", "", "")
+		"Test Hypo 2", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -1630,14 +1634,14 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// Create a DRR (decision)
 	err := tools.DB.CreateHolon(ctx, "DRR-archive-test", "DRR", "system", "DRR",
-		"Archive Test Decision", "Decision content", "default", "global", "")
+		"Archive Test Decision", "Decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
 
 	// Create an L2 holon that was selected by this decision
 	err = tools.DB.CreateHolon(ctx, "archived-hypo", "hypothesis", "system", "L2",
-		"Archived Hypothesis", "Content", "default", "", "")
+		"Archived Hypothesis", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
 	}
@@ -1652,7 +1656,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// Create an L0 holon that's NOT part of any decision (should be active)
 	err = tools.DB.CreateHolon(ctx, "active-hypo", "hypothesis", "system", "L0",
-		"Active Hypothesis", "Content", "default", "", "")
+		"Active Hypothesis", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create active hypothesis: %v", err)
 	}
@@ -1717,7 +1721,7 @@ func TestSearch_WithResults(t *testing.T) {
 	// Create a holon that will be indexed
 	ctx := context.Background()
 	tools.DB.CreateHolon(ctx, "search-test-holon", "hypothesis", "system", "L0",
-		"Authentication Decision", "How to handle user authentication", "default", "", "")
+		"Authentication Decision", "How to handle user authentication", "default", "", "", "")
 
 	// Search for it
 	result, err := tools.Search(ctx,"authentication", "", "", "", "", 10)
@@ -1762,9 +1766,9 @@ func TestSearch_LayerFilter(t *testing.T) {
 
 	// Create holons in different layers
 	tools.DB.CreateHolon(ctx, "l0-holon", "hypothesis", "system", "L0",
-		"L0 Test Holon", "Content for L0", "default", "", "")
+		"L0 Test Holon", "Content for L0", "default", "", "", "")
 	tools.DB.CreateHolon(ctx, "l2-holon", "hypothesis", "system", "L2",
-		"L2 Test Holon", "Content for L2", "default", "", "")
+		"L2 Test Holon", "Content for L2", "default", "", "", "")
 
 	// Search with L2 filter
 	result, err := tools.Search(ctx,"Test Holon", "", "L2", "", "", 10)
@@ -1783,7 +1787,7 @@ func TestSearch_SpecialCharacters(t *testing.T) {
 
 	// Create a holon with hyphenated title
 	tools.DB.CreateHolon(ctx, "special-char-holon", "hypothesis", "system", "L0",
-		"Redis-backed Cache Strategy", "Use redis-cluster for caching", "default", "", "")
+		"Redis-backed Cache Strategy", "Use redis-cluster for caching", "default", "", "", "")
 
 	// Search with hyphenated query (previously would cause FTS5 parse error)
 	result, err := tools.Search(ctx,"redis-backed", "", "", "", "", 10)
@@ -1802,7 +1806,7 @@ func TestResolve_Implemented(t *testing.T) {
 
 	// Create a DRR holon
 	err := tools.DB.CreateHolon(ctx, "DRR-test-decision", "DRR", "system", "DRR",
-		"Test Decision", "Decision content", "default", "global", "")
+		"Test Decision", "Decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -1844,7 +1848,7 @@ func TestResolve_Abandoned(t *testing.T) {
 
 	// Create a DRR holon
 	err := tools.DB.CreateHolon(ctx, "DRR-abandoned-test", "DRR", "system", "DRR",
-		"Abandoned Decision", "Decision content", "default", "global", "")
+		"Abandoned Decision", "Decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -1883,14 +1887,14 @@ func TestResolve_Superseded(t *testing.T) {
 
 	// Create old DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-old-decision", "DRR", "system", "DRR",
-		"Old Decision", "Old decision content", "default", "global", "")
+		"Old Decision", "Old decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create old DRR: %v", err)
 	}
 
 	// Create new DRR that supersedes old
 	err = tools.DB.CreateHolon(ctx, "DRR-new-decision", "DRR", "system", "DRR",
-		"New Decision", "New decision content", "default", "global", "")
+		"New Decision", "New decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create new DRR: %v", err)
 	}
@@ -1936,7 +1940,7 @@ func TestResolve_InvalidResolution(t *testing.T) {
 
 	// Create a DRR holon
 	err := tools.DB.CreateHolon(ctx, "DRR-invalid-res", "DRR", "system", "DRR",
-		"Test Decision", "Decision content", "default", "global", "")
+		"Test Decision", "Decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -1958,7 +1962,7 @@ func TestResolve_MissingRequiredParams(t *testing.T) {
 
 	// Create a DRR holon
 	err := tools.DB.CreateHolon(ctx, "DRR-missing-params", "DRR", "system", "DRR",
-		"Test Decision", "Decision content", "default", "global", "")
+		"Test Decision", "Decision content", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2000,14 +2004,14 @@ func TestSearch_StatusFilterOpen(t *testing.T) {
 
 	// Create open DRR (no resolution evidence)
 	err := tools.DB.CreateHolon(ctx, "DRR-open-test", "DRR", "system", "DRR",
-		"Open Decision", "Pending resolution", "default", "global", "")
+		"Open Decision", "Pending resolution", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create open DRR: %v", err)
 	}
 
 	// Create resolved DRR (with implementation evidence)
 	err = tools.DB.CreateHolon(ctx, "DRR-resolved-test", "DRR", "system", "DRR",
-		"Resolved Decision", "Already implemented", "default", "global", "")
+		"Resolved Decision", "Already implemented", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create resolved DRR: %v", err)
 	}
@@ -2037,7 +2041,7 @@ func TestSearch_StatusFilterImplemented(t *testing.T) {
 
 	// Create implemented DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-impl-search", "DRR", "system", "DRR",
-		"Implemented Decision", "Already done", "default", "global", "")
+		"Implemented Decision", "Already done", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2064,7 +2068,7 @@ func TestInternalize_ShowsOpenDecisions(t *testing.T) {
 
 	// Create an open DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-open-internalize", "DRR", "system", "DRR",
-		"Pending Decision", "Awaiting resolution", "default", "global", "")
+		"Pending Decision", "Awaiting resolution", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2086,7 +2090,7 @@ func TestGetOpenDecisions(t *testing.T) {
 
 	// Create open DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-get-open", "DRR", "system", "DRR",
-		"Open for Query", "Test", "default", "global", "")
+		"Open for Query", "Test", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2118,7 +2122,7 @@ func TestGetResolvedDecisions(t *testing.T) {
 
 	// Create and resolve a DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-get-resolved", "DRR", "system", "DRR",
-		"Resolved for Query", "Test", "default", "global", "")
+		"Resolved for Query", "Test", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2189,7 +2193,7 @@ func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
 
 	// Create an open DRR
 	err := tools.DB.CreateHolon(ctx, "DRR-open-during-reset", "DRR", "system", "DRR",
-		"Open Decision", "Pending", "default", "global", "")
+		"Open Decision", "Pending", "default", "global", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2210,9 +2214,9 @@ func TestResetCycle_ShowsLayerCounts(t *testing.T) {
 	ctx := context.Background()
 
 	// v5.0.0: hypotheses are DB-only
-	tools.DB.CreateHolon(ctx, "hypo1", "hypothesis", "system", "L0", "Hypo 1", "Content", "default", "", "")
-	tools.DB.CreateHolon(ctx, "hypo2", "hypothesis", "system", "L0", "Hypo 2", "Content", "default", "", "")
-	tools.DB.CreateHolon(ctx, "hypo3", "hypothesis", "system", "L1", "Hypo 3", "Content", "default", "", "")
+	tools.DB.CreateHolon(ctx, "hypo1", "hypothesis", "system", "L0", "Hypo 1", "Content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, "hypo2", "hypothesis", "system", "L0", "Hypo 2", "Content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, "hypo3", "hypothesis", "system", "L1", "Hypo 3", "Content", "default", "", "", "")
 
 	result, err := tools.ResetCycle(ctx,"session complete", "", false)
 	if err != nil {
@@ -2312,7 +2316,7 @@ func TestImplement_BasicContract(t *testing.T) {
 
 	drrID := "test-implement-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"Test Implementation", "Test DRR for implement", "default", "", "")
+		"Test Implementation", "Test DRR for implement", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2373,7 +2377,7 @@ func TestImplement_NoContract(t *testing.T) {
 	// Create a DRR without contract
 	drrID := "no-contract-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"No Contract DRR", "Test", "default", "", "")
+		"No Contract DRR", "Test", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2406,7 +2410,7 @@ func TestImplement_NotDRR(t *testing.T) {
 
 	// Create a regular hypothesis, not a DRR
 	err := tools.DB.CreateHolon(ctx, "regular-hypo", "hypothesis", "system", "L0",
-		"Regular Hypothesis", "Not a DRR", "default", "", "")
+		"Regular Hypothesis", "Not a DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -2428,7 +2432,7 @@ func TestImplement_InheritedConstraints(t *testing.T) {
 	parentContract := `{"invariants":["Parent invariant"],"anti_patterns":["Parent anti-pattern"]}`
 	parentID := "parent-drr"
 	err := tools.DB.CreateHolon(ctx, parentID, "DRR", "system", "DRR",
-		"Parent Decision", "Parent", "default", "", "")
+		"Parent Decision", "Parent", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create parent DRR: %v", err)
 	}
@@ -2450,7 +2454,7 @@ content_hash: abc123
 	childContract := `{"invariants":["Child invariant"],"anti_patterns":["Child anti-pattern"],"acceptance_criteria":["Child criteria"]}`
 	childID := "child-drr"
 	err = tools.DB.CreateHolon(ctx, childID, "DRR", "system", "DRR",
-		"Child Decision", "Child", "default", "", "")
+		"Child Decision", "Child", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create child DRR: %v", err)
 	}
@@ -2523,7 +2527,7 @@ func TestImplement_FullFilenameID(t *testing.T) {
 	contractJSON := `{"invariants":["Cache transparent"],"acceptance_criteria":["Works"]}`
 
 	err := tools.DB.CreateHolon(ctx, slugifiedID, "DRR", "system", "DRR",
-		"Redis Cache with Monitoring", "Test", "default", "", "")
+		"Redis Cache with Monitoring", "Test", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2570,8 +2574,8 @@ func TestLinkHolons_Basic(t *testing.T) {
 	id1 := uuid.New().String()
 	id2 := uuid.New().String()
 
-	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
-	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "", "")
 
 	result, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
@@ -2604,8 +2608,8 @@ func TestLinkHolons_EpistemeKind(t *testing.T) {
 	id1 := uuid.New().String()
 	id2 := uuid.New().String()
 
-	tools.DB.CreateHolon(ctx, id1, "hypothesis", "episteme", "L0", "Episteme Source", "content", "default", "", "")
-	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "episteme", "L0", "Episteme Source", "content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "", "")
 
 	result, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
@@ -2622,7 +2626,7 @@ func TestLinkHolons_SourceNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id2 := uuid.New().String()
-	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "", "")
 
 	_, err := tools.LinkHolons(ctx,"nonexistent", id2, 3)
 	if err == nil {
@@ -2638,7 +2642,7 @@ func TestLinkHolons_TargetNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id1 := uuid.New().String()
-	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "", "")
 
 	_, err := tools.LinkHolons(ctx,id1, "nonexistent", 3)
 	if err == nil {
@@ -2656,8 +2660,8 @@ func TestLinkHolons_CyclePrevention(t *testing.T) {
 	id1 := uuid.New().String()
 	id2 := uuid.New().String()
 
-	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "A", "content", "default", "", "")
-	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "B", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "A", "content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "B", "content", "default", "", "", "")
 
 	_, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
@@ -2694,8 +2698,8 @@ func TestLinkHolons_CLValidation(t *testing.T) {
 	id1 := uuid.New().String()
 	id2 := uuid.New().String()
 
-	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source", "content", "default", "", "")
-	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target", "content", "default", "", "")
+	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source", "content", "default", "", "", "")
+	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target", "content", "default", "", "", "")
 
 	_, err := tools.LinkHolons(ctx,id1, id2, 0)
 	if err != nil {
@@ -2713,7 +2717,7 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-suggestions-test", "decision_context", "system", "L0", "Suggestions Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-suggestions-test", "decision_context", "system", "L0", "Suggestions Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -2722,14 +2726,14 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "DRR"), 0755)
 
 	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
-		"Redis Cache Layer", "Implement caching with Redis", "default", "src/cache/*", "")
+		"Redis Cache Layer", "Implement caching with Redis", "default", "src/cache/*", "", "")
 
 	result, err := tools.ProposeHypothesis(ctx,
 		"Token Bucket Rate Limiter using Redis",
 		"Implement rate limiting that stores counters in Redis",
 		"src/api/*", "system",
 		`{"anomaly": "API abuse", "approach": "Token bucket"}`,
-		"dc-suggestions-test", nil, 3,
+		"dc-suggestions-test", nil, 3, "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2754,7 +2758,7 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-no-suggestions", "decision_context", "system", "L0", "No Suggestions Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-no-suggestions", "decision_context", "system", "L0", "No Suggestions Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -2762,14 +2766,14 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
 
 	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
-		"Redis Cache", "Redis caching", "default", "", "")
+		"Redis Cache", "Redis caching", "default", "", "", "")
 
 	result, err := tools.ProposeHypothesis(ctx,
 		"Rate Limiter using Redis",
 		"Implement rate limiting with Redis",
 		"src/api/*", "system",
 		`{"anomaly": "test"}`,
-		"dc-no-suggestions", []string{"redis-cache-drr"}, 3,
+		"dc-no-suggestions", []string{"redis-cache-drr"}, 3, "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2785,7 +2789,7 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 	ctx := context.Background()
 
 	// Create decision context first (required since v5.0.0)
-	err := tools.DB.CreateHolon(ctx, "dc-no-matches", "decision_context", "system", "L0", "No Matches Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-no-matches", "decision_context", "system", "L0", "No Matches Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
@@ -2797,7 +2801,7 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 		"Something completely unrelated to existing holons",
 		"src/xyz/*", "system",
 		`{"anomaly": "test"}`,
-		"dc-no-matches", nil, 3,
+		"dc-no-matches", nil, 3, "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2818,11 +2822,11 @@ func TestGetActiveDecisionContexts_ReturnsActive(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	err := tools.DB.CreateHolon(ctx, "dc-active-1", "decision_context", "system", "L0", "Active 1", "Content", "default", "scope1", "")
+	err := tools.DB.CreateHolon(ctx, "dc-active-1", "decision_context", "system", "L0", "Active 1", "Content", "default", "scope1", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context 1: %v", err)
 	}
-	err = tools.DB.CreateHolon(ctx, "dc-active-2", "decision_context", "system", "L0", "Active 2", "Content", "default", "scope2", "")
+	err = tools.DB.CreateHolon(ctx, "dc-active-2", "decision_context", "system", "L0", "Active 2", "Content", "default", "scope2", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context 2: %v", err)
 	}
@@ -2841,11 +2845,11 @@ func TestGetActiveDecisionContexts_ExcludesClosed(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	err := tools.DB.CreateHolon(ctx, "dc-closed-test", "decision_context", "system", "L0", "Closed Context", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-closed-test", "decision_context", "system", "L0", "Closed Context", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}
-	err = tools.DB.CreateHolon(ctx, "closing-drr", "decision", "system", "DRR", "Closing DRR", "Content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, "closing-drr", "decision", "system", "DRR", "Closing DRR", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -2882,6 +2886,7 @@ func TestProposeHypothesis_RequiresDecisionContext(t *testing.T) {
 		"", // no decision_context - should error
 		nil,
 		3,
+		"",
 	)
 	if err == nil {
 		t.Fatal("Expected error when decision_context is empty")
@@ -2922,7 +2927,7 @@ func TestCreateContext_AlreadyExists(t *testing.T) {
 	ctx := context.Background()
 
 	// Create context first
-	err := tools.DB.CreateHolon(ctx, "dc-existing-context", "decision_context", "system", "L0", "Existing", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-existing-context", "decision_context", "system", "L0", "Existing", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}
@@ -2944,7 +2949,7 @@ func TestCreateContext_Max3Limit(t *testing.T) {
 	// Create 3 contexts
 	for i := 1; i <= 3; i++ {
 		id := fmt.Sprintf("dc-limit-test-%d", i)
-		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("Context %d", i), "Content", "default", "", "")
+		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("Context %d", i), "Content", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context %d: %v", i, err)
 		}
@@ -2968,7 +2973,7 @@ func TestProposeHypothesis_DecisionContextTypeValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a hypothesis (not a decision_context)
-	err := tools.DB.CreateHolon(ctx, "not-a-context", "hypothesis", "system", "L0", "Not A Context", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "not-a-context", "hypothesis", "system", "L0", "Not A Context", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create hypothesis: %v", err)
 	}
@@ -2983,6 +2988,7 @@ func TestProposeHypothesis_DecisionContextTypeValidation(t *testing.T) {
 		"not-a-context", // This is a hypothesis, not a decision_context
 		nil,
 		3,
+		"",
 	)
 	if err == nil {
 		t.Error("Expected error when using hypothesis as decision_context")
@@ -2996,7 +3002,7 @@ func TestResetCycle_AbandonContext(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	err := tools.DB.CreateHolon(ctx, "dc-abandon-test", "decision_context", "system", "L0", "Abandon Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-abandon-test", "decision_context", "system", "L0", "Abandon Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}
@@ -3028,7 +3034,7 @@ func TestResetCycle_AbandonAll(t *testing.T) {
 
 	for i := 1; i <= 2; i++ {
 		id := fmt.Sprintf("dc-all-test-%d", i)
-		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("All Test %d", i), "Content", "default", "", "")
+		err := tools.DB.CreateHolon(ctx, id, "decision_context", "system", "L0", fmt.Sprintf("All Test %d", i), "Content", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context %d: %v", i, err)
 		}
@@ -3057,12 +3063,12 @@ func TestFinalizeDecision_ClosesContext(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	err := tools.DB.CreateHolon(ctx, "dc-finalize-close", "decision_context", "system", "L0", "Finalize Close Test", "Content", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, "dc-finalize-close", "decision_context", "system", "L0", "Finalize Close Test", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}
 
-	err = tools.DB.CreateHolon(ctx, "winner-hypo", "hypothesis", "system", "L2", "Winner", "Content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, "winner-hypo", "hypothesis", "system", "L2", "Winner", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create winner: %v", err)
 	}
@@ -3093,13 +3099,13 @@ func TestFinalizeDecision_CloseContextFalse_KeepsContextOpen(t *testing.T) {
 	ctx := context.Background()
 
 	dcID := "dc-multi-drr-test"
-	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Multi-DRR Test Context", "", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Multi-DRR Test Context", "", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	hyp1ID := "hyp-multi-drr-1"
-	err = tools.DB.CreateHolon(ctx, hyp1ID, "hypothesis", "system", "L2", "First Improvement", "Content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, hyp1ID, "hypothesis", "system", "L2", "First Improvement", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create first hypothesis: %v", err)
 	}
@@ -3108,7 +3114,7 @@ func TestFinalizeDecision_CloseContextFalse_KeepsContextOpen(t *testing.T) {
 	}
 
 	hyp2ID := "hyp-multi-drr-2"
-	err = tools.DB.CreateHolon(ctx, hyp2ID, "hypothesis", "system", "L2", "Second Improvement", "Content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, hyp2ID, "hypothesis", "system", "L2", "Second Improvement", "Content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create second hypothesis: %v", err)
 	}
@@ -3166,7 +3172,7 @@ func TestImplement_AffectedScopeHashTracking(t *testing.T) {
 
 	drrID := "affected-hash-test-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"Affected Hash Test", "Test DRR", "default", "", "")
+		"Affected Hash Test", "Test DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -3223,7 +3229,7 @@ func TestImplement_AffectedScopeNoChange(t *testing.T) {
 
 	drrID := "no-change-test-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"No Change Test", "Test DRR", "default", "", "")
+		"No Change Test", "Test DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -3271,7 +3277,7 @@ func TestImplement_AffectedScopeFileRemoved(t *testing.T) {
 
 	drrID := "remove-test-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"Remove Test", "Test DRR", "default", "", "")
+		"Remove Test", "Test DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -3321,13 +3327,13 @@ func TestFinalizeDecision_StoresAffectedHashes(t *testing.T) {
 	os.WriteFile(testFilePath, []byte(content), 0644)
 
 	dcID := "dc-storehash-test"
-	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Store Hash Test", "", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Store Hash Test", "", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	winnerID := "storehash-winner"
-	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create winner: %v", err)
 	}
@@ -3369,13 +3375,13 @@ func TestFinalizeDecision_AffectedScopeWithClassRef(t *testing.T) {
 	os.WriteFile(testFilePath, []byte(content), 0644)
 
 	dcID := "dc-classref-test"
-	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Class Ref Test", "", "default", "", "")
+	err := tools.DB.CreateHolon(ctx, dcID, "decision_context", "", "L0", "Class Ref Test", "", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create decision context: %v", err)
 	}
 
 	winnerID := "classref-winner"
-	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "")
+	err = tools.DB.CreateHolon(ctx, winnerID, "hypothesis", "system", "L2", "Winner", "content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create winner: %v", err)
 	}
@@ -3424,7 +3430,7 @@ func TestImplement_AffectedScopeWithClassRef(t *testing.T) {
 
 	drrID := "classref-impl-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"Class Ref Impl Test", "Test DRR", "default", "", "")
+		"Class Ref Impl Test", "Test DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
@@ -3480,7 +3486,7 @@ func TestInternalize_AffectedScopeWarnings(t *testing.T) {
 
 	drrID := "internalize-affected-test-drr"
 	err := tools.DB.CreateHolon(ctx, drrID, "DRR", "system", "DRR",
-		"Affected Scope Test", "Test DRR", "default", "", "")
+		"Affected Scope Test", "Test DRR", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}

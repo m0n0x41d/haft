@@ -13,7 +13,7 @@ var ctx = context.Background()
 
 func createTestHolon(t *testing.T, store *db.Store, id, layer string) {
 	t.Helper()
-	if err := store.CreateHolon(ctx, id, "hypothesis", "system", layer, "Test "+id, "Content", "default", "", ""); err != nil {
+	if err := store.CreateHolon(ctx, id, "hypothesis", "system", layer, "Test "+id, "Content", "default", "", "", ""); err != nil {
 		t.Fatalf("Failed to create test holon %s: %v", id, err)
 	}
 }
@@ -278,7 +278,7 @@ func TestCheckPreconditions_CalculateR(t *testing.T) {
 	store, _ := db.NewStore(dbPath)
 	defer store.Close()
 
-	store.CreateHolon(ctx, "existing-holon", "hypothesis", "system", "L0", "Test", "Content", "default", "", "")
+	store.CreateHolon(ctx, "existing-holon", "hypothesis", "system", "L0", "Test", "Content", "default", "", "", "")
 
 	fsm := &FSM{State: State{}}
 	tools := NewTools(fsm, tempDir, store)

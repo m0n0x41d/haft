@@ -24,7 +24,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 		holon_id TEXT,
 		type TEXT,
 		verdict TEXT,
-		valid_until DATETIME
+		valid_until DATETIME,
+		formality_level INTEGER DEFAULT 5
 	);
 	CREATE TABLE relations (source_id TEXT, target_id TEXT, relation_type TEXT, congruence_level INTEGER);
 	`

@@ -317,22 +317,23 @@ func (q *Queries) CountUncoveredPredictions(ctx context.Context, db DBTX, holonI
 const createHolon = `-- name: CreateHolon :exec
 
 
-INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, approach_type, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHolonParams struct {
-	ID        string
-	Type      string
-	Kind      sql.NullString
-	Layer     string
-	Title     string
-	Content   string
-	ContextID string
-	Scope     sql.NullString
-	ParentID  sql.NullString
-	CreatedAt sql.NullTime
-	UpdatedAt sql.NullTime
+	ID           string
+	Type         string
+	Kind         sql.NullString
+	Layer        string
+	Title        string
+	Content      string
+	ContextID    string
+	Scope        sql.NullString
+	ParentID     sql.NullString
+	ApproachType sql.NullString
+	CreatedAt    sql.NullTime
+	UpdatedAt    sql.NullTime
 }
 
 // query.sql
@@ -349,6 +350,7 @@ func (q *Queries) CreateHolon(ctx context.Context, db DBTX, arg CreateHolonParam
 		arg.ContextID,
 		arg.Scope,
 		arg.ParentID,
+		arg.ApproachType,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -1130,7 +1132,7 @@ func (q *Queries) GetEvidenceWithCarrierCommit(ctx context.Context, db DBTX) ([]
 }
 
 const getHolon = `-- name: GetHolon :one
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, approach_type, created_at, updated_at FROM holons WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, error) {
@@ -1151,6 +1153,7 @@ func (q *Queries) GetHolon(ctx context.Context, db DBTX, id string) (Holon, erro
 		&i.ReverificationReason,
 		&i.ReverificationSince,
 		&i.ContextStatus,
+		&i.ApproachType,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1234,7 +1237,7 @@ func (q *Queries) GetHolonTitle(ctx context.Context, db DBTX, id string) (string
 }
 
 const getHolonsByParent = `-- name: GetHolonsByParent :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE parent_id = ? ORDER BY created_at DESC
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, approach_type, created_at, updated_at FROM holons WHERE parent_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.NullString) ([]Holon, error) {
@@ -1261,6 +1264,7 @@ func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.N
 			&i.ReverificationReason,
 			&i.ReverificationSince,
 			&i.ContextStatus,
+			&i.ApproachType,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1278,7 +1282,7 @@ func (q *Queries) GetHolonsByParent(ctx context.Context, db DBTX, parentID sql.N
 }
 
 const getHolonsNeedingReverification = `-- name: GetHolonsNeedingReverification :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM active_holons
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, approach_type, created_at, updated_at FROM active_holons
 WHERE needs_reverification = 1
 ORDER BY reverification_since DESC
 `
@@ -1307,6 +1311,7 @@ func (q *Queries) GetHolonsNeedingReverification(ctx context.Context, db DBTX) (
 			&i.ReverificationReason,
 			&i.ReverificationSince,
 			&i.ContextStatus,
+			&i.ApproachType,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1342,7 +1347,7 @@ func (q *Queries) GetLastCommit(ctx context.Context, db DBTX, contextID string) 
 }
 
 const getLatestHolonByContext = `-- name: GetLatestHolonByContext :one
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, approach_type, created_at, updated_at FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextID string) (Holon, error) {
@@ -1363,6 +1368,7 @@ func (q *Queries) GetLatestHolonByContext(ctx context.Context, db DBTX, contextI
 		&i.ReverificationReason,
 		&i.ReverificationSince,
 		&i.ContextStatus,
+		&i.ApproachType,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1618,7 +1624,7 @@ func (q *Queries) ListAllHolonIDs(ctx context.Context, db DBTX) ([]string, error
 }
 
 const listHolonsByLayer = `-- name: ListHolonsByLayer :many
-SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
+SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cached_r_score, needs_reverification, reverification_reason, reverification_since, context_status, approach_type, created_at, updated_at FROM holons WHERE layer = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) ([]Holon, error) {
@@ -1645,6 +1651,7 @@ func (q *Queries) ListHolonsByLayer(ctx context.Context, db DBTX, layer string) 
 			&i.ReverificationReason,
 			&i.ReverificationSince,
 			&i.ContextStatus,
+			&i.ApproachType,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

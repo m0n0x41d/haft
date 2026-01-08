@@ -183,20 +183,21 @@ func (s *Store) Close() error {
 	return s.conn.Close()
 }
 
-func (s *Store) CreateHolon(ctx context.Context, id, typ, kind, layer, title, content, contextID, scope, parentID string) error {
+func (s *Store) CreateHolon(ctx context.Context, id, typ, kind, layer, title, content, contextID, scope, parentID, approachType string) error {
 	now := sql.NullTime{Time: time.Now(), Valid: true}
 	return s.q.CreateHolon(ctx, s.conn, CreateHolonParams{
-		ID:        id,
-		Type:      typ,
-		Kind:      toNullString(kind),
-		Layer:     layer,
-		Title:     title,
-		Content:   content,
-		ContextID: contextID,
-		Scope:     toNullString(scope),
-		ParentID:  toNullString(parentID),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           id,
+		Type:         typ,
+		Kind:         toNullString(kind),
+		Layer:        layer,
+		Title:        title,
+		Content:      content,
+		ContextID:    contextID,
+		Scope:        toNullString(scope),
+		ParentID:     toNullString(parentID),
+		ApproachType: toNullString(approachType),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	})
 }
 

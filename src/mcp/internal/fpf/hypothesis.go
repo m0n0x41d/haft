@@ -44,7 +44,7 @@ func (t *Tools) suggestDependencies(ctx context.Context, title, content string) 
 	return suggestions
 }
 
-func (t *Tools) ProposeHypothesis(ctx context.Context, title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
+func (t *Tools) ProposeHypothesis(ctx context.Context, title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int, approachType string) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
 	logger.Info().
@@ -52,6 +52,7 @@ func (t *Tools) ProposeHypothesis(ctx context.Context, title, content, scope, ki
 		Str("kind", kind).
 		Str("scope", scope).
 		Str("decision_context", decisionContext).
+		Str("approach_type", approachType).
 		Int("dependency_count", len(dependsOn)).
 		Msg("ProposeHypothesis called")
 
@@ -75,7 +76,7 @@ func (t *Tools) ProposeHypothesis(ctx context.Context, title, content, scope, ki
 	slug := t.Slugify(title)
 	body := fmt.Sprintf("# Hypothesis: %s\n\n%s\n\n## Rationale\n%s", title, content, rationale)
 
-	if err := t.DB.CreateHolon(ctx, slug, "hypothesis", kind, "L0", title, body, "default", scope, ""); err != nil {
+	if err := t.DB.CreateHolon(ctx, slug, "hypothesis", kind, "L0", title, body, "default", scope, "", approachType); err != nil {
 		logger.Error().Err(err).Str("slug", slug).Msg("ProposeHypothesis: failed to create holon")
 		t.AuditLog("quint_propose", "create_hypothesis", "agent", slug, "ERROR", map[string]string{"title": title, "kind": kind}, err.Error())
 		return "", fmt.Errorf("failed to create hypothesis in database: %w", err)
@@ -482,7 +483,7 @@ func (t *Tools) RefineLoopback(ctx context.Context, sourceLayer, parentID, insig
 	}
 
 	rationale := fmt.Sprintf(`{"source": "loopback", "parent_id": "%s", "insight": "%s"}`, parentID, insight)
-	childPath, err := t.ProposeHypothesis(ctx, newTitle, newContent, scope, "system", rationale, decisionContext, nil, 3)
+	childPath, err := t.ProposeHypothesis(ctx, newTitle, newContent, scope, "system", rationale, decisionContext, nil, 3, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}

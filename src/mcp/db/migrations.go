@@ -179,6 +179,11 @@ var migrations = []struct {
 		description: "Predictions tracking: add predictions table for L1-L2 enforcement",
 		sql:         "", // Applied as individual statements below (migration9Statements)
 	},
+	{
+		version:     10,
+		description: "Formality level: add formality_level to evidence for F-G-R triad",
+		sql:         "", // Applied as individual statements below (migration10Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -194,6 +199,10 @@ var migration9Statements = []string{
 	)`,
 	"CREATE INDEX IF NOT EXISTS idx_predictions_holon ON predictions(holon_id)",
 	"CREATE INDEX IF NOT EXISTS idx_predictions_uncovered ON predictions(holon_id) WHERE covered = 0",
+}
+
+var migration10Statements = []string{
+	"ALTER TABLE evidence ADD COLUMN formality_level INTEGER DEFAULT 5",
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
@@ -288,6 +297,15 @@ func RunMigrations(conn *sql.DB) error {
 			for _, stmt := range migration9Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 10 {
+			// Special handling for migration 10 (Formality Level)
+			for _, stmt := range migration10Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !isDuplicateColumnError(execErr) {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
 					}
 				}

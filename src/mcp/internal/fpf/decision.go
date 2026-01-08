@@ -139,7 +139,7 @@ func (t *Tools) FinalizeDecision(ctx context.Context, title, winnerID string, re
 
 	if t.DB != nil {
 		drrID := fmt.Sprintf("DRR-%s-%s", dateStr, t.Slugify(title))
-		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", scopeForDB, winnerID); err != nil {
+		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", scopeForDB, winnerID, ""); err != nil {
 			logger.Warn().Err(err).Msg("failed to create DRR holon in DB")
 		}
 

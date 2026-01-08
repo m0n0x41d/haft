@@ -4,8 +4,8 @@
 -- Holon queries
 
 -- name: CreateHolon :exec
-INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, approach_type, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetHolon :one
 SELECT * FROM holons WHERE id = ? LIMIT 1;

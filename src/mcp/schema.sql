@@ -16,6 +16,7 @@ CREATE TABLE holons (
     reverification_reason TEXT,
     reverification_since DATETIME,
     context_status TEXT DEFAULT NULL,
+    approach_type TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -129,6 +130,9 @@ CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverificat
 -- Indexes for Decision Contexts (v5.0.0)
 CREATE INDEX IF NOT EXISTS idx_holons_context_status ON holons(context_status);
 CREATE INDEX IF NOT EXISTS idx_relations_memberof ON relations(target_id, relation_type);
+
+-- Indexes for approach_type diversity tracking (NQD-CAL)
+CREATE INDEX IF NOT EXISTS idx_holons_approach_type ON holons(approach_type);
 
 -- Active holons: excludes contexts (shown separately) and closed/abandoned items
 -- Used by: GetActiveRecentHolons, CountActiveHolonsByLayer

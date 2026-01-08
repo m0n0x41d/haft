@@ -345,8 +345,8 @@ func (t *Tools) Resolve(ctx context.Context, input ResolveInput) (string, error)
 		}
 		carrierRef = "superseded_by:" + input.SupersededBy
 
-		if err := t.DB.CreateRelation(ctx, input.DecisionID, "SupersededBy", input.SupersededBy, 3); err != nil {
-			logger.Warn().Err(err).Msg("failed to create SupersededBy relation")
+		if err := t.createRelation(ctx, input.DecisionID, "supersededBy", input.SupersededBy, 3); err != nil {
+			logger.Warn().Err(err).Msg("failed to create supersededBy relation")
 		}
 	}
 

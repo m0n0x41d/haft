@@ -19,6 +19,7 @@ var validRelationTypes = map[string]bool{
 	"closes":        true,
 	"verifiedBy":    true,
 	"dependsOn":     true,
+	"supersededBy":  true,
 }
 
 func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targetID string, cl int) error {

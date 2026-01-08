@@ -24,6 +24,7 @@ type ActiveHolon struct {
 	ReverificationReason sql.NullString
 	ReverificationSince  sql.NullTime
 	ContextStatus        sql.NullString
+	ApproachType         sql.NullString
 	CreatedAt            sql.NullTime
 	UpdatedAt            sql.NullTime
 }
@@ -95,6 +96,7 @@ type Holon struct {
 	ReverificationReason sql.NullString
 	ReverificationSince  sql.NullTime
 	ContextStatus        sql.NullString
+	ApproachType         sql.NullString
 	CreatedAt            sql.NullTime
 	UpdatedAt            sql.NullTime
 }

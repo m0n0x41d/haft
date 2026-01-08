@@ -119,7 +119,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **MCP config simplified**: Removed redundant `QUINT_PROJECT_ROOT` env var
 
+- **FPF tools.go Decomposition**: Split monolithic 3904-line file into domain-specific modules
+  - `types.go`: Struct definitions
+  - `utils.go`: Utility methods (GetFPFDir, Slugify, AuditLog)
+  - `git.go`: Git operations (detectCodeChanges, hashCarrierFiles)
+  - `relations.go`: Graph operations (LinkHolons, CreateContext)
+  - `search.go`: Query methods (Search, GetOpenDecisions)
+  - `audit.go`: Tree building (buildAuditTree)
+  - `evidence.go`: Evidence management (ManageEvidence, UnifiedAudit)
+  - `hypothesis.go`: Core FPF flow (Propose, Verify, Validate)
+  - `decision.go`: DRR creation (FinalizeDecision, Resolve)
+  - `implement.go`: Implementation directives
+  - `session.go`: Session management (Internalize, GetStatus)
+  - `lifecycle.go`: Project setup (InitProject, Compact, ResetCycle)
+  - `tools.go` now contains only Tools struct and NewTools (34 lines)
+  - All files under 600 lines, no API changes
+
 ### Fixed
+
+- **Stage Derivation for Mixed-Layer Contexts**: Fixed incorrect stage when context has hypotheses at different layers
+  - Previously: L0 + L2 → StageNeedsAudit (wrong, ignored L0)
+  - Now: L0 + L2 → StageNeedsVerify (correct, uses min stage)
+  - Stage checks now ordered from lowest to highest (L0 → L1 → L2)
 
 - **DB as Source of Truth**: Database is now the authoritative source for holon state
   - `getHolonLayer()` queries DB only (removed filesystem fallback)

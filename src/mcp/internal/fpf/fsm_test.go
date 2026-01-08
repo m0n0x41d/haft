@@ -191,6 +191,131 @@ func TestGetContextStage(t *testing.T) {
 	}
 }
 
+func TestGetContextStageMixedLayers(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer database.Close()
+
+	fsm := &FSM{
+		State: State{AssuranceThreshold: 0.8},
+		DB:    database.GetRawDB(),
+	}
+
+	ctx := context.Background()
+
+	t.Run("L0_plus_L2_returns_StageNeedsVerify", func(t *testing.T) {
+		err := database.CreateHolon(ctx, "ctx-mixed-1", "decision_context", "system", "L0", "Mixed Context 1", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l0", "hypothesis", "system", "L0", "L0 Hypothesis", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L0 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l0", "memberOf", "ctx-mixed-1", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l2", "hypothesis", "system", "L2", "L2 Hypothesis", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L2 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l2", "memberOf", "ctx-mixed-1", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		stage := fsm.GetContextStage("ctx-mixed-1")
+		if stage != StageNeedsVerify {
+			t.Errorf("L0 + L2: expected StageNeedsVerify, got %s", stage)
+		}
+	})
+
+	t.Run("L1_plus_L2_returns_StageNeedsValidation", func(t *testing.T) {
+		err := database.CreateHolon(ctx, "ctx-mixed-2", "decision_context", "system", "L0", "Mixed Context 2", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l1", "hypothesis", "system", "L1", "L1 Hypothesis", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L1 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l1", "memberOf", "ctx-mixed-2", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l2-2", "hypothesis", "system", "L2", "L2 Hypothesis 2", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L2 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l2-2", "memberOf", "ctx-mixed-2", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		stage := fsm.GetContextStage("ctx-mixed-2")
+		if stage != StageNeedsValidation {
+			t.Errorf("L1 + L2: expected StageNeedsValidation, got %s", stage)
+		}
+	})
+
+	t.Run("Only_L2_audited_returns_StageReadyToDecide", func(t *testing.T) {
+		err := database.CreateHolon(ctx, "ctx-l2-only", "decision_context", "system", "L0", "L2 Only Context", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l2-audited", "hypothesis", "system", "L2", "Audited L2", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L2 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l2-audited", "memberOf", "ctx-l2-only", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		err = database.AddEvidence(ctx, "e-audit", "h-l2-audited", "audit_report", "Audit passed", "PASS", "L2", "auditor", "", "", "")
+		if err != nil {
+			t.Fatalf("Failed to add audit evidence: %v", err)
+		}
+
+		stage := fsm.GetContextStage("ctx-l2-only")
+		if stage != StageReadyToDecide {
+			t.Errorf("Only L2 audited: expected StageReadyToDecide, got %s", stage)
+		}
+	})
+
+	t.Run("L2_not_audited_returns_StageNeedsAudit", func(t *testing.T) {
+		err := database.CreateHolon(ctx, "ctx-l2-unaudited", "decision_context", "system", "L0", "L2 Unaudited Context", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create context: %v", err)
+		}
+
+		err = database.CreateHolon(ctx, "h-l2-unaudited", "hypothesis", "system", "L2", "Unaudited L2", "", "default", "", "")
+		if err != nil {
+			t.Fatalf("Failed to create L2 holon: %v", err)
+		}
+		err = database.CreateRelation(ctx, "h-l2-unaudited", "memberOf", "ctx-l2-unaudited", 3)
+		if err != nil {
+			t.Fatalf("Failed to create relation: %v", err)
+		}
+
+		stage := fsm.GetContextStage("ctx-l2-unaudited")
+		if stage != StageNeedsAudit {
+			t.Errorf("L2 not audited: expected StageNeedsAudit, got %s", stage)
+		}
+	})
+}
+
 func TestGetContextStageWithoutDB(t *testing.T) {
 	fsm := &FSM{State: State{}, DB: nil}
 	stage := fsm.GetContextStage("any-context")

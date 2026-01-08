@@ -156,6 +156,12 @@ func (f *FSM) GetContextStage(decisionContextID string) ContextStage {
 	l1 := counts["L1"]
 	l2 := counts["L2"]
 
+	if l0 > 0 {
+		return StageNeedsVerify
+	}
+	if l1 > 0 {
+		return StageNeedsValidation
+	}
 	if l2 > 0 {
 		var allL2Audited bool
 		auditRow := f.DB.QueryRowContext(context.Background(), `
@@ -169,16 +175,10 @@ func (f *FSM) GetContextStage(decisionContextID string) ContextStage {
 				      WHERE e.holon_id = h.id AND e.type = 'audit_report'
 				  )
 			)`, decisionContextID)
-		if err := auditRow.Scan(&allL2Audited); err == nil && allL2Audited && l2 > 0 {
+		if err := auditRow.Scan(&allL2Audited); err == nil && allL2Audited {
 			return StageReadyToDecide
 		}
 		return StageNeedsAudit
-	}
-	if l1 > 0 {
-		return StageNeedsValidation
-	}
-	if l0 > 0 {
-		return StageNeedsVerify
 	}
 	return StageEmpty
 }

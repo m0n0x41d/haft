@@ -232,7 +232,7 @@ func (s *Store) RecordWork(ctx context.Context, id, methodRef, performerRef stri
 	})
 }
 
-func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel, carrierRef, carrierHash, carrierCommit, validUntil string) error {
+func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verdict, assuranceLevel string, formalityLevel int, carrierRef, carrierHash, carrierCommit, validUntil string) error {
 	var vUntil sql.NullTime
 	if validUntil != "" {
 		t, err := time.Parse(time.RFC3339, validUntil)
@@ -251,6 +251,7 @@ func (s *Store) AddEvidence(ctx context.Context, id, holonID, typ, content, verd
 		Content:        content,
 		Verdict:        verdict,
 		AssuranceLevel: toNullString(assuranceLevel),
+		FormalityLevel: sql.NullInt64{Int64: int64(formalityLevel), Valid: true},
 		CarrierRef:     toNullString(carrierRef),
 		CarrierHash:    toNullString(carrierHash),
 		CarrierCommit:  toNullString(carrierCommit),

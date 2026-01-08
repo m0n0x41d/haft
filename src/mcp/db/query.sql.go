@@ -43,8 +43,8 @@ func (q *Queries) AddCharacteristic(ctx context.Context, db DBTX, arg AddCharact
 
 const addEvidence = `-- name: AddEvidence :exec
 
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type AddEvidenceParams struct {
@@ -54,6 +54,7 @@ type AddEvidenceParams struct {
 	Content        string
 	Verdict        string
 	AssuranceLevel sql.NullString
+	FormalityLevel sql.NullInt64
 	CarrierRef     sql.NullString
 	CarrierHash    sql.NullString
 	CarrierCommit  sql.NullString
@@ -70,6 +71,7 @@ func (q *Queries) AddEvidence(ctx context.Context, db DBTX, arg AddEvidenceParam
 		arg.Content,
 		arg.Verdict,
 		arg.AssuranceLevel,
+		arg.FormalityLevel,
 		arg.CarrierRef,
 		arg.CarrierHash,
 		arg.CarrierCommit,
@@ -951,7 +953,7 @@ func (q *Queries) GetEvidenceByCarrierPattern(ctx context.Context, db DBTX, carr
 }
 
 const getEvidenceByHolon = `-- name: GetEvidenceByHolon :many
-SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE holon_id = ? ORDER BY created_at DESC
+SELECT id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE holon_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) GetEvidenceByHolon(ctx context.Context, db DBTX, holonID string) ([]Evidence, error) {
@@ -970,6 +972,7 @@ func (q *Queries) GetEvidenceByHolon(ctx context.Context, db DBTX, holonID strin
 			&i.Content,
 			&i.Verdict,
 			&i.AssuranceLevel,
+			&i.FormalityLevel,
 			&i.CarrierRef,
 			&i.CarrierHash,
 			&i.CarrierCommit,
@@ -993,7 +996,7 @@ func (q *Queries) GetEvidenceByHolon(ctx context.Context, db DBTX, holonID strin
 }
 
 const getEvidenceByID = `-- name: GetEvidenceByID :one
-SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE id = ? LIMIT 1
+SELECT id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetEvidenceByID(ctx context.Context, db DBTX, id string) (Evidence, error) {
@@ -1006,6 +1009,7 @@ func (q *Queries) GetEvidenceByID(ctx context.Context, db DBTX, id string) (Evid
 		&i.Content,
 		&i.Verdict,
 		&i.AssuranceLevel,
+		&i.FormalityLevel,
 		&i.CarrierRef,
 		&i.CarrierHash,
 		&i.CarrierCommit,
@@ -1019,7 +1023,7 @@ func (q *Queries) GetEvidenceByID(ctx context.Context, db DBTX, id string) (Evid
 }
 
 const getEvidenceWithCarrier = `-- name: GetEvidenceWithCarrier :many
-SELECT id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != ''
+SELECT id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, is_stale, stale_reason, stale_since, valid_until, created_at FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != ''
 `
 
 func (q *Queries) GetEvidenceWithCarrier(ctx context.Context, db DBTX) ([]Evidence, error) {
@@ -1038,6 +1042,7 @@ func (q *Queries) GetEvidenceWithCarrier(ctx context.Context, db DBTX) ([]Eviden
 			&i.Content,
 			&i.Verdict,
 			&i.AssuranceLevel,
+			&i.FormalityLevel,
 			&i.CarrierRef,
 			&i.CarrierHash,
 			&i.CarrierCommit,

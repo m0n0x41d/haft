@@ -48,8 +48,8 @@ SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cach
 -- Evidence queries
 
 -- name: AddEvidence :exec
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetEvidenceByHolon :many
 SELECT * FROM evidence WHERE holon_id = ? ORDER BY created_at DESC;

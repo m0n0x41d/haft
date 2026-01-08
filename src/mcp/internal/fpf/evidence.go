@@ -18,7 +18,7 @@ func (t *Tools) AuditEvidence(ctx context.Context, hypothesisID, risks string) (
 
 	logger.Info().Str("hypothesis_id", hypothesisID).Msg("AuditEvidence called")
 
-	_, err := t.ManageEvidence(ctx, "audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
+	_, err := t.ManageEvidence(ctx, "audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", DefaultFormalityLevel, "auditor", "")
 	if err != nil {
 		logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("AuditEvidence: failed to add evidence")
 		return "", err
@@ -54,7 +54,7 @@ func (t *Tools) UnifiedAudit(ctx context.Context, holonID, risks string) (string
 	}
 
 	result.WriteString(fmt.Sprintf("# Audit Report: %s\n\n", holonID))
-	result.WriteString(fmt.Sprintf("**R_eff: %.2f**\n", report.FinalScore))
+	result.WriteString(fmt.Sprintf("**R_eff: %.2f** | **F_eff: %d**\n", report.FinalScore, report.FormalityScore))
 	result.WriteString(fmt.Sprintf("- Self Score: %.2f\n", report.SelfScore))
 	if report.WeakestLink != "" {
 		result.WriteString(fmt.Sprintf("- Weakest Link: %s\n", report.WeakestLink))
@@ -79,7 +79,7 @@ func (t *Tools) UnifiedAudit(ctx context.Context, holonID, risks string) (string
 	result.WriteString("```\n")
 
 	if risks != "" {
-		_, err := t.ManageEvidence(ctx, "audit", "add", holonID, "audit_report", risks, "pass", "L2", "auditor", "")
+		_, err := t.ManageEvidence(ctx, "audit", "add", holonID, "audit_report", risks, "pass", "L2", DefaultFormalityLevel, "auditor", "")
 		if err != nil {
 			result.WriteString(fmt.Sprintf("\n⚠️ Failed to record audit: %v\n", err))
 		} else {
@@ -90,7 +90,7 @@ func (t *Tools) UnifiedAudit(ctx context.Context, holonID, risks string) (string
 	return result.String(), nil
 }
 
-func (t *Tools) ManageEvidence(ctx context.Context, operation, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
+func (t *Tools) ManageEvidence(ctx context.Context, operation, action, targetID, evidenceType, content, verdict, assuranceLevel string, formalityLevel int, carrierRef, validUntil string) (string, error) {
 	defer t.RecordWork("ManageEvidence", time.Now())
 
 	if action == "check" {
@@ -190,7 +190,7 @@ func (t *Tools) ManageEvidence(ctx context.Context, operation, action, targetID,
 			carrierCommit = currentHead
 		}
 
-		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, carrierRef, carrierHash, carrierCommit, validUntil); err != nil {
+		if err := t.DB.AddEvidence(ctx, filename, targetID, evidenceType, content, normalizedVerdict, assuranceLevel, formalityLevel, carrierRef, carrierHash, carrierCommit, validUntil); err != nil {
 			logger.Warn().Err(err).Msg("failed to add evidence to DB")
 		}
 		if err := t.DB.Link(ctx, filename, targetID, "verifiedBy"); err != nil {

@@ -194,7 +194,7 @@ func (t *Tools) VerifyHypothesis(ctx context.Context, hypothesisID, checksJSON, 
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", DefaultFormalityLevel, carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
@@ -235,7 +235,7 @@ func (t *Tools) VerifyHypothesis(ctx context.Context, hypothesisID, checksJSON, 
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", DefaultFormalityLevel, carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
@@ -394,7 +394,7 @@ func (t *Tools) ValidateHypothesis(ctx context.Context, hypothesisID, testType, 
 		}
 
 		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: adding validation evidence")
-		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", DefaultFormalityLevel, carrierRef, validUntil); err != nil {
 			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
@@ -410,7 +410,7 @@ func (t *Tools) ValidateHypothesis(ctx context.Context, hypothesisID, testType, 
 
 	case "FAIL":
 		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: recording failed validation")
-		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", DefaultFormalityLevel, carrierRef, validUntil); err != nil {
 			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err

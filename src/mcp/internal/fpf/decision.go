@@ -364,6 +364,7 @@ func (t *Tools) Resolve(ctx context.Context, input ResolveInput) (string, error)
 		content,
 		"PASS",
 		"",
+		DefaultFormalityLevel,
 		carrierRef,
 		carrierHash,
 		carrierCommit,

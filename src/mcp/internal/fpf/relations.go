@@ -40,7 +40,7 @@ func (t *Tools) createRelation(ctx context.Context, sourceID, relationType, targ
 	return nil
 }
 
-func (t *Tools) CreateContext(title, scope, description string) (string, error) {
+func (t *Tools) CreateContext(ctx context.Context, title, scope, description string) (string, error) {
 	defer t.RecordWork("CreateContext", time.Now())
 
 	logger.Info().
@@ -55,8 +55,6 @@ func (t *Tools) CreateContext(title, scope, description string) (string, error) 
 	if title == "" {
 		return "", fmt.Errorf("title is required")
 	}
-
-	ctx := context.Background()
 	contextID := "dc-" + t.Slugify(title)
 
 	if _, err := t.DB.GetHolon(ctx, contextID); err == nil {
@@ -168,7 +166,7 @@ func (t *Tools) isReachable(ctx context.Context, from, to string, visited map[st
 	return false, nil
 }
 
-func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
+func (t *Tools) LinkHolons(ctx context.Context, sourceID, targetID string, cl int) (string, error) {
 	defer t.RecordWork("LinkHolons", time.Now())
 
 	logger.Info().
@@ -181,8 +179,6 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 		logger.Error().Msg("LinkHolons: database not initialized")
 		return "", ErrDatabaseNotInitialized
 	}
-
-	ctx := context.Background()
 
 	source, err := t.DB.GetHolon(ctx, sourceID)
 	if err != nil {

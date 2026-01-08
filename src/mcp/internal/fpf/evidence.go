@@ -13,12 +13,12 @@ import (
 	"github.com/google/uuid"
 )
 
-func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
+func (t *Tools) AuditEvidence(ctx context.Context, hypothesisID, risks string) (string, error) {
 	defer t.RecordWork("AuditEvidence", time.Now())
 
 	logger.Info().Str("hypothesis_id", hypothesisID).Msg("AuditEvidence called")
 
-	_, err := t.ManageEvidence("audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
+	_, err := t.ManageEvidence(ctx, "audit", "add", hypothesisID, "audit_report", risks, "pass", "L2", "auditor", "")
 	if err != nil {
 		logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("AuditEvidence: failed to add evidence")
 		return "", err
@@ -28,7 +28,7 @@ func (t *Tools) AuditEvidence(hypothesisID, risks string) (string, error) {
 	return "Audit recorded for " + hypothesisID, nil
 }
 
-func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
+func (t *Tools) UnifiedAudit(ctx context.Context, holonID, risks string) (string, error) {
 	defer t.RecordWork("UnifiedAudit", time.Now())
 
 	logger.Info().
@@ -48,7 +48,7 @@ func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 	var result strings.Builder
 
 	calc := assurance.New(t.DB.GetRawDB())
-	report, err := calc.CalculateReliability(context.Background(), holonID)
+	report, err := calc.CalculateReliability(ctx, holonID)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate reliability: %w", err)
 	}
@@ -70,7 +70,7 @@ func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 	}
 
 	result.WriteString("\n## Assurance Tree\n\n```\n")
-	tree, err := t.buildAuditTree(holonID, 0, calc)
+	tree, err := t.buildAuditTree(ctx, holonID, 0, calc)
 	if err != nil {
 		result.WriteString(fmt.Sprintf("(Unable to build tree: %v)\n", err))
 	} else {
@@ -79,7 +79,7 @@ func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 	result.WriteString("```\n")
 
 	if risks != "" {
-		_, err := t.ManageEvidence("audit", "add", holonID, "audit_report", risks, "pass", "L2", "auditor", "")
+		_, err := t.ManageEvidence(ctx, "audit", "add", holonID, "audit_report", risks, "pass", "L2", "auditor", "")
 		if err != nil {
 			result.WriteString(fmt.Sprintf("\n⚠️ Failed to record audit: %v\n", err))
 		} else {
@@ -90,10 +90,8 @@ func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 	return result.String(), nil
 }
 
-func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
+func (t *Tools) ManageEvidence(ctx context.Context, operation, action, targetID, evidenceType, content, verdict, assuranceLevel, carrierRef, validUntil string) (string, error) {
 	defer t.RecordWork("ManageEvidence", time.Now())
-
-	ctx := context.Background()
 
 	if action == "check" {
 		if t.DB == nil {
@@ -140,7 +138,7 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 		case "verification":
 			moveErr = t.MoveHypothesis(targetID, "L0", "L1")
 		case "validation":
-			holon, err := t.DB.GetHolon(context.Background(), targetID)
+			holon, err := t.DB.GetHolon(ctx, targetID)
 			if err == nil && holon.Layer == "L0" {
 				return "", fmt.Errorf("hypothesis %s is still in L0: run /q2-verify to promote it to L1 before testing", targetID)
 			}
@@ -153,7 +151,7 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 		case "verification":
 			moveErr = t.MoveHypothesis(targetID, "L0", "invalid")
 		case "validation":
-			holon, err := t.DB.GetHolon(context.Background(), targetID)
+			holon, err := t.DB.GetHolon(ctx, targetID)
 			if err == nil && holon.Layer == "L1" {
 				moveErr = t.MoveHypothesis(targetID, "L1", "invalid")
 			}
@@ -213,7 +211,7 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 	return path, nil
 }
 
-func (t *Tools) CheckDecay(deprecate, waiveID, waiveUntil, waiveRationale string) (string, error) {
+func (t *Tools) CheckDecay(ctx context.Context, deprecate, waiveID, waiveUntil, waiveRationale string) (string, error) {
 	defer t.RecordWork("CheckDecay", time.Now())
 	if t.DB == nil {
 		return "", ErrDatabaseNotInitialized
@@ -221,19 +219,18 @@ func (t *Tools) CheckDecay(deprecate, waiveID, waiveUntil, waiveRationale string
 
 	switch {
 	case deprecate != "":
-		return t.deprecateHolon(deprecate)
+		return t.deprecateHolon(ctx, deprecate)
 	case waiveID != "":
 		if waiveUntil == "" || waiveRationale == "" {
 			return "", fmt.Errorf("waive requires both --until and --rationale parameters")
 		}
-		return t.createWaiver(waiveID, waiveUntil, waiveRationale)
+		return t.createWaiver(ctx, waiveID, waiveUntil, waiveRationale)
 	default:
-		return t.generateFreshnessReport()
+		return t.generateFreshnessReport(ctx)
 	}
 }
 
-func (t *Tools) deprecateHolon(holonID string) (string, error) {
-	ctx := context.Background()
+func (t *Tools) deprecateHolon(ctx context.Context, holonID string) (string, error) {
 	holon, err := t.DB.GetHolon(ctx, holonID)
 	if err != nil {
 		return "", fmt.Errorf("holon not found: %s", holonID)
@@ -259,8 +256,7 @@ func (t *Tools) deprecateHolon(holonID string) (string, error) {
 	return fmt.Sprintf("Deprecated: %s %s → %s\n\nThis decision now requires re-evaluation.\nNext step: Run /q1-hypothesize to explore alternatives.", holonID, holon.Layer, newLayer), nil
 }
 
-func (t *Tools) createWaiver(evidenceID, until, rationale string) (string, error) {
-	ctx := context.Background()
+func (t *Tools) createWaiver(ctx context.Context, evidenceID, until, rationale string) (string, error) {
 
 	_, err := t.DB.GetEvidenceByID(ctx, evidenceID)
 	if err != nil {
@@ -296,8 +292,7 @@ func (t *Tools) createWaiver(evidenceID, until, rationale string) (string, error
    Set a reminder to run /q3-validate before then.`, evidenceID, until, rationale, until), nil
 }
 
-func (t *Tools) generateFreshnessReport() (string, error) {
-	ctx := context.Background()
+func (t *Tools) generateFreshnessReport(ctx context.Context) (string, error) {
 
 	staleRows, err := t.DB.GetStaleEvidence(ctx)
 	if err != nil {

@@ -91,7 +91,7 @@ func (t *Tools) formatImplementationWarnings(warnings *ImplementationWarnings) s
 	return sb.String()
 }
 
-func (t *Tools) Implement(drrID string) (string, error) {
+func (t *Tools) Implement(ctx context.Context, drrID string) (string, error) {
 	defer t.RecordWork("Implement", time.Now())
 
 	logger.Info().Str("drr_id", drrID).Msg("Implement called")
@@ -100,8 +100,6 @@ func (t *Tools) Implement(drrID string) (string, error) {
 		logger.Error().Msg("Implement: database not initialized")
 		return "", ErrDatabaseNotInitialized
 	}
-
-	ctx := context.Background()
 	if _, err := t.detectCodeChanges(ctx); err != nil {
 		logger.Warn().Err(err).Msg("code change detection failed")
 	}
@@ -114,9 +112,9 @@ func (t *Tools) Implement(drrID string) (string, error) {
 		}
 	}
 
-	drr, err := t.loadDRRInfo(normalizedID)
+	drr, err := t.loadDRRInfo(ctx, normalizedID)
 	if err != nil {
-		drr, err = t.loadDRRInfo(drrID)
+		drr, err = t.loadDRRInfo(ctx, drrID)
 		if err != nil {
 			return "", err
 		}
@@ -147,7 +145,7 @@ func (t *Tools) Implement(drrID string) (string, error) {
 		}
 	}
 
-	inherited := t.collectInheritedConstraints(drr.DependsOn, make(map[string]bool))
+	inherited := t.collectInheritedConstraints(ctx, drr.DependsOn, make(map[string]bool))
 
 	dependsOnWithWinner := drr.DependsOn
 	if drr.WinnerID != "" {
@@ -179,8 +177,7 @@ func (t *Tools) Implement(drrID string) (string, error) {
 	return directive, nil
 }
 
-func (t *Tools) loadDRRInfo(drrID string) (*DRRInfo, error) {
-	ctx := context.Background()
+func (t *Tools) loadDRRInfo(ctx context.Context, drrID string) (*DRRInfo, error) {
 
 	holon, err := t.DB.GetHolon(ctx, drrID)
 	if err != nil {
@@ -217,7 +214,7 @@ func (t *Tools) loadDRRInfo(drrID string) (*DRRInfo, error) {
 	}, nil
 }
 
-func (t *Tools) collectInheritedConstraints(depIDs []string, visited map[string]bool) InheritedConstraints {
+func (t *Tools) collectInheritedConstraints(ctx context.Context, depIDs []string, visited map[string]bool) InheritedConstraints {
 	var result InheritedConstraints
 
 	for _, depID := range depIDs {
@@ -226,7 +223,7 @@ func (t *Tools) collectInheritedConstraints(depIDs []string, visited map[string]
 		}
 		visited[depID] = true
 
-		dep, err := t.loadDRRInfo(depID)
+		dep, err := t.loadDRRInfo(ctx, depID)
 		if err != nil || dep.Contract == nil {
 			continue
 		}
@@ -247,7 +244,7 @@ func (t *Tools) collectInheritedConstraints(depIDs []string, visited map[string]
 			})
 		}
 
-		deeper := t.collectInheritedConstraints(dep.DependsOn, visited)
+		deeper := t.collectInheritedConstraints(ctx, dep.DependsOn, visited)
 		result.Invariants = append(result.Invariants, deeper.Invariants...)
 		result.AntiPatterns = append(result.AntiPatterns, deeper.AntiPatterns...)
 	}

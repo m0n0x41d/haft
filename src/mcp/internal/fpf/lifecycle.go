@@ -119,13 +119,11 @@ func formatInvariants(inv string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (t *Tools) RunDecay() error {
+func (t *Tools) RunDecay(ctx context.Context) error {
 	defer t.RecordWork("RunDecay", time.Now())
 	if t.DB == nil {
 		return ErrDatabaseNotInitialized
 	}
-
-	ctx := context.Background()
 	ids, err := t.DB.ListAllHolonIDs(ctx)
 	if err != nil {
 		return err
@@ -216,7 +214,7 @@ func (t *Tools) Actualize() (string, error) {
 	return report.String(), nil
 }
 
-func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, error) {
+func (t *Tools) ResetCycle(ctx context.Context, reason, contextID string, abandonAll bool) (string, error) {
 	defer t.RecordWork("ResetCycle", time.Now())
 
 	logger.Info().
@@ -228,8 +226,6 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 	if reason == "" {
 		reason = "user requested reset"
 	}
-
-	ctx := context.Background()
 	var sb strings.Builder
 
 	if contextID != "" {
@@ -282,7 +278,7 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 
 	sb.WriteString(fmt.Sprintf("Stage at reset: %s\n", currentStage))
 	sb.WriteString(fmt.Sprintf("L0: %d, L1: %d, L2: %d, DRR: %d\n",
-		t.countHolons("L0"), t.countHolons("L1"), t.countHolons("L2"), t.countDRRs()))
+		t.countHolons(ctx, "L0"), t.countHolons(ctx, "L1"), t.countHolons(ctx, "L2"), t.countDRRs()))
 
 	if t.DB != nil {
 		openDecisions, err := t.GetOpenDecisions(ctx)
@@ -302,7 +298,7 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 		currentStage, reason, sb.String()), nil
 }
 
-func (t *Tools) Compact(mode string, retentionDays int64) (string, error) {
+func (t *Tools) Compact(ctx context.Context, mode string, retentionDays int64) (string, error) {
 	defer t.RecordWork("Compact", time.Now())
 
 	if t.DB == nil {
@@ -315,8 +311,6 @@ func (t *Tools) Compact(mode string, retentionDays int64) (string, error) {
 	if retentionDays <= 0 {
 		retentionDays = DefaultRetentionDays
 	}
-
-	ctx := context.Background()
 	result := CompactResult{
 		Mode:          mode,
 		RetentionDays: retentionDays,

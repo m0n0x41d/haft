@@ -27,6 +27,7 @@ CREATE TABLE evidence (
     content TEXT NOT NULL,
     verdict TEXT NOT NULL,
     assurance_level TEXT,
+    formality_level INTEGER DEFAULT 5 CHECK(formality_level BETWEEN 0 AND 9),
     carrier_ref TEXT,
     carrier_hash TEXT,
     carrier_commit TEXT,

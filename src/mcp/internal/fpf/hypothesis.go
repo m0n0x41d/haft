@@ -12,12 +12,10 @@ import (
 	"github.com/m0n0x41d/quint-code/logger"
 )
 
-func (t *Tools) suggestDependencies(title, content string) []DependencySuggestion {
+func (t *Tools) suggestDependencies(ctx context.Context, title, content string) []DependencySuggestion {
 	if t.DB == nil {
 		return nil
 	}
-
-	ctx := context.Background()
 
 	searchText := title
 	if len(content) > 200 {
@@ -46,7 +44,7 @@ func (t *Tools) suggestDependencies(title, content string) []DependencySuggestio
 	return suggestions
 }
 
-func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
+func (t *Tools) ProposeHypothesis(ctx context.Context, title, content, scope, kind, rationale string, decisionContext string, dependsOn []string, dependencyCL int) (string, error) {
 	defer t.RecordWork("ProposeHypothesis", time.Now())
 
 	logger.Info().
@@ -61,8 +59,6 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 		logger.Error().Msg("ProposeHypothesis: database not initialized")
 		return "", ErrDatabaseNotInitialized
 	}
-
-	ctx := context.Background()
 
 	if decisionContext == "" {
 		return "", fmt.Errorf("decision_context is required. Create one first with quint_context(title=\"Your Decision Title\")")
@@ -124,7 +120,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	var warningBlock string
 	if len(dependsOn) == 0 && t.DB != nil {
-		suggestions := t.suggestDependencies(title, content)
+		suggestions := t.suggestDependencies(ctx, title, content)
 		if len(suggestions) > 0 {
 			var sb strings.Builder
 			sb.WriteString("\n\n⚠️ POTENTIAL DEPENDENCIES DETECTED\n\n")
@@ -146,7 +142,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 	return slug + warningBlock, nil
 }
 
-func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
+func (t *Tools) VerifyHypothesis(ctx context.Context, hypothesisID, checksJSON, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("VerifyHypothesis", time.Now())
 
 	logger.Info().
@@ -170,7 +166,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 	if carrierRef == "" {
 		carrierRef = "internal-logic"
 		if t.DB != nil {
-			holon, err := t.DB.GetHolon(context.Background(), hypothesisID)
+			holon, err := t.DB.GetHolon(ctx, hypothesisID)
 			if err == nil && holon.Kind.Valid {
 				switch holon.Kind.String {
 				case "system":
@@ -182,7 +178,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 		}
 	}
 
-	if warning := t.checkDuplicateHypothesis(hypothesisID); warning != "" {
+	if warning := t.checkDuplicateHypothesis(ctx, hypothesisID); warning != "" {
 		result.Risks = append(result.Risks, warning)
 	}
 
@@ -198,12 +194,11 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence("verification", "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "pass", "L1", carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
 		if t.DB != nil && len(result.Predictions) > 0 {
-			ctx := context.Background()
 			for i, pred := range result.Predictions {
 				predID := fmt.Sprintf("%s-pred-%d", hypothesisID, i+1)
 				if err := t.DB.AddPrediction(ctx, predID, hypothesisID, pred); err != nil {
@@ -240,7 +235,7 @@ func (t *Tools) VerifyHypothesis(hypothesisID, checksJSON, verdict, carrierFiles
 			return "", err
 		}
 
-		if _, err := t.ManageEvidence("verification", "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
+		if _, err := t.ManageEvidence(ctx, "verification", "add", hypothesisID, "verification", string(evidenceJSON), "fail", "invalid", carrierRef, ""); err != nil {
 			logger.Warn().Err(err).Str("hypothesis_id", hypothesisID).Msg("failed to record verification evidence")
 		}
 
@@ -301,12 +296,10 @@ func (t *Tools) validateVerifyResult(r VerifyResult) error {
 	return nil
 }
 
-func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
+func (t *Tools) checkDuplicateHypothesis(ctx context.Context, hypothesisID string) string {
 	if t.DB == nil {
 		return ""
 	}
-
-	ctx := context.Background()
 
 	current, err := t.DB.GetHolon(ctx, hypothesisID)
 	if err != nil || current.Title == "" {
@@ -325,7 +318,7 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 	return ""
 }
 
-func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carrierFiles string) (string, error) {
+func (t *Tools) ValidateHypothesis(ctx context.Context, hypothesisID, testType, result, verdict, carrierFiles string) (string, error) {
 	defer t.RecordWork("ValidateHypothesis", time.Now())
 
 	logger.Info().
@@ -360,8 +353,6 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 
 	switch strings.ToUpper(verdict) {
 	case "PASS":
-		ctx := context.Background()
-
 		if t.DB != nil {
 			predictions, err := t.DB.GetPredictionsByHolon(ctx, hypothesisID)
 			if err != nil {
@@ -403,7 +394,7 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 		}
 
 		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: adding validation evidence")
-		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "pass", "L2", carrierRef, validUntil); err != nil {
 			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "PASS"}, err.Error())
 			return "", err
@@ -419,7 +410,7 @@ func (t *Tools) ValidateHypothesis(hypothesisID, testType, result, verdict, carr
 
 	case "FAIL":
 		logger.Debug().Str("hypothesis_id", hypothesisID).Str("test_type", testType).Msg("ValidateHypothesis: recording failed validation")
-		if _, err := t.ManageEvidence("validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
+		if _, err := t.ManageEvidence(ctx, "validation", "add", hypothesisID, testType, string(evidenceJSON), "fail", "L1", carrierRef, validUntil); err != nil {
 			logger.Error().Err(err).Str("hypothesis_id", hypothesisID).Msg("ValidateHypothesis: failed to add evidence")
 			t.AuditLog("quint_test", "validate_hypothesis", "agent", hypothesisID, "ERROR", map[string]string{"verdict": "FAIL"}, err.Error())
 			return "", err
@@ -470,7 +461,7 @@ func (t *Tools) validateTestResult(r TestResult) error {
 	return nil
 }
 
-func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newContent, scope string) (string, error) {
+func (t *Tools) RefineLoopback(ctx context.Context, sourceLayer, parentID, insight, newTitle, newContent, scope string) (string, error) {
 	defer t.RecordWork("RefineLoopback", time.Now())
 
 	parentLevel := sourceLayer
@@ -480,7 +471,7 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 
 	var decisionContext string
 	if t.DB != nil {
-		decisionContext = t.DB.GetDecisionContextForHolon(context.Background(), parentID)
+		decisionContext = t.DB.GetDecisionContextForHolon(ctx, parentID)
 		if decisionContext == "" {
 			return "", fmt.Errorf("failed to get parent's decision context: parent %s has no decision context", parentID)
 		}
@@ -491,7 +482,7 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 	}
 
 	rationale := fmt.Sprintf(`{"source": "loopback", "parent_id": "%s", "insight": "%s"}`, parentID, insight)
-	childPath, err := t.ProposeHypothesis(newTitle, newContent, scope, "system", rationale, decisionContext, nil, 3)
+	childPath, err := t.ProposeHypothesis(ctx, newTitle, newContent, scope, "system", rationale, decisionContext, nil, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to create child hypothesis: %v", err)
 	}

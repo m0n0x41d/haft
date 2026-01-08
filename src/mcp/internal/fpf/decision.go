@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string, closeContext bool) (string, error) {
+func (t *Tools) FinalizeDecision(ctx context.Context, title, winnerID string, rejectedIDs []string, decisionContext, decision, rationale, consequences, characteristics, contractJSON string, closeContext bool) (string, error) {
 	defer t.RecordWork("FinalizeDecision", time.Now())
 
 	logger.Info().
@@ -55,7 +55,6 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 
 	if t.DB != nil {
-		ctx := context.Background()
 		for _, hypID := range append([]string{winnerID}, rejectedIDs...) {
 			if hypID == "" {
 				continue
@@ -139,7 +138,6 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	}
 
 	if t.DB != nil {
-		ctx := context.Background()
 		drrID := fmt.Sprintf("DRR-%s-%s", dateStr, t.Slugify(title))
 		if err := t.DB.CreateHolon(ctx, drrID, "DRR", "", "DRR", title, body, "default", scopeForDB, winnerID); err != nil {
 			logger.Warn().Err(err).Msg("failed to create DRR holon in DB")
@@ -250,7 +248,7 @@ func (t *Tools) getDRRContract(decisionID string) (*Contract, error) {
 	return nil, nil
 }
 
-func (t *Tools) Resolve(input ResolveInput) (string, error) {
+func (t *Tools) Resolve(ctx context.Context, input ResolveInput) (string, error) {
 	defer t.RecordWork("Resolve", time.Now())
 
 	logger.Info().
@@ -264,8 +262,6 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 		logger.Error().Msg("Resolve: database not initialized")
 		return "", ErrDatabaseNotInitialized
 	}
-
-	ctx := context.Background()
 
 	holon, err := t.DB.GetHolon(ctx, input.DecisionID)
 	if err != nil {

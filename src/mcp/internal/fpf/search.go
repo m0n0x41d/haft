@@ -26,7 +26,7 @@ func formatAge(t time.Time) string {
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
-func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFilter string, limit int) (string, error) {
+func (t *Tools) Search(ctx context.Context, query, scope, layerFilter, statusFilter, affectedScopeFilter string, limit int) (string, error) {
 	defer t.RecordWork("Search", time.Now())
 
 	logger.Info().
@@ -46,7 +46,6 @@ func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFil
 		return "", fmt.Errorf("query is required")
 	}
 
-	ctx := context.Background()
 	results, err := t.DB.Search(ctx, query, scope, layerFilter, statusFilter, limit)
 	if err != nil {
 		logger.Error().Err(err).Str("query", query).Msg("Search: query failed")

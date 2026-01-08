@@ -2,6 +2,7 @@ package fpf
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -360,6 +361,8 @@ Each check requires at least one evidence reference.`,
 }
 
 func (s *Server) handleToolsCall(req JSONRPCRequest) {
+	ctx := context.Background()
+
 	var params struct {
 		Name      string                 `json:"name"`
 		Arguments map[string]interface{} `json:"arguments"`
@@ -397,14 +400,14 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	switch params.Name {
 	case "quint_internalize":
-		output, err = s.tools.Internalize()
+		output, err = s.tools.Internalize(ctx)
 
 	case "quint_search":
 		limit := 10
 		if l, ok := params.Arguments["limit"].(float64); ok {
 			limit = int(l)
 		}
-		output, err = s.tools.Search(arg("query"), arg("scope"), arg("layer_filter"), arg("status_filter"), arg("affected_scope_filter"), limit)
+		output, err = s.tools.Search(ctx, arg("query"), arg("scope"), arg("layer_filter"), arg("status_filter"), arg("affected_scope_filter"), limit)
 
 	case "quint_resolve":
 		criteriaVerified := false
@@ -420,20 +423,20 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			ValidUntil:       arg("valid_until"),
 			CriteriaVerified: criteriaVerified,
 		}
-		output, err = s.tools.Resolve(input)
+		output, err = s.tools.Resolve(ctx, input)
 
 	case "quint_implement":
-		output, err = s.tools.Implement(arg("decision_id"))
+		output, err = s.tools.Implement(ctx, arg("decision_id"))
 
 	case "quint_link":
 		cl := 3
 		if clVal, ok := params.Arguments["congruence_level"].(float64); ok {
 			cl = int(clVal)
 		}
-		output, err = s.tools.LinkHolons(arg("source_id"), arg("target_id"), cl)
+		output, err = s.tools.LinkHolons(ctx, arg("source_id"), arg("target_id"), cl)
 
 	case "quint_context":
-		output, err = s.tools.CreateContext(arg("title"), arg("scope"), arg("description"))
+		output, err = s.tools.CreateContext(ctx, arg("title"), arg("scope"), arg("description"))
 
 	case "quint_propose":
 		decisionContext := arg("decision_context")
@@ -449,16 +452,16 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if cl, ok := params.Arguments["dependency_cl"].(float64); ok {
 			dependencyCL = int(cl)
 		}
-		output, err = s.tools.ProposeHypothesis(arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
+		output, err = s.tools.ProposeHypothesis(ctx, arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
 
 	case "quint_verify":
-		output, err = s.tools.VerifyHypothesis(arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
+		output, err = s.tools.VerifyHypothesis(ctx, arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_test":
-		output, err = s.tools.ValidateHypothesis(arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), arg("carrier_files"))
+		output, err = s.tools.ValidateHypothesis(ctx, arg("hypothesis_id"), arg("test_type"), arg("result"), arg("verdict"), arg("carrier_files"))
 
 	case "quint_audit":
-		output, err = s.tools.UnifiedAudit(arg("holon_id"), arg("risks"))
+		output, err = s.tools.UnifiedAudit(ctx, arg("holon_id"), arg("risks"))
 
 	case "quint_decide":
 		var rejectedIDs []string
@@ -473,21 +476,21 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if cc, ok := params.Arguments["close_context"].(bool); ok {
 			closeContext = cc
 		}
-		output, err = s.tools.FinalizeDecision(arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"), closeContext)
+		output, err = s.tools.FinalizeDecision(ctx, arg("title"), arg("winner_id"), rejectedIDs, arg("context"), arg("decision"), arg("rationale"), arg("consequences"), arg("characteristics"), arg("contract"), closeContext)
 
 	case "quint_reset":
 		abandonAll := false
 		if aa, ok := params.Arguments["abandon_all"].(bool); ok {
 			abandonAll = aa
 		}
-		output, err = s.tools.ResetCycle(arg("reason"), arg("context_id"), abandonAll)
+		output, err = s.tools.ResetCycle(ctx, arg("reason"), arg("context_id"), abandonAll)
 
 	case "quint_compact":
 		retentionDays := int64(DefaultRetentionDays)
 		if rd, ok := params.Arguments["retention_days"].(float64); ok {
 			retentionDays = int64(rd)
 		}
-		output, err = s.tools.Compact(arg("mode"), retentionDays)
+		output, err = s.tools.Compact(ctx, arg("mode"), retentionDays)
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)

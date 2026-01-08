@@ -13,7 +13,7 @@ import (
 	"github.com/m0n0x41d/quint-code/logger"
 )
 
-func (t *Tools) Internalize() (string, error) {
+func (t *Tools) Internalize(ctx context.Context) (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
 
 	logger.Info().Str("root_dir", t.RootDir).Msg("Internalize called")
@@ -68,23 +68,16 @@ func (t *Tools) Internalize() (string, error) {
 	result.ContextID = "default"
 	result.ArchivedCounts = make(map[string]int)
 
-	if t.DB != nil && t.isGitRepo() {
-		ctx := context.Background()
-		_ = ctx
-	}
-
 	if t.DB != nil {
-		ctx := context.Background()
-
 		activeCounts, err := t.DB.CountActiveHolonsByLayer(ctx)
 		if err == nil {
 			for _, c := range activeCounts {
 				result.LayerCounts[c.Layer] = int(c.Count)
 			}
 		} else {
-			result.LayerCounts["L0"] = t.countHolons("L0")
-			result.LayerCounts["L1"] = t.countHolons("L1")
-			result.LayerCounts["L2"] = t.countHolons("L2")
+			result.LayerCounts["L0"] = t.countHolons(ctx, "L0")
+			result.LayerCounts["L1"] = t.countHolons(ctx, "L1")
+			result.LayerCounts["L2"] = t.countHolons(ctx, "L2")
 		}
 
 		archivedCounts, err := t.DB.CountArchivedHolonsByLayer(ctx)
@@ -94,14 +87,13 @@ func (t *Tools) Internalize() (string, error) {
 			}
 		}
 	} else {
-		result.LayerCounts["L0"] = t.countHolons("L0")
-		result.LayerCounts["L1"] = t.countHolons("L1")
-		result.LayerCounts["L2"] = t.countHolons("L2")
+		result.LayerCounts["L0"] = t.countHolons(ctx, "L0")
+		result.LayerCounts["L1"] = t.countHolons(ctx, "L1")
+		result.LayerCounts["L2"] = t.countHolons(ctx, "L2")
 	}
 	result.LayerCounts["DRR"] = t.countDRRs()
 
 	if t.DB != nil {
-		ctx := context.Background()
 		holons, err := t.DB.GetActiveRecentHolons(ctx, 10)
 		if err == nil {
 			for _, h := range holons {
@@ -453,10 +445,9 @@ func (t *Tools) IsContextStale() (bool, []string) {
 	return len(signals) > 0, signals
 }
 
-func (t *Tools) GetStatus() (string, error) {
+func (t *Tools) GetStatus(ctx context.Context) (string, error) {
 	stage := StageEmpty
 	if t.DB != nil {
-		ctx := context.Background()
 		if activeContexts, err := t.GetActiveDecisionContexts(ctx); err == nil && len(activeContexts) > 0 {
 			stage = t.getMostAdvancedStage(activeContexts)
 		}
@@ -467,9 +458,9 @@ func (t *Tools) GetStatus() (string, error) {
 	sb.WriteString(fmt.Sprintf("STAGE: %s\n", stage))
 	sb.WriteString(fmt.Sprintf("ROLE: %s\n\n", RoleObserver))
 
-	l0 := t.countHolons("L0")
-	l1 := t.countHolons("L1")
-	l2 := t.countHolons("L2")
+	l0 := t.countHolons(ctx, "L0")
+	l1 := t.countHolons(ctx, "L1")
+	l2 := t.countHolons(ctx, "L2")
 	drr := t.countDRRs()
 
 	sb.WriteString("## Knowledge\n")
@@ -487,11 +478,11 @@ func (t *Tools) GetStatus() (string, error) {
 	return sb.String(), nil
 }
 
-func (t *Tools) countHolons(layer string) int {
+func (t *Tools) countHolons(ctx context.Context, layer string) int {
 	if t.DB == nil {
 		return 0
 	}
-	return int(t.DB.CountHypothesesByLayer(context.Background(), layer))
+	return int(t.DB.CountHypothesesByLayer(ctx, layer))
 }
 
 func (t *Tools) countDRRs() int {

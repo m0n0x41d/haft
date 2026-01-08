@@ -88,6 +88,36 @@ func (s *Store) GetHypothesisCountForContext(ctx context.Context, dcID string) i
 	return count
 }
 
+type ApproachTypeStat struct {
+	ApproachType string
+	Count        int64
+}
+
+func (s *Store) GetApproachTypeDistribution(ctx context.Context, dcID string) []ApproachTypeStat {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT COALESCE(h.approach_type, '') as approach_type, COUNT(*) as count
+		FROM relations r
+		JOIN holons h ON h.id = r.source_id
+		WHERE r.target_id = ? AND r.relation_type = 'memberOf'
+		AND h.type = 'hypothesis' AND h.layer NOT IN ('invalid')
+		GROUP BY h.approach_type
+	`, dcID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var stats []ApproachTypeStat
+	for rows.Next() {
+		var stat ApproachTypeStat
+		if err := rows.Scan(&stat.ApproachType, &stat.Count); err != nil {
+			continue
+		}
+		stats = append(stats, stat)
+	}
+	return stats
+}
+
 func (s *Store) GetDecisionContextForHolon(ctx context.Context, holonID string) string {
 	var targetID string
 	err := s.conn.QueryRowContext(ctx,

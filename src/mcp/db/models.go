@@ -58,6 +58,7 @@ type Evidence struct {
 	Content        string
 	Verdict        string
 	AssuranceLevel sql.NullString
+	FormalityLevel sql.NullInt64
 	CarrierRef     sql.NullString
 	CarrierHash    sql.NullString
 	CarrierCommit  sql.NullString

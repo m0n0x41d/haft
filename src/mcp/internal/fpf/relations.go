@@ -80,7 +80,7 @@ func (t *Tools) CreateContext(ctx context.Context, title, scope, description str
 	}
 	content += "\nHypotheses will be grouped under this context for decision-making."
 
-	if err := t.DB.CreateHolon(ctx, contextID, "decision_context", "system", "L0", title, content, "default", scope, ""); err != nil {
+	if err := t.DB.CreateHolon(ctx, contextID, "decision_context", "system", "L0", title, content, "default", scope, "", ""); err != nil {
 		return "", fmt.Errorf("failed to create decision context: %w", err)
 	}
 
@@ -111,10 +111,41 @@ func (t *Tools) GetActiveDecisionContexts(ctx context.Context) ([]DecisionContex
 			Stage:           t.FSM.GetContextStage(row.ID),
 			HypothesisCount: int(t.DB.GetHypothesisCountForContext(ctx, row.ID)),
 		}
+		dc.DiversityWarning = t.checkApproachDiversity(ctx, row.ID)
 		contexts = append(contexts, dc)
 	}
 
 	return contexts, nil
+}
+
+func (t *Tools) checkApproachDiversity(ctx context.Context, dcID string) string {
+	if t.DB == nil {
+		return ""
+	}
+
+	stats := t.DB.GetApproachTypeDistribution(ctx, dcID)
+	if len(stats) == 0 {
+		return ""
+	}
+
+	var totalWithType int64
+	var typedApproach string
+	for _, stat := range stats {
+		if stat.ApproachType != "" {
+			totalWithType += stat.Count
+			if typedApproach == "" {
+				typedApproach = stat.ApproachType
+			} else if typedApproach != stat.ApproachType {
+				return ""
+			}
+		}
+	}
+
+	if totalWithType > 1 && typedApproach != "" {
+		return fmt.Sprintf("All %d hypotheses use '%s' approach. Consider exploring alternative approaches for comprehensive coverage.", totalWithType, typedApproach)
+	}
+
+	return ""
 }
 
 func (t *Tools) getDecisionContext(ctx context.Context, holonID string) string {

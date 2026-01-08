@@ -64,11 +64,12 @@ type InternalizeResult struct {
 }
 
 type DecisionContextSummary struct {
-	ID              string
-	Title           string
-	Scope           string
-	Stage           ContextStage
-	HypothesisCount int
+	ID               string
+	Title            string
+	Scope            string
+	Stage            ContextStage
+	HypothesisCount  int
+	DiversityWarning string
 }
 
 type HolonSummary struct {

@@ -196,19 +196,14 @@ func (t *Tools) loadDRRInfo(drrID string) (*DRRInfo, error) {
 	var dependsOn []string
 	var winnerID string
 
-	rows, err := t.DB.GetRawDB().QueryContext(ctx,
-		`SELECT target_id, relation_type FROM relations WHERE source_id = ?`, drrID)
+	relations, err := t.DB.GetRelationsForHolon(ctx, drrID)
 	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var targetID, relType string
-			if err := rows.Scan(&targetID, &relType); err == nil {
-				if relType == "selects" {
-					winnerID = targetID
-					dependsOn = append(dependsOn, targetID)
-				} else if relType == "componentOf" || relType == "constituentOf" {
-					dependsOn = append(dependsOn, targetID)
-				}
+		for _, rel := range relations {
+			if rel.RelationType == "selects" {
+				winnerID = rel.TargetID
+				dependsOn = append(dependsOn, rel.TargetID)
+			} else if rel.RelationType == "componentOf" || rel.RelationType == "constituentOf" {
+				dependsOn = append(dependsOn, rel.TargetID)
 			}
 		}
 	}

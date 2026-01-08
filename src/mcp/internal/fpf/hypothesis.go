@@ -313,26 +313,9 @@ func (t *Tools) checkDuplicateHypothesis(hypothesisID string) string {
 		return ""
 	}
 
-	rows, err := t.DB.GetRawDB().QueryContext(ctx, `
-		SELECT id FROM holons
-		WHERE layer = 'invalid'
-		AND title = ?
-		AND id != ?
-	`, current.Title, hypothesisID)
+	matches, err := t.DB.GetInvalidHolonsWithTitle(ctx, current.Title, hypothesisID)
 	if err != nil {
-		return ""
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var matches []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			matches = append(matches, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		logger.Warn().Err(err).Msg("error iterating duplicate hypothesis rows")
+		logger.Warn().Err(err).Msg("error querying duplicate hypotheses")
 		return ""
 	}
 
@@ -497,14 +480,8 @@ func (t *Tools) RefineLoopback(sourceLayer, parentID, insight, newTitle, newCont
 
 	var decisionContext string
 	if t.DB != nil {
-		ctx := context.Background()
-		rawDB := t.DB.GetRawDB()
-		err := rawDB.QueryRowContext(ctx, `
-			SELECT target_id FROM relations
-			WHERE source_id = ? AND relation_type = 'memberOf'
-			LIMIT 1
-		`, parentID).Scan(&decisionContext)
-		if err != nil {
+		decisionContext = t.DB.GetDecisionContextForHolon(context.Background(), parentID)
+		if decisionContext == "" {
 			return "", fmt.Errorf("failed to get parent's decision context: parent %s has no decision context", parentID)
 		}
 	}

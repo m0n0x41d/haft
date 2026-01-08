@@ -2,7 +2,6 @@ package fpf
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -133,34 +132,21 @@ func (t *Tools) GetOpenDecisions(ctx context.Context) ([]DecisionSummary, error)
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	query := `
-		SELECT h.id, h.title, h.created_at
-		FROM holons h
-		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
-		AND NOT EXISTS (
-			SELECT 1 FROM evidence e
-			WHERE e.holon_id = h.id
-			AND e.type IN ('implementation', 'abandonment', 'supersession')
-		)
-		ORDER BY h.created_at DESC
-	`
-	rows, err := t.DB.GetRawDB().QueryContext(ctx, query)
+	rows, err := t.DB.GetOpenDecisions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var results []DecisionSummary
-	for rows.Next() {
-		var d DecisionSummary
-		var createdAt sql.NullTime
-		if err := rows.Scan(&d.ID, &d.Title, &createdAt); err != nil {
-			continue
+	for _, row := range rows {
+		d := DecisionSummary{
+			ID:         row.ID,
+			Title:      row.Title,
+			Resolution: "open",
 		}
-		if createdAt.Valid {
-			d.CreatedAt = createdAt.Time
+		if row.CreatedAt.Valid {
+			d.CreatedAt = row.CreatedAt.Time
 		}
-		d.Resolution = "open"
 		results = append(results, d)
 	}
 	return results, nil
@@ -185,40 +171,30 @@ func (t *Tools) GetResolvedDecisions(ctx context.Context, resolution string, lim
 		limit = 10
 	}
 
-	query := `
-		SELECT h.id, h.title, h.created_at, e.type, e.created_at as resolved_at, e.content, e.carrier_ref
-		FROM holons h
-		JOIN evidence e ON e.holon_id = h.id
-		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
-		AND e.type = ?
-		ORDER BY e.created_at DESC
-		LIMIT ?
-	`
-	rows, err := t.DB.GetRawDB().QueryContext(ctx, query, evidenceType, limit)
+	rows, err := t.DB.GetResolvedDecisions(ctx, evidenceType, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var results []DecisionSummary
-	for rows.Next() {
-		var d DecisionSummary
-		var createdAt, resolvedAt sql.NullTime
-		var evidenceType string
-		var carrierRef sql.NullString
-		if err := rows.Scan(&d.ID, &d.Title, &createdAt, &evidenceType, &resolvedAt, &d.Notes, &carrierRef); err != nil {
-			continue
+	for _, row := range rows {
+		d := DecisionSummary{
+			ID:         row.ID,
+			Title:      row.Title,
+			Resolution: resolution,
 		}
-		if createdAt.Valid {
-			d.CreatedAt = createdAt.Time
+		if row.CreatedAt.Valid {
+			d.CreatedAt = row.CreatedAt.Time
 		}
-		if resolvedAt.Valid {
-			d.ResolvedAt = resolvedAt.Time
+		if row.ResolvedAt.Valid {
+			d.ResolvedAt = row.ResolvedAt.Time
 		}
-		if carrierRef.Valid {
-			d.Reference = carrierRef.String
+		if row.Content.Valid {
+			d.Notes = row.Content.String
 		}
-		d.Resolution = resolution
+		if row.CarrierRef.Valid {
+			d.Reference = row.CarrierRef.String
+		}
 		results = append(results, d)
 	}
 	return results, nil
@@ -233,20 +209,10 @@ func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]De
 		limit = 5
 	}
 
-	query := `
-		SELECT h.id, h.title, h.created_at, e.type, e.created_at as resolved_at, e.content, e.carrier_ref
-		FROM holons h
-		JOIN evidence e ON e.holon_id = h.id
-		WHERE (h.type = 'DRR' OR h.layer = 'DRR')
-		AND e.type IN ('implementation', 'abandonment', 'supersession')
-		ORDER BY e.created_at DESC
-		LIMIT ?
-	`
-	rows, err := t.DB.GetRawDB().QueryContext(ctx, query, limit)
+	rows, err := t.DB.GetRecentResolvedDecisions(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	evidenceToResolution := map[string]string{
 		"implementation": "implemented",
@@ -255,24 +221,26 @@ func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]De
 	}
 
 	var results []DecisionSummary
-	for rows.Next() {
-		var d DecisionSummary
-		var createdAt, resolvedAt sql.NullTime
-		var evidenceType string
-		var carrierRef sql.NullString
-		if err := rows.Scan(&d.ID, &d.Title, &createdAt, &evidenceType, &resolvedAt, &d.Notes, &carrierRef); err != nil {
-			continue
+	for _, row := range rows {
+		d := DecisionSummary{
+			ID:    row.ID,
+			Title: row.Title,
 		}
-		if createdAt.Valid {
-			d.CreatedAt = createdAt.Time
+		if row.CreatedAt.Valid {
+			d.CreatedAt = row.CreatedAt.Time
 		}
-		if resolvedAt.Valid {
-			d.ResolvedAt = resolvedAt.Time
+		if row.ResolvedAt.Valid {
+			d.ResolvedAt = row.ResolvedAt.Time
 		}
-		if carrierRef.Valid {
-			d.Reference = carrierRef.String
+		if row.Content.Valid {
+			d.Notes = row.Content.String
 		}
-		d.Resolution = evidenceToResolution[evidenceType]
+		if row.CarrierRef.Valid {
+			d.Reference = row.CarrierRef.String
+		}
+		if row.EvidenceType.Valid {
+			d.Resolution = evidenceToResolution[row.EvidenceType.String]
+		}
 		results = append(results, d)
 	}
 	return results, nil

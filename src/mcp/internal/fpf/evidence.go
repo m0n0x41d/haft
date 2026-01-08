@@ -298,32 +298,11 @@ func (t *Tools) createWaiver(evidenceID, until, rationale string) (string, error
 
 func (t *Tools) generateFreshnessReport() (string, error) {
 	ctx := context.Background()
-	rawDB := t.DB.GetRawDB()
 
-	rows, err := rawDB.QueryContext(ctx, `
-		SELECT
-			e.id as evidence_id,
-			e.holon_id,
-			h.title,
-			h.layer,
-			e.type as evidence_type,
-			CAST(JULIANDAY('now') - JULIANDAY(substr(e.valid_until, 1, 10)) AS INTEGER) as days_overdue
-		FROM evidence e
-		JOIN active_holons h ON e.holon_id = h.id
-		LEFT JOIN (
-			SELECT evidence_id, MAX(waived_until) as latest_waiver
-			FROM waivers
-			GROUP BY evidence_id
-		) w ON e.id = w.evidence_id
-		WHERE e.valid_until IS NOT NULL
-		  AND substr(e.valid_until, 1, 10) < date('now')
-		  AND (w.latest_waiver IS NULL OR w.latest_waiver < datetime('now'))
-		ORDER BY h.id, days_overdue DESC
-	`)
+	staleRows, err := t.DB.GetStaleEvidence(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close() //nolint:errcheck
 
 	type evidenceInfo struct {
 		ID          string
@@ -335,34 +314,20 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	holonTitles := make(map[string]string)
 	holonLayers := make(map[string]string)
 
-	for rows.Next() {
-		var evidenceID, holonID, title, layer, evidenceType string
-		var daysOverdue int
-		if err := rows.Scan(&evidenceID, &holonID, &title, &layer, &evidenceType, &daysOverdue); err != nil {
-			continue
-		}
-		holonTitles[holonID] = title
-		holonLayers[holonID] = layer
-		staleHolons[holonID] = append(staleHolons[holonID], evidenceInfo{
-			ID:          evidenceID,
-			Type:        evidenceType,
-			DaysOverdue: daysOverdue,
+	for _, row := range staleRows {
+		holonTitles[row.HolonID] = row.Title
+		holonLayers[row.HolonID] = row.Layer
+		staleHolons[row.HolonID] = append(staleHolons[row.HolonID], evidenceInfo{
+			ID:          row.EvidenceID,
+			Type:        row.EvidenceType,
+			DaysOverdue: row.DaysOverdue,
 		})
 	}
 
-	waivedRows, err := rawDB.QueryContext(ctx, `
-		SELECT w.evidence_id, e.holon_id, h.title, w.waived_until, w.waived_by, w.rationale,
-		       CAST(JULIANDAY(w.waived_until) - JULIANDAY('now') AS INTEGER) as days_until_expiry
-		FROM waivers w
-		JOIN evidence e ON w.evidence_id = e.id
-		JOIN active_holons h ON e.holon_id = h.id
-		WHERE w.waived_until > datetime('now')
-		ORDER BY w.waived_until ASC
-	`)
+	waiverRows, err := t.DB.GetActiveWaivers(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer waivedRows.Close() //nolint:errcheck
 
 	type waiverInfo struct {
 		EvidenceID      string
@@ -375,12 +340,16 @@ func (t *Tools) generateFreshnessReport() (string, error) {
 	}
 
 	var activeWaivers []waiverInfo
-	for waivedRows.Next() {
-		var info waiverInfo
-		if err := waivedRows.Scan(&info.EvidenceID, &info.HolonID, &info.HolonTitle, &info.WaivedUntil, &info.WaivedBy, &info.Rationale, &info.DaysUntilExpiry); err != nil {
-			continue
-		}
-		activeWaivers = append(activeWaivers, info)
+	for _, row := range waiverRows {
+		activeWaivers = append(activeWaivers, waiverInfo{
+			EvidenceID:      row.EvidenceID,
+			HolonID:         row.HolonID,
+			HolonTitle:      row.HolonTitle,
+			WaivedUntil:     row.WaivedUntil,
+			WaivedBy:        row.WaivedBy,
+			Rationale:       row.Rationale,
+			DaysUntilExpiry: row.DaysUntilExpiry,
+		})
 	}
 
 	var result strings.Builder

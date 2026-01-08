@@ -491,15 +491,7 @@ func (t *Tools) countHolons(layer string) int {
 	if t.DB == nil {
 		return 0
 	}
-	var count int
-	err := t.DB.GetRawDB().QueryRow(
-		`SELECT COUNT(*) FROM holons WHERE layer = ? AND type = 'hypothesis'`,
-		layer,
-	).Scan(&count)
-	if err != nil {
-		return 0
-	}
-	return count
+	return int(t.DB.CountHypothesesByLayer(context.Background(), layer))
 }
 
 func (t *Tools) countDRRs() int {

@@ -98,37 +98,20 @@ func (t *Tools) GetActiveDecisionContexts(ctx context.Context) ([]DecisionContex
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	rows, err := t.DB.GetRawDB().QueryContext(ctx, `
-		SELECT h.id, h.title, COALESCE(h.scope, '') as scope
-		FROM holons h
-		WHERE h.type = 'decision_context'
-		AND (h.context_status IS NULL OR h.context_status = 'open')
-		AND h.id NOT IN (
-		    SELECT target_id FROM relations WHERE relation_type = 'closes'
-		)
-		ORDER BY h.created_at DESC
-	`)
+	rows, err := t.DB.GetActiveDecisionContexts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var contexts []DecisionContextSummary
-	for rows.Next() {
-		var dc DecisionContextSummary
-		if err := rows.Scan(&dc.ID, &dc.Title, &dc.Scope); err != nil {
-			continue
+	for _, row := range rows {
+		dc := DecisionContextSummary{
+			ID:              row.ID,
+			Title:           row.Title,
+			Scope:           row.Scope,
+			Stage:           t.FSM.GetContextStage(row.ID),
+			HypothesisCount: int(t.DB.GetHypothesisCountForContext(ctx, row.ID)),
 		}
-
-		dc.Stage = t.FSM.GetContextStage(dc.ID)
-
-		_ = t.DB.GetRawDB().QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM relations r
-			JOIN holons h ON h.id = r.source_id
-			WHERE r.target_id = ? AND r.relation_type = 'memberOf'
-			AND h.type = 'hypothesis'
-		`, dc.ID).Scan(&dc.HypothesisCount)
-
 		contexts = append(contexts, dc)
 	}
 
@@ -139,52 +122,21 @@ func (t *Tools) getDecisionContext(ctx context.Context, holonID string) string {
 	if t.DB == nil {
 		return ""
 	}
-	var targetID string
-	err := t.DB.GetRawDB().QueryRowContext(ctx,
-		`SELECT target_id FROM relations WHERE source_id = ? AND relation_type = 'memberOf' LIMIT 1`,
-		holonID).Scan(&targetID)
-	if err != nil {
-		return ""
-	}
-	return targetID
+	return t.DB.GetDecisionContextForHolon(ctx, holonID)
 }
 
 func (t *Tools) isDecisionContextClosed(ctx context.Context, dcID string) string {
 	if t.DB == nil || dcID == "" {
 		return ""
 	}
-	var drrID string
-	err := t.DB.GetRawDB().QueryRowContext(ctx,
-		`SELECT source_id FROM relations WHERE target_id = ? AND relation_type = 'closes' LIMIT 1`,
-		dcID).Scan(&drrID)
-	if err != nil {
-		return ""
-	}
-	return drrID
+	return t.DB.GetClosingDRRForContext(ctx, dcID)
 }
 
 func (t *Tools) isHypothesisInOpenDRR(ctx context.Context, hypID string) string {
 	if t.DB == nil || hypID == "" {
 		return ""
 	}
-	var drrID string
-	err := t.DB.GetRawDB().QueryRowContext(ctx,
-		`SELECT r.source_id FROM relations r
-		 JOIN holons h ON h.id = r.source_id
-		 WHERE r.target_id = ?
-		   AND r.relation_type IN ('selects', 'rejects')
-		   AND h.type = 'DRR'
-		   AND NOT EXISTS (
-		       SELECT 1 FROM evidence e
-		       WHERE e.holon_id = h.id
-		       AND e.type IN ('implementation', 'abandonment', 'supersession')
-		   )
-		 LIMIT 1`,
-		hypID).Scan(&drrID)
-	if err != nil {
-		return ""
-	}
-	return drrID
+	return t.DB.GetOpenDRRForHypothesis(ctx, hypID)
 }
 
 func (t *Tools) wouldCreateCycle(ctx context.Context, sourceID, targetID string) (bool, error) {

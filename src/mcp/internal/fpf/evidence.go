@@ -38,7 +38,7 @@ func (t *Tools) UnifiedAudit(holonID, risks string) (string, error) {
 
 	if t.DB == nil {
 		logger.Error().Msg("UnifiedAudit: database not initialized")
-		return "", fmt.Errorf("database not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	if holonID == "" {
@@ -97,7 +97,7 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 
 	if action == "check" {
 		if t.DB == nil {
-			return "", fmt.Errorf("DB not initialized")
+			return "", ErrDatabaseNotInitialized
 		}
 		if targetID == "all" {
 			return "Global evidence audit not implemented yet. Please specify a target_id.", nil
@@ -216,7 +216,7 @@ func (t *Tools) ManageEvidence(operation, action, targetID, evidenceType, conten
 func (t *Tools) CheckDecay(deprecate, waiveID, waiveUntil, waiveRationale string) (string, error) {
 	defer t.RecordWork("CheckDecay", time.Now())
 	if t.DB == nil {
-		return "", fmt.Errorf("DB not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	switch {

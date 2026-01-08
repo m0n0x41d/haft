@@ -98,7 +98,7 @@ func (t *Tools) Implement(drrID string) (string, error) {
 
 	if t.DB == nil {
 		logger.Error().Msg("Implement: database not initialized")
-		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	ctx := context.Background()

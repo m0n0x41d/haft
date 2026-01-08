@@ -37,7 +37,7 @@ func (t *Tools) InitProject() error {
 		dbPath := filepath.Join(t.GetFPFDir(), "quint.db")
 		database, err := db.NewStore(dbPath)
 		if err != nil {
-			fmt.Printf("Warning: Failed to init DB: %v\n", err)
+			logger.Warn().Err(err).Msg("failed to init DB")
 		} else {
 			t.DB = database
 		}
@@ -122,7 +122,7 @@ func formatInvariants(inv string) string {
 func (t *Tools) RunDecay() error {
 	defer t.RecordWork("RunDecay", time.Now())
 	if t.DB == nil {
-		return fmt.Errorf("DB not initialized")
+		return ErrDatabaseNotInitialized
 	}
 
 	ctx := context.Background()
@@ -137,13 +137,13 @@ func (t *Tools) RunDecay() error {
 	for _, id := range ids {
 		_, err := calc.CalculateReliability(ctx, id)
 		if err != nil {
-			fmt.Printf("Error calculating R for %s: %v\n", id, err)
+			logger.Error().Err(err).Str("holon_id", id).Msg("error calculating R")
 			continue
 		}
 		updatedCount++
 	}
 
-	fmt.Printf("Decay update complete. Processed %d holons.\n", updatedCount)
+	logger.Info().Int("processed_count", updatedCount).Msg("decay update complete")
 	return nil
 }
 
@@ -234,7 +234,7 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 
 	if contextID != "" {
 		if t.DB == nil {
-			return "", fmt.Errorf("database not initialized")
+			return "", ErrDatabaseNotInitialized
 		}
 		if err := t.DB.AbandonContext(ctx, contextID); err != nil {
 			return "", fmt.Errorf("failed to abandon context %s: %w", contextID, err)
@@ -248,7 +248,7 @@ func (t *Tools) ResetCycle(reason, contextID string, abandonAll bool) (string, e
 
 	if abandonAll {
 		if t.DB == nil {
-			return "", fmt.Errorf("database not initialized")
+			return "", ErrDatabaseNotInitialized
 		}
 		contexts, err := t.GetActiveDecisionContexts(ctx)
 		if err != nil {
@@ -313,7 +313,7 @@ func (t *Tools) Compact(mode string, retentionDays int64) (string, error) {
 		mode = "preview"
 	}
 	if retentionDays <= 0 {
-		retentionDays = 90
+		retentionDays = DefaultRetentionDays
 	}
 
 	ctx := context.Background()

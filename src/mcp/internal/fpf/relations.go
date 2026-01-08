@@ -50,7 +50,7 @@ func (t *Tools) CreateContext(title, scope, description string) (string, error) 
 
 	if t.DB == nil {
 		logger.Error().Msg("CreateContext: database not initialized")
-		return "", fmt.Errorf("database not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 	if title == "" {
 		return "", fmt.Errorf("title is required")
@@ -67,12 +67,12 @@ func (t *Tools) CreateContext(title, scope, description string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("failed to get active contexts: %w", err)
 	}
-	if len(activeContexts) >= 3 {
+	if len(activeContexts) >= MaxActiveContexts {
 		var contextList strings.Builder
 		for _, c := range activeContexts {
 			contextList.WriteString(fmt.Sprintf("\n  - %s: %s", c.ID, c.Title))
 		}
-		return "", fmt.Errorf("BLOCKED: maximum 3 active decision contexts allowed (have %d).\n\nActive contexts:%s\n\n⚠️ USER ACTION REQUIRED: Ask user whether to:\n  1. Use an existing context (pass one of the dc-* IDs above to quint_propose)\n  2. Complete a context via /q5-decide\n  3. Abandon a context via /q-reset with context_id parameter", len(activeContexts), contextList.String())
+		return "", fmt.Errorf("BLOCKED: maximum %d active decision contexts allowed (have %d).\n\nActive contexts:%s\n\n⚠️ USER ACTION REQUIRED: Ask user whether to:\n  1. Use an existing context (pass one of the dc-* IDs above to quint_propose)\n  2. Complete a context via /q5-decide\n  3. Abandon a context via /q-reset with context_id parameter", MaxActiveContexts, len(activeContexts), contextList.String())
 	}
 
 	content := fmt.Sprintf("# Decision Context: %s\n\nScope: %s\n", title, scope)
@@ -95,7 +95,7 @@ func (t *Tools) CreateContext(title, scope, description string) (string, error) 
 
 func (t *Tools) GetActiveDecisionContexts(ctx context.Context) ([]DecisionContextSummary, error) {
 	if t.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+		return nil, ErrDatabaseNotInitialized
 	}
 
 	rows, err := t.DB.GetActiveDecisionContexts(ctx)
@@ -179,7 +179,7 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 
 	if t.DB == nil {
 		logger.Error().Msg("LinkHolons: database not initialized")
-		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	ctx := context.Background()
@@ -195,7 +195,7 @@ func (t *Tools) LinkHolons(sourceID, targetID string, cl int) (string, error) {
 	}
 
 	if cyclic, _ := t.wouldCreateCycle(ctx, sourceID, targetID); cyclic {
-		return "", fmt.Errorf("link would create dependency cycle")
+		return "", ErrCyclicDependency("quint_link")
 	}
 
 	relationType := "componentOf"

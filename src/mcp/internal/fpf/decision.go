@@ -179,29 +179,18 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 		}
 
 		for dcID := range closedContexts {
-			rows, err := t.DB.GetRawDB().QueryContext(ctx, `
-				SELECT r.source_id FROM relations r
-				JOIN holons h ON h.id = r.source_id
-				WHERE r.target_id = ?
-				  AND r.relation_type = 'memberOf'
-				  AND h.layer IN ('L0', 'L1', 'L2')
-			`, dcID)
+			orphanIDs, err := t.DB.GetOrphanedHypotheses(ctx, dcID)
 			if err != nil {
 				logger.Warn().Err(err).Str("decision_context", dcID).Msg("failed to query orphaned hypotheses")
 				continue
 			}
-			for rows.Next() {
-				var orphanID string
-				if err := rows.Scan(&orphanID); err != nil {
-					continue
-				}
+			for _, orphanID := range orphanIDs {
 				if err := t.createRelation(ctx, drrID, "closes", orphanID, 3); err != nil {
 					logger.Warn().Err(err).Str("orphan_id", orphanID).Msg("failed to close orphaned hypothesis")
 				} else {
 					logger.Info().Str("orphan_id", orphanID).Msg("closed orphaned hypothesis")
 				}
 			}
-			rows.Close()
 		}
 	}
 

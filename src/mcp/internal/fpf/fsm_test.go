@@ -131,7 +131,7 @@ func TestGetContextStage(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a decision context
-	err = database.CreateHolon(ctx, "test-context", "decision_context", "system", "L0", "Test Context", "Test content", "default", "", "")
+	err = database.CreateHolon(ctx, "test-context", "decision_context", "system", "L0", "Test Context", "Test content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create context: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestGetContextStage(t *testing.T) {
 	}
 
 	// Add L0 hypothesis with memberOf relation
-	err = database.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypo", "Test content", "default", "", "")
+	err = database.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypo", "Test content", "default", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
@@ -209,12 +209,12 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("L0_plus_L2_returns_StageNeedsVerify", func(t *testing.T) {
-		err := database.CreateHolon(ctx, "ctx-mixed-1", "decision_context", "system", "L0", "Mixed Context 1", "", "default", "", "")
+		err := database.CreateHolon(ctx, "ctx-mixed-1", "decision_context", "system", "L0", "Mixed Context 1", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l0", "hypothesis", "system", "L0", "L0 Hypothesis", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l0", "hypothesis", "system", "L0", "L0 Hypothesis", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L0 holon: %v", err)
 		}
@@ -223,7 +223,7 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 			t.Fatalf("Failed to create relation: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l2", "hypothesis", "system", "L2", "L2 Hypothesis", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l2", "hypothesis", "system", "L2", "L2 Hypothesis", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L2 holon: %v", err)
 		}
@@ -239,12 +239,12 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 	})
 
 	t.Run("L1_plus_L2_returns_StageNeedsValidation", func(t *testing.T) {
-		err := database.CreateHolon(ctx, "ctx-mixed-2", "decision_context", "system", "L0", "Mixed Context 2", "", "default", "", "")
+		err := database.CreateHolon(ctx, "ctx-mixed-2", "decision_context", "system", "L0", "Mixed Context 2", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l1", "hypothesis", "system", "L1", "L1 Hypothesis", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l1", "hypothesis", "system", "L1", "L1 Hypothesis", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L1 holon: %v", err)
 		}
@@ -253,7 +253,7 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 			t.Fatalf("Failed to create relation: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l2-2", "hypothesis", "system", "L2", "L2 Hypothesis 2", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l2-2", "hypothesis", "system", "L2", "L2 Hypothesis 2", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L2 holon: %v", err)
 		}
@@ -269,12 +269,12 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 	})
 
 	t.Run("Only_L2_audited_returns_StageReadyToDecide", func(t *testing.T) {
-		err := database.CreateHolon(ctx, "ctx-l2-only", "decision_context", "system", "L0", "L2 Only Context", "", "default", "", "")
+		err := database.CreateHolon(ctx, "ctx-l2-only", "decision_context", "system", "L0", "L2 Only Context", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l2-audited", "hypothesis", "system", "L2", "Audited L2", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l2-audited", "hypothesis", "system", "L2", "Audited L2", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L2 holon: %v", err)
 		}
@@ -295,12 +295,12 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 	})
 
 	t.Run("L2_not_audited_returns_StageNeedsAudit", func(t *testing.T) {
-		err := database.CreateHolon(ctx, "ctx-l2-unaudited", "decision_context", "system", "L0", "L2 Unaudited Context", "", "default", "", "")
+		err := database.CreateHolon(ctx, "ctx-l2-unaudited", "decision_context", "system", "L0", "L2 Unaudited Context", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create context: %v", err)
 		}
 
-		err = database.CreateHolon(ctx, "h-l2-unaudited", "hypothesis", "system", "L2", "Unaudited L2", "", "default", "", "")
+		err = database.CreateHolon(ctx, "h-l2-unaudited", "hypothesis", "system", "L2", "Unaudited L2", "", "default", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to create L2 holon: %v", err)
 		}

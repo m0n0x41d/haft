@@ -20,7 +20,7 @@ func TestStore_HolonCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	err = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypothesis", "Content here", "ctx1", "scope1", "")
+	err = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypothesis", "Content here", "ctx1", "scope1", "", "")
 	if err != nil {
 		t.Fatalf("CreateHolon failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestStore_EvidenceCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "")
+	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "", "")
 
 	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", 5, "internal-logic", "", "", "")
 	if err != nil {
@@ -118,8 +118,8 @@ func TestStore_RelationsCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "parent", "hypothesis", "system", "L1", "Parent", "Content", "ctx", "", "")
-	_ = store.CreateHolon(ctx, "child", "hypothesis", "system", "L0", "Child", "Content", "ctx", "", "")
+	_ = store.CreateHolon(ctx, "parent", "hypothesis", "system", "L1", "Parent", "Content", "ctx", "", "", "")
+	_ = store.CreateHolon(ctx, "child", "hypothesis", "system", "L0", "Child", "Content", "ctx", "", "", "")
 
 	err = store.Link(ctx, "child", "parent", "componentOf")
 	if err != nil {
@@ -170,9 +170,9 @@ func TestStore_ParentChild(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "l0-hypo", "hypothesis", "system", "L0", "L0 Hypothesis", "Content", "ctx", "", "")
-	_ = store.CreateHolon(ctx, "l1-hypo", "hypothesis", "system", "L1", "L1 Verified", "Content", "ctx", "", "l0-hypo")
-	_ = store.CreateHolon(ctx, "l2-hypo", "hypothesis", "system", "L2", "L2 Validated", "Content", "ctx", "", "l1-hypo")
+	_ = store.CreateHolon(ctx, "l0-hypo", "hypothesis", "system", "L0", "L0 Hypothesis", "Content", "ctx", "", "", "")
+	_ = store.CreateHolon(ctx, "l1-hypo", "hypothesis", "system", "L1", "L1 Verified", "Content", "ctx", "", "l0-hypo", "")
+	_ = store.CreateHolon(ctx, "l2-hypo", "hypothesis", "system", "L2", "L2 Validated", "Content", "ctx", "", "l1-hypo", "")
 
 	children, err := store.GetHolonsByParent(ctx, "l0-hypo")
 	if err != nil {
@@ -275,7 +275,7 @@ func TestStore_HolonReverification(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L2", "Test", "Content", "ctx", "", "")
+	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L2", "Test", "Content", "ctx", "", "", "")
 
 	err = store.MarkHolonNeedsReverification(ctx, "h1", "dependency stale")
 	if err != nil {

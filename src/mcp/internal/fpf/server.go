@@ -244,6 +244,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"default":     CLSameContext,
 						"description": "Congruence level for dependencies. CL3=same context (no penalty), CL2=similar (10% penalty), CL1=different (30% penalty).",
 					},
+					"approach_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional approach classification for diversity tracking. Suggested values: conservative, novel, incremental, radical, hybrid. If all hypotheses in a context share the same approach_type, a diversity warning will be shown.",
+					},
 				},
 				"required": []string{"title", "content", "scope", "kind", "rationale", "decision_context"},
 			},
@@ -452,7 +456,8 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		if cl, ok := params.Arguments["dependency_cl"].(float64); ok {
 			dependencyCL = int(cl)
 		}
-		output, err = s.tools.ProposeHypothesis(ctx, arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL)
+		approachType := arg("approach_type")
+		output, err = s.tools.ProposeHypothesis(ctx, arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL, approachType)
 
 	case "quint_verify":
 		output, err = s.tools.VerifyHypothesis(ctx, arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))

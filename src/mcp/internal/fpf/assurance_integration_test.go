@@ -100,8 +100,9 @@ func TestAuditVisualization_ReturnsTree(t *testing.T) {
 	// Create tools and call VisualizeAudit
 	fsm, _ := fpf.LoadState("default", rawDB)
 	tools := fpf.NewTools(fsm, tempDir, database)
+	ctx := context.Background()
 
-	tree, err := tools.VisualizeAudit("parent")
+	tree, err := tools.VisualizeAudit(ctx, "parent")
 	if err != nil {
 		t.Fatalf("VisualizeAudit failed: %v", err)
 	}

@@ -122,7 +122,7 @@ func TestProposeHypothesis(t *testing.T) {
 	kind := "system"
 	rationale := "This is the rationale."
 
-	holonID, err := tools.ProposeHypothesis(title, content, scope, kind, rationale, dcID, nil, 3)
+	holonID, err := tools.ProposeHypothesis(ctx, title, content, scope, kind, rationale, dcID, nil, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestManageEvidence(t *testing.T) {
 				}
 			}
 
-			evidencePath, err := tools.ManageEvidence(tt.operation, "add", tt.targetID, tt.evidenceType, tt.content, tt.verdict, tt.assuranceLevel, "file://carrier", "2025-12-31")
+			evidencePath, err := tools.ManageEvidence(ctx, tt.operation, "add", tt.targetID, tt.evidenceType, tt.content, tt.verdict, tt.assuranceLevel, "file://carrier", "2025-12-31")
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("ManageEvidence() error = %v, expectErr %v", err, tt.expectErr)
@@ -246,7 +246,7 @@ func TestRefineLoopback(t *testing.T) {
 	newContent := "This is the refined content."
 	scope := "system"
 
-	childID, err := tools.RefineLoopback("L1", parentID, insight, newTitle, newContent, scope)
+	childID, err := tools.RefineLoopback(ctx, "L1", parentID, insight, newTitle, newContent, scope)
 	if err != nil {
 		t.Fatalf("RefineLoopback failed: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestFinalizeDecision(t *testing.T) {
 	title := "Final Project Decision"
 	content := "This is the DRR content for the decision."
 
-	drrPath, err := tools.FinalizeDecision(title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics", "", true)
+	drrPath, err := tools.FinalizeDecision(ctx, title, winnerID, nil, "Context", content, "Rationale", "Consequences", "Characteristics", "", true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestFinalizeDecision_BlockedWhenDecisionContextClosed(t *testing.T) {
 	}
 
 	// Try to create a new DRR with the hypothesis - should be BLOCKED
-	_, err := tools.FinalizeDecision("New Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
+	_, err := tools.FinalizeDecision(ctx, "New Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err == nil {
 		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
 	}
@@ -404,7 +404,7 @@ func TestFinalizeDecision_BlockedWhenHypothesisInOpenDRR(t *testing.T) {
 	}
 
 	// Try to create a new DRR with the same hypothesis - should be BLOCKED
-	_, err := tools.FinalizeDecision("Another Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
+	_, err := tools.FinalizeDecision(ctx, "Another Decision", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err == nil {
 		t.Fatal("Expected FinalizeDecision to return BLOCKED error, got nil")
 	}
@@ -446,7 +446,7 @@ func TestFinalizeDecision_AllowsWhenDRRResolved(t *testing.T) {
 	}
 
 	// Now creating a new DRR with the same hypothesis should succeed (no blocking)
-	_, err := tools.FinalizeDecision("New Decision After Resolution", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
+	_, err := tools.FinalizeDecision(ctx, "New Decision After Resolution", hypID, nil, "Context", "Decision", "Rationale", "Consequences", "", "", true)
 	if err != nil {
 		t.Fatalf("Expected FinalizeDecision to succeed for resolved DRR, got error: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestVerifyHypothesis(t *testing.T) {
 		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"},
 		"predictions": ["Test prediction one", "Test prediction two"]
 	}`
-	msg, err := tools.VerifyHypothesis(hypoID, passJSON, "PASS", "")
+	msg, err := tools.VerifyHypothesis(ctx, hypoID, passJSON, "PASS", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(PASS) failed: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestVerifyHypothesis(t *testing.T) {
 		"constraint_check": {"verdict": "FAIL", "evidence": ["constraint-ref"], "reasoning": "Constraint violated"},
 		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic ok"}
 	}`
-	msg, err = tools.VerifyHypothesis(hypoID2, failJSON, "FAIL", "")
+	msg, err = tools.VerifyHypothesis(ctx, hypoID2, failJSON, "FAIL", "")
 	if err != nil {
 		t.Errorf("VerifyHypothesis(FAIL) failed: %v", err)
 	}
@@ -513,6 +513,7 @@ func TestVerifyHypothesis(t *testing.T) {
 
 func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	tests := []struct {
 		name        string
@@ -566,7 +567,7 @@ func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tools.VerifyHypothesis("any-id", tt.json, tt.verdict, "")
+			_, err := tools.VerifyHypothesis(ctx, "any-id", tt.json, tt.verdict, "")
 			if err == nil {
 				t.Errorf("Expected error containing %q, got nil", tt.errContains)
 				return
@@ -595,7 +596,7 @@ func TestValidateHypothesis(t *testing.T) {
 	}
 
 	passResult := "All tests passed successfully - test output: OK"
-	msg, err := tools.ValidateHypothesis(hypoID, "internal", passResult, "PASS", "")
+	msg, err := tools.ValidateHypothesis(ctx, hypoID, "internal", passResult, "PASS", "")
 	if err != nil {
 		t.Errorf("ValidateHypothesis(PASS) failed: %v", err)
 	}
@@ -613,7 +614,7 @@ func TestValidateHypothesis(t *testing.T) {
 	}
 
 	failResult := "Integration test failed due to connectivity issues - error: connection refused"
-	msg, err = tools.ValidateHypothesis(hypoID2, "internal", failResult, "FAIL", "")
+	msg, err = tools.ValidateHypothesis(ctx, hypoID2, "internal", failResult, "FAIL", "")
 	if err != nil {
 		t.Errorf("ValidateHypothesis(FAIL) failed: %v", err)
 	}
@@ -645,7 +646,7 @@ func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
 		"overall_verdict": "PASS",
 		"reasoning": "P1 validated but P2 not covered"
 	}`
-	_, err := tools.ValidateHypothesis(hypoID, "internal", resultNoP2, "PASS", "")
+	_, err := tools.ValidateHypothesis(ctx, hypoID, "internal", resultNoP2, "PASS", "")
 	if err == nil {
 		t.Error("Expected error for uncovered prediction, got nil")
 	}
@@ -672,7 +673,7 @@ func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
 		t.Fatalf("Failed to add prediction: %v", err)
 	}
 
-	msg, err := tools.ValidateHypothesis(hypoID2, "internal", resultBothCovered, "PASS", "")
+	msg, err := tools.ValidateHypothesis(ctx, hypoID2, "internal", resultBothCovered, "PASS", "")
 	if err != nil {
 		t.Errorf("Expected success when all predictions covered, got: %v", err)
 	}
@@ -683,6 +684,7 @@ func TestValidateHypothesis_PredictionCoverage(t *testing.T) {
 
 func TestValidateHypothesis_ValidationErrors(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	tests := []struct {
 		name        string
@@ -706,7 +708,7 @@ func TestValidateHypothesis_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tools.ValidateHypothesis("any-id", "internal", tt.result, tt.verdict, "")
+			_, err := tools.ValidateHypothesis(ctx, "any-id", "internal", tt.result, tt.verdict, "")
 			if err == nil {
 				t.Errorf("Expected error containing %q, got nil", tt.errContains)
 				return
@@ -730,7 +732,7 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create L0 holon: %v", err)
 	}
 
-	warning := tools.checkDuplicateHypothesis("new-hypo")
+	warning := tools.checkDuplicateHypothesis(ctx, "new-hypo")
 	if warning == "" {
 		t.Error("Expected duplicate warning, got empty string")
 	}
@@ -742,12 +744,12 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 		t.Fatalf("Failed to create unique holon: %v", err)
 	}
 
-	warning = tools.checkDuplicateHypothesis("unique-hypo")
+	warning = tools.checkDuplicateHypothesis(ctx, "unique-hypo")
 	if warning != "" {
 		t.Errorf("Expected no warning for unique title, got %q", warning)
 	}
 
-	warning = tools.checkDuplicateHypothesis("nonexistent-id")
+	warning = tools.checkDuplicateHypothesis(ctx, "nonexistent-id")
 	if warning != "" {
 		t.Errorf("Expected no warning for nonexistent id, got %q", warning)
 	}
@@ -755,10 +757,11 @@ func TestCheckDuplicateHypothesis(t *testing.T) {
 
 func TestAuditEvidence(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	hypoID := "audit-hypo"
 
-	msg, err := tools.AuditEvidence(hypoID, "Risk analysis content")
+	msg, err := tools.AuditEvidence(ctx, hypoID, "Risk analysis content")
 	if err != nil {
 		t.Errorf("AuditEvidence failed: %v", err)
 	}
@@ -788,7 +791,7 @@ func TestCalculateR(t *testing.T) {
 	}
 
 	// Calculate R
-	result, err := tools.CalculateR("calc-r-test")
+	result, err := tools.CalculateR(ctx, "calc-r-test")
 	if err != nil {
 		t.Fatalf("CalculateR failed: %v", err)
 	}
@@ -822,7 +825,7 @@ func TestCalculateR_WithDecay(t *testing.T) {
 	}
 
 	// Calculate R
-	result, err := tools.CalculateR("decay-r-test")
+	result, err := tools.CalculateR(ctx, "decay-r-test")
 	if err != nil {
 		t.Fatalf("CalculateR failed: %v", err)
 	}
@@ -850,7 +853,7 @@ func TestCheckDecay_NoExpired(t *testing.T) {
 	}
 
 	// Check decay (freshness report mode - all empty params)
-	result, err := tools.CheckDecay("", "", "", "")
+	result, err := tools.CheckDecay(ctx, "", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay failed: %v", err)
 	}
@@ -878,7 +881,7 @@ func TestCheckDecay_WithExpired(t *testing.T) {
 	}
 
 	// Check decay (freshness report mode - all empty params)
-	result, err := tools.CheckDecay("", "", "", "")
+	result, err := tools.CheckDecay(ctx, "", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay failed: %v", err)
 	}
@@ -904,7 +907,7 @@ func TestCheckDecay_Deprecate(t *testing.T) {
 	}
 
 	// Deprecate (L2 -> L1)
-	result, err := tools.CheckDecay(holonID, "", "", "")
+	result, err := tools.CheckDecay(ctx, holonID, "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay deprecate failed: %v", err)
 	}
@@ -941,7 +944,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 	}
 
 	// Verify initially shows as stale
-	result, err := tools.CheckDecay("", "", "", "")
+	result, err := tools.CheckDecay(ctx, "", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay failed: %v", err)
 	}
@@ -952,7 +955,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 	// Waive the evidence
 	futureDate := "2099-12-31"
 	rationale := "Test waiver"
-	result, err = tools.CheckDecay("", evidenceID, futureDate, rationale)
+	result, err = tools.CheckDecay(ctx, "", evidenceID, futureDate, rationale)
 	if err != nil {
 		t.Fatalf("CheckDecay waive failed: %v", err)
 	}
@@ -965,7 +968,7 @@ func TestCheckDecay_Waive(t *testing.T) {
 	}
 
 	// Check that it no longer shows as stale
-	result, err = tools.CheckDecay("", "", "", "")
+	result, err = tools.CheckDecay(ctx, "", "", "", "")
 	if err != nil {
 		t.Fatalf("CheckDecay report failed: %v", err)
 	}
@@ -978,15 +981,16 @@ func TestCheckDecay_Waive(t *testing.T) {
 
 func TestCheckDecay_WaiveMissingParams(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	// Waive without until date
-	_, err := tools.CheckDecay("", "some-evidence", "", "some rationale")
+	_, err := tools.CheckDecay(ctx, "", "some-evidence", "", "some rationale")
 	if err == nil {
 		t.Error("Expected error when waive_until is missing")
 	}
 
 	// Waive without rationale
-	_, err = tools.CheckDecay("", "some-evidence", "2099-12-31", "")
+	_, err = tools.CheckDecay(ctx, "", "some-evidence", "2099-12-31", "")
 	if err == nil {
 		t.Error("Expected error when rationale is missing")
 	}
@@ -1004,7 +1008,7 @@ func TestCheckDecay_DeprecateL0Fails(t *testing.T) {
 	}
 
 	// Try to deprecate L0 - should fail
-	_, err = tools.CheckDecay(holonID, "", "", "")
+	_, err = tools.CheckDecay(ctx, holonID, "", "", "")
 	if err == nil {
 		t.Error("Expected error when deprecating L0 holon")
 	}
@@ -1030,7 +1034,7 @@ func TestVisualizeAudit(t *testing.T) {
 	}
 
 	// Visualize audit
-	result, err := tools.VisualizeAudit("audit-viz-test")
+	result, err := tools.VisualizeAudit(ctx, "audit-viz-test")
 	if err != nil {
 		t.Fatalf("VisualizeAudit failed: %v", err)
 	}
@@ -1061,7 +1065,7 @@ func TestUnifiedAudit_Basic(t *testing.T) {
 	}
 
 	// Run unified audit without risks
-	result, err := tools.UnifiedAudit("unified-audit-test", "")
+	result, err := tools.UnifiedAudit(ctx, "unified-audit-test", "")
 	if err != nil {
 		t.Fatalf("UnifiedAudit failed: %v", err)
 	}
@@ -1091,7 +1095,7 @@ func TestUnifiedAudit_WithRisks(t *testing.T) {
 	}
 
 	// Run unified audit with risks
-	result, err := tools.UnifiedAudit("unified-audit-risks", "Risk: dependency might fail under high load")
+	result, err := tools.UnifiedAudit(ctx, "unified-audit-risks", "Risk: dependency might fail under high load")
 	if err != nil {
 		t.Fatalf("UnifiedAudit failed: %v", err)
 	}
@@ -1130,6 +1134,7 @@ func TestPropose_WithDecisionContext(t *testing.T) {
 
 	// Propose hypothesis with decision_context
 	_, err = tools.ProposeHypothesis(
+		ctx,
 		"Use Redis",
 		"Use Redis for caching",
 		"backend",
@@ -1182,6 +1187,7 @@ func TestPropose_WithDependsOn(t *testing.T) {
 
 	// Propose hypothesis with depends_on
 	_, err = tools.ProposeHypothesis(
+		ctx,
 		"API Gateway",
 		"Gateway with auth and rate limiting",
 		"external traffic",
@@ -1228,7 +1234,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 	}
 
 	// Create holon B that depends on A
-	_, err = tools.ProposeHypothesis("Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for B failed: %v", err)
 	}
@@ -1242,7 +1248,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 
 	// Try to make A depend on B (would create cycle since B already depends on A)
 	// This should be skipped with a warning, not error
-	_, err = tools.ProposeHypothesis("Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3)
 	// Should NOT error - cycles are skipped with warning
 	if err != nil {
 		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
@@ -1279,6 +1285,7 @@ func TestPropose_InvalidDependency(t *testing.T) {
 
 	// Propose hypothesis with non-existent dependency
 	_, err = tools.ProposeHypothesis(
+		ctx,
 		"Orphan Hypo",
 		"Depends on non-existent holon",
 		"global",
@@ -1325,13 +1332,13 @@ func TestPropose_KindDeterminesRelation(t *testing.T) {
 	}
 
 	// Propose system hypothesis - should create componentOf
-	_, err = tools.ProposeHypothesis("System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for system failed: %v", err)
 	}
 
 	// Propose episteme hypothesis - should create constituentOf
-	_, err = tools.ProposeHypothesis("Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3)
+	_, err = tools.ProposeHypothesis(ctx, "Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
 	}
@@ -1383,7 +1390,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	}
 
 	// Create good hypothesis that is member of bad decision
-	_, err = tools.ProposeHypothesis(
+	_, err = tools.ProposeHypothesis(ctx,
 		"Good Member",
 		"A good hypothesis",
 		"global",
@@ -1404,7 +1411,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 	}
 
 	// Calculate R for good-member
-	result, err := tools.CalculateR("good-member")
+	result, err := tools.CalculateR(ctx, "good-member")
 	if err != nil {
 		t.Fatalf("CalculateR failed: %v", err)
 	}
@@ -1474,7 +1481,7 @@ func TestManageEvidence_ValidUntilNullByDefault(t *testing.T) {
 	}
 
 	// Call ManageEvidence with EMPTY validUntil - should remain NULL
-	_, err = tools.ManageEvidence("validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
+	_, err = tools.ManageEvidence(ctx, "validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", "")
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
 	}
@@ -1514,7 +1521,7 @@ func TestManageEvidence_ValidUntilExplicit(t *testing.T) {
 
 	// Call ManageEvidence with explicit validUntil
 	explicitDate := "2025-06-15"
-	_, err = tools.ManageEvidence("validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", explicitDate)
+	_, err = tools.ManageEvidence(ctx, "validation", "add", hypoID, "internal", "Test passed", "pass", "L2", "test-runner", explicitDate)
 	if err != nil {
 		t.Fatalf("ManageEvidence failed: %v", err)
 	}
@@ -1548,7 +1555,7 @@ func TestInternalize_FirstCall(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1575,13 +1582,13 @@ func TestInternalize_SubsequentCall(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
 	// First call - sets up everything
-	_, err := tools.Internalize()
+	_, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("First Internalize() error = %v", err)
 	}
 
 	// Second call - should return READY (context is fresh, nothing changed)
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Second Internalize() error = %v", err)
 	}
@@ -1607,7 +1614,7 @@ func TestInternalize_LayerCounts(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1652,7 +1659,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// After selects relation: archived-hypo should immediately be excluded from active count
 	// (New behavior: L2s are excluded immediately after decision, not after resolution)
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1670,7 +1677,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 	}
 
 	// After resolution: still excluded (unchanged)
-	result, err = tools.Internalize()
+	result, err = tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() after resolution error = %v", err)
 	}
@@ -1694,7 +1701,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 func TestSearch_NoResults(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	result, err := tools.Search("xyznonexistentquery", "", "", "", "", 10)
+	result, err := tools.Search(ctx,"xyznonexistentquery", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1713,7 +1720,7 @@ func TestSearch_WithResults(t *testing.T) {
 		"Authentication Decision", "How to handle user authentication", "default", "", "")
 
 	// Search for it
-	result, err := tools.Search("authentication", "", "", "", "", 10)
+	result, err := tools.Search(ctx,"authentication", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1729,7 +1736,7 @@ func TestSearch_WithResults(t *testing.T) {
 func TestSearch_EmptyQuery(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	_, err := tools.Search("", "", "", "", "", 10)
+	_, err := tools.Search(ctx,"", "", "", "", "", 10)
 	if err == nil {
 		t.Error("Empty query should return error")
 	}
@@ -1740,7 +1747,7 @@ func TestSearch_NoDB(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	_, err := tools.Search("test", "", "", "", "", 10)
+	_, err := tools.Search(ctx,"test", "", "", "", "", 10)
 	if err == nil {
 		t.Error("Search without DB should return error")
 	}
@@ -1760,7 +1767,7 @@ func TestSearch_LayerFilter(t *testing.T) {
 		"L2 Test Holon", "Content for L2", "default", "", "")
 
 	// Search with L2 filter
-	result, err := tools.Search("Test Holon", "", "L2", "", "", 10)
+	result, err := tools.Search(ctx,"Test Holon", "", "L2", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -1779,7 +1786,7 @@ func TestSearch_SpecialCharacters(t *testing.T) {
 		"Redis-backed Cache Strategy", "Use redis-cluster for caching", "default", "", "")
 
 	// Search with hyphenated query (previously would cause FTS5 parse error)
-	result, err := tools.Search("redis-backed", "", "", "", "", 10)
+	result, err := tools.Search(ctx,"redis-backed", "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("Search with hyphens should not error: %v", err)
 	}
@@ -1806,7 +1813,7 @@ func TestResolve_Implemented(t *testing.T) {
 		Resolution: "implemented",
 		Reference:  "commit:abc1234",
 	}
-	result, err := tools.Resolve(input)
+	result, err := tools.Resolve(ctx,input)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -1848,7 +1855,7 @@ func TestResolve_Abandoned(t *testing.T) {
 		Resolution: "abandoned",
 		Notes:      "Requirements changed",
 	}
-	result, err := tools.Resolve(input)
+	result, err := tools.Resolve(ctx,input)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -1895,7 +1902,7 @@ func TestResolve_Superseded(t *testing.T) {
 		SupersededBy: "DRR-new-decision",
 		Notes:        "Better approach found",
 	}
-	result, err := tools.Resolve(input)
+	result, err := tools.Resolve(ctx,input)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -1917,7 +1924,7 @@ func TestResolve_InvalidDecision(t *testing.T) {
 		Resolution: "implemented",
 		Reference:  "commit:abc1234",
 	}
-	_, err := tools.Resolve(input)
+	_, err := tools.Resolve(ctx,input)
 	if err == nil {
 		t.Error("Should error on non-existent decision")
 	}
@@ -1939,7 +1946,7 @@ func TestResolve_InvalidResolution(t *testing.T) {
 		DecisionID: "DRR-invalid-res",
 		Resolution: "invalid_type",
 	}
-	_, err = tools.Resolve(input)
+	_, err = tools.Resolve(ctx,input)
 	if err == nil {
 		t.Error("Should error on invalid resolution type")
 	}
@@ -1961,7 +1968,7 @@ func TestResolve_MissingRequiredParams(t *testing.T) {
 		DecisionID: "DRR-missing-params",
 		Resolution: "implemented",
 	}
-	_, err = tools.Resolve(input)
+	_, err = tools.Resolve(ctx,input)
 	if err == nil {
 		t.Error("implemented should require reference")
 	}
@@ -1971,7 +1978,7 @@ func TestResolve_MissingRequiredParams(t *testing.T) {
 		DecisionID: "DRR-missing-params",
 		Resolution: "abandoned",
 	}
-	_, err = tools.Resolve(input)
+	_, err = tools.Resolve(ctx,input)
 	if err == nil {
 		t.Error("abandoned should require notes")
 	}
@@ -1981,7 +1988,7 @@ func TestResolve_MissingRequiredParams(t *testing.T) {
 		DecisionID: "DRR-missing-params",
 		Resolution: "superseded",
 	}
-	_, err = tools.Resolve(input)
+	_, err = tools.Resolve(ctx,input)
 	if err == nil {
 		t.Error("superseded should require superseded_by")
 	}
@@ -2011,7 +2018,7 @@ func TestSearch_StatusFilterOpen(t *testing.T) {
 	}
 
 	// Search for open decisions
-	result, err := tools.Search("Decision", "", "", "open", "", 10)
+	result, err := tools.Search(ctx,"Decision", "", "", "open", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -2041,7 +2048,7 @@ func TestSearch_StatusFilterImplemented(t *testing.T) {
 	}
 
 	// Search for implemented decisions
-	result, err := tools.Search("Decision", "", "", "implemented", "", 10)
+	result, err := tools.Search(ctx,"Decision", "", "", "implemented", "", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -2063,7 +2070,7 @@ func TestInternalize_ShowsOpenDecisions(t *testing.T) {
 	}
 
 	// Internalize and check output
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -2146,7 +2153,7 @@ func TestGetResolvedDecisions(t *testing.T) {
 func TestResetCycle_Basic(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	result, err := tools.ResetCycle("test reset", "", false)
+	result, err := tools.ResetCycle(ctx,"test reset", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2166,7 +2173,7 @@ func TestResetCycle_Basic(t *testing.T) {
 func TestResetCycle_DefaultReason(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	result, err := tools.ResetCycle("", "", false) // Empty reason
+	result, err := tools.ResetCycle(ctx,"", "", false) // Empty reason
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2187,7 +2194,7 @@ func TestResetCycle_ShowsOpenDecisions(t *testing.T) {
 		t.Fatalf("Failed to create DRR: %v", err)
 	}
 
-	result, err := tools.ResetCycle("ending session", "", false)
+	result, err := tools.ResetCycle(ctx,"ending session", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2207,7 +2214,7 @@ func TestResetCycle_ShowsLayerCounts(t *testing.T) {
 	tools.DB.CreateHolon(ctx, "hypo2", "hypothesis", "system", "L0", "Hypo 2", "Content", "default", "", "")
 	tools.DB.CreateHolon(ctx, "hypo3", "hypothesis", "system", "L1", "Hypo 3", "Content", "default", "", "")
 
-	result, err := tools.ResetCycle("session complete", "", false)
+	result, err := tools.ResetCycle(ctx,"session complete", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2236,7 +2243,7 @@ func TestResetCycle_NoDRRCreated(t *testing.T) {
 	}
 
 	// Reset
-	_, err := tools.ResetCycle("testing no DRR", "", false)
+	_, err := tools.ResetCycle(ctx,"testing no DRR", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2273,7 +2280,7 @@ func TestResetCycle_AuditLogEntry(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	_, err := tools.ResetCycle("audit log test", "", false)
+	_, err := tools.ResetCycle(ctx,"audit log test", "", false)
 	if err != nil {
 		t.Fatalf("ResetCycle() error = %v", err)
 	}
@@ -2330,7 +2337,7 @@ Test content.
 	}
 
 	// Call Implement
-	result, err := tools.Implement(drrID)
+	result, err := tools.Implement(ctx,drrID)
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -2372,7 +2379,7 @@ func TestImplement_NoContract(t *testing.T) {
 	}
 
 	// Call Implement - should fail
-	_, err = tools.Implement(drrID)
+	_, err = tools.Implement(ctx,drrID)
 	if err == nil {
 		t.Error("Expected error for DRR without contract")
 	}
@@ -2384,7 +2391,7 @@ func TestImplement_NoContract(t *testing.T) {
 func TestImplement_NotFound(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
-	_, err := tools.Implement("nonexistent-drr")
+	_, err := tools.Implement(ctx,"nonexistent-drr")
 	if err == nil {
 		t.Error("Expected error for nonexistent DRR")
 	}
@@ -2404,7 +2411,7 @@ func TestImplement_NotDRR(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	_, err = tools.Implement("regular-hypo")
+	_, err = tools.Implement(ctx,"regular-hypo")
 	if err == nil {
 		t.Error("Expected error for non-DRR holon")
 	}
@@ -2466,7 +2473,7 @@ content_hash: def456
 	os.WriteFile(childPath, []byte(childContent), 0644)
 
 	// Call Implement on child
-	result, err := tools.Implement(childID)
+	result, err := tools.Implement(ctx,childID)
 	if err != nil {
 		t.Fatalf("Implement() error = %v", err)
 	}
@@ -2498,7 +2505,7 @@ func TestImplement_NoDB(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	_, err := tools.Implement("any-drr")
+	_, err := tools.Implement(ctx,"any-drr")
 	if err == nil {
 		t.Error("Expected error when DB not initialized")
 	}
@@ -2536,7 +2543,7 @@ content_hash: abc123
 
 	// Call Implement with FULL filename (what agent typically uses)
 	fullFilenameID := "DRR-2025-12-24-redis-cache-with-monitoring"
-	result, err := tools.Implement(fullFilenameID)
+	result, err := tools.Implement(ctx,fullFilenameID)
 	if err != nil {
 		t.Fatalf("Implement() with full filename ID should work, got error: %v", err)
 	}
@@ -2546,7 +2553,7 @@ content_hash: abc123
 	}
 
 	// Also verify short ID still works
-	result2, err := tools.Implement(slugifiedID)
+	result2, err := tools.Implement(ctx,slugifiedID)
 	if err != nil {
 		t.Fatalf("Implement() with short ID should work, got error: %v", err)
 	}
@@ -2566,7 +2573,7 @@ func TestLinkHolons_Basic(t *testing.T) {
 	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
 	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
 
-	result, err := tools.LinkHolons(id1, id2, 3)
+	result, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
 		t.Fatalf("LinkHolons failed: %v", err)
 	}
@@ -2600,7 +2607,7 @@ func TestLinkHolons_EpistemeKind(t *testing.T) {
 	tools.DB.CreateHolon(ctx, id1, "hypothesis", "episteme", "L0", "Episteme Source", "content", "default", "", "")
 	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
 
-	result, err := tools.LinkHolons(id1, id2, 3)
+	result, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
 		t.Fatalf("LinkHolons failed: %v", err)
 	}
@@ -2617,7 +2624,7 @@ func TestLinkHolons_SourceNotFound(t *testing.T) {
 	id2 := uuid.New().String()
 	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target Holon", "content", "default", "", "")
 
-	_, err := tools.LinkHolons("nonexistent", id2, 3)
+	_, err := tools.LinkHolons(ctx,"nonexistent", id2, 3)
 	if err == nil {
 		t.Error("Expected error for nonexistent source")
 	}
@@ -2633,7 +2640,7 @@ func TestLinkHolons_TargetNotFound(t *testing.T) {
 	id1 := uuid.New().String()
 	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source Holon", "content", "default", "", "")
 
-	_, err := tools.LinkHolons(id1, "nonexistent", 3)
+	_, err := tools.LinkHolons(ctx,id1, "nonexistent", 3)
 	if err == nil {
 		t.Error("Expected error for nonexistent target")
 	}
@@ -2652,12 +2659,12 @@ func TestLinkHolons_CyclePrevention(t *testing.T) {
 	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "A", "content", "default", "", "")
 	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "B", "content", "default", "", "")
 
-	_, err := tools.LinkHolons(id1, id2, 3)
+	_, err := tools.LinkHolons(ctx,id1, id2, 3)
 	if err != nil {
 		t.Fatalf("First link failed: %v", err)
 	}
 
-	_, err = tools.LinkHolons(id2, id1, 3)
+	_, err = tools.LinkHolons(ctx,id2, id1, 3)
 	if err == nil {
 		t.Error("Expected error for cycle creation")
 	}
@@ -2671,7 +2678,7 @@ func TestLinkHolons_NoDB(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	_, err := tools.LinkHolons("a", "b", 3)
+	_, err := tools.LinkHolons(ctx,"a", "b", 3)
 	if err == nil {
 		t.Error("Expected error when DB is nil")
 	}
@@ -2690,7 +2697,7 @@ func TestLinkHolons_CLValidation(t *testing.T) {
 	tools.DB.CreateHolon(ctx, id1, "hypothesis", "system", "L0", "Source", "content", "default", "", "")
 	tools.DB.CreateHolon(ctx, id2, "hypothesis", "system", "L0", "Target", "content", "default", "", "")
 
-	_, err := tools.LinkHolons(id1, id2, 0)
+	_, err := tools.LinkHolons(ctx,id1, id2, 0)
 	if err != nil {
 		t.Fatalf("LinkHolons with CL=0 should default to 3: %v", err)
 	}
@@ -2717,7 +2724,7 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
 		"Redis Cache Layer", "Implement caching with Redis", "default", "src/cache/*", "")
 
-	result, err := tools.ProposeHypothesis(
+	result, err := tools.ProposeHypothesis(ctx,
 		"Token Bucket Rate Limiter using Redis",
 		"Implement rate limiting that stores counters in Redis",
 		"src/api/*", "system",
@@ -2757,7 +2764,7 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 	tools.DB.CreateHolon(ctx, "redis-cache-drr", "DRR", "system", "DRR",
 		"Redis Cache", "Redis caching", "default", "", "")
 
-	result, err := tools.ProposeHypothesis(
+	result, err := tools.ProposeHypothesis(ctx,
 		"Rate Limiter using Redis",
 		"Implement rate limiting with Redis",
 		"src/api/*", "system",
@@ -2785,7 +2792,7 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(tempDir, ".quint", "knowledge", "L0"), 0755)
 
-	result, err := tools.ProposeHypothesis(
+	result, err := tools.ProposeHypothesis(ctx,
 		"Standalone Feature XYZ",
 		"Something completely unrelated to existing holons",
 		"src/xyz/*", "system",
@@ -2863,9 +2870,10 @@ func TestGetActiveDecisionContexts_ExcludesClosed(t *testing.T) {
 
 func TestProposeHypothesis_RequiresDecisionContext(t *testing.T) {
 	tools, _, _ := setupTools(t)
+	ctx := context.Background()
 
 	// decision_context is now REQUIRED (v5.0.0 refactoring)
-	_, err := tools.ProposeHypothesis(
+	_, err := tools.ProposeHypothesis(ctx,
 		"Test Hypothesis",
 		"Testing required decision_context",
 		"test scope",
@@ -2887,7 +2895,7 @@ func TestCreateContext_Success(t *testing.T) {
 	tools, _, _ := setupTools(t)
 	ctx := context.Background()
 
-	result, err := tools.CreateContext("Database Selection", "backend services", "Choosing between PostgreSQL and MySQL")
+	result, err := tools.CreateContext(ctx,"Database Selection", "backend services", "Choosing between PostgreSQL and MySQL")
 	if err != nil {
 		t.Fatalf("CreateContext failed: %v", err)
 	}
@@ -2920,7 +2928,7 @@ func TestCreateContext_AlreadyExists(t *testing.T) {
 	}
 
 	// Try to create same context again
-	_, err = tools.CreateContext("Existing Context", "scope", "")
+	_, err = tools.CreateContext(ctx,"Existing Context", "scope", "")
 	if err == nil {
 		t.Fatal("Expected error when creating duplicate context")
 	}
@@ -2943,7 +2951,7 @@ func TestCreateContext_Max3Limit(t *testing.T) {
 	}
 
 	// Try to create 4th
-	_, err := tools.CreateContext("Fourth Context", "scope", "")
+	_, err := tools.CreateContext(ctx,"Fourth Context", "scope", "")
 	if err == nil {
 		t.Fatal("Expected error when creating 4th context")
 	}
@@ -2966,7 +2974,7 @@ func TestProposeHypothesis_DecisionContextTypeValidation(t *testing.T) {
 	}
 
 	// Try to use the hypothesis as decision_context - should fail with type validation error
-	_, err = tools.ProposeHypothesis(
+	_, err = tools.ProposeHypothesis(ctx,
 		"Test Hypothesis",
 		"Testing type validation",
 		"test scope",
@@ -2993,7 +3001,7 @@ func TestResetCycle_AbandonContext(t *testing.T) {
 		t.Fatalf("Failed to create context: %v", err)
 	}
 
-	result, err := tools.ResetCycle("testing abandon", "dc-abandon-test", false)
+	result, err := tools.ResetCycle(ctx,"testing abandon", "dc-abandon-test", false)
 	if err != nil {
 		t.Fatalf("ResetCycle failed: %v", err)
 	}
@@ -3026,7 +3034,7 @@ func TestResetCycle_AbandonAll(t *testing.T) {
 		}
 	}
 
-	result, err := tools.ResetCycle("abandon all test", "", true)
+	result, err := tools.ResetCycle(ctx,"abandon all test", "", true)
 	if err != nil {
 		t.Fatalf("ResetCycle failed: %v", err)
 	}
@@ -3063,7 +3071,7 @@ func TestFinalizeDecision_ClosesContext(t *testing.T) {
 		t.Fatalf("Failed to create memberOf relation: %v", err)
 	}
 
-	_, err = tools.FinalizeDecision("Close Context Test", "winner-hypo", nil, "Test", "Decision", "Rationale", "Consequences", "", "", true)
+	_, err = tools.FinalizeDecision(ctx, "Close Context Test", "winner-hypo", nil, "Test", "Decision", "Rationale", "Consequences", "", "", true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -3108,7 +3116,7 @@ func TestFinalizeDecision_CloseContextFalse_KeepsContextOpen(t *testing.T) {
 		t.Fatalf("Failed to create memberOf relation for hyp2: %v", err)
 	}
 
-	_, err = tools.FinalizeDecision("First DRR", hyp1ID, nil, "Test", "Decision 1", "Rationale 1", "Consequences 1", "", "", false)
+	_, err = tools.FinalizeDecision(ctx, "First DRR", hyp1ID, nil, "Test", "Decision 1", "Rationale 1", "Consequences 1", "", "", false)
 	if err != nil {
 		t.Fatalf("First FinalizeDecision with closeContext=false failed: %v", err)
 	}
@@ -3128,7 +3136,7 @@ func TestFinalizeDecision_CloseContextFalse_KeepsContextOpen(t *testing.T) {
 		t.Errorf("Context %s should still be active after closeContext=false", dcID)
 	}
 
-	_, err = tools.FinalizeDecision("Second DRR", hyp2ID, nil, "Test", "Decision 2", "Rationale 2", "Consequences 2", "", "", true)
+	_, err = tools.FinalizeDecision(ctx, "Second DRR", hyp2ID, nil, "Test", "Decision 2", "Rationale 2", "Consequences 2", "", "", true)
 	if err != nil {
 		t.Fatalf("Second FinalizeDecision with closeContext=true failed: %v", err)
 	}
@@ -3185,7 +3193,7 @@ Test content.
 	modifiedContent := "package calculator\nfunc Add(a, b int) int { return a + b + 0 } // CHANGED"
 	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
 
-	result, err := tools.Implement(drrID)
+	result, err := tools.Implement(ctx,drrID)
 	if err != nil {
 		t.Fatalf("Implement() failed: %v", err)
 	}
@@ -3239,7 +3247,7 @@ Test content.
 		t.Fatalf("Failed to write DRR file: %v", err)
 	}
 
-	result, err := tools.Implement(drrID)
+	result, err := tools.Implement(ctx,drrID)
 	if err != nil {
 		t.Fatalf("Implement() failed: %v", err)
 	}
@@ -3289,7 +3297,7 @@ Test content.
 
 	os.Remove(testFilePath)
 
-	result, err := tools.Implement(drrID)
+	result, err := tools.Implement(ctx,drrID)
 	if err != nil {
 		t.Fatalf("Implement() failed: %v", err)
 	}
@@ -3326,7 +3334,7 @@ func TestFinalizeDecision_StoresAffectedHashes(t *testing.T) {
 	tools.createRelation(ctx, winnerID, "memberOf", dcID, 3)
 
 	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, testFile)
-	drrPath, err := tools.FinalizeDecision("Store Hash Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
+	drrPath, err := tools.FinalizeDecision(ctx, "Store Hash Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -3376,7 +3384,7 @@ func TestFinalizeDecision_AffectedScopeWithClassRef(t *testing.T) {
 	// Use file:class format in affected_scope
 	scopeRef := "src/calculator.py:Calculator"
 	contractJSON := fmt.Sprintf(`{"invariants":["Must work"],"affected_scope":["%s"]}`, scopeRef)
-	drrPath, err := tools.FinalizeDecision("Class Ref Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
+	drrPath, err := tools.FinalizeDecision(ctx, "Class Ref Test", winnerID, nil, "Test", "Decision", "Rationale", "Consequences", "", contractJSON, true)
 	if err != nil {
 		t.Fatalf("FinalizeDecision failed: %v", err)
 	}
@@ -3445,7 +3453,7 @@ Test content.
 	modifiedContent := "class Calculator:\n    def add(self, a, b): return a + b  # modified"
 	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
 
-	result, err := tools.Implement(drrID)
+	result, err := tools.Implement(ctx,drrID)
 	if err != nil {
 		t.Fatalf("Implement() failed: %v", err)
 	}
@@ -3499,7 +3507,7 @@ Test content.
 	modifiedContent := "class Target:\n    # modified\n    def method(self): pass\n"
 	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
 
-	result, err := tools.Internalize()
+	result, err := tools.Internalize(ctx)
 	if err != nil {
 		t.Fatalf("Internalize() failed: %v", err)
 	}

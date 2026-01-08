@@ -9,12 +9,13 @@ import (
 )
 
 type AssuranceReport struct {
-	HolonID      string
-	FinalScore   float64
-	SelfScore    float64  // Score based on own evidence
-	WeakestLink  string   // ID of the dependency pulling the score down
-	DecayPenalty float64
-	Factors      []string // Textual explanations for AI
+	HolonID        string
+	FinalScore     float64
+	SelfScore      float64  // Score based on own evidence
+	FormalityScore int      // F_eff = min(F_i) for all evidence (0-9 scale)
+	WeakestLink    string   // ID of the dependency pulling the score down
+	DecayPenalty   float64
+	Factors        []string // Textual explanations for AI
 }
 
 type Calculator struct {
@@ -46,19 +47,22 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 
 	// 1. Calculate Self Score (based on Evidence)
 	// B.3.4: Check for expired evidence + evidence source CL penalty
+	// C.2.3: F_eff = min(F_i) for all evidence (Formality level)
 	rows, err := c.DB.QueryContext(ctx,
-		"SELECT id, type, verdict, valid_until FROM evidence WHERE holon_id = ?", holonID)
+		"SELECT id, type, verdict, valid_until, COALESCE(formality_level, 5) FROM evidence WHERE holon_id = ?", holonID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	minScore := 1.0 // WLNK: track weakest evidence
+	minScore := 1.0    // WLNK: track weakest evidence
+	minFormality := 9  // F_eff: track lowest formality (0-9 scale, 9 is highest)
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
 		var validUntil *time.Time
-		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil); err != nil {
+		var formalityLevel int
+		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &formalityLevel); err != nil {
 			continue
 		}
 		hasEvidence = true
@@ -93,12 +97,19 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		if score < minScore {
 			minScore = score
 		}
+
+		// F_eff: weakest formality determines formality score (C.2.3)
+		if formalityLevel < minFormality {
+			minFormality = formalityLevel
+		}
 	}
 
 	if hasEvidence {
-		report.SelfScore = minScore // WLNK: weakest evidence determines score
+		report.SelfScore = minScore           // WLNK: weakest evidence determines score
+		report.FormalityScore = minFormality  // F_eff: weakest formality
 	} else {
-		report.SelfScore = 0.0 // L0: Unsubstantiated
+		report.SelfScore = 0.0       // L0: Unsubstantiated
+		report.FormalityScore = 0    // No evidence = no formality
 		report.Factors = append(report.Factors, "No evidence found (L0)")
 	}
 

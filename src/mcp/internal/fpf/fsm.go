@@ -43,7 +43,7 @@ type FSM struct {
 func LoadState(contextID string, db *sql.DB) (*FSM, error) {
 	fsm := &FSM{
 		State: State{
-			AssuranceThreshold: 0.8,
+			AssuranceThreshold: DefaultAssuranceThreshold,
 		},
 		DB: db,
 	}
@@ -117,7 +117,7 @@ func (f *FSM) SaveState(contextID string) error {
 // GetAssuranceThreshold returns the configured assurance threshold.
 func (f *FSM) GetAssuranceThreshold() float64 {
 	if f.State.AssuranceThreshold <= 0 {
-		return 0.8
+		return DefaultAssuranceThreshold
 	}
 	return f.State.AssuranceThreshold
 }

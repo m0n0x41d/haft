@@ -55,7 +55,7 @@ func (t *Tools) MoveHypothesis(hypothesisID, sourceLevel, destLevel string) erro
 	ctx := context.Background()
 
 	if t.DB == nil {
-		return fmt.Errorf("database not initialized")
+		return ErrDatabaseNotInitialized
 	}
 
 	holon, err := t.DB.GetHolon(ctx, hypothesisID)
@@ -116,7 +116,7 @@ func (t *Tools) RecordWork(methodName string, start time.Time) {
 
 func (t *Tools) GetHolon(id string) (db.Holon, error) {
 	if t.DB == nil {
-		return db.Holon{}, fmt.Errorf("DB not initialized")
+		return db.Holon{}, ErrDatabaseNotInitialized
 	}
 	return t.DB.GetHolon(context.Background(), id)
 }

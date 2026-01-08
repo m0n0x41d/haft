@@ -59,7 +59,7 @@ func (t *Tools) ProposeHypothesis(title, content, scope, kind, rationale string,
 
 	if t.DB == nil {
 		logger.Error().Msg("ProposeHypothesis: database not initialized")
-		return "", fmt.Errorf("database not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	ctx := context.Background()

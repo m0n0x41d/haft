@@ -185,9 +185,9 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"target_id": map[string]string{"type": "string", "description": "ID of the holon being depended upon"},
 					"congruence_level": map[string]interface{}{
 						"type":        "integer",
-						"minimum":     1,
-						"maximum":     3,
-						"default":     3,
+						"minimum":     CLDifferentContext,
+						"maximum":     CLSameContext,
+						"default":     CLSameContext,
 						"description": "CL3=same context, CL2=similar, CL1=different",
 					},
 				},
@@ -238,9 +238,9 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"dependency_cl": map[string]interface{}{
 						"type":        "integer",
-						"minimum":     1,
-						"maximum":     3,
-						"default":     3,
+						"minimum":     CLDifferentContext,
+						"maximum":     CLSameContext,
+						"default":     CLSameContext,
 						"description": "Congruence level for dependencies. CL3=same context (no penalty), CL2=similar (10% penalty), CL1=different (30% penalty).",
 					},
 				},
@@ -483,7 +483,7 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.ResetCycle(arg("reason"), arg("context_id"), abandonAll)
 
 	case "quint_compact":
-		retentionDays := int64(90)
+		retentionDays := int64(DefaultRetentionDays)
 		if rd, ok := params.Arguments["retention_days"].(float64); ok {
 			retentionDays = int64(rd)
 		}

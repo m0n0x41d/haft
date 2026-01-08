@@ -197,7 +197,7 @@ func (t *Tools) FinalizeDecision(title, winnerID string, rejectedIDs []string, d
 	if winnerID != "" {
 		err := t.MoveHypothesis(winnerID, "L1", "L2")
 		if err != nil {
-			fmt.Printf("WARNING: Failed to move winner hypothesis %s to L2: %v\n", winnerID, err)
+			logger.Warn().Err(err).Str("winner_id", winnerID).Msg("failed to move winner hypothesis to L2")
 		}
 	}
 
@@ -262,7 +262,7 @@ func (t *Tools) Resolve(input ResolveInput) (string, error) {
 
 	if t.DB == nil {
 		logger.Error().Msg("Resolve: database not initialized")
-		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	ctx := context.Background()

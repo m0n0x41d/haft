@@ -13,7 +13,7 @@ import (
 func (t *Tools) VisualizeAudit(rootID string) (string, error) {
 	defer t.RecordWork("VisualizeAudit", time.Now())
 	if t.DB == nil {
-		return "", fmt.Errorf("DB not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	if rootID == "all" {
@@ -85,7 +85,7 @@ func (t *Tools) getHolonTitle(id string) string {
 func (t *Tools) CalculateR(holonID string) (string, error) {
 	defer t.RecordWork("CalculateR", time.Now())
 	if t.DB == nil {
-		return "", fmt.Errorf("DB not initialized")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	calc := assurance.New(t.DB.GetRawDB())

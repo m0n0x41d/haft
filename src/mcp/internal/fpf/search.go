@@ -39,7 +39,7 @@ func (t *Tools) Search(query, scope, layerFilter, statusFilter, affectedScopeFil
 
 	if t.DB == nil {
 		logger.Error().Msg("Search: database not initialized")
-		return "", fmt.Errorf("database not initialized - run quint_internalize first")
+		return "", ErrDatabaseNotInitialized
 	}
 
 	if query == "" {
@@ -129,7 +129,7 @@ func filterByAffectedScope(results []db.SearchResult, affectedScopeFilter string
 
 func (t *Tools) GetOpenDecisions(ctx context.Context) ([]DecisionSummary, error) {
 	if t.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+		return nil, ErrDatabaseNotInitialized
 	}
 
 	rows, err := t.DB.GetOpenDecisions(ctx)
@@ -154,7 +154,7 @@ func (t *Tools) GetOpenDecisions(ctx context.Context) ([]DecisionSummary, error)
 
 func (t *Tools) GetResolvedDecisions(ctx context.Context, resolution string, limit int) ([]DecisionSummary, error) {
 	if t.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+		return nil, ErrDatabaseNotInitialized
 	}
 
 	evidenceType := map[string]string{
@@ -202,7 +202,7 @@ func (t *Tools) GetResolvedDecisions(ctx context.Context, resolution string, lim
 
 func (t *Tools) GetRecentResolvedDecisions(ctx context.Context, limit int) ([]DecisionSummary, error) {
 	if t.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+		return nil, ErrDatabaseNotInitialized
 	}
 
 	if limit <= 0 {

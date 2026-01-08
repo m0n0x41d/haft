@@ -180,7 +180,7 @@ func TestGetContextStage(t *testing.T) {
 	}
 
 	// Add audit report evidence
-	err = database.AddEvidence(ctx, "e1", "h1", "audit_report", "Audit passed", "PASS", "L2", "auditor", "", "", "")
+	err = database.AddEvidence(ctx, "e1", "h1", "audit_report", "Audit passed", "PASS", "L2", 5, "auditor", "", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create evidence: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestGetContextStageMixedLayers(t *testing.T) {
 			t.Fatalf("Failed to create relation: %v", err)
 		}
 
-		err = database.AddEvidence(ctx, "e-audit", "h-l2-audited", "audit_report", "Audit passed", "PASS", "L2", "auditor", "", "", "")
+		err = database.AddEvidence(ctx, "e-audit", "h-l2-audited", "audit_report", "Audit passed", "PASS", "L2", 5, "auditor", "", "", "")
 		if err != nil {
 			t.Fatalf("Failed to add audit evidence: %v", err)
 		}

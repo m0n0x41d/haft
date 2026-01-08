@@ -81,7 +81,7 @@ func TestStore_EvidenceCRUD(t *testing.T) {
 
 	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "")
 
-	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", "internal-logic", "", "", "")
+	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", 5, "internal-logic", "", "", "")
 	if err != nil {
 		t.Fatalf("AddEvidence failed: %v", err)
 	}

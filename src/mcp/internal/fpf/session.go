@@ -255,6 +255,9 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 			desc, _ := GetContextStageDescription(dc.Stage)
 			sb.WriteString(fmt.Sprintf("  - %s: %s (%d hypotheses) [%s]\n",
 				dc.ID, dc.Title, dc.HypothesisCount, desc))
+			if dc.DiversityWarning != "" {
+				sb.WriteString(fmt.Sprintf("    ⚠️ %s\n", dc.DiversityWarning))
+			}
 		}
 		sb.WriteString("\n")
 	} else {

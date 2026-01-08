@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Formality Level (F-G-R Triad)**: Evidence formality tracking per FPF B.3/C.2
+  - `formality_level` column in evidence table (0-9 scale, default 5)
+  - `F_eff = min(F_i)` — effective formality is minimum across all evidence
+  - Audit output now displays F_eff alongside R_eff
+  - Schema migration v10: adds `formality_level` column
+  - Agent assigns formality based on evidence rigor (F2-3: external docs, F4-5: code inspection, F6-7: tests, F8-9: formal proofs)
+
 - **Decision Contexts**: Groups of hypotheses for specific decisions
   - **Context-based workflow**: Each decision has its own context with up to 3 active contexts allowed
   - **Context stage**: Derived per-context state (EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE)

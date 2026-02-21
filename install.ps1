@@ -71,7 +71,13 @@ function Install-QuintCode {
         Write-Host "   No release found, building from source..." -ForegroundColor Yellow
 
         if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-            Write-Host "   [ERROR] Go is not installed" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "   [ERROR] No prebuilt release found and Go is not installed." -ForegroundColor Red
+            Write-Host "   Go is required to build from source." -ForegroundColor Red
+            Write-Host ""
+            Write-Host "   Install Go from: https://go.dev/dl/" -ForegroundColor Yellow
+            Write-Host "   Or with winget:  winget install GoLang.Go" -ForegroundColor Yellow
+            Write-Host ""
             exit 1
         }
 

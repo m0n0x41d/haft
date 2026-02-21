@@ -94,7 +94,7 @@ function Install-QuintCode {
         if (Test-Path $repoDir) { Remove-Item $repoDir -Recurse -Force }
 
         Write-Host "   Cloning repository..." -ForegroundColor DarkGray
-        git clone --depth 1 "https://github.com/$Repo.git" $repoDir 2>$null
+        git clone --depth 1 "https://github.com/$Repo.git" $repoDir 2>&1 | Out-Null
 
         Write-Host "   Building binary..." -ForegroundColor DarkGray
         Push-Location (Join-Path $repoDir "src\mcp")

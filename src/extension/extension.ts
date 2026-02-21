@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import { McpClient, findMcpBinary } from './mcpClient';
-import { ProviderRegistry } from './providers/registry';
-import { ChatPanel } from './chatPanel';
 import { registerChatParticipant } from './chatParticipant';
 
 let mcpClient: McpClient | undefined;
@@ -11,43 +9,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   outputChannel = vscode.window.createOutputChannel('Quint Code');
   context.subscriptions.push(outputChannel);
 
-  const providers = new ProviderRegistry();
-
   const workDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
 
   mcpClient = await startMcpServer(workDir);
 
-  const mcpForPanel = mcpClient ?? createStubClient();
+  const mcpForParticipant = mcpClient ?? createStubClient();
 
-  const chatPanel = new ChatPanel(context.extensionUri, mcpForPanel, providers);
-
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('quint-code.chatView', chatPanel),
-  );
-
-  // Register Copilot Chat Participant (@quint) — works when GitHub Copilot is installed
-  registerChatParticipant(context, mcpForPanel);
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('quint-code.openChat', () => {
-      vscode.commands.executeCommand('quint-code.chatView.focus');
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('quint-code.selectProvider', () => {
-      chatPanel.selectProvider();
-    }),
-  );
+  registerChatParticipant(context, mcpForParticipant);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('quint-code.init', async () => {
-      if (!mcpForPanel.isRunning()) {
+      if (!mcpForParticipant.isRunning()) {
         vscode.window.showErrorMessage('Quint Code: MCP server not running. Install quint-mcp first.');
         return;
       }
       try {
-        const result = await mcpForPanel.callTool('quint_init', {});
+        const result = await mcpForParticipant.callTool('quint_init', {});
         const text = result.content.map((c) => c.text).join('\n');
         vscode.window.showInformationMessage(`Quint Code: ${text}`);
       } catch (err) {
@@ -59,12 +36,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.commands.registerCommand('quint-code.status', async () => {
-      if (!mcpForPanel.isRunning()) {
+      if (!mcpForParticipant.isRunning()) {
         vscode.window.showInformationMessage('Quint Code: MCP server not connected');
         return;
       }
       try {
-        const result = await mcpForPanel.callTool('quint_status', {});
+        const result = await mcpForParticipant.callTool('quint_status', {});
         const text = result.content.map((c) => c.text).join('\n');
         vscode.window.showInformationMessage(`Quint Code phase: ${text}`);
       } catch (err) {

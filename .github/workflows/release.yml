@@ -19,6 +19,7 @@ jobs:
           - {os: 'linux', arch: 'amd64', runner: 'ubuntu-latest'}
           - {os: 'linux', arch: 'arm64', runner: 'ubuntu-24.04-arm'}
           - {os: 'darwin', arch: 'arm64', runner: 'macos-latest'}
+          - {os: 'windows', arch: 'amd64', runner: 'windows-latest'}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,7 +30,8 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: src/mcp/go.sum
 
-      - name: Build MCP binary
+      - name: Build MCP binary (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd src/mcp
           VERSION=${GITHUB_REF_NAME#v}
@@ -38,7 +40,19 @@ jobs:
           LDFLAGS="-s -w -X github.com/m0n0x41d/quint-code/cmd.Version=${VERSION} -X github.com/m0n0x41d/quint-code/cmd.Commit=${COMMIT} -X github.com/m0n0x41d/quint-code/cmd.BuildDate=${DATE}"
           go build -o "../../dist/quint-code" -trimpath -ldflags "${LDFLAGS}"
 
-      - name: Create release package
+      - name: Build MCP binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd src/mcp
+          $Version = "${{ github.ref_name }}".TrimStart("v")
+          $Commit = "${{ github.sha }}".Substring(0, 8)
+          $Date = (Get-Date -AsUTC -Format "yyyy-MM-ddTHH:mm:ssZ")
+          $Ldflags = "-s -w -X github.com/m0n0x41d/quint-code/cmd.Version=$Version -X github.com/m0n0x41d/quint-code/cmd.Commit=$Commit -X github.com/m0n0x41d/quint-code/cmd.BuildDate=$Date"
+          go build -o "../../dist/quint-code.exe" -trimpath -ldflags $Ldflags
+
+      - name: Create release package (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p "package/bin"
           mkdir -p "package/commands"
@@ -49,7 +63,20 @@ jobs:
           tar -czf "$ASSET_NAME" -C "package" .
           echo "ASSET_NAME=${ASSET_NAME}" >> $GITHUB_ENV
 
-      - name: Extract release notes from CHANGELOG
+      - name: Create release package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "package/bin", "package/commands" -Force
+          Move-Item "dist/quint-code.exe" "package/bin/quint-code.exe"
+          Copy-Item "src/mcp/cmd/commands/*" "package/commands/" -Recurse
+          $Tag = "${{ github.ref_name }}".TrimStart("v")
+          $AssetName = "quint-code-${Tag}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.zip"
+          Compress-Archive -Path "package/*" -DestinationPath $AssetName
+          "ASSET_NAME=$AssetName" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Extract release notes from CHANGELOG (Unix)
+        if: runner.os != 'Windows'
         id: changelog
         run: |
           VERSION=${GITHUB_REF_NAME#v}
@@ -58,6 +85,20 @@ jobs:
             awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md
             echo "EOF"
           } >> $GITHUB_ENV
+
+      - name: Extract release notes from CHANGELOG (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Version = "${{ github.ref_name }}".TrimStart("v")
+          $notes = ""
+          $found = $false
+          foreach ($line in Get-Content CHANGELOG.md) {
+            if ($line -match "^## \[$Version\]") { $found = $true; continue }
+            if ($found -and $line -match "^## \[") { break }
+            if ($found) { $notes += "$line`n" }
+          }
+          "RELEASE_NOTES<<EOF`n$notes`nEOF" | Out-File -Append $env:GITHUB_ENV
 
       - name: Upload to release
         uses: svenstaro/upload-release-action@v2

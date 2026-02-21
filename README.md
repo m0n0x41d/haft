@@ -19,17 +19,25 @@ queryable, auditable, yours.
 
 ### Step 1: Install the Binary
 
+**macOS / Linux:**
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.sh | bash
 ```
 
-Or build from source:
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.ps1 | iex
+```
+
+**Or build from source (all platforms):**
 
 ```bash
-git clone https://github.com/m0n0x41d/quint-code.git
-cd quint-code/src/mcp
-go build -o quint-code .
-sudo mv quint-code /usr/local/bin/
+git clone https://github.com/russosalv/quint-code-vscode.git
+cd quint-code-vscode/src/mcp
+go build -o quint-code .        # Linux/macOS
+go build -o quint-code.exe .    # Windows
 ```
 
 ### Step 2: Initialize a Project

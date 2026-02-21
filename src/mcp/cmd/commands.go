@@ -83,8 +83,8 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 
 	// Make path relative for display
 	displayPath := destDir
-	if strings.HasPrefix(destDir, homeDir) {
-		displayPath = "~" + strings.TrimPrefix(destDir, homeDir)
+	if homeDir != "" && strings.HasPrefix(destDir, homeDir) {
+		displayPath = filepath.Join("~", strings.TrimPrefix(destDir, homeDir))
 	}
 
 	return displayPath, count, nil

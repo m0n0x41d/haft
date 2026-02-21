@@ -1,0 +1,155 @@
+{
+  "name": "quint-code",
+  "displayName": "Quint Code - FPF Engineering Assistant",
+  "description": "First Principles Framework (FPF) for structured AI-assisted software engineering. Supports multiple LLM providers.",
+  "version": "0.1.0",
+  "publisher": "quint-code",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m0n0x41d/quint-code"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "llm",
+    "fpf",
+    "engineering",
+    "decision-framework",
+    "mcp"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quint-code",
+          "title": "Quint Code",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "quint-code": [
+        {
+          "type": "webview",
+          "id": "quint-code.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "quint-code.openChat",
+        "title": "Quint Code: Open Chat"
+      },
+      {
+        "command": "quint-code.init",
+        "title": "Quint Code: Initialize FPF Project"
+      },
+      {
+        "command": "quint-code.status",
+        "title": "Quint Code: Show FPF Status"
+      },
+      {
+        "command": "quint-code.selectProvider",
+        "title": "Quint Code: Select LLM Provider"
+      }
+    ],
+    "configuration": {
+      "title": "Quint Code",
+      "properties": {
+        "quintCode.provider": {
+          "type": "string",
+          "default": "anthropic",
+          "enum": [
+            "anthropic",
+            "openai",
+            "ollama",
+            "vscode-lm"
+          ],
+          "enumDescriptions": [
+            "Anthropic Claude (requires API key)",
+            "OpenAI GPT (requires API key)",
+            "Ollama local models (requires Ollama running)",
+            "VS Code Language Model API (requires Copilot or compatible extension)"
+          ],
+          "description": "LLM provider to use for chat"
+        },
+        "quintCode.anthropic.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API key (or set ANTHROPIC_API_KEY env var)"
+        },
+        "quintCode.anthropic.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Anthropic model to use"
+        },
+        "quintCode.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key (or set OPENAI_API_KEY env var)"
+        },
+        "quintCode.openai.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "OpenAI model to use"
+        },
+        "quintCode.openai.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom OpenAI-compatible API base URL (for Azure, etc.)"
+        },
+        "quintCode.ollama.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama server URL"
+        },
+        "quintCode.ollama.model": {
+          "type": "string",
+          "default": "llama3.1",
+          "description": "Ollama model to use"
+        },
+        "quintCode.mcpServerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to quint-mcp binary (auto-detected if on PATH)"
+        },
+        "quintCode.systemPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Additional system prompt to prepend to conversations"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "lint": "eslint src/extension --ext ts",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.77.0"
+  }
+}

@@ -13,12 +13,13 @@ import (
 )
 
 var (
-	initClaude bool
-	initCursor bool
-	initGemini bool
-	initCodex  bool
-	initAll    bool
-	initLocal  bool
+	initClaude  bool
+	initCursor  bool
+	initGemini  bool
+	initCodex   bool
+	initCopilot bool
+	initAll     bool
+	initLocal   bool
 )
 
 var initCmd = &cobra.Command{
@@ -35,7 +36,8 @@ Examples:
   quint-code init              # Claude, global commands (~/.claude/commands/)
   quint-code init --local      # Claude, local commands (.claude/commands/)
   quint-code init --all        # All tools, global commands
-  quint-code init --cursor     # Cursor only`,
+  quint-code init --cursor     # Cursor only
+  quint-code init --copilot    # GitHub Copilot (.vscode/mcp.json + .github/prompts/)`,
 	RunE: runInit,
 }
 
@@ -44,6 +46,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure for Cursor")
 	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure for Gemini CLI")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
+	initCmd.Flags().BoolVar(&initCopilot, "copilot", false, "Configure for GitHub Copilot")
 	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure for all supported tools")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
 
@@ -89,10 +92,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if initAll {
-		initClaude, initCursor, initGemini, initCodex = true, true, true, true
+		initClaude, initCursor, initGemini, initCodex, initCopilot = true, true, true, true, true
 	}
 
-	if !initClaude && !initCursor && !initGemini && !initCodex {
+	if !initClaude && !initCursor && !initGemini && !initCodex && !initCopilot {
 		initClaude = true
 	}
 
@@ -148,6 +151,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
 			fmt.Println("    Note: Use /prompts:q0-init to invoke")
+		}
+	}
+
+	if initCopilot {
+		if err := configureMCPCopilot(cwd, binaryPath); err != nil {
+			fmt.Printf("  ⚠ Failed to configure GitHub Copilot MCP: %v\n", err)
+		} else {
+			fmt.Println("  ✓ Configured MCP for GitHub Copilot (.vscode/mcp.json)")
+		}
+		if destPath, count, err := installCommands(cwd, "copilot", initLocal); err != nil {
+			fmt.Printf("  ⚠ Failed to install Copilot prompt files: %v\n", err)
+		} else {
+			fmt.Printf("  ✓ Installed %d prompt files (%s)\n", count, destPath)
 		}
 	}
 
@@ -305,4 +321,51 @@ env = { QUINT_PROJECT_ROOT = "%s" }
 	updated := strings.TrimRight(existing, "\n") + tomlSection
 
 	return os.WriteFile(configPath, []byte(updated), 0644)
+}
+
+type VSCodeMCPServer struct {
+	Type    string            `json:"type"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+type VSCodeMCPConfig struct {
+	Servers map[string]VSCodeMCPServer `json:"servers"`
+}
+
+func configureMCPCopilot(projectRoot, binaryPath string) error {
+	configPath := filepath.Join(projectRoot, ".vscode", "mcp.json")
+
+	var config VSCodeMCPConfig
+
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("existing config at %s is not valid JSON: %w", configPath, err)
+		}
+	}
+
+	if config.Servers == nil {
+		config.Servers = make(map[string]VSCodeMCPServer)
+	}
+
+	config.Servers["quint-code"] = VSCodeMCPServer{
+		Type:    "stdio",
+		Command: binaryPath,
+		Args:    []string{"serve"},
+		Env: map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
+	}
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, data, 0644)
 }

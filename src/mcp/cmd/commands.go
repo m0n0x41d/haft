@@ -49,6 +49,10 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 		// Codex only supports global prompts in ~/.codex/prompts/
 		destDir = filepath.Join(homeDir, ".codex", "prompts")
 		transformer = transformCodex
+	case "copilot":
+		// Copilot uses .github/prompts/*.prompt.md (always project-local)
+		destDir = filepath.Join(projectRoot, ".github", "prompts")
+		transformer = transformCopilot
 	default:
 		return "", 0, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -98,6 +102,39 @@ func transformCodex(filename, content string) (string, string) {
 	// Codex uses same format as Claude (markdown with frontmatter)
 	// but calls them "prompts" and invokes via /prompts:<name>
 	return filename, content
+}
+
+func transformCopilot(filename, content string) (string, string) {
+	name := strings.TrimSuffix(filename, ".md")
+	newFilename := name + ".prompt.md"
+
+	// Extract description from existing frontmatter
+	description := ""
+	body := content
+	if strings.HasPrefix(content, "---\n") {
+		if end := strings.Index(content[4:], "\n---\n"); end != -1 {
+			frontmatter := content[4 : 4+end]
+			body = content[4+end+5:]
+
+			for _, line := range strings.Split(frontmatter, "\n") {
+				if strings.HasPrefix(line, "description:") {
+					description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+					description = strings.Trim(description, `"'`)
+					break
+				}
+			}
+		}
+	}
+
+	if description == "" {
+		description = "FPF command: " + name
+	}
+
+	// Build Copilot prompt file with its frontmatter format
+	result := fmt.Sprintf("---\ndescription: \"%s\"\nname: \"%s\"\nagent: \"agent\"\n---\n%s",
+		description, name, body)
+
+	return newFilename, result
 }
 
 func transformGemini(filename, content string) (string, string) {

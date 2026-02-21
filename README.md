@@ -2,7 +2,7 @@
 
 **Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
 
-**Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI
+**Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI, GitHub Copilot
 
 > **Works exceptionally well with Claude Code!**
 
@@ -53,6 +53,7 @@ This creates:
 | `--cursor` | `.cursor/mcp.json` | `~/.cursor/commands/*.md` |
 | `--gemini` | `~/.gemini/settings.json` | `~/.gemini/commands/*.toml` |
 | `--codex` | `~/.codex/config.toml`* | `~/.codex/prompts/*.md` |
+| `--copilot` | `.vscode/mcp.json` | `.github/prompts/*.prompt.md` |
 | `--all` | All of the above | All of the above |
 | `--local` | — | Commands in project dir instead of global |
 

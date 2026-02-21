@@ -70,13 +70,22 @@ function Install-QuintCode {
     } else {
         Write-Host "   No release found, building from source..." -ForegroundColor Yellow
 
-        if (!(Get-Command go -ErrorAction SilentlyContinue)) {
+        $missing = @()
+        if (!(Get-Command git -ErrorAction SilentlyContinue)) { $missing += "Git" }
+        if (!(Get-Command go -ErrorAction SilentlyContinue))  { $missing += "Go" }
+
+        if ($missing.Count -gt 0) {
             Write-Host ""
-            Write-Host "   [ERROR] No prebuilt release found and Go is not installed." -ForegroundColor Red
-            Write-Host "   Go is required to build from source." -ForegroundColor Red
+            Write-Host "   [ERROR] No prebuilt release found. Building from source requires: $($missing -join ', ')" -ForegroundColor Red
             Write-Host ""
-            Write-Host "   Install Go from: https://go.dev/dl/" -ForegroundColor Yellow
-            Write-Host "   Or with winget:  winget install GoLang.Go" -ForegroundColor Yellow
+            if ($missing -contains "Git") {
+                Write-Host "   Install Git:  https://git-scm.com/download/win" -ForegroundColor Yellow
+                Write-Host "   Or:           winget install Git.Git" -ForegroundColor Yellow
+            }
+            if ($missing -contains "Go") {
+                Write-Host "   Install Go:   https://go.dev/dl/" -ForegroundColor Yellow
+                Write-Host "   Or:           winget install GoLang.Go" -ForegroundColor Yellow
+            }
             Write-Host ""
             exit 1
         }

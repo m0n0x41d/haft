@@ -10,7 +10,7 @@
     "url": "https://github.com/m0n0x41d/quint-code"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.93.0"
   },
   "categories": [
     "AI",
@@ -30,6 +30,65 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "quint-code.chat",
+        "fullName": "Quint Code",
+        "name": "quint",
+        "description": "FPF engineering assistant for structured, evidence-based decisions",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "init",
+            "description": "Initialize FPF project structure"
+          },
+          {
+            "name": "status",
+            "description": "Show current FPF phase and context"
+          },
+          {
+            "name": "hypothesize",
+            "description": "Propose a new hypothesis (L0)"
+          },
+          {
+            "name": "verify",
+            "description": "Verify a hypothesis (L0 -> L1)"
+          },
+          {
+            "name": "validate",
+            "description": "Validate with tests (L1 -> L2)"
+          },
+          {
+            "name": "audit",
+            "description": "Audit risks for a hypothesis"
+          },
+          {
+            "name": "decide",
+            "description": "Finalize a decision (DRR)"
+          },
+          {
+            "name": "tree",
+            "description": "Visualize assurance tree for a holon"
+          },
+          {
+            "name": "reff",
+            "description": "Calculate effective reliability (R_eff)"
+          },
+          {
+            "name": "decay",
+            "description": "Check evidence freshness"
+          },
+          {
+            "name": "context",
+            "description": "Record bounded context (vocabulary + invariants)"
+          },
+          {
+            "name": "help",
+            "description": "Show available commands"
+          }
+        ]
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -143,7 +202,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.93.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.3.0"

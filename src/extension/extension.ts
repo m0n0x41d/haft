@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { McpClient, findMcpBinary } from './mcpClient';
 import { ProviderRegistry } from './providers/registry';
 import { ChatPanel } from './chatPanel';
+import { registerChatParticipant } from './chatParticipant';
 
 let mcpClient: McpClient | undefined;
 let outputChannel: vscode.OutputChannel;
@@ -23,6 +24,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('quint-code.chatView', chatPanel),
   );
+
+  // Register Copilot Chat Participant (@quint) — works when GitHub Copilot is installed
+  registerChatParticipant(context, mcpForPanel);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('quint-code.openChat', () => {

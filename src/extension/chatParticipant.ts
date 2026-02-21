@@ -23,15 +23,15 @@ interface CommandMapping {
 }
 
 const COMMAND_MAP: Record<string, CommandMapping> = {
-  init: {
+  'q0-init': {
     mcpTool: 'quint_init',
     buildArgs: () => ({}),
   },
-  status: {
+  'q-status': {
     mcpTool: 'quint_status',
     buildArgs: () => ({}),
   },
-  hypothesize: {
+  'q1-hypothesize': {
     mcpTool: 'quint_propose',
     buildArgs: (prompt) => {
       const trimmed = prompt.trim();
@@ -56,37 +56,58 @@ const COMMAND_MAP: Record<string, CommandMapping> = {
       };
     },
   },
-  verify: {
+  'q1-add': {
+    mcpTool: 'quint_propose',
+    buildArgs: (prompt) => {
+      const content = prompt.trim();
+      return {
+        title: content.slice(0, 80),
+        content,
+        scope: 'project',
+        kind: 'system',
+        rationale: JSON.stringify({
+          anomaly: content,
+          approach: 'User hypothesis',
+          alternatives_rejected: 'None',
+        }),
+      };
+    },
+  },
+  'q2-verify': {
     mcpTool: 'quint_verify',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
   },
-  validate: {
+  'q3-validate': {
     mcpTool: 'quint_test',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
   },
-  audit: {
+  'q4-audit': {
     mcpTool: 'quint_audit',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
   },
-  decide: {
+  'q5-decide': {
     mcpTool: 'quint_decide',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
   },
-  tree: {
+  'q-tree': {
     mcpTool: 'quint_audit_tree',
     buildArgs: (prompt) => ({ holon_id: prompt.trim() }),
   },
-  reff: {
+  'q-reff': {
     mcpTool: 'quint_calculate_r',
     buildArgs: (prompt) => ({ holon_id: prompt.trim() }),
   },
-  decay: {
+  'q-decay': {
     mcpTool: 'quint_check_decay',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
   },
-  context: {
+  'q-context': {
     mcpTool: 'quint_record_context',
     buildArgs: (prompt) => parseJsonOrWrap(prompt),
+  },
+  'q-query': {
+    mcpTool: 'quint_audit_tree',
+    buildArgs: (prompt) => ({ holon_id: prompt.trim() }),
   },
 };
 
@@ -133,20 +154,22 @@ export function registerChatParticipant(
 function handleHelp(response: vscode.ChatResponseStream): vscode.ChatResult {
   const lines = [
     '### Quint Code - FPF Commands\n',
-    '| Command | Description |',
-    '|---------|-------------|',
-    '| `/init` | Initialize FPF project |',
-    '| `/status` | Show current phase |',
-    '| `/hypothesize` | Propose hypothesis (L0) |',
-    '| `/verify` | Verify hypothesis (L0 -> L1) |',
-    '| `/validate` | Validate with tests (L1 -> L2) |',
-    '| `/audit` | Audit risks |',
-    '| `/decide` | Finalize decision (DRR) |',
-    '| `/tree` | Visualize assurance tree |',
-    '| `/reff` | Calculate R_eff |',
-    '| `/decay` | Check evidence freshness |',
-    '| `/context` | Record bounded context |',
-    '| `/help` | Show this help |',
+    '| # | Command | Phase | Description |',
+    '|---|---------|-------|-------------|',
+    '| 0 | `/q0-init` | Setup | Initialize FPF project structure |',
+    '| 1 | `/q1-hypothesize` | Abduction | Propose a new hypothesis (L0) |',
+    '| 1b | `/q1-add` | Abduction | Inject a user hypothesis (L0) |',
+    '| 2 | `/q2-verify` | Deduction | Verify hypothesis (L0 -> L1) |',
+    '| 3 | `/q3-validate` | Induction | Validate with tests (L1 -> L2) |',
+    '| 4 | `/q4-audit` | Bias-Audit | WLNK analysis, congruence check |',
+    '| 5 | `/q5-decide` | Decision | Finalize decision (DRR) |',
+    '| S | `/q-status` | — | Show current phase and next steps |',
+    '| Q | `/q-query` | — | Search the knowledge base |',
+    '| T | `/q-tree` | — | Visualize assurance tree |',
+    '| R | `/q-reff` | — | Calculate R_eff |',
+    '| D | `/q-decay` | — | Check evidence freshness |',
+    '| C | `/q-context` | — | Record bounded context |',
+    '| ? | `/help` | — | Show this help |',
     '',
     'You can also chat freely — the LLM has access to all FPF tools.',
   ];

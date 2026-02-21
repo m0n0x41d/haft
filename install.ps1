@@ -4,11 +4,11 @@
 # After installation, run `quint-code init` in each project.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "russosalv/quint-code-vscode"
+$Repo = "m0n0x41d/quint-code"
 $BinName = "quint-code.exe"
 $InstallDir = "$env:LOCALAPPDATA\Programs\quint-code"
 

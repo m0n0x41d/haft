@@ -5,7 +5,7 @@
 # After installation, run `quint-code init` in each project.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 
 set -e
 
@@ -18,7 +18,7 @@ YELLOW='\033[33m'
 CYAN='\033[36m'
 WHITE='\033[37m'
 
-REPO="russosalv/quint-code-vscode"
+REPO="m0n0x41d/quint-code"
 BIN_NAME="quint-code"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
 

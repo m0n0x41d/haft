@@ -22,20 +22,20 @@ queryable, auditable, yours.
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/russosalv/quint-code-vscode/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.ps1 | iex
 ```
 
 **Or build from source (all platforms):**
 
 ```bash
-git clone https://github.com/russosalv/quint-code-vscode.git
-cd quint-code-vscode/src/mcp
+git clone https://github.com/m0n0x41d/quint-code.git
+cd quint-code/src/mcp
 go build -o quint-code .        # Linux/macOS
 go build -o quint-code.exe .    # Windows
 ```

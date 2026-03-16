@@ -136,37 +136,120 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 	// v5 tools only
 	if s.v5Handler != nil {
-		tools = append(tools, Tool{
-			Name:        "quint_note",
-			Description: "Record a micro-decision with rationale. Validates before recording: checks for missing rationale, conflicts with active decisions, and whether the scope is too large for a note. Use for quick engineering choices during coding.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"title": map[string]string{
-						"type":        "string",
-						"description": "What was decided (e.g., 'RWMutex over channels for session cache')",
+		tools = append(tools,
+			Tool{
+				Name:        "quint_note",
+				Description: "Record a micro-decision with rationale. Validates before recording: checks for missing rationale, conflicts with active decisions, and whether the scope is too large for a note. Use for quick engineering choices during coding.",
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"title": map[string]string{
+							"type":        "string",
+							"description": "What was decided (e.g., 'RWMutex over channels for session cache')",
+						},
+						"rationale": map[string]string{
+							"type":        "string",
+							"description": "Why this choice — what alternatives existed, what evidence supports it",
+						},
+						"affected_files": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]string{"type": "string"},
+							"description": "File paths affected by this decision",
+						},
+						"evidence": map[string]string{
+							"type":        "string",
+							"description": "Supporting evidence (benchmarks, test results, references)",
+						},
+						"context": map[string]string{
+							"type":        "string",
+							"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
+						},
 					},
-					"rationale": map[string]string{
-						"type":        "string",
-						"description": "Why this choice — what alternatives existed, what evidence supports it",
-					},
-					"affected_files": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]string{"type": "string"},
-						"description": "File paths affected by this decision",
-					},
-					"evidence": map[string]string{
-						"type":        "string",
-						"description": "Supporting evidence (benchmarks, test results, references)",
-					},
-					"context": map[string]string{
-						"type":        "string",
-						"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
-					},
+					"required": []string{"title", "rationale"},
 				},
-				"required": []string{"title", "rationale"},
 			},
-		})
+			Tool{
+				Name:        "quint_problem",
+				Description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems. Frame the problem BEFORE exploring solutions.",
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action": map[string]interface{}{
+							"type":        "string",
+							"enum":        []interface{}{"frame", "characterize", "select"},
+							"description": "frame=create ProblemCard, characterize=add comparison dimensions, select=list/filter active problems",
+						},
+						"title": map[string]string{
+							"type":        "string",
+							"description": "(frame) Problem title",
+						},
+						"signal": map[string]string{
+							"type":        "string",
+							"description": "(frame) What's anomalous, broken, or needs changing",
+						},
+						"constraints": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]string{"type": "string"},
+							"description": "(frame) Hard constraints that MUST hold",
+						},
+						"optimization_targets": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]string{"type": "string"},
+							"description": "(frame) What to improve (1-3 max)",
+						},
+						"observation_indicators": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]string{"type": "string"},
+							"description": "(frame) What to monitor but NOT optimize (Anti-Goodhart)",
+						},
+						"acceptance": map[string]string{
+							"type":        "string",
+							"description": "(frame) How we'll know the problem is solved",
+						},
+						"blast_radius": map[string]string{
+							"type":        "string",
+							"description": "(frame) What systems/teams are affected",
+						},
+						"reversibility": map[string]string{
+							"type":        "string",
+							"description": "(frame) How easy to undo — low/medium/high",
+						},
+						"problem_ref": map[string]string{
+							"type":        "string",
+							"description": "(characterize) ID of the ProblemCard to add dimensions to",
+						},
+						"dimensions": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"name":           map[string]string{"type": "string", "description": "Dimension name (e.g., 'throughput', 'ops complexity')"},
+									"scale_type":     map[string]string{"type": "string", "description": "ordinal, ratio, nominal"},
+									"unit":           map[string]string{"type": "string", "description": "Measurement unit"},
+									"polarity":       map[string]string{"type": "string", "description": "higher_better or lower_better"},
+									"how_to_measure": map[string]string{"type": "string", "description": "How this dimension is measured"},
+								},
+								"required": []string{"name"},
+							},
+							"description": "(characterize) Comparison dimensions for evaluating solutions",
+						},
+						"parity_rules": map[string]string{
+							"type":        "string",
+							"description": "(characterize) What must be equal across all variants for fair comparison",
+						},
+						"context": map[string]string{
+							"type":        "string",
+							"description": "Optional context name for grouping",
+						},
+						"mode": map[string]string{
+							"type":        "string",
+							"description": "(frame) Decision mode: tactical, standard (default), deep",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		)
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

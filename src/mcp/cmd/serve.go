@@ -97,9 +97,130 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 		switch params.Name {
 		case "quint_note":
 			return handleQuintNote(ctx, store, quintDir, params.Arguments)
+		case "quint_problem":
+			return handleQuintProblem(ctx, store, quintDir, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
+	}
+}
+
+func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+	action, _ := args["action"].(string)
+	contextName, _ := args["context"].(string)
+
+	switch action {
+	case "frame":
+		input := artifact.ProblemFrameInput{
+			Context: contextName,
+		}
+		if v, ok := args["title"].(string); ok {
+			input.Title = v
+		}
+		if v, ok := args["signal"].(string); ok {
+			input.Signal = v
+		}
+		if v, ok := args["acceptance"].(string); ok {
+			input.Acceptance = v
+		}
+		if v, ok := args["blast_radius"].(string); ok {
+			input.BlastRadius = v
+		}
+		if v, ok := args["reversibility"].(string); ok {
+			input.Reversibility = v
+		}
+		if v, ok := args["mode"].(string); ok {
+			input.Mode = v
+		}
+		if items, ok := args["constraints"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.Constraints = append(input.Constraints, s)
+				}
+			}
+		}
+		if items, ok := args["optimization_targets"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.OptimizationTargets = append(input.OptimizationTargets, s)
+				}
+			}
+		}
+		if items, ok := args["observation_indicators"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.ObservationIndicators = append(input.ObservationIndicators, s)
+				}
+			}
+		}
+
+		a, filePath, err := artifact.FrameProblem(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatProblemResponse("frame", a, filePath, navStrip), nil
+
+	case "characterize":
+		input := artifact.CharacterizeInput{}
+		if v, ok := args["problem_ref"].(string); ok {
+			input.ProblemRef = v
+		}
+		if v, ok := args["parity_rules"].(string); ok {
+			input.ParityRules = v
+		}
+		if dims, ok := args["dimensions"].([]interface{}); ok {
+			for _, d := range dims {
+				if dm, ok := d.(map[string]interface{}); ok {
+					dim := artifact.ComparisonDimension{}
+					if v, ok := dm["name"].(string); ok {
+						dim.Name = v
+					}
+					if v, ok := dm["scale_type"].(string); ok {
+						dim.ScaleType = v
+					}
+					if v, ok := dm["unit"].(string); ok {
+						dim.Unit = v
+					}
+					if v, ok := dm["polarity"].(string); ok {
+						dim.Polarity = v
+					}
+					if v, ok := dm["how_to_measure"].(string); ok {
+						dim.HowToMeasure = v
+					}
+					input.Dimensions = append(input.Dimensions, dim)
+				}
+			}
+		}
+
+		// If no problem_ref, find the most recent active problem
+		if input.ProblemRef == "" {
+			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
+			if err != nil || prob == nil {
+				return "No active ProblemCard found.\nUse /q-frame to create one first, then /q-char to add comparison dimensions.\n" +
+					artifact.BuildNavStrip(ctx, store, contextName), nil
+			}
+			input.ProblemRef = prob.Meta.ID
+		}
+
+		a, filePath, err := artifact.CharacterizeProblem(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatProblemResponse("characterize", a, filePath, navStrip), nil
+
+	case "select":
+		limit := 20
+		problems, err := artifact.SelectProblems(ctx, store, contextName, limit)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatProblemsListResponse(problems, navStrip), nil
+
+	default:
+		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', or 'select'", action)
 	}
 }
 

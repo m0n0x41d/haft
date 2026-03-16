@@ -1,0 +1,50 @@
+version: 2
+
+project_name: quint-code
+
+before:
+  hooks:
+    - bash -c "cd src/mcp && go test ./..."
+
+builds:
+  - id: quint-code
+    dir: src/mcp
+    main: .
+    binary: quint-code
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/m0n0x41d/quint-code/cmd.Version={{ .Version }}
+      - -X github.com/m0n0x41d/quint-code/cmd.Commit={{ .ShortCommit }}
+      - -X github.com/m0n0x41d/quint-code/cmd.BuildDate={{ .Date }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  use: github-native
+
+release:
+  header: |
+    ## Quint Code {{ .Tag }}
+
+    FPF spec search embedded (4243 sections from [ailev/FPF](https://github.com/ailev/FPF)).
+
+    ### Install
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+    ```

@@ -15,6 +15,9 @@ var embeddedCommands embed.FS
 //go:embed skill/fpf/SKILL.md
 var embeddedFPFSkill []byte
 
+//go:embed skill/q-reason/SKILL.md
+var embeddedQReasonSkill []byte
+
 func installCommands(projectRoot string, platform string, local bool) (string, int, error) {
 	entries, err := embeddedCommands.ReadDir("commands")
 	if err != nil {
@@ -172,37 +175,49 @@ func escapeTomlMultiline(s string) string {
 func installFPFSkill(platform string, local bool, projectRoot string) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	var skillDir string
-	switch platform {
-	case "claude":
-		if local {
-			skillDir = filepath.Join(projectRoot, ".claude", "skills", "fpf")
-		} else {
-			skillDir = filepath.Join(homeDir, ".claude", "skills", "fpf")
+	skills := []struct {
+		name    string
+		content []byte
+	}{
+		{"q-reason", embeddedQReasonSkill},
+		{"fpf", embeddedFPFSkill},
+	}
+
+	var lastPath string
+	for _, skill := range skills {
+		var skillDir string
+		switch platform {
+		case "claude":
+			if local {
+				skillDir = filepath.Join(projectRoot, ".claude", "skills", skill.name)
+			} else {
+				skillDir = filepath.Join(homeDir, ".claude", "skills", skill.name)
+			}
+		case "cursor":
+			if local {
+				skillDir = filepath.Join(projectRoot, ".cursor", "skills", skill.name)
+			} else {
+				skillDir = filepath.Join(homeDir, ".cursor", "skills", skill.name)
+			}
+		default:
+			return "", nil
 		}
-	case "cursor":
-		if local {
-			skillDir = filepath.Join(projectRoot, ".cursor", "skills", "fpf")
-		} else {
-			skillDir = filepath.Join(homeDir, ".cursor", "skills", "fpf")
+
+		if err := os.MkdirAll(skillDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create skill directory %s: %w", skill.name, err)
 		}
-	default:
-		// Other platforms don't support skills yet
-		return "", nil
+
+		destPath := filepath.Join(skillDir, "SKILL.md")
+		if err := os.WriteFile(destPath, skill.content, 0644); err != nil {
+			return "", fmt.Errorf("failed to write skill %s: %w", skill.name, err)
+		}
+
+		if strings.HasPrefix(skillDir, homeDir) {
+			lastPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+		} else {
+			lastPath = skillDir
+		}
 	}
 
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create skill directory: %w", err)
-	}
-
-	destPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(destPath, embeddedFPFSkill, 0644); err != nil {
-		return "", fmt.Errorf("failed to write skill file: %w", err)
-	}
-
-	displayPath := skillDir
-	if strings.HasPrefix(skillDir, homeDir) {
-		displayPath = "~" + strings.TrimPrefix(skillDir, homeDir)
-	}
-	return displayPath, nil
+	return lastPath, nil
 }

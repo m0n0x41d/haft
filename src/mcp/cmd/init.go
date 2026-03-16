@@ -110,7 +110,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if skillPath, err := installFPFSkill("claude", initLocal, cwd); err != nil {
 			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
 		} else if skillPath != "" {
-			fmt.Printf("  ✓ Installed FPF skill (%s)\n", skillPath)
+			fmt.Printf("  ✓ Installed skills (q-reason + fpf) (%s)\n", skillPath)
 		}
 	}
 
@@ -129,7 +129,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if skillPath, err := installFPFSkill("cursor", initLocal, cwd); err != nil {
 			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
 		} else if skillPath != "" {
-			fmt.Printf("  ✓ Installed FPF skill (%s)\n", skillPath)
+			fmt.Printf("  ✓ Installed skills (q-reason + fpf) (%s)\n", skillPath)
 		}
 	}
 

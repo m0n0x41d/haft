@@ -80,28 +80,48 @@ func (t *Tools) FinalizeDecision(ctx context.Context, title, winnerID string, re
 	body += fmt.Sprintf("## Consequences\n%s\n\n", consequences)
 
 	if contractJSON != "" {
-		body += "## Implementation Contract\n\n"
-		if len(contract.Invariants) > 0 {
-			body += "### Invariants (MUST remain true)\n"
-			for _, inv := range contract.Invariants {
+		body += "## Implementation Contract (L/A/D/E Boundary Norm Square)\n\n"
+
+		laws := contract.GetLaws()
+		if len(laws) > 0 {
+			body += "### L: Laws & Definitions (MUST remain true)\n"
+			body += "*Truth-conditional constraints adjudicated in-description.*\n"
+			for _, inv := range laws {
 				body += fmt.Sprintf("- %s\n", inv)
 			}
 			body += "\n"
 		}
-		if len(contract.AntiPatterns) > 0 {
-			body += "### Anti-Patterns (MUST NOT happen)\n"
-			for _, ap := range contract.AntiPatterns {
+
+		admissibility := contract.GetAdmissibility()
+		if len(admissibility) > 0 {
+			body += "### A: Admissibility & Gates (MUST NOT happen)\n"
+			body += "*Boundaries of the solution space — anti-patterns.*\n"
+			for _, ap := range admissibility {
 				body += fmt.Sprintf("- %s\n", ap)
 			}
 			body += "\n"
 		}
-		if len(contract.AcceptanceCriteria) > 0 {
-			body += "### Acceptance Criteria\n"
-			for _, ac := range contract.AcceptanceCriteria {
+
+		deontics := contract.GetDeontics()
+		if len(deontics) > 0 {
+			body += "### D: Deontics & Commitments (Acceptance Criteria)\n"
+			body += "*Obligations and recommendations — what SHOULD happen.*\n"
+			for _, ac := range deontics {
 				body += fmt.Sprintf("- [ ] %s\n", ac)
 			}
 			body += "\n"
 		}
+
+		evidence := contract.GetEvidence()
+		if len(evidence) > 0 {
+			body += "### E: Evidence & Verification\n"
+			body += "*How to verify compliance — test strategies, observables.*\n"
+			for _, ev := range evidence {
+				body += fmt.Sprintf("- %s\n", ev)
+			}
+			body += "\n"
+		}
+
 		if len(contract.AffectedScope) > 0 {
 			body += "### Affected Scope\n"
 			for _, scope := range contract.AffectedScope {
@@ -287,14 +307,17 @@ func (t *Tools) Resolve(ctx context.Context, input ResolveInput) (string, error)
 			return "", fmt.Errorf("reference required for 'implemented' resolution (e.g., commit:SHA, pr:NUM)")
 		}
 		contract, _ = t.getDRRContract(input.DecisionID)
-		if contract != nil && len(contract.AcceptanceCriteria) > 0 && !input.CriteriaVerified {
-			var criteriaList strings.Builder
-			criteriaList.WriteString("This decision has acceptance criteria that must be verified:\n\n")
-			for i, criterion := range contract.AcceptanceCriteria {
-				criteriaList.WriteString(fmt.Sprintf("%d. %s\n", i+1, criterion))
+		if contract != nil {
+			deontics := contract.GetDeontics()
+			if len(deontics) > 0 && !input.CriteriaVerified {
+				var criteriaList strings.Builder
+				criteriaList.WriteString("This decision has deontic criteria (acceptance criteria) that must be verified:\n\n")
+				for i, criterion := range deontics {
+					criteriaList.WriteString(fmt.Sprintf("%d. %s\n", i+1, criterion))
+				}
+				criteriaList.WriteString("\nTo resolve, set criteria_verified=true after confirming these criteria are met.")
+				return "", fmt.Errorf("acceptance criteria not verified:\n%s", criteriaList.String())
 			}
-			criteriaList.WriteString("\nTo resolve, set criteria_verified=true after confirming these criteria are met.")
-			return "", fmt.Errorf("acceptance criteria not verified:\n%s", criteriaList.String())
 		}
 	case "superseded":
 		if input.SupersededBy == "" {

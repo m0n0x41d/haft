@@ -228,19 +228,21 @@ func (t *Tools) collectInheritedConstraints(ctx context.Context, depIDs []string
 			continue
 		}
 
-		if len(dep.Contract.Invariants) > 0 {
+		laws := dep.Contract.GetLaws()
+		if len(laws) > 0 {
 			result.Invariants = append(result.Invariants, ConstraintSource{
 				DRRID:       depID,
 				DRRTitle:    dep.Title,
-				Constraints: dep.Contract.Invariants,
+				Constraints: laws,
 			})
 		}
 
-		if len(dep.Contract.AntiPatterns) > 0 {
+		admissibility := dep.Contract.GetAdmissibility()
+		if len(admissibility) > 0 {
 			result.AntiPatterns = append(result.AntiPatterns, ConstraintSource{
 				DRRID:       depID,
 				DRRTitle:    dep.Title,
-				Constraints: dep.Contract.AntiPatterns,
+				Constraints: admissibility,
 			})
 		}
 
@@ -269,13 +271,25 @@ func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstr
 	sb.WriteString("Using your internal TODO/planning capabilities, implement this task.\n\n")
 	sb.WriteString("If project context is insufficient, conduct preliminary investigation first.\n\n")
 
-	if len(drr.Contract.Invariants) > 0 || len(inherited.Invariants) > 0 {
-		sb.WriteString("## Invariants to Implement\n\n")
+	sb.WriteString("## Boundary Norm Square (L/A/D/E)\n\n")
+	sb.WriteString("The contract uses the FPF Boundary Norm Square (A.6.B) to classify constraints:\n\n")
+	sb.WriteString("| Quadrant | Meaning | Adjudication |\n")
+	sb.WriteString("|----------|---------|-------------|\n")
+	sb.WriteString("| **L (Laws)** | Physical/logical constraints that CANNOT be violated | In-description: provable from spec |\n")
+	sb.WriteString("| **A (Admissibility)** | What IS and IS NOT allowed (anti-patterns, gates) | In-work: runtime/operational |\n")
+	sb.WriteString("| **D (Deontics)** | What SHOULD happen (obligations, acceptance criteria) | In-description: stated duties |\n")
+	sb.WriteString("| **E (Evidence)** | How we VERIFY compliance (test strategy, observables) | In-work: carriers/traces |\n")
+	sb.WriteString("\n")
+
+	laws := drr.Contract.GetLaws()
+	if len(laws) > 0 || len(inherited.Invariants) > 0 {
+		sb.WriteString("## L: Laws & Definitions\n\n")
+		sb.WriteString("*Truth-conditional constraints adjudicated in-description. If you can write code that violates it, it's not a Law — move it to Admissibility.*\n\n")
 		sb.WriteString("These MUST be true in your implementation:\n\n")
 
-		if len(drr.Contract.Invariants) > 0 {
+		if len(laws) > 0 {
 			sb.WriteString("### This decision:\n")
-			for i, inv := range drr.Contract.Invariants {
+			for i, inv := range laws {
 				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, inv))
 			}
 			sb.WriteString("\n")
@@ -294,14 +308,16 @@ func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstr
 		}
 	}
 
-	if len(drr.Contract.AntiPatterns) > 0 || len(inherited.AntiPatterns) > 0 {
-		sb.WriteString("## Final Verification\n\n")
+	admissibility := drr.Contract.GetAdmissibility()
+	if len(admissibility) > 0 || len(inherited.AntiPatterns) > 0 {
+		sb.WriteString("## A: Admissibility & Gates\n\n")
+		sb.WriteString("*Boundaries of the solution space. Anti-patterns go here — things that ARE possible but NOT allowed.*\n\n")
 		sb.WriteString("Your LAST todo items must verify these constraints were NOT violated:\n\n")
 
-		if len(drr.Contract.AntiPatterns) > 0 {
+		if len(admissibility) > 0 {
 			sb.WriteString("### This decision:\n")
-			for _, ap := range drr.Contract.AntiPatterns {
-				sb.WriteString(fmt.Sprintf("- [ ] %s\n", ap))
+			for _, ap := range admissibility {
+				sb.WriteString(fmt.Sprintf("- [ ] NOT: %s\n", ap))
 			}
 			sb.WriteString("\n")
 		}
@@ -309,17 +325,30 @@ func (t *Tools) formatImplementDirective(drr *DRRInfo, inherited InheritedConstr
 		for _, src := range inherited.AntiPatterns {
 			sb.WriteString(fmt.Sprintf("### Inherited from %s:\n", src.DRRID))
 			for _, ap := range src.Constraints {
-				sb.WriteString(fmt.Sprintf("- [ ] %s\n", ap))
+				sb.WriteString(fmt.Sprintf("- [ ] NOT: %s\n", ap))
 			}
 			sb.WriteString("\n")
 		}
 	}
 
-	if len(drr.Contract.AcceptanceCriteria) > 0 {
-		sb.WriteString("## Acceptance Criteria\n\n")
+	deontics := drr.Contract.GetDeontics()
+	if len(deontics) > 0 {
+		sb.WriteString("## D: Deontics & Commitments\n\n")
+		sb.WriteString("*Obligations and recommendations. Acceptance criteria — what SHOULD happen for success.*\n\n")
 		sb.WriteString("Before calling quint_resolve, verify:\n\n")
-		for _, ac := range drr.Contract.AcceptanceCriteria {
+		for _, ac := range deontics {
 			sb.WriteString(fmt.Sprintf("- [ ] %s\n", ac))
+		}
+		sb.WriteString("\n")
+	}
+
+	evidence := drr.Contract.GetEvidence()
+	if len(evidence) > 0 {
+		sb.WriteString("## E: Evidence & Verification\n\n")
+		sb.WriteString("*How to verify compliance. Test strategies, observables, metrics, carrier classes.*\n\n")
+		sb.WriteString("Verification approach:\n\n")
+		for _, ev := range evidence {
+			sb.WriteString(fmt.Sprintf("- %s\n", ev))
 		}
 		sb.WriteString("\n")
 	}

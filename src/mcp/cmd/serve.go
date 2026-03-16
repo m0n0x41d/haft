@@ -99,9 +99,146 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return handleQuintNote(ctx, store, quintDir, params.Arguments)
 		case "quint_problem":
 			return handleQuintProblem(ctx, store, quintDir, params.Arguments)
+		case "quint_solution":
+			return handleQuintSolution(ctx, store, quintDir, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
+	}
+}
+
+func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+	action, _ := args["action"].(string)
+	contextName, _ := args["context"].(string)
+
+	switch action {
+	case "explore":
+		input := artifact.ExploreInput{
+			Context: contextName,
+		}
+		if v, ok := args["problem_ref"].(string); ok {
+			input.ProblemRef = v
+		}
+		if v, ok := args["mode"].(string); ok {
+			input.Mode = v
+		}
+
+		if variants, ok := args["variants"].([]interface{}); ok {
+			for _, vRaw := range variants {
+				vm, ok := vRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				v := artifact.Variant{}
+				if s, ok := vm["title"].(string); ok {
+					v.Title = s
+				}
+				if s, ok := vm["description"].(string); ok {
+					v.Description = s
+				}
+				if s, ok := vm["weakest_link"].(string); ok {
+					v.WeakestLink = s
+				}
+				if s, ok := vm["rollback_notes"].(string); ok {
+					v.RollbackNotes = s
+				}
+				if b, ok := vm["stepping_stone"].(bool); ok {
+					v.SteppingStone = b
+				}
+				if items, ok := vm["strengths"].([]interface{}); ok {
+					for _, item := range items {
+						if s, ok := item.(string); ok {
+							v.Strengths = append(v.Strengths, s)
+						}
+					}
+				}
+				if items, ok := vm["risks"].([]interface{}); ok {
+					for _, item := range items {
+						if s, ok := item.(string); ok {
+							v.Risks = append(v.Risks, s)
+						}
+					}
+				}
+				input.Variants = append(input.Variants, v)
+			}
+		}
+
+		// Auto-detect problem if not specified
+		if input.ProblemRef == "" {
+			prob, _ := artifact.FindActiveProblem(ctx, store, contextName)
+			if prob != nil {
+				input.ProblemRef = prob.Meta.ID
+			}
+		}
+
+		a, filePath, err := artifact.ExploreSolutions(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatSolutionResponse("explore", a, filePath, navStrip), nil
+
+	case "compare":
+		input := artifact.CompareInput{}
+		if v, ok := args["portfolio_ref"].(string); ok {
+			input.PortfolioRef = v
+		}
+
+		// Parse comparison results
+		if dims, ok := args["dimensions"].([]interface{}); ok {
+			for _, d := range dims {
+				if s, ok := d.(string); ok {
+					input.Results.Dimensions = append(input.Results.Dimensions, s)
+				}
+			}
+		}
+		if scores, ok := args["scores"].(map[string]interface{}); ok {
+			input.Results.Scores = make(map[string]map[string]string)
+			for variantID, dimScores := range scores {
+				if ds, ok := dimScores.(map[string]interface{}); ok {
+					input.Results.Scores[variantID] = make(map[string]string)
+					for dim, val := range ds {
+						if s, ok := val.(string); ok {
+							input.Results.Scores[variantID][dim] = s
+						}
+					}
+				}
+			}
+		}
+		if nds, ok := args["non_dominated_set"].([]interface{}); ok {
+			for _, n := range nds {
+				if s, ok := n.(string); ok {
+					input.Results.NonDominatedSet = append(input.Results.NonDominatedSet, s)
+				}
+			}
+		}
+		if v, ok := args["policy_applied"].(string); ok {
+			input.Results.PolicyApplied = v
+		}
+		if v, ok := args["selected_ref"].(string); ok {
+			input.Results.SelectedRef = v
+		}
+
+		// Auto-detect portfolio if not specified
+		if input.PortfolioRef == "" {
+			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
+			if p != nil {
+				input.PortfolioRef = p.Meta.ID
+			} else {
+				navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+				return "No active SolutionPortfolio found.\nUse /q-explore to create variants first.\n" + navStrip, nil
+			}
+		}
+
+		a, filePath, err := artifact.CompareSolutions(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatSolutionResponse("compare", a, filePath, navStrip), nil
+
+	default:
+		return "", fmt.Errorf("unknown action %q — use 'explore' or 'compare'", action)
 	}
 }
 

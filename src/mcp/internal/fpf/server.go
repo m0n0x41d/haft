@@ -250,6 +250,77 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				},
 			},
 		)
+
+		tools = append(tools, Tool{
+			Name:        "quint_solution",
+			Description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link), 'compare' runs parity check and identifies the Pareto front.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"explore", "compare"},
+						"description": "explore=create variants portfolio, compare=run parity comparison",
+					},
+					"problem_ref": map[string]string{
+						"type":        "string",
+						"description": "(explore) ProblemCard ID this portfolio solves. Auto-detected if only one active.",
+					},
+					"variants": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"title":          map[string]string{"type": "string", "description": "Variant name"},
+								"description":    map[string]string{"type": "string", "description": "What this option does"},
+								"strengths":      map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+								"weakest_link":   map[string]string{"type": "string", "description": "What bounds this option's quality (WLNK)"},
+								"risks":          map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+								"stepping_stone": map[string]interface{}{"type": "boolean", "description": "Opens future possibilities even if not optimal now"},
+								"rollback_notes": map[string]string{"type": "string"},
+							},
+							"required": []string{"title", "weakest_link"},
+						},
+						"description": "(explore) Solution variants — at least 2, genuinely distinct",
+					},
+					"portfolio_ref": map[string]string{
+						"type":        "string",
+						"description": "(compare) SolutionPortfolio ID to add comparison results to. Auto-detected if only one active.",
+					},
+					"dimensions": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "(compare) Comparison dimension names",
+					},
+					"scores": map[string]interface{}{
+						"type":        "object",
+						"description": "(compare) Scores per variant: {\"V1\": {\"throughput\": \"100k/s\", \"cost\": \"$200\"}}",
+					},
+					"non_dominated_set": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "(compare) Variant IDs on the Pareto front",
+					},
+					"policy_applied": map[string]string{
+						"type":        "string",
+						"description": "(compare) Selection policy that was applied",
+					},
+					"selected_ref": map[string]string{
+						"type":        "string",
+						"description": "(compare) Recommended variant ID",
+					},
+					"context": map[string]string{
+						"type":        "string",
+						"description": "Optional context name",
+					},
+					"mode": map[string]string{
+						"type":        "string",
+						"description": "(explore) Decision mode: tactical, standard (default), deep",
+					},
+				},
+				"required": []string{"action"},
+			},
+		})
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

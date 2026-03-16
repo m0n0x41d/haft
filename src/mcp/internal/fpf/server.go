@@ -49,12 +49,11 @@ type ContentItem struct {
 type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
 
 type Server struct {
-	tools     *Tools
 	v5Handler V5ToolHandler
 }
 
-func NewServer(t *Tools) *Server {
-	return &Server{tools: t}
+func NewServer() *Server {
+	return &Server{}
 }
 
 // SetV5Handler registers the handler for v5 tools (quint_note, quint_problem, etc).

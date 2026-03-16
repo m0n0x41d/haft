@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [main]  # Only after merge to main
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,19 +15,18 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
         with:
-          go-version: '1.23'
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
           cache-dependency-path: src/mcp/go.sum
 
       - name: Run tests
-        run: |
-          cd src/mcp
-          go test -v -race -coverprofile=coverage.out ./...
+        working-directory: src/mcp
+        run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -40,17 +39,16 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
         with:
-          go-version: '1.23'
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
           cache-dependency-path: src/mcp/go.sum
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           working-directory: src/mcp
@@ -60,16 +58,15 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
         with:
-          go-version: '1.23'
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
           cache-dependency-path: src/mcp/go.sum
 
       - name: Build binary
-        run: |
-          cd src/mcp
-          go build -o quint-code .
+        working-directory: src/mcp
+        run: go build -o quint-code .

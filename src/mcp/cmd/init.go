@@ -161,7 +161,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Println("\nInitialization complete! Run /q-internalize to start.")
+	fmt.Println("\nInitialization complete! Use /q-note to capture decisions, /q-reason for structured reasoning.")
 	return nil
 }
 

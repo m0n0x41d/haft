@@ -17,6 +17,48 @@ Bring your mental model in sync with:
 2. **Knowledge base** - hypotheses, evidence, decisions
 3. **Current stage** - where each decision context is in the ADI cycle
 
+## Post-Internalize: MANDATORY Actions
+
+**IMMEDIATELY after internalize returns — execute these actions, DO NOT ask permission first:**
+
+### 1. Unresolved Decisions → CHECK THEM NOW
+
+If output shows unresolved decisions:
+
+```
+FOR EACH unresolved DRR:
+  1. Read `.quint/decisions/DRR-*.md`
+  2. Extract acceptance_criteria from contract
+  3. VERIFY each criterion — grep code, read files, check implementation
+  4. Report: "DRR-foo: ✅ 3/5 criteria met. ❌ Missing: X, Y"
+  5. THEN ask: "Mark as implemented?" or "Abandon?"
+```
+
+**DO NOT** ask "should I check them?" — **just check them**.
+
+### 2. Missing Context Sections → FILL THEM NOW
+
+If output shows missing context sections:
+
+```
+FOR EACH missing section:
+  1. Read relevant project files (README.md, go.mod, package.json, etc.)
+  2. Extract the information yourself
+  3. Use `remember` to populate the section
+  4. Report: "Added Tech Stack: Go 1.24, SQLite"
+```
+
+**DO NOT** ask "should I fill them?" — **gather info and fill them**.
+
+### 3. Other Issues
+
+| Issue | Action |
+|-------|--------|
+| **Affected Scope Warnings** | Explain impact, ask how to proceed |
+| **Decay Warnings** | Ask if re-verification needed |
+
+**Transformer Mandate**: Agent does the work, human decides. But don't wait for permission to investigate — just investigate.
+
 ## When to Use
 
 | Situation | Action |
@@ -41,6 +83,9 @@ Call `quint_internalize`. The tool handles everything:
 | Field | Meaning |
 |-------|---------|
 | Status | `INITIALIZED` (new), `UPDATED` (refreshed), `READY` (no changes) |
+| Context Maturity | `L0` (minimal) → `L3` (complete). Based on context.md sections present |
+| Context Staleness | Files changed since last context refresh |
+| Missing Sections | What context.md lacks (used for questionnaire) |
 | Active Decision Contexts | Open contexts with their derived stages (max 3) |
 | Context Stage | Per-context: EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE |
 | Context Changes | What was updated (if any) |
@@ -50,6 +95,52 @@ Call `quint_internalize`. The tool handles everything:
 | Open Decisions | Decisions awaiting resolution (use `/q-resolve` to close) |
 | Recent Resolutions | Recently resolved decisions (implemented/abandoned/superseded) |
 | Next Action | What to do now |
+
+## Context Maturity
+
+The tool returns `Context Maturity` (L0-L3) based on how much project context is available.
+
+| Level | Meaning |
+|-------|---------|
+| **L0** | Minimal — no resolved DRRs yet |
+| **L1** | Basic — some DRR invariants aggregated |
+| **L2** | Good — multiple DRRs with invariants and anti-patterns |
+| **L3** | Complete — rich knowledge base with custom notes |
+
+**context.md is auto-generated.** Agent reads it but does NOT edit it directly.
+
+- **Tech Stack**: Auto-detected from project files
+- **Invariants/Anti-Patterns**: Aggregated from resolved DRRs
+- **Custom Notes**: Use remember/overwrite to add
+
+## Context Write Operations
+
+Use these parameters to manage project context:
+
+| Operation | Parameter | Purpose |
+|-----------|-----------|---------|
+| **Remember** | `remember={category:"...", content:"..."}` | Append fact to category |
+| **Forget** | `forget="category"` | Remove category entirely |
+| **Overwrite** | `overwrite={category:"...", content:"..."}` | Replace category content |
+
+**Example usage:**
+```
+quint_internalize(remember={category:"Tech Stack", content:"Go 1.24, SQLite"})
+quint_internalize(remember={category:"Notes", content:"Auth uses JWT"})
+quint_internalize(overwrite={category:"Notes", content:"Auth uses OAuth2"})
+quint_internalize(forget="Notes")
+```
+
+**Important:**
+- State stored in DB (`context_facts` table)
+- context.md regenerated after every write
+- Read context via `Read(.quint/context.md)` — no recall parameter needed
+
+If context seems incomplete, agent can:
+1. Read README.md, CLAUDE.md directly
+2. Ask user clarifying questions in chat
+3. Use `remember` to persist learned facts
+4. Build knowledge through FPF cycle (hypotheses → decisions → DRRs)
 
 ## Flow After Internalize
 

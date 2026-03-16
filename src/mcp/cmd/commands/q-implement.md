@@ -119,11 +119,18 @@ NEVER
 
 `quint_implement` doesn't create a plan — it **programs your internal planning capabilities** with the decision's contract as specification.
 
-The tool returns an **implementation directive** containing:
-1. Invariants that MUST be true in your implementation
-2. Anti-patterns to verify against in final verification
-3. Acceptance criteria to check before resolving
-4. Inherited constraints from dependency chain (WLNK for constraints)
+The tool returns an **implementation directive** containing the contract structured using the **L/A/D/E Boundary Norm Square** (FPF A.6.B):
+
+| Quadrant | What it Contains | Key Question |
+|----------|-----------------|--------------|
+| **L (Laws)** | Physical/logical constraints that CANNOT be violated | "Can code violate this? If yes, it's not a Law" |
+| **A (Admissibility)** | Anti-patterns — things that ARE possible but NOT allowed | "What must NOT happen?" |
+| **D (Deontics)** | Obligations, acceptance criteria — what SHOULD happen | "What must happen for success?" |
+| **E (Evidence)** | Test strategies, observables, verification methods | "How do we VERIFY compliance?" |
+
+The directive also includes:
+- Inherited constraints from dependency chain (WLNK for constraints)
+- Teaching prompts explaining each quadrant's purpose
 
 ## When to Use
 
@@ -171,7 +178,20 @@ Using your internal TODO/planning capabilities, implement this task.
 
 If project context is insufficient, conduct preliminary investigation first.
 
-## Invariants to Implement
+## Boundary Norm Square (L/A/D/E)
+
+The contract uses the FPF Boundary Norm Square (A.6.B) to classify constraints:
+
+| Quadrant | Meaning | Adjudication |
+|----------|---------|-------------|
+| **L (Laws)** | Physical/logical constraints that CANNOT be violated | In-description: provable from spec |
+| **A (Admissibility)** | What IS and IS NOT allowed (anti-patterns, gates) | In-work: runtime/operational |
+| **D (Deontics)** | What SHOULD happen (obligations, acceptance criteria) | In-description: stated duties |
+| **E (Evidence)** | How we VERIFY compliance (test strategy, observables) | In-work: carriers/traces |
+
+## L: Laws & Definitions
+
+*Truth-conditional constraints adjudicated in-description. If you can write code that violates it, it's not a Law — move it to Admissibility.*
 
 These MUST be true in your implementation:
 
@@ -184,26 +204,42 @@ These MUST be true in your implementation:
 - Tokens must be stateless (no server-side session storage)
 - All token operations must be logged to audit trail
 
-## Final Verification
+⚠️ Inherited constraints come from dependency chain — violating them breaks the foundation.
+
+## A: Admissibility & Gates
+
+*Boundaries of the solution space. Anti-patterns go here — things that ARE possible but NOT allowed.*
 
 Your LAST todo items must verify these constraints were NOT violated:
 
 ### This decision:
-- [ ] No cache-aside pattern in business logic
-- [ ] No hardcoded TTL values
-- [ ] No silent failures
+- [ ] NOT: Cache-aside pattern in business logic
+- [ ] NOT: Hardcoded TTL values
+- [ ] NOT: Silent failures
 
 ### Inherited from drr-jwt-auth:
-- [ ] No server-side token storage introduced
-- [ ] Token operations still logged after cache layer added
+- [ ] NOT: Server-side token storage introduced
+- [ ] NOT: Token operations not logged after cache layer added
 
-## Acceptance Criteria
+## D: Deontics & Commitments
+
+*Obligations and recommendations. Acceptance criteria — what SHOULD happen for success.*
 
 Before calling quint_resolve, verify:
 
 - [ ] Cache hit returns data without DB call
 - [ ] Cache miss fetches from DB and populates cache
 - [ ] Write operations invalidate relevant cache keys
+
+## E: Evidence & Verification
+
+*How to verify compliance. Test strategies, observables, metrics, carrier classes.*
+
+Verification approach:
+
+- Unit tests for cache hit/miss scenarios
+- Integration tests for DB fallthrough
+- Load test to verify TTL behavior under pressure
 
 ---
 When complete: `quint_resolve drr-cache-redis implemented criteria_verified=true`

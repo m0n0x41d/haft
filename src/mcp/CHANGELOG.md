@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **FPF spec search via `quint-code fpf` CLI**: Absorbed `claude-code-fpf` functionality into quint-code binary. FTS5-indexed FPF-Spec.md (56k lines, 4243 sections) embedded in binary via `go:embed`. Three subcommands: `search`, `section`, `info`.
+- **FPF skill installation**: `quint-code init` now installs the FPF reasoning skill (`SKILL.md`) for Claude Code and Cursor alongside slash commands.
+- **FPF spec indexer**: Build-time tool (`cmd/indexer`) to rebuild FTS5 index from upstream FPF-Spec.md. Tracks upstream commit SHA in index metadata.
+- **FPF upstream submodule**: `data/FPF/` git submodule pointing to `github.com/ailev/FPF` for spec source tracking.
 - **DB-backed context management in quint_internalize**: New remember/forget/overwrite parameters for structured context management. Context stored in SQLite `context_facts` table, with context.md auto-regenerated as projection.
   - `remember={category, content}` - Append content to a category
   - `forget="category"` - Remove a category

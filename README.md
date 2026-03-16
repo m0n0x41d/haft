@@ -143,19 +143,6 @@ A new engineer reads this 6 months later and understands everything.
 
 ---
 
-## How It Differs
-
-| | OpenSpec | BMAD | Quint Code |
-|---|---------|------|------------|
-| **Focus** | Spec before code | Agile workflow | Problem before spec |
-| **Upstream reasoning** | None | Weak (PRD) | Frame → characterize → compare → decide |
-| **Staleness tracking** | None | None | Refresh triggers, validity expiry |
-| **Artifact count** | 3 | 10+ | 6 |
-| **MCP tools** | N/A | N/A | 6 (hard cap) |
-| **Ceremony** | Low | High | Scales with decision importance |
-
----
-
 ## Requirements
 
 - Go 1.24+ (for building from source)

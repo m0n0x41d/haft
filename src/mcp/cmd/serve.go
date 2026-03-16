@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/artifact"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
 	"github.com/m0n0x41d/quint-code/logger"
 
@@ -69,7 +72,74 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	tools := fpf.NewTools(fsm, cwd, database)
 	server := fpf.NewServer(tools)
+
+	// Wire v5 artifact handler
+	if rawDB != nil {
+		artStore := artifact.NewStore(rawDB)
+		server.SetV5Handler(makeV5Handler(artStore, quintDir))
+	}
+
 	server.Start()
 
 	return nil
+}
+
+func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
+	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+		var params struct {
+			Name      string                 `json:"name"`
+			Arguments map[string]interface{} `json:"arguments"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return "", fmt.Errorf("invalid params: %w", err)
+		}
+
+		switch params.Name {
+		case "quint_note":
+			return handleQuintNote(ctx, store, quintDir, params.Arguments)
+		default:
+			return "", fmt.Errorf("unknown tool: %s", params.Name)
+		}
+	}
+}
+
+func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+	input := artifact.NoteInput{}
+
+	if v, ok := args["title"].(string); ok {
+		input.Title = v
+	}
+	if v, ok := args["rationale"].(string); ok {
+		input.Rationale = v
+	}
+	if v, ok := args["evidence"].(string); ok {
+		input.Evidence = v
+	}
+	if v, ok := args["context"].(string); ok {
+		input.Context = v
+	}
+	if files, ok := args["affected_files"].([]interface{}); ok {
+		for _, f := range files {
+			if s, ok := f.(string); ok {
+				input.AffectedFiles = append(input.AffectedFiles, s)
+			}
+		}
+	}
+
+	// Validate
+	validation := artifact.ValidateNote(ctx, store, input)
+
+	navStrip := artifact.BuildNavStrip(ctx, store, input.Context)
+
+	if !validation.OK {
+		return artifact.FormatNoteRejection(validation, navStrip), nil
+	}
+
+	// Create
+	a, filePath, err := artifact.CreateNote(ctx, store, quintDir, input)
+	if err != nil {
+		return "", err
+	}
+
+	return artifact.FormatNoteResponse(a, filePath, validation, navStrip), nil
 }

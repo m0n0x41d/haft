@@ -45,12 +45,21 @@ type ContentItem struct {
 	Text string `json:"text"`
 }
 
+// V5ToolHandler handles a v5 MCP tool call and returns the result text.
+type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
+
 type Server struct {
-	tools *Tools
+	tools     *Tools
+	v5Handler V5ToolHandler
 }
 
 func NewServer(t *Tools) *Server {
 	return &Server{tools: t}
+}
+
+// SetV5Handler registers the handler for v5 tools (quint_note, quint_problem, etc).
+func (s *Server) SetV5Handler(h V5ToolHandler) {
+	s.v5Handler = h
 }
 
 func (s *Server) Start() {
@@ -386,6 +395,41 @@ Each check requires at least one evidence reference.`,
 		},
 	}
 
+	// v5 tools
+	if s.v5Handler != nil {
+		tools = append(tools, Tool{
+			Name:        "quint_note",
+			Description: "Record a micro-decision with rationale. Validates before recording: checks for missing rationale, conflicts with active decisions, and whether the scope is too large for a note. Use for quick engineering choices during coding.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]string{
+						"type":        "string",
+						"description": "What was decided (e.g., 'RWMutex over channels for session cache')",
+					},
+					"rationale": map[string]string{
+						"type":        "string",
+						"description": "Why this choice — what alternatives existed, what evidence supports it",
+					},
+					"affected_files": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "File paths affected by this decision",
+					},
+					"evidence": map[string]string{
+						"type":        "string",
+						"description": "Supporting evidence (benchmarks, test results, references)",
+					},
+					"context": map[string]string{
+						"type":        "string",
+						"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
+					},
+				},
+				"required": []string{"title", "rationale"},
+			},
+		})
+	}
+
 	s.sendResult(req.ID, map[string]interface{}{
 		"tools": tools,
 	})
@@ -542,7 +586,15 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 		output, err = s.tools.Compact(ctx, arg("mode"), retentionDays)
 
 	default:
-		err = fmt.Errorf("unknown tool: %s", params.Name)
+		// Try v5 handler
+		if s.v5Handler != nil {
+			output, err = s.v5Handler(ctx, params.Name, req.Params)
+			if err != nil && err.Error() == "unknown tool: "+params.Name {
+				err = fmt.Errorf("unknown tool: %s", params.Name)
+			}
+		} else {
+			err = fmt.Errorf("unknown tool: %s", params.Name)
+		}
 	}
 
 	if err != nil {

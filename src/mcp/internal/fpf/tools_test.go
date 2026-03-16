@@ -122,7 +122,7 @@ func TestProposeHypothesis(t *testing.T) {
 	kind := "system"
 	rationale := "This is the rationale."
 
-	holonID, err := tools.ProposeHypothesis(ctx, title, content, scope, kind, rationale, dcID, nil, 3, "")
+	holonID, err := tools.ProposeHypothesis(ctx, title, content, scope, kind, rationale, dcID, nil, 3, "", "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
 	}
@@ -466,7 +466,10 @@ func TestVerifyHypothesis(t *testing.T) {
 		"type_check": {"verdict": "PASS", "evidence": ["test-ref"], "reasoning": "Type is correct"},
 		"constraint_check": {"verdict": "PASS", "evidence": ["constraint-ref"], "reasoning": "Constraints satisfied"},
 		"logic_check": {"verdict": "PASS", "evidence": ["logic-ref"], "reasoning": "Logic is sound"},
-		"predictions": ["Test prediction one", "Test prediction two"]
+		"predictions": [
+			{"id": "P1", "if": "hypothesis is correct", "then": "outcome one occurs", "testable_by": "integration test"},
+			{"id": "P2", "if": "implementation complete", "then": "outcome two occurs", "testable_by": "manual check"}
+		]
 	}`
 	msg, err := tools.VerifyHypothesis(ctx, hypoID, passJSON, "PASS", "")
 	if err != nil {
@@ -537,7 +540,7 @@ func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 			name:        "invalid verdict value",
 			json:        `{"type_check": {"verdict": "MAYBE", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}}`,
 			verdict:     "PASS",
-			errContains: "type_check: verdict must be PASS or FAIL",
+			errContains: "type_check: verdict must be PASS, FAIL, or REFINE",
 		},
 		{
 			name:        "missing evidence",
@@ -553,9 +556,9 @@ func TestVerifyHypothesis_ValidationErrors(t *testing.T) {
 		},
 		{
 			name:        "invalid overall_verdict",
-			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "predictions": ["P1"]}`,
+			json:        `{"type_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "constraint_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "logic_check": {"verdict": "PASS", "evidence": ["ref"], "reasoning": "why"}, "predictions": [{"id": "P1", "if": "x", "then": "y", "testable_by": "z"}]}`,
 			verdict:     "UNKNOWN",
-			errContains: "overall_verdict must be PASS or FAIL",
+			errContains: "overall_verdict must be PASS, FAIL, or REFINE",
 		},
 		{
 			name:        "missing predictions for PASS",
@@ -702,7 +705,7 @@ func TestValidateHypothesis_ValidationErrors(t *testing.T) {
 			name:        "invalid overall_verdict",
 			result:      "some test result",
 			verdict:     "MAYBE",
-			errContains: "overall_verdict must be PASS or FAIL",
+			errContains: "overall_verdict must be PASS, FAIL, or REFINE",
 		},
 	}
 
@@ -1144,6 +1147,7 @@ func TestPropose_WithDecisionContext(t *testing.T) {
 		nil,                // no depends_on
 		3,
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -1198,6 +1202,7 @@ func TestPropose_WithDependsOn(t *testing.T) {
 		[]string{"auth-module", "rate-limiter"}, // depends_on
 		3,                                       // CL3
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -1236,7 +1241,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 	}
 
 	// Create holon B that depends on A
-	_, err = tools.ProposeHypothesis(ctx, "Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3, "")
+	_, err = tools.ProposeHypothesis(ctx, "Holon B", "B depends on A", "global", "system", "{}", "dc-cycle-test", []string{"holon-a"}, 3, "", "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for B failed: %v", err)
 	}
@@ -1250,7 +1255,7 @@ func TestPropose_CycleDetection(t *testing.T) {
 
 	// Try to make A depend on B (would create cycle since B already depends on A)
 	// This should be skipped with a warning, not error
-	_, err = tools.ProposeHypothesis(ctx, "Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3, "")
+	_, err = tools.ProposeHypothesis(ctx, "Holon C Cyclic", "C tries to depend on B", "global", "system", "{}", "dc-cycle-test", []string{"holon-b"}, 3, "", "")
 	// Should NOT error - cycles are skipped with warning
 	if err != nil {
 		t.Fatalf("ProposeHypothesis should not error on cycle, got: %v", err)
@@ -1297,6 +1302,7 @@ func TestPropose_InvalidDependency(t *testing.T) {
 		[]string{"does-not-exist", "also-missing"}, // These don't exist
 		3,
 		"",
+		"",
 	)
 	// Should NOT error - invalid deps are skipped with warning
 	if err != nil {
@@ -1335,13 +1341,13 @@ func TestPropose_KindDeterminesRelation(t *testing.T) {
 	}
 
 	// Propose system hypothesis - should create componentOf
-	_, err = tools.ProposeHypothesis(ctx, "System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3, "")
+	_, err = tools.ProposeHypothesis(ctx, "System Hypo", "A system thing", "global", "system", "{}", "dc-kind-test", []string{"base-claim"}, 3, "", "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for system failed: %v", err)
 	}
 
 	// Propose episteme hypothesis - should create constituentOf
-	_, err = tools.ProposeHypothesis(ctx, "Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3, "")
+	_, err = tools.ProposeHypothesis(ctx, "Episteme Hypo", "An epistemic claim", "global", "episteme", "{}", "dc-kind-test", []string{"base-claim"}, 3, "", "")
 	if err != nil {
 		t.Fatalf("ProposeHypothesis for episteme failed: %v", err)
 	}
@@ -1402,6 +1408,7 @@ func TestWLNK_MemberOf_NoPropagation(t *testing.T) {
 		"bad-decision", // MemberOf the bad decision
 		nil,
 		3,
+		"",
 		"",
 	)
 	if err != nil {
@@ -1559,7 +1566,7 @@ func TestInternalize_FirstCall(t *testing.T) {
 	fsm := &FSM{State: State{}}
 	tools := &Tools{FSM: fsm, RootDir: tempDir, DB: nil}
 
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1586,13 +1593,13 @@ func TestInternalize_SubsequentCall(t *testing.T) {
 	tools, _, _ := setupTools(t)
 
 	// First call - sets up everything
-	_, err := tools.Internalize(ctx)
+	_, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("First Internalize() error = %v", err)
 	}
 
 	// Second call - should return READY (context is fresh, nothing changed)
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Second Internalize() error = %v", err)
 	}
@@ -1618,7 +1625,7 @@ func TestInternalize_LayerCounts(t *testing.T) {
 		t.Fatalf("Failed to create holon: %v", err)
 	}
 
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1663,7 +1670,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 
 	// After selects relation: archived-hypo should immediately be excluded from active count
 	// (New behavior: L2s are excluded immediately after decision, not after resolution)
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
@@ -1681,7 +1688,7 @@ func TestInternalize_ArchivedHolons(t *testing.T) {
 	}
 
 	// After resolution: still excluded (unchanged)
-	result, err = tools.Internalize(ctx)
+	result, err = tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() after resolution error = %v", err)
 	}
@@ -2074,12 +2081,12 @@ func TestInternalize_ShowsOpenDecisions(t *testing.T) {
 	}
 
 	// Internalize and check output
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() error = %v", err)
 	}
 
-	if !strings.Contains(result, "Open Decisions") || !strings.Contains(result, "Pending Decision") {
+	if !strings.Contains(result, "Unresolved Decisions") || !strings.Contains(result, "Pending Decision") {
 		t.Errorf("Should show open decision in internalize output, got: %s", result)
 	}
 }
@@ -2733,7 +2740,7 @@ func TestProposeHypothesis_ActiveSuggestions(t *testing.T) {
 		"Implement rate limiting that stores counters in Redis",
 		"src/api/*", "system",
 		`{"anomaly": "API abuse", "approach": "Token bucket"}`,
-		"dc-suggestions-test", nil, 3, "",
+		"dc-suggestions-test", nil, 3, "", "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2773,7 +2780,7 @@ func TestProposeHypothesis_NoSuggestionsWhenDependsOnProvided(t *testing.T) {
 		"Implement rate limiting with Redis",
 		"src/api/*", "system",
 		`{"anomaly": "test"}`,
-		"dc-no-suggestions", []string{"redis-cache-drr"}, 3, "",
+		"dc-no-suggestions", []string{"redis-cache-drr"}, 3, "", "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2801,7 +2808,7 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 		"Something completely unrelated to existing holons",
 		"src/xyz/*", "system",
 		`{"anomaly": "test"}`,
-		"dc-no-matches", nil, 3, "",
+		"dc-no-matches", nil, 3, "", "",
 	)
 	if err != nil {
 		t.Fatalf("ProposeHypothesis failed: %v", err)
@@ -2809,6 +2816,187 @@ func TestProposeHypothesis_NoSuggestionsWhenNoMatches(t *testing.T) {
 
 	if strings.Contains(result, "POTENTIAL DEPENDENCIES DETECTED") {
 		t.Error("Should not show suggestions when no keywords match")
+	}
+}
+
+// ============================================
+// REFINES PARAMETER TESTS (v5.4.0)
+// ============================================
+
+func TestProposeHypothesis_RefinesCreatesRelation(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, _ := tools.CreateContext(ctx, "Refines Test", "", "")
+	dcID = strings.Split(dcID, "\n")[0]
+
+	originalID, err := tools.ProposeHypothesis(ctx,
+		"Original Hypothesis",
+		"This is the original",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", "",
+	)
+	if err != nil {
+		t.Fatalf("Failed to create original hypothesis: %v", err)
+	}
+	originalID = strings.Split(originalID, "\n")[0]
+
+	refinedResult, err := tools.ProposeHypothesis(ctx,
+		"Refined Hypothesis",
+		"This is the refined version",
+		"test scope",
+		"system",
+		`{"anomaly": "test", "refined": true}`,
+		dcID, nil, 3, "", originalID,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create refined hypothesis: %v", err)
+	}
+
+	if !strings.Contains(refinedResult, "Refinement of") {
+		t.Error("Expected refinement confirmation in output")
+	}
+	if !strings.Contains(refinedResult, originalID) {
+		t.Error("Expected original ID in refinement output")
+	}
+
+	relations, _ := tools.DB.GetRelationsByTarget(ctx, originalID, "refines")
+	if len(relations) != 1 {
+		t.Errorf("Expected 1 refines relation, got %d", len(relations))
+	}
+}
+
+func TestProposeHypothesis_RefinesOnlyL0(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, _ := tools.CreateContext(ctx, "Refines L0 Test", "", "")
+	dcID = strings.Split(dcID, "\n")[0]
+
+	tools.DB.CreateHolon(ctx, "l1-hypothesis", "hypothesis", "system", "L1",
+		"L1 Hypothesis", "Already verified", "default", "", "", "")
+	tools.DB.CreateRelation(ctx, "l1-hypothesis", "memberOf", dcID, 3)
+
+	_, err := tools.ProposeHypothesis(ctx,
+		"Try Refine L1",
+		"Trying to refine L1",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", "l1-hypothesis",
+	)
+	if err == nil {
+		t.Fatal("Expected error when refining L1 hypothesis")
+	}
+	if !strings.Contains(err.Error(), "must be L0") {
+		t.Errorf("Expected 'must be L0' error, got: %v", err)
+	}
+}
+
+func TestProposeHypothesis_RefinesInheritsContext(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, _ := tools.CreateContext(ctx, "Context Inheritance Test", "", "")
+	dcID = strings.Split(dcID, "\n")[0]
+
+	originalID, _ := tools.ProposeHypothesis(ctx,
+		"Original With Context",
+		"Has explicit context",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", "",
+	)
+	originalID = strings.Split(originalID, "\n")[0]
+
+	refinedID, err := tools.ProposeHypothesis(ctx,
+		"Refined Inheriting Context",
+		"Should inherit context from original",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		"", nil, 3, "", originalID,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create refined hypothesis with inherited context: %v", err)
+	}
+	refinedID = strings.Split(refinedID, "\n")[0]
+
+	holon, _ := tools.DB.GetHolon(ctx, refinedID)
+	inheritedContext := tools.getDecisionContext(ctx, refinedID)
+	if inheritedContext != dcID {
+		t.Errorf("Expected context %s, got %s (holon context: %s)", dcID, inheritedContext, holon.ContextID)
+	}
+}
+
+func TestProposeHypothesis_RefinesOnlyOnce(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, _ := tools.CreateContext(ctx, "Single Refine Test", "", "")
+	dcID = strings.Split(dcID, "\n")[0]
+
+	originalID, _ := tools.ProposeHypothesis(ctx,
+		"Original Hypothesis",
+		"Will be refined",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", "",
+	)
+	originalID = strings.Split(originalID, "\n")[0]
+
+	_, err := tools.ProposeHypothesis(ctx,
+		"First Refinement",
+		"First refinement of original",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", originalID,
+	)
+	if err != nil {
+		t.Fatalf("First refinement should succeed: %v", err)
+	}
+
+	_, err = tools.ProposeHypothesis(ctx,
+		"Second Refinement",
+		"Trying to refine already refined",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", originalID,
+	)
+	if err == nil {
+		t.Fatal("Expected error when refining already-refined hypothesis")
+	}
+	if !strings.Contains(err.Error(), "already refined") {
+		t.Errorf("Expected 'already refined' error, got: %v", err)
+	}
+}
+
+func TestProposeHypothesis_RefinesTargetNotFound(t *testing.T) {
+	tools, _, _ := setupTools(t)
+	ctx := context.Background()
+
+	dcID, _ := tools.CreateContext(ctx, "Not Found Test", "", "")
+	dcID = strings.Split(dcID, "\n")[0]
+
+	_, err := tools.ProposeHypothesis(ctx,
+		"Refine Non-Existent",
+		"Trying to refine non-existent",
+		"test scope",
+		"system",
+		`{"anomaly": "test"}`,
+		dcID, nil, 3, "", "non-existent-hypothesis",
+	)
+	if err == nil {
+		t.Fatal("Expected error when refining non-existent hypothesis")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
 	}
 }
 
@@ -2886,6 +3074,7 @@ func TestProposeHypothesis_RequiresDecisionContext(t *testing.T) {
 		"", // no decision_context - should error
 		nil,
 		3,
+		"",
 		"",
 	)
 	if err == nil {
@@ -2988,6 +3177,7 @@ func TestProposeHypothesis_DecisionContextTypeValidation(t *testing.T) {
 		"not-a-context", // This is a hypothesis, not a decision_context
 		nil,
 		3,
+		"",
 		"",
 	)
 	if err == nil {
@@ -3513,7 +3703,7 @@ Test content.
 	modifiedContent := "class Target:\n    # modified\n    def method(self): pass\n"
 	os.WriteFile(testFilePath, []byte(modifiedContent), 0644)
 
-	result, err := tools.Internalize(ctx)
+	result, err := tools.Internalize(ctx, InternalizeInput{})
 	if err != nil {
 		t.Fatalf("Internalize() failed: %v", err)
 	}
@@ -3526,5 +3716,176 @@ Test content.
 	}
 	if !strings.Contains(result, "modified") {
 		t.Error("Should indicate file was modified")
+	}
+}
+
+func TestContract_LADEGetters_NewFields(t *testing.T) {
+	contract := Contract{
+		Laws:          []string{"Law 1", "Law 2"},
+		Admissibility: []string{"Anti-pattern 1"},
+		Deontics:      []string{"Acceptance 1", "Acceptance 2"},
+		Evidence:      []string{"Test strategy 1"},
+	}
+
+	laws := contract.GetLaws()
+	if len(laws) != 2 || laws[0] != "Law 1" {
+		t.Errorf("GetLaws() with new fields: expected [Law 1, Law 2], got %v", laws)
+	}
+
+	admissibility := contract.GetAdmissibility()
+	if len(admissibility) != 1 || admissibility[0] != "Anti-pattern 1" {
+		t.Errorf("GetAdmissibility() with new fields: expected [Anti-pattern 1], got %v", admissibility)
+	}
+
+	deontics := contract.GetDeontics()
+	if len(deontics) != 2 || deontics[0] != "Acceptance 1" {
+		t.Errorf("GetDeontics() with new fields: expected [Acceptance 1, Acceptance 2], got %v", deontics)
+	}
+
+	evidence := contract.GetEvidence()
+	if len(evidence) != 1 || evidence[0] != "Test strategy 1" {
+		t.Errorf("GetEvidence() with new fields: expected [Test strategy 1], got %v", evidence)
+	}
+}
+
+func TestContract_LADEGetters_BackwardCompatibility(t *testing.T) {
+	contract := Contract{
+		Invariants:         []string{"Invariant 1", "Invariant 2"},
+		AntiPatterns:       []string{"Anti-pattern old"},
+		AcceptanceCriteria: []string{"Criteria old"},
+	}
+
+	laws := contract.GetLaws()
+	if len(laws) != 2 || laws[0] != "Invariant 1" {
+		t.Errorf("GetLaws() backward compat: expected [Invariant 1, Invariant 2], got %v", laws)
+	}
+
+	admissibility := contract.GetAdmissibility()
+	if len(admissibility) != 1 || admissibility[0] != "Anti-pattern old" {
+		t.Errorf("GetAdmissibility() backward compat: expected [Anti-pattern old], got %v", admissibility)
+	}
+
+	deontics := contract.GetDeontics()
+	if len(deontics) != 1 || deontics[0] != "Criteria old" {
+		t.Errorf("GetDeontics() backward compat: expected [Criteria old], got %v", deontics)
+	}
+
+	evidence := contract.GetEvidence()
+	if len(evidence) != 0 {
+		t.Errorf("GetEvidence() backward compat: expected [], got %v", evidence)
+	}
+}
+
+func TestContract_LADEGetters_NewFieldsPriority(t *testing.T) {
+	contract := Contract{
+		Laws:               []string{"New Law"},
+		Invariants:         []string{"Old Invariant"},
+		Admissibility:      []string{"New Admissibility"},
+		AntiPatterns:       []string{"Old AntiPattern"},
+		Deontics:           []string{"New Deontic"},
+		AcceptanceCriteria: []string{"Old Criteria"},
+	}
+
+	laws := contract.GetLaws()
+	if len(laws) != 1 || laws[0] != "New Law" {
+		t.Errorf("GetLaws() priority: expected [New Law], got %v", laws)
+	}
+
+	admissibility := contract.GetAdmissibility()
+	if len(admissibility) != 1 || admissibility[0] != "New Admissibility" {
+		t.Errorf("GetAdmissibility() priority: expected [New Admissibility], got %v", admissibility)
+	}
+
+	deontics := contract.GetDeontics()
+	if len(deontics) != 1 || deontics[0] != "New Deontic" {
+		t.Errorf("GetDeontics() priority: expected [New Deontic], got %v", deontics)
+	}
+}
+
+func TestAnalyzeProject_TechStackDetection(t *testing.T) {
+	tools, _, tempDir := setupTools(t)
+
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module test\n\ngo 1.21"), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+
+	pCtx, err := tools.AnalyzeProject()
+	if err != nil {
+		t.Fatalf("AnalyzeProject failed: %v", err)
+	}
+
+	if len(pCtx.TechStack) == 0 || pCtx.TechStack[0] != "Go" {
+		t.Errorf("Expected TechStack to contain 'Go', got: %v", pCtx.TechStack)
+	}
+}
+
+func TestRecordContextFromProject_PreservesCustomNotes(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	pCtx := ProjectContext{
+		Overview:  "Test overview",
+		TechStack: []string{"Go"},
+		Structure: []string{"src: Source code"},
+	}
+	_, err := tools.RecordContextFromProject(pCtx)
+	if err != nil {
+		t.Fatalf("First RecordContextFromProject failed: %v", err)
+	}
+
+	contextPath := filepath.Join(tools.GetFPFDir(), "context.md")
+	content, _ := os.ReadFile(contextPath)
+	contentStr := string(content)
+
+	customNote := "This is my custom note about the project"
+	contentStr = strings.Replace(contentStr, "*Add project-specific notes here. This section is preserved across regenerations.*", customNote, 1)
+	if err := os.WriteFile(contextPath, []byte(contentStr), 0644); err != nil {
+		t.Fatalf("Failed to write custom note: %v", err)
+	}
+
+	pCtx2 := ProjectContext{
+		Overview:  "Updated overview",
+		TechStack: []string{"Go", "Python"},
+	}
+	_, err = tools.RecordContextFromProject(pCtx2)
+	if err != nil {
+		t.Fatalf("Second RecordContextFromProject failed: %v", err)
+	}
+
+	content, _ = os.ReadFile(contextPath)
+	contentStr = string(content)
+
+	if !strings.Contains(contentStr, customNote) {
+		t.Error("Custom note was not preserved after regeneration")
+	}
+	if !strings.Contains(contentStr, "Updated overview") {
+		t.Error("Overview was not updated")
+	}
+}
+
+func TestCalculateContextMaturity(t *testing.T) {
+	tools, _, _ := setupTools(t)
+
+	maturity, missing := tools.CalculateContextMaturity()
+	if maturity != "L0" {
+		t.Errorf("Expected L0 maturity for missing context.md, got: %s", maturity)
+	}
+	if len(missing) == 0 {
+		t.Error("Expected missing sections for L0 maturity")
+	}
+
+	pCtx := ProjectContext{
+		Overview:      "Test project overview",
+		TechStack:     []string{"Go", "Node.js"},
+		Structure:     []string{"src: Source", "cmd: CLI"},
+		DRRInvariants: []string{"Invariant 1", "Invariant 2"},
+	}
+	_, err := tools.RecordContextFromProject(pCtx)
+	if err != nil {
+		t.Fatalf("RecordContextFromProject failed: %v", err)
+	}
+
+	maturity, missing = tools.CalculateContextMaturity()
+	if maturity != "L2" {
+		t.Errorf("Expected L2 maturity with 4 sections, got: %s (missing: %v)", maturity, missing)
 	}
 }

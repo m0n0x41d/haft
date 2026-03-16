@@ -12,6 +12,9 @@ import (
 //go:embed commands/*.md
 var embeddedCommands embed.FS
 
+//go:embed skill/fpf/SKILL.md
+var embeddedFPFSkill []byte
+
 func installCommands(projectRoot string, platform string, local bool) (string, int, error) {
 	entries, err := embeddedCommands.ReadDir("commands")
 	if err != nil {
@@ -164,4 +167,42 @@ func escapeTomlMultiline(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"""`, `\"""`)
 	return s
+}
+
+func installFPFSkill(platform string, local bool, projectRoot string) (string, error) {
+	homeDir, _ := os.UserHomeDir()
+
+	var skillDir string
+	switch platform {
+	case "claude":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".claude", "skills", "fpf")
+		} else {
+			skillDir = filepath.Join(homeDir, ".claude", "skills", "fpf")
+		}
+	case "cursor":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".cursor", "skills", "fpf")
+		} else {
+			skillDir = filepath.Join(homeDir, ".cursor", "skills", "fpf")
+		}
+	default:
+		// Other platforms don't support skills yet
+		return "", nil
+	}
+
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	destPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(destPath, embeddedFPFSkill, 0644); err != nil {
+		return "", fmt.Errorf("failed to write skill file: %w", err)
+	}
+
+	displayPath := skillDir
+	if strings.HasPrefix(skillDir, homeDir) {
+		displayPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+	}
+	return displayPath, nil
 }

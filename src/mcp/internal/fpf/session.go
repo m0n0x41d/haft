@@ -13,8 +13,13 @@ import (
 	"github.com/m0n0x41d/quint-code/logger"
 )
 
-func (t *Tools) Internalize(ctx context.Context) (string, error) {
+func (t *Tools) Internalize(ctx context.Context, input InternalizeInput) (string, error) {
 	defer t.RecordWork("Internalize", time.Now())
+
+	hasWriteOp := input.Remember != nil || input.Forget != "" || input.Overwrite != nil
+	if hasWriteOp {
+		return t.handleContextWrite(ctx, input)
+	}
 
 	logger.Info().Str("root_dir", t.RootDir).Msg("Internalize called")
 
@@ -33,11 +38,11 @@ func (t *Tools) Internalize(ctx context.Context) (string, error) {
 		result.Status = "INITIALIZED"
 		result.ContextChanges = []string{"Created .quint/ structure"}
 
-		ctx, err := t.AnalyzeProject()
+		pCtx, err := t.AnalyzeProject()
 		if err != nil {
 			result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: auto-analysis failed: %v", err))
 		} else {
-			if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
+			if _, err := t.RecordContextFromProject(pCtx); err != nil {
 				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to record context: %v", err))
 			} else {
 				result.ContextChanges = append(result.ContextChanges, "Auto-generated context from project analysis")
@@ -50,11 +55,11 @@ func (t *Tools) Internalize(ctx context.Context) (string, error) {
 	} else {
 		stale, signals := t.IsContextStale()
 		if stale {
-			ctx, err := t.AnalyzeProject()
+			pCtx, err := t.AnalyzeProject()
 			if err != nil {
 				result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: re-analysis failed: %v", err))
 			} else {
-				if _, err := t.RecordContext(ctx.Vocabulary, ctx.Invariants); err != nil {
+				if _, err := t.RecordContextFromProject(pCtx); err != nil {
 					result.ContextChanges = append(result.ContextChanges, fmt.Sprintf("Warning: failed to update context: %v", err))
 				}
 			}
@@ -67,6 +72,9 @@ func (t *Tools) Internalize(ctx context.Context) (string, error) {
 
 	result.ContextID = "default"
 	result.ArchivedCounts = make(map[string]int)
+
+	result.ContextMaturity, result.MissingSections = t.CalculateContextMaturity()
+	_, result.StalenessWarnings = t.IsContextStale()
 
 	if t.DB != nil {
 		activeCounts, err := t.DB.CountActiveHolonsByLayer(ctx)
@@ -220,12 +228,29 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 
 	sb.WriteString("=== QUINT INTERNALIZE ===\n\n")
 	sb.WriteString(fmt.Sprintf("Status: %s\n", r.Status))
+	sb.WriteString(fmt.Sprintf("Context Maturity: %s\n", r.ContextMaturity))
 	sb.WriteString(fmt.Sprintf("Session Phase: %s\n", r.Phase))
 	if r.SuggestedPhase != "" && r.SuggestedPhase != r.Phase {
 		sb.WriteString(fmt.Sprintf("Suggested Phase: %s (based on knowledge state)\n", r.SuggestedPhase))
 	}
 	sb.WriteString(fmt.Sprintf("Role: %s\n", r.Role))
 	sb.WriteString(fmt.Sprintf("Context: %s\n\n", r.ContextID))
+
+	if len(r.StalenessWarnings) > 0 {
+		sb.WriteString("📋 Context Staleness:\n")
+		for _, w := range r.StalenessWarnings {
+			sb.WriteString(fmt.Sprintf("  - %s\n", w))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(r.MissingSections) > 0 && r.ContextMaturity != "L3" {
+		sb.WriteString("📝 Missing Context Sections:\n")
+		for _, s := range r.MissingSections {
+			sb.WriteString(fmt.Sprintf("  - %s\n", s))
+		}
+		sb.WriteString("  → Agent should ask user about these to enrich context.md\n\n")
+	}
 
 	if len(r.ContextChanges) > 0 {
 		sb.WriteString("Context Changes:\n")
@@ -306,7 +331,7 @@ func (t *Tools) formatInternalizeOutput(r InternalizeResult) string {
 	}
 
 	if len(r.OpenDecisions) > 0 {
-		sb.WriteString("⚠ Open Decisions (awaiting resolution):\n")
+		sb.WriteString("⚠ Unresolved Decisions (status unknown — check acceptance criteria before resolving):\n")
 		for _, d := range r.OpenDecisions {
 			age := formatAge(d.CreatedAt)
 			sb.WriteString(fmt.Sprintf("  - %s: %s (%s)\n", d.ID, d.Title, age))
@@ -333,88 +358,207 @@ func (t *Tools) IsInitialized() bool {
 	return err == nil
 }
 
-func (t *Tools) AnalyzeProject() (ProjectContext, error) {
-	ctx := ProjectContext{}
-	var vocab []string
-	var invariants []string
+func (t *Tools) handleContextWrite(ctx context.Context, input InternalizeInput) (string, error) {
+	if t.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
 
-	goModPath := filepath.Join(t.RootDir, "go.mod")
-	if content, err := os.ReadFile(goModPath); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Go")
-		lines := strings.Split(string(content), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "module ") {
-				modName := strings.TrimPrefix(line, "module ")
-				vocab = append(vocab, fmt.Sprintf("Module: %s", strings.TrimSpace(modName)))
-			}
+	var sb strings.Builder
+	sb.WriteString("=== QUINT INTERNALIZE (Write) ===\n\n")
+
+	if input.Remember != nil {
+		if input.Remember.Category == "" || input.Remember.Content == "" {
+			return "", fmt.Errorf("remember requires both category and content")
 		}
-		invariants = append(invariants, "Go module project")
+		if err := t.DB.AppendContextFact(ctx, input.Remember.Category, input.Remember.Content); err != nil {
+			return "", fmt.Errorf("failed to remember: %w", err)
+		}
+		sb.WriteString(fmt.Sprintf("✓ Remembered fact in category '%s'\n", input.Remember.Category))
 	}
 
-	pkgPath := filepath.Join(t.RootDir, "package.json")
-	if _, err := os.Stat(pkgPath); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Node.js")
-		invariants = append(invariants, "Node.js project")
+	if input.Forget != "" {
+		if err := t.DB.DeleteContextFact(ctx, input.Forget); err != nil {
+			return "", fmt.Errorf("failed to forget: %w", err)
+		}
+		sb.WriteString(fmt.Sprintf("✓ Forgot category '%s'\n", input.Forget))
 	}
 
-	pythonMarkers := []string{"requirements.txt", "pyproject.toml", "setup.py", "Pipfile"}
-	for _, marker := range pythonMarkers {
-		if _, err := os.Stat(filepath.Join(t.RootDir, marker)); err == nil {
-			ctx.TechStack = append(ctx.TechStack, "Python")
-			invariants = append(invariants, "Python project")
+	if input.Overwrite != nil {
+		if input.Overwrite.Category == "" || input.Overwrite.Content == "" {
+			return "", fmt.Errorf("overwrite requires both category and content")
+		}
+		if err := t.DB.UpsertContextFact(ctx, input.Overwrite.Category, input.Overwrite.Content); err != nil {
+			return "", fmt.Errorf("failed to overwrite: %w", err)
+		}
+		sb.WriteString(fmt.Sprintf("✓ Overwrote category '%s'\n", input.Overwrite.Category))
+	}
+
+	if err := t.regenerateContextMD(ctx); err != nil {
+		sb.WriteString(fmt.Sprintf("\n⚠ Warning: failed to regenerate context.md: %v\n", err))
+	} else {
+		sb.WriteString("\n✓ context.md regenerated from DB\n")
+	}
+
+	facts, err := t.DB.GetAllContextFacts(ctx)
+	if err == nil && len(facts) > 0 {
+		sb.WriteString("\nCurrent categories:\n")
+		for _, f := range facts {
+			preview := f.Content
+			if len(preview) > 50 {
+				preview = preview[:50] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  - %s: %s\n", f.Category, preview))
+		}
+	}
+
+	return sb.String(), nil
+}
+
+func (t *Tools) regenerateContextMD(ctx context.Context) error {
+	facts, err := t.DB.GetAllContextFacts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get context facts: %w", err)
+	}
+
+	pCtx, _ := t.AnalyzeProject()
+
+	var sb strings.Builder
+	sb.WriteString("<!-- ATTENTION: This file is auto-generated by quint_internalize.\n")
+	sb.WriteString("     DO NOT EDIT DIRECTLY - changes will be overwritten.\n")
+	sb.WriteString("     Use quint_internalize(remember/forget/overwrite) to modify. -->\n\n")
+	sb.WriteString("# Bounded Context\n\n")
+
+	for _, f := range facts {
+		sb.WriteString(fmt.Sprintf("## %s\n\n", f.Category))
+		sb.WriteString(f.Content)
+		sb.WriteString("\n\n")
+	}
+
+	if len(pCtx.DRRInvariants) > 0 {
+		sb.WriteString("## Invariants (from DRRs)\n\n")
+		for _, inv := range pCtx.DRRInvariants {
+			sb.WriteString(fmt.Sprintf("- %s\n", inv))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(pCtx.DRRAntiPatterns) > 0 {
+		sb.WriteString("## Anti-Patterns (from DRRs)\n\n")
+		for _, ap := range pCtx.DRRAntiPatterns {
+			sb.WriteString(fmt.Sprintf("- %s\n", ap))
+		}
+		sb.WriteString("\n")
+	}
+
+	hasCustomNotes := false
+	for _, f := range facts {
+		if f.Category == "Custom Notes" {
+			hasCustomNotes = true
 			break
 		}
 	}
-
-	if _, err := os.Stat(filepath.Join(t.RootDir, "Cargo.toml")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Rust")
-		invariants = append(invariants, "Rust project")
+	if !hasCustomNotes {
+		sb.WriteString("## Custom Notes\n\n")
+		sb.WriteString("*Add project-specific notes here. This section is preserved across regenerations.*\n\n")
 	}
 
+	path := filepath.Join(t.GetFPFDir(), "context.md")
+	return os.WriteFile(path, []byte(sb.String()), 0644)
+}
+
+func (t *Tools) AnalyzeProject() (ProjectContext, error) {
+	pCtx := ProjectContext{}
+
+	pCtx.TechStack = t.detectTechStack()
+	pCtx.DRRInvariants, pCtx.DRRAntiPatterns = t.aggregateDRRContracts()
+
+	return pCtx, nil
+}
+
+
+func (t *Tools) detectTechStack() []string {
+	var stack []string
+
+	if _, err := os.Stat(filepath.Join(t.RootDir, "go.mod")); err == nil {
+		stack = append(stack, "Go")
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "package.json")); err == nil {
+		stack = append(stack, "Node.js")
+	}
+	pythonMarkers := []string{"requirements.txt", "pyproject.toml", "setup.py", "Pipfile"}
+	for _, marker := range pythonMarkers {
+		if _, err := os.Stat(filepath.Join(t.RootDir, marker)); err == nil {
+			stack = append(stack, "Python")
+			break
+		}
+	}
+	if _, err := os.Stat(filepath.Join(t.RootDir, "Cargo.toml")); err == nil {
+		stack = append(stack, "Rust")
+	}
 	if _, err := os.Stat(filepath.Join(t.RootDir, "pom.xml")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Java (Maven)")
-		invariants = append(invariants, "Maven project")
+		stack = append(stack, "Java (Maven)")
 	}
 	if _, err := os.Stat(filepath.Join(t.RootDir, "build.gradle")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Java/Kotlin (Gradle)")
-		invariants = append(invariants, "Gradle project")
+		stack = append(stack, "Java/Kotlin (Gradle)")
 	}
 	if _, err := os.Stat(filepath.Join(t.RootDir, "build.gradle.kts")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Kotlin (Gradle KTS)")
-		invariants = append(invariants, "Gradle Kotlin DSL project")
+		stack = append(stack, "Kotlin (Gradle KTS)")
 	}
-
 	if _, err := os.Stat(filepath.Join(t.RootDir, "Gemfile")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Ruby")
-		invariants = append(invariants, "Ruby project")
+		stack = append(stack, "Ruby")
 	}
-
 	if _, err := os.Stat(filepath.Join(t.RootDir, "Makefile")); err == nil {
-		ctx.TechStack = append(ctx.TechStack, "Make")
-		invariants = append(invariants, "Make-based build")
+		stack = append(stack, "Make")
 	}
 
-	if len(ctx.TechStack) == 0 {
-		if _, err := os.Stat(filepath.Join(t.RootDir, ".git")); err == nil {
-			ctx.TechStack = append(ctx.TechStack, "Unknown")
-			invariants = append(invariants, "Git repository (unknown project type)")
+	return stack
+}
+
+
+func (t *Tools) aggregateDRRContracts() ([]string, []string) {
+	var invariants, antiPatterns []string
+
+	decisionsDir := filepath.Join(t.GetFPFDir(), "decisions")
+	files, err := os.ReadDir(decisionsDir)
+	if err != nil {
+		return invariants, antiPatterns
+	}
+
+	resolvedDRRs := make(map[string]bool)
+	if t.DB != nil {
+		ctx := context.Background()
+		resolved, err := t.DB.GetResolvedDecisions(ctx, "implementation", 100)
+		if err == nil {
+			for _, d := range resolved {
+				resolvedDRRs[d.ID] = true
+			}
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(t.RootDir, "src")); err == nil {
-		vocab = append(vocab, "src: Source code directory")
-	}
-	if _, err := os.Stat(filepath.Join(t.RootDir, "internal")); err == nil {
-		vocab = append(vocab, "internal: Private Go packages")
-	}
-	if _, err := os.Stat(filepath.Join(t.RootDir, "cmd")); err == nil {
-		vocab = append(vocab, "cmd: Command-line entry points")
+	for _, f := range files {
+		if f.IsDir() || !strings.HasPrefix(f.Name(), "DRR-") || !strings.HasSuffix(f.Name(), ".md") {
+			continue
+		}
+
+		drrID := strings.TrimSuffix(f.Name(), ".md")
+		if len(resolvedDRRs) > 0 && !resolvedDRRs[drrID] {
+			continue
+		}
+
+		contract, err := t.getDRRContract(drrID)
+		if err != nil || contract == nil {
+			continue
+		}
+
+		for _, inv := range contract.GetLaws() {
+			invariants = append(invariants, inv)
+		}
+		for _, ap := range contract.GetAdmissibility() {
+			antiPatterns = append(antiPatterns, ap)
+		}
 	}
 
-	ctx.Vocabulary = strings.Join(vocab, ". ")
-	ctx.Invariants = strings.Join(invariants, ". ")
-
-	return ctx, nil
+	return invariants, antiPatterns
 }
 
 func (t *Tools) IsContextStale() (bool, []string) {
@@ -441,11 +585,94 @@ func (t *Tools) IsContextStale() (bool, []string) {
 		}
 	}
 
+	readmePath := filepath.Join(t.RootDir, "README.md")
+	if info, err := os.Stat(readmePath); err == nil {
+		if info.ModTime().After(contextMod) {
+			signals = append(signals, "README.md modified since last context update")
+		}
+	}
+
+	decisionsDir := filepath.Join(t.GetFPFDir(), "decisions")
+	if entries, err := os.ReadDir(decisionsDir); err == nil {
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "DRR-") && strings.HasSuffix(entry.Name(), ".md") {
+				info, err := entry.Info()
+				if err == nil && info.ModTime().After(contextMod) {
+					signals = append(signals, "New DRRs created since last context update")
+					break
+				}
+			}
+		}
+	}
+
 	if time.Since(contextMod) > 7*24*time.Hour {
 		signals = append(signals, fmt.Sprintf("Context is %d days old", int(time.Since(contextMod).Hours()/24)))
 	}
 
 	return len(signals) > 0, signals
+}
+
+func (t *Tools) CalculateContextMaturity() (string, []string) {
+	contextPath := filepath.Join(t.GetFPFDir(), "context.md")
+	content, err := os.ReadFile(contextPath)
+	if err != nil {
+		return "L0", []string{"Overview", "Tech Stack", "Structure", "Invariants (from DRRs)", "Custom Notes"}
+	}
+
+	contentStr := string(content)
+
+	sections := map[string]bool{
+		"Overview":             strings.Contains(contentStr, "## Overview"),
+		"Tech Stack":           strings.Contains(contentStr, "## Tech Stack"),
+		"Structure":            strings.Contains(contentStr, "## Structure"),
+		"Invariants (from DRRs)": strings.Contains(contentStr, "## Invariants (from DRRs)"),
+		"Custom Notes":         t.hasCustomNotesContent(contentStr),
+	}
+
+	var missing []string
+	present := 0
+	for name, exists := range sections {
+		if exists {
+			present++
+		} else {
+			missing = append(missing, name)
+		}
+	}
+
+	var maturity string
+	switch {
+	case present >= 5:
+		maturity = "L3"
+	case present >= 4:
+		maturity = "L2"
+	case present >= 2:
+		maturity = "L1"
+	default:
+		maturity = "L0"
+	}
+
+	return maturity, missing
+}
+
+func (t *Tools) hasCustomNotesContent(content string) bool {
+	lines := strings.Split(content, "\n")
+	inCustomNotes := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## Custom Notes") {
+			inCustomNotes = true
+			continue
+		}
+		if inCustomNotes {
+			if strings.HasPrefix(line, "## ") {
+				break
+			}
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "*Add project-specific notes") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t *Tools) GetStatus(ctx context.Context) (string, error) {

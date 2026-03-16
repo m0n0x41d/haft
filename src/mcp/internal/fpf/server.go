@@ -128,8 +128,31 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			Name:        "quint_internalize",
 			Description: "Unified entry point for FPF sessions. Initializes project if needed, checks for stale context, loads knowledge state, surfaces decaying evidence, and provides phase-appropriate guidance. Call this at the start of every session.",
 			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
+				"type": "object",
+				"properties": map[string]interface{}{
+					"remember": map[string]interface{}{
+						"type":        "object",
+						"description": "Store a fact in a category. Use for building up context. If category exists, content is appended.",
+						"properties": map[string]interface{}{
+							"category": map[string]string{"type": "string", "description": "Category name (e.g., 'tech_stack', 'invariants', 'notes')"},
+							"content":  map[string]string{"type": "string", "description": "Content to store or append"},
+						},
+						"required": []string{"category", "content"},
+					},
+					"forget": map[string]string{
+						"type":        "string",
+						"description": "Remove a category from context. Pass the category name to delete.",
+					},
+					"overwrite": map[string]interface{}{
+						"type":        "object",
+						"description": "Replace a category's content entirely. Use when you need to correct/update rather than append.",
+						"properties": map[string]interface{}{
+							"category": map[string]string{"type": "string", "description": "Category name to overwrite"},
+							"content":  map[string]string{"type": "string", "description": "New content (replaces existing)"},
+						},
+						"required": []string{"category", "content"},
+					},
+				},
 			},
 		},
 		{
@@ -247,6 +270,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"approach_type": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional approach classification for diversity tracking. Suggested values: conservative, novel, incremental, radical, hybrid. If all hypotheses in a context share the same approach_type, a diversity warning will be shown.",
+					},
+					"refines": map[string]interface{}{
+						"type":        "string",
+						"description": "ID of an L0 hypothesis this refines. Use when addressing REFINE feedback to create a refined version linked to the original. Target must be L0 and not already refined. Decision context inherited from target if not provided.",
 					},
 				},
 				"required": []string{"title", "content", "scope", "kind", "rationale", "decision_context"},
@@ -404,7 +431,23 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 
 	switch params.Name {
 	case "quint_internalize":
-		output, err = s.tools.Internalize(ctx)
+		input := InternalizeInput{}
+		if rem, ok := params.Arguments["remember"].(map[string]interface{}); ok {
+			input.Remember = &ContextFactInput{
+				Category: rem["category"].(string),
+				Content:  rem["content"].(string),
+			}
+		}
+		if forget, ok := params.Arguments["forget"].(string); ok && forget != "" {
+			input.Forget = forget
+		}
+		if ow, ok := params.Arguments["overwrite"].(map[string]interface{}); ok {
+			input.Overwrite = &ContextFactInput{
+				Category: ow["category"].(string),
+				Content:  ow["content"].(string),
+			}
+		}
+		output, err = s.tools.Internalize(ctx, input)
 
 	case "quint_search":
 		limit := 10
@@ -457,7 +500,8 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			dependencyCL = int(cl)
 		}
 		approachType := arg("approach_type")
-		output, err = s.tools.ProposeHypothesis(ctx, arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL, approachType)
+		refines := arg("refines")
+		output, err = s.tools.ProposeHypothesis(ctx, arg("title"), arg("content"), arg("scope"), arg("kind"), arg("rationale"), decisionContext, dependsOn, dependencyCL, approachType, refines)
 
 	case "quint_verify":
 		output, err = s.tools.VerifyHypothesis(ctx, arg("hypothesis_id"), arg("checks_json"), arg("verdict"), arg("carrier_files"))

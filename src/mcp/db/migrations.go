@@ -194,6 +194,11 @@ var migrations = []struct {
 		description: "Context facts: DB-backed storage for context.md projection",
 		sql:         "", // Applied as individual statements below (migration12Statements)
 	},
+	{
+		version:     13,
+		description: "v5 artifact model: artifacts, links, evidence items, affected files, FTS5",
+		sql:         "", // Applied as individual statements below (migration13Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -226,6 +231,85 @@ var migration12Statements = []string{
 		content TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`,
+}
+
+var migration13Statements = []string{
+	// Core artifact table — all v5 artifact types share this
+	`CREATE TABLE IF NOT EXISTS artifacts (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL,
+		version INTEGER NOT NULL DEFAULT 1,
+		status TEXT NOT NULL DEFAULT 'active',
+		context TEXT,
+		mode TEXT,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		file_path TEXT,
+		valid_until TEXT,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`,
+
+	// Links between artifacts
+	`CREATE TABLE IF NOT EXISTS artifact_links (
+		source_id TEXT NOT NULL REFERENCES artifacts(id),
+		target_id TEXT NOT NULL REFERENCES artifacts(id),
+		link_type TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (source_id, target_id, link_type)
+	)`,
+
+	// Evidence items (v5 model)
+	`CREATE TABLE IF NOT EXISTS evidence_items (
+		id TEXT PRIMARY KEY,
+		artifact_ref TEXT NOT NULL REFERENCES artifacts(id),
+		type TEXT NOT NULL,
+		content TEXT NOT NULL,
+		verdict TEXT,
+		carrier_ref TEXT,
+		congruence_level INTEGER DEFAULT 3,
+		formality_level INTEGER DEFAULT 5,
+		valid_until TEXT,
+		created_at TEXT NOT NULL
+	)`,
+
+	// Affected files tracking per artifact
+	`CREATE TABLE IF NOT EXISTS affected_files (
+		artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+		file_path TEXT NOT NULL,
+		file_hash TEXT,
+		PRIMARY KEY (artifact_id, file_path)
+	)`,
+
+	// FTS5 for full-text search over v5 artifacts
+	`CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(
+		id, title, content, kind,
+		tokenize='porter unicode61'
+	)`,
+
+	// Triggers to keep FTS5 in sync
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
+		INSERT INTO artifacts_fts(id, title, content, kind)
+		VALUES (new.id, new.title, new.content, new.kind);
+	END`,
+
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_update AFTER UPDATE ON artifacts BEGIN
+		DELETE FROM artifacts_fts WHERE id = old.id;
+		INSERT INTO artifacts_fts(id, title, content, kind)
+		VALUES (new.id, new.title, new.content, new.kind);
+	END`,
+
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_delete AFTER DELETE ON artifacts BEGIN
+		DELETE FROM artifacts_fts WHERE id = old.id;
+	END`,
+
+	// Indexes
+	"CREATE INDEX IF NOT EXISTS idx_artifacts_kind ON artifacts(kind)",
+	"CREATE INDEX IF NOT EXISTS idx_artifacts_context ON artifacts(context)",
+	"CREATE INDEX IF NOT EXISTS idx_artifacts_status ON artifacts(status)",
+	"CREATE INDEX IF NOT EXISTS idx_artifact_links_target ON artifact_links(target_id, link_type)",
+	"CREATE INDEX IF NOT EXISTS idx_evidence_items_ref ON evidence_items(artifact_ref)",
+	"CREATE INDEX IF NOT EXISTS idx_affected_files_path ON affected_files(file_path)",
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
@@ -345,6 +429,15 @@ func RunMigrations(conn *sql.DB) error {
 		} else if m.version == 12 {
 			// Special handling for migration 12 (Context Facts)
 			for _, stmt := range migration12Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 13 {
+			// v5 artifact model
+			for _, stmt := range migration13Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)

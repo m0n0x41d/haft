@@ -107,6 +107,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  ✓ Installed %d slash commands (%s)\n", count, destPath)
 		}
+		if skillPath, err := installFPFSkill("claude", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed FPF skill (%s)\n", skillPath)
+		}
 	}
 
 	if initCursor {
@@ -120,6 +125,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ⚠ Failed to install Cursor commands: %v\n", err)
 		} else {
 			fmt.Printf("  ✓ Installed %d slash commands (%s)\n", count, destPath)
+		}
+		if skillPath, err := installFPFSkill("cursor", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed FPF skill (%s)\n", skillPath)
 		}
 	}
 

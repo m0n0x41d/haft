@@ -321,6 +321,95 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"action"},
 			},
 		})
+		tools = append(tools, Tool{
+			Name:        "quint_decision",
+			Description: "Finalize a decision with full rationale, or generate an implementation brief. Actions: 'decide' creates a DecisionRecord with invariants, pre/post-conditions, rollback plan, and refresh triggers. 'apply' generates an implementation brief from an existing decision.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"decide", "apply"},
+						"description": "decide=create DecisionRecord, apply=generate implementation brief",
+					},
+					"selected_title": map[string]string{
+						"type":        "string",
+						"description": "(decide) Name of the selected variant",
+					},
+					"why_selected": map[string]string{
+						"type":        "string",
+						"description": "(decide) Why this variant was chosen",
+					},
+					"why_not_others": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"variant": map[string]string{"type": "string"},
+								"reason":  map[string]string{"type": "string"},
+							},
+						},
+						"description": "(decide) Why each rejected variant was not selected",
+					},
+					"invariants": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) What MUST hold at all times",
+					},
+					"pre_conditions": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) What MUST be true before implementation",
+					},
+					"post_conditions": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) What MUST be true after implementation",
+					},
+					"admissibility": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) What is NOT acceptable",
+					},
+					"evidence_requirements": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) What to measure/prove during implementation",
+					},
+					"rollback": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"triggers":     map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+							"steps":        map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+							"blast_radius": map[string]string{"type": "string"},
+						},
+						"description": "(decide) When and how to reverse",
+					},
+					"refresh_triggers": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) When to re-evaluate this decision",
+					},
+					"weakest_link": map[string]string{
+						"type":        "string",
+						"description": "(decide) What bounds this decision's reliability",
+					},
+					"problem_ref": map[string]string{
+						"type": "string", "description": "(decide) ProblemCard ID",
+					},
+					"portfolio_ref": map[string]string{
+						"type": "string", "description": "(decide) SolutionPortfolio ID",
+					},
+					"decision_ref": map[string]string{
+						"type": "string", "description": "(apply) DecisionRecord ID to generate brief from",
+					},
+					"valid_until": map[string]string{
+						"type": "string", "description": "(decide) Expiry date (RFC3339)",
+					},
+					"affected_files": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) Files affected by this decision",
+					},
+					"context": map[string]string{"type": "string", "description": "Optional context name"},
+					"mode":    map[string]string{"type": "string", "description": "(decide) tactical, standard (default), deep"},
+				},
+				"required": []string{"action"},
+			},
+		})
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

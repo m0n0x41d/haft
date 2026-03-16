@@ -101,9 +101,149 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return handleQuintProblem(ctx, store, quintDir, params.Arguments)
 		case "quint_solution":
 			return handleQuintSolution(ctx, store, quintDir, params.Arguments)
+		case "quint_decision":
+			return handleQuintDecision(ctx, store, quintDir, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
+	}
+}
+
+func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+	action, _ := args["action"].(string)
+	contextName, _ := args["context"].(string)
+
+	switch action {
+	case "decide":
+		input := artifact.DecideInput{
+			Context: contextName,
+		}
+		if v, ok := args["selected_title"].(string); ok {
+			input.SelectedTitle = v
+		}
+		if v, ok := args["why_selected"].(string); ok {
+			input.WhySelected = v
+		}
+		if v, ok := args["weakest_link"].(string); ok {
+			input.WeakestLink = v
+		}
+		if v, ok := args["problem_ref"].(string); ok {
+			input.ProblemRef = v
+		}
+		if v, ok := args["portfolio_ref"].(string); ok {
+			input.PortfolioRef = v
+		}
+		if v, ok := args["valid_until"].(string); ok {
+			input.ValidUntil = v
+		}
+		if v, ok := args["mode"].(string); ok {
+			input.Mode = v
+		}
+
+		// Array fields
+		parseStringArray := func(key string) []string {
+			var result []string
+			if items, ok := args[key].([]interface{}); ok {
+				for _, item := range items {
+					if s, ok := item.(string); ok {
+						result = append(result, s)
+					}
+				}
+			}
+			return result
+		}
+
+		input.Invariants = parseStringArray("invariants")
+		input.PreConditions = parseStringArray("pre_conditions")
+		input.PostConditions = parseStringArray("post_conditions")
+		input.Admissibility = parseStringArray("admissibility")
+		input.EvidenceReqs = parseStringArray("evidence_requirements")
+		input.RefreshTriggers = parseStringArray("refresh_triggers")
+		input.AffectedFiles = parseStringArray("affected_files")
+
+		// Rollback
+		if rb, ok := args["rollback"].(map[string]interface{}); ok {
+			rollback := &artifact.RollbackSpec{}
+			if items, ok := rb["triggers"].([]interface{}); ok {
+				for _, item := range items {
+					if s, ok := item.(string); ok {
+						rollback.Triggers = append(rollback.Triggers, s)
+					}
+				}
+			}
+			if items, ok := rb["steps"].([]interface{}); ok {
+				for _, item := range items {
+					if s, ok := item.(string); ok {
+						rollback.Steps = append(rollback.Steps, s)
+					}
+				}
+			}
+			if v, ok := rb["blast_radius"].(string); ok {
+				rollback.BlastRadius = v
+			}
+			input.Rollback = rollback
+		}
+
+		// Why not others
+		if items, ok := args["why_not_others"].([]interface{}); ok {
+			for _, item := range items {
+				if m, ok := item.(map[string]interface{}); ok {
+					rr := artifact.RejectionReason{}
+					if v, ok := m["variant"].(string); ok {
+						rr.Variant = v
+					}
+					if v, ok := m["reason"].(string); ok {
+						rr.Reason = v
+					}
+					input.WhyNotOthers = append(input.WhyNotOthers, rr)
+				}
+			}
+		}
+
+		// Auto-detect refs
+		if input.PortfolioRef == "" {
+			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
+			if p != nil {
+				input.PortfolioRef = p.Meta.ID
+			}
+		}
+		if input.ProblemRef == "" {
+			p, _ := artifact.FindActiveProblem(ctx, store, contextName)
+			if p != nil {
+				input.ProblemRef = p.Meta.ID
+			}
+		}
+
+		a, filePath, err := artifact.Decide(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatDecisionResponse("decide", a, filePath, "", navStrip), nil
+
+	case "apply":
+		decisionRef, _ := args["decision_ref"].(string)
+
+		// Auto-detect if not provided
+		if decisionRef == "" {
+			decisions, _ := store.ListByKind(ctx, artifact.KindDecisionRecord, 1)
+			if len(decisions) > 0 {
+				decisionRef = decisions[0].Meta.ID
+			} else {
+				navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+				return "No DecisionRecord found.\nUse /q-decide to finalize a decision first.\n" + navStrip, nil
+			}
+		}
+
+		brief, err := artifact.Apply(ctx, store, decisionRef)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatDecisionResponse("apply", nil, "", brief, navStrip), nil
+
+	default:
+		return "", fmt.Errorf("unknown action %q — use 'decide' or 'apply'", action)
 	}
 }
 

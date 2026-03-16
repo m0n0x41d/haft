@@ -1,200 +1,166 @@
 <img src="assets/banner.svg" alt="Quint Code" width="600">
 
-**Structured reasoning for AI coding tools** — make better decisions, remember why you made them.
+**Frame problems. Compare options fairly. Know when your decisions need revisiting.**
 
-**Supports:** Claude Code, Cursor, Gemini CLI, Codex CLI
-
-## What Quint Does
-
-### 1. Makes You and AI Think Structurally
-Instead of jumping to conclusions and solutions, your AI generates competing hypotheses, checks them logically, tests against evidence, then you decide. Everything is in your plain sight. 
-
-### 2. Preserves Every Decision And Related Evidence
-No more archaeology in chat history. Decisions live in `.quint/` —
-queryable, auditable, yours.
+Supports: Claude Code, Cursor, Gemini CLI, Codex CLI
 
 ---
 
-### Example: Handling Payment Confirmations
+## What Quint Code Does
 
-Your checkout works. Stripe charges the card.
-But three weeks later, finance finds $12,000 in "ghost payments" —
-customers charged but never got access.
+Quint Code is an FPF-native reasoning layer for engineering decisions. It helps you:
 
-The webhook endpoint returned 200. Logs look clean.
-What went wrong?
+1. **Frame the actual problem** before jumping to solutions
+2. **Compare options in a fair characteristic space** instead of arguing on vibes
+3. **Record decisions with invariants, rollback plans, and refresh triggers**
+4. **Detect when reasoning goes stale** and needs revisiting
 
-#### Without Quint
-
-Your AI suggests: *"Just add a webhook endpoint that activates the subscription"*
-
-You ship it. It works in testing. Production looks fine.
-
-Until it doesn't. Webhooks fail silently. Your endpoint timed out during a DB hiccup. Stripe retried, you processed it twice. A network blip ate three webhooks completely.
-
-Now you're debugging production with no record of why you built it this way.
-
-#### With Quint
-
-```
-You: /q1-hypothesize handle stripe payment confirmation
-```
-
-AI generates competing approaches:
-
-| # | Approach | Risk | Recovery |
-|---|----------|------|----------|
-| H1 | Webhook-only | Silent failures, no detection | None without manual audit |
-| H2 | Webhook + sync processing | Timeout = lost event, retries = duplicates | Stripe retry (3 days) |
-| H3 | Webhook → Queue + Polling backup | Complex, two code paths | Self-healing |
-
-```
-You: /q2-verify
-```
-
-AI checks each hypothesis:
-- **H1 fails:** "No mechanism detects missed webhooks"
-- **H2 partial:** "Idempotency key needed, still misses network failures"
-- **H3 passes:** "Polling catches what webhooks miss, queue handles spikes"
-
-```
-You: /q5-decide
-
-AI: Which hypothesis should we proceed with?
-
-You: H3
-
-AI: Decision recorded.
-```
-
-```
-Decision: H3 — Async queue + 15-min polling reconciliation
-
-Rationale:
-- Webhook acknowledges immediately (200 in <100ms)
-- Background job processes with idempotency check
-- Polling job catches silent failures
-- Accepted tradeoff: 15-min max delay for edge cases
-
-Evidence: Stripe docs recommend polling backup.
-Review trigger: If webhook success rate drops below 99%
-```
-
-#### 3 weeks later
-
-Finance asks: *"Why do we poll every 15 minutes? Can we remove it?"*
-
-```
-You: /q-query payment confirmation architecture
-```
-
-```
-Decision: 2024-01-15 — H3 selected over webhook-only
-
-Key evidence:
-- Stripe admits webhook delivery "not guaranteed"
-- Polling catches ~0.3% of transactions (measured)
-- Removing polling = ~$400/month in silent failures
-
-Recommendation: Keep polling. Document in runbook.
-```
-
-**The decision context survives. No archaeology needed.**
+Everything lives in `.quint/` as git-tracked markdown files. Searchable. Auditable. Yours.
 
 ---
 
 ## Quick Start
 
-### Step 1: Install the Binary
-
 ```bash
+# Install
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
-```
 
-Or build from source:
-
-```bash
-git clone https://github.com/m0n0x41d/quint-code.git
-cd quint-code/src/mcp
-go build -o quint-code .
-sudo mv quint-code /usr/local/bin/
-```
-
-### Step 2: Initialize a Project
-
-```bash
-cd /path/to/your/project
+# Initialize in your project
+cd your-project
 quint-code init
+
+# Start using
+# /q-note   — capture a quick decision
+# /q-frame  — frame a problem properly
+# /q-reason — structured FPF reasoning
 ```
 
-This creates:
-
-- `.quint/` — knowledge base, evidence, decisions
-- `.mcp.json` — MCP server configuration
-- `~/.claude/commands/` — slash commands (global by default)
-
-**Flags:**
-
-| Flag | MCP Config | Commands |
-|------|-----------|----------|
-| `--claude` (default) | `.mcp.json` | `~/.claude/commands/*.md` |
-| `--cursor` | `.cursor/mcp.json` | `~/.cursor/commands/*.md` |
-| `--gemini` | `~/.gemini/settings.json` | `~/.gemini/commands/*.toml` |
-| `--codex` | `~/.codex/config.toml`* | `~/.codex/prompts/*.md` |
-| `--all` | All of the above | All of the above |
-| `--local` | — | Commands in project dir instead of global |
-
-> **\* Codex CLI limitation:** Codex [doesn't support per-project MCP configuration](https://github.com/openai/codex/issues/2628). Run `quint-code init --codex` in **each project before starting work to switch the active project in global codex mcp config**.
-
-### Step 3: Start Reasoning
-
-In your AI chat (Claude Code, Cursor, etc.):
-
-```
-/q-internalize                     # Orient yourself (init if needed)
-/q1-hypothesize "Your problem..."  # Generate hypotheses
-```
-
-> **Pro tip:** For best results, see [Advanced Setup](docs/advanced.md#agent-configuration) to optimize your AI's understanding of the reasoning process.
+---
 
 ## How It Works
 
-Quint Code implements the **[First Principles Framework (FPF)](https://github.com/ailev/FPF)** by Anatoly Levenchuk — a methodology for rigorous, auditable reasoning. The killer feature is turning the black box of AI reasoning into a transparent, evidence-backed audit trail.
+### Quick decisions: `/q-note`
 
-The core cycle follows three modes of inference:
+```
+Dev: "using RWMutex for session cache — contention <0.1% per load test"
 
-1. **Abduction** — Generate competing hypotheses (don't anchor on the first idea).
-2. **Deduction** — Verify logic and constraints (does the idea make sense?).
-3. **Induction** — Gather evidence through tests or research (does the idea work in reality?).
+Quint validates:
+  - Rationale provided? Yes
+  - Conflicts with active decisions? No
+  - Scope too large for a note? No
+  -> Recorded. Searchable. Linked to affected files.
+```
 
-Then, audit for bias, decide, and document the rationale in a durable record.
+### Tactical choices: `/q-frame` -> `/q-explore` -> `/q-decide`
 
-See [docs/fpf-engine.md](docs/fpf-engine.md) for the full breakdown.
+```
+/q-frame "Rate limiting on public API — scraper traffic causing degraded response times"
+/q-explore — generates 3 variants with weakest link per option
+/q-decide — records which variant, why, what to watch for, when to revisit
+```
 
-## Commands
+### Architectural decisions: full flow
 
-| Command | What It Does |
-|---------|--------------|
-| `/q-internalize` | **Start here.** Initialize, update context, show state. |
-| `/q1-hypothesize` | Generate competing ideas for a problem. |
-| `/q2-verify` | Check logic and constraints — does it make sense? |
-| `/q3-validate` | Test against evidence — does it actually work? |
-| `/q4-audit` | Check for bias and calculate confidence scores. |
-| `/q5-decide` | Pick the winner, record the rationale. |
-| `/q-implement` | Transform decision into implementation directive with constraints. |
-| `/q-resolve` | Record decision outcome (implemented/abandoned/superseded). |
-| `/q-audit` | Quick assurance visualization for any holon. |
-| `/q-query` | Search the project's knowledge base. |
-| `/q-reset` | Discard the current reasoning cycle. |
+```
+/q-frame    — define the problem, constraints, acceptance criteria
+/q-char     — define comparison dimensions (throughput, ops complexity, cost)
+/q-explore  — generate genuinely distinct variants with WLNK per option
+/q-compare  — fair parity comparison, Pareto front, non-dominated set
+/q-decide   — full DecisionRecord with invariants, pre/post-conditions, rollback
+/q-apply    — generate implementation brief from the decision
+```
 
-**Note:** `/q-internalize` replaces the old `/q0-init`, `/q-status`, `/q-actualize`, and `/q-decay` commands. It's your single entry point for every session.
+### When decisions go stale: `/q-refresh`
 
-## Documentation
+```
+/q-status   — shows what's expired, what needs attention
+/q-refresh  — waive (extend), reopen (new problem cycle), supersede, or deprecate
+```
 
-- [Quick Reference](docs/fpf-engine.md) — Commands and workflow
-- [Advanced: FPF Deep Dive](docs/advanced.md) — Theory, glossary, tuning
-- [Architecture](docs/architecture.md) — How it works under the hood
+---
+
+## 6 Tools, 11 Commands
+
+| Tool | What it does | Commands |
+|------|-------------|----------|
+| `quint_note` | Micro-decisions with validation | `/q-note` |
+| `quint_problem` | Frame problems, define comparison space | `/q-frame` `/q-char` `/q-problems` |
+| `quint_solution` | Explore variants, compare on Pareto front | `/q-explore` `/q-compare` |
+| `quint_decision` | Decide with full rationale, generate impl brief | `/q-decide` `/q-apply` |
+| `quint_refresh` | Detect stale decisions, manage lifecycle | `/q-refresh` |
+| `quint_query` | Search, status dashboard, file lookups | `/q-search` `/q-status` |
+
+Plus: `quint-code fpf search` for deep FPF methodology lookups.
+
+---
+
+## Decision Modes
+
+| Mode | When | What you get |
+|------|------|-------------|
+| **note** | Micro-decisions during coding | Note with rationale |
+| **tactical** | Reversible, < 2 weeks impact | Problem + Decision (light) |
+| **standard** | Most architectural decisions | Problem + Portfolio + Decision |
+| **deep** | Irreversible, cross-team, security | All standard + parity, runbook, refresh |
+
+---
+
+## What Gets Recorded
+
+Decisions are markdown files with YAML frontmatter in `.quint/`:
+
+```
+.quint/
+  notes/        — quick decisions
+  problems/     — framed problems
+  solutions/    — variant portfolios with comparison
+  decisions/    — full decision records
+  evidence/     — evidence packs
+  refresh/      — refresh reports
+  quint.db      — SQLite index for search and status
+```
+
+Every file is git-tracked, human-readable, and searchable via `quint_query`.
+
+---
+
+## DecisionRecord — The Crown Jewel
+
+A full DRR contains:
+
+- **Selected Variant** — what was chosen
+- **Why This, Not Others** — comparison table
+- **Invariants** — what MUST hold at all times
+- **Pre-conditions** — checklist before implementation
+- **Post-conditions** — definition of done
+- **Admissibility** — what is NOT acceptable
+- **Evidence Requirements** — what to measure
+- **Rollback Plan** — triggers, steps, blast radius
+- **Refresh Triggers** — when to re-evaluate
+- **Weakest Link** — what bounds reliability
+
+A new engineer reads this 6 months later and understands everything.
+
+---
+
+## How It Differs
+
+| | OpenSpec | BMAD | Quint Code |
+|---|---------|------|------------|
+| **Focus** | Spec before code | Agile workflow | Problem before spec |
+| **Upstream reasoning** | None | Weak (PRD) | Frame → characterize → compare → decide |
+| **Staleness tracking** | None | None | Refresh triggers, validity expiry |
+| **Artifact count** | 3 | 10+ | 6 |
+| **MCP tools** | N/A | N/A | 6 (hard cap) |
+| **Ceremony** | Low | High | Scales with decision importance |
+
+---
+
+## Requirements
+
+- Go 1.24+ (for building from source)
+- Any MCP-capable AI tool (Claude Code, Cursor, Gemini CLI, Codex CLI)
 
 ## License
 
-MIT License. FPF methodology by Anatoly Levenchuk.
+MIT

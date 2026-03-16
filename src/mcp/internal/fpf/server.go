@@ -410,6 +410,73 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"action"},
 			},
 		})
+		tools = append(tools, Tool{
+			Name:        "quint_refresh",
+			Description: "Detect stale decisions and manage their lifecycle. Actions: 'scan' finds expired/refresh-due decisions, 'waive' extends validity, 'reopen' starts new problem cycle, 'supersede' replaces with new decision, 'deprecate' marks as no longer relevant.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate"},
+						"description": "scan=find stale, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=remove",
+					},
+					"decision_ref": map[string]string{
+						"type":        "string",
+						"description": "DecisionRecord ID to act on (required for waive/reopen/supersede/deprecate)",
+					},
+					"reason": map[string]string{
+						"type":        "string",
+						"description": "Why this refresh action is being taken",
+					},
+					"new_valid_until": map[string]string{
+						"type":        "string",
+						"description": "(waive) New expiry date in RFC3339 format. Default: +90 days.",
+					},
+					"evidence": map[string]string{
+						"type":        "string",
+						"description": "(waive) Evidence supporting the extension",
+					},
+					"new_decision_ref": map[string]string{
+						"type":        "string",
+						"description": "(supersede) ID of the new decision replacing this one",
+					},
+				},
+				"required": []string{"action"},
+			},
+		})
+
+		tools = append(tools, Tool{
+			Name:        "quint_query",
+			Description: "Search past decisions, check status, find related artifacts. Actions: 'search' does FTS5 search, 'status' shows dashboard of active/stale/recent, 'related' finds decisions affecting a specific file.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"search", "status", "related"},
+						"description": "search=FTS5 keyword search, status=dashboard, related=by file path",
+					},
+					"query": map[string]string{
+						"type":        "string",
+						"description": "(search) Search terms",
+					},
+					"file": map[string]string{
+						"type":        "string",
+						"description": "(related) File path to find linked decisions",
+					},
+					"context": map[string]string{
+						"type":        "string",
+						"description": "Optional context filter",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "(search) Max results, default 20",
+					},
+				},
+				"required": []string{"action"},
+			},
+		})
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

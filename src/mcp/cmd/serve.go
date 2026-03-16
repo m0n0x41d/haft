@@ -103,9 +103,120 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return handleQuintSolution(ctx, store, quintDir, params.Arguments)
 		case "quint_decision":
 			return handleQuintDecision(ctx, store, quintDir, params.Arguments)
+		case "quint_refresh":
+			return handleQuintRefresh(ctx, store, quintDir, params.Arguments)
+		case "quint_query":
+			return handleQuintQuery(ctx, store, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
+	}
+}
+
+func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+	action, _ := args["action"].(string)
+	contextName, _ := args["context"].(string)
+	decisionRef, _ := args["decision_ref"].(string)
+	reason, _ := args["reason"].(string)
+
+	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+
+	switch artifact.RefreshAction(action) {
+	case artifact.RefreshScan:
+		items, err := artifact.ScanStale(ctx, store)
+		if err != nil {
+			return "", err
+		}
+		return artifact.FormatScanResponse(items, navStrip), nil
+
+	case artifact.RefreshWaive:
+		if decisionRef == "" {
+			return "decision_ref is required for waive.\n" + navStrip, nil
+		}
+		newValidUntil, _ := args["new_valid_until"].(string)
+		evidence, _ := args["evidence"].(string)
+		dec, err := artifact.WaiveDecision(ctx, store, quintDir, decisionRef, reason, newValidUntil, evidence)
+		if err != nil {
+			return "", err
+		}
+		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "waive", reason, fmt.Sprintf("Extended to %s", dec.Meta.ValidUntil))
+		return artifact.FormatRefreshActionResponse(artifact.RefreshWaive, dec, nil, navStrip), nil
+
+	case artifact.RefreshReopen:
+		if decisionRef == "" {
+			return "decision_ref is required for reopen.\n" + navStrip, nil
+		}
+		dec, newProb, err := artifact.ReopenDecision(ctx, store, quintDir, decisionRef, reason)
+		if err != nil {
+			return "", err
+		}
+		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
+		return artifact.FormatRefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
+
+	case artifact.RefreshSupersede:
+		if decisionRef == "" {
+			return "decision_ref is required for supersede.\n" + navStrip, nil
+		}
+		newDecRef, _ := args["new_decision_ref"].(string)
+		dec, err := artifact.SupersedeDecision(ctx, store, quintDir, decisionRef, newDecRef, reason)
+		if err != nil {
+			return "", err
+		}
+		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newDecRef))
+		return artifact.FormatRefreshActionResponse(artifact.RefreshSupersede, dec, nil, navStrip), nil
+
+	case artifact.RefreshDeprecate:
+		if decisionRef == "" {
+			return "decision_ref is required for deprecate.\n" + navStrip, nil
+		}
+		dec, err := artifact.DeprecateDecision(ctx, store, quintDir, decisionRef, reason)
+		if err != nil {
+			return "", err
+		}
+		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "deprecate", reason, "Decision deprecated")
+		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, dec, nil, navStrip), nil
+
+	default:
+		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', or 'deprecate'", action)
+	}
+}
+
+func handleQuintQuery(ctx context.Context, store *artifact.Store, args map[string]interface{}) (string, error) {
+	action, _ := args["action"].(string)
+	contextName, _ := args["context"].(string)
+
+	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+
+	switch action {
+	case "search":
+		query, _ := args["query"].(string)
+		limit := 20
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		result, err := artifact.QuerySearch(ctx, store, query, limit)
+		if err != nil {
+			return "", err
+		}
+		return result + navStrip, nil
+
+	case "status":
+		result, err := artifact.QueryStatus(ctx, store, contextName)
+		if err != nil {
+			return "", err
+		}
+		return result + navStrip, nil
+
+	case "related":
+		file, _ := args["file"].(string)
+		result, err := artifact.QueryRelated(ctx, store, file)
+		if err != nil {
+			return "", err
+		}
+		return result + navStrip, nil
+
+	default:
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', or 'related'", action)
 	}
 }
 

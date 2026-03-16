@@ -12,9 +12,6 @@ import (
 //go:embed commands/*.md
 var embeddedCommands embed.FS
 
-//go:embed skill/fpf/SKILL.md
-var embeddedFPFSkill []byte
-
 //go:embed skill/q-reason/SKILL.md
 var embeddedQReasonSkill []byte
 
@@ -172,52 +169,39 @@ func escapeTomlMultiline(s string) string {
 	return s
 }
 
-func installFPFSkill(platform string, local bool, projectRoot string) (string, error) {
+func installSkill(platform string, local bool, projectRoot string) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	skills := []struct {
-		name    string
-		content []byte
-	}{
-		{"q-reason", embeddedQReasonSkill},
-		{"fpf", embeddedFPFSkill},
-	}
-
-	var lastPath string
-	for _, skill := range skills {
-		var skillDir string
-		switch platform {
-		case "claude":
-			if local {
-				skillDir = filepath.Join(projectRoot, ".claude", "skills", skill.name)
-			} else {
-				skillDir = filepath.Join(homeDir, ".claude", "skills", skill.name)
-			}
-		case "cursor":
-			if local {
-				skillDir = filepath.Join(projectRoot, ".cursor", "skills", skill.name)
-			} else {
-				skillDir = filepath.Join(homeDir, ".cursor", "skills", skill.name)
-			}
-		default:
-			return "", nil
-		}
-
-		if err := os.MkdirAll(skillDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create skill directory %s: %w", skill.name, err)
-		}
-
-		destPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(destPath, skill.content, 0644); err != nil {
-			return "", fmt.Errorf("failed to write skill %s: %w", skill.name, err)
-		}
-
-		if strings.HasPrefix(skillDir, homeDir) {
-			lastPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+	var skillDir string
+	switch platform {
+	case "claude":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".claude", "skills", "q-reason")
 		} else {
-			lastPath = skillDir
+			skillDir = filepath.Join(homeDir, ".claude", "skills", "q-reason")
 		}
+	case "cursor":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".cursor", "skills", "q-reason")
+		} else {
+			skillDir = filepath.Join(homeDir, ".cursor", "skills", "q-reason")
+		}
+	default:
+		return "", nil
 	}
 
-	return lastPath, nil
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	destPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(destPath, embeddedQReasonSkill, 0644); err != nil {
+		return "", fmt.Errorf("failed to write skill: %w", err)
+	}
+
+	displayPath := skillDir
+	if strings.HasPrefix(skillDir, homeDir) {
+		displayPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+	}
+	return displayPath, nil
 }

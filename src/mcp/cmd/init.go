@@ -157,7 +157,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ⚠ Failed to install Codex prompts: %v\n", err)
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
-			fmt.Println("    Note: Use /prompts:q-internalize to invoke")
+			fmt.Println("    Note: Use /prompts:q-note to invoke")
 		}
 	}
 
@@ -166,11 +166,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 }
 
 func createDirectoryStructure(quintDir string) error {
+	// v5 artifact directories — created minimal, expanded on demand
 	dirs := []string{
-		"evidence",
+		"notes",
+		"problems",
+		"solutions",
 		"decisions",
-		"sessions",
-		"agents",
+		"evidence",
+		"refresh",
 	}
 
 	for _, d := range dirs {

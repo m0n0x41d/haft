@@ -303,6 +303,13 @@ func (s *Store) GetDependencies(ctx context.Context, sourceID string) ([]GetDepe
 	return s.q.GetDependencies(ctx, s.conn, sourceID)
 }
 
+func (s *Store) GetRelationsByTarget(ctx context.Context, targetID, relationType string) ([]Relation, error) {
+	return s.q.GetRelationsByTarget(ctx, s.conn, GetRelationsByTargetParams{
+		TargetID:     targetID,
+		RelationType: relationType,
+	})
+}
+
 func (s *Store) GetHolonsByParent(ctx context.Context, parentID string) ([]Holon, error) {
 	return s.q.GetHolonsByParent(ctx, s.conn, toNullString(parentID))
 }
@@ -1072,4 +1079,80 @@ func (s *Store) MarkPredictionCovered(ctx context.Context, predictionID, evidenc
 
 func (s *Store) CountUncoveredPredictions(ctx context.Context, holonID string) (int64, error) {
 	return s.q.CountUncoveredPredictions(ctx, s.conn, holonID)
+}
+
+// ============================================
+// CONTEXT FACTS METHODS (v5.2.0)
+// ============================================
+
+type ContextFact struct {
+	Category  string
+	Content   string
+	UpdatedAt time.Time
+}
+
+func (s *Store) UpsertContextFact(ctx context.Context, category, content string) error {
+	_, err := s.conn.ExecContext(ctx, `
+		INSERT INTO context_facts (category, content, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(category) DO UPDATE SET
+			content = excluded.content,
+			updated_at = CURRENT_TIMESTAMP`,
+		category, content)
+	return err
+}
+
+func (s *Store) AppendContextFact(ctx context.Context, category, content string) error {
+	_, err := s.conn.ExecContext(ctx, `
+		INSERT INTO context_facts (category, content, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(category) DO UPDATE SET
+			content = context_facts.content || char(10) || excluded.content,
+			updated_at = CURRENT_TIMESTAMP`,
+		category, content)
+	return err
+}
+
+func (s *Store) DeleteContextFact(ctx context.Context, category string) error {
+	_, err := s.conn.ExecContext(ctx, `DELETE FROM context_facts WHERE category = ?`, category)
+	return err
+}
+
+func (s *Store) GetAllContextFacts(ctx context.Context) ([]ContextFact, error) {
+	rows, err := s.conn.QueryContext(ctx, `
+		SELECT category, content, updated_at
+		FROM context_facts
+		ORDER BY category`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var facts []ContextFact
+	for rows.Next() {
+		var f ContextFact
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&f.Category, &f.Content, &updatedAt); err != nil {
+			continue
+		}
+		if updatedAt.Valid {
+			f.UpdatedAt = updatedAt.Time
+		}
+		facts = append(facts, f)
+	}
+	return facts, rows.Err()
+}
+
+func (s *Store) GetContextFact(ctx context.Context, category string) (ContextFact, error) {
+	var f ContextFact
+	var updatedAt sql.NullTime
+	err := s.conn.QueryRowContext(ctx, `
+		SELECT category, content, updated_at
+		FROM context_facts
+		WHERE category = ?`,
+		category).Scan(&f.Category, &f.Content, &updatedAt)
+	if updatedAt.Valid {
+		f.UpdatedAt = updatedAt.Time
+	}
+	return f, err
 }

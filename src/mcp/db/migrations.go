@@ -189,6 +189,11 @@ var migrations = []struct {
 		description: "Approach type: add approach_type to holons for NQD-CAL diversity tracking",
 		sql:         "", // Applied as individual statements below (migration11Statements)
 	},
+	{
+		version:     12,
+		description: "Context facts: DB-backed storage for context.md projection",
+		sql:         "", // Applied as individual statements below (migration12Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -213,6 +218,14 @@ var migration10Statements = []string{
 var migration11Statements = []string{
 	"ALTER TABLE holons ADD COLUMN approach_type TEXT DEFAULT NULL",
 	"CREATE INDEX IF NOT EXISTS idx_holons_approach_type ON holons(approach_type)",
+}
+
+var migration12Statements = []string{
+	`CREATE TABLE IF NOT EXISTS context_facts (
+		category TEXT PRIMARY KEY,
+		content TEXT NOT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`,
 }
 
 // migration7Statements contains the ALTER TABLE statements for Code Change Awareness.
@@ -325,6 +338,15 @@ func RunMigrations(conn *sql.DB) error {
 			for _, stmt := range migration11Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 12 {
+			// Special handling for migration 12 (Context Facts)
+			for _, stmt := range migration12Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
 					}
 				}

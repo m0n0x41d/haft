@@ -115,8 +115,12 @@ func FrameProblem(ctx context.Context, store *Store, quintDir string, input Prob
 		Body: body.String(),
 	}
 
-	// Archive recall: search for related past artifacts
-	if recall := recallRelated(ctx, store, input.Title); recall != "" {
+	// Archive recall: search by title + signal for better recall
+	recallQuery := input.Title
+	if input.Signal != "" {
+		recallQuery += " " + input.Signal
+	}
+	if recall := recallRelated(ctx, store, recallQuery); recall != "" {
 		a.Body += recall
 	}
 
@@ -296,8 +300,13 @@ func FormatProblemResponse(action string, a *Artifact, filePath string, navStrip
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
 		if a.Meta.Mode == ModeStandard || a.Meta.Mode == ModeDeep {
-			sb.WriteString(fmt.Sprintf("\nValidate this signal with evidence before exploring. Run tests, check metrics, research data.\n"))
+			sb.WriteString("\nValidate this signal with evidence before exploring. Run tests, check metrics, research data.\n")
 			sb.WriteString(fmt.Sprintf("  quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"measurement\", evidence_verdict=\"supports\")\n", a.Meta.ID))
+		}
+		// Surface recall in response if present in body
+		if strings.Contains(a.Body, "## Related History") {
+			idx := strings.Index(a.Body, "## Related History")
+			sb.WriteString("\n" + a.Body[idx:])
 		}
 	case "characterize":
 		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))

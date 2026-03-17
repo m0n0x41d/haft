@@ -535,14 +535,14 @@ func wordSet(text string) map[string]bool {
 	return set
 }
 
-// recallRelated searches for existing active artifacts related to the given title.
-// Returns a markdown section or empty string if no matches found.
-func recallRelated(ctx context.Context, store *Store, title string) string {
-	if store == nil || title == "" {
+// recallRelated searches for existing active artifacts related to the given query.
+// Pass title + signal for better recall. Returns a markdown section or empty string.
+func recallRelated(ctx context.Context, store *Store, query string) string {
+	if store == nil || query == "" {
 		return ""
 	}
 
-	results, err := store.Search(ctx, title, 5)
+	results, err := store.Search(ctx, query, 5)
 	if err != nil || len(results) == 0 {
 		return ""
 	}

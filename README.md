@@ -15,7 +15,7 @@ Quint Code is an FPF-native reasoning layer for engineering decisions. It helps 
 3. **Record decisions with invariants, rollback plans, and refresh triggers**
 4. **Detect when decisions go stale** — expired validity is surfaced automatically
 
-Everything lives in `.quint/` as git-tracked markdown files. SQLite provides search and status. Both are written on every operation.
+**Storage model:** SQLite is the source of truth for the engine (search, stale detection, link traversal, WLNK). Markdown files in `.quint/` are written as git-friendly projections — readable, diffable, portable, but not what the engine reads. See [why DB is primary](#why-db-is-primary).
 
 ---
 
@@ -140,6 +140,31 @@ A full DRR contains:
 - **Weakest Link** — what bounds reliability
 
 A new engineer reads this 6 months later and understands everything.
+
+---
+
+## Why DB Is Primary
+
+Quint Code uses SQLite as the engine's source of truth, not the markdown files. This isn't an accident — it follows from what the product does.
+
+**The lemniscate cycle requires computation, not file reading.** Stale detection scans `valid_until` across all artifacts. WLNK summary aggregates evidence items with min-CL and freshness. Search uses FTS5 indexes. Status computes derived state from artifact completeness. Link traversal finds what problem a decision is based on. All of these are SQL operations — indexed, transactional, fast.
+
+If files were primary, every tool call would parse N markdown files, build an in-memory graph, and hope nothing is malformed. That's slow, fragile, and non-atomic.
+
+**FPF distinction: Object ≠ Carrier.** The artifact model (the object — its state, links, evidence) lives in the DB. The markdown file (the carrier — human-readable, git-tracked) is a projection. Confusing the carrier with the object is the exact anti-pattern FPF warns about: treating the description as the thing it describes.
+
+**What the files are for:**
+- Git history — who changed what decision, when
+- Human review — read a DRR without running Quint
+- Code review — PRs include decision artifacts as readable diffs
+- Portability — copy `.quint/` to another machine
+
+**What the files are NOT for:**
+- Engine queries (use `quint_query`)
+- Stale detection (use `quint_refresh`)
+- Link traversal (use `quint_query(action="related")`)
+
+If you manually edit a `.quint/*.md` file, the DB won't know. The engine will continue using the DB version. A future `sync` command may reimport edited files.
 
 ---
 

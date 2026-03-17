@@ -407,8 +407,13 @@ func TestCompare_NoWarningsWhenFullCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if strings.Contains(a.Body, "Comparison Warnings") {
-		t.Error("should NOT have warnings when all dimensions covered")
+	// Parity checklist is always shown when characterization exists (advisory)
+	// But there should be NO dimension-mismatch or scoring-gap warnings
+	if strings.Contains(a.Body, "Characterized dimensions not in comparison") {
+		t.Error("should NOT have dimension mismatch warning when all covered")
+	}
+	if strings.Contains(a.Body, "missing scores") {
+		t.Error("should NOT have scoring gap warning when all scored")
 	}
 }
 
@@ -481,6 +486,57 @@ func TestCompare_WarnsOnAsymmetricScoring(t *testing.T) {
 
 	if !strings.Contains(a.Body, "CockroachDB missing scores") {
 		t.Errorf("should warn about CockroachDB missing cost score, body: %s", a.Body)
+	}
+}
+
+func TestCompare_ParityChecklist(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "DB choice", Signal: "Scale issues", Context: "data",
+	})
+	CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "throughput"},
+			{Name: "cost"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			{Title: "Postgres", WeakestLink: "sharding"},
+			{Title: "CockroachDB", WeakestLink: "cost"},
+		},
+	})
+
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "cost"},
+			Scores: map[string]map[string]string{
+				"Postgres":    {"throughput": "50k/s", "cost": "$200"},
+				"CockroachDB": {"throughput": "100k/s", "cost": "$800"},
+			},
+			NonDominatedSet: []string{"Postgres", "CockroachDB"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have parity checklist for each dimension
+	if !strings.Contains(a.Body, "Parity checklist") {
+		t.Error("should have parity checklist")
+	}
+	if !strings.Contains(a.Body, "throughput") || !strings.Contains(a.Body, "same conditions") {
+		t.Error("should have parity question for throughput")
+	}
+	if !strings.Contains(a.Body, "cost") {
+		t.Error("should have parity question for cost")
 	}
 }
 

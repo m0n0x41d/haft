@@ -322,14 +322,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "quint_decision",
-			Description: "Finalize a decision with full rationale, or generate an implementation brief. Actions: 'decide' creates a DecisionRecord with invariants, pre/post-conditions, rollback plan, and refresh triggers. 'apply' generates an implementation brief from an existing decision.",
+			Description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"decide", "apply"},
-						"description": "decide=create DecisionRecord, apply=generate implementation brief",
+						"enum":        []interface{}{"decide", "apply", "measure", "evidence"},
+						"description": "decide=create DRR, apply=impl brief, measure=record impact, evidence=attach evidence item",
 					},
 					"selected_title": map[string]string{
 						"type":        "string",
@@ -402,6 +402,42 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"affected_files": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) Files affected by this decision",
+					},
+					"findings": map[string]string{
+						"type": "string", "description": "(measure) What actually happened after implementation",
+					},
+					"criteria_met": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(measure) Acceptance criteria that were met",
+					},
+					"criteria_not_met": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(measure) Acceptance criteria NOT met",
+					},
+					"measurements": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(measure) Measured values (e.g., 'p99 latency: 42ms')",
+					},
+					"verdict": map[string]string{
+						"type": "string", "description": "(measure) accepted, partial, or failed",
+					},
+					"artifact_ref": map[string]string{
+						"type": "string", "description": "(evidence) Artifact ID to attach evidence to",
+					},
+					"evidence_content": map[string]string{
+						"type": "string", "description": "(evidence) The evidence itself",
+					},
+					"evidence_type": map[string]string{
+						"type": "string", "description": "(evidence) measurement, test, research, benchmark, audit",
+					},
+					"evidence_verdict": map[string]string{
+						"type": "string", "description": "(evidence) supports, weakens, refutes",
+					},
+					"carrier_ref": map[string]string{
+						"type": "string", "description": "(evidence) File path or URL of evidence source",
+					},
+					"congruence_level": map[string]interface{}{
+						"type": "integer", "description": "(evidence) CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed",
 					},
 					"context": map[string]string{"type": "string", "description": "Optional context name"},
 					"mode":    map[string]string{"type": "string", "description": "(decide) tactical, standard (default), deep"},

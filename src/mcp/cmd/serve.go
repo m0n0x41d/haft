@@ -503,8 +503,91 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
 		return artifact.FormatDecisionResponse("apply", nil, "", brief, navStrip), nil
 
+	case "measure":
+		input := artifact.MeasureInput{}
+		if v, ok := args["decision_ref"].(string); ok {
+			input.DecisionRef = v
+		}
+		if v, ok := args["findings"].(string); ok {
+			input.Findings = v
+		}
+		if v, ok := args["verdict"].(string); ok {
+			input.Verdict = v
+		}
+		if items, ok := args["criteria_met"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.CriteriaMet = append(input.CriteriaMet, s)
+				}
+			}
+		}
+		if items, ok := args["criteria_not_met"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.CriteriaNotMet = append(input.CriteriaNotMet, s)
+				}
+			}
+		}
+		if items, ok := args["measurements"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					input.Measurements = append(input.Measurements, s)
+				}
+			}
+		}
+		// Auto-detect decision
+		if input.DecisionRef == "" {
+			decisions, _ := store.ListByKind(ctx, artifact.KindDecisionRecord, 1)
+			if len(decisions) > 0 {
+				input.DecisionRef = decisions[0].Meta.ID
+			} else {
+				return "No DecisionRecord found.\n" + artifact.BuildNavStrip(ctx, store, contextName), nil
+			}
+		}
+
+		a, err := artifact.Measure(ctx, store, quintDir, input)
+		if err != nil {
+			return "", err
+		}
+		// Show WLNK summary after measurement
+		wlnk := artifact.ComputeWLNKSummary(ctx, store, a.Meta.ID)
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatDecisionResponse("measure", a, "", fmt.Sprintf("WLNK: %s\n", wlnk.Summary), navStrip), nil
+
+	case "evidence":
+		input := artifact.EvidenceInput{}
+		if v, ok := args["artifact_ref"].(string); ok {
+			input.ArtifactRef = v
+		}
+		if v, ok := args["evidence_content"].(string); ok {
+			input.Content = v
+		}
+		if v, ok := args["evidence_type"].(string); ok {
+			input.Type = v
+		}
+		if v, ok := args["evidence_verdict"].(string); ok {
+			input.Verdict = v
+		}
+		if v, ok := args["carrier_ref"].(string); ok {
+			input.CarrierRef = v
+		}
+		if cl, ok := args["congruence_level"].(float64); ok {
+			input.CongruenceLevel = int(cl)
+		}
+
+		item, err := artifact.AttachEvidence(ctx, store, input)
+		if err != nil {
+			return "", err
+		}
+
+		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatDecisionResponse("evidence", nil, "",
+			fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary),
+			navStrip), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'decide' or 'apply'", action)
+		return "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', or 'evidence'", action)
 	}
 }
 

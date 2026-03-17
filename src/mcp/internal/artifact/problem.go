@@ -30,10 +30,11 @@ type CharacterizeInput struct {
 
 // ComparisonDimension defines a single axis for comparing variants.
 type ComparisonDimension struct {
-	Name      string `json:"name"`
-	ScaleType string `json:"scale_type,omitempty"` // ordinal, ratio, nominal
-	Unit      string `json:"unit,omitempty"`
-	Polarity  string `json:"polarity,omitempty"` // higher_better, lower_better
+	Name         string `json:"name"`
+	ScaleType    string `json:"scale_type,omitempty"`    // ordinal, ratio, nominal
+	Unit         string `json:"unit,omitempty"`
+	Polarity     string `json:"polarity,omitempty"`      // higher_better, lower_better
+	Role         string `json:"role,omitempty"`           // constraint, target, observation (default: target)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
 }
 
@@ -162,9 +163,13 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Characterization v%d (%s)\n\n",
 		charVersion, time.Now().UTC().Format("2006-01-02")))
-	section.WriteString("| Dimension | Scale | Unit | Polarity | Measurement |\n")
-	section.WriteString("|-----------|-------|------|----------|-------------|\n")
+	section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement |\n")
+	section.WriteString("|-----------|------|-------|------|----------|-------------|\n")
 	for _, d := range input.Dimensions {
+		role := d.Role
+		if role == "" {
+			role = "target"
+		}
 		scale := d.ScaleType
 		if scale == "" {
 			scale = "-"
@@ -181,7 +186,7 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 		if measure == "" {
 			measure = "-"
 		}
-		section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n", d.Name, scale, unit, polarity, measure))
+		section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure))
 	}
 
 	if input.ParityRules != "" {

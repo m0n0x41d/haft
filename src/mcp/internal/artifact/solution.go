@@ -229,9 +229,9 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 			continue
 		}
 
-		// Extract characterized dimension names
-		charDims := extractCharacterizedDimensions(prob.Body)
-		if len(charDims) == 0 {
+		// Extract characterized dimensions with roles
+		charDimsWithRoles := extractCharacterizedDimensionsWithRoles(prob.Body)
+		if len(charDimsWithRoles) == 0 {
 			break
 		}
 
@@ -240,15 +240,17 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 		for _, d := range input.Results.Dimensions {
 			compareDimsLower[strings.ToLower(strings.TrimSpace(d))] = true
 		}
-		var missingDims []string
-		for _, cd := range charDims {
-			if !compareDimsLower[strings.ToLower(cd)] {
-				missingDims = append(missingDims, cd)
+		for _, cd := range charDimsWithRoles {
+			if !compareDimsLower[strings.ToLower(cd.Name)] {
+				severity := "missing"
+				if cd.Role == "constraint" {
+					severity = "CONSTRAINT missing"
+				} else if cd.Role == "observation" {
+					severity = "observation missing (informational)"
+				}
+				compareWarnings = append(compareWarnings,
+					fmt.Sprintf("Characterized dimension '%s' (%s) not in comparison", cd.Name, severity))
 			}
-		}
-		if len(missingDims) > 0 {
-			compareWarnings = append(compareWarnings,
-				fmt.Sprintf("Characterized dimensions not in comparison: %s", strings.Join(missingDims, ", ")))
 		}
 
 		// Check score completeness: are all variants scored on all dimensions?
@@ -271,12 +273,21 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 				"ProblemCard has parity rules defined — verify comparison respects them")
 		}
 
-		// Auto-generate parity checklist from characterized dimensions
-		if len(charDims) > 0 {
+		// Auto-generate parity checklist with role-aware language
+		if len(charDimsWithRoles) > 0 {
 			compareWarnings = append(compareWarnings, "Parity checklist (per characterized dimension):")
-			for _, d := range charDims {
-				compareWarnings = append(compareWarnings,
-					fmt.Sprintf("  - Is '%s' measured under the same conditions for all variants?", d))
+			for _, d := range charDimsWithRoles {
+				switch d.Role {
+				case "constraint":
+					compareWarnings = append(compareWarnings,
+						fmt.Sprintf("  - CONSTRAINT '%s': is it satisfied by all variants?", d.Name))
+				case "observation":
+					compareWarnings = append(compareWarnings,
+						fmt.Sprintf("  - OBSERVE '%s': monitored under same conditions? (don't optimize)", d.Name))
+				default:
+					compareWarnings = append(compareWarnings,
+						fmt.Sprintf("  - TARGET '%s': measured under same conditions for all variants?", d.Name))
+				}
 			}
 		}
 
@@ -356,10 +367,30 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 	return a, filePath, nil
 }
 
-// extractCharacterizedDimensions parses dimension names from the latest
+// charDim holds a parsed dimension with its indicator role.
+type charDim struct {
+	Name string
+	Role string // constraint, target, observation
+}
+
+// extractCharacterizedDimensions parses dimension names and roles from the latest
 // Characterization table in a ProblemCard body. Returns nil if no characterization found.
 func extractCharacterizedDimensions(body string) []string {
-	// Find the latest characterization version
+	dims := extractCharacterizedDimensionsWithRoles(body)
+	if dims == nil {
+		return nil
+	}
+	var names []string
+	for _, d := range dims {
+		names = append(names, d.Name)
+	}
+	return names
+}
+
+// extractCharacterizedDimensionsWithRoles parses dimension names and roles.
+// Table format: | Dimension | Role | Scale | Unit | Polarity | Measurement |
+// Old format (no Role column): | Dimension | Scale | Unit | Polarity | Measurement |
+func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 	lastIdx := -1
 	for i := 100; i >= 1; i-- {
 		marker := fmt.Sprintf("## Characterization v%d", i)
@@ -372,41 +403,52 @@ func extractCharacterizedDimensions(body string) []string {
 		return nil
 	}
 
-	// Extract the characterization section
 	section := body[lastIdx:]
 	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
 		section = section[:endIdx+1]
 	}
 
-	// Parse dimension names from markdown table rows
-	// Format: | Name | Scale | Unit | Polarity | Measurement |
-	var dims []string
+	var dims []charDim
 	lines := strings.Split(section, "\n")
 	inTable := false
+	hasRoleColumn := false
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
 			if inTable {
-				break // end of table
+				break
 			}
 			continue
 		}
-		// Skip header and separator rows
-		if strings.Contains(line, "Dimension") || strings.Contains(line, "---") {
+		if strings.Contains(line, "Dimension") {
+			hasRoleColumn = strings.Contains(line, "Role")
+			inTable = true
+			continue
+		}
+		if strings.Contains(line, "---") {
 			inTable = true
 			continue
 		}
 		if !inTable {
 			continue
 		}
-		// Extract first column (dimension name)
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) >= 3 {
-			name := strings.TrimSpace(parts[1])
-			if name != "" && name != "-" {
-				dims = append(dims, name)
+		parts := strings.Split(line, "|")
+		// parts[0] is empty (before first |), parts[1] is first column
+		if len(parts) < 3 {
+			continue
+		}
+		name := strings.TrimSpace(parts[1])
+		if name == "" || name == "-" {
+			continue
+		}
+		role := "target"
+		if hasRoleColumn && len(parts) >= 4 {
+			r := strings.TrimSpace(parts[2])
+			if r == "constraint" || r == "target" || r == "observation" {
+				role = r
 			}
 		}
+		dims = append(dims, charDim{Name: name, Role: role})
 	}
 	return dims
 }

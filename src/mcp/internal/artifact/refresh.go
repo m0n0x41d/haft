@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,13 +20,23 @@ const (
 )
 
 // RefreshInput is the input for refresh operations.
+// ArtifactRef accepts any artifact kind (notes, problems, decisions, etc.).
 type RefreshInput struct {
-	Action      RefreshAction `json:"action"`
-	DecisionRef string        `json:"decision_ref,omitempty"`
-	Reason      string        `json:"reason,omitempty"`
-	NewValidUntil string      `json:"new_valid_until,omitempty"`
-	Evidence    string        `json:"evidence,omitempty"`
-	Context     string        `json:"context,omitempty"`
+	Action        RefreshAction `json:"action"`
+	ArtifactRef   string        `json:"artifact_ref,omitempty"`
+	DecisionRef   string        `json:"decision_ref,omitempty"` // deprecated: use ArtifactRef
+	Reason        string        `json:"reason,omitempty"`
+	NewValidUntil string        `json:"new_valid_until,omitempty"`
+	Evidence      string        `json:"evidence,omitempty"`
+	Context       string        `json:"context,omitempty"`
+}
+
+// ResolveRef returns ArtifactRef if set, otherwise falls back to DecisionRef for backward compat.
+func (r RefreshInput) ResolveRef() string {
+	if r.ArtifactRef != "" {
+		return r.ArtifactRef
+	}
+	return r.DecisionRef
 }
 
 // StaleItem describes one stale artifact with details.
@@ -83,7 +94,7 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 				if t.Before(now) {
 					days := int(now.Sub(t).Hours() / 24)
 					item.DaysStale = days
-					item.Reason = fmt.Sprintf("expired %d day(s) ago (%s)", days, t.Format("2006-01-02"))
+					item.Reason = fmt.Sprintf("expired %d day(s) ago, debt: %.1f (%s)", days, float64(days), t.Format("2006-01-02"))
 				}
 			}
 		}
@@ -95,17 +106,20 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 		items = append(items, item)
 	}
 
+	// Sort by debt descending — most overdue first
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].DaysStale > items[j].DaysStale
+	})
+
 	return items, nil
 }
 
-// WaiveDecision extends a decision's validity with justification.
-func WaiveDecision(ctx context.Context, store *Store, quintDir string, decisionRef, reason, newValidUntil, evidence string) (*Artifact, error) {
-	a, err := store.Get(ctx, decisionRef)
+// WaiveArtifact extends an artifact's validity with justification.
+// Works on any artifact kind (notes, problems, decisions, etc.).
+func WaiveArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, reason, newValidUntil, evidence string) (*Artifact, error) {
+	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
-		return nil, fmt.Errorf("decision %s not found: %w", decisionRef, err)
-	}
-	if a.Meta.Kind != KindDecisionRecord {
-		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, a.Meta.Kind)
+		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
 	}
 
 	if newValidUntil == "" {
@@ -126,7 +140,7 @@ func WaiveDecision(ctx context.Context, store *Store, quintDir string, decisionR
 	a.Body += waiver
 
 	if err := store.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("update decision: %w", err)
+		return nil, fmt.Errorf("update artifact: %w", err)
 	}
 
 	writeFileQuiet(quintDir, a)
@@ -236,40 +250,36 @@ func ReopenDecision(ctx context.Context, store *Store, quintDir string, decision
 	return dec, newProb, nil
 }
 
-// SupersedeDecision marks a decision as superseded by another.
-func SupersedeDecision(ctx context.Context, store *Store, quintDir string, decisionRef, newDecisionRef, reason string) (*Artifact, error) {
-	a, err := store.Get(ctx, decisionRef)
+// SupersedeArtifact marks an artifact as superseded by another.
+// Works on any artifact kind (notes, problems, decisions, etc.).
+func SupersedeArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, newArtifactRef, reason string) (*Artifact, error) {
+	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
-		return nil, fmt.Errorf("decision %s not found: %w", decisionRef, err)
-	}
-	if a.Meta.Kind != KindDecisionRecord {
-		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, a.Meta.Kind)
+		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
 	}
 
 	a.Meta.Status = StatusSuperseded
 	a.Body += fmt.Sprintf("\n## Superseded (%s)\n\n**Replaced by:** %s\n**Reason:** %s\n",
-		time.Now().UTC().Format("2006-01-02"), newDecisionRef, reason)
+		time.Now().UTC().Format("2006-01-02"), newArtifactRef, reason)
 
 	if err := store.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("update decision: %w", err)
+		return nil, fmt.Errorf("update artifact: %w", err)
 	}
 
-	if newDecisionRef != "" {
-		store.AddLink(ctx, newDecisionRef, decisionRef, "supersedes")
+	if newArtifactRef != "" {
+		store.AddLink(ctx, newArtifactRef, artifactRef, "supersedes")
 	}
 
 	writeFileQuiet(quintDir, a)
 	return a, nil
 }
 
-// DeprecateDecision marks a decision as deprecated (no longer relevant).
-func DeprecateDecision(ctx context.Context, store *Store, quintDir string, decisionRef, reason string) (*Artifact, error) {
-	a, err := store.Get(ctx, decisionRef)
+// DeprecateArtifact marks an artifact as deprecated (no longer relevant).
+// Works on any artifact kind (notes, problems, decisions, etc.).
+func DeprecateArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, reason string) (*Artifact, error) {
+	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
-		return nil, fmt.Errorf("decision %s not found: %w", decisionRef, err)
-	}
-	if a.Meta.Kind != KindDecisionRecord {
-		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, a.Meta.Kind)
+		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
 	}
 
 	a.Meta.Status = StatusDeprecated
@@ -277,7 +287,7 @@ func DeprecateDecision(ctx context.Context, store *Store, quintDir string, decis
 		time.Now().UTC().Format("2006-01-02"), reason)
 
 	if err := store.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("update decision: %w", err)
+		return nil, fmt.Errorf("update artifact: %w", err)
 	}
 
 	writeFileQuiet(quintDir, a)

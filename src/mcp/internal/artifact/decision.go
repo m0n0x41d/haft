@@ -90,96 +90,153 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 		}
 	}
 
-	title := fmt.Sprintf("Decision: %s", input.SelectedTitle)
+	title := input.SelectedTitle
 
-	// Build the DRR markdown
+	// Build the DRR markdown — FPF E.9 four-component structure
 	var body strings.Builder
-	body.WriteString(fmt.Sprintf("# %s\n\n", title))
+	body.WriteString(fmt.Sprintf("# %s\n", title))
 
-	body.WriteString(fmt.Sprintf("## Selected Variant\n\n%s\n\n", input.SelectedTitle))
-	body.WriteString(fmt.Sprintf("## Why Selected\n\n%s\n\n", input.WhySelected))
+	// === Component 1: Problem Frame ===
+	body.WriteString("\n## 1. Problem Frame\n\n")
+	if input.ProblemRef != "" {
+		if prob, err := store.Get(ctx, input.ProblemRef); err == nil {
+			// Extract signal from problem body
+			if idx := strings.Index(prob.Body, "## Signal"); idx != -1 {
+				sigStart := idx + len("## Signal")
+				sigEnd := strings.Index(prob.Body[sigStart:], "\n## ")
+				var signal string
+				if sigEnd > 0 {
+					signal = strings.TrimSpace(prob.Body[sigStart : sigStart+sigEnd])
+				} else {
+					signal = strings.TrimSpace(prob.Body[sigStart:])
+				}
+				if signal != "" {
+					body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
+				}
+			}
+			// Extract constraints
+			if idx := strings.Index(prob.Body, "## Constraints"); idx != -1 {
+				cStart := idx + len("## Constraints")
+				cEnd := strings.Index(prob.Body[cStart:], "\n## ")
+				var constraints string
+				if cEnd > 0 {
+					constraints = strings.TrimSpace(prob.Body[cStart : cStart+cEnd])
+				} else {
+					constraints = strings.TrimSpace(prob.Body[cStart:])
+				}
+				if constraints != "" {
+					body.WriteString(fmt.Sprintf("**Constraints:**\n%s\n\n", constraints))
+				}
+			}
+			// Extract acceptance
+			if idx := strings.Index(prob.Body, "## Acceptance"); idx != -1 {
+				aStart := idx + len("## Acceptance")
+				aEnd := strings.Index(prob.Body[aStart:], "\n## ")
+				var acceptance string
+				if aEnd > 0 {
+					acceptance = strings.TrimSpace(prob.Body[aStart : aStart+aEnd])
+				} else {
+					acceptance = strings.TrimSpace(prob.Body[aStart:])
+				}
+				if acceptance != "" {
+					body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", acceptance))
+				}
+			}
+		}
+	}
 
+	// === Component 2: Decision (the contract) ===
+	body.WriteString("## 2. Decision\n\n")
+	body.WriteString(fmt.Sprintf("**Selected:** %s\n\n", input.SelectedTitle))
+	body.WriteString(fmt.Sprintf("%s\n", input.WhySelected))
+
+	if len(input.Invariants) > 0 {
+		body.WriteString("\n**Invariants:**\n")
+		for _, inv := range input.Invariants {
+			body.WriteString(fmt.Sprintf("- %s\n", inv))
+		}
+	}
+
+	if len(input.PreConditions) > 0 {
+		body.WriteString("\n**Pre-conditions:**\n")
+		for _, pc := range input.PreConditions {
+			body.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
+		}
+	}
+
+	if len(input.PostConditions) > 0 {
+		body.WriteString("\n**Post-conditions:**\n")
+		for _, pc := range input.PostConditions {
+			body.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
+		}
+	}
+
+	if len(input.Admissibility) > 0 {
+		body.WriteString("\n**Admissibility:**\n")
+		for _, a := range input.Admissibility {
+			body.WriteString(fmt.Sprintf("- NOT: %s\n", a))
+		}
+	}
+
+	// === Component 3: Rationale ===
+	body.WriteString("\n## 3. Rationale\n\n")
 	if len(input.WhyNotOthers) > 0 {
-		body.WriteString("## Why Not Others\n\n")
 		body.WriteString("| Variant | Verdict | Reason |\n")
 		body.WriteString("|---------|---------|--------|\n")
-		body.WriteString(fmt.Sprintf("| %s | Selected | %s |\n", input.SelectedTitle, truncate(input.WhySelected, 60)))
+		body.WriteString(fmt.Sprintf("| %s | **Selected** | %s |\n", input.SelectedTitle, truncate(input.WhySelected, 60)))
 		for _, r := range input.WhyNotOthers {
 			body.WriteString(fmt.Sprintf("| %s | Rejected | %s |\n", r.Variant, r.Reason))
 		}
 		body.WriteString("\n")
 	}
 
-	if len(input.Invariants) > 0 {
-		body.WriteString("## Invariants\n\n")
-		for _, inv := range input.Invariants {
-			body.WriteString(fmt.Sprintf("- %s\n", inv))
-		}
-		body.WriteString("\n")
-	}
-
-	if len(input.PreConditions) > 0 {
-		body.WriteString("## Pre-conditions\n\n")
-		for _, pc := range input.PreConditions {
-			body.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
-		}
-		body.WriteString("\n")
-	}
-
-	if len(input.PostConditions) > 0 {
-		body.WriteString("## Post-conditions\n\n")
-		for _, pc := range input.PostConditions {
-			body.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
-		}
-		body.WriteString("\n")
-	}
-
-	if len(input.Admissibility) > 0 {
-		body.WriteString("## Admissibility\n\n")
-		for _, a := range input.Admissibility {
-			body.WriteString(fmt.Sprintf("- NOT: %s\n", a))
-		}
-		body.WriteString("\n")
+	if input.WeakestLink != "" {
+		body.WriteString(fmt.Sprintf("**Weakest link:** %s\n\n", input.WeakestLink))
 	}
 
 	if len(input.EvidenceReqs) > 0 {
-		body.WriteString("## Evidence Requirements\n\n")
+		body.WriteString("**Evidence requirements:**\n")
 		for _, e := range input.EvidenceReqs {
 			body.WriteString(fmt.Sprintf("- %s\n", e))
 		}
 		body.WriteString("\n")
 	}
 
+	// === Component 4: Consequences ===
+	body.WriteString("## 4. Consequences\n\n")
+
 	if input.Rollback != nil {
-		body.WriteString("## Rollback Plan\n\n")
+		body.WriteString("**Rollback plan:**\n")
 		if len(input.Rollback.Triggers) > 0 {
-			body.WriteString("**Triggers:**\n")
+			body.WriteString("Triggers:\n")
 			for _, t := range input.Rollback.Triggers {
 				body.WriteString(fmt.Sprintf("- %s\n", t))
 			}
 		}
 		if len(input.Rollback.Steps) > 0 {
-			body.WriteString("\n**Steps:**\n")
+			body.WriteString("Steps:\n")
 			for i, s := range input.Rollback.Steps {
 				body.WriteString(fmt.Sprintf("%d. %s\n", i+1, s))
 			}
 		}
 		if input.Rollback.BlastRadius != "" {
-			body.WriteString(fmt.Sprintf("\n**Blast radius:** %s\n", input.Rollback.BlastRadius))
+			body.WriteString(fmt.Sprintf("Blast radius: %s\n", input.Rollback.BlastRadius))
 		}
 		body.WriteString("\n")
 	}
 
 	if len(input.RefreshTriggers) > 0 {
-		body.WriteString("## Refresh Triggers\n\n")
+		body.WriteString("**Refresh triggers:**\n")
 		for _, rt := range input.RefreshTriggers {
 			body.WriteString(fmt.Sprintf("- %s\n", rt))
 		}
 		body.WriteString("\n")
 	}
 
-	if input.WeakestLink != "" {
-		body.WriteString(fmt.Sprintf("## Weakest Link\n\n%s\n\n", input.WeakestLink))
+	if len(input.AffectedFiles) > 0 {
+		body.WriteString("**Affected files:** ")
+		body.WriteString(strings.Join(input.AffectedFiles, ", "))
+		body.WriteString("\n")
 	}
 
 	a := &Artifact{
@@ -227,7 +284,8 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 	return a, filePath, nil
 }
 
-// Apply generates an Implementation Brief from an existing DecisionRecord.
+// Apply is deprecated — the decide response now includes the full DRR body.
+// Kept for backward compatibility: returns the DRR body directly.
 func Apply(ctx context.Context, store *Store, decisionRef string) (string, error) {
 	a, err := store.Get(ctx, decisionRef)
 	if err != nil {
@@ -236,70 +294,7 @@ func Apply(ctx context.Context, store *Store, decisionRef string) (string, error
 	if a.Meta.Kind != KindDecisionRecord {
 		return "", fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, a.Meta.Kind)
 	}
-
-	var brief strings.Builder
-	brief.WriteString(fmt.Sprintf("# Implementation Brief: %s\n\n", a.Meta.Title))
-	brief.WriteString(fmt.Sprintf("Decision: %s\n\n", a.Meta.ID))
-
-	// Extract key sections from the DRR body and reformat as brief
-	sections := map[string]string{
-		"Selected Variant":      "",
-		"Invariants":            "",
-		"Pre-conditions":        "",
-		"Post-conditions":       "",
-		"Admissibility":         "",
-		"Evidence Requirements": "",
-		"Rollback Plan":         "",
-	}
-
-	currentSection := ""
-	for _, line := range strings.Split(a.Body, "\n") {
-		if strings.HasPrefix(line, "## ") {
-			heading := strings.TrimPrefix(line, "## ")
-			if _, ok := sections[heading]; ok {
-				currentSection = heading
-			} else {
-				currentSection = ""
-			}
-			continue
-		}
-		if currentSection != "" {
-			sections[currentSection] += line + "\n"
-		}
-	}
-
-	if s := strings.TrimSpace(sections["Selected Variant"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## What to Implement\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Invariants"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## Invariants (MUST hold)\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Admissibility"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## NOT Acceptable\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Pre-conditions"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## Before Starting\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Post-conditions"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## Definition of Done\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Evidence Requirements"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## Evidence to Collect\n\n%s\n\n", s))
-	}
-
-	if s := strings.TrimSpace(sections["Rollback Plan"]); s != "" {
-		brief.WriteString(fmt.Sprintf("## If Things Go Wrong\n\n%s\n\n", s))
-	}
-
-	brief.WriteString("---\n\n")
-	brief.WriteString(fmt.Sprintf("When complete: use quint_decision(action=\"resolve\", decision_ref=\"%s\")\n", a.Meta.ID))
-
-	return brief.String(), nil
+	return a.Body, nil
 }
 
 // MeasureInput records impact after implementation.
@@ -595,15 +590,15 @@ func FormatDecisionResponse(action string, a *Artifact, filePath string, extra s
 
 	switch action {
 	case "decide":
-		sb.WriteString(fmt.Sprintf("Decision recorded: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Decision recorded: %s\nID: %s\n", a.Meta.Title, a.Meta.ID))
 		if a.Meta.ValidUntil != "" {
 			sb.WriteString(fmt.Sprintf("Valid until: %s\n", a.Meta.ValidUntil))
 		}
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
-		sb.WriteString(fmt.Sprintf("\nBefore implementing: call quint_decision(action=\"apply\", decision_ref=\"%s\") to generate the implementation brief with invariants, pre-conditions, and rollback plan.\n", a.Meta.ID))
+		sb.WriteString("\n---\n\n")
+		sb.WriteString(a.Body)
 	case "apply":
 		sb.WriteString(extra)
 	case "measure":

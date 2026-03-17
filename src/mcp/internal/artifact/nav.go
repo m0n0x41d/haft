@@ -68,10 +68,7 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		if d.Meta.Status == StatusRefreshDue {
 			state.DerivedStatus = DerivedRefreshDue
 		}
-		// Check if latest decision has been applied (has "## Impact Measurement" or implementation brief generated)
-		if !strings.Contains(d.Body, "## Impact Measurement") {
-			state.NextAction = fmt.Sprintf(`quint_decision(action="apply", decision_ref="%s")`, d.Meta.ID)
-		}
+		// No next action needed after decide — DRR is the specification
 		state.Mode = d.Meta.Mode
 	case len(portfolios) > 0:
 		p := portfolios[0]

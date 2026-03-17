@@ -305,3 +305,215 @@ func TestFindActivePortfolio(t *testing.T) {
 		t.Errorf("kind = %q", p.Meta.Kind)
 	}
 }
+
+// --- Characterization cross-check tests ---
+
+func TestCompare_WarnsOnMissingCharacterizedDimensions(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Create problem with characterization
+	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Cache strategy", Signal: "High latency", Context: "perf",
+	})
+	CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency"},
+			{Name: "cost"},
+			{Name: "complexity"},
+		},
+		ParityRules: "Same workload for all variants",
+	})
+
+	// Create portfolio linked to problem
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			{Title: "Redis", WeakestLink: "SPOF"},
+			{Title: "Memcached", WeakestLink: "no persistence"},
+		},
+	})
+
+	// Compare on only 1 of 3 characterized dimensions
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"Redis":     {"latency": "1ms"},
+				"Memcached": {"latency": "0.5ms"},
+			},
+			NonDominatedSet: []string{"Memcached"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should warn about missing cost and complexity
+	if !strings.Contains(a.Body, "Comparison Warnings") {
+		t.Error("missing Comparison Warnings section")
+	}
+	if !strings.Contains(a.Body, "cost") {
+		t.Error("should warn about missing 'cost' dimension")
+	}
+	if !strings.Contains(a.Body, "complexity") {
+		t.Error("should warn about missing 'complexity' dimension")
+	}
+	if !strings.Contains(a.Body, "parity rules") {
+		t.Error("should remind about parity rules")
+	}
+}
+
+func TestCompare_NoWarningsWhenFullCoverage(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Cache strategy", Signal: "High latency", Context: "perf",
+	})
+	CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency"},
+			{Name: "cost"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			{Title: "Redis", WeakestLink: "SPOF"},
+			{Title: "Memcached", WeakestLink: "no persistence"},
+		},
+	})
+
+	// Compare on all characterized dimensions with full scores
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency", "cost"},
+			Scores: map[string]map[string]string{
+				"Redis":     {"latency": "1ms", "cost": "$100"},
+				"Memcached": {"latency": "0.5ms", "cost": "$50"},
+			},
+			NonDominatedSet: []string{"Memcached"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(a.Body, "Comparison Warnings") {
+		t.Error("should NOT have warnings when all dimensions covered")
+	}
+}
+
+func TestCompare_NoWarningsWithoutCharacterization(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Portfolio without linked problem (no characterization possible)
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		Variants: []Variant{
+			{Title: "A", WeakestLink: "x"},
+			{Title: "B", WeakestLink: "y"},
+		},
+	})
+
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions:      []string{"speed"},
+			Scores:          map[string]map[string]string{"A": {"speed": "fast"}, "B": {"speed": "slow"}},
+			NonDominatedSet: []string{"A"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(a.Body, "Comparison Warnings") {
+		t.Error("should NOT have warnings without characterization")
+	}
+}
+
+func TestCompare_WarnsOnAsymmetricScoring(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "DB choice", Signal: "Scale issues", Context: "data",
+	})
+	CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{{Name: "throughput"}, {Name: "cost"}},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			{Title: "Postgres", WeakestLink: "sharding complexity"},
+			{Title: "CockroachDB", WeakestLink: "cost"},
+		},
+	})
+
+	// Postgres scored on both, CockroachDB missing cost
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "cost"},
+			Scores: map[string]map[string]string{
+				"Postgres":    {"throughput": "50k/s", "cost": "$200"},
+				"CockroachDB": {"throughput": "100k/s"},
+			},
+			NonDominatedSet: []string{"Postgres", "CockroachDB"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "CockroachDB missing scores") {
+		t.Errorf("should warn about CockroachDB missing cost score, body: %s", a.Body)
+	}
+}
+
+func TestExtractCharacterizedDimensions(t *testing.T) {
+	body := `# Problem
+
+## Signal
+
+Something broken
+
+## Characterization v1 (2026-03-17)
+
+| Dimension | Scale | Unit | Polarity | Measurement |
+|-----------|-------|------|----------|-------------|
+| latency | ratio | ms | lower_better | p99 |
+| throughput | ratio | req/s | higher_better | load test |
+| cost | ratio | $/mo | lower_better | invoice |
+
+**Parity rules:** Same workload
+`
+	dims := extractCharacterizedDimensions(body)
+	if len(dims) != 3 {
+		t.Fatalf("expected 3 dimensions, got %d: %v", len(dims), dims)
+	}
+	if dims[0] != "latency" || dims[1] != "throughput" || dims[2] != "cost" {
+		t.Errorf("dimensions = %v", dims)
+	}
+}
+
+func TestExtractCharacterizedDimensions_NoCharacterization(t *testing.T) {
+	body := "# Problem\n\n## Signal\n\nSomething\n"
+	dims := extractCharacterizedDimensions(body)
+	if dims != nil {
+		t.Errorf("expected nil, got %v", dims)
+	}
+}

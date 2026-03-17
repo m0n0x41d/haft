@@ -189,6 +189,63 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 		return nil, "", fmt.Errorf("non_dominated_set is required — which variants are on the Pareto front?")
 	}
 
+	// Cross-check against characterization from linked ProblemCard
+	var compareWarnings []string
+	links, _ := store.GetLinks(ctx, input.PortfolioRef)
+	for _, link := range links {
+		if link.Type != "based_on" {
+			continue
+		}
+		prob, err := store.Get(ctx, link.Ref)
+		if err != nil || prob.Meta.Kind != KindProblemCard {
+			continue
+		}
+
+		// Extract characterized dimension names
+		charDims := extractCharacterizedDimensions(prob.Body)
+		if len(charDims) == 0 {
+			break
+		}
+
+		// Check dimension coverage: which characterized dims are missing from compare?
+		compareDimsLower := make(map[string]bool)
+		for _, d := range input.Results.Dimensions {
+			compareDimsLower[strings.ToLower(strings.TrimSpace(d))] = true
+		}
+		var missingDims []string
+		for _, cd := range charDims {
+			if !compareDimsLower[strings.ToLower(cd)] {
+				missingDims = append(missingDims, cd)
+			}
+		}
+		if len(missingDims) > 0 {
+			compareWarnings = append(compareWarnings,
+				fmt.Sprintf("Characterized dimensions not in comparison: %s", strings.Join(missingDims, ", ")))
+		}
+
+		// Check score completeness: are all variants scored on all dimensions?
+		for variantID, scores := range input.Results.Scores {
+			var gaps []string
+			for _, d := range input.Results.Dimensions {
+				if scores[d] == "" || scores[d] == "-" {
+					gaps = append(gaps, d)
+				}
+			}
+			if len(gaps) > 0 {
+				compareWarnings = append(compareWarnings,
+					fmt.Sprintf("Variant %s missing scores for: %s", variantID, strings.Join(gaps, ", ")))
+			}
+		}
+
+		// Remind about parity rules
+		if strings.Contains(prob.Body, "**Parity rules:**") {
+			compareWarnings = append(compareWarnings,
+				"ProblemCard has parity rules defined — verify comparison respects them")
+		}
+
+		break // only check first linked problem
+	}
+
 	// Build comparison section
 	var section strings.Builder
 	section.WriteString("\n## Comparison\n\n")
@@ -246,12 +303,77 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 		return nil, "", fmt.Errorf("update portfolio: %w", err)
 	}
 
+	// Append warnings to body if any
+	if len(compareWarnings) > 0 {
+		a.Body += "\n## Comparison Warnings\n\n"
+		for _, w := range compareWarnings {
+			a.Body += fmt.Sprintf("- ⚠ %s\n", w)
+		}
+		// Re-update with warnings appended
+		store.Update(ctx, a)
+	}
+
 	filePath, err := WriteFile(quintDir, a)
 	if err != nil {
 		return a, "", fmt.Errorf("file write (DB saved OK): %w", err)
 	}
 
 	return a, filePath, nil
+}
+
+// extractCharacterizedDimensions parses dimension names from the latest
+// Characterization table in a ProblemCard body. Returns nil if no characterization found.
+func extractCharacterizedDimensions(body string) []string {
+	// Find the latest characterization version
+	lastIdx := -1
+	for i := 100; i >= 1; i-- {
+		marker := fmt.Sprintf("## Characterization v%d", i)
+		if idx := strings.Index(body, marker); idx != -1 {
+			lastIdx = idx
+			break
+		}
+	}
+	if lastIdx == -1 {
+		return nil
+	}
+
+	// Extract the characterization section
+	section := body[lastIdx:]
+	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
+		section = section[:endIdx+1]
+	}
+
+	// Parse dimension names from markdown table rows
+	// Format: | Name | Scale | Unit | Polarity | Measurement |
+	var dims []string
+	lines := strings.Split(section, "\n")
+	inTable := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break // end of table
+			}
+			continue
+		}
+		// Skip header and separator rows
+		if strings.Contains(line, "Dimension") || strings.Contains(line, "---") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		// Extract first column (dimension name)
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) >= 3 {
+			name := strings.TrimSpace(parts[1])
+			if name != "" && name != "-" {
+				dims = append(dims, name)
+			}
+		}
+	}
+	return dims
 }
 
 // FindActivePortfolio returns the most recent active SolutionPortfolio for a context.

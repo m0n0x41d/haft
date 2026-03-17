@@ -265,10 +265,19 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 			}
 		}
 
-		// Remind about parity rules
+		// Remind about parity rules (free-text)
 		if strings.Contains(prob.Body, "**Parity rules:**") {
 			compareWarnings = append(compareWarnings,
 				"ProblemCard has parity rules defined — verify comparison respects them")
+		}
+
+		// Auto-generate parity checklist from characterized dimensions
+		if len(charDims) > 0 {
+			compareWarnings = append(compareWarnings, "Parity checklist (per characterized dimension):")
+			for _, d := range charDims {
+				compareWarnings = append(compareWarnings,
+					fmt.Sprintf("  - Is '%s' measured under the same conditions for all variants?", d))
+			}
 		}
 
 		break // only check first linked problem

@@ -109,7 +109,7 @@ func WaiveDecision(ctx context.Context, store *Store, quintDir string, decisionR
 		return nil, fmt.Errorf("update decision: %w", err)
 	}
 
-	WriteFile(quintDir, a)
+	writeFileQuiet(quintDir, a)
 	return a, nil
 }
 
@@ -128,7 +128,7 @@ func ReopenDecision(ctx context.Context, store *Store, quintDir string, decision
 	if err := store.Update(ctx, dec); err != nil {
 		return nil, nil, fmt.Errorf("update decision: %w", err)
 	}
-	WriteFile(quintDir, dec)
+	writeFileQuiet(quintDir, dec)
 
 	// Create a new ProblemCard linked to the old decision
 	newProb, _, err := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
@@ -168,7 +168,7 @@ func SupersedeDecision(ctx context.Context, store *Store, quintDir string, decis
 		store.AddLink(ctx, newDecisionRef, decisionRef, "supersedes")
 	}
 
-	WriteFile(quintDir, a)
+	writeFileQuiet(quintDir, a)
 	return a, nil
 }
 
@@ -190,7 +190,7 @@ func DeprecateDecision(ctx context.Context, store *Store, quintDir string, decis
 		return nil, fmt.Errorf("update decision: %w", err)
 	}
 
-	WriteFile(quintDir, a)
+	writeFileQuiet(quintDir, a)
 	return a, nil
 }
 
@@ -229,7 +229,7 @@ func CreateRefreshReport(ctx context.Context, store *Store, quintDir string, dec
 		return nil, err
 	}
 
-	WriteFile(quintDir, a)
+	writeFileQuiet(quintDir, a)
 	return a, nil
 }
 

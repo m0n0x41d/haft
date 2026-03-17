@@ -26,6 +26,15 @@ func WriteFile(quintDir string, a *Artifact) (string, error) {
 	return path, nil
 }
 
+// writeFileQuiet writes the artifact file, logging but not propagating errors.
+// Use when the DB write already succeeded and the file is a secondary projection.
+func writeFileQuiet(quintDir string, a *Artifact) {
+	if _, err := WriteFile(quintDir, a); err != nil {
+		// Log to stderr since this is a non-fatal projection failure
+		fmt.Fprintf(os.Stderr, "warning: file write failed for %s: %v\n", a.Meta.ID, err)
+	}
+}
+
 func renderArtifact(a *Artifact) string {
 	var sb strings.Builder
 

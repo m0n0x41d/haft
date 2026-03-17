@@ -260,7 +260,7 @@ type MCPServer struct {
 	Timeout int               `json:"timeout,omitempty"`
 }
 
-func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[string]interface{}) error {
+func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]interface{}) error {
 	var config MCPConfig
 
 	if data, err := os.ReadFile(configPath); err == nil {

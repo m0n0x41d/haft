@@ -299,18 +299,16 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 	}
 	a.Body += section.String()
 
-	if err := store.Update(ctx, a); err != nil {
-		return nil, "", fmt.Errorf("update portfolio: %w", err)
-	}
-
-	// Append warnings to body if any
+	// Append warnings to body before saving
 	if len(compareWarnings) > 0 {
 		a.Body += "\n## Comparison Warnings\n\n"
 		for _, w := range compareWarnings {
 			a.Body += fmt.Sprintf("- ⚠ %s\n", w)
 		}
-		// Re-update with warnings appended
-		store.Update(ctx, a)
+	}
+
+	if err := store.Update(ctx, a); err != nil {
+		return nil, "", fmt.Errorf("update portfolio: %w", err)
 	}
 
 	filePath, err := WriteFile(quintDir, a)

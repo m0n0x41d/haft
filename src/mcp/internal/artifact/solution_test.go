@@ -686,3 +686,72 @@ func TestFrame_NoRecallWhenNoHistory(t *testing.T) {
 		t.Error("should NOT show related history when no similar artifacts exist")
 	}
 }
+
+func TestCompare_WarnsOnExpiredDimensionMeasurement(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Performance issue", Signal: "Slow API", Context: "perf",
+	})
+	CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency", ValidUntil: "2020-01-01T00:00:00Z"}, // expired
+			{Name: "cost"},                                          // no expiry
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			{Title: "A", WeakestLink: "x"},
+			{Title: "B", WeakestLink: "y"},
+		},
+	})
+
+	a, _, err := CompareSolutions(ctx, store, quintDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency", "cost"},
+			Scores: map[string]map[string]string{
+				"A": {"latency": "10ms", "cost": "$100"},
+				"B": {"latency": "5ms", "cost": "$200"},
+			},
+			NonDominatedSet: []string{"A", "B"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "latency") && !strings.Contains(a.Body, "expired") {
+		t.Error("should warn about expired latency measurement")
+	}
+	if !strings.Contains(a.Body, "remeasure") {
+		t.Error("should suggest remeasurement")
+	}
+}
+
+func TestExtractDimensionsWithValidUntil(t *testing.T) {
+	body := `# Problem
+
+## Characterization v1 (2026-03-17)
+
+| Dimension | Role | Scale | Unit | Polarity | Measurement | Valid Until |
+|-----------|------|-------|------|----------|-------------|-------------|
+| latency | constraint | ratio | ms | lower_better | p99 | 2026-06-01 |
+| cost | target | ratio | $/mo | lower_better | invoice | - |
+`
+	dims := extractCharacterizedDimensionsWithRoles(body)
+	if len(dims) != 2 {
+		t.Fatalf("expected 2 dims, got %d", len(dims))
+	}
+	if dims[0].ValidUntil != "2026-06-01" {
+		t.Errorf("latency valid_until = %q, want '2026-06-01'", dims[0].ValidUntil)
+	}
+	if dims[1].ValidUntil != "" {
+		t.Errorf("cost valid_until = %q, want empty", dims[1].ValidUntil)
+	}
+}

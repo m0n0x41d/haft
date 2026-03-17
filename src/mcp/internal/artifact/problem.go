@@ -36,6 +36,7 @@ type ComparisonDimension struct {
 	Polarity     string `json:"polarity,omitempty"`      // higher_better, lower_better
 	Role         string `json:"role,omitempty"`           // constraint, target, observation (default: target)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
+	ValidUntil   string `json:"valid_until,omitempty"`   // when this measurement definition expires (RFC3339)
 }
 
 // FrameProblem creates a ProblemCard artifact.
@@ -163,8 +164,22 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Characterization v%d (%s)\n\n",
 		charVersion, time.Now().UTC().Format("2006-01-02")))
-	section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement |\n")
-	section.WriteString("|-----------|------|-------|------|----------|-------------|\n")
+	// Check if any dimension has valid_until — only show column if used
+	hasValidUntil := false
+	for _, d := range input.Dimensions {
+		if d.ValidUntil != "" {
+			hasValidUntil = true
+			break
+		}
+	}
+
+	if hasValidUntil {
+		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement | Valid Until |\n")
+		section.WriteString("|-----------|------|-------|------|----------|-------------|-------------|\n")
+	} else {
+		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement |\n")
+		section.WriteString("|-----------|------|-------|------|----------|-------------|\n")
+	}
 	for _, d := range input.Dimensions {
 		role := d.Role
 		if role == "" {
@@ -186,7 +201,17 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 		if measure == "" {
 			measure = "-"
 		}
-		section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure))
+		if hasValidUntil {
+			vu := d.ValidUntil
+			if vu == "" {
+				vu = "-"
+			} else if len(vu) > 10 {
+				vu = vu[:10]
+			}
+			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure, vu))
+		} else {
+			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure))
+		}
 	}
 
 	if input.ParityRules != "" {

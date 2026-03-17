@@ -258,6 +258,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 									"polarity":       map[string]string{"type": "string", "description": "higher_better or lower_better"},
 									"role":           map[string]string{"type": "string", "description": "Indicator role: constraint (hard limit), target (optimize), observation (watch, don't optimize). Default: target"},
 									"how_to_measure": map[string]string{"type": "string", "description": "How this dimension is measured"},
+									"valid_until":    map[string]string{"type": "string", "description": "When this measurement expires (RFC3339). Compare warns on expired dimensions."},
 								},
 								"required": []string{"name"},
 							},

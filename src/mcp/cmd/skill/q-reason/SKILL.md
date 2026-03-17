@@ -51,7 +51,7 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 | Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
 | Pareto front | **tracked** | You identify the non-dominated set, Quint stores and displays it. Not computed automatically. |
 | Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
-| Refresh (valid_until) | **enforced** | Decisions with expired valid_until are detected by scan and surfaced in status. |
+| Refresh (valid_until) | **enforced** | All artifacts (decisions, problems, portfolios) with expired valid_until detected by scan. |
 | Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
 | CL (congruence) | **textual** | Field on evidence items. Stored but not used in scoring. |
 | F-G-R | **textual** | Formality field on evidence items. Stored but not used in scoring. |
@@ -65,16 +65,30 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 
 ### 1. Frame the problem BEFORE solving it
 
-The bottleneck is **problem quality**, not solution speed.
+The bottleneck is **problem quality**, not solution speed. Don't just fill in fields — drive a diagnostic conversation.
 
-- **State what's anomalous** — what doesn't fit the current model?
-- **Identify trade-off axes** — what dimensions are in tension?
-- **Define acceptance** — how will we know it's solved?
-  - **Optimization targets** (1-3 max)
-  - **Hard constraints** (binary pass/fail)
-  - **Observation indicators** (monitor but don't optimize — Anti-Goodhart)
+**Framing protocol — ask these questions before recording:**
+
+1. **"What observation doesn't fit?"** — the signal, not the assumed cause. "Webhook retries hit 15%" not "we need a new queue."
+2. **"What have you already tried?"** — avoids re-treading known dead ends.
+3. **"Who owns this problem?"** — establishes the principal. Not "the team" — a specific person with authority.
+4. **"What would solved look like?"** — forces measurable acceptance, not vague "it should be better."
+5. **"What constraints are non-negotiable?"** — hard limits that no variant can violate.
+6. **"How reversible is this? What's the blast radius?"** — determines mode (tactical vs standard vs deep).
+7. **"What should we watch but NOT optimize?"** — Anti-Goodhart indicators that prevent reward hacking.
+
+Only after these are answered, persist the ProblemCard:
+
+- **Signal**: the anomalous observation (from question 1)
+- **Constraints**: hard limits (from question 5)
+- **Optimization targets**: 1-3 max (from question 4)
+- **Observation indicators**: monitor-only metrics (from question 7)
+- **Blast radius / reversibility**: from question 6
+- **Acceptance**: measurable "done" criteria (from question 4)
 
 **Persist with**: `quint_problem(action="frame", ...)`
+
+**Goldilocks check**: When multiple problems are active, use `quint_problem(action="select")` to see them with blast radius and reversibility signals. Pick the problem in the growth zone — not too trivial (low impact), not too impossible (exceeds current capacity).
 
 > RAG: `quint-code fpf search "problem card PROB"`
 
@@ -126,9 +140,11 @@ The decision record should contain:
 
 ### 6. Detect staleness and refresh
 
-Decisions with expired `valid_until` dates are automatically detected by `/q-status` and `/q-refresh`.
+All artifacts (decisions, problems, portfolios) with expired `valid_until` dates are automatically detected by `/q-status` and `/q-refresh`. This includes stale ProblemCards — problem framings can go stale too when context changes.
 
 Text-based refresh triggers (e.g., "re-evaluate if throughput >80k/s") are stored as reminders but not automatically checked — you or the agent must notice when conditions change.
+
+When reopening a stale decision, the new ProblemCard inherits lineage: prior characterization, failure reason, and evidence references from the previous cycle.
 
 **Persist with**: `quint_refresh(...)`
 

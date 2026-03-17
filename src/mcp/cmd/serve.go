@@ -754,7 +754,19 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, args map[strin
 		}
 		return result + navStrip, nil
 
+	case "list":
+		kind, _ := args["kind"].(string)
+		limit := 50
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		result, err := artifact.QueryList(ctx, store, kind, limit)
+		if err != nil {
+			return "", err
+		}
+		return result + navStrip, nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', or 'related'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', or 'list'", action)
 	}
 }

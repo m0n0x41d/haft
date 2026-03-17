@@ -525,18 +525,22 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "quint_query",
-			Description: "Search past decisions, check status, find related artifacts. Actions: 'search' does FTS5 search, 'status' shows dashboard of active/stale/recent, 'related' finds decisions affecting a specific file.",
+			Description: "Search past decisions, check status, find related artifacts, or list all artifacts by kind. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'list' shows all artifacts of a given kind.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "related"},
-						"description": "search=FTS5 keyword search, status=dashboard, related=by file path",
+						"enum":        []interface{}{"search", "status", "related", "list"},
+						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind",
 					},
 					"query": map[string]string{
 						"type":        "string",
 						"description": "(search) Search terms",
+					},
+					"kind": map[string]string{
+						"type":        "string",
+						"description": "(list) Artifact kind: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport",
 					},
 					"file": map[string]string{
 						"type":        "string",

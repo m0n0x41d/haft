@@ -194,6 +194,49 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 	return sb.String(), nil
 }
 
+// QueryList returns all artifacts of a given kind with full details.
+func QueryList(ctx context.Context, store *Store, kindStr string, limit int) (string, error) {
+	if kindStr == "" {
+		return "", fmt.Errorf("kind is required — use: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	kind := Kind(kindStr)
+	artifacts, err := store.ListByKind(ctx, kind, limit)
+	if err != nil {
+		return "", err
+	}
+
+	if len(artifacts) == 0 {
+		return fmt.Sprintf("No %s artifacts found.\n", kind), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## %s (%d)\n\n", kind, len(artifacts)))
+
+	for i, a := range artifacts {
+		line := fmt.Sprintf("%d. **%s** `%s`", i+1, a.Meta.Title, a.Meta.ID)
+		if a.Meta.Status != StatusActive {
+			line += fmt.Sprintf(" [%s]", a.Meta.Status)
+		}
+		if a.Meta.ValidUntil != "" {
+			vu := a.Meta.ValidUntil
+			if len(vu) > 10 {
+				vu = vu[:10]
+			}
+			line += fmt.Sprintf(" (valid until %s)", vu)
+		}
+		if a.Meta.Context != "" {
+			line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+		}
+		sb.WriteString(line + "\n")
+	}
+
+	return sb.String(), nil
+}
+
 // QueryRelated finds artifacts linked to a specific file path.
 func QueryRelated(ctx context.Context, store *Store, filePath string) (string, error) {
 	if filePath == "" {

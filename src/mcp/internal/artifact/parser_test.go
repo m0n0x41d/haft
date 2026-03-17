@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,65 @@ Using RWMutex instead of channels. Contention <0.1%.
 	}
 	if a.Body[0] != '#' {
 		t.Errorf("body should start with #, got %q", a.Body[:20])
+	}
+}
+
+func TestParseFile_HorizontalRuleInBody(t *testing.T) {
+	content := `---
+id: dec-20260316-001
+kind: DecisionRecord
+---
+
+# Decision
+
+Some content here.
+
+---
+
+This part must NOT be lost.
+
+More content after the horizontal rule.
+`
+	a, err := ParseFile(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "This part must NOT be lost") {
+		t.Error("body was truncated at markdown horizontal rule --- bug")
+	}
+	if !strings.Contains(a.Body, "More content after") {
+		t.Error("content after horizontal rule is missing")
+	}
+}
+
+func TestParseFile_MultipleHorizontalRules(t *testing.T) {
+	content := `---
+id: note-001
+kind: Note
+---
+
+# Title
+
+---
+
+Section 1
+
+---
+
+Section 2
+
+---
+
+Section 3
+`
+	a, err := ParseFile(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "Section 3") {
+		t.Error("body missing Section 3 — multiple horizontal rules broke parsing")
 	}
 }
 

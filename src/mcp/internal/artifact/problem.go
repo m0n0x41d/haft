@@ -113,6 +113,11 @@ func FrameProblem(ctx context.Context, store *Store, quintDir string, input Prob
 		Body: body.String(),
 	}
 
+	// Archive recall: search for related past artifacts
+	if recall := recallRelated(ctx, store, input.Title); recall != "" {
+		a.Body += recall
+	}
+
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store problem: %w", err)
 	}

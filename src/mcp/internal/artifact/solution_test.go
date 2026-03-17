@@ -517,3 +517,116 @@ func TestExtractCharacterizedDimensions_NoCharacterization(t *testing.T) {
 		t.Errorf("expected nil, got %v", dims)
 	}
 }
+
+// --- Diversity check tests ---
+
+func TestJaccardSimilarity(t *testing.T) {
+	cases := []struct {
+		a, b string
+		min  float64
+		max  float64
+	}{
+		{"Redis TTL cache", "Redis LRU cache", 0.3, 0.7},          // similar but distinct
+		{"Redis cache", "Kafka streams", 0.0, 0.1},                 // completely different
+		{"foo bar baz", "foo bar baz", 0.99, 1.01},                  // identical
+		{"database migration strategy", "strategy for database migration", 0.7, 1.01}, // reordered
+		{"", "", -0.1, 0.1}, // both empty
+	}
+	for _, tc := range cases {
+		sim := jaccardSimilarity(tc.a, tc.b)
+		if sim < tc.min || sim > tc.max {
+			t.Errorf("jaccard(%q, %q) = %.2f, want [%.2f, %.2f]", tc.a, tc.b, sim, tc.min, tc.max)
+		}
+	}
+}
+
+func TestExplore_DiversityWarning(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	a, _, err := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		Variants: []Variant{
+			{Title: "Redis with TTL-based cache eviction strategy", Description: "Use Redis TTL for cache", WeakestLink: "SPOF"},
+			{Title: "Redis with LRU-based cache eviction strategy", Description: "Use Redis LRU for cache", WeakestLink: "memory"},
+			{Title: "Kafka Streams for event processing", Description: "Completely different approach", WeakestLink: "complexity"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Redis pair should trigger warning, Kafka should not
+	if !strings.Contains(a.Body, "Diversity Warnings") {
+		t.Error("should have diversity warnings for similar Redis variants")
+	}
+	if !strings.Contains(a.Body, "Redis with TTL") && !strings.Contains(a.Body, "Redis with LRU") {
+		t.Error("warning should mention the similar pair")
+	}
+}
+
+func TestExplore_NoDiversityWarning(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	a, _, err := ExploreSolutions(ctx, store, quintDir, ExploreInput{
+		Variants: []Variant{
+			{Title: "PostgreSQL with sharding", WeakestLink: "ops complexity"},
+			{Title: "CockroachDB distributed SQL", WeakestLink: "cost"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(a.Body, "Diversity Warnings") {
+		t.Error("should NOT have diversity warnings for distinct variants")
+	}
+}
+
+func TestFrame_RecallRelatedHistory(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Create an existing decision about caching
+	Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Redis for session cache",
+		WhySelected:   "Low latency, simple ops",
+	})
+
+	// Frame a new problem about caching — should recall the decision
+	prob, _, err := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title:  "Cache invalidation causing stale data",
+		Signal: "Users seeing old data after updates",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(prob.Body, "Related History") {
+		t.Error("should show related history when similar artifacts exist")
+	}
+	if !strings.Contains(prob.Body, "Redis") || !strings.Contains(prob.Body, "cache") {
+		t.Error("related history should include the cache decision")
+	}
+}
+
+func TestFrame_NoRecallWhenNoHistory(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	prob, _, err := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title:  "Completely unique problem about quantum computing",
+		Signal: "Qubits decoherence rate exceeds threshold",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(prob.Body, "Related History") {
+		t.Error("should NOT show related history when no similar artifacts exist")
+	}
+}

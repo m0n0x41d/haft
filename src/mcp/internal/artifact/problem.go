@@ -315,7 +315,11 @@ func FormatProblemsListResponse(problems []*Artifact, store *Store, ctx context.
 
 		// Staleness
 		if p.Meta.ValidUntil != "" {
-			sb.WriteString(fmt.Sprintf("Valid until: %s\n", p.Meta.ValidUntil[:10]))
+			vu := p.Meta.ValidUntil
+			if len(vu) > 10 {
+				vu = vu[:10]
+			}
+			sb.WriteString(fmt.Sprintf("Valid until: %s\n", vu))
 		}
 
 		sb.WriteString("\n")

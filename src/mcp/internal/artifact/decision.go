@@ -375,15 +375,17 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 	}
 
 	// Record as evidence item
-	evidID := fmt.Sprintf("evid-%s-%s", time.Now().Format("20060102"), input.DecisionRef[:8])
-	store.AddEvidenceItem(ctx, &EvidenceItem{
+	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:             evidID,
 		Type:           "measurement",
 		Content:        fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
 		Verdict:        input.Verdict,
-		CongruenceLevel: 3, // internal measurement = same context
+		CongruenceLevel: 3,
 		FormalityLevel:  5,
-	}, input.DecisionRef)
+	}, input.DecisionRef); err != nil {
+		return nil, fmt.Errorf("record evidence: %w", err)
+	}
 
 	writeFileQuiet(quintDir, a)
 	return a, nil

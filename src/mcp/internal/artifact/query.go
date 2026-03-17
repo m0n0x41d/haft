@@ -87,7 +87,11 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		for _, d := range activeDecisions {
 			line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
 			if d.Meta.ValidUntil != "" {
-				line += fmt.Sprintf(" (valid until %s)", d.Meta.ValidUntil[:10])
+				vu := d.Meta.ValidUntil
+				if len(vu) > 10 {
+					vu = vu[:10]
+				}
+				line += fmt.Sprintf(" (valid until %s)", vu)
 			}
 			sb.WriteString(line + "\n")
 		}

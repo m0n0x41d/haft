@@ -158,6 +158,12 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 		}
 	}
 
+	// Auto-set valid_until to 90 days if not explicitly provided
+	validUntil := input.ValidUntil
+	if validUntil == "" {
+		validUntil = now.Add(90 * 24 * time.Hour).Format(time.RFC3339)
+	}
+
 	a := &Artifact{
 		Meta: Meta{
 			ID:         id,
@@ -167,7 +173,7 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 			Context:    input.Context,
 			Mode:       ModeNote,
 			Title:      input.Title,
-			ValidUntil: input.ValidUntil,
+			ValidUntil: validUntil,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		},

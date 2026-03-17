@@ -358,7 +358,7 @@ func FormatScanResponse(items []StaleItem, navStrip string) string {
 	var sb strings.Builder
 
 	if len(items) == 0 {
-		sb.WriteString("No stale decisions found. All decisions are current.\n")
+		sb.WriteString("No stale artifacts found. All decisions, problems, and notes are current.\n")
 		sb.WriteString(navStrip)
 		return sb.String()
 	}
@@ -373,11 +373,12 @@ func FormatScanResponse(items []StaleItem, navStrip string) string {
 		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
 	}
 
-	sb.WriteString("**Actions:**\n")
+	sb.WriteString("**Actions** (work on any artifact type):\n")
 	sb.WriteString("- `waive` — extend validity with justification\n")
-	sb.WriteString("- `reopen` — start new problem cycle linked to old decision\n")
-	sb.WriteString("- `supersede` — replace with a new decision\n")
-	sb.WriteString("- `deprecate` — mark as no longer relevant\n")
+	sb.WriteString("- `reopen` — start new problem cycle (decisions only)\n")
+	sb.WriteString("- `supersede` — replace with another artifact\n")
+	sb.WriteString("- `deprecate` — archive as no longer relevant\n")
+	sb.WriteString("\nUse `artifact_ref` parameter with any artifact ID (note, problem, decision, portfolio).\n")
 
 	sb.WriteString(navStrip)
 	return sb.String()

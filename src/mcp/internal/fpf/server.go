@@ -477,18 +477,22 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "quint_refresh",
-			Description: "Detect stale decisions and manage their lifecycle. Actions: 'scan' finds expired/refresh-due decisions, 'waive' extends validity, 'reopen' starts new problem cycle, 'supersede' replaces with new decision, 'deprecate' marks as no longer relevant.",
+			Description: "Manage artifact lifecycle — detect stale items, extend validity, archive, or replace. Works on ALL artifact types: decisions, problems, notes, portfolios. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate"},
-						"description": "scan=find stale, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=remove",
+						"description": "scan=find stale/degraded artifacts, waive=extend validity, reopen=new problem cycle (decisions only), supersede=replace with another artifact, deprecate=archive as no longer relevant",
+					},
+					"artifact_ref": map[string]string{
+						"type":        "string",
+						"description": "Artifact ID to act on — any kind: note, problem, decision, portfolio (required for waive/reopen/supersede/deprecate)",
 					},
 					"decision_ref": map[string]string{
 						"type":        "string",
-						"description": "DecisionRecord ID to act on (required for waive/reopen/supersede/deprecate)",
+						"description": "Deprecated: use artifact_ref instead. Kept for backward compatibility.",
 					},
 					"reason": map[string]string{
 						"type":        "string",
@@ -504,7 +508,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"new_decision_ref": map[string]string{
 						"type":        "string",
-						"description": "(supersede) ID of the new decision replacing this one",
+						"description": "(supersede) ID of the replacement artifact. Deprecated: use new_artifact_ref.",
+					},
+					"new_artifact_ref": map[string]string{
+						"type":        "string",
+						"description": "(supersede) ID of the artifact replacing this one",
+					},
+					"context": map[string]string{
+						"type":        "string",
+						"description": "Optional context filter for scan",
 					},
 				},
 				"required": []string{"action"},

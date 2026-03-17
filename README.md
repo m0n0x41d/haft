@@ -11,11 +11,11 @@ Supports: Claude Code, Cursor, Gemini CLI, Codex CLI
 Quint Code is an FPF-native reasoning layer for engineering decisions. It helps you:
 
 1. **Frame the actual problem** before jumping to solutions
-2. **Compare options in a fair characteristic space** instead of arguing on vibes
+2. **Structure the comparison space** — define dimensions, record variants with weakest links
 3. **Record decisions with invariants, rollback plans, and refresh triggers**
-4. **Detect when reasoning goes stale** and needs revisiting
+4. **Detect when decisions go stale** — expired validity is surfaced automatically
 
-Everything lives in `.quint/` as git-tracked markdown files. Searchable. Auditable. Yours.
+Everything lives in `.quint/` as git-tracked markdown files. SQLite provides search and status. Both are written on every operation.
 
 ---
 
@@ -64,8 +64,8 @@ Quint validates:
 ```
 /q-frame    — define the problem, constraints, acceptance criteria
 /q-char     — define comparison dimensions (throughput, ops complexity, cost)
-/q-explore  — generate genuinely distinct variants with WLNK per option
-/q-compare  — fair parity comparison, Pareto front, non-dominated set
+/q-explore  — generate genuinely distinct variants, label weakest link per option
+/q-compare  — record comparison results, identify non-dominated set (Pareto front)
 /q-decide   — full DecisionRecord with invariants, pre/post-conditions, rollback
 /q-apply    — generate implementation brief from the decision
 ```
@@ -85,7 +85,7 @@ Quint validates:
 |------|-------------|----------|
 | `quint_note` | Micro-decisions with validation | `/q-note` |
 | `quint_problem` | Frame problems, define comparison space | `/q-frame` `/q-char` `/q-problems` |
-| `quint_solution` | Explore variants, compare on Pareto front | `/q-explore` `/q-compare` |
+| `quint_solution` | Explore variants with WLNK, record comparison | `/q-explore` `/q-compare` |
 | `quint_decision` | Decide with full rationale, generate impl brief | `/q-decide` `/q-apply` |
 | `quint_refresh` | Detect stale decisions, manage lifecycle | `/q-refresh` |
 | `quint_query` | Search, status dashboard, file lookups | `/q-search` `/q-status` |

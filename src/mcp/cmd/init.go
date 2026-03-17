@@ -276,11 +276,13 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 	server := MCPServer{
 		Command: binaryPath,
 		Args:    []string{"serve"},
-		Cwd:     projectRoot,
 	}
 
 	if timeout, ok := extraFields["timeout"].(int); ok {
 		server.Timeout = timeout
+	}
+	if env, ok := extraFields["env"].(map[string]string); ok {
+		server.Env = env
 	}
 
 	config.MCPServers["quint-code"] = server
@@ -299,7 +301,11 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 
 func configureMCPClaude(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, nil)
+	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
+	})
 }
 
 func configureMCPCursor(projectRoot, binaryPath string) error {

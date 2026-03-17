@@ -75,8 +75,8 @@ func TestQueryStatus_Dashboard(t *testing.T) {
 	if !strings.Contains(result, "Active Decisions") {
 		t.Error("missing Active Decisions section")
 	}
-	if !strings.Contains(result, "Active Problems") {
-		t.Error("missing Active Problems section")
+	if !strings.Contains(result, "Open Problems") {
+		t.Error("missing Open Problems section")
 	}
 	if !strings.Contains(result, "Recent Notes") {
 		t.Error("missing Recent Notes section")

@@ -2,4 +2,5 @@
 .mcp.json
 quint-mcp.json
 src/mcp/quint-code
+src/mcp/quint-mcp
 TODO.md

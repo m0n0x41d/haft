@@ -172,20 +172,17 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	terms := strings.Fields(query)
 	var ftsTerms []string
 	for _, t := range terms {
-		// Strip FTS5 special characters that break queries
+		// Strip all FTS5 special/operator characters that break queries
 		t = strings.NewReplacer(
-			`"`, ``,
-			`*`, ``,
-			`(`, ``,
-			`)`, ``,
-			`{`, ``,
-			`}`, ``,
-			`^`, ``,
+			`"`, ``, `*`, ``, `(`, ``, `)`, ``,
+			`{`, ``, `}`, ``, `^`, ``, `+`, ``,
+			`-`, ``, `:`, ``, `~`, ``, `'`, ``,
 		).Replace(t)
 		t = strings.TrimSpace(t)
 		if t == "" {
 			continue
 		}
+		// Quoting treats everything as literal (no FTS5 operator interpretation)
 		ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, t))
 	}
 	if len(ftsTerms) == 0 {

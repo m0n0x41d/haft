@@ -145,14 +145,14 @@ func TestCharacterizeProblem_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(a.Body, "## Comparison Dimensions") {
-		t.Error("missing Comparison Dimensions section")
+	if !strings.Contains(a.Body, "## Characterization v1") {
+		t.Error("missing Characterization v1 section")
 	}
 	if !strings.Contains(a.Body, "throughput") {
 		t.Error("missing throughput dimension")
 	}
-	if !strings.Contains(a.Body, "## Parity Rules") {
-		t.Error("missing Parity Rules section")
+	if !strings.Contains(a.Body, "Parity rules:") {
+		t.Error("missing parity rules")
 	}
 	if a.Meta.Version != 2 {
 		t.Errorf("version = %d, want 2 after update", a.Meta.Version)
@@ -187,7 +187,7 @@ func TestCharacterizeProblem_NoDimensions(t *testing.T) {
 	}
 }
 
-func TestCharacterizeProblem_ReplacesExisting(t *testing.T) {
+func TestCharacterizeProblem_VersionsNotOverwrites(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	quintDir := t.TempDir()
@@ -202,7 +202,7 @@ func TestCharacterizeProblem_ReplacesExisting(t *testing.T) {
 		Dimensions: []ComparisonDimension{{Name: "speed"}},
 	})
 
-	// Second characterization replaces
+	// Second characterization appends, not replaces
 	a, _, err := CharacterizeProblem(ctx, store, quintDir, CharacterizeInput{
 		ProblemRef: prob.Meta.ID,
 		Dimensions: []ComparisonDimension{{Name: "reliability"}, {Name: "cost"}},
@@ -211,9 +211,15 @@ func TestCharacterizeProblem_ReplacesExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should have reliability and cost, not speed
-	if strings.Contains(a.Body, "speed") {
-		t.Error("old dimension 'speed' should be replaced")
+	// Should have BOTH versions
+	if !strings.Contains(a.Body, "## Characterization v1") {
+		t.Error("missing v1 characterization")
+	}
+	if !strings.Contains(a.Body, "## Characterization v2") {
+		t.Error("missing v2 characterization")
+	}
+	if !strings.Contains(a.Body, "speed") {
+		t.Error("v1 dimension 'speed' should be preserved in history")
 	}
 	if !strings.Contains(a.Body, "reliability") {
 		t.Error("missing new dimension 'reliability'")

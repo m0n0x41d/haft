@@ -416,6 +416,23 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 	return items, rows.Err()
 }
 
+// LastRefreshScan returns the timestamp of the last quint_refresh:scan call from audit_log.
+// Returns zero time if never scanned.
+func (s *Store) LastRefreshScan(ctx context.Context) time.Time {
+	var ts string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT timestamp FROM audit_log WHERE operation = 'quint_refresh:scan' ORDER BY timestamp DESC LIMIT 1`,
+	).Scan(&ts)
+	if err != nil {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339, ts)
+	if t.IsZero() {
+		t, _ = time.Parse("2006-01-02 15:04:05", ts) // SQLite CURRENT_TIMESTAMP format
+	}
+	return t
+}
+
 // --- helpers ---
 
 func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {

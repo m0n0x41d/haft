@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/m0n0x41d/quint-code/db"
@@ -105,6 +106,17 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 		action, _ := params.Arguments["action"].(string)
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
 
+		// Periodic refresh prompt — if >5 days since last scan, remind agent
+		if toolErr == nil && params.Name != "quint_refresh" {
+			lastScan := store.LastRefreshScan(ctx)
+			if !lastScan.IsZero() {
+				daysSince := int(time.Since(lastScan).Hours() / 24)
+				if daysSince >= 5 {
+					result += fmt.Sprintf("\n\n--- Refresh reminder: %d days since last stale scan. Run quint_refresh(action=\"scan\") to check for stale decisions and evidence decay. ---\n", daysSince)
+				}
+			}
+		}
+
 		return result, toolErr
 	}
 }
@@ -145,6 +157,14 @@ func logAudit(ctx context.Context, rawDB *sql.DB, toolName, action string, args 
 	if err != nil {
 		logger.Warn().Err(err).Str("tool", toolName).Msg("audit log write failed")
 	}
+}
+
+func truncateMeasure(s string, max int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // --- Tool handlers ---
@@ -601,8 +621,17 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 		// Show WLNK summary after measurement
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, a.Meta.ID)
+		extra := fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
+
+		// Lemniscate feedback: failed/partial measurement → suggest reopen
+		if input.Verdict == "failed" || input.Verdict == "partial" {
+			extra += fmt.Sprintf("\nThis decision's measurement %s. Consider re-evaluating:\n", input.Verdict)
+			extra += fmt.Sprintf("  quint_refresh(action=\"reopen\", artifact_ref=\"%s\", reason=\"measurement %s: %s\")\n",
+				input.DecisionRef, input.Verdict, truncateMeasure(input.Findings, 80))
+		}
+
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatDecisionResponse("measure", a, "", fmt.Sprintf("WLNK: %s\n", wlnk.Summary), navStrip), nil
+		return artifact.FormatDecisionResponse("measure", a, "", extra, navStrip), nil
 
 	case "evidence":
 		input := artifact.EvidenceInput{

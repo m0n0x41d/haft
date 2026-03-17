@@ -119,11 +119,15 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 			continue
 		}
 		if wlnk.REff < 0.5 {
+			reason := fmt.Sprintf("evidence degraded (R_eff: %.2f)", wlnk.REff)
+			if wlnk.REff < 0.3 {
+				reason = fmt.Sprintf("AT RISK — evidence degraded (R_eff: %.2f) — consider reopen or supersede", wlnk.REff)
+			}
 			items = append(items, StaleItem{
 				ID:    d.Meta.ID,
 				Title: d.Meta.Title,
 				Kind:  string(d.Meta.Kind),
-				Reason: fmt.Sprintf("evidence degraded (R_eff: %.2f)", wlnk.REff),
+				Reason: reason,
 			})
 		}
 	}

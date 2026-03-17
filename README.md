@@ -1,228 +1,88 @@
 <img src="assets/banner.svg" alt="Quint Code" width="600">
 
-**Frame problems. Compare options fairly. Know when your decisions need revisiting.**
+**Engineering decisions that know when they're stale.**
+
+Frame problems. Compare options fairly. Record decisions as contracts. Know when to revisit.
 
 Supports: Claude Code, Cursor, Gemini CLI, Codex CLI
 
 ---
 
-## What Quint Code Does
-
-Quint Code is an FPF-native reasoning layer for engineering decisions. It helps you:
-
-1. **Frame the actual problem** before jumping to solutions
-2. **Structure the comparison space** — define dimensions, record variants with weakest links
-3. **Record decisions as engineering contracts** — invariants, DO/DON'T, rollback plans, refresh triggers
-4. **Detect when decisions go stale** — expired validity and degraded evidence surfaced automatically
-5. **Manage artifact lifecycle** — notes, problems, decisions all have refresh, deprecation, and supersession
-
-**Storage model:** SQLite is the source of truth for the engine (search, stale detection, WLNK computation, link traversal). Markdown files in `.quint/` are written as git-friendly projections — readable, diffable, portable, but not what the engine reads. See [why DB is primary](#why-db-is-primary).
-
----
-
-## Quick Start
+## Install
 
 ```bash
-# Install
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
-
-# Initialize in your project
-cd your-project
-quint-code init
-
-# Start using
-# /q-note   — capture a quick decision
-# /q-frame  — frame a problem properly
-# /q-reason — structured FPF reasoning
+cd your-project && quint-code init
 ```
+
+Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 
 ---
 
 ## How It Works
 
-### Quick decisions: `/q-note`
+### One command: `/q-reason`
+
+Describe your problem. The agent frames it, generates alternatives, compares them fairly, and records the decision — all in one command. It auto-selects the right depth.
+
+### Or drive each step manually
 
 ```
-Dev: "using RWMutex for session cache — contention <0.1% per load test"
-
-Quint validates:
-  - Rationale provided? Yes
-  - Conflicts with active decisions? No
-  - Scope too large for a note? No
-  -> Recorded. Searchable. Auto-expires in 90 days.
+/q-frame  → /q-char  → /q-explore → /q-compare → /q-decide
+  what's      what       genuinely     fair         engineering
+  broken?     matters?   different     comparison   contract
+                         options
 ```
 
-### Tactical choices: fast path
+### Micro-decisions on the fly
 
-```
-/q-frame   → /q-explore   → /q-decide
-  problem      variants       decision
-```
+The agent captures decisions automatically when it notices them in conversation. No rationale — no record. Conflicts with active decisions are flagged. Auto-expires in 90 days.
 
-Skip straight from problem to variants to decision. The tool records everything, but comparison is on you — no safety net.
+### When decisions go stale
 
-```
-/q-frame "Rate limiting on public API — scraper traffic causing degraded response times"
-/q-explore — generates 3 variants with weakest link per option
-/q-decide — full DRR with invariants, pre/post-conditions, rollback
-```
-
-### Architectural decisions: full flow with comparison contract
-
-```
-/q-frame  → /q-char      → /q-explore → /q-compare → /q-decide
-  problem    dimensions      variants     fair check    decision
-             + roles                      against
-             + parity                     your own
-                                          criteria
-```
-
-The difference: `/q-char` defines **what you'll compare on** before you see the variants. Each dimension gets a role:
-- **constraint** — hard limit (must satisfy, e.g., "latency < 10ms")
-- **target** — what you're optimizing (e.g., "reduce cost")
-- **observation** — watch but don't optimize (Anti-Goodhart, e.g., "CPU usage")
-
-Then `/q-compare` checks your work against your own criteria:
-- Missing a constraint dimension? Strong warning.
-- Variant scored on some dimensions but not others? Warning.
-- Parity rules defined? Checklist generated per dimension.
-
-Same decision quality, but with protection against comparison mistakes:
-forgetting a dimension, scoring variants asymmetrically, or optimizing
-a metric you said you'd only observe.
-
-### When decisions go stale: `/q-refresh`
-
-```
-/q-status   — shows what's expired, what needs attention, open vs addressed problems
-/q-refresh  — waive (extend), reopen (new problem cycle), supersede, or deprecate
-             works on ALL artifact types: notes, problems, decisions, portfolios
-```
+`/q-status` shows what's expired and what needs attention. `/q-refresh` manages the lifecycle of ALL artifact types — waive, reopen, supersede, or deprecate.
 
 ---
 
-## 6 Tools, 11 Commands
+## What Makes It Different
 
-| Tool | What it does | Commands |
-|------|-------------|----------|
-| `quint_note` | Micro-decisions with validation + auto-expiry | `/q-note` |
-| `quint_problem` | Frame problems, define comparison space | `/q-frame` `/q-char` `/q-problems` |
-| `quint_solution` | Explore variants with WLNK, diversity check, compare with parity | `/q-explore` `/q-compare` |
-| `quint_decision` | Decide with full FPF E.9 rationale, measure impact, attach evidence | `/q-decide` |
-| `quint_refresh` | Manage lifecycle for ALL artifacts — detect stale, waive, deprecate | `/q-refresh` |
-| `quint_query` | Search, status dashboard, file lookups, full artifact listing | `/q-search` `/q-status` |
-
-Plus: `quint-code fpf search` for deep FPF methodology lookups.
+- **Decisions are live** — they have computed trust scores (R_eff) that degrade as evidence ages. An expired benchmark drops the whole score.
+- **Comparison is honest** — parity enforced, dimensions cross-checked, asymmetric scoring warned. Anti-Goodhart: tag dimensions as "observation" to prevent optimizing the wrong metric.
+- **Memory across sessions** — when you frame a problem, the tool surfaces related past decisions. When you explore, it checks for similar variants.
+- **The loop closes** — failed measurements suggest reopening. Evidence decay triggers review. Periodic refresh prompts ensure nothing goes stale silently.
+- **Decisions are contracts** — FPF E.9 format: Problem Frame, Decision (invariants + DO/DON'T), Rationale, Consequences. A new engineer reads it 6 months later and gets everything.
 
 ---
 
-## Decision Modes
+## 6 Tools
 
-| Mode | When | What you get |
-|------|------|-------------|
-| **note** | Micro-decisions during coding | Note with rationale, auto-expires 90 days |
-| **tactical** | Reversible, < 2 weeks impact | Problem + Decision (light) |
-| **standard** | Most architectural decisions | Problem + Portfolio + Decision |
-| **deep** | Irreversible, cross-team, security | All standard + parity, runbook, refresh |
-
----
-
-## What Gets Recorded
-
-Artifacts are markdown files with YAML frontmatter in `.quint/`:
-
-```
-.quint/
-  notes/        — quick decisions (auto-expire at 90 days)
-  problems/     — framed problems with characterization
-  solutions/    — variant portfolios with comparison + diversity check
-  decisions/    — FPF E.9 decision records (the crown jewel)
-  evidence/     — evidence packs
-  refresh/      — refresh reports
-  quint.db      — SQLite engine (search, stale detection, WLNK, links)
-```
-
-Every file is git-tracked, human-readable, and searchable via `quint_query`.
+| Tool | What it does |
+|------|-------------|
+| `quint_note` | Micro-decisions with validation + auto-expiry |
+| `quint_problem` | Frame problems, define comparison dimensions with roles |
+| `quint_solution` | Explore variants with diversity check, compare with parity |
+| `quint_decision` | FPF E.9 decision contract, impact measurement, evidence |
+| `quint_refresh` | Lifecycle management for all artifacts |
+| `quint_query` | Search, status dashboard, file-to-decision lookup |
 
 ---
 
-## DecisionRecord — FPF E.9 Engineering Contract
+## Built on First Principles Framework
 
-A full DRR follows the FPF E.9 four-component structure:
+[FPF](https://github.com/ailev/FPF) by [Anatoly Levenchuk](https://www.linkedin.com/in/ailev/) — a rigorous, transdisciplinary architecture for thinking. Quint Code implements the engineering subset: problem framing, characterization, parity, WLNK, evidence decay, and the lemniscate cycle.
 
-### 1. Problem Frame
-- **Signal** — what's anomalous (pulled from linked ProblemCard)
-- **Constraints** — hard limits
-- **Acceptance** — how we know it's solved
-
-### 2. Decision (the contract)
-- **Selected variant** — what was chosen and why
-- **Invariants** — what MUST hold at all times
-- **Pre-conditions** — checklist before implementation
-- **Post-conditions** — definition of done
-- **Admissibility** — what is NOT acceptable
-
-### 3. Rationale
-- **Why this, not others** — comparison table
-- **Weakest link** — what bounds reliability
-- **Evidence requirements** — what to measure
-
-### 4. Consequences
-- **Rollback plan** — triggers, steps, blast radius
-- **Refresh triggers** — when to re-evaluate
-- **Affected files** — what code is touched
-
-A new engineer reads this 6 months later and understands everything — context, contract, reasoning, and risk.
+`quint-code fpf search` gives you access to 4243 indexed sections from the FPF specification.
 
 ---
 
-## Computed Features
+## Learn More
 
-Quint doesn't just store — it computes:
-
-| Feature | What it does |
-|---------|-------------|
-| **R_eff** | Effective reliability = min(evidence scores) with CL penalties. WLNK principle: never average. |
-| **Evidence decay** | Expired evidence scores 0.1 (weak, not absent). R_eff < 0.5 triggers stale detection. |
-| **Epistemic debt** | Graduated staleness severity — most overdue items shown first, debt magnitude displayed. |
-| **Note validation** | Rationale check + conflict detection against active decisions + scope gate. |
-| **Diversity check** | Jaccard similarity on variants — warns when explore submissions look too similar. |
-| **Archive recall** | FTS5 search on title at frame/explore time — surfaces related past decisions and notes. |
-| **Characterization cross-check** | Compare warns when dimensions don't match characterization, scores are asymmetric, or parity rules exist. |
-| **Parity checklist** | Auto-generated per-dimension parity questions from characterization. |
-| **Problem lifecycle** | Status dashboard splits open vs addressed problems via backlink analysis. |
-
----
-
-## Why DB Is Primary
-
-Quint Code uses SQLite as the engine's source of truth, not the markdown files. This isn't an accident — it follows from what the product does.
-
-**The lemniscate cycle requires computation, not file reading.** Stale detection scans `valid_until` across all artifacts. R_eff aggregates evidence items with CL penalties and freshness decay. Search uses FTS5 indexes. Status computes derived state from artifact completeness. Link traversal finds what problem a decision is based on. All of these are SQL operations — indexed, transactional, fast.
-
-If files were primary, every tool call would parse N markdown files, build an in-memory graph, and hope nothing is malformed. That's slow, fragile, and non-atomic.
-
-**FPF distinction: Object ≠ Carrier.** The artifact model (the object — its state, links, evidence) lives in the DB. The markdown file (the carrier — human-readable, git-tracked) is a projection. Confusing the carrier with the object is the exact anti-pattern FPF warns about: treating the description as the thing it describes.
-
-**What the files are for:**
-- Git history — who changed what decision, when
-- Human review — read a DRR without running Quint
-- Code review — PRs include decision artifacts as readable diffs
-- Portability — copy `.quint/` to another machine
-
-**What the files are NOT for:**
-- Engine queries (use `quint_query`)
-- Stale detection (use `quint_refresh`)
-- Link traversal (use `quint_query(action="related")`)
-
-If you manually edit a `.quint/*.md` file, the DB won't know. The engine will continue using the DB version. A future `sync` command may reimport edited files.
-
----
+See the [documentation](https://quint.codes/learn) for detailed guides on decision modes, the DRR format, computed features, and lifecycle management.
 
 ## Requirements
 
 - Go 1.24+ (for building from source)
-- Any MCP-capable AI tool (Claude Code, Cursor, Gemini CLI, Codex CLI)
+- Any MCP-capable AI tool
 
 ## License
 

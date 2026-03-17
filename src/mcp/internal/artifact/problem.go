@@ -459,56 +459,9 @@ func countBullets(body, section string) int {
 }
 
 // countCharacterizationDimensions counts dimension rows in the latest characterization table.
+// Uses extractCharacterizedDimensions from solution.go (same package).
 func countCharacterizationDimensions(p *Artifact) int {
-	// Reuse existing parser — just count results
-	dims := extractCharacterizedDimensionsFromBody(p.Body)
-	return len(dims)
-}
-
-// extractCharacterizedDimensionsFromBody is a local helper to avoid import cycle.
-// Counts table rows (lines starting with | that aren't header/separator).
-func extractCharacterizedDimensionsFromBody(body string) []string {
-	lastIdx := -1
-	for i := 100; i >= 1; i-- {
-		marker := fmt.Sprintf("## Characterization v%d", i)
-		if idx := strings.Index(body, marker); idx != -1 {
-			lastIdx = idx
-			break
-		}
-	}
-	if lastIdx == -1 {
-		return nil
-	}
-	section := body[lastIdx:]
-	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
-		section = section[:endIdx+1]
-	}
-	var dims []string
-	inTable := false
-	for _, line := range strings.Split(section, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "|") {
-			if inTable {
-				break
-			}
-			continue
-		}
-		if strings.Contains(line, "Dimension") || strings.Contains(line, "---") {
-			inTable = true
-			continue
-		}
-		if !inTable {
-			continue
-		}
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) >= 3 {
-			name := strings.TrimSpace(parts[1])
-			if name != "" && name != "-" {
-				dims = append(dims, name)
-			}
-		}
-	}
-	return dims
+	return len(extractCharacterizedDimensions(p.Body))
 }
 
 func countCharacterizations(p *Artifact) int {

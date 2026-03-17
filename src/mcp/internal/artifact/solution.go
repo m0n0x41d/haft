@@ -36,6 +36,21 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 		}
 	}
 
+	// Diversity check: warn on near-identical variants (Jaccard > 0.5)
+	var diversityWarnings []string
+	for i := 0; i < len(input.Variants); i++ {
+		for j := i + 1; j < len(input.Variants); j++ {
+			textI := input.Variants[i].Title + " " + input.Variants[i].Description
+			textJ := input.Variants[j].Title + " " + input.Variants[j].Description
+			sim := jaccardSimilarity(textI, textJ)
+			if sim > 0.5 {
+				diversityWarnings = append(diversityWarnings,
+					fmt.Sprintf("Variants '%s' and '%s' look similar (%.0f%% word overlap) — do they differ in kind, not degree?",
+						input.Variants[i].Title, input.Variants[j].Title, sim*100))
+			}
+		}
+	}
+
 	// Resolve problem reference
 	var problemTitle string
 	var links []Link
@@ -154,6 +169,19 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 			Links:     links,
 		},
 		Body: body.String(),
+	}
+
+	// Append diversity warnings if any
+	if len(diversityWarnings) > 0 {
+		a.Body += "\n## Diversity Warnings\n\n"
+		for _, w := range diversityWarnings {
+			a.Body += fmt.Sprintf("- ⚠ %s\n", w)
+		}
+	}
+
+	// Archive recall: search for related past artifacts
+	if recall := recallRelated(ctx, store, title); recall != "" {
+		a.Body += recall
 	}
 
 	if err := store.Create(ctx, a); err != nil {
@@ -372,6 +400,83 @@ func extractCharacterizedDimensions(body string) []string {
 		}
 	}
 	return dims
+}
+
+// jaccardSimilarity computes Jaccard index (intersection/union) of word sets from two texts.
+func jaccardSimilarity(a, b string) float64 {
+	wordsA := wordSet(a)
+	wordsB := wordSet(b)
+	if len(wordsA) == 0 && len(wordsB) == 0 {
+		return 0
+	}
+
+	intersection := 0
+	for w := range wordsA {
+		if wordsB[w] {
+			intersection++
+		}
+	}
+
+	union := len(wordsA)
+	for w := range wordsB {
+		if !wordsA[w] {
+			union++
+		}
+	}
+
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
+}
+
+// wordSet splits text into a set of lowercase words, stripping punctuation.
+func wordSet(text string) map[string]bool {
+	set := make(map[string]bool)
+	for _, w := range strings.Fields(strings.ToLower(text)) {
+		// Strip common punctuation
+		w = strings.Trim(w, ".,;:!?\"'()-[]{}/*")
+		if len(w) > 1 { // skip single chars
+			set[w] = true
+		}
+	}
+	return set
+}
+
+// recallRelated searches for existing active artifacts related to the given title.
+// Returns a markdown section or empty string if no matches found.
+func recallRelated(ctx context.Context, store *Store, title string) string {
+	if store == nil || title == "" {
+		return ""
+	}
+
+	results, err := store.Search(ctx, title, 5)
+	if err != nil || len(results) == 0 {
+		return ""
+	}
+
+	// Filter to active only, skip self-matches by checking creation time (just created = skip)
+	var related []*Artifact
+	for _, r := range results {
+		if r.Meta.Status != StatusActive && r.Meta.Status != StatusRefreshDue {
+			continue
+		}
+		related = append(related, r)
+		if len(related) >= 3 {
+			break
+		}
+	}
+
+	if len(related) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n## Related History\n\n")
+	for _, r := range related {
+		sb.WriteString(fmt.Sprintf("- [%s] **%s** `%s`\n", r.Meta.Kind, r.Meta.Title, r.Meta.ID))
+	}
+	return sb.String()
 }
 
 // FindActivePortfolio returns the most recent active SolutionPortfolio for a context.

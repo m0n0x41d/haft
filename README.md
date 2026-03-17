@@ -52,7 +52,14 @@ Quint validates:
   -> Recorded. Searchable. Auto-expires in 90 days.
 ```
 
-### Tactical choices: `/q-frame` -> `/q-explore` -> `/q-decide`
+### Tactical choices: fast path
+
+```
+/q-frame   → /q-explore   → /q-decide
+  problem      variants       decision
+```
+
+Skip straight from problem to variants to decision. The tool records everything, but comparison is on you — no safety net.
 
 ```
 /q-frame "Rate limiting on public API — scraper traffic causing degraded response times"
@@ -60,15 +67,29 @@ Quint validates:
 /q-decide — full DRR with invariants, pre/post-conditions, rollback
 ```
 
-### Architectural decisions: full flow
+### Architectural decisions: full flow with comparison contract
 
 ```
-/q-frame    — define the problem, constraints, acceptance criteria
-/q-char     — define comparison dimensions (throughput, ops complexity, cost)
-/q-explore  — generate genuinely distinct variants, label weakest link per option
-/q-compare  — record comparison results, identify non-dominated set (Pareto front)
-/q-decide   — full DecisionRecord as FPF E.9 engineering contract
+/q-frame  → /q-char      → /q-explore → /q-compare → /q-decide
+  problem    dimensions      variants     fair check    decision
+             + roles                      against
+             + parity                     your own
+                                          criteria
 ```
+
+The difference: `/q-char` defines **what you'll compare on** before you see the variants. Each dimension gets a role:
+- **constraint** — hard limit (must satisfy, e.g., "latency < 10ms")
+- **target** — what you're optimizing (e.g., "reduce cost")
+- **observation** — watch but don't optimize (Anti-Goodhart, e.g., "CPU usage")
+
+Then `/q-compare` checks your work against your own criteria:
+- Missing a constraint dimension? Strong warning.
+- Variant scored on some dimensions but not others? Warning.
+- Parity rules defined? Checklist generated per dimension.
+
+Same decision quality, but with protection against comparison mistakes:
+forgetting a dimension, scoring variants asymmetrically, or optimizing
+a metric you said you'd only observe.
 
 ### When decisions go stale: `/q-refresh`
 

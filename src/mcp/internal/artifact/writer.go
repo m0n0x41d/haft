@@ -43,6 +43,9 @@ func renderArtifact(a *Artifact) string {
 	sb.WriteString(fmt.Sprintf("kind: %s\n", a.Meta.Kind))
 	sb.WriteString(fmt.Sprintf("version: %d\n", a.Meta.Version))
 	sb.WriteString(fmt.Sprintf("status: %s\n", a.Meta.Status))
+	if a.Meta.Title != "" {
+		sb.WriteString(fmt.Sprintf("title: %s\n", a.Meta.Title))
+	}
 	if a.Meta.Context != "" {
 		sb.WriteString(fmt.Sprintf("context: %s\n", a.Meta.Context))
 	}

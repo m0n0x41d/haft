@@ -227,6 +227,9 @@ func TestRoundTrip(t *testing.T) {
 	if parsed.Meta.ID != original.Meta.ID {
 		t.Errorf("id: %q != %q", parsed.Meta.ID, original.Meta.ID)
 	}
+	if parsed.Meta.Title != original.Meta.Title {
+		t.Errorf("title: %q != %q", parsed.Meta.Title, original.Meta.Title)
+	}
 	if parsed.Meta.Kind != original.Meta.Kind {
 		t.Errorf("kind: %q != %q", parsed.Meta.Kind, original.Meta.Kind)
 	}

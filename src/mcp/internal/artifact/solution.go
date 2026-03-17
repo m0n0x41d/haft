@@ -253,6 +253,25 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 			}
 		}
 
+		// Check dimension measurement freshness
+		now := time.Now().UTC()
+		for _, cd := range charDimsWithRoles {
+			if cd.ValidUntil != "" {
+				// Try both RFC3339 and date-only formats
+				var parsed time.Time
+				var parseErr error
+				parsed, parseErr = time.Parse(time.RFC3339, cd.ValidUntil)
+				if parseErr != nil {
+					parsed, parseErr = time.Parse("2006-01-02", cd.ValidUntil)
+				}
+				if parseErr == nil && parsed.Before(now) {
+					days := int(now.Sub(parsed).Hours() / 24)
+					compareWarnings = append(compareWarnings,
+						fmt.Sprintf("Dimension '%s' measurement expired %d day(s) ago — remeasure before comparing", cd.Name, days))
+				}
+			}
+		}
+
 		// Check score completeness: are all variants scored on all dimensions?
 		for variantID, scores := range input.Results.Scores {
 			var gaps []string
@@ -367,10 +386,11 @@ func CompareSolutions(ctx context.Context, store *Store, quintDir string, input 
 	return a, filePath, nil
 }
 
-// charDim holds a parsed dimension with its indicator role.
+// charDim holds a parsed dimension with its indicator role and freshness.
 type charDim struct {
-	Name string
-	Role string // constraint, target, observation
+	Name       string
+	Role       string // constraint, target, observation
+	ValidUntil string // measurement freshness (RFC3339 or empty)
 }
 
 // extractCharacterizedDimensions parses dimension names and roles from the latest
@@ -412,6 +432,7 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 	lines := strings.Split(section, "\n")
 	inTable := false
 	hasRoleColumn := false
+	hasValidUntilColumn := false
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
@@ -422,6 +443,7 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 		}
 		if strings.Contains(line, "Dimension") {
 			hasRoleColumn = strings.Contains(line, "Role")
+			hasValidUntilColumn = strings.Contains(line, "Valid Until")
 			inTable = true
 			continue
 		}
@@ -433,7 +455,6 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		// parts[0] is empty (before first |), parts[1] is first column
 		if len(parts) < 3 {
 			continue
 		}
@@ -448,7 +469,15 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 				role = r
 			}
 		}
-		dims = append(dims, charDim{Name: name, Role: role})
+		validUntil := ""
+		if hasValidUntilColumn {
+			// Valid Until is the last data column
+			lastCol := strings.TrimSpace(parts[len(parts)-2]) // -2 because last is empty after trailing |
+			if lastCol != "" && lastCol != "-" {
+				validUntil = lastCol
+			}
+		}
+		dims = append(dims, charDim{Name: name, Role: role, ValidUntil: validUntil})
 	}
 	return dims
 }

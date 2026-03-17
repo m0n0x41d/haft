@@ -106,6 +106,26 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 		items = append(items, item)
 	}
 
+	// Check active decisions with evidence for R_eff degradation
+	decisions, _ := store.ListByKind(ctx, KindDecisionRecord, 100)
+	for _, d := range decisions {
+		if d.Meta.Status != StatusActive || seen[d.Meta.ID] {
+			continue
+		}
+		wlnk := ComputeWLNKSummary(ctx, store, d.Meta.ID)
+		if !wlnk.HasEvidence {
+			continue
+		}
+		if wlnk.REff < 0.5 {
+			items = append(items, StaleItem{
+				ID:    d.Meta.ID,
+				Title: d.Meta.Title,
+				Kind:  string(d.Meta.Kind),
+				Reason: fmt.Sprintf("evidence degraded (R_eff: %.2f)", wlnk.REff),
+			})
+		}
+	}
+
 	// Sort by debt descending — most overdue first
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].DaysStale > items[j].DaysStale

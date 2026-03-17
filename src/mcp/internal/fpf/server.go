@@ -62,8 +62,11 @@ func (s *Server) SetV5Handler(h V5ToolHandler) {
 }
 
 func (s *Server) Start() {
+	logger.Info().Msg("MCP server starting")
+
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB buffer — default 64KB silently kills the server on large payloads
+	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB buffer
+
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -72,23 +75,47 @@ func (s *Server) Start() {
 
 		var req JSONRPCRequest
 		if err := json.Unmarshal(line, &req); err != nil {
+			logger.Warn().Err(err).Int("line_len", len(line)).Msg("JSON-RPC parse error")
 			s.sendError(nil, -32700, "Parse error")
 			continue
 		}
 
-		switch req.Method {
-		case "initialize":
-			s.handleInitialize(req)
-		case "tools/list":
-			s.handleToolsList(req)
-		case "tools/call":
-			s.handleToolsCall(req)
-		case "notifications/initialized":
-			// No-op
-		default:
+		logger.Debug().Str("method", req.Method).Msg("request received")
+
+		s.handleRequest(req)
+	}
+
+	// Scanner exited — log why
+	if err := scanner.Err(); err != nil {
+		logger.Error().Err(err).Msg("MCP server: scanner error (stdin read failure)")
+	} else {
+		logger.Info().Msg("MCP server: stdin closed (EOF)")
+	}
+}
+
+func (s *Server) handleRequest(req JSONRPCRequest) {
+	// Recover from panics — log and return error instead of crashing
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error().Interface("panic", r).Str("method", req.Method).Msg("MCP server: panic recovered")
 			if req.ID != nil {
-				s.sendError(req.ID, -32601, "Method not found")
+				s.sendError(req.ID, -32603, fmt.Sprintf("internal error: %v", r))
 			}
+		}
+	}()
+
+	switch req.Method {
+	case "initialize":
+		s.handleInitialize(req)
+	case "tools/list":
+		s.handleToolsList(req)
+	case "tools/call":
+		s.handleToolsCall(req)
+	case "notifications/initialized":
+		// No-op
+	default:
+		if req.ID != nil {
+			s.sendError(req.ID, -32601, "Method not found")
 		}
 	}
 }
@@ -99,7 +126,9 @@ func (s *Server) send(resp JSONRPCResponse) {
 		logger.Error().Err(err).Msg("failed to marshal JSON-RPC response")
 		return
 	}
-	fmt.Printf("%s\n", string(bytes))
+	if _, err := fmt.Printf("%s\n", string(bytes)); err != nil {
+		logger.Error().Err(err).Msg("failed to write to stdout")
+	}
 }
 
 func (s *Server) sendResult(id interface{}, result interface{}) {

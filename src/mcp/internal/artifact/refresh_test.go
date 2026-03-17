@@ -345,3 +345,77 @@ func TestNoteExplicitValidUntil(t *testing.T) {
 		t.Errorf("valid_until = %q, want %q", note.Meta.ValidUntil, explicit)
 	}
 }
+
+func TestScanStale_REffDegradedDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Create decision with refuting evidence → R_eff = 0.0
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test decision",
+		WhySelected:   "For testing",
+		ValidUntil:    "2027-01-01T00:00:00Z", // not expired by valid_until
+	})
+
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "System crashed under load",
+		Verdict:         "refutes",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range items {
+		if item.ID == dec.Meta.ID {
+			found = true
+			if !strings.Contains(item.Reason, "evidence degraded") {
+				t.Errorf("reason should mention evidence degraded: %q", item.Reason)
+			}
+			if !strings.Contains(item.Reason, "R_eff: 0.00") {
+				t.Errorf("reason should show R_eff: %q", item.Reason)
+			}
+		}
+	}
+	if !found {
+		t.Error("decision with R_eff=0.0 should appear in stale scan")
+	}
+}
+
+func TestScanStale_HealthyEvidenceNotStale(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Create decision with supporting evidence → R_eff = 1.0
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Healthy decision",
+		WhySelected:   "For testing",
+		ValidUntil:    "2027-01-01T00:00:00Z",
+	})
+
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "All tests pass",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range items {
+		if item.ID == dec.Meta.ID {
+			t.Error("decision with R_eff=1.0 should NOT appear in stale scan")
+		}
+	}
+}

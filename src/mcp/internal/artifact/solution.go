@@ -184,13 +184,16 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 		a.Body += recall
 	}
 
-	// SoTA survey prompt for standard/deep mode
+	// SoTA survey + evidence collection prompts for standard/deep mode
 	if mode == ModeStandard || mode == ModeDeep {
 		a.Body += "\n## SoTA Survey Reminder\n\n"
 		a.Body += "Before deciding, have you surveyed existing solutions?\n"
 		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
 		a.Body += "- **Library docs** — check current API/usage patterns for relevant libraries\n"
 		a.Body += "- **FPF spec search** — `quint-code fpf search \"<topic>\"` for methodology patterns\n"
+		a.Body += fmt.Sprintf("\n## Evidence Collection\n\n")
+		a.Body += "Research each variant before comparing. Run tests, check benchmarks, validate claims.\n"
+		a.Body += fmt.Sprintf("Attach findings: `quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"research\", evidence_verdict=\"supports\")`\n", a.Meta.ID)
 	}
 
 	if err := store.Create(ctx, a); err != nil {

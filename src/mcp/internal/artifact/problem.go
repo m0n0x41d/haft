@@ -295,6 +295,10 @@ func FormatProblemResponse(action string, a *Artifact, filePath string, navStrip
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
+		if a.Meta.Mode == ModeStandard || a.Meta.Mode == ModeDeep {
+			sb.WriteString(fmt.Sprintf("\nValidate this signal with evidence before exploring. Run tests, check metrics, research data.\n"))
+			sb.WriteString(fmt.Sprintf("  quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"measurement\", evidence_verdict=\"supports\")\n", a.Meta.ID))
+		}
 	case "characterize":
 		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))
 		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
@@ -337,6 +341,35 @@ func FormatProblemsListResponse(problems []*Artifact, store *Store, ctx context.
 			sb.WriteString(fmt.Sprintf("Characterization: %d version(s) defined\n", charCount))
 		} else {
 			sb.WriteString("Characterization: not yet defined\n")
+		}
+
+		// Evidence count
+		if store != nil {
+			evidItems, _ := store.GetEvidenceItems(ctx, p.Meta.ID)
+			if len(evidItems) > 0 {
+				supporting, weakening, refuting := 0, 0, 0
+				for _, e := range evidItems {
+					switch e.Verdict {
+					case "supports", "accepted":
+						supporting++
+					case "weakens", "partial":
+						weakening++
+					case "refutes", "failed":
+						refuting++
+					}
+				}
+				sb.WriteString(fmt.Sprintf("Evidence: %d item(s)", len(evidItems)))
+				if supporting > 0 {
+					sb.WriteString(fmt.Sprintf(", %d supporting", supporting))
+				}
+				if weakening > 0 {
+					sb.WriteString(fmt.Sprintf(", %d weakening", weakening))
+				}
+				if refuting > 0 {
+					sb.WriteString(fmt.Sprintf(", %d REFUTING", refuting))
+				}
+				sb.WriteString("\n")
+			}
 		}
 
 		// Linked artifacts

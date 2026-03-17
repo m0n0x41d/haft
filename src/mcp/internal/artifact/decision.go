@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -312,14 +313,17 @@ type MeasureInput struct {
 }
 
 // EvidenceInput attaches evidence to any artifact.
+// CongruenceLevel and FormalityLevel use -1 as "not provided" sentinel.
+// JSON decodes missing fields as 0, which is a valid CL value (opposed context).
+// Callers from MCP should set these to -1 when the user doesn't provide them.
 type EvidenceInput struct {
 	ArtifactRef     string `json:"artifact_ref"`
 	Content         string `json:"content"`
 	Type            string `json:"type"`    // measurement, test, research, benchmark, audit
 	Verdict         string `json:"verdict"` // supports, weakens, refutes
 	CarrierRef      string `json:"carrier_ref,omitempty"`
-	CongruenceLevel int    `json:"congruence_level,omitempty"` // 0-3, default 3
-	FormalityLevel  int    `json:"formality_level,omitempty"`  // 0-9, default 5
+	CongruenceLevel int    `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
+	FormalityLevel  int    `json:"formality_level"`  // 0-9; -1 = not provided (defaults to 5)
 	ValidUntil      string `json:"valid_until,omitempty"`
 }
 
@@ -409,10 +413,10 @@ func AttachEvidence(ctx context.Context, store *Store, input EvidenceInput) (*Ev
 	if input.Type == "" {
 		input.Type = "general"
 	}
-	if input.CongruenceLevel == 0 {
+	if input.CongruenceLevel < 0 {
 		input.CongruenceLevel = 3
 	}
-	if input.FormalityLevel == 0 {
+	if input.FormalityLevel < 0 {
 		input.FormalityLevel = 5
 	}
 
@@ -436,21 +440,29 @@ func AttachEvidence(ctx context.Context, store *Store, input EvidenceInput) (*Ev
 	return item, nil
 }
 
-// WLNKSummary computes a minimal WLNK summary from an artifact's evidence items.
-// This is "tracked" maturity — it displays the evidence chain, not computes a score.
+// WLNKSummary holds WLNK analysis for an artifact based on its evidence items.
+// R_eff is computed per FPF B.3: min(effective_score_i) across all evidence,
+// where effective_score = max(0, base_score - clPenalty).
 type WLNKSummary struct {
 	ArtifactID    string
 	EvidenceCount int
 	Supporting    int
 	Weakening     int
 	Refuting      int
-	MinFreshness  string // earliest valid_until across all evidence
-	WeakestCL     int    // minimum congruence level
-	WeakestF      int    // minimum formality level
-	Summary       string // human-readable one-liner
+	HasEvidence   bool    // true if at least one evidence item exists
+	REff          float64 // computed: min(effective_score) across evidence chain
+	MinFreshness  string  // earliest valid_until across all evidence
+	WeakestCL     int     // minimum congruence level
+	WeakestF      int     // minimum formality level
+	Summary       string  // human-readable one-liner
 }
 
 // ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
+// R_eff is computed as min(effective_score_i) where:
+//   - base_score: supports=1.0, weakens=0.5, refutes=0.0
+//   - CL penalty: CL3=0.0, CL2=0.1, CL1=0.4, CL0=0.9
+//   - decay: expired evidence scores 0.1 regardless of verdict
+//   - effective_score = max(0, base_score - clPenalty)
 func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WLNKSummary {
 	result := WLNKSummary{
 		ArtifactID: artifactID,
@@ -465,7 +477,9 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 	}
 
 	result.EvidenceCount = len(items)
+	result.HasEvidence = true
 	now := time.Now().UTC()
+	minREff := 1.0
 
 	for _, e := range items {
 		switch e.Verdict {
@@ -489,7 +503,15 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 				result.MinFreshness = e.ValidUntil
 			}
 		}
+
+		// Compute per-item effective score for R_eff
+		score := scoreEvidence(e, now)
+		if score < minREff {
+			minREff = score
+		}
 	}
+
+	result.REff = minREff
 
 	// Build summary
 	var parts []string
@@ -503,6 +525,7 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 	if result.Refuting > 0 {
 		parts = append(parts, fmt.Sprintf("%d REFUTING", result.Refuting))
 	}
+	parts = append(parts, fmt.Sprintf("R_eff: %.2f", result.REff))
 	if result.MinFreshness != "" {
 		if t, err := time.Parse(time.RFC3339, result.MinFreshness); err == nil {
 			if t.Before(now) {
@@ -522,6 +545,50 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 	return result
 }
 
+// scoreEvidence computes the effective reliability score for a single evidence item.
+// FPF B.3: R_eff = max(0, base_score - Φ(CL)), with decay override for expired evidence.
+func scoreEvidence(e EvidenceItem, now time.Time) float64 {
+	// Expired evidence is weak regardless of verdict (FPF B.3.4)
+	if e.ValidUntil != "" {
+		if t, err := time.Parse(time.RFC3339, e.ValidUntil); err == nil && t.Before(now) {
+			return 0.1
+		}
+	}
+
+	base := verdictToScore(e.Verdict)
+	penalty := clPenalty(e.CongruenceLevel)
+	return math.Max(0, base-penalty)
+}
+
+// verdictToScore maps evidence verdict to base reliability score.
+func verdictToScore(verdict string) float64 {
+	switch verdict {
+	case "supports", "accepted":
+		return 1.0
+	case "weakens", "partial":
+		return 0.5
+	case "refutes", "failed":
+		return 0.0
+	default:
+		return 0.5 // unknown verdict treated as weakening
+	}
+}
+
+// clPenalty returns the congruence level penalty per FPF B.3.
+// CL3 (same context) = no penalty, CL0 (opposed) = near-total penalty.
+func clPenalty(cl int) float64 {
+	switch cl {
+	case 3:
+		return 0.0
+	case 2:
+		return 0.1
+	case 1:
+		return 0.4
+	default: // CL=0 or invalid
+		return 0.9
+	}
+}
+
 // FormatDecisionResponse builds the MCP tool response.
 func FormatDecisionResponse(action string, a *Artifact, filePath string, extra string, navStrip string) string {
 	var sb strings.Builder
@@ -536,6 +603,7 @@ func FormatDecisionResponse(action string, a *Artifact, filePath string, extra s
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
+		sb.WriteString(fmt.Sprintf("\nBefore implementing: call quint_decision(action=\"apply\", decision_ref=\"%s\") to generate the implementation brief with invariants, pre-conditions, and rollback plan.\n", a.Meta.ID))
 	case "apply":
 		sb.WriteString(extra)
 	case "measure":

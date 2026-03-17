@@ -63,6 +63,7 @@ func (s *Server) SetV5Handler(h V5ToolHandler) {
 
 func (s *Server) Start() {
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB buffer — default 64KB silently kills the server on large payloads
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {

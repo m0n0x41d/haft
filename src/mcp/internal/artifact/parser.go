@@ -36,13 +36,32 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 		rest = rest[2:]
 	}
 
-	endIdx := strings.Index(rest, "\n---")
+	// Find closing --- that is exactly "---" on its own line
+	// (not a markdown horizontal rule like "---\nsome content")
+	endIdx := -1
+	lines := strings.SplitAfter(rest, "\n")
+	offset := 0
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, "\r\n")
+		if trimmed == "---" {
+			endIdx = offset
+			break
+		}
+		offset += len(line)
+	}
+
 	if endIdx == -1 {
 		return "", content, fmt.Errorf("no closing --- found for frontmatter")
 	}
 
 	frontmatter = rest[:endIdx]
-	body = strings.TrimLeft(rest[endIdx+4:], "\n\r")
+	afterClose := rest[endIdx:]
+	// Skip the "---" line itself
+	if idx := strings.Index(afterClose, "\n"); idx >= 0 {
+		body = strings.TrimLeft(afterClose[idx+1:], "\n\r")
+	} else {
+		body = ""
+	}
 
 	return frontmatter, body, nil
 }

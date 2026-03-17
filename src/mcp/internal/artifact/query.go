@@ -70,7 +70,17 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 	sb.WriteString("## Quint Status\n\n")
 
 	// Active decisions
-	decisions, _ := store.ListByKind(ctx, KindDecisionRecord, 10)
+	var decisions []*Artifact
+	if contextFilter != "" {
+		all, _ := store.ListByContext(ctx, contextFilter)
+		for _, a := range all {
+			if a.Meta.Kind == KindDecisionRecord {
+				decisions = append(decisions, a)
+			}
+		}
+	} else {
+		decisions, _ = store.ListByKind(ctx, KindDecisionRecord, 10)
+	}
 	activeDecisions := filterActive(decisions)
 	if len(activeDecisions) > 0 {
 		sb.WriteString(fmt.Sprintf("### Active Decisions (%d)\n\n", len(activeDecisions)))
@@ -95,7 +105,17 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 	}
 
 	// Active problems
-	problems, _ := store.ListByKind(ctx, KindProblemCard, 5)
+	var problems []*Artifact
+	if contextFilter != "" {
+		all, _ := store.ListByContext(ctx, contextFilter)
+		for _, a := range all {
+			if a.Meta.Kind == KindProblemCard {
+				problems = append(problems, a)
+			}
+		}
+	} else {
+		problems, _ = store.ListByKind(ctx, KindProblemCard, 5)
+	}
 	activeProblems := filterActive(problems)
 	if len(activeProblems) > 0 {
 		sb.WriteString(fmt.Sprintf("### Active Problems (%d)\n\n", len(activeProblems)))

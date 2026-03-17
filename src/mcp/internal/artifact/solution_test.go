@@ -669,6 +669,32 @@ func TestFrame_RecallRelatedHistory(t *testing.T) {
 	}
 }
 
+func TestFrame_RecallBySignal(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	// Create a decision about Redis
+	Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Redis eviction strategy",
+		WhySelected:   "TTL-based eviction for session tokens",
+	})
+
+	// Frame a problem with different title but signal mentions Redis
+	prob, _, err := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title:  "Data consistency issues in user sessions",
+		Signal: "Redis TTL not expiring, users seeing stale session data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Signal contains "Redis" — should recall the Redis decision
+	if !strings.Contains(prob.Body, "Related History") {
+		t.Error("should recall related history via signal keyword match")
+	}
+}
+
 func TestFrame_NoRecallWhenNoHistory(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

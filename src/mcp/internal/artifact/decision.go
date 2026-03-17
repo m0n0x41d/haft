@@ -10,7 +10,8 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef    string              `json:"problem_ref,omitempty"`
+	ProblemRef    string              `json:"problem_ref,omitempty"`    // single problem (backward compat)
+	ProblemRefs   []string            `json:"problem_refs,omitempty"`  // multiple problems
 	PortfolioRef  string              `json:"portfolio_ref,omitempty"`
 	SelectedTitle string              `json:"selected_title"`
 	WhySelected   string              `json:"why_selected"`
@@ -69,9 +70,24 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 		mode = ModeStandard
 	}
 
-	var links []Link
+	// Merge ProblemRef (single, backward compat) + ProblemRefs (array) into one list
+	problemRefs := input.ProblemRefs
 	if input.ProblemRef != "" {
-		links = append(links, Link{Ref: input.ProblemRef, Type: "based_on"})
+		found := false
+		for _, r := range problemRefs {
+			if r == input.ProblemRef {
+				found = true
+				break
+			}
+		}
+		if !found {
+			problemRefs = append(problemRefs, input.ProblemRef)
+		}
+	}
+
+	var links []Link
+	for _, ref := range problemRefs {
+		links = append(links, Link{Ref: ref, Type: "based_on"})
 	}
 	if input.PortfolioRef != "" {
 		links = append(links, Link{Ref: input.PortfolioRef, Type: "based_on"})
@@ -83,11 +99,16 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 			if p, err := store.Get(ctx, input.PortfolioRef); err == nil {
 				input.Context = p.Meta.Context
 			}
-		} else if input.ProblemRef != "" {
-			if p, err := store.Get(ctx, input.ProblemRef); err == nil {
+		} else if len(problemRefs) > 0 {
+			if p, err := store.Get(ctx, problemRefs[0]); err == nil {
 				input.Context = p.Meta.Context
 			}
 		}
+	}
+
+	// Use first problem ref for Problem Frame section
+	if input.ProblemRef == "" && len(problemRefs) > 0 {
+		input.ProblemRef = problemRefs[0]
 	}
 
 	title := input.SelectedTitle

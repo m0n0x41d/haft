@@ -418,7 +418,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"description": "(decide) What bounds this decision's reliability",
 					},
 					"problem_ref": map[string]string{
-						"type": "string", "description": "(decide) ProblemCard ID",
+						"type": "string", "description": "(decide) Single ProblemCard ID. Use problem_refs for multiple.",
+					},
+					"problem_refs": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "(decide) ProblemCard IDs this decision addresses — supports multiple problems",
 					},
 					"portfolio_ref": map[string]string{
 						"type": "string", "description": "(decide) SolutionPortfolio ID",

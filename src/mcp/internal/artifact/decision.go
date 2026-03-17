@@ -301,6 +301,225 @@ func Apply(ctx context.Context, store *Store, decisionRef string) (string, error
 	return brief.String(), nil
 }
 
+// MeasureInput records impact after implementation.
+type MeasureInput struct {
+	DecisionRef string   `json:"decision_ref"`
+	Findings    string   `json:"findings"`
+	CriteriaMet []string `json:"criteria_met,omitempty"`
+	CriteriaNotMet []string `json:"criteria_not_met,omitempty"`
+	Measurements []string `json:"measurements,omitempty"`
+	Verdict     string   `json:"verdict"` // accepted, partial, failed
+}
+
+// EvidenceInput attaches evidence to any artifact.
+type EvidenceInput struct {
+	ArtifactRef     string `json:"artifact_ref"`
+	Content         string `json:"content"`
+	Type            string `json:"type"`    // measurement, test, research, benchmark, audit
+	Verdict         string `json:"verdict"` // supports, weakens, refutes
+	CarrierRef      string `json:"carrier_ref,omitempty"`
+	CongruenceLevel int    `json:"congruence_level,omitempty"` // 0-3, default 3
+	FormalityLevel  int    `json:"formality_level,omitempty"`  // 0-9, default 5
+	ValidUntil      string `json:"valid_until,omitempty"`
+}
+
+// Measure records post-implementation impact against the DRR's acceptance criteria.
+func Measure(ctx context.Context, store *Store, quintDir string, input MeasureInput) (*Artifact, error) {
+	if input.DecisionRef == "" {
+		return nil, fmt.Errorf("decision_ref is required")
+	}
+	if input.Findings == "" {
+		return nil, fmt.Errorf("findings is required — what actually happened?")
+	}
+	if input.Verdict == "" {
+		return nil, fmt.Errorf("verdict is required — accepted, partial, or failed")
+	}
+
+	a, err := store.Get(ctx, input.DecisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("decision %s not found: %w", input.DecisionRef, err)
+	}
+	if a.Meta.Kind != KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", input.DecisionRef, a.Meta.Kind)
+	}
+
+	// Append impact measurement section to DRR body
+	var section strings.Builder
+	section.WriteString(fmt.Sprintf("\n## Impact Measurement (%s)\n\n", time.Now().UTC().Format("2006-01-02")))
+	section.WriteString(fmt.Sprintf("**Verdict:** %s\n\n", input.Verdict))
+	section.WriteString(fmt.Sprintf("**Findings:**\n%s\n", input.Findings))
+
+	if len(input.CriteriaMet) > 0 {
+		section.WriteString("\n**Criteria met:**\n")
+		for _, c := range input.CriteriaMet {
+			section.WriteString(fmt.Sprintf("- [x] %s\n", c))
+		}
+	}
+	if len(input.CriteriaNotMet) > 0 {
+		section.WriteString("\n**Criteria NOT met:**\n")
+		for _, c := range input.CriteriaNotMet {
+			section.WriteString(fmt.Sprintf("- [ ] %s\n", c))
+		}
+	}
+	if len(input.Measurements) > 0 {
+		section.WriteString("\n**Measurements:**\n")
+		for _, m := range input.Measurements {
+			section.WriteString(fmt.Sprintf("- %s\n", m))
+		}
+	}
+
+	a.Body += section.String()
+
+	if err := store.Update(ctx, a); err != nil {
+		return nil, fmt.Errorf("update decision: %w", err)
+	}
+
+	// Record as evidence item
+	evidID := fmt.Sprintf("evid-%s-%s", time.Now().Format("20060102"), input.DecisionRef[:8])
+	store.AddEvidenceItem(ctx, &EvidenceItem{
+		ID:             evidID,
+		Type:           "measurement",
+		Content:        fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
+		Verdict:        input.Verdict,
+		CongruenceLevel: 3, // internal measurement = same context
+		FormalityLevel:  5,
+	}, input.DecisionRef)
+
+	writeFileQuiet(quintDir, a)
+	return a, nil
+}
+
+// AttachEvidence adds an evidence item to any artifact.
+func AttachEvidence(ctx context.Context, store *Store, input EvidenceInput) (*EvidenceItem, error) {
+	if input.ArtifactRef == "" {
+		return nil, fmt.Errorf("artifact_ref is required")
+	}
+	if input.Content == "" {
+		return nil, fmt.Errorf("content is required — what's the evidence?")
+	}
+
+	// Verify artifact exists
+	_, err := store.Get(ctx, input.ArtifactRef)
+	if err != nil {
+		return nil, fmt.Errorf("artifact %s not found: %w", input.ArtifactRef, err)
+	}
+
+	if input.Type == "" {
+		input.Type = "general"
+	}
+	if input.CongruenceLevel == 0 {
+		input.CongruenceLevel = 3
+	}
+	if input.FormalityLevel == 0 {
+		input.FormalityLevel = 5
+	}
+
+	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+
+	item := &EvidenceItem{
+		ID:              id,
+		Type:            input.Type,
+		Content:         input.Content,
+		Verdict:         input.Verdict,
+		CarrierRef:      input.CarrierRef,
+		CongruenceLevel: input.CongruenceLevel,
+		FormalityLevel:  input.FormalityLevel,
+		ValidUntil:      input.ValidUntil,
+	}
+
+	if err := store.AddEvidenceItem(ctx, item, input.ArtifactRef); err != nil {
+		return nil, fmt.Errorf("store evidence: %w", err)
+	}
+
+	return item, nil
+}
+
+// WLNKSummary computes a minimal WLNK summary from an artifact's evidence items.
+// This is "tracked" maturity — it displays the evidence chain, not computes a score.
+type WLNKSummary struct {
+	ArtifactID    string
+	EvidenceCount int
+	Supporting    int
+	Weakening     int
+	Refuting      int
+	MinFreshness  string // earliest valid_until across all evidence
+	WeakestCL     int    // minimum congruence level
+	WeakestF      int    // minimum formality level
+	Summary       string // human-readable one-liner
+}
+
+// ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
+func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WLNKSummary {
+	result := WLNKSummary{
+		ArtifactID: artifactID,
+		WeakestCL:  3,
+		WeakestF:   9,
+	}
+
+	items, err := store.GetEvidenceItems(ctx, artifactID)
+	if err != nil || len(items) == 0 {
+		result.Summary = "no evidence attached"
+		return result
+	}
+
+	result.EvidenceCount = len(items)
+	now := time.Now().UTC()
+
+	for _, e := range items {
+		switch e.Verdict {
+		case "supports", "accepted":
+			result.Supporting++
+		case "weakens", "partial":
+			result.Weakening++
+		case "refutes", "failed":
+			result.Refuting++
+		}
+
+		if e.CongruenceLevel < result.WeakestCL {
+			result.WeakestCL = e.CongruenceLevel
+		}
+		if e.FormalityLevel < result.WeakestF && e.FormalityLevel > 0 {
+			result.WeakestF = e.FormalityLevel
+		}
+
+		if e.ValidUntil != "" {
+			if result.MinFreshness == "" || e.ValidUntil < result.MinFreshness {
+				result.MinFreshness = e.ValidUntil
+			}
+		}
+	}
+
+	// Build summary
+	var parts []string
+	parts = append(parts, fmt.Sprintf("%d evidence item(s)", result.EvidenceCount))
+	if result.Supporting > 0 {
+		parts = append(parts, fmt.Sprintf("%d supporting", result.Supporting))
+	}
+	if result.Weakening > 0 {
+		parts = append(parts, fmt.Sprintf("%d weakening", result.Weakening))
+	}
+	if result.Refuting > 0 {
+		parts = append(parts, fmt.Sprintf("%d REFUTING", result.Refuting))
+	}
+	if result.MinFreshness != "" {
+		if t, err := time.Parse(time.RFC3339, result.MinFreshness); err == nil {
+			if t.Before(now) {
+				parts = append(parts, "STALE evidence")
+			} else {
+				days := int(t.Sub(now).Hours() / 24)
+				parts = append(parts, fmt.Sprintf("freshest expires in %dd", days))
+			}
+		}
+	}
+	if result.WeakestCL < 3 {
+		clLabels := map[int]string{0: "opposed", 1: "different context", 2: "similar context"}
+		parts = append(parts, fmt.Sprintf("weakest CL: %s", clLabels[result.WeakestCL]))
+	}
+
+	result.Summary = strings.Join(parts, ", ")
+	return result
+}
+
 // FormatDecisionResponse builds the MCP tool response.
 func FormatDecisionResponse(action string, a *Artifact, filePath string, extra string, navStrip string) string {
 	var sb strings.Builder
@@ -316,6 +535,12 @@ func FormatDecisionResponse(action string, a *Artifact, filePath string, extra s
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
 	case "apply":
+		sb.WriteString(extra)
+	case "measure":
+		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(extra)
+	case "evidence":
 		sb.WriteString(extra)
 	}
 

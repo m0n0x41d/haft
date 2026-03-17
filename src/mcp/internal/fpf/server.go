@@ -256,6 +256,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 									"scale_type":     map[string]string{"type": "string", "description": "ordinal, ratio, nominal"},
 									"unit":           map[string]string{"type": "string", "description": "Measurement unit"},
 									"polarity":       map[string]string{"type": "string", "description": "higher_better or lower_better"},
+									"role":           map[string]string{"type": "string", "description": "Indicator role: constraint (hard limit), target (optimize), observation (watch, don't optimize). Default: target"},
 									"how_to_measure": map[string]string{"type": "string", "description": "How this dimension is measured"},
 								},
 								"required": []string{"name"},

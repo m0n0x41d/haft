@@ -248,7 +248,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatProblemsListResponse(problems, navStrip), nil
+		return artifact.FormatProblemsListResponse(problems, store, ctx, navStrip), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', or 'select'", action)

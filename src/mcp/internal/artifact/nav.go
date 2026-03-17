@@ -68,6 +68,10 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		if d.Meta.Status == StatusRefreshDue {
 			state.DerivedStatus = DerivedRefreshDue
 		}
+		// Check if latest decision has been applied (has "## Impact Measurement" or implementation brief generated)
+		if !strings.Contains(d.Body, "## Impact Measurement") {
+			state.NextAction = fmt.Sprintf(`quint_decision(action="apply", decision_ref="%s")`, d.Meta.ID)
+		}
 		state.Mode = d.Meta.Mode
 	case len(portfolios) > 0:
 		p := portfolios[0]
@@ -90,7 +94,7 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		if len(problems) > 1 {
 			state.ProblemStatus += fmt.Sprintf(", +%d more", len(problems)-1)
 		}
-		state.NextAction = `quint_solution(action="explore", ...)`
+		state.NextAction = `quint_solution(action="explore", ...) or quint_decision(action="decide", ...) for tactical`
 		state.Mode = problems[0].Meta.Mode
 	default:
 		state.DerivedStatus = DerivedUnderframed

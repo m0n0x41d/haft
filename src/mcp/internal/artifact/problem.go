@@ -341,10 +341,10 @@ func FormatProblemsListResponse(problems []*Artifact, store *Store, ctx context.
 
 func extractGoldilocksSignals(p *Artifact) string {
 	var signals strings.Builder
-
 	body := p.Body
+
+	// Blast radius and reversibility (existing)
 	if strings.Contains(body, "## Blast Radius") {
-		// Extract first line after ## Blast Radius
 		if idx := strings.Index(body, "## Blast Radius"); idx != -1 {
 			rest := body[idx+len("## Blast Radius"):]
 			rest = strings.TrimLeft(rest, "\n\r ")
@@ -368,7 +368,122 @@ func extractGoldilocksSignals(p *Artifact) string {
 		}
 	}
 
+	// Readiness score: count how well-framed the problem is
+	readiness := 0
+	readinessMax := 6
+	if strings.Contains(body, "## Signal") {
+		readiness++
+	}
+	if strings.Contains(body, "## Constraints") {
+		readiness++
+	}
+	if strings.Contains(body, "## Acceptance") {
+		readiness++
+	}
+	if strings.Contains(body, "## Optimization Targets") {
+		readiness++
+	}
+	if strings.Contains(body, "## Blast Radius") {
+		readiness++
+	}
+	if countCharacterizations(p) > 0 {
+		readiness++
+	}
+	signals.WriteString(fmt.Sprintf("Readiness: %d/%d", readiness, readinessMax))
+
+	// Complexity signals: constraint count + target count
+	constraintCount := countBullets(body, "## Constraints")
+	targetCount := countBullets(body, "## Optimization Targets")
+	dimCount := countCharacterizationDimensions(p)
+
+	var complexity []string
+	if constraintCount > 0 {
+		complexity = append(complexity, fmt.Sprintf("%d constraints", constraintCount))
+	}
+	if targetCount > 0 {
+		complexity = append(complexity, fmt.Sprintf("%d targets", targetCount))
+	}
+	if dimCount > 0 {
+		complexity = append(complexity, fmt.Sprintf("%d dimensions", dimCount))
+	}
+	if len(complexity) > 0 {
+		signals.WriteString(fmt.Sprintf(" | Complexity: %s", strings.Join(complexity, ", ")))
+	}
+	signals.WriteString("\n")
+
 	return signals.String()
+}
+
+// countBullets counts "- " lines in a section of the body.
+func countBullets(body, section string) int {
+	idx := strings.Index(body, section)
+	if idx == -1 {
+		return 0
+	}
+	rest := body[idx+len(section):]
+	if end := strings.Index(rest, "\n## "); end > 0 {
+		rest = rest[:end]
+	}
+	count := 0
+	for _, line := range strings.Split(rest, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
+			count++
+		}
+	}
+	return count
+}
+
+// countCharacterizationDimensions counts dimension rows in the latest characterization table.
+func countCharacterizationDimensions(p *Artifact) int {
+	// Reuse existing parser — just count results
+	dims := extractCharacterizedDimensionsFromBody(p.Body)
+	return len(dims)
+}
+
+// extractCharacterizedDimensionsFromBody is a local helper to avoid import cycle.
+// Counts table rows (lines starting with | that aren't header/separator).
+func extractCharacterizedDimensionsFromBody(body string) []string {
+	lastIdx := -1
+	for i := 100; i >= 1; i-- {
+		marker := fmt.Sprintf("## Characterization v%d", i)
+		if idx := strings.Index(body, marker); idx != -1 {
+			lastIdx = idx
+			break
+		}
+	}
+	if lastIdx == -1 {
+		return nil
+	}
+	section := body[lastIdx:]
+	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
+		section = section[:endIdx+1]
+	}
+	var dims []string
+	inTable := false
+	for _, line := range strings.Split(section, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break
+			}
+			continue
+		}
+		if strings.Contains(line, "Dimension") || strings.Contains(line, "---") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) >= 3 {
+			name := strings.TrimSpace(parts[1])
+			if name != "" && name != "-" {
+				dims = append(dims, name)
+			}
+		}
+	}
+	return dims
 }
 
 func countCharacterizations(p *Artifact) int {

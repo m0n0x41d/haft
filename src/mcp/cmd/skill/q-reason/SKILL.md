@@ -179,6 +179,7 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 When you have Quint tools available, use them proactively:
 
 - **At session start**: call `quint_query(action="status")` to surface stale decisions
+- **If status returns zero artifacts on a project with code**: suggest `/q-onboard` to discover existing knowledge (ADRs, architecture docs, README, test plans). This is critical for brownfield projects.
 - **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions
 - **When dev makes inline decisions**: suggest `quint_note` to capture rationale
 - **When dev says "let's just do X"**: ask "why X?" — rationale is always required

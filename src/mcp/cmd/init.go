@@ -161,8 +161,49 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Println("\nInitialization complete! Use /q-note to capture decisions, /q-reason for structured reasoning.")
+	// Detect brownfield: project with existing git history and code
+	isBrownfield := detectBrownfield(cwd)
+
+	if isBrownfield {
+		fmt.Println("\nInitialization complete!")
+		fmt.Println("\nThis looks like an existing project. Run /q-onboard to discover")
+		fmt.Println("existing decisions, architecture docs, ADRs, and build a knowledge map.")
+	} else {
+		fmt.Println("\nInitialization complete!")
+		fmt.Println("Use /q-note to capture decisions, /q-reason for structured reasoning.")
+	}
 	return nil
+}
+
+func detectBrownfield(projectRoot string) bool {
+	// Check for git history with meaningful commits
+	gitDir := filepath.Join(projectRoot, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check for code indicators
+	codeIndicators := []string{
+		"go.mod", "package.json", "pyproject.toml", "Cargo.toml",
+		"pom.xml", "build.gradle", "Makefile", "CMakeLists.txt",
+	}
+	for _, f := range codeIndicators {
+		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
+			return true
+		}
+	}
+
+	// Check for docs that suggest existing knowledge
+	docIndicators := []string{
+		"README.md", "docs", "adr", "ARCHITECTURE.md",
+	}
+	for _, f := range docIndicators {
+		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 func createDirectoryStructure(quintDir string) error {

@@ -164,6 +164,16 @@ type EvidenceItem struct {
 	ValidUntil      string `json:"valid_until,omitempty"`
 }
 
+// WriteWarning is returned when the operation succeeded but with non-fatal warnings.
+// Callers should check errors with errors.As(*WriteWarning) and surface warnings to user.
+type WriteWarning struct {
+	Warnings []string
+}
+
+func (w *WriteWarning) Error() string {
+	return fmt.Sprintf("completed with %d warning(s): %s", len(w.Warnings), w.Warnings[0])
+}
+
 // AffectedFile tracks which files a decision touches.
 type AffectedFile struct {
 	Path string `json:"path"`

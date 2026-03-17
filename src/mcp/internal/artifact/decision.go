@@ -202,17 +202,25 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 		return nil, "", fmt.Errorf("store decision: %w", err)
 	}
 
+	var warnings []string
+
 	if len(input.AffectedFiles) > 0 {
 		var files []AffectedFile
 		for _, f := range input.AffectedFiles {
 			files = append(files, AffectedFile{Path: f})
 		}
-		store.SetAffectedFiles(ctx, id, files)
+		if err := store.SetAffectedFiles(ctx, id, files); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to track affected files: %v", err))
+		}
 	}
 
 	filePath, err := WriteFile(quintDir, a)
 	if err != nil {
-		return a, "", fmt.Errorf("file write (DB saved OK): %w", err)
+		warnings = append(warnings, fmt.Sprintf("file write failed (DB saved OK): %v", err))
+	}
+
+	if len(warnings) > 0 {
+		return a, filePath, &WriteWarning{Warnings: warnings}
 	}
 
 	return a, filePath, nil

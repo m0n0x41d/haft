@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,7 +131,15 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 
 	a, filePath, err := artifact.CreateNote(ctx, store, quintDir, input)
 	if err != nil {
-		return "", err
+		// WriteWarning is non-fatal — surface warnings in response
+		var ww *artifact.WriteWarning
+		if errors.As(err, &ww) {
+			for _, w := range ww.Warnings {
+				validation.Warnings = append(validation.Warnings, w)
+			}
+		} else {
+			return "", err
+		}
 	}
 	return artifact.FormatNoteResponse(a, filePath, validation, navStrip), nil
 }

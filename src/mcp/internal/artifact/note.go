@@ -180,22 +180,26 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 	}
 
 	// Track affected files
+	var warnings []string
+
 	if len(input.AffectedFiles) > 0 {
 		var files []AffectedFile
 		for _, f := range input.AffectedFiles {
 			files = append(files, AffectedFile{Path: f})
 		}
 		if err := store.SetAffectedFiles(ctx, id, files); err != nil {
-			// Non-fatal
-			_ = err
+			warnings = append(warnings, fmt.Sprintf("failed to track affected files: %v", err))
 		}
 	}
 
-	// File write
 	filePath, err := WriteFile(quintDir, a)
 	if err != nil {
-		// DB write succeeded, file write failed — warn but don't fail
-		return a, "", fmt.Errorf("file write (DB saved OK): %w", err)
+		warnings = append(warnings, fmt.Sprintf("file write failed (DB saved OK): %v", err))
+	}
+
+	// Attach warnings to validation for response formatting
+	if len(warnings) > 0 {
+		return a, filePath, &WriteWarning{Warnings: warnings}
 	}
 
 	return a, filePath, nil

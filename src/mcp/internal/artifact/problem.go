@@ -143,9 +143,20 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 		return nil, "", fmt.Errorf("at least one comparison dimension is required")
 	}
 
-	// Append characterization section to body
+	// Count existing characterization versions
+	charVersion := 1
+	for i := 1; ; i++ {
+		marker := fmt.Sprintf("## Characterization v%d", i)
+		if !strings.Contains(a.Body, marker) {
+			charVersion = i
+			break
+		}
+	}
+
+	// Append new characterization version (never overwrite — keep history)
 	var section strings.Builder
-	section.WriteString("\n## Comparison Dimensions\n\n")
+	section.WriteString(fmt.Sprintf("\n## Characterization v%d (%s)\n\n",
+		charVersion, time.Now().UTC().Format("2006-01-02")))
 	section.WriteString("| Dimension | Scale | Unit | Polarity | Measurement |\n")
 	section.WriteString("|-----------|-------|------|----------|-------------|\n")
 	for _, d := range input.Dimensions {
@@ -169,33 +180,10 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 	}
 
 	if input.ParityRules != "" {
-		section.WriteString(fmt.Sprintf("\n## Parity Rules\n\n%s\n", input.ParityRules))
+		section.WriteString(fmt.Sprintf("\n**Parity rules:** %s\n", input.ParityRules))
 	}
 
-	// Remove existing characterization if present, then append new
-	if idx := strings.Index(a.Body, "\n## Comparison Dimensions"); idx != -1 {
-		// Find the next major section after characterization
-		rest := a.Body[idx+1:]
-		nextSection := -1
-		for i, line := range strings.Split(rest, "\n") {
-			if i > 0 && strings.HasPrefix(line, "## ") && !strings.HasPrefix(line, "## Comparison") && !strings.HasPrefix(line, "## Parity") {
-				// Count bytes to this point
-				offset := 0
-				for j := 0; j < i; j++ {
-					offset += len(strings.Split(rest, "\n")[j]) + 1
-				}
-				nextSection = offset
-				break
-			}
-		}
-		if nextSection > 0 {
-			a.Body = a.Body[:idx] + section.String() + rest[nextSection:]
-		} else {
-			a.Body = a.Body[:idx] + section.String()
-		}
-	} else {
-		a.Body += section.String()
-	}
+	a.Body += section.String()
 
 	if err := store.Update(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("update problem: %w", err)
@@ -281,8 +269,8 @@ func FormatProblemResponse(action string, a *Artifact, filePath string, navStrip
 	return sb.String()
 }
 
-// FormatProblemsListResponse builds the response for listing problems.
-func FormatProblemsListResponse(problems []*Artifact, navStrip string) string {
+// FormatProblemsListResponse builds the response for listing problems with Goldilocks signals.
+func FormatProblemsListResponse(problems []*Artifact, store *Store, ctx context.Context, navStrip string) string {
 	var sb strings.Builder
 
 	if len(problems) == 0 {
@@ -293,19 +281,90 @@ func FormatProblemsListResponse(problems []*Artifact, navStrip string) string {
 	}
 
 	sb.WriteString(fmt.Sprintf("## Active Problems (%d)\n\n", len(problems)))
+	sb.WriteString("Goldilocks guide: pick problems in the growth zone — not too trivial, not too impossible for your current capacity.\n\n")
+
 	for i, p := range problems {
-		sb.WriteString(fmt.Sprintf("%d. **%s** [%s]\n", i+1, p.Meta.Title, p.Meta.ID))
+		sb.WriteString(fmt.Sprintf("### %d. %s [%s]\n", i+1, p.Meta.Title, p.Meta.ID))
 		if p.Meta.Context != "" {
-			sb.WriteString(fmt.Sprintf("   Context: %s\n", p.Meta.Context))
+			sb.WriteString(fmt.Sprintf("Context: %s | ", p.Meta.Context))
 		}
-		sb.WriteString(fmt.Sprintf("   Mode: %s | Created: %s\n", p.Meta.Mode, p.Meta.CreatedAt.Format("2006-01-02")))
-		hasChar := strings.Contains(p.Body, "## Comparison Dimensions")
-		if hasChar {
-			sb.WriteString("   Characterization: defined\n")
+		sb.WriteString(fmt.Sprintf("Mode: %s | Created: %s\n", p.Meta.Mode, p.Meta.CreatedAt.Format("2006-01-02")))
+
+		// Goldilocks signals from body
+		signals := extractGoldilocksSignals(p)
+		if signals != "" {
+			sb.WriteString(signals)
 		}
+
+		// Characterization status
+		charCount := countCharacterizations(p)
+		if charCount > 0 {
+			sb.WriteString(fmt.Sprintf("Characterization: %d version(s) defined\n", charCount))
+		} else {
+			sb.WriteString("Characterization: not yet defined\n")
+		}
+
+		// Linked artifacts
+		if store != nil {
+			links, _ := store.GetLinks(ctx, p.Meta.ID)
+			backlinks, _ := store.GetBacklinks(ctx, p.Meta.ID)
+			if len(links)+len(backlinks) > 0 {
+				sb.WriteString(fmt.Sprintf("Links: %d forward, %d back\n", len(links), len(backlinks)))
+			}
+		}
+
+		// Staleness
+		if p.Meta.ValidUntil != "" {
+			sb.WriteString(fmt.Sprintf("Valid until: %s\n", p.Meta.ValidUntil[:10]))
+		}
+
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString(navStrip)
 	return sb.String()
+}
+
+func extractGoldilocksSignals(p *Artifact) string {
+	var signals strings.Builder
+
+	body := p.Body
+	if strings.Contains(body, "## Blast Radius") {
+		// Extract first line after ## Blast Radius
+		if idx := strings.Index(body, "## Blast Radius"); idx != -1 {
+			rest := body[idx+len("## Blast Radius"):]
+			rest = strings.TrimLeft(rest, "\n\r ")
+			if end := strings.Index(rest, "\n#"); end > 0 {
+				rest = rest[:end]
+			}
+			line := strings.TrimSpace(strings.Split(rest, "\n")[0])
+			if line != "" {
+				signals.WriteString(fmt.Sprintf("Blast radius: %s\n", line))
+			}
+		}
+	}
+	if strings.Contains(body, "## Reversibility") {
+		if idx := strings.Index(body, "## Reversibility"); idx != -1 {
+			rest := body[idx+len("## Reversibility"):]
+			rest = strings.TrimLeft(rest, "\n\r ")
+			line := strings.TrimSpace(strings.Split(rest, "\n")[0])
+			if line != "" {
+				signals.WriteString(fmt.Sprintf("Reversibility: %s\n", line))
+			}
+		}
+	}
+
+	return signals.String()
+}
+
+func countCharacterizations(p *Artifact) int {
+	count := 0
+	for i := 1; i <= 100; i++ {
+		if strings.Contains(p.Body, fmt.Sprintf("## Characterization v%d", i)) {
+			count = i
+		} else {
+			break
+		}
+	}
+	return count
 }

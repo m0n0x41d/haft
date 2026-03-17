@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/m0n0x41d/quint-code/db"
 	"github.com/m0n0x41d/quint-code/internal/artifact"
@@ -79,22 +81,69 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return "", fmt.Errorf("invalid params: %w", err)
 		}
 
+		var result string
+		var toolErr error
+
 		switch params.Name {
 		case "quint_note":
-			return handleQuintNote(ctx, store, quintDir, params.Arguments)
+			result, toolErr = handleQuintNote(ctx, store, quintDir, params.Arguments)
 		case "quint_problem":
-			return handleQuintProblem(ctx, store, quintDir, params.Arguments)
+			result, toolErr = handleQuintProblem(ctx, store, quintDir, params.Arguments)
 		case "quint_solution":
-			return handleQuintSolution(ctx, store, quintDir, params.Arguments)
+			result, toolErr = handleQuintSolution(ctx, store, quintDir, params.Arguments)
 		case "quint_decision":
-			return handleQuintDecision(ctx, store, quintDir, params.Arguments)
+			result, toolErr = handleQuintDecision(ctx, store, quintDir, params.Arguments)
 		case "quint_refresh":
-			return handleQuintRefresh(ctx, store, quintDir, params.Arguments)
+			result, toolErr = handleQuintRefresh(ctx, store, quintDir, params.Arguments)
 		case "quint_query":
-			return handleQuintQuery(ctx, store, params.Arguments)
+			result, toolErr = handleQuintQuery(ctx, store, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
+
+		// Audit log — fire-and-forget, never block the tool response
+		action, _ := params.Arguments["action"].(string)
+		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
+
+		return result, toolErr
+	}
+}
+
+// logAudit writes an audit_log row for every tool call. Errors are logged, never propagated.
+func logAudit(ctx context.Context, rawDB *sql.DB, toolName, action string, args map[string]interface{}, toolErr error) {
+	operation := toolName
+	if action != "" {
+		operation = toolName + ":" + action
+	}
+
+	resultStr := "ok"
+	if toolErr != nil {
+		resultStr = "error: " + toolErr.Error()
+	}
+
+	// Extract target ID from common arg patterns
+	targetID := ""
+	for _, key := range []string{"artifact_ref", "decision_ref", "problem_ref", "portfolio_ref"} {
+		if v, ok := args[key].(string); ok && v != "" {
+			targetID = v
+			break
+		}
+	}
+
+	contextID := ""
+	if v, ok := args["context"].(string); ok {
+		contextID = v
+	}
+
+	id := fmt.Sprintf("audit-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+
+	_, err := rawDB.ExecContext(ctx,
+		`INSERT INTO audit_log (id, tool_name, operation, actor, target_id, result, context_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, toolName, operation, "agent", targetID, resultStr, contextID,
+	)
+	if err != nil {
+		logger.Warn().Err(err).Str("tool", toolName).Msg("audit log write failed")
 	}
 }
 
@@ -555,7 +604,10 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		return artifact.FormatDecisionResponse("measure", a, "", fmt.Sprintf("WLNK: %s\n", wlnk.Summary), navStrip), nil
 
 	case "evidence":
-		input := artifact.EvidenceInput{}
+		input := artifact.EvidenceInput{
+			CongruenceLevel: -1, // sentinel: "not provided", will default to 3
+			FormalityLevel:  -1, // sentinel: "not provided", will default to 5
+		}
 		if v, ok := args["artifact_ref"].(string); ok {
 			input.ArtifactRef = v
 		}
@@ -573,6 +625,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 		if cl, ok := args["congruence_level"].(float64); ok {
 			input.CongruenceLevel = int(cl)
+		}
+		if fl, ok := args["formality_level"].(float64); ok {
+			input.FormalityLevel = int(fl)
 		}
 
 		item, err := artifact.AttachEvidence(ctx, store, input)
@@ -594,9 +649,14 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
-	decisionRef, _ := args["decision_ref"].(string)
 	reason, _ := args["reason"].(string)
 	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+
+	// Support both artifact_ref (new) and decision_ref (backward compat)
+	artifactRef, _ := args["artifact_ref"].(string)
+	if artifactRef == "" {
+		artifactRef, _ = args["decision_ref"].(string)
+	}
 
 	switch artifact.RefreshAction(action) {
 	case artifact.RefreshScan:
@@ -607,51 +667,54 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		return artifact.FormatScanResponse(items, navStrip), nil
 
 	case artifact.RefreshWaive:
-		if decisionRef == "" {
-			return "decision_ref is required for waive.\n" + navStrip, nil
+		if artifactRef == "" {
+			return "artifact_ref is required for waive.\n" + navStrip, nil
 		}
 		newValidUntil, _ := args["new_valid_until"].(string)
 		evidence, _ := args["evidence"].(string)
-		dec, err := artifact.WaiveDecision(ctx, store, quintDir, decisionRef, reason, newValidUntil, evidence)
+		a, err := artifact.WaiveArtifact(ctx, store, quintDir, artifactRef, reason, newValidUntil, evidence)
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "waive", reason, fmt.Sprintf("Extended to %s", dec.Meta.ValidUntil))
-		return artifact.FormatRefreshActionResponse(artifact.RefreshWaive, dec, nil, navStrip), nil
+		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
+		return artifact.FormatRefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
 
 	case artifact.RefreshReopen:
-		if decisionRef == "" {
-			return "decision_ref is required for reopen.\n" + navStrip, nil
+		if artifactRef == "" {
+			return "artifact_ref is required for reopen. Note: reopen only works on DecisionRecords.\n" + navStrip, nil
 		}
-		dec, newProb, err := artifact.ReopenDecision(ctx, store, quintDir, decisionRef, reason)
+		dec, newProb, err := artifact.ReopenDecision(ctx, store, quintDir, artifactRef, reason)
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
+		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
 		return artifact.FormatRefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
 
 	case artifact.RefreshSupersede:
-		if decisionRef == "" {
-			return "decision_ref is required for supersede.\n" + navStrip, nil
+		if artifactRef == "" {
+			return "artifact_ref is required for supersede.\n" + navStrip, nil
 		}
-		newDecRef, _ := args["new_decision_ref"].(string)
-		dec, err := artifact.SupersedeDecision(ctx, store, quintDir, decisionRef, newDecRef, reason)
+		newRef, _ := args["new_decision_ref"].(string)
+		if newRef == "" {
+			newRef, _ = args["new_artifact_ref"].(string)
+		}
+		a, err := artifact.SupersedeArtifact(ctx, store, quintDir, artifactRef, newRef, reason)
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newDecRef))
-		return artifact.FormatRefreshActionResponse(artifact.RefreshSupersede, dec, nil, navStrip), nil
+		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
+		return artifact.FormatRefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
 
 	case artifact.RefreshDeprecate:
-		if decisionRef == "" {
-			return "decision_ref is required for deprecate.\n" + navStrip, nil
+		if artifactRef == "" {
+			return "artifact_ref is required for deprecate.\n" + navStrip, nil
 		}
-		dec, err := artifact.DeprecateDecision(ctx, store, quintDir, decisionRef, reason)
+		a, err := artifact.DeprecateArtifact(ctx, store, quintDir, artifactRef, reason)
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, decisionRef, "deprecate", reason, "Decision deprecated")
-		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, dec, nil, navStrip), nil
+		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
+		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', or 'deprecate'", action)

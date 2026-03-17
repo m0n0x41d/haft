@@ -184,6 +184,15 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 		a.Body += recall
 	}
 
+	// SoTA survey prompt for standard/deep mode
+	if mode == ModeStandard || mode == ModeDeep {
+		a.Body += "\n## SoTA Survey Reminder\n\n"
+		a.Body += "Before deciding, have you surveyed existing solutions?\n"
+		a.Body += "- **Context7** — library/framework documentation and alternatives\n"
+		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
+		a.Body += "- **FPF spec search** — `quint-code fpf search \"<topic>\"` for methodology patterns\n"
+	}
+
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store portfolio: %w", err)
 	}

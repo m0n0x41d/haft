@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/quint-code/logger"
 )
 
 // RefreshAction is what the user wants to do with a stale decision.
@@ -261,11 +263,15 @@ func ReopenDecision(ctx context.Context, store *Store, quintDir string, decision
 
 	// Append lineage to the new problem body
 	newProb.Body += lineageNotes.String()
-	store.Update(ctx, newProb)
+	if err := store.Update(ctx, newProb); err != nil {
+		logger.Warn().Err(err).Str("problem", newProb.Meta.ID).Msg("failed to append lineage to new problem")
+	}
 	writeFileQuiet(quintDir, newProb)
 
 	// Link new problem to old decision
-	store.AddLink(ctx, newProb.Meta.ID, decisionRef, "revisits")
+	if err := store.AddLink(ctx, newProb.Meta.ID, decisionRef, "revisits"); err != nil {
+		logger.Warn().Err(err).Str("problem", newProb.Meta.ID).Str("decision", decisionRef).Msg("failed to link problem to decision")
+	}
 
 	return dec, newProb, nil
 }
@@ -287,7 +293,9 @@ func SupersedeArtifact(ctx context.Context, store *Store, quintDir string, artif
 	}
 
 	if newArtifactRef != "" {
-		store.AddLink(ctx, newArtifactRef, artifactRef, "supersedes")
+		if err := store.AddLink(ctx, newArtifactRef, artifactRef, "supersedes"); err != nil {
+			logger.Warn().Err(err).Str("new", newArtifactRef).Str("old", artifactRef).Msg("failed to create supersedes link")
+		}
 	}
 
 	writeFileQuiet(quintDir, a)

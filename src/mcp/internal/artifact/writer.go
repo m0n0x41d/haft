@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/m0n0x41d/quint-code/logger"
 )
 
 // WriteFile writes an artifact as a markdown file with YAML frontmatter
@@ -30,8 +32,7 @@ func WriteFile(quintDir string, a *Artifact) (string, error) {
 // Use when the DB write already succeeded and the file is a secondary projection.
 func writeFileQuiet(quintDir string, a *Artifact) {
 	if _, err := WriteFile(quintDir, a); err != nil {
-		// Log to stderr since this is a non-fatal projection failure
-		fmt.Fprintf(os.Stderr, "warning: file write failed for %s: %v\n", a.Meta.ID, err)
+		logger.Warn().Err(err).Str("artifact", a.Meta.ID).Msg("file write failed (DB saved OK)")
 	}
 }
 

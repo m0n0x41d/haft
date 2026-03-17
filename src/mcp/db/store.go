@@ -1,3 +1,16 @@
+// Package db provides SQLite database management for Quint Code.
+//
+// LEGACY NOTE (v5): The holons/evidence/relations schema and Store methods
+// below are from v4. They are retained because:
+// 1. The migration system references them (migrations 1-12)
+// 2. The assurance/calculator.go WLNK kernel reads from these tables
+// 3. Existing .quint/quint.db files may contain v4 data
+//
+// v5 artifacts use the separate tables defined in migration 13
+// (artifacts, artifact_links, evidence_items, affected_files, artifacts_fts)
+// and are managed by internal/artifact.Store.
+//
+// Do not add new features to the v4 schema. New work goes in internal/artifact/.
 package db
 
 import (

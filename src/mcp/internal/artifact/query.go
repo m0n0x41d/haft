@@ -118,7 +118,7 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	// Active problems — split into open (no decision) and addressed (has linked decision)
+	// Active problems — three-way split: Backlog / In Progress / Addressed
 	var problems []*Artifact
 	if contextFilter != "" {
 		all, _ := store.ListByContext(ctx, contextFilter)
@@ -131,33 +131,52 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		problems, _ = store.ListByKind(ctx, KindProblemCard, 20)
 	}
 	activeProblems := filterActive(problems)
-	var openProblems, addressedProblems []*Artifact
-	addressedBy := make(map[string]string) // problem ID -> decision title
+	var backlogProblems, inProgressProblems, addressedProblems []*Artifact
+	addressedBy := make(map[string]string)   // problem ID -> decision ID
+	inProgressBy := make(map[string]string)  // problem ID -> portfolio ID
 	for _, p := range activeProblems {
 		backlinks, _ := store.GetBacklinks(ctx, p.Meta.ID)
-		decisionFound := false
+		hasDecision := false
+		hasPortfolio := false
 		for _, bl := range backlinks {
 			if bl.Type == "based_on" {
-				// Verify it's a decision
-				if linked, err := store.Get(ctx, bl.Ref); err == nil && linked.Meta.Kind == KindDecisionRecord {
-					decisionFound = true
-					addressedBy[p.Meta.ID] = linked.Meta.ID
-					break
+				if linked, err := store.Get(ctx, bl.Ref); err == nil {
+					if linked.Meta.Kind == KindDecisionRecord {
+						hasDecision = true
+						addressedBy[p.Meta.ID] = linked.Meta.ID
+					} else if linked.Meta.Kind == KindSolutionPortfolio {
+						hasPortfolio = true
+						inProgressBy[p.Meta.ID] = linked.Meta.ID
+					}
 				}
 			}
 		}
-		if decisionFound {
+		if hasDecision {
 			addressedProblems = append(addressedProblems, p)
+		} else if hasPortfolio {
+			inProgressProblems = append(inProgressProblems, p)
 		} else {
-			openProblems = append(openProblems, p)
+			backlogProblems = append(backlogProblems, p)
 		}
 	}
-	if len(openProblems) > 0 {
-		sb.WriteString(fmt.Sprintf("### Open Problems (%d)\n\n", len(openProblems)))
+	if len(inProgressProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("### In Progress (%d)\n\n", len(inProgressProblems)))
 		cap := 5
-		for i, p := range openProblems {
+		for i, p := range inProgressProblems {
 			if i >= cap {
-				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(openProblems)-cap))
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(inProgressProblems)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** `%s` → %s\n", p.Meta.Title, p.Meta.ID, inProgressBy[p.Meta.ID]))
+		}
+		sb.WriteString("\n")
+	}
+	if len(backlogProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("### Backlog (%d)\n\n", len(backlogProblems)))
+		cap := 5
+		for i, p := range backlogProblems {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(backlogProblems)-cap))
 				break
 			}
 			sb.WriteString(fmt.Sprintf("- **%s** `%s`\n", p.Meta.Title, p.Meta.ID))
@@ -165,7 +184,7 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 	if len(addressedProblems) > 0 {
-		sb.WriteString(fmt.Sprintf("### Addressed Problems (%d)\n\n", len(addressedProblems)))
+		sb.WriteString(fmt.Sprintf("### Addressed (%d)\n\n", len(addressedProblems)))
 		cap := 3
 		for i, p := range addressedProblems {
 			if i >= cap {
@@ -187,7 +206,7 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	if len(activeDecisions) == 0 && len(staleItems) == 0 && len(openProblems) == 0 && len(addressedProblems) == 0 && len(notes) == 0 {
+	if len(activeDecisions) == 0 && len(staleItems) == 0 && len(backlogProblems) == 0 && len(inProgressProblems) == 0 && len(addressedProblems) == 0 && len(notes) == 0 {
 		sb.WriteString("No artifacts found. Use /q-note or /q-frame to get started.\n")
 	}
 

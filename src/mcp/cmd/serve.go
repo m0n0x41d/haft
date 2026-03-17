@@ -461,6 +461,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
 		}
+		input.ProblemRefs = parseStringArray("problem_refs")
 		if v, ok := args["portfolio_ref"].(string); ok {
 			input.PortfolioRef = v
 		}

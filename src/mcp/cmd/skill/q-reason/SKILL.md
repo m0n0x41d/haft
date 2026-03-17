@@ -47,15 +47,17 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 |---------|--------|-----------------|
 | Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Quint persists it. |
 | Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity. You define them, Quint persists them. |
-| WLNK | **textual** | Required label on each variant. Stored and displayed. Not computed from evidence. |
+| WLNK | **tracked** | Required label on variants. After evidence is attached, WLNK summary shows min CL, freshness, supporting/weakening/refuting counts. |
 | Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
 | Pareto front | **tracked** | You identify the non-dominated set, Quint stores and displays it. Not computed automatically. |
 | Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
 | Refresh (valid_until) | **enforced** | All artifacts (decisions, problems, portfolios) with expired valid_until detected by scan. |
 | Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
-| CL (congruence) | **textual** | Field on evidence items. Stored but not used in scoring. |
-| F-G-R | **textual** | Formality field on evidence items. Stored but not used in scoring. |
+| CL (congruence) | **tracked** | Field on evidence items. Shown in WLNK summary (min CL across evidence chain). |
+| F-G-R | **textual** | Formality field on evidence items. Stored, shown in WLNK summary when present. |
 | NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions on ProblemCard instead. |
+| Impact measurement | **tracked** | `quint_decision(action="measure")` records post-implementation findings against acceptance criteria. |
+| Evidence attachment | **tracked** | `quint_decision(action="evidence")` attaches evidence items to any artifact with type/verdict/CL/carrier. |
 
 **Key rule: don't describe textual features as if they compute something.** When you say "WLNK bounds quality," you mean "the user identified what bounds quality" — not that the system calculated it.
 

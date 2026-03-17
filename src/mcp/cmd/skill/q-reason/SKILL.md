@@ -20,12 +20,12 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 
 | Tool | What it does | Slash command |
 |------|-------------|---------------|
-| `quint_note` | Record micro-decisions with rationale | `/q-note` |
-| `quint_problem` | Frame problems, define comparison space | `/q-frame`, `/q-char` |
-| `quint_solution` | Explore variants, compare fairly | `/q-explore`, `/q-compare` |
+| `quint_note` | Record micro-decisions with rationale validation | `/q-note` |
+| `quint_problem` | Frame problems, define comparison dimensions | `/q-frame`, `/q-char` |
+| `quint_solution` | Explore variants, compare and identify Pareto front | `/q-explore`, `/q-compare` |
 | `quint_decision` | Decide with full rationale, generate implementation brief | `/q-decide`, `/q-apply` |
-| `quint_refresh` | Detect stale decisions, manage validity | `/q-refresh` |
-| `quint_query` | Search past decisions, check status | `/q-search`, `/q-status` |
+| `quint_refresh` | Detect stale decisions, manage lifecycle | `/q-refresh` |
+| `quint_query` | Search, status dashboard, file-to-decision lookup | `/q-search`, `/q-status` |
 
 ### FPF spec search — deep methodology reference
 
@@ -35,7 +35,29 @@ quint-code fpf search "<query>" --full # full section content
 quint-code fpf section "<heading>"     # exact section
 ```
 
-Use this when you need formal FPF definitions, templates, aggregation rules, or conformance checklists.
+Use for formal FPF definitions, templates, aggregation rules, or conformance checklists.
+
+---
+
+## Feature maturity
+
+Not all FPF concepts are at the same implementation depth. This matters — don't present tracked annotations as computed evaluations.
+
+| Concept | Status | What Quint does |
+|---------|--------|-----------------|
+| Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Quint persists it. |
+| Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity. You define them, Quint persists them. |
+| WLNK | **textual** | Required label on each variant. Stored and displayed. Not computed from evidence. |
+| Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
+| Pareto front | **tracked** | You identify the non-dominated set, Quint stores and displays it. Not computed automatically. |
+| Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
+| Refresh (valid_until) | **enforced** | Decisions with expired valid_until are detected by scan and surfaced in status. |
+| Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
+| CL (congruence) | **textual** | Field on evidence items. Stored but not used in scoring. |
+| F-G-R | **textual** | Formality field on evidence items. Stored but not used in scoring. |
+| NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions on ProblemCard instead. |
+
+**Key rule: don't describe textual features as if they compute something.** When you say "WLNK bounds quality," you mean "the user identified what bounds quality" — not that the system calculated it.
 
 ---
 
@@ -61,7 +83,7 @@ The bottleneck is **problem quality**, not solution speed.
 Define the **characteristic space** before evaluating options. Without explicit dimensions, comparisons are arbitrary.
 
 - State the **selection policy BEFORE seeing results**
-- Ensure **parity** — same inputs, same scope, same budget across all options
+- Ensure **parity** — same inputs, same scope, same budget across all options (you enforce this, Quint stores your parity rules)
 - Keep it **multi-dimensional** — never collapse to a single score unless the fold is explicit
 
 **Persist with**: `quint_problem(action="characterize", ...)`
@@ -70,20 +92,21 @@ Define the **characteristic space** before evaluating options. Without explicit 
 
 ### 3. Generate genuinely distinct variants
 
-- **≥3 variants** that differ in **kind**, not degree
-- Each variant gets a **weakest link** (WLNK) — the component that bounds overall quality
-- Preserve **stepping stones** — options that open future possibilities
-- **MONO**: if complexity goes up, the added parts must justify the new weak links
+- **≥2 variants** that differ in **kind**, not degree (3+ preferred)
+- Each variant gets a **weakest link** label — what you judge bounds its quality
+- Mark **stepping stones** — options that open future possibilities even if not optimal now
 
 **Persist with**: `quint_solution(action="explore", ...)`
 
 > RAG: `quint-code fpf search "NQD variant quality"`
 
-### 4. Compare on the Pareto front
+### 4. Compare and select
 
-- Hold the **non-dominated set** — don't discard options that aren't strictly worse on ALL dimensions
+- Identify the **non-dominated set** — variants not strictly worse on all dimensions
 - Apply the pre-declared selection policy
 - Record what was compared, what won, and why
+
+Note: Quint stores your comparison results and Pareto front. It does not compute them for you — you (or the agent doing analysis) determine which variants are non-dominated.
 
 **Persist with**: `quint_solution(action="compare", ...)`
 
@@ -91,23 +114,21 @@ Define the **characteristic space** before evaluating options. Without explicit 
 
 ### 5. Decide with full rationale
 
-The decision record must contain:
+The decision record should contain:
 - **Invariants** — what MUST hold at all times
 - **Pre/post-conditions** — checklists for implementation
 - **Admissibility** — what is NOT acceptable
 - **Rollback plan** — when and how to reverse
-- **Refresh triggers** — when to re-evaluate
-- **Weakest link** — what bounds reliability
+- **Refresh triggers** — when to re-evaluate (set valid_until date for automatic detection)
+- **Weakest link** — your assessment of what bounds reliability
 
 **Persist with**: `quint_decision(action="decide", ...)`
 
 ### 6. Detect staleness and refresh
 
-Decisions expire. Evidence goes stale. Reality changes.
+Decisions with expired `valid_until` dates are automatically detected by `/q-status` and `/q-refresh`.
 
-- Check `valid_until` and refresh triggers
-- Surface what's affected
-- Waive, reopen, or supersede as appropriate
+Text-based refresh triggers (e.g., "re-evaluate if throughput >80k/s") are stored as reminders but not automatically checked — you or the agent must notice when conditions change.
 
 **Persist with**: `quint_refresh(...)`
 
@@ -126,38 +147,12 @@ Decisions expire. Evidence goes stale. Reality changes.
 
 ---
 
-## Reasoning cycle (ADI)
-
-All reasoning follows: **Abduction → Deduction → Induction**
-
-| Phase | What happens | Quint action |
-|-------|-------------|--------------|
-| **Abduction** | Frame problems, generate hypotheses | `/q-frame`, `/q-explore` |
-| **Deduction** | Define what MUST follow, acceptance criteria | `/q-char`, `/q-compare` |
-| **Induction** | Test against evidence, update confidence | `/q-decide` (evidence), `/q-refresh` |
-
-**Anti-patterns**: solving before framing (skipping abduction), testing without predictions (skipping deduction), claiming "verified" without evidence (skipping induction).
-
----
-
-## Lifecycle stages
-
-| Stage | Activity | Typical commands |
-|-------|----------|-----------------|
-| **Explore** | Generate possibilities, brainstorm | `/q-frame`, `/q-explore` |
-| **Shape** | Select direction, ensure consistency | `/q-char`, `/q-compare`, `/q-decide` |
-| **Evidence** | Validate claims, measure performance | `/q-decide` (evidence), `/q-apply` |
-| **Operate** | Deploy, monitor, refresh when stale | `/q-apply`, `/q-refresh` |
-
----
-
 ## Key distinctions (always maintain)
 
 - **Object ≠ Description ≠ Carrier** — the system, its spec, and its code are three things
 - **Plan ≠ Reality** — a model is not the thing it models
 - **Target system ≠ creator system** — what must work vs who builds it
-- **WLNK** — System quality = min(component qualities). Always identify the weakest link.
-- **Commensurability (CL 0-3)** — before comparing, assess how comparable the options are
+- **Design-time ≠ run-time** — Quint stores your reasoning artifacts (design-time). It does not measure, test, or verify your system (run-time). Don't confuse stored claims with validated evidence.
 
 ---
 
@@ -173,14 +168,15 @@ When you have Quint tools available, use them proactively:
 
 ---
 
-## When to search FPF spec
+## RAG search reference
 
-Use `quint-code fpf search` when you need:
-- Formal definitions of FPF concepts
-- Templates for problem cards, evidence records, decision records
-- Aggregation rules (Gamma, fold, Quintet)
-- Conformance checklists
-- Patterns referenced as A.*/B.*/C.*/F.*
+Use `quint-code fpf search` when you need formal FPF definitions, templates, aggregation rules, conformance checklists, or patterns (A.*/B.*/C.*/F.*).
+
+```bash
+quint-code fpf search "<query>"
+quint-code fpf search "<query>" --full
+quint-code fpf section "<heading>"
+```
 
 ---
 

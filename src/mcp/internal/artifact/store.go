@@ -266,14 +266,22 @@ func (s *Store) FindStaleArtifacts(ctx context.Context) ([]*Artifact, error) {
 }
 
 // NextSequence returns the next sequence number for a given kind on a given date.
+// Uses MAX(id) to find the highest existing sequence, avoiding TOCTOU race on COUNT.
 func (s *Store) NextSequence(ctx context.Context, kind Kind) (int, error) {
 	prefix := fmt.Sprintf("%s-%s-", kind.IDPrefix(), time.Now().Format("20060102"))
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artifacts WHERE id LIKE ?`, prefix+"%").Scan(&count)
-	if err != nil {
+	var maxID sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM artifacts WHERE id LIKE ?`, prefix+"%").Scan(&maxID)
+	if err != nil || !maxID.Valid {
 		return 1, nil
 	}
-	return count + 1, nil
+	// Extract sequence from ID format: kind-YYYYMMDD-NNN
+	parts := strings.Split(maxID.String, "-")
+	if len(parts) < 3 {
+		return 1, nil
+	}
+	seq := 0
+	fmt.Sscanf(parts[len(parts)-1], "%d", &seq)
+	return seq + 1, nil
 }
 
 // --- Links ---

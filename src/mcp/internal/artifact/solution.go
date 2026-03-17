@@ -188,8 +188,8 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 	if mode == ModeStandard || mode == ModeDeep {
 		a.Body += "\n## SoTA Survey Reminder\n\n"
 		a.Body += "Before deciding, have you surveyed existing solutions?\n"
-		a.Body += "- **Context7** — library/framework documentation and alternatives\n"
 		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
+		a.Body += "- **Library docs** — check current API/usage patterns for relevant libraries\n"
 		a.Body += "- **FPF spec search** — `quint-code fpf search \"<topic>\"` for methodology patterns\n"
 	}
 

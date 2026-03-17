@@ -62,6 +62,9 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		state.DerivedStatus = DerivedDecided
 		d := decisions[0]
 		state.DecisionInfo = d.Meta.Title
+		if len(decisions) > 1 {
+			state.DecisionInfo += fmt.Sprintf(" (+%d more)", len(decisions)-1)
+		}
 		if d.Meta.Status == StatusRefreshDue {
 			state.DerivedStatus = DerivedRefreshDue
 		}
@@ -76,11 +79,17 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 			state.NextAction = `quint_solution(action="compare", ...)`
 		}
 		state.PortfolioInfo = p.Meta.Title
+		if len(portfolios) > 1 {
+			state.PortfolioInfo += fmt.Sprintf(" (+%d more)", len(portfolios)-1)
+		}
 		state.Mode = p.Meta.Mode
 	case len(problems) > 0:
 		state.DerivedStatus = DerivedFramed
 		state.ProblemTitle = problems[0].Meta.Title
 		state.ProblemStatus = string(problems[0].Meta.Status)
+		if len(problems) > 1 {
+			state.ProblemStatus += fmt.Sprintf(", +%d more", len(problems)-1)
+		}
 		state.NextAction = `quint_solution(action="explore", ...)`
 		state.Mode = problems[0].Meta.Mode
 	default:

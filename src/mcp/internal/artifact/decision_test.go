@@ -14,6 +14,8 @@ func TestDecide_FullDRR(t *testing.T) {
 	// Set up problem and portfolio
 	prob, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
 		Title: "Event infrastructure", Signal: "DB polling at 70% CPU", Context: "events",
+		Constraints: []string{"Must maintain <500ms p99"},
+		Acceptance:  "All producers on new infra, p99 < 50ms",
 	})
 	portfolio, _, _ := ExploreSolutions(ctx, store, quintDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
@@ -66,27 +68,28 @@ func TestDecide_FullDRR(t *testing.T) {
 		t.Error("file path should not be empty")
 	}
 
-	// Check all sections present
+	// Check FPF E.9 four-component structure
 	requiredSections := []string{
-		"## Selected Variant",
-		"## Why Selected",
-		"## Why Not Others",
-		"## Invariants",
-		"## Pre-conditions",
-		"## Post-conditions",
-		"## Admissibility",
-		"## Evidence Requirements",
-		"## Rollback Plan",
-		"## Refresh Triggers",
-		"## Weakest Link",
+		"## 1. Problem Frame",
+		"## 2. Decision",
+		"## 3. Rationale",
+		"## 4. Consequences",
 	}
 	for _, section := range requiredSections {
 		if !strings.Contains(a.Body, section) {
-			t.Errorf("missing section: %s", section)
+			t.Errorf("missing FPF E.9 component: %s", section)
 		}
 	}
 
-	// Check content
+	// Check Problem Frame pulled from ProblemCard
+	if !strings.Contains(a.Body, "DB polling at 70% CPU") {
+		t.Error("Problem Frame should contain signal from ProblemCard")
+	}
+	if !strings.Contains(a.Body, "500ms p99") {
+		t.Error("Problem Frame should contain constraints from ProblemCard")
+	}
+
+	// Check Decision contract
 	if !strings.Contains(a.Body, "NATS JetStream") {
 		t.Error("missing selected variant name")
 	}
@@ -100,13 +103,32 @@ func TestDecide_FullDRR(t *testing.T) {
 		t.Error("missing post-condition checklist")
 	}
 
+	// Check Rationale
+	if !strings.Contains(a.Body, "Kafka") && !strings.Contains(a.Body, "Rejected") {
+		t.Error("missing rejection rationale")
+	}
+	if !strings.Contains(a.Body, "Ecosystem maturity") {
+		t.Error("missing weakest link")
+	}
+
+	// Check Consequences
+	if !strings.Contains(a.Body, "Rollback") {
+		t.Error("missing rollback plan")
+	}
+	if !strings.Contains(a.Body, "Refresh triggers") {
+		t.Error("missing refresh triggers")
+	}
+	if !strings.Contains(a.Body, "producer.go") {
+		t.Error("missing affected files")
+	}
+
 	// Check links
 	links, _ := store.GetLinks(ctx, a.Meta.ID)
 	if len(links) != 2 {
 		t.Errorf("expected 2 links (problem + portfolio), got %d", len(links))
 	}
 
-	// Check affected files
+	// Check affected files in DB
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
 		t.Errorf("expected 2 affected files, got %d", len(files))
@@ -131,8 +153,12 @@ func TestDecide_Tactical(t *testing.T) {
 	if a.Meta.Mode != ModeTactical {
 		t.Errorf("mode = %q, want tactical", a.Meta.Mode)
 	}
-	if !strings.Contains(a.Body, "## Invariants") {
+	if !strings.Contains(a.Body, "Rate limit applied per-IP") {
 		t.Error("tactical mode should still have invariants")
+	}
+	// Tactical without problem_ref: Problem Frame section exists but minimal
+	if !strings.Contains(a.Body, "## 1. Problem Frame") {
+		t.Error("even tactical DRR should have Problem Frame section")
 	}
 }
 
@@ -140,7 +166,6 @@ func TestDecide_MissingRequired(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Missing selected_title
 	_, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
 		WhySelected: "because",
 	})
@@ -148,7 +173,6 @@ func TestDecide_MissingRequired(t *testing.T) {
 		t.Error("expected error for missing selected_title")
 	}
 
-	// Missing why_selected
 	_, _, err = Decide(ctx, store, t.TempDir(), DecideInput{
 		SelectedTitle: "something",
 	})
@@ -157,50 +181,27 @@ func TestDecide_MissingRequired(t *testing.T) {
 	}
 }
 
-func TestApply_Success(t *testing.T) {
+func TestApply_ReturnsBody(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
 	dec, _, _ := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:  "NATS JetStream",
-		WhySelected:    "Ops simplicity",
-		Invariants:     []string{"At-least-once delivery"},
-		PreConditions:  []string{"Staging cluster ready"},
-		PostConditions: []string{"All producers migrated"},
-		Admissibility:  []string{"Fire-and-forget"},
-		EvidenceReqs:   []string{"Load test at 100k/s"},
-		Rollback: &RollbackSpec{
-			Triggers: []string{"Error rate > 1%"},
-			Steps:    []string{"Switch back to DB polling"},
-		},
+		SelectedTitle: "NATS JetStream",
+		WhySelected:   "Ops simplicity",
+		Invariants:    []string{"At-least-once delivery"},
 	})
 
-	brief, err := Apply(ctx, store, dec.Meta.ID)
+	body, err := Apply(ctx, store, dec.Meta.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Check brief structure
-	requiredBriefSections := []string{
-		"## What to Implement",
-		"## Invariants (MUST hold)",
-		"## NOT Acceptable",
-		"## Before Starting",
-		"## Definition of Done",
-		"## Evidence to Collect",
-		"## If Things Go Wrong",
+	// Apply now returns the DRR body directly
+	if !strings.Contains(body, "NATS JetStream") {
+		t.Error("apply should return DRR body with decision content")
 	}
-	for _, section := range requiredBriefSections {
-		if !strings.Contains(brief, section) {
-			t.Errorf("brief missing section: %s", section)
-		}
-	}
-
-	if !strings.Contains(brief, "At-least-once delivery") {
-		t.Error("brief missing invariant content")
-	}
-	if !strings.Contains(brief, dec.Meta.ID) {
-		t.Error("brief missing decision reference")
+	if !strings.Contains(body, "At-least-once delivery") {
+		t.Error("apply should return DRR body with invariants")
 	}
 }
 

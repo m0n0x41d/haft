@@ -1,14 +1,14 @@
 ---
 name: q-reason
-description: "Structured reasoning for engineering decisions — frame problems, compare options, decide with rationale, detect when decisions go stale."
-argument-hint: "[problem, decision, architecture question, or 'what's stale?']"
+description: "Think before building. Use when the user asks to reason about, analyze, evaluate, compare options, make an architecture decision, choose between approaches, think through a problem, or assess trade-offs. Also use when the user asks 'why did we...', 'should we...', 'what are our options', 'is this the right approach', or wants to frame/reframe a problem."
+argument-hint: "[problem, decision, architecture question, trade-off, or 'what's stale?']"
 ---
 
 # Quint Reasoning — Think Before You Build
 
 This skill activates structured engineering reasoning powered by FPF (First Principles Framework) and Quint Code.
 
-**When to use**: any decision that's not trivially reversible. Architecture choices, library selection, API design, data model changes, infrastructure decisions, process changes.
+**When to use**: any non-trivial engineering question. Architecture choices, library selection, API design, data model changes, infrastructure decisions, process changes. Also: when the user asks to "think about", "reason about", "evaluate", or "compare" anything significant.
 
 **When NOT to use**: obvious bug fixes, formatting, tiny refactors with clear acceptance.
 
@@ -176,14 +176,34 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 
 ## Proactive agent behavior
 
-When you have Quint tools available, use them proactively:
+When you have Quint tools available, use them **automatically** — don't wait for the user to ask.
 
-- **At session start**: call `quint_query(action="status")` to surface stale decisions
-- **If status returns zero artifacts on a project with code**: suggest `/q-onboard` to discover existing knowledge (ADRs, architecture docs, README, test plans). This is critical for brownfield projects.
-- **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions
-- **When dev makes inline decisions**: suggest `quint_note` to capture rationale
-- **When dev says "let's just do X"**: ask "why X?" — rationale is always required
-- **When note conflicts with active decision**: warn before recording
+### Auto-capture mode (always on)
+
+**Record notes automatically when you observe decisions in conversation.** Don't ask "should I record this?" — just call `quint_note`. The validation will reject bad notes (no rationale) and warn on conflicts. Safe to call freely.
+
+Examples of auto-capture triggers:
+- Dev says "I'm going with Redis for this" → `quint_note(title="Redis for session cache", rationale="<extract from conversation>", affected_files=[...])`
+- Dev says "let's use gRPC instead of REST" → `quint_note(title="gRPC over REST for payments API", rationale="<from conversation>")`
+- Dev makes a config choice, picks a library, chooses an approach → capture it
+
+**Do NOT auto-capture**: formatting choices, import ordering, variable naming (too trivial).
+
+### Proactive checks (at key moments)
+
+- **At session start**: call `quint_query(action="status")` to surface stale decisions and active problems
+- **If status returns zero artifacts on a project with code**: suggest `/q-onboard`
+- **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions — mention them if relevant
+- **When dev says "let's just do X" without rationale**: ask "why X?" before recording
+- **When auto-captured note conflicts with an active decision**: surface the conflict clearly
+
+### Escalation (user-triggered)
+
+These require explicit user action — don't auto-trigger:
+- `/q-frame` — full problem framing (diagnostic conversation)
+- `/q-explore` — variant generation
+- `/q-compare` — parity comparison
+- `/q-decide` — formal decision record
 
 ---
 

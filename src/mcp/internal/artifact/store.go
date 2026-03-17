@@ -246,6 +246,25 @@ func (s *Store) FindStaleDecisions(ctx context.Context) ([]*Artifact, error) {
 	return scanArtifacts(rows)
 }
 
+// FindStaleArtifacts returns any artifacts (not just decisions) past their valid_until.
+// This catches stale ProblemCards, expired characterizations, and old portfolios.
+func (s *Store) FindStaleArtifacts(ctx context.Context) ([]*Artifact, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+		FROM artifacts
+		WHERE status NOT IN ('superseded', 'deprecated')
+		AND valid_until != '' AND valid_until < ?
+		ORDER BY kind, valid_until ASC`,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanArtifacts(rows)
+}
+
 // NextSequence returns the next sequence number for a given kind on a given date.
 func (s *Store) NextSequence(ctx context.Context, kind Kind) (int, error) {
 	prefix := fmt.Sprintf("%s-%s-", kind.IDPrefix(), time.Now().Format("20060102"))

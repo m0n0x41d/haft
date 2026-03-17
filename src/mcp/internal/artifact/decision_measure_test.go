@@ -2,8 +2,10 @@ package artifact
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMeasure_Success(t *testing.T) {
@@ -154,15 +156,16 @@ func TestWLNKSummary_WithEvidence(t *testing.T) {
 		WhySelected:   "Because",
 	})
 
-	// Add supporting evidence
+	// Add supporting evidence (CL3 = same context)
 	AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Load test passed",
-		Verdict:     "supports",
-		ValidUntil:  "2026-09-01T00:00:00Z",
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Load test passed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2026-09-01T00:00:00Z",
 	})
 
-	// Add weakening evidence with lower CL
+	// Add weakening evidence with lower CL (CL1 = different context)
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
 		Content:         "External benchmark shows different results",
@@ -214,5 +217,324 @@ func TestWLNKSummary_Refuting(t *testing.T) {
 	}
 	if !strings.Contains(wlnk.Summary, "REFUTING") {
 		t.Errorf("summary should highlight REFUTING: %q", wlnk.Summary)
+	}
+}
+
+// --- R_eff computation tests ---
+
+func TestREff_NoEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-reff-001", Kind: KindDecisionRecord, Title: "D"},
+		Body: "d",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, "dec-reff-001")
+	if wlnk.HasEvidence {
+		t.Error("HasEvidence should be false with no evidence")
+	}
+	if wlnk.REff != 0.0 {
+		t.Errorf("REff = %.2f, want 0.0 (default) when no evidence", wlnk.REff)
+	}
+	if !strings.Contains(wlnk.Summary, "no evidence attached") {
+		t.Errorf("summary = %q, want 'no evidence attached'", wlnk.Summary)
+	}
+}
+
+func TestREff_AllSupporting(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Test A passed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Test B passed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if !wlnk.HasEvidence {
+		t.Error("HasEvidence should be true")
+	}
+	// supports=1.0, CL3 penalty=0.0 → effective=1.0, min=1.0
+	assertREff(t, wlnk.REff, 1.0)
+	if !strings.Contains(wlnk.Summary, "R_eff: 1.00") {
+		t.Errorf("summary should show R_eff: %q", wlnk.Summary)
+	}
+}
+
+func TestREff_MixedVerdicts(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Test passed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Partial result",
+		Verdict:         "weakens",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	// supports=1.0, weakens=0.5, both CL3 → min=0.5
+	assertREff(t, wlnk.REff, 0.5)
+}
+
+func TestREff_AllRefuting(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Crashed",
+		Verdict:         "refutes",
+		CongruenceLevel: 3,
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	// refutes=0.0, CL3 penalty=0.0 → effective=0.0
+	assertREff(t, wlnk.REff, 0.0)
+}
+
+func TestREff_CLPenalty(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	// CL2: supports(1.0) - 0.1 = 0.9
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Similar context evidence",
+		Verdict:         "supports",
+		CongruenceLevel: 2,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	assertREff(t, wlnk.REff, 0.9)
+}
+
+func TestREff_CL1Penalty(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	// CL1: supports(1.0) - 0.4 = 0.6
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Different context evidence",
+		Verdict:         "supports",
+		CongruenceLevel: 1,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	assertREff(t, wlnk.REff, 0.6)
+}
+
+func TestREff_CL0Penalty(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	// CL0: supports(1.0) - 0.9 = 0.1
+	// This also verifies CL=0 is NOT silently upgraded to CL=3 (known issue S4)
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Opposed context evidence",
+		Verdict:         "supports",
+		CongruenceLevel: 0,
+		FormalityLevel:  0, // also 0 — should NOT be defaulted
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	assertREff(t, wlnk.REff, 0.1)
+}
+
+func TestREff_ExpiredEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	// One fresh supporting, one expired supporting
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Fresh test",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Old benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2020-01-01T00:00:00Z", // expired
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	// Fresh: 1.0, Expired: 0.1 → min = 0.1
+	assertREff(t, wlnk.REff, 0.1)
+	if !strings.Contains(wlnk.Summary, "STALE") {
+		t.Errorf("summary should mention STALE: %q", wlnk.Summary)
+	}
+}
+
+func TestREff_WeakensWithCLPenalty(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, quintDir, DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+	})
+
+	// weakens(0.5) with CL1 penalty(0.4) = 0.1
+	AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "External partial result",
+		Verdict:         "weakens",
+		CongruenceLevel: 1,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	})
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	assertREff(t, wlnk.REff, 0.1)
+}
+
+// --- Scoring pure function tests ---
+
+func TestVerdictToScore(t *testing.T) {
+	cases := []struct {
+		verdict string
+		want    float64
+	}{
+		{"supports", 1.0},
+		{"accepted", 1.0},
+		{"weakens", 0.5},
+		{"partial", 0.5},
+		{"refutes", 0.0},
+		{"failed", 0.0},
+		{"unknown", 0.5},
+		{"", 0.5},
+	}
+	for _, tc := range cases {
+		got := verdictToScore(tc.verdict)
+		if got != tc.want {
+			t.Errorf("verdictToScore(%q) = %.1f, want %.1f", tc.verdict, got, tc.want)
+		}
+	}
+}
+
+func TestCLPenalty(t *testing.T) {
+	cases := []struct {
+		cl   int
+		want float64
+	}{
+		{3, 0.0},
+		{2, 0.1},
+		{1, 0.4},
+		{0, 0.9},
+		{-1, 0.9}, // invalid treated as CL0
+	}
+	for _, tc := range cases {
+		got := clPenalty(tc.cl)
+		if got != tc.want {
+			t.Errorf("clPenalty(%d) = %.1f, want %.1f", tc.cl, got, tc.want)
+		}
+	}
+}
+
+func TestScoreEvidence_Decay(t *testing.T) {
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Expired evidence always scores 0.1
+	expired := EvidenceItem{
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2026-01-01T00:00:00Z",
+	}
+	got := scoreEvidence(expired, now)
+	assertREff(t, got, 0.1)
+
+	// Fresh evidence scored normally
+	fresh := EvidenceItem{
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2027-01-01T00:00:00Z",
+	}
+	got = scoreEvidence(fresh, now)
+	assertREff(t, got, 1.0)
+
+	// No valid_until = perpetual, scored normally
+	perpetual := EvidenceItem{
+		Verdict:         "supports",
+		CongruenceLevel: 2,
+	}
+	got = scoreEvidence(perpetual, now)
+	assertREff(t, got, 0.9) // 1.0 - 0.1 CL2 penalty
+}
+
+func assertREff(t *testing.T, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 0.001 {
+		t.Errorf("R_eff = %.4f, want %.4f", got, want)
 	}
 }

@@ -47,6 +47,9 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 		a.Meta.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return fmt.Errorf("artifact %s already exists", a.Meta.ID)
+		}
 		return fmt.Errorf("insert artifact %s: %w", a.Meta.ID, err)
 	}
 
@@ -169,8 +172,24 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	terms := strings.Fields(query)
 	var ftsTerms []string
 	for _, t := range terms {
-		t = strings.ReplaceAll(t, `"`, `""`)
+		// Strip FTS5 special characters that break queries
+		t = strings.NewReplacer(
+			`"`, ``,
+			`*`, ``,
+			`(`, ``,
+			`)`, ``,
+			`{`, ``,
+			`}`, ``,
+			`^`, ``,
+		).Replace(t)
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
 		ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, t))
+	}
+	if len(ftsTerms) == 0 {
+		return nil, nil
 	}
 	ftsQuery := strings.Join(ftsTerms, " OR ")
 

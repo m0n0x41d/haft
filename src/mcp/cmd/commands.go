@@ -97,11 +97,23 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 }
 
 var deprecatedCommands = []string{
+	// v4 commands
 	"q0-init",
-	"q-status",
 	"q-decay",
 	"q-actualize",
 	"q1-add",
+	"q-implement",
+	"q-internalize",
+	"q-query",
+	"q-reset",
+	"q-resolve",
+	"q1-hypothesize",
+	"q2-verify",
+	"q3-validate",
+	"q4-audit",
+	"q5-decide",
+	// v5 deprecated
+	"q-apply",
 }
 
 func cleanupOldCommands(destDir string, ext string) {

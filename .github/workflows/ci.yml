@@ -4,15 +4,15 @@ on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
+  test-and-build:
+    name: Test & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,22 @@ jobs:
       - name: Run tests
         working-directory: src/mcp
         run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Build binary
+        working-directory: src/mcp
+        run: go build -o quint-code -trimpath .
+
+      - name: Smoke test — binary starts and responds to MCP initialize
+        working-directory: src/mcp
+        run: |
+          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./quint-code serve 2>/dev/null || true)
+          if echo "$RESPONSE" | grep -q '"protocolVersion"'; then
+            echo "Smoke test passed: MCP server responds correctly"
+          else
+            echo "Smoke test FAILED: no valid MCP response"
+            echo "Response was: $RESPONSE"
+            exit 1
+          fi
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -53,20 +69,3 @@ jobs:
           version: v2.1.6
           working-directory: src/mcp
           args: --timeout=5m
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: src/mcp/go.sum
-
-      - name: Build binary
-        working-directory: src/mcp
-        run: go build -o quint-code .

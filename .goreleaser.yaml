@@ -2,10 +2,6 @@ version: 2
 
 project_name: quint-code
 
-before:
-  hooks:
-    - bash -c "cd src/mcp && go test ./..."
-
 builds:
   - id: quint-code
     dir: src/mcp

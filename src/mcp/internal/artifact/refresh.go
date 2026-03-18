@@ -337,7 +337,7 @@ func CreateRefreshReport(ctx context.Context, store *Store, quintDir string, dec
 	now := time.Now().UTC()
 
 	var body strings.Builder
-	body.WriteString(fmt.Sprintf("# Refresh Report\n\n"))
+	body.WriteString("# Refresh Report\n\n")
 	body.WriteString(fmt.Sprintf("## Decision\n\n%s\n\n", decisionRef))
 	body.WriteString(fmt.Sprintf("## Action\n\n%s\n\n", action))
 	body.WriteString(fmt.Sprintf("## Reason\n\n%s\n\n", reason))

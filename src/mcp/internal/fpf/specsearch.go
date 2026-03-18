@@ -16,13 +16,13 @@ type SpecSearchResult struct {
 
 // BuildSpecIndex creates an FTS5-indexed SQLite database from spec chunks.
 func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
-	os.Remove(dbPath) // fresh build
+	_ = os.Remove(dbPath) // fresh build
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	stmts := []string{
 		`CREATE VIRTUAL TABLE fpf_fts USING fts5(heading, body, tokenize='porter unicode61')`,
@@ -42,7 +42,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 	if err != nil {
 		return err
 	}
-	defer ins.Close()
+	defer func() { _ = ins.Close() }()
 
 	for _, c := range chunks {
 		if _, err := ins.Exec(c.Heading, c.Body); err != nil {
@@ -58,7 +58,7 @@ func SetSpecMeta(dbPath, key, value string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	_, err = db.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`, key, value)
 	return err
 }
@@ -88,7 +88,7 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("search query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []SpecSearchResult
 	for rows.Next() {

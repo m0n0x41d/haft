@@ -132,8 +132,8 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 	}
 	activeProblems := filterActive(problems)
 	var backlogProblems, inProgressProblems, addressedProblems []*Artifact
-	addressedBy := make(map[string]string)   // problem ID -> decision ID
-	inProgressBy := make(map[string]string)  // problem ID -> portfolio ID
+	addressedBy := make(map[string]string)  // problem ID -> decision ID
+	inProgressBy := make(map[string]string) // problem ID -> portfolio ID
 	for _, p := range activeProblems {
 		backlinks, _ := store.GetBacklinks(ctx, p.Meta.ID)
 		hasDecision := false

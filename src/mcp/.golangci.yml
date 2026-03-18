@@ -21,6 +21,9 @@ linters:
       - linters:
           - staticcheck
         text: "QF1003"
+      - linters:
+          - errcheck
+        source: "defer .*(Close|Rollback)\\(\\)"
 
 formatters:
   enable:

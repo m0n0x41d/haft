@@ -9,34 +9,34 @@ import (
 
 // ProblemFrameInput is the input for framing a problem.
 type ProblemFrameInput struct {
-	Title                string   `json:"title"`
-	Signal               string   `json:"signal"`
-	Constraints          []string `json:"constraints,omitempty"`
-	OptimizationTargets  []string `json:"optimization_targets,omitempty"`
+	Title                 string   `json:"title"`
+	Signal                string   `json:"signal"`
+	Constraints           []string `json:"constraints,omitempty"`
+	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
 	ObservationIndicators []string `json:"observation_indicators,omitempty"`
-	Acceptance           string   `json:"acceptance,omitempty"`
-	BlastRadius          string   `json:"blast_radius,omitempty"`
-	Reversibility        string   `json:"reversibility,omitempty"`
-	Context              string   `json:"context,omitempty"`
-	Mode                 string   `json:"mode,omitempty"`
+	Acceptance            string   `json:"acceptance,omitempty"`
+	BlastRadius           string   `json:"blast_radius,omitempty"`
+	Reversibility         string   `json:"reversibility,omitempty"`
+	Context               string   `json:"context,omitempty"`
+	Mode                  string   `json:"mode,omitempty"`
 }
 
 // CharacterizeInput is the input for adding comparison dimensions.
 type CharacterizeInput struct {
-	ProblemRef    string              `json:"problem_ref"`
-	Dimensions    []ComparisonDimension `json:"dimensions"`
-	ParityRules   string              `json:"parity_rules,omitempty"`
+	ProblemRef  string                `json:"problem_ref"`
+	Dimensions  []ComparisonDimension `json:"dimensions"`
+	ParityRules string                `json:"parity_rules,omitempty"`
 }
 
 // ComparisonDimension defines a single axis for comparing variants.
 type ComparisonDimension struct {
 	Name         string `json:"name"`
-	ScaleType    string `json:"scale_type,omitempty"`    // ordinal, ratio, nominal
+	ScaleType    string `json:"scale_type,omitempty"` // ordinal, ratio, nominal
 	Unit         string `json:"unit,omitempty"`
-	Polarity     string `json:"polarity,omitempty"`      // higher_better, lower_better
-	Role         string `json:"role,omitempty"`           // constraint, target, observation (default: target)
+	Polarity     string `json:"polarity,omitempty"` // higher_better, lower_better
+	Role         string `json:"role,omitempty"`     // constraint, target, observation (default: target)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
-	ValidUntil   string `json:"valid_until,omitempty"`   // when this measurement definition expires (RFC3339)
+	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339)
 }
 
 // FrameProblem creates a ProblemCard artifact.

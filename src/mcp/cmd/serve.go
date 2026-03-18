@@ -203,9 +203,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 		// WriteWarning is non-fatal — surface warnings in response
 		var ww *artifact.WriteWarning
 		if errors.As(err, &ww) {
-			for _, w := range ww.Warnings {
-				validation.Warnings = append(validation.Warnings, w)
-			}
+			validation.Warnings = append(validation.Warnings, ww.Warnings...)
 		} else {
 			return "", err
 		}

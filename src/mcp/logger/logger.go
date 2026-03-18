@@ -53,7 +53,7 @@ func initLogger(projectRoot string) error {
 
 	if info, err := os.Stat(logPath); err == nil && info.Size() > maxLogSize {
 		rotated := logPath + "." + time.Now().Format("2006-01-02-150405")
-		os.Rename(logPath, rotated)
+		_ = os.Rename(logPath, rotated)
 	}
 
 	logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -104,7 +104,7 @@ func Output(w io.Writer) zerolog.Logger {
 
 func Close() {
 	if logFile != nil {
-		logFile.Close()
+		_ = logFile.Close()
 	}
 }
 

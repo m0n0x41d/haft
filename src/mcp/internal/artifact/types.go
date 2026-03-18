@@ -130,26 +130,26 @@ func GenerateID(kind Kind, seq int) string {
 
 // Variant represents a solution option in a SolutionPortfolio.
 type Variant struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Description      string   `json:"description"`
-	Strengths        []string `json:"strengths,omitempty"`
-	WeakestLink      string   `json:"weakest_link"`
-	Risks            []string `json:"risks,omitempty"`
-	SteppingStone    bool     `json:"stepping_stone,omitempty"`
-	AssumptionNotes  string   `json:"assumption_notes,omitempty"`
-	RollbackNotes    string   `json:"rollback_notes,omitempty"`
-	EvidenceRefs     []string `json:"evidence_refs,omitempty"`
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Description     string   `json:"description"`
+	Strengths       []string `json:"strengths,omitempty"`
+	WeakestLink     string   `json:"weakest_link"`
+	Risks           []string `json:"risks,omitempty"`
+	SteppingStone   bool     `json:"stepping_stone,omitempty"`
+	AssumptionNotes string   `json:"assumption_notes,omitempty"`
+	RollbackNotes   string   `json:"rollback_notes,omitempty"`
+	EvidenceRefs    []string `json:"evidence_refs,omitempty"`
 }
 
 // ComparisonResult holds the outcome of comparing variants.
 type ComparisonResult struct {
-	Dimensions      []string            `json:"dimensions"`
+	Dimensions      []string                     `json:"dimensions"`
 	Scores          map[string]map[string]string `json:"scores"` // variant_id -> dimension -> value
-	NonDominatedSet []string            `json:"non_dominated_set"`
-	Incomparable    [][]string          `json:"incomparable,omitempty"`
-	PolicyApplied   string              `json:"policy_applied,omitempty"`
-	SelectedRef     string              `json:"selected_ref,omitempty"`
+	NonDominatedSet []string                     `json:"non_dominated_set"`
+	Incomparable    [][]string                   `json:"incomparable,omitempty"`
+	PolicyApplied   string                       `json:"policy_applied,omitempty"`
+	SelectedRef     string                       `json:"selected_ref,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.
@@ -160,7 +160,7 @@ type EvidenceItem struct {
 	Verdict         string `json:"verdict,omitempty"` // supports, weakens, refutes
 	CarrierRef      string `json:"carrier_ref,omitempty"`
 	CongruenceLevel int    `json:"congruence_level,omitempty"` // 0-3
-	FormalityLevel  int    `json:"formality_level,omitempty"` // 0-9
+	FormalityLevel  int    `json:"formality_level,omitempty"`  // 0-9
 	ValidUntil      string `json:"valid_until,omitempty"`
 }
 

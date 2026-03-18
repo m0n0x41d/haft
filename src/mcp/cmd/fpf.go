@@ -71,19 +71,19 @@ func openFPFDB() (*sql.DB, func(), error) {
 
 	dbPath := filepath.Join(tmpDir, "fpf.db")
 	if err := os.WriteFile(dbPath, embeddedFPFDB, 0644); err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, nil, fmt.Errorf("write temp db: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, nil, fmt.Errorf("open db: %w", err)
 	}
 
 	cleanup := func() {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 	}
 	return db, cleanup, nil
 }

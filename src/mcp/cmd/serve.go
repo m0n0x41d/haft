@@ -704,7 +704,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
+		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
 		return artifact.FormatRefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
 
 	case artifact.RefreshReopen:
@@ -715,7 +715,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
+		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
 		return artifact.FormatRefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
 
 	case artifact.RefreshSupersede:
@@ -730,7 +730,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
+		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
 		return artifact.FormatRefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
 
 	case artifact.RefreshDeprecate:
@@ -741,7 +741,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
+		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
 		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
 	default:

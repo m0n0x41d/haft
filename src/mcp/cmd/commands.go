@@ -119,7 +119,7 @@ var deprecatedCommands = []string{
 func cleanupOldCommands(destDir string, ext string) {
 	for _, cmd := range deprecatedCommands {
 		path := filepath.Join(destDir, cmd+ext)
-		os.Remove(path) // ignore error - file may not exist
+		_ = os.Remove(path) // ignore error - file may not exist
 	}
 }
 

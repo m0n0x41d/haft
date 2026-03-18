@@ -277,7 +277,7 @@ func (s *Store) NextSequence(ctx context.Context, kind Kind) (int, error) {
 		return 1, nil
 	}
 	seq := 0
-	fmt.Sscanf(parts[len(parts)-1], "%d", &seq)
+	_, _ = fmt.Sscanf(parts[len(parts)-1], "%d", &seq)
 	return seq + 1, nil
 }
 

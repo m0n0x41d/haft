@@ -354,14 +354,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "quint_decision",
-			Description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact.",
+			Description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact, 'baseline' snapshots affected files for drift detection.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"decide", "apply", "measure", "evidence"},
-						"description": "decide=create DRR, apply=impl brief, measure=record impact, evidence=attach evidence item",
+						"enum":        []interface{}{"decide", "apply", "measure", "evidence", "baseline"},
+						"description": "decide=create DRR, apply=impl brief, measure=record impact, evidence=attach evidence item, baseline=snapshot affected files for drift detection",
 					},
 					"selected_title": map[string]string{
 						"type":        "string",
@@ -438,7 +438,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"affected_files": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
-						"description": "(decide) Files affected by this decision",
+						"description": "(decide/baseline) Files affected by this decision. For baseline: optional — if provided, replaces the file list before snapshotting.",
 					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
@@ -532,14 +532,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "quint_query",
-			Description: "Search past decisions, check status, find related artifacts, or list all artifacts by kind. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'list' shows all artifacts of a given kind.",
+			Description: "Search past decisions, check status, find related artifacts, list all artifacts by kind, or show module coverage. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "related", "list"},
-						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind",
+						"enum":        []interface{}{"search", "status", "related", "list", "coverage"},
+						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind, coverage=module-level decision coverage",
 					},
 					"query": map[string]string{
 						"type":        "string",

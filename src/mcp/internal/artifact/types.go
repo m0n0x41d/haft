@@ -203,4 +203,14 @@ type DriftReport struct {
 	DecisionTitle string      `json:"decision_title"`
 	HasBaseline   bool        `json:"has_baseline"`
 	Files         []DriftItem `json:"files,omitempty"`
+	// Level C: impact propagation
+	ImpactedModules []ModuleImpact `json:"impacted_modules,omitempty"`
+}
+
+// ModuleImpact describes a dependent module affected by drift propagation.
+type ModuleImpact struct {
+	ModuleID    string   `json:"module_id"`
+	ModulePath  string   `json:"module_path"`
+	DecisionIDs []string `json:"decision_ids,omitempty"` // decisions governing this module
+	IsBlind     bool     `json:"is_blind"`               // no decisions = unmonitored impact
 }

@@ -49,10 +49,18 @@ Check `git log --oneline -20` for:
 - Architecture changes
 - Patterns in commit messages that suggest undocumented decisions
 
-### 7. Unresolved problems
+### 7. Module coverage analysis
+Run `quint_query(action="coverage")` to get the module map and decision coverage:
+- Identify **blind modules** — parts of the codebase with no engineering decisions
+- Prioritize blind modules by criticality: modules with many dependents and no decisions are the highest-risk blind spots
+- For the most critical blind modules: suggest framing problems for key invariants
+- Report the coverage percentage and highlight the top 3-5 blind spots
+
+### 8. Unresolved problems
 If you find architectural tensions, TODO comments about design issues, or open questions:
 - Use `quint_problem(action="frame")` to capture them as ProblemCards
 - These become the starting point for the user's next reasoning cycle
+- Cross-reference with blind modules from step 7 — blind modules with design tensions are highest priority
 
 ## Output
 After scanning, report:
@@ -60,7 +68,8 @@ After scanning, report:
 - How many problems were discovered
 - What key decisions are now searchable in Quint
 - What gaps exist (decisions mentioned but not documented, missing ADRs)
+- **Module coverage**: X modules detected, Y% governed, Z blind spots identified
 
-Suggest next steps: `/q-status` to see the knowledge map, `/q-frame` for the most pressing unresolved problem.
+Suggest next steps: `/q-status` to see the knowledge map and module coverage, `/q-frame` for the most pressing unresolved problem or highest-risk blind module.
 
 $ARGUMENTS

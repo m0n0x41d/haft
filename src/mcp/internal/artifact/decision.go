@@ -2,8 +2,14 @@ package artifact
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -303,6 +309,275 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 	}
 
 	return a, filePath, nil
+}
+
+// BaselineInput is the input for snapshotting file hashes after implementation.
+type BaselineInput struct {
+	DecisionRef   string   `json:"decision_ref"`
+	AffectedFiles []string `json:"affected_files,omitempty"` // optional: replace file list before hashing
+}
+
+// Baseline snapshots the current state of affected files as the baseline for drift detection.
+// If AffectedFiles is provided, it replaces the existing file list before hashing.
+func Baseline(ctx context.Context, store *Store, projectRoot string, input BaselineInput) ([]AffectedFile, error) {
+	if input.DecisionRef == "" {
+		return nil, fmt.Errorf("decision_ref is required")
+	}
+
+	a, err := store.Get(ctx, input.DecisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("decision %s not found: %w", input.DecisionRef, err)
+	}
+	if a.Meta.Kind != KindDecisionRecord && a.Meta.Kind != KindNote {
+		return nil, fmt.Errorf("%s is %s — baseline only works on decisions and notes", input.DecisionRef, a.Meta.Kind)
+	}
+
+	// If new files provided, replace the list
+	if len(input.AffectedFiles) > 0 {
+		var files []AffectedFile
+		for _, f := range input.AffectedFiles {
+			files = append(files, AffectedFile{Path: f})
+		}
+		if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
+			return nil, fmt.Errorf("replace affected files: %w", err)
+		}
+	}
+
+	// Get current affected files
+	files, err := store.GetAffectedFiles(ctx, input.DecisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("get affected files: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
+	}
+
+	// Compute SHA-256 for each file
+	for i := range files {
+		absPath := filepath.Join(projectRoot, files[i].Path)
+		hash, err := hashFile(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("hash %s: %w", files[i].Path, err)
+		}
+		files[i].Hash = hash
+	}
+
+	// Store updated hashes
+	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
+		return nil, fmt.Errorf("store baseline hashes: %w", err)
+	}
+
+	return files, nil
+}
+
+// CheckDrift compares current file state against stored baseline hashes for all active decisions.
+func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftReport, error) {
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 500)
+	if err != nil {
+		return nil, fmt.Errorf("list decisions: %w", err)
+	}
+
+	// Also check notes with affected_files
+	notes, _ := store.ListByKind(ctx, KindNote, 500)
+	decisions = append(decisions, notes...)
+
+	var reports []DriftReport
+
+	for _, d := range decisions {
+		if d.Meta.Status != StatusActive {
+			continue
+		}
+
+		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
+		if err != nil || len(files) == 0 {
+			continue
+		}
+
+		report := DriftReport{
+			DecisionID:    d.Meta.ID,
+			DecisionTitle: d.Meta.Title,
+		}
+
+		// Check if any file has a baseline hash
+		hasAnyHash := false
+		for _, f := range files {
+			if f.Hash != "" {
+				hasAnyHash = true
+				break
+			}
+		}
+		report.HasBaseline = hasAnyHash
+
+		if !hasAnyHash {
+			// No baseline set — report as "needs baseline"
+			for _, f := range files {
+				report.Files = append(report.Files, DriftItem{
+					Path:   f.Path,
+					Status: DriftNoBaseline,
+				})
+			}
+			reports = append(reports, report)
+			continue
+		}
+
+		// Compare current state to baseline
+		hasDrift := false
+		for _, f := range files {
+			if f.Hash == "" {
+				// File was added to affected_files after baseline — treat as no_baseline
+				report.Files = append(report.Files, DriftItem{
+					Path:   f.Path,
+					Status: DriftNoBaseline,
+				})
+				continue
+			}
+
+			absPath := filepath.Join(projectRoot, f.Path)
+			currentHash, err := hashFile(absPath)
+			if err != nil {
+				// File doesn't exist or can't be read
+				report.Files = append(report.Files, DriftItem{
+					Path:   f.Path,
+					Status: DriftMissing,
+				})
+				hasDrift = true
+				continue
+			}
+
+			if currentHash != f.Hash {
+				lines := gitDiffStat(projectRoot, f.Path)
+				report.Files = append(report.Files, DriftItem{
+					Path:         f.Path,
+					Status:       DriftModified,
+					LinesChanged: lines,
+				})
+				hasDrift = true
+			}
+		}
+
+		// Only include reports with drift or missing baselines
+		if hasDrift || !hasAnyHash {
+			reports = append(reports, report)
+		}
+	}
+
+	return reports, nil
+}
+
+// hashFile computes SHA-256 of a file's contents.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// gitDiffStat returns a short diff stat for a file (e.g., "+8 -2").
+// Returns empty string if git is not available or fails.
+func gitDiffStat(projectRoot, filePath string) string {
+	cmd := exec.Command("git", "diff", "--numstat", "HEAD", "--", filePath)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) >= 2 {
+		return fmt.Sprintf("+%s -%s", parts[0], parts[1])
+	}
+	return ""
+}
+
+// FormatBaselineResponse formats the result of a baseline action.
+func FormatBaselineResponse(decisionRef string, files []AffectedFile, navStrip string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", decisionRef, len(files)))
+	for _, f := range files {
+		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
+	}
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// FormatDriftResponse formats drift check results for the agent.
+func FormatDriftResponse(reports []DriftReport, navStrip string) string {
+	var sb strings.Builder
+
+	if len(reports) == 0 {
+		sb.WriteString("No drift detected. All baselined decisions match current file state.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	driftCount := 0
+	noBaselineCount := 0
+	for _, r := range reports {
+		if r.HasBaseline {
+			driftCount++
+		} else {
+			noBaselineCount++
+		}
+	}
+
+	if driftCount > 0 {
+		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s))\n\n", driftCount))
+		for _, r := range reports {
+			if !r.HasBaseline {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("### %s [%s]\n\n", r.DecisionTitle, r.DecisionID))
+			for _, f := range r.Files {
+				switch f.Status {
+				case DriftModified:
+					sb.WriteString(fmt.Sprintf("  **MODIFIED** %s %s\n", f.Path, f.LinesChanged))
+				case DriftMissing:
+					sb.WriteString(fmt.Sprintf("  **FILE MISSING** %s\n", f.Path))
+				}
+			}
+			sb.WriteString("\n")
+		}
+		// Level C: show impact propagation if available
+		for _, r := range reports {
+			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
+			for _, impact := range r.ImpactedModules {
+				if impact.IsBlind {
+					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
+				} else {
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+				}
+			}
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString("**Action:** Read the actual diffs to determine if changes are material. ")
+		sb.WriteString("If cosmetic (comments, formatting), no action needed. ")
+		sb.WriteString("If substantive, consider reviewing or reopening the decision.\n\n")
+	}
+
+	if noBaselineCount > 0 {
+		sb.WriteString(fmt.Sprintf("## No Baseline (%d decision(s))\n\n", noBaselineCount))
+		for _, r := range reports {
+			if r.HasBaseline {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored\n",
+				r.DecisionTitle, r.DecisionID, len(r.Files)))
+		}
+		sb.WriteString("\n**Action:** After implementing, run `quint_decision(action=\"baseline\", decision_ref=\"<id>\")` to snapshot file state.\n\n")
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
 }
 
 // Apply is deprecated — the decide response now includes the full DRR body.

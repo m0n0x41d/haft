@@ -16,11 +16,10 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "quint-code",
 	Short: "First Principles Framework (FPF) for AI-assisted engineering",
-	Long: `Quint Code is a structured reasoning engine that implements the
-First Principles Framework (FPF) for AI-assisted engineering.
+	Long: `Quint Code is an FPF-native reasoning layer for engineering decisions.
 
-It provides tools for hypothesis generation, verification, validation,
-and decision-making with full audit trails.`,
+Frame problems. Compare options fairly. Record decisions as contracts.
+Know when they go stale. Built on First Principles Framework.`,
 	Version: Version,
 }
 

@@ -83,6 +83,26 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return "", fmt.Errorf("invalid params: %w", err)
 		}
 
+		// Extract action for logging
+		action, _ := params.Arguments["action"].(string)
+
+		// Log tool call entry
+		logParams := map[string]string{}
+		if action != "" {
+			logParams["action"] = action
+		}
+		if ref, ok := params.Arguments["decision_ref"].(string); ok {
+			logParams["decision_ref"] = ref
+		}
+		if ref, ok := params.Arguments["artifact_ref"].(string); ok {
+			logParams["artifact_ref"] = ref
+		}
+		if ref, ok := params.Arguments["problem_ref"].(string); ok {
+			logParams["problem_ref"] = ref
+		}
+		logger.ToolCall(params.Name, action, logParams)
+		start := time.Now()
+
 		var result string
 		var toolErr error
 
@@ -103,8 +123,10 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
 
+		// Log tool call result with duration
+		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
+
 		// Audit log — fire-and-forget, never block the tool response
-		action, _ := params.Arguments["action"].(string)
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
 
 		// Periodic refresh prompt — if >5 days since last scan, remind agent
@@ -469,6 +491,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 				}
 			}
 		} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '[' {
+			logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseStringArray: JSON string array fallback")
 			var parsed []string
 			if err := json.Unmarshal([]byte(s), &parsed); err == nil {
 				result = parsed

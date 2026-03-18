@@ -39,7 +39,14 @@ tasks:
       - echo "Installed to {{.BIN_DIR}}/{{.BIN_NAME}}"
 
   clean:
-    desc: Remove built binary
+    desc: Remove local build binary
     dir: '{{.SRC_DIR}}'
     cmds:
       - rm -f {{.BIN_NAME}}
+
+  cleanup:
+    desc: Remove all built binaries (local + installed)
+    cmds:
+      - rm -f {{.SRC_DIR}}/{{.BIN_NAME}}
+      - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
+      - echo "Removed {{.SRC_DIR}}/{{.BIN_NAME}} and {{.BIN_DIR}}/{{.BIN_NAME}}"

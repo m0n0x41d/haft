@@ -284,6 +284,9 @@ func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]int
 	if env, ok := extraFields["env"].(map[string]string); ok {
 		server.Env = env
 	}
+	if cwd, ok := extraFields["cwd"].(string); ok {
+		server.Cwd = cwd
+	}
 
 	config.MCPServers["quint-code"] = server
 
@@ -310,7 +313,11 @@ func configureMCPClaude(projectRoot, binaryPath string) error {
 
 func configureMCPCursor(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, nil)
+	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
+	})
 }
 
 func configureMCPGemini(projectRoot, binaryPath string) error {
@@ -321,6 +328,10 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(homeDir, ".gemini", "settings.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"timeout": 30000,
+		"cwd":     projectRoot,
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
 	})
 }
 
@@ -344,7 +355,11 @@ func configureMCPCodex(projectRoot, binaryPath string) error {
 [mcp_servers.quint-code]
 command = "%s"
 args = ["serve"]
-env = { QUINT_PROJECT_ROOT = "%s" }
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.quint-code.env]
+QUINT_PROJECT_ROOT = "%s"
 `, binaryPath, projectRoot)
 
 	if start := strings.Index(existing, "[mcp_servers.quint-code]"); start != -1 {

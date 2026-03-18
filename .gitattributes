@@ -1,0 +1,7 @@
+# Binary files — don't diff
+src/mcp/cmd/fpf.db binary
+*.db binary
+
+# Shell scripts — keep LF
+*.sh text eol=lf
+install.sh text eol=lf

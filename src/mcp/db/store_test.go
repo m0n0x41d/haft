@@ -20,7 +20,7 @@ func TestStore_HolonCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	err = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypothesis", "Content here", "ctx1", "scope1", "")
+	err = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test Hypothesis", "Content here", "ctx1", "scope1", "", "")
 	if err != nil {
 		t.Fatalf("CreateHolon failed: %v", err)
 	}
@@ -79,9 +79,9 @@ func TestStore_EvidenceCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "")
+	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L0", "Test", "Content", "ctx", "", "", "")
 
-	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", "internal-logic", "")
+	err = store.AddEvidence(ctx, "e1", "h1", "test_result", "All tests pass", "pass", "L1", 5, "internal-logic", "", "", "")
 	if err != nil {
 		t.Fatalf("AddEvidence failed: %v", err)
 	}
@@ -118,8 +118,8 @@ func TestStore_RelationsCRUD(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "parent", "hypothesis", "system", "L1", "Parent", "Content", "ctx", "", "")
-	_ = store.CreateHolon(ctx, "child", "hypothesis", "system", "L0", "Child", "Content", "ctx", "", "")
+	_ = store.CreateHolon(ctx, "parent", "hypothesis", "system", "L1", "Parent", "Content", "ctx", "", "", "")
+	_ = store.CreateHolon(ctx, "child", "hypothesis", "system", "L0", "Child", "Content", "ctx", "", "", "")
 
 	err = store.Link(ctx, "child", "parent", "componentOf")
 	if err != nil {
@@ -170,9 +170,9 @@ func TestStore_ParentChild(t *testing.T) {
 
 	ctx := context.Background()
 
-	_ = store.CreateHolon(ctx, "l0-hypo", "hypothesis", "system", "L0", "L0 Hypothesis", "Content", "ctx", "", "")
-	_ = store.CreateHolon(ctx, "l1-hypo", "hypothesis", "system", "L1", "L1 Verified", "Content", "ctx", "", "l0-hypo")
-	_ = store.CreateHolon(ctx, "l2-hypo", "hypothesis", "system", "L2", "L2 Validated", "Content", "ctx", "", "l1-hypo")
+	_ = store.CreateHolon(ctx, "l0-hypo", "hypothesis", "system", "L0", "L0 Hypothesis", "Content", "ctx", "", "", "")
+	_ = store.CreateHolon(ctx, "l1-hypo", "hypothesis", "system", "L1", "L1 Verified", "Content", "ctx", "", "l0-hypo", "")
+	_ = store.CreateHolon(ctx, "l2-hypo", "hypothesis", "system", "L2", "L2 Validated", "Content", "ctx", "", "l1-hypo", "")
 
 	children, err := store.GetHolonsByParent(ctx, "l0-hypo")
 	if err != nil {
@@ -254,5 +254,85 @@ func TestStore_FileCleanup(t *testing.T) {
 
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Error("Database file should exist after close")
+	}
+}
+
+// ============================================
+// REVERIFICATION TESTS (v5.0.0)
+// ============================================
+// Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+// Time-based decay via valid_until remains as per FPF spec B.3.4.
+
+func TestStore_HolonReverification(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	_ = store.CreateHolon(ctx, "h1", "hypothesis", "system", "L2", "Test", "Content", "ctx", "", "", "")
+
+	err = store.MarkHolonNeedsReverification(ctx, "h1", "dependency stale")
+	if err != nil {
+		t.Fatalf("MarkHolonNeedsReverification failed: %v", err)
+	}
+
+	holon, _ := store.GetHolon(ctx, "h1")
+	if holon.NeedsReverification.Int64 != 1 {
+		t.Errorf("Expected NeedsReverification=1, got %d", holon.NeedsReverification.Int64)
+	}
+	if holon.ReverificationReason.String != "dependency stale" {
+		t.Errorf("Expected reason 'dependency stale', got '%s'", holon.ReverificationReason.String)
+	}
+
+	err = store.ClearHolonReverification(ctx, "h1")
+	if err != nil {
+		t.Fatalf("ClearHolonReverification failed: %v", err)
+	}
+
+	holon, _ = store.GetHolon(ctx, "h1")
+	if holon.NeedsReverification.Int64 != 0 {
+		t.Errorf("Expected NeedsReverification=0 after clear, got %d", holon.NeedsReverification.Int64)
+	}
+}
+
+func TestStore_CommitTracking(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	_, err = store.GetRawDB().ExecContext(ctx,
+		"INSERT INTO fpf_state (context_id, active_role) VALUES (?, ?)",
+		"test-ctx", "IDLE")
+	if err != nil {
+		t.Fatalf("Failed to create FPF state: %v", err)
+	}
+
+	err = store.UpdateLastCommit(ctx, "test-ctx", "abc123def456")
+	if err != nil {
+		t.Fatalf("UpdateLastCommit failed: %v", err)
+	}
+
+	commit, commitAt, err := store.GetLastCommit(ctx, "test-ctx")
+	if err != nil {
+		t.Fatalf("GetLastCommit failed: %v", err)
+	}
+	if commit != "abc123def456" {
+		t.Errorf("Expected commit 'abc123def456', got '%s'", commit)
+	}
+	if commitAt.IsZero() {
+		t.Error("Expected non-zero commit time")
 	}
 }

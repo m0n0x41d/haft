@@ -1,0 +1,52 @@
+version: 2
+
+project_name: quint-code
+
+builds:
+  - id: quint-code
+    dir: src/mcp
+    main: .
+    binary: quint-code
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/m0n0x41d/quint-code/cmd.Version={{ .Version }}
+      - -X github.com/m0n0x41d/quint-code/cmd.Commit={{ .ShortCommit }}
+      - -X github.com/m0n0x41d/quint-code/cmd.BuildDate={{ .Date }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  use: github-native
+
+release:
+  header: |
+    ## Quint Code {{ .Tag }}
+
+    **Complete product redesign.** v5 is a new product — not backward-compatible with v4.
+
+    New: FPF E.9 decision records, computed R_eff with evidence decay, problem lifecycle (Backlog → In Progress → Addressed), diversity check, archive recall, parity enforcement, indicator roles, Goldilocks signals, lemniscate feedback loop, universal artifact refresh, and 4243 indexed FPF spec sections.
+
+    6 MCP tools. Works with Claude Code, Cursor, Gemini CLI, Codex CLI.
+
+    ### Install
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+    ```
+
+    See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/src/mcp/CHANGELOG.md) for full details.

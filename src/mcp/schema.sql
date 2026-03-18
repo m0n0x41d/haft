@@ -12,6 +12,11 @@ CREATE TABLE holons (
     scope TEXT,
     parent_id TEXT REFERENCES holons(id),
     cached_r_score REAL DEFAULT 0.0 CHECK(cached_r_score BETWEEN 0.0 AND 1.0),
+    needs_reverification INTEGER DEFAULT 0,
+    reverification_reason TEXT,
+    reverification_since DATETIME,
+    context_status TEXT DEFAULT NULL,
+    approach_type TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -23,7 +28,13 @@ CREATE TABLE evidence (
     content TEXT NOT NULL,
     verdict TEXT NOT NULL,
     assurance_level TEXT,
+    formality_level INTEGER DEFAULT 5 CHECK(formality_level BETWEEN 0 AND 9),
     carrier_ref TEXT,
+    carrier_hash TEXT,
+    carrier_commit TEXT,
+    is_stale INTEGER DEFAULT 0,
+    stale_reason TEXT,
+    stale_since DATETIME,
     valid_until DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(holon_id) REFERENCES holons(id)
@@ -84,12 +95,24 @@ CREATE TABLE waivers (
     FOREIGN KEY(evidence_id) REFERENCES evidence(id)
 );
 
+CREATE TABLE predictions (
+    id TEXT PRIMARY KEY,
+    holon_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    covered INTEGER DEFAULT 0,
+    covered_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(holon_id) REFERENCES holons(id),
+    FOREIGN KEY(covered_by) REFERENCES evidence(id)
+);
+
 CREATE TABLE fpf_state (
     context_id TEXT PRIMARY KEY,
     active_role TEXT,
     active_session_id TEXT,
     active_role_context TEXT,
     last_commit TEXT,
+    last_commit_at DATETIME,
     assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -98,3 +121,36 @@ CREATE TABLE fpf_state (
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_waivers_evidence ON waivers(evidence_id);
+
+-- Indexes for Code Change Awareness
+CREATE INDEX IF NOT EXISTS idx_evidence_carrier ON evidence(carrier_ref);
+CREATE INDEX IF NOT EXISTS idx_evidence_stale ON evidence(is_stale) WHERE is_stale = 1;
+CREATE INDEX IF NOT EXISTS idx_holons_reverification ON holons(needs_reverification) WHERE needs_reverification = 1;
+
+-- Indexes for Decision Contexts (v5.0.0)
+CREATE INDEX IF NOT EXISTS idx_holons_context_status ON holons(context_status);
+CREATE INDEX IF NOT EXISTS idx_relations_memberof ON relations(target_id, relation_type);
+
+-- Indexes for approach_type diversity tracking (NQD-CAL)
+CREATE INDEX IF NOT EXISTS idx_holons_approach_type ON holons(approach_type);
+
+-- Active holons: excludes contexts (shown separately) and closed/abandoned items
+-- Used by: GetActiveRecentHolons, CountActiveHolonsByLayer
+CREATE VIEW active_holons AS
+SELECT h.*
+FROM holons h
+WHERE h.layer NOT IN ('invalid')
+  AND h.type != 'decision_context'
+  AND (h.context_status IS NULL OR h.context_status = 'open')
+  AND NOT EXISTS (
+    SELECT 1 FROM relations r
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('rejects', 'closes')
+  )
+  AND NOT EXISTS (
+    -- 'selects' only archives if the DRR is resolved (has implementation/abandonment/supersession evidence)
+    SELECT 1 FROM relations r
+    JOIN evidence e ON e.holon_id = r.source_id AND e.type IN ('implementation', 'abandonment', 'supersession')
+    WHERE r.target_id = h.id
+      AND r.relation_type = 'selects'
+  );

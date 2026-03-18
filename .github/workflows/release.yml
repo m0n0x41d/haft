@@ -1,71 +1,50 @@
 name: Release
+
 on:
   push:
     tags:
       - 'v*'
+
 permissions:
   contents: write
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
-jobs:
-  release:
-    name: Release (${{ matrix.platform.os }}-${{ matrix.platform.arch }})
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - {os: 'linux', arch: 'amd64', runner: 'ubuntu-latest'}
-          - {os: 'linux', arch: 'arm64', runner: 'ubuntu-24.04-arm'}
-          - {os: 'darwin', arch: 'arm64', runner: 'macos-latest'}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+jobs:
+  test:
+    name: Pre-release tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          go-version: '1.23'
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
           cache-dependency-path: src/mcp/go.sum
 
-      - name: Build MCP binary
-        run: |
-          cd src/mcp
-          VERSION=${GITHUB_REF_NAME#v}
-          COMMIT=${GITHUB_SHA::8}
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          LDFLAGS="-s -w -X github.com/m0n0x41d/quint-code/cmd.Version=${VERSION} -X github.com/m0n0x41d/quint-code/cmd.Commit=${COMMIT} -X github.com/m0n0x41d/quint-code/cmd.BuildDate=${DATE}"
-          go build -o "../../dist/quint-code" -trimpath -ldflags "${LDFLAGS}"
+      - name: Run tests
+        working-directory: src/mcp
+        run: go test -race ./...
 
-      - name: Create release package
-        run: |
-          mkdir -p "package/bin"
-          mkdir -p "package/commands"
-          mv "dist/quint-code" "package/bin/quint-code"
-          cp -r src/mcp/cmd/commands/* package/commands/
-          TAG=${GITHUB_REF_NAME#v}
-          ASSET_NAME="quint-code-${TAG}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz"
-          tar -czf "$ASSET_NAME" -C "package" .
-          echo "ASSET_NAME=${ASSET_NAME}" >> $GITHUB_ENV
-
-      - name: Extract release notes from CHANGELOG
-        id: changelog
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          {
-            echo "RELEASE_NOTES<<EOF"
-            awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md
-            echo "EOF"
-          } >> $GITHUB_ENV
-
-      - name: Upload to release
-        uses: svenstaro/upload-release-action@v2
+  release:
+    name: Release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ env.ASSET_NAME }}
-          asset_name: ${{ env.ASSET_NAME }}
-          tag: ${{ github.ref }}
-          release_name: ${{ github.ref_name }}
-          overwrite: true
-          body: ${{ env.RELEASE_NOTES }}
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: src/mcp/go.sum
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

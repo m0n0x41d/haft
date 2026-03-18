@@ -103,8 +103,19 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	// Stale decisions
-	staleItems, _ := ScanStale(ctx, store)
+	// Stale artifacts (filtered by context if set)
+	allStaleItems, _ := ScanStale(ctx, store)
+	var staleItems []StaleItem
+	if contextFilter != "" {
+		for _, s := range allStaleItems {
+			// Check if artifact belongs to context
+			if a, err := store.Get(ctx, s.ID); err == nil && a.Meta.Context == contextFilter {
+				staleItems = append(staleItems, s)
+			}
+		}
+	} else {
+		staleItems = allStaleItems
+	}
 	if len(staleItems) > 0 {
 		sb.WriteString(fmt.Sprintf("### Refresh Due (%d)\n\n", len(staleItems)))
 		cap := 5
@@ -196,8 +207,21 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	// Recent notes
-	notes, _ := store.ListByKind(ctx, KindNote, 5)
+	// Recent notes (context-filtered if set)
+	var notes []*Artifact
+	if contextFilter != "" {
+		all, _ := store.ListByContext(ctx, contextFilter)
+		for _, a := range all {
+			if a.Meta.Kind == KindNote {
+				notes = append(notes, a)
+				if len(notes) >= 5 {
+					break
+				}
+			}
+		}
+	} else {
+		notes, _ = store.ListByKind(ctx, KindNote, 5)
+	}
 	if len(notes) > 0 {
 		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(notes)))
 		for _, n := range notes {

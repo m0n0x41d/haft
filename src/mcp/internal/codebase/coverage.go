@@ -258,7 +258,7 @@ type ModuleImpactInfo struct {
 //   - expired evidence scores 0.1
 func computeDecisionREff(ctx context.Context, db *sql.DB, decisionID string) (float64, bool) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT verdict, congruence_level, valid_until FROM evidence_items WHERE artifact_ref = ?`,
+		`SELECT verdict, congruence_level, valid_until FROM evidence_items WHERE artifact_ref = ? AND verdict != 'superseded'`,
 		decisionID)
 	if err != nil {
 		return 0, false

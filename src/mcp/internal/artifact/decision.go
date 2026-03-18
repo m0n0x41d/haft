@@ -678,6 +678,13 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 		return nil, fmt.Errorf("update decision: %w", err)
 	}
 
+	// Supersede previous measurements on this artifact (FPF F.10:6.1 — newer evidence replaces older within the same Window)
+	if _, err := store.DB().ExecContext(ctx,
+		`UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = 'measurement' AND verdict != 'superseded'`,
+		input.DecisionRef); err != nil {
+		logger.Warn().Err(err).Str("decision_ref", input.DecisionRef).Msg("failed to supersede old measurements")
+	}
+
 	// Record as evidence item
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
@@ -776,12 +783,25 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 		return result
 	}
 
-	result.EvidenceCount = len(items)
+	// Filter out superseded evidence (FPF F.10:6.1 — superseded within same Window)
+	var activeItems []EvidenceItem
+	for _, e := range items {
+		if e.Verdict != "superseded" {
+			activeItems = append(activeItems, e)
+		}
+	}
+
+	if len(activeItems) == 0 {
+		result.Summary = "no active evidence (all superseded)"
+		return result
+	}
+
+	result.EvidenceCount = len(activeItems)
 	result.HasEvidence = true
 	now := time.Now().UTC()
 	minREff := 1.0
 
-	for _, e := range items {
+	for _, e := range activeItems {
 		switch e.Verdict {
 		case "supports", "accepted":
 			result.Supporting++

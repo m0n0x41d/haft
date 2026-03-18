@@ -13,9 +13,21 @@ linters:
     - unused
     - misspell
     - unconvert
+    - gosec
+    - bodyclose
+    - gocritic
+    - prealloc
+    - nolintlint
   settings:
     misspell:
       locale: US
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+    nolintlint:
+      require-explanation: true
+      require-specific: true
   exclusions:
     rules:
       - linters:
@@ -24,6 +36,12 @@ linters:
       - linters:
           - errcheck
         source: "defer .*(Close|Rollback)\\(\\)"
+      - linters:
+          - gosec
+        text: "G204" # subprocess launched with variable — we use bash intentionally
+      - linters:
+          - gocritic
+        text: "appendAssign"
 
 formatters:
   enable:

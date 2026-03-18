@@ -24,6 +24,12 @@ jobs:
           go-version: '1.24'
           cache-dependency-path: src/mcp/go.sum
 
+      - name: Check go mod tidy
+        working-directory: src/mcp
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
+
       - name: Run tests
         working-directory: src/mcp
         run: go test -v -race -coverprofile=coverage.out ./...

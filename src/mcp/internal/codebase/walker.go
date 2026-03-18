@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/quint-code/logger"
 )
 
 // Scanner detects modules and builds the dependency graph for a project.
@@ -27,6 +29,7 @@ func NewScanner(db *sql.DB) *Scanner {
 // ScanModules detects all modules in the project and stores them in the DB.
 // Respects .gitignore, global git ignore, and .quintignore.
 func (s *Scanner) ScanModules(ctx context.Context, projectRoot string) ([]Module, error) {
+	scanStart := time.Now()
 	ignoreChecker := NewIgnoreChecker(projectRoot)
 
 	var allModules []Module
@@ -76,11 +79,14 @@ func (s *Scanner) ScanModules(ctx context.Context, projectRoot string) ([]Module
 		return nil, fmt.Errorf("commit modules: %w", err)
 	}
 
+	logger.CodebaseOp("scan_modules", len(allModules), time.Since(scanStart).Milliseconds())
+
 	return allModules, nil
 }
 
 // ScanDependencies parses imports across all modules and builds the dependency graph.
 func (s *Scanner) ScanDependencies(ctx context.Context, projectRoot string) ([]ImportEdge, error) {
+	scanStart := time.Now()
 	ignoreChecker := NewIgnoreChecker(projectRoot)
 
 	// Get all known modules for import resolution
@@ -162,6 +168,8 @@ func (s *Scanner) ScanDependencies(ctx context.Context, projectRoot string) ([]I
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit deps: %w", err)
 	}
+
+	logger.CodebaseOp("scan_dependencies", len(allEdges), time.Since(scanStart).Milliseconds())
 
 	return allEdges, nil
 }

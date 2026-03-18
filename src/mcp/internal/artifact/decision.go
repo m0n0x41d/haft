@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/m0n0x41d/quint-code/logger"
 	"strings"
 	"time"
 )
@@ -287,6 +289,8 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 		return nil, "", fmt.Errorf("store decision: %w", err)
 	}
 
+	logger.ArtifactOp("create", id, string(KindDecisionRecord))
+
 	var warnings []string
 
 	if len(input.AffectedFiles) > 0 {
@@ -366,6 +370,9 @@ func Baseline(ctx context.Context, store *Store, projectRoot string, input Basel
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
 		return nil, fmt.Errorf("store baseline hashes: %w", err)
 	}
+
+	logger.ArtifactOp("baseline", input.DecisionRef, string(a.Meta.Kind))
+	logger.Debug().Str("decision_ref", input.DecisionRef).Int("files", len(files)).Msg("baseline.complete")
 
 	return files, nil
 }
@@ -460,6 +467,8 @@ func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftR
 			reports = append(reports, report)
 		}
 	}
+
+	logger.Debug().Int("drift_reports", len(reports)).Msg("drift.check.complete")
 
 	return reports, nil
 }

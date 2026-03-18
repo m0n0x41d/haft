@@ -52,7 +52,8 @@ type StaleItem struct {
 }
 
 // ScanStale finds all stale decisions and returns actionable info.
-func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
+// If projectRoot is non-empty, also checks for file drift on baselined decisions.
+func ScanStale(ctx context.Context, store *Store, projectRoot ...string) ([]StaleItem, error) {
 	// Check both decisions and all other artifact types
 	staleDecisions, err := store.FindStaleDecisions(ctx)
 	if err != nil {
@@ -129,6 +130,48 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 				Kind:   string(d.Meta.Kind),
 				Reason: reason,
 			})
+		}
+	}
+
+	// Check for file drift if projectRoot is provided
+	if len(projectRoot) > 0 && projectRoot[0] != "" {
+		driftReports, driftErr := CheckDrift(ctx, store, projectRoot[0])
+		if driftErr == nil {
+			for _, r := range driftReports {
+				if seen[r.DecisionID] {
+					continue
+				}
+				if !r.HasBaseline {
+					items = append(items, StaleItem{
+						ID:     r.DecisionID,
+						Title:  r.DecisionTitle,
+						Kind:   string(KindDecisionRecord),
+						Reason: fmt.Sprintf("no baseline — %d file(s) unmonitored", len(r.Files)),
+					})
+				} else {
+					// Count drifted files
+					drifted := 0
+					missing := 0
+					for _, f := range r.Files {
+						switch f.Status {
+						case DriftModified:
+							drifted++
+						case DriftMissing:
+							missing++
+						}
+					}
+					reason := fmt.Sprintf("code drift — %d file(s) modified", drifted)
+					if missing > 0 {
+						reason += fmt.Sprintf(", %d file(s) missing", missing)
+					}
+					items = append(items, StaleItem{
+						ID:     r.DecisionID,
+						Title:  r.DecisionTitle,
+						Kind:   string(KindDecisionRecord),
+						Reason: reason,
+					})
+				}
+			}
 		}
 	}
 

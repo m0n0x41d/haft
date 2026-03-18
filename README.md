@@ -12,7 +12,12 @@ Supports: Claude Code, Cursor, Gemini CLI, Codex CLI
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
-cd your-project && quint-code init
+```
+
+Then in your project:
+
+```bash
+quint-code init
 ```
 
 Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.

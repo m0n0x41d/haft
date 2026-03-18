@@ -11,9 +11,15 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: indexer <FPF-Spec.md> [output.db] [fpf-commit-sha]\n")
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func run() error {
+	if len(os.Args) < 2 {
+		return fmt.Errorf("usage: indexer <FPF-Spec.md> [output.db] [fpf-commit-sha]")
 	}
 
 	specPath := os.Args[1]
@@ -28,15 +34,13 @@ func main() {
 
 	f, err := os.Open(specPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening spec: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("opening spec: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	chunks, err := fpf.ChunkMarkdown(f)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error chunking: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("chunking: %w", err)
 	}
 
 	var filtered []fpf.SpecChunk
@@ -47,16 +51,15 @@ func main() {
 	}
 
 	if err := fpf.BuildSpecIndex(dbPath, filtered); err != nil {
-		fmt.Fprintf(os.Stderr, "Error building index: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("building index: %w", err)
 	}
 
 	if commitSHA != "" {
 		if err := fpf.SetSpecMeta(dbPath, "fpf_commit", commitSHA); err != nil {
-			fmt.Fprintf(os.Stderr, "Error setting meta: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("setting meta: %w", err)
 		}
 	}
 
 	fmt.Printf("Indexed %d chunks (from %d total) into %s\n", len(filtered), len(chunks), dbPath)
+	return nil
 }

@@ -141,7 +141,7 @@ main() {
     printf "${GREEN}    ╚════════════════════════════════════════════════════════════╝${RESET}\n"
     echo ""
     printf "   ${WHITE}${BOLD}Next step:${RESET}\n"
-    printf "   cd /path/to/your/project && ${WHITE}quint-code init${RESET}\n"
+    printf "   In your project directory, run: ${WHITE}quint-code init${RESET}\n"
     echo ""
 }
 

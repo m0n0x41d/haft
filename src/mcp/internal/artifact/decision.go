@@ -10,24 +10,24 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef    string              `json:"problem_ref,omitempty"`    // single problem (backward compat)
-	ProblemRefs   []string            `json:"problem_refs,omitempty"`  // multiple problems
-	PortfolioRef  string              `json:"portfolio_ref,omitempty"`
-	SelectedTitle string              `json:"selected_title"`
-	WhySelected   string              `json:"why_selected"`
-	WhyNotOthers  []RejectionReason   `json:"why_not_others,omitempty"`
-	Invariants    []string            `json:"invariants,omitempty"`
-	PreConditions []string            `json:"pre_conditions,omitempty"`
-	PostConditions []string           `json:"post_conditions,omitempty"`
-	Admissibility []string            `json:"admissibility,omitempty"`
-	EvidenceReqs  []string            `json:"evidence_requirements,omitempty"`
-	Rollback      *RollbackSpec       `json:"rollback,omitempty"`
+	ProblemRef      string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
+	ProblemRefs     []string          `json:"problem_refs,omitempty"` // multiple problems
+	PortfolioRef    string            `json:"portfolio_ref,omitempty"`
+	SelectedTitle   string            `json:"selected_title"`
+	WhySelected     string            `json:"why_selected"`
+	WhyNotOthers    []RejectionReason `json:"why_not_others,omitempty"`
+	Invariants      []string          `json:"invariants,omitempty"`
+	PreConditions   []string          `json:"pre_conditions,omitempty"`
+	PostConditions  []string          `json:"post_conditions,omitempty"`
+	Admissibility   []string          `json:"admissibility,omitempty"`
+	EvidenceReqs    []string          `json:"evidence_requirements,omitempty"`
+	Rollback        *RollbackSpec     `json:"rollback,omitempty"`
 	RefreshTriggers []string          `json:"refresh_triggers,omitempty"`
-	WeakestLink   string              `json:"weakest_link,omitempty"`
-	ValidUntil    string              `json:"valid_until,omitempty"`
-	Context       string              `json:"context,omitempty"`
-	Mode          string              `json:"mode,omitempty"`
-	AffectedFiles []string            `json:"affected_files,omitempty"`
+	WeakestLink     string            `json:"weakest_link,omitempty"`
+	ValidUntil      string            `json:"valid_until,omitempty"`
+	Context         string            `json:"context,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	AffectedFiles   []string          `json:"affected_files,omitempty"`
 }
 
 // RejectionReason explains why a variant was not selected.
@@ -38,9 +38,9 @@ type RejectionReason struct {
 
 // RollbackSpec defines when and how to reverse a decision.
 type RollbackSpec struct {
-	Triggers   []string `json:"triggers,omitempty"`
-	Steps      []string `json:"steps,omitempty"`
-	BlastRadius string  `json:"blast_radius,omitempty"`
+	Triggers    []string `json:"triggers,omitempty"`
+	Steps       []string `json:"steps,omitempty"`
+	BlastRadius string   `json:"blast_radius,omitempty"`
 }
 
 // ApplyInput is the input for generating an implementation brief.
@@ -320,12 +320,12 @@ func Apply(ctx context.Context, store *Store, decisionRef string) (string, error
 
 // MeasureInput records impact after implementation.
 type MeasureInput struct {
-	DecisionRef string   `json:"decision_ref"`
-	Findings    string   `json:"findings"`
-	CriteriaMet []string `json:"criteria_met,omitempty"`
+	DecisionRef    string   `json:"decision_ref"`
+	Findings       string   `json:"findings"`
+	CriteriaMet    []string `json:"criteria_met,omitempty"`
 	CriteriaNotMet []string `json:"criteria_not_met,omitempty"`
-	Measurements []string `json:"measurements,omitempty"`
-	Verdict     string   `json:"verdict"` // accepted, partial, failed
+	Measurements   []string `json:"measurements,omitempty"`
+	Verdict        string   `json:"verdict"` // accepted, partial, failed
 }
 
 // EvidenceInput attaches evidence to any artifact.
@@ -397,10 +397,10 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 	// Record as evidence item
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
-		ID:             evidID,
-		Type:           "measurement",
-		Content:        fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
-		Verdict:        input.Verdict,
+		ID:              evidID,
+		Type:            "measurement",
+		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
+		Verdict:         input.Verdict,
 		CongruenceLevel: 3,
 		FormalityLevel:  5,
 	}, input.DecisionRef); err != nil {

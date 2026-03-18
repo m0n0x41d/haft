@@ -341,7 +341,7 @@ func (s *Store) SetAffectedFiles(ctx context.Context, artifactID string, files [
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM affected_files WHERE artifact_id = ?`, artifactID); err != nil {
 		return err

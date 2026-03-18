@@ -1,0 +1,92 @@
+name: Update FPF Spec
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Every Monday at 06:00 UTC
+  workflow_dispatch: # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-fpf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Get current submodule commit
+        id: current
+        run: echo "sha=$(git -C data/FPF rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Update FPF submodule to latest
+        run: |
+          git -C data/FPF fetch origin
+          git -C data/FPF checkout origin/main
+          echo "Updated to: $(git -C data/FPF rev-parse HEAD)"
+
+      - name: Check if FPF changed
+        id: check
+        run: |
+          NEW_SHA=$(git -C data/FPF rev-parse HEAD)
+          OLD_SHA=${{ steps.current.outputs.sha }}
+          if [ "$NEW_SHA" = "$OLD_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "FPF is up to date ($NEW_SHA). Nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "new_sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+            echo "new_sha_short=${NEW_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "old_sha=$OLD_SHA" >> "$GITHUB_OUTPUT"
+            echo "old_sha_short=${OLD_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "FPF updated: ${OLD_SHA:0:7} → ${NEW_SHA:0:7}"
+          fi
+
+      - name: Rebuild FTS5 index
+        if: steps.check.outputs.changed == 'true'
+        working-directory: src/mcp
+        run: |
+          NEW_SHA=${{ steps.check.outputs.new_sha }}
+          go run ./cmd/indexer/ ../../data/FPF/FPF-Spec.md ./cmd/fpf.db "$NEW_SHA"
+
+      - name: Create pull request
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          SHORT=${{ steps.check.outputs.new_sha_short }}
+          OLD_SHORT=${{ steps.check.outputs.old_sha_short }}
+          NEW_SHA=${{ steps.check.outputs.new_sha }}
+          OLD_SHA=${{ steps.check.outputs.old_sha }}
+          BRANCH="chore/update-fpf-${SHORT}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add data/FPF src/mcp/cmd/fpf.db
+          git commit -m "chore: update FPF spec index to ${SHORT}
+
+          FPF upstream: ${OLD_SHORT} → ${SHORT}
+          https://github.com/ailev/FPF/commit/$NEW_SHA"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update FPF spec index to ${SHORT}" \
+            --body "## FPF Upstream Update
+
+          Submodule \`data/FPF\` updated to [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA).
+
+          FTS5 index rebuilt: \`src/mcp/cmd/fpf.db\`
+
+          **Previous:** [\`${OLD_SHORT}\`](https://github.com/ailev/FPF/commit/$OLD_SHA)
+          **New:** [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA)" \
+            --base dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

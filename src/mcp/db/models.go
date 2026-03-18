@@ -9,6 +9,26 @@ import (
 	"time"
 )
 
+type ActiveHolon struct {
+	ID                   string
+	Type                 string
+	Kind                 sql.NullString
+	Layer                string
+	Title                string
+	Content              string
+	ContextID            string
+	Scope                sql.NullString
+	ParentID             sql.NullString
+	CachedRScore         sql.NullFloat64
+	NeedsReverification  sql.NullInt64
+	ReverificationReason sql.NullString
+	ReverificationSince  sql.NullTime
+	ContextStatus        sql.NullString
+	ApproachType         sql.NullString
+	CreatedAt            sql.NullTime
+	UpdatedAt            sql.NullTime
+}
+
 type AuditLog struct {
 	ID        string
 	Timestamp sql.NullTime
@@ -39,24 +59,55 @@ type Evidence struct {
 	Content        string
 	Verdict        string
 	AssuranceLevel sql.NullString
+	FormalityLevel sql.NullInt64
 	CarrierRef     sql.NullString
+	CarrierHash    sql.NullString
+	CarrierCommit  sql.NullString
+	IsStale        sql.NullInt64
+	StaleReason    sql.NullString
+	StaleSince     sql.NullTime
 	ValidUntil     sql.NullTime
 	CreatedAt      sql.NullTime
 }
 
+type FpfState struct {
+	ContextID          string
+	ActiveRole         sql.NullString
+	ActiveSessionID    sql.NullString
+	ActiveRoleContext  sql.NullString
+	LastCommit         sql.NullString
+	LastCommitAt       sql.NullTime
+	AssuranceThreshold sql.NullFloat64
+	UpdatedAt          sql.NullTime
+}
+
 type Holon struct {
-	ID           string
-	Type         string
-	Kind         sql.NullString
-	Layer        string
-	Title        string
-	Content      string
-	ContextID    string
-	Scope        sql.NullString
-	ParentID     sql.NullString
-	CachedRScore sql.NullFloat64
-	CreatedAt    sql.NullTime
-	UpdatedAt    sql.NullTime
+	ID                   string
+	Type                 string
+	Kind                 sql.NullString
+	Layer                string
+	Title                string
+	Content              string
+	ContextID            string
+	Scope                sql.NullString
+	ParentID             sql.NullString
+	CachedRScore         sql.NullFloat64
+	NeedsReverification  sql.NullInt64
+	ReverificationReason sql.NullString
+	ReverificationSince  sql.NullTime
+	ContextStatus        sql.NullString
+	ApproachType         sql.NullString
+	CreatedAt            sql.NullTime
+	UpdatedAt            sql.NullTime
+}
+
+type Prediction struct {
+	ID        string
+	HolonID   string
+	Content   string
+	Covered   sql.NullInt64
+	CoveredBy sql.NullString
+	CreatedAt sql.NullTime
 }
 
 type Relation struct {

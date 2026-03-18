@@ -150,8 +150,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - Architectural decisions with long-term consequences
 - Multiple viable approaches requiring systematic evaluation
 - Need auditable reasoning trail for team/future reference
-- Complex problems requiring hypothesis → verification cycle
-- Building up project knowledge base over time
+- Complex problems requiring fair comparison
 
 **When NOT to use:**
 
@@ -159,38 +158,31 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - Easily reversible decisions
 - Time-critical situations where overhead isn't justified
 
-**Activation:** Run `/q0-init` to initialize, or `/q1-hypothesize <problem>` to start directly.
+**Activation:** Run `/q-reason` and describe the problem. The agent auto-selects depth.
 
-**Commands (in order):**
+**Commands:**
 
-| # | Command | Phase | What it does |
-|---|---------|-------|--------------|
-| 0 | `/q0-init` | Setup | Initialize `.quint/` structure |
-| 1 | `/q1-hypothesize` | Abduction | Generate hypotheses → `L0/` |
-| 1b| `/q1-add` | Abduction | Inject user hypothesis → `L0/` |
-| 2 | `/q2-verify` | Deduction | Logical verification → `L1/` |
-| 3 | `/q3-validate` | Induction | Test (internal) or Research (external) → `L2/` |
-| 4 | `/q4-audit` | Bias-Audit | WLNK analysis, congruence check |
-| 5 | `/q5-decide` | Decision | Create DRR from winning hypothesis |
-| S | `/q-status` | — | Show current state and next steps |
-| Q | `/q-query` | — | Search knowledge base |
-| D | `/q-decay` | — | Check evidence freshness |
-
-**Assurance Levels:**
-
-- **L0** (Observation): Unverified hypothesis or note
-- **L1** (Substantiated): Passed logical consistency check
-- **L2** (Verified): Empirically tested and confirmed
-- **Invalid**: Disproved claims (kept for learning)
+| Command | What it does |
+|---------|-------------|
+| `/q-note` | Capture micro-decisions with rationale validation |
+| `/q-frame` | Frame the problem — signal, constraints, acceptance |
+| `/q-char` | Define comparison dimensions with roles (constraint/target/observation) |
+| `/q-explore` | Generate genuinely distinct variants with weakest link |
+| `/q-compare` | Fair comparison with parity enforcement |
+| `/q-decide` | FPF E.9 decision contract — invariants, DO/DON'T, rollback |
+| `/q-refresh` | Manage artifact lifecycle — waive, reopen, supersede, deprecate |
+| `/q-status` | Dashboard — decisions, problems (Backlog/In Progress/Addressed), stale items |
+| `/q-search` | Full-text search across all artifacts |
+| `/q-problems` | List problems with Goldilocks readiness + complexity signals |
 
 **Key Concepts:**
 
-- **WLNK (Weakest Link)**: Assurance = min(evidence), never average
-- **Congruence**: External evidence must match our context (high/medium/low)
-- **Validity**: Evidence expires — check with `/q-decay`
-- **Scope**: Knowledge applies within specified conditions only
+- **R_eff (WLNK)**: Computed trust score = min(evidence scores) with CL penalties. Never average.
+- **Evidence Decay**: Expired evidence scores 0.1. R_eff < 0.5 → stale. R_eff < 0.3 → AT RISK.
+- **Indicator Roles**: constraint (hard limit), target (optimize), observation (Anti-Goodhart).
+- **Parity**: Same inputs, same scope, same budget for all options — or the comparison is junk.
 
-**State Location:** `.quint/` directory (git-tracked)
+**State Location:** `.quint/` directory (git-tracked, SQLite + markdown projections)
 
 **Key Principle:** You (Claude) generate options with evidence. Human decides. This is the Transformer Mandate — a system cannot transform itself.
 
@@ -305,62 +297,34 @@ Invoke via Task tool:
 
 ## FPF Glossary (Quick Reference)
 
-### Knowledge Layers (Epistemic Status)
-| Layer | Name | Meaning | How to reach |
-|-------|------|---------|--------------|
-| **L0** | Conjecture | Unverified hypothesis | `quint_propose` |
-| **L1** | Substantiated | Logically verified | `quint_verify` PASS |
-| **L2** | Corroborated | Empirically validated | `quint_test` PASS |
-| **invalid** | Falsified | Failed verification/validation | FAIL verdict |
-
 ### Core Concepts
 
-**Holon** — A knowledge unit (hypothesis, decision, evidence) stored in `.quint/`. Holons have identity, layer, kind, and assurance scores.
+**R_eff (Effective Reliability)** — Computed trust score (0-1). `R_eff = min(evidence_scores)` with CL penalties. Never average — weakest link principle.
 
-**Kind** — Classification of holon:
-- `system` — Code, architecture, technical implementation
-- `episteme` — Process, documentation, methodology
-
-**Scope (G)** — Where a claim applies. "Redis caching" might have scope "read-heavy endpoints, >1000 RPS".
-
-**R_eff (Effective Reliability)** — Computed trust score (0-1). NOT estimated — must be calculated via `quint_calculate_r`.
-
-**WLNK (Weakest Link)** — R_eff = min(evidence_scores), never average. A chain is only as strong as its weakest link.
-
-### Structural Relations (B.1.1)
-
-Relations are declared during hypothesis creation (Phase 1), not as standalone operations.
-
-**ComponentOf** — System A is physical/functional part of System B.
-- Created via: `quint_propose(..., depends_on=["A"], kind="system")`
-- WLNK effect: `B.R_eff ≤ A.R_eff`
-- Use for: modules, services, subsystems
-
-**ConstituentOf** — Epistemic claim A supports claim B.
-- Created via: `quint_propose(..., depends_on=["A"], kind="episteme")`
-- WLNK effect: `B.R_eff ≤ A.R_eff`
-- Use for: arguments, proofs, documentation
-
-**MemberOf** — A belongs to collection B (non-mereological).
-- Created via: `quint_propose(..., decision_context="B")`
-- No R_eff propagation
-- Use for: grouping alternatives in a decision space
+**WLNK (Weakest Link)** — System reliability ≤ min(component reliabilities). Applied to evidence chains.
 
 **CL (Congruence Level)** — How well evidence transfers across contexts:
 - CL3: Same context (internal test) — no penalty
-- CL2: Similar context (related project) — minor penalty
-- CL1: Different context (external docs) — significant penalty
+- CL2: Similar context (related project) — 0.1 penalty
+- CL1: Different context (external docs) — 0.4 penalty
+- CL0: Opposed context — 0.9 penalty
 
-**DRR (Design Rationale Record)** — Persisted decision with context, rationale, consequences. Created via `quint_decide`.
+**Evidence Decay** — Evidence has `valid_until`. Expired evidence scores 0.1 (weak, not absent). Graduated epistemic debt sorted by severity.
 
-**Epistemic Debt** — Accumulated staleness when evidence expires. Managed via `/q-decay`.
+**DRR (Decision Record)** — FPF E.9 four-component structure: Problem Frame, Decision/Contract, Rationale, Consequences. Created via `/q-decide`.
+
+**Indicator Roles** — Each comparison dimension tagged as:
+- `constraint` — hard limit, must satisfy
+- `target` — what you're optimizing
+- `observation` — watch but don't optimize (Anti-Goodhart)
 
 **Transformer Mandate** — Systems cannot transform themselves. Humans decide; agents document. Autonomous architectural decisions = protocol violation.
 
-### State Machine Phases
+### Artifact Lifecycle
 ```
-IDLE → ABDUCTION → DEDUCTION → INDUCTION → DECISION → IDLE
-       (q1)         (q2)         (q3)        (q4→q5)
-```
+/q-frame → /q-char → /q-explore → /q-compare → /q-decide
+  problem    dims       variants     fair check    DRR contract
 
-Each phase has preconditions. Skipping phases = blocked tools.
+Problems: Backlog → In Progress → Addressed
+Artifacts: active → refresh_due → superseded/deprecated
+```

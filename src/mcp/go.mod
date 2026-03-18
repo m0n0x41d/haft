@@ -3,6 +3,7 @@ module github.com/m0n0x41d/quint-code
 go 1.24.0
 
 require (
+	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.41.0
 )
@@ -11,6 +12,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

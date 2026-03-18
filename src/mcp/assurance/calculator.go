@@ -8,35 +8,31 @@ import (
 	"time"
 )
 
-// AssuranceReport contains details of the reliability calculation for AI explanation
 type AssuranceReport struct {
-	HolonID      string
-	FinalScore   float64
-	SelfScore    float64 // Score based on own evidence
-	WeakestLink  string  // ID of the dependency pulling the score down
-	DecayPenalty float64
-	Factors      []string // Textual explanations for AI
+	HolonID        string
+	FinalScore     float64
+	SelfScore      float64 // Score based on own evidence
+	FormalityScore int     // F_eff = min(F_i) for all evidence (0-9 scale)
+	WeakestLink    string  // ID of the dependency pulling the score down
+	DecayPenalty   float64
+	Factors        []string // Textual explanations for AI
 }
 
-// Calculator handles assurance logic
 type Calculator struct {
 	DB *sql.DB
 }
 
-// New creates a new Calculator
 func New(db *sql.DB) *Calculator {
 	return &Calculator{DB: db}
 }
 
-// CalculateReliability calculates R for a holon (public API)
 func (c *Calculator) CalculateReliability(ctx context.Context, holonID string) (*AssuranceReport, error) {
 	visited := make(map[string]bool)
 	return c.calculateReliabilityWithVisited(ctx, holonID, visited)
 }
 
-// calculateReliabilityWithVisited is the internal implementation with cycle detection
 func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonID string, visited map[string]bool) (*AssuranceReport, error) {
-	// Cycle detection: if already visited, return neutral score to break cycle
+	// Cycle detection: return neutral (1.0) to break cycle without penalizing
 	if visited[holonID] {
 		return &AssuranceReport{
 			HolonID:    holonID,
@@ -50,20 +46,27 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	report := &AssuranceReport{HolonID: holonID}
 
 	// 1. Calculate Self Score (based on Evidence)
-	// B.3.4: Check for expired evidence
-	rows, err := c.DB.QueryContext(ctx, "SELECT verdict, valid_until FROM evidence WHERE holon_id = ?", holonID)
+	// B.3.4: Check for expired evidence + evidence source CL penalty
+	// C.2.3: F_eff = min(F_i) for all evidence (Formality level)
+	rows, err := c.DB.QueryContext(ctx,
+		"SELECT id, type, verdict, valid_until, COALESCE(formality_level, 5) FROM evidence WHERE holon_id = ?", holonID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer func() { _ = rows.Close() }()
 
-	var totalScore, count float64
+	minScore := 1.0   // WLNK: track weakest evidence
+	minFormality := 9 // F_eff: track lowest formality (0-9 scale, 9 is highest)
+	var hasEvidence bool
 	for rows.Next() {
-		var verdict string
+		var evidenceID, evidenceType, verdict string
 		var validUntil *time.Time
-		if err := rows.Scan(&verdict, &validUntil); err != nil {
+		var formalityLevel int
+		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &formalityLevel); err != nil {
 			continue
 		}
+		hasEvidence = true
+		_ = evidenceID // Used for potential future logging
 
 		score := 0.0
 		switch strings.ToLower(verdict) {
@@ -75,20 +78,38 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			score = 0.0
 		}
 
-		// Evidence Decay Logic
+		// Evidence Source CL Penalty (B.3: external evidence has lower congruence)
+		// internal/audit_report → CL3 (0%), external → CL2 (10%)
+		clPenalty := evidenceTypeToCLPenalty(evidenceType)
+		if clPenalty > 0 {
+			score = math.Max(0, score-clPenalty)
+			report.Factors = append(report.Factors, "External evidence CL2 penalty applied")
+		}
+
+		// Evidence Decay Logic (B.3.4: time-based expiration)
 		if validUntil != nil && time.Now().After(*validUntil) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
 			score = 0.1                // Penalty for expiration, not zero but close
 			report.DecayPenalty += 0.9 // Track how much was lost
 		}
-		totalScore += score
-		count++
+
+		// WLNK: weakest evidence determines self score
+		if score < minScore {
+			minScore = score
+		}
+
+		// F_eff: weakest formality determines formality score (C.2.3)
+		if formalityLevel < minFormality {
+			minFormality = formalityLevel
+		}
 	}
 
-	if count > 0 {
-		report.SelfScore = totalScore / count // Or other aggregation logic
+	if hasEvidence {
+		report.SelfScore = minScore          // WLNK: weakest evidence determines score
+		report.FormalityScore = minFormality // F_eff: weakest formality
 	} else {
-		report.SelfScore = 0.0 // L0: Unsubstantiated
+		report.SelfScore = 0.0    // L0: Unsubstantiated
+		report.FormalityScore = 0 // No evidence = no formality
 		report.Factors = append(report.Factors, "No evidence found (L0)")
 	}
 
@@ -128,7 +149,6 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 
 	minDepScore := 1.0
 	for _, d := range deps {
-		// Recursive call for dependency with visited map for cycle detection
 		depReport, err := c.calculateReliabilityWithVisited(ctx, d.id, visited)
 		if err != nil {
 			depReport = &AssuranceReport{FinalScore: 0.0}
@@ -158,7 +178,6 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		report.FinalScore = report.SelfScore
 	}
 
-	// Update cache (non-critical, log warning on failure)
 	if _, err := c.DB.ExecContext(ctx, "UPDATE holons SET cached_r_score = ? WHERE id = ?", report.FinalScore, holonID); err != nil {
 		report.Factors = append(report.Factors, "Warning: cache update failed")
 	}
@@ -176,5 +195,22 @@ func calculateCLPenalty(cl int) float64 {
 		return 0.4
 	default:
 		return 0.9
+	}
+}
+
+// evidenceTypeToCLPenalty maps evidence source type to congruence penalty.
+// internal/audit_report = CL3 (same context, no penalty)
+// external = CL2 (similar context, 10% penalty)
+// research = CL1 (different context, 40% penalty)
+func evidenceTypeToCLPenalty(evidenceType string) float64 {
+	switch strings.ToLower(evidenceType) {
+	case "internal", "audit_report":
+		return 0.0 // CL3: same context
+	case "external":
+		return 0.1 // CL2: similar context
+	case "research":
+		return 0.4 // CL1: different context
+	default:
+		return 0.0 // Unknown type, no penalty
 	}
 }

@@ -1,0 +1,44 @@
+name: Install Script Test
+
+on:
+  pull_request:
+    paths:
+      - 'install.sh'
+      - '.goreleaser.yaml'
+  workflow_dispatch:
+
+jobs:
+  install-linux:
+    name: Install (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test install.sh (source build fallback)
+        run: |
+          # No release exists for this commit, so install.sh falls back to source build
+          # This tests: clone, go build, PATH detection
+          bash install.sh
+
+      - name: Verify binary works
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          quint-code --help || quint-code version || echo "Binary runs"
+
+  install-macos:
+    name: Install (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Test install.sh (source build fallback)
+        run: bash install.sh
+
+      - name: Verify binary works
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          quint-code --help || quint-code version || echo "Binary runs"

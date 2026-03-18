@@ -107,6 +107,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  ✓ Installed %d slash commands (%s)\n", count, destPath)
 		}
+		if skillPath, err := installSkill("claude", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed /q-reason skill (%s)\n", skillPath)
+		}
 	}
 
 	if initCursor {
@@ -120,6 +125,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ⚠ Failed to install Cursor commands: %v\n", err)
 		} else {
 			fmt.Printf("  ✓ Installed %d slash commands (%s)\n", count, destPath)
+		}
+		if skillPath, err := installSkill("cursor", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed /q-reason skill (%s)\n", skillPath)
 		}
 	}
 
@@ -147,24 +157,73 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ⚠ Failed to install Codex prompts: %v\n", err)
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
-			fmt.Println("    Note: Use /prompts:q0-init to invoke")
+			fmt.Println("    Note: Use /prompts:q-note to invoke")
 		}
 	}
 
-	fmt.Println("\nInitialization complete! Run /q0-init to start.")
+	fmt.Println("\nInitialization complete!")
+
+	// Check if .quint/ already has artifacts
+	hasArtifacts := false
+	if database, err := db.NewStore(dbPath); err == nil {
+		var count int
+		if err := database.GetRawDB().QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err == nil && count > 0 {
+			hasArtifacts = true
+		}
+		_ = database.Close()
+	}
+
+	if hasArtifacts {
+		fmt.Println("Use /q-status to see active decisions and problems.")
+	} else if detectBrownfield(cwd) {
+		fmt.Println("\nThis looks like an existing project. Run /q-onboard to discover")
+		fmt.Println("existing decisions, architecture docs, ADRs, and build a knowledge map.")
+	} else {
+		fmt.Println("Use /q-note to capture decisions, /q-reason for structured reasoning.")
+	}
 	return nil
 }
 
+func detectBrownfield(projectRoot string) bool {
+	// Check for git history with meaningful commits
+	gitDir := filepath.Join(projectRoot, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check for code indicators
+	codeIndicators := []string{
+		"go.mod", "package.json", "pyproject.toml", "Cargo.toml",
+		"pom.xml", "build.gradle", "Makefile", "CMakeLists.txt",
+	}
+	for _, f := range codeIndicators {
+		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
+			return true
+		}
+	}
+
+	// Check for docs that suggest existing knowledge
+	docIndicators := []string{
+		"README.md", "docs", "adr", "ARCHITECTURE.md",
+	}
+	for _, f := range docIndicators {
+		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 func createDirectoryStructure(quintDir string) error {
+	// v5 artifact directories — created minimal, expanded on demand
 	dirs := []string{
-		"evidence",
+		"notes",
+		"problems",
+		"solutions",
 		"decisions",
-		"sessions",
-		"knowledge/L0",
-		"knowledge/L1",
-		"knowledge/L2",
-		"knowledge/invalid",
-		"agents",
+		"evidence",
+		"refresh",
 	}
 
 	for _, d := range dirs {
@@ -210,7 +269,7 @@ type MCPServer struct {
 	Timeout int               `json:"timeout,omitempty"`
 }
 
-func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[string]interface{}) error {
+func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]interface{}) error {
 	var config MCPConfig
 
 	if data, err := os.ReadFile(configPath); err == nil {
@@ -226,14 +285,16 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 	server := MCPServer{
 		Command: binaryPath,
 		Args:    []string{"serve"},
-		Cwd:     projectRoot,
-		Env: map[string]string{
-			"QUINT_PROJECT_ROOT": projectRoot,
-		},
 	}
 
 	if timeout, ok := extraFields["timeout"].(int); ok {
 		server.Timeout = timeout
+	}
+	if env, ok := extraFields["env"].(map[string]string); ok {
+		server.Env = env
+	}
+	if cwd, ok := extraFields["cwd"].(string); ok {
+		server.Cwd = cwd
 	}
 
 	config.MCPServers["quint-code"] = server
@@ -252,12 +313,20 @@ func mergeMCPConfig(configPath, binaryPath, projectRoot string, extraFields map[
 
 func configureMCPClaude(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, nil)
+	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
+	})
 }
 
 func configureMCPCursor(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, nil)
+	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
+	})
 }
 
 func configureMCPGemini(projectRoot, binaryPath string) error {
@@ -268,6 +337,10 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(homeDir, ".gemini", "settings.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"timeout": 30000,
+		"cwd":     projectRoot,
+		"env": map[string]string{
+			"QUINT_PROJECT_ROOT": projectRoot,
+		},
 	})
 }
 
@@ -291,7 +364,11 @@ func configureMCPCodex(projectRoot, binaryPath string) error {
 [mcp_servers.quint-code]
 command = "%s"
 args = ["serve"]
-env = { QUINT_PROJECT_ROOT = "%s" }
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.quint-code.env]
+QUINT_PROJECT_ROOT = "%s"
 `, binaryPath, projectRoot)
 
 	if start := strings.Index(existing, "[mcp_servers.quint-code]"); start != -1 {

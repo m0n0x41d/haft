@@ -4,8 +4,8 @@
 -- Holon queries
 
 -- name: CreateHolon :exec
-INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO holons (id, type, kind, layer, title, content, context_id, scope, parent_id, approach_type, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetHolon :one
 SELECT * FROM holons WHERE id = ? LIMIT 1;
@@ -29,7 +29,7 @@ UPDATE holons SET cached_r_score = ?, updated_at = ? WHERE id = ?;
 SELECT * FROM holons WHERE parent_id = ? ORDER BY created_at DESC;
 
 -- name: CountHolonsByLayer :many
-SELECT layer, COUNT(*) as count FROM holons WHERE context_id = ? GROUP BY layer;
+SELECT layer, COUNT(*) as count FROM active_holons WHERE context_id = ? GROUP BY layer;
 
 -- name: GetLatestHolonByContext :one
 SELECT * FROM holons WHERE context_id = ? ORDER BY updated_at DESC LIMIT 1;
@@ -48,14 +48,26 @@ SELECT id, type, kind, layer, title, content, context_id, scope, parent_id, cach
 -- Evidence queries
 
 -- name: AddEvidence :exec
-INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, carrier_ref, valid_until, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO evidence (id, holon_id, type, content, verdict, assurance_level, formality_level, carrier_ref, carrier_hash, carrier_commit, valid_until, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetEvidenceByHolon :many
 SELECT * FROM evidence WHERE holon_id = ? ORDER BY created_at DESC;
 
 -- name: GetEvidenceWithCarrier :many
 SELECT * FROM evidence WHERE carrier_ref IS NOT NULL AND carrier_ref != '';
+
+-- name: GetEvidenceWithCarrierCommit :many
+SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
+       e.assurance_level, e.carrier_ref, e.carrier_commit,
+       e.valid_until, e.created_at,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.carrier_commit IS NOT NULL
+  AND e.carrier_commit != ''
+  AND e.carrier_ref IS NOT NULL
+  AND e.carrier_ref != '';
 
 -- Relation queries
 
@@ -140,3 +152,180 @@ SELECT * FROM waivers WHERE waived_until > datetime('now') ORDER BY waived_until
 
 -- name: GetEvidenceByID :one
 SELECT * FROM evidence WHERE id = ? LIMIT 1;
+
+-- Active holon queries (exclude holons in resolved decisions)
+-- NOTE: Decisions are holons with type='DRR' or layer='DRR'.
+-- Resolution is tracked via evidence records of type 'implementation'/'abandonment'/'supersession'.
+-- DRRs create 'selects' relations to winner hypotheses and 'rejects' relations to rejected ones.
+--
+-- The active_holons VIEW (migration v6) defines "active" = not selected/rejected by resolved DRR.
+-- Queries below use the view and add layer filters as needed.
+
+-- name: GetActiveRecentHolons :many
+-- Returns working holons (L0/L1/L2) not belonging to resolved decisions.
+-- Uses active_holons view + excludes DRR/invalid layers for display purposes.
+SELECT id, type, kind, layer, title, content, context_id,
+       scope, parent_id, cached_r_score, created_at, updated_at
+FROM active_holons
+WHERE layer NOT IN ('DRR', 'invalid')
+  AND type != 'DRR'
+ORDER BY updated_at DESC
+LIMIT ?;
+
+-- name: CountActiveHolonsByLayer :many
+-- Counts working holons by layer, using active_holons view.
+SELECT layer, COUNT(*) as count
+FROM active_holons
+WHERE layer NOT IN ('DRR', 'invalid')
+  AND type != 'DRR'
+GROUP BY layer;
+
+-- name: CountArchivedHolonsByLayer :many
+-- Counts holons by layer that ARE selected/rejected by resolved DRRs (archived).
+-- INVERSE of active_holons VIEW logic. If active_holons definition changes,
+-- update this query accordingly. See migration v6.
+SELECT h.layer, COUNT(*) as count
+FROM holons h
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND EXISTS (
+    SELECT 1 FROM relations r
+    INNER JOIN holons drr ON drr.id = r.source_id
+    WHERE r.target_id = h.id
+      AND r.relation_type IN ('selects', 'rejects')
+      AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+      AND EXISTS (
+          SELECT 1 FROM evidence e
+          WHERE e.holon_id = drr.id
+          AND e.type IN ('implementation', 'abandonment', 'supersession')
+      )
+)
+GROUP BY h.layer;
+
+-- ============================================
+-- COMPACTION QUERIES (v5.1.0)
+-- ============================================
+
+-- name: GetArchivedHolonsForCompaction :many
+-- Returns archived holons older than retention_days after decision resolution.
+-- These are candidates for compaction (content summarization, evidence deletion).
+-- sqlc: arg(retention_days) type: int64
+SELECT h.id, h.type, h.kind, h.layer, h.title, h.content, h.context_id,
+       h.scope, h.parent_id, h.cached_r_score, h.created_at, h.updated_at,
+       drr.id as decision_id, drr.title as decision_title,
+       r.relation_type as decision_outcome,
+       MAX(e.created_at) as resolved_at
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(sqlc.arg(retention_days) AS INTEGER)
+GROUP BY h.id
+ORDER BY resolved_at ASC;
+
+-- name: CompactHolonContent :exec
+UPDATE holons
+SET content = '[COMPACTED]',
+    scope = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: DeleteEvidenceForHolon :exec
+DELETE FROM evidence WHERE holon_id = ?;
+
+-- name: DeleteCharacteristicsForHolon :exec
+DELETE FROM characteristics WHERE holon_id = ?;
+
+-- name: DeleteWaiversForHolon :exec
+DELETE FROM waivers WHERE evidence_id IN (SELECT id FROM evidence WHERE holon_id = ?);
+
+-- name: CountCompactableHolons :one
+SELECT COUNT(*) as count
+FROM holons h
+INNER JOIN relations r ON r.target_id = h.id AND r.relation_type IN ('selects', 'rejects')
+INNER JOIN holons drr ON drr.id = r.source_id AND (drr.type = 'DRR' OR drr.layer = 'DRR')
+INNER JOIN evidence e ON e.holon_id = drr.id AND e.type IN ('implementation', 'abandonment', 'supersession')
+WHERE h.layer NOT IN ('DRR', 'invalid')
+  AND h.type != 'DRR'
+  AND h.content != '[COMPACTED]'
+  AND CAST(JULIANDAY('now') - JULIANDAY(e.created_at) AS INTEGER) > CAST(sqlc.arg(retention_days) AS INTEGER);
+
+-- ============================================
+-- REVERIFICATION QUERIES (v5.0.0)
+-- ============================================
+-- Note: Evidence staleness by carrier-file hash was removed in v5.1.0.
+-- Time-based decay via valid_until remains as per FPF spec B.3.4.
+-- DRR affected_scope tracking uses carrier_ref for implementation warnings.
+
+-- name: MarkHolonNeedsReverification :exec
+UPDATE holons
+SET needs_reverification = 1,
+    reverification_reason = ?,
+    reverification_since = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: ClearHolonReverification :exec
+UPDATE holons
+SET needs_reverification = 0,
+    reverification_reason = NULL,
+    reverification_since = NULL
+WHERE id = ?;
+
+-- name: GetHolonsNeedingReverification :many
+SELECT * FROM active_holons
+WHERE needs_reverification = 1
+ORDER BY reverification_since DESC;
+
+-- name: CountHolonsNeedingReverification :one
+SELECT COUNT(*) as count FROM active_holons WHERE needs_reverification = 1;
+
+-- name: UpdateLastCommit :exec
+UPDATE fpf_state
+SET last_commit = ?,
+    last_commit_at = CURRENT_TIMESTAMP
+WHERE context_id = ?;
+
+-- name: GetLastCommit :one
+SELECT last_commit, last_commit_at
+FROM fpf_state
+WHERE context_id = ?;
+
+-- name: GetEvidenceByCarrierPattern :many
+SELECT e.id, e.holon_id, e.type, e.content, e.verdict,
+       e.assurance_level, e.carrier_ref, e.carrier_commit,
+       e.valid_until, e.created_at,
+       h.title as holon_title, h.layer as holon_layer
+FROM evidence e
+JOIN holons h ON e.holon_id = h.id
+WHERE e.carrier_ref LIKE ?;
+
+-- ============================================
+-- PREDICTIONS QUERIES (v5.1.0)
+-- ============================================
+
+-- name: AddPrediction :exec
+INSERT INTO predictions (id, holon_id, content)
+VALUES (?, ?, ?);
+
+-- name: GetPredictionsByHolon :many
+SELECT id, holon_id, content, covered, covered_by, created_at
+FROM predictions
+WHERE holon_id = ?;
+
+-- name: GetUncoveredPredictions :many
+SELECT id, holon_id, content, created_at
+FROM predictions
+WHERE holon_id = ? AND covered = 0;
+
+-- name: MarkPredictionCovered :exec
+UPDATE predictions
+SET covered = 1, covered_by = ?
+WHERE id = ?;
+
+-- name: CountUncoveredPredictions :one
+SELECT COUNT(*) as count
+FROM predictions
+WHERE holon_id = ? AND covered = 0;

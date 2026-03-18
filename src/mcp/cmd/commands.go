@@ -12,6 +12,9 @@ import (
 //go:embed commands/*.md
 var embeddedCommands embed.FS
 
+//go:embed skill/q-reason/SKILL.md
+var embeddedQReasonSkill []byte
+
 func installCommands(projectRoot string, platform string, local bool) (string, int, error) {
 	entries, err := embeddedCommands.ReadDir("commands")
 	if err != nil {
@@ -22,6 +25,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 
 	var destDir string
 	var transformer func(string, string) (string, string)
+	var ext string
 
 	switch platform {
 	case "claude":
@@ -31,6 +35,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".claude", "commands")
 		}
 		transformer = transformClaude
+		ext = ".md"
 	case "cursor":
 		if local {
 			destDir = filepath.Join(projectRoot, ".cursor", "commands")
@@ -38,6 +43,7 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".cursor", "commands")
 		}
 		transformer = transformCursor
+		ext = ".md"
 	case "gemini":
 		if local {
 			destDir = filepath.Join(projectRoot, ".gemini", "commands")
@@ -45,10 +51,12 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 			destDir = filepath.Join(homeDir, ".gemini", "commands")
 		}
 		transformer = transformGemini
+		ext = ".toml"
 	case "codex":
 		// Codex only supports global prompts in ~/.codex/prompts/
 		destDir = filepath.Join(homeDir, ".codex", "prompts")
 		transformer = transformCodex
+		ext = ".md"
 	default:
 		return "", 0, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -56,6 +64,8 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", 0, err
 	}
+
+	cleanupOldCommands(destDir, ext)
 
 	count := 0
 	for _, entry := range entries {
@@ -84,6 +94,33 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 	}
 
 	return displayPath, count, nil
+}
+
+var deprecatedCommands = []string{
+	// v4 commands
+	"q0-init",
+	"q-decay",
+	"q-actualize",
+	"q1-add",
+	"q-implement",
+	"q-internalize",
+	"q-query",
+	"q-reset",
+	"q-resolve",
+	"q1-hypothesize",
+	"q2-verify",
+	"q3-validate",
+	"q4-audit",
+	"q5-decide",
+	// v5 deprecated
+	"q-apply",
+}
+
+func cleanupOldCommands(destDir string, ext string) {
+	for _, cmd := range deprecatedCommands {
+		path := filepath.Join(destDir, cmd+ext)
+		_ = os.Remove(path) // ignore error - file may not exist
+	}
 }
 
 func transformClaude(filename, content string) (string, string) {
@@ -142,4 +179,41 @@ func escapeTomlMultiline(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"""`, `\"""`)
 	return s
+}
+
+func installSkill(platform string, local bool, projectRoot string) (string, error) {
+	homeDir, _ := os.UserHomeDir()
+
+	var skillDir string
+	switch platform {
+	case "claude":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".claude", "skills", "q-reason")
+		} else {
+			skillDir = filepath.Join(homeDir, ".claude", "skills", "q-reason")
+		}
+	case "cursor":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".cursor", "skills", "q-reason")
+		} else {
+			skillDir = filepath.Join(homeDir, ".cursor", "skills", "q-reason")
+		}
+	default:
+		return "", nil
+	}
+
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	destPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(destPath, embeddedQReasonSkill, 0644); err != nil {
+		return "", fmt.Errorf("failed to write skill: %w", err)
+	}
+
+	displayPath := skillDir
+	if strings.HasPrefix(skillDir, homeDir) {
+		displayPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+	}
+	return displayPath, nil
 }

@@ -69,9 +69,11 @@ The agent captures decisions automatically when it notices them in conversation.
 
 ## Built on First Principles Framework
 
-[FPF](https://github.com/ailev/FPF) by [Anatoly Levenchuk](https://www.linkedin.com/in/ailev/) — a rigorous, transdisciplinary architecture for thinking. Quint Code implements the engineering subset: problem framing, characterization, parity, WLNK, evidence decay, and the lemniscate cycle.
+[FPF](https://github.com/ailev/FPF) by [Anatoly Levenchuk](https://www.linkedin.com/in/ailev/) — a rigorous, transdisciplinary architecture for thinking.
 
-`quint-code fpf search` gives you access to 4243 indexed sections from the FPF specification.
+`/q-reason` gives your AI agent an FPF-native operating system for engineering decisions: problem framing before solutions, characterization before comparison, parity enforcement, evidence with congruence penalties, weakest-link assurance, and the lemniscate cycle that closes itself when evidence ages or measurements fail.
+
+`quint-code fpf search` gives you access to 4243 indexed sections from the FPF specification — the agent can look up any concept on demand.
 
 ---
 

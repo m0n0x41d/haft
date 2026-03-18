@@ -161,15 +161,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Detect brownfield: project with existing git history and code
-	isBrownfield := detectBrownfield(cwd)
+	fmt.Println("\nInitialization complete!")
 
-	if isBrownfield {
-		fmt.Println("\nInitialization complete!")
+	// Check if .quint/ already has artifacts
+	hasArtifacts := false
+	if database, err := db.NewStore(dbPath); err == nil {
+		var count int
+		if err := database.GetRawDB().QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err == nil && count > 0 {
+			hasArtifacts = true
+		}
+		_ = database.Close()
+	}
+
+	if hasArtifacts {
+		fmt.Println("Use /q-status to see active decisions and problems.")
+	} else if detectBrownfield(cwd) {
 		fmt.Println("\nThis looks like an existing project. Run /q-onboard to discover")
 		fmt.Println("existing decisions, architecture docs, ADRs, and build a knowledge map.")
 	} else {
-		fmt.Println("\nInitialization complete!")
 		fmt.Println("Use /q-note to capture decisions, /q-reason for structured reasoning.")
 	}
 	return nil

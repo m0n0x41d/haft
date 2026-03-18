@@ -1,0 +1,52 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        args: ['-w']
+        files: \.go$
+      - id: go-imports
+        args: ['-w']
+        files: \.go$
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.62.2
+    hooks:
+      - id: golangci-lint
+        entry: golangci-lint run --fix
+        args: ['--config', 'src/mcp/.golangci.yml']
+        files: ^src/mcp/
+
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        entry: bash -c 'cd src/mcp && go test ./...'
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      - id: go-build
+        name: go build
+        entry: bash -c 'cd src/mcp && go build -o /dev/null .'
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      - id: check-dist-sync
+        name: check dist/ in sync
+        entry: bash -c './build.sh && git diff --exit-code dist/'
+        language: system
+        files: ^src/commands/
+        pass_filenames: false

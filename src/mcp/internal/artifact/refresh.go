@@ -124,9 +124,9 @@ func ScanStale(ctx context.Context, store *Store) ([]StaleItem, error) {
 				reason = fmt.Sprintf("AT RISK — evidence degraded (R_eff: %.2f) — consider reopen or supersede", wlnk.REff)
 			}
 			items = append(items, StaleItem{
-				ID:    d.Meta.ID,
-				Title: d.Meta.Title,
-				Kind:  string(d.Meta.Kind),
+				ID:     d.Meta.ID,
+				Title:  d.Meta.Title,
+				Kind:   string(d.Meta.Kind),
 				Reason: reason,
 			})
 		}

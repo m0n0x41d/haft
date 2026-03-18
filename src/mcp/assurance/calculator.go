@@ -11,9 +11,9 @@ import (
 type AssuranceReport struct {
 	HolonID        string
 	FinalScore     float64
-	SelfScore      float64  // Score based on own evidence
-	FormalityScore int      // F_eff = min(F_i) for all evidence (0-9 scale)
-	WeakestLink    string   // ID of the dependency pulling the score down
+	SelfScore      float64 // Score based on own evidence
+	FormalityScore int     // F_eff = min(F_i) for all evidence (0-9 scale)
+	WeakestLink    string  // ID of the dependency pulling the score down
 	DecayPenalty   float64
 	Factors        []string // Textual explanations for AI
 }
@@ -55,8 +55,8 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	}
 	defer rows.Close() //nolint:errcheck
 
-	minScore := 1.0    // WLNK: track weakest evidence
-	minFormality := 9  // F_eff: track lowest formality (0-9 scale, 9 is highest)
+	minScore := 1.0   // WLNK: track weakest evidence
+	minFormality := 9 // F_eff: track lowest formality (0-9 scale, 9 is highest)
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
@@ -105,11 +105,11 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	}
 
 	if hasEvidence {
-		report.SelfScore = minScore           // WLNK: weakest evidence determines score
-		report.FormalityScore = minFormality  // F_eff: weakest formality
+		report.SelfScore = minScore          // WLNK: weakest evidence determines score
+		report.FormalityScore = minFormality // F_eff: weakest formality
 	} else {
-		report.SelfScore = 0.0       // L0: Unsubstantiated
-		report.FormalityScore = 0    // No evidence = no formality
+		report.SelfScore = 0.0    // L0: Unsubstantiated
+		report.FormalityScore = 0 // No evidence = no formality
 		report.Factors = append(report.Factors, "No evidence found (L0)")
 	}
 

@@ -177,5 +177,30 @@ func (w *WriteWarning) Error() string {
 // AffectedFile tracks which files a decision touches.
 type AffectedFile struct {
 	Path string `json:"path"`
-	Hash string `json:"hash,omitempty"` // SHA256 at decision time
+	Hash string `json:"hash,omitempty"` // SHA256 at baseline time
+}
+
+// DriftStatus represents the state of a file relative to its baseline.
+type DriftStatus string
+
+const (
+	DriftNone       DriftStatus = "no_drift"
+	DriftModified   DriftStatus = "modified"
+	DriftMissing    DriftStatus = "file_missing"
+	DriftNoBaseline DriftStatus = "no_baseline"
+)
+
+// DriftItem describes drift for a single file.
+type DriftItem struct {
+	Path         string      `json:"path"`
+	Status       DriftStatus `json:"status"`
+	LinesChanged string      `json:"lines_changed,omitempty"` // e.g., "+8 -2"
+}
+
+// DriftReport describes drift for a single decision.
+type DriftReport struct {
+	DecisionID    string      `json:"decision_id"`
+	DecisionTitle string      `json:"decision_title"`
+	HasBaseline   bool        `json:"has_baseline"`
+	Files         []DriftItem `json:"files,omitempty"`
 }

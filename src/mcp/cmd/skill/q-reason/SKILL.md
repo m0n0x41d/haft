@@ -169,7 +169,7 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 
 - **Object ≠ Description ≠ Carrier** — the system, its spec, and its code are three things
 - **Plan ≠ Reality** — a model is not the thing it models
-- **Target system ≠ creator system** — what must work vs who builds it
+- **Target system ≠ enabling system** — what must work vs who builds/maintains it
 - **Design-time ≠ run-time** — Quint stores your reasoning artifacts (design-time). It does not measure, test, or verify your system (run-time). Don't confuse stored claims with validated evidence.
 
 ---

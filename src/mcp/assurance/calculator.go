@@ -53,7 +53,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer func() { _ = rows.Close() }()
 
 	minScore := 1.0   // WLNK: track weakest evidence
 	minFormality := 9 // F_eff: track lowest formality (0-9 scale, 9 is highest)

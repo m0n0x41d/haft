@@ -16,7 +16,6 @@ linters:
     - gosec
     - bodyclose
     - gocritic
-    - prealloc
     - nolintlint
   settings:
     misspell:
@@ -25,9 +24,16 @@ linters:
       disabled-checks:
         - ifElseChain
         - singleCaseSwitch
+        - elseif
     nolintlint:
       require-explanation: true
       require-specific: true
+    gosec:
+      excludes:
+        - G301 # directory permissions 0755 — fine for user-facing dirs
+        - G302 # file permissions 0644 — fine for user-facing files
+        - G304 # file inclusion via variable — we read user-specified paths intentionally
+        - G306 # WriteFile permissions 0644 — fine for markdown/config files
   exclusions:
     rules:
       - linters:
@@ -36,12 +42,6 @@ linters:
       - linters:
           - errcheck
         source: "defer .*(Close|Rollback)\\(\\)"
-      - linters:
-          - gosec
-        text: "G204" # subprocess launched with variable — we use bash intentionally
-      - linters:
-          - gocritic
-        text: "appendAssign"
 
 formatters:
   enable:

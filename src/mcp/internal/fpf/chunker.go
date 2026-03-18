@@ -48,11 +48,9 @@ func ChunkMarkdown(r io.Reader) ([]SpecChunk, error) {
 			flush()
 			currentHeading = heading
 			currentLevel = level
-		} else {
-			if currentHeading != "" {
-				currentBody.WriteString(line)
-				currentBody.WriteString("\n")
-			}
+		} else if currentHeading != "" {
+			currentBody.WriteString(line)
+			currentBody.WriteString("\n")
 		}
 	}
 	flush()

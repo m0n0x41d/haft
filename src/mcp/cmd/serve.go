@@ -15,6 +15,7 @@ import (
 	"github.com/m0n0x41d/quint-code/internal/artifact"
 	"github.com/m0n0x41d/quint-code/internal/codebase"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
+	"github.com/m0n0x41d/quint-code/internal/project"
 	"github.com/m0n0x41d/quint-code/logger"
 
 	"github.com/spf13/cobra"
@@ -53,19 +54,54 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer logger.Close()
 
+	// QUINT_SERVER_ORIGIN: "local" (default) or URL for future remote server
+	serverOrigin := os.Getenv("QUINT_SERVER_ORIGIN")
+	if serverOrigin != "" && serverOrigin != "local" {
+		logger.Info().Str("origin", serverOrigin).Msg("QUINT_SERVER_ORIGIN set to remote — not implemented yet, using local storage")
+	}
+
 	quintDir := filepath.Join(cwd, ".quint")
-	dbPath := filepath.Join(quintDir, "quint.db")
 
 	server := fpf.NewServer()
 
-	// Wire v5 artifact handler if DB exists
-	if _, err := os.Stat(dbPath); err == nil {
-		database, err := db.NewStore(dbPath)
+	// Load project identity
+	projCfg, err := project.Load(quintDir)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to load project config")
+	}
+
+	if projCfg != nil {
+		// Unified storage: DB in ~/.quint-code/projects/{id}/
+		dbPath, err := projCfg.DBPath()
 		if err != nil {
-			logger.Warn().Err(err).Msg("failed to open database")
-		} else {
-			artStore := artifact.NewStore(database.GetRawDB())
-			server.SetV5Handler(makeV5Handler(artStore, quintDir))
+			logger.Warn().Err(err).Msg("failed to determine DB path")
+		} else if _, err := os.Stat(dbPath); err == nil {
+			database, err := db.NewStore(dbPath)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to open database")
+			} else {
+				artStore := artifact.NewStore(database.GetRawDB())
+
+				// Open cross-project index
+				indexStore, indexErr := project.OpenIndex()
+				if indexErr != nil {
+					logger.Warn().Err(indexErr).Msg("failed to open cross-project index")
+				}
+
+				// Populate context_facts on startup
+				project.PopulateContextFacts(context.Background(), database.GetRawDB(), projCfg.Name)
+
+				server.SetV5Handler(makeV5Handler(artStore, quintDir, projCfg, indexStore))
+			}
+		}
+	} else {
+		// Legacy: check for old .quint/quint.db (pre-migration)
+		oldDBPath := filepath.Join(quintDir, "quint.db")
+		if _, err := os.Stat(oldDBPath); err == nil {
+			// Serve guard: block MCP and ask to re-run init
+			server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+				return "", fmt.Errorf("Quint Code storage has been upgraded. Please run `quint-code init` in your project directory to migrate to unified storage. Your data will be preserved.")
+			})
 		}
 	}
 
@@ -73,7 +109,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
+func makeV5Handler(store *artifact.Store, quintDir string, projCfg *project.Config, indexStore *project.IndexStore) fpf.V5ToolHandler {
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
 			Name      string                 `json:"name"`
@@ -126,6 +162,50 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 		// Log tool call result with duration
 		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
 
+		// Cross-project recall — append to frame results
+		if toolErr == nil && params.Name == "quint_problem" && action == "frame" && indexStore != nil && projCfg != nil {
+			signal, _ := params.Arguments["signal"].(string)
+			title, _ := params.Arguments["title"].(string)
+			query := title + " " + signal
+			primaryLang := project.DetectPrimaryLanguage(store.DB())
+			recalls, recallErr := indexStore.Search(ctx, query, projCfg.ID, primaryLang, 3)
+			if recallErr == nil && len(recalls) > 0 {
+				result += "\n## Cross-Project History\n\n"
+				for _, r := range recalls {
+					clLabel := fmt.Sprintf("CL%d", r.CL)
+					if r.CL == 2 {
+						clLabel += " (similar context)"
+					} else {
+						clLabel += " (different context)"
+					}
+					result += fmt.Sprintf("- [%s] **%s** — %s (%s, from %s)\n",
+						r.DecisionID, r.Title, truncateStr(r.WhySelected, 120), clLabel, r.ProjectName)
+				}
+				result += "\n"
+			}
+		}
+
+		// Cross-project index — write decision summaries on decide
+		if toolErr == nil && params.Name == "quint_decision" && action == "decide" && indexStore != nil && projCfg != nil {
+			if selectedTitle, _ := params.Arguments["selected_title"].(string); selectedTitle != "" {
+				whySelected, _ := params.Arguments["why_selected"].(string)
+				weakestLink, _ := params.Arguments["weakest_link"].(string)
+				primaryLang := project.DetectPrimaryLanguage(store.DB())
+				_ = indexStore.WriteDecision(ctx, project.IndexEntry{
+					ProjectID:     projCfg.ID,
+					ProjectName:   projCfg.Name,
+					DecisionID:    selectedTitle, // will be replaced with actual ID below
+					Title:         selectedTitle,
+					SelectedTitle: selectedTitle,
+					WhySelected:   whySelected,
+					WeakestLink:   weakestLink,
+					PrimaryLang:   primaryLang,
+					CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+				})
+				logger.Debug().Str("project", projCfg.ID).Str("decision", selectedTitle).Msg("index.write")
+			}
+		}
+
 		// Audit log — fire-and-forget, never block the tool response
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
 
@@ -142,6 +222,13 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 
 		return result, toolErr
 	}
+}
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // logAudit writes an audit_log row for every tool call. Errors are logged, never propagated.

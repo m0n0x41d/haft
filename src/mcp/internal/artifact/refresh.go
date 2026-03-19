@@ -436,16 +436,15 @@ func Reconcile(ctx context.Context, store *Store) ([]ReconcileOverlap, error) {
 		if n.Meta.Status != StatusActive {
 			continue
 		}
-		noteText := n.Meta.Title // title-to-title comparison
 
 		for _, d := range decisions {
 			if d.Meta.Status != StatusActive {
 				continue
 			}
-			decText := d.Meta.Title // compare titles only — full body dilutes Jaccard
-			sim := jaccardSimilarity(noteText, decText)
+			// Containment: what fraction of note title words appear in decision title?
+			sim := containment(n.Meta.Title, d.Meta.Title)
 
-			if sim > 0.3 {
+			if sim > 0.5 {
 				overlaps = append(overlaps, ReconcileOverlap{
 					NoteID:        n.Meta.ID,
 					NoteTitle:     n.Meta.Title,
@@ -478,7 +477,7 @@ func FormatReconcileResponse(overlaps []ReconcileOverlap, navStrip string) strin
 	sb.WriteString(fmt.Sprintf("## Note-Decision Overlaps (%d found)\n\n", len(overlaps)))
 	for _, o := range overlaps {
 		action := "consider deprecating"
-		if o.Similarity > 0.5 {
+		if o.Similarity > 0.7 {
 			action = "should deprecate"
 		}
 		sb.WriteString(fmt.Sprintf("- **%s** [%s] overlaps with **%s** [%s] (%.0f%% overlap) — %s\n",

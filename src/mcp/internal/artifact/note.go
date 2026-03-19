@@ -61,23 +61,39 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 		}
 	}
 
-	// Check 2b: Overlap with existing decisions (Jaccard dedup)
+	// Check 2b: Overlap with existing decisions (containment-based dedup)
 	if store != nil {
-		noteText := input.Title // title-to-title comparison — rationale dilutes Jaccard
-		overlap := checkDecisionOverlap(ctx, store, noteText)
+		overlap := checkDecisionOverlap(ctx, store, input.Title)
 		if overlap != nil {
-			if overlap.Similarity > 0.5 {
-				// High overlap — reject
+			if overlap.Similarity > 0.7 {
 				v.OK = false
 				v.Warnings = append(v.Warnings, fmt.Sprintf(
-					"Decision %s (%s) already covers this topic (%.0f%% word overlap). Notes are for observations and discoveries, not architectural choices. Use /q-decide for decisions.",
+					"Decision %s (%s) already covers this topic (%.0f%% of note words found in decision). Notes are for observations and discoveries, not architectural choices. Use /q-decide for decisions.",
 					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
 				))
 				return v
 			}
-			// Low overlap — warn but allow
 			v.Warnings = append(v.Warnings, fmt.Sprintf(
-				"Similar to decision %s (%s) — %.0f%% word overlap. Make sure this note adds information not already in the decision.",
+				"Similar to decision %s (%s) — %.0f%% word containment. Make sure this note adds information not already in the decision.",
+				overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+			))
+		}
+	}
+
+	// Check 2c: Overlap with existing notes (same containment check)
+	if store != nil {
+		overlap := checkNoteOverlap(ctx, store, input.Title)
+		if overlap != nil {
+			if overlap.Similarity > 0.7 {
+				v.OK = false
+				v.Warnings = append(v.Warnings, fmt.Sprintf(
+					"Note %s (%s) already records this (%.0f%% word containment). Duplicate note rejected.",
+					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+				))
+				return v
+			}
+			v.Warnings = append(v.Warnings, fmt.Sprintf(
+				"Similar to existing note %s (%s) — %.0f%% word containment.",
 				overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
 			))
 		}
@@ -115,29 +131,56 @@ type OverlapInfo struct {
 	Similarity    float64
 }
 
-// checkDecisionOverlap finds the most overlapping active decision using Jaccard similarity.
-// Returns the highest overlap if above the warning threshold (0.3), nil otherwise.
-func checkDecisionOverlap(ctx context.Context, store *Store, noteText string) *OverlapInfo {
+// checkDecisionOverlap finds the most overlapping active decision using containment.
+// Containment = "what fraction of the note's words appear in the decision title?"
+// Returns the highest overlap if above the warning threshold (0.5), nil otherwise.
+func checkDecisionOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
 	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 100)
 	if err != nil {
 		return nil
 	}
 
 	var best *OverlapInfo
-	bestSim := 0.3 // minimum threshold to report
+	bestSim := 0.5 // minimum threshold to report (containment is higher than Jaccard)
 
 	for _, d := range decisions {
 		if d.Meta.Status != StatusActive {
 			continue
 		}
-		// Compare against title only — full body dilutes Jaccard (DRR bodies are 500+ words)
-		decText := d.Meta.Title
-		sim := jaccardSimilarity(noteText, decText)
+		sim := containment(noteTitle, d.Meta.Title)
 		if sim > bestSim {
 			bestSim = sim
 			best = &OverlapInfo{
 				DecisionID:    d.Meta.ID,
 				DecisionTitle: d.Meta.Title,
+				Similarity:    sim,
+			}
+		}
+	}
+
+	return best
+}
+
+// checkNoteOverlap finds the most overlapping active note using containment.
+func checkNoteOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
+	notes, err := store.ListByKind(ctx, KindNote, 500)
+	if err != nil {
+		return nil
+	}
+
+	var best *OverlapInfo
+	bestSim := 0.5
+
+	for _, n := range notes {
+		if n.Meta.Status != StatusActive {
+			continue
+		}
+		sim := containment(noteTitle, n.Meta.Title)
+		if sim > bestSim {
+			bestSim = sim
+			best = &OverlapInfo{
+				DecisionID:    n.Meta.ID,
+				DecisionTitle: n.Meta.Title,
 				Similarity:    sim,
 			}
 		}

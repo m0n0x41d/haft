@@ -207,12 +207,12 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	// Recent notes (context-filtered if set)
+	// Recent notes (active only, context-filtered if set)
 	var notes []*Artifact
 	if contextFilter != "" {
 		all, _ := store.ListByContext(ctx, contextFilter)
 		for _, a := range all {
-			if a.Meta.Kind == KindNote {
+			if a.Meta.Kind == KindNote && a.Meta.Status == StatusActive {
 				notes = append(notes, a)
 				if len(notes) >= 5 {
 					break
@@ -220,7 +220,15 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 			}
 		}
 	} else {
-		notes, _ = store.ListByKind(ctx, KindNote, 5)
+		allNotes, _ := store.ListByKind(ctx, KindNote, 20)
+		for _, n := range allNotes {
+			if n.Meta.Status == StatusActive {
+				notes = append(notes, n)
+				if len(notes) >= 5 {
+					break
+				}
+			}
+		}
 	}
 	if len(notes) > 0 {
 		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(notes)))

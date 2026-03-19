@@ -649,9 +649,9 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 
 	// Inductive verification gate: check if baseline exists for decisions with affected_files
 	var measureWarnings []string
+	hasBaseline := false
 	files, _ := store.GetAffectedFiles(ctx, input.DecisionRef)
 	if len(files) > 0 {
-		hasBaseline := false
 		for _, f := range files {
 			if f.Hash != "" {
 				hasBaseline = true
@@ -661,10 +661,12 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 		if !hasBaseline {
 			measureWarnings = append(measureWarnings,
 				"⚠ No baseline found for this decision's affected files. "+
-					"Implementation may not be verified. Consider running "+
-					"`quint_decision(action=\"baseline\")` first. "+
-					"Measurement recorded but may be based on claims, not evidence (FPF B.5:4.3).")
+					"Implementation may not be verified. Measurement recorded at CL1 (self-evidence). "+
+					"Run `quint_decision(action=\"baseline\")` first for CL3 scoring.")
 		}
+	} else {
+		// No affected_files — can't verify via baseline, treat as unverified
+		hasBaseline = false
 	}
 
 	// Append impact measurement section to DRR body
@@ -706,13 +708,19 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 	}
 
 	// Record as evidence item
+	// CL based on verification quality: baseline exists = CL3, no baseline = CL1 (self-evidence, FPF A.12)
+	measureCL := 1 // default: self-evidence (no independent verification)
+	if hasBaseline {
+		measureCL = 3 // baseline exists = independent file-level verification
+	}
+
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:              evidID,
 		Type:            "measurement",
 		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
 		Verdict:         input.Verdict,
-		CongruenceLevel: 3,
+		CongruenceLevel: measureCL,
 		FormalityLevel:  5,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)

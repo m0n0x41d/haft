@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/m0n0x41d/quint-code/internal/reff"
 	"github.com/m0n0x41d/quint-code/logger"
 	"strings"
 	"time"
@@ -897,48 +897,9 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 	return result
 }
 
-// scoreEvidence computes the effective reliability score for a single evidence item.
-// FPF B.3: R_eff = max(0, base_score - Φ(CL)), with decay override for expired evidence.
+// scoreEvidence delegates to reff.ScoreEvidence (single source of truth).
 func scoreEvidence(e EvidenceItem, now time.Time) float64 {
-	// Expired evidence is weak regardless of verdict (FPF B.3.4)
-	if e.ValidUntil != "" {
-		if t, err := time.Parse(time.RFC3339, e.ValidUntil); err == nil && t.Before(now) {
-			return 0.1
-		}
-	}
-
-	base := verdictToScore(e.Verdict)
-	penalty := clPenalty(e.CongruenceLevel)
-	return math.Max(0, base-penalty)
-}
-
-// verdictToScore maps evidence verdict to base reliability score.
-func verdictToScore(verdict string) float64 {
-	switch verdict {
-	case "supports", "accepted":
-		return 1.0
-	case "weakens", "partial":
-		return 0.5
-	case "refutes", "failed":
-		return 0.0
-	default:
-		return 0.5 // unknown verdict treated as weakening
-	}
-}
-
-// clPenalty returns the congruence level penalty per FPF B.3.
-// CL3 (same context) = no penalty, CL0 (opposed) = near-total penalty.
-func clPenalty(cl int) float64 {
-	switch cl {
-	case 3:
-		return 0.0
-	case 2:
-		return 0.1
-	case 1:
-		return 0.4
-	default: // CL=0 or invalid
-		return 0.9
-	}
+	return reff.ScoreEvidence(e.Verdict, e.CongruenceLevel, e.ValidUntil, now)
 }
 
 // FormatDecisionResponse builds the MCP tool response.

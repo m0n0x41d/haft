@@ -72,8 +72,8 @@ func TestQueryStatus_Dashboard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(result, "Active Decisions") {
-		t.Error("missing Active Decisions section")
+	if !strings.Contains(result, "Pending Implementation") && !strings.Contains(result, "Shipped") {
+		t.Error("missing Pending Implementation or Shipped decisions section")
 	}
 	if !strings.Contains(result, "Backlog") {
 		t.Error("missing Backlog section for problems without linked artifacts")

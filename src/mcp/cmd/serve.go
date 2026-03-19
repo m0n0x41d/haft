@@ -844,8 +844,15 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
 		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
+	case artifact.RefreshReconcile:
+		overlaps, err := artifact.Reconcile(ctx, store)
+		if err != nil {
+			return "", err
+		}
+		return artifact.FormatReconcileResponse(overlaps, navStrip), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', or 'deprecate'", action)
+		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', 'deprecate', or 'reconcile'", action)
 	}
 }
 

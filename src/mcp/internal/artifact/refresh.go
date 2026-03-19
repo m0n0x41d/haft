@@ -19,6 +19,7 @@ const (
 	RefreshReopen    RefreshAction = "reopen"
 	RefreshSupersede RefreshAction = "supersede"
 	RefreshDeprecate RefreshAction = "deprecate"
+	RefreshReconcile RefreshAction = "reconcile"
 )
 
 // RefreshInput is the input for refresh operations.
@@ -406,6 +407,86 @@ func CreateRefreshReport(ctx context.Context, store *Store, quintDir string, dec
 
 	writeFileQuiet(quintDir, a)
 	return a, nil
+}
+
+// ReconcileOverlap describes a note that overlaps with a decision.
+type ReconcileOverlap struct {
+	NoteID        string
+	NoteTitle     string
+	DecisionID    string
+	DecisionTitle string
+	Similarity    float64
+}
+
+// Reconcile scans all active notes against all active decisions for overlaps.
+// Returns overlapping pairs sorted by similarity (highest first).
+func Reconcile(ctx context.Context, store *Store) ([]ReconcileOverlap, error) {
+	notes, err := store.ListByKind(ctx, KindNote, 500)
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 500)
+	if err != nil {
+		return nil, fmt.Errorf("list decisions: %w", err)
+	}
+
+	var overlaps []ReconcileOverlap
+
+	for _, n := range notes {
+		if n.Meta.Status != StatusActive {
+			continue
+		}
+		noteText := n.Meta.Title // title-to-title comparison
+
+		for _, d := range decisions {
+			if d.Meta.Status != StatusActive {
+				continue
+			}
+			decText := d.Meta.Title // compare titles only — full body dilutes Jaccard
+			sim := jaccardSimilarity(noteText, decText)
+
+			if sim > 0.3 {
+				overlaps = append(overlaps, ReconcileOverlap{
+					NoteID:        n.Meta.ID,
+					NoteTitle:     n.Meta.Title,
+					DecisionID:    d.Meta.ID,
+					DecisionTitle: d.Meta.Title,
+					Similarity:    sim,
+				})
+			}
+		}
+	}
+
+	// Sort by similarity descending
+	sort.Slice(overlaps, func(i, j int) bool {
+		return overlaps[i].Similarity > overlaps[j].Similarity
+	})
+
+	return overlaps, nil
+}
+
+// FormatReconcileResponse formats the reconcile results.
+func FormatReconcileResponse(overlaps []ReconcileOverlap, navStrip string) string {
+	var sb strings.Builder
+
+	if len(overlaps) == 0 {
+		sb.WriteString("No note-decision overlaps found. Notes and decisions are clean.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf("## Note-Decision Overlaps (%d found)\n\n", len(overlaps)))
+	for _, o := range overlaps {
+		action := "consider deprecating"
+		if o.Similarity > 0.5 {
+			action = "should deprecate"
+		}
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] overlaps with **%s** [%s] (%.0f%% overlap) — %s\n",
+			o.NoteTitle, o.NoteID, o.DecisionTitle, o.DecisionID, o.Similarity*100, action))
+	}
+	sb.WriteString("\nUse `quint_refresh(action=\"deprecate\", artifact_ref=\"<note-id>\", reason=\"superseded by decision\")` to clean up.\n")
+	sb.WriteString(navStrip)
+	return sb.String()
 }
 
 // FormatScanResponse formats the stale scan results.

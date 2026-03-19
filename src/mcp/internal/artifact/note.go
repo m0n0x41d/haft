@@ -61,6 +61,28 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 		}
 	}
 
+	// Check 2b: Overlap with existing decisions (Jaccard dedup)
+	if store != nil {
+		noteText := input.Title // title-to-title comparison — rationale dilutes Jaccard
+		overlap := checkDecisionOverlap(ctx, store, noteText)
+		if overlap != nil {
+			if overlap.Similarity > 0.5 {
+				// High overlap — reject
+				v.OK = false
+				v.Warnings = append(v.Warnings, fmt.Sprintf(
+					"Decision %s (%s) already covers this topic (%.0f%% word overlap). Notes are for observations and discoveries, not architectural choices. Use /q-decide for decisions.",
+					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+				))
+				return v
+			}
+			// Low overlap — warn but allow
+			v.Warnings = append(v.Warnings, fmt.Sprintf(
+				"Similar to decision %s (%s) — %.0f%% word overlap. Make sure this note adds information not already in the decision.",
+				overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+			))
+		}
+	}
+
 	// Check 3: Scope — is this too big for a note?
 	if len(input.AffectedFiles) > 3 {
 		v.Suggest = "/q-frame"
@@ -84,6 +106,44 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 	}
 
 	return v
+}
+
+// OverlapInfo describes overlap between a note and an existing decision.
+type OverlapInfo struct {
+	DecisionID    string
+	DecisionTitle string
+	Similarity    float64
+}
+
+// checkDecisionOverlap finds the most overlapping active decision using Jaccard similarity.
+// Returns the highest overlap if above the warning threshold (0.3), nil otherwise.
+func checkDecisionOverlap(ctx context.Context, store *Store, noteText string) *OverlapInfo {
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 100)
+	if err != nil {
+		return nil
+	}
+
+	var best *OverlapInfo
+	bestSim := 0.3 // minimum threshold to report
+
+	for _, d := range decisions {
+		if d.Meta.Status != StatusActive {
+			continue
+		}
+		// Compare against title only — full body dilutes Jaccard (DRR bodies are 500+ words)
+		decText := d.Meta.Title
+		sim := jaccardSimilarity(noteText, decText)
+		if sim > bestSim {
+			bestSim = sim
+			best = &OverlapInfo{
+				DecisionID:    d.Meta.ID,
+				DecisionTitle: d.Meta.Title,
+				Similarity:    sim,
+			}
+		}
+	}
+
+	return best
 }
 
 func checkConflicts(ctx context.Context, store *Store, input NoteInput) []ConflictInfo {

@@ -484,14 +484,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "quint_refresh",
-			Description: "Manage artifact lifecycle — detect stale items, extend validity, archive, or replace. Works on ALL artifact types: decisions, problems, notes, portfolios. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant.",
+			Description: "Manage artifact lifecycle — detect stale items, extend validity, archive, replace, or find note-decision overlaps. Works on ALL artifact types. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant, 'reconcile' finds notes that overlap with decisions.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate"},
-						"description": "scan=find stale/degraded artifacts, waive=extend validity, reopen=new problem cycle (decisions only), supersede=replace with another artifact, deprecate=archive as no longer relevant",
+						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
+						"description": "scan=find stale/degraded, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",

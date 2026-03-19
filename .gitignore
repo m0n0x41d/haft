@@ -1,6 +1,7 @@
 .quint
 .context
 .mcp.json
+.codex/config.toml
 quint-mcp.json
 src/mcp/quint-code
 src/mcp/quint-mcp

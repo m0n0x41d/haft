@@ -204,6 +204,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Println("    Note: Use /prompts:q-note to invoke")
 		}
 
+		if initCodex {
+			if skillPath, err := installSkill("codex", false, cwd); err != nil {
+				fmt.Printf("  ⚠ Failed to install Codex skill: %v\n", err)
+			} else if skillPath != "" {
+				fmt.Printf("  ✓ Installed Codex skill $q-reason (%s)\n", skillPath)
+			}
+		}
 		if initAir {
 			if skillPath, err := installSkill("air", true, cwd); err != nil {
 				fmt.Printf("  ⚠ Failed to install Air skill: %v\n", err)
@@ -443,15 +450,11 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 }
 
 func configureMCPCodex(projectRoot, binaryPath string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	configPath := filepath.Join(homeDir, ".codex", "config.toml")
+        configPath := filepath.Join(projectRoot, ".codex", "config.toml")
 
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return err
-	}
+        if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+                return err
+        }
 
 	existing := ""
 	if data, err := os.ReadFile(configPath); err == nil {

@@ -20,6 +20,12 @@ Then in your project:
 quint-code init
 ```
 
+For JetBrains Air:
+
+```bash
+quint-code init --air
+```
+
 Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 
 ---

@@ -522,6 +522,25 @@ func jaccardSimilarity(a, b string) float64 {
 	return float64(intersection) / float64(union)
 }
 
+// containment computes what fraction of words in 'subset' appear in 'superset'.
+// Answers: "is the topic of 'subset' already covered by 'superset'?"
+func containment(subset, superset string) float64 {
+	subWords := wordSet(subset)
+	superWords := wordSet(superset)
+	if len(subWords) == 0 {
+		return 0
+	}
+
+	intersection := 0
+	for w := range subWords {
+		if superWords[w] {
+			intersection++
+		}
+	}
+
+	return float64(intersection) / float64(len(subWords))
+}
+
 // wordSet splits text into a set of lowercase words, stripping punctuation.
 func wordSet(text string) map[string]bool {
 	set := make(map[string]bool)

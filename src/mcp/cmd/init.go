@@ -3,11 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -57,10 +59,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	quintDir := filepath.Join(cwd, ".quint")
-	dbPath := filepath.Join(quintDir, "quint.db")
 
 	_, quintExists := os.Stat(quintDir)
-	_, dbExists := os.Stat(dbPath)
 
 	fmt.Println("Initializing Quint Code project...")
 
@@ -73,12 +73,43 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  ✓ .quint/ directory structure OK")
 	}
 
-	if err := initializeDatabase(quintDir); err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
+	// Create or load project identity
+	projCfg, err := project.Create(quintDir, cwd)
+	if err != nil {
+		return fmt.Errorf("failed to create project identity: %w", err)
 	}
-	if os.IsNotExist(dbExists) {
+	fmt.Printf("  ✓ Project ID: %s (%s)\n", projCfg.ID, projCfg.Name)
+
+	// Determine DB path — unified storage in ~/.quint-code/projects/{id}/
+	unifiedDBPath, err := projCfg.DBPath()
+	if err != nil {
+		return fmt.Errorf("failed to determine DB path: %w", err)
+	}
+
+	oldDBPath := filepath.Join(quintDir, "quint.db")
+	_, oldDBExists := os.Stat(oldDBPath)
+	_, unifiedDBExists := os.Stat(unifiedDBPath)
+
+	if os.IsNotExist(unifiedDBExists) && !os.IsNotExist(oldDBExists) {
+		// Migration: copy old DB to unified location
+		if err := copyFile(oldDBPath, unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to migrate database: %w", err)
+		}
+		fmt.Printf("  ✓ Migrated database to %s\n", unifiedDBPath)
+
+		// Add quint.db to .quint/.gitignore
+		addToGitignore(quintDir, "quint.db")
+	} else if os.IsNotExist(unifiedDBExists) {
+		// Fresh init — create DB at unified location
+		if err := initializeDatabase(unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
 		fmt.Println("  ✓ Initialized database")
 	} else {
+		// DB already exists at unified location — run migrations
+		if err := initializeDatabase(unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to update database: %w", err)
+		}
 		fmt.Println("  ✓ Database OK")
 	}
 
@@ -163,9 +194,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("\nInitialization complete!")
 
-	// Check if .quint/ already has artifacts
+	// Check if project already has artifacts
 	hasArtifacts := false
-	if database, err := db.NewStore(dbPath); err == nil {
+	if database, err := db.NewStore(unifiedDBPath); err == nil {
 		var count int
 		if err := database.GetRawDB().QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err == nil && count > 0 {
 			hasArtifacts = true
@@ -182,6 +213,50 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Use /q-note to capture decisions, /q-reason for structured reasoning.")
 	}
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
+}
+
+func addToGitignore(quintDir, entry string) {
+	gitignorePath := filepath.Join(quintDir, ".gitignore")
+	content, _ := os.ReadFile(gitignorePath)
+
+	// Check if already present
+	if strings.Contains(string(content), entry) {
+		return
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		f.WriteString("\n")
+	}
+	f.WriteString(entry + "\n")
 }
 
 func detectBrownfield(projectRoot string) bool {
@@ -239,8 +314,10 @@ func createDirectoryStructure(quintDir string) error {
 	return nil
 }
 
-func initializeDatabase(quintDir string) error {
-	dbPath := filepath.Join(quintDir, "quint.db")
+func initializeDatabase(dbPath string) error {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return err
+	}
 	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return err

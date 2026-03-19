@@ -4,7 +4,7 @@
 
 Frame problems. Compare options fairly. Record decisions as contracts. Know when to revisit.
 
-Supports: Claude Code, Cursor, Gemini CLI, Codex CLI
+Supports: Claude Code, Cursor, Gemini CLI, Codex CLI, Codex App, Air
 
 ---
 

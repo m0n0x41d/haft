@@ -737,12 +737,24 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 
 		a, err := artifact.Measure(ctx, store, quintDir, input)
+		// Surface baseline gate warnings (not errors — measurement still recorded)
+		var measureWarning string
+		if ww, ok := err.(*artifact.WriteWarning); ok {
+			for _, w := range ww.Warnings {
+				measureWarning += w + "\n"
+			}
+			err = nil // warnings, not errors
+		}
 		if err != nil {
 			return "", err
 		}
 		// Show WLNK summary after measurement
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, a.Meta.ID)
-		extra := fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
+		extra := ""
+		if measureWarning != "" {
+			extra += measureWarning + "\n"
+		}
+		extra += fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
 
 		// Lemniscate feedback: failed/partial measurement → suggest reopen
 		if input.Verdict == "failed" || input.Verdict == "partial" {

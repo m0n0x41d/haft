@@ -647,6 +647,26 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 		return nil, fmt.Errorf("%s is %s, not DecisionRecord", input.DecisionRef, a.Meta.Kind)
 	}
 
+	// Inductive verification gate: check if baseline exists for decisions with affected_files
+	var measureWarnings []string
+	files, _ := store.GetAffectedFiles(ctx, input.DecisionRef)
+	if len(files) > 0 {
+		hasBaseline := false
+		for _, f := range files {
+			if f.Hash != "" {
+				hasBaseline = true
+				break
+			}
+		}
+		if !hasBaseline {
+			measureWarnings = append(measureWarnings,
+				"⚠ No baseline found for this decision's affected files. "+
+					"Implementation may not be verified. Consider running "+
+					"`quint_decision(action=\"baseline\")` first. "+
+					"Measurement recorded but may be based on claims, not evidence (FPF B.5:4.3).")
+		}
+	}
+
 	// Append impact measurement section to DRR body
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Impact Measurement (%s)\n\n", time.Now().UTC().Format("2006-01-02")))
@@ -699,6 +719,10 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 	}
 
 	writeFileQuiet(quintDir, a)
+
+	if len(measureWarnings) > 0 {
+		return a, &WriteWarning{Warnings: measureWarnings}
+	}
 	return a, nil
 }
 

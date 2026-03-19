@@ -193,7 +193,13 @@ Examples of auto-capture triggers:
 
 After implementing a decision and committing code:
 1. Call `quint_decision(action="baseline", decision_ref="<id>")` — snapshot file hashes
-2. Call `quint_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — verify acceptance criteria and mark as shipped
+2. **Verify inductively** — at least one of:
+   - Run tests (`go test`, `npm test`, `cargo test`) and confirm they pass
+   - Read affected files and verify the implementation matches the decision
+   - Ask the user to confirm implementation
+3. Call `quint_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
+
+**Calling measure from memory without verification is a FPF B.5:4.3 violation.** The tool will warn if no baseline exists. This is not ceremony — it's the difference between design-time claims and run-time evidence.
 
 This closes the lemniscate. Without measure, the decision stays in "Pending Implementation" on `/q-status`.
 

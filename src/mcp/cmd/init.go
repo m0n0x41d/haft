@@ -204,6 +204,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Println("    Note: Use /prompts:q-note to invoke")
 		}
 
+		if initCodex {
+			if skillPath, err := installSkill("codex", false, cwd); err != nil {
+				fmt.Printf("  ⚠ Failed to install Codex skill: %v\n", err)
+			} else if skillPath != "" {
+				fmt.Printf("  ✓ Installed Codex skill $q-reason (%s)\n", skillPath)
+			}
+		}
 		if initAir {
 			if skillPath, err := installSkill("air", true, cwd); err != nil {
 				fmt.Printf("  ⚠ Failed to install Air skill: %v\n", err)

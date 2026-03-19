@@ -19,6 +19,7 @@ var (
 	initCursor bool
 	initGemini bool
 	initCodex  bool
+	initAir    bool
 	initAll    bool
 	initLocal  bool
 )
@@ -31,13 +32,15 @@ var initCmd = &cobra.Command{
 This command creates:
   - .quint/ directory structure (knowledge base, evidence, decisions)
   - MCP configuration for selected AI tools
-  - Slash commands (global by default, or local with --local)
+  - Slash commands / prompts (global by default, or local with --local)
+  - Repo-local Air skills when requested
 
 Examples:
   quint-code init              # Claude, global commands (~/.claude/commands/)
   quint-code init --local      # Claude, local commands (.claude/commands/)
   quint-code init --all        # All tools, global commands
-  quint-code init --cursor     # Cursor only`,
+  quint-code init --cursor     # Cursor only
+  quint-code init --air        # Air skill + Codex-compatible prompts/MCP`,
 	RunE: runInit,
 }
 
@@ -46,6 +49,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure for Cursor")
 	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure for Gemini CLI")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
+	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure for JetBrains Air")
 	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure for all supported tools")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
 
@@ -120,10 +124,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if initAll {
-		initClaude, initCursor, initGemini, initCodex = true, true, true, true
+		initClaude, initCursor, initGemini, initCodex, initAir = true, true, true, true, true
 	}
 
-	if !initClaude && !initCursor && !initGemini && !initCodex {
+	if !initClaude && !initCursor && !initGemini && !initCodex && !initAir {
 		initClaude = true
 	}
 
@@ -177,18 +181,35 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCodex {
-		if err := configureMCPCodex(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure Codex CLI MCP: %v\n", err)
-		} else {
-			fmt.Printf("  ✓ Configured MCP for Codex CLI (project: %s)\n", cwd)
+	if initCodex || initAir {
+		targetName := "Codex CLI"
+		switch {
+		case initCodex && initAir:
+			targetName = "Codex CLI / Air"
+		case initAir:
+			targetName = "Air"
 		}
-		// Codex only supports global prompts
+
+		if err := configureMCPCodex(cwd, binaryPath); err != nil {
+			fmt.Printf("  ⚠ Failed to configure %s MCP: %v\n", targetName, err)
+		} else {
+			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
+		}
+
+		// Air currently uses the same Codex prompt/MCP bootstrap.
 		if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
-			fmt.Printf("  ⚠ Failed to install Codex prompts: %v\n", err)
+			fmt.Printf("  ⚠ Failed to install %s prompts: %v\n", targetName, err)
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
 			fmt.Println("    Note: Use /prompts:q-note to invoke")
+		}
+
+		if initAir {
+			if skillPath, err := installSkill("air", true, cwd); err != nil {
+				fmt.Printf("  ⚠ Failed to install Air skill: %v\n", err)
+			} else if skillPath != "" {
+				fmt.Printf("  ✓ Installed Air skill q-reason (%s)\n", skillPath)
+			}
 		}
 	}
 

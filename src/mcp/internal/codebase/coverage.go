@@ -292,15 +292,17 @@ func computeDecisionREff(ctx context.Context, db *sql.DB, decisionID string) (fl
 			continue
 		}
 
-		// Base score by verdict
+		// Base score by verdict (must match artifact.verdictToScore)
 		var base float64
 		switch verdict {
 		case "supports", "accepted":
 			base = 1.0
 		case "weakens", "partial":
 			base = 0.5
-		default: // refutes, failed
+		case "refutes", "failed":
 			base = 0.0
+		default:
+			base = 0.5 // unknown verdict treated as weakening
 		}
 
 		// CL penalty

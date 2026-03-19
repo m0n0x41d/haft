@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/quint-code/internal/reff"
 )
 
 // CoverageStatus represents how well a module is governed by decisions.
@@ -279,38 +281,14 @@ func computeDecisionREff(ctx context.Context, db *sql.DB, decisionID string) (fl
 		}
 		count++
 
-		// Check expiry
-		expired := false
-		if validUntil.Valid && validUntil.String != "" {
-			if t, err := time.Parse(time.RFC3339, validUntil.String); err == nil {
-				expired = t.Before(now)
-			}
+		vu := ""
+		if validUntil.Valid {
+			vu = validUntil.String
 		}
-
-		if expired {
-			minScore = math.Min(minScore, 0.1)
-			continue
+		score := reff.ScoreEvidence(verdict, cl, vu, now)
+		if score < minScore {
+			minScore = score
 		}
-
-		// Base score by verdict (must match artifact.verdictToScore)
-		var base float64
-		switch verdict {
-		case "supports", "accepted":
-			base = 1.0
-		case "weakens", "partial":
-			base = 0.5
-		case "refutes", "failed":
-			base = 0.0
-		default:
-			base = 0.5 // unknown verdict treated as weakening
-		}
-
-		// CL penalty
-		clPenalty := map[int]float64{3: 0.0, 2: 0.1, 1: 0.4, 0: 0.9}
-		penalty := clPenalty[cl]
-
-		effective := math.Max(0, base-penalty)
-		minScore = math.Min(minScore, effective)
 	}
 
 	if count == 0 {

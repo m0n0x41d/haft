@@ -443,15 +443,11 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 }
 
 func configureMCPCodex(projectRoot, binaryPath string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	configPath := filepath.Join(homeDir, ".codex", "config.toml")
+        configPath := filepath.Join(projectRoot, ".codex", "config.toml")
 
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return err
-	}
+        if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+                return err
+        }
 
 	existing := ""
 	if data, err := os.ReadFile(configPath); err == nil {

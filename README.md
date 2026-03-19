@@ -20,11 +20,19 @@ Then in your project:
 quint-code init
 ```
 
+For Codex CLI:
+
+```bash
+quint-code init --codex
+```
+
 For JetBrains Air:
 
 ```bash
 quint-code init --air
 ```
+
+For Codex CLI and Air, init writes MCP settings to project-local `.codex/config.toml` and sets `QUINT_PROJECT_ROOT` to the current repository. Codex must trust the project for local config to load.
 
 Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 

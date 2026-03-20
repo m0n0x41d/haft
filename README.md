@@ -54,6 +54,14 @@ The binary is the same — only the MCP config location differs:
 
 Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 
+**First time?** Ask the agent to explain how it works:
+
+```
+/q-reason explain how to work with quint-code effectively — what commands exist, when to use each one, and what's the recommended workflow
+```
+
+The agent has full knowledge of all Quint tools and will walk you through them in context of your project.
+
 ---
 
 ## How It Works

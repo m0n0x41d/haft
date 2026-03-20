@@ -304,8 +304,8 @@ func computeDecisionREff(ctx context.Context, db *sql.DB, decisionID string) (fl
 // isFileInModule checks if a file path belongs to a module's directory.
 func isFileInModule(filePath, modulePath string) bool {
 	if modulePath == "" {
-		// Root module — check if file is directly in root (no subdirectory)
-		return !strings.Contains(filePath, "/")
+		// Root module covers all files in the project
+		return true
 	}
 	return strings.HasPrefix(filePath, modulePath+"/") || filePath == modulePath
 }

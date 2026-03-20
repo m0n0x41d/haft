@@ -89,7 +89,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 				}
 
 				// Populate context_facts on startup
-				project.PopulateContextFacts(context.Background(), database.GetRawDB(), projCfg.Name)
+				_ = project.PopulateContextFacts(context.Background(), database.GetRawDB(), projCfg.Name)
 
 				server.SetV5Handler(makeV5Handler(artStore, quintDir, projCfg, indexStore))
 			}
@@ -100,7 +100,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if _, err := os.Stat(oldDBPath); err == nil {
 			// Serve guard: block MCP and ask to re-run init
 			server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-				return "", fmt.Errorf("Quint Code storage has been upgraded. Please run `quint-code init` in your project directory to migrate to unified storage. Your data will be preserved.")
+				return "", fmt.Errorf("quint-code storage has been upgraded, please run `quint-code init` in your project directory to migrate to unified storage, your data will be preserved")
 			})
 		}
 	}

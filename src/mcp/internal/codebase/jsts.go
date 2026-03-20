@@ -62,7 +62,7 @@ func (j *JSTSLang) DetectModules(projectRoot string) ([]Module, error) {
 	if len(workspaceDirs) == 0 {
 		srcDir := filepath.Join(projectRoot, "src")
 		if info, err := os.Stat(srcDir); err == nil && info.IsDir() {
-			filepath.WalkDir(srcDir, func(path string, d os.DirEntry, err error) error {
+			_ = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					return nil
 				}
@@ -95,8 +95,8 @@ func (j *JSTSLang) DetectModules(projectRoot string) ([]Module, error) {
 }
 
 var (
-	jsImportRe  = regexp.MustCompile(`(?m)^\s*import\s+.*?from\s+['"]([^'"]+)['"]`)
-	jsRequireRe = regexp.MustCompile(`(?m)\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)`)
+	jsImportRe   = regexp.MustCompile(`(?m)^\s*import\s+.*?from\s+['"]([^'"]+)['"]`)
+	jsRequireRe  = regexp.MustCompile(`(?m)\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)`)
 	jsReExportRe = regexp.MustCompile(`(?m)^\s*export\s+.*?from\s+['"]([^'"]+)['"]`)
 )
 

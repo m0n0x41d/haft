@@ -11,7 +11,7 @@ import (
 // RustLang implements ModuleDetector and ImportParser for Rust projects.
 type RustLang struct{}
 
-func (r *RustLang) Language() string    { return "rust" }
+func (r *RustLang) Language() string     { return "rust" }
 func (r *RustLang) Extensions() []string { return []string{".rs"} }
 
 // DetectModules discovers Rust crates/modules by looking for Cargo.toml and mod.rs/lib.rs.

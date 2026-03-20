@@ -189,9 +189,24 @@ Examples of auto-capture triggers:
 
 **Do NOT auto-capture**: formatting choices, import ordering, variable naming (too trivial).
 
+### Post-implementation ritual (after /q-decide → implement → commit)
+
+After implementing a decision and committing code:
+1. Call `quint_decision(action="baseline", decision_ref="<id>")` — snapshot file hashes
+2. **Verify inductively** — at least one of:
+   - Run tests (`go test`, `npm test`, `cargo test`) and confirm they pass
+   - Read affected files and verify the implementation matches the decision
+   - Ask the user to confirm implementation
+3. Call `quint_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
+
+**Calling measure from memory without verification is a FPF B.5:4.3 violation.** The tool will warn if no baseline exists. This is not ceremony — it's the difference between design-time claims and run-time evidence.
+
+This closes the lemniscate. Without measure, the decision stays in "Pending Implementation" on `/q-status`.
+
 ### Proactive checks (at key moments)
 
 - **At session start**: call `quint_query(action="status")` to surface stale decisions and active problems
+- **When /q-status shows Pending Implementation decisions**: check if they were actually implemented. If the decision has a baseline and the code is in place — call `measure` to close the loop.
 - **If status returns zero artifacts on a project with code**: suggest `/q-onboard`
 - **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions — mention them if relevant
 - **When dev says "let's just do X" without rationale**: ask "why X?" before recording

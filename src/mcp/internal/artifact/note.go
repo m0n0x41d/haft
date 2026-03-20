@@ -61,6 +61,44 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 		}
 	}
 
+	// Check 2b: Overlap with existing decisions (containment-based dedup)
+	if store != nil {
+		overlap := checkDecisionOverlap(ctx, store, input.Title)
+		if overlap != nil {
+			if overlap.Similarity > 0.7 {
+				v.OK = false
+				v.Warnings = append(v.Warnings, fmt.Sprintf(
+					"Decision %s (%s) already covers this topic (%.0f%% of note words found in decision). Notes are for observations and discoveries, not architectural choices. Use /q-decide for decisions.",
+					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+				))
+				return v
+			}
+			v.Warnings = append(v.Warnings, fmt.Sprintf(
+				"Similar to decision %s (%s) — %.0f%% word containment. Make sure this note adds information not already in the decision.",
+				overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+			))
+		}
+	}
+
+	// Check 2c: Overlap with existing notes (same containment check)
+	if store != nil {
+		overlap := checkNoteOverlap(ctx, store, input.Title)
+		if overlap != nil {
+			if overlap.Similarity > 0.7 {
+				v.OK = false
+				v.Warnings = append(v.Warnings, fmt.Sprintf(
+					"Note %s (%s) already records this (%.0f%% word containment). Duplicate note rejected.",
+					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+				))
+				return v
+			}
+			v.Warnings = append(v.Warnings, fmt.Sprintf(
+				"Similar to existing note %s (%s) — %.0f%% word containment.",
+				overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
+			))
+		}
+	}
+
 	// Check 3: Scope — is this too big for a note?
 	if len(input.AffectedFiles) > 3 {
 		v.Suggest = "/q-frame"
@@ -84,6 +122,71 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 	}
 
 	return v
+}
+
+// OverlapInfo describes overlap between a note and an existing decision.
+type OverlapInfo struct {
+	DecisionID    string
+	DecisionTitle string
+	Similarity    float64
+}
+
+// checkDecisionOverlap finds the most overlapping active decision using containment.
+// Containment = "what fraction of the note's words appear in the decision title?"
+// Returns the highest overlap if above the warning threshold (0.5), nil otherwise.
+func checkDecisionOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 100)
+	if err != nil {
+		return nil
+	}
+
+	var best *OverlapInfo
+	bestSim := 0.5 // minimum threshold to report (containment is higher than Jaccard)
+
+	for _, d := range decisions {
+		if d.Meta.Status != StatusActive {
+			continue
+		}
+		sim := containment(noteTitle, d.Meta.Title)
+		if sim > bestSim {
+			bestSim = sim
+			best = &OverlapInfo{
+				DecisionID:    d.Meta.ID,
+				DecisionTitle: d.Meta.Title,
+				Similarity:    sim,
+			}
+		}
+	}
+
+	return best
+}
+
+// checkNoteOverlap finds the most overlapping active note using containment.
+func checkNoteOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
+	notes, err := store.ListByKind(ctx, KindNote, 500)
+	if err != nil {
+		return nil
+	}
+
+	var best *OverlapInfo
+	bestSim := 0.5
+
+	for _, n := range notes {
+		if n.Meta.Status != StatusActive {
+			continue
+		}
+		sim := containment(noteTitle, n.Meta.Title)
+		if sim > bestSim {
+			bestSim = sim
+			best = &OverlapInfo{
+				DecisionID:    n.Meta.ID,
+				DecisionTitle: n.Meta.Title,
+				Similarity:    sim,
+			}
+		}
+	}
+
+	return best
 }
 
 func checkConflicts(ctx context.Context, store *Store, input NoteInput) []ConflictInfo {

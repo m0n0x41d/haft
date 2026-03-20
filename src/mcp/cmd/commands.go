@@ -198,6 +198,14 @@ func installSkill(platform string, local bool, projectRoot string) (string, erro
 		} else {
 			skillDir = filepath.Join(homeDir, ".cursor", "skills", "q-reason")
 		}
+	case "air":
+		skillDir = filepath.Join(projectRoot, "skills", "q-reason")
+	case "codex":
+		if local {
+			skillDir = filepath.Join(projectRoot, ".agents", "skills", "q-reason")
+		} else {
+			skillDir = filepath.Join(homeDir, ".agents", "skills", "q-reason")
+		}
 	default:
 		return "", nil
 	}

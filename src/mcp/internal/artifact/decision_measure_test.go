@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/quint-code/internal/reff"
 )
 
 func TestMeasure_Success(t *testing.T) {
@@ -476,9 +478,9 @@ func TestVerdictToScore(t *testing.T) {
 		{"", 0.5},
 	}
 	for _, tc := range cases {
-		got := verdictToScore(tc.verdict)
+		got := reff.VerdictToScore(tc.verdict)
 		if got != tc.want {
-			t.Errorf("verdictToScore(%q) = %.1f, want %.1f", tc.verdict, got, tc.want)
+			t.Errorf("VerdictToScore(%q) = %.1f, want %.1f", tc.verdict, got, tc.want)
 		}
 	}
 }
@@ -495,9 +497,9 @@ func TestCLPenalty(t *testing.T) {
 		{-1, 0.9}, // invalid treated as CL0
 	}
 	for _, tc := range cases {
-		got := clPenalty(tc.cl)
+		got := reff.CLPenalty(tc.cl)
 		if got != tc.want {
-			t.Errorf("clPenalty(%d) = %.1f, want %.1f", tc.cl, got, tc.want)
+			t.Errorf("CLPenalty(%d) = %.1f, want %.1f", tc.cl, got, tc.want)
 		}
 	}
 }

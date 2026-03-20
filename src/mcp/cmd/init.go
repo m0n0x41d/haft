@@ -3,11 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/m0n0x41d/quint-code/db"
+	"github.com/m0n0x41d/quint-code/internal/project"
 
 	"github.com/spf13/cobra"
 )
@@ -17,6 +19,7 @@ var (
 	initCursor bool
 	initGemini bool
 	initCodex  bool
+	initAir    bool
 	initAll    bool
 	initLocal  bool
 )
@@ -29,13 +32,15 @@ var initCmd = &cobra.Command{
 This command creates:
   - .quint/ directory structure (knowledge base, evidence, decisions)
   - MCP configuration for selected AI tools
-  - Slash commands (global by default, or local with --local)
+  - Slash commands / prompts (global by default, or local with --local)
+  - Repo-local Air skills when requested
 
 Examples:
   quint-code init              # Claude, global commands (~/.claude/commands/)
   quint-code init --local      # Claude, local commands (.claude/commands/)
   quint-code init --all        # All tools, global commands
-  quint-code init --cursor     # Cursor only`,
+  quint-code init --cursor     # Cursor only
+  quint-code init --air        # Air skill + Codex-compatible prompts/MCP`,
 	RunE: runInit,
 }
 
@@ -44,6 +49,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure for Cursor")
 	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure for Gemini CLI")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
+	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure for JetBrains Air")
 	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure for all supported tools")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
 
@@ -57,10 +63,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	quintDir := filepath.Join(cwd, ".quint")
-	dbPath := filepath.Join(quintDir, "quint.db")
 
 	_, quintExists := os.Stat(quintDir)
-	_, dbExists := os.Stat(dbPath)
 
 	fmt.Println("Initializing Quint Code project...")
 
@@ -73,12 +77,43 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  ✓ .quint/ directory structure OK")
 	}
 
-	if err := initializeDatabase(quintDir); err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
+	// Create or load project identity
+	projCfg, err := project.Create(quintDir, cwd)
+	if err != nil {
+		return fmt.Errorf("failed to create project identity: %w", err)
 	}
-	if os.IsNotExist(dbExists) {
+	fmt.Printf("  ✓ Project ID: %s (%s)\n", projCfg.ID, projCfg.Name)
+
+	// Determine DB path — unified storage in ~/.quint-code/projects/{id}/
+	unifiedDBPath, err := projCfg.DBPath()
+	if err != nil {
+		return fmt.Errorf("failed to determine DB path: %w", err)
+	}
+
+	oldDBPath := filepath.Join(quintDir, "quint.db")
+	_, oldDBExists := os.Stat(oldDBPath)
+	_, unifiedDBExists := os.Stat(unifiedDBPath)
+
+	if os.IsNotExist(unifiedDBExists) && !os.IsNotExist(oldDBExists) {
+		// Migration: copy old DB to unified location
+		if err := copyFile(oldDBPath, unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to migrate database: %w", err)
+		}
+		fmt.Printf("  ✓ Migrated database to %s\n", unifiedDBPath)
+
+		// Add quint.db to .quint/.gitignore
+		addToGitignore(quintDir, "quint.db")
+	} else if os.IsNotExist(unifiedDBExists) {
+		// Fresh init — create DB at unified location
+		if err := initializeDatabase(unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
 		fmt.Println("  ✓ Initialized database")
 	} else {
+		// DB already exists at unified location — run migrations
+		if err := initializeDatabase(unifiedDBPath); err != nil {
+			return fmt.Errorf("failed to update database: %w", err)
+		}
 		fmt.Println("  ✓ Database OK")
 	}
 
@@ -89,10 +124,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if initAll {
-		initClaude, initCursor, initGemini, initCodex = true, true, true, true
+		initClaude, initCursor, initGemini, initCodex, initAir = true, true, true, true, true
 	}
 
-	if !initClaude && !initCursor && !initGemini && !initCodex {
+	if !initClaude && !initCursor && !initGemini && !initCodex && !initAir {
 		initClaude = true
 	}
 
@@ -146,26 +181,50 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCodex {
-		if err := configureMCPCodex(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure Codex CLI MCP: %v\n", err)
-		} else {
-			fmt.Printf("  ✓ Configured MCP for Codex CLI (project: %s)\n", cwd)
+	if initCodex || initAir {
+		targetName := "Codex CLI"
+		switch {
+		case initCodex && initAir:
+			targetName = "Codex CLI / Air"
+		case initAir:
+			targetName = "Air"
 		}
-		// Codex only supports global prompts
+
+		if err := configureMCPCodex(cwd, binaryPath); err != nil {
+			fmt.Printf("  ⚠ Failed to configure %s MCP: %v\n", targetName, err)
+		} else {
+			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
+		}
+
+		// Air currently uses the same Codex prompt/MCP bootstrap.
 		if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
-			fmt.Printf("  ⚠ Failed to install Codex prompts: %v\n", err)
+			fmt.Printf("  ⚠ Failed to install %s prompts: %v\n", targetName, err)
 		} else {
 			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
 			fmt.Println("    Note: Use /prompts:q-note to invoke")
+		}
+
+		if initCodex {
+			if skillPath, err := installSkill("codex", false, cwd); err != nil {
+				fmt.Printf("  ⚠ Failed to install Codex skill: %v\n", err)
+			} else if skillPath != "" {
+				fmt.Printf("  ✓ Installed Codex skill $q-reason (%s)\n", skillPath)
+			}
+		}
+		if initAir {
+			if skillPath, err := installSkill("air", true, cwd); err != nil {
+				fmt.Printf("  ⚠ Failed to install Air skill: %v\n", err)
+			} else if skillPath != "" {
+				fmt.Printf("  ✓ Installed Air skill q-reason (%s)\n", skillPath)
+			}
 		}
 	}
 
 	fmt.Println("\nInitialization complete!")
 
-	// Check if .quint/ already has artifacts
+	// Check if project already has artifacts
 	hasArtifacts := false
-	if database, err := db.NewStore(dbPath); err == nil {
+	if database, err := db.NewStore(unifiedDBPath); err == nil {
 		var count int
 		if err := database.GetRawDB().QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err == nil && count > 0 {
 			hasArtifacts = true
@@ -182,6 +241,50 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Use /q-note to capture decisions, /q-reason for structured reasoning.")
 	}
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
+}
+
+func addToGitignore(quintDir, entry string) {
+	gitignorePath := filepath.Join(quintDir, ".gitignore")
+	content, _ := os.ReadFile(gitignorePath)
+
+	// Check if already present
+	if strings.Contains(string(content), entry) {
+		return
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		_, _ = f.WriteString("\n")
+	}
+	_, _ = f.WriteString(entry + "\n")
 }
 
 func detectBrownfield(projectRoot string) bool {
@@ -239,8 +342,10 @@ func createDirectoryStructure(quintDir string) error {
 	return nil
 }
 
-func initializeDatabase(quintDir string) error {
-	dbPath := filepath.Join(quintDir, "quint.db")
+func initializeDatabase(dbPath string) error {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return err
+	}
 	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return err
@@ -345,11 +450,7 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 }
 
 func configureMCPCodex(projectRoot, binaryPath string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	configPath := filepath.Join(homeDir, ".codex", "config.toml")
+	configPath := filepath.Join(projectRoot, ".codex", "config.toml")
 
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return err

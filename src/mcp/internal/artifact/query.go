@@ -83,24 +83,45 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 	}
 	activeDecisions := filterActive(decisions)
 	if len(activeDecisions) > 0 {
-		sb.WriteString(fmt.Sprintf("### Active Decisions (%d)\n\n", len(activeDecisions)))
-		cap := 5
-		for i, d := range activeDecisions {
-			if i >= cap {
-				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(activeDecisions)-cap))
-				break
+		// Split by measurement status: shipped (has measurement) vs pending (no measurement)
+		var shipped, pending []*Artifact
+		for _, d := range activeDecisions {
+			if hasMeasurement(ctx, store, d.Meta.ID) {
+				shipped = append(shipped, d)
+			} else {
+				pending = append(pending, d)
 			}
-			line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
-			if d.Meta.ValidUntil != "" {
-				vu := d.Meta.ValidUntil
-				if len(vu) > 10 {
-					vu = vu[:10]
-				}
-				line += fmt.Sprintf(" (valid until %s)", vu)
-			}
-			sb.WriteString(line + "\n")
 		}
-		sb.WriteString("\n")
+
+		formatDecisionList := func(items []*Artifact, cap int) {
+			for i, d := range items {
+				if i >= cap {
+					sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(items)-cap))
+					break
+				}
+				line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
+				if d.Meta.ValidUntil != "" {
+					vu := d.Meta.ValidUntil
+					if len(vu) > 10 {
+						vu = vu[:10]
+					}
+					line += fmt.Sprintf(" (valid until %s)", vu)
+				}
+				sb.WriteString(line + "\n")
+			}
+		}
+
+		if len(pending) > 0 {
+			sb.WriteString(fmt.Sprintf("### Pending Implementation (%d)\n\n", len(pending)))
+			formatDecisionList(pending, 5)
+			sb.WriteString("\n")
+		}
+
+		if len(shipped) > 0 {
+			sb.WriteString(fmt.Sprintf("### Shipped (%d)\n\n", len(shipped)))
+			formatDecisionList(shipped, 5)
+			sb.WriteString("\n")
+		}
 	}
 
 	// Stale artifacts (filtered by context if set)
@@ -207,12 +228,12 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 		sb.WriteString("\n")
 	}
 
-	// Recent notes (context-filtered if set)
+	// Recent notes (active only, context-filtered if set)
 	var notes []*Artifact
 	if contextFilter != "" {
 		all, _ := store.ListByContext(ctx, contextFilter)
 		for _, a := range all {
-			if a.Meta.Kind == KindNote {
+			if a.Meta.Kind == KindNote && a.Meta.Status == StatusActive {
 				notes = append(notes, a)
 				if len(notes) >= 5 {
 					break
@@ -220,7 +241,15 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 			}
 		}
 	} else {
-		notes, _ = store.ListByKind(ctx, KindNote, 5)
+		allNotes, _ := store.ListByKind(ctx, KindNote, 20)
+		for _, n := range allNotes {
+			if n.Meta.Status == StatusActive {
+				notes = append(notes, n)
+				if len(notes) >= 5 {
+					break
+				}
+			}
+		}
 	}
 	if len(notes) > 0 {
 		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(notes)))
@@ -309,6 +338,20 @@ func QueryRelated(ctx context.Context, store *Store, filePath string) (string, e
 	}
 
 	return sb.String(), nil
+}
+
+// hasMeasurement checks if a decision has any measurement evidence (type=measurement, verdict not superseded).
+func hasMeasurement(ctx context.Context, store *Store, decisionID string) bool {
+	items, err := store.GetEvidenceItems(ctx, decisionID)
+	if err != nil {
+		return false
+	}
+	for _, e := range items {
+		if e.Type == "measurement" && e.Verdict != "superseded" {
+			return true
+		}
+	}
+	return false
 }
 
 func filterActive(artifacts []*Artifact) []*Artifact {

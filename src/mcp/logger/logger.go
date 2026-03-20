@@ -111,3 +111,45 @@ func Close() {
 func SetLevel(level zerolog.Level) {
 	log = log.Level(level)
 }
+
+// --- Structured logging helpers ---
+
+// ToolCall logs the entry of an MCP tool call.
+func ToolCall(tool, action string, params map[string]string) {
+	e := log.Info().Str("component", "mcp").Str("tool", tool).Str("action", action)
+	for k, v := range params {
+		e = e.Str(k, v)
+	}
+	e.Msg("tool.call")
+}
+
+// ToolResult logs the exit of an MCP tool call with duration.
+func ToolResult(tool, action string, durationMs int64, err error) {
+	e := log.Info().Str("component", "mcp").Str("tool", tool).Str("action", action).Int64("duration_ms", durationMs)
+	if err != nil {
+		e = e.Err(err).Str("status", "error")
+	} else {
+		e = e.Str("status", "ok")
+	}
+	e.Msg("tool.result")
+}
+
+// ArtifactOp logs an artifact lifecycle operation.
+func ArtifactOp(op, artifactID, kind string) {
+	log.Info().
+		Str("component", "artifact").
+		Str("op", op).
+		Str("artifact_id", artifactID).
+		Str("kind", kind).
+		Msg("artifact." + op)
+}
+
+// CodebaseOp logs a codebase scanning operation.
+func CodebaseOp(op string, count int, durationMs int64) {
+	log.Info().
+		Str("component", "codebase").
+		Str("op", op).
+		Int("count", count).
+		Int64("duration_ms", durationMs).
+		Msg("codebase." + op)
+}

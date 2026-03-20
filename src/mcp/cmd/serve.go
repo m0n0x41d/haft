@@ -13,7 +13,9 @@ import (
 
 	"github.com/m0n0x41d/quint-code/db"
 	"github.com/m0n0x41d/quint-code/internal/artifact"
+	"github.com/m0n0x41d/quint-code/internal/codebase"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
+	"github.com/m0n0x41d/quint-code/internal/project"
 	"github.com/m0n0x41d/quint-code/logger"
 
 	"github.com/spf13/cobra"
@@ -52,19 +54,54 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer logger.Close()
 
+	// QUINT_SERVER_ORIGIN: "local" (default) or URL for future remote server
+	serverOrigin := os.Getenv("QUINT_SERVER_ORIGIN")
+	if serverOrigin != "" && serverOrigin != "local" {
+		logger.Info().Str("origin", serverOrigin).Msg("QUINT_SERVER_ORIGIN set to remote — not implemented yet, using local storage")
+	}
+
 	quintDir := filepath.Join(cwd, ".quint")
-	dbPath := filepath.Join(quintDir, "quint.db")
 
 	server := fpf.NewServer()
 
-	// Wire v5 artifact handler if DB exists
-	if _, err := os.Stat(dbPath); err == nil {
-		database, err := db.NewStore(dbPath)
+	// Load project identity
+	projCfg, err := project.Load(quintDir)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to load project config")
+	}
+
+	if projCfg != nil {
+		// Unified storage: DB in ~/.quint-code/projects/{id}/
+		dbPath, err := projCfg.DBPath()
 		if err != nil {
-			logger.Warn().Err(err).Msg("failed to open database")
-		} else {
-			artStore := artifact.NewStore(database.GetRawDB())
-			server.SetV5Handler(makeV5Handler(artStore, quintDir))
+			logger.Warn().Err(err).Msg("failed to determine DB path")
+		} else if _, err := os.Stat(dbPath); err == nil {
+			database, err := db.NewStore(dbPath)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to open database")
+			} else {
+				artStore := artifact.NewStore(database.GetRawDB())
+
+				// Open cross-project index
+				indexStore, indexErr := project.OpenIndex()
+				if indexErr != nil {
+					logger.Warn().Err(indexErr).Msg("failed to open cross-project index")
+				}
+
+				// Populate context_facts on startup
+				_ = project.PopulateContextFacts(context.Background(), database.GetRawDB(), projCfg.Name)
+
+				server.SetV5Handler(makeV5Handler(artStore, quintDir, projCfg, indexStore))
+			}
+		}
+	} else {
+		// Legacy: check for old .quint/quint.db (pre-migration)
+		oldDBPath := filepath.Join(quintDir, "quint.db")
+		if _, err := os.Stat(oldDBPath); err == nil {
+			// Serve guard: block MCP and ask to re-run init
+			server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+				return "", fmt.Errorf("quint-code storage has been upgraded, please run `quint-code init` in your project directory to migrate to unified storage, your data will be preserved")
+			})
 		}
 	}
 
@@ -72,7 +109,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
+func makeV5Handler(store *artifact.Store, quintDir string, projCfg *project.Config, indexStore *project.IndexStore) fpf.V5ToolHandler {
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
 			Name      string                 `json:"name"`
@@ -81,6 +118,26 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 		if err := json.Unmarshal(rawParams, &params); err != nil {
 			return "", fmt.Errorf("invalid params: %w", err)
 		}
+
+		// Extract action for logging
+		action, _ := params.Arguments["action"].(string)
+
+		// Log tool call entry
+		logParams := map[string]string{}
+		if action != "" {
+			logParams["action"] = action
+		}
+		if ref, ok := params.Arguments["decision_ref"].(string); ok {
+			logParams["decision_ref"] = ref
+		}
+		if ref, ok := params.Arguments["artifact_ref"].(string); ok {
+			logParams["artifact_ref"] = ref
+		}
+		if ref, ok := params.Arguments["problem_ref"].(string); ok {
+			logParams["problem_ref"] = ref
+		}
+		logger.ToolCall(params.Name, action, logParams)
+		start := time.Now()
 
 		var result string
 		var toolErr error
@@ -97,13 +154,59 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 		case "quint_refresh":
 			result, toolErr = handleQuintRefresh(ctx, store, quintDir, params.Arguments)
 		case "quint_query":
-			result, toolErr = handleQuintQuery(ctx, store, params.Arguments)
+			result, toolErr = handleQuintQuery(ctx, store, quintDir, params.Arguments)
 		default:
 			return "", fmt.Errorf("unknown tool: %s", params.Name)
 		}
 
+		// Log tool call result with duration
+		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
+
+		// Cross-project recall — append to frame results
+		if toolErr == nil && params.Name == "quint_problem" && action == "frame" && indexStore != nil && projCfg != nil {
+			signal, _ := params.Arguments["signal"].(string)
+			title, _ := params.Arguments["title"].(string)
+			query := title + " " + signal
+			primaryLang := project.DetectPrimaryLanguage(store.DB())
+			recalls, recallErr := indexStore.Search(ctx, query, projCfg.ID, primaryLang, 3)
+			if recallErr == nil && len(recalls) > 0 {
+				result += "\n## Cross-Project History\n\n"
+				for _, r := range recalls {
+					clLabel := fmt.Sprintf("CL%d", r.CL)
+					if r.CL == 2 {
+						clLabel += " (similar context)"
+					} else {
+						clLabel += " (different context)"
+					}
+					result += fmt.Sprintf("- [%s] **%s** — %s (%s, from %s)\n",
+						r.DecisionID, r.Title, truncateStr(r.WhySelected, 120), clLabel, r.ProjectName)
+				}
+				result += "\n"
+			}
+		}
+
+		// Cross-project index — write decision summaries on decide
+		if toolErr == nil && params.Name == "quint_decision" && action == "decide" && indexStore != nil && projCfg != nil {
+			if selectedTitle, _ := params.Arguments["selected_title"].(string); selectedTitle != "" {
+				whySelected, _ := params.Arguments["why_selected"].(string)
+				weakestLink, _ := params.Arguments["weakest_link"].(string)
+				primaryLang := project.DetectPrimaryLanguage(store.DB())
+				_ = indexStore.WriteDecision(ctx, project.IndexEntry{
+					ProjectID:     projCfg.ID,
+					ProjectName:   projCfg.Name,
+					DecisionID:    selectedTitle, // will be replaced with actual ID below
+					Title:         selectedTitle,
+					SelectedTitle: selectedTitle,
+					WhySelected:   whySelected,
+					WeakestLink:   weakestLink,
+					PrimaryLang:   primaryLang,
+					CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+				})
+				logger.Debug().Str("project", projCfg.ID).Str("decision", selectedTitle).Msg("index.write")
+			}
+		}
+
 		// Audit log — fire-and-forget, never block the tool response
-		action, _ := params.Arguments["action"].(string)
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
 
 		// Periodic refresh prompt — if >5 days since last scan, remind agent
@@ -119,6 +222,13 @@ func makeV5Handler(store *artifact.Store, quintDir string) fpf.V5ToolHandler {
 
 		return result, toolErr
 	}
+}
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // logAudit writes an audit_log row for every tool call. Errors are logged, never propagated.
@@ -183,6 +293,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 	if v, ok := args["context"].(string); ok {
 		input.Context = v
 	}
+	// TODO: MCP clients may send arrays as JSON strings — see parseStringArray in handleQuintDecision
 	if files, ok := args["affected_files"].([]interface{}); ok {
 		for _, f := range files {
 			if s, ok := f.(string); ok {
@@ -236,6 +347,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
+		// TODO: MCP clients may send arrays as JSON strings — see parseStringArray in handleQuintDecision
 		for _, key := range []string{"constraints", "optimization_targets", "observation_indicators"} {
 			if items, ok := args[key].([]interface{}); ok {
 				var strs []string
@@ -452,6 +564,11 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
+	// NOTE: MCP clients may send JSON arrays as either parsed []interface{} or as
+	// raw JSON strings (e.g., `"[\"a\",\"b\"]"` instead of `["a","b"]`).
+	// This function handles both formats. Other handlers in this file (handleQuintNote,
+	// handleQuintProblem, etc.) have the same issue with .([]interface{}) casts
+	// and may need similar treatment. See: dec-20260318-001 baseline debugging.
 	parseStringArray := func(key string) []string {
 		var result []string
 		if items, ok := args[key].([]interface{}); ok {
@@ -459,6 +576,12 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 				if s, ok := item.(string); ok {
 					result = append(result, s)
 				}
+			}
+		} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '[' {
+			logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseStringArray: JSON string array fallback")
+			var parsed []string
+			if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+				result = parsed
 			}
 		}
 		return result
@@ -614,12 +737,24 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 
 		a, err := artifact.Measure(ctx, store, quintDir, input)
+		// Surface baseline gate warnings (not errors — measurement still recorded)
+		var measureWarning string
+		if ww, ok := err.(*artifact.WriteWarning); ok {
+			for _, w := range ww.Warnings {
+				measureWarning += w + "\n"
+			}
+			err = nil // warnings, not errors
+		}
 		if err != nil {
 			return "", err
 		}
 		// Show WLNK summary after measurement
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, a.Meta.ID)
-		extra := fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
+		extra := ""
+		if measureWarning != "" {
+			extra += measureWarning + "\n"
+		}
+		extra += fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
 
 		// Lemniscate feedback: failed/partial measurement → suggest reopen
 		if input.Verdict == "failed" || input.Verdict == "partial" {
@@ -669,8 +804,29 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary),
 			navStrip), nil
 
+	case "baseline":
+		input := artifact.BaselineInput{}
+		if v, ok := args["decision_ref"].(string); ok {
+			input.DecisionRef = v
+		}
+		if input.DecisionRef == "" {
+			// Auto-detect: use the most recent decision
+			decisions, _ := store.ListByKind(ctx, artifact.KindDecisionRecord, 1)
+			if len(decisions) > 0 {
+				input.DecisionRef = decisions[0].Meta.ID
+			}
+		}
+		input.AffectedFiles = parseStringArray("affected_files")
+
+		files, err := artifact.Baseline(ctx, store, filepath.Dir(quintDir), input)
+		if err != nil {
+			return "", err
+		}
+		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		return artifact.FormatBaselineResponse(input.DecisionRef, files, navStrip), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', or 'evidence'", action)
+		return "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', 'evidence', or 'baseline'", action)
 	}
 }
 
@@ -688,11 +844,54 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 
 	switch artifact.RefreshAction(action) {
 	case artifact.RefreshScan:
-		items, err := artifact.ScanStale(ctx, store)
+		projectRoot := filepath.Dir(quintDir)
+		items, err := artifact.ScanStale(ctx, store, projectRoot)
 		if err != nil {
 			return "", err
 		}
-		return artifact.FormatScanResponse(items, navStrip), nil
+		result := artifact.FormatScanResponse(items, "")
+
+		// Level C: enrich drift reports with dependency impact
+		driftReports, _ := artifact.CheckDrift(ctx, store, projectRoot)
+		for i, r := range driftReports {
+			if !r.HasBaseline {
+				continue
+			}
+			hasDrift := false
+			var driftedFiles []string
+			for _, f := range r.Files {
+				if f.Status == artifact.DriftModified || f.Status == artifact.DriftMissing {
+					hasDrift = true
+					driftedFiles = append(driftedFiles, f.Path)
+				}
+			}
+			if hasDrift && len(driftedFiles) > 0 {
+				impacts, _ := codebase.EnrichDriftWithImpact(ctx, store.DB(), driftedFiles)
+				if len(impacts) > 0 {
+					for _, imp := range impacts {
+						driftReports[i].ImpactedModules = append(driftReports[i].ImpactedModules, artifact.ModuleImpact{
+							ModuleID:    imp.ModuleID,
+							ModulePath:  imp.ModulePath,
+							DecisionIDs: imp.DecisionIDs,
+							IsBlind:     imp.IsBlind,
+						})
+					}
+				}
+			}
+		}
+		// If any drift has impact propagation, append the detailed report
+		hasImpact := false
+		for _, r := range driftReports {
+			if len(r.ImpactedModules) > 0 {
+				hasImpact = true
+				break
+			}
+		}
+		if hasImpact {
+			result += "\n" + artifact.FormatDriftResponse(driftReports, "")
+		}
+
+		return result + navStrip, nil
 
 	case artifact.RefreshWaive:
 		if artifactRef == "" {
@@ -744,12 +943,19 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
 		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
+	case artifact.RefreshReconcile:
+		overlaps, err := artifact.Reconcile(ctx, store)
+		if err != nil {
+			return "", err
+		}
+		return artifact.FormatReconcileResponse(overlaps, navStrip), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', or 'deprecate'", action)
+		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', 'deprecate', or 'reconcile'", action)
 	}
 }
 
-func handleQuintQuery(ctx context.Context, store *artifact.Store, args map[string]interface{}) (string, error) {
+func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
@@ -771,6 +977,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, args map[strin
 		result, err := artifact.QueryStatus(ctx, store, contextName)
 		if err != nil {
 			return "", err
+		}
+		// Append module coverage if modules are scanned
+		scanner := codebase.NewScanner(store.DB())
+		if !scanner.ModulesLastScanned(ctx).IsZero() {
+			if report, err := codebase.ComputeCoverage(ctx, store.DB()); err == nil && report.TotalModules > 0 {
+				result += "\n" + codebase.FormatCoverageResponse(report)
+			}
 		}
 		return result + navStrip, nil
 
@@ -794,7 +1007,25 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, args map[strin
 		}
 		return result + navStrip, nil
 
+	case "coverage":
+		projectRoot := filepath.Dir(quintDir)
+		scanner := codebase.NewScanner(store.DB())
+
+		// Always rescan — module detection is fast (<100ms)
+		if _, err := scanner.ScanModules(ctx, projectRoot); err != nil {
+			return "", fmt.Errorf("module scan: %w", err)
+		}
+		if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
+			_ = err // non-fatal
+		}
+
+		report, err := codebase.ComputeCoverage(ctx, store.DB())
+		if err != nil {
+			return "", fmt.Errorf("compute coverage: %w", err)
+		}
+		return codebase.FormatCoverageResponse(report) + navStrip, nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', or 'list'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', or 'coverage'", action)
 	}
 }

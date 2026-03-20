@@ -199,6 +199,11 @@ var migrations = []struct {
 		description: "v5 artifact model: artifacts, links, evidence items, affected files, FTS5",
 		sql:         "", // Applied as individual statements below (migration13Statements)
 	},
+	{
+		version:     14,
+		description: "Codebase awareness: module map and dependency graph",
+		sql:         "", // Applied as individual statements below (migration14Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -231,6 +236,28 @@ var migration12Statements = []string{
 		content TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`,
+}
+
+var migration14Statements = []string{
+	`CREATE TABLE IF NOT EXISTS codebase_modules (
+		module_id TEXT PRIMARY KEY,
+		path TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		lang TEXT,
+		file_count INTEGER DEFAULT 0,
+		last_scanned TEXT NOT NULL
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_codebase_modules_path ON codebase_modules(path)",
+
+	`CREATE TABLE IF NOT EXISTS module_dependencies (
+		source_module TEXT NOT NULL,
+		target_module TEXT NOT NULL,
+		dep_type TEXT NOT NULL DEFAULT 'import',
+		file_path TEXT,
+		last_scanned TEXT NOT NULL,
+		PRIMARY KEY (source_module, target_module, dep_type)
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_module_deps_target ON module_dependencies(target_module)",
 }
 
 var migration13Statements = []string{
@@ -438,6 +465,15 @@ func RunMigrations(conn *sql.DB) error {
 		} else if m.version == 13 {
 			// v5 artifact model
 			for _, stmt := range migration13Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 14 {
+			// Codebase awareness: module map + dependency graph
+			for _, stmt := range migration14Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)

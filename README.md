@@ -14,25 +14,43 @@ Supports: Claude Code, Cursor, Gemini CLI, Codex CLI, Codex App, Air
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
 ```
 
-Then in your project:
+Then in your project, run init **with your tool's flag**:
 
 ```bash
+# Claude Code (default if no flag)
 quint-code init
-```
 
-For Codex CLI:
+# Cursor
+quint-code init --cursor
 
-```bash
+# Gemini CLI
+quint-code init --gemini
+
+# Codex CLI / Codex App
 quint-code init --codex
-```
 
-For JetBrains Air:
-
-```bash
+# JetBrains Air
 quint-code init --air
+
+# All tools at once
+quint-code init --all
 ```
 
-For Codex CLI and Air, init writes MCP settings to project-local `.codex/config.toml` and sets `QUINT_PROJECT_ROOT` to the current repository. Codex must trust the project for local config to load.
+### What init does per tool
+
+The binary is the same — only the MCP config location differs:
+
+| Tool | MCP Config | Commands | Skill |
+|------|-----------|----------|-------|
+| Claude Code | `.mcp.json` (project root) | `~/.claude/commands/` | `~/.claude/skills/q-reason/` |
+| Cursor | `.cursor/mcp.json` | `~/.cursor/commands/` | `~/.cursor/skills/q-reason/` |
+| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/commands/` | — |
+| Codex CLI | `.codex/config.toml` | `~/.codex/prompts/` | `~/.agents/skills/q-reason/` |
+| Air | `.codex/config.toml` | project `skills/` | project `skills/q-reason/` |
+
+**Important for Cursor:** After init, open Cursor Settings → MCP → find `quint-code` → enable the toggle. Cursor adds MCP servers as disabled by default.
+
+**Note:** Cursor also picks up Claude Code commands from `~/.claude/commands/` — so slash commands work even without `--cursor`. But MCP config (`.cursor/mcp.json`) must be set up for the tools to connect.
 
 Existing project? Run `/q-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 

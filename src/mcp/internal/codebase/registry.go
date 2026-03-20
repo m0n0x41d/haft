@@ -50,6 +50,13 @@ func NewRegistry() *Registry {
 		r.parsers[ext] = rsImpl
 	}
 
+	// Register C/C++
+	cImpl := &CCppLang{}
+	r.detectors["c_cpp"] = cImpl
+	for _, ext := range cImpl.Extensions() {
+		r.parsers[ext] = cImpl
+	}
+
 	return r
 }
 

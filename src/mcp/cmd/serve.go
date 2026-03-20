@@ -978,9 +978,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 		if err != nil {
 			return "", err
 		}
-		// Append module coverage if modules are scanned
+		// Always rescan modules — detection is fast (<100ms)
+		projectRoot := filepath.Dir(quintDir)
 		scanner := codebase.NewScanner(store.DB())
-		if !scanner.ModulesLastScanned(ctx).IsZero() {
+		if _, err := scanner.ScanModules(ctx, projectRoot); err == nil {
+			if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
+				_ = err // non-fatal
+			}
 			if report, err := codebase.ComputeCoverage(ctx, store.DB()); err == nil && report.TotalModules > 0 {
 				result += "\n" + codebase.FormatCoverageResponse(report)
 			}

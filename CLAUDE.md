@@ -1,8 +1,3 @@
-# Expert Software Engineering Agent
-
-You are an expert interactive coding assistant for software engineering tasks.
-Proficient in computer science and software engineering.
-
 ## Communication Style
 
 **Be a peer engineer, not a cheerleader:**
@@ -65,7 +60,6 @@ When reasoning through problems, apply these principles:
 
 ### 2. Investigate the Codebase
 
-- **Check `.context/` directory** — Architectural documentation, design decisions, ideas
 - **Check `.quint/` directory** — Decisions, problems, notes (markdown projections)
 - Explore relevant files and directories
 - Search for key functions, classes, variables
@@ -192,78 +186,9 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 **Key Principle:** You (the agent) generate options with evidence. Human decides. This is the Transformer Mandate — a system cannot transform itself.
 
-## Code Generation Guidelines
-
-### Architecture: Functional Core, Imperative Shell
-
-- Pure functions (no side effects) → core business logic
-- Side effects (I/O, state, external APIs) → isolated shell modules
-- Clear separation: core never calls shell, shell orchestrates core
-
-### Functional Paradigm
-
-- **Immutability**: Use immutable types, avoid implicit mutations, return new instances
-- **Pure Functions**: Deterministic (same input → same output), no hidden dependencies
-- **No Exotic Constructs**: Stick to language idioms unless monads are natively supported
-
-### Error Handling: Explicit Over Hidden
-
-- Never swallow errors silently (empty catch blocks are bugs)
-- Handle exceptions at boundaries, not deep in call stack
-- Return error values when codebase uses them (Result, Option, error tuples)
-- If codebase uses exceptions — use exceptions consistently, but explicitly
-- Fail fast for programmer errors, handle gracefully for expected failures
-- Keep execution flow deterministic and linear
-
-### Code Quality
-
-- Self-documenting code for simple logic
-- Comments only for complex invariants and business logic (explain WHY not WHAT)
-- Keep functions small and focused (<25 lines as guideline)
-- Avoid high cyclomatic complexity
-- No deeply nested conditions (max 2 levels)
-- No loops nested in loops — extract inner loop
-- Extract complex conditions into named functions
-
-### Testing Philosophy
-
-**Preference order:** E2E → Integration → Unit
-
-| Type | When | ROI |
-|------|------|-----|
-| E2E | Test what users see | Highest value, highest cost |
-| Integration | Test module boundaries | Good balance |
-| Unit | Complex pure functions with many edge cases | Low cost, limited value |
-
-**Test contracts, not implementation:**
-
-- If function signature is the contract → test the contract
-- Public interfaces and use cases only
-- Never test internal/private functions directly
-
-**Never test:**
-
-- Private methods
-- Implementation details
-- Mocks of things you own
-- Getters/setters
-- Framework code
-
-**The rule:** If refactoring internals breaks your tests but behavior is unchanged, your tests are bad.
-
-### Code Style
-
-- DO NOT ADD COMMENTS unless asked
-- Follow existing codebase conventions
-- Check what libraries/frameworks are already in use
-- Mimic existing code style, naming conventions, typing
-- Never assume a non-standard library is available
-- Never expose or log secrets and keys
-
 ## Critical Reminders
 
-1. **Ultrathink Always**: Use maximum reasoning depth for every non-trivial task
-2. **Decision Framework vs FPF**: Quick decisions → inline framework. Complex/persistent → `/q-reason`
+1. **Decision Framework vs FPF**: Quick decisions → inline framework. Complex/persistent → `/q-reason`
 3. **Actually Do Work**: When you say "I will do X", DO X
 4. **No Commits Without Permission**: Only commit when explicitly asked
 5. **Test Contracts**: Test behavior through public interfaces, not implementation

@@ -27,13 +27,13 @@ type IndexEntry struct {
 
 // IndexRecall is a cross-project decision surfaced during framing.
 type IndexRecall struct {
-	ProjectName   string
-	DecisionID    string
-	Title         string
-	WhySelected   string
-	WeakestLink   string
-	CL            int     // 2 = similar context, 1 = different context
-	Similarity    float64 // FTS5 rank
+	ProjectName string
+	DecisionID  string
+	Title       string
+	WhySelected string
+	WeakestLink string
+	CL          int     // 2 = similar context, 1 = different context
+	Similarity  float64 // FTS5 rank
 }
 
 // IndexStore manages the cross-project index at ~/.quint-code/index.db.
@@ -86,7 +86,7 @@ func OpenIndex() (*IndexStore, error) {
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
-				db.Close()
+				_ = db.Close()
 				return nil, fmt.Errorf("index schema: %w", err)
 			}
 		}
@@ -103,7 +103,7 @@ func (s *IndexStore) Close() error {
 // WriteDecision writes or updates a decision summary in the index.
 func (s *IndexStore) WriteDecision(ctx context.Context, entry IndexEntry) error {
 	// Delete old entry first (for FTS5 trigger)
-	s.db.ExecContext(ctx,
+	_, _ = s.db.ExecContext(ctx,
 		`DELETE FROM global_decisions WHERE project_id = ? AND decision_id = ?`,
 		entry.ProjectID, entry.DecisionID)
 
@@ -240,7 +240,7 @@ func PopulateContextFacts(ctx context.Context, db *sql.DB, projectName string) e
 				domains = append(domains, d)
 			}
 		}
-		rows.Close()
+		_ = rows.Close()
 		if len(domains) > 0 {
 			facts["domains"] = strings.Join(domains, ",")
 		}

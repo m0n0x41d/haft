@@ -12,7 +12,7 @@ import (
 // GoLang implements ModuleDetector and ImportParser for Go projects.
 type GoLang struct{}
 
-func (g *GoLang) Language() string    { return "go" }
+func (g *GoLang) Language() string     { return "go" }
 func (g *GoLang) Extensions() []string { return []string{".go"} }
 
 // DetectModules discovers Go packages by walking directories for .go files.
@@ -20,7 +20,7 @@ func (g *GoLang) Extensions() []string { return []string{".go"} }
 func (g *GoLang) DetectModules(projectRoot string) ([]Module, error) {
 	// Find all go.mod files — supports both root-level and nested (e.g., src/mcp/go.mod)
 	var goModRoots []string
-	filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

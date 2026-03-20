@@ -11,7 +11,7 @@ import (
 // PythonLang implements ModuleDetector and ImportParser for Python projects.
 type PythonLang struct{}
 
-func (p *PythonLang) Language() string    { return "python" }
+func (p *PythonLang) Language() string     { return "python" }
 func (p *PythonLang) Extensions() []string { return []string{".py"} }
 
 // DetectModules discovers Python packages by looking for __init__.py or pyproject.toml.

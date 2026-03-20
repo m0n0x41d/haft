@@ -30,11 +30,11 @@ type ModuleCoverage struct {
 
 // CoverageReport is the full coverage report for a project.
 type CoverageReport struct {
-	TotalModules   int
-	CoveredCount   int
-	PartialCount   int
-	BlindCount     int
-	Modules        []ModuleCoverage
+	TotalModules int
+	CoveredCount int
+	PartialCount int
+	BlindCount   int
+	Modules      []ModuleCoverage
 }
 
 // ComputeCoverage calculates decision coverage for all modules.

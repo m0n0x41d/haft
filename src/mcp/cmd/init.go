@@ -282,9 +282,9 @@ func addToGitignore(quintDir, entry string) {
 	defer f.Close()
 
 	if len(content) > 0 && content[len(content)-1] != '\n' {
-		f.WriteString("\n")
+		_, _ = f.WriteString("\n")
 	}
-	f.WriteString(entry + "\n")
+	_, _ = f.WriteString(entry + "\n")
 }
 
 func detectBrownfield(projectRoot string) bool {
@@ -450,11 +450,11 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 }
 
 func configureMCPCodex(projectRoot, binaryPath string) error {
-        configPath := filepath.Join(projectRoot, ".codex", "config.toml")
+	configPath := filepath.Join(projectRoot, ".codex", "config.toml")
 
-        if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-                return err
-        }
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return err
+	}
 
 	existing := ""
 	if data, err := os.ReadFile(configPath); err == nil {

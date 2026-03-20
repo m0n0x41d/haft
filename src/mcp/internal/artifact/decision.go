@@ -9,11 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/m0n0x41d/quint-code/internal/reff"
 	"github.com/m0n0x41d/quint-code/logger"
-	"strings"
-	"time"
 )
 
 // DecideInput is the input for creating a DecisionRecord.

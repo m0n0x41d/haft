@@ -313,10 +313,6 @@ func (c *CCppLang) resolveInclude(includePath, sourceDir, projectRoot string, in
 	return ""
 }
 
-// compileCommandsCache caches parsed compile_commands.json per project root.
-// Not thread-safe -- fine for single-threaded scanner use.
-var compileCommandsCache = make(map[string][]compileCommand)
-
 // extractIncludePaths returns -I paths from compile_commands.json for the given file.
 func (c *CCppLang) extractIncludePaths(filePath, projectRoot string) []string {
 	ccjPath := findCompileCommandsJSON(projectRoot)
@@ -324,16 +320,13 @@ func (c *CCppLang) extractIncludePaths(filePath, projectRoot string) []string {
 		return nil
 	}
 
-	commands, ok := compileCommandsCache[projectRoot]
-	if !ok {
-		data, err := os.ReadFile(ccjPath)
-		if err != nil {
-			return nil
-		}
-		if err := json.Unmarshal(data, &commands); err != nil {
-			return nil
-		}
-		compileCommandsCache[projectRoot] = commands
+	data, err := os.ReadFile(ccjPath)
+	if err != nil {
+		return nil
+	}
+	var commands []compileCommand
+	if err := json.Unmarshal(data, &commands); err != nil {
+		return nil
 	}
 
 	// Find the command for this file — resolve symlinks for reliable matching

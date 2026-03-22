@@ -422,9 +422,6 @@ func TestCCppParseImports(t *testing.T) {
 	]`
 	writeFile(t, root, "compile_commands.json", ccj)
 
-	// Clear the cache so this test gets fresh data
-	compileCommandsCache = make(map[string][]compileCommand)
-
 	parser := &CCppLang{}
 	edges, err := parser.ParseImports(filepath.Join(root, "src/main.c"), root)
 	if err != nil {

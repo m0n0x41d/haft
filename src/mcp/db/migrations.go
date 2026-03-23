@@ -204,6 +204,11 @@ var migrations = []struct {
 		description: "Codebase awareness: module map and dependency graph",
 		sql:         "", // Applied as individual statements below (migration14Statements)
 	},
+	{
+		version:     15,
+		description: "FTS5 enrichment: search_keywords column for semantic search",
+		sql:         "", // Applied as individual statements below (migration15Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -236,6 +241,41 @@ var migration12Statements = []string{
 		content TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`,
+}
+
+var migration15Statements = []string{
+	// Add search_keywords column to artifacts
+	"ALTER TABLE artifacts ADD COLUMN search_keywords TEXT DEFAULT ''",
+
+	// Rebuild FTS5 table and triggers to include search_keywords
+	"DROP TRIGGER IF EXISTS artifacts_fts_insert",
+	"DROP TRIGGER IF EXISTS artifacts_fts_update",
+	"DROP TRIGGER IF EXISTS artifacts_fts_delete",
+	"DROP TABLE IF EXISTS artifacts_fts",
+
+	`CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(
+		id, title, content, kind, search_keywords,
+		tokenize='porter unicode61'
+	)`,
+
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
+		INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
+		VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
+	END`,
+
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_update AFTER UPDATE ON artifacts BEGIN
+		DELETE FROM artifacts_fts WHERE id = old.id;
+		INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
+		VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
+	END`,
+
+	`CREATE TRIGGER IF NOT EXISTS artifacts_fts_delete AFTER DELETE ON artifacts BEGIN
+		DELETE FROM artifacts_fts WHERE id = old.id;
+	END`,
+
+	// Rebuild FTS5 index from existing artifacts
+	`INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
+		SELECT id, title, content, kind, COALESCE(search_keywords, '') FROM artifacts`,
 }
 
 var migration14Statements = []string{
@@ -476,6 +516,15 @@ func RunMigrations(conn *sql.DB) error {
 			for _, stmt := range migration14Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 15 {
+			// FTS5 enrichment: search_keywords
+			for _, stmt := range migration15Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
 					}
 				}

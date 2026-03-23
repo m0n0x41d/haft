@@ -36,6 +36,7 @@ type DecideInput struct {
 	Context         string            `json:"context,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	AffectedFiles   []string          `json:"affected_files,omitempty"`
+	SearchKeywords  string            `json:"search_keywords,omitempty"`
 }
 
 // RejectionReason explains why a variant was not selected.
@@ -282,7 +283,8 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 			UpdatedAt:  now,
 			Links:      links,
 		},
-		Body: body.String(),
+		Body:           body.String(),
+		SearchKeywords: input.SearchKeywords,
 	}
 
 	if err := store.Create(ctx, a); err != nil {

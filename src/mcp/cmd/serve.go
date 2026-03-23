@@ -293,14 +293,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 	if v, ok := args["context"].(string); ok {
 		input.Context = v
 	}
-	// TODO: MCP clients may send arrays as JSON strings — see parseStringArray in handleQuintDecision
-	if files, ok := args["affected_files"].([]interface{}); ok {
-		for _, f := range files {
-			if s, ok := f.(string); ok {
-				input.AffectedFiles = append(input.AffectedFiles, s)
-			}
-		}
-	}
+	input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
 
 	validation := artifact.ValidateNote(ctx, store, input)
 	navStrip := artifact.BuildNavStrip(ctx, store, input.Context)
@@ -347,25 +340,9 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
-		// TODO: MCP clients may send arrays as JSON strings — see parseStringArray in handleQuintDecision
-		for _, key := range []string{"constraints", "optimization_targets", "observation_indicators"} {
-			if items, ok := args[key].([]interface{}); ok {
-				var strs []string
-				for _, item := range items {
-					if s, ok := item.(string); ok {
-						strs = append(strs, s)
-					}
-				}
-				switch key {
-				case "constraints":
-					input.Constraints = strs
-				case "optimization_targets":
-					input.OptimizationTargets = strs
-				case "observation_indicators":
-					input.ObservationIndicators = strs
-				}
-			}
-		}
+		input.Constraints = parseStringArrayFromArgs(args, "constraints")
+		input.OptimizationTargets = parseStringArrayFromArgs(args, "optimization_targets")
+		input.ObservationIndicators = parseStringArrayFromArgs(args, "observation_indicators")
 
 		a, filePath, err := artifact.FrameProblem(ctx, store, quintDir, input)
 		if err != nil {
@@ -447,45 +424,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
-		if variants, ok := args["variants"].([]interface{}); ok {
-			for _, vRaw := range variants {
-				vm, ok := vRaw.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				v := artifact.Variant{}
-				if s, ok := vm["title"].(string); ok {
-					v.Title = s
-				}
-				if s, ok := vm["description"].(string); ok {
-					v.Description = s
-				}
-				if s, ok := vm["weakest_link"].(string); ok {
-					v.WeakestLink = s
-				}
-				if s, ok := vm["rollback_notes"].(string); ok {
-					v.RollbackNotes = s
-				}
-				if b, ok := vm["stepping_stone"].(bool); ok {
-					v.SteppingStone = b
-				}
-				if items, ok := vm["strengths"].([]interface{}); ok {
-					for _, item := range items {
-						if s, ok := item.(string); ok {
-							v.Strengths = append(v.Strengths, s)
-						}
-					}
-				}
-				if items, ok := vm["risks"].([]interface{}); ok {
-					for _, item := range items {
-						if s, ok := item.(string); ok {
-							v.Risks = append(v.Risks, s)
-						}
-					}
-				}
-				input.Variants = append(input.Variants, v)
-			}
-		}
+		input.Variants = parseVariants(args)
 		if input.ProblemRef == "" {
 			prob, _ := artifact.FindActiveProblem(ctx, store, contextName)
 			if prob != nil {
@@ -564,29 +503,6 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
-	// NOTE: MCP clients may send JSON arrays as either parsed []interface{} or as
-	// raw JSON strings (e.g., `"[\"a\",\"b\"]"` instead of `["a","b"]`).
-	// This function handles both formats. Other handlers in this file (handleQuintNote,
-	// handleQuintProblem, etc.) have the same issue with .([]interface{}) casts
-	// and may need similar treatment. See: dec-20260318-001 baseline debugging.
-	parseStringArray := func(key string) []string {
-		var result []string
-		if items, ok := args[key].([]interface{}); ok {
-			for _, item := range items {
-				if s, ok := item.(string); ok {
-					result = append(result, s)
-				}
-			}
-		} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '[' {
-			logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseStringArray: JSON string array fallback")
-			var parsed []string
-			if err := json.Unmarshal([]byte(s), &parsed); err == nil {
-				result = parsed
-			}
-		}
-		return result
-	}
-
 	switch action {
 	case "decide":
 		input := artifact.DecideInput{Context: contextName}
@@ -602,7 +518,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
 		}
-		input.ProblemRefs = parseStringArray("problem_refs")
+		input.ProblemRefs = parseStringArrayFromArgs(args, "problem_refs")
 		if v, ok := args["portfolio_ref"].(string); ok {
 			input.PortfolioRef = v
 		}
@@ -612,13 +528,13 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
-		input.Invariants = parseStringArray("invariants")
-		input.PreConditions = parseStringArray("pre_conditions")
-		input.PostConditions = parseStringArray("post_conditions")
-		input.Admissibility = parseStringArray("admissibility")
-		input.EvidenceReqs = parseStringArray("evidence_requirements")
-		input.RefreshTriggers = parseStringArray("refresh_triggers")
-		input.AffectedFiles = parseStringArray("affected_files")
+		input.Invariants = parseStringArrayFromArgs(args, "invariants")
+		input.PreConditions = parseStringArrayFromArgs(args, "pre_conditions")
+		input.PostConditions = parseStringArrayFromArgs(args, "post_conditions")
+		input.Admissibility = parseStringArrayFromArgs(args, "admissibility")
+		input.EvidenceReqs = parseStringArrayFromArgs(args, "evidence_requirements")
+		input.RefreshTriggers = parseStringArrayFromArgs(args, "refresh_triggers")
+		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
 
 		if rb, ok := args["rollback"].(map[string]interface{}); ok {
 			rollback := &artifact.RollbackSpec{}
@@ -816,7 +732,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 				input.DecisionRef = decisions[0].Meta.ID
 			}
 		}
-		input.AffectedFiles = parseStringArray("affected_files")
+		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
 
 		files, err := artifact.Baseline(ctx, store, filepath.Dir(quintDir), input)
 		if err != nil {
@@ -1028,4 +944,95 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', or 'coverage'", action)
 	}
+}
+
+// parseStringArrayFromArgs handles MCP client serialization differences.
+// Some clients send JSON arrays as parsed []interface{}, others as raw JSON strings.
+func parseStringArrayFromArgs(args map[string]interface{}, key string) []string {
+	if items, ok := args[key].([]interface{}); ok {
+		var result []string
+		for _, item := range items {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '[' {
+		logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseStringArrayFromArgs: JSON string fallback")
+		var parsed []string
+		if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+			return parsed
+		}
+	}
+	return nil
+}
+
+// parseVariants handles MCP client serialization of the variants array.
+// Accepts both parsed []interface{} and raw JSON string formats.
+func parseVariants(args map[string]interface{}) []artifact.Variant {
+	var raw []interface{}
+
+	if items, ok := args["variants"].([]interface{}); ok {
+		raw = items
+	} else if s, ok := args["variants"].(string); ok && len(s) > 0 && s[0] == '[' {
+		logger.Debug().Str("key", "variants").Str("raw_type", "string").Msg("parseVariants: JSON string fallback")
+		// Try direct unmarshal into []Variant first
+		var parsed []artifact.Variant
+		if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+			return parsed
+		}
+		// Fall back to generic unmarshal
+		if err := json.Unmarshal([]byte(s), &raw); err != nil {
+			logger.Warn().Str("key", "variants").Err(err).Msg("parseVariants: failed to parse JSON string")
+			return nil
+		}
+	}
+
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var variants []artifact.Variant
+	for _, vRaw := range raw {
+		vm, ok := vRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		v := artifact.Variant{}
+		if s, ok := vm["title"].(string); ok {
+			v.Title = s
+		}
+		if s, ok := vm["id"].(string); ok {
+			v.ID = s
+		}
+		if s, ok := vm["description"].(string); ok {
+			v.Description = s
+		}
+		if s, ok := vm["weakest_link"].(string); ok {
+			v.WeakestLink = s
+		}
+		if s, ok := vm["rollback_notes"].(string); ok {
+			v.RollbackNotes = s
+		}
+		if b, ok := vm["stepping_stone"].(bool); ok {
+			v.SteppingStone = b
+		}
+		if items, ok := vm["strengths"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					v.Strengths = append(v.Strengths, s)
+				}
+			}
+		}
+		if items, ok := vm["risks"].([]interface{}); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					v.Risks = append(v.Risks, s)
+				}
+			}
+		}
+		variants = append(variants, v)
+	}
+	return variants
 }

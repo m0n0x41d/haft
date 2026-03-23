@@ -37,11 +37,7 @@ release:
   header: |
     ## Quint Code {{ .Tag }}
 
-    **Complete product redesign.** v5 is a new product — not backward-compatible with v4.
-
-    New: FPF E.9 decision records, computed R_eff with evidence decay, problem lifecycle (Backlog → In Progress → Addressed), diversity check, archive recall, parity enforcement, indicator roles, Goldilocks signals, lemniscate feedback loop, universal artifact refresh, and 4243 indexed FPF spec sections.
-
-    6 MCP tools. Works with Claude Code, Cursor, Gemini CLI, Codex CLI.
+    FPF-native engineering decision tool. 6 MCP tools. Works with Claude Code, Cursor, Gemini CLI, Codex CLI.
 
     ### Install
 
@@ -49,4 +45,4 @@ release:
     curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
     ```
 
-    See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/src/mcp/CHANGELOG.md) for full details.
+    See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/CHANGELOG.md) for full details.

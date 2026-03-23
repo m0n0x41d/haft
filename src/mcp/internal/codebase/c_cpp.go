@@ -105,6 +105,31 @@ func (c *CCppLang) detectFromCompileCommands(ccjPath, projectRoot string) ([]Mod
 		dirFiles[dir]++
 	}
 
+	// Also register -I include directories as modules so dependency edges
+	// targeting header-only directories (e.g. include/) are not dropped.
+	includeDirs := make(map[string]bool)
+	for _, cmd := range commands {
+		for _, incDir := range parseIncludeFlags(cmd) {
+			absInc, err := filepath.Abs(incDir)
+			if err != nil {
+				continue
+			}
+			if resolved, err := filepath.EvalSymlinks(absInc); err == nil {
+				absInc = resolved
+			}
+			rel, err := filepath.Rel(canonicalRoot, absInc)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				continue
+			}
+			if rel == "." {
+				rel = ""
+			}
+			if _, exists := dirFiles[rel]; !exists {
+				includeDirs[rel] = true
+			}
+		}
+	}
+
 	var modules []Module
 	for dir, count := range dirFiles {
 		name := filepath.Base(dir)
@@ -119,6 +144,24 @@ func (c *CCppLang) detectFromCompileCommands(ccjPath, projectRoot string) ([]Mod
 			Name:      name,
 			Lang:      "c_cpp",
 			FileCount: count,
+		})
+	}
+
+	// Header-only modules get FileCount=0 — they contain headers but
+	// no translation units listed in compile_commands.json.
+	for dir := range includeDirs {
+		name := filepath.Base(dir)
+		id := moduleID(dir)
+		if dir == "" {
+			name = filepath.Base(projectRoot)
+			id = "mod-root"
+		}
+		modules = append(modules, Module{
+			ID:        id,
+			Path:      dir,
+			Name:      name,
+			Lang:      "c_cpp",
+			FileCount: 0,
 		})
 	}
 
@@ -265,9 +308,17 @@ func (c *CCppLang) ParseImports(filePath string, projectRoot string) ([]ImportEd
 // resolveInclude tries to find which directory an included file belongs to.
 // It checks: relative to source, then each -I path from compile_commands.json.
 func (c *CCppLang) resolveInclude(includePath, sourceDir, projectRoot string, includePaths []string) string {
+	// Canonicalize projectRoot so -I paths (which may be symlink-resolved)
+	// produce valid relative paths on macOS (/tmp → /private/tmp).
+	canonicalRoot := projectRoot
+	if resolved, err := filepath.EvalSymlinks(projectRoot); err == nil {
+		canonicalRoot = resolved
+	}
+	canonicalRoot, _ = filepath.Abs(canonicalRoot)
+
 	// 1. Relative to source file's directory
 	candidate := filepath.Join(sourceDir, includePath)
-	candidateAbs := filepath.Join(projectRoot, candidate)
+	candidateAbs := filepath.Join(canonicalRoot, candidate)
 	if _, err := os.Stat(candidateAbs); err == nil {
 		dir := filepath.Dir(candidate)
 		if dir == "." {
@@ -278,18 +329,21 @@ func (c *CCppLang) resolveInclude(includePath, sourceDir, projectRoot string, in
 
 	// 2. Relative to each include path from compile_commands.json
 	for _, incDir := range includePaths {
-		// Make include path relative to project root
-		relInc := incDir
-		if filepath.IsAbs(incDir) {
-			var err error
-			relInc, err = filepath.Rel(projectRoot, incDir)
-			if err != nil || strings.HasPrefix(relInc, "..") {
-				continue
-			}
+		// Canonicalize -I path too before computing relative
+		absInc, err := filepath.Abs(incDir)
+		if err != nil {
+			continue
+		}
+		if resolved, err := filepath.EvalSymlinks(absInc); err == nil {
+			absInc = resolved
+		}
+		relInc, err := filepath.Rel(canonicalRoot, absInc)
+		if err != nil || strings.HasPrefix(relInc, "..") {
+			continue
 		}
 
 		candidate := filepath.Join(relInc, includePath)
-		candidateAbs := filepath.Join(projectRoot, candidate)
+		candidateAbs := filepath.Join(canonicalRoot, candidate)
 		if _, err := os.Stat(candidateAbs); err == nil {
 			dir := filepath.Dir(candidate)
 			if dir == "." {
@@ -301,7 +355,7 @@ func (c *CCppLang) resolveInclude(includePath, sourceDir, projectRoot string, in
 
 	// 3. Try from project root
 	candidate = includePath
-	candidateAbs = filepath.Join(projectRoot, candidate)
+	candidateAbs = filepath.Join(canonicalRoot, candidate)
 	if _, err := os.Stat(candidateAbs); err == nil {
 		dir := filepath.Dir(candidate)
 		if dir == "." {

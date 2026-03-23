@@ -293,6 +293,185 @@ fn main() {}
 	}
 }
 
+// --- C/C++ Detection Tests ---
+
+func TestCCppDetectModulesWithCompileCommands(t *testing.T) {
+	root := t.TempDir()
+
+	// Create a C project with compile_commands.json
+	writeFile(t, root, "Makefile", "all: myapp\n")
+	writeFile(t, root, "src/main.c", "#include <stdio.h>\nint main() { return 0; }\n")
+	writeFile(t, root, "src/utils.c", "void helper() {}\n")
+	writeFile(t, root, "src/net/socket.c", "void connect() {}\n")
+	writeFile(t, root, "src/net/dns.c", "void resolve() {}\n")
+	writeFile(t, root, "include/utils.h", "void helper();\n")
+
+	ccj := `[
+		{"directory": "` + root + `", "command": "gcc -Iinclude -c src/main.c -o main.o", "file": "src/main.c"},
+		{"directory": "` + root + `", "command": "gcc -Iinclude -c src/utils.c -o utils.o", "file": "src/utils.c"},
+		{"directory": "` + root + `", "command": "gcc -Iinclude -c src/net/socket.c -o net/socket.o", "file": "src/net/socket.c"},
+		{"directory": "` + root + `", "command": "gcc -Iinclude -c src/net/dns.c -o net/dns.o", "file": "src/net/dns.c"}
+	]`
+	writeFile(t, root, "compile_commands.json", ccj)
+
+	detector := &CCppLang{}
+	modules, err := detector.DetectModules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(modules) < 2 {
+		t.Fatalf("expected >=2 modules (src, src/net), got %d: %v", len(modules), moduleNames(modules))
+	}
+
+	// Check src/net module has 2 files
+	for _, m := range modules {
+		if m.Path == "src/net" {
+			if m.FileCount != 2 {
+				t.Errorf("src/net module: expected 2 files, got %d", m.FileCount)
+			}
+			if m.Lang != "c_cpp" {
+				t.Errorf("src/net module: expected lang=c_cpp, got %s", m.Lang)
+			}
+		}
+	}
+}
+
+func TestCCppDetectModulesFallback(t *testing.T) {
+	root := t.TempDir()
+
+	// No compile_commands.json, just a Makefile and source files
+	writeFile(t, root, "Makefile", "all: myapp\n")
+	writeFile(t, root, "main.c", "int main() { return 0; }\n")
+	writeFile(t, root, "lib/math.c", "int add(int a, int b) { return a+b; }\n")
+	writeFile(t, root, "lib/math.h", "int add(int, int);\n")
+
+	detector := &CCppLang{}
+	modules, err := detector.DetectModules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(modules) < 2 {
+		t.Fatalf("expected >=2 modules (root, lib), got %d: %v", len(modules), moduleNames(modules))
+	}
+}
+
+func TestCCppCompileCommandsBadPathsFallback(t *testing.T) {
+	root := t.TempDir()
+
+	// compile_commands.json exists but all file paths point outside the project
+	writeFile(t, root, "Makefile", "all: myapp\n")
+	writeFile(t, root, "src/main.c", "int main() { return 0; }\n")
+	ccj := `[
+		{"directory": "/nonexistent/build", "command": "gcc -c /nonexistent/src/main.c", "file": "/nonexistent/src/main.c"}
+	]`
+	writeFile(t, root, "compile_commands.json", ccj)
+
+	detector := &CCppLang{}
+	modules, err := detector.DetectModules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should fall back to directory scan and find src/main.c
+	if len(modules) == 0 {
+		t.Fatal("expected fallback to directory scan when compile_commands.json paths don't resolve")
+	}
+
+	foundSrc := false
+	for _, m := range modules {
+		if m.Path == "src" {
+			foundSrc = true
+		}
+	}
+	if !foundSrc {
+		t.Errorf("expected src module from fallback, got: %v", moduleNames(modules))
+	}
+}
+
+func TestCCppNotCProject(t *testing.T) {
+	root := t.TempDir()
+	// No Makefile, no CMakeLists.txt, no compile_commands.json
+	detector := &CCppLang{}
+	modules, err := detector.DetectModules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modules != nil {
+		t.Errorf("expected nil for non-C/C++ project, got %v", modules)
+	}
+}
+
+func TestCCppParseImports(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, root, "Makefile", "all: myapp\n")
+	writeFile(t, root, "include/utils.h", "void helper();\n")
+	writeFile(t, root, "include/net/socket.h", "void connect();\n")
+	writeFile(t, root, "src/main.c", `
+#include <stdio.h>
+#include <stdlib.h>
+#include "utils.h"
+#include "net/socket.h"
+`)
+
+	// compile_commands.json with -I flag pointing to include/
+	ccj := `[
+		{"directory": "` + root + `", "command": "gcc -I` + root + `/include -c src/main.c -o main.o", "file": "src/main.c"}
+	]`
+	writeFile(t, root, "compile_commands.json", ccj)
+
+	parser := &CCppLang{}
+	edges, err := parser.ParseImports(filepath.Join(root, "src/main.c"), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should find: include (via utils.h) and include/net (via net/socket.h)
+	// Should skip: stdio.h, stdlib.h (system includes with <>)
+	if len(edges) < 2 {
+		t.Fatalf("expected >=2 local import edges, got %d: %v", len(edges), edges)
+	}
+
+	targets := make(map[string]bool)
+	for _, e := range edges {
+		targets[e.TargetModule] = true
+	}
+	if !targets["mod-include"] {
+		t.Error("missing import edge to mod-include (from utils.h)")
+	}
+	if !targets["mod-include-net"] {
+		t.Error("missing import edge to mod-include-net (from net/socket.h)")
+	}
+}
+
+func TestCCppParseImportsRelative(t *testing.T) {
+	root := t.TempDir()
+
+	// No compile_commands.json -- pure relative include resolution
+	writeFile(t, root, "Makefile", "all: myapp\n")
+	writeFile(t, root, "src/main.c", `
+#include "../lib/math.h"
+#include <string.h>
+`)
+	writeFile(t, root, "lib/math.h", "int add(int, int);\n")
+
+	parser := &CCppLang{}
+	edges, err := parser.ParseImports(filepath.Join(root, "src/main.c"), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should find lib (via ../lib/math.h resolved from src/)
+	if len(edges) != 1 {
+		t.Fatalf("expected 1 local import edge, got %d: %v", len(edges), edges)
+	}
+	if edges[0].TargetModule != "mod-lib" {
+		t.Errorf("expected target mod-lib, got %s", edges[0].TargetModule)
+	}
+}
+
 // --- Scanner Integration Tests ---
 
 func TestScannerFullPipeline(t *testing.T) {

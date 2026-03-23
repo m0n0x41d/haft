@@ -23,8 +23,11 @@ type CompareInput struct {
 
 // ExploreSolutions creates a SolutionPortfolio artifact with variants.
 func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input ExploreInput) (*Artifact, string, error) {
+	if len(input.Variants) == 0 {
+		return nil, "", fmt.Errorf("no variants received — check that 'variants' is a JSON array of objects with 'title' and 'weakest_link' fields")
+	}
 	if len(input.Variants) < 2 {
-		return nil, "", fmt.Errorf("at least 2 variants required — genuinely distinct options, not variations of one idea")
+		return nil, "", fmt.Errorf("at least 2 variants required (got %d) — genuinely distinct options, not variations of one idea", len(input.Variants))
 	}
 
 	for i, v := range input.Variants {

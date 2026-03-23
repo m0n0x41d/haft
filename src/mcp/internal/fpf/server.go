@@ -189,6 +189,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"type":        "string",
 							"description": "Supporting evidence (benchmarks, test results, references)",
 						},
+						"search_keywords": map[string]string{
+							"type":        "string",
+							"description": "Space-separated synonyms and related terms for search enrichment (e.g., 'redis cache caching in-memory key-value nosql')",
+						},
 						"context": map[string]string{
 							"type":        "string",
 							"description": "Optional context name for grouping (e.g., 'auth', 'payments')",

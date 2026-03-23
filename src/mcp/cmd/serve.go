@@ -294,6 +294,9 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 		input.Context = v
 	}
 	input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+	if v, ok := args["search_keywords"].(string); ok {
+		input.SearchKeywords = v
+	}
 
 	validation := artifact.ValidateNote(ctx, store, input)
 	navStrip := artifact.BuildNavStrip(ctx, store, input.Context)
@@ -535,6 +538,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		input.EvidenceReqs = parseStringArrayFromArgs(args, "evidence_requirements")
 		input.RefreshTriggers = parseStringArrayFromArgs(args, "refresh_triggers")
 		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+		if v, ok := args["search_keywords"].(string); ok {
+			input.SearchKeywords = v
+		}
 
 		if rb, ok := args["rollback"].(map[string]interface{}); ok {
 			rollback := &artifact.RollbackSpec{}
@@ -761,6 +767,16 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 	switch artifact.RefreshAction(action) {
 	case artifact.RefreshScan:
 		projectRoot := filepath.Dir(quintDir)
+
+		// Rescan modules before drift detection — keeps dependency graph fresh
+		scanner := codebase.NewScanner(store.DB())
+		if _, err := scanner.ScanModules(ctx, projectRoot); err != nil {
+			logger.Warn().Err(err).Msg("refresh: module rescan failed (non-fatal)")
+		}
+		if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
+			_ = err // non-fatal
+		}
+
 		items, err := artifact.ScanStale(ctx, store, projectRoot)
 		if err != nil {
 			return "", err

@@ -74,9 +74,9 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 	id := GenerateID(KindDecisionRecord, seq)
 	now := time.Now().UTC()
 
-	mode := Mode(input.Mode)
-	if mode == "" {
-		mode = ModeStandard
+	declaredMode := Mode(input.Mode)
+	if declaredMode == "" {
+		declaredMode = ModeStandard
 	}
 
 	// Merge ProblemRef (single, backward compat) + ProblemRefs (array) into one list
@@ -101,6 +101,13 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 	if input.PortfolioRef != "" {
 		links = append(links, Link{Ref: input.PortfolioRef, Type: "based_on"})
 	}
+
+	// Compute mode from artifact chain — what actually happened, not what agent claimed.
+	// Chain evidence: problem exists → not note. Characterization → not tactical.
+	// Portfolio with comparison → standard minimum.
+	// Compute mode from artifact chain — what actually happened, not what agent claimed.
+	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
+	mode := maxMode(declaredMode, chainMode)
 
 	// Inherit context from linked artifacts
 	if input.Context == "" {
@@ -386,9 +393,7 @@ func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftR
 		return nil, fmt.Errorf("list decisions: %w", err)
 	}
 
-	// Also check notes with affected_files
-	notes, _ := store.ListByKind(ctx, KindNote, 500)
-	decisions = append(decisions, notes...)
+	// Notes are observations, not implementations — skip baseline/drift checks for them
 
 	var reports []DriftReport
 
@@ -902,6 +907,74 @@ func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WL
 // scoreEvidence delegates to reff.ScoreEvidence (single source of truth).
 func scoreEvidence(e EvidenceItem, now time.Time) float64 {
 	return reff.ScoreEvidence(e.Verdict, e.CongruenceLevel, e.ValidUntil, now)
+}
+
+// modeRank maps Mode to a numeric rank for comparison.
+func modeRank(m Mode) int {
+	switch m {
+	case ModeNote:
+		return 0
+	case ModeTactical:
+		return 1
+	case ModeStandard:
+		return 2
+	case ModeDeep:
+		return 3
+	default:
+		return 1
+	}
+}
+
+// maxMode returns the higher of two modes (deeper reasoning wins).
+func maxMode(a, b Mode) Mode {
+	if modeRank(a) >= modeRank(b) {
+		return a
+	}
+	return b
+}
+
+// inferModeFromChain determines the minimum mode based on what artifacts
+// actually exist in the reasoning chain. This reflects what happened,
+// not what the agent declared.
+func inferModeFromChain(ctx context.Context, store *Store, problemRefs []string, portfolioRef string) Mode {
+	// No linked problem → note-level (agent just called decide directly)
+	if len(problemRefs) == 0 && portfolioRef == "" {
+		return ModeTactical
+	}
+
+	// Check if any linked problem has characterization
+	hasCharacterization := false
+	for _, ref := range problemRefs {
+		prob, err := store.Get(ctx, ref)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(prob.Body, "## Characterization") {
+			hasCharacterization = true
+			break
+		}
+	}
+
+	// Check if portfolio has comparison
+	hasComparison := false
+	if portfolioRef != "" {
+		portfolio, err := store.Get(ctx, portfolioRef)
+		if err == nil {
+			hasComparison = strings.Contains(portfolio.Body, "## Comparison")
+		}
+	}
+
+	// Derive mode from chain evidence
+	switch {
+	case hasCharacterization && hasComparison:
+		return ModeStandard
+	case hasCharacterization || hasComparison:
+		return ModeStandard
+	case len(problemRefs) > 0:
+		return ModeTactical // has problem but no char/compare = tactical with frame
+	default:
+		return ModeTactical
+	}
 }
 
 // FormatDecisionResponse builds the MCP tool response.

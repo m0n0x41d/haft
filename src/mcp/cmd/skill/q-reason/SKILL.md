@@ -14,6 +14,29 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 
 ---
 
+## Context-aware entry — read what the user actually wants
+
+**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. There are three distinct paths:
+
+### Path 1: Think and respond (no artifacts)
+**Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?"
+
+The user wants structured thinking, not tool calls. Reason through the problem using FPF principles (weakest link, parity, distinguish object/description/carrier, etc.). Give a well-structured answer. **Do not call quint tools** unless the user explicitly asks to persist something.
+
+### Path 2: Prepare for human-driven cycle (research + wait)
+**Trigger:** "/q-reason [topic], prepare for framing", "let's think about X before deciding", "I want to reason through X"
+
+The user wants to drive the cycle themselves. Gather context (read relevant code, search existing decisions, research). Present findings. **Stop and wait** for the user to decide the next step — they will call `/q-frame`, `/q-char`, etc. when ready.
+
+### Path 3: Full autonomous cycle (agent drives)
+**Trigger:** "/q-reason [topic] and implement", "figure out the best approach and do it", "fix everything", explicit delegation to agent
+
+The user wants the agent to run the full cycle: frame → explore → decide → implement. Only in this mode does the agent drive without pausing.
+
+**If unclear which path:** default to Path 2 (prepare and wait). Never default to Path 3. Ask: "Want me to think this through and present options, or drive the full cycle and implement?"
+
+---
+
 ## What you have
 
 ### Quint tools (MCP) — persist reasoning as artifacts

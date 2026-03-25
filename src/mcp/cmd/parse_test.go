@@ -188,3 +188,96 @@ func TestParseVariants_JSONStringPreservesFields(t *testing.T) {
 		t.Error("stepping_stone should be false")
 	}
 }
+
+func TestParseNestedStringMapFromArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      map[string]interface{}
+		key       string
+		wantNil   bool
+		wantOuter []string
+	}{
+		{
+			name: "parsed map",
+			args: map[string]interface{}{
+				"scores": map[string]interface{}{
+					"V1": map[string]interface{}{"latency": "10ms", "cost": "$5"},
+					"V2": map[string]interface{}{"latency": "50ms", "cost": "$1"},
+				},
+			},
+			key:       "scores",
+			wantOuter: []string{"V1", "V2"},
+		},
+		{
+			name: "JSON string map",
+			args: map[string]interface{}{
+				"scores": `{"V1":{"latency":"10ms","cost":"$5"},"V2":{"latency":"50ms","cost":"$1"}}`,
+			},
+			key:       "scores",
+			wantOuter: []string{"V1", "V2"},
+		},
+		{
+			name:    "missing key",
+			args:    map[string]interface{}{},
+			key:     "scores",
+			wantNil: true,
+		},
+		{
+			name: "non-object string",
+			args: map[string]interface{}{
+				"scores": "not a map",
+			},
+			key:     "scores",
+			wantNil: true,
+		},
+		{
+			name: "empty object",
+			args: map[string]interface{}{
+				"scores": map[string]interface{}{},
+			},
+			key:     "scores",
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseNestedStringMapFromArgs(tt.args, tt.key)
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("want nil, got %v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("got nil, want non-nil")
+			}
+			for _, k := range tt.wantOuter {
+				inner, ok := got[k]
+				if !ok {
+					t.Errorf("missing outer key %q", k)
+					continue
+				}
+				if len(inner) == 0 {
+					t.Errorf("outer key %q has empty inner map", k)
+				}
+			}
+		})
+	}
+}
+
+func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
+	args := map[string]interface{}{
+		"scores": `{"V1":{"latency":"10ms","throughput":"100k/s"}}`,
+	}
+	got := parseNestedStringMapFromArgs(args, "scores")
+	if got == nil {
+		t.Fatal("got nil")
+	}
+	if got["V1"]["latency"] != "10ms" {
+		t.Errorf("V1.latency = %q, want 10ms", got["V1"]["latency"])
+	}
+	if got["V1"]["throughput"] != "100k/s" {
+		t.Errorf("V1.throughput = %q, want 100k/s", got["V1"]["throughput"])
+	}
+}

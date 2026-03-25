@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: src/mcp/go.sum
 
       - name: Check go mod tidy
@@ -67,7 +67,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: src/mcp/go.sum
 
       - uses: golangci/golangci-lint-action@v7

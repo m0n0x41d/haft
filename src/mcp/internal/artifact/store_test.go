@@ -25,7 +25,8 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, kind TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
 			status TEXT NOT NULL DEFAULT 'active', context TEXT, mode TEXT,
 			title TEXT NOT NULL, content TEXT NOT NULL, file_path TEXT,
-			valid_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+			valid_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+			search_keywords TEXT DEFAULT '')`,
 		`CREATE TABLE artifact_links (
 			source_id TEXT NOT NULL, target_id TEXT NOT NULL, link_type TEXT NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (source_id, target_id, link_type))`,
@@ -37,13 +38,13 @@ func setupTestDB(t *testing.T) *Store {
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,
-		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, tokenize='porter unicode61')`,
+		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
 		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
-			INSERT INTO artifacts_fts(id, title, content, kind) VALUES (new.id, new.title, new.content, new.kind);
+			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords) VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
 		END`,
 		`CREATE TRIGGER artifacts_fts_update AFTER UPDATE ON artifacts BEGIN
 			DELETE FROM artifacts_fts WHERE id = old.id;
-			INSERT INTO artifacts_fts(id, title, content, kind) VALUES (new.id, new.title, new.content, new.kind);
+			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords) VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
 		END`,
 		`CREATE TRIGGER artifacts_fts_delete AFTER DELETE ON artifacts BEGIN
 			DELETE FROM artifacts_fts WHERE id = old.id;
@@ -163,6 +164,40 @@ func TestSearch(t *testing.T) {
 	}
 	if results[0].Meta.ID != "dec-001" {
 		t.Errorf("expected dec-001 as top result, got %s", results[0].Meta.ID)
+	}
+}
+
+func TestSearch_KeywordsEnrichment(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	// Create an artifact about Redis session cache, with search keywords
+	// that include "caching" and "in-memory" — terms NOT in the title or body
+	store.Create(ctx, &Artifact{
+		Meta:           Meta{ID: "dec-002", Kind: KindDecisionRecord, Title: "Redis for session store"},
+		Body:           "Selected Redis for session persistence with 15min TTL",
+		SearchKeywords: "cache caching in-memory key-value nosql session store redis",
+	})
+
+	// Search for "caching strategy" — no match in title/body, but matches keywords
+	results, err := store.Search(ctx, "caching strategy", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search results via keyword enrichment — 'caching' should match search_keywords")
+	}
+	if results[0].Meta.ID != "dec-002" {
+		t.Errorf("expected dec-002, got %s", results[0].Meta.ID)
+	}
+
+	// Search for "nosql" — only in keywords, not in title or body
+	results2, err := store.Search(ctx, "nosql", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results2) == 0 {
+		t.Fatal("expected search results for 'nosql' via keywords")
 	}
 }
 

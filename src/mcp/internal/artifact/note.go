@@ -9,12 +9,13 @@ import (
 
 // NoteInput is the input for creating a note.
 type NoteInput struct {
-	Title         string   `json:"title"`
-	Rationale     string   `json:"rationale"`
-	AffectedFiles []string `json:"affected_files,omitempty"`
-	Evidence      string   `json:"evidence,omitempty"`
-	Context       string   `json:"context,omitempty"`
-	ValidUntil    string   `json:"valid_until,omitempty"`
+	Title          string   `json:"title"`
+	Rationale      string   `json:"rationale"`
+	AffectedFiles  []string `json:"affected_files,omitempty"`
+	Evidence       string   `json:"evidence,omitempty"`
+	Context        string   `json:"context,omitempty"`
+	ValidUntil     string   `json:"valid_until,omitempty"`
+	SearchKeywords string   `json:"search_keywords,omitempty"`
 }
 
 // NoteValidation holds the result of pre-recording checks.
@@ -280,7 +281,8 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		},
-		Body: body.String(),
+		Body:           body.String(),
+		SearchKeywords: input.SearchKeywords,
 	}
 
 	// DB write

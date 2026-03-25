@@ -113,8 +113,9 @@ type Meta struct {
 
 // Artifact holds metadata + markdown body for any artifact type.
 type Artifact struct {
-	Meta Meta   `yaml:"meta" json:"meta"`
-	Body string `yaml:"-" json:"body"` // markdown content after frontmatter
+	Meta           Meta   `yaml:"meta" json:"meta"`
+	Body           string `yaml:"-" json:"body"`            // markdown content after frontmatter
+	SearchKeywords string `yaml:"-" json:"search_keywords"` // agent-generated synonyms/related terms for FTS5
 }
 
 // GenerateID creates a deterministic artifact ID.

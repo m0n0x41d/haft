@@ -200,12 +200,12 @@ type DriftItem struct {
 
 // DriftReport describes drift for a single decision.
 type DriftReport struct {
-	DecisionID    string      `json:"decision_id"`
-	DecisionTitle string      `json:"decision_title"`
-	HasBaseline   bool        `json:"has_baseline"`
-	Files         []DriftItem `json:"files,omitempty"`
-	// Level C: impact propagation
-	ImpactedModules []ModuleImpact `json:"impacted_modules,omitempty"`
+	DecisionID        string         `json:"decision_id"`
+	DecisionTitle     string         `json:"decision_title"`
+	HasBaseline       bool           `json:"has_baseline"`
+	LikelyImplemented bool           `json:"likely_implemented,omitempty"` // no baseline but files changed in git since decision
+	Files             []DriftItem    `json:"files,omitempty"`
+	ImpactedModules   []ModuleImpact `json:"impacted_modules,omitempty"` // Level C: impact propagation
 }
 
 // ModuleImpact describes a dependent module affected by drift propagation.

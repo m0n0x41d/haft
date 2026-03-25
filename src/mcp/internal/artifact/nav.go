@@ -40,7 +40,7 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 	}
 	if err != nil || len(artifacts) == 0 {
 		state.DerivedStatus = DerivedUnderframed
-		state.NextAction = `quint_problem(action="frame", title="...")`
+		state.NextAction = `/q-frame (frame the problem)`
 		return state
 	}
 
@@ -74,10 +74,14 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		p := portfolios[0]
 		if strings.Contains(p.Body, "## Comparison") || strings.Contains(p.Body, "## Non-Dominated Set") {
 			state.DerivedStatus = DerivedCompared
-			state.NextAction = `quint_decision(action="decide", ...)`
+			state.NextAction = `/q-decide (record decision)`
 		} else {
 			state.DerivedStatus = DerivedExploring
-			state.NextAction = `quint_solution(action="compare", ...)`
+			if p.Meta.Mode == ModeTactical || p.Meta.Mode == ModeNote {
+				state.NextAction = `/q-decide (decide) | /q-compare (compare first → full cycle)`
+			} else {
+				state.NextAction = `/q-compare (compare variants)`
+			}
 		}
 		state.PortfolioInfo = p.Meta.Title
 		if len(portfolios) > 1 {
@@ -91,11 +95,20 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		if len(problems) > 1 {
 			state.ProblemStatus += fmt.Sprintf(", +%d more", len(problems)-1)
 		}
-		state.NextAction = `quint_solution(action="explore", ...) or quint_decision(action="decide", ...) for tactical`
 		state.Mode = problems[0].Meta.Mode
+
+		hasChar := strings.Contains(problems[0].Body, "## Characterization")
+		switch {
+		case state.Mode == ModeTactical || state.Mode == ModeNote:
+			state.NextAction = `/q-explore (generate variants) | /q-decide (decide directly)`
+		case hasChar:
+			state.NextAction = `/q-explore (generate variants)`
+		default:
+			state.NextAction = `/q-char (define dimensions → full cycle) | /q-explore (skip to variants → short cycle)`
+		}
 	default:
 		state.DerivedStatus = DerivedUnderframed
-		state.NextAction = `quint_problem(action="frame", title="...")`
+		state.NextAction = `/q-frame (frame the problem)`
 	}
 
 	// Check for stale decisions
@@ -114,7 +127,7 @@ func ComputeNavState(ctx context.Context, store *Store, contextName string) NavS
 		}
 		if state.DerivedStatus == DerivedDecided {
 			state.DerivedStatus = DerivedRefreshDue
-			state.NextAction = "quint_refresh(...)"
+			state.NextAction = `/q-refresh (manage lifecycle)`
 		}
 	}
 
@@ -155,7 +168,8 @@ func FormatNavStrip(state NavState) string {
 	}
 
 	if state.NextAction != "" {
-		sb.WriteString(fmt.Sprintf("Next: %s\n", state.NextAction))
+		sb.WriteString(fmt.Sprintf("Available: %s\n", state.NextAction))
+		sb.WriteString("↑ Present to user — do not auto-execute.\n")
 	}
 
 	sb.WriteString("───────────────────────────────────\n")

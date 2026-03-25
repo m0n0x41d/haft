@@ -444,6 +444,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide/baseline) Files affected by this decision. For baseline: optional — if provided, replaces the file list before snapshotting.",
 					},
+					"search_keywords": map[string]string{
+						"type":        "string",
+						"description": "(decide) Space-separated synonyms and related terms for search enrichment",
+					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
 					},

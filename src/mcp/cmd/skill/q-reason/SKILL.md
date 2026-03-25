@@ -243,6 +243,15 @@ These require explicit user action — don't auto-trigger:
 - `/q-compare` — parity comparison
 - `/q-decide` — formal decision record
 
+### NavStrip interpretation
+
+The `── Quint ──` strip appended to tool responses shows current state and available actions. Key rules:
+
+- **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
+- **Mode determines flow shape** — tactical skips `/q-char` and `/q-compare`; standard includes them. The Available line reflects the current mode.
+- **Fewer steps ≠ fewer checkpoints.** Tactical mode has fewer FPF steps but the same human consent requirement at each transition.
+- **Path 3 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through Available actions without pausing.
+
 ---
 
 ## RAG search reference

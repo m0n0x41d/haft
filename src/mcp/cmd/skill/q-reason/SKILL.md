@@ -230,6 +230,7 @@ This closes the lemniscate. Without measure, the decision stays in "Pending Impl
 
 - **At session start**: call `quint_query(action="status")` to surface stale decisions and active problems
 - **When /q-status shows Pending Implementation decisions**: check if they were actually implemented. If the decision has a baseline and the code is in place — call `measure` to close the loop.
+- **When scan shows "no baseline"**: do NOT assume "not implemented." "No baseline" means the measurement loop wasn't closed, not that the work wasn't done. Check git history for the affected files before reporting status. The scan output distinguishes "files changed since decision" from "files unchanged" — use this signal.
 - **If status returns zero artifacts on a project with code**: suggest `/q-onboard`
 - **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions — mention them if relevant
 - **When dev says "let's just do X" without rationale**: ask "why X?" before recording

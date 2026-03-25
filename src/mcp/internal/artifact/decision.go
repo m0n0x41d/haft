@@ -423,13 +423,18 @@ func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftR
 		report.HasBaseline = hasAnyHash
 
 		if !hasAnyHash {
-			// No baseline set — report as "needs baseline"
+			// No baseline set — check git to distinguish "forgot to close loop" from "not started"
+			anyChanged := false
 			for _, f := range files {
 				report.Files = append(report.Files, DriftItem{
 					Path:   f.Path,
 					Status: DriftNoBaseline,
 				})
+				if projectRoot != "" && gitFileModifiedSince(projectRoot, f.Path, d.Meta.CreatedAt) {
+					anyChanged = true
+				}
 			}
+			report.LikelyImplemented = anyChanged
 			reports = append(reports, report)
 			continue
 		}
@@ -493,6 +498,19 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// gitFileModifiedSince checks if a file has git commits after the given time.
+// Returns false if git is unavailable or fails.
+func gitFileModifiedSince(projectRoot, filePath string, since time.Time) bool {
+	sinceStr := since.Format("2006-01-02T15:04:05")
+	cmd := exec.Command("git", "log", "--oneline", "--after="+sinceStr, "--", filePath)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
 }
 
 // gitDiffStat returns a short diff stat for a file (e.g., "+8 -2").
@@ -586,10 +604,15 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 			if r.HasBaseline {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files)))
+			if r.LikelyImplemented {
+				sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, **files changed since decision** (likely implemented, needs baseline+measure)\n",
+					r.DecisionTitle, r.DecisionID, len(r.Files)))
+			} else {
+				sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, files unchanged (not yet implemented)\n",
+					r.DecisionTitle, r.DecisionID, len(r.Files)))
+			}
 		}
-		sb.WriteString("\n**Action:** After implementing, run `quint_decision(action=\"baseline\", decision_ref=\"<id>\")` to snapshot file state.\n\n")
+		sb.WriteString("\n**Action:** For likely-implemented decisions, run `quint_decision(action=\"baseline\", decision_ref=\"<id>\")` then `action=\"measure\"` to close the loop.\n\n")
 	}
 
 	sb.WriteString(navStrip)

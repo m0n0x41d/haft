@@ -38,13 +38,14 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO artifacts (id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO artifacts (id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, search_keywords)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.Meta.ID, string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
 		a.Meta.Context, string(a.Meta.Mode), a.Meta.Title, a.Body,
 		a.Meta.ValidUntil,
 		a.Meta.CreatedAt.Format(time.RFC3339),
 		a.Meta.UpdatedAt.Format(time.RFC3339),
+		a.SearchKeywords,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
@@ -66,12 +67,13 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 func (s *Store) Get(ctx context.Context, id string) (*Artifact, error) {
 	var a Artifact
 	var kind, status, mode, validUntil, context_, createdAt, updatedAt string
+	var searchKeywords sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, COALESCE(search_keywords, '')
 		FROM artifacts WHERE id = ?`, id,
 	).Scan(
 		&a.Meta.ID, &kind, &a.Meta.Version, &status, &context_, &mode,
-		&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt,
+		&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt, &searchKeywords,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get artifact %s: %w", id, err)
@@ -83,6 +85,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Artifact, error) {
 	a.Meta.ValidUntil = validUntil
 	a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	a.Meta.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	a.SearchKeywords = searchKeywords.String
 
 	links, err := s.GetLinks(ctx, id)
 	if err == nil {
@@ -98,11 +101,12 @@ func (s *Store) Update(ctx context.Context, a *Artifact) error {
 	a.Meta.Version++
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE artifacts SET kind=?, version=?, status=?, context=?, mode=?, title=?, content=?, valid_until=?, updated_at=?
+		UPDATE artifacts SET kind=?, version=?, status=?, context=?, mode=?, title=?, content=?, valid_until=?, updated_at=?, search_keywords=?
 		WHERE id=?`,
 		string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
 		a.Meta.Context, string(a.Meta.Mode), a.Meta.Title, a.Body,
 		a.Meta.ValidUntil, a.Meta.UpdatedAt.Format(time.RFC3339),
+		a.SearchKeywords,
 		a.Meta.ID,
 	)
 	if err != nil {
@@ -116,15 +120,23 @@ func (s *Store) Update(ctx context.Context, a *Artifact) error {
 }
 
 // ListByKind returns artifacts of a given kind, ordered by creation time descending.
+// If kind is empty, returns all artifacts regardless of kind.
 func (s *Store) ListByKind(ctx context.Context, kind Kind, limit int) ([]*Artifact, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts WHERE kind = ? ORDER BY created_at DESC LIMIT ?`,
-		string(kind), limit,
-	)
+	var rows *sql.Rows
+	var err error
+	if kind == "" {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts ORDER BY created_at DESC LIMIT ?`, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE kind = ? ORDER BY created_at DESC LIMIT ?`,
+			string(kind), limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +182,7 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	}
 
 	terms := strings.Fields(query)
+
 	var ftsTerms []string
 	for _, t := range terms {
 		// Strip all FTS5 special/operator characters that break queries

@@ -320,11 +320,12 @@ func TestCCppDetectModulesWithCompileCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(modules) < 2 {
-		t.Fatalf("expected >=2 modules (src, src/net), got %d: %v", len(modules), moduleNames(modules))
+	if len(modules) < 3 {
+		t.Fatalf("expected >=3 modules (src, src/net, include), got %d: %v", len(modules), moduleNames(modules))
 	}
 
 	// Check src/net module has 2 files
+	foundInclude := false
 	for _, m := range modules {
 		if m.Path == "src/net" {
 			if m.FileCount != 2 {
@@ -334,6 +335,15 @@ func TestCCppDetectModulesWithCompileCommands(t *testing.T) {
 				t.Errorf("src/net module: expected lang=c_cpp, got %s", m.Lang)
 			}
 		}
+		if m.Path == "include" {
+			foundInclude = true
+			if m.FileCount != 0 {
+				t.Errorf("include module: expected 0 files (header-only), got %d", m.FileCount)
+			}
+		}
+	}
+	if !foundInclude {
+		t.Errorf("expected include/ directory to be registered as module from -I flags, got: %v", moduleNames(modules))
 	}
 }
 
@@ -469,6 +479,82 @@ func TestCCppParseImportsRelative(t *testing.T) {
 	}
 	if edges[0].TargetModule != "mod-lib" {
 		t.Errorf("expected target mod-lib, got %s", edges[0].TargetModule)
+	}
+}
+
+func TestCCppResolveIncludeWithSymlinks(t *testing.T) {
+	// Create a real project directory
+	realDir := t.TempDir()
+	writeFile(t, realDir, "Makefile", "all: myapp\n")
+	writeFile(t, realDir, "src/main.c", `#include "utils.h"`+"\n")
+	writeFile(t, realDir, "include/utils.h", "void helper();\n")
+
+	// -I flags use the real path
+	ccj := `[
+		{"directory": "` + realDir + `", "command": "gcc -I` + realDir + `/include -c src/main.c", "file": "src/main.c"}
+	]`
+	writeFile(t, realDir, "compile_commands.json", ccj)
+
+	// Create a symlink to the project — simulates macOS /tmp → /private/tmp
+	symlinkDir := filepath.Join(t.TempDir(), "linked-project")
+	if err := os.Symlink(realDir, symlinkDir); err != nil {
+		t.Skip("symlinks not supported on this OS")
+	}
+
+	// Parse imports using the SYMLINK path (user's working dir)
+	// but -I flags point to the REAL path
+	parser := &CCppLang{}
+	edges, err := parser.ParseImports(filepath.Join(symlinkDir, "src/main.c"), symlinkDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(edges) == 0 {
+		t.Fatal("expected include edge via -I flag through symlink, got 0 edges")
+	}
+	if edges[0].TargetModule != "mod-include" {
+		t.Errorf("expected target mod-include, got %s", edges[0].TargetModule)
+	}
+}
+
+func TestCCppHeaderOnlyModulesFromIncludeFlags(t *testing.T) {
+	root := t.TempDir()
+
+	// src/ has source files, include/ and third_party/lib/ have only headers
+	writeFile(t, root, "src/main.c", "int main() { return 0; }\n")
+	writeFile(t, root, "include/api.h", "void api();\n")
+	writeFile(t, root, "third_party/lib/vendor.h", "void vendor();\n")
+
+	ccj := `[
+		{"directory": "` + root + `", "command": "gcc -I` + root + `/include -I` + root + `/third_party/lib -c src/main.c", "file": "src/main.c"}
+	]`
+	writeFile(t, root, "compile_commands.json", ccj)
+
+	detector := &CCppLang{}
+	modules, err := detector.DetectModules(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	paths := make(map[string]int)
+	for _, m := range modules {
+		paths[m.Path] = m.FileCount
+	}
+
+	// src should be a source module
+	if _, ok := paths["src"]; !ok {
+		t.Errorf("expected src module, got: %v", moduleNames(modules))
+	}
+	// include and third_party/lib should be header-only modules (FileCount=0)
+	if fc, ok := paths["include"]; !ok {
+		t.Errorf("expected include module from -I flags, got: %v", moduleNames(modules))
+	} else if fc != 0 {
+		t.Errorf("include module should have FileCount=0 (header-only), got %d", fc)
+	}
+	if fc, ok := paths["third_party/lib"]; !ok {
+		t.Errorf("expected third_party/lib module from -I flags, got: %v", moduleNames(modules))
+	} else if fc != 0 {
+		t.Errorf("third_party/lib module should have FileCount=0, got %d", fc)
 	}
 }
 

@@ -150,7 +150,7 @@ func GetIgnoreChecker(projectRoot string) *IgnoreChecker {
 func IsExcludedDir(name string) bool {
 	// Minimal hardcoded set — only things that should NEVER be scanned
 	switch name {
-	case ".git", ".quint":
+	case ".git", ".quint", ".claude", ".context":
 		return true
 	}
 	return false

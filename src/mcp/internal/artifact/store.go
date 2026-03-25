@@ -120,15 +120,23 @@ func (s *Store) Update(ctx context.Context, a *Artifact) error {
 }
 
 // ListByKind returns artifacts of a given kind, ordered by creation time descending.
+// If kind is empty, returns all artifacts regardless of kind.
 func (s *Store) ListByKind(ctx context.Context, kind Kind, limit int) ([]*Artifact, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts WHERE kind = ? ORDER BY created_at DESC LIMIT ?`,
-		string(kind), limit,
-	)
+	var rows *sql.Rows
+	var err error
+	if kind == "" {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts ORDER BY created_at DESC LIMIT ?`, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE kind = ? ORDER BY created_at DESC LIMIT ?`,
+			string(kind), limit)
+	}
 	if err != nil {
 		return nil, err
 	}

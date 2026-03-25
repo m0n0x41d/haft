@@ -92,13 +92,9 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("board: %w", err)
 	}
 
-	// Return error to signal critical issues (cobra handles exit code)
-	if m, ok := finalModel.(ui.Model); ok {
-		if m.CriticalCount() > 0 {
-			return fmt.Errorf("%d critical issue(s) require attention", m.CriticalCount())
-		}
-	}
-
+	// Interactive mode always exits 0 — user saw the dashboard.
+	// Use --check for non-zero exit on critical issues.
+	_ = finalModel
 	return nil
 }
 

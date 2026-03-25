@@ -447,33 +447,11 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["portfolio_ref"].(string); ok {
 			input.PortfolioRef = v
 		}
-		if dims, ok := args["dimensions"].([]interface{}); ok {
-			for _, d := range dims {
-				if s, ok := d.(string); ok {
-					input.Results.Dimensions = append(input.Results.Dimensions, s)
-				}
-			}
+		input.Results.Dimensions = parseStringArrayFromArgs(args, "dimensions")
+		if scores := parseNestedStringMapFromArgs(args, "scores"); scores != nil {
+			input.Results.Scores = scores
 		}
-		if scores, ok := args["scores"].(map[string]interface{}); ok {
-			input.Results.Scores = make(map[string]map[string]string)
-			for variantID, dimScores := range scores {
-				if ds, ok := dimScores.(map[string]interface{}); ok {
-					input.Results.Scores[variantID] = make(map[string]string)
-					for dim, val := range ds {
-						if s, ok := val.(string); ok {
-							input.Results.Scores[variantID][dim] = s
-						}
-					}
-				}
-			}
-		}
-		if nds, ok := args["non_dominated_set"].([]interface{}); ok {
-			for _, n := range nds {
-				if s, ok := n.(string); ok {
-					input.Results.NonDominatedSet = append(input.Results.NonDominatedSet, s)
-				}
-			}
-		}
+		input.Results.NonDominatedSet = parseStringArrayFromArgs(args, "non_dominated_set")
 		if v, ok := args["policy_applied"].(string); ok {
 			input.Results.PolicyApplied = v
 		}
@@ -627,27 +605,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if v, ok := args["verdict"].(string); ok {
 			input.Verdict = v
 		}
-		if items, ok := args["criteria_met"].([]interface{}); ok {
-			for _, item := range items {
-				if s, ok := item.(string); ok {
-					input.CriteriaMet = append(input.CriteriaMet, s)
-				}
-			}
-		}
-		if items, ok := args["criteria_not_met"].([]interface{}); ok {
-			for _, item := range items {
-				if s, ok := item.(string); ok {
-					input.CriteriaNotMet = append(input.CriteriaNotMet, s)
-				}
-			}
-		}
-		if items, ok := args["measurements"].([]interface{}); ok {
-			for _, item := range items {
-				if s, ok := item.(string); ok {
-					input.Measurements = append(input.Measurements, s)
-				}
-			}
-		}
+		input.CriteriaMet = parseStringArrayFromArgs(args, "criteria_met")
+		input.CriteriaNotMet = parseStringArrayFromArgs(args, "criteria_not_met")
+		input.Measurements = parseStringArrayFromArgs(args, "measurements")
 		// Auto-detect decision
 		if input.DecisionRef == "" {
 			decisions, _ := store.ListByKind(ctx, artifact.KindDecisionRecord, 1)
@@ -982,6 +942,35 @@ func parseStringArrayFromArgs(args map[string]interface{}, key string) []string 
 		}
 	}
 	return nil
+}
+
+// parseNestedStringMapFromArgs handles MCP client serialization of map[string]map[string]string.
+// Some clients send JSON objects as parsed map[string]interface{}, others as raw JSON strings.
+func parseNestedStringMapFromArgs(args map[string]interface{}, key string) map[string]map[string]string {
+	var raw map[string]interface{}
+	if m, ok := args[key].(map[string]interface{}); ok {
+		raw = m
+	} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '{' {
+		logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseNestedStringMapFromArgs: JSON string fallback")
+		if err := json.Unmarshal([]byte(s), &raw); err != nil {
+			return nil
+		}
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	result := make(map[string]map[string]string, len(raw))
+	for outerKey, innerVal := range raw {
+		if inner, ok := innerVal.(map[string]interface{}); ok {
+			result[outerKey] = make(map[string]string, len(inner))
+			for k, v := range inner {
+				if s, ok := v.(string); ok {
+					result[outerKey][k] = s
+				}
+			}
+		}
+	}
+	return result
 }
 
 // parseVariants handles MCP client serialization of the variants array.

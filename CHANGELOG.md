@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Status column in Decisions tab** — board now shows Shipped/Pending status per decision.
+
+### Fixed
+
+- **Drift scan requires diff review before action** — `FormatDriftResponse` adds a guard: "REQUIRED: read `git diff` on modified files before taking action." Classification rubric (cosmetic/material/incidental) presented to agent. Prevents agents from summarizing drift as "expected" without reading diffs.
+- **Drift output uses raw signals instead of interpretive labels** — "likely implemented" / "not yet implemented" labels replaced with "git activity detected after decision date" / "no git activity detected after decision date". Tool outputs observable facts; agent performs all interpretation.
+
+### Changed
+
+- **Board no longer reloads data on tab switch** — 3-second periodic refresh provides sufficient data freshness. Removes per-switch overhead.
+
 ## [5.3.1] — 2026-03-25
 
 ### Fixed

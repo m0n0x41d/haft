@@ -562,6 +562,8 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 
 	if driftCount > 0 {
 		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s))\n\n", driftCount))
+		sb.WriteString("⚠ REQUIRED: For each decision below, read `git diff` on modified files before taking action.\n")
+		sb.WriteString("Do not summarize drift as \"expected\" without reading the diffs — that is treating description as evidence.\n\n")
 		for _, r := range reports {
 			if !r.HasBaseline {
 				continue
@@ -593,9 +595,7 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 			sb.WriteString("\n")
 		}
 
-		sb.WriteString("**Action:** Read the actual diffs to determine if changes are material. ")
-		sb.WriteString("If cosmetic (comments, formatting), no action needed. ")
-		sb.WriteString("If substantive, consider reviewing or reopening the decision.\n\n")
+		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
 	}
 
 	if noBaselineCount > 0 {

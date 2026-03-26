@@ -256,13 +256,12 @@ func SelectProblems(ctx context.Context, store *Store, contextFilter string, lim
 		return problems, nil
 	}
 
-	return store.ListByKind(ctx, KindProblemCard, limit)
+	return store.ListActiveByKind(ctx, KindProblemCard, limit)
 }
 
 // FindActiveProblem returns the most recent active ProblemCard for a context (or globally).
 func FindActiveProblem(ctx context.Context, store *Store, contextName string) (*Artifact, error) {
 	var problems []*Artifact
-	var err error
 
 	if contextName != "" {
 		all, e := store.ListByContext(ctx, contextName)
@@ -275,10 +274,11 @@ func FindActiveProblem(ctx context.Context, store *Store, contextName string) (*
 			}
 		}
 	} else {
-		problems, err = store.ListByKind(ctx, KindProblemCard, 1)
-		if err != nil {
-			return nil, err
+		active, e := store.ListActiveByKind(ctx, KindProblemCard, 1)
+		if e != nil {
+			return nil, e
 		}
+		problems = active
 	}
 
 	if len(problems) == 0 {

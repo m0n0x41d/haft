@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Status column in Decisions tab** — board now shows Shipped/Pending status per decision.
+
+### Fixed
+
+- **Drift scan requires diff review before action** — `FormatDriftResponse` adds a guard: "REQUIRED: read `git diff` on modified files before taking action." Classification rubric (cosmetic/material/incidental) presented to agent. Prevents agents from summarizing drift as "expected" without reading diffs.
+- **Drift output uses raw signals instead of interpretive labels** — "likely implemented" / "not yet implemented" labels replaced with "git activity detected after decision date" / "no git activity detected after decision date". Tool outputs observable facts; agent performs all interpretation.
+- **`quint_problem(action="select")` returns deprecated problems** — `SelectProblems` and `FindActiveProblem` applied status filter in Go after a SQL `LIMIT`, so deprecated rows could push active ones out of the result window. Added `ListActiveByKind` with SQL-level `status = 'active'` filter. ([#38](https://github.com/m0n0x41d/quint-code/issues/38))
+
+### Changed
+
+- **Board no longer reloads data on tab switch** — 3-second periodic refresh provides sufficient data freshness. Removes per-switch overhead.
+
 ## [5.3.1] — 2026-03-25
 
 ### Fixed
@@ -13,10 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **NavStrip no longer triggers agent auto-execution** — "Next:" label replaced with "Available:" + explicit guard line ("do not auto-execute"). Slash commands (`/q-explore`, `/q-decide`) replace tool call syntax (`quint_solution(action="explore", ...)`), so agents read them as user actions, not callable functions.
 - **NavStrip is mode-aware** — available actions now reflect the current depth mode. Tactical shows `/q-explore | /q-decide` (short cycle). Standard without characterization shows `/q-char | /q-explore` — making `/q-char` visible as the gateway to the full cycle. Standard with characterization shows only `/q-explore`. EXPLORING in tactical shows `/q-decide | /q-compare (upgrade)` instead of always suggesting compare.
 - **`quint_solution(action="compare")` rejected valid dimensions** — compare handler used raw type assertions instead of `parseStringArrayFromArgs` helper. When MCP clients serialized `dimensions` or `non_dominated_set` as JSON strings (common without schema loaded), the assertion silently failed, producing a misleading "at least one comparison dimension is required" error. Same fix applied to `scores` (new `parseNestedStringMapFromArgs` helper) and measure handler arrays (`criteria_met`, `criteria_not_met`, `measurements`).
+- **"No baseline" scan confused with "not implemented"** — `CheckDrift` now checks git history for affected files when no baseline exists. Distinguishes "files changed since decision (likely implemented, needs baseline+measure)" from "files unchanged (not yet implemented)". Prevents agents from misreporting implemented decisions as not started.
 
 ### Added
 
 - **NavStrip interpretation in q-reason skill** — new section documenting that "Available:" is a menu for the user, not instructions for the agent. Clarifies that tactical mode has fewer steps but the same human consent gates, and only Path 3 (explicit delegation) overrides the guard.
+- **Proactive check for "no baseline" in q-reason skill** — instructs agents to not assume "no baseline" means "not implemented" and to check git history before reporting status.
 
 ## [5.3.0] — 2026-03-24
 

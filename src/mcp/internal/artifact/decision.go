@@ -423,13 +423,18 @@ func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftR
 		report.HasBaseline = hasAnyHash
 
 		if !hasAnyHash {
-			// No baseline set — report as "needs baseline"
+			// No baseline set — check git to distinguish "forgot to close loop" from "not started"
+			anyChanged := false
 			for _, f := range files {
 				report.Files = append(report.Files, DriftItem{
 					Path:   f.Path,
 					Status: DriftNoBaseline,
 				})
+				if projectRoot != "" && gitFileModifiedSince(projectRoot, f.Path, d.Meta.CreatedAt) {
+					anyChanged = true
+				}
 			}
+			report.LikelyImplemented = anyChanged
 			reports = append(reports, report)
 			continue
 		}
@@ -495,6 +500,19 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// gitFileModifiedSince checks if a file has git commits after the given time.
+// Returns false if git is unavailable or fails.
+func gitFileModifiedSince(projectRoot, filePath string, since time.Time) bool {
+	sinceStr := since.Format("2006-01-02T15:04:05")
+	cmd := exec.Command("git", "log", "--oneline", "--after="+sinceStr, "--", filePath)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+
 // gitDiffStat returns a short diff stat for a file (e.g., "+8 -2").
 // Returns empty string if git is not available or fails.
 func gitDiffStat(projectRoot, filePath string) string {
@@ -544,6 +562,8 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 
 	if driftCount > 0 {
 		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s))\n\n", driftCount))
+		sb.WriteString("⚠ REQUIRED: For each decision below, read `git diff` on modified files before taking action.\n")
+		sb.WriteString("Do not summarize drift as \"expected\" without reading the diffs — that is treating description as evidence.\n\n")
 		for _, r := range reports {
 			if !r.HasBaseline {
 				continue
@@ -575,9 +595,7 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 			sb.WriteString("\n")
 		}
 
-		sb.WriteString("**Action:** Read the actual diffs to determine if changes are material. ")
-		sb.WriteString("If cosmetic (comments, formatting), no action needed. ")
-		sb.WriteString("If substantive, consider reviewing or reopening the decision.\n\n")
+		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
 	}
 
 	if noBaselineCount > 0 {
@@ -586,10 +604,14 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 			if r.HasBaseline {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files)))
+			gitHint := "no git activity detected after decision date"
+			if r.LikelyImplemented {
+				gitHint = "git activity detected after decision date"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
+				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
 		}
-		sb.WriteString("\n**Action:** After implementing, run `quint_decision(action=\"baseline\", decision_ref=\"<id>\")` to snapshot file state.\n\n")
+		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
 	}
 
 	sb.WriteString(navStrip)

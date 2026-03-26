@@ -614,6 +614,36 @@ func main() { auth.Check() }
 	}
 }
 
+func TestCoverageComputation_RootModule(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	now := "2026-03-18T12:00:00Z"
+	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-root', '', 'myapp', 'go', 5, ?)`, now)
+
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Root decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'main.go', '')`)
+	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'handlers.go', '')`)
+
+	report, err := ComputeCoverage(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.TotalModules != 1 {
+		t.Fatalf("expected 1 module, got %d", report.TotalModules)
+	}
+	if report.CoveredCount != 1 {
+		t.Errorf("expected root module to be covered, got covered=%d blind=%d", report.CoveredCount, report.BlindCount)
+	}
+	if report.Modules[0].Status != CoverageCovered {
+		t.Errorf("root module status = %s, want covered", report.Modules[0].Status)
+	}
+	if report.Modules[0].DecisionCount != 1 {
+		t.Errorf("root module decisions = %d, want 1", report.Modules[0].DecisionCount)
+	}
+}
+
 func TestCoverageComputation(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()

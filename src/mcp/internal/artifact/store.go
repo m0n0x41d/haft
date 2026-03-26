@@ -144,6 +144,23 @@ func (s *Store) ListByKind(ctx context.Context, kind Kind, limit int) ([]*Artifa
 	return scanArtifacts(rows)
 }
 
+// ListActiveByKind returns non-deprecated, non-superseded artifacts of the given kind.
+func (s *Store) ListActiveByKind(ctx context.Context, kind Kind, limit int) ([]*Artifact, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+		FROM artifacts WHERE kind = ? AND status = 'active'
+		ORDER BY created_at DESC LIMIT ?`,
+		string(kind), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanArtifacts(rows)
+}
+
 // ListByContext returns artifacts for a given context, ordered by creation time.
 func (s *Store) ListByContext(ctx context.Context, contextName string) ([]*Artifact, error) {
 	rows, err := s.db.QueryContext(ctx, `

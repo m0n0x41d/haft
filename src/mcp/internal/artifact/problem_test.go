@@ -294,6 +294,84 @@ func TestFindActiveProblem(t *testing.T) {
 	}
 }
 
+func TestSelectProblems_ExcludesDeprecated(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	a, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Active Problem", Signal: "signal",
+	})
+	b, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Deprecated Problem", Signal: "signal",
+	})
+
+	DeprecateArtifact(ctx, store, quintDir, b.Meta.ID, "no longer relevant")
+
+	// Without context filter
+	problems, err := SelectProblems(ctx, store, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("expected 1 active problem, got %d", len(problems))
+	}
+	if problems[0].Meta.ID != a.Meta.ID {
+		t.Errorf("expected %s, got %s", a.Meta.ID, problems[0].Meta.ID)
+	}
+
+	// With context filter — same context, same expectation
+	c, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Active in ctx", Signal: "signal", Context: "payments",
+	})
+	d, _, _ := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Deprecated in ctx", Signal: "signal", Context: "payments",
+	})
+	DeprecateArtifact(ctx, store, quintDir, d.Meta.ID, "done")
+
+	ctxProblems, err := SelectProblems(ctx, store, "payments", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ctxProblems) != 1 {
+		t.Fatalf("expected 1 active problem in context, got %d", len(ctxProblems))
+	}
+	if ctxProblems[0].Meta.ID != c.Meta.ID {
+		t.Errorf("expected %s, got %s", c.Meta.ID, ctxProblems[0].Meta.ID)
+	}
+}
+
+func TestFindActiveProblem_ExcludesDeprecated(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	quintDir := t.TempDir()
+
+	FrameProblem(ctx, store, quintDir, ProblemFrameInput{
+		Title: "Only Problem", Signal: "signal",
+	})
+
+	// Verify it's found
+	p, err := FindActiveProblem(ctx, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("expected to find active problem")
+	}
+
+	// Deprecate it
+	DeprecateArtifact(ctx, store, quintDir, p.Meta.ID, "done")
+
+	// Should no longer be found
+	p, err = FindActiveProblem(ctx, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != nil {
+		t.Errorf("expected nil after deprecation, got %s", p.Meta.ID)
+	}
+}
+
 func TestFormatProblemResponse_ShowsRecall(t *testing.T) {
 	a := &Artifact{
 		Meta: Meta{

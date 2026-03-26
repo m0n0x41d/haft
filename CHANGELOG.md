@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Drift scan requires diff review before action** — `FormatDriftResponse` adds a guard: "REQUIRED: read `git diff` on modified files before taking action." Classification rubric (cosmetic/material/incidental) presented to agent. Prevents agents from summarizing drift as "expected" without reading diffs.
 - **Drift output uses raw signals instead of interpretive labels** — "likely implemented" / "not yet implemented" labels replaced with "git activity detected after decision date" / "no git activity detected after decision date". Tool outputs observable facts; agent performs all interpretation.
+- **`quint_problem(action="select")` returns deprecated problems** — `SelectProblems` and `FindActiveProblem` applied status filter in Go after a SQL `LIMIT`, so deprecated rows could push active ones out of the result window. Added `ListActiveByKind` with SQL-level `status = 'active'` filter. ([#38](https://github.com/m0n0x41d/quint-code/issues/38))
 
 ### Changed
 

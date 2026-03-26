@@ -19,11 +19,12 @@ type BoardData struct {
 	ProjectRoot string
 
 	// Decisions
-	Decisions     []*artifact.Artifact
-	ShippedCount  int
-	PendingCount  int
-	DecisionREff  map[string]float64 // decision ID → R_eff
-	DecisionDrift map[string]string  // decision ID → "clean"/"drift"/"no baseline"
+	Decisions       []*artifact.Artifact
+	ShippedCount    int
+	PendingCount    int
+	DecisionREff    map[string]float64 // decision ID → R_eff
+	DecisionDrift   map[string]string  // decision ID → "clean"/"drift"/"no baseline"
+	DecisionShipped map[string]bool    // decision ID → true if has measurement
 
 	// Problems
 	BacklogProblems    []*artifact.Artifact
@@ -80,11 +81,12 @@ type ExpiringItem struct {
 func LoadBoardData(store *artifact.Store, db *sql.DB, projectName, projectRoot string) (*BoardData, error) {
 	ctx := context.Background()
 	data := &BoardData{
-		ProjectName:   projectName,
-		ProjectRoot:   projectRoot,
-		DecisionREff:  make(map[string]float64),
-		DecisionDrift: make(map[string]string),
-		ContextGroups: make(map[string]int),
+		ProjectName:     projectName,
+		ProjectRoot:     projectRoot,
+		DecisionREff:    make(map[string]float64),
+		DecisionDrift:   make(map[string]string),
+		DecisionShipped: make(map[string]bool),
+		ContextGroups:   make(map[string]int),
 	}
 
 	// Decisions
@@ -95,7 +97,9 @@ func LoadBoardData(store *artifact.Store, db *sql.DB, projectName, projectRoot s
 	data.Decisions = filterActive(decisions)
 
 	for _, d := range data.Decisions {
-		if hasMeasurement(ctx, store, d.Meta.ID) {
+		shipped := hasMeasurement(ctx, store, d.Meta.ID)
+		data.DecisionShipped[d.Meta.ID] = shipped
+		if shipped {
 			data.ShippedCount++
 		} else {
 			data.PendingCount++

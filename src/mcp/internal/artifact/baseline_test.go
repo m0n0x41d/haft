@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -308,6 +309,58 @@ func TestScanStaleIncludesDrift(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected drifted decision in ScanStale results")
+	}
+}
+
+func TestFormatDriftResponse_LikelyImplemented(t *testing.T) {
+	reports := []DriftReport{
+		{
+			DecisionID:        "dec-001",
+			DecisionTitle:     "Implemented decision",
+			HasBaseline:       false,
+			LikelyImplemented: true,
+			Files:             []DriftItem{{Path: "app.go", Status: DriftNoBaseline}},
+		},
+		{
+			DecisionID:    "dec-002",
+			DecisionTitle: "Not started decision",
+			HasBaseline:   false,
+			Files:         []DriftItem{{Path: "other.go", Status: DriftNoBaseline}},
+		},
+	}
+
+	output := FormatDriftResponse(reports, "")
+
+	if !strings.Contains(output, "git activity detected after decision date") {
+		t.Errorf("should report git activity for decision with commits:\n%s", output)
+	}
+	if !strings.Contains(output, "no git activity detected after decision date") {
+		t.Errorf("should report no git activity for decision without commits:\n%s", output)
+	}
+	if !strings.Contains(output, "Verify implementation status") {
+		t.Errorf("should instruct agent to verify before baselining:\n%s", output)
+	}
+}
+
+func TestCheckDriftReportsNoBaseline_LikelyImplementedFalseWithoutGit(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir() // not a git repo
+
+	dec := createTestDecision(t, store, "dec-test-li", "No git")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "some.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].LikelyImplemented {
+		t.Error("expected LikelyImplemented=false when git is not available")
 	}
 }
 

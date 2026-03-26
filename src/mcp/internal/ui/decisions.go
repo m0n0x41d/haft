@@ -105,11 +105,12 @@ func (v *DecisionsView) Render(width, height int, s Styles) string {
 
 	// Fixed column widths
 	const (
-		colStatus = 3
-		colREff   = 6
-		colDrift  = 8
+		colIcon      = 3
+		colStatusTxt = 9
+		colREff      = 6
+		colDrift     = 8
 	)
-	colTitle := width - colStatus - colREff - colDrift - 8
+	colTitle := width - colIcon - colStatusTxt - colREff - colDrift - 10
 	if colTitle < 20 {
 		colTitle = 20
 	}
@@ -119,8 +120,9 @@ func (v *DecisionsView) Render(width, height int, s Styles) string {
 
 	// Header
 	hdr := lipgloss.NewStyle().Foreground(s.Theme.Dim).Bold(true)
-	b.WriteString(fmt.Sprintf("  %s%s%s%s\n",
-		padRight("", colStatus+1),
+	b.WriteString(fmt.Sprintf("  %s%s%s%s%s\n",
+		padRight("", colIcon+1),
+		padRight(hdr.Render("Status"), colStatusTxt+1),
 		padRight(hdr.Render("R_eff"), colREff+1),
 		padRight(hdr.Render("Drift"), colDrift+1),
 		hdr.Render("Title")))
@@ -137,10 +139,13 @@ func (v *DecisionsView) Render(width, height int, s Styles) string {
 
 		// Build each column as a styled string, then pad to fixed width
 		reff := v.data.DecisionREff[d.Meta.ID]
+		shipped := v.data.DecisionShipped[d.Meta.ID]
 
-		statusStr := s.Warning.Render("⏳")
-		if reff > 0 {
-			statusStr = s.OK.Render("✓")
+		iconStr := s.Warning.Render("⏳")
+		statusTxtStr := s.Warning.Render("pending")
+		if shipped {
+			iconStr = s.OK.Render("✓")
+			statusTxtStr = s.OK.Render("shipped")
 		}
 
 		reffStr := s.DimText.Render("—")
@@ -161,8 +166,9 @@ func (v *DecisionsView) Render(width, height int, s Styles) string {
 
 		title := truncate(d.Meta.Title, colTitle)
 
-		line := fmt.Sprintf("  %s %s %s %s",
-			padRight(statusStr, colStatus),
+		line := fmt.Sprintf("  %s %s %s %s %s",
+			padRight(iconStr, colIcon),
+			padRight(statusTxtStr, colStatusTxt),
 			padRight(reffStr, colREff),
 			padRight(driftStr, colDrift),
 			title)

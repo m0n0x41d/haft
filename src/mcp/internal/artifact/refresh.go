@@ -145,7 +145,7 @@ func ScanStale(ctx context.Context, store *Store, projectRoot ...string) ([]Stal
 				if !r.HasBaseline {
 					reason := fmt.Sprintf("no baseline — %d file(s) unmonitored", len(r.Files))
 					if r.LikelyImplemented {
-						reason += " — files changed since decision (likely implemented, run baseline+measure)"
+						reason += " — git activity detected after decision date"
 					}
 					items = append(items, StaleItem{
 						ID:     r.DecisionID,

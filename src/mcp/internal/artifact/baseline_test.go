@@ -331,17 +331,14 @@ func TestFormatDriftResponse_LikelyImplemented(t *testing.T) {
 
 	output := FormatDriftResponse(reports, "")
 
-	if !strings.Contains(output, "files changed since decision") {
-		t.Errorf("should flag likely-implemented decision:\n%s", output)
+	if !strings.Contains(output, "git activity detected after decision date") {
+		t.Errorf("should report git activity for decision with commits:\n%s", output)
 	}
-	if !strings.Contains(output, "likely implemented") {
-		t.Errorf("should say 'likely implemented':\n%s", output)
+	if !strings.Contains(output, "no git activity detected after decision date") {
+		t.Errorf("should report no git activity for decision without commits:\n%s", output)
 	}
-	if !strings.Contains(output, "files unchanged") {
-		t.Errorf("should say 'files unchanged' for not-started:\n%s", output)
-	}
-	if !strings.Contains(output, "not yet implemented") {
-		t.Errorf("should say 'not yet implemented':\n%s", output)
+	if !strings.Contains(output, "Verify implementation status") {
+		t.Errorf("should instruct agent to verify before baselining:\n%s", output)
 	}
 }
 

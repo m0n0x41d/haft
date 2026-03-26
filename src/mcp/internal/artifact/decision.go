@@ -604,15 +604,14 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 			if r.HasBaseline {
 				continue
 			}
+			gitHint := "no git activity detected after decision date"
 			if r.LikelyImplemented {
-				sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, **files changed since decision** (likely implemented, needs baseline+measure)\n",
-					r.DecisionTitle, r.DecisionID, len(r.Files)))
-			} else {
-				sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, files unchanged (not yet implemented)\n",
-					r.DecisionTitle, r.DecisionID, len(r.Files)))
+				gitHint = "git activity detected after decision date"
 			}
+			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
+				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
 		}
-		sb.WriteString("\n**Action:** For likely-implemented decisions, run `quint_decision(action=\"baseline\", decision_ref=\"<id>\")` then `action=\"measure\"` to close the loop.\n\n")
+		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
 	}
 
 	sb.WriteString(navStrip)

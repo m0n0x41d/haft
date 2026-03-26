@@ -112,27 +112,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "tab":
 			m.active = (m.active + 1) % Tab(len(tabNames))
-			m.reload()
 			return m, nil
 		case "shift+tab":
 			m.active = (m.active - 1 + Tab(len(tabNames))) % Tab(len(tabNames))
-			m.reload()
 			return m, nil
 		case "1":
 			m.active = TabOverview
-			m.reload()
 			return m, nil
 		case "2":
 			m.active = TabProblems
-			m.reload()
 			return m, nil
 		case "3":
 			m.active = TabDecisions
-			m.reload()
 			return m, nil
 		case "4":
 			m.active = TabModules
-			m.reload()
 			return m, nil
 		}
 

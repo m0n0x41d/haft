@@ -83,9 +83,21 @@ func (s *Store) Get(ctx context.Context, id string) (*Artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get artifact %s: %w", id, err)
 	}
-	a.Meta.Kind = Kind(kind)       // trusted: from DB, validated on write
-	a.Meta.Status = Status(status) // trusted: from DB
-	a.Meta.Mode = Mode(mode)       // trusted: from DB
+	if k, err := ParseKind(kind); err == nil {
+		a.Meta.Kind = k
+	} else {
+		a.Meta.Kind = Kind(kind) // preserve unknown kinds from older schema
+	}
+	if st, err := ParseStatus(status); err == nil {
+		a.Meta.Status = st
+	} else {
+		a.Meta.Status = Status(status)
+	}
+	if m, err := ParseMode(mode); err == nil {
+		a.Meta.Mode = m
+	} else {
+		a.Meta.Mode = Mode(mode)
+	}
 	a.Meta.Context = context_
 	a.Meta.ValidUntil = validUntil
 	a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
@@ -508,9 +520,9 @@ func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
 		); err != nil {
 			return nil, err
 		}
-		a.Meta.Kind = Kind(kind)
-		a.Meta.Status = Status(status)
-		a.Meta.Mode = Mode(mode)
+		a.Meta.Kind, _ = ParseKind(kind)
+		a.Meta.Status, _ = ParseStatus(status)
+		a.Meta.Mode, _ = ParseMode(mode)
 		a.Meta.Context = ctx
 		a.Meta.ValidUntil = validUntil
 		a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)

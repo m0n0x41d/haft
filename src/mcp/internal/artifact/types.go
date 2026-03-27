@@ -1,6 +1,7 @@
 package artifact
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -17,14 +18,14 @@ const (
 	KindRefreshReport     Kind = "RefreshReport"
 )
 
-// ValidKinds is the set of all valid artifact kinds.
-var ValidKinds = map[Kind]bool{
+// validKinds is the set of all valid artifact kinds (unexported — use ParseKind at boundaries).
+var validKinds = map[Kind]bool{
 	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
 	KindDecisionRecord: true, KindEvidencePack: true, KindRefreshReport: true,
 }
 
 // IsValid returns true if the kind is a recognized artifact kind.
-func (k Kind) IsValid() bool { return ValidKinds[k] }
+func (k Kind) IsValid() bool { return validKinds[k] }
 
 // ParseKind validates and returns a Kind, or an error if unrecognized.
 func ParseKind(s string) (Kind, error) {
@@ -85,13 +86,12 @@ const (
 	StatusRefreshDue Status = "refresh_due"
 )
 
-// ValidStatuses is the set of all valid artifact statuses.
-var ValidStatuses = map[Status]bool{
+var validStatuses = map[Status]bool{
 	StatusActive: true, StatusSuperseded: true, StatusDeprecated: true, StatusRefreshDue: true,
 }
 
 // IsValid returns true if the status is recognized.
-func (s Status) IsValid() bool { return ValidStatuses[s] }
+func (s Status) IsValid() bool { return validStatuses[s] }
 
 // ParseStatus validates and returns a Status, or an error if unrecognized.
 func ParseStatus(s string) (Status, error) {
@@ -112,13 +112,12 @@ const (
 	ModeDeep     Mode = "deep"
 )
 
-// ValidModes is the set of all valid decision depth modes.
-var ValidModes = map[Mode]bool{
+var validModes = map[Mode]bool{
 	ModeNote: true, ModeTactical: true, ModeStandard: true, ModeDeep: true,
 }
 
 // IsValid returns true if the mode is recognized.
-func (m Mode) IsValid() bool { return ValidModes[m] }
+func (m Mode) IsValid() bool { return validModes[m] }
 
 // ParseMode validates and returns a Mode, or an error if unrecognized.
 func ParseMode(s string) (Mode, error) {
@@ -190,6 +189,27 @@ type DecisionFields struct {
 	Invariants    []string `json:"invariants,omitempty"`
 	PostConds     []string `json:"post_conditions,omitempty"`
 	Admissibility []string `json:"admissibility,omitempty"`
+}
+
+// UnmarshalProblemFields extracts structured fields from an artifact's StructuredData.
+// Returns zero value if StructuredData is empty or not a ProblemCard.
+func (a *Artifact) UnmarshalProblemFields() ProblemFields {
+	if a.StructuredData == "" {
+		return ProblemFields{}
+	}
+	var pf ProblemFields
+	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
+	return pf
+}
+
+// UnmarshalDecisionFields extracts structured fields from an artifact's StructuredData.
+func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
+	if a.StructuredData == "" {
+		return DecisionFields{}
+	}
+	var df DecisionFields
+	_ = json.Unmarshal([]byte(a.StructuredData), &df)
+	return df
 }
 
 // GenerateID creates a deterministic artifact ID.

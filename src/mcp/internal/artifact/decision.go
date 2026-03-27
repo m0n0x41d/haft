@@ -60,13 +60,14 @@ type ApplyInput struct {
 
 // DecideContext holds pre-fetched data needed for pure decision construction.
 type DecideContext struct {
-	ID          string
-	Now         time.Time
-	Mode        Mode   // computed from chain (max of declared and inferred)
-	Context     string // inherited from linked artifacts if not in input
-	ProblemBody string // pre-fetched problem markdown for signal/constraints extraction
-	Links       []Link
-	ProblemRefs []string // merged refs
+	ID                string
+	Now               time.Time
+	Mode              Mode   // computed from chain (max of declared and inferred)
+	Context           string // inherited from linked artifacts if not in input
+	ProblemBody       string // pre-fetched problem markdown (fallback for older artifacts)
+	ProblemStructured string // pre-fetched structured_data JSON (preferred, no re-parsing)
+	Links             []Link
+	ProblemRefs       []string // merged refs
 }
 
 // extractSection extracts a markdown section by heading from a body string. Pure.
@@ -101,7 +102,26 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	// === Component 1: Problem Frame ===
 	body.WriteString("\n## 1. Problem Frame\n\n")
-	if dctx.ProblemBody != "" {
+	if dctx.ProblemStructured != "" {
+		// Prefer structured data — canonical, no re-parsing
+		var pf ProblemFields
+		if err := json.Unmarshal([]byte(dctx.ProblemStructured), &pf); err == nil {
+			if pf.Signal != "" {
+				body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", pf.Signal))
+			}
+			if len(pf.Constraints) > 0 {
+				body.WriteString("**Constraints:**\n")
+				for _, c := range pf.Constraints {
+					body.WriteString(fmt.Sprintf("- %s\n", c))
+				}
+				body.WriteString("\n")
+			}
+			if pf.Acceptance != "" {
+				body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", pf.Acceptance))
+			}
+		}
+	} else if dctx.ProblemBody != "" {
+		// Fallback: parse markdown for older artifacts without structured_data
 		if signal := extractSection(dctx.ProblemBody, "Signal"); signal != "" {
 			body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
 		}
@@ -316,22 +336,24 @@ func Decide(ctx context.Context, store ArtifactStore, quintDir string, input Dec
 	if primaryRef == "" && len(problemRefs) > 0 {
 		primaryRef = problemRefs[0]
 	}
-	var problemBody string
+	var problemBody, problemStructured string
 	if primaryRef != "" {
 		if prob, err := store.Get(ctx, primaryRef); err == nil {
 			problemBody = prob.Body
+			problemStructured = prob.StructuredData
 		}
 	}
 
 	// Pure construction
 	a, err := BuildDecisionArtifact(DecideContext{
-		ID:          id,
-		Now:         now,
-		Mode:        mode,
-		Context:     resolvedContext,
-		ProblemBody: problemBody,
-		Links:       links,
-		ProblemRefs: problemRefs,
+		ID:                id,
+		Now:               now,
+		Mode:              mode,
+		Context:           resolvedContext,
+		ProblemBody:       problemBody,
+		ProblemStructured: problemStructured,
+		Links:             links,
+		ProblemRefs:       problemRefs,
 	}, input)
 	if err != nil {
 		return nil, "", err

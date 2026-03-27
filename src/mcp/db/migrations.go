@@ -209,6 +209,11 @@ var migrations = []struct {
 		description: "FTS5 enrichment: search_keywords column for semantic search",
 		sql:         "", // Applied as individual statements below (migration15Statements)
 	},
+	{
+		version:     16,
+		description: "Structured fields: canonical data alongside markdown body",
+		sql:         "", // Applied as individual statements below (migration16Statements)
+	},
 }
 
 var migration9Statements = []string{
@@ -276,6 +281,11 @@ var migration15Statements = []string{
 	// Rebuild FTS5 index from existing artifacts
 	`INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
 		SELECT id, title, content, kind, COALESCE(search_keywords, '') FROM artifacts`,
+}
+
+var migration16Statements = []string{
+	// Structured data for ProblemCards — eliminates re-parsing markdown
+	"ALTER TABLE artifacts ADD COLUMN structured_data TEXT DEFAULT ''",
 }
 
 var migration14Statements = []string{
@@ -525,6 +535,15 @@ func RunMigrations(conn *sql.DB) error {
 			for _, stmt := range migration15Statements {
 				if _, execErr := conn.Exec(stmt); execErr != nil {
 					if !isDuplicateColumnError(execErr) && !strings.Contains(execErr.Error(), "already exists") {
+						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
+					}
+				}
+			}
+		} else if m.version == 16 {
+			// Structured fields
+			for _, stmt := range migration16Statements {
+				if _, execErr := conn.Exec(stmt); execErr != nil {
+					if !isDuplicateColumnError(execErr) {
 						return fmt.Errorf("migration %d statement failed: %w", m.version, execErr)
 					}
 				}

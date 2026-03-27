@@ -218,9 +218,15 @@ func ExploreSolutions(ctx context.Context, store ArtifactStore, quintDir string,
 	}
 
 	id := GenerateID(KindSolutionPortfolio, seq)
-	mode := Mode(resolvedMode)
-	if mode == "" {
+	var mode Mode
+	if resolvedMode == "" {
 		mode = ModeStandard
+	} else {
+		var err error
+		mode, err = ParseMode(resolvedMode)
+		if err != nil {
+			mode = ModeStandard // fallback: inherited mode may be from older schema
+		}
 	}
 
 	recall := recallRelated(ctx, store, problemTitle)

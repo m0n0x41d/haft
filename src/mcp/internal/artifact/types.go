@@ -168,6 +168,28 @@ type Artifact struct {
 	Meta           Meta   `yaml:"meta" json:"meta"`
 	Body           string `yaml:"-" json:"body"`            // markdown content after frontmatter
 	SearchKeywords string `yaml:"-" json:"search_keywords"` // agent-generated synonyms/related terms for FTS5
+	StructuredData string `yaml:"-" json:"structured_data"` // JSON: canonical structured fields (eliminates markdown re-parsing)
+}
+
+// ProblemFields holds structured data for a ProblemCard. Stored as JSON in StructuredData.
+type ProblemFields struct {
+	Signal                string   `json:"signal"`
+	Constraints           []string `json:"constraints,omitempty"`
+	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
+	ObservationIndicators []string `json:"observation_indicators,omitempty"`
+	Acceptance            string   `json:"acceptance,omitempty"`
+	BlastRadius           string   `json:"blast_radius,omitempty"`
+	Reversibility         string   `json:"reversibility,omitempty"`
+}
+
+// DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
+type DecisionFields struct {
+	SelectedTitle string   `json:"selected_title"`
+	WhySelected   string   `json:"why_selected"`
+	WeakestLink   string   `json:"weakest_link,omitempty"`
+	Invariants    []string `json:"invariants,omitempty"`
+	PostConds     []string `json:"post_conditions,omitempty"`
+	Admissibility []string `json:"admissibility,omitempty"`
 }
 
 // GenerateID creates a deterministic artifact ID.

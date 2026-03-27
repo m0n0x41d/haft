@@ -275,7 +275,10 @@ func QueryList(ctx context.Context, store ArtifactStore, kindStr string, limit i
 		limit = 50
 	}
 
-	kind := Kind(kindStr)
+	kind, err := ParseKind(kindStr)
+	if err != nil {
+		return "", fmt.Errorf("%w (valid: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport)", err)
+	}
 	artifacts, err := store.ListByKind(ctx, kind, limit)
 	if err != nil {
 		return "", err

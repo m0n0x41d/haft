@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -115,6 +116,18 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	if recall != "" {
 		a.Body += recall
 	}
+
+	// Populate structured data — canonical fields alongside markdown body
+	sd, _ := json.Marshal(ProblemFields{
+		Signal:                input.Signal,
+		Constraints:           input.Constraints,
+		OptimizationTargets:   input.OptimizationTargets,
+		ObservationIndicators: input.ObservationIndicators,
+		Acceptance:            input.Acceptance,
+		BlastRadius:           input.BlastRadius,
+		Reversibility:         input.Reversibility,
+	})
+	a.StructuredData = string(sd)
 
 	return a, nil
 }

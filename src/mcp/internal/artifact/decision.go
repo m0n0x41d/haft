@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -206,7 +207,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n")
 	}
 
-	return &Artifact{
+	a := &Artifact{
 		Meta: Meta{
 			ID:         dctx.ID,
 			Kind:       KindDecisionRecord,
@@ -222,7 +223,19 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		},
 		Body:           body.String(),
 		SearchKeywords: input.SearchKeywords,
-	}, nil
+	}
+
+	sd, _ := json.Marshal(DecisionFields{
+		SelectedTitle: input.SelectedTitle,
+		WhySelected:   input.WhySelected,
+		WeakestLink:   input.WeakestLink,
+		Invariants:    input.Invariants,
+		PostConds:     input.PostConditions,
+		Admissibility: input.Admissibility,
+	})
+	a.StructuredData = string(sd)
+
+	return a, nil
 }
 
 // MergeProblemRefs merges single ProblemRef with ProblemRefs array, deduplicating. Pure.

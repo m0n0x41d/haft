@@ -119,17 +119,23 @@ func parseFrontmatter(fm string, meta *Meta) error {
 		case "id":
 			meta.ID = value
 		case "kind":
-			meta.Kind = Kind(value)
+			if k, err := ParseKind(value); err == nil {
+				meta.Kind = k
+			}
 		case "version":
 			if v, err := strconv.Atoi(value); err == nil {
 				meta.Version = v
 			}
 		case "status":
-			meta.Status = Status(value)
+			if st, err := ParseStatus(value); err == nil {
+				meta.Status = st
+			}
 		case "context":
 			meta.Context = value
 		case "mode":
-			meta.Mode = Mode(value)
+			if m, err := ParseMode(value); err == nil {
+				meta.Mode = m
+			}
 		case "title":
 			meta.Title = value
 		case "valid_until":

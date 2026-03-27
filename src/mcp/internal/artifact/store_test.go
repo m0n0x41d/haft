@@ -26,7 +26,7 @@ func setupTestDB(t *testing.T) *Store {
 			status TEXT NOT NULL DEFAULT 'active', context TEXT, mode TEXT,
 			title TEXT NOT NULL, content TEXT NOT NULL, file_path TEXT,
 			valid_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-			search_keywords TEXT DEFAULT '')`,
+			search_keywords TEXT DEFAULT '', structured_data TEXT DEFAULT '')`,
 		`CREATE TABLE artifact_links (
 			source_id TEXT NOT NULL, target_id TEXT NOT NULL, link_type TEXT NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (source_id, target_id, link_type))`,

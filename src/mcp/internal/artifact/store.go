@@ -42,14 +42,15 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO artifacts (id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, search_keywords)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO artifacts (id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, search_keywords, structured_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.Meta.ID, string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
 		a.Meta.Context, string(a.Meta.Mode), a.Meta.Title, a.Body,
 		a.Meta.ValidUntil,
 		a.Meta.CreatedAt.Format(time.RFC3339),
 		a.Meta.UpdatedAt.Format(time.RFC3339),
 		a.SearchKeywords,
+		a.StructuredData,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
@@ -71,25 +72,26 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 func (s *Store) Get(ctx context.Context, id string) (*Artifact, error) {
 	var a Artifact
 	var kind, status, mode, validUntil, context_, createdAt, updatedAt string
-	var searchKeywords sql.NullString
+	var searchKeywords, structuredData sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, COALESCE(search_keywords, '')
+		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, COALESCE(search_keywords, ''), COALESCE(structured_data, '')
 		FROM artifacts WHERE id = ?`, id,
 	).Scan(
 		&a.Meta.ID, &kind, &a.Meta.Version, &status, &context_, &mode,
-		&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt, &searchKeywords,
+		&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt, &searchKeywords, &structuredData,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get artifact %s: %w", id, err)
 	}
-	a.Meta.Kind = Kind(kind)
-	a.Meta.Status = Status(status)
-	a.Meta.Mode = Mode(mode)
+	a.Meta.Kind = Kind(kind)       // trusted: from DB, validated on write
+	a.Meta.Status = Status(status) // trusted: from DB
+	a.Meta.Mode = Mode(mode)       // trusted: from DB
 	a.Meta.Context = context_
 	a.Meta.ValidUntil = validUntil
 	a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	a.Meta.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	a.SearchKeywords = searchKeywords.String
+	a.StructuredData = structuredData.String
 
 	links, err := s.GetLinks(ctx, id)
 	if err == nil {
@@ -105,12 +107,12 @@ func (s *Store) Update(ctx context.Context, a *Artifact) error {
 	a.Meta.Version++
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE artifacts SET kind=?, version=?, status=?, context=?, mode=?, title=?, content=?, valid_until=?, updated_at=?, search_keywords=?
+		UPDATE artifacts SET kind=?, version=?, status=?, context=?, mode=?, title=?, content=?, valid_until=?, updated_at=?, search_keywords=?, structured_data=?
 		WHERE id=?`,
 		string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
 		a.Meta.Context, string(a.Meta.Mode), a.Meta.Title, a.Body,
 		a.Meta.ValidUntil, a.Meta.UpdatedAt.Format(time.RFC3339),
-		a.SearchKeywords,
+		a.SearchKeywords, a.StructuredData,
 		a.Meta.ID,
 	)
 	if err != nil {

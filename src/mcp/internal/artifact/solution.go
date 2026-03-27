@@ -22,78 +22,60 @@ type CompareInput struct {
 }
 
 // ExploreSolutions creates a SolutionPortfolio artifact with variants.
-func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input ExploreInput) (*Artifact, string, error) {
+// ExploreContext holds pre-fetched data for pure portfolio construction.
+type ExploreContext struct {
+	ID           string
+	Now          time.Time
+	ProblemTitle string // from linked problem
+	Context      string // inherited
+	Mode         Mode   // inherited or default
+	Links        []Link
+}
+
+// ValidateExploreInput checks variant constraints. Pure.
+func ValidateExploreInput(input ExploreInput) error {
 	if len(input.Variants) == 0 {
-		return nil, "", fmt.Errorf("no variants received — check that 'variants' is a JSON array of objects with 'title' and 'weakest_link' fields")
+		return fmt.Errorf("no variants received — check that 'variants' is a JSON array of objects with 'title' and 'weakest_link' fields")
 	}
 	if len(input.Variants) < 2 {
-		return nil, "", fmt.Errorf("at least 2 variants required (got %d) — genuinely distinct options, not variations of one idea", len(input.Variants))
+		return fmt.Errorf("at least 2 variants required (got %d) — genuinely distinct options, not variations of one idea", len(input.Variants))
 	}
-
 	for i, v := range input.Variants {
 		if v.Title == "" {
-			return nil, "", fmt.Errorf("variant %d: title is required", i+1)
+			return fmt.Errorf("variant %d: title is required", i+1)
 		}
 		if v.WeakestLink == "" {
-			return nil, "", fmt.Errorf("variant %d (%s): weakest_link is required — what bounds this option's quality?", i+1, v.Title)
+			return fmt.Errorf("variant %d (%s): weakest_link is required — what bounds this option's quality?", i+1, v.Title)
 		}
 	}
+	return nil
+}
 
-	// Diversity check: warn on near-identical variants (Jaccard > 0.5)
-	var diversityWarnings []string
-	for i := 0; i < len(input.Variants); i++ {
-		for j := i + 1; j < len(input.Variants); j++ {
-			textI := input.Variants[i].Title + " " + input.Variants[i].Description
-			textJ := input.Variants[j].Title + " " + input.Variants[j].Description
+// CheckVariantDiversity warns on near-identical variants (Jaccard > 0.5). Pure.
+func CheckVariantDiversity(variants []Variant) []string {
+	var warnings []string
+	for i := 0; i < len(variants); i++ {
+		for j := i + 1; j < len(variants); j++ {
+			textI := variants[i].Title + " " + variants[i].Description
+			textJ := variants[j].Title + " " + variants[j].Description
 			sim := jaccardSimilarity(textI, textJ)
 			if sim > 0.5 {
-				diversityWarnings = append(diversityWarnings,
+				warnings = append(warnings,
 					fmt.Sprintf("Variants '%s' and '%s' look similar (%.0f%% word overlap) — do they differ in kind, not degree?",
-						input.Variants[i].Title, input.Variants[j].Title, sim*100))
+						variants[i].Title, variants[j].Title, sim*100))
 			}
 		}
 	}
+	return warnings
+}
 
-	// Resolve problem reference
-	var problemTitle string
-	var links []Link
-	if input.ProblemRef != "" {
-		prob, err := store.Get(ctx, input.ProblemRef)
-		if err != nil {
-			return nil, "", fmt.Errorf("problem %s not found: %w", input.ProblemRef, err)
-		}
-		if prob.Meta.Kind != KindProblemCard {
-			return nil, "", fmt.Errorf("%s is %s, not ProblemCard", input.ProblemRef, prob.Meta.Kind)
-		}
-		problemTitle = prob.Meta.Title
-		links = append(links, Link{Ref: input.ProblemRef, Type: "based_on"})
-		if input.Context == "" {
-			input.Context = prob.Meta.Context
-		}
-		if input.Mode == "" {
-			input.Mode = string(prob.Meta.Mode)
-		}
-	}
-
-	seq, err := store.NextSequence(ctx, KindSolutionPortfolio)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindSolutionPortfolio, seq)
-	now := time.Now().UTC()
-
-	mode := Mode(input.Mode)
-	if mode == "" {
-		mode = ModeStandard
-	}
-
+// BuildPortfolioArtifact constructs a SolutionPortfolio from input. Pure — no side effects.
+func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWarnings []string, recall string) *Artifact {
 	title := "Solution Portfolio"
-	if problemTitle != "" {
-		title = fmt.Sprintf("Solutions for: %s", problemTitle)
+	if ectx.ProblemTitle != "" {
+		title = fmt.Sprintf("Solutions for: %s", ectx.ProblemTitle)
 	}
 
-	// Build markdown body
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("# %s\n\n", title))
 
@@ -160,21 +142,20 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 
 	a := &Artifact{
 		Meta: Meta{
-			ID:        id,
+			ID:        ectx.ID,
 			Kind:      KindSolutionPortfolio,
 			Version:   1,
 			Status:    StatusActive,
-			Context:   input.Context,
-			Mode:      mode,
+			Context:   ectx.Context,
+			Mode:      ectx.Mode,
 			Title:     title,
-			CreatedAt: now,
-			UpdatedAt: now,
-			Links:     links,
+			CreatedAt: ectx.Now,
+			UpdatedAt: ectx.Now,
+			Links:     ectx.Links,
 		},
 		Body: body.String(),
 	}
 
-	// Append diversity warnings if any
 	if len(diversityWarnings) > 0 {
 		a.Body += "\n## Diversity Warnings\n\n"
 		for _, w := range diversityWarnings {
@@ -182,23 +163,79 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 		}
 	}
 
-	// Archive recall: search for related past artifacts
-	if recall := recallRelated(ctx, store, title); recall != "" {
+	if recall != "" {
 		a.Body += recall
 	}
 
-	// SoTA survey + evidence collection prompts for standard/deep mode
-	if mode == ModeStandard || mode == ModeDeep {
+	if ectx.Mode == ModeStandard || ectx.Mode == ModeDeep {
 		a.Body += "\n## SoTA Survey Reminder\n\n"
 		a.Body += "Before deciding, have you surveyed existing solutions?\n"
 		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
 		a.Body += "- **Library docs** — check current API/usage patterns for relevant libraries\n"
-		a.Body += "- **FPF spec search** — `quint-code fpf search \"<topic>\"` for methodology patterns\n"
+		a.Body += "- **FPF spec search** — `quint_query(action=\"fpf\", query=\"<topic>\")` for methodology patterns\n"
 		a.Body += "\n## Evidence Collection\n\n"
 		a.Body += "Research each variant before comparing. Run tests, check benchmarks, validate claims.\n"
 		a.Body += fmt.Sprintf("Attach findings: `quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"research\", evidence_verdict=\"supports\")`\n", a.Meta.ID)
 	}
 
+	return a
+}
+
+// ExploreSolutions creates a SolutionPortfolio. Orchestrates effects around BuildPortfolioArtifact.
+func ExploreSolutions(ctx context.Context, store ArtifactStore, quintDir string, input ExploreInput) (*Artifact, string, error) {
+	if err := ValidateExploreInput(input); err != nil {
+		return nil, "", err
+	}
+
+	diversityWarnings := CheckVariantDiversity(input.Variants)
+
+	// Effects: resolve problem reference
+	var problemTitle string
+	var links []Link
+	resolvedContext := input.Context
+	resolvedMode := input.Mode
+	if input.ProblemRef != "" {
+		prob, err := store.Get(ctx, input.ProblemRef)
+		if err != nil {
+			return nil, "", fmt.Errorf("problem %s not found: %w", input.ProblemRef, err)
+		}
+		if prob.Meta.Kind != KindProblemCard {
+			return nil, "", fmt.Errorf("%s is %s, not ProblemCard", input.ProblemRef, prob.Meta.Kind)
+		}
+		problemTitle = prob.Meta.Title
+		links = append(links, Link{Ref: input.ProblemRef, Type: "based_on"})
+		if resolvedContext == "" {
+			resolvedContext = prob.Meta.Context
+		}
+		if resolvedMode == "" {
+			resolvedMode = string(prob.Meta.Mode)
+		}
+	}
+
+	seq, err := store.NextSequence(ctx, KindSolutionPortfolio)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate ID: %w", err)
+	}
+
+	id := GenerateID(KindSolutionPortfolio, seq)
+	mode := Mode(resolvedMode)
+	if mode == "" {
+		mode = ModeStandard
+	}
+
+	recall := recallRelated(ctx, store, problemTitle)
+
+	// Pure construction
+	a := BuildPortfolioArtifact(ExploreContext{
+		ID:           id,
+		Now:          time.Now().UTC(),
+		ProblemTitle: problemTitle,
+		Context:      resolvedContext,
+		Mode:         mode,
+		Links:        links,
+	}, input, diversityWarnings, recall)
+
+	// Effects: persist
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store portfolio: %w", err)
 	}
@@ -212,7 +249,7 @@ func ExploreSolutions(ctx context.Context, store *Store, quintDir string, input 
 }
 
 // CompareSolutions adds comparison results to an existing SolutionPortfolio.
-func CompareSolutions(ctx context.Context, store *Store, quintDir string, input CompareInput) (*Artifact, string, error) {
+func CompareSolutions(ctx context.Context, store ArtifactStore, quintDir string, input CompareInput) (*Artifact, string, error) {
 	if input.PortfolioRef == "" {
 		return nil, "", fmt.Errorf("portfolio_ref is required")
 	}
@@ -559,7 +596,7 @@ func wordSet(text string) map[string]bool {
 
 // recallRelated searches for existing active artifacts related to the given query.
 // Pass title + signal for better recall. Returns a markdown section or empty string.
-func recallRelated(ctx context.Context, store *Store, query string) string {
+func recallRelated(ctx context.Context, store ArtifactStore, query string) string {
 	if store == nil || query == "" {
 		return ""
 	}
@@ -594,7 +631,7 @@ func recallRelated(ctx context.Context, store *Store, query string) string {
 }
 
 // FindActivePortfolio returns the most recent active SolutionPortfolio for a context.
-func FindActivePortfolio(ctx context.Context, store *Store, contextName string) (*Artifact, error) {
+func FindActivePortfolio(ctx context.Context, store ArtifactStore, contextName string) (*Artifact, error) {
 	var portfolios []*Artifact
 	var err error
 

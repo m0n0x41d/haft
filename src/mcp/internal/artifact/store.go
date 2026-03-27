@@ -9,9 +9,13 @@ import (
 )
 
 // Store handles artifact persistence in SQLite.
+// Implements ArtifactStore interface.
 type Store struct {
 	db *sql.DB
 }
+
+// Compile-time check: Store must implement ArtifactStore.
+var _ ArtifactStore = (*Store)(nil)
 
 // NewStore creates a new artifact store using an existing DB connection.
 func NewStore(db *sql.DB) *Store {
@@ -218,22 +222,39 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	if len(ftsTerms) == 0 {
 		return nil, nil
 	}
-	ftsQuery := strings.Join(ftsTerms, " OR ")
 
-	rows, err := s.db.QueryContext(ctx, `
+	searchQuery := `
 		SELECT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
 		FROM artifacts a
 		JOIN artifacts_fts f ON a.id = f.id
 		WHERE artifacts_fts MATCH ?
-		ORDER BY rank
-		LIMIT ?`,
-		ftsQuery, limit,
-	)
+		ORDER BY bm25(artifacts_fts, 0.0, 10.0, 1.0, 5.0, 3.0)
+		LIMIT ?`
+
+	// AND-default: require all terms present (implicit AND = space-join in FTS5)
+	ftsQuery := strings.Join(ftsTerms, " ")
+	rows, err := s.db.QueryContext(ctx, searchQuery, ftsQuery, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
-	defer rows.Close()
-	return scanArtifacts(rows)
+	results, err := scanArtifacts(rows)
+	_ = rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	// Fallback to OR if AND returned nothing
+	if len(results) == 0 && len(ftsTerms) > 1 {
+		ftsQuery = strings.Join(ftsTerms, " OR ")
+		rows, err = s.db.QueryContext(ctx, searchQuery, ftsQuery, limit)
+		if err != nil {
+			return nil, fmt.Errorf("search fallback: %w", err)
+		}
+		defer rows.Close()
+		return scanArtifacts(rows)
+	}
+
+	return results, nil
 }
 
 // SearchByAffectedFile finds artifacts linked to a specific file path.
@@ -444,6 +465,15 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 		items = append(items, e)
 	}
 	return items, rows.Err()
+}
+
+// SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.
+// Used by Measure to supersede previous measurements (FPF F.10:6.1 — newer evidence replaces older).
+func (s *Store) SupersedeEvidenceByType(ctx context.Context, artifactRef string, evidenceType string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = ? AND verdict != 'superseded'`,
+		artifactRef, evidenceType)
+	return err
 }
 
 // LastRefreshScan returns the timestamp of the last quint_refresh:scan call from audit_log.

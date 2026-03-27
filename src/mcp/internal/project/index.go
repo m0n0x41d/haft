@@ -178,6 +178,19 @@ func DetectPrimaryLanguage(db *sql.DB) string {
 	return lang
 }
 
+// ftsStopWords is a set of common English function words that add noise to FTS5 queries.
+// Lowercase-compared — technical 2-char terms like "Go", "CI", "DB" pass through.
+var ftsStopWords = map[string]bool{
+	"a": true, "an": true, "am": true, "as": true, "at": true,
+	"be": true, "by": true, "do": true, "go": false, // "go" is a language name — keep it
+	"he": true, "if": true, "in": true, "is": true, "it": true,
+	"me": true, "my": true, "no": true, "of": true, "on": true,
+	"or": true, "so": true, "to": true, "up": true, "us": true,
+	"we": true, "the": true, "and": true, "but": true, "for": true,
+	"not": true, "you": true, "are": true, "was": true, "has": true,
+	"had": true, "its": true, "our": true, "can": true, "did": true,
+}
+
 func sanitizeFTS(query string) string {
 	// Remove FTS5 special characters
 	replacer := strings.NewReplacer(
@@ -189,19 +202,23 @@ func sanitizeFTS(query string) string {
 	)
 	cleaned := replacer.Replace(query)
 
-	// Split into words, filter short ones
+	// Split into words, filter 1-char tokens and English stop words
 	var words []string
 	for _, w := range strings.Fields(cleaned) {
-		if len(w) > 2 {
-			words = append(words, w)
+		if len(w) < 2 {
+			continue
 		}
+		if ftsStopWords[strings.ToLower(w)] {
+			continue
+		}
+		words = append(words, w)
 	}
 	if len(words) == 0 {
 		return ""
 	}
 
-	// Join with OR for broader matching
-	return strings.Join(words, " OR ")
+	// AND-default: implicit AND in FTS5 (space-separated = all terms required)
+	return strings.Join(words, " ")
 }
 
 // PopulateContextFacts writes project fingerprint data to context_facts table.

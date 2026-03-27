@@ -39,32 +39,23 @@ type ComparisonDimension struct {
 	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339)
 }
 
-// FrameProblem creates a ProblemCard artifact.
-func FrameProblem(ctx context.Context, store *Store, quintDir string, input ProblemFrameInput) (*Artifact, string, error) {
+// BuildProblemArtifact constructs a ProblemCard from input. Pure — no side effects.
+// The recall parameter is pre-fetched related history (may be empty).
+func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, recall string) (*Artifact, error) {
 	if input.Title == "" {
-		return nil, "", fmt.Errorf("title is required")
+		return nil, fmt.Errorf("title is required")
 	}
 	if input.Signal == "" {
-		return nil, "", fmt.Errorf("signal is required — what's anomalous or broken?")
+		return nil, fmt.Errorf("signal is required — what's anomalous or broken?")
 	}
-
-	seq, err := store.NextSequence(ctx, KindProblemCard)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindProblemCard, seq)
-	now := time.Now().UTC()
 
 	mode := Mode(input.Mode)
 	if mode == "" {
 		mode = ModeStandard
 	}
 
-	// Build markdown body
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("# %s\n\n", input.Title))
-
 	body.WriteString(fmt.Sprintf("## Signal\n\n%s\n", input.Signal))
 
 	if len(input.Constraints) > 0 {
@@ -115,15 +106,36 @@ func FrameProblem(ctx context.Context, store *Store, quintDir string, input Prob
 		Body: body.String(),
 	}
 
-	// Archive recall: search by title + signal for better recall
+	if recall != "" {
+		a.Body += recall
+	}
+
+	return a, nil
+}
+
+// FrameProblem creates a ProblemCard artifact. Orchestrates effects around BuildProblemArtifact.
+func FrameProblem(ctx context.Context, store ArtifactStore, quintDir string, input ProblemFrameInput) (*Artifact, string, error) {
+	seq, err := store.NextSequence(ctx, KindProblemCard)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate ID: %w", err)
+	}
+
+	id := GenerateID(KindProblemCard, seq)
+
+	// Pre-fetch recall (side effect)
 	recallQuery := input.Title
 	if input.Signal != "" {
 		recallQuery += " " + input.Signal
 	}
-	if recall := recallRelated(ctx, store, recallQuery); recall != "" {
-		a.Body += recall
+	recall := recallRelated(ctx, store, recallQuery)
+
+	// Pure construction
+	a, err := BuildProblemArtifact(id, time.Now().UTC(), input, recall)
+	if err != nil {
+		return nil, "", err
 	}
 
+	// Persist (side effects)
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store problem: %w", err)
 	}
@@ -137,7 +149,7 @@ func FrameProblem(ctx context.Context, store *Store, quintDir string, input Prob
 }
 
 // CharacterizeProblem adds comparison dimensions to an existing ProblemCard.
-func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, input CharacterizeInput) (*Artifact, string, error) {
+func CharacterizeProblem(ctx context.Context, store ArtifactStore, quintDir string, input CharacterizeInput) (*Artifact, string, error) {
 	if input.ProblemRef == "" {
 		return nil, "", fmt.Errorf("problem_ref is required")
 	}
@@ -237,7 +249,7 @@ func CharacterizeProblem(ctx context.Context, store *Store, quintDir string, inp
 }
 
 // SelectProblems lists active ProblemCards, optionally filtered by context.
-func SelectProblems(ctx context.Context, store *Store, contextFilter string, limit int) ([]*Artifact, error) {
+func SelectProblems(ctx context.Context, store ArtifactStore, contextFilter string, limit int) ([]*Artifact, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -260,7 +272,7 @@ func SelectProblems(ctx context.Context, store *Store, contextFilter string, lim
 }
 
 // FindActiveProblem returns the most recent active ProblemCard for a context (or globally).
-func FindActiveProblem(ctx context.Context, store *Store, contextName string) (*Artifact, error) {
+func FindActiveProblem(ctx context.Context, store ArtifactStore, contextName string) (*Artifact, error) {
 	var problems []*Artifact
 
 	if contextName != "" {
@@ -318,7 +330,7 @@ func FormatProblemResponse(action string, a *Artifact, filePath string, navStrip
 }
 
 // FormatProblemsListResponse builds the response for listing problems with Goldilocks signals.
-func FormatProblemsListResponse(problems []*Artifact, store *Store, ctx context.Context, navStrip string) string {
+func FormatProblemsListResponse(problems []*Artifact, store ArtifactStore, ctx context.Context, navStrip string) string {
 	var sb strings.Builder
 
 	if len(problems) == 0 {

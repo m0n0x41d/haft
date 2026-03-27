@@ -700,12 +700,21 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
 
+		var baselineWarnings []string
+		if len(input.AffectedFiles) > 0 {
+			baselineWarnings = artifact.WarnSharedFiles(input.AffectedFiles)
+		}
+
 		files, err := artifact.Baseline(ctx, store, filepath.Dir(quintDir), input)
 		if err != nil {
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatBaselineResponse(input.DecisionRef, files, navStrip), nil
+		result := artifact.FormatBaselineResponse(input.DecisionRef, files, navStrip)
+		for _, w := range baselineWarnings {
+			result = "⚠ " + w + "\n" + result
+		}
+		return result, nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', 'evidence', or 'baseline'", action)
@@ -917,8 +926,38 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 		}
 		return codebase.FormatCoverageResponse(report) + navStrip, nil
 
+	case "fpf":
+		query, _ := args["query"].(string)
+		if query == "" {
+			return "", fmt.Errorf("query is required for fpf search")
+		}
+		limit := 10
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		db, cleanup, err := openFPFDB()
+		if err != nil {
+			return "", fmt.Errorf("open fpf db: %w", err)
+		}
+		defer cleanup()
+
+		results, err := fpf.SearchSpec(db, query, limit)
+		if err != nil {
+			return "", fmt.Errorf("fpf search: %w", err)
+		}
+		if len(results) == 0 {
+			return fmt.Sprintf("No FPF spec results for: %s\n", query), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## FPF Spec: %s (%d results)\n\n", query, len(results)))
+		for i, r := range results {
+			sb.WriteString(fmt.Sprintf("### %d. %s\n\n%s\n\n", i+1, r.Heading, r.Snippet))
+		}
+		return sb.String() + navStrip, nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', or 'coverage'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', 'coverage', or 'fpf'", action)
 	}
 }
 

@@ -54,7 +54,7 @@ type StaleItem struct {
 
 // ScanStale finds all stale decisions and returns actionable info.
 // If projectRoot is non-empty, also checks for file drift on baselined decisions.
-func ScanStale(ctx context.Context, store *Store, projectRoot ...string) ([]StaleItem, error) {
+func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) ([]StaleItem, error) {
 	// Check both decisions and all other artifact types
 	staleDecisions, err := store.FindStaleDecisions(ctx)
 	if err != nil {
@@ -190,7 +190,7 @@ func ScanStale(ctx context.Context, store *Store, projectRoot ...string) ([]Stal
 
 // WaiveArtifact extends an artifact's validity with justification.
 // Works on any artifact kind (notes, problems, decisions, etc.).
-func WaiveArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, reason, newValidUntil, evidence string) (*Artifact, error) {
+func WaiveArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, reason, newValidUntil, evidence string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
 		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
@@ -222,7 +222,7 @@ func WaiveArtifact(ctx context.Context, store *Store, quintDir string, artifactR
 }
 
 // ReopenDecision marks a decision as refresh_due and creates a new ProblemCard linked to it.
-func ReopenDecision(ctx context.Context, store *Store, quintDir string, decisionRef, reason string) (*Artifact, *Artifact, error) {
+func ReopenDecision(ctx context.Context, store ArtifactStore, quintDir string, decisionRef, reason string) (*Artifact, *Artifact, error) {
 	dec, err := store.Get(ctx, decisionRef)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decision %s not found: %w", decisionRef, err)
@@ -330,7 +330,7 @@ func ReopenDecision(ctx context.Context, store *Store, quintDir string, decision
 
 // SupersedeArtifact marks an artifact as superseded by another.
 // Works on any artifact kind (notes, problems, decisions, etc.).
-func SupersedeArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, newArtifactRef, reason string) (*Artifact, error) {
+func SupersedeArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, newArtifactRef, reason string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
 		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
@@ -356,7 +356,7 @@ func SupersedeArtifact(ctx context.Context, store *Store, quintDir string, artif
 
 // DeprecateArtifact marks an artifact as deprecated (no longer relevant).
 // Works on any artifact kind (notes, problems, decisions, etc.).
-func DeprecateArtifact(ctx context.Context, store *Store, quintDir string, artifactRef, reason string) (*Artifact, error) {
+func DeprecateArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, reason string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
 		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
@@ -375,7 +375,7 @@ func DeprecateArtifact(ctx context.Context, store *Store, quintDir string, artif
 }
 
 // CreateRefreshReport creates a RefreshReport artifact summarizing what was done.
-func CreateRefreshReport(ctx context.Context, store *Store, quintDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
+func CreateRefreshReport(ctx context.Context, store ArtifactStore, quintDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
 	seq, err := store.NextSequence(ctx, KindRefreshReport)
 	if err != nil {
 		return nil, err
@@ -424,7 +424,7 @@ type ReconcileOverlap struct {
 
 // Reconcile scans all active notes against all active decisions for overlaps.
 // Returns overlapping pairs sorted by similarity (highest first).
-func Reconcile(ctx context.Context, store *Store) ([]ReconcileOverlap, error) {
+func Reconcile(ctx context.Context, store ArtifactStore) ([]ReconcileOverlap, error) {
 	notes, err := store.ListByKind(ctx, KindNote, 500)
 	if err != nil {
 		return nil, fmt.Errorf("list notes: %w", err)

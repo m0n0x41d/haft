@@ -57,74 +57,39 @@ type ApplyInput struct {
 	DecisionRef string `json:"decision_ref"`
 }
 
-// Decide creates a DecisionRecord artifact — the crown jewel.
-func Decide(ctx context.Context, store *Store, quintDir string, input DecideInput) (*Artifact, string, error) {
+// DecideContext holds pre-fetched data needed for pure decision construction.
+type DecideContext struct {
+	ID          string
+	Now         time.Time
+	Mode        Mode   // computed from chain (max of declared and inferred)
+	Context     string // inherited from linked artifacts if not in input
+	ProblemBody string // pre-fetched problem markdown for signal/constraints extraction
+	Links       []Link
+	ProblemRefs []string // merged refs
+}
+
+// extractSection extracts a markdown section by heading from a body string. Pure.
+func extractSection(body, heading string) string {
+	marker := "## " + heading
+	idx := strings.Index(body, marker)
+	if idx == -1 {
+		return ""
+	}
+	start := idx + len(marker)
+	end := strings.Index(body[start:], "\n## ")
+	if end > 0 {
+		return strings.TrimSpace(body[start : start+end])
+	}
+	return strings.TrimSpace(body[start:])
+}
+
+// BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.
+func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
 	if input.SelectedTitle == "" {
-		return nil, "", fmt.Errorf("selected_title is required — what variant was chosen?")
+		return nil, fmt.Errorf("selected_title is required — what variant was chosen?")
 	}
 	if input.WhySelected == "" {
-		return nil, "", fmt.Errorf("why_selected is required — rationale for the choice")
-	}
-
-	seq, err := store.NextSequence(ctx, KindDecisionRecord)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindDecisionRecord, seq)
-	now := time.Now().UTC()
-
-	declaredMode := Mode(input.Mode)
-	if declaredMode == "" {
-		declaredMode = ModeStandard
-	}
-
-	// Merge ProblemRef (single, backward compat) + ProblemRefs (array) into one list
-	problemRefs := input.ProblemRefs
-	if input.ProblemRef != "" {
-		found := false
-		for _, r := range problemRefs {
-			if r == input.ProblemRef {
-				found = true
-				break
-			}
-		}
-		if !found {
-			problemRefs = append(problemRefs, input.ProblemRef)
-		}
-	}
-
-	var links []Link
-	for _, ref := range problemRefs {
-		links = append(links, Link{Ref: ref, Type: "based_on"})
-	}
-	if input.PortfolioRef != "" {
-		links = append(links, Link{Ref: input.PortfolioRef, Type: "based_on"})
-	}
-
-	// Compute mode from artifact chain — what actually happened, not what agent claimed.
-	// Chain evidence: problem exists → not note. Characterization → not tactical.
-	// Portfolio with comparison → standard minimum.
-	// Compute mode from artifact chain — what actually happened, not what agent claimed.
-	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
-	mode := maxMode(declaredMode, chainMode)
-
-	// Inherit context from linked artifacts
-	if input.Context == "" {
-		if input.PortfolioRef != "" {
-			if p, err := store.Get(ctx, input.PortfolioRef); err == nil {
-				input.Context = p.Meta.Context
-			}
-		} else if len(problemRefs) > 0 {
-			if p, err := store.Get(ctx, problemRefs[0]); err == nil {
-				input.Context = p.Meta.Context
-			}
-		}
-	}
-
-	// Use first problem ref for Problem Frame section
-	if input.ProblemRef == "" && len(problemRefs) > 0 {
-		input.ProblemRef = problemRefs[0]
+		return nil, fmt.Errorf("why_selected is required — rationale for the choice")
 	}
 
 	title := input.SelectedTitle
@@ -135,50 +100,15 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 
 	// === Component 1: Problem Frame ===
 	body.WriteString("\n## 1. Problem Frame\n\n")
-	if input.ProblemRef != "" {
-		if prob, err := store.Get(ctx, input.ProblemRef); err == nil {
-			// Extract signal from problem body
-			if idx := strings.Index(prob.Body, "## Signal"); idx != -1 {
-				sigStart := idx + len("## Signal")
-				sigEnd := strings.Index(prob.Body[sigStart:], "\n## ")
-				var signal string
-				if sigEnd > 0 {
-					signal = strings.TrimSpace(prob.Body[sigStart : sigStart+sigEnd])
-				} else {
-					signal = strings.TrimSpace(prob.Body[sigStart:])
-				}
-				if signal != "" {
-					body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
-				}
-			}
-			// Extract constraints
-			if idx := strings.Index(prob.Body, "## Constraints"); idx != -1 {
-				cStart := idx + len("## Constraints")
-				cEnd := strings.Index(prob.Body[cStart:], "\n## ")
-				var constraints string
-				if cEnd > 0 {
-					constraints = strings.TrimSpace(prob.Body[cStart : cStart+cEnd])
-				} else {
-					constraints = strings.TrimSpace(prob.Body[cStart:])
-				}
-				if constraints != "" {
-					body.WriteString(fmt.Sprintf("**Constraints:**\n%s\n\n", constraints))
-				}
-			}
-			// Extract acceptance
-			if idx := strings.Index(prob.Body, "## Acceptance"); idx != -1 {
-				aStart := idx + len("## Acceptance")
-				aEnd := strings.Index(prob.Body[aStart:], "\n## ")
-				var acceptance string
-				if aEnd > 0 {
-					acceptance = strings.TrimSpace(prob.Body[aStart : aStart+aEnd])
-				} else {
-					acceptance = strings.TrimSpace(prob.Body[aStart:])
-				}
-				if acceptance != "" {
-					body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", acceptance))
-				}
-			}
+	if dctx.ProblemBody != "" {
+		if signal := extractSection(dctx.ProblemBody, "Signal"); signal != "" {
+			body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
+		}
+		if constraints := extractSection(dctx.ProblemBody, "Constraints"); constraints != "" {
+			body.WriteString(fmt.Sprintf("**Constraints:**\n%s\n\n", constraints))
+		}
+		if acceptance := extractSection(dctx.ProblemBody, "Acceptance"); acceptance != "" {
+			body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", acceptance))
 		}
 	}
 
@@ -276,24 +206,119 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 		body.WriteString("\n")
 	}
 
-	a := &Artifact{
+	return &Artifact{
 		Meta: Meta{
-			ID:         id,
+			ID:         dctx.ID,
 			Kind:       KindDecisionRecord,
 			Version:    1,
 			Status:     StatusActive,
-			Context:    input.Context,
-			Mode:       mode,
+			Context:    dctx.Context,
+			Mode:       dctx.Mode,
 			Title:      title,
 			ValidUntil: input.ValidUntil,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-			Links:      links,
+			CreatedAt:  dctx.Now,
+			UpdatedAt:  dctx.Now,
+			Links:      dctx.Links,
 		},
 		Body:           body.String(),
 		SearchKeywords: input.SearchKeywords,
+	}, nil
+}
+
+// MergeProblemRefs merges single ProblemRef with ProblemRefs array, deduplicating. Pure.
+func MergeProblemRefs(single string, multiple []string) []string {
+	refs := make([]string, len(multiple))
+	copy(refs, multiple)
+	if single != "" {
+		found := false
+		for _, r := range refs {
+			if r == single {
+				found = true
+				break
+			}
+		}
+		if !found {
+			refs = append(refs, single)
+		}
+	}
+	return refs
+}
+
+// BuildLinks constructs artifact links from problem refs and portfolio ref. Pure.
+func BuildLinks(problemRefs []string, portfolioRef string) []Link {
+	var links []Link
+	for _, ref := range problemRefs {
+		links = append(links, Link{Ref: ref, Type: "based_on"})
+	}
+	if portfolioRef != "" {
+		links = append(links, Link{Ref: portfolioRef, Type: "based_on"})
+	}
+	return links
+}
+
+// Decide creates a DecisionRecord artifact. Orchestrates effects around BuildDecisionArtifact.
+func Decide(ctx context.Context, store ArtifactStore, quintDir string, input DecideInput) (*Artifact, string, error) {
+	seq, err := store.NextSequence(ctx, KindDecisionRecord)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate ID: %w", err)
 	}
 
+	id := GenerateID(KindDecisionRecord, seq)
+	now := time.Now().UTC()
+
+	// Pure: merge refs
+	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
+	links := BuildLinks(problemRefs, input.PortfolioRef)
+
+	// Effects: compute mode from chain
+	declaredMode := Mode(input.Mode)
+	if declaredMode == "" {
+		declaredMode = ModeStandard
+	}
+	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
+	mode := maxMode(declaredMode, chainMode)
+
+	// Effects: inherit context from linked artifacts
+	resolvedContext := input.Context
+	if resolvedContext == "" {
+		if input.PortfolioRef != "" {
+			if p, err := store.Get(ctx, input.PortfolioRef); err == nil {
+				resolvedContext = p.Meta.Context
+			}
+		} else if len(problemRefs) > 0 {
+			if p, err := store.Get(ctx, problemRefs[0]); err == nil {
+				resolvedContext = p.Meta.Context
+			}
+		}
+	}
+
+	// Effects: pre-fetch problem body
+	primaryRef := input.ProblemRef
+	if primaryRef == "" && len(problemRefs) > 0 {
+		primaryRef = problemRefs[0]
+	}
+	var problemBody string
+	if primaryRef != "" {
+		if prob, err := store.Get(ctx, primaryRef); err == nil {
+			problemBody = prob.Body
+		}
+	}
+
+	// Pure construction
+	a, err := BuildDecisionArtifact(DecideContext{
+		ID:          id,
+		Now:         now,
+		Mode:        mode,
+		Context:     resolvedContext,
+		ProblemBody: problemBody,
+		Links:       links,
+		ProblemRefs: problemRefs,
+	}, input)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Effects: persist
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store decision: %w", err)
 	}
@@ -303,6 +328,7 @@ func Decide(ctx context.Context, store *Store, quintDir string, input DecideInpu
 	var warnings []string
 
 	if len(input.AffectedFiles) > 0 {
+		warnings = append(warnings, WarnSharedFiles(input.AffectedFiles)...)
 		var files []AffectedFile
 		for _, f := range input.AffectedFiles {
 			files = append(files, AffectedFile{Path: f})
@@ -332,7 +358,7 @@ type BaselineInput struct {
 
 // Baseline snapshots the current state of affected files as the baseline for drift detection.
 // If AffectedFiles is provided, it replaces the existing file list before hashing.
-func Baseline(ctx context.Context, store *Store, projectRoot string, input BaselineInput) ([]AffectedFile, error) {
+func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, input BaselineInput) ([]AffectedFile, error) {
 	if input.DecisionRef == "" {
 		return nil, fmt.Errorf("decision_ref is required")
 	}
@@ -387,7 +413,7 @@ func Baseline(ctx context.Context, store *Store, projectRoot string, input Basel
 }
 
 // CheckDrift compares current file state against stored baseline hashes for all active decisions.
-func CheckDrift(ctx context.Context, store *Store, projectRoot string) ([]DriftReport, error) {
+func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([]DriftReport, error) {
 	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 500)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
@@ -620,7 +646,7 @@ func FormatDriftResponse(reports []DriftReport, navStrip string) string {
 
 // Apply is deprecated — the decide response now includes the full DRR body.
 // Kept for backward compatibility: returns the DRR body directly.
-func Apply(ctx context.Context, store *Store, decisionRef string) (string, error) {
+func Apply(ctx context.Context, store ArtifactStore, decisionRef string) (string, error) {
 	a, err := store.Get(ctx, decisionRef)
 	if err != nil {
 		return "", fmt.Errorf("decision %s not found: %w", decisionRef, err)
@@ -657,7 +683,7 @@ type EvidenceInput struct {
 }
 
 // Measure records post-implementation impact against the DRR's acceptance criteria.
-func Measure(ctx context.Context, store *Store, quintDir string, input MeasureInput) (*Artifact, error) {
+func Measure(ctx context.Context, store ArtifactStore, quintDir string, input MeasureInput) (*Artifact, error) {
 	if input.DecisionRef == "" {
 		return nil, fmt.Errorf("decision_ref is required")
 	}
@@ -730,9 +756,7 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 	}
 
 	// Supersede previous measurements on this artifact (FPF F.10:6.1 — newer evidence replaces older within the same Window)
-	if _, err := store.DB().ExecContext(ctx,
-		`UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = 'measurement' AND verdict != 'superseded'`,
-		input.DecisionRef); err != nil {
+	if err := store.SupersedeEvidenceByType(ctx, input.DecisionRef, "measurement"); err != nil {
 		logger.Warn().Err(err).Str("decision_ref", input.DecisionRef).Msg("failed to supersede old measurements")
 	}
 
@@ -764,7 +788,7 @@ func Measure(ctx context.Context, store *Store, quintDir string, input MeasureIn
 }
 
 // AttachEvidence adds an evidence item to any artifact.
-func AttachEvidence(ctx context.Context, store *Store, input EvidenceInput) (*EvidenceItem, error) {
+func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInput) (*EvidenceItem, error) {
 	if input.ArtifactRef == "" {
 		return nil, fmt.Errorf("artifact_ref is required")
 	}
@@ -831,7 +855,7 @@ type WLNKSummary struct {
 //   - CL penalty: CL3=0.0, CL2=0.1, CL1=0.4, CL0=0.9
 //   - decay: expired evidence scores 0.1 regardless of verdict
 //   - effective_score = max(0, base_score - clPenalty)
-func ComputeWLNKSummary(ctx context.Context, store *Store, artifactID string) WLNKSummary {
+func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID string) WLNKSummary {
 	result := WLNKSummary{
 		ArtifactID: artifactID,
 		WeakestCL:  3,
@@ -958,7 +982,7 @@ func maxMode(a, b Mode) Mode {
 // inferModeFromChain determines the minimum mode based on what artifacts
 // actually exist in the reasoning chain. This reflects what happened,
 // not what the agent declared.
-func inferModeFromChain(ctx context.Context, store *Store, problemRefs []string, portfolioRef string) Mode {
+func inferModeFromChain(ctx context.Context, store ArtifactStore, problemRefs []string, portfolioRef string) Mode {
 	// No linked problem → note-level (agent just called decide directly)
 	if len(problemRefs) == 0 && portfolioRef == "" {
 		return ModeTactical

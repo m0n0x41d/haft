@@ -22,13 +22,13 @@ type NavState struct {
 }
 
 // BuildNavStrip computes the current state from the artifact store and formats it.
-func BuildNavStrip(ctx context.Context, store *Store, contextName string) string {
+func BuildNavStrip(ctx context.Context, store ArtifactStore, contextName string) string {
 	state := ComputeNavState(ctx, store, contextName)
 	return FormatNavStrip(state)
 }
 
 // ComputeNavState derives the current state from artifact completeness.
-func ComputeNavState(ctx context.Context, store *Store, contextName string) NavState {
+func ComputeNavState(ctx context.Context, store ArtifactStore, contextName string) NavState {
 	state := NavState{Context: contextName}
 
 	var artifacts []*Artifact

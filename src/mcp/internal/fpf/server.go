@@ -546,8 +546,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "related", "list", "coverage"},
-						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind, coverage=module-level decision coverage",
+						"enum":        []interface{}{"search", "status", "related", "list", "coverage", "fpf"},
+						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec",
 					},
 					"query": map[string]string{
 						"type":        "string",

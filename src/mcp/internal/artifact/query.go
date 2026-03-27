@@ -16,7 +16,7 @@ type QueryInput struct {
 }
 
 // QuerySearch performs FTS5 search across all artifacts.
-func QuerySearch(ctx context.Context, store *Store, query string, limit int) (string, error) {
+func QuerySearch(ctx context.Context, store ArtifactStore, query string, limit int) (string, error) {
 	if query == "" {
 		return "", fmt.Errorf("query is required")
 	}
@@ -65,7 +65,7 @@ func QuerySearch(ctx context.Context, store *Store, query string, limit int) (st
 }
 
 // QueryStatus returns a dashboard of active decisions, stale items, and recent notes.
-func QueryStatus(ctx context.Context, store *Store, contextFilter string) (string, error) {
+func QueryStatus(ctx context.Context, store ArtifactStore, contextFilter string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("## Quint Status\n\n")
 
@@ -267,7 +267,7 @@ func QueryStatus(ctx context.Context, store *Store, contextFilter string) (strin
 }
 
 // QueryList returns all artifacts of a given kind with full details.
-func QueryList(ctx context.Context, store *Store, kindStr string, limit int) (string, error) {
+func QueryList(ctx context.Context, store ArtifactStore, kindStr string, limit int) (string, error) {
 	if kindStr == "" {
 		return "", fmt.Errorf("kind is required — use: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport")
 	}
@@ -310,7 +310,7 @@ func QueryList(ctx context.Context, store *Store, kindStr string, limit int) (st
 }
 
 // QueryRelated finds artifacts linked to a specific file path.
-func QueryRelated(ctx context.Context, store *Store, filePath string) (string, error) {
+func QueryRelated(ctx context.Context, store ArtifactStore, filePath string) (string, error) {
 	if filePath == "" {
 		return "", fmt.Errorf("file path is required")
 	}
@@ -341,7 +341,7 @@ func QueryRelated(ctx context.Context, store *Store, filePath string) (string, e
 }
 
 // hasMeasurement checks if a decision has any measurement evidence (type=measurement, verdict not superseded).
-func hasMeasurement(ctx context.Context, store *Store, decisionID string) bool {
+func hasMeasurement(ctx context.Context, store ArtifactStore, decisionID string) bool {
 	items, err := store.GetEvidenceItems(ctx, decisionID)
 	if err != nil {
 		return false

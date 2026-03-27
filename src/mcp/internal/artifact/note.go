@@ -34,7 +34,7 @@ type ConflictInfo struct {
 }
 
 // ValidateNote runs the three checks before recording.
-func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValidation {
+func ValidateNote(ctx context.Context, store ArtifactStore, input NoteInput) NoteValidation {
 	v := NoteValidation{OK: true}
 
 	// Check 1: Rationale
@@ -100,7 +100,10 @@ func ValidateNote(ctx context.Context, store *Store, input NoteInput) NoteValida
 		}
 	}
 
-	// Check 3: Scope — is this too big for a note?
+	// Check 3: Shared/generated files — will cause false drift
+	v.Warnings = append(v.Warnings, WarnSharedFiles(input.AffectedFiles)...)
+
+	// Check 4: Scope — is this too big for a note?
 	if len(input.AffectedFiles) > 3 {
 		v.Suggest = "/q-frame"
 		v.Warnings = append(v.Warnings, fmt.Sprintf(
@@ -135,7 +138,7 @@ type OverlapInfo struct {
 // checkDecisionOverlap finds the most overlapping active decision using containment.
 // Containment = "what fraction of the note's words appear in the decision title?"
 // Returns the highest overlap if above the warning threshold (0.5), nil otherwise.
-func checkDecisionOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
+func checkDecisionOverlap(ctx context.Context, store ArtifactStore, noteTitle string) *OverlapInfo {
 	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 100)
 	if err != nil {
 		return nil
@@ -163,7 +166,7 @@ func checkDecisionOverlap(ctx context.Context, store *Store, noteTitle string) *
 }
 
 // checkNoteOverlap finds the most overlapping active note using containment.
-func checkNoteOverlap(ctx context.Context, store *Store, noteTitle string) *OverlapInfo {
+func checkNoteOverlap(ctx context.Context, store ArtifactStore, noteTitle string) *OverlapInfo {
 	notes, err := store.ListByKind(ctx, KindNote, 500)
 	if err != nil {
 		return nil
@@ -190,7 +193,7 @@ func checkNoteOverlap(ctx context.Context, store *Store, noteTitle string) *Over
 	return best
 }
 
-func checkConflicts(ctx context.Context, store *Store, input NoteInput) []ConflictInfo {
+func checkConflicts(ctx context.Context, store ArtifactStore, input NoteInput) []ConflictInfo {
 	var conflicts []ConflictInfo
 
 	// Search by title keywords
@@ -239,16 +242,8 @@ func checkConflicts(ctx context.Context, store *Store, input NoteInput) []Confli
 }
 
 // CreateNote creates a Note artifact after validation passes.
-func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteInput) (*Artifact, string, error) {
-	seq, err := store.NextSequence(ctx, KindNote)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindNote, seq)
-	now := time.Now().UTC()
-
-	// Build markdown body
+// BuildNoteArtifact constructs a Note from input. Pure — no side effects.
+func BuildNoteArtifact(id string, now time.Time, input NoteInput) *Artifact {
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("# %s\n\n", input.Title))
 	body.WriteString(fmt.Sprintf("## Rationale\n\n%s\n", input.Rationale))
@@ -262,13 +257,12 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 		}
 	}
 
-	// Auto-set valid_until to 90 days if not explicitly provided
 	validUntil := input.ValidUntil
 	if validUntil == "" {
 		validUntil = now.Add(90 * 24 * time.Hour).Format(time.RFC3339)
 	}
 
-	a := &Artifact{
+	return &Artifact{
 		Meta: Meta{
 			ID:         id,
 			Kind:       KindNote,
@@ -284,13 +278,22 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 		Body:           body.String(),
 		SearchKeywords: input.SearchKeywords,
 	}
+}
 
-	// DB write
+// CreateNote creates a Note artifact. Orchestrates effects around BuildNoteArtifact.
+func CreateNote(ctx context.Context, store ArtifactStore, quintDir string, input NoteInput) (*Artifact, string, error) {
+	seq, err := store.NextSequence(ctx, KindNote)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate ID: %w", err)
+	}
+
+	id := GenerateID(KindNote, seq)
+	a := BuildNoteArtifact(id, time.Now().UTC(), input)
+
 	if err := store.Create(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("store note: %w", err)
 	}
 
-	// Track affected files
 	var warnings []string
 
 	if len(input.AffectedFiles) > 0 {
@@ -308,7 +311,6 @@ func CreateNote(ctx context.Context, store *Store, quintDir string, input NoteIn
 		warnings = append(warnings, fmt.Sprintf("file write failed (DB saved OK): %v", err))
 	}
 
-	// Attach warnings to validation for response formatting
 	if len(warnings) > 0 {
 		return a, filePath, &WriteWarning{Warnings: warnings}
 	}

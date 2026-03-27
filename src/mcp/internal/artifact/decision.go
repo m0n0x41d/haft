@@ -271,9 +271,15 @@ func Decide(ctx context.Context, store ArtifactStore, quintDir string, input Dec
 	links := BuildLinks(problemRefs, input.PortfolioRef)
 
 	// Effects: compute mode from chain
-	declaredMode := Mode(input.Mode)
-	if declaredMode == "" {
+	var declaredMode Mode
+	if input.Mode == "" {
 		declaredMode = ModeStandard
+	} else {
+		var err error
+		declaredMode, err = ParseMode(input.Mode)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w (valid: note, tactical, standard, deep)", err)
+		}
 	}
 	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
 	mode := maxMode(declaredMode, chainMode)

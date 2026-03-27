@@ -17,6 +17,24 @@ const (
 	KindRefreshReport     Kind = "RefreshReport"
 )
 
+// ValidKinds is the set of all valid artifact kinds.
+var ValidKinds = map[Kind]bool{
+	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
+	KindDecisionRecord: true, KindEvidencePack: true, KindRefreshReport: true,
+}
+
+// IsValid returns true if the kind is a recognized artifact kind.
+func (k Kind) IsValid() bool { return ValidKinds[k] }
+
+// ParseKind validates and returns a Kind, or an error if unrecognized.
+func ParseKind(s string) (Kind, error) {
+	k := Kind(s)
+	if !k.IsValid() {
+		return "", fmt.Errorf("invalid artifact kind: %q", s)
+	}
+	return k, nil
+}
+
 // IDPrefix returns the stable ID prefix for this artifact kind.
 func (k Kind) IDPrefix() string {
 	switch k {
@@ -67,6 +85,23 @@ const (
 	StatusRefreshDue Status = "refresh_due"
 )
 
+// ValidStatuses is the set of all valid artifact statuses.
+var ValidStatuses = map[Status]bool{
+	StatusActive: true, StatusSuperseded: true, StatusDeprecated: true, StatusRefreshDue: true,
+}
+
+// IsValid returns true if the status is recognized.
+func (s Status) IsValid() bool { return ValidStatuses[s] }
+
+// ParseStatus validates and returns a Status, or an error if unrecognized.
+func ParseStatus(s string) (Status, error) {
+	st := Status(s)
+	if !st.IsValid() {
+		return "", fmt.Errorf("invalid artifact status: %q", s)
+	}
+	return st, nil
+}
+
 // Mode represents the decision depth mode.
 type Mode string
 
@@ -76,6 +111,23 @@ const (
 	ModeStandard Mode = "standard"
 	ModeDeep     Mode = "deep"
 )
+
+// ValidModes is the set of all valid decision depth modes.
+var ValidModes = map[Mode]bool{
+	ModeNote: true, ModeTactical: true, ModeStandard: true, ModeDeep: true,
+}
+
+// IsValid returns true if the mode is recognized.
+func (m Mode) IsValid() bool { return ValidModes[m] }
+
+// ParseMode validates and returns a Mode, or an error if unrecognized.
+func ParseMode(s string) (Mode, error) {
+	m := Mode(s)
+	if !m.IsValid() {
+		return "", fmt.Errorf("invalid decision mode: %q", s)
+	}
+	return m, nil
+}
 
 // DerivedStatus is computed from artifact completeness, never stored.
 type DerivedStatus string

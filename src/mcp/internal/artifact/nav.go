@@ -135,6 +135,8 @@ func ComputeNavState(ctx context.Context, store ArtifactStore, contextName strin
 }
 
 // FormatNavStrip renders the nav state as a compact text block.
+//
+// Deprecated: use present.NavStrip instead. Kept for test compatibility in artifact package.
 func FormatNavStrip(state NavState) string {
 	var sb strings.Builder
 

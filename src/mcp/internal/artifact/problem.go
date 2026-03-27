@@ -49,9 +49,15 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		return nil, fmt.Errorf("signal is required — what's anomalous or broken?")
 	}
 
-	mode := Mode(input.Mode)
-	if mode == "" {
+	var mode Mode
+	if input.Mode == "" {
 		mode = ModeStandard
+	} else {
+		var err error
+		mode, err = ParseMode(input.Mode)
+		if err != nil {
+			return nil, fmt.Errorf("%w (valid: note, tactical, standard, deep)", err)
+		}
 	}
 
 	var body strings.Builder

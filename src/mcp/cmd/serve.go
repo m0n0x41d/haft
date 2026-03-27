@@ -300,7 +300,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 	}
 
 	validation := artifact.ValidateNote(ctx, store, input)
-	navStrip := artifact.BuildNavStrip(ctx, store, input.Context)
+	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, input.Context))
 
 	if !validation.OK {
 		return present.NoteRejection(validation, navStrip), nil
@@ -352,7 +352,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.ProblemResponse("frame", a, filePath, navStrip), nil
 
 	case "characterize":
@@ -390,7 +390,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
 			if err != nil || prob == nil {
 				return "No active ProblemCard found.\nUse /q-frame to create one first.\n" +
-					artifact.BuildNavStrip(ctx, store, contextName), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 			input.ProblemRef = prob.Meta.ID
 		}
@@ -399,7 +399,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.ProblemResponse("characterize", a, filePath, navStrip), nil
 
 	case "select":
@@ -407,7 +407,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return artifact.FormatProblemsListResponse(problems, store, ctx, navStrip), nil
 
 	default:
@@ -440,7 +440,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.SolutionResponse("explore", a, filePath, navStrip), nil
 
 	case "compare":
@@ -465,7 +465,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 				input.PortfolioRef = p.Meta.ID
 			} else {
 				return "No active SolutionPortfolio found.\nUse /q-explore to create variants first.\n" +
-					artifact.BuildNavStrip(ctx, store, contextName), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -473,7 +473,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.SolutionResponse("compare", a, filePath, navStrip), nil
 
 	default:
@@ -573,7 +573,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.DecisionResponse("decide", a, filePath, "", navStrip), nil
 
 	case "apply":
@@ -584,7 +584,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 				decisionRef = decisions[0].Meta.ID
 			} else {
 				return "No DecisionRecord found.\nUse /q-decide to finalize a decision first.\n" +
-					artifact.BuildNavStrip(ctx, store, contextName), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -592,7 +592,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.DecisionResponse("apply", nil, "", brief, navStrip), nil
 
 	case "measure":
@@ -615,7 +615,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			if len(decisions) > 0 {
 				input.DecisionRef = decisions[0].Meta.ID
 			} else {
-				return "No DecisionRecord found.\n" + artifact.BuildNavStrip(ctx, store, contextName), nil
+				return "No DecisionRecord found.\n" + present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -646,7 +646,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 				input.DecisionRef, input.Verdict, truncateMeasure(input.Findings, 80))
 		}
 
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.DecisionResponse("measure", a, "", extra, navStrip), nil
 
 	case "evidence":
@@ -682,7 +682,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.DecisionResponse("evidence", nil, "",
 			fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary),
 			navStrip), nil
@@ -710,7 +710,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		if err != nil {
 			return "", err
 		}
-		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		result := present.BaselineResponse(input.DecisionRef, files, navStrip)
 		for _, w := range baselineWarnings {
 			result = "⚠ " + w + "\n" + result
@@ -726,7 +726,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
-	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 
 	// Support both artifact_ref (new) and decision_ref (backward compat)
 	artifactRef, _ := args["artifact_ref"].(string)
@@ -860,7 +860,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
-	navStrip := artifact.BuildNavStrip(ctx, store, contextName)
+	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 
 	switch action {
 	case "search":

@@ -278,62 +278,7 @@ func TestComputeNavState_Decided(t *testing.T) {
 	}
 }
 
-// --- FormatNavStrip tests ---
-
-func TestFormatNavStrip_AvailableGuardLine(t *testing.T) {
-	state := NavState{
-		DerivedStatus: DerivedFramed,
-		Mode:          ModeTactical,
-		NextAction:    `/q-explore (generate variants) | /q-decide (decide directly)`,
-	}
-
-	output := FormatNavStrip(state)
-
-	if !strings.Contains(output, "Available:") {
-		t.Errorf("should contain 'Available:', got:\n%s", output)
-	}
-	if strings.Contains(output, "Next:") {
-		t.Errorf("should NOT contain 'Next:', got:\n%s", output)
-	}
-	if !strings.Contains(output, "do not auto-execute") {
-		t.Errorf("should contain guard line, got:\n%s", output)
-	}
-}
-
-func TestFormatNavStrip_NoGuardWhenDecided(t *testing.T) {
-	state := NavState{
-		DerivedStatus: DerivedDecided,
-		DecisionInfo:  "Use Redis",
-	}
-
-	output := FormatNavStrip(state)
-
-	if strings.Contains(output, "Available:") {
-		t.Errorf("DECIDED state should NOT show Available, got:\n%s", output)
-	}
-	if strings.Contains(output, "do not auto-execute") {
-		t.Errorf("DECIDED state should NOT show guard line, got:\n%s", output)
-	}
-}
-
-func TestFormatNavStrip_AllFieldsRendered(t *testing.T) {
-	state := NavState{
-		Context:       "payments",
-		Mode:          ModeStandard,
-		DerivedStatus: DerivedExploring,
-		PortfolioInfo: "API redesign",
-		StaleCount:    2,
-		NextAction:    "/q-compare (compare variants)",
-	}
-
-	output := FormatNavStrip(state)
-
-	for _, want := range []string{"Context: payments", "Mode: standard", "Status: EXPLORING", "Portfolio: API redesign", "Stale: 2", "Available:", "/q-compare"} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q:\n%s", want, output)
-		}
-	}
-}
+// FormatNavStrip tests moved to internal/present/format_test.go
 
 // --- Contract tests: invariants that must hold across ALL states ---
 
@@ -456,25 +401,12 @@ func TestContract_NoToolCallSyntax(t *testing.T) {
 	}
 }
 
-// Contract: guard line present iff NextAction present.
-func TestContract_GuardLineIffNextAction(t *testing.T) {
+// Contract: NextAction is set iff state warrants available actions.
+func TestContract_NextActionConsistency(t *testing.T) {
 	for status, state := range buildNavStates(t) {
-		output := FormatNavStrip(state)
-		hasAvailable := strings.Contains(output, "Available:")
-		hasGuard := strings.Contains(output, "do not auto-execute")
 		hasAction := state.NextAction != ""
-
-		if hasAction && !hasAvailable {
-			t.Errorf("[%s] has NextAction but no Available line", status)
-		}
-		if hasAction && !hasGuard {
-			t.Errorf("[%s] has NextAction but no guard line", status)
-		}
-		if !hasAction && hasAvailable {
-			t.Errorf("[%s] no NextAction but Available line shown", status)
-		}
-		if !hasAction && hasGuard {
-			t.Errorf("[%s] no NextAction but guard line shown", status)
+		if hasAction && !strings.Contains(state.NextAction, "/q-") {
+			t.Errorf("[%s] NextAction should use slash commands (/q-*): %q", status, state.NextAction)
 		}
 	}
 }
@@ -486,19 +418,5 @@ func TestContract_DecidedIsTerminal(t *testing.T) {
 
 	if decided.NextAction != "" {
 		t.Errorf("DECIDED should be terminal, got NextAction = %q", decided.NextAction)
-	}
-	output := FormatNavStrip(decided)
-	if strings.Contains(output, "Available:") {
-		t.Errorf("DECIDED should show no Available actions:\n%s", output)
-	}
-}
-
-// Contract: "Next:" must never appear in output (replaced by "Available:").
-func TestContract_NoLegacyNextLabel(t *testing.T) {
-	for status, state := range buildNavStates(t) {
-		output := FormatNavStrip(state)
-		if strings.Contains(output, "Next:") {
-			t.Errorf("[%s] output contains legacy 'Next:' label:\n%s", status, output)
-		}
 	}
 }

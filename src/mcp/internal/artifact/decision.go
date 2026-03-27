@@ -561,95 +561,6 @@ func gitDiffStat(projectRoot, filePath string) string {
 	return ""
 }
 
-// FormatBaselineResponse formats the result of a baseline action.
-func FormatBaselineResponse(decisionRef string, files []AffectedFile, navStrip string) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", decisionRef, len(files)))
-	for _, f := range files {
-		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
-	}
-	sb.WriteString(navStrip)
-	return sb.String()
-}
-
-// FormatDriftResponse formats drift check results for the agent.
-func FormatDriftResponse(reports []DriftReport, navStrip string) string {
-	var sb strings.Builder
-
-	if len(reports) == 0 {
-		sb.WriteString("No drift detected. All baselined decisions match current file state.\n")
-		sb.WriteString(navStrip)
-		return sb.String()
-	}
-
-	driftCount := 0
-	noBaselineCount := 0
-	for _, r := range reports {
-		if r.HasBaseline {
-			driftCount++
-		} else {
-			noBaselineCount++
-		}
-	}
-
-	if driftCount > 0 {
-		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s))\n\n", driftCount))
-		sb.WriteString("⚠ REQUIRED: For each decision below, read `git diff` on modified files before taking action.\n")
-		sb.WriteString("Do not summarize drift as \"expected\" without reading the diffs — that is treating description as evidence.\n\n")
-		for _, r := range reports {
-			if !r.HasBaseline {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("### %s [%s]\n\n", r.DecisionTitle, r.DecisionID))
-			for _, f := range r.Files {
-				switch f.Status {
-				case DriftModified:
-					sb.WriteString(fmt.Sprintf("  **MODIFIED** %s %s\n", f.Path, f.LinesChanged))
-				case DriftMissing:
-					sb.WriteString(fmt.Sprintf("  **FILE MISSING** %s\n", f.Path))
-				}
-			}
-			sb.WriteString("\n")
-		}
-		// Level C: show impact propagation if available
-		for _, r := range reports {
-			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
-			for _, impact := range r.ImpactedModules {
-				if impact.IsBlind {
-					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
-				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
-				}
-			}
-			sb.WriteString("\n")
-		}
-
-		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
-	}
-
-	if noBaselineCount > 0 {
-		sb.WriteString(fmt.Sprintf("## No Baseline (%d decision(s))\n\n", noBaselineCount))
-		for _, r := range reports {
-			if r.HasBaseline {
-				continue
-			}
-			gitHint := "no git activity detected after decision date"
-			if r.LikelyImplemented {
-				gitHint = "git activity detected after decision date"
-			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
-		}
-		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
-	}
-
-	sb.WriteString(navStrip)
-	return sb.String()
-}
-
 // Apply is deprecated — the decide response now includes the full DRR body.
 // Kept for backward compatibility: returns the DRR body directly.
 func Apply(ctx context.Context, store ArtifactStore, decisionRef string) (string, error) {
@@ -1027,35 +938,6 @@ func inferModeFromChain(ctx context.Context, store ArtifactStore, problemRefs []
 	default:
 		return ModeTactical
 	}
-}
-
-// FormatDecisionResponse builds the MCP tool response.
-func FormatDecisionResponse(action string, a *Artifact, filePath string, extra string, navStrip string) string {
-	var sb strings.Builder
-
-	switch action {
-	case "decide":
-		sb.WriteString(fmt.Sprintf("Decision recorded: %s\nID: %s\n", a.Meta.Title, a.Meta.ID))
-		if a.Meta.ValidUntil != "" {
-			sb.WriteString(fmt.Sprintf("Valid until: %s\n", a.Meta.ValidUntil))
-		}
-		if filePath != "" {
-			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
-		}
-		sb.WriteString("\n---\n\n")
-		sb.WriteString(a.Body)
-	case "apply":
-		sb.WriteString(extra)
-	case "measure":
-		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
-		sb.WriteString(extra)
-	case "evidence":
-		sb.WriteString(extra)
-	}
-
-	sb.WriteString(navStrip)
-	return sb.String()
 }
 
 func truncate(s string, max int) string {

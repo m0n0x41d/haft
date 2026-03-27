@@ -372,41 +372,4 @@ func TestFindActiveProblem_ExcludesDeprecated(t *testing.T) {
 	}
 }
 
-func TestFormatProblemResponse_ShowsRecall(t *testing.T) {
-	a := &Artifact{
-		Meta: Meta{
-			ID:    "prob-001",
-			Kind:  KindProblemCard,
-			Title: "Test problem",
-			Mode:  ModeStandard,
-		},
-		Body: "# Test\n\n## Signal\n\nSomething\n\n## Related History\n\n- [DecisionRecord] **Redis cache** `dec-001`\n",
-	}
-
-	response := FormatProblemResponse("frame", a, "/tmp/test.md", "\n-- nav --\n")
-
-	if !strings.Contains(response, "Related History") {
-		t.Error("frame response should surface Related History from body")
-	}
-	if !strings.Contains(response, "Redis cache") {
-		t.Error("frame response should show recalled artifact")
-	}
-}
-
-func TestFormatProblemResponse_NoRecallWhenAbsent(t *testing.T) {
-	a := &Artifact{
-		Meta: Meta{
-			ID:    "prob-001",
-			Kind:  KindProblemCard,
-			Title: "Test problem",
-			Mode:  ModeStandard,
-		},
-		Body: "# Test\n\n## Signal\n\nSomething\n",
-	}
-
-	response := FormatProblemResponse("frame", a, "", "\n-- nav --\n")
-
-	if strings.Contains(response, "Related History") {
-		t.Error("frame response should NOT show Related History when not in body")
-	}
-}
+// FormatProblemResponse tests moved to internal/present/format_test.go

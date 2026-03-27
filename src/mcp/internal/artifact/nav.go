@@ -22,11 +22,6 @@ type NavState struct {
 }
 
 // BuildNavStrip computes the current state from the artifact store and formats it.
-func BuildNavStrip(ctx context.Context, store ArtifactStore, contextName string) string {
-	state := ComputeNavState(ctx, store, contextName)
-	return FormatNavStrip(state)
-}
-
 // ComputeNavState derives the current state from artifact completeness.
 func ComputeNavState(ctx context.Context, store ArtifactStore, contextName string) NavState {
 	state := NavState{Context: contextName}
@@ -132,49 +127,4 @@ func ComputeNavState(ctx context.Context, store ArtifactStore, contextName strin
 	}
 
 	return state
-}
-
-// FormatNavStrip renders the nav state as a compact text block.
-//
-// Deprecated: use present.NavStrip instead. Kept for test compatibility in artifact package.
-func FormatNavStrip(state NavState) string {
-	var sb strings.Builder
-
-	sb.WriteString("\n── Quint ──────────────────────────\n")
-
-	if state.Context != "" {
-		sb.WriteString(fmt.Sprintf("Context: %s\n", state.Context))
-	}
-	if state.Mode != "" {
-		sb.WriteString(fmt.Sprintf("Mode: %s\n", state.Mode))
-	}
-
-	sb.WriteString(fmt.Sprintf("Status: %s\n", state.DerivedStatus))
-
-	if state.ProblemTitle != "" {
-		sb.WriteString(fmt.Sprintf("Problem: %s", state.ProblemTitle))
-		if state.ProblemStatus != "" {
-			sb.WriteString(fmt.Sprintf(" [%s]", state.ProblemStatus))
-		}
-		sb.WriteString("\n")
-	}
-	if state.PortfolioInfo != "" {
-		sb.WriteString(fmt.Sprintf("Portfolio: %s\n", state.PortfolioInfo))
-	}
-	if state.DecisionInfo != "" {
-		sb.WriteString(fmt.Sprintf("Decision: %s\n", state.DecisionInfo))
-	}
-
-	if state.StaleCount > 0 {
-		sb.WriteString(fmt.Sprintf("Stale: %d decision(s) need refresh\n", state.StaleCount))
-	}
-
-	if state.NextAction != "" {
-		sb.WriteString(fmt.Sprintf("Available: %s\n", state.NextAction))
-		sb.WriteString("↑ Present to user — do not auto-execute.\n")
-	}
-
-	sb.WriteString("───────────────────────────────────\n")
-
-	return sb.String()
 }

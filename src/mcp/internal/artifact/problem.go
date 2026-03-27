@@ -305,36 +305,6 @@ func FindActiveProblem(ctx context.Context, store ArtifactStore, contextName str
 	return problems[0], nil
 }
 
-// FormatProblemResponse builds the MCP tool response for a framed problem.
-func FormatProblemResponse(action string, a *Artifact, filePath string, navStrip string) string {
-	var sb strings.Builder
-
-	switch action {
-	case "frame":
-		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
-		sb.WriteString(fmt.Sprintf("Mode: %s\n", a.Meta.Mode))
-		if filePath != "" {
-			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
-		}
-		if a.Meta.Mode == ModeStandard || a.Meta.Mode == ModeDeep {
-			sb.WriteString("\nValidate this signal with evidence before exploring. Run tests, check metrics, research data.\n")
-			sb.WriteString(fmt.Sprintf("  quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"measurement\", evidence_verdict=\"supports\")\n", a.Meta.ID))
-		}
-		// Surface recall in response if present in body
-		if strings.Contains(a.Body, "## Related History") {
-			idx := strings.Index(a.Body, "## Related History")
-			sb.WriteString("\n" + a.Body[idx:])
-		}
-	case "characterize":
-		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
-	}
-
-	sb.WriteString(navStrip)
-	return sb.String()
-}
-
 // FormatProblemsListResponse builds the response for listing problems with Goldilocks signals.
 func FormatProblemsListResponse(problems []*Artifact, store ArtifactStore, ctx context.Context, navStrip string) string {
 	var sb strings.Builder

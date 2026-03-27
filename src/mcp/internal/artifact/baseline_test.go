@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -312,35 +311,7 @@ func TestScanStaleIncludesDrift(t *testing.T) {
 	}
 }
 
-func TestFormatDriftResponse_LikelyImplemented(t *testing.T) {
-	reports := []DriftReport{
-		{
-			DecisionID:        "dec-001",
-			DecisionTitle:     "Implemented decision",
-			HasBaseline:       false,
-			LikelyImplemented: true,
-			Files:             []DriftItem{{Path: "app.go", Status: DriftNoBaseline}},
-		},
-		{
-			DecisionID:    "dec-002",
-			DecisionTitle: "Not started decision",
-			HasBaseline:   false,
-			Files:         []DriftItem{{Path: "other.go", Status: DriftNoBaseline}},
-		},
-	}
-
-	output := FormatDriftResponse(reports, "")
-
-	if !strings.Contains(output, "git activity detected after decision date") {
-		t.Errorf("should report git activity for decision with commits:\n%s", output)
-	}
-	if !strings.Contains(output, "no git activity detected after decision date") {
-		t.Errorf("should report no git activity for decision without commits:\n%s", output)
-	}
-	if !strings.Contains(output, "Verify implementation status") {
-		t.Errorf("should instruct agent to verify before baselining:\n%s", output)
-	}
-}
+// TestFormatDriftResponse_LikelyImplemented moved to internal/present/format_test.go
 
 func TestCheckDriftReportsNoBaseline_LikelyImplementedFalseWithoutGit(t *testing.T) {
 	store := setupTestDB(t)

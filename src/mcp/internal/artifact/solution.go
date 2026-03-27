@@ -365,67 +365,10 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, quintDir string,
 		break // only check first linked problem
 	}
 
-	// Build comparison section
-	var section strings.Builder
-	section.WriteString("\n## Comparison\n\n")
+	// Pure: build comparison section + apply to body
+	a.Body = BuildComparisonBody(a.Body, input.Results, compareWarnings)
 
-	// Build comparison table
-	header := "| Variant |"
-	sep := "|---------|"
-	for _, d := range input.Results.Dimensions {
-		header += fmt.Sprintf(" %s |", d)
-		sep += "------|"
-	}
-	section.WriteString(header + "\n")
-	section.WriteString(sep + "\n")
-
-	for variantID, scores := range input.Results.Scores {
-		row := fmt.Sprintf("| %s |", variantID)
-		for _, d := range input.Results.Dimensions {
-			val := scores[d]
-			if val == "" {
-				val = "-"
-			}
-			row += fmt.Sprintf(" %s |", val)
-		}
-		section.WriteString(row + "\n")
-	}
-	section.WriteString("\n")
-
-	// Non-dominated set
-	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Pareto front:** %s\n\n",
-		strings.Join(input.Results.NonDominatedSet, ", ")))
-
-	if len(input.Results.Incomparable) > 0 {
-		section.WriteString("**Incomparable pairs:**\n")
-		for _, pair := range input.Results.Incomparable {
-			section.WriteString(fmt.Sprintf("- %s vs %s\n", pair[0], pair[1]))
-		}
-		section.WriteString("\n")
-	}
-
-	if input.Results.PolicyApplied != "" {
-		section.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", input.Results.PolicyApplied))
-	}
-
-	if input.Results.SelectedRef != "" {
-		section.WriteString(fmt.Sprintf("**Recommended:** %s\n\n", input.Results.SelectedRef))
-	}
-
-	// Remove existing comparison if present, then append
-	if idx := strings.Index(a.Body, "\n## Comparison"); idx != -1 {
-		a.Body = a.Body[:idx]
-	}
-	a.Body += section.String()
-
-	// Append warnings to body before saving
-	if len(compareWarnings) > 0 {
-		a.Body += "\n## Comparison Warnings\n\n"
-		for _, w := range compareWarnings {
-			a.Body += fmt.Sprintf("- ⚠ %s\n", w)
-		}
-	}
-
+	// Effects: persist
 	if err := store.Update(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("update portfolio: %w", err)
 	}
@@ -436,6 +379,69 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, quintDir string,
 	}
 
 	return a, filePath, nil
+}
+
+// BuildComparisonBody appends comparison results to an existing portfolio body. Pure.
+func BuildComparisonBody(existingBody string, results ComparisonResult, warnings []string) string {
+	var section strings.Builder
+	section.WriteString("\n## Comparison\n\n")
+
+	header := "| Variant |"
+	sep := "|---------|"
+	for _, d := range results.Dimensions {
+		header += fmt.Sprintf(" %s |", d)
+		sep += "------|"
+	}
+	section.WriteString(header + "\n")
+	section.WriteString(sep + "\n")
+
+	for variantID, scores := range results.Scores {
+		row := fmt.Sprintf("| %s |", variantID)
+		for _, d := range results.Dimensions {
+			val := scores[d]
+			if val == "" {
+				val = "-"
+			}
+			row += fmt.Sprintf(" %s |", val)
+		}
+		section.WriteString(row + "\n")
+	}
+	section.WriteString("\n")
+
+	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Pareto front:** %s\n\n",
+		strings.Join(results.NonDominatedSet, ", ")))
+
+	if len(results.Incomparable) > 0 {
+		section.WriteString("**Incomparable pairs:**\n")
+		for _, pair := range results.Incomparable {
+			section.WriteString(fmt.Sprintf("- %s vs %s\n", pair[0], pair[1]))
+		}
+		section.WriteString("\n")
+	}
+
+	if results.PolicyApplied != "" {
+		section.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", results.PolicyApplied))
+	}
+
+	if results.SelectedRef != "" {
+		section.WriteString(fmt.Sprintf("**Recommended:** %s\n\n", results.SelectedRef))
+	}
+
+	// Strip existing comparison if present
+	body := existingBody
+	if idx := strings.Index(body, "\n## Comparison"); idx != -1 {
+		body = body[:idx]
+	}
+	body += section.String()
+
+	if len(warnings) > 0 {
+		body += "\n## Comparison Warnings\n\n"
+		for _, w := range warnings {
+			body += fmt.Sprintf("- ⚠ %s\n", w)
+		}
+	}
+
+	return body
 }
 
 // charDim holds a parsed dimension with its indicator role and freshness.

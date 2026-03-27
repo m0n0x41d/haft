@@ -190,28 +190,33 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 
 // WaiveArtifact extends an artifact's validity with justification.
 // Works on any artifact kind (notes, problems, decisions, etc.).
+// BuildWaiverSection builds the waiver markdown to append. Pure.
+func BuildWaiverSection(now time.Time, newValidUntil, reason, evidence string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\n## Waiver (%s)\n\n", now.Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("**Extended until:** %s\n", newValidUntil))
+	sb.WriteString(fmt.Sprintf("**Reason:** %s\n", reason))
+	if evidence != "" {
+		sb.WriteString(fmt.Sprintf("**Evidence:** %s\n", evidence))
+	}
+	return sb.String()
+}
+
+// WaiveArtifact extends an artifact's validity. Orchestrates effects.
 func WaiveArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, reason, newValidUntil, evidence string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
 		return nil, fmt.Errorf("artifact %s not found: %w", artifactRef, err)
 	}
 
+	now := time.Now().UTC()
 	if newValidUntil == "" {
-		// Default: extend 90 days from now
-		newValidUntil = time.Now().UTC().Add(90 * 24 * time.Hour).Format(time.RFC3339)
+		newValidUntil = now.Add(90 * 24 * time.Hour).Format(time.RFC3339)
 	}
 
 	a.Meta.ValidUntil = newValidUntil
 	a.Meta.Status = StatusActive
-
-	// Append waiver to body
-	waiver := fmt.Sprintf("\n## Waiver (%s)\n\n", time.Now().UTC().Format("2006-01-02"))
-	waiver += fmt.Sprintf("**Extended until:** %s\n", newValidUntil)
-	waiver += fmt.Sprintf("**Reason:** %s\n", reason)
-	if evidence != "" {
-		waiver += fmt.Sprintf("**Evidence:** %s\n", evidence)
-	}
-	a.Body += waiver
+	a.Body += BuildWaiverSection(now, newValidUntil, reason, evidence)
 
 	if err := store.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("update artifact: %w", err)
@@ -330,6 +335,13 @@ func ReopenDecision(ctx context.Context, store ArtifactStore, quintDir string, d
 
 // SupersedeArtifact marks an artifact as superseded by another.
 // Works on any artifact kind (notes, problems, decisions, etc.).
+// BuildSupersedeSection builds the supersede markdown. Pure.
+func BuildSupersedeSection(now time.Time, newArtifactRef, reason string) string {
+	return fmt.Sprintf("\n## Superseded (%s)\n\n**Replaced by:** %s\n**Reason:** %s\n",
+		now.Format("2006-01-02"), newArtifactRef, reason)
+}
+
+// SupersedeArtifact marks an artifact as superseded by another. Orchestrates effects.
 func SupersedeArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, newArtifactRef, reason string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
@@ -337,8 +349,7 @@ func SupersedeArtifact(ctx context.Context, store ArtifactStore, quintDir string
 	}
 
 	a.Meta.Status = StatusSuperseded
-	a.Body += fmt.Sprintf("\n## Superseded (%s)\n\n**Replaced by:** %s\n**Reason:** %s\n",
-		time.Now().UTC().Format("2006-01-02"), newArtifactRef, reason)
+	a.Body += BuildSupersedeSection(time.Now().UTC(), newArtifactRef, reason)
 
 	if err := store.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("update artifact: %w", err)
@@ -354,8 +365,13 @@ func SupersedeArtifact(ctx context.Context, store ArtifactStore, quintDir string
 	return a, nil
 }
 
-// DeprecateArtifact marks an artifact as deprecated (no longer relevant).
-// Works on any artifact kind (notes, problems, decisions, etc.).
+// BuildDeprecateSection builds the deprecate markdown. Pure.
+func BuildDeprecateSection(now time.Time, reason string) string {
+	return fmt.Sprintf("\n## Deprecated (%s)\n\n**Reason:** %s\n",
+		now.Format("2006-01-02"), reason)
+}
+
+// DeprecateArtifact marks an artifact as deprecated. Orchestrates effects.
 func DeprecateArtifact(ctx context.Context, store ArtifactStore, quintDir string, artifactRef, reason string) (*Artifact, error) {
 	a, err := store.Get(ctx, artifactRef)
 	if err != nil {
@@ -363,8 +379,7 @@ func DeprecateArtifact(ctx context.Context, store ArtifactStore, quintDir string
 	}
 
 	a.Meta.Status = StatusDeprecated
-	a.Body += fmt.Sprintf("\n## Deprecated (%s)\n\n**Reason:** %s\n",
-		time.Now().UTC().Format("2006-01-02"), reason)
+	a.Body += BuildDeprecateSection(time.Now().UTC(), reason)
 
 	if err := store.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("update artifact: %w", err)
@@ -374,16 +389,8 @@ func DeprecateArtifact(ctx context.Context, store ArtifactStore, quintDir string
 	return a, nil
 }
 
-// CreateRefreshReport creates a RefreshReport artifact summarizing what was done.
-func CreateRefreshReport(ctx context.Context, store ArtifactStore, quintDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
-	seq, err := store.NextSequence(ctx, KindRefreshReport)
-	if err != nil {
-		return nil, err
-	}
-
-	id := GenerateID(KindRefreshReport, seq)
-	now := time.Now().UTC()
-
+// BuildRefreshReportArtifact constructs a RefreshReport. Pure.
+func BuildRefreshReportArtifact(id string, now time.Time, decisionRef, action, reason, outcome string) *Artifact {
 	var body strings.Builder
 	body.WriteString("# Refresh Report\n\n")
 	body.WriteString(fmt.Sprintf("## Decision\n\n%s\n\n", decisionRef))
@@ -391,7 +398,7 @@ func CreateRefreshReport(ctx context.Context, store ArtifactStore, quintDir stri
 	body.WriteString(fmt.Sprintf("## Reason\n\n%s\n\n", reason))
 	body.WriteString(fmt.Sprintf("## Outcome\n\n%s\n", outcome))
 
-	a := &Artifact{
+	return &Artifact{
 		Meta: Meta{
 			ID:        id,
 			Kind:      KindRefreshReport,
@@ -404,6 +411,16 @@ func CreateRefreshReport(ctx context.Context, store ArtifactStore, quintDir stri
 		},
 		Body: body.String(),
 	}
+}
+
+// CreateRefreshReport creates a RefreshReport artifact. Orchestrates effects.
+func CreateRefreshReport(ctx context.Context, store ArtifactStore, quintDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
+	seq, err := store.NextSequence(ctx, KindRefreshReport)
+	if err != nil {
+		return nil, err
+	}
+
+	a := BuildRefreshReportArtifact(GenerateID(KindRefreshReport, seq), time.Now().UTC(), decisionRef, action, reason, outcome)
 
 	if err := store.Create(ctx, a); err != nil {
 		return nil, err

@@ -1,0 +1,372 @@
+// Package present contains pure presentation functions for formatting
+// artifact data as MCP tool responses. No side effects, no store access.
+// Depends on artifact package for domain types only.
+package present
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/m0n0x41d/quint-code/internal/artifact"
+)
+
+// NavStrip renders the nav state as a compact text block.
+func NavStrip(state artifact.NavState) string {
+	var sb strings.Builder
+
+	sb.WriteString("\n── Quint ──────────────────────────\n")
+
+	if state.Context != "" {
+		sb.WriteString(fmt.Sprintf("Context: %s\n", state.Context))
+	}
+	if state.Mode != "" {
+		sb.WriteString(fmt.Sprintf("Mode: %s\n", state.Mode))
+	}
+
+	sb.WriteString(fmt.Sprintf("Status: %s\n", state.DerivedStatus))
+
+	if state.ProblemTitle != "" {
+		sb.WriteString(fmt.Sprintf("Problem: %s", state.ProblemTitle))
+		if state.ProblemStatus != "" {
+			sb.WriteString(fmt.Sprintf(" [%s]", state.ProblemStatus))
+		}
+		sb.WriteString("\n")
+	}
+	if state.PortfolioInfo != "" {
+		sb.WriteString(fmt.Sprintf("Portfolio: %s\n", state.PortfolioInfo))
+	}
+	if state.DecisionInfo != "" {
+		sb.WriteString(fmt.Sprintf("Decision: %s\n", state.DecisionInfo))
+	}
+
+	if state.StaleCount > 0 {
+		sb.WriteString(fmt.Sprintf("Stale: %d decision(s) need refresh\n", state.StaleCount))
+	}
+
+	if state.NextAction != "" {
+		sb.WriteString(fmt.Sprintf("Available: %s\n", state.NextAction))
+		sb.WriteString("↑ Present to user — do not auto-execute.\n")
+	}
+
+	sb.WriteString("───────────────────────────────────\n")
+
+	return sb.String()
+}
+
+// NoteResponse builds the MCP tool response for a note.
+func NoteResponse(a *artifact.Artifact, filePath string, validation artifact.NoteValidation, navStrip string) string {
+	var sb strings.Builder
+
+	if len(validation.Warnings) > 0 && validation.OK {
+		for _, w := range validation.Warnings {
+			sb.WriteString(fmt.Sprintf("⚠ %s\n", w))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("Recorded: %s\n", a.Meta.Title))
+	sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	if filePath != "" {
+		sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// NoteRejection builds the response when a note is rejected.
+func NoteRejection(validation artifact.NoteValidation, navStrip string) string {
+	var sb strings.Builder
+
+	for _, w := range validation.Warnings {
+		sb.WriteString(fmt.Sprintf("⚠ %s\n", w))
+	}
+
+	if len(validation.Conflicts) > 0 {
+		sb.WriteString("\nConflicting decisions:\n")
+		for _, c := range validation.Conflicts {
+			sb.WriteString(fmt.Sprintf("  - %s: %s (%s)\n", c.DecisionID, c.DecisionTitle, c.Reason))
+		}
+	}
+
+	sb.WriteString("\nOptions:\n")
+	if validation.Suggest != "" {
+		sb.WriteString(fmt.Sprintf("  1. Use %s to start a proper exploration\n", validation.Suggest))
+		sb.WriteString("  2. Add rationale and retry\n")
+	} else {
+		sb.WriteString("  1. Add rationale explaining why this choice\n")
+		sb.WriteString("  2. Provide evidence supporting the decision\n")
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// ReconcileResponse formats the reconcile results.
+func ReconcileResponse(overlaps []artifact.ReconcileOverlap, navStrip string) string {
+	var sb strings.Builder
+
+	if len(overlaps) == 0 {
+		sb.WriteString("No note-decision overlaps found. Notes and decisions are clean.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf("## Note-Decision Overlaps (%d found)\n\n", len(overlaps)))
+	for _, o := range overlaps {
+		action := "consider deprecating"
+		if o.Similarity > 0.7 {
+			action = "should deprecate"
+		}
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] overlaps with **%s** [%s] (%.0f%% overlap) — %s\n",
+			o.NoteTitle, o.NoteID, o.DecisionTitle, o.DecisionID, o.Similarity*100, action))
+	}
+	sb.WriteString("\nUse `quint_refresh(action=\"deprecate\", artifact_ref=\"<note-id>\", reason=\"superseded by decision\")` to clean up.\n")
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// ScanResponse formats the stale scan results.
+func ScanResponse(items []artifact.StaleItem, navStrip string) string {
+	var sb strings.Builder
+
+	if len(items) == 0 {
+		sb.WriteString("No stale artifacts found. All decisions, problems, and notes are current.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf("## Refresh Due (%d artifact(s))\n\n", len(items)))
+	for i, item := range items {
+		kindLabel := item.Kind
+		if kindLabel == "" {
+			kindLabel = "DecisionRecord"
+		}
+		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
+		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
+	}
+
+	sb.WriteString("**Actions** (work on any artifact type):\n")
+	sb.WriteString("- `waive` — extend validity with justification\n")
+	sb.WriteString("- `reopen` — start new problem cycle (decisions only)\n")
+	sb.WriteString("- `supersede` — replace with another artifact\n")
+	sb.WriteString("- `deprecate` — archive as no longer relevant\n")
+	sb.WriteString("\nUse `artifact_ref` parameter with any artifact ID (note, problem, decision, portfolio).\n")
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// RefreshActionResponse formats the result of a refresh action.
+func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact, newProb *artifact.Artifact, navStrip string) string {
+	var sb strings.Builder
+
+	switch action {
+	case artifact.RefreshWaive:
+		sb.WriteString(fmt.Sprintf("Waived: %s\n", dec.Meta.Title))
+		sb.WriteString(fmt.Sprintf("New valid_until: %s\n", dec.Meta.ValidUntil))
+	case artifact.RefreshReopen:
+		sb.WriteString(fmt.Sprintf("Reopened: %s → status: refresh_due\n", dec.Meta.Title))
+		if newProb != nil {
+			sb.WriteString(fmt.Sprintf("New ProblemCard: %s (%s)\n", newProb.Meta.Title, newProb.Meta.ID))
+			sb.WriteString("Use /q-explore to find new solutions.\n")
+		}
+	case artifact.RefreshSupersede:
+		sb.WriteString(fmt.Sprintf("Superseded: %s\n", dec.Meta.Title))
+	case artifact.RefreshDeprecate:
+		sb.WriteString(fmt.Sprintf("Deprecated: %s\n", dec.Meta.Title))
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// BaselineResponse formats the result of a baseline action.
+func BaselineResponse(decisionRef string, files []artifact.AffectedFile, navStrip string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", decisionRef, len(files)))
+	for _, f := range files {
+		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
+	}
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// DriftResponse formats drift check results for the agent.
+func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
+	var sb strings.Builder
+
+	if len(reports) == 0 {
+		sb.WriteString("No drift detected. All baselined decisions match current file state.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	driftCount := 0
+	noBaselineCount := 0
+	for _, r := range reports {
+		if r.HasBaseline {
+			driftCount++
+		} else {
+			noBaselineCount++
+		}
+	}
+
+	if driftCount > 0 {
+		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s))\n\n", driftCount))
+		sb.WriteString("⚠ REQUIRED: For each decision below, read `git diff` on modified files before taking action.\n")
+		sb.WriteString("Do not summarize drift as \"expected\" without reading the diffs — that is treating description as evidence.\n\n")
+		for _, r := range reports {
+			if !r.HasBaseline {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("### %s [%s]\n\n", r.DecisionTitle, r.DecisionID))
+			for _, f := range r.Files {
+				switch f.Status {
+				case artifact.DriftModified:
+					sb.WriteString(fmt.Sprintf("  **MODIFIED** %s %s\n", f.Path, f.LinesChanged))
+				case artifact.DriftMissing:
+					sb.WriteString(fmt.Sprintf("  **FILE MISSING** %s\n", f.Path))
+				}
+			}
+			sb.WriteString("\n")
+		}
+		for _, r := range reports {
+			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
+			for _, impact := range r.ImpactedModules {
+				if impact.IsBlind {
+					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
+				} else {
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+				}
+			}
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
+	}
+
+	if noBaselineCount > 0 {
+		sb.WriteString(fmt.Sprintf("## No Baseline (%d decision(s))\n\n", noBaselineCount))
+		for _, r := range reports {
+			if r.HasBaseline {
+				continue
+			}
+			gitHint := "no git activity detected after decision date"
+			if r.LikelyImplemented {
+				gitHint = "git activity detected after decision date"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
+				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
+		}
+		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// DecisionResponse builds the MCP tool response.
+func DecisionResponse(action string, a *artifact.Artifact, filePath string, extra string, navStrip string) string {
+	var sb strings.Builder
+
+	switch action {
+	case "decide":
+		sb.WriteString(fmt.Sprintf("Decision recorded: %s\nID: %s\n", a.Meta.Title, a.Meta.ID))
+		if a.Meta.ValidUntil != "" {
+			sb.WriteString(fmt.Sprintf("Valid until: %s\n", a.Meta.ValidUntil))
+		}
+		if filePath != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
+		}
+		sb.WriteString("\n---\n\n")
+		sb.WriteString(a.Body)
+	case "apply":
+		sb.WriteString(extra)
+	case "measure":
+		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(extra)
+	case "evidence":
+		sb.WriteString(extra)
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// SolutionResponse builds the MCP tool response.
+func SolutionResponse(action string, a *artifact.Artifact, filePath string, navStrip string) string {
+	var sb strings.Builder
+
+	switch action {
+	case "explore":
+		sb.WriteString(fmt.Sprintf("Portfolio created: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		if filePath != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
+		}
+	case "compare":
+		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+
+		if idx := strings.Index(a.Body, "**Pareto front:**"); idx != -1 {
+			end := strings.Index(a.Body[idx:], "\n")
+			if end > 0 {
+				sb.WriteString(a.Body[idx:idx+end] + "\n")
+			}
+		}
+		if idx := strings.Index(a.Body, "**Recommended:**"); idx != -1 {
+			end := strings.Index(a.Body[idx:], "\n")
+			if end > 0 {
+				sb.WriteString(a.Body[idx:idx+end] + "\n")
+			}
+		}
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// MissingProblemResponse returns prescriptive guidance when problem is missing.
+func MissingProblemResponse(navStrip string) string {
+	return "No active ProblemCard found.\n\n" +
+		"Frame the problem first:\n" +
+		"  /q-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
+		"Or explore directly in tactical mode:\n" +
+		"  quint_solution(action=\"explore\", variants=[...])\n" +
+		"  → will create a lightweight ProblemCard from context\n" +
+		navStrip
+}
+
+// ProblemResponse builds the MCP tool response for a framed problem.
+func ProblemResponse(action string, a *artifact.Artifact, filePath string, navStrip string) string {
+	var sb strings.Builder
+
+	switch action {
+	case "frame":
+		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Mode: %s\n", a.Meta.Mode))
+		if filePath != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
+		}
+		if a.Meta.Mode == artifact.ModeStandard || a.Meta.Mode == artifact.ModeDeep {
+			sb.WriteString("\nValidate this signal with evidence before exploring. Run tests, check metrics, research data.\n")
+			sb.WriteString(fmt.Sprintf("  quint_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"measurement\", evidence_verdict=\"supports\")\n", a.Meta.ID))
+		}
+		if strings.Contains(a.Body, "## Related History") {
+			idx := strings.Index(a.Body, "## Related History")
+			sb.WriteString("\n" + a.Body[idx:])
+		}
+	case "characterize":
+		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}

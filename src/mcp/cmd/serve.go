@@ -15,6 +15,7 @@ import (
 	"github.com/m0n0x41d/quint-code/internal/artifact"
 	"github.com/m0n0x41d/quint-code/internal/codebase"
 	"github.com/m0n0x41d/quint-code/internal/fpf"
+	"github.com/m0n0x41d/quint-code/internal/present"
 	"github.com/m0n0x41d/quint-code/internal/project"
 	"github.com/m0n0x41d/quint-code/logger"
 
@@ -302,7 +303,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 	navStrip := artifact.BuildNavStrip(ctx, store, input.Context)
 
 	if !validation.OK {
-		return artifact.FormatNoteRejection(validation, navStrip), nil
+		return present.NoteRejection(validation, navStrip), nil
 	}
 
 	a, filePath, err := artifact.CreateNote(ctx, store, quintDir, input)
@@ -315,7 +316,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 			return "", err
 		}
 	}
-	return artifact.FormatNoteResponse(a, filePath, validation, navStrip), nil
+	return present.NoteResponse(a, filePath, validation, navStrip), nil
 }
 
 func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
@@ -352,7 +353,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatProblemResponse("frame", a, filePath, navStrip), nil
+		return present.ProblemResponse("frame", a, filePath, navStrip), nil
 
 	case "characterize":
 		input := artifact.CharacterizeInput{}
@@ -399,7 +400,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatProblemResponse("characterize", a, filePath, navStrip), nil
+		return present.ProblemResponse("characterize", a, filePath, navStrip), nil
 
 	case "select":
 		problems, err := artifact.SelectProblems(ctx, store, contextName, 20)
@@ -440,7 +441,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatSolutionResponse("explore", a, filePath, navStrip), nil
+		return present.SolutionResponse("explore", a, filePath, navStrip), nil
 
 	case "compare":
 		input := artifact.CompareInput{}
@@ -473,7 +474,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatSolutionResponse("compare", a, filePath, navStrip), nil
+		return present.SolutionResponse("compare", a, filePath, navStrip), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'explore' or 'compare'", action)
@@ -573,7 +574,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatDecisionResponse("decide", a, filePath, "", navStrip), nil
+		return present.DecisionResponse("decide", a, filePath, "", navStrip), nil
 
 	case "apply":
 		decisionRef, _ := args["decision_ref"].(string)
@@ -592,7 +593,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatDecisionResponse("apply", nil, "", brief, navStrip), nil
+		return present.DecisionResponse("apply", nil, "", brief, navStrip), nil
 
 	case "measure":
 		input := artifact.MeasureInput{}
@@ -646,7 +647,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 		}
 
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatDecisionResponse("measure", a, "", extra, navStrip), nil
+		return present.DecisionResponse("measure", a, "", extra, navStrip), nil
 
 	case "evidence":
 		input := artifact.EvidenceInput{
@@ -682,7 +683,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		return artifact.FormatDecisionResponse("evidence", nil, "",
+		return present.DecisionResponse("evidence", nil, "",
 			fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary),
 			navStrip), nil
 
@@ -710,7 +711,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			return "", err
 		}
 		navStrip := artifact.BuildNavStrip(ctx, store, contextName)
-		result := artifact.FormatBaselineResponse(input.DecisionRef, files, navStrip)
+		result := present.BaselineResponse(input.DecisionRef, files, navStrip)
 		for _, w := range baselineWarnings {
 			result = "⚠ " + w + "\n" + result
 		}
@@ -750,7 +751,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 		if err != nil {
 			return "", err
 		}
-		result := artifact.FormatScanResponse(items, "")
+		result := present.ScanResponse(items, "")
 
 		// Level C: enrich drift reports with dependency impact
 		driftReports, _ := artifact.CheckDrift(ctx, store, projectRoot)
@@ -789,7 +790,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 			}
 		}
 		if hasImpact {
-			result += "\n" + artifact.FormatDriftResponse(driftReports, "")
+			result += "\n" + present.DriftResponse(driftReports, "")
 		}
 
 		return result + navStrip, nil
@@ -805,7 +806,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
-		return artifact.FormatRefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
+		return present.RefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
 
 	case artifact.RefreshReopen:
 		if artifactRef == "" {
@@ -816,7 +817,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
-		return artifact.FormatRefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
+		return present.RefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
 
 	case artifact.RefreshSupersede:
 		if artifactRef == "" {
@@ -831,7 +832,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
-		return artifact.FormatRefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
+		return present.RefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
 
 	case artifact.RefreshDeprecate:
 		if artifactRef == "" {
@@ -842,14 +843,14 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		_, _ = artifact.CreateRefreshReport(ctx, store, quintDir, artifactRef, "deprecate", reason, "Artifact deprecated")
-		return artifact.FormatRefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
+		return present.RefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
 	case artifact.RefreshReconcile:
 		overlaps, err := artifact.Reconcile(ctx, store)
 		if err != nil {
 			return "", err
 		}
-		return artifact.FormatReconcileResponse(overlaps, navStrip), nil
+		return present.ReconcileResponse(overlaps, navStrip), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'scan', 'waive', 'reopen', 'supersede', 'deprecate', or 'reconcile'", action)

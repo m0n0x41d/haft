@@ -370,3 +370,68 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 	sb.WriteString(navStrip)
 	return sb.String()
 }
+
+// ProblemsListResponse formats a list of problems with pre-fetched enrichment data. Pure.
+func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) string {
+	var sb strings.Builder
+
+	if len(items) == 0 {
+		sb.WriteString("No active problems found.\n")
+		sb.WriteString("Use /q-frame to frame a new problem.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf("## Active Problems (%d)\n\n", len(items)))
+	sb.WriteString("Goldilocks guide: pick problems in the growth zone — not too trivial, not too impossible for your current capacity.\n\n")
+
+	for i, item := range items {
+		p := item.Problem
+		sb.WriteString(fmt.Sprintf("### %d. %s [%s]\n", i+1, p.Meta.Title, p.Meta.ID))
+		if p.Meta.Context != "" {
+			sb.WriteString(fmt.Sprintf("Context: %s | ", p.Meta.Context))
+		}
+		sb.WriteString(fmt.Sprintf("Mode: %s | Created: %s\n", p.Meta.Mode, p.Meta.CreatedAt.Format("2006-01-02")))
+
+		if item.Signals != "" {
+			sb.WriteString(item.Signals)
+		}
+
+		if item.CharCount > 0 {
+			sb.WriteString(fmt.Sprintf("Characterization: %d version(s) defined\n", item.CharCount))
+		} else {
+			sb.WriteString("Characterization: not yet defined\n")
+		}
+
+		if item.EvidenceTotal > 0 {
+			sb.WriteString(fmt.Sprintf("Evidence: %d item(s)", item.EvidenceTotal))
+			if item.EvidenceSupp > 0 {
+				sb.WriteString(fmt.Sprintf(", %d supporting", item.EvidenceSupp))
+			}
+			if item.EvidenceWeak > 0 {
+				sb.WriteString(fmt.Sprintf(", %d weakening", item.EvidenceWeak))
+			}
+			if item.EvidenceRefute > 0 {
+				sb.WriteString(fmt.Sprintf(", %d REFUTING", item.EvidenceRefute))
+			}
+			sb.WriteString("\n")
+		}
+
+		if item.ForwardLinks+item.BackLinks > 0 {
+			sb.WriteString(fmt.Sprintf("Links: %d forward, %d back\n", item.ForwardLinks, item.BackLinks))
+		}
+
+		if p.Meta.ValidUntil != "" {
+			vu := p.Meta.ValidUntil
+			if len(vu) > 10 {
+				vu = vu[:10]
+			}
+			sb.WriteString(fmt.Sprintf("Valid until: %s\n", vu))
+		}
+
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}

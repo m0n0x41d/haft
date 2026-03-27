@@ -305,93 +305,50 @@ func FindActiveProblem(ctx context.Context, store ArtifactStore, contextName str
 	return problems[0], nil
 }
 
-// FormatProblemsListResponse builds the response for listing problems with Goldilocks signals.
-func FormatProblemsListResponse(problems []*Artifact, store ArtifactStore, ctx context.Context, navStrip string) string {
-	var sb strings.Builder
+// ProblemListItem holds pre-fetched enrichment data for a problem in the list view.
+type ProblemListItem struct {
+	Problem        *Artifact
+	Signals        string // Goldilocks signals (pure, from body)
+	CharCount      int
+	EvidenceTotal  int
+	EvidenceSupp   int
+	EvidenceWeak   int
+	EvidenceRefute int
+	ForwardLinks   int
+	BackLinks      int
+}
 
-	if len(problems) == 0 {
-		sb.WriteString("No active problems found.\n")
-		sb.WriteString("Use /q-frame to frame a new problem.\n")
-		sb.WriteString(navStrip)
-		return sb.String()
-	}
-
-	sb.WriteString(fmt.Sprintf("## Active Problems (%d)\n\n", len(problems)))
-	sb.WriteString("Goldilocks guide: pick problems in the growth zone — not too trivial, not too impossible for your current capacity.\n\n")
-
+// EnrichProblemsForList pre-fetches store data for each problem. Effect boundary.
+func EnrichProblemsForList(ctx context.Context, store ArtifactStore, problems []*Artifact) []ProblemListItem {
+	items := make([]ProblemListItem, len(problems))
 	for i, p := range problems {
-		sb.WriteString(fmt.Sprintf("### %d. %s [%s]\n", i+1, p.Meta.Title, p.Meta.ID))
-		if p.Meta.Context != "" {
-			sb.WriteString(fmt.Sprintf("Context: %s | ", p.Meta.Context))
-		}
-		sb.WriteString(fmt.Sprintf("Mode: %s | Created: %s\n", p.Meta.Mode, p.Meta.CreatedAt.Format("2006-01-02")))
-
-		// Goldilocks signals from body
-		signals := extractGoldilocksSignals(p)
-		if signals != "" {
-			sb.WriteString(signals)
+		item := ProblemListItem{
+			Problem:   p,
+			Signals:   extractGoldilocksSignals(p),
+			CharCount: countCharacterizations(p),
 		}
 
-		// Characterization status
-		charCount := countCharacterizations(p)
-		if charCount > 0 {
-			sb.WriteString(fmt.Sprintf("Characterization: %d version(s) defined\n", charCount))
-		} else {
-			sb.WriteString("Characterization: not yet defined\n")
-		}
-
-		// Evidence count
-		if store != nil {
-			evidItems, _ := store.GetEvidenceItems(ctx, p.Meta.ID)
-			if len(evidItems) > 0 {
-				supporting, weakening, refuting := 0, 0, 0
-				for _, e := range evidItems {
-					switch e.Verdict {
-					case "supports", "accepted":
-						supporting++
-					case "weakens", "partial":
-						weakening++
-					case "refutes", "failed":
-						refuting++
-					}
-				}
-				sb.WriteString(fmt.Sprintf("Evidence: %d item(s)", len(evidItems)))
-				if supporting > 0 {
-					sb.WriteString(fmt.Sprintf(", %d supporting", supporting))
-				}
-				if weakening > 0 {
-					sb.WriteString(fmt.Sprintf(", %d weakening", weakening))
-				}
-				if refuting > 0 {
-					sb.WriteString(fmt.Sprintf(", %d REFUTING", refuting))
-				}
-				sb.WriteString("\n")
+		evidItems, _ := store.GetEvidenceItems(ctx, p.Meta.ID)
+		item.EvidenceTotal = len(evidItems)
+		for _, e := range evidItems {
+			switch e.Verdict {
+			case "supports", "accepted":
+				item.EvidenceSupp++
+			case "weakens", "partial":
+				item.EvidenceWeak++
+			case "refutes", "failed":
+				item.EvidenceRefute++
 			}
 		}
 
-		// Linked artifacts
-		if store != nil {
-			links, _ := store.GetLinks(ctx, p.Meta.ID)
-			backlinks, _ := store.GetBacklinks(ctx, p.Meta.ID)
-			if len(links)+len(backlinks) > 0 {
-				sb.WriteString(fmt.Sprintf("Links: %d forward, %d back\n", len(links), len(backlinks)))
-			}
-		}
+		links, _ := store.GetLinks(ctx, p.Meta.ID)
+		backlinks, _ := store.GetBacklinks(ctx, p.Meta.ID)
+		item.ForwardLinks = len(links)
+		item.BackLinks = len(backlinks)
 
-		// Staleness
-		if p.Meta.ValidUntil != "" {
-			vu := p.Meta.ValidUntil
-			if len(vu) > 10 {
-				vu = vu[:10]
-			}
-			sb.WriteString(fmt.Sprintf("Valid until: %s\n", vu))
-		}
-
-		sb.WriteString("\n")
+		items[i] = item
 	}
-
-	sb.WriteString(navStrip)
-	return sb.String()
+	return items
 }
 
 func extractGoldilocksSignals(p *Artifact) string {

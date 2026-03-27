@@ -113,116 +113,139 @@ func runServe(cmd *cobra.Command, args []string) error {
 func makeV5Handler(store *artifact.Store, quintDir string, projCfg *project.Config, indexStore *project.IndexStore) fpf.V5ToolHandler {
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments"`
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
 		}
 		if err := json.Unmarshal(rawParams, &params); err != nil {
 			return "", fmt.Errorf("invalid params: %w", err)
 		}
 
-		// Extract action for logging
 		action, _ := params.Arguments["action"].(string)
-
-		// Log tool call entry
-		logParams := map[string]string{}
-		if action != "" {
-			logParams["action"] = action
-		}
-		if ref, ok := params.Arguments["decision_ref"].(string); ok {
-			logParams["decision_ref"] = ref
-		}
-		if ref, ok := params.Arguments["artifact_ref"].(string); ok {
-			logParams["artifact_ref"] = ref
-		}
-		if ref, ok := params.Arguments["problem_ref"].(string); ok {
-			logParams["problem_ref"] = ref
-		}
-		logger.ToolCall(params.Name, action, logParams)
+		logToolEntry(params.Name, action, params.Arguments)
 		start := time.Now()
 
-		var result string
-		var toolErr error
+		// Dispatch
+		result, toolErr := dispatchTool(ctx, store, quintDir, params.Name, params.Arguments)
 
-		switch params.Name {
-		case "quint_note":
-			result, toolErr = handleQuintNote(ctx, store, quintDir, params.Arguments)
-		case "quint_problem":
-			result, toolErr = handleQuintProblem(ctx, store, quintDir, params.Arguments)
-		case "quint_solution":
-			result, toolErr = handleQuintSolution(ctx, store, quintDir, params.Arguments)
-		case "quint_decision":
-			result, toolErr = handleQuintDecision(ctx, store, quintDir, params.Arguments)
-		case "quint_refresh":
-			result, toolErr = handleQuintRefresh(ctx, store, quintDir, params.Arguments)
-		case "quint_query":
-			result, toolErr = handleQuintQuery(ctx, store, quintDir, params.Arguments)
-		default:
-			return "", fmt.Errorf("unknown tool: %s", params.Name)
-		}
-
-		// Log tool call result with duration
+		// Post-dispatch hooks
 		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
 
-		// Cross-project recall — append to frame results
-		if toolErr == nil && params.Name == "quint_problem" && action == "frame" && indexStore != nil && projCfg != nil {
-			signal, _ := params.Arguments["signal"].(string)
-			title, _ := params.Arguments["title"].(string)
-			query := title + " " + signal
-			primaryLang := project.DetectPrimaryLanguage(store.DB())
-			recalls, recallErr := indexStore.Search(ctx, query, projCfg.ID, primaryLang, 3)
-			if recallErr == nil && len(recalls) > 0 {
-				result += "\n## Cross-Project History\n\n"
-				for _, r := range recalls {
-					clLabel := fmt.Sprintf("CL%d", r.CL)
-					if r.CL == 2 {
-						clLabel += " (similar context)"
-					} else {
-						clLabel += " (different context)"
-					}
-					result += fmt.Sprintf("- [%s] **%s** — %s (%s, from %s)\n",
-						r.DecisionID, r.Title, truncateStr(r.WhySelected, 120), clLabel, r.ProjectName)
-				}
-				result += "\n"
-			}
+		if toolErr == nil {
+			result = applyCrossProjectRecall(ctx, result, params.Name, action, params.Arguments, store, projCfg, indexStore)
+			applyCrossProjectIndex(ctx, params.Name, action, params.Arguments, store, projCfg, indexStore)
 		}
 
-		// Cross-project index — write decision summaries on decide
-		if toolErr == nil && params.Name == "quint_decision" && action == "decide" && indexStore != nil && projCfg != nil {
-			if selectedTitle, _ := params.Arguments["selected_title"].(string); selectedTitle != "" {
-				whySelected, _ := params.Arguments["why_selected"].(string)
-				weakestLink, _ := params.Arguments["weakest_link"].(string)
-				primaryLang := project.DetectPrimaryLanguage(store.DB())
-				_ = indexStore.WriteDecision(ctx, project.IndexEntry{
-					ProjectID:     projCfg.ID,
-					ProjectName:   projCfg.Name,
-					DecisionID:    selectedTitle, // will be replaced with actual ID below
-					Title:         selectedTitle,
-					SelectedTitle: selectedTitle,
-					WhySelected:   whySelected,
-					WeakestLink:   weakestLink,
-					PrimaryLang:   primaryLang,
-					CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-				})
-				logger.Debug().Str("project", projCfg.ID).Str("decision", selectedTitle).Msg("index.write")
-			}
-		}
-
-		// Audit log — fire-and-forget, never block the tool response
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
 
-		// Periodic refresh prompt — if >5 days since last scan, remind agent
-		if toolErr == nil && params.Name != "quint_refresh" {
-			lastScan := store.LastRefreshScan(ctx)
-			if !lastScan.IsZero() {
-				daysSince := int(time.Since(lastScan).Hours() / 24)
-				if daysSince >= 5 {
-					result += fmt.Sprintf("\n\n--- Refresh reminder: %d days since last stale scan. Run quint_refresh(action=\"scan\") to check for stale decisions and evidence decay. ---\n", daysSince)
-				}
-			}
+		if toolErr == nil {
+			result = applyRefreshReminder(ctx, result, params.Name, store)
 		}
 
 		return result, toolErr
 	}
+}
+
+// dispatchTool routes a tool call to its handler. Pure dispatch, no hooks.
+func dispatchTool(ctx context.Context, store *artifact.Store, quintDir string, name string, args map[string]any) (string, error) {
+	switch name {
+	case "quint_note":
+		return handleQuintNote(ctx, store, quintDir, args)
+	case "quint_problem":
+		return handleQuintProblem(ctx, store, quintDir, args)
+	case "quint_solution":
+		return handleQuintSolution(ctx, store, quintDir, args)
+	case "quint_decision":
+		return handleQuintDecision(ctx, store, quintDir, args)
+	case "quint_refresh":
+		return handleQuintRefresh(ctx, store, quintDir, args)
+	case "quint_query":
+		return handleQuintQuery(ctx, store, quintDir, args)
+	default:
+		return "", fmt.Errorf("unknown tool: %s", name)
+	}
+}
+
+// logToolEntry logs the tool call entry with extracted refs.
+func logToolEntry(name, action string, args map[string]any) {
+	logParams := map[string]string{}
+	if action != "" {
+		logParams["action"] = action
+	}
+	for _, key := range []string{"decision_ref", "artifact_ref", "problem_ref"} {
+		if ref, ok := args[key].(string); ok {
+			logParams[key] = ref
+		}
+	}
+	logger.ToolCall(name, action, logParams)
+}
+
+// applyCrossProjectRecall appends cross-project history to frame results.
+func applyCrossProjectRecall(ctx context.Context, result, name, action string, args map[string]any, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) string {
+	if name != "quint_problem" || action != "frame" || indexStore == nil || projCfg == nil {
+		return result
+	}
+	signal, _ := args["signal"].(string)
+	title, _ := args["title"].(string)
+	query := title + " " + signal
+	primaryLang := project.DetectPrimaryLanguage(store.DB())
+	recalls, err := indexStore.Search(ctx, query, projCfg.ID, primaryLang, 3)
+	if err != nil || len(recalls) == 0 {
+		return result
+	}
+	result += "\n## Cross-Project History\n\n"
+	for _, r := range recalls {
+		clLabel := fmt.Sprintf("CL%d", r.CL)
+		if r.CL == 2 {
+			clLabel += " (similar context)"
+		} else {
+			clLabel += " (different context)"
+		}
+		result += fmt.Sprintf("- [%s] **%s** — %s (%s, from %s)\n",
+			r.DecisionID, r.Title, truncateStr(r.WhySelected, 120), clLabel, r.ProjectName)
+	}
+	return result + "\n"
+}
+
+// applyCrossProjectIndex writes decision summaries to the global index on decide.
+func applyCrossProjectIndex(ctx context.Context, name, action string, args map[string]any, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) {
+	if name != "quint_decision" || action != "decide" || indexStore == nil || projCfg == nil {
+		return
+	}
+	selectedTitle, _ := args["selected_title"].(string)
+	if selectedTitle == "" {
+		return
+	}
+	whySelected, _ := args["why_selected"].(string)
+	weakestLink, _ := args["weakest_link"].(string)
+	primaryLang := project.DetectPrimaryLanguage(store.DB())
+	_ = indexStore.WriteDecision(ctx, project.IndexEntry{
+		ProjectID:     projCfg.ID,
+		ProjectName:   projCfg.Name,
+		DecisionID:    selectedTitle,
+		Title:         selectedTitle,
+		SelectedTitle: selectedTitle,
+		WhySelected:   whySelected,
+		WeakestLink:   weakestLink,
+		PrimaryLang:   primaryLang,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	logger.Debug().Str("project", projCfg.ID).Str("decision", selectedTitle).Msg("index.write")
+}
+
+// applyRefreshReminder appends a reminder if >5 days since last stale scan.
+func applyRefreshReminder(ctx context.Context, result, name string, store *artifact.Store) string {
+	if name == "quint_refresh" {
+		return result
+	}
+	lastScan := store.LastRefreshScan(ctx)
+	if lastScan.IsZero() {
+		return result
+	}
+	daysSince := int(time.Since(lastScan).Hours() / 24)
+	if daysSince >= 5 {
+		result += fmt.Sprintf("\n\n--- Refresh reminder: %d days since last stale scan. Run quint_refresh(action=\"scan\") to check for stale decisions and evidence decay. ---\n", daysSince)
+	}
+	return result
 }
 
 func truncateStr(s string, maxLen int) string {
@@ -233,7 +256,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 // logAudit writes an audit_log row for every tool call. Errors are logged, never propagated.
-func logAudit(ctx context.Context, rawDB *sql.DB, toolName, action string, args map[string]interface{}, toolErr error) {
+func logAudit(ctx context.Context, rawDB *sql.DB, toolName, action string, args map[string]any, toolErr error) {
 	operation := toolName
 	if action != "" {
 		operation = toolName + ":" + action
@@ -280,7 +303,7 @@ func truncateMeasure(s string, max int) string {
 
 // --- Tool handlers ---
 
-func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	input := artifact.NoteInput{}
 	if v, ok := args["title"].(string); ok {
 		input.Title = v
@@ -319,7 +342,7 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, quintDir string
 	return present.NoteResponse(a, filePath, validation, navStrip), nil
 }
 
-func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -363,9 +386,9 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if v, ok := args["parity_rules"].(string); ok {
 			input.ParityRules = v
 		}
-		if dims, ok := args["dimensions"].([]interface{}); ok {
+		if dims, ok := args["dimensions"].([]any); ok {
 			for _, d := range dims {
-				if dm, ok := d.(map[string]interface{}); ok {
+				if dm, ok := d.(map[string]any); ok {
 					dim := artifact.ComparisonDimension{}
 					if v, ok := dm["name"].(string); ok {
 						dim.Name = v
@@ -408,14 +431,15 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return artifact.FormatProblemsListResponse(problems, store, ctx, navStrip), nil
+		items := artifact.EnrichProblemsForList(ctx, store, problems)
+		return present.ProblemsListResponse(items, navStrip), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', or 'select'", action)
 	}
 }
 
-func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -481,7 +505,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, quintDir st
 	}
 }
 
-func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -521,16 +545,16 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			input.SearchKeywords = v
 		}
 
-		if rb, ok := args["rollback"].(map[string]interface{}); ok {
+		if rb, ok := args["rollback"].(map[string]any); ok {
 			rollback := &artifact.RollbackSpec{}
-			if items, ok := rb["triggers"].([]interface{}); ok {
+			if items, ok := rb["triggers"].([]any); ok {
 				for _, item := range items {
 					if s, ok := item.(string); ok {
 						rollback.Triggers = append(rollback.Triggers, s)
 					}
 				}
 			}
-			if items, ok := rb["steps"].([]interface{}); ok {
+			if items, ok := rb["steps"].([]any); ok {
 				for _, item := range items {
 					if s, ok := item.(string); ok {
 						rollback.Steps = append(rollback.Steps, s)
@@ -542,9 +566,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 			}
 			input.Rollback = rollback
 		}
-		if items, ok := args["why_not_others"].([]interface{}); ok {
+		if items, ok := args["why_not_others"].([]any); ok {
 			for _, item := range items {
-				if m, ok := item.(map[string]interface{}); ok {
+				if m, ok := item.(map[string]any); ok {
 					rr := artifact.RejectionReason{}
 					if v, ok := m["variant"].(string); ok {
 						rr.Variant = v
@@ -722,7 +746,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, quintDir st
 	}
 }
 
-func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
@@ -857,7 +881,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, quintDir str
 	}
 }
 
-func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir string, args map[string]interface{}) (string, error) {
+func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
@@ -963,9 +987,9 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 }
 
 // parseStringArrayFromArgs handles MCP client serialization differences.
-// Some clients send JSON arrays as parsed []interface{}, others as raw JSON strings.
-func parseStringArrayFromArgs(args map[string]interface{}, key string) []string {
-	if items, ok := args[key].([]interface{}); ok {
+// Some clients send JSON arrays as parsed []any, others as raw JSON strings.
+func parseStringArrayFromArgs(args map[string]any, key string) []string {
+	if items, ok := args[key].([]any); ok {
 		var result []string
 		for _, item := range items {
 			if s, ok := item.(string); ok {
@@ -985,10 +1009,10 @@ func parseStringArrayFromArgs(args map[string]interface{}, key string) []string 
 }
 
 // parseNestedStringMapFromArgs handles MCP client serialization of map[string]map[string]string.
-// Some clients send JSON objects as parsed map[string]interface{}, others as raw JSON strings.
-func parseNestedStringMapFromArgs(args map[string]interface{}, key string) map[string]map[string]string {
-	var raw map[string]interface{}
-	if m, ok := args[key].(map[string]interface{}); ok {
+// Some clients send JSON objects as parsed map[string]any, others as raw JSON strings.
+func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]map[string]string {
+	var raw map[string]any
+	if m, ok := args[key].(map[string]any); ok {
 		raw = m
 	} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '{' {
 		logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseNestedStringMapFromArgs: JSON string fallback")
@@ -1001,7 +1025,7 @@ func parseNestedStringMapFromArgs(args map[string]interface{}, key string) map[s
 	}
 	result := make(map[string]map[string]string, len(raw))
 	for outerKey, innerVal := range raw {
-		if inner, ok := innerVal.(map[string]interface{}); ok {
+		if inner, ok := innerVal.(map[string]any); ok {
 			result[outerKey] = make(map[string]string, len(inner))
 			for k, v := range inner {
 				if s, ok := v.(string); ok {
@@ -1014,11 +1038,11 @@ func parseNestedStringMapFromArgs(args map[string]interface{}, key string) map[s
 }
 
 // parseVariants handles MCP client serialization of the variants array.
-// Accepts both parsed []interface{} and raw JSON string formats.
-func parseVariants(args map[string]interface{}) []artifact.Variant {
-	var raw []interface{}
+// Accepts both parsed []any and raw JSON string formats.
+func parseVariants(args map[string]any) []artifact.Variant {
+	var raw []any
 
-	if items, ok := args["variants"].([]interface{}); ok {
+	if items, ok := args["variants"].([]any); ok {
 		raw = items
 	} else if s, ok := args["variants"].(string); ok && len(s) > 0 && s[0] == '[' {
 		logger.Debug().Str("key", "variants").Str("raw_type", "string").Msg("parseVariants: JSON string fallback")
@@ -1040,7 +1064,7 @@ func parseVariants(args map[string]interface{}) []artifact.Variant {
 
 	var variants []artifact.Variant
 	for _, vRaw := range raw {
-		vm, ok := vRaw.(map[string]interface{})
+		vm, ok := vRaw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -1063,14 +1087,14 @@ func parseVariants(args map[string]interface{}) []artifact.Variant {
 		if b, ok := vm["stepping_stone"].(bool); ok {
 			v.SteppingStone = b
 		}
-		if items, ok := vm["strengths"].([]interface{}); ok {
+		if items, ok := vm["strengths"].([]any); ok {
 			for _, item := range items {
 				if s, ok := item.(string); ok {
 					v.Strengths = append(v.Strengths, s)
 				}
 			}
 		}
-		if items, ok := vm["risks"].([]interface{}); ok {
+		if items, ok := vm["risks"].([]any); ok {
 			for _, item := range items {
 				if s, ok := item.(string); ok {
 					v.Risks = append(v.Risks, s)

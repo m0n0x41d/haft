@@ -226,7 +226,58 @@ func WaiveArtifact(ctx context.Context, store ArtifactStore, quintDir string, ar
 	return a, nil
 }
 
+// LineageSource holds pre-fetched data for building lineage notes. Pure input.
+type LineageSource struct {
+	DecisionRef    string
+	Reason         string
+	LinkedProblems []LinkedProblem // problems linked via "based_on"
+	EvidenceItems  []EvidenceItem
+}
+
+// LinkedProblem holds a pre-fetched problem's body for characterization extraction.
+type LinkedProblem struct {
+	ID   string
+	Body string
+}
+
+// BuildLineageNotes constructs lineage markdown from pre-fetched sources. Pure.
+func BuildLineageNotes(src LineageSource) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\n## Lineage from %s\n\n", src.DecisionRef))
+	sb.WriteString(fmt.Sprintf("**Reopen reason:** %s\n\n", src.Reason))
+
+	for _, prob := range src.LinkedProblems {
+		// Extract latest versioned characterization
+		for i := 100; i >= 1; i-- {
+			marker := fmt.Sprintf("## Characterization v%d", i)
+			if section := extractSection(prob.Body, fmt.Sprintf("Characterization v%d", i)); section != "" {
+				_ = marker // used for documentation only
+				sb.WriteString(fmt.Sprintf("**Prior characterization (from %s):**\n%s\n", prob.ID, section))
+				break
+			}
+		}
+		// Old-style characterization
+		if section := extractSection(prob.Body, "Comparison Dimensions"); section != "" {
+			sb.WriteString(fmt.Sprintf("**Prior characterization (from %s):**\n%s\n", prob.ID, section))
+		}
+	}
+
+	if len(src.EvidenceItems) > 0 {
+		sb.WriteString(fmt.Sprintf("\n**Prior evidence (%d items):**\n", len(src.EvidenceItems)))
+		for _, e := range src.EvidenceItems {
+			sb.WriteString(fmt.Sprintf("- [%s] %s", e.Type, truncate(e.Content, 80)))
+			if e.CarrierRef != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", e.CarrierRef))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String()
+}
+
 // ReopenDecision marks a decision as refresh_due and creates a new ProblemCard linked to it.
+// Orchestrates effects around BuildLineageNotes.
 func ReopenDecision(ctx context.Context, store ArtifactStore, quintDir string, decisionRef, reason string) (*Artifact, *Artifact, error) {
 	dec, err := store.Get(ctx, decisionRef)
 	if err != nil {
@@ -236,79 +287,39 @@ func ReopenDecision(ctx context.Context, store ArtifactStore, quintDir string, d
 		return nil, nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, dec.Meta.Kind)
 	}
 
-	// Mark as refresh_due
+	// Effect: mark as refresh_due
 	dec.Meta.Status = StatusRefreshDue
 	if err := store.Update(ctx, dec); err != nil {
 		return nil, nil, fmt.Errorf("update decision: %w", err)
 	}
 	writeFileQuiet(quintDir, dec)
 
-	// Build lineage: carry forward context from previous cycle
-	signal := fmt.Sprintf("Decision %s needs re-evaluation: %s", decisionRef, reason)
-
-	// Extract what failed from the old decision body
-	var lineageNotes strings.Builder
-	lineageNotes.WriteString(fmt.Sprintf("\n## Lineage from %s\n\n", decisionRef))
-	lineageNotes.WriteString(fmt.Sprintf("**Reopen reason:** %s\n\n", reason))
-
-	// Carry forward characterization from the original problem if it exists
-	if dec.Meta.Links != nil {
-		for _, link := range dec.Meta.Links {
-			if link.Type == "based_on" {
-				origArt, err := store.Get(ctx, link.Ref)
-				if err != nil {
-					continue
-				}
-				if origArt.Meta.Kind == KindProblemCard {
-					// Extract latest characterization from original problem
-					for i := 100; i >= 1; i-- {
-						marker := fmt.Sprintf("## Characterization v%d", i)
-						if idx := strings.Index(origArt.Body, marker); idx != -1 {
-							end := strings.Index(origArt.Body[idx+1:], "\n## ")
-							var charSection string
-							if end > 0 {
-								charSection = origArt.Body[idx : idx+1+end]
-							} else {
-								charSection = origArt.Body[idx:]
-							}
-							lineageNotes.WriteString(fmt.Sprintf("**Prior characterization (from %s):**\n%s\n",
-								origArt.Meta.ID, strings.TrimSpace(charSection)))
-							break
-						}
-					}
-					// Also check old-style characterization
-					if strings.Contains(origArt.Body, "## Comparison Dimensions") {
-						if idx := strings.Index(origArt.Body, "## Comparison Dimensions"); idx != -1 {
-							end := strings.Index(origArt.Body[idx+1:], "\n## ")
-							var charSection string
-							if end > 0 {
-								charSection = origArt.Body[idx : idx+1+end]
-							} else {
-								charSection = origArt.Body[idx:]
-							}
-							lineageNotes.WriteString(fmt.Sprintf("**Prior characterization (from %s):**\n%s\n",
-								origArt.Meta.ID, strings.TrimSpace(charSection)))
-						}
-					}
-				}
-			}
+	// Effect: pre-fetch linked problems for lineage
+	var linkedProblems []LinkedProblem
+	for _, link := range dec.Meta.Links {
+		if link.Type != "based_on" {
+			continue
 		}
+		origArt, err := store.Get(ctx, link.Ref)
+		if err != nil || origArt.Meta.Kind != KindProblemCard {
+			continue
+		}
+		linkedProblems = append(linkedProblems, LinkedProblem{ID: origArt.Meta.ID, Body: origArt.Body})
 	}
 
-	// Carry forward linked evidence references
+	// Effect: pre-fetch evidence
 	evidenceItems, _ := store.GetEvidenceItems(ctx, decisionRef)
-	if len(evidenceItems) > 0 {
-		lineageNotes.WriteString(fmt.Sprintf("\n**Prior evidence (%d items):**\n", len(evidenceItems)))
-		for _, e := range evidenceItems {
-			lineageNotes.WriteString(fmt.Sprintf("- [%s] %s", e.Type, truncate(e.Content, 80)))
-			if e.CarrierRef != "" {
-				lineageNotes.WriteString(fmt.Sprintf(" (%s)", e.CarrierRef))
-			}
-			lineageNotes.WriteString("\n")
-		}
-	}
 
-	// Create a new ProblemCard with lineage
+	// Pure: build lineage
+	lineage := BuildLineageNotes(LineageSource{
+		DecisionRef:    decisionRef,
+		Reason:         reason,
+		LinkedProblems: linkedProblems,
+		EvidenceItems:  evidenceItems,
+	})
+
+	// Effect: create new ProblemCard with lineage
+	signal := fmt.Sprintf("Decision %s needs re-evaluation: %s", decisionRef, reason)
 	newProb, _, err := FrameProblem(ctx, store, quintDir, ProblemFrameInput{
 		Title:   fmt.Sprintf("Revisit: %s", strings.TrimPrefix(dec.Meta.Title, "Decision: ")),
 		Signal:  signal,
@@ -318,14 +329,12 @@ func ReopenDecision(ctx context.Context, store ArtifactStore, quintDir string, d
 		return dec, nil, fmt.Errorf("create new problem: %w", err)
 	}
 
-	// Append lineage to the new problem body
-	newProb.Body += lineageNotes.String()
+	newProb.Body += lineage
 	if err := store.Update(ctx, newProb); err != nil {
 		logger.Warn().Err(err).Str("problem", newProb.Meta.ID).Msg("failed to append lineage to new problem")
 	}
 	writeFileQuiet(quintDir, newProb)
 
-	// Link new problem to old decision
 	if err := store.AddLink(ctx, newProb.Meta.ID, decisionRef, "revisits"); err != nil {
 		logger.Warn().Err(err).Str("problem", newProb.Meta.ID).Str("decision", decisionRef).Msg("failed to link problem to decision")
 	}

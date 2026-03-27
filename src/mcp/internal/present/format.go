@@ -371,6 +371,203 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 	return sb.String()
 }
 
+// SearchResponse formats FTS5 search results as markdown.
+func SearchResponse(results []*artifact.Artifact, query string) string {
+	if len(results) == 0 {
+		return fmt.Sprintf("No results found for: %s\n", query)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Search: %s (%d results)\n\n", query, len(results)))
+
+	for i, a := range results {
+		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] `%s`\n", i+1, a.Meta.Title, a.Meta.Kind, a.Meta.ID))
+		if a.Meta.Context != "" {
+			sb.WriteString(fmt.Sprintf("   Context: %s", a.Meta.Context))
+		}
+		if a.Meta.Status != artifact.StatusActive {
+			sb.WriteString(fmt.Sprintf(" | Status: %s", a.Meta.Status))
+		}
+		sb.WriteString(fmt.Sprintf(" | %s\n", a.Meta.CreatedAt.Format("2006-01-02")))
+
+		// Show first 120 chars of body as preview
+		preview := strings.TrimSpace(a.Body)
+		if idx := strings.Index(preview, "\n"); idx > 0 {
+			preview = strings.TrimSpace(preview[idx:])
+		}
+		if len(preview) > 120 {
+			preview = preview[:117] + "..."
+		}
+		if preview != "" {
+			sb.WriteString(fmt.Sprintf("   %s\n", preview))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// StatusResponse formats the status dashboard from pre-fetched data.
+func StatusResponse(data artifact.StatusData) string {
+	var sb strings.Builder
+	sb.WriteString("## Quint Status\n\n")
+
+	formatDecisionList := func(items []*artifact.Artifact, cap int) {
+		for i, d := range items {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(items)-cap))
+				break
+			}
+			line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
+			if d.Meta.ValidUntil != "" {
+				vu := d.Meta.ValidUntil
+				if len(vu) > 10 {
+					vu = vu[:10]
+				}
+				line += fmt.Sprintf(" (valid until %s)", vu)
+			}
+			sb.WriteString(line + "\n")
+		}
+	}
+
+	if len(data.PendingDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Pending Implementation (%d)\n\n", len(data.PendingDecisions)))
+		formatDecisionList(data.PendingDecisions, 5)
+		sb.WriteString("\n")
+	}
+
+	if len(data.ShippedDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Shipped (%d)\n\n", len(data.ShippedDecisions)))
+		formatDecisionList(data.ShippedDecisions, 5)
+		sb.WriteString("\n")
+	}
+
+	if len(data.StaleItems) > 0 {
+		sb.WriteString(fmt.Sprintf("### Refresh Due (%d)\n\n", len(data.StaleItems)))
+		cap := 5
+		for i, s := range data.StaleItems {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more (use /q-refresh to see all)\n", len(data.StaleItems)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", s.Title, s.ID, s.Reason))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(data.InProgressProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("### In Progress (%d)\n\n", len(data.InProgressProblems)))
+		cap := 5
+		for i, p := range data.InProgressProblems {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.InProgressProblems)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** `%s` → %s\n", p.Meta.Title, p.Meta.ID, data.InProgressBy[p.Meta.ID]))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(data.BacklogProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("### Backlog (%d)\n\n", len(data.BacklogProblems)))
+		cap := 5
+		for i, p := range data.BacklogProblems {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.BacklogProblems)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** `%s`\n", p.Meta.Title, p.Meta.ID))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(data.AddressedProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("### Addressed (%d)\n\n", len(data.AddressedProblems)))
+		cap := 3
+		for i, p := range data.AddressedProblems {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.AddressedProblems)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** `%s` → %s\n", p.Meta.Title, p.Meta.ID, data.AddressedBy[p.Meta.ID]))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(data.RecentNotes) > 0 {
+		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(data.RecentNotes)))
+		for _, n := range data.RecentNotes {
+			sb.WriteString(fmt.Sprintf("- %s `%s` (%s)\n", n.Meta.Title, n.Meta.ID, n.Meta.CreatedAt.Format("2006-01-02")))
+		}
+		sb.WriteString("\n")
+	}
+
+	hasAny := len(data.PendingDecisions) > 0 ||
+		len(data.ShippedDecisions) > 0 ||
+		len(data.StaleItems) > 0 ||
+		len(data.InProgressProblems) > 0 ||
+		len(data.BacklogProblems) > 0 ||
+		len(data.AddressedProblems) > 0 ||
+		len(data.RecentNotes) > 0
+	if !hasAny {
+		sb.WriteString("No artifacts found. Use /q-note or /q-frame to get started.\n")
+	}
+
+	return sb.String()
+}
+
+// ListResponse formats artifacts of a given kind as markdown.
+func ListResponse(data artifact.ListData) string {
+	if len(data.Artifacts) == 0 {
+		return fmt.Sprintf("No %s artifacts found.\n", data.Kind)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## %s (%d)\n\n", data.Kind, len(data.Artifacts)))
+
+	for i, a := range data.Artifacts {
+		line := fmt.Sprintf("%d. **%s** `%s`", i+1, a.Meta.Title, a.Meta.ID)
+		if a.Meta.Status != artifact.StatusActive {
+			line += fmt.Sprintf(" [%s]", a.Meta.Status)
+		}
+		if a.Meta.ValidUntil != "" {
+			vu := a.Meta.ValidUntil
+			if len(vu) > 10 {
+				vu = vu[:10]
+			}
+			line += fmt.Sprintf(" (valid until %s)", vu)
+		}
+		if a.Meta.Context != "" {
+			line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+		}
+		sb.WriteString(line + "\n")
+	}
+
+	return sb.String()
+}
+
+// RelatedResponse formats artifacts linked to a file path as markdown.
+func RelatedResponse(results []*artifact.Artifact, filePath string) string {
+	if len(results) == 0 {
+		return fmt.Sprintf("No decisions found affecting: %s\n", filePath)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Decisions affecting: %s\n\n", filePath))
+
+	for _, a := range results {
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] `%s`", a.Meta.Title, a.Meta.Kind, a.Meta.ID))
+		if a.Meta.Status == artifact.StatusRefreshDue {
+			sb.WriteString(" ⚠ REFRESH DUE")
+		} else if a.Meta.Status == artifact.StatusSuperseded {
+			sb.WriteString(" (superseded)")
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 // ProblemsListResponse formats a list of problems with pre-fetched enrichment data. Pure.
 func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) string {
 	var sb strings.Builder

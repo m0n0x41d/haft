@@ -2,12 +2,11 @@ package artifact
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestQuerySearch_FindsResults(t *testing.T) {
+func TestFetchSearchResults_FindsResults(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
@@ -16,39 +15,48 @@ func TestQuerySearch_FindsResults(t *testing.T) {
 		Body: "Selected NATS over Kafka for domain event infrastructure",
 	})
 
-	result, err := QuerySearch(ctx, store, "NATS events", 10)
+	results, err := FetchSearchResults(ctx, store, "NATS events", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "NATS JetStream") {
-		t.Error("expected NATS in results")
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	found := false
+	for _, a := range results {
+		if a.Meta.Title == "NATS JetStream for events" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected NATS JetStream artifact in results")
 	}
 }
 
-func TestQuerySearch_NoResults(t *testing.T) {
+func TestFetchSearchResults_NoResults(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	result, err := QuerySearch(ctx, store, "nonexistent", 10)
+	results, err := FetchSearchResults(ctx, store, "nonexistent", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "No results") {
-		t.Error("expected 'No results' message")
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
 	}
 }
 
-func TestQuerySearch_EmptyQuery(t *testing.T) {
+func TestFetchSearchResults_EmptyQuery(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	_, err := QuerySearch(ctx, store, "", 10)
+	_, err := FetchSearchResults(ctx, store, "", 10)
 	if err == nil {
 		t.Error("expected error for empty query")
 	}
 }
 
-func TestQueryStatus_Dashboard(t *testing.T) {
+func TestFetchStatusData_Dashboard(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	quintDir := t.TempDir()
@@ -67,36 +75,44 @@ func TestQueryStatus_Dashboard(t *testing.T) {
 		Rationale: "Low contention verified by load test",
 	})
 
-	result, err := QueryStatus(ctx, store, "")
+	data, err := FetchStatusData(ctx, store, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(result, "Pending Implementation") && !strings.Contains(result, "Shipped") {
-		t.Error("missing Pending Implementation or Shipped decisions section")
+	hasPendingOrShipped := len(data.PendingDecisions) > 0 || len(data.ShippedDecisions) > 0
+	if !hasPendingOrShipped {
+		t.Error("missing pending or shipped decisions")
 	}
-	if !strings.Contains(result, "Backlog") {
-		t.Error("missing Backlog section for problems without linked artifacts")
+	if len(data.BacklogProblems) == 0 {
+		t.Error("missing backlog problems")
 	}
-	if !strings.Contains(result, "Recent Notes") {
-		t.Error("missing Recent Notes section")
+	if len(data.RecentNotes) == 0 {
+		t.Error("missing recent notes")
 	}
 }
 
-func TestQueryStatus_Empty(t *testing.T) {
+func TestFetchStatusData_Empty(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	result, err := QueryStatus(ctx, store, "")
+	data, err := FetchStatusData(ctx, store, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "No artifacts found") {
-		t.Error("expected 'No artifacts found' for empty DB")
+	hasAny := len(data.PendingDecisions) > 0 ||
+		len(data.ShippedDecisions) > 0 ||
+		len(data.StaleItems) > 0 ||
+		len(data.InProgressProblems) > 0 ||
+		len(data.BacklogProblems) > 0 ||
+		len(data.AddressedProblems) > 0 ||
+		len(data.RecentNotes) > 0
+	if hasAny {
+		t.Error("expected empty status data for empty DB")
 	}
 }
 
-func TestQueryRelated_FindsByFile(t *testing.T) {
+func TestFetchRelatedArtifacts_FindsByFile(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
@@ -106,33 +122,42 @@ func TestQueryRelated_FindsByFile(t *testing.T) {
 	})
 	store.SetAffectedFiles(ctx, "dec-001", []AffectedFile{{Path: "internal/events/producer.go"}})
 
-	result, err := QueryRelated(ctx, store, "internal/events/producer.go")
+	results, err := FetchRelatedArtifacts(ctx, store, "internal/events/producer.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "NATS decision") {
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	found := false
+	for _, a := range results {
+		if a.Meta.Title == "NATS decision" {
+			found = true
+		}
+	}
+	if !found {
 		t.Error("expected NATS decision in related results")
 	}
 }
 
-func TestQueryRelated_NoResults(t *testing.T) {
+func TestFetchRelatedArtifacts_NoResults(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	result, err := QueryRelated(ctx, store, "nonexistent.go")
+	results, err := FetchRelatedArtifacts(ctx, store, "nonexistent.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "No decisions found") {
-		t.Error("expected 'No decisions found'")
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
 	}
 }
 
-func TestQueryRelated_EmptyPath(t *testing.T) {
+func TestFetchRelatedArtifacts_EmptyPath(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	_, err := QueryRelated(ctx, store, "")
+	_, err := FetchRelatedArtifacts(ctx, store, "")
 	if err == nil {
 		t.Error("expected error for empty file path")
 	}

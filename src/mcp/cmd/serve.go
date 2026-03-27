@@ -893,17 +893,18 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 		if l, ok := args["limit"].(float64); ok {
 			limit = int(l)
 		}
-		result, err := artifact.QuerySearch(ctx, store, query, limit)
+		results, err := artifact.FetchSearchResults(ctx, store, query, limit)
 		if err != nil {
 			return "", err
 		}
-		return result + navStrip, nil
+		return present.SearchResponse(results, query) + navStrip, nil
 
 	case "status":
-		result, err := artifact.QueryStatus(ctx, store, contextName)
+		data, err := artifact.FetchStatusData(ctx, store, contextName)
 		if err != nil {
 			return "", err
 		}
+		result := present.StatusResponse(data)
 		// Append module coverage if modules are scanned
 		scanner := codebase.NewScanner(store.DB())
 		if !scanner.ModulesLastScanned(ctx).IsZero() {
@@ -915,11 +916,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 
 	case "related":
 		file, _ := args["file"].(string)
-		result, err := artifact.QueryRelated(ctx, store, file)
+		results, err := artifact.FetchRelatedArtifacts(ctx, store, file)
 		if err != nil {
 			return "", err
 		}
-		return result + navStrip, nil
+		return present.RelatedResponse(results, file) + navStrip, nil
 
 	case "list":
 		kind, _ := args["kind"].(string)
@@ -927,11 +928,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, quintDir strin
 		if l, ok := args["limit"].(float64); ok {
 			limit = int(l)
 		}
-		result, err := artifact.QueryList(ctx, store, kind, limit)
+		data, err := artifact.FetchListData(ctx, store, kind, limit)
 		if err != nil {
 			return "", err
 		}
-		return result + navStrip, nil
+		return present.ListResponse(data) + navStrip, nil
 
 	case "coverage":
 		projectRoot := filepath.Dir(quintDir)

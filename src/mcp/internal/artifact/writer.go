@@ -20,7 +20,7 @@ func WriteFile(quintDir string, a *Artifact) (string, error) {
 	filename := a.Meta.ID + ".md"
 	path := filepath.Join(dir, filename)
 
-	content := renderArtifact(a)
+	content := RenderArtifactFile(a)
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
@@ -29,14 +29,16 @@ func WriteFile(quintDir string, a *Artifact) (string, error) {
 }
 
 // writeFileQuiet writes the artifact file, logging but not propagating errors.
-// Use when the DB write already succeeded and the file is a secondary projection.
 func writeFileQuiet(quintDir string, a *Artifact) {
 	if _, err := WriteFile(quintDir, a); err != nil {
 		logger.Warn().Err(err).Str("artifact", a.Meta.ID).Msg("file write failed (DB saved OK)")
 	}
 }
 
-func renderArtifact(a *Artifact) string {
+// RenderArtifactFile renders an artifact as YAML frontmatter + markdown body. Pure.
+// Lives in artifact (not present) due to Go import cycle constraint — present imports artifact.
+// Will move to present when types are extracted to a shared domain package.
+func RenderArtifactFile(a *Artifact) string {
 	var sb strings.Builder
 
 	sb.WriteString("---\n")

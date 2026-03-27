@@ -9,16 +9,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Status column in Decisions tab** — board now shows Shipped/Pending status per decision.
+- **FPF spec search as MCP action** — `quint_query(action="fpf", query="...")` searches the embedded FPF specification inline. No more switching to Bash for `quint-code fpf search`. Skill RAG hints updated to use MCP action.
+- **Structured data on artifacts** — new `structured_data` JSON column (migration 16). `ProblemFields` and `DecisionFields` stored as canonical structured JSON alongside markdown body. `BuildDecisionArtifact` reads structured fields from linked problem instead of re-parsing markdown. Backward compatible — falls back to markdown extraction for older artifacts.
+- **Architecture documentation** — `ARCHITECTURE.md` with full layer hierarchy, compilation chain, and per-layer specifications (concepts, functions, inexpressible states, dependencies).
+
+### Changed
+
+- **Functional architecture layering** — complete kernel refactoring with zero MCP contract changes:
+  - `ArtifactStore` interface (26 methods) — all domain functions accept interface, not concrete Store. Compile-time checked.
+  - Pure `Build*` functions for all domain modules (Problem, Note, Decision, Explore, Compare, Waive, Supersede, Deprecate, RefreshReport, Lineage). Orchestrators are thin: fetch → pure build → persist.
+  - `internal/present` package — 17 pure formatting functions extracted from artifact. One-way dependency (present → artifact), no cycles. Zero store access in presentation layer.
+  - `serve.go` handler split — `makeV5Handler` reduced to ~15 lines. Named hooks: `dispatchTool`, `logToolEntry`, `applyCrossProjectRecall`, `applyCrossProjectIndex`, `applyRefreshReminder`.
+  - `query.go` split into `FetchSearchResults`/`FetchStatusData`/`FetchListData`/`FetchRelatedArtifacts` (data, artifact package) + `SearchResponse`/`StatusResponse`/`ListResponse`/`RelatedResponse` (format, present package).
+  - Type validation: `ParseKind`/`ParseStatus`/`ParseMode` enforced at all boundaries (MCP input, file parsing, DB reads). Validation maps unexported.
+  - `interface{}` → `any` throughout serve.go (Go 1.18+).
+- **FTS5 search quality improvements:**
+  - AND-default with OR fallback for multi-term queries (precision ~3-5x improvement).
+  - `bm25` column weighting: title=10x, kind=5x, search_keywords=3x, content=1x.
+  - Stop-word filter replacing `len > 2` heuristic — preserves technical 2-char terms (Go, CI, DB, IO, UI).
+  - Search keywords instruction added to q-reason skill with quality rules (what to generate, what not).
+- **Board no longer reloads data on tab switch** — 3-second periodic refresh provides sufficient data freshness. Removes per-switch overhead.
 
 ### Fixed
 
 - **Drift scan requires diff review before action** — `FormatDriftResponse` adds a guard: "REQUIRED: read `git diff` on modified files before taking action." Classification rubric (cosmetic/material/incidental) presented to agent. Prevents agents from summarizing drift as "expected" without reading diffs.
 - **Drift output uses raw signals instead of interpretive labels** — "likely implemented" / "not yet implemented" labels replaced with "git activity detected after decision date" / "no git activity detected after decision date". Tool outputs observable facts; agent performs all interpretation.
 - **`quint_problem(action="select")` returns deprecated problems** — `SelectProblems` and `FindActiveProblem` applied status filter in Go after a SQL `LIMIT`, so deprecated rows could push active ones out of the result window. Added `ListActiveByKind` with SQL-level `status = 'active'` filter. ([#38](https://github.com/m0n0x41d/quint-code/issues/38))
-
-### Changed
-
-- **Board no longer reloads data on tab switch** — 3-second periodic refresh provides sufficient data freshness. Removes per-switch overhead.
+- **Raw type casts on DB read** — `store.Get()` and `scanArtifacts()` now use `ParseKind`/`ParseStatus`/`ParseMode` instead of raw `Kind(string)` casts, with graceful fallback for older data.
 
 ## [5.3.1] — 2026-03-25
 

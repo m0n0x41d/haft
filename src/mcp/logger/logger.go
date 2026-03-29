@@ -30,6 +30,36 @@ func Init(projectRoot string) error {
 	return initErr
 }
 
+// InitSession creates a per-session log file for the agent.
+// Log path: ~/.quint-code/logs/sessions/{sessionID}.log
+func InitSession(sessionID string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	sessionLogDir := filepath.Join(homeDir, logDir, logsSubDir, "sessions")
+	if err := os.MkdirAll(sessionLogDir, 0755); err != nil {
+		return err
+	}
+
+	logPath := filepath.Join(sessionLogDir, sessionID+".log")
+	logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	zerolog.TimeFieldFormat = time.RFC3339
+	log = zerolog.New(logFile).
+		With().
+		Timestamp().
+		Str("session", sessionID).
+		Logger()
+
+	log.Info().Msg("Session logger initialized")
+	return nil
+}
+
 func initLogger(projectRoot string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -152,4 +182,124 @@ func CodebaseOp(op string, count int, durationMs int64) {
 		Int("count", count).
 		Int64("duration_ms", durationMs).
 		Msg("codebase." + op)
+}
+
+// --- Agent logging helpers ---
+
+// AgentSession logs session start/resume.
+func AgentSession(op, sessionID, model string) {
+	log.Info().
+		Str("component", "agent").
+		Str("op", op).
+		Str("session_id", sessionID).
+		Str("model", model).
+		Msg("agent." + op)
+}
+
+// AgentPhase logs a lemniscate phase transition.
+func AgentPhase(from, to, name string) {
+	log.Info().
+		Str("component", "agent").
+		Str("from", from).
+		Str("to", to).
+		Str("phase_name", name).
+		Msg("agent.phase_transition")
+}
+
+// AgentSignal logs a detected transition signal.
+func AgentSignal(phase, signal, toolName string) {
+	log.Info().
+		Str("component", "agent").
+		Str("phase", phase).
+		Str("signal", signal).
+		Str("tool", toolName).
+		Msg("agent.signal")
+}
+
+// AgentStep logs a ReAct loop step.
+func AgentStep(step int, phase string, toolCount int, hasText bool) {
+	log.Debug().
+		Str("component", "agent").
+		Int("step", step).
+		Str("phase", phase).
+		Int("tool_calls", toolCount).
+		Bool("has_text", hasText).
+		Msg("agent.step")
+}
+
+// AgentToolGated logs when a tool is blocked by phase gating.
+func AgentToolGated(phase, tool string) {
+	log.Warn().
+		Str("component", "agent").
+		Str("phase", phase).
+		Str("tool", tool).
+		Msg("agent.tool_gated")
+}
+
+// AgentToolExec logs tool execution.
+func AgentToolExec(tool, callID string, durationMs int64, isError bool) {
+	e := log.Info().
+		Str("component", "agent").
+		Str("tool", tool).
+		Str("call_id", callID).
+		Int64("duration_ms", durationMs)
+	if isError {
+		e = e.Str("status", "error")
+	} else {
+		e = e.Str("status", "ok")
+	}
+	e.Msg("agent.tool_exec")
+}
+
+// AgentLLM logs an LLM call.
+func AgentLLM(phase string, inputTokens, outputTokens int) {
+	log.Info().
+		Str("component", "agent").
+		Str("phase", phase).
+		Int("input_tokens", inputTokens).
+		Int("output_tokens", outputTokens).
+		Msg("agent.llm_call")
+}
+
+// AgentError logs an agent error.
+func AgentError(phase string, err error) {
+	log.Error().
+		Str("component", "agent").
+		Str("phase", phase).
+		Err(err).
+		Msg("agent.error")
+}
+
+// AgentMessage logs a conversation message (user, assistant, system, tool).
+func AgentMessage(role, content string, toolCalls int, tokens int) {
+	e := log.Info().
+		Str("component", "agent").
+		Str("role", role).
+		Int("tool_calls", toolCalls).
+		Int("tokens", tokens)
+	// Truncate content for log readability
+	if len(content) > 500 {
+		e = e.Str("content", content[:500]+"...(truncated)")
+	} else {
+		e = e.Str("content", content)
+	}
+	e.Msg("agent.message")
+}
+
+// AgentPrompt logs the system prompt being used.
+func AgentPrompt(phase string, promptLen int) {
+	log.Debug().
+		Str("component", "agent").
+		Str("phase", phase).
+		Int("prompt_len", promptLen).
+		Msg("agent.prompt")
+}
+
+// AgentTUI logs TUI state transitions.
+func AgentTUI(event string, details map[string]string) {
+	e := log.Debug().Str("component", "tui").Str("event", event)
+	for k, v := range details {
+		e = e.Str(k, v)
+	}
+	e.Msg("tui." + event)
 }

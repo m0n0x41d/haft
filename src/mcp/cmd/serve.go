@@ -386,29 +386,11 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, quintDir str
 		if v, ok := args["parity_rules"].(string); ok {
 			input.ParityRules = v
 		}
-		if dims, ok := args["dimensions"].([]any); ok {
-			for _, d := range dims {
-				if dm, ok := d.(map[string]any); ok {
-					dim := artifact.ComparisonDimension{}
-					if v, ok := dm["name"].(string); ok {
-						dim.Name = v
-					}
-					if v, ok := dm["scale_type"].(string); ok {
-						dim.ScaleType = v
-					}
-					if v, ok := dm["unit"].(string); ok {
-						dim.Unit = v
-					}
-					if v, ok := dm["polarity"].(string); ok {
-						dim.Polarity = v
-					}
-					if v, ok := dm["how_to_measure"].(string); ok {
-						dim.HowToMeasure = v
-					}
-					input.Dimensions = append(input.Dimensions, dim)
-				}
-			}
+		// Log all args keys and types for debugging
+		for k, v := range args {
+			logger.Debug().Str("key", k).Str("type", fmt.Sprintf("%T", v)).Msg("characterize arg")
 		}
+		input.Dimensions = parseDimensions(args["dimensions"])
 		if input.ProblemRef == "" {
 			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
 			if err != nil || prob == nil {
@@ -1007,6 +989,66 @@ func parseStringArrayFromArgs(args map[string]any, key string) []string {
 		}
 	}
 	return nil
+}
+
+// parseDimensions handles MCP client serialization of comparison dimensions.
+// Claude Code may send the array as:
+//   - []any (parsed JSON array) — standard case
+//   - string (JSON-encoded string) — when the client serializes nested arrays as strings
+func parseDimensions(raw any) []artifact.ComparisonDimension {
+	var items []map[string]any
+
+	switch v := raw.(type) {
+	case []any:
+		for _, item := range v {
+			if m, ok := item.(map[string]any); ok {
+				items = append(items, m)
+			}
+		}
+	case string:
+		// JSON string fallback: "[{...}, {...}]"
+		if len(v) > 0 && v[0] == '[' {
+			var parsed []map[string]any
+			if err := json.Unmarshal([]byte(v), &parsed); err == nil {
+				items = parsed
+			}
+		}
+	case nil:
+		return nil
+	default:
+		// Try JSON marshal/unmarshal roundtrip as last resort
+		data, err := json.Marshal(raw)
+		if err == nil {
+			var parsed []map[string]any
+			if json.Unmarshal(data, &parsed) == nil {
+				items = parsed
+			}
+		}
+	}
+
+	var dims []artifact.ComparisonDimension
+	for _, dm := range items {
+		dim := artifact.ComparisonDimension{}
+		if v, ok := dm["name"].(string); ok {
+			dim.Name = v
+		}
+		if v, ok := dm["scale_type"].(string); ok {
+			dim.ScaleType = v
+		}
+		if v, ok := dm["unit"].(string); ok {
+			dim.Unit = v
+		}
+		if v, ok := dm["polarity"].(string); ok {
+			dim.Polarity = v
+		}
+		if v, ok := dm["how_to_measure"].(string); ok {
+			dim.HowToMeasure = v
+		}
+		if dim.Name != "" {
+			dims = append(dims, dim)
+		}
+	}
+	return dims
 }
 
 // parseNestedStringMapFromArgs handles MCP client serialization of map[string]map[string]string.

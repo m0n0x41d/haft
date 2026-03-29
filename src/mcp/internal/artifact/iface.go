@@ -40,6 +40,10 @@ type ArtifactStore interface {
 	SetAffectedFiles(ctx context.Context, artifactID string, files []AffectedFile) error
 	GetAffectedFiles(ctx context.Context, artifactID string) ([]AffectedFile, error)
 
+	// Affected symbols (tree-sitter powered, symbol-level baselines)
+	SetAffectedSymbols(ctx context.Context, artifactID string, symbols []AffectedSymbol) error
+	GetAffectedSymbols(ctx context.Context, artifactID string) ([]AffectedSymbol, error)
+
 	// Evidence
 	AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifactRef string) error
 	GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error)

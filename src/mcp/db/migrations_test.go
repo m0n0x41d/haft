@@ -24,8 +24,8 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to query schema_version: %v", err)
 	}
-	if count != len(migrations) {
-		t.Errorf("Expected %d migrations recorded, got %d", len(migrations), count)
+	if count != len(kernelMigrations) {
+		t.Errorf("Expected %d kernelMigrations recorded, got %d", len(kernelMigrations), count)
 	}
 }
 
@@ -56,7 +56,7 @@ func TestRunMigrations_ExistingDatabase(t *testing.T) {
 	}
 	conn.Close()
 
-	// Now open with NewStore which runs migrations
+	// Now open with NewStore which runs kernelMigrations
 	store, err := NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -72,11 +72,11 @@ func TestRunMigrations_ExistingDatabase(t *testing.T) {
 		t.Errorf("New columns should exist: %v", err)
 	}
 
-	// Verify migrations are recorded
+	// Verify kernelMigrations are recorded
 	var count int
 	store.conn.QueryRow("SELECT COUNT(*) FROM schema_version").Scan(&count)
-	if count != len(migrations) {
-		t.Errorf("Expected %d migrations recorded, got %d", len(migrations), count)
+	if count != len(kernelMigrations) {
+		t.Errorf("Expected %d kernelMigrations recorded, got %d", len(kernelMigrations), count)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	// Run migrations twice
+	// Run kernelMigrations twice
 	store1, err := NewStore(dbPath)
 	if err != nil {
 		t.Fatalf("First NewStore failed: %v", err)
@@ -100,7 +100,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	// Should still have same number of migration records
 	var count int
 	store2.conn.QueryRow("SELECT COUNT(*) FROM schema_version").Scan(&count)
-	if count != len(migrations) {
-		t.Errorf("Expected %d migrations, got %d (not idempotent)", len(migrations), count)
+	if count != len(kernelMigrations) {
+		t.Errorf("Expected %d kernelMigrations, got %d (not idempotent)", len(kernelMigrations), count)
 	}
 }

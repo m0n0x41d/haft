@@ -275,6 +275,17 @@ type AffectedFile struct {
 	Hash string `json:"hash,omitempty"` // SHA256 at baseline time
 }
 
+// AffectedSymbol captures a symbol-level baseline snapshot.
+// Used for tree-sitter powered drift detection at function/type granularity.
+type AffectedSymbol struct {
+	FilePath   string `json:"file_path"`
+	SymbolName string `json:"symbol_name"`
+	SymbolKind string `json:"symbol_kind"` // func, type, class, interface, method
+	Line       int    `json:"line"`
+	EndLine    int    `json:"end_line"`
+	Hash       string `json:"hash"` // SHA256 of symbol source
+}
+
 // DriftStatus represents the state of a file relative to its baseline.
 type DriftStatus string
 

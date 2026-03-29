@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/m0n0x41d/quint-code/internal/codebase"
+
 	"github.com/m0n0x41d/quint-code/internal/reff"
 	"github.com/m0n0x41d/quint-code/logger"
 )
@@ -442,13 +444,40 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		files[i].Hash = hash
 	}
 
-	// Store updated hashes
+	// Store updated file hashes
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
 		return nil, fmt.Errorf("store baseline hashes: %w", err)
 	}
 
+	// Extract and store symbol-level snapshots (tree-sitter powered)
+	var symbols []AffectedSymbol
+	for _, f := range files {
+		snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, f.Path)
+		if err != nil || snapshots == nil {
+			continue
+		}
+		for _, s := range snapshots {
+			symbols = append(symbols, AffectedSymbol{
+				FilePath:   s.FilePath,
+				SymbolName: s.SymbolName,
+				SymbolKind: s.SymbolKind,
+				Line:       s.Line,
+				EndLine:    s.EndLine,
+				Hash:       s.Hash,
+			})
+		}
+	}
+	if len(symbols) > 0 {
+		if err := store.SetAffectedSymbols(ctx, input.DecisionRef, symbols); err != nil {
+			logger.Warn().Str("decision_ref", input.DecisionRef).Err(err).Msg("baseline.symbols_failed")
+		}
+	}
+
 	logger.ArtifactOp("baseline", input.DecisionRef, string(a.Meta.Kind))
-	logger.Debug().Str("decision_ref", input.DecisionRef).Int("files", len(files)).Msg("baseline.complete")
+	logger.Debug().Str("decision_ref", input.DecisionRef).
+		Int("files", len(files)).
+		Int("symbols", len(symbols)).
+		Msg("baseline.complete")
 
 	return files, nil
 }

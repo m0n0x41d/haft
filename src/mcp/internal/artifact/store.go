@@ -441,6 +441,53 @@ func (s *Store) GetAffectedFiles(ctx context.Context, artifactID string) ([]Affe
 	return files, rows.Err()
 }
 
+// --- Affected Symbols (tree-sitter powered) ---
+
+// SetAffectedSymbols replaces the symbol snapshots for an artifact.
+func (s *Store) SetAffectedSymbols(ctx context.Context, artifactID string, symbols []AffectedSymbol) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM affected_symbols WHERE artifact_id = ?`, artifactID); err != nil {
+		return err
+	}
+
+	for _, sym := range symbols {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO affected_symbols (artifact_id, file_path, symbol_name, symbol_kind, symbol_line, symbol_end_line, symbol_hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			artifactID, sym.FilePath, sym.SymbolName, sym.SymbolKind, sym.Line, sym.EndLine, sym.Hash); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetAffectedSymbols returns the symbol snapshots for an artifact.
+func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]AffectedSymbol, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT file_path, symbol_name, symbol_kind, symbol_line, symbol_end_line, symbol_hash
+		 FROM affected_symbols WHERE artifact_id = ? ORDER BY file_path, symbol_line`, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var symbols []AffectedSymbol
+	for rows.Next() {
+		var sym AffectedSymbol
+		if err := rows.Scan(&sym.FilePath, &sym.SymbolName, &sym.SymbolKind, &sym.Line, &sym.EndLine, &sym.Hash); err != nil {
+			return nil, err
+		}
+		symbols = append(symbols, sym)
+	}
+	return symbols, rows.Err()
+}
+
 // --- Evidence Items ---
 
 // AddEvidenceItem adds an evidence item linked to an artifact.

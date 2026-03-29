@@ -43,59 +43,6 @@ func (vm *viewMessage) hasCompletedTools() bool {
 	return false
 }
 
-// renderAllMessages builds the full chat content string for the viewport.
-func (m Model) renderAllMessages() string {
-	fullWidth := max(20, m.width-2)
-	bodyWidth := max(20, fullWidth-4)
-
-	var sections []string
-
-	for _, msg := range m.messages {
-		sections = append(sections, m.renderMessage(msg, bodyWidth, fullWidth))
-	}
-
-	// Streaming thinking + text
-	if m.state == stateStreaming || m.state == statePermission {
-		// Show thinking box while streaming
-		thinking := m.thinkBuf.String()
-		if thinking != "" {
-			thinkBox := m.renderThinkingBox(thinking, bodyWidth)
-			sections = append(sections, m.renderAssistantBlock("", thinkBox))
-		}
-
-		s := m.streamBuf.String()
-		if s != "" {
-			body := renderBodyText(s, bodyWidth, m.styles.AssistantText)
-			sections = append(sections, m.renderAssistantBlock("", body))
-		}
-	}
-
-	// Error
-	if m.errMsg != "" {
-		errBlock := m.styles.ErrorText.Render(" Error: " + truncate(m.errMsg, bodyWidth))
-		sections = append(sections, errBlock)
-	}
-
-	// Permission prompt
-	if m.state == statePermission {
-		sections = append(sections, m.renderPermission(bodyWidth))
-	}
-
-	return m.joinSections(sections, fullWidth)
-}
-
-// renderMessage renders a single message with role-specific styling.
-func (m Model) renderMessage(msg viewMessage, bodyWidth int, fullWidth int) string {
-	switch msg.Role {
-	case agent.RoleUser:
-		return m.renderUserMessage(msg, fullWidth)
-	case agent.RoleAssistant:
-		return m.renderAssistantMessage(msg, bodyWidth)
-	default:
-		return ""
-	}
-}
-
 // renderUserMessage renders user text as a full-width accent block.
 func (m Model) renderUserMessage(msg viewMessage, width int) string {
 	border := m.styles.InputBorder.Render(strings.Repeat("━", width))
@@ -105,39 +52,6 @@ func (m Model) renderUserMessage(msg viewMessage, width int) string {
 }
 
 // renderAssistantMessage renders assistant text with a Claude-like marker + body.
-func (m Model) renderAssistantMessage(msg viewMessage, w int) string {
-	var parts []string
-
-	// Thinking box (dim, muted — Crush pattern)
-	if msg.Thinking != "" {
-		parts = append(parts, m.renderThinkingBox(msg.Thinking, w))
-	}
-
-	if msg.Text != "" {
-		parts = append(parts, renderBodyText(msg.Text, w, m.styles.AssistantText))
-	}
-
-	// Show phase name only when in a lemniscate phase
-	label := ""
-	if msg.Phase != "" {
-		label = m.findPhaseName(msg.Phase)
-	}
-
-	// Text + thinking get the assistant block header (⏣)
-	var sections []string
-	textBody := strings.Join(parts, "\n\n")
-	if textBody != "" || len(msg.Tools) == 0 {
-		sections = append(sections, m.renderAssistantBlock(label, textBody))
-	}
-
-	// Tool calls are peers — same level as assistant text, each gets its own ⏣
-	for _, tool := range msg.Tools {
-		sections = append(sections, m.renderTool(tool, w))
-	}
-
-	return strings.Join(sections, "\n\n")
-}
-
 // renderThinkingBox renders reasoning text with a subtle left border.
 func (m Model) renderThinkingBox(thinking string, w int) string {
 	const maxLines = 10
@@ -161,7 +75,7 @@ func (m Model) renderThinkingBox(thinking string, w int) string {
 		rendered = append(rendered, dimStyle.Render(line))
 	}
 
-	// Subtle left border — dim vertical line, like Crush's ThinkingBox
+	// Subtle left border — dim vertical line
 	content := strings.Join(rendered, "\n")
 	return lipgloss.NewStyle().
 		BorderLeft(true).
@@ -183,7 +97,9 @@ func (m Model) renderAssistantBlock(label string, body string) string {
 	if !strings.Contains(body, "\n") && lipgloss.Width(body) < 80 {
 		return mark + " " + body
 	}
-	return mark + "\n" + indentBlock(body, "  ")
+	// Use lipgloss PaddingLeft for ANSI-aware indentation (not string prefix)
+	indented := lipgloss.NewStyle().PaddingLeft(2).Render(body)
+	return mark + "\n" + indented
 }
 
 // toolDisplayName maps raw tool names to human-friendly display names.
@@ -366,24 +282,6 @@ func (m Model) renderPermission(w int) string {
 		Render(body.String())
 
 	return box
-}
-
-func (m Model) joinSections(sections []string, width int) string {
-	if len(sections) == 0 {
-		return ""
-	}
-
-	divider := m.renderSectionDivider(width)
-	var b strings.Builder
-	for i, section := range sections {
-		if i > 0 {
-			b.WriteString("\n")
-			b.WriteString(divider)
-			b.WriteString("\n")
-		}
-		b.WriteString(section)
-	}
-	return b.String()
 }
 
 func (m Model) renderSectionDivider(width int) string {

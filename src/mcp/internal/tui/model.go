@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -66,12 +66,11 @@ type Model struct {
 
 	// Components
 	input       textarea.Model
-	chat        viewport.Model
+	chatList    ChatList
 	spinner     spinner.Model
 	picker      list.Model // session picker (for /resume)
-	chatReady   bool
-	gliderTick  int // glider animation frame (advances slowly)
-	spinnerTick int // raw spinner tick counter (fast, ~80ms)
+	gliderTick  int        // glider animation frame (advances slowly)
+	spinnerTick int        // raw spinner tick counter (fast, ~80ms)
 
 	// Infra
 	bus             *Bus
@@ -83,6 +82,9 @@ type Model struct {
 	// Layout
 	width, height int
 	styles        Styles
+
+	// Status bar notification (transient, clears after timeout)
+	notification string
 
 	initialGoal string
 }
@@ -174,7 +176,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseWheelMsg:
-		return m.handleMouseWheel(msg)
+		m.chatList.HandleMouseWheel(msg.Button)
+		return m, nil
+
+	case tea.MouseClickMsg:
+		_, _, chatH := m.layoutBlocks()
+		if msg.Y < chatH {
+			cmd := m.chatList.HandleMouseDown(msg.X, msg.Y)
+			return m, cmd
+		}
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		_, _, chatH := m.layoutBlocks()
+		if msg.Y < chatH {
+			m.chatList.HandleMouseDrag(msg.X, msg.Y)
+		}
+		return m, nil
+
+	case tea.MouseReleaseMsg:
+		_, _, chatH := m.layoutBlocks()
+		if msg.Y < chatH {
+			cmd := m.chatList.HandleMouseUp(msg.X, msg.Y)
+			return m, cmd
+		}
+		return m, nil
+
+	case CopySelectionMsg:
+		if msg.Text != "" {
+			m.notification = "copied to clipboard"
+			return m, tea.Batch(
+				CopyToClipboard(msg.Text),
+				tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
+					return clearNotificationMsg{}
+				}),
+			)
+		}
+		return m, nil
+
+	case clearNotificationMsg:
+		m.notification = ""
+		return m, nil
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -348,17 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) resizeComponents() {
 	m.input.SetWidth(max(1, m.width-4))
 	_, _, chatH := m.layoutBlocks()
-
-	if !m.chatReady {
-		m.chat = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(chatH))
-		m.chat.KeyMap.Left.SetEnabled(false)
-		m.chat.KeyMap.Right.SetEnabled(false)
-		m.chatReady = true
-	} else {
-		m.chat.SetWidth(m.width)
-		m.chat.SetHeight(chatH)
-	}
-
+	m.chatList.SetSize(m.width, chatH)
 	m.refreshChat()
 }
 
@@ -383,34 +415,8 @@ func (m Model) layoutBlocks() (string, string, int) {
 }
 
 func (m *Model) refreshChat() {
-	wasAtBottom := m.chat.AtBottom()
-	content := m.renderAllMessages()
-	content = m.bottomAlignChat(content)
-	m.chat.SetContent(content)
-	if wasAtBottom {
-		m.chat.GotoBottom()
-	}
-}
-
-func (m Model) bottomAlignChat(content string) string {
-	if !m.chatReady {
-		return content
-	}
-	if m.chat.Height() <= 0 {
-		return content
-	}
-	if strings.TrimSpace(content) == "" {
-		return content
-	}
-
-	contentHeight := lipgloss.Height(content)
-	if contentHeight >= m.chat.Height() {
-		return content
-	}
-
-	gap := m.chat.Height() - contentHeight
-	padding := strings.Repeat("\n", gap)
-	return padding + content
+	items := m.buildChatItems()
+	m.chatList.SetItems(items)
 }
 
 // ---------------------------------------------------------------------------
@@ -479,16 +485,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// PgUp/PgDown for page scroll, Shift+Up/Down for line scroll.
 	switch {
 	case key.Code == tea.KeyPgUp:
-		m.chat.PageUp()
+		m.chatList.PageUp()
 		return m, nil
 	case key.Code == tea.KeyPgDown:
-		m.chat.PageDown()
+		m.chatList.PageDown()
 		return m, nil
 	case key.Mod == tea.ModShift && key.Code == tea.KeyUp:
-		m.chat.SetYOffset(m.chat.YOffset() - 3)
+		m.chatList.ScrollBy(-3)
 		return m, nil
 	case key.Mod == tea.ModShift && key.Code == tea.KeyDown:
-		m.chat.SetYOffset(m.chat.YOffset() + 3)
+		m.chatList.ScrollBy(3)
 		return m, nil
 	}
 
@@ -533,12 +539,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	m.chat, cmd = m.chat.Update(msg)
-	return m, cmd
 }
 
 // ---------------------------------------------------------------------------
@@ -802,14 +802,15 @@ func (m Model) View() tea.View {
 
 	inputBlock, statusBlock, chatH := m.layoutBlocks()
 
-	if m.chatReady && m.chat.Height() != chatH {
-		m.chat.SetHeight(chatH)
+	// Ensure chatList has correct size for this render
+	if m.chatList.height != chatH || m.chatList.width != m.width {
+		m.chatList.SetSize(m.width, chatH)
 	}
 
 	var b strings.Builder
 
 	// === TOP: Chat viewport ===
-	b.WriteString(m.chat.View())
+	b.WriteString(m.chatList.View())
 	b.WriteString("\n")
 
 	// === MIDDLE: Input area ===
@@ -878,8 +879,8 @@ func (m Model) renderStatusBlock() string {
 	)
 
 	scrollHint := ""
-	if m.chatReady && !m.chat.AtBottom() {
-		pct := int(m.chat.ScrollPercent() * 100)
+	if !m.chatList.AtBottom() {
+		pct := int(m.chatList.ScrollPercent() * 100)
 		scrollHint = m.styles.Dim.Render(fmt.Sprintf(" ↑%d%% ", pct))
 	}
 
@@ -909,6 +910,16 @@ func (m Model) renderStatusBlock() string {
 	line0 := padStatusRow(rows[0], scrollHint, innerWidth)
 	line1 := padStatusRow(rows[1]+"  "+title, "", innerWidth)
 	line2 := padStatusRow(rows[2], meta, innerWidth)
+
+	// Inline notification replaces the title in line1 when active
+	if m.notification != "" {
+		notif := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("48")).
+			Render(" " + m.notification + " ")
+		line1 = padStatusRow(rows[1]+"  "+notif, "", innerWidth)
+	}
 
 	return "  " + line0 + "  \n" +
 		"  " + line1 + "  \n" +

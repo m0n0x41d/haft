@@ -17,13 +17,18 @@ func TestRenderBodyTextKeepsPlainTextPlain(t *testing.T) {
 
 func TestRenderAssistantMessageUsesHexagonMarker(t *testing.T) {
 	model := Model{styles: DefaultStyles()}
+
+	// Use buildAssistantItems which replaced renderAssistantMessage
 	msg := viewMessage{
 		Role: agent.RoleAssistant,
 		Text: "Hello",
 	}
+	items := model.buildAssistantItems(msg, 60)
+	if len(items) == 0 {
+		t.Fatal("expected at least one item from buildAssistantItems")
+	}
 
-	got := model.renderAssistantMessage(msg, 60)
-
+	got := items[0].Render(60)
 	if !strings.Contains(got, "⏣") {
 		t.Fatalf("expected assistant rendering to include hexagon marker, got %q", got)
 	}
@@ -56,7 +61,12 @@ func TestRenderAllMessagesStreamingDoesNotShowBlockCursor(t *testing.T) {
 	}
 	model.streamBuf.WriteString("hello")
 
-	got := model.renderAllMessages()
+	// Use buildChatItems which replaced renderAllMessages
+	items := model.buildChatItems()
+	var got string
+	for _, item := range items {
+		got += item.Render(80) + "\n"
+	}
 
 	if strings.Contains(got, "█") {
 		t.Fatalf("expected streaming content without block cursor, got %q", got)

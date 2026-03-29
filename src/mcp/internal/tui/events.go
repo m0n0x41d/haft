@@ -101,3 +101,6 @@ type SubagentDoneMsg struct {
 
 // CoordinatorDoneMsg signals the coordinator goroutine has finished.
 type CoordinatorDoneMsg struct{}
+
+// clearNotificationMsg clears the status bar notification after a timeout.
+type clearNotificationMsg struct{}

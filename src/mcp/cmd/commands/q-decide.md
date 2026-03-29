@@ -9,16 +9,13 @@ Create a DecisionRecord — the crown jewel artifact. Must include what was chos
 Use `quint_decision` tool with `action="decide"` and:
 - `selected_title`: name of chosen variant (required)
 - `why_selected`: rationale (required)
-- `why_not_others`: [{variant, reason}] for each rejected option
+- `problem_ref`: problem ID
+- `portfolio_ref`: portfolio ID
 - `invariants`: what MUST hold at all times
-- `pre_conditions`: checklist before implementation
 - `post_conditions`: checklist after (definition of done)
 - `admissibility`: what is NOT acceptable
-- `evidence_requirements`: what to measure/prove
-- `rollback`: {triggers, steps, blast_radius}
-- `refresh_triggers`: when to re-evaluate
 - `weakest_link`: what bounds reliability
-- `valid_until`: expiry date (RFC3339)
+- `valid_until`: expiry date (YYYY-MM-DD)
 - `affected_files`: files affected
 
 ## Verification Gate (before recording)

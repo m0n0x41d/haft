@@ -44,9 +44,9 @@ The user wants the agent to run the full cycle: frame → explore → decide →
 | Tool | What it does | Slash command |
 |------|-------------|---------------|
 | `quint_note` | Record micro-decisions with rationale validation | `/q-note` |
-| `quint_problem` | Frame problems, define comparison dimensions | `/q-frame`, `/q-char` |
+| `quint_problem` | Frame problems; characterization is currently done inline in reasoning | `/q-frame`, `/q-char` |
 | `quint_solution` | Explore variants, compare and identify Pareto front | `/q-explore`, `/q-compare` |
-| `quint_decision` | Decide with full rationale, generate implementation brief | `/q-decide`, `/q-apply` |
+| `quint_decision` | Decide with formal rationale; record measurement results | `/q-decide` |
 | `quint_refresh` | Detect stale decisions, manage lifecycle | `/q-refresh` |
 | `quint_query` | Search, status dashboard, file-to-decision lookup | `/q-search`, `/q-status` |
 
@@ -69,18 +69,18 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 | Concept | Status | What Quint does |
 |---------|--------|-----------------|
 | Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Quint persists it. |
-| Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity. You define them, Quint persists them. |
-| WLNK | **tracked** | Required label on variants. After evidence is attached, WLNK summary shows min CL, freshness, supporting/weakening/refuting counts. |
+| Characterization | **inline** | Define comparison dimensions in reasoning and carry them into compare. Current runtime does not persist a separate characterization artifact. |
+| WLNK | **tracked** | Required label on variants. Quint stores the stated weakest link on explored variants and decisions. |
 | Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
 | Pareto front | **tracked** | You identify the non-dominated set, Quint stores and displays it. Not computed automatically. |
 | Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
 | Refresh (valid_until) | **enforced** | All artifacts (decisions, problems, portfolios) with expired valid_until detected by scan. |
 | Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
-| CL (congruence) | **tracked** | Field on evidence items. Shown in WLNK summary (min CL across evidence chain). |
-| F-G-R | **textual** | Formality field on evidence items. Stored, shown in WLNK summary when present. |
-| NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions on ProblemCard instead. |
+| CL (congruence) | **artifact-level** | Reliability/evidence calculations exist in artifact/runtime code, but not as a `quint_decision` action exposed in the current haft tool schema. |
+| F-G-R | **textual** | Formality labels may exist in artifact data, but are not a first-class haft decision-tool workflow step. |
+| NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions in exploration/compare instead. |
 | Impact measurement | **tracked** | `quint_decision(action="measure")` records post-implementation findings against acceptance criteria. |
-| Evidence attachment | **tracked** | `quint_decision(action="evidence")` attaches evidence items to any artifact with type/verdict/CL/carrier. |
+| Evidence attachment | **not exposed here** | Do not instruct agents to call `quint_decision(action="evidence")`; that action is not available in the current haft tool schema. |
 
 **Key rule: don't describe textual features as if they compute something.** When you say "WLNK bounds quality," you mean "the user identified what bounds quality" — not that the system calculated it.
 
@@ -125,7 +125,7 @@ Define the **characteristic space** before evaluating options. Without explicit 
 - Ensure **parity** — same inputs, same scope, same budget across all options (you enforce this, Quint stores your parity rules)
 - Keep it **multi-dimensional** — never collapse to a single score unless the fold is explicit
 
-**Persist with**: `quint_problem(action="characterize", ...)`
+**Persisting is not available as a separate step in the current runtime.** Define dimensions in reasoning, then include them in `quint_solution(action="compare", ...)`.
 
 > RAG: `quint-code fpf search "characterization CHR"`
 
@@ -155,10 +155,9 @@ Note: Quint stores your comparison results and Pareto front. It does not compute
 
 The decision record should contain:
 - **Invariants** — what MUST hold at all times
-- **Pre/post-conditions** — checklists for implementation
+- **Post-conditions** — checklist for implementation completion
 - **Admissibility** — what is NOT acceptable
-- **Rollback plan** — when and how to reverse
-- **Refresh triggers** — when to re-evaluate (set valid_until date for automatic detection)
+- **Valid-until date** — when to re-evaluate automatically
 - **Weakest link** — your assessment of what bounds reliability
 
 **Persist with**: `quint_decision(action="decide", ...)`
@@ -180,8 +179,8 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 | Mode | When | Flow |
 |------|------|------|
 | **note** | Micro-decisions during coding | `/q-note` — done |
-| **tactical** | Reversible, <2 weeks blast radius | `/q-frame` → `/q-explore` → `/q-decide` |
-| **standard** | Most architectural decisions | `/q-frame` → `/q-char` → `/q-explore` → `/q-compare` → `/q-decide` |
+| **tactical** | Reversible, <2 weeks blast radius | `/q-frame` → `/q-decide` |
+| **standard** | Most architectural decisions | define dimensions → `/q-explore` → `/q-compare` → `/q-decide` |
 | **deep** | Irreversible, security, cross-team | All standard + rich parity, runbook, refresh triggers |
 
 **Default is tactical.** Escalate when: hard to reverse, multiple teams affected, or problem framing is unclear.
@@ -212,26 +211,24 @@ Examples of auto-capture triggers:
 
 **Do NOT auto-capture**: formatting choices, import ordering, variable naming (too trivial).
 
-### Post-implementation ritual (after /q-decide → implement → commit)
+### Post-implementation ritual (after /q-decide → implement)
 
-After implementing a decision and committing code:
-1. Call `quint_decision(action="baseline", decision_ref="<id>")` — snapshot file hashes
-2. **Verify inductively** — at least one of:
+After implementing a decision:
+1. **Verify inductively** — at least one of:
    - Run tests (`go test`, `npm test`, `cargo test`) and confirm they pass
    - Read affected files and verify the implementation matches the decision
    - Ask the user to confirm implementation
-3. Call `quint_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
+2. Call `quint_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
 
-**Calling measure from memory without verification is a FPF B.5:4.3 violation.** The tool will warn if no baseline exists. This is not ceremony — it's the difference between design-time claims and run-time evidence.
+**Calling measure from memory without verification is a FPF B.5:4.3 violation.**
 
-This closes the lemniscate. Without measure, the decision stays in "Pending Implementation" on `/q-status`.
+This closes the lemniscate. Without measure, the decision stays open.
 
 ### Proactive checks (at key moments)
 
 - **At session start**: call `quint_query(action="status")` to surface stale decisions and active problems
-- **When /q-status shows Pending Implementation decisions**: check if they were actually implemented. If the decision has a baseline and the code is in place — call `measure` to close the loop.
-- **When scan shows "no baseline"**: do NOT assume "not implemented." "No baseline" means the measurement loop wasn't closed, not that the work wasn't done. Check git history for the affected files before reporting status. The scan output distinguishes "files changed since decision" from "files unchanged" — use this signal.
-- **When scan shows drift**: do NOT summarize as "expected from development" without reading diffs. For each drifted decision: (1) read `git diff` for each modified file, (2) classify as cosmetic / incidental / material to the decision's invariants, (3) present classification to user. Skipping diff review is a FPF violation — treating description as evidence.
+- **When /q-status shows pending decisions**: check if they were actually implemented and measured.
+- **When code changed after a decision**: do NOT summarize drift without reading diffs. For each modified file: (1) read `git diff`, (2) classify as cosmetic / incidental / material to the decision's invariants, (3) present classification to user.
 - **If status returns zero artifacts on a project with code**: suggest `/q-onboard`
 - **When dev works on files**: call `quint_query(action="related", file="path")` to find linked decisions — mention them if relevant
 - **When dev says "let's just do X" without rationale**: ask "why X?" before recording
@@ -250,7 +247,7 @@ These require explicit user action — don't auto-trigger:
 The `── Quint ──` strip appended to tool responses shows current state and available actions. Key rules:
 
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
-- **Mode determines flow shape** — tactical skips `/q-char` and `/q-compare`; standard includes them. The Available line reflects the current mode.
+- **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
 - **Fewer steps ≠ fewer checkpoints.** Tactical mode has fewer FPF steps but the same human consent requirement at each transition.
 - **Path 3 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through Available actions without pausing.
 

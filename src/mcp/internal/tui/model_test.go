@@ -13,7 +13,7 @@ import (
 func TestMouseWheelScrollsChatList(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
 
 	model.width = 80
 	model.height = 12

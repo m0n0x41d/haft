@@ -60,7 +60,7 @@ func DefaultStyles() Styles {
 
 	return Styles{
 		// Layout
-		HeaderBar:    lipgloss.NewStyle().Bold(true).Foreground(accent).PaddingLeft(1),
+		HeaderBar:    lipgloss.NewStyle().Bold(true).Foreground(accent),
 		StatusBar:    lipgloss.NewStyle().Foreground(subtle).PaddingLeft(1),
 		BlockDivider: lipgloss.NewStyle().Foreground(lipgloss.Color("239")),
 

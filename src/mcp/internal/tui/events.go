@@ -57,12 +57,12 @@ type PhaseChangeMsg struct {
 	Name string // display name (e.g., "haft-worker")
 }
 
-// PhasePauseMsg signals the coordinator paused for manual mode input.
-// The TUI should show the phase result and wait for user to press Enter.
+// PhasePauseMsg signals the coordinator paused for user approval.
+// Reply true = proceed to next phase. Reply false = stay, let user discuss.
 type PhasePauseMsg struct {
 	Phase   agent.Phase
 	Summary string
-	Resume  chan<- struct{} // close or send to resume
+	Reply   chan<- bool
 }
 
 // TokenUpdateMsg carries token usage info to the TUI.
@@ -99,8 +99,28 @@ type SubagentDoneMsg struct {
 	IsError    bool
 }
 
+// CycleUpdateMsg notifies the TUI that the active cycle changed.
+type CycleUpdateMsg struct {
+	CycleID      string
+	ProblemRef   string
+	PortfolioRef string
+	DecisionRef  string
+	Phase        agent.Phase
+	Status       agent.CycleStatus
+}
+
 // CoordinatorDoneMsg signals the coordinator goroutine has finished.
 type CoordinatorDoneMsg struct{}
 
 // clearNotificationMsg clears the status bar notification after a timeout.
 type clearNotificationMsg struct{}
+
+// clearQuitConfirmMsg resets the quit confirmation state after timeout.
+type clearQuitConfirmMsg struct{}
+
+// compactDoneMsg signals that forced compaction completed.
+type compactDoneMsg struct {
+	before int
+	after  int
+	err    error
+}

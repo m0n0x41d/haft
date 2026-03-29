@@ -5,9 +5,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	glamour "charm.land/glamour/v2"
-	glamansi "charm.land/glamour/v2/ansi"
-	glamstyles "charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
@@ -46,7 +43,7 @@ func (vm *viewMessage) hasCompletedTools() bool {
 // renderUserMessage renders user text as a full-width accent block.
 func (m Model) renderUserMessage(msg viewMessage, width int) string {
 	border := m.styles.InputBorder.Render(strings.Repeat("━", width))
-	body := renderPlainText(msg.Text, max(20, width-4), m.styles.UserText)
+	body := wrapPlainLine(msg.Text, max(20, width-4))
 	body = indentBlock(body, "  ")
 	return border + "\n" + body + "\n" + border
 }
@@ -97,9 +94,7 @@ func (m Model) renderAssistantBlock(label string, body string) string {
 	if !strings.Contains(body, "\n") && lipgloss.Width(body) < 80 {
 		return mark + " " + body
 	}
-	// Use lipgloss PaddingLeft for ANSI-aware indentation (not string prefix)
-	indented := lipgloss.NewStyle().PaddingLeft(2).Render(body)
-	return mark + "\n" + indented
+	return mark + "\n" + indentBlock(body, "  ")
 }
 
 // toolDisplayName maps raw tool names to human-friendly display names.
@@ -284,6 +279,29 @@ func (m Model) renderPermission(w int) string {
 	return box
 }
 
+func (m Model) renderGovernance(w int) string {
+	var body strings.Builder
+
+	body.WriteString(m.styles.PermTitle.Render("Next phase"))
+	if m.govRationale != "" {
+		body.WriteString("\n")
+		body.WriteString(m.styles.Dim.Render(m.govRationale))
+	}
+	body.WriteString("\n\n")
+	body.WriteString(
+		m.styles.PermKey.Render(" y ") + " yes, proceed   " +
+			m.styles.PermDeny.Render(" n ") + " not yet, let me discuss")
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(0, 2).
+		Width(min(w-4, 60)).
+		Render(body.String())
+
+	return box
+}
+
 func (m Model) renderSectionDivider(width int) string {
 	return m.styles.BlockDivider.Render(strings.Repeat("─", width))
 }
@@ -292,106 +310,98 @@ func (m Model) renderSectionDivider(width int) string {
 // Markdown
 // ---------------------------------------------------------------------------
 
-// Cached markdown renderer — re-created only when width changes.
-var (
-	cachedRenderer      *glamour.TermRenderer
-	cachedRendererWidth int
-)
+// maxTextWidth caps word-wrap width for readability on wide terminals.
+const maxTextWidth = 120
 
 func renderBodyText(text string, width int, style lipgloss.Style) string {
-	if looksLikeMarkdown(text) {
-		return renderMarkdown(text, width)
-	}
-	return renderPlainText(text, width, style)
-}
-
-func renderPlainText(text string, width int, style lipgloss.Style) string {
 	if text == "" {
 		return ""
 	}
+	renderWidth := min(width, maxTextWidth)
+	return renderSimpleMarkdown(text, renderWidth, style)
+}
 
+// renderSimpleMarkdown renders markdown without glamour.
+// Handles: inline code, code blocks, bold, lists. No word-level corruption.
+func renderSimpleMarkdown(text string, width int, style lipgloss.Style) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	rendered := make([]string, 0, len(lines))
+	var result []string
+	inCodeBlock := false
+	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Background(lipgloss.Color("236"))
+	boldStyle := lipgloss.NewStyle().Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
 	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			rendered = append(rendered, "")
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inCodeBlock = !inCodeBlock
+			result = append(result, dimStyle.Render(line))
 			continue
 		}
+		if inCodeBlock {
+			result = append(result, codeStyle.Render(line))
+			continue
+		}
+
+		if strings.TrimSpace(line) == "" {
+			result = append(result, "")
+			continue
+		}
+
+		// First wrap plain text (rune-safe), THEN apply inline formatting.
+		// Never format before wrapping — ANSI codes break width measurement.
 		wrapped := strings.Split(wrapPlainLine(line, width), "\n")
-		for _, visualLine := range wrapped {
-			rendered = append(rendered, style.Render(visualLine))
+		for _, seg := range wrapped {
+			result = append(result, processInlineFormatting(seg, codeStyle, boldStyle))
 		}
 	}
-
-	return strings.Join(rendered, "\n")
+	return strings.Join(result, "\n")
 }
 
-func looksLikeMarkdown(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return false
-	}
-	if strings.Contains(trimmed, "```") || strings.Contains(trimmed, "`") {
-		return true
-	}
-	for _, line := range strings.Split(trimmed, "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "# "):
-			return true
-		case strings.HasPrefix(line, "## "):
-			return true
-		case strings.HasPrefix(line, "### "):
-			return true
-		case strings.HasPrefix(line, "- "):
-			return true
-		case strings.HasPrefix(line, "* "):
-			return true
-		case strings.HasPrefix(line, "> "):
-			return true
-		case strings.HasPrefix(line, "|"):
-			return true
-		case strings.HasPrefix(line, "1. "):
-			return true
-		case strings.HasPrefix(line, "2. "):
-			return true
-		case strings.HasPrefix(line, "3. "):
-			return true
-		}
-	}
-	return false
-}
+// processInlineFormatting handles `code` and **bold** in a line.
+// Splits into segments first, then styles each — never searches styled output.
+func processInlineFormatting(line string, codeStyle, boldStyle lipgloss.Style) string {
+	var result strings.Builder
+	i := 0
+	runes := []rune(line)
+	n := len(runes)
 
-// renderMarkdown renders text as terminal markdown using glamour.
-func renderMarkdown(text string, width int) string {
-	if text == "" {
-		return ""
-	}
-	if cachedRenderer == nil || cachedRendererWidth != width {
-		style := glamstyles.DarkStyleConfig
-		style.Document = glamansi.StyleBlock{
-			StylePrimitive: glamansi.StylePrimitive{
-				Color: strPtr("252"),
-			},
-			Margin: uintPtr(0),
+	for i < n {
+		// Check for inline code: `text`
+		if runes[i] == '`' {
+			end := -1
+			for j := i + 1; j < n; j++ {
+				if runes[j] == '`' {
+					end = j
+					break
+				}
+			}
+			if end > i {
+				code := string(runes[i+1 : end])
+				result.WriteString(codeStyle.Render(" " + code + " "))
+				i = end + 1
+				continue
+			}
 		}
-		style.BlockQuote.Indent = uintPtr(0)
-		style.BlockQuote.IndentToken = strPtr("")
-		r, err := glamour.NewTermRenderer(
-			glamour.WithStyles(style),
-			glamour.WithWordWrap(width),
-		)
-		if err != nil {
-			return text
+		// Check for bold: **text**
+		if i+1 < n && runes[i] == '*' && runes[i+1] == '*' {
+			end := -1
+			for j := i + 2; j+1 < n; j++ {
+				if runes[j] == '*' && runes[j+1] == '*' {
+					end = j
+					break
+				}
+			}
+			if end > i {
+				bold := string(runes[i+2 : end])
+				result.WriteString(boldStyle.Render(bold))
+				i = end + 2
+				continue
+			}
 		}
-		cachedRenderer = r
-		cachedRendererWidth = width
+		result.WriteRune(runes[i])
+		i++
 	}
-	rendered, err := cachedRenderer.Render(text)
-	if err != nil {
-		return text
-	}
-	return strings.TrimRight(rendered, "\n")
+	return result.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -524,14 +534,6 @@ func wrapPlainLine(line string, width int) string {
 
 	lines = append(lines, current)
 	return strings.Join(lines, "\n")
-}
-
-func uintPtr(v uint) *uint {
-	return &v
-}
-
-func strPtr(v string) *string {
-	return &v
 }
 
 func extractToolParam(name, argsJSON string) string {

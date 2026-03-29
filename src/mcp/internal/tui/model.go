@@ -19,6 +19,9 @@ import (
 // RunFunc is the coordinator's Run function, injected to avoid import cycles.
 type RunFunc func(ctx context.Context, sess *agent.Session, userText string)
 
+// CompactFunc runs forced compaction. Returns (messagesBefore, messagesAfter, error).
+type CompactFunc func(ctx context.Context, sess *agent.Session) (int, int, error)
+
 // AppState tracks what the TUI is doing.
 type AppState int
 
@@ -26,6 +29,7 @@ const (
 	stateInput AppState = iota
 	stateStreaming
 	statePermission
+	stateGovernance
 	stateSessionPicker
 )
 
@@ -41,11 +45,18 @@ type Model struct {
 	errMsg    string
 
 	// Lemniscate phase
-	currentPhase agent.Phase     // current lemniscate phase (empty = no lemniscate)
-	phaseName    string          // display name (e.g., "haft-framer")
-	phaseVerb    string          // current status verb (picked once per phase activation)
-	verbCounter  int             // increments each phase activation, selects word from pool
-	pauseResume  chan<- struct{} // manual mode resume channel
+	currentPhase agent.Phase // current lemniscate phase (empty = no lemniscate)
+	phaseName    string      // display name (e.g., "haft-framer")
+	phaseVerb    string      // current status verb (picked once per phase activation)
+	verbCounter  int         // increments each phase activation, selects word from pool
+	phaseReply   chan<- bool // phase pause reply: true=proceed, false=discuss
+
+	// Active cycle tracking (from CycleUpdateMsg)
+	cycleID      string
+	problemRef   string
+	portfolioRef string
+	decisionRef  string
+	cycleStatus  agent.CycleStatus
 
 	// Token tracking
 	tokensUsed  int
@@ -57,6 +68,7 @@ type Model struct {
 	// Mode toggles
 	autoApprove bool // Ctrl+Y: auto-approve tool permissions
 	prefixMode  bool // Ctrl+S prefix: next key selects action
+	quitConfirm bool // Ctrl+C pressed once, waiting for confirm
 
 	// Command palette
 	palette CommandPalette
@@ -67,6 +79,9 @@ type Model struct {
 	// Permission
 	permToolName, permArgs string
 	permReply              chan<- bool
+
+	// Phase pause
+	govRationale string // summary text for phase transition overlay
 
 	// Components
 	input       textarea.Model
@@ -79,9 +94,11 @@ type Model struct {
 	// Infra
 	bus             *Bus
 	runFn           RunFunc
+	compactFn       CompactFunc
 	cancel          context.CancelFunc
 	sessionStore    session.SessionStore
 	sessionMsgStore session.MessageStore
+	cycleStore      session.CycleStore
 
 	// Layout
 	width, height int
@@ -100,6 +117,8 @@ func New(
 	initialGoal string,
 	sessStore session.SessionStore,
 	msgStore session.MessageStore,
+	compactFn CompactFunc,
+	cycleStore session.CycleStore,
 ) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message..."
@@ -134,8 +153,10 @@ func New(
 		session:         session,
 		bus:             bus,
 		runFn:           runFn,
+		compactFn:       compactFn,
 		sessionStore:    sessStore,
 		sessionMsgStore: msgStore,
+		cycleStore:      cycleStore,
 		styles:          DefaultStyles(),
 		initialGoal:     initialGoal,
 		streamBuf:       &strings.Builder{},
@@ -222,6 +243,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notification = ""
 		return m, nil
 
+	case clearQuitConfirmMsg:
+		m.quitConfirm = false
+		if m.notification == "Press Ctrl+C again to quit, or keep working" {
+			m.notification = ""
+		}
+		return m, nil
+
+	case compactDoneMsg:
+		if msg.err != nil {
+			m.errMsg = fmt.Sprintf("compact failed: %s", msg.err)
+			m.notification = ""
+		} else {
+			m.notification = fmt.Sprintf("compacted %d → %d messages", msg.before, msg.after)
+		}
+		return m, tea.Tick(5*time.Second, func(_ time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
@@ -236,12 +275,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSubmit(msg.text)
 
 	case spinner.TickMsg:
-		if m.state == stateStreaming {
+		if m.state == stateStreaming || m.state == statePermission || m.state == stateGovernance || m.notification != "" {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			m.spinnerTick++
-			// Advance glider every 5 spinner ticks (~400ms per frame)
-			// 4 frames × 400ms = ~1.6s full cycle
+			// Advance animation every 5 spinner ticks (~400ms per frame)
 			if m.spinnerTick%5 == 0 {
 				m.gliderTick++
 			}
@@ -339,13 +377,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tokensLimit = msg.Limit
 		return m, m.waitForBus()
 
+	case CycleUpdateMsg:
+		m.cycleID = msg.CycleID
+		m.problemRef = msg.ProblemRef
+		m.portfolioRef = msg.PortfolioRef
+		m.decisionRef = msg.DecisionRef
+		m.cycleStatus = msg.Status
+		m.refreshChat()
+		return m, m.waitForBus()
+
 	case PhaseChangeMsg:
 		// Finalize any in-progress streaming from the previous phase
 		if m.streamBuf.Len() > 0 || m.thinkBuf.Len() > 0 {
 			m.finalizeStream()
 		}
-		// Update phase — lastAssistantInPhase() will return nil for the new phase,
-		// so the next streaming text automatically creates a new message.
 		m.currentPhase = msg.To
 		m.phaseName = msg.Name
 		m.verbCounter++
@@ -354,12 +399,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForBus()
 
 	case PhasePauseMsg:
-		m.state = statePermission // reuse permission state for pause UI
-		m.pauseResume = msg.Resume
-		m.permToolName = "phase"
-		m.permArgs = msg.Summary
+		m.state = stateGovernance // reuse governance state — Enter to proceed
+		m.govRationale = msg.Summary
+		m.phaseReply = msg.Reply
 		m.refreshChat()
-		return m, nil
+		return m, m.spinner.Tick
 
 	case CoordinatorDoneMsg:
 		m.state = stateInput
@@ -435,19 +479,35 @@ func (m *Model) refreshChat() {
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.Key()
 
-	// Global: Ctrl+C
+	// Global: Ctrl+C — first press cancels/shows quit confirm, second quits
 	if key.Mod == tea.ModCtrl && key.Code == 'c' {
 		if m.state == statePermission && m.permReply != nil {
 			m.permReply <- false
+		}
+		if m.state == stateGovernance && m.phaseReply != nil {
+			m.phaseReply <- false
+			m.phaseReply = nil
 		}
 		if m.cancel != nil {
 			m.cancel()
 		}
 		if m.state == stateInput {
-			return m, tea.Quit
+			if m.quitConfirm {
+				return m, tea.Quit
+			}
+			m.quitConfirm = true
+			m.notification = "Press Ctrl+C again to quit, or keep working"
+			return m, tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
+				return clearQuitConfirmMsg{}
+			})
 		}
 		m.state = stateInput
 		return m, m.input.Focus()
+	}
+	// Any other key clears quit confirm
+	if m.quitConfirm {
+		m.quitConfirm = false
+		m.notification = ""
 	}
 	// Global: Ctrl+Q toggles interaction mode (symbiotic ↔ autonomous)
 	if key.Mod == tea.ModCtrl && key.Code == 'q' {
@@ -455,18 +515,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.session.Interaction = agent.InteractionSymbiotic
 		} else {
 			m.session.Interaction = agent.InteractionAutonomous
-		}
-		return m, nil
-	}
-	// Global: Ctrl+T cycles depth (tactical → standard → deep → tactical)
-	if key.Mod == tea.ModCtrl && key.Code == 't' {
-		switch m.session.Depth {
-		case agent.DepthTactical:
-			m.session.Depth = agent.DepthStandard
-		case agent.DepthStandard:
-			m.session.Depth = agent.DepthDeep
-		default:
-			m.session.Depth = agent.DepthTactical
 		}
 		return m, nil
 	}
@@ -609,6 +657,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.state = stateStreaming
 			return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
 		}
+
+	case stateGovernance:
+		switch key.Text {
+		case "y", "Y":
+			if m.phaseReply != nil {
+				m.phaseReply <- true
+				m.phaseReply = nil
+			}
+			m.state = stateStreaming
+			return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
+		case "n", "N":
+			if m.phaseReply != nil {
+				m.phaseReply <- false
+				m.phaseReply = nil
+			}
+			m.state = stateInput
+			return m, m.input.Focus()
+		}
+		if key.Code == tea.KeyEnter {
+			if m.phaseReply != nil {
+				m.phaseReply <- true
+				m.phaseReply = nil
+			}
+			m.state = stateStreaming
+			return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
+		}
 	}
 
 	return m, nil
@@ -662,10 +736,18 @@ func (m Model) handleSlashCommand(text string) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case "/resume", "/sessions":
 		return m.openSessionPicker()
-	case "/next":
-		return m.handleSubmit("continue to next phase")
 	case "/compact":
-		return m.handleSubmit("/compact")
+		if m.compactFn == nil {
+			m.errMsg = "compaction not available"
+			return m, nil
+		}
+		m.notification = "compacting..."
+		compactFn := m.compactFn
+		sess := m.session
+		return m, func() tea.Msg {
+			before, after, err := compactFn(context.Background(), sess)
+			return compactDoneMsg{before: before, after: after, err: err}
+		}
 	case "/help":
 		var names []string
 		for _, sc := range slashCommands {
@@ -676,8 +758,8 @@ func (m Model) handleSlashCommand(text string) (tea.Model, tea.Cmd) {
 	case "/frame", "/explore", "/decide", "/measure", "/status",
 		"/reason", "/note", "/search", "/compare", "/problems",
 		"/refresh", "/char":
-		// Pass through to agent as user message
-		return m.handleSubmit(text)
+		// Pass through to agent as user message (strip slash to avoid recursion)
+		return m.handleSubmit(strings.TrimPrefix(text, "/"))
 	default:
 		m.errMsg = fmt.Sprintf("Unknown command: %s. Type / to see available commands", cmd)
 		return m, nil
@@ -929,29 +1011,27 @@ func (m Model) renderStatusBlock() string {
 		sid = sid[:8]
 	}
 
-	glider := GliderCells(0)
+	anim := m.selectAnimation()
+	glider := AnimationCells(anim, m.gliderTick)
 	var stateText string
 
 	switch m.state {
 	case stateInput:
 		stateText = m.styles.StatusState.Render("ready")
 	case stateStreaming:
-		glider = GliderCells(m.gliderTick)
 		verb := m.phaseVerb
 		if verb == "" {
 			verb = "reasoning"
 		}
 		stateText = m.scanText(verb)
 	case statePermission:
-		glider = GliderCells(m.gliderTick)
 		stateText = m.styles.PermTitle.Render("permission")
+	case stateGovernance:
+		stateText = m.styles.PermTitle.Render("phase transition")
 	}
 
-	// Mode indicators: depth × interaction
+	// Mode indicators
 	modeIndicator := ""
-	if m.session.Depth != "" {
-		modeIndicator += m.styles.Dim.Render(string(m.session.Depth)) + " "
-	}
 	if m.session.Interaction == agent.InteractionAutonomous {
 		modeIndicator += m.styles.ToolRunning.Render("⚡auto") + " "
 	}
@@ -964,6 +1044,9 @@ func (m Model) renderStatusBlock() string {
 		modeIndicator,
 		stateText,
 	)
+
+	// Cycle pipeline display
+	cycleInfo := m.renderCycleInfo()
 
 	scrollHint := ""
 	if !m.chatList.AtBottom() {
@@ -994,7 +1077,11 @@ func (m Model) renderStatusBlock() string {
 	)
 
 	rows := m.renderGliderRows(glider)
-	line0 := padStatusRow(rows[0], scrollHint, innerWidth)
+	line0Left := rows[0]
+	if cycleInfo != "" {
+		line0Left = rows[0] + "  " + cycleInfo
+	}
+	line0 := padStatusRow(line0Left, scrollHint, innerWidth)
 	line1 := padStatusRow(rows[1]+"  "+title, "", innerWidth)
 	line2 := padStatusRow(rows[2], meta, innerWidth)
 
@@ -1041,6 +1128,75 @@ func (m Model) renderGliderRow(row [3]bool) string {
 	return strings.Join(cells, " ")
 }
 
+// renderCycleInfo renders the cycle pipeline for the status bar top line.
+// Shows: Working on: prob-001 → sol-001 → deciding...
+func (m Model) renderCycleInfo() string {
+	if m.cycleID == "" {
+		return ""
+	}
+
+	accent := m.styles.StatusAccent
+	dim := m.styles.Dim
+
+	var refs []string
+
+	if m.problemRef != "" {
+		refs = append(refs, accent.Render(truncRef(m.problemRef)))
+	}
+	if m.portfolioRef != "" {
+		refs = append(refs, accent.Render(truncRef(m.portfolioRef)))
+	} else if m.problemRef != "" && m.currentPhase == agent.PhaseExplorer {
+		refs = append(refs, dim.Render("exploring…"))
+	}
+	if m.decisionRef != "" {
+		refs = append(refs, accent.Render(truncRef(m.decisionRef)))
+	} else if m.portfolioRef != "" && m.currentPhase == agent.PhaseDecider {
+		refs = append(refs, dim.Render("deciding…"))
+	}
+
+	if m.cycleStatus == agent.CycleComplete {
+		refs = append(refs, m.styles.ToolDone.Render("✓"))
+	}
+
+	if len(refs) == 0 {
+		return ""
+	}
+
+	pipeline := strings.Join(refs, dim.Render(" → "))
+	return dim.Render("Working on: ") + pipeline
+}
+
+// truncRef shortens an artifact ref for display (prob-20260329-001 → prob-001).
+func truncRef(ref string) string {
+	// refs look like "prob-20260329-001" — show "prob-001" (kind + seq)
+	parts := strings.Split(ref, "-")
+	if len(parts) >= 3 {
+		return parts[0] + "-" + parts[len(parts)-1]
+	}
+	if len(ref) > 12 {
+		return ref[:12]
+	}
+	return ref
+}
+
+// selectAnimation picks the animation pattern based on current TUI state.
+func (m Model) selectAnimation() Animation {
+	switch m.state {
+	case stateStreaming:
+		if m.activeSubagents > 0 {
+			return AnimOrbit // dot circling — agents working
+		}
+		return AnimGlider // Conway's glider — LLM thinking
+	case statePermission, stateGovernance:
+		return AnimPulse // center radiates — waiting for user
+	default:
+		if strings.Contains(m.notification, "compact") {
+			return AnimConverge // corners→center — compaction
+		}
+		return AnimStatic // frozen — idle
+	}
+}
+
 // pickVerb selects a status verb for a phase activation.
 // Called once when a phase starts or streaming begins — the word holds for the entire run.
 // Uses verbCounter to cycle through the pool so each activation gets a different word.
@@ -1082,7 +1238,14 @@ func (m Model) pickVerb(phase agent.Phase) string {
 		}
 	}
 
-	return pool[m.verbCounter%len(pool)]
+	// Mix verbCounter with session ID hash for variety across sessions
+	seed := m.verbCounter
+	if m.session != nil && len(m.session.ID) > 0 {
+		for _, b := range m.session.ID {
+			seed += int(b)
+		}
+	}
+	return pool[seed%len(pool)]
 }
 
 // pulseText renders text with a pulsating brightness effect.

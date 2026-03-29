@@ -20,7 +20,6 @@ type SlashCmd struct {
 // slashCommands is the command registry. Add new commands here.
 var slashCommands = []SlashCmd{
 	{Name: "resume", Desc: "Resume a previous session"},
-	{Name: "next", Desc: "Continue to next phase"},
 	{Name: "compact", Desc: "Compact context window"},
 	{Name: "help", Desc: "Show available commands"},
 	{Name: "frame", Desc: "Frame an engineering problem"},

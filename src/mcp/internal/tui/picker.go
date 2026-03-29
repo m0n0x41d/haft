@@ -143,22 +143,21 @@ func (m Model) handleSessionPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		m.session = &si.session
 		msgs, err := m.sessionMsgStore.ListBySession(context.Background(), si.session.ID)
 		if err == nil {
-			m.messages = nil
-			for _, msg := range msgs {
-				switch msg.Role {
-				case agent.RoleUser:
-					m.messages = append(m.messages, viewMessage{
-						Role: agent.RoleUser,
-						Text: msg.Text(),
-					})
-				case agent.RoleAssistant:
-					m.messages = append(m.messages, viewMessage{
-						Role: agent.RoleAssistant,
-						Text: msg.Text(),
-					})
-				}
+			m.messages = restoreViewMessages(msgs)
+		}
+
+		// Restore active cycle state
+		if m.cycleStore != nil {
+			if cycle, err := m.cycleStore.GetActiveCycle(context.Background(), si.session.ID); err == nil && cycle != nil {
+				m.cycleID = cycle.ID
+				m.problemRef = cycle.ProblemRef
+				m.portfolioRef = cycle.PortfolioRef
+				m.decisionRef = cycle.DecisionRef
+				m.cycleStatus = cycle.Status
+				m.currentPhase = cycle.Phase
 			}
 		}
+
 		m.state = stateInput
 		m.refreshChat()
 		return m, m.input.Focus()
@@ -168,4 +167,69 @@ func (m Model) handleSessionPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	var cmd tea.Cmd
 	m.picker, cmd = m.picker.Update(msg)
 	return m, cmd
+}
+
+// restoreViewMessages converts persisted agent.Messages back into viewMessages,
+// reconstructing tool call structure (name, args, output) from Parts.
+func restoreViewMessages(msgs []agent.Message) []viewMessage {
+	var result []viewMessage
+
+	// Index tool results by ToolCallID for fast lookup
+	toolResults := make(map[string]agent.ToolResultPart)
+	for _, msg := range msgs {
+		if msg.Role != agent.RoleTool {
+			continue
+		}
+		for _, p := range msg.Parts {
+			if tr, ok := p.(agent.ToolResultPart); ok {
+				toolResults[tr.ToolCallID] = tr
+			}
+		}
+	}
+
+	for _, msg := range msgs {
+		switch msg.Role {
+		case agent.RoleUser:
+			text := msg.Text()
+			if text == "" {
+				continue
+			}
+			result = append(result, viewMessage{
+				Role: agent.RoleUser,
+				Text: text,
+			})
+
+		case agent.RoleAssistant:
+			vm := viewMessage{
+				Role: agent.RoleAssistant,
+				Text: msg.Text(),
+			}
+
+			// Restore tool calls from ToolCallParts
+			for _, p := range msg.Parts {
+				tc, ok := p.(agent.ToolCallPart)
+				if !ok {
+					continue
+				}
+				vt := viewTool{
+					CallID:  tc.ToolCallID,
+					Name:    tc.ToolName,
+					Args:    tc.Arguments,
+					Running: false,
+				}
+				// Match with tool result
+				if tr, found := toolResults[tc.ToolCallID]; found {
+					vt.Output = tr.Content
+					vt.IsError = tr.IsError
+				}
+				vm.Tools = append(vm.Tools, vt)
+			}
+
+			result = append(result, vm)
+
+			// RoleTool messages are consumed via toolResults map above
+		}
+	}
+
+	return result
 }

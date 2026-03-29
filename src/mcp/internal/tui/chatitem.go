@@ -216,7 +216,7 @@ func (*permissionItem) PlainText(_ int) string          { return "" }
 // Called from refreshChat() — rebuilds on every content change.
 func (m Model) buildChatItems() []ChatItem {
 	fullWidth := max(20, m.width-2)
-	bodyWidth := max(20, fullWidth-4)
+	bodyWidth := fullWidth // content width = viewport - divider margins only
 
 	var items []ChatItem
 
@@ -240,7 +240,7 @@ func (m Model) buildChatItems() []ChatItem {
 	}
 
 	// Streaming content (transient)
-	if m.state == stateStreaming || m.state == statePermission {
+	if m.state == stateStreaming || m.state == statePermission || m.state == stateGovernance {
 		items = append(items, m.buildStreamingItems(bodyWidth)...)
 	}
 
@@ -257,6 +257,13 @@ func (m Model) buildChatItems() []ChatItem {
 		})
 	}
 
+	// Governance pause (transient)
+	if m.state == stateGovernance {
+		items = append(items, &permissionItem{
+			baseItem: newBaseItem(m.renderGovernance(bodyWidth)),
+		})
+	}
+
 	return items
 }
 
@@ -266,12 +273,15 @@ func (m Model) buildAssistantItems(msg viewMessage, w int) []ChatItem {
 	var items []ChatItem
 
 	// Text block: thinking + body
+	// Subtract 2 for PaddingLeft(2) in renderAssistantBlock — without this,
+	// glamour wraps at `w` but indentation pushes lines past the viewport.
+	contentWidth := w - 2
 	var textParts []string
 	if msg.Thinking != "" {
-		textParts = append(textParts, m.renderThinkingBox(msg.Thinking, w))
+		textParts = append(textParts, m.renderThinkingBox(msg.Thinking, contentWidth))
 	}
 	if msg.Text != "" {
-		textParts = append(textParts, renderBodyText(msg.Text, w, m.styles.AssistantText))
+		textParts = append(textParts, renderBodyText(msg.Text, contentWidth, m.styles.AssistantText))
 	}
 
 	label := ""
@@ -297,17 +307,18 @@ func (m Model) buildAssistantItems(msg viewMessage, w int) []ChatItem {
 // buildStreamingItems creates items for the currently streaming content.
 func (m Model) buildStreamingItems(w int) []ChatItem {
 	var items []ChatItem
+	contentWidth := w - 2 // account for PaddingLeft(2) in renderAssistantBlock
 
 	thinking := m.thinkBuf.String()
 	if thinking != "" {
-		thinkBox := m.renderThinkingBox(thinking, w)
+		thinkBox := m.renderThinkingBox(thinking, contentWidth)
 		rendered := m.renderAssistantBlock("", thinkBox)
 		items = append(items, &streamingItem{baseItem: newBaseItem(rendered)})
 	}
 
 	s := m.streamBuf.String()
 	if s != "" {
-		body := renderBodyText(s, w, m.styles.AssistantText)
+		body := renderBodyText(s, contentWidth, m.styles.AssistantText)
 		rendered := m.renderAssistantBlock("", body)
 		items = append(items, &streamingItem{baseItem: newBaseItem(rendered)})
 	}

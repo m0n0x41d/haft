@@ -134,8 +134,8 @@ func (p *CommandPalette) Render(width int, styles Styles) string {
 	for i, cmd := range visible {
 		name := "/" + cmd.Name
 		desc := cmd.Desc
-		if len(desc) > descWidth {
-			desc = desc[:descWidth-1] + "…"
+		if r := []rune(desc); len(r) > descWidth {
+			desc = string(r[:descWidth-1]) + "…"
 		}
 
 		line := padRight(name, nameWidth+1) + styles.Dim.Render(desc)
@@ -168,31 +168,6 @@ func (p *CommandPalette) Render(width int, styles Styles) string {
 		Render(content)
 
 	return box
-}
-
-// overlayOnChat splices the palette box onto the bottom of the chat view.
-// The palette "paints over" the last N lines of chat without shifting layout.
-func overlayOnChat(chatView string, paletteBox string) string {
-	if paletteBox == "" {
-		return chatView
-	}
-
-	chatLines := strings.Split(chatView, "\n")
-	paletteLines := strings.Split(paletteBox, "\n")
-
-	startLine := len(chatLines) - len(paletteLines)
-	if startLine < 0 {
-		startLine = 0
-	}
-
-	for i, pl := range paletteLines {
-		idx := startLine + i
-		if idx < len(chatLines) {
-			chatLines[idx] = pl
-		}
-	}
-
-	return strings.Join(chatLines, "\n")
 }
 
 func padRight(s string, width int) string {

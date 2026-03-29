@@ -3,9 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
 )
@@ -66,8 +66,8 @@ func (m Model) renderThinkingBox(thinking string, w int) string {
 		rendered = append(rendered, dimStyle.Render(fmt.Sprintf("… (%d lines hidden)", hidden)))
 	}
 	for _, line := range lines {
-		if len(line) > w-4 {
-			line = line[:w-4] + "…"
+		if ansi.StringWidth(line) > w-4 {
+			line = ansi.Truncate(line, w-4, "…")
 		}
 		rendered = append(rendered, dimStyle.Render(line))
 	}
@@ -94,6 +94,8 @@ func (m Model) renderAssistantBlock(label string, body string) string {
 	if !strings.Contains(body, "\n") && lipgloss.Width(body) < 80 {
 		return mark + " " + body
 	}
+	// Indent by prepending spaces per-line. Safe with ANSI because
+	// spaces before escape codes don't affect terminal interpretation.
 	return mark + "\n" + indentBlock(body, "  ")
 }
 
@@ -191,8 +193,8 @@ func (m Model) renderEditDiff(output string, w int) string {
 
 	bw := w - 4
 	for _, line := range allLines[1:] {
-		if len(line) > bw {
-			line = line[:bw] + "…"
+		if ansi.StringWidth(line) > bw {
+			line = ansi.Truncate(line, bw, "…")
 		}
 		switch {
 		case strings.HasPrefix(line, "--- old") || strings.HasPrefix(line, "+++ new"):
@@ -227,8 +229,8 @@ func (m Model) renderToolOutput(output string, isError bool, w int) string {
 	var lines []string
 	bw := w - 4
 	for i, line := range outLines {
-		if len(line) > bw {
-			line = line[:bw] + "…"
+		if ansi.StringWidth(line) > bw {
+			line = ansi.Truncate(line, bw, "…")
 		}
 		prefix := "  "
 		if i == 0 {
@@ -272,29 +274,6 @@ func (m Model) renderPermission(w int) string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("214")). // yellow
-		Padding(0, 2).
-		Width(min(w-4, 60)).
-		Render(body.String())
-
-	return box
-}
-
-func (m Model) renderGovernance(w int) string {
-	var body strings.Builder
-
-	body.WriteString(m.styles.PermTitle.Render("Next phase"))
-	if m.govRationale != "" {
-		body.WriteString("\n")
-		body.WriteString(m.styles.Dim.Render(m.govRationale))
-	}
-	body.WriteString("\n\n")
-	body.WriteString(
-		m.styles.PermKey.Render(" y ") + " yes, proceed   " +
-			m.styles.PermDeny.Render(" n ") + " not yet, let me discuss")
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("39")).
 		Padding(0, 2).
 		Width(min(w-4, 60)).
 		Render(body.String())
@@ -347,7 +326,7 @@ func renderSimpleMarkdown(text string, width int, style lipgloss.Style) string {
 			continue
 		}
 
-		// First wrap plain text (rune-safe), THEN apply inline formatting.
+		// First wrap plain text, THEN apply inline formatting.
 		// Never format before wrapping — ANSI codes break width measurement.
 		wrapped := strings.Split(wrapPlainLine(line, width), "\n")
 		for _, seg := range wrapped {
@@ -510,30 +489,80 @@ func indentBlock(content string, prefix string) string {
 }
 
 func wrapPlainLine(line string, width int) string {
-	if width <= 0 {
+	if width <= 0 || line == "" {
 		return line
 	}
 
-	words := strings.Fields(line)
-	if len(words) == 0 {
-		return ""
+	var lines []string
+	var current strings.Builder
+	currentWidth := 0
+
+	flush := func() {
+		lines = append(lines, strings.TrimRight(current.String(), " "))
+		current.Reset()
+		currentWidth = 0
 	}
 
-	var lines []string
-	current := words[0]
-
-	for _, word := range words[1:] {
-		candidate := current + " " + word
-		if utf8.RuneCountInString(candidate) <= width {
-			current = candidate
+	for _, word := range strings.Fields(line) {
+		wordWidth := ansi.StringWidth(word)
+		if currentWidth == 0 {
+			if wordWidth <= width {
+				current.WriteString(word)
+				currentWidth = wordWidth
+				continue
+			}
+			lines = append(lines, splitTokenToWidth(word, width)...)
 			continue
 		}
-		lines = append(lines, current)
-		current = word
+
+		candidateWidth := currentWidth + 1 + wordWidth
+		if candidateWidth <= width {
+			current.WriteString(" ")
+			current.WriteString(word)
+			currentWidth = candidateWidth
+			continue
+		}
+
+		flush()
+		if wordWidth <= width {
+			current.WriteString(word)
+			currentWidth = wordWidth
+			continue
+		}
+		lines = append(lines, splitTokenToWidth(word, width)...)
 	}
 
-	lines = append(lines, current)
+	if currentWidth > 0 {
+		flush()
+	}
+	if len(lines) == 0 {
+		return ""
+	}
 	return strings.Join(lines, "\n")
+}
+
+func splitTokenToWidth(token string, width int) []string {
+	if width <= 0 || token == "" {
+		return []string{token}
+	}
+
+	var chunks []string
+	var current strings.Builder
+	currentWidth := 0
+	for _, r := range token {
+		rw := ansi.StringWidth(string(r))
+		if currentWidth > 0 && currentWidth+rw > width {
+			chunks = append(chunks, current.String())
+			current.Reset()
+			currentWidth = 0
+		}
+		current.WriteRune(r)
+		currentWidth += rw
+	}
+	if current.Len() > 0 {
+		chunks = append(chunks, current.String())
+	}
+	return chunks
 }
 
 func extractToolParam(name, argsJSON string) string {
@@ -560,7 +589,7 @@ func extractToolParam(name, argsJSON string) string {
 }
 
 func extractJSONString(json, key string) string {
-	for _, needle := range []string{`"` + key + `":"`, `"` + key + `": "`} {
+	for _, needle := range []string{`"` + key + `":"`, `"` + key + `": `} {
 		idx := strings.Index(json, needle)
 		if idx < 0 {
 			continue
@@ -582,8 +611,8 @@ func truncate(s string, max int) string {
 	if max < 4 {
 		max = 4
 	}
-	if len(s) <= max {
+	if ansi.StringWidth(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	return ansi.Truncate(s, max, "…")
 }

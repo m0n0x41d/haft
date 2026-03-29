@@ -13,13 +13,14 @@ import (
 )
 
 // GlobTool finds files matching a glob pattern.
+// Uses ripgrep --files when available (.gitignore aware, fast).
 type GlobTool struct {
 	projectRoot string
 }
 
 type globArgs struct {
 	Pattern string `json:"pattern"`
-	Path    string `json:"path,omitempty"` // base directory (default: project root)
+	Path    string `json:"path,omitempty"`
 }
 
 func (t *GlobTool) Name() string { return "glob" }
@@ -27,7 +28,7 @@ func (t *GlobTool) Name() string { return "glob" }
 func (t *GlobTool) Schema() agent.ToolSchema {
 	return agent.ToolSchema{
 		Name:        "glob",
-		Description: "Find files matching a glob pattern (e.g. '**/*.go', 'src/**/*.ts'). Returns matching file paths sorted alphabetically.",
+		Description: "Find files matching a glob pattern (e.g. '**/*.go', 'src/**/*.ts'). Returns file paths sorted by modification time (newest first). Respects .gitignore when ripgrep is available.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -59,10 +60,36 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult
 		baseDir = args.Path
 	}
 
+	// Try ripgrep first (fast, .gitignore aware)
+	if rgAvailable() {
+		return t.globWithRipgrep(args.Pattern, baseDir)
+	}
+
+	return t.globWithFallback(args.Pattern, baseDir)
+}
+
+func (t *GlobTool) globWithRipgrep(pattern, baseDir string) (agent.ToolResult, error) {
+	files, err := rgFiles(baseDir, pattern)
+	if err != nil {
+		// Fallback on rg error
+		return t.globWithFallback(pattern, baseDir)
+	}
+
+	if len(files) == 0 {
+		return agent.PlainResult("No files matched the pattern."), nil
+	}
+
+	// Sort by mtime (newest first)
+	sortByMtime(files)
+
+	return agent.PlainResult(strings.Join(files, "\n")), nil
+}
+
+func (t *GlobTool) globWithFallback(pattern, baseDir string) (agent.ToolResult, error) {
 	var matches []string
 	err := filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return nil
 		}
 		if d.IsDir() {
 			name := d.Name()
@@ -72,9 +99,9 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult
 			return nil
 		}
 		relPath, _ := filepath.Rel(baseDir, path)
-		matched, _ := filepath.Match(args.Pattern, filepath.Base(relPath))
+		matched, _ := filepath.Match(pattern, filepath.Base(relPath))
 		if !matched {
-			matched = matchDoubleStarGlob(relPath, args.Pattern)
+			matched = matchDoubleStarGlob(relPath, pattern)
 		}
 		if matched {
 			matches = append(matches, relPath)
@@ -85,15 +112,17 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult
 		return agent.ToolResult{}, fmt.Errorf("walk: %w", err)
 	}
 
-	sort.Strings(matches)
-
 	if len(matches) == 0 {
 		return agent.PlainResult("No files matched the pattern."), nil
 	}
+
+	// Sort by mtime (newest first)
+	sortByMtime(matches)
+
 	return agent.PlainResult(strings.Join(matches, "\n")), nil
 }
 
-// matchDoubleStarGlob handles ** patterns by splitting on ** and matching segments.
+// matchDoubleStarGlob handles ** patterns.
 func matchDoubleStarGlob(path, pattern string) bool {
 	if !strings.Contains(pattern, "**") {
 		return false
@@ -109,4 +138,27 @@ func matchDoubleStarGlob(path, pattern string) bool {
 	}
 	matched, _ := filepath.Match(suffix, filepath.Base(path))
 	return matched
+}
+
+// sortByMtime sorts file paths by modification time (newest first).
+func sortByMtime(files []string) {
+	type fileWithTime struct {
+		path string
+		mod  int64
+	}
+	fwt := make([]fileWithTime, len(files))
+	for i, f := range files {
+		info, err := os.Stat(f)
+		if err == nil {
+			fwt[i] = fileWithTime{path: f, mod: info.ModTime().UnixNano()}
+		} else {
+			fwt[i] = fileWithTime{path: f, mod: 0}
+		}
+	}
+	sort.Slice(fwt, func(i, j int) bool {
+		return fwt[i].mod > fwt[j].mod
+	})
+	for i, f := range fwt {
+		files[i] = f.path
+	}
 }

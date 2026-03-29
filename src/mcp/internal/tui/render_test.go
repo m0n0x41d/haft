@@ -72,3 +72,21 @@ func TestRenderAllMessagesStreamingDoesNotShowBlockCursor(t *testing.T) {
 		t.Fatalf("expected streaming content without block cursor, got %q", got)
 	}
 }
+
+func TestWrapPlainLineMixedLanguageOrderStable(t *testing.T) {
+	line := "Ладно, ещё один примерно на 1k symbols. Иногда тест интерфейса лучше делать не на hello world, а на тексте ближе к реальному хаосу."
+	got := wrapPlainLine(line, 24)
+	normalized := strings.Join(strings.Fields(got), " ")
+	if normalized != strings.Join(strings.Fields(line), " ") {
+		t.Fatalf("expected wrapped text to preserve token order\nwant: %q\n got: %q", line, got)
+	}
+}
+
+func TestRenderBodyTextMixedLanguageNoReordering(t *testing.T) {
+	text := "Ладно, ещё один примерно на 1k symbols. Иногда тест интерфейса лучше делать не на hello world, а на тексте ближе к реальному хаосу."
+	got := renderBodyText(text, 24, DefaultStyles().AssistantText)
+	normalized := strings.Join(strings.Fields(got), " ")
+	if normalized != strings.Join(strings.Fields(text), " ") {
+		t.Fatalf("expected assistant body text to preserve token order\nwant: %q\n got: %q", text, got)
+	}
+}

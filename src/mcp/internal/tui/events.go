@@ -50,21 +50,6 @@ type ErrorMsg struct {
 	Err error
 }
 
-// PhaseChangeMsg signals a lemniscate phase transition.
-type PhaseChangeMsg struct {
-	From agent.Phase
-	To   agent.Phase
-	Name string // display name (e.g., "haft-worker")
-}
-
-// PhasePauseMsg signals the coordinator paused for user approval.
-// Reply true = proceed to next phase. Reply false = stay, let user discuss.
-type PhasePauseMsg struct {
-	Phase   agent.Phase
-	Summary string
-	Reply   chan<- bool
-}
-
 // TokenUpdateMsg carries token usage info to the TUI.
 type TokenUpdateMsg struct {
 	Used  int
@@ -107,6 +92,18 @@ type CycleUpdateMsg struct {
 	DecisionRef  string
 	Phase        agent.Phase
 	Status       agent.CycleStatus
+}
+
+// PhaseChangeMsg updates the currently displayed phase label/verb.
+type PhaseChangeMsg struct {
+	To   agent.Phase
+	Name string
+}
+
+// PhasePauseMsg requests approval before continuing a phase transition.
+type PhasePauseMsg struct {
+	Summary string
+	Reply   chan<- bool
 }
 
 // CoordinatorDoneMsg signals the coordinator goroutine has finished.

@@ -11,6 +11,8 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
 	"github.com/m0n0x41d/quint-code/internal/session"
@@ -75,6 +77,10 @@ type Model struct {
 
 	// Message queue (user types during streaming)
 	pendingMessages []string
+
+	// Paste attachments (large pastes → files instead of inline)
+	attachments []pasteAttachment
+	pasteIdx    int
 
 	// Permission
 	permToolName, permArgs string
@@ -265,9 +271,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.PasteMsg:
-		if m.state == stateInput {
-			m.input.SetValue(m.input.Value() + msg.Content)
-			m.resizeComponents()
+		if m.state == stateInput || m.state == stateStreaming {
+			content := msg.Content
+			// Large paste → attachment (like Crush: >10 newlines or >1000 chars)
+			if isLargePaste(content) {
+				m.pasteIdx++
+				name := fmt.Sprintf("paste_%d.txt", m.pasteIdx)
+				m.attachments = append(m.attachments, pasteAttachment{Name: name, Content: content})
+				m.notification = fmt.Sprintf("📎 %s attached (%d chars)", name, len([]rune(content)))
+			} else {
+				m.input.SetValue(m.input.Value() + content)
+				m.resizeComponents()
+			}
 		}
 		return m, nil
 
@@ -290,18 +305,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- Bus events ---
 	case ThinkingDeltaMsg:
-		m.thinkBuf.WriteString(msg.Text)
+		m.appendStreamingThinking(msg.Text)
 		m.refreshChat()
 		return m, m.waitForBus()
 
 	case StreamDeltaMsg:
-		m.streamBuf.WriteString(msg.Text)
+		m.appendStreamingText(msg.Text)
 		m.errMsg = ""
 		m.refreshChat()
 		return m, m.waitForBus()
 
 	case StreamDoneMsg:
-		m.finalizeStream()
+		m.finalizeStreamMessage(msg.Message)
 		if len(msg.Message.ToolCalls()) == 0 {
 			m.state = stateInput
 			cmds = append(cmds, m.input.Focus())
@@ -449,8 +464,29 @@ func (m *Model) resizeComponents() {
 
 func (m Model) buildInputBlock() string {
 	borderLine := m.styles.InputBorder.Render(strings.Repeat("━", m.width))
-	if m.state == stateInput {
-		return borderLine + "\n" + m.input.View() + "\n" + borderLine
+	if m.state == stateInput || m.state == stateStreaming {
+		var parts []string
+
+		// Attachment chips above input
+		if len(m.attachments) > 0 {
+			chipStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("48")).
+				Bold(true)
+			var chips []string
+			for _, att := range m.attachments {
+				chips = append(chips, chipStyle.Render(" 📎 "+att.Name+" "))
+			}
+			parts = append(parts, strings.Join(chips, " "))
+		}
+
+		parts = append(parts, m.input.View())
+
+		if len(m.pendingMessages) > 0 {
+			parts = append(parts, m.styles.Dim.Render(fmt.Sprintf("  (%d queued)", len(m.pendingMessages))))
+		}
+
+		return borderLine + "\n" + strings.Join(parts, "\n") + "\n" + borderLine
 	}
 	return borderLine + "\n" + m.styles.Dim.Render("│") + "\n" + borderLine
 }
@@ -460,7 +496,7 @@ func (m Model) layoutBlocks() (string, string, int) {
 	statusBlock := m.renderStatusBlock()
 	inputH := lipgloss.Height(inputBlock)
 	statusH := lipgloss.Height(statusBlock)
-	chatH := m.height - inputH - statusH
+	chatH := m.height - inputH - statusH - 2 // separator rows between chat/input and input/status
 	if chatH < 1 {
 		chatH = 1
 	}
@@ -698,6 +734,17 @@ func (m Model) handleSubmit(text string) (tea.Model, tea.Cmd) {
 		return m.handleSlashCommand(text)
 	}
 
+	// Prepend paste attachments as inline content (like Crush's <file> tags)
+	if len(m.attachments) > 0 {
+		var prefix strings.Builder
+		for _, att := range m.attachments {
+			prefix.WriteString(fmt.Sprintf("<file path=%q>\n%s\n</file>\n\n", att.Name, att.Content))
+		}
+		text = prefix.String() + text
+		m.attachments = nil
+		m.notification = ""
+	}
+
 	if m.streamBuf == nil {
 		m.streamBuf = &strings.Builder{}
 	}
@@ -789,8 +836,14 @@ func (m Model) openSessionPicker() (tea.Model, tea.Cmd) {
 // ---------------------------------------------------------------------------
 
 func (m *Model) finalizeStream() {
-	text := m.streamBuf.String()
-	thinking := m.thinkBuf.String()
+	m.finalizeStreamText(m.streamBuf.String(), m.thinkBuf.String())
+}
+
+func (m *Model) finalizeStreamMessage(msg agent.Message) {
+	m.finalizeStreamText(msg.Text(), m.thinkBuf.String())
+}
+
+func (m *Model) finalizeStreamText(text, thinking string) {
 	m.streamBuf.Reset()
 	m.thinkBuf.Reset()
 
@@ -798,36 +851,33 @@ func (m *Model) finalizeStream() {
 		return
 	}
 
-	// Find last assistant message FROM THE SAME PHASE.
-	// If the phase changed, last will be nil → new message created.
-	last := m.lastAssistantInPhase()
-	if last != nil && !last.hasCompletedTools() {
-		last.Text = text
-		if thinking != "" {
-			last.Thinking = thinking
-		}
-	} else {
-		m.messages = append(m.messages, viewMessage{
-			Role:     agent.RoleAssistant,
-			Text:     text,
-			Thinking: thinking,
-			Phase:    m.currentPhase,
-		})
-	}
+	last := m.ensureAssistantMessage()
+	last.Text = text
+	last.Thinking = thinking
 }
 
-func (m *Model) ensureAssistantMessage() {
+func (m *Model) appendStreamingText(delta string) {
+	m.streamBuf.WriteString(delta)
+	last := m.ensureAssistantMessage()
+	last.Text += delta
+}
+
+func (m *Model) appendStreamingThinking(delta string) {
+	m.thinkBuf.WriteString(delta)
+	last := m.ensureAssistantMessage()
+	last.Thinking += delta
+}
+
+func (m *Model) ensureAssistantMessage() *viewMessage {
 	last := m.lastAssistantInPhase()
 	if last != nil && !last.hasCompletedTools() {
-		return
+		return last
 	}
-	text := m.streamBuf.String()
-	m.streamBuf.Reset()
 	m.messages = append(m.messages, viewMessage{
 		Role:  agent.RoleAssistant,
-		Text:  text,
 		Phase: m.currentPhase,
 	})
+	return &m.messages[len(m.messages)-1]
 }
 
 // lastAssistantInPhase returns the last assistant message that belongs
@@ -971,37 +1021,58 @@ func (m Model) View() tea.View {
 		m.chatList.SetSize(m.width, chatH)
 	}
 
-	var b strings.Builder
+	canvas := uv.NewScreenBuffer(m.width, m.height)
+	canvas.Method = ansi.GraphemeWidth
 
-	// === TOP: Chat viewport ===
 	chatView := m.chatList.View()
+	drawBlock(&canvas, 0, 0, m.width, chatH, chatView)
 	if m.palette.Visible() {
 		paletteBox := m.palette.Render(m.width, m.styles)
-		chatView = overlayOnChat(chatView, paletteBox)
+		drawOverlayBottom(&canvas, 0, 0, m.width, chatH, paletteBox)
 	}
-	b.WriteString(chatView)
-	b.WriteString("\n")
 
-	// === MIDDLE: Input area ===
-	b.WriteString(inputBlock)
-	b.WriteString("\n")
+	inputY := chatH + 1
+	drawBlock(&canvas, 0, inputY, m.width, lipgloss.Height(inputBlock), inputBlock)
 
-	// === BOTTOM: Status line ===
-	b.WriteString(statusBlock)
+	statusY := inputY + lipgloss.Height(inputBlock) + 1
+	drawBlock(&canvas, 0, statusY, m.width, lipgloss.Height(statusBlock), statusBlock)
 
-	v := tea.NewView(b.String())
+	var v tea.View
+	v.SetContent(canvas.Render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = fmt.Sprintf("haft — %s", m.session.Model)
 
 	if m.state == stateInput {
 		if c := m.input.Cursor(); c != nil {
-			c.Y += chatH + 1
+			c.Y += inputY
 			v.Cursor = c
 		}
 	}
 
 	return v
+}
+
+func drawBlock(buf *uv.ScreenBuffer, x, y, width, height int, content string) {
+	if width <= 0 || height <= 0 || content == "" {
+		return
+	}
+	area := uv.Rect(x, y, x+width, y+height)
+	styled := uv.NewStyledString(content)
+	styled.Wrap = true
+	styled.Draw(*buf, area)
+}
+
+func drawOverlayBottom(buf *uv.ScreenBuffer, x, y, width, height int, overlay string) {
+	if width <= 0 || height <= 0 || overlay == "" {
+		return
+	}
+	overlayH := strings.Count(overlay, "\n") + 1
+	if overlayH > height {
+		overlayH = height
+	}
+	startY := y + height - overlayH
+	drawBlock(buf, x, startY, width, overlayH, overlay)
 }
 
 func (m Model) renderStatusBlock() string {
@@ -1200,6 +1271,38 @@ func (m Model) selectAnimation() Animation {
 // pickVerb selects a status verb for a phase activation.
 // Called once when a phase starts or streaming begins — the word holds for the entire run.
 // Uses verbCounter to cycle through the pool so each activation gets a different word.
+// ---------------------------------------------------------------------------
+// Paste attachments
+// ---------------------------------------------------------------------------
+
+// pasteAttachment holds large pasted text as a file-like attachment.
+type pasteAttachment struct {
+	Name    string // "paste_1.txt"
+	Content string
+}
+
+const (
+	pasteLinesThreshold = 10   // >10 newlines → attachment
+	pasteCharsThreshold = 1000 // >1000 chars → attachment
+)
+
+// isLargePaste returns true if pasted content should become an attachment.
+func isLargePaste(content string) bool {
+	if len([]rune(content)) > pasteCharsThreshold {
+		return true
+	}
+	lines := 0
+	for _, c := range content {
+		if c == '\n' {
+			lines++
+			if lines > pasteLinesThreshold {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m Model) pickVerb(phase agent.Phase) string {
 	pools := map[agent.Phase][]string{
 		agent.PhaseFramer: {

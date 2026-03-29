@@ -99,8 +99,8 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// Wire quint kernel tools — same core as MCP server, different transport
 	artStore := artifact.NewStore(sqlDB)
 	toolRegistry.Register(tools.NewQuintProblemTool(artStore, quintDir))
-	toolRegistry.Register(tools.NewQuintSolutionTool(artStore, quintDir))
-	toolRegistry.Register(tools.NewQuintDecisionTool(artStore, quintDir))
+	toolRegistry.Register(tools.NewQuintSolutionTool(artStore, quintDir, toolRegistry))
+	toolRegistry.Register(tools.NewQuintDecisionTool(artStore, quintDir, toolRegistry))
 	toolRegistry.Register(tools.NewQuintQueryTool(artStore))
 	toolRegistry.Register(tools.NewQuintRefreshTool(artStore, quintDir, projectRoot))
 	toolRegistry.Register(tools.NewQuintNoteTool(artStore, quintDir))
@@ -147,17 +147,17 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	// 11. Create coordinator with lemniscate agent
 	coordinator := &agentloop.Coordinator{
-		Provider:       llm,
-		Tools:          toolRegistry,
-		Sessions:       store,
-		Messages:       store,
-		Cycles:         store,
-		ArtifactStore:  artStore,
-		Bus:            bus,
-		SystemPrompt:   systemPrompt,
-		AgentDef:       agentDef,
-		Subagents:      agentloop.NewSubagentTracker(),
-		SessionContext: "", // project-wide NavState — artifacts scoped by problem, not session
+		Provider:      llm,
+		Tools:         toolRegistry,
+		Sessions:      store,
+		Messages:      store,
+		Cycles:        store,
+		ArtifactStore: artStore,
+		Bus:           bus,
+		SystemPrompt:  systemPrompt,
+		AgentDef:      agentDef,
+		Subagents:     agentloop.NewSubagentTracker(),
+		ProjectRoot:   projectRoot,
 	}
 
 	// Register subagent tool — callback spawns AND waits (blocking, like Crush/Claude Code)
@@ -198,7 +198,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	model := tui.New(sess, runFn, bus, initialGoal, store, store, compactFn, store)
 
 	// 14. Run TUI
-	p := tea.NewProgram(model)
+	p := tea.NewProgram(model, tea.WithEnvironment(bubbleTeaEnv()))
 	_, err = p.Run()
 	if err != nil {
 		return fmt.Errorf("agent TUI: %w", err)

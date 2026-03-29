@@ -14,10 +14,42 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error)
 }
 
+// CycleResolver provides active cycle state to tools for guardrail checks.
+// Set by the coordinator before each turn.
+type CycleResolver func(ctx context.Context) *agent.Cycle
+
 // Registry holds all available tools.
 type Registry struct {
-	tools map[string]ToolExecutor
-	order []string // insertion order for stable listing
+	tools         map[string]ToolExecutor
+	order         []string // insertion order for stable listing
+	cycleResolver CycleResolver
+	readFiles     map[string]bool // tracks files read in current session (for read-before-edit)
+}
+
+// MarkFileRead records that a file was read in this session.
+func (r *Registry) MarkFileRead(path string) {
+	if r.readFiles == nil {
+		r.readFiles = make(map[string]bool)
+	}
+	r.readFiles[path] = true
+}
+
+// WasFileRead checks if a file was read before attempting to edit.
+func (r *Registry) WasFileRead(path string) bool {
+	return r.readFiles != nil && r.readFiles[path]
+}
+
+// SetCycleResolver sets the function that tools use to get the active cycle.
+func (r *Registry) SetCycleResolver(resolver CycleResolver) {
+	r.cycleResolver = resolver
+}
+
+// ActiveCycle returns the current active cycle, or nil if none.
+func (r *Registry) ActiveCycle(ctx context.Context) *agent.Cycle {
+	if r.cycleResolver == nil {
+		return nil
+	}
+	return r.cycleResolver(ctx)
 }
 
 // NewRegistry creates a registry with all builtin tools registered.
@@ -26,7 +58,7 @@ func NewRegistry(projectRoot string) *Registry {
 	r.register(&BashTool{projectRoot: projectRoot})
 	r.register(&ReadFileTool{})
 	r.register(&WriteFileTool{})
-	r.register(&EditFileTool{})
+	r.register(&EditFileTool{registry: r})
 	r.register(&GlobTool{projectRoot: projectRoot})
 	r.register(&GrepTool{projectRoot: projectRoot})
 	return r

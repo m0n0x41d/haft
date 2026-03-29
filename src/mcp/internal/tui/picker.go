@@ -49,8 +49,8 @@ func (i sessionItem) Description() string {
 	}
 	// Single line, truncated
 	msg = strings.ReplaceAll(msg, "\n", " ")
-	if len(msg) > 80 {
-		msg = msg[:77] + "..."
+	if r := []rune(msg); len(r) > 80 {
+		msg = string(r[:77]) + "..."
 	}
 	return msg
 }
@@ -82,6 +82,10 @@ func buildSessionPicker(
 	items := make([]list.Item, 0, len(sessions))
 	for _, s := range sessions {
 		lastMsg, _ := msgStore.LastUserMessage(ctx, s.ID)
+		// Skip empty sessions (no messages)
+		if lastMsg == "" {
+			continue
+		}
 		items = append(items, sessionItem{
 			session:     s,
 			lastMessage: lastMsg,

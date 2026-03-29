@@ -180,11 +180,6 @@ type toolItem struct{ baseItem }
 
 func (*toolItem) Selectable() bool { return true }
 
-// streamingItem — live streaming text (rebuilt every spinner tick).
-type streamingItem struct{ baseItem }
-
-func (*streamingItem) Selectable() bool { return true }
-
 // errorItem — error message display.
 type errorItem struct{ baseItem }
 
@@ -239,11 +234,6 @@ func (m Model) buildChatItems() []ChatItem {
 		}
 	}
 
-	// Streaming content (transient)
-	if m.state == stateStreaming || m.state == statePermission || m.state == stateGovernance {
-		items = append(items, m.buildStreamingItems(bodyWidth)...)
-	}
-
 	// Error (transient)
 	if m.errMsg != "" {
 		errBlock := m.styles.ErrorText.Render(" Error: " + truncate(m.errMsg, bodyWidth))
@@ -254,13 +244,6 @@ func (m Model) buildChatItems() []ChatItem {
 	if m.state == statePermission {
 		items = append(items, &permissionItem{
 			baseItem: newBaseItem(m.renderPermission(bodyWidth)),
-		})
-	}
-
-	// Governance pause (transient)
-	if m.state == stateGovernance {
-		items = append(items, &permissionItem{
-			baseItem: newBaseItem(m.renderGovernance(bodyWidth)),
 		})
 	}
 
@@ -299,28 +282,6 @@ func (m Model) buildAssistantItems(msg viewMessage, w int) []ChatItem {
 	for _, tool := range msg.Tools {
 		rendered := m.renderTool(tool, w)
 		items = append(items, &toolItem{baseItem: newBaseItem(rendered)})
-	}
-
-	return items
-}
-
-// buildStreamingItems creates items for the currently streaming content.
-func (m Model) buildStreamingItems(w int) []ChatItem {
-	var items []ChatItem
-	contentWidth := w - 2 // account for PaddingLeft(2) in renderAssistantBlock
-
-	thinking := m.thinkBuf.String()
-	if thinking != "" {
-		thinkBox := m.renderThinkingBox(thinking, contentWidth)
-		rendered := m.renderAssistantBlock("", thinkBox)
-		items = append(items, &streamingItem{baseItem: newBaseItem(rendered)})
-	}
-
-	s := m.streamBuf.String()
-	if s != "" {
-		body := renderBodyText(s, contentWidth, m.styles.AssistantText)
-		rendered := m.renderAssistantBlock("", body)
-		items = append(items, &streamingItem{baseItem: newBaseItem(rendered)})
 	}
 
 	return items

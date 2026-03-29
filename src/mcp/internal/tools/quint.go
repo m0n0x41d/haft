@@ -196,10 +196,11 @@ func (t *QuintProblemTool) Execute(ctx context.Context, argsJSON string) (agent.
 type QuintSolutionTool struct {
 	store    artifact.ArtifactStore
 	quintDir string
+	registry *Registry // for cycle access (guardrails)
 }
 
-func NewQuintSolutionTool(store artifact.ArtifactStore, quintDir string) *QuintSolutionTool {
-	return &QuintSolutionTool{store: store, quintDir: quintDir}
+func NewQuintSolutionTool(store artifact.ArtifactStore, quintDir string, registry *Registry) *QuintSolutionTool {
+	return &QuintSolutionTool{store: store, quintDir: quintDir, registry: registry}
 }
 
 func (t *QuintSolutionTool) Name() string { return "quint_solution" }
@@ -255,8 +256,20 @@ func (t *QuintSolutionTool) Execute(ctx context.Context, argsJSON string) (agent
 
 	switch action {
 	case "explore":
+		// FPF guardrail: requires problem frame
+		if t.registry != nil {
+			if err := agent.CanExplore(t.registry.ActiveCycle(ctx)); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+		}
 		return t.explore(ctx, args)
 	case "compare":
+		// FPF guardrail: requires solution portfolio
+		if t.registry != nil {
+			if err := agent.CanCompare(t.registry.ActiveCycle(ctx)); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+		}
 		return t.compare(ctx, args)
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
@@ -343,10 +356,11 @@ func (t *QuintSolutionTool) compare(ctx context.Context, args map[string]any) (a
 type QuintDecisionTool struct {
 	store    artifact.ArtifactStore
 	quintDir string
+	registry *Registry
 }
 
-func NewQuintDecisionTool(store artifact.ArtifactStore, quintDir string) *QuintDecisionTool {
-	return &QuintDecisionTool{store: store, quintDir: quintDir}
+func NewQuintDecisionTool(store artifact.ArtifactStore, quintDir string, registry *Registry) *QuintDecisionTool {
+	return &QuintDecisionTool{store: store, quintDir: quintDir, registry: registry}
 }
 
 func (t *QuintDecisionTool) Name() string { return "quint_decision" }
@@ -397,8 +411,20 @@ func (t *QuintDecisionTool) Execute(ctx context.Context, argsJSON string) (agent
 
 	switch action {
 	case "decide":
+		// FPF guardrail: requires explored variants
+		if t.registry != nil {
+			if err := agent.CanDecide(t.registry.ActiveCycle(ctx)); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+		}
 		return t.decide(ctx, args)
 	case "measure":
+		// FPF guardrail: requires decision
+		if t.registry != nil {
+			if err := agent.CanMeasure(t.registry.ActiveCycle(ctx)); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+		}
 		return t.measure(ctx, args)
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)

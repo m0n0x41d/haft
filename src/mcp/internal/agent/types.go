@@ -240,31 +240,13 @@ const (
 	NavRefreshDue  NavStatus = "REFRESH_DUE"
 )
 
-// PhaseDef defines a single lemniscate phase — its prompt, tools, and identity.
-type PhaseDef struct {
-	Phase        Phase    // phase identity
-	Name         string   // display name (e.g., "haft-framer")
-	SystemPrompt string   // phase-specific system prompt
-	AllowedTools []string // tool allowlist (deterministic gating)
-	MaxToolCalls int      // per-phase budget (0 = use global default)
-}
-
-// AgentDef defines an agent's behavior. The default "haft" agent has Lemniscate=true.
+// AgentDef defines an agent's behavior.
+// v2: single unified prompt, no phase pipeline. FPF enforced by tool guardrails.
 type AgentDef struct {
 	Name         string // agent name (e.g., "haft", "code")
-	Lemniscate   bool   // enables phase transitions
-	DefaultDepth Depth  // recommended depth for this agent
-	Phases       []PhaseDef
-}
-
-// PhaseByID returns the PhaseDef for a given phase, or nil if not found.
-func (a AgentDef) PhaseByID(phase Phase) *PhaseDef {
-	for i := range a.Phases {
-		if a.Phases[i].Phase == phase {
-			return &a.Phases[i]
-		}
-	}
-	return nil
+	Lemniscate   bool   // enables FPF cycle tracking (artifact binding, guardrails)
+	SystemPrompt string // unified agent prompt (replaces per-phase prompts)
+	MaxToolCalls int    // per-turn budget (0 = default 200)
 }
 
 // ---------------------------------------------------------------------------

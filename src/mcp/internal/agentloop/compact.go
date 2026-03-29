@@ -103,7 +103,7 @@ func (c *Coordinator) buildArtifactSections(ctx context.Context) string {
 		return ""
 	}
 
-	navState := artifact.ComputeNavState(ctx, c.ArtifactStore, c.SessionContext)
+	navState := artifact.ComputeNavState(ctx, c.ArtifactStore, "")
 
 	var problemSummary, decisionSummary, portfolioSummary string
 

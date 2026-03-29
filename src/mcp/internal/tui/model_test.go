@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
 )
@@ -75,5 +78,97 @@ func TestChatListTallContentNotPadded(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 visible lines, got %d", len(lines))
+	}
+}
+
+func TestViewUsesUVCompositionForMixedText(t *testing.T) {
+	runFn := func(context.Context, *agent.Session, string) {}
+	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model.width = 80
+	model.height = 18
+	model.resizeComponents()
+	model.messages = []viewMessage{{
+		Role: agent.RoleAssistant,
+		Text: "Ладно, вот нормальный mixed-text sample примерно на 1k symbols для проверки рендера в TUI.",
+	}}
+	model.refreshChat()
+
+	view := model.View()
+	normalized := strings.Join(strings.Fields(ansi.Strip(view.Content)), " ")
+	want := strings.Join(strings.Fields("Ладно, вот нормальный mixed-text sample примерно на 1k symbols для проверки рендера в TUI."), " ")
+	if !strings.Contains(normalized, want) {
+		t.Fatalf("expected UV-composed view to preserve mixed text order\nwant substring: %q\n got: %q", want, normalized)
+	}
+}
+
+func TestLayoutBlocksReserveSeparatorRows(t *testing.T) {
+	runFn := func(context.Context, *agent.Session, string) {}
+	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model.width = 80
+	model.height = 10
+	model.resizeComponents()
+
+	inputBlock, statusBlock, chatH := model.layoutBlocks()
+	total := chatH + lipgloss.Height(inputBlock) + lipgloss.Height(statusBlock) + 2
+	if total != model.height {
+		t.Fatalf("expected layout to reserve two separator rows, total=%d height=%d", total, model.height)
+	}
+}
+
+func TestDrawBlockWrapsLongMixedText(t *testing.T) {
+	canvas := uv.NewScreenBuffer(24, 6)
+	canvas.Method = ansi.GraphemeWidth
+	text := "Сейчас как раз нужен не красивый text, а честный stress sample для TUI"
+	drawBlock(&canvas, 0, 0, 24, 6, text)
+	got := ansi.Strip(canvas.Render())
+	normalized := strings.Join(strings.Fields(got), " ")
+	want := strings.Join(strings.Fields(text), " ")
+	if !strings.Contains(normalized, want) {
+		t.Fatalf("expected wrapped UV block to preserve mixed text order\nwant substring: %q\n got: %q", want, normalized)
+	}
+}
+
+func TestStreamDoneFinalizesFromAuthoritativeMessage(t *testing.T) {
+	runFn := func(context.Context, *agent.Session, string) {}
+	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model.currentPhase = agent.PhaseWorker
+	model.streamBuf.WriteString("broken live preview text")
+	model.thinkBuf.WriteString("thinking")
+
+	final := agent.Message{
+		Role:  agent.RoleAssistant,
+		Parts: []agent.Part{agent.TextPart{Text: "authoritative final text"}},
+	}
+	updated, _ := model.Update(StreamDoneMsg{Message: final})
+	next := updated.(Model)
+	if len(next.messages) == 0 {
+		t.Fatal("expected finalized assistant message")
+	}
+	got := next.messages[len(next.messages)-1]
+	if got.Text != "authoritative final text" {
+		t.Fatalf("expected final text from StreamDone message, got %q", got.Text)
+	}
+}
+
+func TestStreamingDeltaUpdatesCanonicalAssistantMessage(t *testing.T) {
+	runFn := func(context.Context, *agent.Session, string) {}
+	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model.currentPhase = agent.PhaseWorker
+
+	updated, _ := model.Update(StreamDeltaMsg{Text: "hello "})
+	next := updated.(Model)
+	updated, _ = next.Update(StreamDeltaMsg{Text: "world"})
+	next = updated.(Model)
+
+	if len(next.messages) == 0 {
+		t.Fatal("expected assistant message during streaming")
+	}
+	got := next.messages[len(next.messages)-1]
+	if got.Text != "hello world" {
+		t.Fatalf("expected canonical assistant text to accumulate deltas, got %q", got.Text)
 	}
 }

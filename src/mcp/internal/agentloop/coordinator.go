@@ -12,6 +12,7 @@ import (
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
 	"github.com/m0n0x41d/quint-code/internal/artifact"
+	"github.com/m0n0x41d/quint-code/internal/codebase"
 	"github.com/m0n0x41d/quint-code/internal/provider"
 	"github.com/m0n0x41d/quint-code/internal/session"
 	"github.com/m0n0x41d/quint-code/internal/tools"
@@ -40,7 +41,10 @@ type Coordinator struct {
 	SystemPrompt  string
 	AgentDef      agent.AgentDef
 	Subagents     *SubagentTracker
-	ProjectRoot   string // for drift detection
+	ProjectRoot   string               // for drift detection
+	repoMapCache  string               // cached repo map text, invalidated after edit/write
+	repoMapDirty  bool                 // true = needs rebuild before next LLM call
+	evidence      *agent.EvidenceChain // auto-tracked evidence for active decision
 }
 
 // Run executes one user turn: save message → react loop → done.
@@ -102,10 +106,15 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userText str
 		}
 	}
 
-	// Build system prompt: unified agent prompt + project context
+	// Build system prompt: unified agent prompt + project context + repo map
 	systemPrompt := c.SystemPrompt
 	if c.AgentDef.SystemPrompt != "" {
 		systemPrompt += "\n\n" + c.AgentDef.SystemPrompt
+	}
+
+	// Inject repo map (lazy rebuild after edits)
+	if repoMap := c.getRepoMap(); repoMap != "" {
+		systemPrompt += "\n\n" + repoMap
 	}
 
 	systemMsg := agent.Message{
@@ -247,11 +256,23 @@ func (c *Coordinator) reactLoop(
 				}
 			}
 
+			// Invalidate repo map after file changes
+			if (r.toolName == "edit" || r.toolName == "write" || r.toolName == "multiedit") && !r.isError {
+				c.invalidateRepoMap()
+			}
+
 			// Decision-aware context injection: when editing governed files,
 			// inject invariants so the LLM knows what constraints to preserve.
 			if (r.toolName == "edit" || r.toolName == "write") && !r.isError && c.ArtifactStore != nil {
 				if path := extractJSONField(r.args, "file_path"); path != "" {
 					c.injectDecisionContext(ctx, sess, path, &fullHistory)
+				}
+			}
+
+			// Evidence auto-tracking: observe agent actions after decide
+			if c.evidence != nil {
+				if ev := agent.DetectEvidenceFromTool(r.toolName, r.args, r.output, r.isError); ev != nil {
+					c.evidence.Items = append(c.evidence.Items, *ev)
 				}
 			}
 
@@ -458,6 +479,129 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 		Str("ref", meta.ArtifactRef).
 		Str("phase", string(updated.Phase)).
 		Msg("agent.cycle_artifact_bound")
+
+	// Start evidence tracking when decision is made
+	if meta.Operation == "decide" {
+		c.evidence = &agent.EvidenceChain{
+			DecRef:   meta.ArtifactRef,
+			CycleRef: updated.ID,
+		}
+		logger.Debug().Str("component", "agent").
+			Str("decision", meta.ArtifactRef).
+			Msg("agent.evidence_tracking_started")
+	}
+
+	// Cycle closure: measure verdict closes or abandons the cycle
+	if meta.Operation == "measure" && meta.MeasureVerdict != "" {
+		// Add measure verdict as evidence
+		if c.evidence != nil {
+			var evType agent.EvidenceType
+			if meta.MeasureVerdict == "accepted" {
+				evType = agent.EvidenceMeasure
+			} else {
+				evType = agent.EvidencePartial
+			}
+			c.evidence.Items = append(c.evidence.Items, agent.NewEvidenceItem(evType, "verdict: "+meta.MeasureVerdict, 3))
+		}
+
+		// If no evidence at all (agent skipped tests/verification), add "no_verification"
+		if c.evidence != nil && len(c.evidence.Items) <= 1 {
+			c.evidence.Items = append(c.evidence.Items, agent.NewEvidenceItem(agent.EvidenceNoVerify, "no tests or lint run before measure", 3))
+		}
+
+		// Compute R_eff from evidence chain
+		rEff := agent.ComputeREff(c.evidence)
+
+		switch meta.MeasureVerdict {
+		case "accepted", "partial":
+			wlnk := "measurement " + meta.MeasureVerdict
+			if c.evidence != nil && len(c.evidence.Items) > 0 {
+				// Find weakest evidence for WLNK label
+				minScore := 1.0
+				var weakest string
+				for _, item := range c.evidence.Items {
+					s := item.BaseScore - clPenalty(item.CL)
+					if s < minScore {
+						minScore = s
+						weakest = string(item.Type)
+					}
+				}
+				if weakest != "" {
+					wlnk = weakest + fmt.Sprintf(" (score: %.1f)", minScore)
+				}
+			}
+			completed := agent.CompleteCycle(updated, wlnk, rEff)
+			_ = c.Cycles.UpdateCycle(ctx, completed)
+			sess.ActiveCycleID = ""
+			_ = c.Sessions.Update(ctx, sess)
+			c.sendCycleUpdate(completed)
+			evCount := 0
+			if c.evidence != nil {
+				evCount = len(c.evidence.Items)
+			}
+
+			// Outer cycle trigger: suggest reframe after completion (FPF lemniscate feedback)
+			outerMsg := agent.Message{
+				Role: agent.RoleSystem,
+				Parts: []agent.Part{agent.TextPart{Text: fmt.Sprintf(
+					"[Cycle complete] Problem solved (R_eff: %.2f, %d evidence items). "+
+						"The lemniscate closes here. Situation may have changed — "+
+						"if the user has more tasks, frame a new problem. "+
+						"If the solution revealed new issues, suggest reframing.",
+					rEff, evCount)}},
+			}
+			_ = c.Messages.Save(ctx, &agent.Message{
+				ID: newMsgID(), SessionID: sess.ID, Role: agent.RoleSystem,
+				Parts: outerMsg.Parts, CreatedAt: time.Now().UTC(),
+			})
+
+			c.evidence = nil
+			logger.Info().Str("component", "agent").
+				Str("cycle_id", completed.ID).
+				Str("verdict", meta.MeasureVerdict).
+				Float64("r_eff", rEff).
+				Int("evidence_items", evCount).
+				Msg("agent.cycle_completed")
+
+		case "failed":
+			abandoned := agent.AbandonCycle(updated)
+			_ = c.Cycles.UpdateCycle(ctx, abandoned)
+			// Create new cycle from lineage for reframing
+			newCycle := agent.NewCycleFromLineage("cyc_"+uuid.NewString(), sess.ID, abandoned)
+			_ = c.Cycles.CreateCycle(ctx, newCycle)
+			sess.ActiveCycleID = newCycle.ID
+			_ = c.Sessions.Update(ctx, sess)
+			c.sendCycleUpdate(newCycle)
+			c.evidence = nil
+			logger.Info().Str("component", "agent").
+				Str("failed_cycle", abandoned.ID).
+				Str("new_cycle", newCycle.ID).
+				Float64("r_eff", rEff).
+				Msg("agent.cycle_reframed")
+		}
+	}
+}
+
+// getRepoMap returns the cached repo map, rebuilding if dirty or first call.
+func (c *Coordinator) getRepoMap() string {
+	if c.ProjectRoot == "" {
+		return ""
+	}
+	if c.repoMapCache == "" || c.repoMapDirty {
+		rm, err := codebase.BuildRepoMap(c.ProjectRoot, 500)
+		if err != nil || rm == nil || rm.TotalFiles == 0 {
+			return ""
+		}
+		c.repoMapCache = codebase.RenderRepoMap(rm, 2000)
+		c.repoMapDirty = false
+	}
+	return c.repoMapCache
+}
+
+// invalidateRepoMap marks the repo map as needing rebuild.
+// Called after edit/write tool modifies files.
+func (c *Coordinator) invalidateRepoMap() {
+	c.repoMapDirty = true
 }
 
 // injectDriftWarnings runs drift detection on first turn and injects
@@ -536,6 +680,7 @@ func (c *Coordinator) sendCycleUpdate(cycle *agent.Cycle) {
 		DecisionRef:  cycle.DecisionRef,
 		Phase:        cycle.Phase,
 		Status:       cycle.Status,
+		REff:         cycle.REff,
 	})
 }
 
@@ -634,6 +779,19 @@ func sanitizeHistory(msgs []agent.Message) []agent.Message {
 		return msgs
 	}
 	return append(msgs, patches...)
+}
+
+func clPenalty(cl int) float64 {
+	switch cl {
+	case 3:
+		return 0.0
+	case 2:
+		return 0.1
+	case 1:
+		return 0.4
+	default:
+		return 0.9
+	}
 }
 
 // extractJSONField extracts a string field from a JSON args string.

@@ -92,6 +92,7 @@ type CycleUpdateMsg struct {
 	DecisionRef  string
 	Phase        agent.Phase
 	Status       agent.CycleStatus
+	REff         float64
 }
 
 // PhaseChangeMsg updates the currently displayed phase label/verb.

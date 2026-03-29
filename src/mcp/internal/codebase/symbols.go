@@ -32,6 +32,7 @@ type FileSymbols struct {
 	Language string   // "go", "python", "javascript", "typescript", "rust", "c", "cpp"
 	Lines    int      // total line count
 	Symbols  []Symbol // extracted symbols, sorted by line
+	ModTime  int64    // modification time (unix nano) for recency sorting
 }
 
 // RepoMap is the complete symbol map for a repository.
@@ -279,11 +280,18 @@ func extractFileSymbols(parser *sitter.Parser, absPath, relPath string, langInfo
 	// Deduplicate (same name+line from overlapping queries)
 	symbols = dedup(symbols)
 
+	// Get modification time for recency sorting
+	var modTime int64
+	if info, err := os.Stat(absPath); err == nil {
+		modTime = info.ModTime().UnixNano()
+	}
+
 	return &FileSymbols{
 		Path:     relPath,
 		Language: langInfo.name,
 		Lines:    lines,
 		Symbols:  symbols,
+		ModTime:  modTime,
 	}, nil
 }
 
@@ -303,6 +311,8 @@ func dedup(syms []Symbol) []Symbol {
 }
 
 // RenderRepoMap formats the repo map for injection into the system prompt.
+// Shows directory tree with exported symbols, kinds, and line counts.
+// Files sorted by modification time (recent first) for relevance.
 // Respects a token budget (approximate: 4 chars ≈ 1 token).
 func RenderRepoMap(rm *RepoMap, maxTokens int) string {
 	if maxTokens <= 0 {
@@ -313,8 +323,20 @@ func RenderRepoMap(rm *RepoMap, maxTokens int) string {
 	var b strings.Builder
 	b.WriteString("## Repository map\n\n")
 
+	// Sort files: recently modified first within each directory
+	files := make([]FileSymbols, len(rm.Files))
+	copy(files, rm.Files)
+	sort.Slice(files, func(i, j int) bool {
+		di, dj := filepath.Dir(files[i].Path), filepath.Dir(files[j].Path)
+		if di != dj {
+			return di < dj
+		}
+		// Within same dir, recent files first
+		return files[i].ModTime > files[j].ModTime
+	})
+
 	currentDir := ""
-	for _, f := range rm.Files {
+	for _, f := range files {
 		dir := filepath.Dir(f.Path)
 		if dir != currentDir {
 			if currentDir != "" {
@@ -327,23 +349,30 @@ func RenderRepoMap(rm *RepoMap, maxTokens int) string {
 		if len(f.Symbols) == 0 {
 			b.WriteString(fmt.Sprintf("  %s (%d lines)\n", filepath.Base(f.Path), f.Lines))
 		} else {
-			names := make([]string, 0, len(f.Symbols))
+			// Show symbols with kinds for better context
+			parts := make([]string, 0, len(f.Symbols))
 			for _, s := range f.Symbols {
 				if s.Exported {
-					names = append(names, s.Name)
+					if s.Kind != "" && s.Kind != "func" {
+						// Show kind for non-functions (types, interfaces, classes)
+						parts = append(parts, s.Kind+" "+s.Name)
+					} else {
+						parts = append(parts, s.Name)
+					}
 				}
 			}
-			if len(names) == 0 {
-				// No exported symbols — show file only
+			if len(parts) == 0 {
 				b.WriteString(fmt.Sprintf("  %s (%d lines)\n", filepath.Base(f.Path), f.Lines))
 			} else {
-				b.WriteString(fmt.Sprintf("  %s: %s\n", filepath.Base(f.Path), strings.Join(names, ", ")))
+				b.WriteString(fmt.Sprintf("  %s: %s\n", filepath.Base(f.Path), strings.Join(parts, ", ")))
 			}
 		}
 
-		// Check budget
 		if b.Len() > maxChars {
-			b.WriteString(fmt.Sprintf("\n... (%d more files)\n", rm.TotalFiles-len(rm.Files)))
+			remaining := rm.TotalFiles - len(files)
+			if remaining > 0 {
+				b.WriteString(fmt.Sprintf("\n... (%d more files)\n", remaining))
+			}
 			break
 		}
 	}

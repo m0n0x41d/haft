@@ -59,8 +59,10 @@ func NewRegistry(projectRoot string) *Registry {
 	r.register(&ReadFileTool{})
 	r.register(&WriteFileTool{})
 	r.register(&EditFileTool{registry: r})
+	r.register(&MultiEditTool{registry: r})
 	r.register(&GlobTool{projectRoot: projectRoot})
 	r.register(&GrepTool{projectRoot: projectRoot})
+	r.register(&FetchTool{})
 	return r
 }
 
@@ -87,6 +89,22 @@ func (r *Registry) List() []agent.ToolSchema {
 func (r *Registry) Get(name string) (ToolExecutor, bool) {
 	t, ok := r.tools[name]
 	return t, ok
+}
+
+// ReadOnlyRegistry returns a filtered registry excluding write tools.
+// Used for read-only subagents (explore, plan).
+func (r *Registry) ReadOnlyRegistry() *Registry {
+	writeTools := map[string]bool{
+		"bash": true, "write": true, "edit": true, "multiedit": true,
+		"quint_problem": true, "quint_solution": true, "quint_decision": true, "quint_note": true,
+	}
+	ro := &Registry{tools: make(map[string]ToolExecutor)}
+	for _, name := range r.order {
+		if !writeTools[name] {
+			ro.register(r.tools[name])
+		}
+	}
+	return ro
 }
 
 // Execute runs a tool by name with the given arguments JSON.

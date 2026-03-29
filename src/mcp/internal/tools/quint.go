@@ -182,7 +182,54 @@ func (t *QuintProblemTool) Execute(ctx context.Context, argsJSON string) (agent.
 		return agent.PlainResult(b.String()), nil
 
 	case "characterize":
-		return agent.PlainResult("Characterization is embedded in the frame action via acceptance criteria and optimization targets."), nil
+		problemRef := jsonStr(args, "problem_ref")
+		if problemRef == "" {
+			// Try to get from active cycle
+			if t.store != nil {
+				problems, _ := artifact.SelectProblems(ctx, t.store, "", 1)
+				if len(problems) > 0 {
+					problemRef = problems[0].Meta.ID
+				}
+			}
+		}
+		if problemRef == "" {
+			return agent.PlainResult("problem_ref required. Frame a problem first, then characterize."), nil
+		}
+
+		input := artifact.CharacterizeInput{
+			ProblemRef:  problemRef,
+			ParityRules: jsonStr(args, "parity_rules"),
+		}
+
+		// Parse dimensions
+		if dims, ok := args["dimensions"]; ok {
+			data, _ := json.Marshal(dims)
+			var parsed []artifact.ComparisonDimension
+			if json.Unmarshal(data, &parsed) == nil {
+				input.Dimensions = parsed
+			}
+		}
+
+		if len(input.Dimensions) == 0 {
+			return agent.PlainResult("At least one dimension required for characterization."), nil
+		}
+
+		a, filePath, err := artifact.CharacterizeProblem(ctx, t.store, t.quintDir, input)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+
+		var dimNames []string
+		for _, d := range input.Dimensions {
+			label := d.Name
+			if d.Role != "" {
+				label += " (" + d.Role + ")"
+			}
+			dimNames = append(dimNames, label)
+		}
+		display := fmt.Sprintf("Problem characterized: %s\nDimensions: %s\nFile: %s",
+			a.Meta.ID, strings.Join(dimNames, ", "), filePath)
+		return agent.PlainResult(display), nil
 
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
@@ -213,11 +260,13 @@ func (t *QuintSolutionTool) Schema() agent.ToolSchema {
 Actions:
 - explore: Generate 2+ genuinely distinct approaches with strengths, weakest link, and risks.
   Each variant must differ in KIND, not degree. This is creative abduction.
-- compare: Fair comparison of variants on explicit dimensions. Identify the Pareto front.`,
+- compare: Fair comparison of variants on explicit dimensions. Identify the Pareto front.
+- similar: Search past solution portfolios for patterns matching a query. Reuse proven approaches.`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":        map[string]any{"type": "string", "enum": []string{"explore", "compare"}, "description": "explore | compare"},
+				"action":        map[string]any{"type": "string", "enum": []string{"explore", "compare", "similar"}, "description": "explore | compare | similar"},
+				"query":         map[string]any{"type": "string", "description": "Search query for similar past solutions (similar)"},
 				"problem_ref":   map[string]any{"type": "string", "description": "Problem ID to solve (explore)"},
 				"portfolio_ref": map[string]any{"type": "string", "description": "Portfolio ID to compare (compare)"},
 				"variants": map[string]any{
@@ -271,6 +320,27 @@ func (t *QuintSolutionTool) Execute(ctx context.Context, argsJSON string) (agent
 			}
 		}
 		return t.compare(ctx, args)
+	case "similar":
+		query := jsonStr(args, "query")
+		if query == "" {
+			return agent.ToolResult{}, fmt.Errorf("query required for similar search")
+		}
+		results, err := artifact.FetchSearchResults(ctx, t.store, query, 10)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		var matches []string
+		for _, r := range results {
+			if r.Meta.Kind == artifact.KindSolutionPortfolio {
+				matches = append(matches, fmt.Sprintf("- [%s] %s (problem: %s)",
+					r.Meta.ID, r.Meta.Title, r.Meta.Context))
+			}
+		}
+		if len(matches) == 0 {
+			return agent.PlainResult("No similar past solutions found. This is a novel problem."), nil
+		}
+		return agent.PlainResult(fmt.Sprintf("Past solution portfolios matching \"%s\":\n%s\n\nUse quint_query(search) for details on any portfolio.",
+			query, strings.Join(matches, "\n"))), nil
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
@@ -378,15 +448,27 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":           map[string]any{"type": "string", "enum": []string{"decide", "measure"}, "description": "decide | measure"},
-				"problem_ref":      map[string]any{"type": "string", "description": "Problem ID (decide)"},
-				"portfolio_ref":    map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
-				"selected_title":   map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
-				"why_selected":     map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
-				"invariants":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What MUST hold (decide)"},
-				"post_conditions":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Implementation checklist (decide)"},
-				"admissibility":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What is NOT acceptable (decide)"},
-				"weakest_link":     map[string]any{"type": "string", "description": "What bounds quality (decide)"},
+				"action":          map[string]any{"type": "string", "enum": []string{"decide", "measure"}, "description": "decide | measure"},
+				"problem_ref":     map[string]any{"type": "string", "description": "Problem ID (decide)"},
+				"portfolio_ref":   map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
+				"selected_title":  map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
+				"why_selected":    map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
+				"invariants":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What MUST hold (decide)"},
+				"post_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Implementation checklist (decide)"},
+				"admissibility":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What is NOT acceptable (decide)"},
+				"weakest_link":    map[string]any{"type": "string", "description": "What bounds quality (decide)"},
+				"predictions": map[string]any{
+					"type":        "array",
+					"description": "Testable predictions — measure will check each one (decide)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"claim":      map[string]any{"type": "string", "description": "What should be true after implementation"},
+							"observable": map[string]any{"type": "string", "description": "How to verify (test name, command, file check)"},
+							"threshold":  map[string]any{"type": "string", "description": "What counts as passing"},
+						},
+					},
+				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide)"},
 				"valid_until":      map[string]any{"type": "string", "description": "Expiry date YYYY-MM-DD (decide)"},
 				"decision_ref":     map[string]any{"type": "string", "description": "Decision ID (measure)"},
@@ -447,6 +529,15 @@ func (t *QuintDecisionTool) decide(ctx context.Context, args map[string]any) (ag
 		AffectedFiles:  jsonStrArray(args, "affected_files"),
 	}
 
+	// Parse predictions
+	if preds, ok := args["predictions"]; ok {
+		data, _ := json.Marshal(preds)
+		var parsed []artifact.PredictionInput
+		if json.Unmarshal(data, &parsed) == nil {
+			input.Predictions = parsed
+		}
+	}
+
 	a, filePath, err := artifact.Decide(ctx, t.store, t.quintDir, input)
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -498,9 +589,10 @@ func (t *QuintDecisionTool) measure(ctx context.Context, args map[string]any) (a
 	return agent.ToolResult{
 		DisplayText: display,
 		Meta: &agent.ArtifactMeta{
-			Kind:        "decision",
-			ArtifactRef: result.Meta.ID,
-			Operation:   "measure",
+			Kind:           "decision",
+			ArtifactRef:    result.Meta.ID,
+			Operation:      "measure",
+			MeasureVerdict: input.Verdict,
 		},
 	}, nil
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/m0n0x41d/quint-code/internal/agent"
 	"github.com/m0n0x41d/quint-code/internal/agentloop"
 	"github.com/m0n0x41d/quint-code/internal/artifact"
-	"github.com/m0n0x41d/quint-code/internal/codebase"
 	"github.com/m0n0x41d/quint-code/internal/project"
 	"github.com/m0n0x41d/quint-code/internal/provider"
 	"github.com/m0n0x41d/quint-code/internal/session"
@@ -108,15 +107,9 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// 7. Create event bus
 	bus := tui.NewBus(256)
 
-	// 8. Build system prompt with project context + repo map
+	// 8. Build system prompt with project context (repo map injected lazily by coordinator)
 	cwd, _ := os.Getwd()
 	systemPrompt := agent.BuildSystemPrompt(projectRoot, cwd) + agent.LoadProjectContext(projectRoot)
-
-	// Build tree-sitter repo map (symbol extraction for all supported languages)
-	repoMap, err := codebase.BuildRepoMap(projectRoot, 500)
-	if err == nil && repoMap != nil && repoMap.TotalFiles > 0 {
-		systemPrompt += "\n\n" + codebase.RenderRepoMap(repoMap, 2000)
-	}
 
 	// 9. Create coordinator with lemniscate agent
 	agentDef := agent.HaftAgent()
@@ -195,7 +188,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	compactFn := func(ctx context.Context, s *agent.Session) (int, int, error) {
 		return coordinator.ForceCompact(ctx, s)
 	}
-	model := tui.New(sess, runFn, bus, initialGoal, store, store, compactFn, store)
+	model := tui.New(sess, runFn, bus, initialGoal, store, store, compactFn, store, projectRoot)
 
 	// 14. Run TUI
 	p := tea.NewProgram(model, tea.WithEnvironment(bubbleTeaEnv()))

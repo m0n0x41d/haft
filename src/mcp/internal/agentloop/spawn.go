@@ -167,7 +167,7 @@ func (c *Coordinator) SpawnSubagent(
 	})
 
 	// Launch goroutine
-	go c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, resultCh)
+	go c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, resultCh)
 
 	return handle, nil
 }
@@ -181,6 +181,7 @@ func (c *Coordinator) runSubagent(
 	task string,
 	toolSchemas []agent.ToolSchema,
 	maxSteps int,
+	readOnly bool,
 	resultCh chan<- SubagentResult,
 ) {
 	defer func() {
@@ -212,7 +213,7 @@ func (c *Coordinator) runSubagent(
 	history := []agent.Message{systemMsg, *userMsg}
 
 	// Run a simplified reactLoop — no phase transitions, no signals
-	result := c.subagentLoop(ctx, sess, subagentID, history, toolSchemas, maxSteps)
+	result := c.subagentLoop(ctx, sess, subagentID, history, toolSchemas, maxSteps, readOnly)
 	resultCh <- result
 }
 
@@ -225,6 +226,7 @@ func (c *Coordinator) subagentLoop(
 	history []agent.Message,
 	toolSchemas []agent.ToolSchema,
 	maxSteps int,
+	readOnly bool,
 ) SubagentResult {
 	var totalTokens int
 
@@ -274,7 +276,7 @@ func (c *Coordinator) subagentLoop(
 			})
 
 			// Execute (subagent tools are pre-approved — no permission prompts)
-			output, isError := c.executeSubagentTool(ctx, tc)
+			output, isError := c.executeSubagentTool(ctx, tc, readOnly)
 
 			// Truncate
 			const maxBytes = 50_000
@@ -312,7 +314,17 @@ func (c *Coordinator) subagentLoop(
 	}
 }
 
-func (c *Coordinator) executeSubagentTool(ctx context.Context, tc agent.ToolCallPart) (string, bool) {
+// writeTools are blocked for read-only subagents at execution time.
+var writeToolNames = map[string]bool{
+	"bash": true, "write": true, "edit": true, "multiedit": true,
+	"quint_problem": true, "quint_solution": true, "quint_decision": true, "quint_note": true,
+}
+
+func (c *Coordinator) executeSubagentTool(ctx context.Context, tc agent.ToolCallPart, readOnly bool) (string, bool) {
+	// Enforce read-only at execution time (not just schema filtering)
+	if readOnly && writeToolNames[tc.ToolName] {
+		return fmt.Sprintf("Tool '%s' is not available in read-only subagent mode.", tc.ToolName), true
+	}
 	result, err := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
 	if err != nil {
 		return fmt.Sprintf("Tool error: %s", err.Error()), true
@@ -390,7 +402,7 @@ func (c *Coordinator) buildSubagentTools(def agent.SubagentDef) []agent.ToolSche
 		if len(def.AllowedTools) > 0 && !allowed[tool.Name] {
 			continue
 		}
-		if def.ReadOnly && (tool.Name == "write" || tool.Name == "edit") {
+		if def.ReadOnly && writeToolNames[tool.Name] {
 			continue
 		}
 		// Never give subagents spawn/wait tools (prevents recursion at tool level)

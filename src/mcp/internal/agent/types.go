@@ -282,9 +282,11 @@ type ArtifactMeta struct {
 	Governance  *GovernanceMeta // non-nil when framer proposes ceremony level
 
 	// Adopt-specific: related refs found for the adopted problem.
-	// Coordinator uses these to pre-populate the cycle.
 	AdoptPortfolioRef string // existing solution portfolio
 	AdoptDecisionRef  string // existing decision
+
+	// Measure-specific: verdict from quint_decision(measure).
+	MeasureVerdict string // "accepted" | "partial" | "failed"
 }
 
 // GovernanceMeta carries the framer's ceremony recommendation.

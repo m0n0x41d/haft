@@ -39,7 +39,15 @@ type DecideInput struct {
 	Context         string            `json:"context,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	AffectedFiles   []string          `json:"affected_files,omitempty"`
+	Predictions     []PredictionInput `json:"predictions,omitempty"`
 	SearchKeywords  string            `json:"search_keywords,omitempty"`
+}
+
+// PredictionInput is a testable claim that measure should verify.
+type PredictionInput struct {
+	Claim      string `json:"claim"`
+	Observable string `json:"observable"`
+	Threshold  string `json:"threshold"`
 }
 
 // RejectionReason explains why a variant was not selected.

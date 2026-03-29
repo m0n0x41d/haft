@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -59,6 +61,7 @@ type Model struct {
 	portfolioRef string
 	decisionRef  string
 	cycleStatus  agent.CycleStatus
+	cycleREff    float64
 
 	// Token tracking
 	tokensUsed  int
@@ -73,7 +76,8 @@ type Model struct {
 	quitConfirm bool // Ctrl+C pressed once, waiting for confirm
 
 	// Command palette
-	palette CommandPalette
+	palette    CommandPalette
+	filePicker *FilePicker // @ file mention completion
 
 	// Message queue (user types during streaming)
 	pendingMessages []string
@@ -125,6 +129,7 @@ func New(
 	msgStore session.MessageStore,
 	compactFn CompactFunc,
 	cycleStore session.CycleStore,
+	projectRoot string,
 ) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message..."
@@ -169,6 +174,7 @@ func New(
 		thinkBuf:        &strings.Builder{},
 		input:           ta,
 		spinner:         sp,
+		filePicker:      NewFilePicker(projectRoot),
 	}
 }
 
@@ -398,6 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.portfolioRef = msg.PortfolioRef
 		m.decisionRef = msg.DecisionRef
 		m.cycleStatus = msg.Status
+		m.cycleREff = msg.REff
 		m.refreshChat()
 		return m, m.waitForBus()
 
@@ -651,6 +658,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// File picker: intercept keys when visible (@ mention)
+		if m.filePicker != nil && m.filePicker.Visible() {
+			switch {
+			case key.Code == tea.KeyUp || key.Code == 'k':
+				m.filePicker.MoveUp()
+				return m, nil
+			case key.Code == tea.KeyDown || key.Code == 'j':
+				m.filePicker.MoveDown()
+				return m, nil
+			case key.Code == tea.KeyTab || (key.Code == tea.KeyEnter && key.Mod == 0):
+				// Select file → attach content
+				if sel := m.filePicker.Selected(); sel != "" {
+					m.attachFile(sel)
+					// Remove @query from input
+					val := m.input.Value()
+					if atIdx := strings.LastIndex(val, "@"); atIdx >= 0 {
+						m.input.SetValue(val[:atIdx])
+					}
+				}
+				return m, nil
+			case key.Code == tea.KeyEscape:
+				m.filePicker.Update("") // close
+				return m, nil
+			}
+		}
+
 		// Ctrl+J inserts newline (like Claude Code / Codex)
 		if key.Mod == tea.ModCtrl && key.Code == 'j' {
 			m.input.InsertString("\n")
@@ -671,8 +704,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		prevInputH := m.input.Height()
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		// Update command palette filter from current input
+		// Update command palette + file picker filter from current input
 		m.palette.Update(m.input.Value())
+		if m.filePicker != nil {
+			m.filePicker.Update(m.input.Value())
+		}
 		// Only resize if textarea height changed (multiline expansion)
 		if m.input.Height() != prevInputH {
 			m.resizeComponents()
@@ -1029,6 +1065,9 @@ func (m Model) View() tea.View {
 	if m.palette.Visible() {
 		paletteBox := m.palette.Render(m.width, m.styles)
 		drawOverlayBottom(&canvas, 0, 0, m.width, chatH, paletteBox)
+	} else if m.filePicker != nil && m.filePicker.Visible() {
+		pickerBox := m.filePicker.Render(m.width, m.styles)
+		drawOverlayBottom(&canvas, 0, 0, m.width, chatH, pickerBox)
 	}
 
 	inputY := chatH + 1
@@ -1226,7 +1265,14 @@ func (m Model) renderCycleInfo() string {
 	}
 
 	if m.cycleStatus == agent.CycleComplete {
-		refs = append(refs, m.styles.ToolDone.Render("✓"))
+		rEffLabel := fmt.Sprintf("✓ R:%.1f", m.cycleREff)
+		if m.cycleREff >= 0.7 {
+			refs = append(refs, m.styles.ToolDone.Render(rEffLabel))
+		} else if m.cycleREff >= 0.4 {
+			refs = append(refs, m.styles.Dim.Render(rEffLabel))
+		} else {
+			refs = append(refs, m.styles.ErrorText.Render(rEffLabel))
+		}
 	}
 
 	if len(refs) == 0 {
@@ -1271,6 +1317,29 @@ func (m Model) selectAnimation() Animation {
 // pickVerb selects a status verb for a phase activation.
 // Called once when a phase starts or streaming begins — the word holds for the entire run.
 // Uses verbCounter to cycle through the pool so each activation gets a different word.
+// ---------------------------------------------------------------------------
+// File attachment (@ mention + paste)
+// ---------------------------------------------------------------------------
+
+// attachFile reads a file and adds it as an attachment.
+func (m *Model) attachFile(relPath string) {
+	if m.filePicker == nil {
+		return
+	}
+	absPath := filepath.Join(m.filePicker.projectRoot, relPath)
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		m.errMsg = fmt.Sprintf("Failed to read %s: %s", relPath, err)
+		return
+	}
+
+	m.attachments = append(m.attachments, pasteAttachment{
+		Name:    relPath,
+		Content: string(content),
+	})
+	m.notification = fmt.Sprintf("📎 %s attached", relPath)
+}
+
 // ---------------------------------------------------------------------------
 // Paste attachments
 // ---------------------------------------------------------------------------

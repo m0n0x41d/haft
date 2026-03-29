@@ -16,7 +16,7 @@ import (
 func TestMouseWheelScrollsChatList(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 
 	model.width = 80
 	model.height = 12
@@ -84,7 +84,7 @@ func TestChatListTallContentNotPadded(t *testing.T) {
 func TestViewUsesUVCompositionForMixedText(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 	model.width = 80
 	model.height = 18
 	model.resizeComponents()
@@ -105,7 +105,7 @@ func TestViewUsesUVCompositionForMixedText(t *testing.T) {
 func TestLayoutBlocksReserveSeparatorRows(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 	model.width = 80
 	model.height = 10
 	model.resizeComponents()
@@ -133,7 +133,7 @@ func TestDrawBlockWrapsLongMixedText(t *testing.T) {
 func TestStreamDoneFinalizesFromAuthoritativeMessage(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 	model.currentPhase = agent.PhaseWorker
 	model.streamBuf.WriteString("broken live preview text")
 	model.thinkBuf.WriteString("thinking")
@@ -156,7 +156,7 @@ func TestStreamDoneFinalizesFromAuthoritativeMessage(t *testing.T) {
 func TestStreamingDeltaUpdatesCanonicalAssistantMessage(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, string) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
-	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil)
+	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 	model.currentPhase = agent.PhaseWorker
 
 	updated, _ := model.Update(StreamDeltaMsg{Text: "hello "})

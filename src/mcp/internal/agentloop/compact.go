@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/quint-code/internal/agent"
 	"github.com/m0n0x41d/quint-code/internal/artifact"
@@ -182,4 +183,67 @@ func emergencyTruncate(history []agent.Message, keepLastN int) []agent.Message {
 	}
 
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// Force compact (user-triggered via /compact)
+// ---------------------------------------------------------------------------
+
+// ForceCompact runs compaction regardless of token usage and persists the result.
+// Returns (messagesBefore, messagesAfter, error).
+func (c *Coordinator) ForceCompact(ctx context.Context, sess *agent.Session) (int, int, error) {
+	history, err := c.Messages.ListBySession(ctx, sess.ID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("load history: %w", err)
+	}
+
+	before := len(history)
+	if before <= agent.ProtectLastN+1 {
+		return before, before, nil // too few messages to compact
+	}
+
+	// Build full history with system prompt (matches reactLoop structure)
+	systemMsg := agent.Message{
+		Role:  agent.RoleSystem,
+		Parts: []agent.Part{agent.TextPart{Text: c.SystemPrompt}},
+	}
+	fullHistory := append([]agent.Message{systemMsg}, history...)
+
+	// Run stage 2 compaction (LLM summary + artifacts)
+	anchor := c.buildFullAnchor(ctx, sess, fullHistory)
+	if anchor == "" {
+		// No artifacts and LLM failed — do stage 1 (prune tool outputs) at minimum
+		pruned := agent.PruneOldToolOutputs(fullHistory, agent.ProtectLastN)
+		anchor = agent.ExtractConversationText(pruned, agent.ProtectLastN)
+		if anchor == "" {
+			return before, before, nil
+		}
+	}
+
+	// Persist: delete old messages from DB, keep last N
+	deleted, err := c.Messages.DeleteOlderThan(ctx, sess.ID, agent.ProtectLastN)
+	if err != nil {
+		return before, before, fmt.Errorf("delete old messages: %w", err)
+	}
+
+	// Insert anchor as a system message (placed before the kept messages by timestamp)
+	anchorMsg := &agent.Message{
+		ID:        newMsgID(),
+		SessionID: sess.ID,
+		Role:      agent.RoleSystem,
+		Parts:     []agent.Part{agent.TextPart{Text: fmt.Sprintf("[Context compaction summary]\n\n%s", anchor)}},
+		CreatedAt: time.Now().UTC().Add(-time.Second), // slightly before kept messages
+	}
+	if err := c.Messages.Save(ctx, anchorMsg); err != nil {
+		return before, before, fmt.Errorf("save anchor: %w", err)
+	}
+
+	after := before - deleted + 1 // +1 for the anchor
+	logger.Info().Str("component", "agent").
+		Int("before", before).
+		Int("after", after).
+		Int("deleted", deleted).
+		Msg("agent.force_compact_done")
+
+	return before, after, nil
 }

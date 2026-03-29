@@ -57,10 +57,11 @@ func NewTokenBudget(contextWindow int) TokenBudget {
 	}
 }
 
-// Add records token usage. Returns the updated budget.
-// Pure function (returns new value).
+// Add records token usage from the latest API response.
+// tokens is TotalTokens (prompt + completion) — it already represents
+// the current context size. We replace Used, not accumulate.
 func (b TokenBudget) Add(tokens int) TokenBudget {
-	b.Used += tokens
+	b.Used = tokens
 	return b
 }
 
@@ -83,12 +84,28 @@ func (b TokenBudget) Exhausted() bool {
 	return b.Used >= b.Limit
 }
 
+// ResetTokenBudget recalculates Used from the actual message history after compaction.
+// This prevents stale cumulative counts from persisting after history truncation.
+func ResetTokenBudget(old TokenBudget, history []Message) TokenBudget {
+	used := 0
+	for _, msg := range history {
+		used += msg.Tokens
+	}
+	return TokenBudget{
+		Limit:     old.Limit,
+		Threshold: old.Threshold,
+		Used:      used,
+	}
+}
+
 // ModelContextWindow returns a reasonable context window estimate for a model.
 // Pure function — no API calls.
 func ModelContextWindow(model string) int {
 	// Known models
 	switch {
-	case strings.Contains(model, "gpt-5.4"), strings.Contains(model, "gpt-5.3"):
+	case strings.Contains(model, "gpt-5.4"):
+		return 1_050_000 // 1.05M context (announced March 2026)
+	case strings.Contains(model, "gpt-5.3"):
 		return 400_000
 	case strings.Contains(model, "gpt-5.2"), strings.Contains(model, "gpt-5.1"):
 		return 256_000

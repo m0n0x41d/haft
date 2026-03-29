@@ -57,4 +57,37 @@ var AgentMigrations = []db.Migration{
 			"ALTER TABLE agent_sessions ADD COLUMN parent_id TEXT DEFAULT ''",
 		},
 	},
+	{
+		Version:     6,
+		Description: "Reasoning cycles table",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS reasoning_cycles (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				problem_ref TEXT DEFAULT '',
+				portfolio_ref TEXT DEFAULT '',
+				decision_ref TEXT DEFAULT '',
+				phase TEXT NOT NULL DEFAULT 'framer',
+				depth TEXT NOT NULL DEFAULT 'tactical',
+				status TEXT NOT NULL DEFAULT 'active',
+				lineage_ref TEXT DEFAULT '',
+				weakest_link TEXT DEFAULT '',
+				r_eff REAL DEFAULT 0.0,
+				cl_min INTEGER DEFAULT 3,
+				governance TEXT DEFAULT '[]',
+				skip_log TEXT DEFAULT '[]',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_cycles_session ON reasoning_cycles(session_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_cycles_status ON reasoning_cycles(status)`,
+		},
+	},
+	{
+		Version:     7,
+		Description: "Add active_cycle_id to sessions",
+		Statements: []string{
+			"ALTER TABLE agent_sessions ADD COLUMN active_cycle_id TEXT DEFAULT ''",
+		},
+	},
 }

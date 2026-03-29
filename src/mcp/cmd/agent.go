@@ -126,7 +126,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		ID:          uuid.NewString(),
 		Title:       "",
 		Model:       agentModel,
-		Depth:       agent.DepthTactical, // FPF default: tactical. Escalate with Ctrl+T.
+		Depth:       agent.DepthStandard, // FPF B.5.1: all phases mandatory
 		Interaction: agent.InteractionSymbiotic,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
@@ -151,6 +151,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		Tools:          toolRegistry,
 		Sessions:       store,
 		Messages:       store,
+		Cycles:         store,
 		ArtifactStore:  artStore,
 		Bus:            bus,
 		SystemPrompt:   systemPrompt,
@@ -191,7 +192,10 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	runFn := func(ctx context.Context, s *agent.Session, text string) {
 		coordinator.Run(ctx, s, text)
 	}
-	model := tui.New(sess, runFn, bus, initialGoal, store, store)
+	compactFn := func(ctx context.Context, s *agent.Session) (int, int, error) {
+		return coordinator.ForceCompact(ctx, s)
+	}
+	model := tui.New(sess, runFn, bus, initialGoal, store, store, compactFn, store)
 
 	// 14. Run TUI
 	p := tea.NewProgram(model)

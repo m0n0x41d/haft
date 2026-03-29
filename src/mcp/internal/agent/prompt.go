@@ -64,7 +64,7 @@ In autonomous mode (user toggled Ctrl+Q): act decisively, report results.
 ## When to use the lemniscate
 
 - Simple questions, greetings → respond directly, no tools
-- Trivial fixes (typos, imports) → edit directly, skip framing
+- Trivial engineering changes (typos, imports, simple renames) → use a lightweight frame, then implement
 - Non-trivial tasks (bugs, features) → frame first, then implement
 - Architectural tasks → full cycle: frame → explore → decide → implement → measure
 

@@ -41,23 +41,23 @@ func (t *WriteFileTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *WriteFileTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args writeArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Path == "" {
-		return "", fmt.Errorf("path is required")
+		return agent.ToolResult{}, fmt.Errorf("path is required")
 	}
 
 	dir := filepath.Dir(args.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create directory %s: %w", dir, err)
+		return agent.ToolResult{}, fmt.Errorf("create directory %s: %w", dir, err)
 	}
 
 	if err := os.WriteFile(args.Path, []byte(args.Content), 0o644); err != nil {
-		return "", fmt.Errorf("write file: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("write file: %w", err)
 	}
 
-	return fmt.Sprintf("Written %d bytes to %s", len(args.Content), args.Path), nil
+	return agent.PlainResult(fmt.Sprintf("Written %d bytes to %s", len(args.Content), args.Path)), nil
 }

@@ -45,13 +45,13 @@ func (t *GlobTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *GlobTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *GlobTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args globArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Pattern == "" {
-		return "", fmt.Errorf("pattern is required")
+		return agent.ToolResult{}, fmt.Errorf("pattern is required")
 	}
 
 	baseDir := t.projectRoot
@@ -82,15 +82,15 @@ func (t *GlobTool) Execute(_ context.Context, argsJSON string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("walk: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("walk: %w", err)
 	}
 
 	sort.Strings(matches)
 
 	if len(matches) == 0 {
-		return "No files matched the pattern.", nil
+		return agent.PlainResult("No files matched the pattern."), nil
 	}
-	return strings.Join(matches, "\n"), nil
+	return agent.PlainResult(strings.Join(matches, "\n")), nil
 }
 
 // matchDoubleStarGlob handles ** patterns by splitting on ** and matching segments.

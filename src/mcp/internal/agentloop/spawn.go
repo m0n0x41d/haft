@@ -317,7 +317,7 @@ func (c *Coordinator) executeSubagentTool(ctx context.Context, tc agent.ToolCall
 	if err != nil {
 		return fmt.Sprintf("Tool error: %s", err.Error()), true
 	}
-	return result, false
+	return result.DisplayText, false
 }
 
 // WaitSubagents blocks until all specified subagents complete or timeout.

@@ -47,13 +47,13 @@ func (t *BashTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *BashTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args bashArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Command == "" {
-		return "", fmt.Errorf("command is required")
+		return agent.ToolResult{}, fmt.Errorf("command is required")
 	}
 
 	timeout := bashTimeout
@@ -76,16 +76,16 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	output := strings.TrimRight(buf.String(), "\n")
 
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("Command timed out after %ds.\nPartial output:\n%s", int(timeout.Seconds()), output), nil
+		return agent.PlainResult(fmt.Sprintf("Command timed out after %ds.\nPartial output:\n%s", int(timeout.Seconds()), output)), nil
 	}
 
 	if err != nil {
 		exitErr, ok := err.(*exec.ExitError)
 		if ok {
-			return fmt.Sprintf("Exit code: %d\n%s", exitErr.ExitCode(), output), nil
+			return agent.PlainResult(fmt.Sprintf("Exit code: %d\n%s", exitErr.ExitCode(), output)), nil
 		}
-		return "", fmt.Errorf("exec: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("exec: %w", err)
 	}
 
-	return output, nil
+	return agent.PlainResult(output), nil
 }

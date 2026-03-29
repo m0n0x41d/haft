@@ -160,15 +160,16 @@ func (m Message) ToolCalls() []ToolCallPart {
 
 // Session is a persistent agent conversation.
 type Session struct {
-	ID           string      `json:"id"`
-	ParentID     string      `json:"parent_id,omitempty"` // non-empty = subagent child session
-	Title        string      `json:"title"`
-	Model        string      `json:"model"`
-	CurrentPhase Phase       `json:"current_phase,omitempty"` // lemniscate phase state
-	Depth        Depth       `json:"depth,omitempty"`         // which phases to include
-	Interaction  Interaction `json:"interaction,omitempty"`   // pause between phases?
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID            string      `json:"id"`
+	ParentID      string      `json:"parent_id,omitempty"` // non-empty = subagent child session
+	Title         string      `json:"title"`
+	Model         string      `json:"model"`
+	CurrentPhase  Phase       `json:"current_phase,omitempty"` // lemniscate phase state
+	Depth         Depth       `json:"depth,omitempty"`         // which phases to include
+	Interaction   Interaction `json:"interaction,omitempty"`   // pause between phases?
+	ActiveCycleID string      `json:"active_cycle_id,omitempty"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -278,3 +279,117 @@ const (
 	PermissionNeedsApproval                        // ask user before executing
 	PermissionDenied                               // never execute
 )
+
+// ---------------------------------------------------------------------------
+// Tool Results — typed boundary between tools and coordinator (L2)
+// ---------------------------------------------------------------------------
+
+// ToolResult is the typed return value from tool execution.
+// DisplayText goes to LLM and user. Meta is consumed by the coordinator only.
+type ToolResult struct {
+	DisplayText string        // shown to LLM and user
+	Meta        *ArtifactMeta // non-nil for artifact-producing tools
+}
+
+// ArtifactMeta carries structured artifact identity from tool execution.
+// The coordinator uses this to bind cycle refs — no string parsing.
+type ArtifactMeta struct {
+	Kind        string          // "problem" | "solution" | "decision" | "note" | "evidence"
+	ArtifactRef string          // "prob-20260329-004"
+	Operation   string          // "frame" | "explore" | "decide" | "measure" | "evidence" | "compare" | "adopt"
+	Governance  *GovernanceMeta // non-nil when framer proposes ceremony level
+
+	// Adopt-specific: related refs found for the adopted problem.
+	// Coordinator uses these to pre-populate the cycle.
+	AdoptPortfolioRef string // existing solution portfolio
+	AdoptDecisionRef  string // existing decision
+}
+
+// GovernanceMeta carries the framer's ceremony recommendation.
+type GovernanceMeta struct {
+	RecommendedDepth Depth
+	Rationale        string
+}
+
+// PlainResult creates a ToolResult with no artifact metadata.
+// Used by non-artifact tools (bash, read, write, edit, glob, grep).
+func PlainResult(text string) ToolResult {
+	return ToolResult{DisplayText: text}
+}
+
+// ---------------------------------------------------------------------------
+// Cycle — first-class reasoning cycle entity (L0)
+// ---------------------------------------------------------------------------
+
+// CycleStatus tracks the lifecycle of a reasoning cycle.
+type CycleStatus string
+
+const (
+	CycleActive    CycleStatus = "active"
+	CycleComplete  CycleStatus = "complete"
+	CycleAbandoned CycleStatus = "abandoned"
+)
+
+// Cycle is a single reasoning cycle within a session.
+// Binds artifact refs as they're created, tracks governance decisions,
+// and carries assurance metrics. Session.ActiveCycleID points here.
+type Cycle struct {
+	ID           string      `json:"id"`
+	SessionID    string      `json:"session_id"`
+	ProblemRef   string      `json:"problem_ref,omitempty"`
+	PortfolioRef string      `json:"portfolio_ref,omitempty"`
+	DecisionRef  string      `json:"decision_ref,omitempty"`
+	Phase        Phase       `json:"phase"`
+	Depth        Depth       `json:"depth"`
+	Status       CycleStatus `json:"status"`
+	LineageRef   string      `json:"lineage_ref,omitempty"` // previous cycle (reframe after measure fail)
+	WeakestLink  string      `json:"weakest_link,omitempty"`
+	REff         float64     `json:"r_eff"`
+	CLMin        int         `json:"cl_min"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+
+	// Structured governance and skip records (JSON-serialized in DB)
+	Governance []GovernanceEntry `json:"governance,omitempty"`
+	SkipLog    []SkipEntry       `json:"skip_log,omitempty"`
+}
+
+// GovernanceEntry records a ceremony-level decision.
+// Who recommended what, who chose what, and what was skipped.
+type GovernanceEntry struct {
+	Recommended   Depth       `json:"recommended"`
+	Chosen        Depth       `json:"chosen"`
+	ChosenBy      string      `json:"chosen_by"` // "user" | "autonomous_delegation"
+	Mode          Interaction `json:"mode"`
+	SkippedPhases []Phase     `json:"skipped_phases,omitempty"`
+	Timestamp     time.Time   `json:"timestamp"`
+}
+
+// SkipEntry records why a phase was skipped (FPF B.5.1 CC-B5.1.2).
+type SkipEntry struct {
+	Phase            Phase  `json:"phase"`
+	Reason           string `json:"reason"`
+	AcceptedRisk     string `json:"accepted_risk"`
+	ResidualEvidence string `json:"residual_evidence"` // what evidence is still required
+	ReopenTrigger    string `json:"reopen_trigger"`    // what would trigger reopening
+}
+
+// Prediction is a testable claim emitted by the Decider.
+// Stored on the Decision artifact. Measure checks each one.
+type Prediction struct {
+	Claim      string `json:"claim"`
+	Observable string `json:"observable"`
+	Threshold  string `json:"threshold"`
+	Verdict    string `json:"verdict,omitempty"` // "" | "supported" | "refuted" | "inconclusive"
+}
+
+// PhaseSpec maps a runtime phase to FPF spec concepts.
+type PhaseSpec struct {
+	Phase            Phase    `json:"phase"`
+	FPFStage         string   `json:"fpf_stage"` // "Explore" | "Shape" | "Evidence" | "Operate"
+	ADIRole          string   `json:"adi_role"`  // "abduction" | "deduction" | "induction"
+	AllowedCreate    []string `json:"allowed_create"`
+	AllowedUpdate    []string `json:"allowed_update"`
+	CompletionSignal string   `json:"completion_signal"`
+	SkipDepths       []Depth  `json:"skip_depths"` // which depths allow skipping
+}

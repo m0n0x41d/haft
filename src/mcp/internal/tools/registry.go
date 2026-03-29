@@ -11,7 +11,7 @@ import (
 type ToolExecutor interface {
 	Name() string
 	Schema() agent.ToolSchema
-	Execute(ctx context.Context, argsJSON string) (string, error)
+	Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error)
 }
 
 // Registry holds all available tools.
@@ -58,10 +58,10 @@ func (r *Registry) Get(name string) (ToolExecutor, bool) {
 }
 
 // Execute runs a tool by name with the given arguments JSON.
-func (r *Registry) Execute(ctx context.Context, name string, argsJSON string) (string, error) {
+func (r *Registry) Execute(ctx context.Context, name string, argsJSON string) (agent.ToolResult, error) {
 	t, ok := r.tools[name]
 	if !ok {
-		return "", fmt.Errorf("unknown tool: %s", name)
+		return agent.ToolResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
 	return t.Execute(ctx, argsJSON)
 }

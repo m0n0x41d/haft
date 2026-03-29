@@ -37,12 +37,16 @@ func (t *QuintProblemTool) Schema() agent.ToolSchema {
 Actions:
 - frame: Create a ProblemCard with signal (what's broken), constraints, acceptance criteria.
   This is the LEFT CYCLE of the lemniscate — understand before implementing.
+- adopt: Continue work on an existing problem from a previous session.
+  Pass the problem ref (e.g. "prob-20260329-008") to pick up where it left off.
+  The cycle will start from the phase that matches existing artifacts.
 - select: List active problems with readiness signals (Goldilocks assessment).
 - characterize: Add comparison dimensions to a problem (what to measure, how).`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "select", "characterize"}, "description": "frame | select | characterize"},
+				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "adopt", "select", "characterize"}, "description": "frame | adopt | select | characterize"},
+				"ref":                    map[string]any{"type": "string", "description": "Existing problem ID to adopt (adopt)"},
 				"title":                  map[string]any{"type": "string", "description": "Problem title (frame)"},
 				"signal":                 map[string]any{"type": "string", "description": "What's anomalous or broken (frame)"},
 				"constraints":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Hard limits (frame)"},
@@ -52,16 +56,34 @@ Actions:
 				"blast_radius":           map[string]any{"type": "string", "description": "What's affected (frame)"},
 				"reversibility":          map[string]any{"type": "string", "description": "How easy to undo (frame)"},
 				"mode":                   map[string]any{"type": "string", "description": "tactical | standard | deep (frame)"},
+				"problem_ref":            map[string]any{"type": "string", "description": "Problem ID to characterize; if omitted, use the current active problem"},
+				"parity_rules":           map[string]any{"type": "string", "description": "What must be equal across variants for fair comparison (characterize)"},
+				"dimensions": map[string]any{
+					"type":        "array",
+					"description": "Comparison dimensions to persist on the problem (characterize)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":           map[string]any{"type": "string"},
+							"scale_type":     map[string]any{"type": "string"},
+							"unit":           map[string]any{"type": "string"},
+							"polarity":       map[string]any{"type": "string"},
+							"role":           map[string]any{"type": "string"},
+							"how_to_measure": map[string]any{"type": "string"},
+							"valid_until":    map[string]any{"type": "string"},
+						},
+					},
+				},
 			},
 			"required": []any{"action"},
 		},
 	}
 }
 
-func (t *QuintProblemTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintProblemTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	action, _ := args["action"].(string)
@@ -81,32 +103,89 @@ func (t *QuintProblemTool) Execute(ctx context.Context, argsJSON string) (string
 		}
 		a, filePath, err := artifact.FrameProblem(ctx, t.store, t.quintDir, input)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
-		return fmt.Sprintf("Problem framed: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath), nil
+		display := fmt.Sprintf("Problem framed: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath)
+		return agent.ToolResult{
+			DisplayText: display,
+			Meta: &agent.ArtifactMeta{
+				Kind:        "problem",
+				ArtifactRef: a.Meta.ID,
+				Operation:   "frame",
+			},
+		}, nil
+
+	case "adopt":
+		ref := jsonStr(args, "ref")
+		if ref == "" {
+			return agent.ToolResult{}, fmt.Errorf("ref required: pass an existing problem ID (e.g. prob-20260329-008)")
+		}
+		// Verify the problem exists
+		a, err := t.store.Get(ctx, ref)
+		if err != nil {
+			return agent.PlainResult(fmt.Sprintf("Problem '%s' not found. Use quint_problem(select) to list active problems.", ref)), nil
+		}
+		if a.Meta.Kind != artifact.KindProblemCard {
+			return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a ProblemCard.", ref, a.Meta.Kind)), nil
+		}
+
+		// Find related solution and decision artifacts
+		portfolioRef := ""
+		decisionRef := ""
+		related, _ := artifact.FetchSearchResults(ctx, t.store, ref, 20)
+		for _, r := range related {
+			switch r.Meta.Kind {
+			case artifact.KindSolutionPortfolio:
+				if portfolioRef == "" {
+					portfolioRef = r.Meta.ID
+				}
+			case artifact.KindDecisionRecord:
+				if decisionRef == "" {
+					decisionRef = r.Meta.ID
+				}
+			}
+		}
+
+		var b strings.Builder
+		fmt.Fprintf(&b, "Adopted problem: %s\nID: %s\n", a.Meta.Title, a.Meta.ID)
+		if portfolioRef != "" {
+			fmt.Fprintf(&b, "Found portfolio: %s\n", portfolioRef)
+		}
+		if decisionRef != "" {
+			fmt.Fprintf(&b, "Found decision: %s\n", decisionRef)
+		}
+
+		return agent.ToolResult{
+			DisplayText: b.String(),
+			Meta: &agent.ArtifactMeta{
+				Kind:              "problem",
+				ArtifactRef:       a.Meta.ID,
+				Operation:         "adopt",
+				AdoptPortfolioRef: portfolioRef,
+				AdoptDecisionRef:  decisionRef,
+			},
+		}, nil
 
 	case "select":
 		problems, err := artifact.SelectProblems(ctx, t.store, "", 10)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
 		if len(problems) == 0 {
-			return "No active problems found.", nil
+			return agent.PlainResult("No active problems found."), nil
 		}
 		var b strings.Builder
 		items := artifact.EnrichProblemsForList(ctx, t.store, problems)
 		for _, item := range items {
 			fmt.Fprintf(&b, "- [%s] %s (%s) %s\n", item.Problem.Meta.ID, item.Problem.Meta.Title, item.Problem.Meta.Status, item.Signals)
 		}
-		return b.String(), nil
+		return agent.PlainResult(b.String()), nil
 
 	case "characterize":
-		// Characterize is called via quint_problem in MCP but uses CharacterizeInput
-		// For the agent, framing includes acceptance criteria which serves the same purpose
-		return "Characterization is embedded in the frame action via acceptance criteria and optimization targets.", nil
+		return agent.PlainResult("Characterization is embedded in the frame action via acceptance criteria and optimization targets."), nil
 
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
@@ -166,10 +245,10 @@ Actions:
 	}
 }
 
-func (t *QuintSolutionTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintSolutionTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	action, _ := args["action"].(string)
@@ -180,18 +259,17 @@ func (t *QuintSolutionTool) Execute(ctx context.Context, argsJSON string) (strin
 	case "compare":
 		return t.compare(ctx, args)
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
-func (t *QuintSolutionTool) explore(ctx context.Context, args map[string]any) (string, error) {
+func (t *QuintSolutionTool) explore(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.ExploreInput{
 		ProblemRef: jsonStr(args, "problem_ref"),
 		Context:    jsonStr(args, "context"),
 		Mode:       jsonStr(args, "mode"),
 	}
 
-	// Parse variants
 	if variants, ok := args["variants"]; ok {
 		data, _ := json.Marshal(variants)
 		var parsed []artifact.Variant
@@ -201,12 +279,12 @@ func (t *QuintSolutionTool) explore(ctx context.Context, args map[string]any) (s
 	}
 
 	if len(input.Variants) < 2 {
-		return "", fmt.Errorf("at least 2 variants required for exploration")
+		return agent.ToolResult{}, fmt.Errorf("at least 2 variants required for exploration")
 	}
 
 	a, filePath, err := artifact.ExploreSolutions(ctx, t.store, t.quintDir, input)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
 
 	var b strings.Builder
@@ -215,10 +293,17 @@ func (t *QuintSolutionTool) explore(ctx context.Context, args map[string]any) (s
 	for _, v := range input.Variants {
 		fmt.Fprintf(&b, "- %s (WLNK: %s)\n", v.Title, v.WeakestLink)
 	}
-	return b.String(), nil
+	return agent.ToolResult{
+		DisplayText: b.String(),
+		Meta: &agent.ArtifactMeta{
+			Kind:        "solution",
+			ArtifactRef: a.Meta.ID,
+			Operation:   "explore",
+		},
+	}, nil
 }
 
-func (t *QuintSolutionTool) compare(ctx context.Context, args map[string]any) (string, error) {
+func (t *QuintSolutionTool) compare(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.CompareInput{
 		PortfolioRef: jsonStr(args, "portfolio_ref"),
 	}
@@ -227,7 +312,6 @@ func (t *QuintSolutionTool) compare(ctx context.Context, args map[string]any) (s
 	input.Results.SelectedRef = jsonStr(args, "selected_ref")
 	input.Results.PolicyApplied = jsonStr(args, "policy_applied")
 
-	// Parse scores
 	if scores, ok := args["scores"]; ok {
 		data, _ := json.Marshal(scores)
 		var parsed map[string]map[string]string
@@ -238,10 +322,18 @@ func (t *QuintSolutionTool) compare(ctx context.Context, args map[string]any) (s
 
 	a, filePath, err := artifact.CompareSolutions(ctx, t.store, t.quintDir, input)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
 
-	return fmt.Sprintf("Comparison recorded.\nID: %s\nFile: %s\nSelected: %s", a.Meta.ID, filePath, input.Results.SelectedRef), nil
+	display := fmt.Sprintf("Comparison recorded.\nID: %s\nFile: %s\nSelected: %s", a.Meta.ID, filePath, input.Results.SelectedRef)
+	return agent.ToolResult{
+		DisplayText: display,
+		Meta: &agent.ArtifactMeta{
+			Kind:        "solution",
+			ArtifactRef: a.Meta.ID,
+			Operation:   "compare",
+		},
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -295,10 +387,10 @@ Actions:
 	}
 }
 
-func (t *QuintDecisionTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	action, _ := args["action"].(string)
@@ -309,11 +401,11 @@ func (t *QuintDecisionTool) Execute(ctx context.Context, argsJSON string) (strin
 	case "measure":
 		return t.measure(ctx, args)
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
-func (t *QuintDecisionTool) decide(ctx context.Context, args map[string]any) (string, error) {
+func (t *QuintDecisionTool) decide(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.DecideInput{
 		ProblemRef:     jsonStr(args, "problem_ref"),
 		PortfolioRef:   jsonStr(args, "portfolio_ref"),
@@ -331,31 +423,36 @@ func (t *QuintDecisionTool) decide(ctx context.Context, args map[string]any) (st
 
 	a, filePath, err := artifact.Decide(ctx, t.store, t.quintDir, input)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
 
-	return fmt.Sprintf("Decision recorded: %s\nID: %s\nFile: %s\nSelected: %s", a.Meta.Title, a.Meta.ID, filePath, input.SelectedTitle), nil
+	display := fmt.Sprintf("Decision recorded: %s\nID: %s\nFile: %s\nSelected: %s", a.Meta.Title, a.Meta.ID, filePath, input.SelectedTitle)
+	return agent.ToolResult{
+		DisplayText: display,
+		Meta: &agent.ArtifactMeta{
+			Kind:        "decision",
+			ArtifactRef: a.Meta.ID,
+			Operation:   "decide",
+		},
+	}, nil
 }
 
-func (t *QuintDecisionTool) measure(ctx context.Context, args map[string]any) (string, error) {
+func (t *QuintDecisionTool) measure(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	decisionRef := jsonStr(args, "decision_ref")
 
-	// If no decision_ref provided, or it points to a non-decision artifact,
-	// return a helpful message instead of a cryptic kernel error.
 	if decisionRef == "" {
-		return "No decision_ref provided. In tactical mode (no formal decision recorded), " +
+		return agent.PlainResult("No decision_ref provided. In tactical mode (no formal decision recorded), " +
 			"report your findings as text in your response instead of calling this tool. " +
-			"Only use quint_decision(measure) after quint_decision(decide) has been called.", nil
+			"Only use quint_decision(measure) after quint_decision(decide) has been called."), nil
 	}
 
-	// Check if the ref actually points to a DecisionRecord
 	a, err := t.store.Get(ctx, decisionRef)
 	if err != nil {
-		return fmt.Sprintf("Decision '%s' not found. If you're in tactical mode, report findings as text instead.", decisionRef), nil
+		return agent.PlainResult(fmt.Sprintf("Decision '%s' not found. If you're in tactical mode, report findings as text instead.", decisionRef)), nil
 	}
 	if a.Meta.Kind != artifact.KindDecisionRecord {
-		return fmt.Sprintf("'%s' is a %s, not a DecisionRecord. You likely passed a problem ID. "+
-			"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, a.Meta.Kind), nil
+		return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a DecisionRecord. You likely passed a problem ID. "+
+			"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, a.Meta.Kind)), nil
 	}
 
 	input := artifact.MeasureInput{
@@ -368,10 +465,18 @@ func (t *QuintDecisionTool) measure(ctx context.Context, args map[string]any) (s
 
 	result, err := artifact.Measure(ctx, t.store, t.quintDir, input)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
 
-	return fmt.Sprintf("Measurement recorded: verdict=%s\nArtifact: %s", input.Verdict, result.Meta.ID), nil
+	display := fmt.Sprintf("Measurement recorded: verdict=%s\nArtifact: %s", input.Verdict, result.Meta.ID)
+	return agent.ToolResult{
+		DisplayText: display,
+		Meta: &agent.ArtifactMeta{
+			Kind:        "decision",
+			ArtifactRef: result.Meta.ID,
+			Operation:   "measure",
+		},
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -409,10 +514,10 @@ Actions:
 	}
 }
 
-func (t *QuintQueryTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintQueryTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	action, _ := args["action"].(string)
@@ -421,48 +526,48 @@ func (t *QuintQueryTool) Execute(ctx context.Context, argsJSON string) (string, 
 	case "search":
 		query := jsonStr(args, "query")
 		if query == "" {
-			return "", fmt.Errorf("query required")
+			return agent.ToolResult{}, fmt.Errorf("query required")
 		}
 		results, err := artifact.FetchSearchResults(ctx, t.store, query, 10)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
 		if len(results) == 0 {
-			return "No results found.", nil
+			return agent.PlainResult("No results found."), nil
 		}
 		var b strings.Builder
 		for _, r := range results {
 			fmt.Fprintf(&b, "- [%s] %s (%s)\n", r.Meta.ID, r.Meta.Title, r.Meta.Kind)
 		}
-		return b.String(), nil
+		return agent.PlainResult(b.String()), nil
 
 	case "status":
 		data, err := artifact.FetchStatusData(ctx, t.store, "")
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
-		return present.StatusResponse(data), nil
+		return agent.PlainResult(present.StatusResponse(data)), nil
 
 	case "related":
 		file := jsonStr(args, "file")
 		if file == "" {
-			return "", fmt.Errorf("file required")
+			return agent.ToolResult{}, fmt.Errorf("file required")
 		}
 		results, err := artifact.FetchRelatedArtifacts(ctx, t.store, file)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
 		if len(results) == 0 {
-			return "No decisions found for this file.", nil
+			return agent.PlainResult("No decisions found for this file."), nil
 		}
 		var b strings.Builder
 		for _, r := range results {
 			fmt.Fprintf(&b, "- [%s] %s\n", r.Meta.ID, r.Meta.Title)
 		}
-		return b.String(), nil
+		return agent.PlainResult(b.String()), nil
 
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
@@ -500,10 +605,10 @@ Actions:
 	}
 }
 
-func (t *QuintRefreshTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	action, _ := args["action"].(string)
@@ -512,25 +617,25 @@ func (t *QuintRefreshTool) Execute(ctx context.Context, argsJSON string) (string
 	case "scan":
 		items, err := artifact.ScanStale(ctx, t.store, t.projectRoot)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
 		if len(items) == 0 {
-			return "No stale artifacts found.", nil
+			return agent.PlainResult("No stale artifacts found."), nil
 		}
-		return present.ScanResponse(items, ""), nil
+		return agent.PlainResult(present.ScanResponse(items, "")), nil
 
 	case "drift":
 		reports, err := artifact.CheckDrift(ctx, t.store, t.projectRoot)
 		if err != nil {
-			return "", err
+			return agent.ToolResult{}, err
 		}
 		if len(reports) == 0 {
-			return "No drift detected.", nil
+			return agent.PlainResult("No drift detected."), nil
 		}
-		return present.DriftResponse(reports, ""), nil
+		return agent.PlainResult(present.DriftResponse(reports, "")), nil
 
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
@@ -566,10 +671,10 @@ func (t *QuintNoteTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *QuintNoteTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *QuintNoteTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	input := artifact.NoteInput{
 		Title:         jsonStr(args, "title"),
@@ -578,17 +683,24 @@ func (t *QuintNoteTool) Execute(ctx context.Context, argsJSON string) (string, e
 	}
 	validation := artifact.ValidateNote(ctx, t.store, input)
 	if !validation.OK {
-		return fmt.Sprintf("Note rejected: %s", strings.Join(validation.Warnings, "; ")), nil
+		return agent.PlainResult(fmt.Sprintf("Note rejected: %s", strings.Join(validation.Warnings, "; "))), nil
 	}
 	a, filePath, err := artifact.CreateNote(ctx, t.store, t.quintDir, input)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
-	result := fmt.Sprintf("Note recorded: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath)
+	display := fmt.Sprintf("Note recorded: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath)
 	if len(validation.Warnings) > 0 {
-		result += "\nWarnings: " + strings.Join(validation.Warnings, "; ")
+		display += "\nWarnings: " + strings.Join(validation.Warnings, "; ")
 	}
-	return result, nil
+	return agent.ToolResult{
+		DisplayText: display,
+		Meta: &agent.ArtifactMeta{
+			Kind:        "note",
+			ArtifactRef: a.Meta.ID,
+			Operation:   "note",
+		},
+	}, nil
 }
 
 // JSON helpers

@@ -46,13 +46,13 @@ func (t *ReadFileTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args readArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Path == "" {
-		return "", fmt.Errorf("path is required")
+		return agent.ToolResult{}, fmt.Errorf("path is required")
 	}
 	if args.Limit <= 0 {
 		args.Limit = 2000
@@ -63,13 +63,13 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 
 	content, err := os.ReadFile(args.Path)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("read file: %w", err)
 	}
 
 	lines := strings.Split(string(content), "\n")
 	startIdx := args.Offset - 1
 	if startIdx >= len(lines) {
-		return fmt.Sprintf("File has %d lines, offset %d is past end", len(lines), args.Offset), nil
+		return agent.PlainResult(fmt.Sprintf("File has %d lines, offset %d is past end", len(lines), args.Offset)), nil
 	}
 
 	endIdx := startIdx + args.Limit
@@ -86,5 +86,5 @@ func (t *ReadFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		fmt.Fprintf(&b, "\n... (%d more lines)", len(lines)-endIdx)
 	}
 
-	return b.String(), nil
+	return agent.PlainResult(b.String()), nil
 }

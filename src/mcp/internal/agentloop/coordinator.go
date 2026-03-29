@@ -43,6 +43,7 @@ type Coordinator struct {
 	Tools          *tools.Registry
 	Sessions       session.SessionStore
 	Messages       session.MessageStore
+	Cycles         session.CycleStore
 	ArtifactStore  artifact.ArtifactStore // for NavState computation at phase boundaries
 	Bus            *tui.Bus
 	SystemPrompt   string
@@ -64,6 +65,13 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userText str
 	logger.AgentSession("user_turn", sess.ID, sess.Model)
 	logger.AgentMessage("user", userText, 0, 0)
 
+	// Restore active cycle state to TUI (supports resume)
+	if c.Cycles != nil {
+		if cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID); err == nil && cycle != nil {
+			c.sendCycleUpdate(cycle)
+		}
+	}
+
 	// Save user message
 	userMsg := &agent.Message{
 		ID:        newMsgID(),
@@ -82,6 +90,10 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userText str
 		c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("load history: %w", err)})
 		return
 	}
+
+	// Sanitize history: ensure every tool call has a matching tool result.
+	// Interrupted sessions may have orphaned tool calls → OpenAI 400 error.
+	history = sanitizeHistory(history)
 
 	// Generate title on first turn (session has no title yet)
 	isFirstTurn := sess.Title == "" && len(history) <= 1
@@ -145,12 +157,15 @@ func (c *Coordinator) runPlainReAct(ctx context.Context, sess *agent.Session, hi
 }
 
 // ---------------------------------------------------------------------------
-// Lemniscate: one phase per call, V3-symmetric transition gate
+// Lemniscate: cycle-derived phase transitions
 // ---------------------------------------------------------------------------
 
-// runPhase executes the current phase from sess.CurrentPhase.
-// On transition: validates with NavState, saves next phase, returns to TUI.
-// In autonomous mode: recurses into the next phase.
+// runPhase executes the current phase.
+// Phase transitions are derived from cycle state (via bindCycleArtifact),
+// not from signal parsing. The cycle IS the state.
+//
+// Fallback: when no cycle exists (no artifact tools called), signal-based
+// transitions still work for non-cycle phases (worker write/edit signals).
 func (c *Coordinator) runPhase(ctx context.Context, sess *agent.Session, history []agent.Message) {
 	if ctx.Err() != nil {
 		return
@@ -158,8 +173,7 @@ func (c *Coordinator) runPhase(ctx context.Context, sess *agent.Session, history
 
 	currentPhase := sess.CurrentPhase
 
-	// Lemniscate agents auto-enter PhaseFramer on first substantive message.
-	// The framer decides: respond to greeting (LLMDone) or frame the problem.
+	// Auto-enter framer on first message
 	if currentPhase == agent.PhaseReady {
 		currentPhase = agent.PhaseFramer
 		sess.CurrentPhase = currentPhase
@@ -191,23 +205,22 @@ func (c *Coordinator) runPhase(ctx context.Context, sess *agent.Session, history
 
 	logger.Debug().Str("component", "agent").
 		Str("phase", string(currentPhase)).
-		Str("depth", string(sess.Depth)).
 		Int("tools", len(phaseTools)).
 		Msg("agent.run_phase")
 
-	// Run ReAct loop for this phase
+	// Run ReAct loop — bindCycleArtifact updates cycle state during execution
 	signal := c.reactLoop(ctx, sess, fullHistory, phaseTools, currentPhase, phaseDef)
 
-	logger.AgentSignal(string(currentPhase), string(signal), "")
-
-	// --- V3-symmetric transition gate ---
-	nextPhase := c.resolveTransition(ctx, sess, currentPhase, signal)
+	// --- Cycle-derived transition ---
+	// Primary: read phase from active cycle (updated by bindCycleArtifact)
+	// Fallback: signal-based for non-cycle operations (worker write/edit, LLMDone)
+	nextPhase := c.deriveNextPhase(ctx, sess, currentPhase, signal)
 
 	logger.Debug().Str("component", "agent").
 		Str("current", string(currentPhase)).
 		Str("signal", string(signal)).
 		Str("next", string(nextPhase)).
-		Msg("agent.phase_computed")
+		Msg("agent.phase_transition")
 
 	// No transition — stay or done
 	if nextPhase == currentPhase || nextPhase == agent.PhaseReady {
@@ -220,96 +233,82 @@ func (c *Coordinator) runPhase(ctx context.Context, sess *agent.Session, history
 		return
 	}
 
-	// --- Phase transition ---
+	// Commit transition
 	c.commitTransition(ctx, sess, currentPhase, nextPhase)
 
-	// Autonomous mode: auto-chain to next phase
+	// Autonomous mode: auto-chain immediately
 	if sess.Interaction == agent.InteractionAutonomous {
 		history, _ = c.Messages.ListBySession(ctx, sess.ID)
 		c.runPhase(ctx, sess, history)
 		return
 	}
 
-	// Symbiotic mode: return to TUI. User gives feedback or types /next.
-	logger.Info().Str("component", "agent").
-		Str("next_phase", string(nextPhase)).
-		Msg("agent.awaiting_user")
+	// Symbiotic mode: pause for user approval.
+	// y/Enter = proceed (auto-chain). n = stop, let user discuss.
+	if c.sendPhasePause(ctx, sess, currentPhase, nextPhase) {
+		// User approved — chain into next phase
+		history, _ = c.Messages.ListBySession(ctx, sess.ID)
+		c.runPhase(ctx, sess, history)
+	}
+	// User said "not yet" — return to TUI input. Next user message
+	// will trigger Run which picks up from sess.CurrentPhase.
 }
 
-// resolveTransition implements the V3-symmetric gate:
-// 1. Signal proposes → validate with NavState
-// 2. If no signal → NavState fallback proposes
-func (c *Coordinator) resolveTransition(
+// deriveNextPhase determines the next phase.
+// Primary path: cycle state (structural, from typed tool results).
+// Fallback: signal-based (for worker write/edit, LLMDone, no-cycle sessions).
+func (c *Coordinator) deriveNextPhase(
 	ctx context.Context,
 	sess *agent.Session,
 	currentPhase agent.Phase,
 	signal agent.TransitionSignal,
 ) agent.Phase {
-	depth := sess.Depth
-
-	if signal != "" && signal != agent.SignalLLMDone {
-		// Fast path: signal proposes a transition
-		proposed := agent.DeriveNextPhase(currentPhase, signal, depth)
-		if proposed == currentPhase {
-			return currentPhase
-		}
-
-		// Validate with NavState (one DB query)
-		navStatus := c.computeNavStatus(ctx)
-		if agent.ValidateProposal(proposed, navStatus, signal) {
-			logger.Debug().Str("component", "agent").
-				Str("path", "signal+gate").
-				Str("proposed", string(proposed)).
-				Str("navStatus", string(navStatus)).
-				Msg("agent.transition_validated")
-			return proposed
-		}
-
-		// Signal/state mismatch — stay in phase
-		logger.Warn().Str("component", "agent").
-			Str("signal", string(signal)).
-			Str("proposed", string(proposed)).
-			Str("navStatus", string(navStatus)).
-			Msg("agent.signal_navstate_mismatch")
-		return currentPhase
-	}
-
-	// SignalLLMDone or no signal — check NavState fallback
-	// First try signal-based proposal for LLMDone
-	if signal == agent.SignalLLMDone {
-		proposed := agent.DeriveNextPhase(currentPhase, signal, depth)
-		if proposed != currentPhase {
-			// LLMDone proposals for worker→measure and tactical framer→worker
-			// don't need NavState validation (no artifact involved)
-			if currentPhase == agent.PhaseWorker || (currentPhase == agent.PhaseFramer && depth == agent.DepthTactical) {
-				return proposed
+	// Primary: check active cycle phase (set by bindCycleArtifact)
+	// Only transition FORWARD — never go backward in the cycle.
+	if c.Cycles != nil {
+		if cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID); err == nil && cycle != nil {
+			cyclePhase := agent.DerivePhaseFromCycle(cycle)
+			if cyclePhase != currentPhase && agent.PhaseAfter(cyclePhase, currentPhase) {
+				return cyclePhase
 			}
 		}
 	}
 
-	// Slow path: NavState fallback — check if artifacts changed
-	navStatus := c.computeNavStatus(ctx)
-	suggested := agent.DeriveFromNavState(currentPhase, navStatus, depth)
-	if suggested != currentPhase {
-		logger.Debug().Str("component", "agent").
-			Str("path", "navstate_fallback").
-			Str("suggested", string(suggested)).
-			Str("navStatus", string(navStatus)).
-			Msg("agent.navstate_fallback_transition")
-		return suggested
+	// Fallback: signal-based transitions for non-artifact events
+	if signal == agent.SignalLLMDone {
+		// Framer: stay in pre-abductive seam (FPF B.4.1)
+		if currentPhase == agent.PhaseFramer {
+			return agent.PhaseFramer
+		}
+		// Worker LLMDone → measure
+		if currentPhase == agent.PhaseWorker {
+			return agent.PhaseMeasure
+		}
+		// Measure LLMDone → complete cycle and finish
+		if currentPhase == agent.PhaseMeasure {
+			c.closeCycle(ctx, sess, signal)
+			return agent.PhaseReady
+		}
+	}
+
+	// Measure signals: complete or abandon cycle
+	if currentPhase == agent.PhaseMeasure {
+		if signal == agent.SignalMeasured || signal == agent.SignalTestsPassed {
+			c.closeCycle(ctx, sess, signal)
+			return agent.PhaseReady
+		}
+		if signal == agent.SignalMeasureFailed || signal == agent.SignalTestsFailed {
+			c.reframeCycle(ctx, sess)
+			return agent.PhaseFramer
+		}
+	}
+
+	// Worker: write/edit signals → measure
+	if signal == agent.SignalImplemented && currentPhase == agent.PhaseWorker {
+		return agent.PhaseMeasure
 	}
 
 	return currentPhase
-}
-
-// computeNavStatus queries artifact state and maps to agent.NavStatus.
-// Returns NavUnderframed on error (graceful degradation).
-func (c *Coordinator) computeNavStatus(ctx context.Context) agent.NavStatus {
-	if c.ArtifactStore == nil {
-		return agent.NavUnderframed
-	}
-	navState := artifact.ComputeNavState(ctx, c.ArtifactStore, c.SessionContext)
-	return agent.NavStatus(navState.DerivedStatus)
 }
 
 // commitTransition saves the transition and notifies TUI.
@@ -335,6 +334,18 @@ func (c *Coordinator) commitTransition(ctx context.Context, sess *agent.Session,
 	sess.CurrentPhase = to
 	_ = c.Sessions.Update(ctx, sess)
 	c.Bus.Send(tui.PhaseChangeMsg{From: from, To: to, Name: name})
+
+	// Sync cycle phase (for transitions not driven by artifact binding,
+	// e.g. worker→measure via write/edit signal)
+	if c.Cycles != nil {
+		if cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID); err == nil && cycle != nil {
+			if cycle.Phase != to {
+				cycle.Phase = to
+				_ = c.Cycles.UpdateCycle(ctx, cycle)
+				c.sendCycleUpdate(cycle)
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +366,6 @@ func (c *Coordinator) reactLoop(
 		toolCallHistory []agent.ToolCallRecord
 		toolCallCount   int
 		tokenBudget     = agent.NewTokenBudget(agent.ModelContextWindow(sess.Model))
-		compacted       bool
 	)
 
 	// Per-phase tool call budget (PhaseReady gets a default of 50)
@@ -376,19 +386,22 @@ func (c *Coordinator) reactLoop(
 			return agent.SignalLLMDone
 		}
 
-		// Safety: token budget
+		// Context compaction: retry on every step while budget is pressured.
+		// After compaction, reset token budget from the new (shorter) history.
+		if newHistory, didCompact := c.compactContext(ctx, sess, fullHistory, tokenBudget); didCompact {
+			fullHistory = newHistory
+			tokenBudget = agent.ResetTokenBudget(tokenBudget, fullHistory)
+			logger.Debug().Str("component", "agent").
+				Int("used_after", tokenBudget.Used).
+				Int("limit", tokenBudget.Limit).
+				Msg("agent.compacted_budget_reset")
+		}
+
+		// Safety: token budget — checked AFTER compaction attempt
 		if tokenBudget.Exhausted() {
 			logger.Warn().Str("component", "agent").Int("used", tokenBudget.Used).Msg("agent.tokens_exhausted")
 			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("context window exhausted (%d/%d tokens)", tokenBudget.Used, tokenBudget.Limit)})
 			return agent.SignalLLMDone
-		}
-
-		// Context compaction: 3-stage pipeline
-		if !compacted {
-			if newHistory, didCompact := c.compactContext(ctx, sess, fullHistory, tokenBudget); didCompact {
-				fullHistory = newHistory
-				compacted = true
-			}
 		}
 
 		logger.AgentStep(step, string(currentPhase), len(toolCallHistory), false)
@@ -463,12 +476,35 @@ func (c *Coordinator) reactLoop(
 
 		var lastSignal agent.TransitionSignal
 		results := c.executeToolCalls(ctx, sess, toolCalls, currentPhase, phaseDef, &fullHistory)
+		cycleTransition := false
 		for _, r := range results {
 			toolCallHistory = append(toolCallHistory, agent.ToolCallRecord{Name: r.toolName, Args: r.args})
+
+			// Cycle binding: typed Meta from artifact tools → update cycle refs
+			if r.meta != nil && !r.isError {
+				c.bindCycleArtifact(ctx, sess, r.meta)
+
+				// Check if cycle binding changed the phase — if so, break immediately.
+				// Don't let the LLM continue in the old phase with wrong tools.
+				if c.Cycles != nil {
+					if cyc, err := c.Cycles.GetActiveCycle(ctx, sess.ID); err == nil && cyc != nil {
+						if agent.DerivePhaseFromCycle(cyc) != currentPhase {
+							cycleTransition = true
+						}
+					}
+				}
+			}
+
 			if sig := detectSignal(currentPhase, r.toolName, r.args, r.output, r.isError); sig != "" {
 				logger.AgentSignal(string(currentPhase), string(sig), r.toolName)
 				lastSignal = sig
 			}
+		}
+
+		// Cycle-driven phase change: exit reactLoop immediately.
+		// deriveNextPhase will read the new phase from the cycle.
+		if cycleTransition {
+			return lastSignal
 		}
 
 		// Store first signal, let LLM produce summary
@@ -499,6 +535,7 @@ type toolCallResult struct {
 	args     string
 	output   string
 	isError  bool
+	meta     *agent.ArtifactMeta // non-nil for artifact-producing tools
 }
 
 // executeToolCalls runs tool calls, parallelizing when all are auto-approved.
@@ -559,16 +596,19 @@ func (c *Coordinator) executeToolCallsParallel(
 		go func(idx int, tc agent.ToolCallPart) {
 			defer wg.Done()
 			toolStart := time.Now()
-			output, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+			toolResult, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+			var output string
 			isError := false
 			if execErr != nil {
 				output = fmt.Sprintf("Tool error: %s", execErr.Error())
 				isError = true
+			} else {
+				output = toolResult.DisplayText
 			}
 			logger.AgentToolExec(tc.ToolName, tc.ToolCallID, time.Since(toolStart).Milliseconds(), isError)
 
 			output = truncateToolOutput(output)
-			results[idx] = toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError}
+			results[idx] = toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: toolResult.Meta}
 
 			// Send done event from goroutine (bus is thread-safe)
 			c.Bus.Send(tui.ToolDoneMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Output: output, IsError: isError})
@@ -632,14 +672,16 @@ func (c *Coordinator) executeToolCallsSequential(
 		}
 
 		// Execute
+		var meta *agent.ArtifactMeta
 		if output == "" {
 			toolStart := time.Now()
-			result, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+			toolResult, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
 			if execErr != nil {
 				output = fmt.Sprintf("Tool error: %s", execErr.Error())
 				isError = true
 			} else {
-				output = result
+				output = toolResult.DisplayText
+				meta = toolResult.Meta
 			}
 			logger.AgentToolExec(tc.ToolName, tc.ToolCallID, time.Since(toolStart).Milliseconds(), isError)
 		}
@@ -647,7 +689,7 @@ func (c *Coordinator) executeToolCallsSequential(
 		output = truncateToolOutput(output)
 		c.Bus.Send(tui.ToolDoneMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Output: output, IsError: isError})
 		c.saveToolResult(ctx, sess, tc.ToolCallID, tc.ToolName, output, isError, fullHistory)
-		results = append(results, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError})
+		results = append(results, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: meta})
 	}
 
 	return results
@@ -678,6 +720,177 @@ func (c *Coordinator) saveToolResult(ctx context.Context, sess *agent.Session, c
 	}
 	_ = c.Messages.Save(ctx, msg)
 	*history = append(*history, *msg)
+}
+
+// ---------------------------------------------------------------------------
+// Cycle binding — typed Meta from artifact tools updates cycle refs
+// ---------------------------------------------------------------------------
+
+// bindCycleArtifact creates or updates the active cycle when an artifact tool
+// returns structured Meta. This is the typed replacement for string-based
+// signal detection for cycle state changes.
+func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session, meta *agent.ArtifactMeta) {
+	if c.Cycles == nil || meta == nil {
+		return
+	}
+
+	// Get or create active cycle
+	cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID)
+	if err != nil || cycle == nil {
+		// First artifact in this session — create a new cycle
+		cycle = &agent.Cycle{
+			ID:        "cyc_" + uuid.NewString(),
+			SessionID: sess.ID,
+			Phase:     agent.PhaseFramer,
+			Depth:     sess.Depth,
+			Status:    agent.CycleActive,
+			CLMin:     3,
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := c.Cycles.CreateCycle(ctx, cycle); err != nil {
+			logger.Error().Str("component", "agent").Err(err).Msg("agent.cycle_create_error")
+			return
+		}
+		sess.ActiveCycleID = cycle.ID
+		_ = c.Sessions.Update(ctx, sess)
+		c.sendCycleUpdate(cycle)
+
+		logger.Info().Str("component", "agent").
+			Str("cycle_id", cycle.ID).
+			Str("depth", string(cycle.Depth)).
+			Msg("agent.cycle_created")
+	}
+
+	// Bind artifact ref to cycle (L1 pure function)
+	updated := agent.BindArtifact(cycle, *meta)
+	if updated == nil {
+		return // meta didn't bind (notes, queries, etc.)
+	}
+
+	if err := c.Cycles.UpdateCycle(ctx, updated); err != nil {
+		logger.Error().Str("component", "agent").Err(err).Msg("agent.cycle_update_error")
+		return
+	}
+	c.sendCycleUpdate(updated)
+
+	logger.Info().Str("component", "agent").
+		Str("cycle_id", updated.ID).
+		Str("kind", meta.Kind).
+		Str("ref", meta.ArtifactRef).
+		Str("phase", string(updated.Phase)).
+		Msg("agent.cycle_artifact_bound")
+}
+
+// sendPhasePause sends a pause summary to the TUI in symbiotic mode.
+// Returns true if user approved (y/Enter), false if user wants to discuss (n).
+func (c *Coordinator) sendPhasePause(ctx context.Context, sess *agent.Session, from, to agent.Phase) bool {
+	summary := buildPhaseSummary(from, to, sess)
+
+	replyCh := make(chan bool, 1)
+	c.Bus.Send(tui.PhasePauseMsg{
+		Phase:   to,
+		Summary: summary,
+		Reply:   replyCh,
+	})
+
+	// Block until user responds
+	var proceed bool
+	select {
+	case proceed = <-replyCh:
+	case <-ctx.Done():
+		return false
+	}
+
+	logger.Info().Str("component", "agent").
+		Str("from", string(from)).
+		Str("to", string(to)).
+		Bool("proceed", proceed).
+		Msg("agent.phase_pause_acknowledged")
+	return proceed
+}
+
+func buildPhaseSummary(from, to agent.Phase, _ *agent.Session) string {
+	switch to {
+	case agent.PhaseExplorer:
+		return "Problem framed. Next: characterize dimensions + explore variants."
+	case agent.PhaseDecider:
+		return "Variants explored. Next: compare on dimensions + decide."
+	case agent.PhaseWorker:
+		return "Decision recorded. Next: implement the chosen approach."
+	case agent.PhaseMeasure:
+		return "Implementation done. Next: verify against predictions."
+	default:
+		return fmt.Sprintf("%s → %s", from, to)
+	}
+}
+
+// closeCycle marks the active cycle as complete after successful measurement.
+func (c *Coordinator) closeCycle(ctx context.Context, sess *agent.Session, signal agent.TransitionSignal) {
+	if c.Cycles == nil {
+		return
+	}
+	cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID)
+	if err != nil || cycle == nil {
+		return
+	}
+
+	// Determine weakest link from signal type
+	wlnk := "measurement passed"
+	if signal == agent.SignalTestsPassed {
+		wlnk = "tests passed (no structured prediction check)"
+	}
+
+	completed := agent.CompleteCycle(cycle, wlnk, 0.0) // R_eff computed later when predictions exist
+	_ = c.Cycles.UpdateCycle(ctx, completed)
+
+	sess.ActiveCycleID = ""
+	_ = c.Sessions.Update(ctx, sess)
+	c.sendCycleUpdate(completed)
+
+	logger.Info().Str("component", "agent").
+		Str("cycle_id", completed.ID).
+		Str("weakest_link", wlnk).
+		Msg("agent.cycle_completed")
+}
+
+// reframeCycle abandons the current cycle and creates a new one with lineage.
+// Called when measurement fails — the lemniscate loops back to framer.
+func (c *Coordinator) reframeCycle(ctx context.Context, sess *agent.Session) {
+	if c.Cycles == nil {
+		return
+	}
+	cycle, err := c.Cycles.GetActiveCycle(ctx, sess.ID)
+	if err != nil || cycle == nil {
+		return
+	}
+
+	abandoned := agent.AbandonCycle(cycle)
+	_ = c.Cycles.UpdateCycle(ctx, abandoned)
+
+	// Create new cycle linked to the failed one
+	newCycle := agent.NewCycleFromLineage("cyc_"+uuid.NewString(), sess.ID, abandoned)
+	_ = c.Cycles.CreateCycle(ctx, newCycle)
+
+	sess.ActiveCycleID = newCycle.ID
+	_ = c.Sessions.Update(ctx, sess)
+	c.sendCycleUpdate(newCycle)
+
+	logger.Info().Str("component", "agent").
+		Str("failed_cycle", abandoned.ID).
+		Str("new_cycle", newCycle.ID).
+		Msg("agent.cycle_reframed")
+}
+
+func (c *Coordinator) sendCycleUpdate(cycle *agent.Cycle) {
+	c.Bus.Send(tui.CycleUpdateMsg{
+		CycleID:      cycle.ID,
+		ProblemRef:   cycle.ProblemRef,
+		PortfolioRef: cycle.PortfolioRef,
+		DecisionRef:  cycle.DecisionRef,
+		Phase:        cycle.Phase,
+		Status:       cycle.Status,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -729,6 +942,48 @@ func detectSignal(phase agent.Phase, toolName, args, output string, isError bool
 		}
 	}
 	return ""
+}
+
+// sanitizeHistory ensures every tool call has a matching tool result.
+// Adds placeholder results for orphaned calls (interrupted sessions).
+func sanitizeHistory(msgs []agent.Message) []agent.Message {
+	// Collect all tool call IDs and tool result IDs
+	resultIDs := make(map[string]bool)
+	for _, msg := range msgs {
+		if msg.Role == agent.RoleTool {
+			for _, p := range msg.Parts {
+				if tr, ok := p.(agent.ToolResultPart); ok {
+					resultIDs[tr.ToolCallID] = true
+				}
+			}
+		}
+	}
+
+	// Find orphaned tool calls and append placeholder results
+	var patches []agent.Message
+	for _, msg := range msgs {
+		if msg.Role != agent.RoleAssistant {
+			continue
+		}
+		for _, tc := range msg.ToolCalls() {
+			if !resultIDs[tc.ToolCallID] {
+				patches = append(patches, agent.Message{
+					Role: agent.RoleTool,
+					Parts: []agent.Part{agent.ToolResultPart{
+						ToolCallID: tc.ToolCallID,
+						ToolName:   tc.ToolName,
+						Content:    "[session interrupted — no result]",
+						IsError:    true,
+					}},
+				})
+			}
+		}
+	}
+
+	if len(patches) == 0 {
+		return msgs
+	}
+	return append(msgs, patches...)
 }
 
 func newMsgID() string {

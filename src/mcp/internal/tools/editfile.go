@@ -46,31 +46,31 @@ func (t *EditFileTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args editArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Path == "" {
-		return "", fmt.Errorf("path is required")
+		return agent.ToolResult{}, fmt.Errorf("path is required")
 	}
 	if args.OldString == "" {
-		return "", fmt.Errorf("old_string is required")
+		return agent.ToolResult{}, fmt.Errorf("old_string is required")
 	}
 
 	content, err := os.ReadFile(args.Path)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("read file: %w", err)
 	}
 
 	original := string(content)
 	if !strings.Contains(original, args.OldString) {
-		return "old_string not found in file. Make sure it matches exactly, including whitespace and indentation.", nil
+		return agent.PlainResult("old_string not found in file. Make sure it matches exactly, including whitespace and indentation."), nil
 	}
 
 	updated := strings.Replace(original, args.OldString, args.NewString, 1)
 	if err := os.WriteFile(args.Path, []byte(updated), 0o644); err != nil {
-		return "", fmt.Errorf("write file: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("write file: %w", err)
 	}
 
 	// Show colored diff with -/+ prefixes (rendered by TUI)
@@ -94,5 +94,5 @@ func (t *EditFileTool) Execute(_ context.Context, argsJSON string) (string, erro
 		diff.WriteString("+" + line + "\n")
 	}
 
-	return strings.TrimRight(diff.String(), "\n"), nil
+	return agent.PlainResult(strings.TrimRight(diff.String(), "\n")), nil
 }

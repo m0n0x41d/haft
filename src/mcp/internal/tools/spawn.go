@@ -63,28 +63,28 @@ func (t *SpawnAgentTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args struct {
 		AgentType string `json:"agent_type"`
 		Task      string `json:"task"`
 		Model     string `json:"model"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 
 	if args.AgentType == "" {
-		return "", fmt.Errorf("agent_type is required")
+		return agent.ToolResult{}, fmt.Errorf("agent_type is required")
 	}
 	if args.Task == "" {
-		return "", fmt.Errorf("task is required")
+		return agent.ToolResult{}, fmt.Errorf("task is required")
 	}
 
 	// BLOCKS until subagent completes
 	summary, err := t.spawnAndWait(ctx, args.AgentType, args.Task, args.Model)
 	if err != nil {
-		return "", err
+		return agent.ToolResult{}, err
 	}
 
-	return summary, nil
+	return agent.PlainResult(summary), nil
 }

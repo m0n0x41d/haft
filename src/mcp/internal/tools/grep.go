@@ -51,18 +51,18 @@ func (t *GrepTool) Schema() agent.ToolSchema {
 	}
 }
 
-func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
+func (t *GrepTool) Execute(_ context.Context, argsJSON string) (agent.ToolResult, error) {
 	var args grepArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("parse args: %w", err)
 	}
 	if args.Pattern == "" {
-		return "", fmt.Errorf("pattern is required")
+		return agent.ToolResult{}, fmt.Errorf("pattern is required")
 	}
 
 	re, err := regexp.Compile(args.Pattern)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
+		return agent.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	searchPath := t.projectRoot
@@ -72,7 +72,7 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 
 	info, err := os.Stat(searchPath)
 	if err != nil {
-		return "", fmt.Errorf("stat %s: %w", searchPath, err)
+		return agent.ToolResult{}, fmt.Errorf("stat %s: %w", searchPath, err)
 	}
 
 	var results []string
@@ -107,14 +107,14 @@ func (t *GrepTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	}
 
 	if len(results) == 0 {
-		return "No matches found.", nil
+		return agent.PlainResult("No matches found."), nil
 	}
 
 	output := strings.Join(results, "\n")
 	if len(results) >= maxResults {
 		output += fmt.Sprintf("\n\n... (truncated at %d matches)", maxResults)
 	}
-	return output, nil
+	return agent.PlainResult(output), nil
 }
 
 func grepFile(path string, re *regexp.Regexp, limit int) []string {

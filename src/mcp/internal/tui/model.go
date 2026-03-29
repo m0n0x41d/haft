@@ -56,6 +56,10 @@ type Model struct {
 
 	// Mode toggles
 	autoApprove bool // Ctrl+Y: auto-approve tool permissions
+	prefixMode  bool // Ctrl+S prefix: next key selects action
+
+	// Command palette
+	palette CommandPalette
 
 	// Message queue (user types during streaming)
 	pendingMessages []string
@@ -390,8 +394,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) resizeComponents() {
 	m.input.SetWidth(max(1, m.width-4))
 	_, _, chatH := m.layoutBlocks()
+	sizeChanged := m.chatList.width != m.width || m.chatList.height != chatH
 	m.chatList.SetSize(m.width, chatH)
-	m.refreshChat()
+	// Only rebuild items if viewport size actually changed.
+	// Keystroke in textarea doesn't change chat content — skip expensive rebuild.
+	if sizeChanged {
+		m.refreshChat()
+	}
 }
 
 func (m Model) buildInputBlock() string {
@@ -469,6 +478,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Mod == tea.ModCtrl && key.Code == 'd' {
 		return m, tea.Quit
 	}
+	// Ctrl+S prefix mode: Ctrl+S then next key selects action
+	if key.Mod == tea.ModCtrl && key.Code == 's' {
+		m.prefixMode = true
+		m.notification = "C-s ..."
+		return m, nil
+	}
+	if m.prefixMode {
+		m.prefixMode = false
+		m.notification = ""
+		switch key.Code {
+		case 'i': // Ctrl+S, i → copy session ID
+			m.notification = "session " + m.session.ID
+			return m, tea.Batch(
+				CopyToClipboard(m.session.ID),
+				tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
+					return clearNotificationMsg{}
+				}),
+			)
+		default:
+			return m, nil
+		}
+	}
 	// Global: Ctrl+O toggles subagent expand/collapse
 	if key.Mod == tea.ModCtrl && key.Code == 'o' {
 		m.toggleSubagentExpand()
@@ -500,6 +531,42 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch m.state {
 	case stateInput:
+		// Command palette: intercept keys when visible
+		if m.palette.Visible() {
+			switch {
+			case key.Code == tea.KeyUp || key.Code == 'k':
+				m.palette.MoveUp()
+				return m, nil
+			case key.Code == tea.KeyDown || key.Code == 'j':
+				m.palette.MoveDown()
+				return m, nil
+			case key.Code == tea.KeyTab:
+				// Tab: fill input with selected command
+				if sel := m.palette.Selected(); sel != "" {
+					m.input.SetValue(sel)
+					m.input.CursorEnd()
+					m.palette.Update(sel)
+				}
+				return m, nil
+			case key.Code == tea.KeyEnter && key.Mod == 0:
+				// Enter: execute selected command
+				sel := m.palette.Selected()
+				if sel == "" {
+					sel = strings.TrimSpace(m.input.Value())
+				}
+				if sel != "" {
+					m.input.SetValue("")
+					m.palette.Update("")
+					return m.handleSubmit(sel)
+				}
+				return m, nil
+			case key.Code == tea.KeyEscape:
+				m.input.SetValue("")
+				m.palette.Update("")
+				return m, nil
+			}
+		}
+
 		// Ctrl+J inserts newline (like Claude Code / Codex)
 		if key.Mod == tea.ModCtrl && key.Code == 'j' {
 			m.input.InsertString("\n")
@@ -517,9 +584,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Forward everything else to textarea
+		prevInputH := m.input.Height()
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		m.resizeComponents()
+		// Update command palette filter from current input
+		m.palette.Update(m.input.Value())
+		// Only resize if textarea height changed (multiline expansion)
+		if m.input.Height() != prevInputH {
+			m.resizeComponents()
+		}
 		return m, cmd
 
 	case stateStreaming:
@@ -594,10 +667,19 @@ func (m Model) handleSlashCommand(text string) (tea.Model, tea.Cmd) {
 	case "/compact":
 		return m.handleSubmit("/compact")
 	case "/help":
-		m.errMsg = "Commands: /resume, /compact, /frame, /explore, /decide, /measure, /status, Ctrl+Q (auto), Ctrl+Y (yolo)"
+		var names []string
+		for _, sc := range slashCommands {
+			names = append(names, "/"+sc.Name)
+		}
+		m.errMsg = "Commands: " + strings.Join(names, ", ")
 		return m, nil
+	case "/frame", "/explore", "/decide", "/measure", "/status",
+		"/reason", "/note", "/search", "/compare", "/problems",
+		"/refresh", "/char":
+		// Pass through to agent as user message
+		return m.handleSubmit(text)
 	default:
-		m.errMsg = fmt.Sprintf("Unknown command: %s. Try /help", cmd)
+		m.errMsg = fmt.Sprintf("Unknown command: %s. Type / to see available commands", cmd)
 		return m, nil
 	}
 }
@@ -810,7 +892,12 @@ func (m Model) View() tea.View {
 	var b strings.Builder
 
 	// === TOP: Chat viewport ===
-	b.WriteString(m.chatList.View())
+	chatView := m.chatList.View()
+	if m.palette.Visible() {
+		paletteBox := m.palette.Render(m.width, m.styles)
+		chatView = overlayOnChat(chatView, paletteBox)
+	}
+	b.WriteString(chatView)
 	b.WriteString("\n")
 
 	// === MIDDLE: Input area ===

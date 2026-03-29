@@ -103,22 +103,15 @@ func LineExtent(line string) (startCol, endCol int) {
 // Highlight application: content string → highlighted ANSI string
 // ---------------------------------------------------------------------------
 
-// ApplyHighlight renders content into a cell buffer, applies reverse-video
-// to cells within sel, and returns the resulting ANSI string.
-// Pure function: string in → string out.
-func ApplyHighlight(content string, width int, sel SelectionRange) string {
-	if sel.Empty() {
-		return content
-	}
-
+// ParseContentBuffer parses ANSI content into a reusable ScreenBuffer.
+// Expensive (ANSI parsing) — call once, reuse across drags.
+func ParseContentBuffer(content string, width int) *uv.ScreenBuffer {
 	lines := strings.Split(content, "\n")
 	height := len(lines)
 	if height == 0 {
-		return content
+		return nil
 	}
 
-	// Buffer width must fit the widest content line, not just viewport width.
-	// ANSI codes inflate byte length but not display width.
 	bufWidth := width
 	for _, l := range lines {
 		if w := ansi.StringWidth(l); w > bufWidth {
@@ -129,7 +122,14 @@ func ApplyHighlight(content string, width int, sel SelectionRange) string {
 	buf := uv.NewScreenBuffer(bufWidth, height)
 	styled := uv.NewStyledString(content)
 	styled.Draw(&buf, uv.Rect(0, 0, bufWidth, height))
+	return &buf
+}
 
+// setReverse applies or clears AttrReverse on cells in the given range.
+func setReverse(buf *uv.ScreenBuffer, height int, sel SelectionRange, on bool) {
+	if sel.Empty() || buf == nil {
+		return
+	}
 	for y := sel.Start.Line; y <= sel.End.Line && y < height; y++ {
 		line := buf.Line(y)
 		if line == nil {
@@ -142,22 +142,51 @@ func ApplyHighlight(content string, width int, sel SelectionRange) string {
 		}
 
 		lastContentX := findLastContent(line, colStart, colEnd)
-		var highlightEnd int
+		highlightEnd := colStart
 		if lastContentX >= 0 {
 			highlightEnd = lastContentX + 1
-		} else {
-			highlightEnd = colStart
 		}
 
 		for x := colStart; x < highlightEnd && x < len(line); x++ {
 			cell := line.At(x)
-			if cell != nil {
+			if cell == nil {
+				continue
+			}
+			if on {
 				cell.Style.Attrs |= uv.AttrReverse
+			} else {
+				cell.Style.Attrs &^= uv.AttrReverse
 			}
 		}
 	}
+}
 
-	return renderBuffer(&buf, height)
+// RenderHighlighted applies reverse to a cached buffer and renders to string.
+// Cheap: no ANSI re-parsing, just cell attr flip + render.
+func RenderHighlighted(buf *uv.ScreenBuffer, height int, prev, cur SelectionRange) string {
+	setReverse(buf, height, prev, false) // clear old
+	setReverse(buf, height, cur, true)   // apply new
+	return renderBuffer(buf, height)
+}
+
+// ApplyHighlight renders content into a cell buffer, applies reverse-video
+// to cells within sel, and returns the resulting ANSI string.
+// Non-cached path — used for one-shot rendering (tests, non-interactive).
+func ApplyHighlight(content string, width int, sel SelectionRange) string {
+	if sel.Empty() {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	height := len(lines)
+	if height == 0 {
+		return content
+	}
+	buf := ParseContentBuffer(content, width)
+	if buf == nil {
+		return content
+	}
+	setReverse(buf, height, sel, true)
+	return renderBuffer(buf, height)
 }
 
 // ExtractText renders content into a cell buffer and collects plain text

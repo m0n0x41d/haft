@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 
+	uv "github.com/charmbracelet/ultraviolet"
+
 	"github.com/m0n0x41d/quint-code/internal/agent"
 )
 
@@ -106,6 +108,12 @@ type baseItem struct {
 	rendered string
 	height   int
 	highlightState
+
+	// Highlight rendering cache: parsed ScreenBuffer + last applied range.
+	// Avoids re-parsing ANSI on every drag — only cell attr flips.
+	cellBuf       *uv.ScreenBuffer
+	cellBufWidth  int
+	prevHighlight SelectionRange
 }
 
 func newBaseItem(rendered string) baseItem {
@@ -122,9 +130,26 @@ func newBaseItem(rendered string) baseItem {
 
 func (b *baseItem) Render(width int) string {
 	if !b.hasHighlight() {
+		// Clear cached buffer highlight state when selection is removed
+		if !b.prevHighlight.Empty() && b.cellBuf != nil {
+			setReverse(b.cellBuf, b.height, b.prevHighlight, false)
+			b.prevHighlight = SelectionRange{}
+		}
 		return b.rendered
 	}
-	return ApplyHighlight(b.rendered, width, b.resolvedRange(b.height, width))
+
+	cur := b.resolvedRange(b.height, width)
+
+	// Lazy-parse buffer on first highlight (or if width changed)
+	if b.cellBuf == nil || b.cellBufWidth != width {
+		b.cellBuf = ParseContentBuffer(b.rendered, width)
+		b.cellBufWidth = width
+		b.prevHighlight = SelectionRange{}
+	}
+
+	result := RenderHighlighted(b.cellBuf, b.height, b.prevHighlight, cur)
+	b.prevHighlight = cur
+	return result
 }
 
 func (b *baseItem) Height() int { return b.height }

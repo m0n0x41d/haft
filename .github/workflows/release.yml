@@ -21,10 +21,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-          cache-dependency-path: src/mcp/go.sum
+          cache-dependency-path: go.sum
 
       - name: Run tests
-        working-directory: src/mcp
         run: go test -race ./...
 
   release:
@@ -40,7 +39,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-          cache-dependency-path: src/mcp/go.sum
+          cache-dependency-path: go.sum
 
       - uses: goreleaser/goreleaser-action@v6
         with:

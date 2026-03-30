@@ -14,16 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Test install.sh (source build fallback)
-        run: |
-          # No release exists for this commit, so install.sh falls back to source build
-          # This tests: clone, go build, PATH detection
-          bash install.sh
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Build haft
+        run: go build -o haft -trimpath ./cmd/haft/
 
       - name: Verify binary works
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          quint-code --help || quint-code version || echo "Binary runs"
+          ./haft version || echo "Binary runs"
 
   install-macos:
     name: Install (macOS)
@@ -35,10 +35,9 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Test install.sh (source build fallback)
-        run: bash install.sh
+      - name: Build haft
+        run: go build -o haft -trimpath ./cmd/haft/
 
       - name: Verify binary works
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          quint-code --help || quint-code version || echo "Binary runs"
+          ./haft version || echo "Binary runs"

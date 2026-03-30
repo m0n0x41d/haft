@@ -1,19 +1,19 @@
 version: 2
 
-project_name: quint-code
+project_name: haft
 
 builds:
-  - id: quint-code
-    dir: src/mcp
-    main: .
-    binary: quint-code
+  - id: haft
+    dir: .
+    main: ./cmd/haft/
+    binary: haft
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/m0n0x41d/quint-code/cmd.Version={{ .Version }}
-      - -X github.com/m0n0x41d/quint-code/cmd.Commit={{ .ShortCommit }}
-      - -X github.com/m0n0x41d/quint-code/cmd.BuildDate={{ .Date }}
+      - -X github.com/m0n0x41d/haft/internal/cli.Version={{ .Version }}
+      - -X github.com/m0n0x41d/haft/internal/cli.Commit={{ .ShortCommit }}
+      - -X github.com/m0n0x41d/haft/internal/cli.BuildDate={{ .Date }}
     goos:
       - linux
       - darwin
@@ -35,14 +35,14 @@ changelog:
 
 release:
   header: |
-    ## Quint Code {{ .Tag }}
+    ## Haft {{ .Tag }}
 
-    FPF-native engineering decision tool. 6 MCP tools. Works with Claude Code, Cursor, Gemini CLI, Codex CLI.
+    Engineering agent with FPF reasoning discipline. Interactive CLI + MCP server.
 
     ### Install
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+    go install github.com/m0n0x41d/haft/cmd/haft@latest
     ```
 
     See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/CHANGELOG.md) for full details.

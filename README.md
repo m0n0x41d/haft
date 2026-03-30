@@ -60,7 +60,7 @@ Existing project? Run `/q-onboard` after init — the agent scans your codebase 
 /q-reason explain how to work with quint-code effectively — what commands exist, when to use each one, and what's the recommended workflow
 ```
 
-The agent has full knowledge of all Quint tools and will walk you through them in context of your project.
+The agent has full knowledge of all project tools and will walk you through them in context of your project.
 
 ---
 

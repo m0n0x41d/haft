@@ -22,26 +22,22 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-          cache-dependency-path: src/mcp/go.sum
+          cache-dependency-path: go.sum
 
       - name: Check go mod tidy
-        working-directory: src/mcp
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
       - name: Run tests
-        working-directory: src/mcp
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Build binary
-        working-directory: src/mcp
-        run: go build -o quint-code -trimpath .
+        run: go build -o haft -trimpath ./cmd/haft/
 
       - name: Smoke test — binary starts and responds to MCP initialize
-        working-directory: src/mcp
         run: |
-          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./quint-code serve 2>/dev/null || true)
+          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./haft serve 2>/dev/null || true)
           if echo "$RESPONSE" | grep -q '"protocolVersion"'; then
             echo "Smoke test passed: MCP server responds correctly"
           else
@@ -53,7 +49,7 @@ jobs:
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:
-          file: src/mcp/coverage.out
+          file: coverage.out
           fail_ci_if_error: false
         continue-on-error: true
 
@@ -68,10 +64,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-          cache-dependency-path: src/mcp/go.sum
+          cache-dependency-path: go.sum
 
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
-          working-directory: src/mcp
           args: --timeout=5m

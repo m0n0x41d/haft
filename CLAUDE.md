@@ -60,7 +60,7 @@ When reasoning through problems, apply these principles:
 
 ### 2. Investigate the Codebase
 
-- **Check `.quint/` directory** — Decisions, problems, notes (markdown projections)
+- **Check `.haft/` directory** — Decisions, problems, notes (markdown projections)
 - Explore relevant files and directories
 - Search for key functions, classes, variables
 - Identify root cause
@@ -182,7 +182,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - **Codebase Awareness**: Module coverage shows which parts of the architecture have decisions. `/q-status` includes module coverage section.
 - **Cross-Project Recall**: Decisions from other projects surface during `/q-frame` with CL2/CL1 penalties.
 
-**State Location:** `.quint/` directory (markdown projections, git-tracked). Database in `~/.quint-code/`.
+**State Location:** `.haft/` directory (markdown projections, git-tracked). Database in `~/.haft/`.
 
 **Key Principle:** You (the agent) generate options with evidence. Human decides. This is the Transformer Mandate — a system cannot transform itself.
 

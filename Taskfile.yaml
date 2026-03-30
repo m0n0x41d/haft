@@ -1,9 +1,8 @@
 version: '3'
 
 vars:
-  BIN_NAME: quint-code
+  BIN_NAME: haft
   BIN_DIR: ~/.local/bin
-  SRC_DIR: src/mcp
 
 tasks:
   default:
@@ -13,40 +12,35 @@ tasks:
 
   test:
     desc: Run all tests
-    dir: '{{.SRC_DIR}}'
     cmds:
       - go test -v ./...
 
   lint:
     desc: Run linter (go vet)
-    dir: '{{.SRC_DIR}}'
     cmds:
       - go vet ./...
 
   build:
     desc: Build binary
-    dir: '{{.SRC_DIR}}'
     cmds:
-      - go build -o {{.BIN_NAME}} -trimpath .
+      - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
       - '{{.BIN_NAME}}'
 
   install:
     desc: Build and install to ~/.local/bin
-    dir: '{{.SRC_DIR}}'
     cmds:
-      - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath .
+      - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - echo "Installed to {{.BIN_DIR}}/{{.BIN_NAME}}"
 
   clean:
     desc: Remove local build binary
-    dir: '{{.SRC_DIR}}'
     cmds:
       - rm -f {{.BIN_NAME}}
 
   cleanup:
     desc: Remove all built binaries (local + installed)
     cmds:
-      - rm -f {{.SRC_DIR}}/{{.BIN_NAME}}
+      - rm -f {{.BIN_NAME}}
       - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
-      - echo "Removed {{.SRC_DIR}}/{{.BIN_NAME}} and {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - echo "Cleaned up"

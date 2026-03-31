@@ -199,12 +199,14 @@ func restoreViewMessages(msgs []agent.Message) []viewMessage {
 				continue
 			}
 			result = append(result, viewMessage{
+				ID:   msg.ID,
 				Role: agent.RoleUser,
 				Text: text,
 			})
 
 		case agent.RoleAssistant:
 			vm := viewMessage{
+				ID:   msg.ID,
 				Role: agent.RoleAssistant,
 				Text: msg.Text(),
 			}

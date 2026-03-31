@@ -129,6 +129,21 @@ func newBaseItem(rendered string) baseItem {
 	}
 }
 
+func (b *baseItem) UpdateRendered(rendered string) {
+	if b.rendered == rendered {
+		return
+	}
+	b.rendered = rendered
+	if rendered == "" {
+		b.height = 1
+	} else {
+		b.height = strings.Count(rendered, "\n") + 1
+	}
+	b.cellBuf = nil
+	b.cellBufWidth = 0
+	b.prevHighlight = SelectionRange{}
+}
+
 func (b *baseItem) Render(width int) string {
 	if !b.hasHighlight() {
 		// Clear cached buffer highlight state when selection is removed
@@ -202,6 +217,66 @@ func (*permissionItem) SetHighlight(_, _, _, _ int)     {}
 func (*permissionItem) Highlight() (int, int, int, int) { return -1, -1, -1, -1 }
 func (*permissionItem) PlainText(_ int) string          { return "" }
 
+func (m *Model) upsertUserItem(key, rendered string) ChatItem {
+	if m.chatItemByID == nil {
+		m.chatItemByID = make(map[string]ChatItem)
+	}
+	if existing, ok := m.chatItemByID[key]; ok {
+		if item, ok := existing.(*userItem); ok {
+			item.UpdateRendered(rendered)
+			return item
+		}
+	}
+	item := &userItem{baseItem: newBaseItem(rendered)}
+	m.chatItemByID[key] = item
+	return item
+}
+
+func (m *Model) upsertAssistantItem(key, rendered string) ChatItem {
+	if m.chatItemByID == nil {
+		m.chatItemByID = make(map[string]ChatItem)
+	}
+	if existing, ok := m.chatItemByID[key]; ok {
+		if item, ok := existing.(*assistantTextItem); ok {
+			item.UpdateRendered(rendered)
+			return item
+		}
+	}
+	item := &assistantTextItem{baseItem: newBaseItem(rendered)}
+	m.chatItemByID[key] = item
+	return item
+}
+
+func (m *Model) upsertToolItem(key, rendered string) ChatItem {
+	if m.chatItemByID == nil {
+		m.chatItemByID = make(map[string]ChatItem)
+	}
+	if existing, ok := m.chatItemByID[key]; ok {
+		if item, ok := existing.(*toolItem); ok {
+			item.UpdateRendered(rendered)
+			return item
+		}
+	}
+	item := &toolItem{baseItem: newBaseItem(rendered)}
+	m.chatItemByID[key] = item
+	return item
+}
+
+func (m *Model) upsertErrorItem(key, rendered string) ChatItem {
+	if m.chatItemByID == nil {
+		m.chatItemByID = make(map[string]ChatItem)
+	}
+	if existing, ok := m.chatItemByID[key]; ok {
+		if item, ok := existing.(*errorItem); ok {
+			item.UpdateRendered(rendered)
+			return item
+		}
+	}
+	item := &errorItem{baseItem: newBaseItem(rendered)}
+	m.chatItemByID[key] = item
+	return item
+}
+
 // ---------------------------------------------------------------------------
 // Builder: viewMessage slice → ChatItem slice
 // ---------------------------------------------------------------------------
@@ -210,33 +285,33 @@ func (*permissionItem) PlainText(_ int) string          { return "" }
 // into a flat list of ChatItems for the ChatList.
 //
 // Called from refreshChat() — rebuilds on every content change.
-func (m Model) buildChatItems() []ChatItem {
+func (m *Model) buildChatItems() []ChatItem {
 	fullWidth := max(20, m.width-2)
 	bodyWidth := fullWidth // content width = viewport - divider margins only
 
 	var items []ChatItem
+	seen := make(map[string]bool)
 
-	for i, msg := range m.messages {
-		// Divider between messages
-		if i > 0 {
-			items = append(items, &dividerItem{
-				baseItem: newBaseItem(m.renderSectionDivider(fullWidth)),
-			})
-		}
-
+	for _, msg := range m.messages {
 		switch msg.Role {
 		case agent.RoleUser:
-			items = append(items, &userItem{
-				baseItem: newBaseItem(m.renderUserMessage(msg, fullWidth)),
-			})
+			key := "user:" + msg.ID
+			rendered := m.renderUserMessage(msg, fullWidth)
+			item := m.upsertUserItem(key, rendered)
+			items = append(items, item)
+			seen[key] = true
 
 		case agent.RoleAssistant:
-			items = append(items, m.buildAssistantItems(msg, bodyWidth)...)
+			assistantItems, keys := m.buildAssistantItems(msg, bodyWidth)
+			items = append(items, assistantItems...)
+			for _, key := range keys {
+				seen[key] = true
+			}
 		}
 	}
 
-	// Error — persistent box, press Esc to dismiss
 	if m.errMsg != "" {
+		key := "error"
 		errContent := m.styles.ErrorText.Render("Error: " + m.errMsg)
 		dismiss := m.styles.Dim.Render("\n\npress esc to dismiss")
 		errBox := lipgloss.NewStyle().
@@ -245,14 +320,14 @@ func (m Model) buildChatItems() []ChatItem {
 			Padding(0, 2).
 			Width(min(bodyWidth, 70)).
 			Render(errContent + dismiss)
-		items = append(items, &errorItem{baseItem: newBaseItem(errBox)})
+		items = append(items, m.upsertErrorItem(key, errBox))
+		seen[key] = true
 	}
 
-	// Permission (transient, not selectable)
-	if m.state == statePermission {
-		items = append(items, &permissionItem{
-			baseItem: newBaseItem(m.renderPermission(bodyWidth)),
-		})
+	for key := range m.chatItemByID {
+		if !seen[key] {
+			delete(m.chatItemByID, key)
+		}
 	}
 
 	return items
@@ -260,38 +335,33 @@ func (m Model) buildChatItems() []ChatItem {
 
 // buildAssistantItems splits an assistant viewMessage into separate items:
 // one for text (if present) and one per tool call.
-func (m Model) buildAssistantItems(msg viewMessage, w int) []ChatItem {
+func (m *Model) buildAssistantItems(msg viewMessage, w int) ([]ChatItem, []string) {
 	var items []ChatItem
+	var keys []string
 
-	// Text block: thinking + body
-	// Subtract 2 for PaddingLeft(2) in renderAssistantBlock — without this,
-	// glamour wraps at `w` but indentation pushes lines past the viewport.
 	contentWidth := w - 2
 	var textParts []string
 	if msg.Thinking != "" {
 		textParts = append(textParts, m.renderThinkingBox(msg.Thinking, contentWidth))
 	}
 	if msg.Text != "" {
-		if msg.Streaming {
-			textParts = append(textParts, renderStreamingBodyText(msg.Text, contentWidth, m.styles.AssistantText))
-		} else {
-			textParts = append(textParts, renderBodyText(msg.Text, contentWidth, m.styles.AssistantText))
-		}
+		textParts = append(textParts, renderBodyText(msg.Text, contentWidth, m.styles.AssistantText))
 	}
-
-	label := ""
 
 	textBody := strings.Join(textParts, "\n\n")
 	if textBody != "" || len(msg.Tools) == 0 {
-		rendered := m.renderAssistantBlock(label, textBody)
-		items = append(items, &assistantTextItem{baseItem: newBaseItem(rendered)})
+		key := "assistant:" + msg.ID
+		rendered := m.renderAssistantBlock("", textBody)
+		items = append(items, m.upsertAssistantItem(key, rendered))
+		keys = append(keys, key)
 	}
 
-	// Each tool as a separate item
 	for _, tool := range msg.Tools {
+		key := "tool:" + tool.CallID
 		rendered := m.renderTool(tool, w)
-		items = append(items, &toolItem{baseItem: newBaseItem(rendered)})
+		items = append(items, m.upsertToolItem(key, rendered))
+		keys = append(keys, key)
 	}
 
-	return items
+	return items, keys
 }

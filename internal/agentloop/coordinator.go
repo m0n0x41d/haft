@@ -22,8 +22,9 @@ import (
 
 const (
 	maxStepsPerTurn = 200 // hard cap per user turn
-	loopWindowSize  = 8   // recent tool calls to check for loops
-	loopMaxRepeats  = 3   // same tool+args repeated = loop
+	loopWindowSize   = 12 // recent tool calls to check for loops
+	loopWarnRepeats  = 3  // yellow: inject warning, don't stop
+	loopHardRepeats  = 5  // red: hard stop
 )
 
 // Coordinator runs a single ReAct loop per user turn.
@@ -152,7 +153,22 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 
 	// Inject interaction mode — the LLM must know if autonomous mode is active
 	if sess.Interaction == agent.InteractionAutonomous {
-		systemPrompt += "\n\n[MODE: AUTONOMOUS] The user toggled autonomous mode. Be decisively proactive: chain all phases without pausing, don't narrate intentions — just execute, don't ask permission for non-destructive actions. Implement immediately after deciding."
+		systemPrompt += `
+
+## [MODE: AUTONOMOUS — ACTIVE NOW]
+
+The user explicitly toggled autonomous mode. This OVERRIDES the collaborative workflow rules above.
+
+IN AUTONOMOUS MODE YOU MUST:
+- ACT, don't describe. Never say "I'll do X" — just DO X.
+- CHAIN all phases in one turn: frame → explore → decide → implement → measure.
+- EXECUTE tool calls immediately. Don't read 3 files then explain what you found — read, act, continue.
+- SKIP all "STOP and present" checkpoints. The user delegated — they trust you.
+- NEVER ask "shall I proceed?" or "would you like me to..." — the answer is always YES.
+- When the user says "do it" or "давай" — that means START WORKING NOW, not "explain your plan."
+
+The Transformer Mandate still applies to DECISIONS (user's choices/directions are authoritative).
+But it does NOT apply to EXECUTION STEPS — you don't need approval for each tool call, each file read, each edit. Just do the work.`
 	}
 
 	// Inject repo map (lazy rebuild after edits)
@@ -202,11 +218,21 @@ func (c *Coordinator) reactLoop(
 			return
 		}
 
-		// Loop detection
-		if agent.DetectLoop(toolCallHistory, loopWindowSize, loopMaxRepeats) {
-			logger.Warn().Str("component", "agent").Msg("agent.loop_detected")
+		// Loop detection — three-level escalation
+		loopLevel := agent.DetectLoopLevel(toolCallHistory, loopWindowSize, loopWarnRepeats, loopHardRepeats)
+		switch loopLevel {
+		case agent.LoopHard:
+			logger.Warn().Str("component", "agent").Msg("agent.loop_hard_stop")
 			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("loop detected: agent is repeating the same tool calls")})
 			return
+		case agent.LoopWarning:
+			// Yellow: inject warning, don't stop. Agent should summarize and ask user.
+			warnMsg := agent.Message{
+				Role: agent.RoleSystem,
+				Parts: []agent.Part{agent.TextPart{Text: "[Loop Warning] You are repeating similar tool calls. Stop iterating. Summarize what you've tried, what's blocking you, and present current options to the user. If you need to retry, explain why this attempt will differ."}},
+			}
+			fullHistory = append(fullHistory, warnMsg)
+			logger.Warn().Str("component", "agent").Msg("agent.loop_warning_injected")
 		}
 
 		// Inject overseer alerts as system message (if any pending)
@@ -243,14 +269,29 @@ func (c *Coordinator) reactLoop(
 		logger.AgentStep(step, "react", len(toolCallHistory), false)
 
 		// LLM call (5 minute timeout)
+		liveAssistant := &agent.Message{
+			ID:        newMsgID(),
+			SessionID: sess.ID,
+			Role:      agent.RoleAssistant,
+			Model:     c.Provider.ModelID(),
+			CreatedAt: time.Now().UTC(),
+		}
+		_ = c.Messages.Save(ctx, liveAssistant)
 		llmCtx, llmCancel := context.WithTimeout(ctx, 5*time.Minute)
 		llmStart := time.Now()
 		assistantMsg, err := c.Provider.Stream(llmCtx, fullHistory, allTools, func(delta provider.StreamDelta) {
+			updated := false
 			if delta.Text != "" {
-				c.Bus.Send(tui.StreamDeltaMsg{Text: delta.Text})
+				liveAssistant.AppendText(delta.Text)
+				updated = true
 			}
 			if delta.Thinking != "" {
-				c.Bus.Send(tui.ThinkingDeltaMsg{Text: delta.Thinking})
+				liveAssistant.AppendThinking(delta.Thinking)
+				updated = true
+			}
+			if updated {
+				_ = c.Messages.UpdateMessage(ctx, liveAssistant)
+				c.Bus.Send(tui.AssistantMessageUpdateMsg{Message: liveAssistant.Clone()})
 			}
 		})
 		llmCancel()
@@ -267,13 +308,28 @@ func (c *Coordinator) reactLoop(
 			return
 		}
 
-		assistantMsg.ID = newMsgID()
+		assistantMsg.ID = liveAssistant.ID
 		assistantMsg.SessionID = sess.ID
-		_ = c.Messages.Save(ctx, assistantMsg)
+		assistantMsg.Parts = liveAssistant.Parts
+		assistantMsg.CreatedAt = liveAssistant.CreatedAt
+		_ = c.Messages.UpdateMessage(ctx, assistantMsg)
+		c.Bus.Send(tui.AssistantMessageUpdateMsg{Message: assistantMsg.Clone(), Done: true})
 
 		toolCalls := assistantMsg.ToolCalls()
 		tokenBudget = tokenBudget.Add(assistantMsg.Tokens)
 		c.Bus.Send(tui.TokenUpdateMsg{Used: tokenBudget.Used, Limit: tokenBudget.Limit})
+
+		// Detect empty response — LLM returned nothing useful
+		hasText := assistantMsg.Text() != ""
+		hasThinking := liveAssistant != nil && strings.Contains(liveAssistant.Text(), "[thinking]")
+		if !hasText && len(toolCalls) == 0 && !hasThinking {
+			if tokenBudget.NeedsSummarization() {
+				c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("context window nearly full (%d/%d tokens). Use /compact to free space", tokenBudget.Used, tokenBudget.Limit)})
+			} else {
+				c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("model returned empty response — try rephrasing or use /compact")})
+			}
+			return
+		}
 
 		logger.Debug().Str("component", "agent").
 			Int("step", step).
@@ -286,11 +342,9 @@ func (c *Coordinator) reactLoop(
 		// No tool calls → done
 		if len(toolCalls) == 0 {
 			logger.AgentMessage("assistant", assistantMsg.Text(), 0, assistantMsg.Tokens)
-			c.Bus.Send(tui.StreamDoneMsg{Message: *assistantMsg})
 			return
 		}
 
-		c.Bus.Send(tui.StreamDoneMsg{Message: *assistantMsg})
 		fullHistory = append(fullHistory, *assistantMsg)
 
 		// Tool call budget
@@ -306,7 +360,7 @@ func (c *Coordinator) reactLoop(
 		// Execute tool calls
 		results := c.executeToolCalls(ctx, sess, toolCalls, &fullHistory)
 		for _, r := range results {
-			toolCallHistory = append(toolCallHistory, agent.ToolCallRecord{Name: r.toolName, Args: r.args})
+			toolCallHistory = append(toolCallHistory, agent.ToolCallRecord{Name: r.toolName, Args: r.args, IsError: r.isError})
 
 			// Track file reads for read-before-edit enforcement
 			if r.toolName == "read" && !r.isError {
@@ -523,7 +577,11 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 
 	updated := agent.BindArtifact(cycle, *meta)
 	if updated == nil {
-		return
+		if meta.Operation == "measure" && meta.MeasureVerdict != "" {
+			updated = cycle
+		} else {
+			return
+		}
 	}
 
 	if err := c.Cycles.UpdateCycle(ctx, updated); err != nil {
@@ -687,28 +745,28 @@ func (c *Coordinator) injectDriftWarnings(ctx context.Context, history *[]agent.
 		return
 	}
 
-	var warnings []string
+	drifted := 0
 	for _, r := range reports {
 		if len(r.Files) > 0 {
-			warnings = append(warnings, fmt.Sprintf("- %s: %s (%d files changed since baseline)",
-				r.DecisionID, r.DecisionTitle, len(r.Files)))
+			drifted++
 		}
 	}
-
-	if len(warnings) == 0 {
+	if drifted == 0 {
 		return
 	}
 
+	// Keep drift injection minimal — just a count, not full list.
+	// Full details available via /refresh command.
 	msg := agent.Message{
 		Role: agent.RoleSystem,
 		Parts: []agent.Part{agent.TextPart{Text: fmt.Sprintf(
-			"[Drift detection] The following decisions have files that changed since their baseline:\n%s\nConsider reviewing with /refresh or haft_refresh(drift).",
-			strings.Join(warnings, "\n"))}},
+			"[Drift] %d decision(s) have files changed since baseline. Use /refresh for details.",
+			drifted)}},
 	}
 	*history = append(*history, msg)
 
 	logger.Info().Str("component", "agent").
-		Int("drifted", len(warnings)).
+		Int("drifted", drifted).
 		Msg("agent.drift_warnings_injected")
 }
 

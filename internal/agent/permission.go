@@ -41,8 +41,14 @@ func EvaluatePermission(toolName string, args string) PermissionLevel {
 		"haft_query", "haft_refresh", "haft_note":
 		return PermissionAllowed
 	// File mutations — need approval
-	case "write", "edit":
+	case "write", "edit", "multiedit":
 		return PermissionNeedsApproval
+	// LSP tools — safe
+	case "lsp_diagnostics", "lsp_references", "lsp_restart":
+		return PermissionAllowed
+	// Fetch — HTTP request, low risk
+	case "fetch":
+		return PermissionAllowed
 	case "bash":
 		return evaluateBashPermission(args)
 	default:

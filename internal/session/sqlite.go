@@ -123,6 +123,18 @@ func (s *SQLiteStore) Save(ctx context.Context, msg *agent.Message) error {
 	return err
 }
 
+func (s *SQLiteStore) UpdateMessage(ctx context.Context, msg *agent.Message) error {
+	partsJSON, err := agent.MarshalParts(msg.Parts)
+	if err != nil {
+		return fmt.Errorf("marshal parts: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE agent_messages SET parts = ?, model = ?, token_count = ? WHERE id = ?`,
+		string(partsJSON), msg.Model, msg.Tokens, msg.ID,
+	)
+	return err
+}
+
 func (s *SQLiteStore) ListBySession(ctx context.Context, sessionID string) ([]agent.Message, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, role, parts, model, token_count, created_at

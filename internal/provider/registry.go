@@ -71,6 +71,10 @@ func NewRegistry(providers []ProviderInfo) *Registry {
 	}
 	for _, p := range providers {
 		for _, m := range p.Models {
+			// Keep the entry with the highest context window when IDs collide across providers
+			if existing, ok := r.byModel[m.ID]; ok && existing.ContextWindow >= m.ContextWindow {
+				continue
+			}
 			r.byModel[m.ID] = m
 		}
 	}

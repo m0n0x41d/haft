@@ -156,37 +156,27 @@ func (o *Overseer) checkSymbolDrift(ctx context.Context) []string {
 		}
 
 		// Extract current symbols and compare per file
+		removedCount := 0
 		for filePath, baseSnapshots := range fileSymbols {
 			currentSnapshots, err := codebase.ExtractSymbolSnapshots(o.ProjectRoot, filePath)
 			if err != nil {
-				// File might not exist anymore — file-level drift catches this
 				continue
 			}
 
 			drifts := codebase.CompareSymbolSnapshots(baseSnapshots, currentSnapshots)
 			for _, drift := range drifts {
 				if drift.Status == "removed" {
-					alert := fmt.Sprintf("⚠ %s: %s %s deleted (%s)",
-						d.Meta.ID, drift.SymbolKind, drift.SymbolName, drift.FilePath)
-					alerts = append(alerts, alert)
+					removedCount++
 					logger.Warn().Str("component", "overseer").
 						Str("decision", d.Meta.ID).
 						Str("symbol", drift.SymbolName).
-						Str("kind", drift.SymbolKind).
 						Str("file", drift.FilePath).
 						Msg("overseer.symbol_removed")
 				}
-				if drift.Status == "modified" {
-					logger.Info().Str("component", "overseer").
-						Str("decision", d.Meta.ID).
-						Str("symbol", drift.SymbolName).
-						Str("kind", drift.SymbolKind).
-						Str("file", drift.FilePath).
-						Msg("overseer.symbol_modified")
-					// Modified symbols are logged but not alerted — only removed symbols
-					// are likely invariant violations. Modified could be legitimate evolution.
-				}
 			}
+		}
+		if removedCount > 0 {
+			alerts = append(alerts, fmt.Sprintf("⚠ %d symbols removed", removedCount))
 		}
 	}
 

@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/m0n0x41d/haft/internal/agent"
 )
 
 func TestRenderBodyTextKeepsPlainTextPlain(t *testing.T) {
 	got := renderBodyText("Hello", 40, DefaultStyles().AssistantText)
-
-	if strings.Contains(got, "• ") || strings.Contains(got, ". Hello") {
-		t.Fatalf("expected plain text rendering without markdown list/enumeration markers, got %q", got)
+	if strings.TrimSpace(ansi.Strip(got)) != "Hello" {
+		t.Fatalf("expected plain text rendering to preserve content, got %q", got)
 	}
 }
 
@@ -23,7 +23,7 @@ func TestRenderAssistantMessageUsesHexagonMarker(t *testing.T) {
 		Role: agent.RoleAssistant,
 		Text: "Hello",
 	}
-	items := model.buildAssistantItems(msg, 60)
+	items, _ := model.buildAssistantItems(msg, 60)
 	if len(items) == 0 {
 		t.Fatal("expected at least one item from buildAssistantItems")
 	}
@@ -106,7 +106,7 @@ func TestWrapPlainLineMixedLanguageOrderStable(t *testing.T) {
 func TestRenderBodyTextMixedLanguageNoReordering(t *testing.T) {
 	text := "Ладно, ещё один примерно на 1k symbols. Иногда тест интерфейса лучше делать не на hello world, а на тексте ближе к реальному хаосу."
 	got := renderBodyText(text, 24, DefaultStyles().AssistantText)
-	normalized := strings.Join(strings.Fields(got), " ")
+	normalized := strings.Join(strings.Fields(ansi.Strip(got)), " ")
 	if normalized != strings.Join(strings.Fields(text), " ") {
 		t.Fatalf("expected assistant body text to preserve token order\nwant: %q\n got: %q", text, got)
 	}

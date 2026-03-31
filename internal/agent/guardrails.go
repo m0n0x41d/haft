@@ -16,8 +16,8 @@ func CanExplore(cycle *Cycle) error {
 	if cycle == nil || cycle.ProblemRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_solution(explore)",
-			Missing:  "problem frame",
-			Guidance: "Frame the problem first: haft_problem(action=\"frame\", signal=..., acceptance=...)",
+			Missing:  "problem frame bound to active cycle",
+			Guidance: "Frame a new problem: haft_problem(action=\"frame\", signal=..., acceptance=...) OR adopt an existing one: haft_problem(action=\"adopt\", ref=\"prob-...\"). Note: characterize does not create a cycle — you need frame or adopt first.",
 		}
 	}
 	return nil

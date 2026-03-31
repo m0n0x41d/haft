@@ -137,7 +137,7 @@ func buildResponseParams(
 			OfToolChoiceMode: openai.Opt(responses.ToolChoiceOptionsAuto),
 		},
 	}
-	// MaxOutputTokens not supported by Codex backend — only set for API key auth
+	// MaxOutputTokens not supported by Codex backend — only set for direct API
 	if authType == "api_key" {
 		maxOut := 16384
 		if m, ok := DefaultRegistry().Lookup(model); ok && m.DefaultMaxOut > 0 {
@@ -154,7 +154,7 @@ func buildResponseParams(
 	if len(tools) > 0 {
 		params.Tools = convertTools(tools)
 	}
-	if reasoning, ok := defaultReasoningForModel(model); ok {
+	if reasoning, ok := defaultReasoningForModel(model, authType); ok {
 		params.Reasoning = reasoning
 		params.Include = []responses.ResponseIncludable{
 			responses.ResponseIncludableReasoningEncryptedContent,
@@ -276,17 +276,35 @@ func responseToMessage(resp responses.Response) *agent.Message {
 		msg.Parts = append(msg.Parts, agent.TextPart{Text: text})
 	}
 	for _, item := range resp.Output {
-		if item.Type != "function_call" {
-			continue
+		switch item.Type {
+		case "function_call":
+			call := item.AsFunctionCall()
+			msg.Parts = append(msg.Parts, agent.ToolCallPart{
+				ToolCallID: call.CallID,
+				ToolName:   call.Name,
+				Arguments:  call.Arguments,
+			})
+		case "message":
+			// Reasoning models may return output as message items
+			m := item.AsMessage()
+			for _, content := range m.Content {
+				if content.Type == "output_text" {
+					msg.Parts = append(msg.Parts, agent.TextPart{Text: content.Text})
+				}
+			}
 		}
-		call := item.AsFunctionCall()
-		msg.Parts = append(msg.Parts, agent.ToolCallPart{
-			ToolCallID: call.CallID,
-			ToolName:   call.Name,
-			Arguments:  call.Arguments,
-		})
 	}
 	msg.Tokens = int(resp.Usage.TotalTokens)
+
+	// Debug: log if response has output items but no parts extracted
+	if len(msg.Parts) == 0 && len(resp.Output) > 0 {
+		types := make([]string, 0, len(resp.Output))
+		for _, item := range resp.Output {
+			types = append(types, item.Type)
+		}
+		fmt.Fprintf(os.Stderr, "haft: warning: %d output items but no parts extracted (types: %v)\n", len(resp.Output), types)
+	}
+
 	return msg
 }
 
@@ -371,7 +389,7 @@ func writeDebugLog(err error, requestDebug string) {
 	_, _ = f.WriteString(buf.String())
 }
 
-func defaultReasoningForModel(model string) (shared.ReasoningParam, bool) {
+func defaultReasoningForModel(model, authType string) (shared.ReasoningParam, bool) {
 	if !isReasoningModel(model) {
 		return shared.ReasoningParam{}, false
 	}
@@ -381,9 +399,17 @@ func defaultReasoningForModel(model string) (shared.ReasoningParam, bool) {
 		effort = shared.ReasoningEffortHigh
 	}
 
+	// Codex backend: use concise summary to reduce output budget consumption.
+	// The backend doesn't support MaxOutputTokens, so verbose thinking summaries
+	// can exhaust the output budget leaving no tokens for the actual response.
+	summary := shared.ReasoningSummaryAuto
+	if authType == "codex" || authType == "codex_cli" {
+		summary = shared.ReasoningSummaryConcise
+	}
+
 	return shared.ReasoningParam{
 		Effort:  effort,
-		Summary: shared.ReasoningSummaryAuto,
+		Summary: summary,
 	}, true
 }
 

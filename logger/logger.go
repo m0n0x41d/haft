@@ -14,6 +14,8 @@ var (
 	log     zerolog.Logger
 	logFile *os.File
 	once    sync.Once
+	mu      sync.Mutex
+	closed  bool
 )
 
 const (
@@ -33,6 +35,16 @@ func Init(projectRoot string) error {
 // InitSession creates a per-session log file for the agent.
 // Log path: ~/.haft/logs/sessions/{sessionID}.log
 func InitSession(sessionID string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Close previous log file if one exists (e.g. from Init)
+	if logFile != nil {
+		_ = logFile.Close()
+		logFile = nil
+	}
+	closed = false
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -133,8 +145,13 @@ func Output(w io.Writer) zerolog.Logger {
 }
 
 func Close() {
-	if logFile != nil {
+	mu.Lock()
+	defer mu.Unlock()
+	if logFile != nil && !closed {
+		closed = true
 		_ = logFile.Close()
+		// Redirect logger to discard so late writes don't hit a closed fd
+		log = zerolog.New(io.Discard)
 	}
 }
 

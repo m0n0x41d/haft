@@ -13,6 +13,12 @@ Use `haft_refresh` tool with:
 - `action="supersede"` — replace with a different artifact (artifact_ref, new_artifact_ref, reason)
 - `action="deprecate"` — archive as no longer relevant (artifact_ref, reason required)
 
+When reporting refresh results to the user:
+- lead with the artifact title, not just the ID
+- say what the decision/problem/note was about in one short phrase
+- explain the concrete issue: weak evidence, no baseline, or actual code drift
+- if drift/no-baseline is reported, mention the affected file count or the files when useful
+
 Common use cases:
 - Problem no longer relevant? → `deprecate`
 - Note superseded by a full decision? → `supersede` with the decision ref

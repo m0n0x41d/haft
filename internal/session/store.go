@@ -17,6 +17,7 @@ type SessionStore interface {
 // MessageStore persists conversation messages.
 type MessageStore interface {
 	Save(ctx context.Context, msg *agent.Message) error
+	UpdateMessage(ctx context.Context, msg *agent.Message) error
 	ListBySession(ctx context.Context, sessionID string) ([]agent.Message, error)
 	LastUserMessage(ctx context.Context, sessionID string) (string, error)
 	// DeleteOlderThan removes all but the most recent keepLastN messages for a session.

@@ -89,6 +89,7 @@ func TestViewUsesUVCompositionForMixedText(t *testing.T) {
 	model.height = 18
 	model.resizeComponents()
 	model.messages = []viewMessage{{
+		ID:   "msg-1",
 		Role: agent.RoleAssistant,
 		Text: "Ладно, вот нормальный mixed-text sample примерно на 1k symbols для проверки рендера в TUI.",
 	}}
@@ -117,50 +118,57 @@ func TestLayoutBlocksReserveSeparatorRows(t *testing.T) {
 	}
 }
 
-func TestDrawBlockWrapsLongMixedText(t *testing.T) {
+func TestDrawBlockRendersPreWrappedMixedText(t *testing.T) {
 	canvas := uv.NewScreenBuffer(24, 6)
 	canvas.Method = ansi.GraphemeWidth
-	text := "Сейчас как раз нужен не красивый text, а честный stress sample для TUI"
+	text := wrapPlainLinePreserveWhitespace("Сейчас как раз нужен не красивый text, а честный stress sample для TUI", 24)
 	drawBlock(&canvas, 0, 0, 24, 6, text)
 	got := ansi.Strip(canvas.Render())
 	normalized := strings.Join(strings.Fields(got), " ")
-	want := strings.Join(strings.Fields(text), " ")
-	if !strings.Contains(normalized, want) {
-		t.Fatalf("expected wrapped UV block to preserve mixed text order\nwant substring: %q\n got: %q", want, normalized)
+	want := strings.Join(strings.Fields(strings.ReplaceAll(text, "\n", " ")), " ")
+	if normalized != want {
+		t.Fatalf("expected drawBlock to preserve pre-wrapped mixed text order\nwant: %q\n got: %q", want, normalized)
 	}
 }
 
-func TestStreamDoneFinalizesFromAuthoritativeMessage(t *testing.T) {
+func TestAssistantMessageUpdateFinalizesUsingMessageSnapshot(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, []agent.Part) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
 	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
-	// Phase tracking removed in v2 — agent uses tool guardrails, not phase gates
-	model.streamBuf.WriteString("broken live preview text")
-	model.thinkBuf.WriteString("thinking")
 
 	final := agent.Message{
-		Role:  agent.RoleAssistant,
-		Parts: []agent.Part{agent.TextPart{Text: "authoritative final text"}},
+		ID:   "asst-1",
+		Role: agent.RoleAssistant,
+		Parts: []agent.Part{
+			agent.TextPart{Text: "authoritative final text"},
+		},
 	}
-	updated, _ := model.Update(StreamDoneMsg{Message: final})
+	updated, _ := model.Update(AssistantMessageUpdateMsg{Message: final, Done: true})
 	next := updated.(Model)
 	if len(next.messages) == 0 {
 		t.Fatal("expected finalized assistant message")
 	}
 	got := next.messages[len(next.messages)-1]
 	if got.Text != "authoritative final text" {
-		t.Fatalf("expected final text from StreamDone message, got %q", got.Text)
+		t.Fatalf("expected final display text from assistant snapshot, got %q", got.Text)
+	}
+	if got.Streaming {
+		t.Fatal("expected assistant message to leave streaming state on final update")
 	}
 }
 
-func TestStreamingDeltaUpdatesCanonicalAssistantMessage(t *testing.T) {
+func TestAssistantMessageUpdateReusesAssistantChatItem(t *testing.T) {
 	runFn := func(context.Context, *agent.Session, []agent.Part) {}
 	session := &agent.Session{ID: "ses-test", Model: "gpt-5.4"}
 	model := New(session, runFn, NewBus(1), "", nil, nil, nil, nil, "")
 
-	updated, _ := model.Update(StreamDeltaMsg{Text: "hello "})
+	first := agent.Message{ID: "asst-1", Role: agent.RoleAssistant, Parts: []agent.Part{agent.TextPart{Text: "hello "}}}
+	updated, _ := model.Update(AssistantMessageUpdateMsg{Message: first})
 	next := updated.(Model)
-	updated, _ = next.Update(StreamDeltaMsg{Text: "world"})
+	firstItem := next.chatItemByID["assistant:asst-1"]
+
+	second := agent.Message{ID: "asst-1", Role: agent.RoleAssistant, Parts: []agent.Part{agent.TextPart{Text: "hello world"}}}
+	updated, _ = next.Update(AssistantMessageUpdateMsg{Message: second})
 	next = updated.(Model)
 
 	if len(next.messages) == 0 {
@@ -168,10 +176,13 @@ func TestStreamingDeltaUpdatesCanonicalAssistantMessage(t *testing.T) {
 	}
 	got := next.messages[len(next.messages)-1]
 	if got.Text != "hello world" {
-		t.Fatalf("expected canonical assistant text to accumulate deltas, got %q", got.Text)
+		t.Fatalf("expected assistant snapshot text to update, got %q", got.Text)
 	}
 	if !got.Streaming {
-		t.Fatal("expected assistant message to be marked streaming during deltas")
+		t.Fatal("expected assistant message to be marked streaming during updates")
+	}
+	if next.chatItemByID["assistant:asst-1"] != firstItem {
+		t.Fatal("expected assistant chat item to be reused across updates")
 	}
 }
 

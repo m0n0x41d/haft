@@ -45,10 +45,12 @@ type Model struct {
 	session *agent.Session
 
 	// Chat content
-	messages  []viewMessage
-	streamBuf *strings.Builder
-	thinkBuf  *strings.Builder // reasoning/thinking text accumulator
-	errMsg    string
+	messages     []viewMessage
+	streamBuf    *strings.Builder
+	thinkBuf     *strings.Builder // reasoning/thinking text accumulator
+	chatItemByID map[string]ChatItem
+	nextMsgID    int
+	errMsg       string
 
 	// Status bar verb (animated during streaming)
 	phaseVerb   string // current status verb (rotates through pool)
@@ -100,6 +102,7 @@ type Model struct {
 	// Permission
 	permToolName, permArgs string
 	permReply              chan<- bool
+	permDialog             *PermDialog // modal overlay for permission prompts
 
 	// Components
 	input       textarea.Model
@@ -180,6 +183,7 @@ func New(
 		initialGoal:     initialGoal,
 		streamBuf:       &strings.Builder{},
 		thinkBuf:        &strings.Builder{},
+		chatItemByID:    make(map[string]ChatItem),
 		input:           ta,
 		spinner:         sp,
 		filePicker:      NewFilePicker(projectRoot),
@@ -346,30 +350,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.spinnerTick%5 == 0 {
 				m.gliderTick++
 			}
-			m.refreshChat()
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
 
 	// --- Bus events ---
-	case ThinkingDeltaMsg:
-		m.appendStreamingThinking(msg.Text)
-		m.refreshChat()
-		return m, m.waitForBus()
-
-	case StreamDeltaMsg:
-		m.appendStreamingText(msg.Text)
+	case AssistantMessageUpdateMsg:
+		m.upsertAssistantViewMessage(msg.Message, !msg.Done)
 		m.errMsg = ""
-		m.refreshChat()
-		return m, m.waitForBus()
-
-	case StreamDoneMsg:
-		m.finalizeStreamMessage(msg.Message)
-		if len(msg.Message.ToolCalls()) == 0 {
+		if msg.Done && len(msg.Message.ToolCalls()) == 0 {
 			m.state = stateInput
 			cmds = append(cmds, m.input.Focus())
 		}
 		m.refreshChat()
+		return m, tea.Batch(append(cmds, m.waitForBus())...)
+
+	case ThinkingDeltaMsg:
+		return m, m.waitForBus()
+
+	case StreamDeltaMsg:
+		return m, m.waitForBus()
+
+	case StreamDoneMsg:
 		return m, tea.Batch(append(cmds, m.waitForBus())...)
 
 	case ToolStartMsg:
@@ -413,7 +415,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PermissionAskMsg:
 		if m.autoApprove {
-			// Yolo mode: auto-approve without showing dialog
 			msg.Reply <- true
 			return m, m.waitForBus()
 		}
@@ -421,6 +422,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.permToolName = msg.ToolName
 		m.permArgs = msg.Args
 		m.permReply = msg.Reply
+		m.permDialog = NewPermDialog(msg.ToolName, msg.Args, m.width, m.height)
 		m.refreshChat()
 		return m, nil
 
@@ -513,7 +515,6 @@ func (m *Model) resizeComponents() {
 }
 
 func (m Model) buildInputBlock() string {
-	borderLine := m.styles.InputBorder.Render(strings.Repeat("─", m.width))
 	if m.state == stateInput || m.state == stateStreaming {
 		var parts []string
 
@@ -540,9 +541,9 @@ func (m Model) buildInputBlock() string {
 			parts = append(parts, m.styles.Dim.Render(fmt.Sprintf("  (%d queued)", len(m.pendingMessages))))
 		}
 
-		return borderLine + "\n" + strings.Join(parts, "\n") + "\n" + borderLine
+		return strings.Join(parts, "\n")
 	}
-	return borderLine + "\n" + m.styles.Dim.Render("│") + "\n" + borderLine
+	return m.styles.Dim.Render("│")
 }
 
 func (m Model) layoutBlocks() (string, string, int) {
@@ -819,24 +820,30 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case statePermission:
-		switch key.Text {
-		case "y", "Y":
-			m.permReply <- true
-			m.state = stateStreaming
-			return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
-		case "a", "A":
-			// Allow all — auto-approve remaining tools this session
-			m.permReply <- true
-			m.autoApprove = true
-			m.notification = "Auto-approve enabled for this session"
-			m.state = stateStreaming
-			return m, tea.Batch(m.waitForBus(), m.spinner.Tick, tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
-				return clearNotificationMsg{}
-			}))
-		case "n", "N":
-			m.permReply <- false
-			m.state = stateStreaming
-			return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
+		if m.permDialog != nil {
+			action, cmd := m.permDialog.Update(msg)
+			switch action {
+			case PermAllow:
+				m.permReply <- true
+				m.permDialog = nil
+				m.state = stateStreaming
+				return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
+			case PermAllowSession:
+				m.permReply <- true
+				m.autoApprove = true
+				m.permDialog = nil
+				m.notification = "Auto-approve enabled for this session"
+				m.state = stateStreaming
+				return m, tea.Batch(m.waitForBus(), m.spinner.Tick, tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
+					return clearNotificationMsg{}
+				}))
+			case PermDeny:
+				m.permReply <- false
+				m.permDialog = nil
+				m.state = stateStreaming
+				return m, tea.Batch(m.waitForBus(), m.spinner.Tick)
+			}
+			return m, cmd
 		}
 
 	}
@@ -880,7 +887,7 @@ func (m Model) handleSubmitWithDisplay(llmText, displayText string) (tea.Model, 
 	if m.streamBuf == nil {
 		m.streamBuf = &strings.Builder{}
 	}
-	m.messages = append(m.messages, viewMessage{Role: agent.RoleUser, Text: displayText, Attachments: attachments})
+	m.messages = append(m.messages, viewMessage{ID: m.newViewMessageID(), Role: agent.RoleUser, Text: displayText, Attachments: attachments})
 	m.state = stateStreaming
 	m.streamBuf.Reset()
 	m.thinkBuf.Reset()
@@ -1004,35 +1011,33 @@ func (m Model) openSessionPicker() (tea.Model, tea.Cmd) {
 // ---------------------------------------------------------------------------
 
 func (m *Model) finalizeStreamMessage(msg agent.Message) {
-	m.finalizeStreamText(msg.Text(), m.thinkBuf.String())
+	m.upsertAssistantViewMessage(msg, false)
 }
 
-func (m *Model) finalizeStreamText(text, thinking string) {
-	m.streamBuf.Reset()
-	m.thinkBuf.Reset()
+func (m *Model) appendStreamingText(delta string) {}
 
-	if text == "" && thinking == "" {
+func (m *Model) appendStreamingThinking(delta string) {}
+
+func (m *Model) upsertAssistantViewMessage(msg agent.Message, streaming bool) {
+	text, thinking := splitTextAndThinking(msg)
+	for i := range m.messages {
+		if m.messages[i].ID != msg.ID {
+			continue
+		}
+		m.messages[i].Text = text
+		m.messages[i].Thinking = thinking
+		m.messages[i].Streaming = streaming
+		m.messages[i].Tools = mergeViewTools(msg, m.messages[i].Tools)
 		return
 	}
-
-	last := m.ensureAssistantMessage()
-	last.Text = text
-	last.Thinking = thinking
-	last.Streaming = false
-}
-
-func (m *Model) appendStreamingText(delta string) {
-	m.streamBuf.WriteString(delta)
-	last := m.ensureAssistantMessage()
-	last.Text += delta
-	last.Streaming = true
-}
-
-func (m *Model) appendStreamingThinking(delta string) {
-	m.thinkBuf.WriteString(delta)
-	last := m.ensureAssistantMessage()
-	last.Thinking += delta
-	last.Streaming = true
+	m.messages = append(m.messages, viewMessage{
+		ID:        msg.ID,
+		Role:      agent.RoleAssistant,
+		Text:      text,
+		Thinking:  thinking,
+		Tools:     mergeViewTools(msg, nil),
+		Streaming: streaming,
+	})
 }
 
 func (m *Model) ensureAssistantMessage() *viewMessage {
@@ -1041,6 +1046,7 @@ func (m *Model) ensureAssistantMessage() *viewMessage {
 		return last
 	}
 	m.messages = append(m.messages, viewMessage{
+		ID:   m.newViewMessageID(),
 		Role: agent.RoleAssistant,
 	})
 	return &m.messages[len(m.messages)-1]
@@ -1055,6 +1061,53 @@ func (m *Model) lastAssistantMsg() *viewMessage {
 		}
 	}
 	return nil
+}
+
+// splitTextAndThinking separates thinking from body text.
+// Thinking parts have "[thinking]" prefix. Regular text goes to body.
+// Prevents duplication: thinking in dim box, body text in main area.
+func splitTextAndThinking(msg agent.Message) (text, thinking string) {
+	var textParts, thinkParts []string
+	for _, part := range msg.Parts {
+		tp, ok := part.(agent.TextPart)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(tp.Text, "[thinking]") {
+			thinkParts = append(thinkParts, strings.TrimPrefix(tp.Text, "[thinking]"))
+		} else if tp.Text != "" {
+			textParts = append(textParts, tp.Text)
+		}
+	}
+	return strings.Join(textParts, ""), strings.Join(thinkParts, "\n")
+}
+
+func mergeViewTools(msg agent.Message, existing []viewTool) []viewTool {
+	byID := make(map[string]viewTool, len(existing))
+	for _, tool := range existing {
+		byID[tool.CallID] = tool
+	}
+	for _, call := range msg.ToolCalls() {
+		tool := byID[call.ToolCallID]
+		tool.CallID = call.ToolCallID
+		tool.Name = call.ToolName
+		tool.Args = call.Arguments
+		tool.Running = false
+		byID[call.ToolCallID] = tool
+	}
+	if len(byID) == 0 {
+		return nil
+	}
+	result := make([]viewTool, 0, len(byID))
+	for _, call := range msg.ToolCalls() {
+		result = append(result, byID[call.ToolCallID])
+	}
+	return result
+}
+
+func (m *Model) newViewMessageID() string {
+	m.nextMsgID++
+	return fmt.Sprintf("msg-%d", m.nextMsgID)
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1234,15 @@ func (m Model) View() tea.View {
 		return v
 	}
 
+	// Permission modal overlay
+	if m.state == statePermission && m.permDialog != nil {
+		content := m.permDialog.Render()
+		v := tea.NewView(content)
+		v.AltScreen = true
+		v.WindowTitle = "haft — permission required"
+		return v
+	}
+
 	// Model picker overlay
 	if m.state == stateModelSwitch && m.modelPicker != nil {
 		content := m.modelPicker.Render(m.styles)
@@ -1249,7 +1311,6 @@ func drawBlock(buf *uv.ScreenBuffer, x, y, width, height int, content string) {
 	}
 	area := uv.Rect(x, y, x+width, y+height)
 	styled := uv.NewStyledString(content)
-	styled.Wrap = true
 	styled.Draw(*buf, area)
 }
 

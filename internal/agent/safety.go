@@ -2,33 +2,72 @@ package agent
 
 // ---------------------------------------------------------------------------
 // Loop detection — pure functions, no side effects.
+//
+// Three-level escalation:
+//   Green  (< warnThreshold repeats): normal operation
+//   Yellow (≥ warnThreshold repeats): inject warning, don't stop
+//   Red    (≥ hardThreshold repeats): hard stop
+//
+// Guardrail errors (tool rejected, not executed) are excluded from counting.
+// Only successful same-tool same-args calls trigger detection.
 // ---------------------------------------------------------------------------
 
 // ToolCallRecord tracks a tool call for loop detection.
 type ToolCallRecord struct {
-	Name string
-	Args string
+	Name    string
+	Args    string
+	IsError bool // true = tool returned error (guardrail, not found, etc.)
 }
 
-// DetectLoop checks if the last N tool calls contain repeated patterns.
-// Returns true if any tool name+args combination appears more than maxRepeats times
-// within the last windowSize calls.
+// LoopLevel indicates the severity of detected repetition.
+type LoopLevel int
+
+const (
+	LoopNone    LoopLevel = iota // no repetition
+	LoopWarning                  // yellow: agent should summarize and ask user
+	LoopHard                     // red: hard stop
+)
+
+// DetectLoopLevel checks repetition in tool call history.
+// Only counts SUCCESSFUL calls (IsError=false) — guardrail errors are learning, not loops.
+// Returns LoopWarning at warnThreshold, LoopHard at hardThreshold.
 // Pure function.
-func DetectLoop(history []ToolCallRecord, windowSize, maxRepeats int) bool {
+func DetectLoopLevel(history []ToolCallRecord, windowSize, warnThreshold, hardThreshold int) LoopLevel {
 	if len(history) < windowSize {
-		return false
+		return LoopNone
 	}
 
 	window := history[len(history)-windowSize:]
 	counts := make(map[string]int)
 	for _, tc := range window {
+		if tc.IsError {
+			continue // guardrail rejections don't count
+		}
 		key := tc.Name + ":" + tc.Args
 		counts[key]++
-		if counts[key] >= maxRepeats {
-			return true
+	}
+
+	maxCount := 0
+	for _, c := range counts {
+		if c > maxCount {
+			maxCount = c
 		}
 	}
-	return false
+
+	switch {
+	case maxCount >= hardThreshold:
+		return LoopHard
+	case maxCount >= warnThreshold:
+		return LoopWarning
+	default:
+		return LoopNone
+	}
+}
+
+// DetectLoop is the legacy API — returns true only on hard stop.
+// Kept for backward compatibility with tests.
+func DetectLoop(history []ToolCallRecord, windowSize, maxRepeats int) bool {
+	return DetectLoopLevel(history, windowSize, maxRepeats, maxRepeats) == LoopHard
 }
 
 // ---------------------------------------------------------------------------
@@ -43,27 +82,19 @@ type TokenBudget struct {
 }
 
 // NewTokenBudget creates a budget for a given model.
-// Pure function.
 func NewTokenBudget(contextWindow int) TokenBudget {
-	threshold := contextWindow / 5 // 20% buffer
+	threshold := contextWindow / 5
 	if contextWindow > 200_000 {
-		threshold = 20_000 // large models: fixed 20k buffer
+		threshold = 20_000
 	}
-	return TokenBudget{
-		Limit:     contextWindow,
-		Threshold: threshold,
-	}
+	return TokenBudget{Limit: contextWindow, Threshold: threshold}
 }
 
-// Add records token usage from the latest API response.
-// tokens is TotalTokens (prompt + completion) — it already represents
-// the current context size. We replace Used, not accumulate.
 func (b TokenBudget) Add(tokens int) TokenBudget {
 	b.Used = tokens
 	return b
 }
 
-// Remaining returns how many tokens are left.
 func (b TokenBudget) Remaining() int {
 	r := b.Limit - b.Used
 	if r < 0 {
@@ -72,36 +103,24 @@ func (b TokenBudget) Remaining() int {
 	return r
 }
 
-// NeedsSummarization returns true if the remaining budget is below threshold.
 func (b TokenBudget) NeedsSummarization() bool {
 	return b.Remaining() <= b.Threshold
 }
 
-// Exhausted returns true if no tokens remain.
 func (b TokenBudget) Exhausted() bool {
 	return b.Used >= b.Limit
 }
 
-// ResetTokenBudget recalculates Used from the actual message history after compaction.
-// This prevents stale cumulative counts from persisting after history truncation.
 func ResetTokenBudget(old TokenBudget, history []Message) TokenBudget {
 	used := 0
 	for _, msg := range history {
 		used += msg.Tokens
 	}
-	return TokenBudget{
-		Limit:     old.Limit,
-		Threshold: old.Threshold,
-		Used:      used,
-	}
+	return TokenBudget{Limit: old.Limit, Threshold: old.Threshold, Used: used}
 }
 
-// ContextWindowFunc is a lookup function for model context windows.
-// Injected by the coordinator from the registry. Decouples agent from provider.
 type ContextWindowFunc func(model string) int
 
-// DefaultContextWindow is a static fallback when no registry is available.
-// Used in tests and when registry hasn't been loaded yet.
 func DefaultContextWindow(model string) int {
 	return 128_000
 }

@@ -5,6 +5,12 @@ import "github.com/m0n0x41d/haft/internal/agent"
 // Events flow from Coordinator -> TUI via the Bus.
 // Each event type implements tea.Msg (any type does in BubbleTea v2).
 
+// AssistantMessageUpdateMsg carries the evolving assistant message during and after streaming.
+type AssistantMessageUpdateMsg struct {
+	Message agent.Message
+	Done    bool
+}
+
 // StreamDeltaMsg carries a text chunk from the streaming LLM response.
 type StreamDeltaMsg struct {
 	Text string

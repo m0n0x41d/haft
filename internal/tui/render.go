@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -15,6 +16,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type viewMessage struct {
+	ID          string
 	Role        agent.Role
 	Text        string
 	Thinking    string // reasoning/thinking summary (shown in dim box)
@@ -148,6 +150,8 @@ func toolDisplayName(name string) string {
 	case "write":
 		return "Write"
 	case "edit":
+		return "Update"
+	case "multiedit":
 		return "Update"
 	case "glob":
 		return "Search"
@@ -366,98 +370,26 @@ func renderBodyText(text string, width int, style lipgloss.Style) string {
 		return ""
 	}
 	renderWidth := min(width, maxTextWidth)
-	return renderSimpleMarkdown(text, renderWidth, style)
+	return renderAssistantMarkdown(text, renderWidth, style)
 }
 
 func renderStreamingBodyText(text string, width int, style lipgloss.Style) string {
-	if text == "" {
-		return ""
-	}
-	renderWidth := min(width, maxTextWidth)
-	return style.Render(wrapPlainLinePreserveWhitespace(text, renderWidth))
+	return renderBodyText(text, width, style)
 }
 
-// renderSimpleMarkdown renders markdown without glamour.
-// Handles: inline code, code blocks, bold, lists. No word-level corruption.
-func renderSimpleMarkdown(text string, width int, style lipgloss.Style) string {
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	var result []string
-	inCodeBlock := false
-	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Background(lipgloss.Color("236"))
-	boldStyle := lipgloss.NewStyle().Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-
-	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inCodeBlock = !inCodeBlock
-			result = append(result, dimStyle.Render(line))
-			continue
-		}
-		if inCodeBlock {
-			result = append(result, codeStyle.Render(line))
-			continue
-		}
-
-		if strings.TrimSpace(line) == "" {
-			result = append(result, "")
-			continue
-		}
-
-		// First wrap plain text, THEN apply inline formatting.
-		// Never format before wrapping — ANSI codes break width measurement.
-		wrapped := strings.Split(wrapPlainLine(line, width), "\n")
-		for _, seg := range wrapped {
-			result = append(result, processInlineFormatting(seg, codeStyle, boldStyle))
-		}
+func renderAssistantMarkdown(text string, width int, style lipgloss.Style) string {
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return style.Render(wrapPlainLinePreserveWhitespace(text, width))
 	}
-	return strings.Join(result, "\n")
-}
-
-// processInlineFormatting handles `code` and **bold** in a line.
-// Splits into segments first, then styles each — never searches styled output.
-func processInlineFormatting(line string, codeStyle, boldStyle lipgloss.Style) string {
-	var result strings.Builder
-	i := 0
-	runes := []rune(line)
-	n := len(runes)
-
-	for i < n {
-		// Check for inline code: `text`
-		if runes[i] == '`' {
-			end := -1
-			for j := i + 1; j < n; j++ {
-				if runes[j] == '`' {
-					end = j
-					break
-				}
-			}
-			if end > i {
-				code := string(runes[i+1 : end])
-				result.WriteString(codeStyle.Render(" " + code + " "))
-				i = end + 1
-				continue
-			}
-		}
-		// Check for bold: **text**
-		if i+1 < n && runes[i] == '*' && runes[i+1] == '*' {
-			end := -1
-			for j := i + 2; j+1 < n; j++ {
-				if runes[j] == '*' && runes[j+1] == '*' {
-					end = j
-					break
-				}
-			}
-			if end > i {
-				bold := string(runes[i+2 : end])
-				result.WriteString(boldStyle.Render(bold))
-				i = end + 2
-				continue
-			}
-		}
-		result.WriteRune(runes[i])
-		i++
+	result, err := renderer.Render(text)
+	if err != nil {
+		return style.Render(wrapPlainLinePreserveWhitespace(text, width))
 	}
-	return result.String()
+	return strings.TrimSuffix(result, "\n")
 }
 
 // ---------------------------------------------------------------------------

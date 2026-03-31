@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -165,6 +166,33 @@ func (m Message) ToolCalls() []ToolCallPart {
 		}
 	}
 	return calls
+}
+
+func (m *Message) AppendText(delta string) {
+	for i, p := range m.Parts {
+		if tp, ok := p.(TextPart); ok {
+			m.Parts[i] = TextPart{Text: tp.Text + delta}
+			return
+		}
+	}
+	m.Parts = append(m.Parts, TextPart{Text: delta})
+}
+
+func (m *Message) AppendThinking(delta string) {
+	for i, p := range m.Parts {
+		if tp, ok := p.(TextPart); ok && strings.HasPrefix(tp.Text, "[thinking]") {
+			m.Parts[i] = TextPart{Text: tp.Text + delta}
+			return
+		}
+	}
+	m.Parts = append(m.Parts, TextPart{Text: "[thinking]" + delta})
+}
+
+func (m Message) Clone() Message {
+	parts := make([]Part, len(m.Parts))
+	copy(parts, m.Parts)
+	m.Parts = parts
+	return m
 }
 
 // ---------------------------------------------------------------------------

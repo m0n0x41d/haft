@@ -1,0 +1,363 @@
+// L5: App Shell — wires protocol, state, scroll, and components.
+
+import React, { useReducer, useEffect, useCallback, useRef, useState, useMemo } from "react"
+import { Box, Text, useApp, useInput, useStdout } from "ink"
+import type { EventEmitter } from "node:events"
+import type { JsonRpcClient } from "../protocol/client.js"
+import type { SessionListResponse, ModelListResponse, FileListResponse } from "../protocol/types.js"
+import { initialState, reducer } from "../state/store.js"
+import { buildTranscript } from "../state/transcript.js"
+import { useScroll } from "../scroll/useScroll.js"
+import { ChatView } from "./ChatView.js"
+import { StatusBar } from "./StatusBar.js"
+import { InputArea, type InputAreaHandle } from "./InputArea.js"
+import { PermissionDialog } from "./PermissionDialog.js"
+import { QuestionDialog } from "./QuestionDialog.js"
+import { Picker, type PickerItem } from "./Picker.js"
+import { Attachments, type AttachmentItem } from "./Attachments.js"
+
+type PickerMode = null | "sessions" | "models" | "files" | "commands"
+
+const SLASH_COMMANDS: PickerItem[] = [
+  { id: "/compact", label: "/compact", desc: "Compress context window" },
+  { id: "/model", label: "/model", desc: "Switch model" },
+  { id: "/resume", label: "/resume", desc: "Resume previous session" },
+  { id: "/help", label: "/help", desc: "Show commands" },
+  { id: "/frame", label: "/frame", desc: "Frame an engineering problem" },
+  { id: "/explore", label: "/explore", desc: "Explore solution variants" },
+  { id: "/decide", label: "/decide", desc: "Finalize a decision" },
+  { id: "/status", label: "/status", desc: "Decision dashboard" },
+  { id: "/problems", label: "/problems", desc: "List active problems" },
+  { id: "/refresh", label: "/refresh", desc: "Check for stale decisions" },
+  { id: "/note", label: "/note", desc: "Record a micro-decision" },
+  { id: "/search", label: "/search", desc: "Search past decisions" },
+]
+
+// Bottom area: separator + queued + input + separator + status
+const BOTTOM_ROWS = 4
+
+interface AppProps {
+  client: JsonRpcClient
+  inputEvents: EventEmitter  // L1 mouse/scroll events from terminal router
+}
+
+export function App({ client, inputEvents }: AppProps) {
+  const [state, dispatch] = useReducer(reducer, initialState())
+  const { exit } = useApp()
+  const { stdout } = useStdout()
+  const width = stdout?.columns ?? 80
+  const height = stdout?.rows ?? 24
+
+  const [pickerMode, setPickerMode] = useState<PickerMode>(null)
+  const [pickerItems, setPickerItems] = useState<PickerItem[]>([])
+  const respondRef = useRef<((result: unknown) => void) | null>(null)
+  const inputRef = useRef<InputAreaHandle>(null)
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([])
+  const [attachmentSelection, setAttachmentSelection] = useState(false)
+  const nextAttachmentId = useRef(1)
+  const phaseRef = useRef(state.phase)
+  phaseRef.current = state.phase
+
+  // Throttle streaming updates
+  const pendingUpdate = useRef<any>(null)
+  const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const throttledMsgUpdate = useCallback((params: any) => {
+    pendingUpdate.current = params
+    if (!throttleTimer.current) {
+      throttleTimer.current = setTimeout(() => {
+        if (pendingUpdate.current) {
+          dispatch({ type: "msg.update", params: pendingUpdate.current })
+          pendingUpdate.current = null
+        }
+        throttleTimer.current = null
+      }, 250)
+    }
+  }, [])
+
+  // --- L3: Transcript ---
+  const transcript = useMemo(() => buildTranscript({
+    messages: state.messages,
+    streaming: state.phase === "streaming",
+    streamingMsgId: state.streamingMsgId,
+    thinkExpanded: state.thinkExpanded,
+    error: state.error,
+    model: state.session.model,
+  }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
+
+  // --- L2: Scroll ---
+  const chatHeight = Math.max(5, height - BOTTOM_ROWS)
+  const { state: scrollState, scroll, visibleRange: vr, isAtBottom: atBottom } = useScroll(
+    inputEvents,
+    transcript.length,
+    chatHeight,
+  )
+
+  // Visible entries based on scroll
+  const visibleEntries = useMemo(() => {
+    return transcript.slice(vr.start, vr.end)
+  }, [transcript, vr.start, vr.end])
+
+  // --- Protocol ---
+  useEffect(() => {
+    client.setNotificationHandler((method, params) => {
+      const p = params as any
+      switch (method) {
+        case "init":
+          dispatch({ type: "init", session: p.session, projectRoot: p.projectRoot, messages: p.messages }); break
+        case "msg.update":
+          if (p.streaming) { throttledMsgUpdate(p) }
+          else {
+            if (throttleTimer.current) { clearTimeout(throttleTimer.current); throttleTimer.current = null }
+            dispatch({ type: "msg.update", params: p })
+          }
+          break
+        case "tool.start": dispatch({ type: "tool.start", params: p }); break
+        case "tool.progress": dispatch({ type: "tool.progress", params: p }); break
+        case "tool.done": dispatch({ type: "tool.done", params: p }); break
+        case "token.update": dispatch({ type: "token.update", params: p }); break
+        case "session.title": dispatch({ type: "session.title", title: p.title }); break
+        case "cycle.update": dispatch({ type: "cycle.update", params: p }); break
+        case "subagent.start": dispatch({ type: "subagent.start", params: p }); break
+        case "subagent.done": dispatch({ type: "subagent.done", params: p }); break
+        case "overseer.alert": dispatch({ type: "overseer.alert", alerts: p.alerts }); break
+        case "drift.update": dispatch({ type: "drift.update", params: p }); break
+        case "lsp.update": dispatch({ type: "lsp.update", params: p }); break
+        case "error": dispatch({ type: "error", message: p.message }); break
+        case "coord.done":
+          if (throttleTimer.current) { clearTimeout(throttleTimer.current); throttleTimer.current = null }
+          if (pendingUpdate.current) {
+            pendingUpdate.current.streaming = false
+            dispatch({ type: "msg.update", params: pendingUpdate.current })
+            pendingUpdate.current = null
+          }
+          dispatch({ type: "coord.done" })
+          setQueuedMessages((q) => {
+            if (q.length > 0) {
+              const next = q[0]
+              setTimeout(() => handleSubmit(next), 100)
+              return q.slice(1)
+            }
+            return q
+          })
+          break
+      }
+    })
+
+    client.setRequestHandler((method, params, respond) => {
+      const p = params as any
+      if (method === "permission.ask") {
+        dispatch({ type: "permission.ask", id: 0, toolName: p.toolName, args: p.args, description: p.description, diff: p.diff, adds: p.adds, dels: p.dels })
+        respondRef.current = respond
+      } else if (method === "question.ask") {
+        dispatch({ type: "question.ask", id: 0, question: p.question, options: p.options })
+        respondRef.current = respond
+      }
+    })
+
+    client.send("resize", { width, height })
+  }, [client, width, height])
+
+  // --- Notification auto-clear ---
+  useEffect(() => {
+    if (!state.notification) return
+    const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 3000)
+    return () => clearTimeout(timer)
+  }, [state.notification])
+
+  // --- Handlers ---
+  const handleSubmit = useCallback((text: string) => {
+    if (phaseRef.current === "streaming") {
+      setQueuedMessages((q) => [...q, text])
+      return
+    }
+    if (text.startsWith("/")) {
+      const cmd = text.split(" ")[0]
+      switch (cmd) {
+        case "/model": openModelPicker(); return
+        case "/resume": openSessionPicker(); return
+        case "/compact":
+          client.request("compact", {}).then((r: any) => {
+            dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
+          }).catch((e: Error) => dispatch({ type: "error", message: e.message }))
+          return
+        case "/help": setPickerMode("commands"); setPickerItems(SLASH_COMMANDS); return
+      }
+    }
+    dispatch({ type: "submitted" })
+    const displayParts = [text]
+    for (const a of attachments) {
+      displayParts.push(a.isImage ? `[Image #${a.id}]` : `[${a.name}]`)
+    }
+    dispatch({ type: "msg.update", params: { id: `user-${Date.now()}`, text: displayParts.join("\n"), streaming: false } })
+    const submitAttachments = attachments.map((a) => ({ name: a.name, path: a.path, isImage: a.isImage, mimeType: a.isImage ? "image/*" : undefined }))
+    client.send("submit", { text, attachments: submitAttachments.length > 0 ? submitAttachments : undefined })
+    setAttachments([])
+    setAttachmentSelection(false)
+  }, [client, attachments])
+
+  const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
+    respondRef.current?.({ action }); respondRef.current = null
+    dispatch({ type: "permission.replied" })
+    if (action === "allow_session") dispatch({ type: "set.notification", text: "Auto-approve enabled" })
+  }, [])
+
+  const handleQuestion = useCallback((answer: string) => {
+    respondRef.current?.({ answer }); respondRef.current = null
+    dispatch({ type: "question.replied" })
+  }, [])
+
+  const openFilePicker = useCallback(async () => {
+    try {
+      const resp = await client.request<FileListResponse>("file.list", { limit: 200 })
+      setPickerItems(resp.files.map((f) => ({ id: f.path, label: f.path, desc: formatSize(f.size) })))
+      setPickerMode("files")
+    } catch (e: any) { dispatch({ type: "error", message: `file list: ${e.message}` }) }
+  }, [client])
+
+  const openModelPicker = useCallback(async () => {
+    try {
+      const resp = await client.request<ModelListResponse>("model.list", {})
+      setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \u00B7 ${Math.round(m.contextWindow / 1000)}k` })))
+      setPickerMode("models")
+    } catch (e: any) { dispatch({ type: "error", message: `model list: ${e.message}` }) }
+  }, [client])
+
+  const openSessionPicker = useCallback(async () => {
+    try {
+      const resp = await client.request<SessionListResponse>("session.list", { limit: 20 })
+      setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })))
+      setPickerMode("sessions")
+    } catch (e: any) { dispatch({ type: "error", message: `session list: ${e.message}` }) }
+  }, [client])
+
+  const handlePickerSelect = useCallback((item: PickerItem) => {
+    const mode = pickerMode; setPickerMode(null)
+    switch (mode) {
+      case "models": client.request("model.switch", { model: item.id }).catch((e: any) => dispatch({ type: "error", message: e.message })); break
+      case "sessions": client.request("session.resume", { sessionId: item.id }).then((r: any) => dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages })).catch((e: any) => dispatch({ type: "error", message: e.message })); break
+      case "files": {
+        const isImg = /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(item.id)
+        const id = nextAttachmentId.current++
+        setAttachments((a) => [...a, { id, name: item.id.split("/").pop() || item.id, path: item.id, isImage: isImg }])
+        break
+      }
+      case "commands": handleSubmit(item.id); break
+    }
+  }, [pickerMode, client, state.projectRoot, handleSubmit])
+
+  // --- Keyboard scroll + global shortcuts ---
+  // Our useInput uses useEventCallback internally — handler closures are
+  // always fresh (reads latest state/pickerMode), but the listener is
+  // registered ONCE and never re-appended. No refs needed.
+  useInput((input, key) => {
+    if (pickerMode) return
+
+    // Ctrl+C ALWAYS works — never blocked
+    if (key.ctrl && input === "c") {
+      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }) }
+      else exit()
+      return
+    }
+    if (key.ctrl && input === "q") {
+      const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic"
+      dispatch({ type: "toggle.autonomy" })
+      client.send("autonomy.toggle", { autonomous: newMode === "autonomous" })
+      dispatch({ type: "set.notification", text: `${newMode} mode` })
+      return
+    }
+    if (key.ctrl && input === "m") { openModelPicker(); return }
+    if (key.escape && state.error) { dispatch({ type: "clear.error" }); return }
+
+    // Keyboard scroll
+    if (key.upArrow && key.shift) { scroll({ type: "wheelUp", amount: 3 }); return }
+    if (key.downArrow && key.shift) { scroll({ type: "wheelDown", amount: 3 }); return }
+    if (key.pageUp) { scroll({ type: "pageUp" }); return }
+    if (key.pageDown) { scroll({ type: "pageDown" }); return }
+
+    if (state.phase !== "input" || input === "") {
+      if (input === "t") { dispatch({ type: "toggle.think" }); return }
+    }
+  })
+
+  const showPermission = state.phase === "permission" && state.permissionRequest
+  const showQuestion = state.phase === "question" && state.questionRequest
+
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      {/* Chat: fixed height, overflow clipped, content anchored bottom */}
+      <Box flexDirection="column" height={chatHeight} overflowY="hidden">
+        <Box flexGrow={1} />
+        <ChatView entries={visibleEntries} width={width} />
+      </Box>
+
+      {/* Scroll indicator */}
+      {scrollState.offset > 0 && (
+        <Text dimColor>  {"\u2191"} {scrollState.offset} entries above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
+      )}
+
+      {/* Overlays */}
+      {showPermission && <PermissionDialog request={state.permissionRequest!} onRespond={handlePermission} width={width} />}
+      {showQuestion && <QuestionDialog question={state.questionRequest!.question} options={state.questionRequest!.options} onRespond={handleQuestion} width={width} />}
+      {pickerMode && <Picker title={pickerTitle(pickerMode)} items={pickerItems} onSelect={handlePickerSelect} onCancel={() => setPickerMode(null)} width={width} />}
+
+      {/* Separator */}
+      <Text dimColor>{"\u2500".repeat(width)}</Text>
+
+      {/* Queued messages */}
+      {queuedMessages.length > 0 && (
+        <Box flexDirection="column" paddingX={1}>
+          {queuedMessages.map((msg, i) => (
+            <Box key={i}><Text backgroundColor="blackBright" dimColor>{" \u276F "}{msg}{" "}</Text></Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Attachments */}
+      {attachments.length > 0 && (
+        <Attachments items={attachments} onRemove={(id) => { setAttachments((a) => a.filter((x) => x.id !== id)); if (attachments.length <= 1) setAttachmentSelection(false) }} selectionMode={attachmentSelection} onExitSelection={() => setAttachmentSelection(false)} />
+      )}
+
+      {/* Input */}
+      <InputArea
+        ref={inputRef}
+        phase={pickerMode ? "picker" : state.phase}
+        onSubmit={handleSubmit}
+        onAtMention={openFilePicker}
+        onSlashCommand={() => { setPickerMode("commands"); setPickerItems(SLASH_COMMANDS) }}
+        onPopQueue={() => { if (queuedMessages.length === 0) return null; const m = [...queuedMessages]; setQueuedMessages([]); return m }}
+        onEnterAttachmentSelection={() => setAttachmentSelection(true)}
+        onPasteImage={(path) => { const id = nextAttachmentId.current++; setAttachments((a) => [...a, { id, name: `Image #${id}`, path, isImage: true }]) }}
+        hasAttachments={attachments.length > 0}
+        width={width}
+        hasQueuedMessages={queuedMessages.length > 0}
+      />
+
+      {/* Bottom separator */}
+      <Text dimColor>{"\u2500".repeat(width)}</Text>
+
+      {/* Status */}
+      <StatusBar
+        model={state.session.model} tokensUsed={state.tokensUsed} tokensLimit={state.tokensLimit}
+        mode={state.mode} streaming={state.phase === "streaming"} subagents={state.activeSubagents}
+        cycle={state.cycle} drift={state.drift} notification={state.notification} width={width}
+      />
+    </Box>
+  )
+}
+
+function pickerTitle(mode: PickerMode): string {
+  switch (mode) {
+    case "models": return "Select model"
+    case "sessions": return "Resume session"
+    case "files": return "Select file"
+    case "commands": return "Commands"
+    default: return "Select"
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}M`
+}

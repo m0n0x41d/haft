@@ -3,6 +3,9 @@ version: '3'
 vars:
   BIN_NAME: haft
   BIN_DIR: ~/.local/bin
+  TUI_DIR: tui
+  TUI_BUNDLE: tui/dist/tui.mjs
+  TUI_INSTALL_DIR: ~/.haft/tui
 
 tasks:
   default:
@@ -13,34 +16,63 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test -v ./...
+      - go test ./...
 
   lint:
-    desc: Run linter (go vet)
+    desc: Run linter (go vet + typecheck)
     cmds:
       - go vet ./...
+      - cd {{.TUI_DIR}} && bun run typecheck
+
+  tui:
+    desc: Build TUI bundle
+    cmds:
+      - cd {{.TUI_DIR}} && bun run build
+    sources:
+      - tui/src/**/*.ts
+      - tui/src/**/*.tsx
+    generates:
+      - '{{.TUI_BUNDLE}}'
 
   build:
-    desc: Build binary
+    desc: Build Go binary + TUI bundle
+    deps: [tui]
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
       - '{{.BIN_NAME}}'
 
   install:
-    desc: Build and install to ~/.local/bin
+    desc: Build and install haft (binary + TUI) locally
+    deps: [tui]
     cmds:
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
-      - echo "Installed to {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - mkdir -p {{.TUI_INSTALL_DIR}}
+      - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs
+      - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - echo "Installed {{.TUI_INSTALL_DIR}}/bundle.mjs"
+
+  dev:
+    desc: Build Go binary only (TUI runs from source via bun)
+    cmds:
+      - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
+
+  doctor:
+    desc: Run haft doctor health check
+    cmds:
+      - go run ./cmd/haft doctor
 
   clean:
-    desc: Remove local build binary
+    desc: Remove local build artifacts
     cmds:
       - rm -f {{.BIN_NAME}}
+      - rm -rf tui/dist
 
   cleanup:
-    desc: Remove all built binaries (local + installed)
+    desc: Remove all built binaries and installed files
     cmds:
       - rm -f {{.BIN_NAME}}
+      - rm -rf tui/dist
       - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
+      - rm -rf {{.TUI_INSTALL_DIR}}
       - echo "Cleaned up"

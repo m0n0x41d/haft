@@ -67,8 +67,8 @@ func TestBuildResponseParamsMovesSystemPromptToInstructions(t *testing.T) {
 	if reasoning["effort"] != "medium" {
 		t.Fatalf("expected reasoning.effort=medium, got %#v", reasoning["effort"])
 	}
-	if reasoning["summary"] != "auto" {
-		t.Fatalf("expected reasoning.summary=auto, got %#v", reasoning["summary"])
+	if reasoning["summary"] != "concise" {
+		t.Fatalf("expected reasoning.summary=concise, got %#v", reasoning["summary"])
 	}
 	include, ok := payload["include"].([]any)
 	if !ok || len(include) != 1 {

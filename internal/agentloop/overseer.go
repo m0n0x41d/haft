@@ -7,8 +7,8 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/session"
-	"github.com/m0n0x41d/haft/internal/tui"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -19,7 +19,7 @@ import (
 type Overseer struct {
 	ArtifactStore   artifact.ArtifactStore
 	Cycles          session.CycleStore
-	Bus             *tui.Bus
+	Bus             *protocol.Bus
 	CoordinatorChan chan []string // alerts injected into agent context
 	SessionID       string
 	ProjectRoot     string
@@ -85,7 +85,7 @@ func (o *Overseer) check(ctx context.Context) {
 	}
 
 	// Always send to TUI — even empty alerts clear the status bar
-	o.Bus.Send(tui.OverseerAlertMsg{Alerts: alerts})
+	o.Bus.SendOverseerAlert(protocol.OverseerAlert{Alerts: alerts})
 
 	if len(alerts) > 0 {
 		// Send to coordinator (system message injection)

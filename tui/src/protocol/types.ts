@@ -1,0 +1,202 @@
+// L2: Protocol types — mirrors internal/protocol/*.go exactly.
+// One canonical form per message. Generated from the same spec.
+
+// --- Wire format ---
+
+export interface JsonRpcMessage {
+  jsonrpc: "2.0"
+  method?: string
+  params?: unknown
+  result?: unknown
+  error?: { code: number; message: string }
+  id?: number
+}
+
+// --- Backend → TUI notifications ---
+
+export interface InitParams {
+  session: SessionInfo
+  projectRoot: string
+  width: number
+  height: number
+  messages?: MsgInfo[]
+}
+
+export interface SessionInfo {
+  id: string
+  title: string
+  model: string
+}
+
+export interface MsgInfo {
+  id: string
+  role: "user" | "assistant"
+  text: string
+  thinking?: string
+  tools?: ToolCall[]
+}
+
+export interface MsgUpdateParams {
+  id: string
+  text: string
+  thinking?: string
+  tools?: ToolCall[]
+  streaming: boolean
+}
+
+export interface ToolCall {
+  callId: string
+  name: string
+  args: string
+  output?: string
+  isError?: boolean
+  running: boolean
+  subagentId?: string
+  children?: ToolCall[]
+}
+
+export interface ToolStartParams {
+  callId: string
+  name: string
+  args: string
+  subagentId?: string
+}
+
+export interface ToolProgressParams {
+  callId: string
+  text: string
+}
+
+export interface ToolDoneParams {
+  callId: string
+  name: string
+  output: string
+  isError: boolean
+  subagentId?: string
+}
+
+export interface TokenUpdateParams {
+  used: number
+  limit: number
+}
+
+export interface SessionTitleParams {
+  title: string
+}
+
+export interface CycleUpdateParams {
+  cycleId: string
+  problemRef: string
+  problemTitle: string
+  portfolioRef?: string
+  decisionRef?: string
+  phase: "frame" | "explore" | "compare" | "decide" | "implement" | "measure"
+  status: "active" | "complete" | "abandoned"
+  rEff: number
+}
+
+export interface SubagentStartParams {
+  subagentId: string
+  name: string
+  task: string
+}
+
+export interface SubagentDoneParams {
+  subagentId: string
+  summary: string
+  isError: boolean
+}
+
+export interface OverseerAlertParams {
+  alerts: string[]
+}
+
+export interface DriftUpdateParams {
+  drifted: number
+  stale: number
+  coverage: number
+}
+
+export interface LspUpdateParams {
+  servers: Record<string, string>
+  errors: number
+  warnings: number
+}
+
+export interface ErrorParams {
+  message: string
+}
+
+// --- Backend → TUI requests ---
+
+export interface PermissionAskParams {
+  toolName: string
+  args: string
+  description: string
+  filePath?: string
+  diff?: string
+  adds?: number
+  dels?: number
+}
+
+export interface PermissionReply {
+  action: "allow" | "allow_session" | "deny"
+}
+
+export interface QuestionAskParams {
+  question: string
+  options?: string[]
+}
+
+export interface QuestionReply {
+  answer: string
+}
+
+// --- TUI → Backend notifications ---
+
+export interface SubmitParams {
+  text: string
+  displayText?: string
+  attachments?: Attachment[]
+}
+
+export interface Attachment {
+  name: string
+  path: string
+  mimeType?: string
+  isImage: boolean
+  content?: string
+  data?: string
+}
+
+export interface ResizeParams {
+  width: number
+  height: number
+}
+
+// --- TUI → Backend requests ---
+
+export interface SessionListResponse {
+  sessions: SessionInfo[]
+}
+
+export interface ModelInfo {
+  id: string
+  name: string
+  provider: string
+  contextWindow: number
+  canReason: boolean
+}
+
+export interface ModelListResponse {
+  models: ModelInfo[]
+}
+
+export interface FileInfo {
+  path: string
+  size: number
+}
+
+export interface FileListResponse {
+  files: FileInfo[]
+}

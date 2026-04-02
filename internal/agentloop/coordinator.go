@@ -13,10 +13,11 @@ import (
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/hooks"
+	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
 	"github.com/m0n0x41d/haft/internal/session"
 	"github.com/m0n0x41d/haft/internal/tools"
-	"github.com/m0n0x41d/haft/internal/tui"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -38,7 +39,7 @@ type Coordinator struct {
 	Messages      session.MessageStore
 	Cycles        session.CycleStore
 	ArtifactStore artifact.ArtifactStore
-	Bus           *tui.Bus
+	Bus           *protocol.Bus
 	SystemPrompt  string
 	AgentDef      agent.AgentDef
 	Subagents     *SubagentTracker
@@ -47,7 +48,15 @@ type Coordinator struct {
 	repoMapDirty    bool                 // true = needs rebuild before next LLM call
 	evidence        *agent.EvidenceChain // auto-tracked evidence for active decision
 	OverseerAlerts  chan []string         // pending alerts from background overseer (thread-safe)
+	planMode        bool                 // true = write tools blocked (plan mode active)
+	Hooks           *hooks.Executor      // optional: pre/post tool hooks
 }
+
+// SetPlanMode toggles plan mode. Implements tools.PlanModeController.
+func (c *Coordinator) SetPlanMode(enabled bool) { c.planMode = enabled }
+
+// IsPlanMode returns whether plan mode is active. Implements tools.PlanModeController.
+func (c *Coordinator) IsPlanMode() bool { return c.planMode }
 
 // Run executes one user turn: save message → react loop → done.
 func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []agent.Part) {
@@ -57,9 +66,9 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error().Str("component", "agent").Interface("panic", r).Msg("agent.panic")
-			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("coordinator panic: %v", r)})
+			c.Bus.SendError(fmt.Sprintf("coordinator panic: %v", r))
 		}
-		c.Bus.Send(tui.CoordinatorDoneMsg{})
+		c.Bus.SendCoordDone()
 	}()
 
 	logger.AgentSession("user_turn", sess.ID, sess.Model)
@@ -112,7 +121,7 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 			c.sendCycleUpdate(cycle)
 		} else {
 			// No active cycle — clear any stale display from previous session
-			c.Bus.Send(tui.CycleUpdateMsg{})
+			c.Bus.SendCycleUpdate(protocol.CycleUpdate{})
 		}
 	}
 
@@ -125,13 +134,13 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := c.Messages.Save(ctx, userMsg); err != nil {
-		c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("save user message: %w", err)})
+		c.Bus.SendError(fmt.Sprintf("save user message: %s", err))
 		return
 	}
 
 	history, err := c.Messages.ListBySession(ctx, sess.ID)
 	if err != nil {
-		c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("load history: %w", err)})
+		c.Bus.SendError(fmt.Sprintf("load history: %s", err))
 		return
 	}
 	history = sanitizeHistory(history)
@@ -223,7 +232,7 @@ func (c *Coordinator) reactLoop(
 		switch loopLevel {
 		case agent.LoopHard:
 			logger.Warn().Str("component", "agent").Msg("agent.loop_hard_stop")
-			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("loop detected: agent is repeating the same tool calls")})
+			c.Bus.SendError("loop detected: agent is repeating the same tool calls")
 			return
 		case agent.LoopWarning:
 			// Yellow: inject warning, don't stop. Agent should summarize and ask user.
@@ -254,7 +263,7 @@ func (c *Coordinator) reactLoop(
 		// Token budget
 		if tokenBudget.Exhausted() {
 			logger.Warn().Str("component", "agent").Int("used", tokenBudget.Used).Msg("agent.tokens_exhausted")
-			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("context window exhausted (%d/%d tokens)", tokenBudget.Used, tokenBudget.Limit)})
+			c.Bus.SendError(fmt.Sprintf("context window exhausted (%d/%d tokens)", tokenBudget.Used, tokenBudget.Limit))
 			return
 		}
 
@@ -291,7 +300,7 @@ func (c *Coordinator) reactLoop(
 			}
 			if updated {
 				_ = c.Messages.UpdateMessage(ctx, liveAssistant)
-				c.Bus.Send(tui.AssistantMessageUpdateMsg{Message: liveAssistant.Clone()})
+				c.Bus.SendMsgUpdate(msgToUpdate(liveAssistant, true))
 			}
 		})
 		llmCancel()
@@ -304,29 +313,49 @@ func (c *Coordinator) reactLoop(
 						fmt.Sprintf("Tool call interrupted: %s", err.Error()), true, &fullHistory)
 				}
 			}
-			c.Bus.Send(tui.ErrorMsg{Err: err})
+			c.Bus.SendError(err.Error())
 			return
 		}
 
 		assistantMsg.ID = liveAssistant.ID
 		assistantMsg.SessionID = sess.ID
-		assistantMsg.Parts = liveAssistant.Parts
 		assistantMsg.CreatedAt = liveAssistant.CreatedAt
+		// Merge: responseToMessage has authoritative text + tool calls from final response.
+		// liveAssistant has streaming-accumulated thinking (reasoning summaries).
+		// Append thinking parts that only exist in the streaming accumulator.
+		for _, p := range liveAssistant.Parts {
+			if tp, ok := p.(agent.TextPart); ok && strings.HasPrefix(tp.Text, "[thinking]") {
+				assistantMsg.Parts = append(assistantMsg.Parts, tp)
+			}
+		}
 		_ = c.Messages.UpdateMessage(ctx, assistantMsg)
-		c.Bus.Send(tui.AssistantMessageUpdateMsg{Message: assistantMsg.Clone(), Done: true})
+		c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
 
 		toolCalls := assistantMsg.ToolCalls()
 		tokenBudget = tokenBudget.Add(assistantMsg.Tokens)
-		c.Bus.Send(tui.TokenUpdateMsg{Used: tokenBudget.Used, Limit: tokenBudget.Limit})
+		c.Bus.SendTokenUpdate(protocol.TokenUpdate{Used: tokenBudget.Used, Limit: tokenBudget.Limit})
+
+		// Log LLM response details
+		toolNames := make([]string, len(toolCalls))
+		for i, tc := range toolCalls {
+			toolNames[i] = tc.ToolName
+		}
+		logger.Info().Str("component", "agent").
+			Int("step", step).
+			Int("tool_calls", len(toolCalls)).
+			Bool("has_text", assistantMsg.Text() != "").
+			Int("tokens", assistantMsg.Tokens).
+			Strs("tools", toolNames).
+			Msg("agent.llm_response")
 
 		// Detect empty response — LLM returned nothing useful
 		hasText := assistantMsg.Text() != ""
 		hasThinking := liveAssistant != nil && strings.Contains(liveAssistant.Text(), "[thinking]")
 		if !hasText && len(toolCalls) == 0 && !hasThinking {
 			if tokenBudget.NeedsSummarization() {
-				c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("context window nearly full (%d/%d tokens). Use /compact to free space", tokenBudget.Used, tokenBudget.Limit)})
+				c.Bus.SendError(fmt.Sprintf("context window nearly full (%d/%d tokens). Use /compact to free space", tokenBudget.Used, tokenBudget.Limit))
 			} else {
-				c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf("model returned empty response — try rephrasing or use /compact")})
+				c.Bus.SendError("model returned empty response — try rephrasing or use /compact")
 			}
 			return
 		}
@@ -352,8 +381,8 @@ func (c *Coordinator) reactLoop(
 			logger.Warn().Str("component", "agent").
 				Int("budget", maxToolCalls).
 				Msg("agent.tool_budget_exhausted")
-			c.Bus.Send(tui.ErrorMsg{Err: fmt.Errorf(
-				"tool call budget exhausted (%d calls)", maxToolCalls)})
+			c.Bus.SendError(fmt.Sprintf(
+				"tool call budget exhausted (%d calls)", maxToolCalls))
 			return
 		}
 
@@ -418,6 +447,36 @@ func (c *Coordinator) executeToolCalls(
 	toolCalls []agent.ToolCallPart,
 	fullHistory *[]agent.Message,
 ) []toolCallResult {
+	// Plan mode enforcement: block write tools before they reach the executor
+	if c.planMode {
+		var allowed []agent.ToolCallPart
+		var blocked []toolCallResult
+		for _, tc := range toolCalls {
+			if tools.PlanModeGuard(c, tc.ToolName) {
+				c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
+				msg := tools.PlanModeBlockMessage(tc.ToolName)
+				c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: msg, IsError: true})
+				blocked = append(blocked, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: msg, isError: true})
+			} else {
+				allowed = append(allowed, tc)
+			}
+		}
+		if len(allowed) == 0 {
+			return blocked
+		}
+		results := c.executeToolCallsInner(ctx, sess, allowed, fullHistory)
+		return append(blocked, results...)
+	}
+
+	return c.executeToolCallsInner(ctx, sess, toolCalls, fullHistory)
+}
+
+func (c *Coordinator) executeToolCallsInner(
+	ctx context.Context,
+	sess *agent.Session,
+	toolCalls []agent.ToolCallPart,
+	fullHistory *[]agent.Message,
+) []toolCallResult {
 	// Check if all tool calls can run without permission
 	allSafe := true
 	for _, tc := range toolCalls {
@@ -444,12 +503,12 @@ func (c *Coordinator) executeToolCallsParallel(
 	// Send start events: non-agent tools first, then spawn_agent
 	for _, tc := range toolCalls {
 		if tc.ToolName != "spawn_agent" {
-			c.Bus.Send(tui.ToolStartMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Args: tc.Arguments})
+			c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 		}
 	}
 	for _, tc := range toolCalls {
 		if tc.ToolName == "spawn_agent" {
-			c.Bus.Send(tui.ToolStartMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Args: tc.Arguments})
+			c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 		}
 	}
 
@@ -472,7 +531,7 @@ func (c *Coordinator) executeToolCallsParallel(
 
 			output = truncateToolOutput(output)
 			results[idx] = toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: toolResult.Meta}
-			c.Bus.Send(tui.ToolDoneMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Output: output, IsError: isError})
+			c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
 		}(i, tc)
 	}
 	wg.Wait()
@@ -497,7 +556,7 @@ func (c *Coordinator) executeToolCallsSequential(
 			break
 		}
 
-		c.Bus.Send(tui.ToolStartMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Args: tc.Arguments})
+		c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 
 		var output string
 		var isError bool
@@ -506,16 +565,27 @@ func (c *Coordinator) executeToolCallsSequential(
 		// Permission check
 		level := agent.EvaluatePermission(tc.ToolName, tc.Arguments)
 		if level == agent.PermissionNeedsApproval {
-			replyCh := make(chan bool, 1)
-			c.Bus.Send(tui.PermissionAskMsg{ToolName: tc.ToolName, Args: tc.Arguments, Reply: replyCh})
-			select {
-			case allowed := <-replyCh:
-				if !allowed {
-					output = "Permission denied by user."
+			reply, err := c.Bus.AskPermission(protocol.PermissionAsk{
+				ToolName: tc.ToolName,
+				Args:     tc.Arguments,
+			})
+			if err != nil || reply.Action == "deny" {
+				output = "Permission denied by user."
+				isError = true
+			}
+		}
+
+		// Pre-tool hook
+		if output == "" && c.Hooks != nil && c.Hooks.HasHooks() {
+			hookResults := c.Hooks.Run(ctx, hooks.TriggerPreTool, hooks.HookEnv{
+				ToolName: tc.ToolName, ToolArgs: tc.Arguments, SessionID: sess.ID,
+			})
+			for _, hr := range hookResults {
+				if hr.Blocked {
+					output = fmt.Sprintf("Blocked by hook '%s': %s", hr.Name, hr.Message)
 					isError = true
+					break
 				}
-			case <-ctx.Done():
-				break
 			}
 		}
 
@@ -531,10 +601,17 @@ func (c *Coordinator) executeToolCallsSequential(
 				meta = toolResult.Meta
 			}
 			logger.AgentToolExec(tc.ToolName, tc.ToolCallID, time.Since(toolStart).Milliseconds(), isError)
+
+			// Post-tool hook
+			if c.Hooks != nil && c.Hooks.HasHooks() {
+				c.Hooks.Run(ctx, hooks.TriggerPostTool, hooks.HookEnv{
+					ToolName: tc.ToolName, ToolArgs: tc.Arguments, ToolOutput: output, SessionID: sess.ID,
+				})
+			}
 		}
 
 		output = truncateToolOutput(output)
-		c.Bus.Send(tui.ToolDoneMsg{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Output: output, IsError: isError})
+		c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
 		c.saveToolResult(ctx, sess, tc.ToolCallID, tc.ToolName, output, isError, fullHistory)
 		results = append(results, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: meta})
 	}
@@ -821,14 +898,14 @@ func (c *Coordinator) sendCycleUpdate(cycle *agent.Cycle) {
 		}
 	}
 
-	c.Bus.Send(tui.CycleUpdateMsg{
+	c.Bus.SendCycleUpdate(protocol.CycleUpdate{
 		CycleID:      cycle.ID,
 		ProblemRef:   cycle.ProblemRef,
 		ProblemTitle: problemTitle,
 		PortfolioRef: cycle.PortfolioRef,
 		DecisionRef:  cycle.DecisionRef,
-		Phase:        cycle.Phase,
-		Status:       cycle.Status,
+		Phase:        string(cycle.Phase),
+		Status:       string(cycle.Status),
 		REff:         cycle.REff,
 	})
 }
@@ -906,7 +983,7 @@ func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {
 
 	sess.Title = title
 	_ = c.Sessions.Update(context.Background(), sess)
-	c.Bus.Send(tui.SessionTitleMsg{Title: title})
+	c.Bus.SendSessionTitle(protocol.SessionTitle{Title: title})
 }
 
 // sanitizeHistory ensures every tool call has a matching tool result.
@@ -973,4 +1050,35 @@ func extractJSONField(argsJSON, field string) string {
 
 func newMsgID() string {
 	return "msg_" + uuid.New().String()
+}
+
+// msgToUpdate converts an agent.Message to a protocol.MsgUpdate for the TUI.
+func msgToUpdate(msg *agent.Message, streaming bool) protocol.MsgUpdate {
+	var thinking string
+	var toolCalls []protocol.ToolCall
+	for _, p := range msg.Parts {
+		switch tp := p.(type) {
+		case agent.TextPart:
+			if strings.HasPrefix(tp.Text, "[thinking]") {
+				if thinking != "" {
+					thinking += "\n"
+				}
+				thinking += strings.TrimPrefix(tp.Text, "[thinking]")
+			}
+		case agent.ToolCallPart:
+			toolCalls = append(toolCalls, protocol.ToolCall{
+				CallID:  tp.ToolCallID,
+				Name:    tp.ToolName,
+				Args:    tp.Arguments,
+				Running: streaming,
+			})
+		}
+	}
+	return protocol.MsgUpdate{
+		ID:        msg.ID,
+		Text:      msg.Text(),
+		Thinking:  thinking,
+		Tools:     toolCalls,
+		Streaming: streaming,
+	}
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/m0n0x41d/haft/internal/agent"
+	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
-	"github.com/m0n0x41d/haft/internal/tui"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -160,14 +160,20 @@ func (c *Coordinator) SpawnSubagent(
 		Msg("agent.subagent_spawned")
 
 	// Notify TUI
-	c.Bus.Send(tui.SubagentStartMsg{
+	c.Bus.SendSubagentStart(protocol.SubagentStart{
 		SubagentID: subagentID,
 		Name:       def.Name,
 		Task:       task,
 	})
 
 	// Launch goroutine
-	go c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, resultCh)
+	if def.Fork {
+		// Fork mode: inherit parent conversation history (prompt cache sharing)
+		parentHistory, _ := c.Messages.ListBySession(ctx, parentSess.ID)
+		go c.runForkSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, parentHistory, resultCh)
+	} else {
+		go c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, resultCh)
+	}
 
 	return handle, nil
 }
@@ -193,7 +199,7 @@ func (c *Coordinator) runSubagent(
 			resultCh <- SubagentResult{ID: subagentID, Error: fmt.Errorf("subagent panic: %v", r)}
 		}
 		c.Subagents.MarkDone(subagentID)
-		c.Bus.Send(tui.SubagentDoneMsg{SubagentID: subagentID})
+		c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
 	}()
 
 	// Build message history: system + user task
@@ -213,6 +219,62 @@ func (c *Coordinator) runSubagent(
 	history := []agent.Message{systemMsg, *userMsg}
 
 	// Run a simplified reactLoop — no phase transitions, no signals
+	result := c.subagentLoop(ctx, sess, subagentID, history, toolSchemas, maxSteps, readOnly)
+	resultCh <- result
+}
+
+// runForkSubagent runs a fork subagent that inherits the parent's conversation history.
+// This enables prompt cache sharing — the LLM sees the same prefix and can reuse cached computation.
+func (c *Coordinator) runForkSubagent(
+	ctx context.Context,
+	sess *agent.Session,
+	subagentID string,
+	systemPrompt string,
+	task string,
+	toolSchemas []agent.ToolSchema,
+	maxSteps int,
+	readOnly bool,
+	parentHistory []agent.Message,
+	resultCh chan<- SubagentResult,
+) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error().Str("component", "agent").
+				Str("subagent_id", subagentID).
+				Interface("panic", r).
+				Msg("agent.fork_subagent_panic")
+			resultCh <- SubagentResult{ID: subagentID, Error: fmt.Errorf("fork subagent panic: %v", r)}
+		}
+		c.Subagents.MarkDone(subagentID)
+		c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
+	}()
+
+	// Build history: parent messages + system role injection + task
+	// Replace the parent's system prompt with the fork's focused prompt
+	var history []agent.Message
+	for _, msg := range parentHistory {
+		if msg.Role == agent.RoleSystem {
+			// Inject fork system prompt instead of parent's
+			history = append(history, agent.Message{
+				Role:  agent.RoleSystem,
+				Parts: []agent.Part{agent.TextPart{Text: systemPrompt + "\n\n" + msg.Text()}},
+			})
+		} else {
+			history = append(history, msg)
+		}
+	}
+
+	// Add the fork task as a new user message
+	userMsg := &agent.Message{
+		ID:        newMsgID(),
+		SessionID: sess.ID,
+		Role:      agent.RoleUser,
+		Parts:     []agent.Part{agent.TextPart{Text: "[Fork task] " + task}},
+		CreatedAt: time.Now().UTC(),
+	}
+	_ = c.Messages.Save(ctx, userMsg)
+	history = append(history, *userMsg)
+
 	result := c.subagentLoop(ctx, sess, subagentID, history, toolSchemas, maxSteps, readOnly)
 	resultCh <- result
 }
@@ -268,9 +330,9 @@ func (c *Coordinator) subagentLoop(
 			}
 
 			// Send tagged ToolStartMsg (TUI renders nested under spawn)
-			c.Bus.Send(tui.ToolStartMsg{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
+			c.Bus.SendToolStart(protocol.ToolStart{
+				CallID:     tc.ToolCallID,
+				Name:       tc.ToolName,
 				Args:       tc.Arguments,
 				SubagentID: subagentID,
 			})
@@ -284,9 +346,9 @@ func (c *Coordinator) subagentLoop(
 				output = output[:maxBytes] + "\n... (truncated)"
 			}
 
-			c.Bus.Send(tui.ToolDoneMsg{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
+			c.Bus.SendToolDone(protocol.ToolDone{
+				CallID:     tc.ToolCallID,
+				Name:       tc.ToolName,
 				Output:     output,
 				IsError:    isError,
 				SubagentID: subagentID,
@@ -367,7 +429,7 @@ func (c *Coordinator) WaitSubagents(ctx context.Context, ids []string, timeoutMs
 				summary = result.Error.Error()
 				isError = true
 			}
-			c.Bus.Send(tui.SubagentDoneMsg{
+			c.Bus.SendSubagentDone(protocol.SubagentDone{
 				SubagentID: id,
 				Summary:    summary,
 				IsError:    isError,

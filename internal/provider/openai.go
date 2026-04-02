@@ -94,6 +94,11 @@ func (p *OpenAIProvider) Stream(
 			if event.Delta != "" {
 				handler(StreamDelta{Thinking: event.Delta})
 			}
+		case "response.content_part.delta":
+			// Some models/backends emit content deltas under this type
+			if event.Delta != "" {
+				handler(StreamDelta{Text: event.Delta})
+			}
 		case "response.completed":
 			resp := event.Response
 			finalResp = &resp
@@ -272,26 +277,20 @@ func responseToMessage(resp responses.Response) *agent.Message {
 		Model:     resp.Model,
 		CreatedAt: time.Now().UTC(),
 	}
+	// OutputText() concatenates all text from output items — use it as the
+	// single source of truth. Don't also extract from "message" items or
+	// text gets doubled.
 	if text := resp.OutputText(); text != "" {
 		msg.Parts = append(msg.Parts, agent.TextPart{Text: text})
 	}
 	for _, item := range resp.Output {
-		switch item.Type {
-		case "function_call":
+		if item.Type == "function_call" {
 			call := item.AsFunctionCall()
 			msg.Parts = append(msg.Parts, agent.ToolCallPart{
 				ToolCallID: call.CallID,
 				ToolName:   call.Name,
 				Arguments:  call.Arguments,
 			})
-		case "message":
-			// Reasoning models may return output as message items
-			m := item.AsMessage()
-			for _, content := range m.Content {
-				if content.Type == "output_text" {
-					msg.Parts = append(msg.Parts, agent.TextPart{Text: content.Text})
-				}
-			}
 		}
 	}
 	msg.Tokens = int(resp.Usage.TotalTokens)
@@ -389,7 +388,7 @@ func writeDebugLog(err error, requestDebug string) {
 	_, _ = f.WriteString(buf.String())
 }
 
-func defaultReasoningForModel(model, authType string) (shared.ReasoningParam, bool) {
+func defaultReasoningForModel(model, _ string) (shared.ReasoningParam, bool) {
 	if !isReasoningModel(model) {
 		return shared.ReasoningParam{}, false
 	}
@@ -399,13 +398,10 @@ func defaultReasoningForModel(model, authType string) (shared.ReasoningParam, bo
 		effort = shared.ReasoningEffortHigh
 	}
 
-	// Codex backend: use concise summary to reduce output budget consumption.
-	// The backend doesn't support MaxOutputTokens, so verbose thinking summaries
-	// can exhaust the output budget leaving no tokens for the actual response.
-	summary := shared.ReasoningSummaryAuto
-	if authType == "codex" || authType == "codex_cli" {
-		summary = shared.ReasoningSummaryConcise
-	}
+	// Always request concise summary. "auto" allows OpenAI to skip summaries
+	// entirely, which produces zero streaming deltas — the model thinks for
+	// thousands of tokens but nothing is visible to the user.
+	summary := shared.ReasoningSummaryConcise
 
 	return shared.ReasoningParam{
 		Effort:  effort,

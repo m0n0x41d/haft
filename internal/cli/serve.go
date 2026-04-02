@@ -28,7 +28,7 @@ var serveCmd = &cobra.Command{
 	Long: `Start the Model Context Protocol (MCP) server for AI tool integration.
 
 The server communicates via stdio and provides Haft v5 tools to AI
-assistants like Claude Code, Cursor, Gemini CLI, and Codex CLI.
+assistants like Cursor, Gemini CLI, and Codex CLI.
 
 The project root is determined by:
   1. HAFT_PROJECT_ROOT environment variable (if set)
@@ -999,7 +999,7 @@ func parseStringArrayFromArgs(args map[string]any, key string) []string {
 }
 
 // parseDimensions handles MCP client serialization of comparison dimensions.
-// Claude Code may send the array as:
+// Some MCP clients may send the array as:
 //   - []any (parsed JSON array) — standard case
 //   - string (JSON-encoded string) — when the client serializes nested arrays as strings
 func parseDimensions(raw any) []artifact.ComparisonDimension {

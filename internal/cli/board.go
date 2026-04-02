@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -18,16 +17,11 @@ var checkMode bool
 
 var boardCmd = &cobra.Command{
 	Use:   "board",
-	Short: "Interactive dashboard — decision health, coverage, drift, problems",
-	Long: `Launch the Haft dashboard.
+	Short: "Decision health dashboard",
+	Long: `Shows decision health, coverage, drift, and problems.
 
-Shows decision health, module coverage, drift alerts, problem pipeline,
-and evidence quality in an interactive terminal UI.
-
-Navigation: tab/1-4 switch views, j/k navigate, enter drill in, esc back, q quit.
-
-Use --check for CI/hooks: exits with code 1 if critical issues exist
-(R_eff < 0.3, decisions expired > 30 days).`,
+Use --check for CI/hooks: exits with code 1 if critical issues exist.
+Interactive dashboard is being migrated to tview.`,
 	RunE: runBoard,
 }
 
@@ -37,15 +31,12 @@ func init() {
 }
 
 func runBoard(cmd *cobra.Command, _ []string) error {
-	// Find project root
 	projectRoot, err := findProjectRoot()
 	if err != nil {
-		return fmt.Errorf("not a haft project (no .haft/ directory found): %w", err)
+		return fmt.Errorf("not a haft project: %w", err)
 	}
 
 	haftDir := filepath.Join(projectRoot, ".haft")
-
-	// Load project config
 	projCfg, err := project.Load(haftDir)
 	if err != nil {
 		return fmt.Errorf("load project config: %w", err)
@@ -54,15 +45,11 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("project not initialized — run 'haft init' first")
 	}
 
-	// Open DB
 	dbPath, err := projCfg.DBPath()
 	if err != nil {
 		return fmt.Errorf("get DB path: %w", err)
 	}
 
-	// Open DB with WAL mode and busy timeout.
-	// MCP server may hold a write connection to the same DB —
-	// WAL allows concurrent readers, busy timeout prevents instant SQLITE_BUSY.
 	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -73,29 +60,17 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 	store := artifact.NewStore(sqlDB)
 	projectName := projCfg.Name
 
-	// Load all data
 	data, err := ui.LoadBoardData(store, sqlDB, projectName, projectRoot)
 	if err != nil {
 		return fmt.Errorf("load board data: %w", err)
 	}
 
-	// Check mode: print summary and exit
 	if checkMode {
 		return runCheck(data)
 	}
 
-	// Interactive mode
-	model := ui.New(data, store, sqlDB, projectName, projectRoot)
-	p := tea.NewProgram(model)
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("board: %w", err)
-	}
-
-	// Interactive mode always exits 0 — user saw the dashboard.
-	// Use --check for non-zero exit on critical issues.
-	_ = finalModel
-	return nil
+	// Interactive dashboard not yet available — use --check mode.
+	return runCheck(data)
 }
 
 func runCheck(data *ui.BoardData) error {
@@ -121,5 +96,3 @@ func runCheck(data *ui.BoardData) error {
 	fmt.Println("\n  OK: no critical issues")
 	return nil
 }
-
-// findProjectRoot is in cmd/util.go (shared with agent command)

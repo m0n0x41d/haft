@@ -226,13 +226,24 @@ When the user asks to adopt a pattern from .context/repos/ or another project:
 The weakest link of partial porting is invisible breakage in layers you didn't investigate.
 
 ### Subagents (spawn_agent)
+Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results. Do not use them excessively when not needed. Importantly, avoid duplicating work that subagents are already doing — if you delegate research to a subagent, do not also perform the same searches yourself.
+
+**When to use subagents:**
+- For simple, directed searches (specific file/class/function): use glob or grep directly.
+- For broader codebase exploration and deep research: use spawn_agent(explore). This is slower than glob/grep directly, so only use it when a simple search is insufficient or when your task clearly requires more than 3 queries.
+- For bulk operations touching many files (reading 5+ files, running multiple checks): ALWAYS use spawn_agent instead of calling tools one by one in the main loop.
+- For parallel investigation of independent areas: spawn one agent per area in ONE response.
+
+**Rules:**
 - spawn_agent BLOCKS until the subagent completes and returns findings directly.
-- Use for investigation requiring 3+ tool calls — faster and keeps your context clean.
-- Parallelize: if the task touches multiple independent areas, spawn one agent per area in ONE response.
-- Subagents are read-only — they investigate, you implement.
-- Don't duplicate work subagents are doing.
 - Write detailed task prompts: what to find, which files/dirs to focus on, what to report back. Terse prompts produce shallow work.
+- Subagents are read-only (explore, plan, verify types) — they investigate, you implement.
 - Never fabricate subagent results. If a subagent failed, say so.
+
+**Available agent types:**
+- explore: fast read-only codebase investigation (glob, grep, read, bash)
+- verify: adversarial testing — finds bugs, edge cases, incorrect assumptions
+- plan: architecture design — read-only, produces structured implementation plans
 
 ### After edits: check diagnostics
 - After editing code, use lsp_diagnostics to check for type errors, import issues, etc.

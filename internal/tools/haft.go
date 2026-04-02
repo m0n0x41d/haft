@@ -1,6 +1,6 @@
 // Package tools — haft kernel tool executors for the haft agent.
 // These wrap the same L4 kernel functions as the MCP server.
-// One kernel, two transports: MCP (for Claude Code) and direct (for haft).
+// One kernel, two transports: MCP (for external agents) and direct (for haft agent).
 package tools
 
 import (

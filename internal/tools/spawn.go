@@ -10,7 +10,7 @@ import (
 )
 
 // SpawnAndWaitFunc spawns a subagent and BLOCKS until it completes.
-// Returns the subagent's summary. This is the Crush/Claude Code foreground pattern:
+// Returns the subagent's summary. Foreground spawn-and-wait pattern:
 // the parent's tool execution blocks, so the LLM cannot call other tools
 // between spawn and completion.
 type SpawnAndWaitFunc func(ctx context.Context, agentType, task, model string) (summary string, err error)

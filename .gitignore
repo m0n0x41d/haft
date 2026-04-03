@@ -12,6 +12,11 @@ TODO.md
 .task/
 tmp/
 __pycache__/
+node_modules/
+dist/
+build/
+.cache/
+*.log
 
 .claude/
 .codex/

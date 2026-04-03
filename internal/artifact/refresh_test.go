@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -417,5 +418,90 @@ func TestScanStale_HealthyEvidenceNotStale(t *testing.T) {
 		if item.ID == dec.Meta.ID {
 			t.Error("decision with R_eff=1.0 should NOT appear in stale scan")
 		}
+	}
+}
+
+func TestScanStale_EpistemicDebtBudgetExceeded(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	now := time.Now().UTC()
+
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO fpf_state (context_id, active_role, epistemic_debt_budget, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		"default", "decide", 5.0, now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert fpf_state: %v", err)
+	}
+
+	createDecisionWithDebt := func(title string, expiredDays int) string {
+		decision, _, err := Decide(ctx, store, haftDir, DecideInput{
+			SelectedTitle: title,
+			WhySelected:   "For testing",
+			ValidUntil:    now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
+		})
+		if err != nil {
+			t.Fatalf("Decide(%s): %v", title, err)
+		}
+
+		_, evidenceErr := AttachEvidence(ctx, store, EvidenceInput{
+			ArtifactRef:     decision.Meta.ID,
+			Content:         fmt.Sprintf("expired %d days", expiredDays),
+			Verdict:         "supports",
+			CongruenceLevel: 3,
+			ValidUntil:      now.Add(time.Duration(-expiredDays) * 24 * time.Hour).Format(time.RFC3339),
+		})
+		if evidenceErr != nil {
+			t.Fatalf("AttachEvidence(%s): %v", title, evidenceErr)
+		}
+
+		return decision.Meta.ID
+	}
+
+	firstID := createDecisionWithDebt("First debt", 2)
+	secondID := createDecisionWithDebt("Second debt", 3)
+	thirdID := createDecisionWithDebt("Third debt", 4)
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var debtItem *StaleItem
+	for index := range items {
+		if items[index].Category == StaleCategoryEpistemicDebtExceeded {
+			debtItem = &items[index]
+			break
+		}
+	}
+	if debtItem == nil {
+		t.Fatal("expected epistemic debt budget alert")
+	}
+
+	if debtItem.TotalED != 9.0 {
+		t.Fatalf("total ED = %.1f, want 9.0", debtItem.TotalED)
+	}
+	if debtItem.DebtBudget != 5.0 {
+		t.Fatalf("budget = %.1f, want 5.0", debtItem.DebtBudget)
+	}
+	if debtItem.DebtExcess != 4.0 {
+		t.Fatalf("excess = %.1f, want 4.0", debtItem.DebtExcess)
+	}
+	if len(debtItem.DecisionDebt) != 3 {
+		t.Fatalf("decision debt count = %d, want 3", len(debtItem.DecisionDebt))
+	}
+	if debtItem.DecisionDebt[0].DecisionID != thirdID {
+		t.Fatalf("highest debt decision = %q, want %q", debtItem.DecisionDebt[0].DecisionID, thirdID)
+	}
+	if debtItem.DecisionDebt[1].DecisionID != secondID {
+		t.Fatalf("second debt decision = %q, want %q", debtItem.DecisionDebt[1].DecisionID, secondID)
+	}
+	if debtItem.DecisionDebt[2].DecisionID != firstID {
+		t.Fatalf("third debt decision = %q, want %q", debtItem.DecisionDebt[2].DecisionID, firstID)
+	}
+	if !strings.Contains(debtItem.Reason, thirdID+" 4.0") {
+		t.Fatalf("reason should include decision breakdown, got %q", debtItem.Reason)
 	}
 }

@@ -570,7 +570,63 @@ func (s *Store) LastRefreshScan(ctx context.Context) time.Time {
 	return t
 }
 
+// EpistemicDebtBudget returns the configured ED budget, or the default when
+// the shared state table or column is unavailable.
+func (s *Store) EpistemicDebtBudget(ctx context.Context) float64 {
+	if !s.tableHasColumn(ctx, "fpf_state", "epistemic_debt_budget") {
+		return DefaultEpistemicDebtBudget
+	}
+
+	var budget sql.NullFloat64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT epistemic_debt_budget
+		FROM fpf_state
+		ORDER BY updated_at DESC
+		LIMIT 1`,
+	).Scan(&budget)
+	if err != nil {
+		return DefaultEpistemicDebtBudget
+	}
+	if !budget.Valid {
+		return DefaultEpistemicDebtBudget
+	}
+	if budget.Float64 < 0 {
+		return 0
+	}
+
+	return budget.Float64
+}
+
 // --- helpers ---
+
+func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string) bool {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			kind       string
+			notNull    int
+			defaultVal sql.NullString
+			primaryKey int
+		)
+
+		err := rows.Scan(&cid, &name, &kind, &notNull, &defaultVal, &primaryKey)
+		if err != nil {
+			return false
+		}
+		if name == columnName {
+			return true
+		}
+	}
+
+	return false
+}
 
 func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
 	var result []*Artifact

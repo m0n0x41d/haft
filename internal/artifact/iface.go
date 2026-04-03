@@ -51,4 +51,5 @@ type ArtifactStore interface {
 
 	// Timing
 	LastRefreshScan(ctx context.Context) time.Time
+	EpistemicDebtBudget(ctx context.Context) float64
 }

@@ -115,6 +115,7 @@ CREATE TABLE fpf_state (
     last_commit TEXT,
     last_commit_at DATETIME,
     assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
+    epistemic_debt_budget REAL DEFAULT 30.0,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

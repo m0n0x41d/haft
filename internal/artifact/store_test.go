@@ -40,6 +40,15 @@ func setupTestDB(t *testing.T) *Store {
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,
+		`CREATE TABLE fpf_state (
+			context_id TEXT PRIMARY KEY,
+			active_role TEXT,
+			epistemic_debt_budget REAL DEFAULT 30.0,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE audit_log (
+			id TEXT PRIMARY KEY,
+			timestamp TEXT NOT NULL,
+			operation TEXT NOT NULL)`,
 		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
 		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
 			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords) VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);

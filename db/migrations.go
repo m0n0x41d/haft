@@ -279,4 +279,11 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE evidence_items ADD COLUMN claim_scope TEXT DEFAULT '[]'",
 		},
 	},
+	{
+		Version:     19,
+		Description: "Epistemic debt budget on shared FPF state",
+		Statements: []string{
+			"ALTER TABLE fpf_state ADD COLUMN epistemic_debt_budget REAL DEFAULT 30.0",
+		},
+	},
 }

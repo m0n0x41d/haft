@@ -1,7 +1,6 @@
 import React from "react"
 import { Box, Text } from "ink"
 import type { ToolCall } from "../protocol/types.js"
-import { DiffView } from "./DiffView.js"
 
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
@@ -18,6 +17,7 @@ interface Props {
 export function ToolCallView({ tool, width }: Props) {
   const displayName = TOOL_NAMES[tool.name] ?? tool.name
   const param = extractParam(tool.name, tool.args)
+  const summary = tool.subagent?.summary ?? tool.output
 
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
@@ -31,8 +31,8 @@ export function ToolCallView({ tool, width }: Props) {
       </Box>
 
       {/* Completed output — single summary line, indented under name */}
-      {tool.output && !tool.running && (
-        <ToolResultSummary tool={tool} width={width} />
+      {summary && !tool.running && (
+        <ToolResultSummary output={summary} toolName={tool.name} width={width} />
       )}
 
       {/* Streaming output — last 3 lines */}
@@ -45,8 +45,8 @@ export function ToolCallView({ tool, width }: Props) {
       )}
 
       {/* Subagent children */}
-      {tool.children && tool.children.length > 0 && (
-        <SubagentChildren children={tool.children} width={width} />
+      {tool.subagent?.tools.length && (
+        <SubagentChildren children={tool.subagent.tools} />
       )}
     </Box>
   )
@@ -71,15 +71,23 @@ function ToolDot({ tool }: { tool: ToolCall }) {
 }
 
 // Tool result — ⎿ + one-line summary
-function ToolResultSummary({ tool, width }: { tool: ToolCall; width: number }) {
-  if (!tool.output) return null
+function ToolResultSummary({
+  output,
+  toolName,
+  width,
+}: {
+  output: string
+  toolName: string
+  width: number
+}) {
+  if (!output) return null
 
-  const isEditTool = tool.name === "edit" || tool.name === "multiedit"
-  const hasDiff = isEditTool && (tool.output.includes("--- old") || tool.output.includes("@@"))
+  const isEditTool = toolName === "edit" || toolName === "multiedit"
+  const hasDiff = isEditTool && (output.includes("--- old") || output.includes("@@"))
 
   if (hasDiff) {
-    const adds = (tool.output.match(/^\+[^+]/gm) || []).length
-    const dels = (tool.output.match(/^-[^-]/gm) || []).length
+    const adds = (output.match(/^\+[^+]/gm) || []).length
+    const dels = (output.match(/^-[^-]/gm) || []).length
     return (
       <Box>
         <Text dimColor>{"\u21B3"} </Text>
@@ -90,7 +98,7 @@ function ToolResultSummary({ tool, width }: { tool: ToolCall; width: number }) {
     )
   }
 
-  const firstLine = tool.output.split("\n").find((l) => l.trim().length > 0)
+  const firstLine = output.split("\n").find((l) => l.trim().length > 0)
   if (!firstLine) return null
 
   return (
@@ -101,7 +109,7 @@ function ToolResultSummary({ tool, width }: { tool: ToolCall; width: number }) {
   )
 }
 
-function SubagentChildren({ children, width }: { children: ToolCall[]; width: number }) {
+function SubagentChildren({ children }: { children: ToolCall[] }) {
   const visible = children.slice(-5)
   const hiddenCount = children.length - visible.length
 

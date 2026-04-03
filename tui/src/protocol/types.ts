@@ -1,5 +1,5 @@
-// L2: Protocol types — mirrors internal/protocol/*.go exactly.
-// One canonical form per message. Generated from the same spec.
+// L2: Protocol wire types + normalized TUI state types.
+// Wire shapes mirror internal/protocol/*.go. State shapes normalize TUI-only data.
 
 // --- Wire format ---
 
@@ -19,7 +19,7 @@ export interface InitParams {
   projectRoot: string
   width: number
   height: number
-  messages?: MsgInfo[]
+  messages?: WireMsgInfo[]
 }
 
 export interface SessionInfo {
@@ -28,7 +28,34 @@ export interface SessionInfo {
   model: string
 }
 
-export interface MsgInfo {
+export interface WireMsgInfo {
+  id: string
+  role: "user" | "assistant"
+  text: string
+  thinking?: string
+  tools?: WireToolCall[]
+}
+
+export interface MsgUpdateParams {
+  id: string
+  text: string
+  thinking?: string
+  tools?: WireToolCall[]
+  streaming: boolean
+}
+
+export interface WireToolCall {
+  callId: string
+  name: string
+  args: string
+  output?: string
+  isError?: boolean
+  running: boolean
+  subagentId?: string
+  children?: WireToolCall[]
+}
+
+export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   text: string
@@ -36,12 +63,14 @@ export interface MsgInfo {
   tools?: ToolCall[]
 }
 
-export interface MsgUpdateParams {
+export interface SubagentRun {
   id: string
-  text: string
-  thinking?: string
-  tools?: ToolCall[]
-  streaming: boolean
+  name: string
+  task: string
+  running: boolean
+  isError?: boolean
+  summary?: string
+  tools: ToolCall[]
 }
 
 export interface ToolCall {
@@ -51,8 +80,7 @@ export interface ToolCall {
   output?: string
   isError?: boolean
   running: boolean
-  subagentId?: string
-  children?: ToolCall[]
+  subagent?: SubagentRun
 }
 
 export interface ToolStartParams {

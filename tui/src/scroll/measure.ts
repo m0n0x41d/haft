@@ -2,6 +2,7 @@
 // Estimates terminal-row height for transcript entries.
 // Bridges data model (TranscriptEntry) and viewport (terminal rows).
 
+import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 
 // Approximate terminal-row height of a single transcript entry.
@@ -23,17 +24,8 @@ export function measureEntry(entry: TranscriptEntry, width: number): number {
       // optional "... (N hidden)" line + visible lines
       return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length)
 
-    case "toolCall": {
-      const t = entry.tool
-      let h = 2 // marginTop(1) + header(1)
-      if (t.output && !t.running) h += 1
-      if (t.output && t.running) h += Math.min(3, t.output.split("\n").length)
-      if (t.children && t.children.length > 0) {
-        if (t.children.length > 5) h += 1
-        h += Math.min(5, t.children.length)
-      }
-      return h
-    }
+    case "assistantToolBatch":
+      return entry.tools.reduce((sum, tool) => sum + measureToolCall(tool), 0)
 
     case "indicator":
       return 2 // marginTop(1) + animation(1)
@@ -41,6 +33,26 @@ export function measureEntry(entry: TranscriptEntry, width: number): number {
     case "error":
       return 6 // marginTop(1) + border-top(1) + "Error"(1) + message(1) + hint(1) + border-bottom(1)
   }
+}
+
+function measureToolCall(tool: ToolCall): number {
+  let height = 2 // marginTop(1) + header(1)
+  const summary = tool.subagent?.summary ?? tool.output
+
+  if (summary && !tool.running) {
+    height += 1
+  }
+  if (tool.output && tool.running) {
+    height += Math.min(3, tool.output.split("\n").length)
+  }
+  if (tool.subagent?.tools.length) {
+    if (tool.subagent.tools.length > 5) {
+      height += 1
+    }
+    height += Math.min(5, tool.subagent.tools.length)
+  }
+
+  return height
 }
 
 // Count terminal rows for text, accounting for line wrapping at width boundary.

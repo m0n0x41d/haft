@@ -1,6 +1,7 @@
 // L2: Text Extraction — pure.
 // Maps terminal row selections to transcript entry text.
 
+import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 import type { VisibleWindow } from "../scroll/measure.js"
 
@@ -50,14 +51,34 @@ function entryText(entry: TranscriptEntry): string {
     case "userPrompt": return entry.text
     case "assistantText": return entry.text
     case "thinking": return entry.lines.join("\n")
-    case "toolCall": {
-      const parts = [entry.tool.name]
-      if (entry.tool.output) parts.push(entry.tool.output)
-      return parts.join("\n")
-    }
+    case "assistantToolBatch":
+      return entry.tools
+        .map((tool) => toolText(tool))
+        .filter((text) => text.length > 0)
+        .join("\n\n")
     case "indicator": return ""
     case "error": return entry.message
   }
+}
+
+function toolText(tool: ToolCall): string {
+  const parts = [tool.name]
+  const summary = tool.subagent?.summary ?? tool.output
+
+  if (summary) {
+    parts.push(summary)
+  }
+
+  const childText = tool.subagent?.tools
+    .map((child) => toolText(child))
+    .filter((text) => text.length > 0)
+    .join("\n")
+
+  if (childText) {
+    parts.push(childText)
+  }
+
+  return parts.join("\n")
 }
 
 // Extract text from entries overlapping the selection row range.

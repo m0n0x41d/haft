@@ -2,10 +2,22 @@
 // All state changes go through the reducer. No side effects.
 
 import type {
-  MsgInfo, ToolCall, SessionInfo, CycleUpdateParams,
-  MsgUpdateParams, ToolStartParams, ToolProgressParams, ToolDoneParams,
-  TokenUpdateParams, SubagentStartParams, SubagentDoneParams,
-  OverseerAlertParams, DriftUpdateParams, LspUpdateParams,
+  ChatMessage,
+  ToolCall,
+  WireMsgInfo,
+  WireToolCall,
+  SessionInfo,
+  CycleUpdateParams,
+  MsgUpdateParams,
+  ToolStartParams,
+  ToolProgressParams,
+  ToolDoneParams,
+  TokenUpdateParams,
+  SubagentRun,
+  SubagentStartParams,
+  SubagentDoneParams,
+  DriftUpdateParams,
+  LspUpdateParams,
 } from "../protocol/types.js"
 
 export interface AppState {
@@ -14,7 +26,7 @@ export interface AppState {
   projectRoot: string
 
   // Chat
-  messages: MsgInfo[]
+  messages: ChatMessage[]
   streamingMsgId: string | null
 
   // Status
@@ -74,7 +86,7 @@ export function initialState(): AppState {
 // --- Pure reducer ---
 
 export type Action =
-  | { type: "init"; session: SessionInfo; projectRoot: string; messages?: MsgInfo[] }
+  | { type: "init"; session: SessionInfo; projectRoot: string; messages?: WireMsgInfo[] }
   | { type: "msg.update"; params: MsgUpdateParams }
   | { type: "tool.start"; params: ToolStartParams }
   | { type: "tool.progress"; params: ToolProgressParams }
@@ -107,7 +119,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         session: action.session,
         projectRoot: action.projectRoot,
-        messages: action.messages ?? [],
+        messages: normalizeMessages(action.messages),
         phase: "input",
       }
 
@@ -115,12 +127,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const { params } = action
       const idx = state.messages.findIndex((m) => m.id === params.id)
       const existing = idx >= 0 ? state.messages[idx] : null
-      const msg: MsgInfo = {
+      const msg: ChatMessage = {
         id: params.id,
         role: existing?.role ?? (params.id.startsWith("user-") ? "user" : "assistant"),
         text: params.text,
         thinking: params.thinking,
-        tools: params.tools,
+        tools: mergeToolCollections(existing?.tools, normalizeToolCalls(params.tools)),
       }
       const messages = [...state.messages]
       if (idx >= 0) {
@@ -140,37 +152,41 @@ export function reducer(state: AppState, action: Action): AppState {
     case "tool.start": {
       const { params } = action
       if (params.subagentId) {
-        return updateAssistantToolBySubagentId(state, params.subagentId, (parent) => ({
-          ...parent,
-          children: [...(parent.children ?? []), {
-            callId: params.callId,
-            name: params.name,
-            args: params.args,
-            running: true,
-            subagentId: params.subagentId,
-          }],
-        }))
-      }
-      return updateLastAssistant(state, (msg) => {
-        // Don't add if already present (msg.update may have included it)
-        if (msg.tools?.some((t) => t.callId === params.callId)) {
+        const subagentId = params.subagentId
+        return updateAssistantToolBySubagentId(state, subagentId, (parent) => {
+          const subagent = ensureSubagent(parent, subagentId)
+          const tools = upsertToolCollection(
+            subagent.tools,
+            createToolCall(params.callId, params.name, params.args),
+            (tool) => ({
+              ...tool,
+              name: params.name,
+              args: params.args,
+              running: true,
+            }),
+          )
           return {
-            ...msg,
-            tools: msg.tools.map((t) =>
-              t.callId === params.callId ? { ...t, running: true } : t
-            ),
+            ...parent,
+            subagent: {
+              ...subagent,
+              tools,
+            },
           }
-        }
-        return {
-          ...msg,
-          tools: [...(msg.tools ?? []), {
-            callId: params.callId,
+        })
+      }
+      return updateLastAssistant(state, (msg) => ({
+        ...msg,
+        tools: upsertToolCollection(
+          msg.tools,
+          createToolCall(params.callId, params.name, params.args),
+          (tool) => ({
+            ...tool,
             name: params.name,
             args: params.args,
             running: true,
-          }],
-        }
-      })
+          }),
+        ),
+      }))
     }
 
     case "tool.progress": {
@@ -184,19 +200,14 @@ export function reducer(state: AppState, action: Action): AppState {
     case "tool.done": {
       const { params } = action
       if (params.subagentId) {
-        return updateChildTool(state, params.subagentId, params.callId, (tool) => ({
+        return updateSubagentTool(state, params.subagentId, params.callId, (tool) => ({
           ...tool,
           output: params.output,
           isError: params.isError,
           running: false,
         }))
       }
-      return updateToolInMessages(state, params.callId, (tool) => ({
-        ...tool,
-        output: params.output,
-        isError: params.isError,
-        running: false,
-      }))
+      return updateToolInMessages(state, params.callId, (tool) => completeToolCall(tool, params.output, params.isError))
     }
 
     case "token.update":
@@ -210,21 +221,33 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "subagent.start": {
       const newState = { ...state, activeSubagents: state.activeSubagents + 1 }
-      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => (
-        tool.name !== "spawn_agent"
-          ? tool
-          : { ...tool, subagentId: action.params.subagentId }
-      ))
+      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => ({
+        ...tool,
+        subagent: {
+          ...ensureSubagent(tool, action.params.subagentId),
+          id: action.params.subagentId,
+          name: action.params.name,
+          task: action.params.task,
+          running: true,
+        },
+      }))
     }
 
     case "subagent.done": {
       const newState = { ...state, activeSubagents: Math.max(0, state.activeSubagents - 1) }
-      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => ({
-        ...tool,
-        running: false,
-        output: action.params.summary,
-        isError: action.params.isError,
-      }))
+      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => {
+        const subagent = ensureSubagent(tool, action.params.subagentId)
+        return {
+          ...tool,
+          isError: action.params.isError || tool.isError,
+          subagent: {
+            ...subagent,
+            running: false,
+            isError: action.params.isError || subagent.isError,
+            summary: action.params.summary || subagent.summary,
+          },
+        }
+      })
     }
 
     case "overseer.alert":
@@ -240,14 +263,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, error: action.message }
 
     case "coord.done": {
-      // Mark all running tools as done
       const messages = state.messages.map((msg) => ({
         ...msg,
-        tools: msg.tools?.map((t) => ({
-          ...t,
-          running: false,
-          children: t.children?.map((c) => ({ ...c, running: false })),
-        })),
+        tools: msg.tools?.map(finishToolTree),
       }))
       return {
         ...state,
@@ -311,7 +329,187 @@ export function reducer(state: AppState, action: Action): AppState {
 
 // --- Immutable state update helpers ---
 
-function updateLastAssistant(state: AppState, fn: (msg: MsgInfo) => MsgInfo): AppState {
+function normalizeMessages(messages?: WireMsgInfo[]): ChatMessage[] {
+  return messages?.map(normalizeMessage) ?? []
+}
+
+function normalizeMessage(message: WireMsgInfo): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    thinking: message.thinking,
+    tools: normalizeToolCalls(message.tools),
+  }
+}
+
+function normalizeToolCalls(tools?: WireToolCall[]): ToolCall[] | undefined {
+  if (!tools?.length) {
+    return undefined
+  }
+
+  return tools.map(normalizeToolCall)
+}
+
+function normalizeToolCall(tool: WireToolCall): ToolCall {
+  const subagent = normalizeSubagent(tool)
+
+  return {
+    callId: tool.callId,
+    name: tool.name,
+    args: tool.args,
+    output: subagent ? undefined : tool.output,
+    isError: subagent ? undefined : tool.isError,
+    running: tool.running,
+    subagent,
+  }
+}
+
+function normalizeSubagent(tool: WireToolCall): SubagentRun | undefined {
+  const hasSubagent = Boolean(tool.subagentId) || Boolean(tool.children?.length)
+  if (!hasSubagent) {
+    return undefined
+  }
+
+  return {
+    id: tool.subagentId ?? `legacy-${tool.callId}`,
+    name: "agent",
+    task: extractSpawnTask(tool.args),
+    running: tool.running,
+    isError: tool.isError,
+    summary: tool.output || undefined,
+    tools: normalizeToolCalls(tool.children) ?? [],
+  }
+}
+
+function mergeToolCollections(
+  existing: ToolCall[] | undefined,
+  incoming: ToolCall[] | undefined,
+): ToolCall[] | undefined {
+  if (!incoming?.length) {
+    return existing
+  }
+  if (!existing?.length) {
+    return incoming
+  }
+
+  const existingById = new Map(existing.map((tool) => [tool.callId, tool]))
+  const merged = incoming.map((incomingTool) => {
+    const current = existingById.get(incomingTool.callId)
+    existingById.delete(incomingTool.callId)
+    return current ? mergeToolCall(current, incomingTool) : incomingTool
+  })
+  const remaining = existing.filter((tool) => existingById.has(tool.callId))
+
+  return [...merged, ...remaining]
+}
+
+function mergeToolCall(existing: ToolCall, incoming: ToolCall): ToolCall {
+  const subagent = mergeSubagent(existing.subagent, incoming.subagent)
+
+  return {
+    ...incoming,
+    output: subagent ? undefined : (existing.output ?? incoming.output),
+    isError: existing.isError ?? incoming.isError ?? subagent?.isError,
+    running: existing.running,
+    subagent,
+  }
+}
+
+function mergeSubagent(
+  existing: SubagentRun | undefined,
+  incoming: SubagentRun | undefined,
+): SubagentRun | undefined {
+  if (!existing) {
+    return incoming
+  }
+  if (!incoming) {
+    return existing
+  }
+
+  return {
+    id: existing.id || incoming.id,
+    name: existing.name || incoming.name,
+    task: existing.task || incoming.task,
+    running: existing.running,
+    isError: existing.isError ?? incoming.isError,
+    summary: existing.summary ?? incoming.summary,
+    tools: mergeToolCollections(existing.tools, incoming.tools) ?? [],
+  }
+}
+
+function createToolCall(callId: string, name: string, args: string): ToolCall {
+  return {
+    callId,
+    name,
+    args,
+    running: true,
+  }
+}
+
+function completeToolCall(tool: ToolCall, output: string, isError: boolean): ToolCall {
+  if (tool.name !== "spawn_agent" || !tool.subagent) {
+    return {
+      ...tool,
+      output,
+      isError,
+      running: false,
+    }
+  }
+
+  return {
+    ...tool,
+    isError: isError || tool.subagent.isError || tool.isError,
+    running: false,
+    subagent: {
+      ...tool.subagent,
+      running: false,
+      isError: isError || tool.subagent.isError,
+      summary: output || tool.subagent.summary,
+    },
+  }
+}
+
+function finishToolTree(tool: ToolCall): ToolCall {
+  return {
+    ...tool,
+    running: false,
+    subagent: tool.subagent
+      ? {
+          ...tool.subagent,
+          running: false,
+          tools: tool.subagent.tools.map(finishToolTree),
+        }
+      : undefined,
+  }
+}
+
+function ensureSubagent(parent: ToolCall, subagentId: string): SubagentRun {
+  if (parent.subagent && parent.subagent.id === subagentId) {
+    return parent.subagent
+  }
+
+  return {
+    id: subagentId,
+    name: parent.subagent?.name ?? "agent",
+    task: parent.subagent?.task ?? extractSpawnTask(parent.args),
+    running: parent.subagent?.running ?? parent.running,
+    isError: parent.subagent?.isError,
+    summary: parent.subagent?.summary,
+    tools: parent.subagent?.tools ?? [],
+  }
+}
+
+function extractSpawnTask(args: string): string {
+  try {
+    const parsed = JSON.parse(args) as { task?: string }
+    return parsed.task ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function updateLastAssistant(state: AppState, fn: (msg: ChatMessage) => ChatMessage): AppState {
   const messages = [...state.messages]
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "assistant") {
@@ -349,21 +547,122 @@ function updateAssistantTool(
   return state
 }
 
-function updateAssistantToolByCallId(state: AppState, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
+function updateAssistantToolByCallId(
+  state: AppState,
+  callId: string,
+  fn: (tool: ToolCall) => ToolCall,
+): AppState {
   return updateAssistantTool(state, (tool) => tool.callId === callId, fn)
 }
 
-function updateAssistantToolBySubagentId(state: AppState, subagentId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateAssistantTool(state, (tool) => tool.subagentId === subagentId, fn)
+function updateAssistantToolBySubagentId(
+  state: AppState,
+  subagentId: string,
+  fn: (tool: ToolCall) => ToolCall,
+): AppState {
+  return updateAssistantTool(state, (tool) => tool.subagent?.id === subagentId, fn)
 }
 
-function updateToolInMessages(state: AppState, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateAssistantToolByCallId(state, callId, fn)
+function updateToolInMessages(
+  state: AppState,
+  callId: string,
+  fn: (tool: ToolCall) => ToolCall,
+): AppState {
+  const messages = state.messages.map((msg) => {
+    if (msg.role !== "assistant" || !msg.tools?.length) {
+      return msg
+    }
+
+    const tools = updateToolCollectionByCallId(msg.tools, callId, fn)
+    if (tools === msg.tools) {
+      return msg
+    }
+
+    return {
+      ...msg,
+      tools,
+    }
+  })
+
+  const changed = messages.some((msg, index) => msg !== state.messages[index])
+  if (!changed) {
+    return state
+  }
+
+  return {
+    ...state,
+    messages,
+  }
 }
 
-function updateChildTool(state: AppState, subagentId: string, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateAssistantToolBySubagentId(state, subagentId, (parent) => ({
-    ...parent,
-    children: parent.children?.map((c) => c.callId === callId ? fn(c) : c),
-  }))
+function updateToolCollectionByCallId(
+  tools: ToolCall[],
+  callId: string,
+  fn: (tool: ToolCall) => ToolCall,
+): ToolCall[] {
+  let changed = false
+
+  const next = tools.map((tool) => {
+    if (tool.callId === callId) {
+      changed = true
+      return fn(tool)
+    }
+
+    if (!tool.subagent?.tools.length) {
+      return tool
+    }
+
+    const childTools = updateToolCollectionByCallId(tool.subagent.tools, callId, fn)
+    if (childTools === tool.subagent.tools) {
+      return tool
+    }
+
+    changed = true
+    return {
+      ...tool,
+      subagent: {
+        ...tool.subagent,
+        tools: childTools,
+      },
+    }
+  })
+
+  return changed ? next : tools
+}
+
+function updateSubagentTool(
+  state: AppState,
+  subagentId: string,
+  callId: string,
+  fn: (tool: ToolCall) => ToolCall,
+): AppState {
+  return updateAssistantToolBySubagentId(state, subagentId, (parent) => {
+    const subagent = ensureSubagent(parent, subagentId)
+    const tools = updateToolCollectionByCallId(subagent.tools, callId, fn)
+
+    return {
+      ...parent,
+      subagent: {
+        ...subagent,
+        tools,
+      },
+    }
+  })
+}
+
+function upsertToolCollection(
+  tools: ToolCall[] | undefined,
+  incoming: ToolCall,
+  fn: (tool: ToolCall) => ToolCall,
+): ToolCall[] {
+  const list = tools ?? []
+  const index = list.findIndex((tool) => tool.callId === incoming.callId)
+
+  if (index < 0) {
+    return [...list, incoming]
+  }
+
+  const next = [...list]
+  next[index] = fn(next[index])
+  return next
 }

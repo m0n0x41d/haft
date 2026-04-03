@@ -1,37 +1,34 @@
 // L2: Scroll Measurement — pure.
-// Estimates terminal-row height for transcript entries.
-// Bridges data model (TranscriptEntry) and viewport (terminal rows).
+// Bridges transcript entries, measured row heights, and the virtualized viewport.
 
 import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 
+export const DEFAULT_OVERSCAN_ROWS = 8
+
 // Approximate terminal-row height of a single transcript entry.
-// Matches the rendering logic in ChatView / ToolCallView / etc.
-// Deliberately conservative — a few lines off is fine, overflowY="hidden" clips the rest.
-export function measureEntry(entry: TranscriptEntry, width: number): number {
+// Used until the mounted entry has a measured Yoga height.
+export function estimateEntryHeight(entry: TranscriptEntry, width: number): number {
   switch (entry.type) {
     case "userPrompt":
-      // marginTop(1) + prompt line(1) + attachment lines
       return 1 + 1 + entry.attachments.length
 
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120))
-      // marginTop(1) + wrapped text lines
       return 1 + countWrappedLines(entry.text, contentWidth)
     }
 
     case "thinking":
-      // optional "... (N hidden)" line + visible lines
       return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length)
 
     case "assistantToolBatch":
       return entry.tools.reduce((sum, tool) => sum + measureToolCall(tool), 0)
 
     case "indicator":
-      return 2 // marginTop(1) + animation(1)
+      return 2
 
     case "error":
-      return 6 // marginTop(1) + border-top(1) + "Error"(1) + message(1) + hint(1) + border-bottom(1)
+      return 6
   }
 }
 
@@ -63,57 +60,171 @@ function countWrappedLines(text: string, width: number): number {
     .reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0)
 }
 
-// Measure all entries in a transcript.
-export function measureTranscript(entries: readonly TranscriptEntry[], width: number): number[] {
-  return entries.map((e) => measureEntry(e, width))
+// Resolve per-entry heights using measured values when available and width-based
+// estimates as the fallback before the first layout pass completes.
+export function resolveEntryHeights(
+  entries: readonly TranscriptEntry[],
+  width: number,
+  measuredHeights: ReadonlyMap<string, number>,
+): number[] {
+  return entries.map((entry) => measuredHeights.get(entry.id) ?? estimateEntryHeight(entry, width))
 }
 
-// Visible window: which entries overlap the viewport given a line-based scroll offset.
-export interface VisibleWindow {
-  start: number   // first visible entry index (inclusive)
-  end: number     // past-end entry index (exclusive)
-  cropTop: number // lines to skip from the top of entry[start] (intra-entry offset)
-}
-
-// Compute the entry range visible in the viewport.
-// offset = lines scrolled back from bottom (0 = at bottom).
-// Returns entries that overlap the viewport, plus cropTop: the number of lines
-// from the first visible entry that fall above the viewport top edge.
-export function computeVisibleWindow(
-  heights: readonly number[],
-  offset: number,
-  viewportSize: number,
-): VisibleWindow {
-  if (heights.length === 0) return { start: 0, end: 0, cropTop: 0 }
-
-  const totalLines = heights.reduce((a, b) => a + b, 0)
-  const safeOffset = Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)))
-
-  // Viewport spans [viewTop, viewBottom) in absolute line coordinates
-  const viewBottom = totalLines - safeOffset
-  const viewTop = Math.max(0, viewBottom - viewportSize)
-
-  let linePos = 0
-  let start = -1
-  let end = 0
-  let cropTop = 0
-
-  for (let i = 0; i < heights.length; i++) {
-    const entryTop = linePos
-    const entryBottom = linePos + heights[i]
-
-    // Entry overlaps viewport when entryBottom > viewTop AND entryTop < viewBottom
-    if (entryBottom > viewTop && entryTop < viewBottom) {
-      if (start === -1) {
-        start = i
-        // How many lines of this first entry are above the viewport top?
-        cropTop = Math.max(0, viewTop - entryTop)
-      }
-      end = i + 1
-    }
-
-    linePos = entryBottom
+export function scaleMeasuredHeights(
+  measuredHeights: Map<string, number>,
+  prevWidth: number,
+  nextWidth: number,
+): boolean {
+  if (prevWidth <= 0 || nextWidth <= 0 || prevWidth === nextWidth) {
+    return false
   }
 
-  return start === -1 ? { start: 0, end: 0, cropTop: 0 } : { start, end, cropTop }
+  const ratio = prevWidth / nextWidth
+  let changed = false
+
+  for (const [entryId, height] of measuredHeights) {
+    const scaledHeight = height === 0
+      ? 0
+      : Math.max(1, Math.round(height * ratio))
+
+    if (scaledHeight === height) {
+      continue
+    }
+
+    measuredHeights.set(entryId, scaledHeight)
+    changed = true
+  }
+
+  return changed
+}
+
+export function computeOffsets(heights: readonly number[]): number[] {
+  const offsets = new Array<number>(heights.length + 1)
+  let linePos = 0
+
+  offsets[0] = 0
+
+  for (let index = 0; index < heights.length; index++) {
+    linePos += heights[index] ?? 0
+    offsets[index + 1] = linePos
+  }
+
+  return offsets
+}
+
+export interface VisibleWindow {
+  start: number
+  end: number
+  viewTop: number
+  viewBottom: number
+  topSpacer: number
+  bottomSpacer: number
+  totalLines: number
+}
+
+export function computeVisibleWindow(
+  offsets: readonly number[],
+  offset: number,
+  viewportSize: number,
+  overscanRows: number = DEFAULT_OVERSCAN_ROWS,
+): VisibleWindow {
+  const entryCount = Math.max(0, offsets.length - 1)
+
+  if (entryCount === 0) {
+    return {
+      start: 0,
+      end: 0,
+      viewTop: 0,
+      viewBottom: 0,
+      topSpacer: 0,
+      bottomSpacer: 0,
+      totalLines: 0,
+    }
+  }
+
+  const totalLines = offsets[entryCount] ?? 0
+  const safeOffset = Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)))
+  const viewBottom = totalLines - safeOffset
+  const viewTop = Math.max(0, viewBottom - viewportSize)
+  const mountedTop = Math.max(0, viewTop - overscanRows)
+  const mountedBottom = Math.min(totalLines, viewBottom + overscanRows)
+  const start = findEntryIndexByBottom(offsets, mountedTop)
+  const end = Math.max(start + 1, findEntryIndexByTop(offsets, mountedBottom))
+
+  return {
+    start,
+    end,
+    viewTop,
+    viewBottom,
+    topSpacer: offsets[start] ?? 0,
+    bottomSpacer: totalLines - (offsets[end] ?? totalLines),
+    totalLines,
+  }
+}
+
+export function findEntryIndexForLine(
+  offsets: readonly number[],
+  line: number,
+): number | null {
+  const entryCount = Math.max(0, offsets.length - 1)
+  const totalLines = offsets[entryCount] ?? 0
+
+  if (entryCount === 0 || line < 0 || line >= totalLines) {
+    return null
+  }
+
+  let lo = 0
+  let hi = entryCount
+
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    const nextTop = offsets[mid + 1] ?? totalLines
+
+    if (nextTop <= line) {
+      lo = mid + 1
+      continue
+    }
+
+    hi = mid
+  }
+
+  return lo
+}
+
+function findEntryIndexByBottom(offsets: readonly number[], line: number): number {
+  const entryCount = Math.max(0, offsets.length - 1)
+  let lo = 1
+  let hi = entryCount
+
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+
+    if ((offsets[mid] ?? 0) <= line) {
+      lo = mid + 1
+      continue
+    }
+
+    hi = mid
+  }
+
+  return Math.max(0, lo - 1)
+}
+
+function findEntryIndexByTop(offsets: readonly number[], line: number): number {
+  const entryCount = Math.max(0, offsets.length - 1)
+  let lo = 0
+  let hi = entryCount
+
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+
+    if ((offsets[mid] ?? 0) < line) {
+      lo = mid + 1
+      continue
+    }
+
+    hi = mid
+  }
+
+  return lo
 }

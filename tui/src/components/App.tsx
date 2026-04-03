@@ -10,14 +10,14 @@ import type { SessionListResponse, ModelListResponse, FileListResponse } from ".
 import { initialState, reducer } from "../state/store.js"
 import { buildTranscript } from "../state/transcript.js"
 import { useScroll } from "../scroll/useScroll.js"
-import { measureTranscript } from "../scroll/measure.js"
+import { useMeasuredTranscript } from "../scroll/useMeasuredTranscript.js"
 // highlight.ts no longer has a subscriber pattern — highlighting applies
 // lazily on natural re-renders (scroll, new message, etc.)
 import type { InputEvent } from "../terminal/input.js"
 import { INITIAL_SELECTION, reduceSelection, hasSelection, normalizedRange, type SelectionState } from "../selection/state.js"
 import { copyToClipboard } from "../selection/clipboard.js"
 import { extractSelection, type ViewportLayout } from "../selection/extract.js"
-import { ChatView } from "./ChatView.js"
+import { TranscriptViewport } from "./TranscriptViewport.js"
 import { StatusBar } from "./StatusBar.js"
 import { InputArea, type InputAreaHandle } from "./InputArea.js"
 import { PermissionDialog } from "./PermissionDialog.js"
@@ -81,8 +81,18 @@ export function App({ client, inputEvents }: AppProps) {
   const selRef = useRef<SelectionState>(INITIAL_SELECTION)
   const layoutRef = useRef<ViewportLayout>({
     chatHeight: 0, atBottom: true,
-    visibleWindow: { start: 0, end: 0, cropTop: 0 },
-    entryHeights: [], transcript: [],
+    visibleWindow: {
+      start: 0,
+      end: 0,
+      viewTop: 0,
+      viewBottom: 0,
+      topSpacer: 0,
+      bottomSpacer: 0,
+      totalLines: 0,
+    },
+    entryHeights: [],
+    entryOffsets: [0],
+    transcript: [],
   })
 
   // --- L1: Paste events (bypass Ink's input system, one render per paste) ---
@@ -121,10 +131,10 @@ export function App({ client, inputEvents }: AppProps) {
     model: state.session.model,
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
 
-  // --- L2: Scroll (line-based) ---
+  // --- L2: Scroll (measured line-based) ---
   const chatHeight = Math.max(5, height - BOTTOM_ROWS)
-  const entryHeights = useMemo(() => measureTranscript(transcript, width), [transcript, width])
-  const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
+  const { entryHeights, measureRef } = useMeasuredTranscript(transcript, width)
+  const { state: scrollState, scroll, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
     entryHeights,
     chatHeight,
@@ -136,7 +146,7 @@ export function App({ client, inputEvents }: AppProps) {
   }, [transcript, vw.start, vw.end])
 
   // --- Selection: keep layout ref current for mouse event handler ---
-  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, transcript }
+  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, entryOffsets, transcript }
 
   useEffect(() => {
     const handler = (ev: InputEvent) => {
@@ -379,12 +389,16 @@ export function App({ client, inputEvents }: AppProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Chat: fixed height, overflow clipped. Spacer anchors content to bottom when at latest messages; removed when scrolled up so overflow clips from bottom. */}
+      {/* Chat: fixed-height viewport over a measured virtual transcript. */}
       <Box flexDirection="column" height={chatHeight} overflowY="hidden">
         {atBottom && <Box flexGrow={1} />}
-        <Box flexDirection="column" marginTop={vw.cropTop > 0 ? -vw.cropTop : undefined}>
-          <ChatView entries={visibleEntries} width={width} />
-        </Box>
+        <TranscriptViewport
+          entries={visibleEntries}
+          measureRef={measureRef}
+          viewport={vw}
+          viewportHeight={chatHeight}
+          width={width}
+        />
       </Box>
 
       {/* Scroll indicator */}

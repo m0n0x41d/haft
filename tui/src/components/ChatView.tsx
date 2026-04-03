@@ -3,7 +3,7 @@
 // Does NOT guess heights. Ink handles layout.
 
 import React from "react"
-import { Box, Text } from "ink"
+import { Box, Text, type DOMElement } from "ink"
 import type { TranscriptEntry } from "../state/transcript.js"
 import { MarkdownView } from "./MarkdownView.js"
 import { AssistantToolBatchView } from "./AssistantToolBatchView.js"
@@ -12,15 +12,18 @@ import { ThinkingIndicator } from "./ThinkingIndicator.js"
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
 interface Props {
-  entries: TranscriptEntry[]
+  entries: readonly TranscriptEntry[]
   width: number
+  measureRef?: (entryId: string) => (node: DOMElement | null) => void
 }
 
-export function ChatView({ entries, width }: Props) {
+export function ChatView({ entries, width, measureRef }: Props) {
   return (
     <Box flexDirection="column">
       {entries.map((entry) => (
-        <EntryBlock key={entry.id} entry={entry} width={width} />
+        <Box key={entry.id} flexDirection="column" ref={measureRef?.(entry.id)}>
+          <EntryBlock entry={entry} width={width} />
+        </Box>
       ))}
     </Box>
   )

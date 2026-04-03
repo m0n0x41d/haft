@@ -3,46 +3,35 @@
 
 import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
-import type { VisibleWindow } from "../scroll/measure.js"
+import { findEntryIndexForLine, type VisibleWindow } from "../scroll/measure.js"
 
 export interface ViewportLayout {
   chatHeight: number
   atBottom: boolean
   visibleWindow: VisibleWindow
   entryHeights: readonly number[]
+  entryOffsets: readonly number[]
   transcript: readonly TranscriptEntry[]
 }
 
-// Map a terminal row (1-based SGR) to a visible entry index.
-// Returns null if the row falls outside content (padding or below chat area).
 export function termRowToEntryIndex(
   termRow: number,
   layout: ViewportLayout,
 ): number | null {
-  const { visibleWindow: vw, entryHeights, atBottom, chatHeight } = layout
+  const { visibleWindow: vw, entryOffsets, atBottom, chatHeight } = layout
   const chatRow = termRow - 1 // 0-based within chat area
 
   if (chatRow < 0 || chatRow >= chatHeight) return null
 
-  let totalVisible = 0
-  for (let i = vw.start; i < vw.end; i++) totalVisible += entryHeights[i]
+  const visibleLineCount = Math.max(0, vw.viewBottom - vw.viewTop)
+  const topPadding = atBottom ? Math.max(0, chatHeight - visibleLineCount) : 0
+  const contentRow = chatRow - topPadding
 
-  // Account for cropTop: the first entry is shifted up by cropTop lines
-  const effectiveVisible = totalVisible - vw.cropTop
-  const padding = atBottom ? Math.max(0, chatHeight - effectiveVisible) : 0
-  // Map terminal row to absolute line within the visible entries
-  // cropTop offsets into the first entry (its first cropTop lines are above the viewport)
-  const contentRow = chatRow - padding + vw.cropTop
-
-  if (contentRow < 0) return null
-
-  let cumHeight = 0
-  for (let i = vw.start; i < vw.end; i++) {
-    if (contentRow < cumHeight + entryHeights[i]) return i
-    cumHeight += entryHeights[i]
+  if (contentRow < 0 || contentRow >= visibleLineCount) {
+    return null
   }
 
-  return null
+  return findEntryIndexForLine(entryOffsets, vw.viewTop + contentRow)
 }
 
 // Extract readable text from a transcript entry.

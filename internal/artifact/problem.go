@@ -27,6 +27,7 @@ type CharacterizeInput struct {
 	ProblemRef  string                `json:"problem_ref"`
 	Dimensions  []ComparisonDimension `json:"dimensions"`
 	ParityRules string                `json:"parity_rules,omitempty"`
+	ParityPlan  *ParityPlan           `json:"parity_plan,omitempty"`
 }
 
 // ComparisonDimension defines a single axis for comparing variants.
@@ -185,6 +186,13 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 		return nil, "", fmt.Errorf("at least one comparison dimension is required")
 	}
 
+	parityPlan := mergeLegacyParityRules(input.ParityPlan, input.ParityRules)
+	if input.ParityPlan != nil {
+		if err := ValidateParityPlan(*parityPlan); err != nil {
+			return nil, "", err
+		}
+	}
+
 	// Count existing characterization versions
 	charVersion := 1
 	for i := 1; ; i++ {
@@ -249,11 +257,23 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 		}
 	}
 
-	if input.ParityRules != "" {
+	if input.ParityRules != "" && input.ParityPlan == nil {
 		section.WriteString(fmt.Sprintf("\n**Parity rules:** %s\n", input.ParityRules))
+	}
+	if input.ParityPlan != nil {
+		section.WriteString(renderParityPlanSection(parityPlan))
 	}
 
 	a.Body += section.String()
+
+	fields := a.UnmarshalProblemFields()
+	fields.Characterizations = append(fields.Characterizations, CharacterizationSnapshot{
+		Version:    charVersion,
+		Dimensions: cloneDimensions(input.Dimensions),
+		ParityPlan: cloneParityPlan(parityPlan),
+	})
+	sd, _ := json.Marshal(fields)
+	a.StructuredData = string(sd)
 
 	if err := store.Update(ctx, a); err != nil {
 		return nil, "", fmt.Errorf("update problem: %w", err)
@@ -265,6 +285,28 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 	}
 
 	return a, filePath, nil
+}
+
+func renderParityPlanSection(plan *ParityPlan) string {
+	if plan == nil {
+		return ""
+	}
+
+	var section strings.Builder
+	section.WriteString("\n**Parity plan:**\n")
+	section.WriteString(fmt.Sprintf("- Baseline set: %s\n", strings.Join(plan.BaselineSet, ", ")))
+	section.WriteString(fmt.Sprintf("- Window: %s\n", plan.Window))
+	section.WriteString(fmt.Sprintf("- Budget: %s\n", plan.Budget))
+	section.WriteString(fmt.Sprintf("- Missing data policy: %s\n", plan.MissingDataPolicy))
+
+	for _, rule := range plan.Normalization {
+		section.WriteString(fmt.Sprintf("- Normalize %s with %s\n", rule.Dimension, rule.Method))
+	}
+	for _, condition := range plan.PinnedConditions {
+		section.WriteString(fmt.Sprintf("- Pinned condition: %s\n", condition))
+	}
+
+	return section.String()
 }
 
 // SelectProblems lists active ProblemCards, optionally filtered by context.

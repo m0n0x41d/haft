@@ -705,8 +705,9 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 			c.evidence.Items = append(c.evidence.Items, agent.NewEvidenceItem(agent.ObservationNoVerify, "no tests or lint run before measure", 3))
 		}
 
-		// Compute R_eff from explicit evidence only (observations don't count)
-		rEff := agent.ComputeREff(c.evidence)
+		// Compute cycle-local assurance from explicit evidence only.
+		assurance := agent.ComputeAssurance(c.evidence)
+		rEff := assurance.R
 
 		// R_eff threshold check (FPF: low evidence = low trust)
 		if rEffErr := agent.CheckREff(rEff); rEffErr != nil && meta.MeasureVerdict == "accepted" {
@@ -742,7 +743,7 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 					wlnk = weakest + fmt.Sprintf(" (score: %.1f)", minScore)
 				}
 			}
-			completed := agent.CompleteCycle(updated, wlnk, rEff)
+			completed := agent.CompleteCycle(updated, wlnk, assurance)
 			_ = c.Cycles.UpdateCycle(ctx, completed)
 			sess.ActiveCycleID = ""
 			_ = c.Sessions.Update(ctx, sess)

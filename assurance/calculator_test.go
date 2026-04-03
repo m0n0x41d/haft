@@ -231,3 +231,25 @@ func TestCalculateReliability_MixedEvidenceWLNK(t *testing.T) {
 	}
 }
 
+func TestCalculateReliability_FormalityNormalization(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, formality_level) VALUES ('e1', 'A', 'internal', 'pass', ?, 7)",
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FormalityScore != 2 {
+		t.Errorf("Expected normalized formality score 2, got %d", report.FormalityScore)
+	}
+}

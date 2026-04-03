@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+type EDItem struct {
+	ValidUntil time.Time
+	Now        time.Time
+	K          float64
+}
+
+type EDBudgetAlert struct {
+	TotalED float64
+	Budget  float64
+	Excess  float64
+}
+
 // ScoreEvidence computes the effective reliability score for a single evidence item.
 // FPF B.3: R_eff = max(0, base_score - Φ(CL)), with decay override for expired evidence.
 func ScoreEvidence(verdict string, cl int, validUntil string, now time.Time) float64 {
@@ -49,4 +61,49 @@ func CLPenalty(cl int) float64 {
 	default: // CL=0 or invalid
 		return 0.9
 	}
+}
+
+// ComputeED returns the epistemic debt for evidence that has expired.
+// k defaults to 1.0 debt unit per day.
+func ComputeED(validUntil time.Time, now time.Time, k float64) float64 {
+	if validUntil.IsZero() {
+		return 0
+	}
+	if now.Before(validUntil) || now.Equal(validUntil) {
+		return 0
+	}
+	if k <= 0 {
+		k = 1.0
+	}
+
+	daysExpired := now.Sub(validUntil).Hours() / 24
+	return k * math.Max(0, daysExpired)
+}
+
+// AggregateED returns the total epistemic debt across all items.
+func AggregateED(items []EDItem) float64 {
+	total := 0.0
+
+	for _, item := range items {
+		total += ComputeED(item.ValidUntil, item.Now, item.K)
+	}
+
+	return total
+}
+
+// CheckEDBudget reports when total epistemic debt exceeds the configured budget.
+func CheckEDBudget(totalED, budget float64) *EDBudgetAlert {
+	if budget < 0 {
+		budget = 0
+	}
+	if totalED <= budget {
+		return nil
+	}
+
+	alert := &EDBudgetAlert{
+		TotalED: totalED,
+		Budget:  budget,
+		Excess:  totalED - budget,
+	}
+	return alert
 }

@@ -12,7 +12,7 @@ type AssuranceReport struct {
 	HolonID        string
 	FinalScore     float64
 	SelfScore      float64 // Score based on own evidence
-	FormalityScore int     // F_eff = min(F_i) for all evidence (0-9 scale)
+	FormalityScore int     // F_eff = min(F_i) after normalizing legacy data to F0-F3
 	WeakestLink    string  // ID of the dependency pulling the score down
 	DecayPenalty   float64
 	Factors        []string // Textual explanations for AI
@@ -44,6 +44,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	visited[holonID] = true
 
 	report := &AssuranceReport{HolonID: holonID}
+	now := time.Now().UTC()
 
 	// 1. Calculate Self Score (based on Evidence)
 	// B.3.4: Check for expired evidence + evidence source CL penalty
@@ -55,8 +56,8 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	}
 	defer func() { _ = rows.Close() }()
 
-	minScore := 1.0   // WLNK: track weakest evidence
-	minFormality := 9 // F_eff: track lowest formality (0-9 scale, 9 is highest)
+	minScore := 1.0
+	minFormality := 3
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
@@ -87,7 +88,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		}
 
 		// Evidence Decay Logic (B.3.4: time-based expiration)
-		if validUntil != nil && time.Now().After(*validUntil) {
+		if validUntil != nil && now.After(*validUntil) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
 			score = 0.1                // Penalty for expiration, not zero but close
 			report.DecayPenalty += 0.9 // Track how much was lost
@@ -98,18 +99,18 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			minScore = score
 		}
 
-		// F_eff: weakest formality determines formality score (C.2.3)
-		if formalityLevel < minFormality {
-			minFormality = formalityLevel
+		normalizedFormality := normalizeFormalityLevel(formalityLevel)
+		if normalizedFormality < minFormality {
+			minFormality = normalizedFormality
 		}
 	}
 
 	if hasEvidence {
-		report.SelfScore = minScore          // WLNK: weakest evidence determines score
-		report.FormalityScore = minFormality // F_eff: weakest formality
+		report.SelfScore = minScore
+		report.FormalityScore = minFormality
 	} else {
-		report.SelfScore = 0.0    // L0: Unsubstantiated
-		report.FormalityScore = 0 // No evidence = no formality
+		report.SelfScore = 0.0
+		report.FormalityScore = 0
 		report.Factors = append(report.Factors, "No evidence found (L0)")
 	}
 
@@ -212,5 +213,20 @@ func evidenceTypeToCLPenalty(evidenceType string) float64 {
 		return 0.4 // CL1: different context
 	default:
 		return 0.0 // Unknown type, no penalty
+	}
+}
+
+func normalizeFormalityLevel(level int) int {
+	switch {
+	case level < 0:
+		return 0
+	case level <= 3:
+		return level
+	case level <= 5:
+		return 1
+	case level <= 8:
+		return 2
+	default:
+		return 3
 	}
 }

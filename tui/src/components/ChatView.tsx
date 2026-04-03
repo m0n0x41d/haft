@@ -4,11 +4,10 @@
 
 import React from "react"
 import { Box, Text } from "ink"
-import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 import { MarkdownView } from "./MarkdownView.js"
+import { AssistantToolBatchView } from "./AssistantToolBatchView.js"
 import { ThinkingIndicator } from "./ThinkingIndicator.js"
-import { ToolCallView } from "./ToolCallView.js"
 
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
@@ -36,7 +35,7 @@ const EntryBlock = React.memo(function EntryBlock({ entry, width }: { entry: Tra
     case "thinking":
       return <ThinkingBlock lines={entry.lines} hiddenCount={entry.hiddenCount} />
     case "assistantToolBatch":
-      return <AssistantToolBatchBlock tools={entry.tools} width={width} />
+      return <AssistantToolBatchView tools={entry.tools} width={width} />
     case "indicator":
       return <ThinkingIndicator model={entry.model} />
     case "error":
@@ -90,22 +89,6 @@ function ThinkingBlock({ lines, hiddenCount }: { lines: string[]; hiddenCount: n
       )}
       {lines.map((line, i) => (
         <Text key={i} dimColor><Text color="gray">{"\u2503"}</Text> {line}</Text>
-      ))}
-    </Box>
-  )
-}
-
-function AssistantToolBatchBlock({
-  tools,
-  width,
-}: {
-  tools: ToolCall[]
-  width: number
-}) {
-  return (
-    <Box flexDirection="column">
-      {tools.map((tool) => (
-        <ToolCallView key={tool.callId} tool={tool} width={width} />
       ))}
     </Box>
   )

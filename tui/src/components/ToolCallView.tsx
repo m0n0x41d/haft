@@ -1,6 +1,7 @@
 import React from "react"
 import { Box, Text } from "ink"
 import type { ToolCall } from "../protocol/types.js"
+import type { ToolDisplay } from "./toolBatch.js"
 
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
@@ -8,19 +9,22 @@ const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 // Tool calls use simple colored dot.
 
 interface Props {
-  tool: ToolCall
+  display: ToolDisplay
   width: number
+  depth?: number
 }
 
 // ⎿ prefix (2 chars) + ToolDot + bold name + (params)
 // All aligned at paddingX={1} from parent
-export function ToolCallView({ tool, width }: Props) {
+export function ToolCallView({ display, width, depth = 0 }: Props) {
+  const { tool } = display
   const displayName = TOOL_NAMES[tool.name] ?? tool.name
   const param = extractParam(tool.name, tool.args)
-  const summary = tool.subagent?.summary ?? tool.output
+  const summary = getToolSummary(tool)
+  const nestedWidth = Math.max(24, width - 2)
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0}>
       {/* Header: dot Name (param) */}
       <Box>
         <ToolDot tool={tool} />
@@ -36,17 +40,78 @@ export function ToolCallView({ tool, width }: Props) {
       )}
 
       {/* Streaming output — last 3 lines */}
-      {tool.output && tool.running && (
-        <Box marginLeft={2} flexDirection="column">
-          {tool.output.split("\n").slice(-3).map((line, i) => (
-            <Text key={i} dimColor>{truncate(line, width - 6)}</Text>
-          ))}
+      {tool.output && tool.running && !tool.subagent && (
+        <StreamingToolOutput output={tool.output} width={width} />
+      )}
+
+      {display.kind === "spawnedAgent" && (
+        <SpawnedAgentView display={display} width={nestedWidth} depth={depth + 1} />
+      )}
+    </Box>
+  )
+}
+
+function getToolSummary(tool: ToolCall): string | undefined {
+  if (tool.subagent) {
+    return undefined
+  }
+
+  return tool.output
+}
+
+function StreamingToolOutput({ output, width }: { output: string; width: number }) {
+  return (
+    <Box marginLeft={2} flexDirection="column">
+      {output.split("\n").slice(-3).map((line, i) => (
+        <Text key={i} dimColor>{truncate(line, width - 6)}</Text>
+      ))}
+    </Box>
+  )
+}
+
+function SpawnedAgentView({
+  display,
+  width,
+  depth,
+}: {
+  display: ToolDisplay
+  width: number
+  depth: number
+}) {
+  const subagent = display.tool.subagent
+
+  if (!subagent) {
+    return null
+  }
+
+  const showWaitingState = subagent.running && display.children.length === 0 && !subagent.summary
+
+  return (
+    <Box flexDirection="column" marginLeft={2}>
+      <Box>
+        <Text dimColor>{"\u21B3 "}</Text>
+        <Text color="cyan" bold>{display.subagentLabel ?? "agent"}</Text>
+        {subagent.running && <Text dimColor>{" (running)"}</Text>}
+        {subagent.isError && !subagent.running && <Text color="red">{" (failed)"}</Text>}
+      </Box>
+
+      {showWaitingState && (
+        <Box marginLeft={2}>
+          <Text dimColor>waiting for tool activity</Text>
         </Box>
       )}
 
-      {/* Subagent children */}
-      {tool.subagent?.tools.length && (
-        <SubagentChildren children={tool.subagent.tools} />
+      {display.children.map((child) => (
+        <ToolCallView
+          key={child.tool.callId}
+          display={child}
+          width={width}
+          depth={depth}
+        />
+      ))}
+
+      {subagent.summary && !subagent.running && (
+        <ToolResultSummary output={subagent.summary} toolName={display.tool.name} width={width} />
       )}
     </Box>
   )
@@ -105,28 +170,6 @@ function ToolResultSummary({
     <Box marginLeft={2}>
       <Text dimColor>{"\u21B3 "}</Text>
       <Text dimColor>{truncate(firstLine.trim(), width - 6)}</Text>
-    </Box>
-  )
-}
-
-function SubagentChildren({ children }: { children: ToolCall[] }) {
-  const visible = children.slice(-5)
-  const hiddenCount = children.length - visible.length
-
-  return (
-    <Box flexDirection="column" marginLeft={2}>
-      {hiddenCount > 0 && <Text dimColor>  +{hiddenCount} more</Text>}
-      {visible.map((child, i) => {
-        const isLast = i === visible.length - 1 && !child.running
-        const childName = TOOL_NAMES[child.name] ?? child.name
-        return (
-          <Box key={child.callId}>
-            <Text dimColor>{isLast ? "\u2514\u2500 " : "\u251C\u2500 "}</Text>
-            <ToolDot tool={child} />
-            <Text bold>{childName}</Text>
-          </Box>
-        )
-      })}
     </Box>
   )
 }

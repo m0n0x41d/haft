@@ -1,10 +1,11 @@
 // L4: Chat viewport — renders transcript entries from L3.
-// Scroll clipping done by entry slicing from L2.
-// Does NOT guess heights. Ink handles layout.
+// Scroll clipping is driven by the active L2 viewport window.
+// Does NOT guess heights. Ink handles layout inside the painted window.
 
 import React from "react"
 import { Box, Text } from "ink"
 import type { TranscriptEntry } from "../state/transcript.js"
+import type { VisibleWindow } from "../scroll/measure.js"
 import { MarkdownView } from "./MarkdownView.js"
 import { ThinkingIndicator } from "./ThinkingIndicator.js"
 import { ToolCallView } from "./ToolCallView.js"
@@ -12,16 +13,62 @@ import { ToolCallView } from "./ToolCallView.js"
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
 interface Props {
-  entries: TranscriptEntry[]
+  entries: readonly TranscriptEntry[]
+  entryHeights: readonly number[]
+  visibleWindow: VisibleWindow
   width: number
+  height: number
 }
 
-export function ChatView({ entries, width }: Props) {
+export const ChatView = React.memo(function ChatView({
+  entries,
+  entryHeights,
+  visibleWindow,
+  width,
+  height,
+}: Props) {
+  const visibleEntries = entries.slice(visibleWindow.start, visibleWindow.end)
+  const firstEntry = visibleEntries[0]
+  const remainingEntries = visibleEntries.slice(1)
+  const firstEntryHeight = entryHeights[visibleWindow.start] ?? 0
+  const clippedFirstEntryHeight = Math.max(0, firstEntryHeight - visibleWindow.cropTop)
+
   return (
-    <Box flexDirection="column">
-      {entries.map((entry) => (
+    <Box flexDirection="column" height={height} overflowY="hidden">
+      {visibleWindow.paddingTop > 0 && <Box height={visibleWindow.paddingTop} flexShrink={0} />}
+      {firstEntry && (
+        <VisibleEntryBlock
+          entry={firstEntry}
+          width={width}
+          cropTop={visibleWindow.cropTop}
+          visibleHeight={clippedFirstEntryHeight}
+        />
+      )}
+      {remainingEntries.map((entry) => (
         <EntryBlock key={entry.id} entry={entry} width={width} />
       ))}
+      {visibleWindow.paddingBottom > 0 && <Box height={visibleWindow.paddingBottom} flexShrink={0} />}
+    </Box>
+  )
+})
+
+function VisibleEntryBlock(
+  { entry, width, cropTop, visibleHeight }:
+  { entry: TranscriptEntry; width: number; cropTop: number; visibleHeight: number },
+) {
+  if (cropTop <= 0) {
+    return <EntryBlock entry={entry} width={width} />
+  }
+
+  if (visibleHeight <= 0) {
+    return null
+  }
+
+  return (
+    <Box height={visibleHeight} overflowY="hidden" flexShrink={0}>
+      <Box flexDirection="column" marginTop={-cropTop}>
+        <EntryBlock entry={entry} width={width} />
+      </Box>
     </Box>
   )
 }

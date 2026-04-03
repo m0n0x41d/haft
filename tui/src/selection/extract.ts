@@ -18,22 +18,18 @@ export function termRowToEntryIndex(
   termRow: number,
   layout: ViewportLayout,
 ): number | null {
-  const { visibleWindow: vw, entryHeights, atBottom, chatHeight } = layout
+  const { visibleWindow: vw, entryHeights, chatHeight } = layout
   const chatRow = termRow - 1 // 0-based within chat area
 
   if (chatRow < 0 || chatRow >= chatHeight) return null
 
-  let totalVisible = 0
-  for (let i = vw.start; i < vw.end; i++) totalVisible += entryHeights[i]
+  if (chatRow < vw.paddingTop) return null
 
-  // Account for cropTop: the first entry is shifted up by cropTop lines
-  const effectiveVisible = totalVisible - vw.cropTop
-  const padding = atBottom ? Math.max(0, chatHeight - effectiveVisible) : 0
-  // Map terminal row to absolute line within the visible entries
-  // cropTop offsets into the first entry (its first cropTop lines are above the viewport)
-  const contentRow = chatRow - padding + vw.cropTop
+  const visibleContentBottom = vw.paddingTop + vw.contentHeight
 
-  if (contentRow < 0) return null
+  if (chatRow >= visibleContentBottom) return null
+
+  const contentRow = chatRow - vw.paddingTop + vw.cropTop
 
   let cumHeight = 0
   for (let i = vw.start; i < vw.end; i++) {

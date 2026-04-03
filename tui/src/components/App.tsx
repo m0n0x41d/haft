@@ -10,7 +10,6 @@ import type { SessionListResponse, ModelListResponse, FileListResponse } from ".
 import { initialState, reducer } from "../state/store.js"
 import { buildTranscript } from "../state/transcript.js"
 import { useScroll } from "../scroll/useScroll.js"
-import { measureTranscript } from "../scroll/measure.js"
 // highlight.ts no longer has a subscriber pattern — highlighting applies
 // lazily on natural re-renders (scroll, new message, etc.)
 import type { InputEvent } from "../terminal/input.js"
@@ -81,7 +80,17 @@ export function App({ client, inputEvents }: AppProps) {
   const selRef = useRef<SelectionState>(INITIAL_SELECTION)
   const layoutRef = useRef<ViewportLayout>({
     chatHeight: 0, atBottom: true,
-    visibleWindow: { start: 0, end: 0, cropTop: 0 },
+    visibleWindow: {
+      start: 0,
+      end: 0,
+      cropTop: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      contentHeight: 0,
+      viewportTop: 0,
+      viewportBottom: 0,
+      totalHeight: 0,
+    },
     entryHeights: [], transcript: [],
   })
 
@@ -123,20 +132,15 @@ export function App({ client, inputEvents }: AppProps) {
 
   // --- L2: Scroll (line-based) ---
   const chatHeight = Math.max(5, height - BOTTOM_ROWS)
-  const entryHeights = useMemo(() => measureTranscript(transcript, width), [transcript, width])
-  const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
+  const { scroll, visibleWindow: vw, layout: transcriptLayout, linesAboveBottom, isAtBottom: atBottom } = useScroll(
     inputEvents,
-    entryHeights,
+    transcript,
+    width,
     chatHeight,
   )
 
-  // Visible entries based on scroll
-  const visibleEntries = useMemo(() => {
-    return transcript.slice(vw.start, vw.end)
-  }, [transcript, vw.start, vw.end])
-
   // --- Selection: keep layout ref current for mouse event handler ---
-  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, transcript }
+  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights: transcriptLayout.heights, transcript }
 
   useEffect(() => {
     const handler = (ev: InputEvent) => {
@@ -379,17 +383,17 @@ export function App({ client, inputEvents }: AppProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Chat: fixed height, overflow clipped. Spacer anchors content to bottom when at latest messages; removed when scrolled up so overflow clips from bottom. */}
-      <Box flexDirection="column" height={chatHeight} overflowY="hidden">
-        {atBottom && <Box flexGrow={1} />}
-        <Box flexDirection="column" marginTop={vw.cropTop > 0 ? -vw.cropTop : undefined}>
-          <ChatView entries={visibleEntries} width={width} />
-        </Box>
-      </Box>
+      <ChatView
+        entries={transcript}
+        entryHeights={transcriptLayout.heights}
+        visibleWindow={vw}
+        width={width}
+        height={chatHeight}
+      />
 
       {/* Scroll indicator */}
-      {scrollState.offset > 0 && (
-        <Text dimColor>  {"\u2191"} {scrollState.offset} lines above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
+      {linesAboveBottom > 0 && (
+        <Text dimColor>  {"\u2191"} {linesAboveBottom} lines above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
       )}
 
       {/* Overlays */}

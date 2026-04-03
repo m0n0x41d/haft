@@ -115,13 +115,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const { params } = action
       const idx = state.messages.findIndex((m) => m.id === params.id)
       const existing = idx >= 0 ? state.messages[idx] : null
-      const msg: MsgInfo = {
-        id: params.id,
-        role: existing?.role ?? (params.id.startsWith("user-") ? "user" : "assistant"),
-        text: params.text,
-        thinking: params.thinking,
-        tools: params.tools,
-      }
+      const msg = buildUpdatedMessage(existing, params)
       const messages = [...state.messages]
       if (idx >= 0) {
         messages[idx] = msg
@@ -209,16 +203,15 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, cycle: action.params }
 
     case "subagent.start": {
-      // Link subagent to most recent spawn_agent tool
       const newState = { ...state, activeSubagents: state.activeSubagents + 1 }
       return updateLastAssistant(newState, (msg) => {
         const tools = [...(msg.tools ?? [])]
-        for (let i = tools.length - 1; i >= 0; i--) {
-          if (tools[i].name === "spawn_agent" && !tools[i].subagentId) {
-            tools[i] = { ...tools[i], subagentId: action.params.subagentId }
-            break
-          }
+        const index = findSpawnAgentToolIndex(tools, action.params)
+        if (index < 0) {
+          return msg
         }
+
+        tools[index] = { ...tools[index], subagentId: action.params.subagentId }
         return { ...msg, tools }
       })
     }
@@ -353,4 +346,95 @@ function updateChildTool(state: AppState, subagentId: string, callId: string, fn
     ...parent,
     children: parent.children?.map((c) => c.callId === callId ? fn(c) : c),
   }))
+}
+
+function buildUpdatedMessage(existing: MsgInfo | null, params: MsgUpdateParams): MsgInfo {
+  return {
+    id: params.id,
+    role: existing?.role ?? inferMessageRole(params.id),
+    text: params.text,
+    thinking: params.thinking,
+    tools: mergeToolCalls(existing?.tools, params.tools),
+  }
+}
+
+function inferMessageRole(id: string): MsgInfo["role"] {
+  if (id.startsWith("user-")) {
+    return "user"
+  }
+
+  return "assistant"
+}
+
+function mergeToolCalls(existing: ToolCall[] | undefined, incoming: ToolCall[] | undefined): ToolCall[] | undefined {
+  const existingTools = existing ?? []
+  if (incoming === undefined) {
+    return existingTools.length > 0 ? existingTools : undefined
+  }
+
+  const existingByCallId = new Map(existingTools.map((tool) => [tool.callId, tool]))
+  const incomingCallIds = new Set(incoming.map((tool) => tool.callId))
+  const mergedIncoming = incoming.map((tool) => mergeToolCall(existingByCallId.get(tool.callId), tool))
+  const retainedExisting = existingTools.filter((tool) => !incomingCallIds.has(tool.callId))
+  const mergedTools = [...mergedIncoming, ...retainedExisting]
+
+  return mergedTools.length > 0 ? mergedTools : undefined
+}
+
+function mergeToolCall(existing: ToolCall | undefined, incoming: ToolCall): ToolCall {
+  return {
+    callId: incoming.callId,
+    name: incoming.name,
+    args: incoming.args,
+    output: incoming.output ?? existing?.output,
+    isError: incoming.isError ?? existing?.isError,
+    running: incoming.running,
+    subagentId: incoming.subagentId ?? existing?.subagentId,
+    children: mergeToolCalls(existing?.children, incoming.children),
+  }
+}
+
+function findSpawnAgentToolIndex(tools: ToolCall[], params: SubagentStartParams): number {
+  const predicates = [
+    (tool: ToolCall) => isUnboundSpawnAgentTool(tool) && matchesSpawnAgentTask(tool, params.task) && matchesSpawnAgentType(tool, params.name),
+    (tool: ToolCall) => isUnboundSpawnAgentTool(tool) && matchesSpawnAgentTask(tool, params.task),
+    (tool: ToolCall) => isUnboundSpawnAgentTool(tool),
+  ]
+
+  for (const predicate of predicates) {
+    const index = tools.findIndex(predicate)
+    if (index >= 0) {
+      return index
+    }
+  }
+
+  return -1
+}
+
+function isUnboundSpawnAgentTool(tool: ToolCall): boolean {
+  return tool.name === "spawn_agent" && !tool.subagentId
+}
+
+function matchesSpawnAgentTask(tool: ToolCall, task: string): boolean {
+  return parseSpawnAgentArgs(tool.args)?.task === task
+}
+
+function matchesSpawnAgentType(tool: ToolCall, agentType: string): boolean {
+  return parseSpawnAgentArgs(tool.args)?.agent_type === agentType
+}
+
+function parseSpawnAgentArgs(args: string): { agent_type?: string; task?: string } | null {
+  try {
+    const parsed = JSON.parse(args) as Record<string, unknown>
+    if (!parsed || Array.isArray(parsed)) {
+      return null
+    }
+
+    return {
+      agent_type: typeof parsed.agent_type === "string" ? parsed.agent_type : undefined,
+      task: typeof parsed.task === "string" ? parsed.task : undefined,
+    }
+  } catch {
+    return null
+  }
 }

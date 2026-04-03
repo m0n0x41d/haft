@@ -1370,15 +1370,15 @@ var require_react_development = __commonJS({
           }
           return dispatcher.useContext(Context);
         }
-        function useState8(initialState2) {
+        function useState9(initialState2) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useState(initialState2);
         }
-        function useReducer3(reducer2, initialArg, init) {
+        function useReducer2(reducer2, initialArg, init) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useReducer(reducer2, initialArg, init);
         }
-        function useRef5(initialValue) {
+        function useRef6(initialValue) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useRef(initialValue);
         }
@@ -2171,9 +2171,9 @@ var require_react_development = __commonJS({
         exports.useInsertionEffect = useInsertionEffect;
         exports.useLayoutEffect = useLayoutEffect3;
         exports.useMemo = useMemo6;
-        exports.useReducer = useReducer3;
-        exports.useRef = useRef5;
-        exports.useState = useState8;
+        exports.useReducer = useReducer2;
+        exports.useRef = useRef6;
+        exports.useState = useState9;
         exports.useSyncExternalStore = useSyncExternalStore;
         exports.useTransition = useTransition;
         exports.version = ReactVersion;
@@ -33859,13 +33859,7 @@ function reducer(state, action) {
       const { params } = action;
       const idx = state.messages.findIndex((m) => m.id === params.id);
       const existing = idx >= 0 ? state.messages[idx] : null;
-      const msg = {
-        id: params.id,
-        role: existing?.role ?? (params.id.startsWith("user-") ? "user" : "assistant"),
-        text: params.text,
-        thinking: params.thinking,
-        tools: params.tools
-      };
+      const msg = buildUpdatedMessage(existing, params);
       const messages = [...state.messages];
       if (idx >= 0) {
         messages[idx] = msg;
@@ -33948,12 +33942,11 @@ function reducer(state, action) {
       const newState = { ...state, activeSubagents: state.activeSubagents + 1 };
       return updateLastAssistant(newState, (msg) => {
         const tools = [...msg.tools ?? []];
-        for (let i = tools.length - 1; i >= 0; i--) {
-          if (tools[i].name === "spawn_agent" && !tools[i].subagentId) {
-            tools[i] = { ...tools[i], subagentId: action.params.subagentId };
-            break;
-          }
+        const index = findSpawnAgentToolIndex(tools, action.params);
+        if (index < 0) {
+          return msg;
         }
+        tools[index] = { ...tools[index], subagentId: action.params.subagentId };
         return { ...msg, tools };
       });
     }
@@ -34065,191 +34058,627 @@ function updateChildTool(state, subagentId, callId, fn) {
     children: parent.children?.map((c) => c.callId === callId ? fn(c) : c)
   }));
 }
-
-// src/state/transcript.ts
-function buildTranscript(opts) {
-  const entries = [];
-  for (const msg of opts.messages) {
-    if (msg.role === "user") {
-      const lines = msg.text.split("\n");
-      const text = lines[0] ?? "";
-      const attachments = lines.slice(1).filter((l) => l.startsWith("["));
-      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text, attachments });
-      continue;
-    }
-    if (msg.thinking) {
-      const allLines = msg.thinking.split("\n");
-      const maxVisible = 5;
-      const visible = opts.thinkExpanded ? allLines : allLines.slice(-maxVisible);
-      const hidden = opts.thinkExpanded ? 0 : Math.max(0, allLines.length - maxVisible);
-      entries.push({ type: "thinking", id: `${msg.id}-thinking`, lines: visible, hiddenCount: hidden });
-    }
-    if (msg.text) {
-      entries.push({
-        type: "assistantText",
-        id: `${msg.id}-text`,
-        text: msg.text,
-        streaming: msg.id === opts.streamingMsgId
-      });
-    }
-    for (const tool of msg.tools ?? []) {
-      entries.push({ type: "toolCall", id: `${msg.id}-tool-${tool.callId}`, tool });
+function buildUpdatedMessage(existing, params) {
+  return {
+    id: params.id,
+    role: existing?.role ?? inferMessageRole(params.id),
+    text: params.text,
+    thinking: params.thinking,
+    tools: mergeToolCalls(existing?.tools, params.tools)
+  };
+}
+function inferMessageRole(id) {
+  if (id.startsWith("user-")) {
+    return "user";
+  }
+  return "assistant";
+}
+function mergeToolCalls(existing, incoming) {
+  const existingTools = existing ?? [];
+  if (incoming === void 0) {
+    return existingTools.length > 0 ? existingTools : void 0;
+  }
+  const existingByCallId = new Map(existingTools.map((tool) => [tool.callId, tool]));
+  const incomingCallIds = new Set(incoming.map((tool) => tool.callId));
+  const mergedIncoming = incoming.map((tool) => mergeToolCall(existingByCallId.get(tool.callId), tool));
+  const retainedExisting = existingTools.filter((tool) => !incomingCallIds.has(tool.callId));
+  const mergedTools = [...mergedIncoming, ...retainedExisting];
+  return mergedTools.length > 0 ? mergedTools : void 0;
+}
+function mergeToolCall(existing, incoming) {
+  return {
+    callId: incoming.callId,
+    name: incoming.name,
+    args: incoming.args,
+    output: incoming.output ?? existing?.output,
+    isError: incoming.isError ?? existing?.isError,
+    running: incoming.running,
+    subagentId: incoming.subagentId ?? existing?.subagentId,
+    children: mergeToolCalls(existing?.children, incoming.children)
+  };
+}
+function findSpawnAgentToolIndex(tools, params) {
+  const predicates = [
+    (tool) => isUnboundSpawnAgentTool(tool) && matchesSpawnAgentTask(tool, params.task) && matchesSpawnAgentType(tool, params.name),
+    (tool) => isUnboundSpawnAgentTool(tool) && matchesSpawnAgentTask(tool, params.task),
+    (tool) => isUnboundSpawnAgentTool(tool)
+  ];
+  for (const predicate of predicates) {
+    const index = tools.findIndex(predicate);
+    if (index >= 0) {
+      return index;
     }
   }
+  return -1;
+}
+function isUnboundSpawnAgentTool(tool) {
+  return tool.name === "spawn_agent" && !tool.subagentId;
+}
+function matchesSpawnAgentTask(tool, task) {
+  return parseSpawnAgentArgs(tool.args)?.task === task;
+}
+function matchesSpawnAgentType(tool, agentType) {
+  return parseSpawnAgentArgs(tool.args)?.agent_type === agentType;
+}
+function parseSpawnAgentArgs(args) {
+  try {
+    const parsed = JSON.parse(args);
+    if (!parsed || Array.isArray(parsed)) {
+      return null;
+    }
+    return {
+      agent_type: typeof parsed.agent_type === "string" ? parsed.agent_type : void 0,
+      task: typeof parsed.task === "string" ? parsed.task : void 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+// src/state/turnProjection.ts
+function projectTurns(messages) {
+  return messages.map(projectTurn);
+}
+function projectTurn(message) {
+  if (message.role === "user") {
+    return projectUserTurn(message);
+  }
+  return projectAssistantTurn(message);
+}
+function projectUserTurn(message) {
+  const lines = message.text.split("\n");
+  const attachments = lines.slice(1).filter((line) => line.startsWith("["));
+  return {
+    kind: "user",
+    message,
+    text: lines[0] ?? "",
+    attachments
+  };
+}
+function projectAssistantTurn(message) {
+  const toolSlots = buildToolSlots(message.tools ?? []);
+  const normalTools = toolSlots.filter((slot) => slot.kind === "normal");
+  const agentTools = toolSlots.filter((slot) => slot.kind === "agent");
+  return {
+    kind: "assistant",
+    message,
+    thinking: message.thinking ?? null,
+    text: message.text,
+    normalTools,
+    agentTools
+  };
+}
+function buildToolSlots(tools) {
+  const slots = tools.map((tool, ordinal) => ({
+    kind: getToolCallKind(tool),
+    ordinal,
+    tool
+  }));
+  const orderedSlots = [...slots].sort(compareToolSlots);
+  return orderedSlots;
+}
+function compareToolSlots(left, right) {
+  if (left.ordinal !== right.ordinal) {
+    return left.ordinal - right.ordinal;
+  }
+  return left.tool.callId.localeCompare(right.tool.callId);
+}
+function getToolCallKind(tool) {
+  const hasSubagent = Boolean(tool.subagentId);
+  const hasChildren = (tool.children?.length ?? 0) > 0;
+  if (tool.name === "spawn_agent" || hasSubagent || hasChildren) {
+    return "agent";
+  }
+  return "normal";
+}
+
+// src/state/transcript.ts
+function buildTranscriptRows(opts) {
+  const turns = projectTurns(opts.messages);
+  const rows = turns.flatMap((turn) => buildTurnRows(turn, opts));
+  const indicatorRow = buildIndicatorRow(opts);
+  const errorRow = buildErrorRow(opts);
+  return rows.concat(indicatorRow ? [indicatorRow] : []).concat(errorRow ? [errorRow] : []);
+}
+var buildTranscript = buildTranscriptRows;
+function buildTurnRows(turn, opts) {
+  if (turn.kind === "user") {
+    return [buildUserPromptRow(turn.message.id, turn.text, turn.attachments)];
+  }
+  return buildAssistantRows(turn, opts);
+}
+function buildUserPromptRow(messageId, text, attachments) {
+  return {
+    type: "userPrompt",
+    id: `${messageId}-user`,
+    text,
+    attachments,
+    measureKey: ["userPrompt", attachments.length].join(":")
+  };
+}
+function buildAssistantRows(turn, opts) {
+  const rows = [];
+  const thinkingRow = buildThinkingRow(turn, opts);
+  const assistantTextRow = buildAssistantTextRow(turn, opts);
+  const orderedTools = [...turn.normalTools, ...turn.agentTools];
+  const toolRows = orderedTools.map((slot) => buildToolCallRow(turn.message.id, slot));
+  if (thinkingRow) {
+    rows.push(thinkingRow);
+  }
+  if (assistantTextRow) {
+    rows.push(assistantTextRow);
+  }
+  return rows.concat(toolRows);
+}
+function buildThinkingRow(turn, opts) {
+  if (!turn.thinking) {
+    return null;
+  }
+  const allLines = turn.thinking.split("\n");
+  const maxVisible = 5;
+  const visible = opts.thinkExpanded ? allLines : allLines.slice(-maxVisible);
+  const hidden = opts.thinkExpanded ? 0 : Math.max(0, allLines.length - maxVisible);
+  return {
+    type: "thinking",
+    id: `${turn.message.id}-thinking`,
+    lines: visible,
+    hiddenCount: hidden,
+    measureKey: ["thinking", visible.length, hidden].join(":")
+  };
+}
+function buildAssistantTextRow(turn, opts) {
+  if (!turn.text) {
+    return null;
+  }
+  const streaming = turn.message.id === opts.streamingMsgId;
+  return {
+    type: "assistantText",
+    id: `${turn.message.id}-text`,
+    text: turn.text,
+    streaming,
+    measureKey: ["assistantText", streaming ? "streaming" : "static", getTextMeasureToken(turn.text)].join(":")
+  };
+}
+function buildToolCallRow(messageId, slot) {
+  return {
+    type: "toolCall",
+    id: `${messageId}-tool-${slot.tool.callId}`,
+    tool: slot.tool,
+    measureKey: buildToolMeasureKey(slot.tool)
+  };
+}
+function buildIndicatorRow(opts) {
   const streamingMsg = opts.streamingMsgId ? opts.messages.find((m) => m.id === opts.streamingMsgId) : null;
   const hasContent = streamingMsg && (streamingMsg.text || streamingMsg.tools && streamingMsg.tools.length > 0);
   if (opts.streaming && !hasContent) {
-    entries.push({ type: "indicator", id: "thinking-indicator", model: opts.model });
+    return {
+      type: "indicator",
+      id: "thinking-indicator",
+      model: opts.model,
+      measureKey: "indicator"
+    };
   }
-  if (opts.error) {
-    entries.push({ type: "error", id: "error", message: opts.error });
+  return null;
+}
+function buildErrorRow(opts) {
+  if (!opts.error) {
+    return null;
   }
-  return entries;
+  return {
+    type: "error",
+    id: "error",
+    message: opts.error,
+    measureKey: "error"
+  };
+}
+function getTextMeasureToken(text) {
+  const lineLengths = text.split("\n").map((line) => line.length).join(",");
+  return lineLengths;
+}
+function buildToolMeasureKey(tool) {
+  const outputLineCount = tool.output?.split("\n").length ?? 0;
+  const childCount = tool.children?.length ?? 0;
+  return [
+    "toolCall",
+    tool.callId,
+    tool.running ? "running" : "done",
+    tool.output ? "output" : "empty",
+    outputLineCount,
+    childCount
+  ].join(":");
 }
 
 // src/scroll/useScroll.ts
 var import_react25 = __toESM(require_react(), 1);
 
-// src/scroll/state.ts
-function initialScroll() {
-  return { offset: 0, totalLines: 0, viewportSize: 20 };
-}
-function clampOffset(offset, totalLines, viewportSize) {
-  return Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
-}
-function reduceScroll(state, cmd) {
-  const max = Math.max(0, state.totalLines - state.viewportSize);
-  switch (cmd.type) {
-    case "wheelUp":
-      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), max) };
-    case "wheelDown":
-      return { ...state, offset: Math.max(0, state.offset - (cmd.amount ?? 3)) };
-    case "pageUp":
-      return { ...state, offset: Math.min(state.offset + state.viewportSize, max) };
-    case "pageDown":
-      return { ...state, offset: Math.max(0, state.offset - state.viewportSize) };
-    case "home":
-      return { ...state, offset: max };
-    case "end":
-      return { ...state, offset: 0 };
-    case "contentChanged": {
-      const wasAtBottom = state.offset === 0;
-      if (wasAtBottom) {
-        return { ...state, totalLines: cmd.newTotalLines };
-      }
-      const delta = cmd.newTotalLines - state.totalLines;
-      return {
-        ...state,
-        totalLines: cmd.newTotalLines,
-        offset: clampOffset(state.offset + delta, cmd.newTotalLines, state.viewportSize)
-      };
-    }
-    case "resize":
-      return {
-        ...state,
-        viewportSize: cmd.viewportSize,
-        offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize)
-      };
-  }
-}
-function isAtBottom(state) {
-  return state.offset === 0;
-}
-
 // src/scroll/measure.ts
-function measureEntry(entry, width) {
-  switch (entry.type) {
+var MIN_ROW_HEIGHT = 1;
+var MIN_OVERSCAN_LINES = 6;
+function createTranscriptHeightCache() {
+  return {
+    width: 0,
+    heightsByRowId: /* @__PURE__ */ new Map(),
+    measureKeysByRowId: /* @__PURE__ */ new Map()
+  };
+}
+function measureRow(row, width) {
+  switch (row.type) {
     case "userPrompt":
-      return 1 + 1 + entry.attachments.length;
+      return 1 + 1 + row.attachments.length;
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120));
-      return 1 + countWrappedLines(entry.text, contentWidth);
+      const wrappedLines = countWrappedLines(row.text, contentWidth);
+      const streamingCursor = row.streaming ? 1 : 0;
+      return 1 + wrappedLines + streamingCursor;
     }
     case "thinking":
-      return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length);
+      return (row.hiddenCount > 0 ? 1 : 0) + Math.max(1, row.lines.length);
     case "toolCall": {
-      const t = entry.tool;
-      let h = 2;
-      if (t.output && !t.running) h += 1;
-      if (t.output && t.running) h += Math.min(3, t.output.split("\n").length);
-      if (t.children && t.children.length > 0) {
-        if (t.children.length > 5) h += 1;
-        h += Math.min(5, t.children.length);
+      const childCount = row.tool.children?.length ?? 0;
+      const visibleChildren = Math.min(5, childCount);
+      const hiddenChildren = childCount > 5 ? 1 : 0;
+      const outputLines = row.tool.output?.split("\n").length ?? 0;
+      let height = 2;
+      if (row.tool.output && !row.tool.running) {
+        height += 1;
       }
-      return h;
+      if (row.tool.output && row.tool.running) {
+        height += Math.min(3, outputLines);
+      }
+      return height + visibleChildren + hiddenChildren;
     }
     case "indicator":
       return 2;
-    // marginTop(1) + animation(1)
     case "error":
       return 6;
   }
 }
+function buildTranscriptLayout(rows, width, previousCache = createTranscriptHeightCache()) {
+  const canReuseHeights = previousCache.width === width;
+  const heightsByRowId = /* @__PURE__ */ new Map();
+  const measureKeysByRowId = /* @__PURE__ */ new Map();
+  const heights = rows.map((row) => {
+    const cachedMeasureKey = canReuseHeights ? previousCache.measureKeysByRowId.get(row.id) : void 0;
+    const cachedHeight = canReuseHeights ? previousCache.heightsByRowId.get(row.id) : void 0;
+    const height = cachedMeasureKey === row.measureKey && cachedHeight !== void 0 ? cachedHeight : measureRow(row, width);
+    heightsByRowId.set(row.id, height);
+    measureKeysByRowId.set(row.id, row.measureKey);
+    return height;
+  });
+  const offsets = buildOffsets(heights);
+  const rowIndexById = new Map(rows.map((row, index) => [row.id, index]));
+  const totalHeight = offsets[offsets.length - 1] ?? 0;
+  const heightCache = {
+    width,
+    heightsByRowId,
+    measureKeysByRowId
+  };
+  return {
+    rows,
+    heights,
+    offsets,
+    totalHeight,
+    width,
+    heightCache,
+    rowIndexById
+  };
+}
+function computeRenderWindow(layout, viewportTop, viewportSize, pinnedToBottom, overscanLines = getOverscanLines(viewportSize)) {
+  if (layout.rows.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      cropTop: 0,
+      paddingTop: 0,
+      viewportTop: 0,
+      viewportBottom: 0,
+      totalHeight: 0
+    };
+  }
+  const clampedViewportTop = clampLine(viewportTop, 0, Math.max(0, layout.totalHeight - viewportSize));
+  const viewportBottom = Math.min(layout.totalHeight, clampedViewportTop + viewportSize);
+  const windowTop = Math.max(0, clampedViewportTop - overscanLines);
+  const windowBottom = Math.min(layout.totalHeight, viewportBottom + overscanLines);
+  const start = findRowIndexForLine(layout.offsets, windowTop);
+  const end = findWindowEnd(layout.offsets, windowBottom);
+  const cropTop = Math.max(0, clampedViewportTop - layout.offsets[start]);
+  const visibleHeight = Math.max(0, viewportBottom - clampedViewportTop);
+  const paddingTop = pinnedToBottom ? Math.max(0, viewportSize - visibleHeight) : 0;
+  return {
+    start,
+    end,
+    cropTop,
+    paddingTop,
+    viewportTop: clampedViewportTop,
+    viewportBottom,
+    totalHeight: layout.totalHeight
+  };
+}
+function computeVisibleWindow(layout, renderWindow, viewportSize) {
+  if (layout.rows.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      cropTop: 0,
+      paddingTop: renderWindow.paddingTop,
+      paddingBottom: Math.max(0, viewportSize - renderWindow.paddingTop),
+      contentHeight: 0,
+      viewportTop: renderWindow.viewportTop,
+      viewportBottom: renderWindow.viewportBottom,
+      totalHeight: renderWindow.totalHeight
+    };
+  }
+  const start = findRowIndexForLine(layout.offsets, renderWindow.viewportTop);
+  const end = findWindowEnd(layout.offsets, renderWindow.viewportBottom);
+  const cropTop = Math.max(0, renderWindow.viewportTop - layout.offsets[start]);
+  const contentHeight = Math.max(0, renderWindow.viewportBottom - renderWindow.viewportTop);
+  const paddingBottom = Math.max(0, viewportSize - renderWindow.paddingTop - contentHeight);
+  return {
+    start,
+    end,
+    cropTop,
+    paddingTop: renderWindow.paddingTop,
+    paddingBottom,
+    contentHeight,
+    viewportTop: renderWindow.viewportTop,
+    viewportBottom: renderWindow.viewportBottom,
+    totalHeight: renderWindow.totalHeight
+  };
+}
 function countWrappedLines(text, width) {
-  if (!text) return 1;
+  if (!text) {
+    return 1;
+  }
   return text.split("\n").reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0);
 }
-function measureTranscript(entries, width) {
-  return entries.map((e) => measureEntry(e, width));
-}
-function computeVisibleWindow(heights, offset, viewportSize) {
-  if (heights.length === 0) return { start: 0, end: 0, cropTop: 0 };
-  const totalLines = heights.reduce((a, b) => a + b, 0);
-  const safeOffset = Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
-  const viewBottom = totalLines - safeOffset;
-  const viewTop = Math.max(0, viewBottom - viewportSize);
-  let linePos = 0;
-  let start = -1;
-  let end = 0;
-  let cropTop = 0;
-  for (let i = 0; i < heights.length; i++) {
-    const entryTop = linePos;
-    const entryBottom = linePos + heights[i];
-    if (entryBottom > viewTop && entryTop < viewBottom) {
-      if (start === -1) {
-        start = i;
-        cropTop = Math.max(0, viewTop - entryTop);
-      }
-      end = i + 1;
-    }
-    linePos = entryBottom;
+function buildOffsets(heights) {
+  const offsets = new Array(heights.length + 1);
+  offsets[0] = 0;
+  for (let index = 0; index < heights.length; index++) {
+    offsets[index + 1] = offsets[index] + Math.max(MIN_ROW_HEIGHT, heights[index] ?? MIN_ROW_HEIGHT);
   }
-  return start === -1 ? { start: 0, end: 0, cropTop: 0 } : { start, end, cropTop };
+  return offsets;
+}
+function findWindowEnd(offsets, windowBottom) {
+  const rowCount = Math.max(0, offsets.length - 1);
+  for (let index = 0; index < rowCount; index++) {
+    if (offsets[index] >= windowBottom) {
+      return index;
+    }
+  }
+  return rowCount;
+}
+function findRowIndexForLine(offsets, line) {
+  const rowCount = Math.max(0, offsets.length - 1);
+  if (rowCount === 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = rowCount - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const rowTop = offsets[mid];
+    const rowBottom = offsets[mid + 1];
+    if (line < rowTop) {
+      high = mid - 1;
+      continue;
+    }
+    if (line >= rowBottom) {
+      low = mid + 1;
+      continue;
+    }
+    return mid;
+  }
+  return Math.max(0, Math.min(low, rowCount - 1));
+}
+function getOverscanLines(viewportSize) {
+  return Math.max(MIN_OVERSCAN_LINES, Math.floor(viewportSize / 2));
+}
+function clampLine(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+// src/scroll/state.ts
+function initialScroll(viewportSize = 20) {
+  return {
+    anchorRowId: null,
+    anchorOffset: 0,
+    pinnedToBottom: true,
+    viewportSize
+  };
+}
+function reduceScroll(state, cmd, layout) {
+  switch (cmd.type) {
+    case "wheelUp":
+      return shiftViewport(state, layout, -(cmd.amount ?? 3));
+    case "wheelDown":
+      return shiftViewport(state, layout, cmd.amount ?? 3);
+    case "pageUp":
+      return shiftViewport(state, layout, -state.viewportSize);
+    case "pageDown":
+      return shiftViewport(state, layout, state.viewportSize);
+    case "home":
+      return createViewportState(0, state.viewportSize, layout);
+    case "end":
+      return createViewportState(getMaxViewportTop(layout.totalHeight, state.viewportSize), state.viewportSize, layout, true);
+    case "contentChanged":
+      return normalizeViewport(state, layout);
+    case "resize":
+      return normalizeViewport({ ...state, viewportSize: cmd.viewportSize }, layout);
+  }
+}
+function isAtBottom(state) {
+  return state.pinnedToBottom;
+}
+function resolveViewportTop(state, layout) {
+  if (layout.rows.length === 0) {
+    return 0;
+  }
+  if (state.pinnedToBottom) {
+    return getMaxViewportTop(layout.totalHeight, state.viewportSize);
+  }
+  if (!state.anchorRowId) {
+    return getMaxViewportTop(layout.totalHeight, state.viewportSize);
+  }
+  const anchorIndex = layout.rowIndexById.get(state.anchorRowId);
+  if (anchorIndex === void 0) {
+    return getMaxViewportTop(layout.totalHeight, state.viewportSize);
+  }
+  const rowTop = layout.offsets[anchorIndex] ?? 0;
+  const rowHeight = layout.heights[anchorIndex] ?? 0;
+  const maxAnchorOffset = Math.max(0, rowHeight - 1);
+  const clampedAnchorOffset = clampLine2(state.anchorOffset, 0, maxAnchorOffset);
+  const viewportTop = rowTop + clampedAnchorOffset;
+  const maxViewportTop = getMaxViewportTop(layout.totalHeight, state.viewportSize);
+  return clampLine2(viewportTop, 0, maxViewportTop);
+}
+function getOffsetFromBottom(state, layout) {
+  const maxViewportTop = getMaxViewportTop(layout.totalHeight, state.viewportSize);
+  const viewportTop = resolveViewportTop(state, layout);
+  return maxViewportTop - viewportTop;
+}
+function shiftViewport(state, layout, delta) {
+  const currentTop = resolveViewportTop(state, layout);
+  const nextTop = currentTop + delta;
+  return createViewportState(nextTop, state.viewportSize, layout);
+}
+function normalizeViewport(state, layout) {
+  if (state.pinnedToBottom) {
+    return createViewportState(getMaxViewportTop(layout.totalHeight, state.viewportSize), state.viewportSize, layout, true);
+  }
+  const viewportTop = resolveViewportTop(state, layout);
+  return createViewportState(viewportTop, state.viewportSize, layout);
+}
+function createViewportState(viewportTop, viewportSize, layout, pinnedToBottom = false) {
+  const clampedViewportTop = clampLine2(viewportTop, 0, getMaxViewportTop(layout.totalHeight, viewportSize));
+  const anchor = findAnchor(layout, clampedViewportTop);
+  return {
+    anchorRowId: anchor.rowId,
+    anchorOffset: anchor.offset,
+    pinnedToBottom: pinnedToBottom || clampedViewportTop === getMaxViewportTop(layout.totalHeight, viewportSize),
+    viewportSize
+  };
+}
+function findAnchor(layout, viewportTop) {
+  if (layout.rows.length === 0) {
+    return { rowId: null, offset: 0 };
+  }
+  const anchorIndex = findRowIndex(layout.offsets, viewportTop);
+  const anchorTop = layout.offsets[anchorIndex] ?? 0;
+  const anchorRow = layout.rows[anchorIndex];
+  return {
+    rowId: anchorRow?.id ?? null,
+    offset: viewportTop - anchorTop
+  };
+}
+function findRowIndex(offsets, line) {
+  const rowCount = Math.max(0, offsets.length - 1);
+  if (rowCount === 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = rowCount - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const rowTop = offsets[mid];
+    const rowBottom = offsets[mid + 1];
+    if (line < rowTop) {
+      high = mid - 1;
+      continue;
+    }
+    if (line >= rowBottom) {
+      low = mid + 1;
+      continue;
+    }
+    return mid;
+  }
+  return Math.max(0, Math.min(low, rowCount - 1));
+}
+function getMaxViewportTop(totalHeight, viewportSize) {
+  return Math.max(0, totalHeight - viewportSize);
+}
+function clampLine2(value, min, max) {
+  return Math.max(min, Math.min(value, max));
 }
 
 // src/scroll/useScroll.ts
-function useScroll(inputEvents, entryHeights, viewportSize) {
-  const [state, dispatch] = (0, import_react25.useReducer)(
-    (s, cmd) => reduceScroll(s, cmd),
-    initialScroll()
+function useScroll(inputEvents, rows, width, viewportSize) {
+  const cacheRef = (0, import_react25.useRef)(createTranscriptHeightCache());
+  const layout = (0, import_react25.useMemo)(
+    () => buildTranscriptLayout(rows, width, cacheRef.current),
+    [rows, width]
   );
-  const totalLines = entryHeights.reduce((a, b) => a + b, 0);
+  const layoutRef = (0, import_react25.useRef)(layout);
+  layoutRef.current = layout;
+  const [state, setState] = (0, import_react25.useState)(() => initialScroll(viewportSize));
   (0, import_react25.useEffect)(() => {
-    dispatch({ type: "contentChanged", newTotalLines: totalLines });
-  }, [totalLines]);
+    cacheRef.current = layout.heightCache;
+  }, [layout.heightCache]);
   (0, import_react25.useEffect)(() => {
-    dispatch({ type: "resize", viewportSize });
+    setState((current) => reduceScroll(current, { type: "contentChanged" }, layout));
+  }, [layout]);
+  (0, import_react25.useEffect)(() => {
+    setState((current) => reduceScroll(current, { type: "resize", viewportSize }, layoutRef.current));
   }, [viewportSize]);
   (0, import_react25.useEffect)(() => {
     if (!inputEvents) return;
     const handler = (ev) => {
-      if (ev.type === "wheelUp") dispatch({ type: "wheelUp" });
-      else if (ev.type === "wheelDown") dispatch({ type: "wheelDown" });
+      if (ev.type === "wheelUp") {
+        setState((current) => reduceScroll(current, { type: "wheelUp" }, layoutRef.current));
+      } else if (ev.type === "wheelDown") {
+        setState((current) => reduceScroll(current, { type: "wheelDown" }, layoutRef.current));
+      }
     };
     inputEvents.on("input", handler);
     return () => {
       inputEvents.off("input", handler);
     };
   }, [inputEvents]);
-  const scroll = (0, import_react25.useCallback)((cmd) => dispatch(cmd), []);
+  const scroll = (0, import_react25.useCallback)((cmd) => {
+    setState((current) => reduceScroll(current, cmd, layoutRef.current));
+  }, []);
+  const viewportTop = (0, import_react25.useMemo)(
+    () => resolveViewportTop(state, layout),
+    [state, layout]
+  );
+  const renderWindow = (0, import_react25.useMemo)(
+    () => computeRenderWindow(layout, viewportTop, state.viewportSize, state.pinnedToBottom),
+    [layout, viewportTop, state.viewportSize, state.pinnedToBottom]
+  );
   const visibleWindow = (0, import_react25.useMemo)(
-    () => computeVisibleWindow(entryHeights, state.offset, state.viewportSize),
-    [entryHeights, state.offset, state.viewportSize]
+    () => computeVisibleWindow(layout, renderWindow, state.viewportSize),
+    [layout, renderWindow, state.viewportSize]
+  );
+  const linesAboveBottom = (0, import_react25.useMemo)(
+    () => getOffsetFromBottom(state, layout),
+    [state, layout]
   );
   return {
     state,
     scroll,
     visibleWindow,
+    layout,
+    linesAboveBottom,
     isAtBottom: isAtBottom(state)
   };
 }
@@ -34346,15 +34775,13 @@ function copyToClipboard(text, output) {
 
 // src/selection/extract.ts
 function termRowToEntryIndex(termRow, layout) {
-  const { visibleWindow: vw, entryHeights, atBottom, chatHeight } = layout;
+  const { visibleWindow: vw, entryHeights, chatHeight } = layout;
   const chatRow = termRow - 1;
   if (chatRow < 0 || chatRow >= chatHeight) return null;
-  let totalVisible = 0;
-  for (let i = vw.start; i < vw.end; i++) totalVisible += entryHeights[i];
-  const effectiveVisible = totalVisible - vw.cropTop;
-  const padding = atBottom ? Math.max(0, chatHeight - effectiveVisible) : 0;
-  const contentRow = chatRow - padding + vw.cropTop;
-  if (contentRow < 0) return null;
+  if (chatRow < vw.paddingTop) return null;
+  const visibleContentBottom = vw.paddingTop + vw.contentHeight;
+  if (chatRow >= visibleContentBottom) return null;
+  const contentRow = chatRow - vw.paddingTop + vw.cropTop;
   let cumHeight = 0;
   for (let i = vw.start; i < vw.end; i++) {
     if (contentRow < cumHeight + entryHeights[i]) return i;
@@ -35170,8 +35597,41 @@ function truncate(s, max) {
 // src/components/ChatView.tsx
 var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var BLACK_CIRCLE2 = process.platform === "darwin" ? "\u23FA" : "\u25CF";
-function ChatView({ entries, width }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EntryBlock, { entry, width }, entry.id)) });
+var ChatView = import_react30.default.memo(function ChatView2({
+  entries,
+  entryHeights,
+  visibleWindow,
+  width,
+  height
+}) {
+  const visibleEntries = entries.slice(visibleWindow.start, visibleWindow.end);
+  const firstEntry = visibleEntries[0];
+  const remainingEntries = visibleEntries.slice(1);
+  const firstEntryHeight = entryHeights[visibleWindow.start] ?? 0;
+  const clippedFirstEntryHeight = Math.max(0, firstEntryHeight - visibleWindow.cropTop);
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", height, overflowY: "hidden", children: [
+    visibleWindow.paddingTop > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { height: visibleWindow.paddingTop, flexShrink: 0 }),
+    firstEntry && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      VisibleEntryBlock,
+      {
+        entry: firstEntry,
+        width,
+        cropTop: visibleWindow.cropTop,
+        visibleHeight: clippedFirstEntryHeight
+      }
+    ),
+    remainingEntries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EntryBlock, { entry, width }, entry.id)),
+    visibleWindow.paddingBottom > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { height: visibleWindow.paddingBottom, flexShrink: 0 })
+  ] });
+});
+function VisibleEntryBlock({ entry, width, cropTop, visibleHeight }) {
+  if (cropTop <= 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EntryBlock, { entry, width });
+  }
+  if (visibleHeight <= 0) {
+    return null;
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { height: visibleHeight, overflowY: "hidden", flexShrink: 0, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", marginTop: -cropTop, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EntryBlock, { entry, width }) }) });
 }
 var EntryBlock = import_react30.default.memo(function EntryBlock2({ entry, width }) {
   switch (entry.type) {
@@ -35993,7 +36453,17 @@ function App2({ client: client2, inputEvents }) {
   const layoutRef = (0, import_react36.useRef)({
     chatHeight: 0,
     atBottom: true,
-    visibleWindow: { start: 0, end: 0, cropTop: 0 },
+    visibleWindow: {
+      start: 0,
+      end: 0,
+      cropTop: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      contentHeight: 0,
+      viewportTop: 0,
+      viewportBottom: 0,
+      totalHeight: 0
+    },
     entryHeights: [],
     transcript: []
   });
@@ -36030,16 +36500,13 @@ function App2({ client: client2, inputEvents }) {
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
   const chatHeight = Math.max(5, height - BOTTOM_ROWS);
-  const entryHeights = (0, import_react36.useMemo)(() => measureTranscript(transcript, width), [transcript, width]);
-  const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
+  const { scroll, visibleWindow: vw, layout: transcriptLayout, linesAboveBottom, isAtBottom: atBottom } = useScroll(
     inputEvents,
-    entryHeights,
+    transcript,
+    width,
     chatHeight
   );
-  const visibleEntries = (0, import_react36.useMemo)(() => {
-    return transcript.slice(vw.start, vw.end);
-  }, [transcript, vw.start, vw.end]);
-  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, transcript };
+  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights: transcriptLayout.heights, transcript };
   (0, import_react36.useEffect)(() => {
     const handler = (ev) => {
       if (ev.type === "mouseClick" && ev.button === 0) {
@@ -36338,15 +36805,21 @@ function App2({ client: client2, inputEvents }) {
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
   return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
-      atBottom && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexGrow: 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexDirection: "column", marginTop: vw.cropTop > 0 ? -vw.cropTop : void 0, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ChatView, { entries: visibleEntries, width }) })
-    ] }),
-    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+      ChatView,
+      {
+        entries: transcript,
+        entryHeights: transcriptLayout.heights,
+        visibleWindow: vw,
+        width,
+        height: chatHeight
+      }
+    ),
+    linesAboveBottom > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
       "  ",
       "\u2191",
       " ",
-      scrollState.offset,
+      linesAboveBottom,
       " lines above (Shift+",
       "\u2193",
       " / PgDn to scroll down)"

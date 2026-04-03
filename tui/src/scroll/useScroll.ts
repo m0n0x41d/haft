@@ -1,65 +1,109 @@
 // L2 React hook: wires L1 input events → L2 scroll reducer.
-// Accepts per-entry heights (line counts) and computes the visible entry window.
+// Accepts transcript rows and computes an anchor-based render window.
 
-import { useReducer, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import type { EventEmitter } from "node:events"
 import type { InputEvent } from "../terminal/input.js"
-import { initialScroll, reduceScroll, isAtBottom, type ScrollState, type ScrollCommand } from "./state.js"
-import { computeVisibleWindow, type VisibleWindow } from "./measure.js"
+import type { TranscriptRow } from "../state/transcript.js"
+import {
+  buildTranscriptLayout,
+  computeRenderWindow,
+  computeVisibleWindow,
+  createTranscriptHeightCache,
+  type TranscriptLayout,
+  type VisibleWindow,
+} from "./measure.js"
+import {
+  getOffsetFromBottom,
+  initialScroll,
+  isAtBottom,
+  reduceScroll,
+  resolveViewportTop,
+  type ScrollState,
+  type ScrollCommand,
+} from "./state.js"
 
 export interface UseScrollResult {
   state: ScrollState
   scroll: (cmd: ScrollCommand) => void
   visibleWindow: VisibleWindow
+  layout: TranscriptLayout
+  linesAboveBottom: number
   isAtBottom: boolean
 }
 
 export function useScroll(
   inputEvents: EventEmitter | null,
-  entryHeights: readonly number[],
+  rows: readonly TranscriptRow[],
+  width: number,
   viewportSize: number,
 ): UseScrollResult {
-  const [state, dispatch] = useReducer(
-    (s: ScrollState, cmd: ScrollCommand) => reduceScroll(s, cmd),
-    initialScroll(),
+  const cacheRef = useRef(createTranscriptHeightCache())
+  const layout = useMemo(
+    () => buildTranscriptLayout(rows, width, cacheRef.current),
+    [rows, width],
   )
+  const layoutRef = useRef(layout)
 
-  // Derive total lines from entry heights (cheap O(n), n = transcript length)
-  const totalLines = entryHeights.reduce((a, b) => a + b, 0)
+  layoutRef.current = layout
 
-  // Sync total line count into scroll state
+  const [state, setState] = useState<ScrollState>(() => initialScroll(viewportSize))
+
   useEffect(() => {
-    dispatch({ type: "contentChanged", newTotalLines: totalLines })
-  }, [totalLines])
+    cacheRef.current = layout.heightCache
+  }, [layout.heightCache])
 
-  // Sync viewport size changes
   useEffect(() => {
-    dispatch({ type: "resize", viewportSize })
+    setState((current) => reduceScroll(current, { type: "contentChanged" }, layout))
+  }, [layout])
+
+  useEffect(() => {
+    setState((current) => reduceScroll(current, { type: "resize", viewportSize }, layoutRef.current))
   }, [viewportSize])
 
-  // Route mouse wheel events from L1
   useEffect(() => {
     if (!inputEvents) return
+
     const handler = (ev: InputEvent) => {
-      if (ev.type === "wheelUp") dispatch({ type: "wheelUp" })
-      else if (ev.type === "wheelDown") dispatch({ type: "wheelDown" })
+      if (ev.type === "wheelUp") {
+        setState((current) => reduceScroll(current, { type: "wheelUp" }, layoutRef.current))
+      } else if (ev.type === "wheelDown") {
+        setState((current) => reduceScroll(current, { type: "wheelDown" }, layoutRef.current))
+      }
     }
+
     inputEvents.on("input", handler)
+
     return () => { inputEvents.off("input", handler) }
   }, [inputEvents])
 
-  const scroll = useCallback((cmd: ScrollCommand) => dispatch(cmd), [])
+  const scroll = useCallback((cmd: ScrollCommand) => {
+    setState((current) => reduceScroll(current, cmd, layoutRef.current))
+  }, [])
 
-  // Compute visible entry window from current heights and scroll offset
+  const viewportTop = useMemo(
+    () => resolveViewportTop(state, layout),
+    [state, layout],
+  )
+  const renderWindow = useMemo(
+    () => computeRenderWindow(layout, viewportTop, state.viewportSize, state.pinnedToBottom),
+    [layout, viewportTop, state.viewportSize, state.pinnedToBottom],
+  )
   const visibleWindow = useMemo(
-    () => computeVisibleWindow(entryHeights, state.offset, state.viewportSize),
-    [entryHeights, state.offset, state.viewportSize],
+    () => computeVisibleWindow(layout, renderWindow, state.viewportSize),
+    [layout, renderWindow, state.viewportSize],
+  )
+  const linesAboveBottom = useMemo(
+    () => getOffsetFromBottom(state, layout),
+    [state, layout],
   )
 
   return {
     state,
     scroll,
     visibleWindow,
+    layout,
+    linesAboveBottom,
     isAtBottom: isAtBottom(state),
   }
 }

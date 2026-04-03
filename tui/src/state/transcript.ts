@@ -4,14 +4,23 @@
 // Just transforms the data shape for the component layer.
 
 import type { MsgInfo, ToolCall } from "../protocol/types.js"
+import type { AssistantTurnProjection, ToolSlot, TurnProjection } from "./turnProjection.js"
+import { projectTurns } from "./turnProjection.js"
 
-export type TranscriptEntry =
-  | { type: "userPrompt"; id: string; text: string; attachments: string[] }
-  | { type: "assistantText"; id: string; text: string; streaming: boolean }
-  | { type: "thinking"; id: string; lines: string[]; hiddenCount: number }
-  | { type: "toolCall"; id: string; tool: ToolCall }
-  | { type: "indicator"; id: string; model: string }
-  | { type: "error"; id: string; message: string }
+interface TranscriptRowBase {
+  id: string
+  measureKey: string
+}
+
+export type TranscriptRow =
+  | (TranscriptRowBase & { type: "userPrompt"; text: string; attachments: string[] })
+  | (TranscriptRowBase & { type: "assistantText"; text: string; streaming: boolean })
+  | (TranscriptRowBase & { type: "thinking"; lines: string[]; hiddenCount: number })
+  | (TranscriptRowBase & { type: "toolCall"; tool: ToolCall })
+  | (TranscriptRowBase & { type: "indicator"; model: string })
+  | (TranscriptRowBase & { type: "error"; message: string })
+
+export type TranscriptEntry = TranscriptRow
 
 export interface TranscriptOptions {
   messages: MsgInfo[]
@@ -24,53 +33,149 @@ export interface TranscriptOptions {
 
 // Build transcript from messages. Each entry is one renderable block.
 // The component layer (L4) decides how to render and how tall each block is.
-export function buildTranscript(opts: TranscriptOptions): TranscriptEntry[] {
-  const entries: TranscriptEntry[] = []
+export function buildTranscriptRows(opts: TranscriptOptions): TranscriptRow[] {
+  const turns = projectTurns(opts.messages)
+  const rows = turns.flatMap((turn) => buildTurnRows(turn, opts))
+  const indicatorRow = buildIndicatorRow(opts)
+  const errorRow = buildErrorRow(opts)
 
-  for (const msg of opts.messages) {
-    if (msg.role === "user") {
-      const lines = msg.text.split("\n")
-      const text = lines[0] ?? ""
-      const attachments = lines.slice(1).filter((l) => l.startsWith("["))
-      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text, attachments })
-      continue
-    }
+  return rows
+    .concat(indicatorRow ? [indicatorRow] : [])
+    .concat(errorRow ? [errorRow] : [])
+}
 
-    // Assistant message
-    if (msg.thinking) {
-      const allLines = msg.thinking.split("\n")
-      const maxVisible = 5
-      const visible = opts.thinkExpanded ? allLines : allLines.slice(-maxVisible)
-      const hidden = opts.thinkExpanded ? 0 : Math.max(0, allLines.length - maxVisible)
-      entries.push({ type: "thinking", id: `${msg.id}-thinking`, lines: visible, hiddenCount: hidden })
-    }
+export const buildTranscript = buildTranscriptRows
 
-    if (msg.text) {
-      entries.push({
-        type: "assistantText",
-        id: `${msg.id}-text`,
-        text: msg.text,
-        streaming: msg.id === opts.streamingMsgId,
-      })
-    }
-
-    for (const tool of msg.tools ?? []) {
-      entries.push({ type: "toolCall", id: `${msg.id}-tool-${tool.callId}`, tool })
-    }
+function buildTurnRows(turn: TurnProjection, opts: TranscriptOptions): TranscriptRow[] {
+  if (turn.kind === "user") {
+    return [buildUserPromptRow(turn.message.id, turn.text, turn.attachments)]
   }
 
-  // Thinking indicator when streaming with no content yet
+  return buildAssistantRows(turn, opts)
+}
+
+function buildUserPromptRow(messageId: string, text: string, attachments: string[]): TranscriptRow {
+  return {
+    type: "userPrompt",
+    id: `${messageId}-user`,
+    text,
+    attachments,
+    measureKey: ["userPrompt", attachments.length].join(":"),
+  }
+}
+
+function buildAssistantRows(turn: AssistantTurnProjection, opts: TranscriptOptions): TranscriptRow[] {
+  const rows: TranscriptRow[] = []
+  const thinkingRow = buildThinkingRow(turn, opts)
+  const assistantTextRow = buildAssistantTextRow(turn, opts)
+  const orderedTools = [...turn.normalTools, ...turn.agentTools]
+  const toolRows = orderedTools.map((slot) => buildToolCallRow(turn.message.id, slot))
+
+  if (thinkingRow) {
+    rows.push(thinkingRow)
+  }
+
+  if (assistantTextRow) {
+    rows.push(assistantTextRow)
+  }
+
+  return rows.concat(toolRows)
+}
+
+function buildThinkingRow(turn: AssistantTurnProjection, opts: TranscriptOptions): TranscriptRow | null {
+  if (!turn.thinking) {
+    return null
+  }
+
+  const allLines = turn.thinking.split("\n")
+  const maxVisible = 5
+  const visible = opts.thinkExpanded ? allLines : allLines.slice(-maxVisible)
+  const hidden = opts.thinkExpanded ? 0 : Math.max(0, allLines.length - maxVisible)
+
+  return {
+    type: "thinking",
+    id: `${turn.message.id}-thinking`,
+    lines: visible,
+    hiddenCount: hidden,
+    measureKey: ["thinking", visible.length, hidden].join(":"),
+  }
+}
+
+function buildAssistantTextRow(turn: AssistantTurnProjection, opts: TranscriptOptions): TranscriptRow | null {
+  if (!turn.text) {
+    return null
+  }
+
+  const streaming = turn.message.id === opts.streamingMsgId
+
+  return {
+    type: "assistantText",
+    id: `${turn.message.id}-text`,
+    text: turn.text,
+    streaming,
+    measureKey: ["assistantText", streaming ? "streaming" : "static", getTextMeasureToken(turn.text)].join(":"),
+  }
+}
+
+function buildToolCallRow(messageId: string, slot: ToolSlot): TranscriptRow {
+  return {
+    type: "toolCall",
+    id: `${messageId}-tool-${slot.tool.callId}`,
+    tool: slot.tool,
+    measureKey: buildToolMeasureKey(slot.tool),
+  }
+}
+
+function buildIndicatorRow(opts: TranscriptOptions): TranscriptRow | null {
   const streamingMsg = opts.streamingMsgId
     ? opts.messages.find((m) => m.id === opts.streamingMsgId)
     : null
   const hasContent = streamingMsg && (streamingMsg.text || (streamingMsg.tools && streamingMsg.tools.length > 0))
+
   if (opts.streaming && !hasContent) {
-    entries.push({ type: "indicator", id: "thinking-indicator", model: opts.model })
+    return {
+      type: "indicator",
+      id: "thinking-indicator",
+      model: opts.model,
+      measureKey: "indicator",
+    }
   }
 
-  if (opts.error) {
-    entries.push({ type: "error", id: "error", message: opts.error })
+  return null
+}
+
+function buildErrorRow(opts: TranscriptOptions): TranscriptRow | null {
+  if (!opts.error) {
+    return null
   }
 
-  return entries
+  return {
+    type: "error",
+    id: "error",
+    message: opts.error,
+    measureKey: "error",
+  }
+}
+
+function getTextMeasureToken(text: string): string {
+  const lineLengths = text
+    .split("\n")
+    .map((line) => line.length)
+    .join(",")
+
+  return lineLengths
+}
+
+function buildToolMeasureKey(tool: ToolCall): string {
+  const outputLineCount = tool.output?.split("\n").length ?? 0
+  const childCount = tool.children?.length ?? 0
+
+  return [
+    "toolCall",
+    tool.callId,
+    tool.running ? "running" : "done",
+    tool.output ? "output" : "empty",
+    outputLineCount,
+    childCount,
+  ].join(":")
 }

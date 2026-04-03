@@ -5,12 +5,14 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/codebase"
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
@@ -19,7 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type HaftProblemTool struct {
-	store    artifact.ArtifactStore
+	store   artifact.ArtifactStore
 	haftDir string
 }
 
@@ -242,7 +244,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 
 type HaftSolutionTool struct {
 	store    artifact.ArtifactStore
-	haftDir string
+	haftDir  string
 	registry *Registry // for cycle access (guardrails)
 }
 
@@ -430,6 +432,10 @@ type HaftDecisionTool struct {
 	registry    *Registry
 }
 
+type sqlArtifactStore interface {
+	DB() *sql.DB
+}
+
 func NewHaftDecisionTool(store artifact.ArtifactStore, haftDir, projectRoot string, registry *Registry) *HaftDecisionTool {
 	return &HaftDecisionTool{store: store, haftDir: haftDir, projectRoot: projectRoot, registry: registry}
 }
@@ -548,6 +554,11 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 	}
 
 	display := fmt.Sprintf("Decision recorded: %s\nID: %s\nFile: %s\nSelected: %s", a.Meta.Title, a.Meta.ID, filePath, input.SelectedTitle)
+	coverageWarnings := t.coverageWarnings(ctx, input.AffectedFiles)
+	if len(coverageWarnings) > 0 {
+		display += "\n\n" + strings.Join(coverageWarnings, "\n")
+	}
+
 	return agent.ToolResult{
 		DisplayText: display,
 		Meta: &agent.ArtifactMeta{
@@ -556,6 +567,40 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 			Operation:   "decide",
 		},
 	}, nil
+}
+
+func (t *HaftDecisionTool) coverageWarnings(ctx context.Context, affectedFiles []string) []string {
+	if len(affectedFiles) == 0 {
+		return nil
+	}
+
+	dbStore, ok := t.store.(sqlArtifactStore)
+	if !ok {
+		return nil
+	}
+
+	gaps, err := codebase.FindFirstDecisionModules(ctx, dbStore.DB(), affectedFiles)
+	if err != nil || len(gaps) == 0 {
+		return nil
+	}
+
+	warnings := make([]string, 0, len(gaps)*2)
+
+	for _, gap := range gaps {
+		modulePath := gap.Module.Path
+		if modulePath == "" {
+			modulePath = "(root)"
+		}
+
+		warnings = append(warnings,
+			fmt.Sprintf("⚠ First decision governing module '%s' — no prior architectural context exists.", modulePath),
+		)
+		warnings = append(warnings,
+			"Consider: are there implicit conventions or patterns in this module that should be captured?",
+		)
+	}
+
+	return warnings
 }
 
 func (t *HaftDecisionTool) baseline(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
@@ -754,7 +799,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 
 type HaftRefreshTool struct {
 	store       artifact.ArtifactStore
-	haftDir    string
+	haftDir     string
 	projectRoot string
 }
 
@@ -822,7 +867,7 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 // ---------------------------------------------------------------------------
 
 type HaftNoteTool struct {
-	store    artifact.ArtifactStore
+	store   artifact.ArtifactStore
 	haftDir string
 }
 

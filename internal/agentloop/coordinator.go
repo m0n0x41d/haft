@@ -2,20 +2,24 @@ package agentloop
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/m0n0x41d/haft/assurance"
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
 	"github.com/m0n0x41d/haft/internal/hooks"
 	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
+	"github.com/m0n0x41d/haft/internal/reff"
 	"github.com/m0n0x41d/haft/internal/session"
 	"github.com/m0n0x41d/haft/internal/tools"
 	"github.com/m0n0x41d/haft/logger"
@@ -26,6 +30,8 @@ const (
 	loopWindowSize  = 12  // recent tool calls to check for loops
 	loopWarnRepeats = 3   // yellow: inject warning, don't stop
 	loopHardRepeats = 5   // red: hard stop
+
+	assuranceAdapterLevel = "artifact_adapter"
 )
 
 // Coordinator runs a single ReAct loop per user turn.
@@ -705,8 +711,17 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 			c.evidence.Items = append(c.evidence.Items, agent.NewEvidenceItem(agent.ObservationNoVerify, "no tests or lint run before measure", 3))
 		}
 
-		// Compute cycle-local assurance from explicit evidence only.
-		assurance := agent.ComputeAssurance(c.evidence)
+		assurance, wlnk, syncErr := c.computeClosedCycleAssurance(ctx, updated.DecisionRef, c.evidence)
+		if syncErr != nil {
+			logger.Warn().Str("component", "agent").
+				Str("decision_ref", updated.DecisionRef).
+				Err(syncErr).
+				Msg("agent.assurance_sync_failed")
+			c.recordSystemWarning(ctx, sess.ID,
+				fmt.Sprintf("[Assurance Warning] durable assurance sync failed; using cycle-local evidence only: %s", syncErr.Error()),
+			)
+		}
+
 		rEff := assurance.R
 
 		// R_eff threshold check (FPF: low evidence = low trust)
@@ -724,25 +739,6 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 
 		switch meta.MeasureVerdict {
 		case "accepted", "partial":
-			wlnk := "measurement " + meta.MeasureVerdict
-			if c.evidence != nil {
-				// Find weakest explicit evidence for WLNK label
-				minScore := 1.0
-				var weakest string
-				for _, item := range c.evidence.Items {
-					if !item.Type.IsExplicitEvidence() {
-						continue
-					}
-					s := item.BaseScore - clPenalty(item.CL)
-					if s < minScore {
-						minScore = s
-						weakest = string(item.Type)
-					}
-				}
-				if weakest != "" {
-					wlnk = weakest + fmt.Sprintf(" (score: %.1f)", minScore)
-				}
-			}
 			completed := agent.CompleteCycle(updated, wlnk, assurance)
 			_ = c.Cycles.UpdateCycle(ctx, completed)
 			sess.ActiveCycleID = ""
@@ -1026,6 +1022,330 @@ func sanitizeHistory(msgs []agent.Message) []agent.Message {
 		return msgs
 	}
 	return append(msgs, patches...)
+}
+
+func (c *Coordinator) recordSystemWarning(ctx context.Context, sessionID, text string) {
+	if c.Messages == nil || sessionID == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+
+	_ = c.Messages.Save(ctx, &agent.Message{
+		ID:        newMsgID(),
+		SessionID: sessionID,
+		Role:      agent.RoleSystem,
+		Parts:     []agent.Part{agent.TextPart{Text: text}},
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func (c *Coordinator) computeClosedCycleAssurance(
+	ctx context.Context,
+	decisionRef string,
+	chain *agent.EvidenceChain,
+) (agent.AssuranceTuple, string, error) {
+	assuranceTuple := agent.ComputeAssurance(chain)
+	weakestLink := weakestChainLink(chain)
+
+	if c.ArtifactStore == nil || decisionRef == "" {
+		return assuranceTuple, weakestLink, nil
+	}
+
+	dbStore, ok := c.ArtifactStore.(interface{ DB() *sql.DB })
+	if !ok {
+		return assuranceTuple, weakestLink, fmt.Errorf("artifact store does not expose SQL access")
+	}
+
+	decision, err := c.ArtifactStore.Get(ctx, decisionRef)
+	if err != nil {
+		return assuranceTuple, weakestLink, fmt.Errorf("load decision %s: %w", decisionRef, err)
+	}
+
+	activeEvidence, err := c.syncDecisionAssuranceGraph(ctx, dbStore.DB(), decision)
+	if err != nil {
+		return assuranceTuple, weakestLink, err
+	}
+
+	report, err := assurance.New(dbStore.DB()).CalculateReliability(ctx, decisionRef)
+	if err != nil {
+		return assuranceTuple, weakestLink, fmt.Errorf("calculate dependency-aware reliability: %w", err)
+	}
+
+	assuranceTuple.F = report.FormalityScore
+	assuranceTuple.G = claimScopeUnion(activeEvidence)
+	assuranceTuple.R = report.FinalScore
+
+	if report.WeakestLink != "" {
+		weakestLink = "dependency " + report.WeakestLink
+	}
+	if weakestLink == "" {
+		weakestLink = weakestPersistedEvidence(activeEvidence)
+	}
+
+	return assuranceTuple, weakestLink, nil
+}
+
+func (c *Coordinator) syncDecisionAssuranceGraph(
+	ctx context.Context,
+	db *sql.DB,
+	decision *artifact.Artifact,
+) ([]artifact.EvidenceItem, error) {
+	if decision == nil {
+		return nil, fmt.Errorf("decision artifact is nil")
+	}
+
+	evidenceItems, err := c.ArtifactStore.GetEvidenceItems(ctx, decision.Meta.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision evidence: %w", err)
+	}
+
+	activeEvidence := activeArtifactEvidence(evidenceItems)
+	now := time.Now().UTC()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin assurance sync: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	err = c.ensureDecisionHolon(ctx, tx, decision, now)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`DELETE FROM evidence WHERE holon_id = ? AND assurance_level = ?`,
+		decision.Meta.ID,
+		assuranceAdapterLevel,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("clear adapter evidence: %w", err)
+	}
+
+	for _, item := range activeEvidence {
+		scopeJSON := "[]"
+		if len(item.ClaimScope) > 0 {
+			data, err := json.Marshal(item.ClaimScope)
+			if err != nil {
+				return nil, fmt.Errorf("marshal claim_scope for %s: %w", item.ID, err)
+			}
+			scopeJSON = string(data)
+		}
+
+		validUntil, err := parseAssuranceValidUntil(item.ValidUntil, decision.Meta.ValidUntil)
+		if err != nil {
+			return nil, fmt.Errorf("parse valid_until for %s: %w", item.ID, err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO evidence (
+				id, holon_id, type, content, verdict, assurance_level, formality_level,
+				claim_scope, carrier_ref, valid_until, created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"artifact:"+item.ID,
+			decision.Meta.ID,
+			item.Type,
+			item.Content,
+			item.Verdict,
+			assuranceAdapterLevel,
+			item.FormalityLevel,
+			scopeJSON,
+			nullIfEmpty(item.CarrierRef),
+			validUntil,
+			now.Format(time.RFC3339),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("persist assurance evidence %s: %w", item.ID, err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("commit assurance sync: %w", err)
+	}
+
+	return activeEvidence, nil
+}
+
+func (c *Coordinator) ensureDecisionHolon(
+	ctx context.Context,
+	tx *sql.Tx,
+	decision *artifact.Artifact,
+	now time.Time,
+) error {
+	affectedFiles, err := c.ArtifactStore.GetAffectedFiles(ctx, decision.Meta.ID)
+	if err != nil {
+		return fmt.Errorf("load affected files for %s: %w", decision.Meta.ID, err)
+	}
+
+	scopeParts := make([]string, 0, len(affectedFiles))
+	for _, file := range affectedFiles {
+		scopeParts = append(scopeParts, file.Path)
+	}
+	sort.Strings(scopeParts)
+
+	contextID := strings.TrimSpace(decision.Meta.Context)
+	if contextID == "" {
+		contextID = "default"
+	}
+
+	createdAt := decision.Meta.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO holons (
+			id, type, kind, layer, title, content, context_id, scope, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			type = excluded.type,
+			kind = excluded.kind,
+			layer = excluded.layer,
+			title = excluded.title,
+			content = excluded.content,
+			context_id = excluded.context_id,
+			scope = excluded.scope,
+			updated_at = excluded.updated_at`,
+		decision.Meta.ID,
+		"DRR",
+		string(artifact.KindDecisionRecord),
+		"DRR",
+		decision.Meta.Title,
+		decision.Body,
+		contextID,
+		strings.Join(scopeParts, "\n"),
+		createdAt.Format(time.RFC3339),
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert decision holon %s: %w", decision.Meta.ID, err)
+	}
+
+	return nil
+}
+
+func activeArtifactEvidence(items []artifact.EvidenceItem) []artifact.EvidenceItem {
+	active := make([]artifact.EvidenceItem, 0, len(items))
+
+	for _, item := range items {
+		if strings.EqualFold(item.Verdict, "superseded") {
+			continue
+		}
+		active = append(active, item)
+	}
+
+	return active
+}
+
+func claimScopeUnion(items []artifact.EvidenceItem) []string {
+	seen := make(map[string]struct{})
+	union := make([]string, 0)
+
+	for _, item := range items {
+		for _, scope := range item.ClaimScope {
+			scope = strings.TrimSpace(scope)
+			if scope == "" {
+				continue
+			}
+			if _, ok := seen[scope]; ok {
+				continue
+			}
+			seen[scope] = struct{}{}
+			union = append(union, scope)
+		}
+	}
+
+	sort.Strings(union)
+	if len(union) == 0 {
+		return nil
+	}
+
+	return union
+}
+
+func weakestChainLink(chain *agent.EvidenceChain) string {
+	if chain == nil {
+		return ""
+	}
+
+	minScore := 1.0
+	weakest := ""
+
+	for _, item := range chain.Items {
+		if !item.Type.IsExplicitEvidence() {
+			continue
+		}
+
+		score := item.BaseScore - clPenalty(item.CL)
+		if score >= minScore {
+			continue
+		}
+
+		minScore = score
+		weakest = string(item.Type)
+	}
+
+	if weakest == "" {
+		return ""
+	}
+
+	return weakest + fmt.Sprintf(" (score: %.1f)", minScore)
+}
+
+func weakestPersistedEvidence(items []artifact.EvidenceItem) string {
+	minScore := 1.0
+	weakest := ""
+	now := time.Now().UTC()
+
+	for _, item := range items {
+		score := reff.ScoreEvidence(item.Verdict, item.CongruenceLevel, item.ValidUntil, now)
+		if score >= minScore {
+			continue
+		}
+
+		minScore = score
+		label := strings.TrimSpace(item.Type)
+		if label == "" {
+			label = "evidence"
+		}
+		weakest = label
+	}
+
+	if weakest == "" {
+		return ""
+	}
+
+	return weakest + fmt.Sprintf(" (score: %.1f)", minScore)
+}
+
+func parseAssuranceValidUntil(primary string, fallback string) (any, error) {
+	for _, candidate := range []string{primary, fallback} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+
+		for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+			parsed, err := time.Parse(layout, candidate)
+			if err == nil {
+				return parsed.UTC(), nil
+			}
+		}
+
+		return nil, fmt.Errorf("unsupported timestamp %q", candidate)
+	}
+
+	return nil, nil
+}
+
+func nullIfEmpty(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+
+	return value
 }
 
 func clPenalty(cl int) float64 {

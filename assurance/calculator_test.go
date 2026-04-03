@@ -253,3 +253,29 @@ func TestCalculateReliability_FormalityNormalization(t *testing.T) {
 		t.Errorf("Expected normalized formality score 2, got %d", report.FormalityScore)
 	}
 }
+
+func TestCalculateReliability_AcceptsArtifactVerdicts(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, formality_level) VALUES ('e1', 'A', 'measurement', 'accepted', ?, 2)",
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FinalScore != 1.0 {
+		t.Errorf("Expected score 1.0 for accepted measurement, got %f", report.FinalScore)
+	}
+	if report.FormalityScore != 2 {
+		t.Errorf("Expected formality score 2, got %d", report.FormalityScore)
+	}
+}

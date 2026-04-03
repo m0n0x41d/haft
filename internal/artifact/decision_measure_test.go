@@ -354,7 +354,7 @@ func TestREff_AllSupporting(t *testing.T) {
 	}
 	// supports=1.0, CL3 penalty=0.0 → effective=1.0, min=1.0
 	assertREff(t, wlnk.REff, 1.0)
-	if !strings.Contains(wlnk.Summary, "R_eff: 1.00") {
+	if !strings.Contains(wlnk.Summary, "R: 1.00") {
 		t.Errorf("summary should show R_eff: %q", wlnk.Summary)
 	}
 }

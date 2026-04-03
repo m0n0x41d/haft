@@ -69,15 +69,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		hasEvidence = true
 		_ = evidenceID // Used for potential future logging
 
-		score := 0.0
-		switch strings.ToLower(verdict) {
-		case "pass":
-			score = 1.0
-		case "degrade":
-			score = 0.5
-		case "fail":
-			score = 0.0
-		}
+		score := scoreForVerdict(verdict)
 
 		// Evidence Source CL Penalty (B.3: external evidence has lower congruence)
 		// internal/audit_report → CL3 (0%), external → CL2 (10%)
@@ -213,6 +205,19 @@ func evidenceTypeToCLPenalty(evidenceType string) float64 {
 		return 0.4 // CL1: different context
 	default:
 		return 0.0 // Unknown type, no penalty
+	}
+}
+
+func scoreForVerdict(verdict string) float64 {
+	switch strings.ToLower(strings.TrimSpace(verdict)) {
+	case "pass", "accepted", "supports":
+		return 1.0
+	case "degrade", "partial", "weakens":
+		return 0.5
+	case "fail", "failed", "refutes":
+		return 0.0
+	default:
+		return 0.0
 	}
 }
 

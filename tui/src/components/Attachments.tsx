@@ -1,5 +1,6 @@
 import React, { useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text } from "ink"
+import { useInput } from "../hooks/useInput.js"
 
 export interface AttachmentItem {
   id: number

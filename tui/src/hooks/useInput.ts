@@ -1,17 +1,14 @@
-// Stable useInput — replaces Ink's stock useInput.
+// Stable useInput — reads from our own EventEmitter, NOT Ink's stdin.
 //
-// Differences from stock Ink v5 useInput:
-// 1. useLayoutEffect for raw mode (fires synchronously during commit, no echo gap)
-// 2. useEventCallback for stable handler (listener registered ONCE, never re-appended)
-// 3. isActive checked INSIDE handler, not in effect deps (preserves listener slot ordering)
+// Ink is rendering-only. All input flows:
+//   /dev/tty → data event → inputStream router → "keyboard" event → this hook
 //
-// This eliminates the root cause of all input bugs: Ink's useEffect + inline handler
-// causes listener re-registration on every render, with a gap where keypresses are lost.
+// This eliminates the class of bugs where Ink's internal stdin management
+// (pause/resume/buffer) interferes with input delivery.
 
-import { useEffect, useLayoutEffect } from "react"
-import { useStdin } from "ink"
+import { useEffect } from "react"
+import { useInputEmitter } from "./InputContext.js"
 import { useEventCallback } from "./useEventCallback.js"
-
 import parseKeypress, { nonAlphanumericKeys } from "./parseKeypress.js"
 
 export type Key = {
@@ -21,6 +18,8 @@ export type Key = {
   rightArrow: boolean
   pageDown: boolean
   pageUp: boolean
+  home: boolean
+  end: boolean
   return: boolean
   escape: boolean
   ctrl: boolean
@@ -38,27 +37,10 @@ interface UseInputOptions {
 }
 
 export function useInput(inputHandler: InputHandler, options: UseInputOptions = {}) {
-  // Access Ink's internal stdin context
-  const { setRawMode, internal_exitOnCtrlC, internal_eventEmitter } = useStdin() as {
-    setRawMode: (mode: boolean) => void
-    internal_exitOnCtrlC: boolean
-    internal_eventEmitter: import("node:events").EventEmitter | undefined
-  }
-
-  // Raw mode via useLayoutEffect — fires synchronously during React commit phase.
-  // Stock Ink uses useEffect which defers to the next event loop tick,
-  // leaving raw mode disabled during paint → keystrokes echo and cursor visible.
-  useLayoutEffect(() => {
-    if (options.isActive === false) return
-    setRawMode(true)
-    return () => { setRawMode(false) }
-  }, [options.isActive, setRawMode])
+  const emitter = useInputEmitter()
 
   // Stable handler via ref — NEVER causes listener re-registration.
-  // Always reads the latest isActive/inputHandler from the closure.
   const stableHandler = useEventCallback((data: string) => {
-    // Guard inside handler, not in effect deps — preserves listener slot
-    // in EventEmitter's array (critical for stopImmediatePropagation ordering)
     if (options.isActive === false) return
 
     const keypress = parseKeypress(data)
@@ -69,6 +51,8 @@ export function useInput(inputHandler: InputHandler, options: UseInputOptions = 
       rightArrow: keypress.name === "right",
       pageDown: keypress.name === "pagedown",
       pageUp: keypress.name === "pageup",
+      home: keypress.name === "home",
+      end: keypress.name === "end",
       return: keypress.name === "return",
       escape: keypress.name === "escape",
       ctrl: keypress.ctrl,
@@ -86,17 +70,12 @@ export function useInput(inputHandler: InputHandler, options: UseInputOptions = 
       key.shift = true
     }
 
-    // Suppress Ctrl+C only if app wants to exit on it (Ink default behavior)
-    if (!(input === "c" && key.ctrl) || !internal_exitOnCtrlC) {
-      inputHandler(input, key)
-    }
+    inputHandler(input, key)
   })
 
-  // Register listener ONCE on mount. stableHandler identity is fixed
-  // (useEventCallback returns a stable reference), so this effect never re-runs.
-  // Listener slot in EventEmitter's array is permanent — no re-ordering.
+  // Register listener ONCE on mount. stableHandler identity is fixed.
   useEffect(() => {
-    internal_eventEmitter?.on("input", stableHandler)
-    return () => { internal_eventEmitter?.removeListener("input", stableHandler) }
-  }, [internal_eventEmitter, stableHandler])
+    emitter.on("keyboard", stableHandler)
+    return () => { emitter.removeListener("keyboard", stableHandler) }
+  }, [emitter, stableHandler])
 }

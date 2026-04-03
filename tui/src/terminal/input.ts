@@ -7,6 +7,8 @@ export type InputEvent =
   | { type: "wheelUp" }
   | { type: "wheelDown" }
   | { type: "mouseClick"; col: number; row: number; button: number }
+  | { type: "mouseDrag"; col: number; row: number; button: number }
+  | { type: "mouseMotion"; col: number; row: number }
   | { type: "mouseRelease"; col: number; row: number }
   | { type: "paste"; text: string }
 
@@ -30,10 +32,17 @@ export function parseInput(raw: string): InputEvent[] {
 
     if (!isPress) {
       events.push({ type: "mouseRelease", col, row })
-    } else if ((button & 0x43) === 0x40) {
-      events.push({ type: "wheelUp" })
-    } else if ((button & 0x43) === 0x41) {
-      events.push({ type: "wheelDown" })
+    } else if (button & 0x40) {
+      // Wheel (bit 6): up=even, down=odd
+      events.push(button & 0x01 ? { type: "wheelDown" } : { type: "wheelUp" })
+    } else if (button & 0x20) {
+      // Motion (bit 5): drag (button held) or hover (no button, mode 1003)
+      const btn = button & 0x03
+      if (btn === 3) {
+        events.push({ type: "mouseMotion", col, row })
+      } else {
+        events.push({ type: "mouseDrag", col, row, button: btn })
+      }
     } else {
       events.push({ type: "mouseClick", col, row, button: button & 0x03 })
     }

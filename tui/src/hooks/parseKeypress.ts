@@ -85,7 +85,9 @@ export default function parseKeypress(s: string | Buffer = ""): ParsedKey {
     key.name = "backspace"
     key.meta = str.charAt(0) === "\x1b"
   } else if (str === "\x7f" || str === "\x1b\x7f") {
-    key.name = "delete"
+    // 0x7f is DEL — most terminals send this for Backspace.
+    // Real forward-delete sends \x1b[3~ which hits the keyName table as "delete".
+    key.name = "backspace"
     key.meta = str.charAt(0) === "\x1b"
   } else if (str === "\x1b" || str === "\x1b\x1b") {
     key.name = "escape"

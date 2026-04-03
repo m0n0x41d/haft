@@ -1,8 +1,14 @@
 // L5: JSON-RPC client over stdin/stdout.
 // Reads from process.stdin, writes to process.stdout.
 // Thread-safe: multiple pending requests tracked by ID.
+//
+// IMPORTANT: Writes are serialized through an async queue using fs.write(fd)
+// instead of process.stdout.write(). This prevents Bun from blocking the
+// event loop on pipe writes when the Go backend is temporarily not reading.
 
 import * as readline from "node:readline"
+import { write as fsWrite } from "node:fs"
+import { trace } from "../debug.js"
 import type { JsonRpcMessage, PermissionReply, QuestionReply } from "./types.js"
 
 export type RequestHandler = (method: string, params: unknown, respond: (result: unknown) => void) => void
@@ -14,6 +20,10 @@ export class JsonRpcClient {
   private onRequest: RequestHandler | null = null
   private onNotification: NotificationHandler | null = null
   private rl: readline.Interface
+
+  // Async write queue: serializes writes so they never interleave,
+  // and uses fs.write(fd) which goes through libuv's threadpool (non-blocking).
+  private writeChain: Promise<void> = Promise.resolve()
 
   constructor() {
     this.rl = readline.createInterface({ input: process.stdin })
@@ -32,7 +42,7 @@ export class JsonRpcClient {
   // Send a notification (no response expected)
   send(method: string, params: unknown): void {
     const msg: JsonRpcMessage = { jsonrpc: "2.0", method, params }
-    this.writeLine(msg)
+    this.enqueueWrite(msg)
   }
 
   // Send a request and wait for response
@@ -41,14 +51,14 @@ export class JsonRpcClient {
     const msg: JsonRpcMessage = { jsonrpc: "2.0", method, params, id }
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-      this.writeLine(msg)
+      this.enqueueWrite(msg)
     })
   }
 
   // Respond to a backend request
   respond(id: number, result: unknown): void {
     const msg: JsonRpcMessage = { jsonrpc: "2.0", result, id }
-    this.writeLine(msg)
+    this.enqueueWrite(msg)
   }
 
   private handleLine(line: string) {
@@ -92,7 +102,26 @@ export class JsonRpcClient {
     }
   }
 
-  private writeLine(msg: JsonRpcMessage) {
-    process.stdout.write(JSON.stringify(msg) + "\n")
+  // Enqueue a write. Writes are serialized: each starts only after the
+  // previous one completes. Uses fs.write(fd=1) which is async (libuv
+  // threadpool) rather than process.stdout.write() which can block in Bun.
+  private enqueueWrite(msg: JsonRpcMessage): void {
+    const line = JSON.stringify(msg) + "\n"
+    this.writeChain = this.writeChain.then(() => this.writeAsync(line))
+  }
+
+  private writeAsync(line: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const buf = Buffer.from(line, "utf-8")
+      trace(`rpc.write len=${buf.length}`)
+      fsWrite(1, buf, 0, buf.length, null, (err) => {
+        if (err) {
+          trace(`rpc.write.err ${err.message}`)
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
   }
 }

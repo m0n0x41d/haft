@@ -1,13 +1,22 @@
 // L5: App Shell — wires protocol, state, scroll, and components.
 
 import React, { useReducer, useEffect, useCallback, useRef, useState, useMemo } from "react"
-import { Box, Text, useApp, useInput, useStdout } from "ink"
+import { Box, Text, useApp, useStdout } from "ink"
+import { useInput } from "../hooks/useInput.js"
+import { trace } from "../debug.js"
 import type { EventEmitter } from "node:events"
 import type { JsonRpcClient } from "../protocol/client.js"
 import type { SessionListResponse, ModelListResponse, FileListResponse } from "../protocol/types.js"
 import { initialState, reducer } from "../state/store.js"
 import { buildTranscript } from "../state/transcript.js"
 import { useScroll } from "../scroll/useScroll.js"
+import { measureTranscript } from "../scroll/measure.js"
+// highlight.ts no longer has a subscriber pattern — highlighting applies
+// lazily on natural re-renders (scroll, new message, etc.)
+import type { InputEvent } from "../terminal/input.js"
+import { INITIAL_SELECTION, reduceSelection, hasSelection, normalizedRange, type SelectionState } from "../selection/state.js"
+import { copyToClipboard } from "../selection/clipboard.js"
+import { extractSelection, type ViewportLayout } from "../selection/extract.js"
 import { ChatView } from "./ChatView.js"
 import { StatusBar } from "./StatusBar.js"
 import { InputArea, type InputAreaHandle } from "./InputArea.js"
@@ -59,6 +68,33 @@ export function App({ client, inputEvents }: AppProps) {
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
 
+  // Stable ref to handleSubmit — protocol handler (registered once) always calls latest version
+  const handleSubmitRef = useRef<(text: string) => void>(() => {})
+
+  // Syntax highlighting applies lazily — no forced re-render on load.
+  // Components pick up highlighting on their next natural render cycle.
+
+  // Force rerender for Ctrl+L screen redraw
+  const [, setRedrawTick] = useState(0)
+
+  // --- Selection state (mouse drag → copy to clipboard) ---
+  const selRef = useRef<SelectionState>(INITIAL_SELECTION)
+  const layoutRef = useRef<ViewportLayout>({
+    chatHeight: 0, atBottom: true,
+    visibleWindow: { start: 0, end: 0, cropTop: 0 },
+    entryHeights: [], transcript: [],
+  })
+
+  // --- L1: Paste events (bypass Ink's input system, one render per paste) ---
+  useEffect(() => {
+    const handler = (text: string) => {
+      if (!text) return
+      if (inputRef.current) inputRef.current.insert(text)
+    }
+    inputEvents.on("paste", handler)
+    return () => { inputEvents.off("paste", handler) }
+  }, [inputEvents])
+
   // Throttle streaming updates
   const pendingUpdate = useRef<any>(null)
   const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -85,22 +121,50 @@ export function App({ client, inputEvents }: AppProps) {
     model: state.session.model,
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
 
-  // --- L2: Scroll ---
+  // --- L2: Scroll (line-based) ---
   const chatHeight = Math.max(5, height - BOTTOM_ROWS)
-  const { state: scrollState, scroll, visibleRange: vr, isAtBottom: atBottom } = useScroll(
+  const entryHeights = useMemo(() => measureTranscript(transcript, width), [transcript, width])
+  const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
-    transcript.length,
+    entryHeights,
     chatHeight,
   )
 
   // Visible entries based on scroll
   const visibleEntries = useMemo(() => {
-    return transcript.slice(vr.start, vr.end)
-  }, [transcript, vr.start, vr.end])
+    return transcript.slice(vw.start, vw.end)
+  }, [transcript, vw.start, vw.end])
+
+  // --- Selection: keep layout ref current for mouse event handler ---
+  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, transcript }
+
+  useEffect(() => {
+    const handler = (ev: InputEvent) => {
+      if (ev.type === "mouseClick" && ev.button === 0) {
+        selRef.current = reduceSelection(selRef.current, { type: "mouseDown", col: ev.col, row: ev.row })
+      } else if (ev.type === "mouseDrag" && ev.button === 0) {
+        selRef.current = reduceSelection(selRef.current, { type: "mouseDrag", col: ev.col, row: ev.row })
+      } else if (ev.type === "mouseRelease") {
+        const sel = selRef.current
+        if (hasSelection(sel)) {
+          const range = normalizedRange(sel)!
+          const text = extractSelection(range.start.row, range.end.row, layoutRef.current)
+          if (text.trim()) {
+            copyToClipboard(text, process.stderr)
+            dispatch({ type: "set.notification", text: "Copied to clipboard" })
+          }
+        }
+        selRef.current = INITIAL_SELECTION
+      }
+    }
+    inputEvents.on("input", handler)
+    return () => { inputEvents.off("input", handler) }
+  }, [inputEvents])
 
   // --- Protocol ---
   useEffect(() => {
     client.setNotificationHandler((method, params) => {
+      trace(`notification: ${method}`)
       const p = params as any
       switch (method) {
         case "init":
@@ -120,7 +184,11 @@ export function App({ client, inputEvents }: AppProps) {
         case "cycle.update": dispatch({ type: "cycle.update", params: p }); break
         case "subagent.start": dispatch({ type: "subagent.start", params: p }); break
         case "subagent.done": dispatch({ type: "subagent.done", params: p }); break
-        case "overseer.alert": dispatch({ type: "overseer.alert", alerts: p.alerts }); break
+        case "overseer.alert":
+          trace(`overseer.alert alerts=${JSON.stringify(p.alerts).slice(0, 200)}`)
+          dispatch({ type: "overseer.alert", alerts: p.alerts })
+          trace("overseer.alert dispatch done")
+          break
         case "drift.update": dispatch({ type: "drift.update", params: p }); break
         case "lsp.update": dispatch({ type: "lsp.update", params: p }); break
         case "error": dispatch({ type: "error", message: p.message }); break
@@ -135,7 +203,7 @@ export function App({ client, inputEvents }: AppProps) {
           setQueuedMessages((q) => {
             if (q.length > 0) {
               const next = q[0]
-              setTimeout(() => handleSubmit(next), 100)
+              setTimeout(() => handleSubmitRef.current(next), 100)
               return q.slice(1)
             }
             return q
@@ -155,18 +223,23 @@ export function App({ client, inputEvents }: AppProps) {
       }
     })
 
+  }, [client]) // eslint-disable-line react-hooks/exhaustive-deps — handlers registered once
+
+  // Forward terminal resize to backend (also sends initial size on mount)
+  useEffect(() => {
     client.send("resize", { width, height })
   }, [client, width, height])
 
   // --- Notification auto-clear ---
   useEffect(() => {
     if (!state.notification) return
-    const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 3000)
+    const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 5000)
     return () => clearTimeout(timer)
   }, [state.notification])
 
   // --- Handlers ---
   const handleSubmit = useCallback((text: string) => {
+    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
     if (phaseRef.current === "streaming") {
       setQueuedMessages((q) => [...q, text])
       return
@@ -195,6 +268,7 @@ export function App({ client, inputEvents }: AppProps) {
     setAttachments([])
     setAttachmentSelection(false)
   }, [client, attachments])
+  handleSubmitRef.current = handleSubmit
 
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
     respondRef.current?.({ action }); respondRef.current = null
@@ -255,8 +329,21 @@ export function App({ client, inputEvents }: AppProps) {
 
     // Ctrl+C ALWAYS works — never blocked
     if (key.ctrl && input === "c") {
+      trace(`ctrl-c phase=${state.phase}`)
       if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }) }
       else exit()
+      return
+    }
+    // Ctrl+D — exit (same as Ctrl+C when not streaming)
+    if (key.ctrl && input === "d") {
+      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }) }
+      else exit()
+      return
+    }
+    // Ctrl+L — redraw screen (clear + force Ink repaint via state change)
+    if (key.ctrl && input === "l") {
+      stdout?.write("\x1b[2J\x1b[3J\x1b[H")
+      setRedrawTick((t) => t + 1)
       return
     }
     if (key.ctrl && input === "q") {
@@ -267,13 +354,20 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
     if (key.ctrl && input === "m") { openModelPicker(); return }
-    if (key.escape && state.error) { dispatch({ type: "clear.error" }); return }
+    // Escape: cancel streaming, clear error, or clear scroll
+    if (key.escape) {
+      if (state.error) { dispatch({ type: "clear.error" }); return }
+      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }); return }
+      return
+    }
 
     // Keyboard scroll
     if (key.upArrow && key.shift) { scroll({ type: "wheelUp", amount: 3 }); return }
     if (key.downArrow && key.shift) { scroll({ type: "wheelDown", amount: 3 }); return }
     if (key.pageUp) { scroll({ type: "pageUp" }); return }
     if (key.pageDown) { scroll({ type: "pageDown" }); return }
+    if (key.home && key.ctrl) { scroll({ type: "home" }); return }
+    if (key.end && key.ctrl) { scroll({ type: "end" }); return }
 
     if (state.phase !== "input" || input === "") {
       if (input === "t") { dispatch({ type: "toggle.think" }); return }
@@ -285,15 +379,17 @@ export function App({ client, inputEvents }: AppProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Chat: fixed height, overflow clipped, content anchored bottom */}
+      {/* Chat: fixed height, overflow clipped. Spacer anchors content to bottom when at latest messages; removed when scrolled up so overflow clips from bottom. */}
       <Box flexDirection="column" height={chatHeight} overflowY="hidden">
-        <Box flexGrow={1} />
-        <ChatView entries={visibleEntries} width={width} />
+        {atBottom && <Box flexGrow={1} />}
+        <Box flexDirection="column" marginTop={vw.cropTop > 0 ? -vw.cropTop : undefined}>
+          <ChatView entries={visibleEntries} width={width} />
+        </Box>
       </Box>
 
       {/* Scroll indicator */}
       {scrollState.offset > 0 && (
-        <Text dimColor>  {"\u2191"} {scrollState.offset} entries above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
+        <Text dimColor>  {"\u2191"} {scrollState.offset} lines above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
       )}
 
       {/* Overlays */}

@@ -73,8 +73,9 @@ function AssistantTextBlock({ text, streaming, width }: { text: string; streamin
       <Box flexShrink={0} minWidth={2}>
         <Text>{BLACK_CIRCLE}</Text>
       </Box>
-      <Box flexShrink={1} flexGrow={1}>
-        {streaming ? <Text>{text}</Text> : <MarkdownView text={text} width={contentWidth} />}
+      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+        <MarkdownView text={text} width={contentWidth} />
+        {streaming && <Text dimColor>{"\u2588"}</Text>}
       </Box>
     </Box>
   )

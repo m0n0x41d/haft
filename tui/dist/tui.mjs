@@ -1070,7 +1070,7 @@ var require_react_development = __commonJS({
           }
           return children;
         }
-        function createContext6(defaultValue) {
+        function createContext7(defaultValue) {
           var context = {
             $$typeof: REACT_CONTEXT_TYPE,
             // As a workaround to support multiple concurrent renderers, we categorize
@@ -1356,7 +1356,7 @@ var require_react_development = __commonJS({
           }
           return dispatcher;
         }
-        function useContext7(Context) {
+        function useContext8(Context) {
           var dispatcher = resolveDispatcher();
           {
             if (Context._context !== void 0) {
@@ -1378,11 +1378,11 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useReducer(reducer2, initialArg, init);
         }
-        function useRef3(initialValue) {
+        function useRef5(initialValue) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useRef(initialValue);
         }
-        function useEffect6(create2, deps) {
+        function useEffect7(create2, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useEffect(create2, deps);
         }
@@ -1390,15 +1390,15 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useInsertionEffect(create2, deps);
         }
-        function useLayoutEffect2(create2, deps) {
+        function useLayoutEffect3(create2, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useLayoutEffect(create2, deps);
         }
-        function useCallback3(callback, deps) {
+        function useCallback4(callback, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useCallback(callback, deps);
         }
-        function useMemo5(create2, deps) {
+        function useMemo6(create2, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useMemo(create2, deps);
         }
@@ -2151,7 +2151,7 @@ var require_react_development = __commonJS({
         exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactSharedInternals;
         exports.act = act;
         exports.cloneElement = cloneElement$1;
-        exports.createContext = createContext6;
+        exports.createContext = createContext7;
         exports.createElement = createElement$1;
         exports.createFactory = createFactory;
         exports.createRef = createRef;
@@ -2161,18 +2161,18 @@ var require_react_development = __commonJS({
         exports.memo = memo;
         exports.startTransition = startTransition;
         exports.unstable_act = act;
-        exports.useCallback = useCallback3;
-        exports.useContext = useContext7;
+        exports.useCallback = useCallback4;
+        exports.useContext = useContext8;
         exports.useDebugValue = useDebugValue;
         exports.useDeferredValue = useDeferredValue;
-        exports.useEffect = useEffect6;
+        exports.useEffect = useEffect7;
         exports.useId = useId;
         exports.useImperativeHandle = useImperativeHandle2;
         exports.useInsertionEffect = useInsertionEffect;
-        exports.useLayoutEffect = useLayoutEffect2;
-        exports.useMemo = useMemo5;
+        exports.useLayoutEffect = useLayoutEffect3;
+        exports.useMemo = useMemo6;
         exports.useReducer = useReducer3;
-        exports.useRef = useRef3;
+        exports.useRef = useRef5;
         exports.useState = useState8;
         exports.useSyncExternalStore = useSyncExternalStore;
         exports.useTransition = useTransition;
@@ -2272,7 +2272,7 @@ var require_signal_exit = __commonJS({
         }
         assert.equal(typeof cb, "function", "a callback must be provided for exit handler");
         if (loaded === false) {
-          load();
+          load2();
         }
         var ev = "exit";
         if (opts && opts.alwaysLast) {
@@ -2332,7 +2332,7 @@ var require_signal_exit = __commonJS({
         return signals;
       };
       loaded = false;
-      load = function load2() {
+      load2 = function load3() {
         if (loaded || !processOk(global.process)) {
           return;
         }
@@ -2349,7 +2349,7 @@ var require_signal_exit = __commonJS({
         process13.emit = processEmit;
         process13.reallyExit = processReallyExit;
       };
-      module.exports.load = load;
+      module.exports.load = load2;
       originalProcessReallyExit = process13.reallyExit;
       processReallyExit = function processReallyExit2(code) {
         if (!processOk(global.process)) {
@@ -2385,7 +2385,7 @@ var require_signal_exit = __commonJS({
     var emit;
     var sigListeners;
     var loaded;
-    var load;
+    var load2;
     var originalProcessReallyExit;
     var processReallyExit;
     var originalProcessEmit;
@@ -2659,7 +2659,7 @@ var require_scheduler_development = __commonJS({
         var enableSchedulerDebugging = false;
         var enableProfiling = false;
         var frameYieldMs = 5;
-        function push(heap, node) {
+        function push2(heap, node) {
           var index = heap.length;
           heap.push(node);
           siftUp(heap, node, index);
@@ -2771,7 +2771,7 @@ var require_scheduler_development = __commonJS({
             } else if (timer.startTime <= currentTime) {
               pop(timerQueue);
               timer.sortIndex = timer.expirationTime;
-              push(taskQueue, timer);
+              push2(taskQueue, timer);
             } else {
               return;
             }
@@ -2954,7 +2954,7 @@ var require_scheduler_development = __commonJS({
           };
           if (startTime2 > currentTime) {
             newTask.sortIndex = startTime2;
-            push(timerQueue, newTask);
+            push2(timerQueue, newTask);
             if (peek(taskQueue) === null && newTask === peek(timerQueue)) {
               if (isHostTimeoutScheduled) {
                 cancelHostTimeout();
@@ -2965,7 +2965,7 @@ var require_scheduler_development = __commonJS({
             }
           } else {
             newTask.sortIndex = expirationTime;
-            push(taskQueue, newTask);
+            push2(taskQueue, newTask);
             if (!isHostCallbackScheduled && !isPerformingWork) {
               isHostCallbackScheduled = true;
               requestHostCallback(flushWork);
@@ -7865,9 +7865,9 @@ var require_react_reconciler_development = __commonJS({
       module.exports = function $$$reconciler($$$hostConfig) {
         var exports2 = {};
         "use strict";
-        var React19 = require_react();
+        var React21 = require_react();
         var Scheduler = require_scheduler();
-        var ReactSharedInternals = React19.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        var ReactSharedInternals = React21.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
         var suppressWarning = false;
         function setSuppressWarning(newSuppressWarning) {
           {
@@ -7931,7 +7931,7 @@ var require_react_reconciler_development = __commonJS({
         var HostPortal = 4;
         var HostComponent = 5;
         var HostText = 6;
-        var Fragment = 7;
+        var Fragment2 = 7;
         var Mode = 8;
         var ContextConsumer = 9;
         var ContextProvider = 10;
@@ -8071,7 +8071,7 @@ var require_react_reconciler_development = __commonJS({
               return "DehydratedFragment";
             case ForwardRef:
               return getWrappedName$1(type, type.render, "ForwardRef");
-            case Fragment:
+            case Fragment2:
               return "Fragment";
             case HostComponent:
               return type;
@@ -8838,7 +8838,7 @@ var require_react_reconciler_development = __commonJS({
           }
           index--;
         }
-        function push(cursor, value, fiber) {
+        function push2(cursor, value, fiber) {
           index++;
           valueStack[index] = cursor.current;
           {
@@ -8925,8 +8925,8 @@ var require_react_reconciler_development = __commonJS({
             if (contextStackCursor.current !== emptyContextObject) {
               throw new Error("Unexpected context found on stack. This error is likely caused by a bug in React. Please file an issue.");
             }
-            push(contextStackCursor, context, fiber);
-            push(didPerformWorkStackCursor, didChange, fiber);
+            push2(contextStackCursor, context, fiber);
+            push2(didPerformWorkStackCursor, didChange, fiber);
           }
         }
         function processChildContext(fiber, type, parentContext) {
@@ -8961,8 +8961,8 @@ var require_react_reconciler_development = __commonJS({
             var instance = workInProgress2.stateNode;
             var memoizedMergedChildContext = instance && instance.__reactInternalMemoizedMergedChildContext || emptyContextObject;
             previousContext = contextStackCursor.current;
-            push(contextStackCursor, memoizedMergedChildContext, workInProgress2);
-            push(didPerformWorkStackCursor, didPerformWorkStackCursor.current, workInProgress2);
+            push2(contextStackCursor, memoizedMergedChildContext, workInProgress2);
+            push2(didPerformWorkStackCursor, didPerformWorkStackCursor.current, workInProgress2);
             return true;
           }
         }
@@ -8977,11 +8977,11 @@ var require_react_reconciler_development = __commonJS({
               instance.__reactInternalMemoizedMergedChildContext = mergedContext;
               pop(didPerformWorkStackCursor, workInProgress2);
               pop(contextStackCursor, workInProgress2);
-              push(contextStackCursor, mergedContext, workInProgress2);
-              push(didPerformWorkStackCursor, didChange, workInProgress2);
+              push2(contextStackCursor, mergedContext, workInProgress2);
+              push2(didPerformWorkStackCursor, didChange, workInProgress2);
             } else {
               pop(didPerformWorkStackCursor, workInProgress2);
-              push(didPerformWorkStackCursor, didChange, workInProgress2);
+              push2(didPerformWorkStackCursor, didChange, workInProgress2);
             }
           }
         }
@@ -11205,7 +11205,7 @@ var require_react_reconciler_development = __commonJS({
             }
           }
           function updateFragment2(returnFiber, current2, fragment, lanes, key) {
-            if (current2 === null || current2.tag !== Fragment) {
+            if (current2 === null || current2.tag !== Fragment2) {
               var created = createFiberFromFragment(fragment, returnFiber.mode, lanes, key);
               created.return = returnFiber;
               return created;
@@ -11608,7 +11608,7 @@ var require_react_reconciler_development = __commonJS({
               if (child.key === key) {
                 var elementType = element.type;
                 if (elementType === REACT_FRAGMENT_TYPE) {
-                  if (child.tag === Fragment) {
+                  if (child.tag === Fragment2) {
                     deleteRemainingChildren(returnFiber, child.sibling);
                     var existing = useFiber(child, element.props.children);
                     existing.return = returnFiber;
@@ -11769,7 +11769,7 @@ var require_react_reconciler_development = __commonJS({
         }
         function pushProvider(providerFiber, context, nextValue) {
           if (isPrimaryRenderer) {
-            push(valueCursor, context._currentValue, providerFiber);
+            push2(valueCursor, context._currentValue, providerFiber);
             context._currentValue = nextValue;
             {
               if (context._currentRenderer !== void 0 && context._currentRenderer !== null && context._currentRenderer !== rendererSigil) {
@@ -11778,7 +11778,7 @@ var require_react_reconciler_development = __commonJS({
               context._currentRenderer = rendererSigil;
             }
           } else {
-            push(valueCursor, context._currentValue2, providerFiber);
+            push2(valueCursor, context._currentValue2, providerFiber);
             context._currentValue2 = nextValue;
             {
               if (context._currentRenderer2 !== void 0 && context._currentRenderer2 !== null && context._currentRenderer2 !== rendererSigil) {
@@ -12434,12 +12434,12 @@ var require_react_reconciler_development = __commonJS({
           return rootInstance;
         }
         function pushHostContainer(fiber, nextRootInstance) {
-          push(rootInstanceStackCursor, nextRootInstance, fiber);
-          push(contextFiberStackCursor, fiber, fiber);
-          push(contextStackCursor$1, NO_CONTEXT, fiber);
+          push2(rootInstanceStackCursor, nextRootInstance, fiber);
+          push2(contextFiberStackCursor, fiber, fiber);
+          push2(contextStackCursor$1, NO_CONTEXT, fiber);
           var nextRootContext = getRootHostContext(nextRootInstance);
           pop(contextStackCursor$1, fiber);
-          push(contextStackCursor$1, nextRootContext, fiber);
+          push2(contextStackCursor$1, nextRootContext, fiber);
         }
         function popHostContainer(fiber) {
           pop(contextStackCursor$1, fiber);
@@ -12457,8 +12457,8 @@ var require_react_reconciler_development = __commonJS({
           if (context === nextContext) {
             return;
           }
-          push(contextFiberStackCursor, fiber, fiber);
-          push(contextStackCursor$1, nextContext, fiber);
+          push2(contextFiberStackCursor, fiber, fiber);
+          push2(contextStackCursor$1, nextContext, fiber);
         }
         function popHostContext(fiber) {
           if (contextFiberStackCursor.current !== fiber) {
@@ -12485,7 +12485,7 @@ var require_react_reconciler_development = __commonJS({
           return parentContext | subtreeContext;
         }
         function pushSuspenseContext(fiber, newContext) {
-          push(suspenseStackCursor, newContext, fiber);
+          push2(suspenseStackCursor, newContext, fiber);
         }
         function popSuspenseContext(fiber) {
           pop(suspenseStackCursor, fiber);
@@ -17099,7 +17099,7 @@ var require_react_reconciler_development = __commonJS({
               var _resolvedProps2 = workInProgress2.elementType === type ? _unresolvedProps2 : resolveDefaultProps(type, _unresolvedProps2);
               return updateForwardRef(current2, workInProgress2, type, _resolvedProps2, renderLanes2);
             }
-            case Fragment:
+            case Fragment2:
               return updateFragment(current2, workInProgress2, renderLanes2);
             case Mode:
               return updateMode(current2, workInProgress2, renderLanes2);
@@ -17536,7 +17536,7 @@ var require_react_reconciler_development = __commonJS({
             case SimpleMemoComponent:
             case FunctionComponent:
             case ForwardRef:
-            case Fragment:
+            case Fragment2:
             case Mode:
             case Profiler:
             case ContextConsumer:
@@ -20795,7 +20795,7 @@ var require_react_reconciler_development = __commonJS({
           }
         }
         function pushRenderLanes(fiber, lanes) {
-          push(subtreeRenderLanesCursor, subtreeRenderLanes, fiber);
+          push2(subtreeRenderLanesCursor, subtreeRenderLanes, fiber);
           subtreeRenderLanes = mergeLanes(subtreeRenderLanes, lanes);
           workInProgressRootIncludedLanes = mergeLanes(workInProgressRootIncludedLanes, lanes);
         }
@@ -22304,7 +22304,7 @@ var require_react_reconciler_development = __commonJS({
           return fiber;
         }
         function createFiberFromFragment(elements, mode, lanes, key) {
-          var fiber = createFiber(Fragment, elements, key, mode);
+          var fiber = createFiber(Fragment2, elements, key, mode);
           fiber.lanes = lanes;
           return fiber;
         }
@@ -25117,7 +25117,7 @@ var require_extension = __commonJS({
   "node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
-    function push(dest, name, elem) {
+    function push2(dest, name, elem) {
       if (dest[name] === void 0) dest[name] = [elem];
       else dest[name].push(elem);
     }
@@ -25147,7 +25147,7 @@ var require_extension = __commonJS({
             if (end === -1) end = i;
             const name = header.slice(start, end);
             if (code === 44) {
-              push(offers, name, params);
+              push2(offers, name, params);
               params = /* @__PURE__ */ Object.create(null);
             } else {
               extensionName = name;
@@ -25166,9 +25166,9 @@ var require_extension = __commonJS({
               throw new SyntaxError(`Unexpected character at index ${i}`);
             }
             if (end === -1) end = i;
-            push(params, header.slice(start, end), true);
+            push2(params, header.slice(start, end), true);
             if (code === 44) {
-              push(offers, extensionName, params);
+              push2(offers, extensionName, params);
               params = /* @__PURE__ */ Object.create(null);
               extensionName = void 0;
             }
@@ -25214,9 +25214,9 @@ var require_extension = __commonJS({
               value = value.replace(/\\/g, "");
               mustUnescape = false;
             }
-            push(params, paramName, value);
+            push2(params, paramName, value);
             if (code === 44) {
-              push(offers, extensionName, params);
+              push2(offers, extensionName, params);
               params = /* @__PURE__ */ Object.create(null);
               extensionName = void 0;
             }
@@ -25233,16 +25233,16 @@ var require_extension = __commonJS({
       if (end === -1) end = i;
       const token = header.slice(start, end);
       if (extensionName === void 0) {
-        push(offers, token, params);
+        push2(offers, token, params);
       } else {
         if (paramName === void 0) {
-          push(params, token, true);
+          push2(params, token, true);
         } else if (mustUnescape) {
-          push(params, paramName, token.replace(/\\/g, ""));
+          push2(params, paramName, token.replace(/\\/g, ""));
         } else {
-          push(params, paramName, token);
+          push2(params, paramName, token);
         }
-        push(offers, extensionName, params);
+        push2(offers, extensionName, params);
       }
       return offers;
     }
@@ -27226,7 +27226,7 @@ var require_react_jsx_runtime_development = __commonJS({
     if (process.env.NODE_ENV !== "production") {
       (function() {
         "use strict";
-        var React19 = require_react();
+        var React21 = require_react();
         var REACT_ELEMENT_TYPE = Symbol.for("react.element");
         var REACT_PORTAL_TYPE = Symbol.for("react.portal");
         var REACT_FRAGMENT_TYPE = Symbol.for("react.fragment");
@@ -27252,7 +27252,7 @@ var require_react_jsx_runtime_development = __commonJS({
           }
           return null;
         }
-        var ReactSharedInternals = React19.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        var ReactSharedInternals = React21.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
         function error(format) {
           {
             {
@@ -28102,10 +28102,10 @@ var require_react_jsx_runtime_development = __commonJS({
             return jsxWithValidation(type, props, key, false);
           }
         }
-        var jsx14 = jsxWithValidationDynamic;
+        var jsx15 = jsxWithValidationDynamic;
         var jsxs13 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
-        exports.jsx = jsx14;
+        exports.jsx = jsx15;
         exports.jsxs = jsxs13;
       })();
     }
@@ -30083,8 +30083,8 @@ import process3 from "node:process";
 
 // node_modules/ansi-regex/index.js
 function ansiRegex({ onlyFirst = false } = {}) {
-  const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
-  const osc = `(?:\\u001B\\][\\s\\S]*?${ST})`;
+  const ST2 = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
+  const osc = `(?:\\u001B\\][\\s\\S]*?${ST2})`;
   const csi = "[\\u001B\\u009B][[\\]()#;?]*(?:\\d{1,4}(?:[;:]\\d{0,4})*)?[\\dA-PR-TZcf-nq-uy=><~]";
   const pattern = `${osc}|${csi}`;
   return new RegExp(pattern, onlyFirst ? void 0 : "g");
@@ -33483,9 +33483,6 @@ var import_react14 = __toESM(require_react(), 1);
 var import_react16 = __toESM(require_react(), 1);
 
 // node_modules/ink/build/parse-keypress.js
-import { Buffer as Buffer2 } from "node:buffer";
-var metaKeyCodeRe = /^(?:\x1b)([a-zA-Z0-9])$/;
-var fnKeyRe = /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/;
 var keyName = {
   /* xterm/gnome ESC O letter */
   OP: "f1",
@@ -33568,178 +33565,9 @@ var keyName = {
   "[Z": "tab"
 };
 var nonAlphanumericKeys = [...Object.values(keyName), "backspace"];
-var isShiftKey = (code) => {
-  return [
-    "[a",
-    "[b",
-    "[c",
-    "[d",
-    "[e",
-    "[2$",
-    "[3$",
-    "[5$",
-    "[6$",
-    "[7$",
-    "[8$",
-    "[Z"
-  ].includes(code);
-};
-var isCtrlKey = (code) => {
-  return [
-    "Oa",
-    "Ob",
-    "Oc",
-    "Od",
-    "Oe",
-    "[2^",
-    "[3^",
-    "[5^",
-    "[6^",
-    "[7^",
-    "[8^"
-  ].includes(code);
-};
-var parseKeypress = (s = "") => {
-  let parts;
-  if (Buffer2.isBuffer(s)) {
-    if (s[0] > 127 && s[1] === void 0) {
-      s[0] -= 128;
-      s = "\x1B" + String(s);
-    } else {
-      s = String(s);
-    }
-  } else if (s !== void 0 && typeof s !== "string") {
-    s = String(s);
-  } else if (!s) {
-    s = "";
-  }
-  const key = {
-    name: "",
-    ctrl: false,
-    meta: false,
-    shift: false,
-    option: false,
-    sequence: s,
-    raw: s
-  };
-  key.sequence = key.sequence || s || key.name;
-  if (s === "\r") {
-    key.raw = void 0;
-    key.name = "return";
-  } else if (s === "\n") {
-    key.name = "enter";
-  } else if (s === "	") {
-    key.name = "tab";
-  } else if (s === "\b" || s === "\x1B\b") {
-    key.name = "backspace";
-    key.meta = s.charAt(0) === "\x1B";
-  } else if (s === "\x7F" || s === "\x1B\x7F") {
-    key.name = "delete";
-    key.meta = s.charAt(0) === "\x1B";
-  } else if (s === "\x1B" || s === "\x1B\x1B") {
-    key.name = "escape";
-    key.meta = s.length === 2;
-  } else if (s === " " || s === "\x1B ") {
-    key.name = "space";
-    key.meta = s.length === 2;
-  } else if (s.length === 1 && s <= "") {
-    key.name = String.fromCharCode(s.charCodeAt(0) + "a".charCodeAt(0) - 1);
-    key.ctrl = true;
-  } else if (s.length === 1 && s >= "0" && s <= "9") {
-    key.name = "number";
-  } else if (s.length === 1 && s >= "a" && s <= "z") {
-    key.name = s;
-  } else if (s.length === 1 && s >= "A" && s <= "Z") {
-    key.name = s.toLowerCase();
-    key.shift = true;
-  } else if (parts = metaKeyCodeRe.exec(s)) {
-    key.meta = true;
-    key.shift = /^[A-Z]$/.test(parts[1]);
-  } else if (parts = fnKeyRe.exec(s)) {
-    const segs = [...s];
-    if (segs[0] === "\x1B" && segs[1] === "\x1B") {
-      key.option = true;
-    }
-    const code = [parts[1], parts[2], parts[4], parts[6]].filter(Boolean).join("");
-    const modifier = (parts[3] || parts[5] || 1) - 1;
-    key.ctrl = !!(modifier & 4);
-    key.meta = !!(modifier & 10);
-    key.shift = !!(modifier & 1);
-    key.code = code;
-    key.name = keyName[code];
-    key.shift = isShiftKey(code) || key.shift;
-    key.ctrl = isCtrlKey(code) || key.ctrl;
-  }
-  return key;
-};
-var parse_keypress_default = parseKeypress;
 
 // node_modules/ink/build/hooks/use-stdin.js
 var import_react15 = __toESM(require_react(), 1);
-var useStdin = () => (0, import_react15.useContext)(StdinContext_default);
-var use_stdin_default = useStdin;
-
-// node_modules/ink/build/hooks/use-input.js
-var useInput = (inputHandler, options = {}) => {
-  const { stdin, setRawMode, internal_exitOnCtrlC, internal_eventEmitter } = use_stdin_default();
-  (0, import_react16.useEffect)(() => {
-    if (options.isActive === false) {
-      return;
-    }
-    setRawMode(true);
-    return () => {
-      setRawMode(false);
-    };
-  }, [options.isActive, setRawMode]);
-  (0, import_react16.useEffect)(() => {
-    if (options.isActive === false) {
-      return;
-    }
-    const handleData = (data) => {
-      const keypress = parse_keypress_default(data);
-      const key = {
-        upArrow: keypress.name === "up",
-        downArrow: keypress.name === "down",
-        leftArrow: keypress.name === "left",
-        rightArrow: keypress.name === "right",
-        pageDown: keypress.name === "pagedown",
-        pageUp: keypress.name === "pageup",
-        return: keypress.name === "return",
-        escape: keypress.name === "escape",
-        ctrl: keypress.ctrl,
-        shift: keypress.shift,
-        tab: keypress.name === "tab",
-        backspace: keypress.name === "backspace",
-        delete: keypress.name === "delete",
-        // `parseKeypress` parses \u001B\u001B[A (meta + up arrow) as meta = false
-        // but with option = true, so we need to take this into account here
-        // to avoid breaking changes in Ink.
-        // TODO(vadimdemedes): consider removing this in the next major version.
-        meta: keypress.meta || keypress.name === "escape" || keypress.option
-      };
-      let input = keypress.ctrl ? keypress.name : keypress.sequence;
-      if (nonAlphanumericKeys.includes(keypress.name)) {
-        input = "";
-      }
-      if (input.startsWith("\x1B")) {
-        input = input.slice(1);
-      }
-      if (input.length === 1 && typeof input[0] === "string" && /[A-Z]/.test(input[0])) {
-        key.shift = true;
-      }
-      if (!(input === "c" && key.ctrl) || !internal_exitOnCtrlC) {
-        reconciler_default.batchedUpdates(() => {
-          inputHandler(input, key);
-        });
-      }
-    };
-    internal_eventEmitter?.on("input", handleData);
-    return () => {
-      internal_eventEmitter?.removeListener("input", handleData);
-    };
-  }, [options.isActive, stdin, internal_exitOnCtrlC, inputHandler]);
-};
-var use_input_default = useInput;
 
 // node_modules/ink/build/hooks/use-app.js
 var import_react17 = __toESM(require_react(), 1);
@@ -33760,8 +33588,238 @@ var import_react20 = __toESM(require_react(), 1);
 // node_modules/ink/build/hooks/use-focus-manager.js
 var import_react21 = __toESM(require_react(), 1);
 
+// src/debug.ts
+import { appendFileSync } from "node:fs";
+var LOG_PATH = "/tmp/haft-debug.log";
+function trace(label) {
+  try {
+    appendFileSync(LOG_PATH, `[${(/* @__PURE__ */ new Date()).toISOString()}] ${label}
+`);
+  } catch {
+  }
+}
+var heartbeatCount = 0;
+setInterval(() => {
+  trace(`heartbeat #${++heartbeatCount}`);
+}, 2e3).unref();
+
+// src/hooks/InputContext.ts
+var import_react22 = __toESM(require_react(), 1);
+var InputContext = (0, import_react22.createContext)(null);
+var InputProvider = InputContext.Provider;
+function useInputEmitter() {
+  const emitter = (0, import_react22.useContext)(InputContext);
+  if (!emitter) throw new Error("useInputEmitter must be used within InputProvider");
+  return emitter;
+}
+
 // src/components/App.tsx
-var import_react31 = __toESM(require_react(), 1);
+var import_react36 = __toESM(require_react(), 1);
+
+// src/hooks/useInput.ts
+var import_react24 = __toESM(require_react(), 1);
+
+// src/hooks/useEventCallback.ts
+var import_react23 = __toESM(require_react(), 1);
+function useEventCallback(fn) {
+  const ref = (0, import_react23.useRef)(fn);
+  (0, import_react23.useLayoutEffect)(() => {
+    ref.current = fn;
+  });
+  return (0, import_react23.useCallback)((...args) => ref.current(...args), []);
+}
+
+// src/hooks/parseKeypress.ts
+import { Buffer as Buffer2 } from "node:buffer";
+var metaKeyCodeRe = /^(?:\x1b)([a-zA-Z0-9])$/;
+var fnKeyRe = /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/;
+var keyName2 = {
+  OP: "f1",
+  OQ: "f2",
+  OR: "f3",
+  OS: "f4",
+  "[11~": "f1",
+  "[12~": "f2",
+  "[13~": "f3",
+  "[14~": "f4",
+  "[[A": "f1",
+  "[[B": "f2",
+  "[[C": "f3",
+  "[[D": "f4",
+  "[[E": "f5",
+  "[15~": "f5",
+  "[17~": "f6",
+  "[18~": "f7",
+  "[19~": "f8",
+  "[20~": "f9",
+  "[21~": "f10",
+  "[23~": "f11",
+  "[24~": "f12",
+  "[A": "up",
+  "[B": "down",
+  "[C": "right",
+  "[D": "left",
+  "[E": "clear",
+  "[F": "end",
+  "[H": "home",
+  OA: "up",
+  OB: "down",
+  OC: "right",
+  OD: "left",
+  OE: "clear",
+  OF: "end",
+  OH: "home",
+  "[1~": "home",
+  "[2~": "insert",
+  "[3~": "delete",
+  "[4~": "end",
+  "[5~": "pageup",
+  "[6~": "pagedown",
+  "[[5~": "pageup",
+  "[[6~": "pagedown",
+  "[7~": "home",
+  "[8~": "end",
+  "[a": "up",
+  "[b": "down",
+  "[c": "right",
+  "[d": "left",
+  "[e": "clear",
+  "[2$": "insert",
+  "[3$": "delete",
+  "[5$": "pageup",
+  "[6$": "pagedown",
+  "[7$": "home",
+  "[8$": "end",
+  Oa: "up",
+  Ob: "down",
+  Oc: "right",
+  Od: "left",
+  Oe: "clear",
+  "[2^": "insert",
+  "[3^": "delete",
+  "[5^": "pageup",
+  "[6^": "pagedown",
+  "[7^": "home",
+  "[8^": "end",
+  "[Z": "tab"
+};
+var nonAlphanumericKeys2 = [...Object.values(keyName2), "backspace"];
+var shiftKeys = /* @__PURE__ */ new Set(["[a", "[b", "[c", "[d", "[e", "[2$", "[3$", "[5$", "[6$", "[7$", "[8$", "[Z"]);
+var ctrlKeys = /* @__PURE__ */ new Set(["Oa", "Ob", "Oc", "Od", "Oe", "[2^", "[3^", "[5^", "[6^", "[7^", "[8^"]);
+function parseKeypress(s = "") {
+  let parts;
+  let str;
+  if (Buffer2.isBuffer(s)) {
+    if (s[0] > 127 && s[1] === void 0) {
+      s[0] -= 128;
+      str = "\x1B" + String(s);
+    } else {
+      str = String(s);
+    }
+  } else if (typeof s !== "string") {
+    str = String(s);
+  } else {
+    str = s || "";
+  }
+  const key = {
+    name: "",
+    ctrl: false,
+    meta: false,
+    shift: false,
+    option: false,
+    sequence: str,
+    raw: str
+  };
+  key.sequence = key.sequence || str || key.name;
+  if (str === "\r") {
+    key.raw = void 0;
+    key.name = "return";
+  } else if (str === "\n") {
+    key.name = "enter";
+  } else if (str === "	") {
+    key.name = "tab";
+  } else if (str === "\b" || str === "\x1B\b") {
+    key.name = "backspace";
+    key.meta = str.charAt(0) === "\x1B";
+  } else if (str === "\x7F" || str === "\x1B\x7F") {
+    key.name = "backspace";
+    key.meta = str.charAt(0) === "\x1B";
+  } else if (str === "\x1B" || str === "\x1B\x1B") {
+    key.name = "escape";
+    key.meta = str.length === 2;
+  } else if (str === " " || str === "\x1B ") {
+    key.name = "space";
+    key.meta = str.length === 2;
+  } else if (str.length === 1 && str <= "") {
+    key.name = String.fromCharCode(str.charCodeAt(0) + "a".charCodeAt(0) - 1);
+    key.ctrl = true;
+  } else if (str.length === 1 && str >= "0" && str <= "9") {
+    key.name = "number";
+  } else if (str.length === 1 && str >= "a" && str <= "z") {
+    key.name = str;
+  } else if (str.length === 1 && str >= "A" && str <= "Z") {
+    key.name = str.toLowerCase();
+    key.shift = true;
+  } else if (parts = metaKeyCodeRe.exec(str)) {
+    key.meta = true;
+    key.shift = /^[A-Z]$/.test(parts[1]);
+  } else if (parts = fnKeyRe.exec(str)) {
+    const segs = [...str];
+    if (segs[0] === "\x1B" && segs[1] === "\x1B") {
+      key.option = true;
+    }
+    const code = [parts[1], parts[2], parts[4], parts[6]].filter(Boolean).join("");
+    const modifier = Number(parts[3] || parts[5] || 1) - 1;
+    key.ctrl = !!(modifier & 4);
+    key.meta = !!(modifier & 10);
+    key.shift = !!(modifier & 1);
+    key.code = code;
+    key.name = keyName2[code] ?? "";
+    key.shift = shiftKeys.has(code) || key.shift;
+    key.ctrl = ctrlKeys.has(code) || key.ctrl;
+  }
+  return key;
+}
+
+// src/hooks/useInput.ts
+function useInput(inputHandler, options = {}) {
+  const emitter = useInputEmitter();
+  const stableHandler = useEventCallback((data) => {
+    if (options.isActive === false) return;
+    const keypress = parseKeypress(data);
+    const key = {
+      upArrow: keypress.name === "up",
+      downArrow: keypress.name === "down",
+      leftArrow: keypress.name === "left",
+      rightArrow: keypress.name === "right",
+      pageDown: keypress.name === "pagedown",
+      pageUp: keypress.name === "pageup",
+      home: keypress.name === "home",
+      end: keypress.name === "end",
+      return: keypress.name === "return",
+      escape: keypress.name === "escape",
+      ctrl: keypress.ctrl,
+      shift: keypress.shift,
+      tab: keypress.name === "tab",
+      backspace: keypress.name === "backspace",
+      delete: keypress.name === "delete",
+      meta: keypress.meta || keypress.name === "escape" || keypress.option
+    };
+    let input = keypress.ctrl ? keypress.name : keypress.sequence;
+    if (nonAlphanumericKeys2.includes(keypress.name)) input = "";
+    if (input.startsWith("\x1B")) input = input.slice(1);
+    if (input.length === 1 && typeof input[0] === "string" && /[A-Z]/.test(input[0])) {
+      key.shift = true;
+    }
+    inputHandler(input, key);
+  });
+  (0, import_react24.useEffect)(() => {
+    emitter.on("keyboard", stableHandler);
+    return () => {
+      emitter.removeListener("keyboard", stableHandler);
+    };
+  }, [emitter, stableHandler]);
+}
 
 // src/state/store.ts
 function initialState() {
@@ -34050,65 +34108,129 @@ function buildTranscript(opts) {
 }
 
 // src/scroll/useScroll.ts
-var import_react22 = __toESM(require_react(), 1);
+var import_react25 = __toESM(require_react(), 1);
 
 // src/scroll/state.ts
 function initialScroll() {
-  return { offset: 0, contentLength: 0, viewportSize: 20 };
+  return { offset: 0, totalLines: 0, viewportSize: 20 };
+}
+function clampOffset(offset, totalLines, viewportSize) {
+  return Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
 }
 function reduceScroll(state, cmd) {
-  const maxOffset = Math.max(0, state.contentLength - 1);
+  const max = Math.max(0, state.totalLines - state.viewportSize);
   switch (cmd.type) {
     case "wheelUp":
-      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), maxOffset) };
+      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), max) };
     case "wheelDown":
       return { ...state, offset: Math.max(0, state.offset - (cmd.amount ?? 3)) };
     case "pageUp":
-      return { ...state, offset: Math.min(state.offset + state.viewportSize, maxOffset) };
+      return { ...state, offset: Math.min(state.offset + state.viewportSize, max) };
     case "pageDown":
       return { ...state, offset: Math.max(0, state.offset - state.viewportSize) };
     case "home":
-      return { ...state, offset: maxOffset };
+      return { ...state, offset: max };
     case "end":
       return { ...state, offset: 0 };
-    case "contentGrew": {
+    case "contentChanged": {
       const wasAtBottom = state.offset === 0;
       if (wasAtBottom) {
-        return { ...state, contentLength: cmd.newLength };
+        return { ...state, totalLines: cmd.newTotalLines };
       }
-      const delta = cmd.newLength - state.contentLength;
+      const delta = cmd.newTotalLines - state.totalLines;
       return {
         ...state,
-        contentLength: cmd.newLength,
-        offset: Math.min(state.offset + delta, Math.max(0, cmd.newLength - 1))
+        totalLines: cmd.newTotalLines,
+        offset: clampOffset(state.offset + delta, cmd.newTotalLines, state.viewportSize)
       };
     }
     case "resize":
-      return { ...state, viewportSize: cmd.viewportSize };
+      return {
+        ...state,
+        viewportSize: cmd.viewportSize,
+        offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize)
+      };
   }
 }
 function isAtBottom(state) {
   return state.offset === 0;
 }
-function visibleRange(state) {
-  const end = state.contentLength - state.offset;
-  const start = Math.max(0, end - state.viewportSize);
-  return { start, end: Math.min(end, state.contentLength) };
+
+// src/scroll/measure.ts
+function measureEntry(entry, width) {
+  switch (entry.type) {
+    case "userPrompt":
+      return 1 + 1 + entry.attachments.length;
+    case "assistantText": {
+      const contentWidth = Math.max(1, Math.min(width - 4, 120));
+      return 1 + countWrappedLines(entry.text, contentWidth);
+    }
+    case "thinking":
+      return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length);
+    case "toolCall": {
+      const t = entry.tool;
+      let h = 2;
+      if (t.output && !t.running) h += 1;
+      if (t.output && t.running) h += Math.min(3, t.output.split("\n").length);
+      if (t.children && t.children.length > 0) {
+        if (t.children.length > 5) h += 1;
+        h += Math.min(5, t.children.length);
+      }
+      return h;
+    }
+    case "indicator":
+      return 2;
+    // marginTop(1) + animation(1)
+    case "error":
+      return 6;
+  }
+}
+function countWrappedLines(text, width) {
+  if (!text) return 1;
+  return text.split("\n").reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0);
+}
+function measureTranscript(entries, width) {
+  return entries.map((e) => measureEntry(e, width));
+}
+function computeVisibleWindow(heights, offset, viewportSize) {
+  if (heights.length === 0) return { start: 0, end: 0, cropTop: 0 };
+  const totalLines = heights.reduce((a, b) => a + b, 0);
+  const safeOffset = Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
+  const viewBottom = totalLines - safeOffset;
+  const viewTop = Math.max(0, viewBottom - viewportSize);
+  let linePos = 0;
+  let start = -1;
+  let end = 0;
+  let cropTop = 0;
+  for (let i = 0; i < heights.length; i++) {
+    const entryTop = linePos;
+    const entryBottom = linePos + heights[i];
+    if (entryBottom > viewTop && entryTop < viewBottom) {
+      if (start === -1) {
+        start = i;
+        cropTop = Math.max(0, viewTop - entryTop);
+      }
+      end = i + 1;
+    }
+    linePos = entryBottom;
+  }
+  return start === -1 ? { start: 0, end: 0, cropTop: 0 } : { start, end, cropTop };
 }
 
 // src/scroll/useScroll.ts
-function useScroll(inputEvents, contentLength, viewportSize) {
-  const [state, dispatch] = (0, import_react22.useReducer)(
+function useScroll(inputEvents, entryHeights, viewportSize) {
+  const [state, dispatch] = (0, import_react25.useReducer)(
     (s, cmd) => reduceScroll(s, cmd),
     initialScroll()
   );
-  (0, import_react22.useEffect)(() => {
-    dispatch({ type: "contentGrew", newLength: contentLength });
-  }, [contentLength]);
-  (0, import_react22.useEffect)(() => {
+  const totalLines = entryHeights.reduce((a, b) => a + b, 0);
+  (0, import_react25.useEffect)(() => {
+    dispatch({ type: "contentChanged", newTotalLines: totalLines });
+  }, [totalLines]);
+  (0, import_react25.useEffect)(() => {
     dispatch({ type: "resize", viewportSize });
   }, [viewportSize]);
-  (0, import_react22.useEffect)(() => {
+  (0, import_react25.useEffect)(() => {
     if (!inputEvents) return;
     const handler = (ev) => {
       if (ev.type === "wheelUp") dispatch({ type: "wheelUp" });
@@ -34119,35 +34241,473 @@ function useScroll(inputEvents, contentLength, viewportSize) {
       inputEvents.off("input", handler);
     };
   }, [inputEvents]);
-  const scroll = (0, import_react22.useCallback)((cmd) => dispatch(cmd), []);
+  const scroll = (0, import_react25.useCallback)((cmd) => dispatch(cmd), []);
+  const visibleWindow = (0, import_react25.useMemo)(
+    () => computeVisibleWindow(entryHeights, state.offset, state.viewportSize),
+    [entryHeights, state.offset, state.viewportSize]
+  );
   return {
     state,
     scroll,
-    visibleRange: visibleRange(state),
+    visibleWindow,
     isAtBottom: isAtBottom(state)
   };
 }
 
+// src/selection/state.ts
+var INITIAL_SELECTION = {
+  anchor: null,
+  focus: null,
+  isDragging: false
+};
+function reduceSelection(state, action) {
+  switch (action.type) {
+    case "mouseDown":
+      return {
+        anchor: { col: action.col, row: action.row },
+        focus: null,
+        isDragging: true
+      };
+    case "mouseDrag": {
+      if (!state.isDragging || !state.anchor) return state;
+      if (!state.focus) {
+        if (action.col === state.anchor.col && action.row === state.anchor.row) return state;
+      }
+      return { ...state, focus: { col: action.col, row: action.row } };
+    }
+    case "mouseUp":
+      return { ...state, isDragging: false };
+    case "clear":
+      return INITIAL_SELECTION;
+  }
+}
+function hasSelection(state) {
+  return state.anchor !== null && state.focus !== null;
+}
+function normalizedRange(state) {
+  if (!state.anchor || !state.focus) return null;
+  const a = state.anchor;
+  const f = state.focus;
+  const aFirst = a.row < f.row || a.row === f.row && a.col <= f.col;
+  return aFirst ? { start: a, end: f } : { start: f, end: a };
+}
+
+// src/selection/clipboard.ts
+import { spawn } from "node:child_process";
+var ESC2 = "\x1B";
+var BEL2 = "\x07";
+var ST = ESC2 + "\\";
+function pipeToProcess(cmd, args, text) {
+  try {
+    const proc = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
+    proc.stdin.write(text);
+    proc.stdin.end();
+    proc.on("error", () => {
+    });
+  } catch {
+  }
+}
+function osc52Sequence(text) {
+  const b64 = Buffer.from(text, "utf-8").toString("base64");
+  const terminator = process.env["TERM_PROGRAM"] === "kitty" ? ST : BEL2;
+  return `${ESC2}]52;c;${b64}${terminator}`;
+}
+function tmuxPassthrough(sequence) {
+  return `${ESC2}Ptmux;${sequence.replaceAll(ESC2, ESC2 + ESC2)}${ST}`;
+}
+function copyToClipboard(text, output) {
+  if (!text) return;
+  if (!process.env["SSH_CONNECTION"]) {
+    switch (process.platform) {
+      case "darwin":
+        pipeToProcess("pbcopy", [], text);
+        break;
+      case "linux":
+        if (process.env["WAYLAND_DISPLAY"]) {
+          pipeToProcess("wl-copy", [], text);
+        } else {
+          pipeToProcess("xclip", ["-selection", "clipboard"], text);
+        }
+        break;
+      case "win32":
+        pipeToProcess("clip", [], text);
+        break;
+    }
+  }
+  if (process.env["TMUX"]) {
+    const isITerm = process.env["LC_TERMINAL"] === "iTerm2";
+    pipeToProcess("tmux", isITerm ? ["load-buffer", "-"] : ["load-buffer", "-w", "-"], text);
+    const b64 = Buffer.from(text, "utf-8").toString("base64");
+    output.write(tmuxPassthrough(`${ESC2}]52;c;${b64}${BEL2}`));
+    return;
+  }
+  output.write(osc52Sequence(text));
+}
+
+// src/selection/extract.ts
+function termRowToEntryIndex(termRow, layout) {
+  const { visibleWindow: vw, entryHeights, atBottom, chatHeight } = layout;
+  const chatRow = termRow - 1;
+  if (chatRow < 0 || chatRow >= chatHeight) return null;
+  let totalVisible = 0;
+  for (let i = vw.start; i < vw.end; i++) totalVisible += entryHeights[i];
+  const effectiveVisible = totalVisible - vw.cropTop;
+  const padding = atBottom ? Math.max(0, chatHeight - effectiveVisible) : 0;
+  const contentRow = chatRow - padding + vw.cropTop;
+  if (contentRow < 0) return null;
+  let cumHeight = 0;
+  for (let i = vw.start; i < vw.end; i++) {
+    if (contentRow < cumHeight + entryHeights[i]) return i;
+    cumHeight += entryHeights[i];
+  }
+  return null;
+}
+function entryText(entry) {
+  switch (entry.type) {
+    case "userPrompt":
+      return entry.text;
+    case "assistantText":
+      return entry.text;
+    case "thinking":
+      return entry.lines.join("\n");
+    case "toolCall": {
+      const parts = [entry.tool.name];
+      if (entry.tool.output) parts.push(entry.tool.output);
+      return parts.join("\n");
+    }
+    case "indicator":
+      return "";
+    case "error":
+      return entry.message;
+  }
+}
+function extractSelection(startRow, endRow, layout) {
+  const startIdx = termRowToEntryIndex(startRow, layout);
+  const endIdx = termRowToEntryIndex(endRow, layout);
+  if (startIdx === null && endIdx === null) return "";
+  const lo = Math.min(startIdx ?? endIdx, endIdx ?? startIdx);
+  const hi = Math.max(startIdx ?? endIdx, endIdx ?? startIdx);
+  const parts = [];
+  for (let i = lo; i <= hi; i++) {
+    if (i >= 0 && i < layout.transcript.length) {
+      const text = entryText(layout.transcript[i]);
+      if (text) parts.push(text);
+    }
+  }
+  return parts.join("\n\n");
+}
+
 // src/components/ChatView.tsx
-var import_react25 = __toESM(require_react(), 1);
+var import_react30 = __toESM(require_react(), 1);
 
 // src/components/MarkdownView.tsx
+var import_react27 = __toESM(require_react(), 1);
+
+// src/components/AnsiText.tsx
+var import_react26 = __toESM(require_react(), 1);
+
+// src/rendering/ansi.ts
+var FG_BASIC = [
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white"
+];
+var FG_BRIGHT = [
+  "blackBright",
+  "redBright",
+  "greenBright",
+  "yellowBright",
+  "blueBright",
+  "magentaBright",
+  "cyanBright",
+  "whiteBright"
+];
+var BG_BASIC = [
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white"
+];
+var BG_BRIGHT = [
+  "blackBright",
+  "redBright",
+  "greenBright",
+  "yellowBright",
+  "blueBright",
+  "magentaBright",
+  "cyanBright",
+  "whiteBright"
+];
+function emptyStyle() {
+  return {};
+}
+function freezeStyle(acc) {
+  const s = {};
+  if (acc.bold) s.bold = true;
+  if (acc.dim) s.dim = true;
+  if (acc.italic) s.italic = true;
+  if (acc.underline) s.underline = true;
+  if (acc.strikethrough) s.strikethrough = true;
+  if (acc.inverse) s.inverse = true;
+  if (acc.fg) s.fg = acc.fg;
+  if (acc.bg) s.bg = acc.bg;
+  return s;
+}
+function stylesEqual(a, b) {
+  return a.bold === b.bold && a.dim === b.dim && a.italic === b.italic && a.underline === b.underline && a.strikethrough === b.strikethrough && a.inverse === b.inverse && a.fg === b.fg && a.bg === b.bg;
+}
+function parseExtendedColor(params, offset) {
+  const mode = params[offset];
+  if (mode === 5 && offset + 1 < params.length) {
+    return [`ansi256(${params[offset + 1]})`, offset + 2];
+  }
+  if (mode === 2 && offset + 3 < params.length) {
+    return [`rgb(${params[offset + 1]},${params[offset + 2]},${params[offset + 3]})`, offset + 4];
+  }
+  return [void 0, offset + 1];
+}
+function applySgr(params, style) {
+  let i = 0;
+  while (i < params.length) {
+    const p = params[i];
+    switch (true) {
+      case p === 0:
+        Object.keys(style).forEach((k) => delete style[k]);
+        break;
+      case p === 1:
+        style.bold = true;
+        break;
+      case p === 2:
+        style.dim = true;
+        break;
+      case p === 3:
+        style.italic = true;
+        break;
+      case p === 4:
+        style.underline = true;
+        break;
+      case p === 7:
+        style.inverse = true;
+        break;
+      case p === 9:
+        style.strikethrough = true;
+        break;
+      case p === 22:
+        delete style.bold;
+        delete style.dim;
+        break;
+      case p === 23:
+        delete style.italic;
+        break;
+      case p === 24:
+        delete style.underline;
+        break;
+      case p === 27:
+        delete style.inverse;
+        break;
+      case p === 29:
+        delete style.strikethrough;
+        break;
+      case (p >= 30 && p <= 37):
+        style.fg = FG_BASIC[p - 30];
+        break;
+      case p === 38: {
+        const [color, next] = parseExtendedColor(params, i + 1);
+        if (color) style.fg = color;
+        i = next;
+        continue;
+      }
+      case p === 39:
+        delete style.fg;
+        break;
+      case (p >= 40 && p <= 47):
+        style.bg = BG_BASIC[p - 40];
+        break;
+      case p === 48: {
+        const [color, next] = parseExtendedColor(params, i + 1);
+        if (color) style.bg = color;
+        i = next;
+        continue;
+      }
+      case p === 49:
+        delete style.bg;
+        break;
+      case (p >= 90 && p <= 97):
+        style.fg = FG_BRIGHT[p - 90];
+        break;
+      case (p >= 100 && p <= 107):
+        style.bg = BG_BRIGHT[p - 100];
+        break;
+    }
+    i++;
+  }
+}
+var SGR_RE = /\x1b\[([0-9;]*)m/;
+function parseAnsi(input) {
+  if (!input) return [];
+  const spans = [];
+  const style = emptyStyle();
+  let rest = input;
+  while (rest.length > 0) {
+    const match = SGR_RE.exec(rest);
+    if (!match) {
+      pushSpan(spans, rest, freezeStyle(style));
+      break;
+    }
+    if (match.index > 0) {
+      pushSpan(spans, rest.slice(0, match.index), freezeStyle(style));
+    }
+    const paramStr = match[1];
+    const params = paramStr === "" ? [0] : paramStr.split(";").map(Number);
+    applySgr(params, style);
+    rest = rest.slice(match.index + match[0].length);
+  }
+  return spans;
+}
+function pushSpan(spans, text, style) {
+  if (!text) return;
+  const last = spans[spans.length - 1];
+  if (last && stylesEqual(last.style, style)) {
+    ;
+    spans[spans.length - 1] = { text: last.text + text, style };
+  } else {
+    spans.push({ text, style });
+  }
+}
+
+// src/components/AnsiText.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+var AnsiText = import_react26.default.memo(function AnsiText2({ children }) {
+  if (!children) return null;
+  const spans = parseAnsi(children);
+  if (spans.length === 0) return null;
+  if (spans.length === 1 && !hasStyle(spans[0])) {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: spans[0].text });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: spans.map(
+    (span, i) => hasStyle(span) ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Text,
+      {
+        color: span.style.fg,
+        backgroundColor: span.style.bg,
+        bold: span.style.bold,
+        dimColor: span.style.dim,
+        italic: span.style.italic,
+        underline: span.style.underline,
+        strikethrough: span.style.strikethrough,
+        inverse: span.style.inverse,
+        children: span.text
+      },
+      i
+    ) : span.text
+  ) });
+});
+function hasStyle(span) {
+  const s = span.style;
+  return s.fg !== void 0 || s.bg !== void 0 || s.bold === true || s.dim === true || s.italic === true || s.underline === true || s.strikethrough === true || s.inverse === true;
+}
+
+// src/rendering/highlight.ts
+var MAX_HIGHLIGHT_LEN = 8192;
+var loadPromise;
+var hl = null;
+var loadStarted = false;
+function load() {
+  loadPromise ??= import("cli-highlight").then((mod) => {
+    trace("highlight: module loaded");
+    const loaded = {
+      highlight: mod.highlight,
+      supportsLanguage: mod.supportsLanguage
+    };
+    hl = loaded;
+    return loaded;
+  }).catch((e) => {
+    trace(`highlight: load failed ${e}`);
+    return null;
+  });
+  return loadPromise;
+}
+var CACHE_MAX = 256;
+var cache3 = /* @__PURE__ */ new Map();
+function cached(key) {
+  const hit = cache3.get(key);
+  if (hit !== void 0) {
+    cache3.delete(key);
+    cache3.set(key, hit);
+  }
+  return hit;
+}
+function store(key, value) {
+  if (cache3.size >= CACHE_MAX) {
+    const first = cache3.keys().next().value;
+    if (first !== void 0) cache3.delete(first);
+  }
+  cache3.set(key, value);
+}
+function preloadHighlighter() {
+  if (loadStarted) return;
+  loadStarted = true;
+  const t0 = Date.now();
+  load().then((loaded) => {
+    const elapsed = Date.now() - t0;
+    trace(`preloadHighlighter: loaded in ${elapsed}ms, module=${loaded ? "ok" : "null"}`);
+  });
+}
+function highlightCode(code, language) {
+  if (!hl) {
+    if (!loadStarted) preloadHighlighter();
+    return code;
+  }
+  if (code.length > MAX_HIGHLIGHT_LEN) return code;
+  const key = `${language}\0${code}`;
+  const hit = cached(key);
+  if (hit !== void 0) return hit;
+  const lang = language && hl.supportsLanguage(language) ? language : "plaintext";
+  try {
+    const result = hl.highlight(code, { language: lang });
+    store(key, result);
+    return result;
+  } catch {
+    return code;
+  }
+}
+
+// src/components/MarkdownView.tsx
+var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 function MarkdownView({ text, width }) {
   const lines = text.split("\n");
   const elements = [];
   let inCodeBlock = false;
   let codeLang = "";
+  let codeLines = [];
+  let codeStartIdx = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.trimStart().startsWith("```")) {
       if (inCodeBlock) {
+        const code = codeLines.join("\n");
+        const highlighted = highlightCode(code, codeLang);
+        elements.push(
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", paddingLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(AnsiText, { children: highlighted }) }, `code-${codeStartIdx}`)
+        );
+        elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "```" }, `cend-${i}`));
         inCodeBlock = false;
-        elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "```" }, `cend-${i}`));
+        codeLines = [];
+        codeLang = "";
       } else {
         inCodeBlock = true;
+        codeStartIdx = i;
         codeLang = line.trimStart().slice(3).trim();
-        elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, children: [
+        elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
           "```",
           codeLang
         ] }, `cstart-${i}`));
@@ -34155,58 +34715,133 @@ function MarkdownView({ text, width }) {
       continue;
     }
     if (inCodeBlock) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "white", children: [
-        "  ",
-        line
-      ] }, `code-${i}`));
+      codeLines.push(line);
       continue;
     }
     if (line.startsWith("# ")) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: "white", children: line.slice(2) }, `h-${i}`));
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: "white", children: line.slice(2) }, `h-${i}`));
       continue;
     }
     if (line.startsWith("## ")) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: line.slice(3) }, `h2-${i}`));
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: line.slice(3) }, `h2-${i}`));
       continue;
     }
     if (line.startsWith("### ")) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: line.slice(4) }, `h3-${i}`));
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: line.slice(4) }, `h3-${i}`));
       continue;
     }
     if (line.match(/^\s*[-*]\s/)) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: line.replace(/^(\s*)[-*]\s/, "$1\u2022 ") }, `li-${i}`));
+      const indent = line.match(/^(\s*)/)?.[1] ?? "";
+      const content = line.replace(/^\s*[-*]\s/, "");
+      elements.push(
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            indent,
+            "\u2022",
+            " "
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(InlineMarkdown, { text: content })
+        ] }, `li-${i}`)
+      );
       continue;
     }
     if (line.match(/^\s*\d+\.\s/)) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: line }, `ol-${i}`));
+      const match = line.match(/^(\s*\d+\.\s)(.*)/);
+      if (match) {
+        elements.push(
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: match[1] }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(InlineMarkdown, { text: match[2] })
+          ] }, `ol-${i}`)
+        );
+      } else {
+        elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: line }, `ol-${i}`));
+      }
       continue;
     }
     if (line.startsWith("> ")) {
       elements.push(
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, color: "cyan", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, color: "cyan", children: [
             "\u2502",
             " "
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: line.slice(2) })
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(InlineMarkdown, { text: line.slice(2) }) })
         ] }, `bq-${i}`)
       );
       continue;
     }
     if (line.match(/^-{3,}$/) || line.match(/^\*{3,}$/)) {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: true, children: "\u2500".repeat(Math.min(width - 2, 60)) }, `hr-${i}`));
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "\u2500".repeat(Math.min(width - 2, 60)) }, `hr-${i}`));
+      continue;
+    }
+    if (line.trimStart().startsWith("|") && line.trimEnd().endsWith("|")) {
+      const tableLines = [line];
+      while (i + 1 < lines.length && lines[i + 1].trimStart().startsWith("|") && lines[i + 1].trimEnd().endsWith("|")) {
+        i++;
+        tableLines.push(lines[i]);
+      }
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(TableBlock, { lines: tableLines, width }, `tbl-${i}`));
       continue;
     }
     if (line.trim() === "") {
-      elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " }, `empty-${i}`));
+      elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: " " }, `empty-${i}`));
       continue;
     }
-    elements.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(InlineMarkdown, { text: line }, `p-${i}`));
+    elements.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(InlineMarkdown, { text: line }, `p-${i}`));
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { flexDirection: "column", children: elements });
+  if (inCodeBlock && codeLines.length > 0) {
+    const code = codeLines.join("\n");
+    const highlighted = highlightCode(code, codeLang);
+    elements.push(
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", paddingLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(AnsiText, { children: highlighted }) }, `code-${codeStartIdx}`)
+    );
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", children: elements });
+}
+function TableBlock({ lines, width }) {
+  const isSeparator = (line) => /^\|[\s\-:|]+\|$/.test(line.trim());
+  const parseCells = (line) => line.split("|").slice(1, -1).map((c) => c.trim());
+  const dataRows = lines.filter((l) => !isSeparator(l));
+  if (dataRows.length === 0) return null;
+  const allCells = dataRows.map(parseCells);
+  const colCount = Math.max(...allCells.map((r) => r.length));
+  const colWidths = Array(colCount).fill(0);
+  for (const row of allCells) {
+    for (let c = 0; c < colCount; c++) {
+      colWidths[c] = Math.max(colWidths[c], (row[c] ?? "").length);
+    }
+  }
+  const totalPad = colCount * 3 + 1;
+  const maxContent = width - totalPad - 2;
+  if (maxContent > 0) {
+    const totalContent = colWidths.reduce((a, b) => a + b, 0);
+    if (totalContent > maxContent) {
+      const scale = maxContent / totalContent;
+      for (let c = 0; c < colCount; c++) {
+        colWidths[c] = Math.max(3, Math.floor(colWidths[c] * scale));
+      }
+    }
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { flexDirection: "column", children: allCells.map((row, ri) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "\u2502" }),
+    Array.from({ length: colCount }, (_, c) => {
+      const cell = (row[c] ?? "").slice(0, colWidths[c]);
+      const pad = " ".repeat(Math.max(0, colWidths[c] - cell.length));
+      return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_react27.default.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { bold: ri === 0, children: [
+          " ",
+          cell,
+          pad,
+          " "
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "\u2502" })
+      ] }, c);
+    })
+  ] }, ri)) });
 }
 function InlineMarkdown({ text }) {
-  if (!text) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: " " });
+  if (!text) return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: " " });
   const parts = [];
   let remaining = text;
   let key = 0;
@@ -34214,42 +34849,58 @@ function InlineMarkdown({ text }) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
     const codeMatch = remaining.match(/`([^`]+)`/);
     const italicMatch = remaining.match(/(?<!\*)\*([^*]+)\*(?!\*)/);
-    const matches = [
+    const strikeMatch = remaining.match(/~~(.+?)~~/);
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
+    const candidates = [
       boldMatch ? { type: "bold", match: boldMatch, idx: boldMatch.index } : null,
       codeMatch ? { type: "code", match: codeMatch, idx: codeMatch.index } : null,
-      italicMatch ? { type: "italic", match: italicMatch, idx: italicMatch.index } : null
-    ].filter(Boolean).sort((a, b) => a.idx - b.idx);
+      italicMatch ? { type: "italic", match: italicMatch, idx: italicMatch.index } : null,
+      strikeMatch ? { type: "strikethrough", match: strikeMatch, idx: strikeMatch.index } : null,
+      linkMatch ? { type: "link", match: linkMatch, idx: linkMatch.index } : null
+    ];
+    const matches = candidates.filter(Boolean).sort((a, b) => a.idx - b.idx);
     if (matches.length === 0) {
-      parts.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: remaining }, key++));
+      parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: remaining }, key++));
       break;
     }
     const first = matches[0];
     if (first.idx > 0) {
-      parts.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: remaining.slice(0, first.idx) }, key++));
+      parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: remaining.slice(0, first.idx) }, key++));
     }
     switch (first.type) {
       case "bold":
-        parts.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: first.match[1] }, key++));
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: first.match[1] }, key++));
         break;
       case "code":
-        parts.push(/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: "white", backgroundColor: "blackBright", children: [
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: "white", backgroundColor: "blackBright", children: [
           " ",
           first.match[1],
           " "
         ] }, key++));
         break;
       case "italic":
-        parts.push(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { italic: true, children: first.match[1] }, key++));
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { italic: true, children: first.match[1] }, key++));
+        break;
+      case "strikethrough":
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { strikethrough: true, dimColor: true, children: first.match[1] }, key++));
+        break;
+      case "link":
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { underline: true, color: "blue", children: first.match[1] }, key++));
+        parts.push(/* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { dimColor: true, children: [
+          " (",
+          first.match[2],
+          ")"
+        ] }, key++));
         break;
     }
     remaining = remaining.slice(first.idx + first.match[0].length);
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: parts });
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: parts });
 }
 
 // src/components/ThinkingIndicator.tsx
-var import_react23 = __toESM(require_react(), 1);
-var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+var import_react28 = __toESM(require_react(), 1);
+var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
 var VERBS = [
   "Forging",
   "Weaving",
@@ -34266,15 +34917,15 @@ var DOT = "\u25CF";
 var SMALL = "\u2219";
 var WIDTH = 5;
 function ThinkingIndicator({ model }) {
-  const [dotFrame, setDotFrame] = (0, import_react23.useState)(SMALL.repeat(WIDTH));
-  const [verbTick, setVerbTick] = (0, import_react23.useState)(0);
-  const stateRef = (0, import_react23.useRef)({
+  const [dotFrame, setDotFrame] = (0, import_react28.useState)(SMALL.repeat(WIDTH));
+  const [verbTick, setVerbTick] = (0, import_react28.useState)(0);
+  const stateRef = (0, import_react28.useRef)({
     mode: "sweep",
     pos: 0,
     dir: 1,
     counter: 0
   });
-  (0, import_react23.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     const render2 = () => {
       const s = stateRef.current;
       const dots = Array(WIDTH).fill(SMALL);
@@ -34339,7 +34990,7 @@ function ThinkingIndicator({ model }) {
     timer = setTimeout(tick, 200);
     return () => clearTimeout(timer);
   }, []);
-  (0, import_react23.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     const timer = setInterval(() => setVerbTick((t) => t + 1), 100);
     return () => clearInterval(timer);
   }, []);
@@ -34351,56 +35002,56 @@ function ThinkingIndicator({ model }) {
   const highlightPos = pos < wordLen ? pos : cycleLen - pos - 1;
   const chars = verb.split("").map((ch, i) => {
     if (i === highlightPos) {
-      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: "yellow", bold: true, children: ch }, i);
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", bold: true, children: ch }, i);
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: ch }, i);
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: ch }, i);
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { paddingX: 1, marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: "yellow", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { paddingX: 1, marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: "yellow", children: [
       dotFrame,
       " "
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: chars }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { dimColor: true, children: "\u2026" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: chars }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u2026" })
   ] });
 }
 
 // src/components/ToolCallView.tsx
-var import_react24 = __toESM(require_react(), 1);
-var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
+var import_react29 = __toESM(require_react(), 1);
+var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
 var BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF";
 function ToolCallView({ tool, width }) {
   const displayName = TOOL_NAMES[tool.name] ?? tool.name;
   const param = extractParam(tool.name, tool.args);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: displayName }),
-      param && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolDot, { tool }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: displayName }),
+      param && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
         " (",
         truncate(param, width - displayName.length - 8),
         ")"
       ] })
     ] }),
-    tool.output && !tool.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolResultSummary, { tool, width }),
-    tool.output && tool.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", children: tool.output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) }),
-    tool.children && tool.children.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SubagentChildren, { children: tool.children, width })
+    tool.output && !tool.running && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolResultSummary, { tool, width }),
+    tool.output && tool.running && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", children: tool.output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) }),
+    tool.children && tool.children.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SubagentChildren, { children: tool.children, width })
   ] });
 }
 function ToolDot({ tool }) {
-  const [blink, setBlink] = import_react24.default.useState(true);
-  import_react24.default.useEffect(() => {
+  const [blink, setBlink] = import_react29.default.useState(true);
+  import_react29.default.useEffect(() => {
     if (!tool.running) return;
     const timer = setInterval(() => setBlink((b) => !b), 500);
     return () => clearInterval(timer);
   }, [tool.running]);
   if (tool.running) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: blink ? BLACK_CIRCLE : " " }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: blink ? BLACK_CIRCLE : " " }) });
   }
   if (tool.isError) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "red", children: BLACK_CIRCLE }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "red", children: BLACK_CIRCLE }) });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "green", children: BLACK_CIRCLE }) });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "green", children: BLACK_CIRCLE }) });
 }
 function ToolResultSummary({ tool, width }) {
   if (!tool.output) return null;
@@ -34409,17 +35060,17 @@ function ToolResultSummary({ tool, width }) {
   if (hasDiff) {
     const adds = (tool.output.match(/^\+[^+]/gm) || []).length;
     const dels = (tool.output.match(/^-[^-]/gm) || []).length;
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
         "\u21B3",
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: "green", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "green", children: [
         "+",
         adds
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: " " }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: "red", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " " }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "red", children: [
         "-",
         dels
       ] })
@@ -34427,16 +35078,16 @@ function ToolResultSummary({ tool, width }) {
   }
   const firstLine = tool.output.split("\n").find((l) => l.trim().length > 0);
   if (!firstLine) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginLeft: 2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(firstLine.trim(), width - 6) })
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginLeft: 2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: truncate(firstLine.trim(), width - 6) })
   ] });
 }
 function SubagentChildren({ children, width }) {
   const visible = children.slice(-5);
   const hiddenCount = children.length - visible.length;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, children: [
-    hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, children: [
+    hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
       "  +",
       hiddenCount,
       " more"
@@ -34444,10 +35095,10 @@ function SubagentChildren({ children, width }) {
     visible.map((child, i) => {
       const isLast = i === visible.length - 1 && !child.running;
       const childName = TOOL_NAMES[child.name] ?? child.name;
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: isLast ? "\u2514\u2500 " : "\u251C\u2500 " }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool: child }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: childName })
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: isLast ? "\u2514\u2500 " : "\u251C\u2500 " }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolDot, { tool: child }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: childName })
       ] }, child.callId);
     })
   ] });
@@ -34517,38 +35168,38 @@ function truncate(s, max) {
 }
 
 // src/components/ChatView.tsx
-var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var BLACK_CIRCLE2 = process.platform === "darwin" ? "\u23FA" : "\u25CF";
 function ChatView({ entries, width }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(EntryBlock, { entry, width }, entry.id)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EntryBlock, { entry, width }, entry.id)) });
 }
-var EntryBlock = import_react25.default.memo(function EntryBlock2({ entry, width }) {
+var EntryBlock = import_react30.default.memo(function EntryBlock2({ entry, width }) {
   switch (entry.type) {
     case "userPrompt":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(UserPromptBlock, { text: entry.text, attachments: entry.attachments, width });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(UserPromptBlock, { text: entry.text, attachments: entry.attachments, width });
     case "assistantText":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(AssistantTextBlock, { text: entry.text, streaming: entry.streaming, width });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(AssistantTextBlock, { text: entry.text, streaming: entry.streaming, width });
     case "thinking":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ThinkingBlock, { lines: entry.lines, hiddenCount: entry.hiddenCount });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ThinkingBlock, { lines: entry.lines, hiddenCount: entry.hiddenCount });
     case "toolCall":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolCallView, { tool: entry.tool, width });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ToolCallView, { tool: entry.tool, width });
     case "indicator":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ThinkingIndicator, { model: entry.model });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ThinkingIndicator, { model: entry.model });
     case "error":
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ErrorBlock, { message: entry.message });
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ErrorBlock, { message: entry.message });
   }
 });
 function UserPromptBlock({ text, attachments, width }) {
   const content = ` \u276F ${text}`;
   const pad = Math.max(0, width - content.length);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { backgroundColor: "blackBright", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: " \u276F" }),
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { backgroundColor: "blackBright", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: " \u276F" }),
       " ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: text }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: text }),
       " ".repeat(pad)
     ] }) }),
-    attachments.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+    attachments.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "\u21B3  ",
       line
     ] }) }, i))
@@ -34556,35 +35207,38 @@ function UserPromptBlock({ text, attachments, width }) {
 }
 function AssistantTextBlock({ text, streaming, width }) {
   const contentWidth = Math.min(width - 4, 120);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexShrink: 0, minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: BLACK_CIRCLE2 }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexShrink: 1, flexGrow: 1, children: streaming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: text }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownView, { text, width: contentWidth }) })
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexShrink: 0, minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: BLACK_CIRCLE2 }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", flexShrink: 1, flexGrow: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(MarkdownView, { text, width: contentWidth }),
+      streaming && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "\u2588" })
+    ] })
   ] });
 }
 function ThinkingBlock({ lines, hiddenCount }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, children: [
-    hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, children: [
+    hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "... (",
       hiddenCount,
       " lines hidden, press t to expand)"
     ] }),
-    lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "gray", children: "\u2503" }),
+    lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "gray", children: "\u2503" }),
       " ",
       line
     ] }, i))
   ] });
 }
 function ErrorBlock({ message }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "red", bold: true, children: "Error" }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "red", children: message }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "press esc to dismiss" })
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "red", bold: true, children: "Error" }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "red", children: message }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "press esc to dismiss" })
   ] });
 }
 
 // src/components/StatusBar.tsx
-var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 function StatusBar(props) {
   const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, width } = props;
   const parts = [];
@@ -34605,9 +35259,9 @@ function StatusBar(props) {
     parts.push(`\u25B2${drift.drifted} drift`);
   }
   const statusText = parts.join(" \u2219 ");
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
-    notification && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: notification })
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
+    notification && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: notification })
   ] });
 }
 function formatTokens(n) {
@@ -34617,23 +35271,109 @@ function formatTokens(n) {
 }
 
 // src/components/InputArea.tsx
-var import_react26 = __toESM(require_react(), 1);
+var import_react31 = __toESM(require_react(), 1);
+
+// src/input/editBuffer.ts
+var empty = { text: "", cursor: 0 };
+var fromText = (text) => ({
+  text,
+  cursor: text.length
+});
+var insertAt = (s, str) => ({
+  text: s.text.slice(0, s.cursor) + str + s.text.slice(s.cursor),
+  cursor: s.cursor + str.length
+});
+var deleteBack = (s) => s.cursor === 0 ? s : {
+  text: s.text.slice(0, s.cursor - 1) + s.text.slice(s.cursor),
+  cursor: s.cursor - 1
+};
+var deleteForward = (s) => s.cursor >= s.text.length ? s : {
+  text: s.text.slice(0, s.cursor) + s.text.slice(s.cursor + 1),
+  cursor: s.cursor
+};
+var isWordChar = (ch) => ch !== " " && ch !== "\n" && ch !== "	";
+var deleteWordBack = (s) => {
+  if (s.cursor === 0) return s;
+  let i = s.cursor;
+  while (i > 0 && !isWordChar(s.text[i - 1])) i--;
+  while (i > 0 && isWordChar(s.text[i - 1])) i--;
+  return { text: s.text.slice(0, i) + s.text.slice(s.cursor), cursor: i };
+};
+var moveLeft = (s) => s.cursor === 0 ? s : { ...s, cursor: s.cursor - 1 };
+var moveRight = (s) => s.cursor >= s.text.length ? s : { ...s, cursor: s.cursor + 1 };
+var moveHome = (s) => {
+  const lineStart = s.text.lastIndexOf("\n", s.cursor - 1) + 1;
+  return { ...s, cursor: lineStart };
+};
+var moveEnd = (s) => {
+  const lineEnd = s.text.indexOf("\n", s.cursor);
+  return { ...s, cursor: lineEnd === -1 ? s.text.length : lineEnd };
+};
+var moveWordLeft = (s) => {
+  if (s.cursor === 0) return s;
+  let i = s.cursor;
+  while (i > 0 && !isWordChar(s.text[i - 1])) i--;
+  while (i > 0 && isWordChar(s.text[i - 1])) i--;
+  return { ...s, cursor: i };
+};
+var moveWordRight = (s) => {
+  if (s.cursor >= s.text.length) return s;
+  let i = s.cursor;
+  while (i < s.text.length && isWordChar(s.text[i])) i++;
+  while (i < s.text.length && !isWordChar(s.text[i])) i++;
+  return { ...s, cursor: i };
+};
+var cursorPosition = (s) => {
+  const before = s.text.slice(0, s.cursor);
+  const lines = before.split("\n");
+  return { line: lines.length - 1, col: lines[lines.length - 1].length };
+};
+
+// src/input/history.ts
+var MAX_ENTRIES = 100;
+var emptyHistory = { entries: [], position: 0, draft: "" };
+var push = (h, entry) => {
+  if (!entry.trim()) return { ...h, position: h.entries.length, draft: "" };
+  const last = h.entries[h.entries.length - 1];
+  const entries = entry === last ? h.entries : h.entries.length >= MAX_ENTRIES ? [...h.entries.slice(1), entry] : [...h.entries, entry];
+  return { entries, position: entries.length, draft: "" };
+};
+var navigateUp = (h, currentText2) => {
+  if (h.entries.length === 0) return null;
+  const atDraft = h.position >= h.entries.length;
+  const draft = atDraft ? currentText2 : h.draft;
+  const newPos = atDraft ? h.entries.length - 1 : h.position - 1;
+  if (newPos < 0) return null;
+  return { ...h, position: newPos, draft };
+};
+var navigateDown = (h) => {
+  if (h.position >= h.entries.length) return null;
+  return { ...h, position: h.position + 1 };
+};
+var currentText = (h) => h.position >= h.entries.length ? h.draft : h.entries[h.position] ?? h.draft;
+var isNavigating = (h) => h.position < h.entries.length;
 
 // src/terminal/clipboard.ts
-import { spawn } from "node:child_process";
-import { readFileSync as readFileSync2 } from "node:fs";
+import { spawn as spawn2 } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-function run(cmd, args, timeoutMs = 3e3) {
+function run(cmd, args, opts = {}) {
+  const { timeoutMs = 3e3, captureStdout = true } = opts;
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn2(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     const chunks = [];
-    proc.stdout.on("data", (d) => chunks.push(d));
+    if (captureStdout) {
+      proc.stdout.on("data", (d) => chunks.push(d));
+    } else {
+      proc.stdout.resume();
+    }
+    proc.stderr.resume();
     let settled = false;
     const finish = (code) => {
       if (settled) return;
       settled = true;
-      resolve({ code, stdout: Buffer.concat(chunks).toString("utf-8") });
+      resolve({ code, stdout: captureStdout ? Buffer.concat(chunks).toString("utf-8") : "" });
     };
     proc.on("close", (code) => finish(code));
     proc.on("error", () => finish(null));
@@ -34650,29 +35390,59 @@ async function getImageFromClipboard() {
   return null;
 }
 async function getImageDarwin() {
-  const check = await run("osascript", ["-e", "the clipboard as \xABclass PNGf\xBB"], 3e3);
-  if (check.code !== 0) return null;
+  trace("clipboard: step1 check types");
+  const check = await run("osascript", [
+    "-e",
+    "try",
+    "-e",
+    "  set theInfo to (clipboard info)",
+    "-e",
+    "  repeat with t in theInfo",
+    "-e",
+    '    if (item 1 of t) is \xABclass PNGf\xBB then return "png"',
+    "-e",
+    '    if (item 1 of t) is \xABclass JPEG\xBB then return "jpeg"',
+    "-e",
+    "  end repeat",
+    "-e",
+    '  return "none"',
+    "-e",
+    "on error",
+    "-e",
+    '  return "none"',
+    "-e",
+    "end try"
+  ], { timeoutMs: 3e3 });
+  const imgType = (check.stdout ?? "").trim();
+  trace(`clipboard: step1 done code=${check.code} type=${imgType}`);
+  if (check.code !== 0 || imgType === "none" || imgType === "") return null;
+  trace("clipboard: step2 save to file");
   const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`);
+  const typeClass = imgType === "jpeg" ? "\xABclass JPEG\xBB" : "\xABclass PNGf\xBB";
   const save = await run("osascript", [
     "-e",
-    "set png_data to (the clipboard as \xABclass PNGf\xBB)",
+    `set img_data to (the clipboard as ${typeClass})`,
     "-e",
     `set fp to open for access POSIX file "${imgPath}" with write permission`,
     "-e",
-    "write png_data to fp",
+    "write img_data to fp",
     "-e",
     "close access fp"
-  ], 5e3);
+  ], { timeoutMs: 5e3, captureStdout: false });
+  trace(`clipboard: step2 done code=${save.code}`);
   if (save.code !== 0) return null;
+  trace("clipboard: step3 read file");
   try {
-    const buffer = readFileSync2(imgPath);
+    const buffer = await readFile(imgPath);
+    trace(`clipboard: step3 done size=${buffer.length}`);
     if (buffer.length === 0) return null;
     return {
       base64: buffer.toString("base64"),
       mediaType: detectMediaType(buffer),
       tempPath: imgPath
     };
-  } catch {
+  } catch (e) {
+    trace(`clipboard: step3 error ${e}`);
     return null;
   }
 }
@@ -34680,16 +35450,16 @@ async function getImageLinux() {
   const check = await run("sh", [
     "-c",
     'xclip -selection clipboard -t TARGETS -o 2>/dev/null | grep -qE "image/(png|jpeg)" || wl-paste -l 2>/dev/null | grep -qE "image/(png|jpeg)"'
-  ], 2e3);
+  ], { timeoutMs: 2e3 });
   if (check.code !== 0) return null;
   const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`);
   const save = await run("sh", [
     "-c",
     `xclip -selection clipboard -t image/png -o > "${imgPath}" 2>/dev/null || wl-paste --type image/png > "${imgPath}" 2>/dev/null`
-  ], 3e3);
+  ], { timeoutMs: 3e3, captureStdout: false });
   if (save.code !== 0) return null;
   try {
-    const buffer = readFileSync2(imgPath);
+    const buffer = await readFile(imgPath);
     if (buffer.length === 0) return null;
     return {
       base64: buffer.toString("base64"),
@@ -34709,72 +35479,122 @@ function detectMediaType(buf) {
 }
 
 // src/components/InputArea.tsx
-var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
-var InputArea = import_react26.default.memo((0, import_react26.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages }, ref) {
-  const [value, setValue] = (0, import_react26.useState)("");
-  (0, import_react26.useImperativeHandle)(ref, () => ({
+var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+var InputArea = import_react31.default.memo((0, import_react31.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages }, ref) {
+  const [edit, setEdit] = (0, import_react31.useState)(empty);
+  const historyRef = (0, import_react31.useRef)(emptyHistory);
+  (0, import_react31.useImperativeHandle)(ref, () => ({
     insert(text) {
-      setValue((v) => v + text);
+      setEdit((s) => insertAt(s, text));
     },
     getValue() {
-      return value;
+      return edit.text;
     }
-  }), [value]);
-  use_input_default((input, key) => {
+  }), [edit.text]);
+  useInput((input, key) => {
     if (phase !== "input" && phase !== "streaming") return;
     if (key.return) {
-      if (value.endsWith("\\")) {
-        setValue((v) => v.slice(0, -1) + "\n");
+      if (edit.text.endsWith("\\")) {
+        setEdit((s) => {
+          const newText = s.text.slice(0, -1) + "\n";
+          return { text: newText, cursor: Math.min(s.cursor, newText.length) };
+        });
         return;
       }
       if (key.meta || key.shift) {
-        setValue((v) => v + "\n");
+        setEdit((s) => insertAt(s, "\n"));
         return;
       }
-      if (value.trim()) {
-        onSubmit(value.trim());
-        setValue("");
+      if (edit.text.trim()) {
+        historyRef.current = push(historyRef.current, edit.text.trim());
+        onSubmit(edit.text.trim());
+        setEdit(empty);
       }
       return;
     }
     if (key.ctrl && input === "j") {
-      setValue((v) => v + "\n");
+      setEdit((s) => insertAt(s, "\n"));
       return;
     }
-    if (key.backspace || key.delete) {
-      setValue((v) => v.slice(0, -1));
+    if ((key.backspace || key.delete) && key.meta) {
+      setEdit(deleteWordBack);
+      return;
+    }
+    if (key.ctrl && input === "w") {
+      setEdit(deleteWordBack);
+      return;
+    }
+    if (key.backspace) {
+      setEdit(deleteBack);
+      return;
+    }
+    if (key.delete) {
+      setEdit(deleteForward);
       return;
     }
     if (key.ctrl && input === "u") {
-      if (value) {
-        setValue("");
+      if (edit.text) {
+        setEdit(empty);
         return;
       }
     }
     if (key.ctrl && input === "v") {
+      trace("ctrl-v: starting clipboard check");
       if (onPasteImage) void checkClipboardImage(onPasteImage);
       return;
     }
-    if (key.ctrl && input === "w") {
-      setValue((v) => {
-        const trimmed = v.trimEnd();
-        const lastSpace = trimmed.lastIndexOf(" ");
-        return lastSpace >= 0 ? v.slice(0, lastSpace + 1) : "";
-      });
+    if (key.home || key.ctrl && input === "a") {
+      setEdit(moveHome);
       return;
     }
-    if (key.upArrow && !value) {
-      if (hasAttachments && onEnterAttachmentSelection) {
-        onEnterAttachmentSelection();
-        return;
-      }
-      if (hasQueuedMessages && onPopQueue) {
-        const queued = onPopQueue();
-        if (queued && queued.length > 0) {
-          const merged = [...queued, value].filter(Boolean).join("\n");
-          setValue(merged);
+    if (key.end || key.ctrl && input === "e") {
+      setEdit(moveEnd);
+      return;
+    }
+    if (key.leftArrow && (key.meta || key.ctrl)) {
+      setEdit(moveWordLeft);
+      return;
+    }
+    if (key.rightArrow && (key.meta || key.ctrl)) {
+      setEdit(moveWordRight);
+      return;
+    }
+    if (key.leftArrow) {
+      setEdit(moveLeft);
+      return;
+    }
+    if (key.rightArrow) {
+      setEdit(moveRight);
+      return;
+    }
+    if (key.upArrow) {
+      if (!edit.text) {
+        if (hasAttachments && onEnterAttachmentSelection) {
+          onEnterAttachmentSelection();
+          return;
         }
-        return;
+        if (hasQueuedMessages && onPopQueue) {
+          const queued = onPopQueue();
+          if (queued && queued.length > 0) {
+            setEdit(fromText(queued.join("\n")));
+          }
+          return;
+        }
+      }
+      const result = navigateUp(historyRef.current, edit.text);
+      if (result) {
+        historyRef.current = result;
+        setEdit(fromText(currentText(result)));
+      }
+      return;
+    }
+    if (key.downArrow) {
+      if (isNavigating(historyRef.current)) {
+        const result = navigateDown(historyRef.current);
+        if (result) {
+          historyRef.current = result;
+          setEdit(fromText(currentText(result)));
+        }
       }
       return;
     }
@@ -34791,78 +35611,85 @@ var InputArea = import_react26.default.memo((0, import_react26.forwardRef)(funct
         onAtMention();
         return;
       }
-      if (input === "/" && value === "" && onSlashCommand) {
+      if (input === "/" && edit.text === "" && onSlashCommand) {
         onSlashCommand();
         return;
       }
-      setValue((v) => v + input);
+      setEdit((s) => insertAt(s, input));
     }
   }, { isActive: phase === "input" || phase === "streaming" });
   if (phase !== "input" && phase !== "streaming") return null;
-  if (!value) {
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { paddingX: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { children: [
+  if (!edit.text) {
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { paddingX: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
         "\u276F",
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { inverse: true, children: " " }),
-      hasQueuedMessages && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: "  Press up to edit queued messages" })
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { inverse: true, children: " " }),
+      hasQueuedMessages && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { dimColor: true, children: "  Press up to edit queued messages" })
     ] });
   }
-  const lines = value.split("\n");
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
-    i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { children: [
+  const { line: cursorLine, col: cursorCol } = cursorPosition(edit);
+  const lines = edit.text.split("\n");
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
+    i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
       "\u276F",
       " "
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: "  " }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: line }),
-    i === lines.length - 1 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { inverse: true, children: " " })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: "  " }),
+    i === cursorLine ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line.slice(0, cursorCol) }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { inverse: true, children: cursorCol < line.length ? line[cursorCol] : " " }),
+      cursorCol < line.length && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line.slice(cursorCol + 1) })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line })
   ] }, i)) });
 }));
 async function checkClipboardImage(onPasteImage) {
+  trace("checkClipboardImage: start");
   try {
     const img = await getImageFromClipboard();
+    trace(`checkClipboardImage: result=${img ? "found" : "null"}`);
     if (img) onPasteImage(img.tempPath);
-  } catch {
+  } catch (e) {
+    trace(`checkClipboardImage: error=${e}`);
   }
 }
 
 // src/components/PermissionDialog.tsx
-var import_react27 = __toESM(require_react(), 1);
+var import_react32 = __toESM(require_react(), 1);
 
 // src/components/DiffView.tsx
-var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
 function DiffView({ diff: diff2, width }) {
   const lines = diff2.split("\n");
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DiffLine, { line, width }, i)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DiffLine, { line, width }, i)) });
 }
 function DiffLine({ line, width }) {
   const truncated = line.length > width ? line.slice(0, width - 1) + "\u2026" : line;
   if (line.startsWith("@@")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "cyan", children: truncated });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyan", children: truncated });
   }
   if (line.startsWith("+++") || line.startsWith("---")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "cyan", dimColor: true, children: truncated });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyan", dimColor: true, children: truncated });
   }
   if (line.startsWith("+")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "green", bold: true, children: "+" }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "green", backgroundColor: "blackBright", children: truncated.slice(1) })
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "green", bold: true, children: "+" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "green", backgroundColor: "blackBright", children: truncated.slice(1) })
     ] });
   }
   if (line.startsWith("-")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "red", bold: true, children: "-" }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: "red", backgroundColor: "blackBright", children: truncated.slice(1) })
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "red", bold: true, children: "-" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "red", backgroundColor: "blackBright", children: truncated.slice(1) })
     ] });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { dimColor: true, children: truncated });
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: truncated });
 }
 
 // src/components/PermissionDialog.tsx
-var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
-var PermissionDialog = import_react27.default.memo(function PermissionDialog2({ request, onRespond, width }) {
-  use_input_default((input, key) => {
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var PermissionDialog = import_react32.default.memo(function PermissionDialog2({ request, onRespond, width }) {
+  useInput((input, key) => {
     switch (input) {
       case "y":
       case "1":
@@ -34881,7 +35708,7 @@ var PermissionDialog = import_react27.default.memo(function PermissionDialog2({ 
   });
   const boxWidth = Math.min(width - 4, 70);
   const param = extractMainParam(request.args, boxWidth - 4);
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -34891,31 +35718,31 @@ var PermissionDialog = import_react27.default.memo(function PermissionDialog2({ 
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { color: "yellow", bold: true, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "yellow", bold: true, children: [
           "Allow ",
           request.toolName,
           "?"
         ] }),
-        request.description && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: request.description }),
-        param && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: param }),
-        request.diff && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          request.adds !== void 0 && request.dels !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { color: "green", children: [
+        request.description && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: request.description }),
+        param && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: param }),
+        request.diff && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          request.adds !== void 0 && request.dels !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "green", children: [
               "+",
               request.adds
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: " " }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { color: "red", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: " " }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "red", children: [
               "-",
               request.dels
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DiffView, { diff: request.diff.slice(0, 800), width: boxWidth - 4 })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(DiffView, { diff: request.diff.slice(0, 800), width: boxWidth - 4 })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { marginTop: 1, gap: 2, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " y allow " }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { backgroundColor: "blue", color: "white", bold: true, children: " a all " }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " n deny " })
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { marginTop: 1, gap: 2, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " y allow " }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "blue", color: "white", bold: true, children: " a all " }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " n deny " })
         ] })
       ]
     }
@@ -34933,13 +35760,13 @@ function extractMainParam(args, max) {
 }
 
 // src/components/QuestionDialog.tsx
-var import_react28 = __toESM(require_react(), 1);
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
-var QuestionDialog = import_react28.default.memo(function QuestionDialog2({ question, options, onRespond, width }) {
-  const [answer, setAnswer] = (0, import_react28.useState)("");
-  const [selectedOption, setSelectedOption] = (0, import_react28.useState)(0);
+var import_react33 = __toESM(require_react(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var QuestionDialog = import_react33.default.memo(function QuestionDialog2({ question, options, onRespond, width }) {
+  const [answer, setAnswer] = (0, import_react33.useState)("");
+  const [selectedOption, setSelectedOption] = (0, import_react33.useState)(0);
   const boxWidth = Math.min(width - 4, 70);
-  use_input_default((input, key) => {
+  useInput((input, key) => {
     if (options && options.length > 0) {
       if (key.upArrow) setSelectedOption((s) => Math.max(0, s - 1));
       if (key.downArrow) setSelectedOption((s) => Math.min(options.length - 1, s + 1));
@@ -34958,7 +35785,7 @@ var QuestionDialog = import_react28.default.memo(function QuestionDialog2({ ques
       setAnswer((a) => a + input);
     }
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -34968,21 +35795,21 @@ var QuestionDialog = import_react28.default.memo(function QuestionDialog2({ ques
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "cyan", bold: true, children: "Agent question" }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { wrap: "wrap", children: question }),
-        options && options.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          options.map((opt, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: i === selectedOption ? "cyan" : void 0, children: i === selectedOption ? "> " : "  " }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { bold: i === selectedOption, children: opt })
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: "cyan", bold: true, children: "Agent question" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { wrap: "wrap", children: question }),
+        options && options.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          options.map((opt, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: i === selectedOption ? "cyan" : void 0, children: i === selectedOption ? "> " : "  " }),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: i === selectedOption, children: opt })
           ] }, opt)),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: "\u2191\u2193 navigate \xB7 Enter select" })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { bold: true, color: "white", children: "> " }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: answer }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "white", inverse: true, children: " " })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "\u2191\u2193 navigate \xB7 Enter select" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: true, color: "white", children: "> " }),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { children: answer }),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: "white", inverse: true, children: " " })
           ] }),
-          !answer && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: "Type your answer..." })
+          !answer && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "Type your answer..." })
         ] })
       ]
     }
@@ -34990,12 +35817,12 @@ var QuestionDialog = import_react28.default.memo(function QuestionDialog2({ ques
 });
 
 // src/components/Picker.tsx
-var import_react29 = __toESM(require_react(), 1);
-var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var import_react34 = __toESM(require_react(), 1);
+var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 function Picker({ title, items, onSelect, onCancel, width }) {
-  const [filter, setFilter] = (0, import_react29.useState)("");
-  const [cursor, setCursor] = (0, import_react29.useState)(0);
-  const filtered = (0, import_react29.useMemo)(() => {
+  const [filter, setFilter] = (0, import_react34.useState)("");
+  const [cursor, setCursor] = (0, import_react34.useState)(0);
+  const filtered = (0, import_react34.useMemo)(() => {
     if (!filter) return items;
     const lower = filter.toLowerCase();
     return items.filter(
@@ -35003,7 +35830,7 @@ function Picker({ title, items, onSelect, onCancel, width }) {
     );
   }, [items, filter]);
   const maxVisible = 15;
-  use_input_default((input, key) => {
+  useInput((input, key) => {
     if (key.escape) {
       onCancel();
       return;
@@ -35033,7 +35860,7 @@ function Picker({ title, items, onSelect, onCancel, width }) {
     }
   });
   const boxWidth = Math.min(width - 4, 60);
-  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -35043,30 +35870,30 @@ function Picker({ title, items, onSelect, onCancel, width }) {
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: "blue", bold: true, children: title }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { marginTop: 1, children: filter ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { color: "blue", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: "blue", bold: true, children: title }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginTop: 1, children: filter ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { color: "blue", children: [
             "/ ",
             filter
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { children: "_" })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "Type to filter" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "No matches" }) : filtered.slice(0, maxVisible).map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: i === cursor ? "blue" : void 0, children: i === cursor ? "> " : "  " }),
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: i === cursor, color: i === cursor ? "white" : void 0, children: item.label }),
-            item.desc && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { dimColor: true, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { children: "_" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "Type to filter" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "No matches" }) : filtered.slice(0, maxVisible).map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: i === cursor ? "blue" : void 0, children: i === cursor ? "> " : "  " }),
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { bold: i === cursor, color: i === cursor ? "white" : void 0, children: item.label }),
+            item.desc && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
               " ",
               truncate2(item.desc, boxWidth - item.label.length - 6)
             ] })
           ] }, item.id)),
-          filtered.length > maxVisible && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { dimColor: true, children: [
+          filtered.length > maxVisible && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
             "  ... and ",
             filtered.length - maxVisible,
             " more"
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "Esc cancel \xB7 \u2191\u2193 navigate \xB7 Enter select" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "Esc cancel \xB7 \u2191\u2193 navigate \xB7 Enter select" }) })
       ]
     }
   );
@@ -35078,11 +35905,11 @@ function truncate2(s, max) {
 }
 
 // src/components/Attachments.tsx
-var import_react30 = __toESM(require_react(), 1);
-var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
+var import_react35 = __toESM(require_react(), 1);
+var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
 function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
-  const [cursor, setCursor] = (0, import_react30.useState)(0);
-  use_input_default((_input, key) => {
+  const [cursor, setCursor] = (0, import_react35.useState)(0);
+  useInput((_input, key) => {
     if (key.rightArrow) {
       setCursor((c) => Math.min(c + 1, items.length - 1));
       return;
@@ -35104,13 +35931,13 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
     }
   }, { isActive: selectionMode });
   if (items.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { paddingX: 1, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { paddingX: 1, children: [
     items.map((item, i) => {
       const isSelected = selectionMode && i === cursor;
       const label = item.isImage ? `[Image #${item.id}]` : `[${item.name}]`;
-      return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginRight: 1, children: isSelected ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { inverse: true, bold: true, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: label }) }, item.id);
+      return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { marginRight: 1, children: isSelected ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { inverse: true, bold: true, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: label }) }, item.id);
     }),
-    selectionMode && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
+    selectionMode && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
       "\u2192",
       " to next",
       " \xB7 ",
@@ -35118,7 +35945,7 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
       " \xB7 ",
       "Esc to cancel"
     ] }),
-    !selectionMode && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
+    !selectionMode && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
       "(",
       "\u2191",
       " to select)"
@@ -35127,7 +35954,7 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
 }
 
 // src/components/App.tsx
-var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime13 = __toESM(require_jsx_runtime(), 1);
 var SLASH_COMMANDS = [
   { id: "/compact", label: "/compact", desc: "Compress context window" },
   { id: "/model", label: "/model", desc: "Switch model" },
@@ -35144,24 +35971,45 @@ var SLASH_COMMANDS = [
 ];
 var BOTTOM_ROWS = 4;
 function App2({ client: client2, inputEvents }) {
-  const [state, dispatch] = (0, import_react31.useReducer)(reducer, initialState());
+  const [state, dispatch] = (0, import_react36.useReducer)(reducer, initialState());
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const width = stdout?.columns ?? 80;
   const height = stdout?.rows ?? 24;
-  const [pickerMode, setPickerMode] = (0, import_react31.useState)(null);
-  const [pickerItems, setPickerItems] = (0, import_react31.useState)([]);
-  const respondRef = (0, import_react31.useRef)(null);
-  const inputRef = (0, import_react31.useRef)(null);
-  const [queuedMessages, setQueuedMessages] = (0, import_react31.useState)([]);
-  const [attachments, setAttachments] = (0, import_react31.useState)([]);
-  const [attachmentSelection, setAttachmentSelection] = (0, import_react31.useState)(false);
-  const nextAttachmentId = (0, import_react31.useRef)(1);
-  const phaseRef = (0, import_react31.useRef)(state.phase);
+  const [pickerMode, setPickerMode] = (0, import_react36.useState)(null);
+  const [pickerItems, setPickerItems] = (0, import_react36.useState)([]);
+  const respondRef = (0, import_react36.useRef)(null);
+  const inputRef = (0, import_react36.useRef)(null);
+  const [queuedMessages, setQueuedMessages] = (0, import_react36.useState)([]);
+  const [attachments, setAttachments] = (0, import_react36.useState)([]);
+  const [attachmentSelection, setAttachmentSelection] = (0, import_react36.useState)(false);
+  const nextAttachmentId = (0, import_react36.useRef)(1);
+  const phaseRef = (0, import_react36.useRef)(state.phase);
   phaseRef.current = state.phase;
-  const pendingUpdate = (0, import_react31.useRef)(null);
-  const throttleTimer = (0, import_react31.useRef)(null);
-  const throttledMsgUpdate = (0, import_react31.useCallback)((params) => {
+  const handleSubmitRef = (0, import_react36.useRef)(() => {
+  });
+  const [, setRedrawTick] = (0, import_react36.useState)(0);
+  const selRef = (0, import_react36.useRef)(INITIAL_SELECTION);
+  const layoutRef = (0, import_react36.useRef)({
+    chatHeight: 0,
+    atBottom: true,
+    visibleWindow: { start: 0, end: 0, cropTop: 0 },
+    entryHeights: [],
+    transcript: []
+  });
+  (0, import_react36.useEffect)(() => {
+    const handler = (text) => {
+      if (!text) return;
+      if (inputRef.current) inputRef.current.insert(text);
+    };
+    inputEvents.on("paste", handler);
+    return () => {
+      inputEvents.off("paste", handler);
+    };
+  }, [inputEvents]);
+  const pendingUpdate = (0, import_react36.useRef)(null);
+  const throttleTimer = (0, import_react36.useRef)(null);
+  const throttledMsgUpdate = (0, import_react36.useCallback)((params) => {
     pendingUpdate.current = params;
     if (!throttleTimer.current) {
       throttleTimer.current = setTimeout(() => {
@@ -35173,7 +36021,7 @@ function App2({ client: client2, inputEvents }) {
       }, 250);
     }
   }, []);
-  const transcript = (0, import_react31.useMemo)(() => buildTranscript({
+  const transcript = (0, import_react36.useMemo)(() => buildTranscript({
     messages: state.messages,
     streaming: state.phase === "streaming",
     streamingMsgId: state.streamingMsgId,
@@ -35182,16 +36030,43 @@ function App2({ client: client2, inputEvents }) {
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
   const chatHeight = Math.max(5, height - BOTTOM_ROWS);
-  const { state: scrollState, scroll, visibleRange: vr, isAtBottom: atBottom } = useScroll(
+  const entryHeights = (0, import_react36.useMemo)(() => measureTranscript(transcript, width), [transcript, width]);
+  const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
-    transcript.length,
+    entryHeights,
     chatHeight
   );
-  const visibleEntries = (0, import_react31.useMemo)(() => {
-    return transcript.slice(vr.start, vr.end);
-  }, [transcript, vr.start, vr.end]);
-  (0, import_react31.useEffect)(() => {
+  const visibleEntries = (0, import_react36.useMemo)(() => {
+    return transcript.slice(vw.start, vw.end);
+  }, [transcript, vw.start, vw.end]);
+  layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, transcript };
+  (0, import_react36.useEffect)(() => {
+    const handler = (ev) => {
+      if (ev.type === "mouseClick" && ev.button === 0) {
+        selRef.current = reduceSelection(selRef.current, { type: "mouseDown", col: ev.col, row: ev.row });
+      } else if (ev.type === "mouseDrag" && ev.button === 0) {
+        selRef.current = reduceSelection(selRef.current, { type: "mouseDrag", col: ev.col, row: ev.row });
+      } else if (ev.type === "mouseRelease") {
+        const sel = selRef.current;
+        if (hasSelection(sel)) {
+          const range = normalizedRange(sel);
+          const text = extractSelection(range.start.row, range.end.row, layoutRef.current);
+          if (text.trim()) {
+            copyToClipboard(text, process.stderr);
+            dispatch({ type: "set.notification", text: "Copied to clipboard" });
+          }
+        }
+        selRef.current = INITIAL_SELECTION;
+      }
+    };
+    inputEvents.on("input", handler);
+    return () => {
+      inputEvents.off("input", handler);
+    };
+  }, [inputEvents]);
+  (0, import_react36.useEffect)(() => {
     client2.setNotificationHandler((method, params) => {
+      trace(`notification: ${method}`);
       const p = params;
       switch (method) {
         case "init":
@@ -35233,7 +36108,9 @@ function App2({ client: client2, inputEvents }) {
           dispatch({ type: "subagent.done", params: p });
           break;
         case "overseer.alert":
+          trace(`overseer.alert alerts=${JSON.stringify(p.alerts).slice(0, 200)}`);
           dispatch({ type: "overseer.alert", alerts: p.alerts });
+          trace("overseer.alert dispatch done");
           break;
         case "drift.update":
           dispatch({ type: "drift.update", params: p });
@@ -35258,7 +36135,7 @@ function App2({ client: client2, inputEvents }) {
           setQueuedMessages((q) => {
             if (q.length > 0) {
               const next = q[0];
-              setTimeout(() => handleSubmit(next), 100);
+              setTimeout(() => handleSubmitRef.current(next), 100);
               return q.slice(1);
             }
             return q;
@@ -35276,14 +36153,17 @@ function App2({ client: client2, inputEvents }) {
         respondRef.current = respond;
       }
     });
+  }, [client2]);
+  (0, import_react36.useEffect)(() => {
     client2.send("resize", { width, height });
   }, [client2, width, height]);
-  (0, import_react31.useEffect)(() => {
+  (0, import_react36.useEffect)(() => {
     if (!state.notification) return;
-    const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 3e3);
+    const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 5e3);
     return () => clearTimeout(timer);
   }, [state.notification]);
-  const handleSubmit = (0, import_react31.useCallback)((text) => {
+  const handleSubmit = (0, import_react36.useCallback)((text) => {
+    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
     if (phaseRef.current === "streaming") {
       setQueuedMessages((q) => [...q, text]);
       return;
@@ -35319,18 +36199,19 @@ function App2({ client: client2, inputEvents }) {
     setAttachments([]);
     setAttachmentSelection(false);
   }, [client2, attachments]);
-  const handlePermission = (0, import_react31.useCallback)((action) => {
+  handleSubmitRef.current = handleSubmit;
+  const handlePermission = (0, import_react36.useCallback)((action) => {
     respondRef.current?.({ action });
     respondRef.current = null;
     dispatch({ type: "permission.replied" });
     if (action === "allow_session") dispatch({ type: "set.notification", text: "Auto-approve enabled" });
   }, []);
-  const handleQuestion = (0, import_react31.useCallback)((answer) => {
+  const handleQuestion = (0, import_react36.useCallback)((answer) => {
     respondRef.current?.({ answer });
     respondRef.current = null;
     dispatch({ type: "question.replied" });
   }, []);
-  const openFilePicker = (0, import_react31.useCallback)(async () => {
+  const openFilePicker = (0, import_react36.useCallback)(async () => {
     try {
       const resp = await client2.request("file.list", { limit: 200 });
       setPickerItems(resp.files.map((f) => ({ id: f.path, label: f.path, desc: formatSize(f.size) })));
@@ -35339,7 +36220,7 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "error", message: `file list: ${e.message}` });
     }
   }, [client2]);
-  const openModelPicker = (0, import_react31.useCallback)(async () => {
+  const openModelPicker = (0, import_react36.useCallback)(async () => {
     try {
       const resp = await client2.request("model.list", {});
       setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \xB7 ${Math.round(m.contextWindow / 1e3)}k` })));
@@ -35348,7 +36229,7 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "error", message: `model list: ${e.message}` });
     }
   }, [client2]);
-  const openSessionPicker = (0, import_react31.useCallback)(async () => {
+  const openSessionPicker = (0, import_react36.useCallback)(async () => {
     try {
       const resp = await client2.request("session.list", { limit: 20 });
       setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })));
@@ -35357,7 +36238,7 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "error", message: `session list: ${e.message}` });
     }
   }, [client2]);
-  const handlePickerSelect = (0, import_react31.useCallback)((item) => {
+  const handlePickerSelect = (0, import_react36.useCallback)((item) => {
     const mode = pickerMode;
     setPickerMode(null);
     switch (mode) {
@@ -35378,13 +36259,26 @@ function App2({ client: client2, inputEvents }) {
         break;
     }
   }, [pickerMode, client2, state.projectRoot, handleSubmit]);
-  use_input_default((input, key) => {
+  useInput((input, key) => {
     if (pickerMode) return;
     if (key.ctrl && input === "c") {
+      trace(`ctrl-c phase=${state.phase}`);
       if (state.phase === "streaming") {
         client2.send("cancel", {});
         dispatch({ type: "coord.done" });
       } else exit();
+      return;
+    }
+    if (key.ctrl && input === "d") {
+      if (state.phase === "streaming") {
+        client2.send("cancel", {});
+        dispatch({ type: "coord.done" });
+      } else exit();
+      return;
+    }
+    if (key.ctrl && input === "l") {
+      stdout?.write("\x1B[2J\x1B[3J\x1B[H");
+      setRedrawTick((t) => t + 1);
       return;
     }
     if (key.ctrl && input === "q") {
@@ -35398,8 +36292,16 @@ function App2({ client: client2, inputEvents }) {
       openModelPicker();
       return;
     }
-    if (key.escape && state.error) {
-      dispatch({ type: "clear.error" });
+    if (key.escape) {
+      if (state.error) {
+        dispatch({ type: "clear.error" });
+        return;
+      }
+      if (state.phase === "streaming") {
+        client2.send("cancel", {});
+        dispatch({ type: "coord.done" });
+        return;
+      }
       return;
     }
     if (key.upArrow && key.shift) {
@@ -35418,6 +36320,14 @@ function App2({ client: client2, inputEvents }) {
       scroll({ type: "pageDown" });
       return;
     }
+    if (key.home && key.ctrl) {
+      scroll({ type: "home" });
+      return;
+    }
+    if (key.end && key.ctrl) {
+      scroll({ type: "end" });
+      return;
+    }
     if (state.phase !== "input" || input === "") {
       if (input === "t") {
         dispatch({ type: "toggle.think" });
@@ -35427,34 +36337,34 @@ function App2({ client: client2, inputEvents }) {
   });
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
-  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { flexGrow: 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ChatView, { entries: visibleEntries, width })
+  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
+      atBottom && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexGrow: 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexDirection: "column", marginTop: vw.cropTop > 0 ? -vw.cropTop : void 0, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ChatView, { entries: visibleEntries, width }) })
     ] }),
-    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
+    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
       "  ",
       "\u2191",
       " ",
       scrollState.offset,
-      " entries above (Shift+",
+      " lines above (Shift+",
       "\u2193",
       " / PgDn to scroll down)"
     ] }),
-    showPermission && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
-    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
-    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
+    showPermission && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
+    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
+    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
       " \u276F ",
       msg,
       " "
     ] }) }, i)) }),
-    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Attachments, { items: attachments, onRemove: (id) => {
+    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Attachments, { items: attachments, onRemove: (id) => {
       setAttachments((a) => a.filter((x) => x.id !== id));
       if (attachments.length <= 1) setAttachmentSelection(false);
     }, selectionMode: attachmentSelection, onExitSelection: () => setAttachmentSelection(false) }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
       InputArea,
       {
         ref: inputRef,
@@ -35481,8 +36391,8 @@ function App2({ client: client2, inputEvents }) {
         hasQueuedMessages: queuedMessages.length > 0
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
       StatusBar,
       {
         model: state.session.model,
@@ -35521,12 +36431,16 @@ function formatSize(bytes) {
 
 // src/protocol/client.ts
 import * as readline from "node:readline";
+import { write as fsWrite } from "node:fs";
 var JsonRpcClient = class {
   nextId = 1;
   pending = /* @__PURE__ */ new Map();
   onRequest = null;
   onNotification = null;
   rl;
+  // Async write queue: serializes writes so they never interleave,
+  // and uses fs.write(fd) which goes through libuv's threadpool (non-blocking).
+  writeChain = Promise.resolve();
   constructor() {
     this.rl = readline.createInterface({ input: process.stdin });
     this.rl.on("line", (line) => this.handleLine(line));
@@ -35541,7 +36455,7 @@ var JsonRpcClient = class {
   // Send a notification (no response expected)
   send(method, params) {
     const msg = { jsonrpc: "2.0", method, params };
-    this.writeLine(msg);
+    this.enqueueWrite(msg);
   }
   // Send a request and wait for response
   async request(method, params) {
@@ -35549,13 +36463,13 @@ var JsonRpcClient = class {
     const msg = { jsonrpc: "2.0", method, params, id };
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.writeLine(msg);
+      this.enqueueWrite(msg);
     });
   }
   // Respond to a backend request
   respond(id, result) {
     const msg = { jsonrpc: "2.0", result, id };
-    this.writeLine(msg);
+    this.enqueueWrite(msg);
   }
   handleLine(line) {
     if (!line.trim()) return;
@@ -35591,8 +36505,26 @@ var JsonRpcClient = class {
       }
     }
   }
-  writeLine(msg) {
-    process.stdout.write(JSON.stringify(msg) + "\n");
+  // Enqueue a write. Writes are serialized: each starts only after the
+  // previous one completes. Uses fs.write(fd=1) which is async (libuv
+  // threadpool) rather than process.stdout.write() which can block in Bun.
+  enqueueWrite(msg) {
+    const line = JSON.stringify(msg) + "\n";
+    this.writeChain = this.writeChain.then(() => this.writeAsync(line));
+  }
+  writeAsync(line) {
+    return new Promise((resolve, reject) => {
+      const buf = Buffer.from(line, "utf-8");
+      trace(`rpc.write len=${buf.length}`);
+      fsWrite(1, buf, 0, buf.length, null, (err) => {
+        if (err) {
+          trace(`rpc.write.err ${err.message}`);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 };
 
@@ -35606,34 +36538,34 @@ function openTerminal() {
     output: process.stderr
   };
 }
-var ESC2 = "\x1B[";
+var ESC3 = "\x1B[";
 function enableMouseTracking(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?1000h${ESC2}?1003h${ESC2}?1006h`);
+  out.write(`${ESC3}?1000h${ESC3}?1003h${ESC3}?1006h`);
 }
 function disableMouseTracking(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?1006l${ESC2}?1003l${ESC2}?1000l`);
+  out.write(`${ESC3}?1006l${ESC3}?1003l${ESC3}?1000l`);
 }
 function enableBracketedPaste(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?2004h`);
+  out.write(`${ESC3}?2004h`);
 }
 function disableBracketedPaste(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?2004l`);
+  out.write(`${ESC3}?2004l`);
 }
 function enableFocusEvents(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?1004h`);
+  out.write(`${ESC3}?1004h`);
 }
 function disableFocusEvents(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?1004l`);
+  out.write(`${ESC3}?1004l`);
 }
 function showCursor(out) {
   if (!out.isTTY) return;
-  out.write(`${ESC2}?25h`);
+  out.write(`${ESC3}?25h`);
 }
 function reassertTerminalModes(out) {
   enableMouseTracking(out);
@@ -35648,6 +36580,7 @@ function cleanupTerminal(out) {
 }
 
 // src/terminal/inputStream.ts
+import { PassThrough as PassThrough2 } from "node:stream";
 import { EventEmitter as EventEmitter3 } from "node:events";
 
 // src/terminal/input.ts
@@ -35664,10 +36597,15 @@ function parseInput(raw) {
     const isPress = match[4] === "M";
     if (!isPress) {
       events.push({ type: "mouseRelease", col, row });
-    } else if ((button & 67) === 64) {
-      events.push({ type: "wheelUp" });
-    } else if ((button & 67) === 65) {
-      events.push({ type: "wheelDown" });
+    } else if (button & 64) {
+      events.push(button & 1 ? { type: "wheelDown" } : { type: "wheelUp" });
+    } else if (button & 32) {
+      const btn = button & 3;
+      if (btn === 3) {
+        events.push({ type: "mouseMotion", col, row });
+      } else {
+        events.push({ type: "mouseDrag", col, row, button: btn });
+      }
     } else {
       events.push({ type: "mouseClick", col, row, button: button & 3 });
     }
@@ -35682,42 +36620,182 @@ function parseInput(raw) {
 }
 
 // src/terminal/inputStream.ts
-function createInputRouter(ttyInput, _onStdinResume) {
+var PASTE_START = "\x1B[200~";
+var PASTE_END = "\x1B[201~";
+var CTRL_C = "";
+var PASTE_TIMEOUT_MS = 1e3;
+var PASTE_HARD_DEADLINE_MS = 3e3;
+var STDIN_RESUME_GAP_MS = 5e3;
+var DOUBLE_CTRLC_MS = 1e3;
+var MAX_PASTE_BYTES = 512 * 1024;
+var SGR_MOUSE_RE2 = /\x1b\[<\d+;\d+;\d+[Mm]/g;
+function createDummyTTYStdin() {
+  const stream = new PassThrough2();
+  stream.isTTY = true;
+  stream.isRaw = false;
+  stream.setRawMode = function(mode) {
+    stream.isRaw = mode;
+    return stream;
+  };
+  stream.ref = function() {
+    return stream;
+  };
+  stream.unref = function() {
+    return stream;
+  };
+  return stream;
+}
+function createInputRouter(ttyInput, onStdinResume) {
   const events = new EventEmitter3();
-  const origPush = ttyInput.push.bind(ttyInput);
-  ttyInput.push = function(chunk) {
-    if (chunk === null) return origPush(null);
-    const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+  const inkStdin = createDummyTTYStdin();
+  let inPaste = false;
+  let pasteBuffer = "";
+  let pasteTimer = null;
+  let pasteDeadlineTimer = null;
+  function flushPaste() {
+    inPaste = false;
+    if (pasteTimer) {
+      clearTimeout(pasteTimer);
+      pasteTimer = null;
+    }
+    if (pasteDeadlineTimer) {
+      clearTimeout(pasteDeadlineTimer);
+      pasteDeadlineTimer = null;
+    }
+    const text = pasteBuffer;
+    pasteBuffer = "";
+    if (text) {
+      trace(`paste: flushed ${text.length} chars`);
+      events.emit("paste", text);
+    }
+  }
+  function abortPaste() {
+    trace("paste: aborted (timeout/overflow)");
+    inPaste = false;
+    if (pasteTimer) {
+      clearTimeout(pasteTimer);
+      pasteTimer = null;
+    }
+    if (pasteDeadlineTimer) {
+      clearTimeout(pasteDeadlineTimer);
+      pasteDeadlineTimer = null;
+    }
+    pasteBuffer = "";
+  }
+  function enterPasteMode() {
+    inPaste = true;
+    pasteBuffer = "";
+    trace("paste: enter");
+    pasteTimer = setTimeout(flushPaste, PASTE_TIMEOUT_MS);
+    pasteDeadlineTimer = setTimeout(abortPaste, PASTE_HARD_DEADLINE_MS);
+  }
+  function resetPasteTimer() {
+    if (pasteTimer) clearTimeout(pasteTimer);
+    pasteTimer = setTimeout(flushPaste, PASTE_TIMEOUT_MS);
+  }
+  let lastCtrlCTime = 0;
+  let lastStdinTime = Date.now();
+  function emitMouseEvents(str) {
     const parsed = parseInput(str);
     for (const ev of parsed) {
-      if (ev.type === "wheelUp" || ev.type === "wheelDown" || ev.type === "mouseClick" || ev.type === "mouseRelease") {
-        events.emit("input", ev);
+      if (ev.type !== "key") events.emit("input", ev);
+    }
+  }
+  function stripMouse(str) {
+    SGR_MOUSE_RE2.lastIndex = 0;
+    const stripped = str.replace(SGR_MOUSE_RE2, "");
+    if (stripped.length < str.length) emitMouseEvents(str);
+    return stripped;
+  }
+  function routeNormal(str) {
+    const parsed = parseInput(str);
+    for (const ev of parsed) {
+      if (ev.type !== "key") events.emit("input", ev);
+    }
+    const keys = parsed.filter((e) => e.type === "key").map((e) => e.raw).join("");
+    if (keys.length > 0) events.emit("keyboard", keys);
+  }
+  function processChunk(str) {
+    const startIdx = str.indexOf(PASTE_START);
+    if (startIdx >= 0) {
+      if (startIdx > 0) routeNormal(str.slice(0, startIdx));
+      enterPasteMode();
+      const afterStart = str.slice(startIdx + PASTE_START.length);
+      const endIdx = afterStart.indexOf(PASTE_END);
+      if (endIdx >= 0) {
+        pasteBuffer = afterStart.slice(0, endIdx);
+        flushPaste();
+        const afterEnd = afterStart.slice(endIdx + PASTE_END.length);
+        if (afterEnd) processChunk(afterEnd);
+      } else {
+        pasteBuffer = afterStart;
       }
+      return;
     }
-    const keyEvents = parsed.filter((e) => e.type === "key");
-    const cleanStr = keyEvents.map((e) => e.raw).join("");
-    if (cleanStr.length > 0) {
-      return origPush(Buffer.from(cleanStr, "utf-8"));
+    routeNormal(str);
+  }
+  function onData(chunk) {
+    const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    const now = Date.now();
+    if (now - lastStdinTime > STDIN_RESUME_GAP_MS) onStdinResume?.();
+    lastStdinTime = now;
+    if (str.includes(CTRL_C)) {
+      const ctrlCNow = Date.now();
+      if (ctrlCNow - lastCtrlCTime < DOUBLE_CTRLC_MS) {
+        events.emit("force-exit");
+        return;
+      }
+      lastCtrlCTime = ctrlCNow;
+      if (inPaste) abortPaste();
+      events.emit("keyboard", CTRL_C);
+      return;
     }
-    return true;
-  };
+    if (inPaste) {
+      const endIdx = str.indexOf(PASTE_END);
+      if (endIdx >= 0) {
+        const beforeEnd = stripMouse(str.slice(0, endIdx));
+        pasteBuffer += beforeEnd;
+        if (pasteBuffer.length > MAX_PASTE_BYTES) pasteBuffer = "";
+        flushPaste();
+        const after = str.slice(endIdx + PASTE_END.length);
+        if (after) processChunk(after);
+      } else {
+        const cleaned = stripMouse(str);
+        if (cleaned.length > 0) {
+          pasteBuffer += cleaned;
+          resetPasteTimer();
+        }
+        if (pasteBuffer.length > MAX_PASTE_BYTES) abortPaste();
+      }
+      return;
+    }
+    processChunk(str);
+  }
+  ttyInput.setRawMode(true);
+  ttyInput.resume();
+  ttyInput.on("data", onData);
   return {
-    stream: ttyInput,
     events,
+    inkStdin,
     destroy: () => {
-      ;
-      ttyInput.push = origPush;
+      ttyInput.removeListener("data", onData);
+      if (pasteTimer) clearTimeout(pasteTimer);
+      if (pasteDeadlineTimer) clearTimeout(pasteDeadlineTimer);
     }
   };
 }
 
 // src/index.tsx
-var import_jsx_runtime13 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+trace("tui.start");
 var terminal = openTerminal();
+trace("tui.terminal_opened");
 var router = createInputRouter(terminal.input, () => {
   reassertTerminalModes(terminal.output);
 });
+preloadHighlighter();
 enableMouseTracking(terminal.output);
+enableBracketedPaste(terminal.output);
 function cleanup() {
   cleanupTerminal(terminal.output);
   router.destroy();
@@ -35748,12 +36826,21 @@ process.on("unhandledRejection", (reason) => {
   console.error("haft TUI unhandled rejection:", reason);
   process.exit(1);
 });
-var client = new JsonRpcClient();
-render_default(/* @__PURE__ */ (0, import_jsx_runtime13.jsx)(App2, { client, inputEvents: router.events }), {
-  stdin: router.stream,
-  stdout: terminal.output,
-  stderr: terminal.output
+router.events.on("force-exit", () => {
+  cleanup();
+  process.exit(130);
 });
+trace("tui.pre_render");
+var client = new JsonRpcClient();
+render_default(
+  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InputProvider, { value: router.events, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(App2, { client, inputEvents: router.events }) }),
+  {
+    stdin: router.inkStdin,
+    stdout: terminal.output,
+    stderr: terminal.output,
+    exitOnCtrlC: false
+  }
+);
 /*! Bundled license information:
 
 react/cjs/react.production.min.js:

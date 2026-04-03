@@ -1,5 +1,32 @@
-import React, { useState, useImperativeHandle, forwardRef } from "react"
-import { Box, Text, useInput } from "ink"
+import React, { useState, useImperativeHandle, forwardRef, useRef } from "react"
+import { Box, Text } from "ink"
+import { trace } from "../debug.js"
+import { useInput } from "../hooks/useInput.js"
+import {
+  type EditState,
+  empty,
+  fromText,
+  insertAt,
+  deleteBack,
+  deleteForward,
+  deleteWordBack,
+  moveLeft,
+  moveRight,
+  moveHome,
+  moveEnd,
+  moveWordLeft,
+  moveWordRight,
+  cursorPosition,
+} from "../input/editBuffer.js"
+import {
+  type History,
+  emptyHistory,
+  push,
+  navigateUp,
+  navigateDown,
+  currentText,
+  isNavigating,
+} from "../input/history.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
@@ -20,95 +47,153 @@ export interface InputAreaHandle {
   getValue: () => string
 }
 
-// Prompt input: ❯ prefix, inline text
-// Paste: handled by terminal (Cmd+V sends text through stdin).
-// Image paste: Ctrl+V → async clipboard check.
-// Text paste: Cmd+V (terminal sends raw chars, no special handling needed).
-// Image paste: Ctrl+V keybinding → async clipboard check.
 export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function InputArea(
   { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages },
   ref,
 ) {
-  const [value, setValue] = useState("")
+  const [edit, setEdit] = useState<EditState>(empty)
+  const historyRef = useRef<History>(emptyHistory)
 
   useImperativeHandle(ref, () => ({
-    insert(text: string) { setValue((v) => v + text) },
-    getValue() { return value },
-  }), [value])
+    insert(text: string) { setEdit((s) => insertAt(s, text)) },
+    getValue() { return edit.text },
+  }), [edit.text])
 
   useInput((input, key) => {
-    // Allow typing during streaming (for message queuing)
     if (phase !== "input" && phase !== "streaming") return
 
+    // --- Submit ---
     if (key.return) {
-      if (value.endsWith("\\")) {
-        setValue((v) => v.slice(0, -1) + "\n")
+      if (edit.text.endsWith("\\")) {
+        setEdit((s) => {
+          const newText = s.text.slice(0, -1) + "\n"
+          return { text: newText, cursor: Math.min(s.cursor, newText.length) }
+        })
         return
       }
       if (key.meta || key.shift) {
-        setValue((v) => v + "\n")
+        setEdit((s) => insertAt(s, "\n"))
         return
       }
-      if (value.trim()) {
-        onSubmit(value.trim())
-        setValue("")
+      if (edit.text.trim()) {
+        historyRef.current = push(historyRef.current, edit.text.trim())
+        onSubmit(edit.text.trim())
+        setEdit(empty)
       }
       return
     }
 
+    // --- Newline ---
     if (key.ctrl && input === "j") {
-      setValue((v) => v + "\n")
+      setEdit((s) => insertAt(s, "\n"))
       return
     }
 
-    if (key.backspace || key.delete) {
-      setValue((v) => v.slice(0, -1))
+    // --- Deletion ---
+    // Alt+Backspace / Alt+Delete: delete word backward
+    if ((key.backspace || key.delete) && key.meta) {
+      setEdit(deleteWordBack)
+      return
+    }
+    // Ctrl+W: delete word backward
+    if (key.ctrl && input === "w") {
+      setEdit(deleteWordBack)
+      return
+    }
+    // Backspace (0x7f from terminal, or 0x08 from some terminals)
+    if (key.backspace) {
+      setEdit(deleteBack)
+      return
+    }
+    // Forward Delete key (\x1b[3~ escape sequence)
+    if (key.delete) {
+      setEdit(deleteForward)
       return
     }
 
+    // --- Clear ---
     if (key.ctrl && input === "u") {
-      if (value) {
-        setValue("")
-        return
-      }
+      if (edit.text) { setEdit(empty); return }
     }
 
-    // Ctrl+V: image paste from clipboard (async, never blocks)
-    // Text paste goes through terminal directly (Cmd+V sends raw chars).
+    // --- Clipboard ---
     if (key.ctrl && input === "v") {
+      trace("ctrl-v: starting clipboard check")
       if (onPasteImage) void checkClipboardImage(onPasteImage)
       return
     }
 
-    if (key.ctrl && input === "w") {
-      setValue((v) => {
-        const trimmed = v.trimEnd()
-        const lastSpace = trimmed.lastIndexOf(" ")
-        return lastSpace >= 0 ? v.slice(0, lastSpace + 1) : ""
-      })
+    // --- Movement ---
+    // Home / Ctrl+A: start of line
+    if (key.home || (key.ctrl && input === "a")) {
+      setEdit(moveHome)
+      return
+    }
+    // End / Ctrl+E: end of line
+    if (key.end || (key.ctrl && input === "e")) {
+      setEdit(moveEnd)
+      return
+    }
+    // Alt+Left / Ctrl+Left: word left
+    if (key.leftArrow && (key.meta || key.ctrl)) {
+      setEdit(moveWordLeft)
+      return
+    }
+    // Alt+Right / Ctrl+Right: word right
+    if (key.rightArrow && (key.meta || key.ctrl)) {
+      setEdit(moveWordRight)
+      return
+    }
+    // Left arrow
+    if (key.leftArrow) {
+      setEdit(moveLeft)
+      return
+    }
+    // Right arrow
+    if (key.rightArrow) {
+      setEdit(moveRight)
       return
     }
 
-    // Up arrow (only when input is empty): attachment selection → queue pop → history
-    if (key.upArrow && !value) {
-      if (hasAttachments && onEnterAttachmentSelection) {
-        onEnterAttachmentSelection()
-        return
-      }
-      if (hasQueuedMessages && onPopQueue) {
-        const queued = onPopQueue()
-        if (queued && queued.length > 0) {
-          const merged = [...queued, value].filter(Boolean).join("\n")
-          setValue(merged)
+    // --- History / Up arrow ---
+    if (key.upArrow) {
+      // Empty input: attachments > queue > history
+      if (!edit.text) {
+        if (hasAttachments && onEnterAttachmentSelection) {
+          onEnterAttachmentSelection()
+          return
         }
-        return
+        if (hasQueuedMessages && onPopQueue) {
+          const queued = onPopQueue()
+          if (queued && queued.length > 0) {
+            setEdit(fromText(queued.join("\n")))
+          }
+          return
+        }
+      }
+      const result = navigateUp(historyRef.current, edit.text)
+      if (result) {
+        historyRef.current = result
+        setEdit(fromText(currentText(result)))
       }
       return
     }
 
-    // Regular input (printable characters)
+    // --- History / Down arrow ---
+    if (key.downArrow) {
+      if (isNavigating(historyRef.current)) {
+        const result = navigateDown(historyRef.current)
+        if (result) {
+          historyRef.current = result
+          setEdit(fromText(currentText(result)))
+        }
+      }
+      return
+    }
+
+    // --- Regular input ---
     if (input && !key.ctrl && !key.meta) {
-      // Mouse sequences that leaked through — route to scroll
+      // Mouse sequences that leaked through
       const mouseMatch = /^(?:\x1b)?\[<(\d+);(\d+);(\d+)([Mm])$/.exec(input)
       if (mouseMatch) {
         const button = Number.parseInt(mouseMatch[1] ?? "", 10)
@@ -123,18 +208,18 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         return
       }
       // / at start triggers command picker
-      if (input === "/" && value === "" && onSlashCommand) {
+      if (input === "/" && edit.text === "" && onSlashCommand) {
         onSlashCommand()
         return
       }
-      setValue((v) => v + input)
+      setEdit((s) => insertAt(s, input))
     }
   }, { isActive: phase === "input" || phase === "streaming" })
 
   if (phase !== "input" && phase !== "streaming") return null
 
-  // Empty: ❯ + cursor block
-  if (!value) {
+  // --- Render ---
+  if (!edit.text) {
     return (
       <Box paddingX={1}>
         <Text>{"\u276F"} </Text>
@@ -144,32 +229,39 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
     )
   }
 
-  // Multiline input
-  const lines = value.split("\n")
+  const { line: cursorLine, col: cursorCol } = cursorPosition(edit)
+  const lines = edit.text.split("\n")
+
   return (
     <Box flexDirection="column" paddingX={1}>
       {lines.map((line, i) => (
         <Box key={i}>
-          {i === 0 ? (
-            <Text>{"\u276F"} </Text>
+          {i === 0 ? <Text>{"\u276F"} </Text> : <Text>{"  "}</Text>}
+          {i === cursorLine ? (
+            <>
+              <Text>{line.slice(0, cursorCol)}</Text>
+              <Text inverse>{cursorCol < line.length ? line[cursorCol] : " "}</Text>
+              {cursorCol < line.length && <Text>{line.slice(cursorCol + 1)}</Text>}
+            </>
           ) : (
-            <Text>{"  "}</Text>
+            <Text>{line}</Text>
           )}
-          <Text>{line}</Text>
-          {i === lines.length - 1 && <Text inverse> </Text>}
         </Box>
       ))}
     </Box>
   )
 }))
 
-// Async clipboard image check — called on Ctrl+V.
-// Uses getImageFromClipboard (spawns osascript in child process).
+// Async clipboard image check
 import { getImageFromClipboard } from "../terminal/clipboard.js"
 
 async function checkClipboardImage(onPasteImage: (path: string) => void) {
+  trace("checkClipboardImage: start")
   try {
     const img = await getImageFromClipboard()
+    trace(`checkClipboardImage: result=${img ? "found" : "null"}`)
     if (img) onPasteImage(img.tempPath)
-  } catch {}
+  } catch (e) {
+    trace(`checkClipboardImage: error=${e}`)
+  }
 }

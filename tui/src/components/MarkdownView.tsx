@@ -1,5 +1,7 @@
 import React from "react"
 import { Box, Text } from "ink"
+import { AnsiText } from "./AnsiText.js"
+import { highlightCode } from "../rendering/highlight.js"
 
 interface Props {
   text: string
@@ -12,6 +14,8 @@ export function MarkdownView({ text, width }: Props) {
   const elements: React.ReactNode[] = []
   let inCodeBlock = false
   let codeLang = ""
+  let codeLines: string[] = []
+  let codeStartIdx = 0
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -19,10 +23,21 @@ export function MarkdownView({ text, width }: Props) {
     // Code block boundaries
     if (line.trimStart().startsWith("```")) {
       if (inCodeBlock) {
-        inCodeBlock = false
+        // Closing fence — highlight accumulated code and emit
+        const code = codeLines.join("\n")
+        const highlighted = highlightCode(code, codeLang)
+        elements.push(
+          <Box key={`code-${codeStartIdx}`} flexDirection="column" paddingLeft={2}>
+            <AnsiText>{highlighted}</AnsiText>
+          </Box>
+        )
         elements.push(<Text key={`cend-${i}`} dimColor>{"```"}</Text>)
+        inCodeBlock = false
+        codeLines = []
+        codeLang = ""
       } else {
         inCodeBlock = true
+        codeStartIdx = i
         codeLang = line.trimStart().slice(3).trim()
         elements.push(<Text key={`cstart-${i}`} dimColor>{"```"}{codeLang}</Text>)
       }
@@ -30,7 +45,7 @@ export function MarkdownView({ text, width }: Props) {
     }
 
     if (inCodeBlock) {
-      elements.push(<Text key={`code-${i}`} color="white">{"  "}{line}</Text>)
+      codeLines.push(line)
       continue
     }
 
@@ -50,11 +65,28 @@ export function MarkdownView({ text, width }: Props) {
 
     // List items — CC uses • (U+2022)
     if (line.match(/^\s*[-*]\s/)) {
-      elements.push(<Text key={`li-${i}`}>{line.replace(/^(\s*)[-*]\s/, "$1\u2022 ")}</Text>)
+      const indent = line.match(/^(\s*)/)?.[1] ?? ""
+      const content = line.replace(/^\s*[-*]\s/, "")
+      elements.push(
+        <Text key={`li-${i}`}>
+          <Text>{indent}{"\u2022"} </Text>
+          <InlineMarkdown text={content} />
+        </Text>
+      )
       continue
     }
     if (line.match(/^\s*\d+\.\s/)) {
-      elements.push(<Text key={`ol-${i}`}>{line}</Text>)
+      const match = line.match(/^(\s*\d+\.\s)(.*)/)
+      if (match) {
+        elements.push(
+          <Text key={`ol-${i}`}>
+            <Text>{match[1]}</Text>
+            <InlineMarkdown text={match[2]} />
+          </Text>
+        )
+      } else {
+        elements.push(<Text key={`ol-${i}`}>{line}</Text>)
+      }
       continue
     }
 
@@ -63,7 +95,7 @@ export function MarkdownView({ text, width }: Props) {
       elements.push(
         <Text key={`bq-${i}`}>
           <Text dimColor color="cyan">{"\u2502"} </Text>
-          <Text dimColor>{line.slice(2)}</Text>
+          <Text dimColor><InlineMarkdown text={line.slice(2)} /></Text>
         </Text>
       )
       continue
@@ -72,6 +104,18 @@ export function MarkdownView({ text, width }: Props) {
     // Horizontal rule
     if (line.match(/^-{3,}$/) || line.match(/^\*{3,}$/)) {
       elements.push(<Text key={`hr-${i}`} dimColor>{"\u2500".repeat(Math.min(width - 2, 60))}</Text>)
+      continue
+    }
+
+    // Table rows (pipe-delimited)
+    if (line.trimStart().startsWith("|") && line.trimEnd().endsWith("|")) {
+      // Collect consecutive table lines
+      const tableLines: string[] = [line]
+      while (i + 1 < lines.length && lines[i + 1].trimStart().startsWith("|") && lines[i + 1].trimEnd().endsWith("|")) {
+        i++
+        tableLines.push(lines[i])
+      }
+      elements.push(<TableBlock key={`tbl-${i}`} lines={tableLines} width={width} />)
       continue
     }
 
@@ -85,6 +129,17 @@ export function MarkdownView({ text, width }: Props) {
     elements.push(<InlineMarkdown key={`p-${i}`} text={line} />)
   }
 
+  // Flush unclosed code block (e.g., truncated response)
+  if (inCodeBlock && codeLines.length > 0) {
+    const code = codeLines.join("\n")
+    const highlighted = highlightCode(code, codeLang)
+    elements.push(
+      <Box key={`code-${codeStartIdx}`} flexDirection="column" paddingLeft={2}>
+        <AnsiText>{highlighted}</AnsiText>
+      </Box>
+    )
+  }
+
   return (
     <Box flexDirection="column">
       {elements}
@@ -92,7 +147,67 @@ export function MarkdownView({ text, width }: Props) {
   )
 }
 
-// Handles **bold**, `code`, *italic* within a single line
+// --- Table rendering ---
+
+function TableBlock({ lines, width }: { lines: string[]; width: number }) {
+  // Parse cells from pipe-delimited lines, skip separator rows (|---|---|)
+  const isSeparator = (line: string) => /^\|[\s\-:|]+\|$/.test(line.trim())
+  const parseCells = (line: string) =>
+    line.split("|").slice(1, -1).map((c) => c.trim())
+
+  const dataRows = lines.filter((l) => !isSeparator(l))
+  if (dataRows.length === 0) return null
+
+  const allCells = dataRows.map(parseCells)
+  const colCount = Math.max(...allCells.map((r) => r.length))
+
+  // Compute column widths from content
+  const colWidths: number[] = Array(colCount).fill(0)
+  for (const row of allCells) {
+    for (let c = 0; c < colCount; c++) {
+      colWidths[c] = Math.max(colWidths[c], (row[c] ?? "").length)
+    }
+  }
+
+  // Cap total width
+  const totalPad = colCount * 3 + 1 // " | " between cols + outer borders
+  const maxContent = width - totalPad - 2
+  if (maxContent > 0) {
+    const totalContent = colWidths.reduce((a, b) => a + b, 0)
+    if (totalContent > maxContent) {
+      const scale = maxContent / totalContent
+      for (let c = 0; c < colCount; c++) {
+        colWidths[c] = Math.max(3, Math.floor(colWidths[c] * scale))
+      }
+    }
+  }
+
+  return (
+    <Box flexDirection="column">
+      {allCells.map((row, ri) => (
+        <Box key={ri}>
+          <Text dimColor>{"\u2502"}</Text>
+          {Array.from({ length: colCount }, (_, c) => {
+            const cell = (row[c] ?? "").slice(0, colWidths[c])
+            const pad = " ".repeat(Math.max(0, colWidths[c] - cell.length))
+            return (
+              <React.Fragment key={c}>
+                <Text bold={ri === 0}> {cell}{pad} </Text>
+                <Text dimColor>{"\u2502"}</Text>
+              </React.Fragment>
+            )
+          })}
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+// --- Inline formatting ---
+// Handles **bold**, `code`, *italic*, ~~strikethrough~~, [text](url) within a single line
+
+type InlineMatch = { type: "bold" | "code" | "italic" | "strikethrough" | "link"; match: RegExpMatchArray; idx: number }
+
 function InlineMarkdown({ text }: { text: string }) {
   if (!text) return <Text> </Text>
 
@@ -104,19 +219,24 @@ function InlineMarkdown({ text }: { text: string }) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/)
     const codeMatch = remaining.match(/`([^`]+)`/)
     const italicMatch = remaining.match(/(?<!\*)\*([^*]+)\*(?!\*)/)
+    const strikeMatch = remaining.match(/~~(.+?)~~/)
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/)
 
-    const matches = [
-      boldMatch ? { type: "bold" as const, match: boldMatch, idx: boldMatch.index! } : null,
-      codeMatch ? { type: "code" as const, match: codeMatch, idx: codeMatch.index! } : null,
-      italicMatch ? { type: "italic" as const, match: italicMatch, idx: italicMatch.index! } : null,
-    ].filter(Boolean).sort((a, b) => a!.idx - b!.idx)
+    const candidates: (InlineMatch | null)[] = [
+      boldMatch ? { type: "bold", match: boldMatch, idx: boldMatch.index! } : null,
+      codeMatch ? { type: "code", match: codeMatch, idx: codeMatch.index! } : null,
+      italicMatch ? { type: "italic", match: italicMatch, idx: italicMatch.index! } : null,
+      strikeMatch ? { type: "strikethrough", match: strikeMatch, idx: strikeMatch.index! } : null,
+      linkMatch ? { type: "link", match: linkMatch, idx: linkMatch.index! } : null,
+    ]
+    const matches = candidates.filter(Boolean).sort((a, b) => a!.idx - b!.idx) as InlineMatch[]
 
     if (matches.length === 0) {
       parts.push(<Text key={key++}>{remaining}</Text>)
       break
     }
 
-    const first = matches[0]!
+    const first = matches[0]
     if (first.idx > 0) {
       parts.push(<Text key={key++}>{remaining.slice(0, first.idx)}</Text>)
     }
@@ -126,11 +246,18 @@ function InlineMarkdown({ text }: { text: string }) {
         parts.push(<Text key={key++} bold>{first.match[1]}</Text>)
         break
       case "code":
-        // white on blackBright with padding
         parts.push(<Text key={key++} color="white" backgroundColor="blackBright"> {first.match[1]} </Text>)
         break
       case "italic":
         parts.push(<Text key={key++} italic>{first.match[1]}</Text>)
+        break
+      case "strikethrough":
+        parts.push(<Text key={key++} strikethrough dimColor>{first.match[1]}</Text>)
+        break
+      case "link":
+        // Show link text underlined, URL in dim after
+        parts.push(<Text key={key++} underline color="blue">{first.match[1]}</Text>)
+        parts.push(<Text key={key++} dimColor> ({first.match[2]})</Text>)
         break
     }
 

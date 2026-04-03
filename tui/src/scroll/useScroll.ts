@@ -1,21 +1,22 @@
 // L2 React hook: wires L1 input events → L2 scroll reducer.
-// Also exposes keyboard scroll commands for useInput integration.
+// Accepts per-entry heights (line counts) and computes the visible entry window.
 
-import { useReducer, useEffect, useCallback } from "react"
+import { useReducer, useEffect, useCallback, useMemo } from "react"
 import type { EventEmitter } from "node:events"
 import type { InputEvent } from "../terminal/input.js"
-import { initialScroll, reduceScroll, visibleRange, isAtBottom, type ScrollState, type ScrollCommand } from "./state.js"
+import { initialScroll, reduceScroll, isAtBottom, type ScrollState, type ScrollCommand } from "./state.js"
+import { computeVisibleWindow, type VisibleWindow } from "./measure.js"
 
 export interface UseScrollResult {
   state: ScrollState
   scroll: (cmd: ScrollCommand) => void
-  visibleRange: { start: number; end: number }
+  visibleWindow: VisibleWindow
   isAtBottom: boolean
 }
 
 export function useScroll(
   inputEvents: EventEmitter | null,
-  contentLength: number,
+  entryHeights: readonly number[],
   viewportSize: number,
 ): UseScrollResult {
   const [state, dispatch] = useReducer(
@@ -23,17 +24,20 @@ export function useScroll(
     initialScroll(),
   )
 
-  // Sync content length changes
+  // Derive total lines from entry heights (cheap O(n), n = transcript length)
+  const totalLines = entryHeights.reduce((a, b) => a + b, 0)
+
+  // Sync total line count into scroll state
   useEffect(() => {
-    dispatch({ type: "contentGrew", newLength: contentLength })
-  }, [contentLength])
+    dispatch({ type: "contentChanged", newTotalLines: totalLines })
+  }, [totalLines])
 
   // Sync viewport size changes
   useEffect(() => {
     dispatch({ type: "resize", viewportSize })
   }, [viewportSize])
 
-  // Route mouse events from L1
+  // Route mouse wheel events from L1
   useEffect(() => {
     if (!inputEvents) return
     const handler = (ev: InputEvent) => {
@@ -46,10 +50,16 @@ export function useScroll(
 
   const scroll = useCallback((cmd: ScrollCommand) => dispatch(cmd), [])
 
+  // Compute visible entry window from current heights and scroll offset
+  const visibleWindow = useMemo(
+    () => computeVisibleWindow(entryHeights, state.offset, state.viewportSize),
+    [entryHeights, state.offset, state.viewportSize],
+  )
+
   return {
     state,
     scroll,
-    visibleRange: visibleRange(state),
+    visibleWindow,
     isAtBottom: isAtBottom(state),
   }
 }

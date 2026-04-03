@@ -1,13 +1,13 @@
-// L2: Scroll State Machine — pure.
+// L2: Scroll State Machine — pure, line-based.
+// Offset is in rendered lines, not entry indices.
 // No React, no Ink, no side effects.
-// One canonical place for all scroll logic.
 
 export interface ScrollState {
   // Lines scrolled back from bottom. 0 = at bottom (sticky).
   offset: number
-  // Total number of scrollable items (messages, not rows)
-  contentLength: number
-  // How many items fit in the viewport
+  // Total rendered lines across all transcript entries
+  totalLines: number
+  // Terminal rows available for the chat viewport
   viewportSize: number
 }
 
@@ -18,62 +18,62 @@ export type ScrollCommand =
   | { type: "pageDown" }
   | { type: "home" }
   | { type: "end" }
-  | { type: "contentGrew"; newLength: number }
+  | { type: "contentChanged"; newTotalLines: number }
   | { type: "resize"; viewportSize: number }
 
 export function initialScroll(): ScrollState {
-  return { offset: 0, contentLength: 0, viewportSize: 20 }
+  return { offset: 0, totalLines: 0, viewportSize: 20 }
+}
+
+function clampOffset(offset: number, totalLines: number, viewportSize: number): number {
+  return Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)))
 }
 
 export function reduceScroll(state: ScrollState, cmd: ScrollCommand): ScrollState {
-  const maxOffset = Math.max(0, state.contentLength - 1)
+  const max = Math.max(0, state.totalLines - state.viewportSize)
 
   switch (cmd.type) {
     case "wheelUp":
-      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), maxOffset) }
+      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), max) }
 
     case "wheelDown":
       return { ...state, offset: Math.max(0, state.offset - (cmd.amount ?? 3)) }
 
     case "pageUp":
-      return { ...state, offset: Math.min(state.offset + state.viewportSize, maxOffset) }
+      return { ...state, offset: Math.min(state.offset + state.viewportSize, max) }
 
     case "pageDown":
       return { ...state, offset: Math.max(0, state.offset - state.viewportSize) }
 
     case "home":
-      return { ...state, offset: maxOffset }
+      return { ...state, offset: max }
 
     case "end":
       return { ...state, offset: 0 }
 
-    case "contentGrew": {
+    case "contentChanged": {
       const wasAtBottom = state.offset === 0
       if (wasAtBottom) {
-        // Stay at bottom — offset stays 0
-        return { ...state, contentLength: cmd.newLength }
+        return { ...state, totalLines: cmd.newTotalLines }
       }
-      // Preserve distance from bottom: shift offset by the delta
-      const delta = cmd.newLength - state.contentLength
+      // Preserve viewing position: shift offset by the delta in total lines
+      const delta = cmd.newTotalLines - state.totalLines
       return {
         ...state,
-        contentLength: cmd.newLength,
-        offset: Math.min(state.offset + delta, Math.max(0, cmd.newLength - 1)),
+        totalLines: cmd.newTotalLines,
+        offset: clampOffset(state.offset + delta, cmd.newTotalLines, state.viewportSize),
       }
     }
 
     case "resize":
-      return { ...state, viewportSize: cmd.viewportSize }
+      return {
+        ...state,
+        viewportSize: cmd.viewportSize,
+        offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize),
+      }
   }
 }
 
 export function isAtBottom(state: ScrollState): boolean {
   return state.offset === 0
-}
-
-// Compute visible range: [start, end) indices into content array
-export function visibleRange(state: ScrollState): { start: number; end: number } {
-  const end = state.contentLength - state.offset
-  const start = Math.max(0, end - state.viewportSize)
-  return { start, end: Math.min(end, state.contentLength) }
 }

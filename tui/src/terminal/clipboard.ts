@@ -1,11 +1,11 @@
-// Async clipboard image extraction — macOS, Linux, Windows.
-// Platform-specific clipboard image extraction.
+// Async clipboard image extraction — macOS, Linux.
 // All operations are async (child_process.spawn), never block event loop.
 
 import { spawn } from "node:child_process"
-import { readFileSync, unlinkSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { trace } from "../debug.js"
 
 export interface ClipboardImage {
   base64: string
@@ -14,17 +14,28 @@ export interface ClipboardImage {
 }
 
 // Run a command async, capture stdout, kill after timeout.
-function run(cmd: string, args: string[], timeoutMs = 3000): Promise<{ code: number | null; stdout: string }> {
+// Drains both stdout and stderr to prevent pipe deadlock.
+function run(
+  cmd: string,
+  args: string[],
+  opts: { timeoutMs?: number; captureStdout?: boolean } = {},
+): Promise<{ code: number | null; stdout: string }> {
+  const { timeoutMs = 3000, captureStdout = true } = opts
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] })
     const chunks: Buffer[] = []
-    proc.stdout!.on("data", (d: Buffer) => chunks.push(d))
+    if (captureStdout) {
+      proc.stdout!.on("data", (d: Buffer) => chunks.push(d))
+    } else {
+      proc.stdout!.resume() // drain without storing
+    }
+    proc.stderr!.resume() // always drain stderr to prevent deadlock
 
     let settled = false
     const finish = (code: number | null) => {
       if (settled) return
       settled = true
-      resolve({ code, stdout: Buffer.concat(chunks).toString("utf-8") })
+      resolve({ code, stdout: captureStdout ? Buffer.concat(chunks).toString("utf-8") : "" })
     }
 
     proc.on("close", (code) => finish(code))
@@ -43,50 +54,70 @@ export async function getImageFromClipboard(): Promise<ClipboardImage | null> {
 }
 
 async function getImageDarwin(): Promise<ClipboardImage | null> {
-  // Step 1: Check if clipboard has image data
-  const check = await run("osascript", ["-e", "the clipboard as «class PNGf»"], 3000)
-  if (check.code !== 0) return null
+  trace("clipboard: step1 check types")
+  // Step 1: Check clipboard types (no data materialization — just type names)
+  const check = await run("osascript", [
+    "-e", 'try',
+    "-e", '  set theInfo to (clipboard info)',
+    "-e", '  repeat with t in theInfo',
+    "-e", '    if (item 1 of t) is «class PNGf» then return "png"',
+    "-e", '    if (item 1 of t) is «class JPEG» then return "jpeg"',
+    "-e", '  end repeat',
+    "-e", '  return "none"',
+    "-e", 'on error',
+    "-e", '  return "none"',
+    "-e", 'end try',
+  ], { timeoutMs: 3000 })
+  const imgType = (check.stdout ?? "").trim()
+  trace(`clipboard: step1 done code=${check.code} type=${imgType}`)
+  if (check.code !== 0 || imgType === "none" || imgType === "") return null
 
-  // Step 2: Save to temp file
+  trace("clipboard: step2 save to file")
+  // Step 2: Save to temp file (osascript writes binary data directly)
   const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`)
+  const typeClass = imgType === "jpeg" ? "«class JPEG»" : "«class PNGf»"
   const save = await run("osascript", [
-    "-e", "set png_data to (the clipboard as «class PNGf»)",
+    "-e", `set img_data to (the clipboard as ${typeClass})`,
     "-e", `set fp to open for access POSIX file "${imgPath}" with write permission`,
-    "-e", "write png_data to fp",
+    "-e", "write img_data to fp",
     "-e", "close access fp",
-  ], 5000)
+  ], { timeoutMs: 5000, captureStdout: false })
 
+  trace(`clipboard: step2 done code=${save.code}`)
   if (save.code !== 0) return null
 
-  // Step 3: Read and encode
+  trace("clipboard: step3 read file")
+  // Step 3: Read and encode (async — does not block event loop)
   try {
-    const buffer = readFileSync(imgPath)
+    const buffer = await readFile(imgPath)
+    trace(`clipboard: step3 done size=${buffer.length}`)
     if (buffer.length === 0) return null
     return {
       base64: buffer.toString("base64"),
       mediaType: detectMediaType(buffer),
       tempPath: imgPath,
     }
-  } catch {
+  } catch (e) {
+    trace(`clipboard: step3 error ${e}`)
     return null
   }
 }
 
 async function getImageLinux(): Promise<ClipboardImage | null> {
-  // Check xclip or wl-paste
+  // Check xclip or wl-paste for image types
   const check = await run("sh", ["-c",
     'xclip -selection clipboard -t TARGETS -o 2>/dev/null | grep -qE "image/(png|jpeg)" || wl-paste -l 2>/dev/null | grep -qE "image/(png|jpeg)"'
-  ], 2000)
+  ], { timeoutMs: 2000 })
   if (check.code !== 0) return null
 
   const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`)
   const save = await run("sh", ["-c",
     `xclip -selection clipboard -t image/png -o > "${imgPath}" 2>/dev/null || wl-paste --type image/png > "${imgPath}" 2>/dev/null`
-  ], 3000)
+  ], { timeoutMs: 3000, captureStdout: false })
   if (save.code !== 0) return null
 
   try {
-    const buffer = readFileSync(imgPath)
+    const buffer = await readFile(imgPath)
     if (buffer.length === 0) return null
     return {
       base64: buffer.toString("base64"),

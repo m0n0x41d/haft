@@ -1,5 +1,6 @@
 import React from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text } from "ink"
+import { useInput } from "../hooks/useInput.js"
 import { DiffView } from "./DiffView.js"
 
 interface Props {

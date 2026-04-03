@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -492,11 +493,21 @@ func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]Af
 
 // AddEvidenceItem adds an evidence item linked to an artifact.
 func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifactRef string) error {
+	formality := normalizeFormalityLevel(item.FormalityLevel)
+	scopeJSON := "[]"
+	if scope := normalizeClaimScope(item.ClaimScope); len(scope) > 0 {
+		data, err := json.Marshal(scope)
+		if err != nil {
+			return fmt.Errorf("marshal claim_scope: %w", err)
+		}
+		scopeJSON = string(data)
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, claim_scope, valid_until, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, artifactRef, item.Type, item.Content, item.Verdict,
-		item.CarrierRef, item.CongruenceLevel, item.FormalityLevel,
+		item.CarrierRef, item.CongruenceLevel, formality, scopeJSON,
 		item.ValidUntil, time.Now().UTC().Format(time.RFC3339),
 	)
 	return err
@@ -505,7 +516,7 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 // GetEvidenceItems returns evidence items for an artifact.
 func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until
+		SELECT id, type, content, verdict, carrier_ref, congruence_level, formality_level, claim_scope, valid_until
 		FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC`, artifactRef)
 	if err != nil {
 		return nil, err
@@ -515,13 +526,18 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 	var items []EvidenceItem
 	for rows.Next() {
 		var e EvidenceItem
-		var verdict, carrierRef, validUntil sql.NullString
+		var verdict, carrierRef, claimScope, validUntil sql.NullString
 		if err := rows.Scan(&e.ID, &e.Type, &e.Content, &verdict, &carrierRef,
-			&e.CongruenceLevel, &e.FormalityLevel, &validUntil); err != nil {
+			&e.CongruenceLevel, &e.FormalityLevel, &claimScope, &validUntil); err != nil {
 			return nil, err
 		}
 		e.Verdict = verdict.String
 		e.CarrierRef = carrierRef.String
+		e.FormalityLevel = normalizeFormalityLevel(e.FormalityLevel)
+		if claimScope.String != "" {
+			_ = json.Unmarshal([]byte(claimScope.String), &e.ClaimScope)
+			e.ClaimScope = normalizeClaimScope(e.ClaimScope)
+		}
 		e.ValidUntil = validUntil.String
 		items = append(items, e)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			claim_scope TEXT DEFAULT '[]',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
@@ -286,6 +288,7 @@ func TestEvidenceItems(t *testing.T) {
 		Verdict:         "supports",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimScope:      []string{"throughput", "latency", "throughput"},
 	}
 	if err := store.AddEvidenceItem(ctx, item, "dec-001"); err != nil {
 		t.Fatal(err)
@@ -300,6 +303,12 @@ func TestEvidenceItems(t *testing.T) {
 	}
 	if items[0].Content != "Load test: 100k events/sec, p99 < 50ms" {
 		t.Errorf("content mismatch")
+	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("formality mismatch: got %d want 2", items[0].FormalityLevel)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
+		t.Errorf("claim scope mismatch: got %q", got)
 	}
 }
 

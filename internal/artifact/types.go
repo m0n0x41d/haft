@@ -309,14 +309,15 @@ type ComparisonResult struct {
 
 // EvidenceItem represents a single piece of evidence.
 type EvidenceItem struct {
-	ID              string `json:"id"`
-	Type            string `json:"type"` // measurement, test, research, benchmark, audit
-	Content         string `json:"content"`
-	Verdict         string `json:"verdict,omitempty"` // supports, weakens, refutes
-	CarrierRef      string `json:"carrier_ref,omitempty"`
-	CongruenceLevel int    `json:"congruence_level,omitempty"` // 0-3
-	FormalityLevel  int    `json:"formality_level,omitempty"`  // 0-9
-	ValidUntil      string `json:"valid_until,omitempty"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"` // measurement, test, research, benchmark, audit
+	Content         string   `json:"content"`
+	Verdict         string   `json:"verdict,omitempty"` // supports, weakens, refutes
+	CarrierRef      string   `json:"carrier_ref,omitempty"`
+	CongruenceLevel int      `json:"congruence_level,omitempty"` // 0-3
+	FormalityLevel  int      `json:"formality_level,omitempty"`  // F0-F3 (legacy 0-9 normalized on read)
+	ClaimScope      []string `json:"claim_scope,omitempty"`
+	ValidUntil      string   `json:"valid_until,omitempty"`
 }
 
 // WriteWarning is returned when the operation succeeded but with non-fatal warnings.

@@ -18,6 +18,7 @@ func TestMeasure_Success(t *testing.T) {
 	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
 		SelectedTitle: "NATS JetStream",
 		WhySelected:   "Ops simplicity",
+		ValidUntil:    "2027-01-01T00:00:00Z",
 		PostConditions: []string{
 			"All producers migrated",
 			"Load test at 100k/s passed",
@@ -62,6 +63,15 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].Verdict != "partial" {
 		t.Errorf("evidence verdict = %q, want partial", items[0].Verdict)
 	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("evidence formality = %d, want 2", items[0].FormalityLevel)
+	}
+	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
+		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
+	}
+	if len(items[0].ClaimScope) != 1 || items[0].ClaimScope[0] != "Load test at 100k/s passed (actual: 120k/s)" {
+		t.Errorf("evidence claim_scope = %#v, want criteria_met scope", items[0].ClaimScope)
+	}
 }
 
 func TestMeasure_MissingRequired(t *testing.T) {
@@ -97,6 +107,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 		CarrierRef:      "benchmarks/nats_load_test.md",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimScope:      []string{"throughput", "latency", "throughput"},
 		ValidUntil:      "2026-06-01T00:00:00Z",
 	})
 	if err != nil {
@@ -114,6 +125,12 @@ func TestAttachEvidence_Success(t *testing.T) {
 	items, _ := store.GetEvidenceItems(ctx, dec.Meta.ID)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(items))
+	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("stored formality = %d, want normalized F2", items[0].FormalityLevel)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
+		t.Errorf("stored claim_scope = %q, want deduplicated scope", got)
 	}
 }
 
@@ -194,6 +211,67 @@ func TestWLNKSummary_WithEvidence(t *testing.T) {
 	}
 	if !strings.Contains(wlnk.Summary, "different context") {
 		t.Errorf("summary should mention weakest CL: %q", wlnk.Summary)
+	}
+}
+
+func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Queue migration",
+		Signal: "Current queue saturates under burst load.",
+		Acceptance: strings.Join([]string{
+			"- P99 latency under 50ms",
+			"- Throughput above 100k events/sec",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+		ProblemRef:    prob.Meta.ID,
+		SelectedTitle: "JetStream",
+		WhySelected:   "Lower operational overhead",
+		WeakestLink:   "benchmark evidence freshness",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Load test passed on staging",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  7,
+		ClaimScope:      []string{"P99 latency under 50ms"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if wlnk.FEff != 2 {
+		t.Errorf("FEff = %d, want 2", wlnk.FEff)
+	}
+	if !wlnk.CoverageKnown {
+		t.Fatal("expected explicit acceptance coverage")
+	}
+	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms" {
+		t.Errorf("GEff = %q, want covered criterion", got)
+	}
+	if got := strings.Join(wlnk.CoverageGaps, ","); got != "Throughput above 100k events/sec" {
+		t.Errorf("CoverageGaps = %q, want uncovered criterion", got)
+	}
+	if !strings.Contains(wlnk.Summary, "Assurance: F2 (structured-formal)") {
+		t.Errorf("summary should show structured assurance: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
+		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
 	}
 }
 

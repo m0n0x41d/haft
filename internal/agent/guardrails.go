@@ -1,6 +1,9 @@
 package agent
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // L1: FPF Guardrails — pure functions for tool precondition checks.
@@ -76,15 +79,30 @@ func CanMeasure(cycle *Cycle) error {
 
 // CheckREff validates that R_eff meets minimum threshold for cycle closure.
 // Returns nil if sufficient, error with guidance if not.
-func CheckREff(rEff float64) error {
+func CheckREff(rEff float64, fEff ...int) error {
+	var guidance []string
+
 	if rEff < 0.3 {
-		return &GuardrailError{
-			Tool:     "cycle closure",
-			Missing:  "sufficient evidence",
-			Guidance: fmt.Sprintf("R_eff=%.2f is below 0.3 (AT RISK). Run tests, verify implementation, or attach evidence before closing the cycle.", rEff),
-		}
+		guidance = append(guidance,
+			fmt.Sprintf("R_eff=%.2f is below 0.3 (AT RISK). Run tests, verify implementation, or attach evidence before closing the cycle.", rEff),
+		)
 	}
-	return nil
+
+	if len(fEff) > 0 && fEff[0] == 0 {
+		guidance = append(guidance,
+			"F_eff=F0 (unsubstantiated). The closure path has no structured explicit evidence; record at least structured-informal evidence before treating the cycle as closed.",
+		)
+	}
+
+	if len(guidance) == 0 {
+		return nil
+	}
+
+	return &GuardrailError{
+		Tool:     "cycle closure",
+		Missing:  "sufficient substantiated evidence",
+		Guidance: strings.Join(guidance, " "),
+	}
 }
 
 // GuardrailError is returned by tools when FPF preconditions are not met.

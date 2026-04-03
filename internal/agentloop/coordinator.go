@@ -710,7 +710,7 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 		rEff := assurance.R
 
 		// R_eff threshold check (FPF: low evidence = low trust)
-		if rEffErr := agent.CheckREff(rEff); rEffErr != nil && meta.MeasureVerdict == "accepted" {
+		if rEffErr := agent.CheckREff(rEff, assurance.F); rEffErr != nil && meta.MeasureVerdict == "accepted" {
 			logger.Warn().Str("component", "agent").
 				Float64("r_eff", rEff).
 				Msg("agent.low_reff_warning")

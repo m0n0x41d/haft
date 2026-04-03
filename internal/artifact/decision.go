@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -661,14 +662,15 @@ type MeasureInput struct {
 // JSON decodes missing fields as 0, which is a valid CL value (opposed context).
 // Callers from MCP should set these to -1 when the user doesn't provide them.
 type EvidenceInput struct {
-	ArtifactRef     string `json:"artifact_ref"`
-	Content         string `json:"content"`
-	Type            string `json:"type"`    // measurement, test, research, benchmark, audit
-	Verdict         string `json:"verdict"` // supports, weakens, refutes
-	CarrierRef      string `json:"carrier_ref,omitempty"`
-	CongruenceLevel int    `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
-	FormalityLevel  int    `json:"formality_level"`  // 0-9; -1 = not provided (defaults to 5)
-	ValidUntil      string `json:"valid_until,omitempty"`
+	ArtifactRef     string   `json:"artifact_ref"`
+	Content         string   `json:"content"`
+	Type            string   `json:"type"`    // measurement, test, research, benchmark, audit
+	Verdict         string   `json:"verdict"` // supports, weakens, refutes
+	CarrierRef      string   `json:"carrier_ref,omitempty"`
+	CongruenceLevel int      `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
+	FormalityLevel  int      `json:"formality_level"`  // F0-F3; legacy 0-9 inputs are normalized
+	ClaimScope      []string `json:"claim_scope,omitempty"`
+	ValidUntil      string   `json:"valid_until,omitempty"`
 }
 
 // Measure records post-implementation impact against the DRR's acceptance criteria.
@@ -763,7 +765,9 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
-		FormalityLevel:  5,
+		FormalityLevel:  2,
+		ClaimScope:      normalizeClaimScope(input.CriteriaMet),
+		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)
 	}
@@ -798,7 +802,7 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		input.CongruenceLevel = 3
 	}
 	if input.FormalityLevel < 0 {
-		input.FormalityLevel = 5
+		input.FormalityLevel = defaultEvidenceFormalityLevel(input.Type)
 	}
 
 	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
@@ -810,7 +814,8 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		Verdict:         input.Verdict,
 		CarrierRef:      input.CarrierRef,
 		CongruenceLevel: input.CongruenceLevel,
-		FormalityLevel:  input.FormalityLevel,
+		FormalityLevel:  normalizeFormalityLevel(input.FormalityLevel),
+		ClaimScope:      normalizeClaimScope(input.ClaimScope),
 		ValidUntil:      input.ValidUntil,
 	}
 
@@ -830,12 +835,17 @@ type WLNKSummary struct {
 	Supporting    int
 	Weakening     int
 	Refuting      int
-	HasEvidence   bool    // true if at least one evidence item exists
-	REff          float64 // computed: min(effective_score) across evidence chain
-	MinFreshness  string  // earliest valid_until across all evidence
-	WeakestCL     int     // minimum congruence level
-	WeakestF      int     // minimum formality level
-	Summary       string  // human-readable one-liner
+	HasEvidence   bool     // true if at least one evidence item exists
+	FEff          int      // computed: min(formality_level_i) across evidence chain
+	GEff          []string // computed: union(claim_scope_i) across evidence chain
+	REff          float64  // computed: min(effective_score) across evidence chain
+	MinFreshness  string   // earliest valid_until across all evidence
+	WeakestCL     int      // minimum congruence level
+	WeakestF      int      // compatibility alias for FEff
+	ExpectedScope []string // explicit acceptance identifiers, when available
+	CoverageGaps  []string // expected scope not covered by GEff
+	CoverageKnown bool     // false when the problem frame has no explicit identifiers
+	Summary       string   // human-readable one-liner
 }
 
 // ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
@@ -848,8 +858,11 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result := WLNKSummary{
 		ArtifactID: artifactID,
 		WeakestCL:  3,
-		WeakestF:   9,
+		FEff:       0,
+		WeakestF:   0,
 	}
+	result.ExpectedScope, result.CoverageKnown = explicitAcceptanceScope(ctx, store, artifactID)
+	result.CoverageGaps = append(result.CoverageGaps, result.ExpectedScope...)
 
 	items, err := store.GetEvidenceItems(ctx, artifactID)
 	if err != nil || len(items) == 0 {
@@ -874,6 +887,7 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result.HasEvidence = true
 	now := time.Now().UTC()
 	minREff := 1.0
+	minFormality := 3
 
 	for _, e := range activeItems {
 		switch e.Verdict {
@@ -888,8 +902,8 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		if e.CongruenceLevel < result.WeakestCL {
 			result.WeakestCL = e.CongruenceLevel
 		}
-		if e.FormalityLevel < result.WeakestF && e.FormalityLevel > 0 {
-			result.WeakestF = e.FormalityLevel
+		if e.FormalityLevel < minFormality {
+			minFormality = e.FormalityLevel
 		}
 
 		if e.ValidUntil != "" {
@@ -905,10 +919,19 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		}
 	}
 
+	result.FEff = minFormality
+	result.WeakestF = minFormality
+	result.GEff = computeClaimCoverage(activeItems)
 	result.REff = minREff
+	if result.CoverageKnown {
+		result.CoverageGaps = differenceScope(result.ExpectedScope, result.GEff)
+	} else {
+		result.CoverageGaps = nil
+	}
 
 	// Build summary
 	var parts []string
+	parts = append(parts, formatAssuranceSummary(result))
 	parts = append(parts, fmt.Sprintf("%d evidence item(s)", result.EvidenceCount))
 	if result.Supporting > 0 {
 		parts = append(parts, fmt.Sprintf("%d supporting", result.Supporting))
@@ -919,7 +942,6 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	if result.Refuting > 0 {
 		parts = append(parts, fmt.Sprintf("%d REFUTING", result.Refuting))
 	}
-	parts = append(parts, fmt.Sprintf("R_eff: %.2f", result.REff))
 	if result.MinFreshness != "" {
 		if t, err := time.Parse(time.RFC3339, result.MinFreshness); err == nil {
 			if t.Before(now) {
@@ -934,6 +956,9 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		clLabels := map[int]string{0: "opposed", 1: "different context", 2: "similar context"}
 		parts = append(parts, fmt.Sprintf("weakest CL: %s", clLabels[result.WeakestCL]))
 	}
+	if len(result.CoverageGaps) > 0 {
+		parts = append(parts, "coverage gaps: "+strings.Join(result.CoverageGaps, ", "))
+	}
 
 	result.Summary = strings.Join(parts, ", ")
 	return result
@@ -942,6 +967,174 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 // scoreEvidence delegates to reff.ScoreEvidence (single source of truth).
 func scoreEvidence(e EvidenceItem, now time.Time) float64 {
 	return reff.ScoreEvidence(e.Verdict, e.CongruenceLevel, e.ValidUntil, now)
+}
+
+func defaultEvidenceFormalityLevel(evidenceType string) int {
+	switch strings.ToLower(strings.TrimSpace(evidenceType)) {
+	case "measurement", "test", "benchmark", "audit":
+		return 2
+	case "research":
+		return 1
+	default:
+		return 1
+	}
+}
+
+func normalizeFormalityLevel(level int) int {
+	switch {
+	case level < 0:
+		return 0
+	case level <= 3:
+		return level
+	case level <= 5:
+		return 1
+	case level <= 8:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func normalizeClaimScope(scope []string) []string {
+	if len(scope) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(scope))
+	normalized := make([]string, 0, len(scope))
+
+	for _, item := range scope {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	sort.Strings(normalized)
+
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func computeClaimCoverage(items []EvidenceItem) []string {
+	scope := make([]string, 0, len(items))
+	for _, item := range items {
+		scope = append(scope, item.ClaimScope...)
+	}
+	return normalizeClaimScope(scope)
+}
+
+func differenceScope(expected []string, covered []string) []string {
+	if len(expected) == 0 {
+		return nil
+	}
+
+	coveredSet := make(map[string]struct{}, len(covered))
+	for _, item := range covered {
+		coveredSet[item] = struct{}{}
+	}
+
+	gaps := make([]string, 0, len(expected))
+	for _, item := range expected {
+		if _, ok := coveredSet[item]; ok {
+			continue
+		}
+		gaps = append(gaps, item)
+	}
+
+	return gaps
+}
+
+func explicitAcceptanceScope(ctx context.Context, store ArtifactStore, artifactID string) ([]string, bool) {
+	artifactItem, err := store.Get(ctx, artifactID)
+	if err != nil {
+		return nil, false
+	}
+
+	if artifactItem.Meta.Kind == KindProblemCard {
+		scope := explicitAcceptanceCriteria(artifactItem.UnmarshalProblemFields().Acceptance)
+		return scope, len(scope) > 0
+	}
+
+	if artifactItem.Meta.Kind != KindDecisionRecord {
+		return nil, false
+	}
+
+	scope := make([]string, 0)
+	for _, link := range artifactItem.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+		problem, err := store.Get(ctx, link.Ref)
+		if err != nil || problem.Meta.Kind != KindProblemCard {
+			continue
+		}
+		scope = append(scope, explicitAcceptanceCriteria(problem.UnmarshalProblemFields().Acceptance)...)
+	}
+
+	scope = normalizeClaimScope(scope)
+	return scope, len(scope) > 0
+}
+
+func explicitAcceptanceCriteria(acceptance string) []string {
+	lines := strings.Split(acceptance, "\n")
+	criteria := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(trimmed, "- [ ] "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ] ")))
+		case strings.HasPrefix(trimmed, "- [x] "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- [x] ")))
+		case strings.HasPrefix(trimmed, "- "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+		case strings.HasPrefix(trimmed, "* "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "* ")))
+		default:
+			return nil
+		}
+	}
+
+	return normalizeClaimScope(criteria)
+}
+
+func formatAssuranceSummary(summary WLNKSummary) string {
+	formality := fmt.Sprintf("F%d (%s)", summary.FEff, formalityLabel(summary.FEff))
+	coverage := "G: no claim scope"
+	switch {
+	case summary.CoverageKnown:
+		coverage = fmt.Sprintf("G: %d/%d criteria covered", len(summary.GEff), len(summary.ExpectedScope))
+	case len(summary.GEff) > 0:
+		coverage = fmt.Sprintf("G: %d covered (acceptance ids unavailable)", len(summary.GEff))
+	}
+	return fmt.Sprintf("Assurance: %s | %s | R: %.2f", formality, coverage, summary.REff)
+}
+
+func formalityLabel(level int) string {
+	switch level {
+	case 0:
+		return "unsubstantiated"
+	case 1:
+		return "structured-informal"
+	case 2:
+		return "structured-formal"
+	case 3:
+		return "proof-grade"
+	default:
+		return "unknown"
+	}
 }
 
 // modeRank maps Mode to a numeric rank for comparison.

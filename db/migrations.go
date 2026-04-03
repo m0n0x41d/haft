@@ -271,4 +271,12 @@ var kernelMigrations = []Migration{
 			"CREATE INDEX IF NOT EXISTS idx_affected_symbols_artifact ON affected_symbols(artifact_id)",
 		},
 	},
+	{
+		Version:     18,
+		Description: "Claim scope on persisted evidence",
+		Statements: []string{
+			"ALTER TABLE evidence ADD COLUMN claim_scope TEXT DEFAULT '[]'",
+			"ALTER TABLE evidence_items ADD COLUMN claim_scope TEXT DEFAULT '[]'",
+		},
+	},
 }

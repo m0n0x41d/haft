@@ -140,7 +140,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "tool.start": {
       const { params } = action
       if (params.subagentId) {
-        return updateLastAssistantTool(state, params.subagentId, (parent) => ({
+        return updateAssistantToolBySubagentId(state, params.subagentId, (parent) => ({
           ...parent,
           children: [...(parent.children ?? []), {
             callId: params.callId,
@@ -209,23 +209,17 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, cycle: action.params }
 
     case "subagent.start": {
-      // Link subagent to most recent spawn_agent tool
       const newState = { ...state, activeSubagents: state.activeSubagents + 1 }
-      return updateLastAssistant(newState, (msg) => {
-        const tools = [...(msg.tools ?? [])]
-        for (let i = tools.length - 1; i >= 0; i--) {
-          if (tools[i].name === "spawn_agent" && !tools[i].subagentId) {
-            tools[i] = { ...tools[i], subagentId: action.params.subagentId }
-            break
-          }
-        }
-        return { ...msg, tools }
-      })
+      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => (
+        tool.name !== "spawn_agent"
+          ? tool
+          : { ...tool, subagentId: action.params.subagentId }
+      ))
     }
 
     case "subagent.done": {
       const newState = { ...state, activeSubagents: Math.max(0, state.activeSubagents - 1) }
-      return updateLastAssistantTool(newState, action.params.subagentId, (tool) => ({
+      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => ({
         ...tool,
         running: false,
         output: action.params.summary,
@@ -328,28 +322,47 @@ function updateLastAssistant(state: AppState, fn: (msg: MsgInfo) => MsgInfo): Ap
   return state
 }
 
-function updateLastAssistantTool(state: AppState, subagentId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateLastAssistant(state, (msg) => {
-    const tools = [...(msg.tools ?? [])]
-    for (let i = tools.length - 1; i >= 0; i--) {
-      if (tools[i].subagentId === subagentId || tools[i].callId === subagentId) {
-        tools[i] = fn(tools[i])
-        return { ...msg, tools }
-      }
+function updateAssistantTool(
+  state: AppState,
+  match: (tool: ToolCall) => boolean,
+  fn: (tool: ToolCall) => ToolCall,
+): AppState {
+  const messages = [...state.messages]
+  for (let msgIndex = messages.length - 1; msgIndex >= 0; msgIndex--) {
+    const msg = messages[msgIndex]
+    if (msg.role !== "assistant" || !msg.tools?.length) {
+      continue
     }
-    return msg
-  })
+
+    const tools = [...msg.tools]
+    for (let toolIndex = tools.length - 1; toolIndex >= 0; toolIndex--) {
+      if (!match(tools[toolIndex])) {
+        continue
+      }
+
+      tools[toolIndex] = fn(tools[toolIndex])
+      messages[msgIndex] = { ...msg, tools }
+      return { ...state, messages }
+    }
+  }
+
+  return state
+}
+
+function updateAssistantToolByCallId(state: AppState, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
+  return updateAssistantTool(state, (tool) => tool.callId === callId, fn)
+}
+
+function updateAssistantToolBySubagentId(state: AppState, subagentId: string, fn: (tool: ToolCall) => ToolCall): AppState {
+  return updateAssistantTool(state, (tool) => tool.subagentId === subagentId, fn)
 }
 
 function updateToolInMessages(state: AppState, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateLastAssistant(state, (msg) => ({
-    ...msg,
-    tools: msg.tools?.map((t) => t.callId === callId ? fn(t) : t),
-  }))
+  return updateAssistantToolByCallId(state, callId, fn)
 }
 
 function updateChildTool(state: AppState, subagentId: string, callId: string, fn: (tool: ToolCall) => ToolCall): AppState {
-  return updateLastAssistantTool(state, subagentId, (parent) => ({
+  return updateAssistantToolBySubagentId(state, subagentId, (parent) => ({
     ...parent,
     children: parent.children?.map((c) => c.callId === callId ? fn(c) : c),
   }))

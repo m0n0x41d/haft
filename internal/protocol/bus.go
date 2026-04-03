@@ -65,7 +65,7 @@ func (b *Bus) SendCycleUpdate(p CycleUpdate) error {
 }
 
 func (b *Bus) SendSubagentStart(p SubagentStart) error {
-	logger.Info().Str("component", "bus").Str("method", "subagent.start").Str("subagent_id", p.SubagentID).Str("name", p.Name).Msg("bus.send")
+	logger.Info().Str("component", "bus").Str("method", "subagent.start").Str("subagent_id", p.SubagentID).Str("parent_call_id", p.ParentCallID).Str("name", p.Name).Msg("bus.send")
 	return b.rpc.Send(MethodSubagentStart, p)
 }
 

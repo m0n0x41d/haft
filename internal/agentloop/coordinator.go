@@ -23,9 +23,9 @@ import (
 
 const (
 	maxStepsPerTurn = 200 // hard cap per user turn
-	loopWindowSize   = 12 // recent tool calls to check for loops
-	loopWarnRepeats  = 3  // yellow: inject warning, don't stop
-	loopHardRepeats  = 5  // red: hard stop
+	loopWindowSize  = 12  // recent tool calls to check for loops
+	loopWarnRepeats = 3   // yellow: inject warning, don't stop
+	loopHardRepeats = 5   // red: hard stop
 )
 
 // Coordinator runs a single ReAct loop per user turn.
@@ -33,23 +33,23 @@ const (
 // One unified prompt, all tools available. Cycle binding happens
 // automatically when artifact tools return typed Meta.
 type Coordinator struct {
-	Provider      provider.LLMProvider
-	Tools         *tools.Registry
-	Sessions      session.SessionStore
-	Messages      session.MessageStore
-	Cycles        session.CycleStore
-	ArtifactStore artifact.ArtifactStore
-	Bus           *protocol.Bus
-	SystemPrompt  string
-	AgentDef      agent.AgentDef
-	Subagents     *SubagentTracker
-	ProjectRoot   string               // for drift detection
-	repoMapCache    string               // cached repo map text, invalidated after edit/write
-	repoMapDirty    bool                 // true = needs rebuild before next LLM call
-	evidence        *agent.EvidenceChain // auto-tracked evidence for active decision
-	OverseerAlerts  chan []string         // pending alerts from background overseer (thread-safe)
-	planMode        bool                 // true = write tools blocked (plan mode active)
-	Hooks           *hooks.Executor      // optional: pre/post tool hooks
+	Provider       provider.LLMProvider
+	Tools          *tools.Registry
+	Sessions       session.SessionStore
+	Messages       session.MessageStore
+	Cycles         session.CycleStore
+	ArtifactStore  artifact.ArtifactStore
+	Bus            *protocol.Bus
+	SystemPrompt   string
+	AgentDef       agent.AgentDef
+	Subagents      *SubagentTracker
+	ProjectRoot    string               // for drift detection
+	repoMapCache   string               // cached repo map text, invalidated after edit/write
+	repoMapDirty   bool                 // true = needs rebuild before next LLM call
+	evidence       *agent.EvidenceChain // auto-tracked evidence for active decision
+	OverseerAlerts chan []string        // pending alerts from background overseer (thread-safe)
+	planMode       bool                 // true = write tools blocked (plan mode active)
+	Hooks          *hooks.Executor      // optional: pre/post tool hooks
 }
 
 // SetPlanMode toggles plan mode. Implements tools.PlanModeController.
@@ -237,7 +237,7 @@ func (c *Coordinator) reactLoop(
 		case agent.LoopWarning:
 			// Yellow: inject warning, don't stop. Agent should summarize and ask user.
 			warnMsg := agent.Message{
-				Role: agent.RoleSystem,
+				Role:  agent.RoleSystem,
 				Parts: []agent.Part{agent.TextPart{Text: "[Loop Warning] You are repeating similar tool calls. Stop iterating. Summarize what you've tried, what's blocking you, and present current options to the user. If you need to retry, explain why this attempt will differ."}},
 			}
 			fullHistory = append(fullHistory, warnMsg)
@@ -518,7 +518,8 @@ func (c *Coordinator) executeToolCallsParallel(
 		go func(idx int, tc agent.ToolCallPart) {
 			defer wg.Done()
 			toolStart := time.Now()
-			toolResult, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+			toolCtx := tools.WithActiveToolCallID(ctx, tc.ToolCallID)
+			toolResult, execErr := c.Tools.Execute(toolCtx, tc.ToolName, tc.Arguments)
 			var output string
 			isError := false
 			if execErr != nil {
@@ -592,7 +593,8 @@ func (c *Coordinator) executeToolCallsSequential(
 		// Execute
 		if output == "" {
 			toolStart := time.Now()
-			toolResult, execErr := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+			toolCtx := tools.WithActiveToolCallID(ctx, tc.ToolCallID)
+			toolResult, execErr := c.Tools.Execute(toolCtx, tc.ToolName, tc.Arguments)
 			if execErr != nil {
 				output = fmt.Sprintf("Tool error: %s", execErr.Error())
 				isError = true

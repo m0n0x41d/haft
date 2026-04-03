@@ -90,16 +90,17 @@ type CycleUpdate struct {
 	ProblemTitle string  `json:"problemTitle"`
 	PortfolioRef string  `json:"portfolioRef,omitempty"`
 	DecisionRef  string  `json:"decisionRef,omitempty"`
-	Phase        string  `json:"phase"` // frame|explore|compare|decide|implement|measure
+	Phase        string  `json:"phase"`  // frame|explore|compare|decide|implement|measure
 	Status       string  `json:"status"` // active|complete|abandoned
 	REff         float64 `json:"rEff"`
 }
 
 // SubagentStart signals a subagent was spawned.
 type SubagentStart struct {
-	SubagentID string `json:"subagentId"`
-	Name       string `json:"name"`
-	Task       string `json:"task"`
+	SubagentID   string `json:"subagentId"`
+	ParentCallID string `json:"parentCallId"`
+	Name         string `json:"name"`
+	Task         string `json:"task"`
 }
 
 // SubagentDone signals a subagent completed.

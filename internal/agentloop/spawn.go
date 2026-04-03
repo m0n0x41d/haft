@@ -12,6 +12,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
+	"github.com/m0n0x41d/haft/internal/tools"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -151,8 +152,11 @@ func (c *Coordinator) SpawnSubagent(
 	}
 	c.Subagents.Add(handle)
 
+	parentCallID := tools.ActiveToolCallID(ctx)
+
 	logger.Info().Str("component", "agent").
 		Str("subagent_id", subagentID).
+		Str("parent_call_id", parentCallID).
 		Str("type", def.Name).
 		Str("session_id", childSess.ID).
 		Str("parent_id", parentSess.ID).
@@ -161,9 +165,10 @@ func (c *Coordinator) SpawnSubagent(
 
 	// Notify TUI
 	c.Bus.SendSubagentStart(protocol.SubagentStart{
-		SubagentID: subagentID,
-		Name:       def.Name,
-		Task:       task,
+		SubagentID:   subagentID,
+		ParentCallID: parentCallID,
+		Name:         def.Name,
+		Task:         task,
 	})
 
 	// Launch goroutine
@@ -387,7 +392,8 @@ func (c *Coordinator) executeSubagentTool(ctx context.Context, tc agent.ToolCall
 	if readOnly && writeToolNames[tc.ToolName] {
 		return fmt.Sprintf("Tool '%s' is not available in read-only subagent mode.", tc.ToolName), true
 	}
-	result, err := c.Tools.Execute(ctx, tc.ToolName, tc.Arguments)
+	toolCtx := tools.WithActiveToolCallID(ctx, tc.ToolCallID)
+	result, err := c.Tools.Execute(toolCtx, tc.ToolName, tc.Arguments)
 	if err != nil {
 		return fmt.Sprintf("Tool error: %s", err.Error()), true
 	}

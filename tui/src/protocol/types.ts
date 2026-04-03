@@ -97,6 +97,7 @@ export interface CycleUpdateParams {
 
 export interface SubagentStartParams {
   subagentId: string
+  parentCallId: string
   name: string
   task: string
 }

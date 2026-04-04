@@ -161,6 +161,8 @@ func TestDetectExplicitDecisionSelection_IgnoresFollowUps(t *testing.T) {
 		"explain option V2",
 		"can we choose V2?",
 		"variant V2 is bad because of tooling",
+		"gRPC because of tooling overhead is risky",
+		"REST because latency is worse should be ruled out",
 		"do not choose gRPC",
 		"use gRPC benchmarks from the previous run",
 		"proceed with gRPC benchmarks from the previous run",
@@ -170,6 +172,26 @@ func TestDetectExplicitDecisionSelection_IgnoresFollowUps(t *testing.T) {
 	for _, input := range inputs {
 		if got, ok := detectExplicitDecisionSelection(input, candidates); ok {
 			t.Fatalf("detectExplicitDecisionSelection(%q) = %q, want no match", input, got)
+		}
+	}
+}
+
+func TestAttemptsExplicitDecisionSelection_IgnoresAnalyticalReasonClauses(t *testing.T) {
+	t.Parallel()
+
+	candidates := []decisionSelectionCandidate{
+		{VariantRef: "V1", Aliases: normalizeDecisionSelectionAliases([]string{"V1", "REST", "variant V1"})},
+		{VariantRef: "V2", Aliases: normalizeDecisionSelectionAliases([]string{"V2", "gRPC", "variant V2"})},
+	}
+
+	inputs := []string{
+		"gRPC because of tooling overhead is risky",
+		"REST because latency is worse should be ruled out",
+	}
+
+	for _, input := range inputs {
+		if attemptsExplicitDecisionSelection(input, candidates) {
+			t.Fatalf("attemptsExplicitDecisionSelection(%q) = true, want false", input)
 		}
 	}
 }

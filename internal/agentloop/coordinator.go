@@ -1066,7 +1066,7 @@ func detectExplicitDecisionSelection(message string, candidates []decisionSelect
 	}
 
 	selectedRef := matches[0]
-	if matchesExplicitDecisionSelectionClause(normalizedMessage, selectedRef, candidates) {
+	if matchesExplicitDecisionSelectionFillerClause(normalizedMessage, selectedRef, candidates) {
 		return selectedRef, true
 	}
 
@@ -1074,7 +1074,7 @@ func detectExplicitDecisionSelection(message string, candidates []decisionSelect
 	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
 		return "", false
 	}
-	if matchesExplicitDecisionSelectionClause(trimmedMessage, selectedRef, candidates) {
+	if matchesExplicitDecisionSelectionFillerClause(trimmedMessage, selectedRef, candidates) {
 		return selectedRef, true
 	}
 	selectionText, ok := trimPositiveDecisionSelectionPrefix(trimmedMessage)
@@ -1187,15 +1187,28 @@ func trimPositiveDecisionSelectionPrefix(value string) (string, bool) {
 		"choose ",
 		"i choose ",
 		"we choose ",
+		"lets choose ",
+		"let s choose ",
 		"pick ",
 		"i pick ",
 		"we pick ",
+		"lets pick ",
+		"let s pick ",
 		"select ",
 		"i select ",
 		"we select ",
+		"lets select ",
+		"let s select ",
 		"prefer ",
 		"i prefer ",
 		"we prefer ",
+		"lets prefer ",
+		"let s prefer ",
+		"use ",
+		"i use ",
+		"we use ",
+		"lets use ",
+		"let s use ",
 		"go with ",
 		"lets go with ",
 		"let s go with ",
@@ -1236,10 +1249,38 @@ func matchesExplicitDecisionSelectionClause(value, selectedRef string, candidate
 	return false
 }
 
+func matchesExplicitDecisionSelectionFillerClause(value, selectedRef string, candidates []decisionSelectionCandidate) bool {
+	for _, candidate := range candidates {
+		if candidate.VariantRef != selectedRef {
+			continue
+		}
+
+		for _, alias := range candidate.Aliases {
+			if matchesDecisionSelectionAliasWithPolicy(value, alias, false) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func matchesAnyExplicitDecisionSelectionClause(value string, candidates []decisionSelectionCandidate) bool {
 	for _, candidate := range candidates {
 		for _, alias := range candidate.Aliases {
 			if matchesDecisionSelectionAlias(value, alias) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func matchesAnyExplicitDecisionSelectionFillerClause(value string, candidates []decisionSelectionCandidate) bool {
+	for _, candidate := range candidates {
+		for _, alias := range candidate.Aliases {
+			if matchesDecisionSelectionAliasWithPolicy(value, alias, false) {
 				return true
 			}
 		}
@@ -1256,7 +1297,7 @@ func attemptsExplicitDecisionSelection(message string, candidates []decisionSele
 	if strings.Contains(message, "?") {
 		return false
 	}
-	if matchesAnyExplicitDecisionSelectionClause(normalizedMessage, candidates) {
+	if matchesAnyExplicitDecisionSelectionFillerClause(normalizedMessage, candidates) {
 		return true
 	}
 
@@ -1264,7 +1305,7 @@ func attemptsExplicitDecisionSelection(message string, candidates []decisionSele
 	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
 		return false
 	}
-	if matchesAnyExplicitDecisionSelectionClause(trimmedMessage, candidates) {
+	if matchesAnyExplicitDecisionSelectionFillerClause(trimmedMessage, candidates) {
 		return true
 	}
 
@@ -1277,11 +1318,15 @@ func attemptsExplicitDecisionSelection(message string, candidates []decisionSele
 }
 
 func matchesDecisionSelectionAlias(value, alias string) bool {
+	return matchesDecisionSelectionAliasWithPolicy(value, alias, true)
+}
+
+func matchesDecisionSelectionAliasWithPolicy(value, alias string, allowReasonSuffix bool) bool {
 	if value == alias {
 		return true
 	}
 
-	if hasDecisionSelectionReasonSuffix(value, alias) {
+	if allowReasonSuffix && hasDecisionSelectionReasonSuffix(value, alias) {
 		return true
 	}
 

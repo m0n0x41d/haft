@@ -551,31 +551,41 @@ func runAgent(cmd *cobra.Command, args []string) error {
 // buildFPFSearchFunc creates a callback for HaftQueryTool's "fpf" action.
 // Uses the embedded FPF spec database (same as `haft fpf search`).
 func buildFPFSearchFunc() tools.FPFSearchFunc {
-	return func(query string, limit int) (string, error) {
+	return func(request tools.FPFSearchRequest) (string, error) {
 		db, cleanup, err := openFPFDB()
 		if err != nil {
 			return "", fmt.Errorf("open fpf db: %w", err)
 		}
 		defer cleanup()
 
-		results, err := fpf.SearchSpec(db, query, limit)
+		results, err := fpf.SearchSpecWithOptions(db, request.Query, fpf.SpecSearchOptions{
+			Limit: request.Limit,
+		})
 		if err != nil {
 			return "", err
 		}
 		if len(results) == 0 {
-			return formatAgentFPFSearch(query, nil), nil
+			return formatAgentFPFSearchWithExplain(request.Query, nil, request.Explain), nil
 		}
 
 		formattedResults := make([]present.FPFSearchResult, 0, len(results))
 		for _, r := range results {
+			content := r.Snippet
+			if request.Full {
+				body, err := fpf.GetSpecSection(db, firstNonEmpty(r.PatternID, r.Heading))
+				if err == nil {
+					content = body
+				}
+			}
+
 			formattedResults = append(formattedResults, present.FPFSearchResult{
 				PatternID: r.PatternID,
 				Heading:   r.Heading,
 				Tier:      r.Tier,
 				Reason:    r.Reason,
-				Content:   r.Snippet,
+				Content:   content,
 			})
 		}
-		return formatAgentFPFSearch(query, formattedResults), nil
+		return formatAgentFPFSearchWithExplain(request.Query, formattedResults, request.Explain), nil
 	}
 }

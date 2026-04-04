@@ -551,7 +551,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"query": map[string]string{
 						"type":        "string",
-						"description": "(search) Search terms",
+						"description": "(search, fpf) Search terms",
 					},
 					"kind": map[string]string{
 						"type":        "string",
@@ -567,7 +567,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
-						"description": "(search) Max results, default 20",
+						"description": "(search) Max results, default 20; (fpf) max results, default 10",
+					},
+					"full": map[string]interface{}{
+						"type":        "boolean",
+						"description": "(fpf) Show full section content instead of snippets",
+					},
+					"explain": map[string]interface{}{
+						"type":        "boolean",
+						"description": "(fpf) Show why each result matched",
 					},
 				},
 				"required": []string{"action"},

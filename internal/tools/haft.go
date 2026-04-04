@@ -693,10 +693,19 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 // HaftQueryTool — search, status, related decisions
 // ---------------------------------------------------------------------------
 
+// FPFSearchRequest captures deterministic FPF retrieval and presentation
+// options for the haft_query tool.
+type FPFSearchRequest struct {
+	Query   string
+	Limit   int
+	Full    bool
+	Explain bool
+}
+
 // FPFSearchFunc is a callback that searches the FPF specification.
 // Returns formatted results or error. Injected by cmd/agent.go to avoid
 // importing the embedded DB from internal packages.
-type FPFSearchFunc func(query string, limit int) (string, error)
+type FPFSearchFunc func(request FPFSearchRequest) (string, error)
 
 type HaftQueryTool struct {
 	store     artifact.ArtifactStore
@@ -725,6 +734,12 @@ Actions:
 				"action": map[string]any{"type": "string", "enum": []string{"search", "status", "related", "fpf"}, "description": "search | status | related | fpf"},
 				"query":  map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
 				"file":   map[string]any{"type": "string", "description": "File path (related)"},
+				"limit":  map[string]any{"type": "integer", "description": "(fpf) Max FPF results, default 5"},
+				"full":   map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
+				"explain": map[string]any{
+					"type":        "boolean",
+					"description": "(fpf) Show why each FPF result matched",
+				},
 			},
 			"required": []any{"action"},
 		},
@@ -791,7 +806,13 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 		if t.fpfSearch == nil {
 			return agent.ToolResult{}, fmt.Errorf("FPF spec search not available")
 		}
-		result, err := t.fpfSearch(query, 5)
+		request := FPFSearchRequest{
+			Query:   query,
+			Limit:   jsonIntDefault(args, "limit", 5),
+			Full:    jsonBool(args, "full"),
+			Explain: jsonBool(args, "explain"),
+		}
+		result, err := t.fpfSearch(request)
 		if err != nil {
 			return agent.ToolResult{}, fmt.Errorf("fpf search: %w", err)
 		}
@@ -940,6 +961,31 @@ func (t *HaftNoteTool) Execute(ctx context.Context, argsJSON string) (agent.Tool
 func jsonStr(args map[string]any, key string) string {
 	v, _ := args[key].(string)
 	return v
+}
+
+func jsonBool(args map[string]any, key string) bool {
+	v, _ := args[key].(bool)
+	return v
+}
+
+func jsonIntDefault(args map[string]any, key string, defaultValue int) int {
+	value, ok := args[key]
+	if !ok {
+		return defaultValue
+	}
+
+	switch typed := value.(type) {
+	case float64:
+		if int(typed) > 0 {
+			return int(typed)
+		}
+	case int:
+		if typed > 0 {
+			return typed
+		}
+	}
+
+	return defaultValue
 }
 
 func jsonStrArray(args map[string]any, key string) []string {

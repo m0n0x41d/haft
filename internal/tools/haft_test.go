@@ -69,6 +69,69 @@ func setupHaftToolStore(t *testing.T) *artifact.Store {
 	return artifact.NewStore(db)
 }
 
+func TestHaftQueryTool_FPFUsesInjectedSearch(t *testing.T) {
+	store := setupHaftToolStore(t)
+	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
+		if request.Query != "A.6" {
+			t.Fatalf("unexpected query %q", request.Query)
+		}
+		if request.Limit != 5 {
+			t.Fatalf("unexpected limit %d", request.Limit)
+		}
+		if request.Full {
+			t.Fatal("expected full=false by default")
+		}
+		if request.Explain {
+			t.Fatal("expected explain=false by default")
+		}
+		return "### A.6 — Signature Stack & Boundary Discipline\ntier: pattern · exact pattern id\n", nil
+	})
+
+	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
+		"action": "fpf",
+		"query":  "A.6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.DisplayText, "A.6") {
+		t.Fatalf("unexpected result: %s", result.DisplayText)
+	}
+}
+
+func TestHaftQueryTool_FPFPassesOptionalSearchControls(t *testing.T) {
+	store := setupHaftToolStore(t)
+	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
+		if request.Query != "boundary routing" {
+			t.Fatalf("unexpected query %q", request.Query)
+		}
+		if request.Limit != 3 {
+			t.Fatalf("unexpected limit %d", request.Limit)
+		}
+		if !request.Full {
+			t.Fatal("expected full=true")
+		}
+		if !request.Explain {
+			t.Fatal("expected explain=true")
+		}
+		return "### A.6 — Signature Stack & Boundary Discipline\ntier: route · Boundary discipline and routing\n", nil
+	})
+
+	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
+		"action":  "fpf",
+		"query":   "boundary routing",
+		"limit":   3,
+		"full":    true,
+		"explain": true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.DisplayText, "Boundary discipline and routing") {
+		t.Fatalf("unexpected result: %s", result.DisplayText)
+	}
+}
+
 func TestHaftSolutionTool_ExploreAcceptsNoSteppingStoneRationale(t *testing.T) {
 	store := setupHaftToolStore(t)
 	tool := NewHaftSolutionTool(store, t.TempDir(), nil)

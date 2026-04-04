@@ -13,13 +13,23 @@ func formatCLIFPFSearchWithExplain(results []present.FPFSearchResult, explain bo
 }
 
 func formatMCPFPFSearch(results []present.FPFSearchResult) string {
+	return formatMCPFPFSearchWithExplain(results, false)
+}
+
+func formatMCPFPFSearchWithExplain(results []present.FPFSearchResult, explain bool) string {
 	options := sharedFPFSearchOptions()
+	options.ShowMetadata = explain
 	return present.FormatFPFSearch(results, options)
 }
 
 func formatAgentFPFSearch(query string, results []present.FPFSearchResult) string {
+	return formatAgentFPFSearchWithExplain(query, results, false)
+}
+
+func formatAgentFPFSearchWithExplain(query string, results []present.FPFSearchResult, explain bool) string {
 	options := present.FPFSearchOptions{
 		EmptyMessage: "No FPF spec matches for: " + query,
+		ShowMetadata: explain,
 	}
 
 	return present.FormatFPFSearch(results, options)

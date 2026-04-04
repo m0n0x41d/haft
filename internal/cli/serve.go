@@ -950,31 +950,43 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		if l, ok := args["limit"].(float64); ok {
 			limit = int(l)
 		}
-		db, cleanup, err := openFPFDB()
+		full, _ := args["full"].(bool)
+		explain, _ := args["explain"].(bool)
+		db, cleanup, err := openFPFDBFunc()
 		if err != nil {
 			return "", fmt.Errorf("open fpf db: %w", err)
 		}
 		defer cleanup()
 
-		results, err := fpf.SearchSpec(db, query, limit)
+		results, err := fpf.SearchSpecWithOptions(db, query, fpf.SpecSearchOptions{
+			Limit: limit,
+		})
 		if err != nil {
 			return "", fmt.Errorf("fpf search: %w", err)
 		}
 		if len(results) == 0 {
-			return formatMCPFPFSearch(nil), nil
+			return formatMCPFPFSearchWithExplain(nil, explain), nil
 		}
 
 		formattedResults := make([]present.FPFSearchResult, 0, len(results))
 		for _, r := range results {
+			content := r.Snippet
+			if full {
+				body, err := fpf.GetSpecSection(db, firstNonEmpty(r.PatternID, r.Heading))
+				if err == nil {
+					content = body
+				}
+			}
+
 			formattedResults = append(formattedResults, present.FPFSearchResult{
 				PatternID: r.PatternID,
 				Heading:   r.Heading,
 				Tier:      r.Tier,
 				Reason:    r.Reason,
-				Content:   r.Snippet,
+				Content:   content,
 			})
 		}
-		return formatMCPFPFSearch(formattedResults), nil
+		return formatMCPFPFSearchWithExplain(formattedResults, explain), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', 'coverage', or 'fpf'", action)

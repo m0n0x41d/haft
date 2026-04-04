@@ -2,6 +2,7 @@ package cli
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -175,7 +176,10 @@ func runFPFSection(cmd *cobra.Command, args []string) error {
 
 	body, err := fpf.GetSpecSection(db, lookup)
 	if err != nil {
-		return fmt.Errorf("section not found by heading or pattern id: %q", lookup)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("section not found by heading or pattern id: %q", lookup)
+		}
+		return fmt.Errorf("get FPF section: %w", err)
 	}
 
 	fmt.Print(present.FormatFPFSection(lookup, body))

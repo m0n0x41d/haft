@@ -144,6 +144,35 @@ func TestRunFPFSection_NotFoundMentionsHeadingAndPatternID(t *testing.T) {
 	}
 }
 
+func TestRunFPFSection_UnexpectedLookupErrorKeepsContext(t *testing.T) {
+	original := openFPFDBFunc
+	openFPFDBFunc = func() (*sql.DB, func(), error) {
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			return nil, nil, err
+		}
+
+		cleanup := func() {
+			_ = db.Close()
+		}
+		return db, cleanup, nil
+	}
+	defer func() {
+		openFPFDBFunc = original
+	}()
+
+	err := runFPFSection(nil, []string{"A.6"})
+	if err == nil {
+		t.Fatal("expected unexpected lookup error")
+	}
+	if !strings.Contains(err.Error(), "get FPF section:") {
+		t.Fatalf("expected wrapped section lookup error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "section not found by heading or pattern id") {
+		t.Fatalf("expected unexpected error to avoid not-found rewrite, got: %v", err)
+	}
+}
+
 func buildFPFSearchTestDB(t *testing.T) string {
 	t.Helper()
 

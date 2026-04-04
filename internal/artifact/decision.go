@@ -768,7 +768,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
 		FormalityLevel:  2,
-		ClaimScope:      normalizeClaimScope(input.CriteriaMet),
+		ClaimScope:      measuredCriteriaScope(input.CriteriaMet, input.CriteriaNotMet),
 		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)
@@ -1030,6 +1030,13 @@ func computeClaimCoverage(items []EvidenceItem) []string {
 	for _, item := range items {
 		scope = append(scope, item.ClaimScope...)
 	}
+	return normalizeClaimScope(scope)
+}
+
+func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string) []string {
+	scope := make([]string, 0, len(criteriaMet)+len(criteriaNotMet))
+	scope = append(scope, criteriaMet...)
+	scope = append(scope, criteriaNotMet...)
 	return normalizeClaimScope(scope)
 }
 

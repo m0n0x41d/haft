@@ -53,8 +53,10 @@ export function StatusBar(props: Props) {
   const statusText = parts.join(" \u2219 ")
 
   return (
-    <Box paddingX={1} gap={2}>
-      <Text dimColor wrap="truncate-end">{statusText}</Text>
+    <Box paddingX={1} gap={2} width={width}>
+      <Box flexGrow={1} flexShrink={1}>
+        <Text dimColor wrap="truncate-end">{statusText}</Text>
+      </Box>
       {notification && <Text dimColor>{notification}</Text>}
     </Box>
   )

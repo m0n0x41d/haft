@@ -20,9 +20,9 @@ interface Props {
 
 export function ChatView({ entries, width, toolHistoryExpanded, measureRef }: Props) {
   return (
-    <Box flexDirection="column" flexShrink={0}>
+    <Box flexDirection="column" flexShrink={0} width={width}>
       {entries.map((entry) => (
-        <Box key={entry.id} flexDirection="column" flexShrink={0} ref={measureRef?.(entry.id)}>
+        <Box key={entry.id} flexDirection="column" flexShrink={0} width={width} ref={measureRef?.(entry.id)}>
           <EntryBlock entry={entry} width={width} toolHistoryExpanded={toolHistoryExpanded} />
         </Box>
       ))}
@@ -45,13 +45,13 @@ const EntryBlock = React.memo(function EntryBlock({
     case "assistantText":
       return <AssistantTextBlock text={entry.text} streaming={entry.streaming} width={width} />
     case "thinking":
-      return <ThinkingBlock lines={entry.lines} hiddenCount={entry.hiddenCount} />
+      return <ThinkingBlock lines={entry.lines} hiddenCount={entry.hiddenCount} width={width} />
     case "assistantToolBatch":
       return <AssistantToolBatchView tools={entry.tools} width={width} expanded={toolHistoryExpanded} />
     case "indicator":
       return <ThinkingIndicator model={entry.model} />
     case "error":
-      return <ErrorBlock message={entry.message} />
+      return <ErrorBlock message={entry.message} width={width} />
   }
 })
 
@@ -62,14 +62,14 @@ function UserPromptBlock({ text, attachments, width }: { text: string; attachmen
   const pad = Math.max(0, width - content.length)
 
   return (
-    <Box flexDirection="column" marginTop={1} flexShrink={0}>
-      <Box>
+    <Box flexDirection="column" marginTop={1} flexShrink={0} width={width}>
+      <Box width={width}>
         <Text backgroundColor="blackBright">
           <Text dimColor>{" \u276F"}</Text> <Text bold>{text}</Text>{" ".repeat(pad)}
         </Text>
       </Box>
       {attachments.map((line, i) => (
-        <Box key={i} paddingX={1}>
+        <Box key={i} paddingX={1} width={width}>
           <Text dimColor>{"\u21B3  "}{line}</Text>
         </Box>
       ))}
@@ -81,7 +81,7 @@ function AssistantTextBlock({ text, streaming, width }: { text: string; streamin
   const contentWidth = Math.min(width - 4, 120)
 
   return (
-    <Box flexDirection="row" marginTop={1} paddingX={1} flexShrink={0}>
+    <Box flexDirection="row" marginTop={1} paddingX={1} flexShrink={0} width={width}>
       <Box flexShrink={0} minWidth={2}>
         <Text>{BLACK_CIRCLE}</Text>
       </Box>
@@ -93,9 +93,9 @@ function AssistantTextBlock({ text, streaming, width }: { text: string; streamin
   )
 }
 
-function ThinkingBlock({ lines, hiddenCount }: { lines: string[]; hiddenCount: number }) {
+function ThinkingBlock({ lines, hiddenCount, width }: { lines: string[]; hiddenCount: number; width: number }) {
   return (
-    <Box flexDirection="column" marginLeft={3} flexShrink={0}>
+    <Box flexDirection="column" marginLeft={3} flexShrink={0} width={Math.max(0, width - 3)}>
       {hiddenCount > 0 && (
         <Text dimColor>{"... ("}{hiddenCount}{" lines hidden, press t to expand)"}</Text>
       )}
@@ -106,9 +106,9 @@ function ThinkingBlock({ lines, hiddenCount }: { lines: string[]; hiddenCount: n
   )
 }
 
-function ErrorBlock({ message }: { message: string }) {
+function ErrorBlock({ message, width }: { message: string; width: number }) {
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1} flexShrink={0}>
+    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1} flexShrink={0} width={width}>
       <Text color="red" bold>Error</Text>
       <Text color="red">{message}</Text>
       <Text dimColor>press esc to dismiss</Text>

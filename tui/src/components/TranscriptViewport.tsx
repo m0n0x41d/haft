@@ -20,7 +20,7 @@ export function TranscriptViewport({
   width,
 }: TranscriptViewportProps) {
   return (
-    <Box flexDirection="column" marginTop={-viewport.cropTop} flexShrink={0}>
+    <Box flexDirection="column" marginTop={-viewport.cropTop} flexShrink={0} width={width}>
       <ChatView
         entries={entries}
         width={width}

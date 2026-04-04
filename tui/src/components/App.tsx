@@ -407,7 +407,7 @@ export function App({ client, inputEvents }: AppProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       {/* Chat: fixed-height viewport over the cropped mounted transcript slice. */}
-      <Box flexDirection="column" height={chatHeight} overflowY="hidden">
+      <Box flexDirection="column" height={chatHeight} overflowY="hidden" width={width}>
         {atBottom && <Box flexGrow={1} />}
         <TranscriptViewport
           entries={visibleEntries}
@@ -433,9 +433,9 @@ export function App({ client, inputEvents }: AppProps) {
 
       {/* Queued messages */}
       {queuedMessages.length > 0 && (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingX={1} width={width}>
           {queuedMessages.map((msg, i) => (
-            <Box key={i}><Text backgroundColor="blackBright" dimColor>{" \u276F "}{msg}{" "}</Text></Box>
+            <Box key={i} width={width}><Text backgroundColor="blackBright" dimColor>{" \u276F "}{msg}{" "}</Text></Box>
           ))}
         </Box>
       )}

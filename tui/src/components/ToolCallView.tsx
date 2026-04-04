@@ -49,9 +49,9 @@ function RegularToolCallView({
   const summary = getToolSummary(tool)
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0} width={width}>
       {/* Header: dot Name (param) */}
-      <Box>
+      <Box width={width}>
         <ToolDot tool={tool} />
         <Text bold>{displayName}</Text>
         {param && (
@@ -82,7 +82,7 @@ function getToolSummary(tool: ToolCall): string | undefined {
 
 function StreamingToolOutput({ output, width }: { output: string; width: number }) {
   return (
-    <Box marginLeft={2} flexDirection="column" flexShrink={0}>
+    <Box marginLeft={2} flexDirection="column" flexShrink={0} width={Math.max(0, width - 2)}>
       {output.split("\n").slice(-3).map((line, i) => (
         <Text key={i} dimColor>{truncate(line, width - 6)}</Text>
       ))}
@@ -116,8 +116,8 @@ function SpawnedAgentToolCallView({
     !subagent.summary
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
-      <Box>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0} width={width}>
+      <Box width={width}>
         <ToolDot tool={tool} />
         <Text bold>{displayName}</Text>
         {param && (
@@ -125,7 +125,7 @@ function SpawnedAgentToolCallView({
         )}
       </Box>
 
-      <Box flexDirection="column" marginLeft={2} flexShrink={0}>
+      <Box flexDirection="column" marginLeft={2} flexShrink={0} width={nestedWidth}>
         <Box>
           <Text dimColor>{"\u21B3 "}</Text>
           <Text color="cyan" bold>{display.subagentLabel ?? "agent"}</Text>
@@ -179,15 +179,15 @@ function CollapsedToolHistoryView({
   }
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
-      <Box>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0} width={width}>
+      <Box width={width}>
         <ToolStateDot running={dotState.running} isError={dotState.isError} />
         <Text dimColor>{display.summary}</Text>
         <Text dimColor>{" (ctrl+o to expand)"}</Text>
       </Box>
 
       {display.hint && (
-        <Box marginLeft={2}>
+        <Box marginLeft={2} width={Math.max(0, width - 2)}>
           <Text dimColor>{"\u21B3 "}{truncate(display.hint, width - 8)}</Text>
         </Box>
       )}
@@ -268,7 +268,7 @@ function ToolResultSummary({
   if (!firstLine) return null
 
   return (
-    <Box marginLeft={2} flexShrink={0}>
+    <Box marginLeft={2} flexShrink={0} width={Math.max(0, width - 2)}>
       <Text dimColor>{"\u21B3 "}</Text>
       <Text dimColor>{truncate(firstLine.trim(), width - 6)}</Text>
     </Box>

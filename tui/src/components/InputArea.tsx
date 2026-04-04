@@ -221,7 +221,7 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
   // --- Render ---
   if (!edit.text) {
     return (
-      <Box paddingX={1}>
+      <Box paddingX={1} width={width}>
         <Text>{"\u276F"} </Text>
         <Text inverse> </Text>
         {hasQueuedMessages && <Text dimColor>  Press up to edit queued messages</Text>}
@@ -233,9 +233,9 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
   const lines = edit.text.split("\n")
 
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1} width={width}>
       {lines.map((line, i) => (
-        <Box key={i}>
+        <Box key={i} width={width}>
           {i === 0 ? <Text>{"\u276F"} </Text> : <Text>{"  "}</Text>}
           {i === cursorLine ? (
             <>

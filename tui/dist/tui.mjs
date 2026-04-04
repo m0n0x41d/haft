@@ -33582,8 +33582,13 @@ function reducer(state, action) {
     case "cycle.update":
       return { ...state, cycle: action.params };
     case "subagent.start": {
-      const newState = { ...state, activeSubagents: state.activeSubagents + 1 };
-      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => ({
+      if (!action.params.parentCallId) {
+        return state;
+      }
+      if (!hasAssistantToolByCallId(state, action.params.parentCallId)) {
+        return state;
+      }
+      const newState = updateAssistantToolByCallId(state, action.params.parentCallId, (tool) => ({
         ...tool,
         subagent: {
           ...ensureSubagent(tool, action.params.subagentId),
@@ -33593,10 +33598,16 @@ function reducer(state, action) {
           running: true
         }
       }));
+      return {
+        ...newState,
+        activeSubagents: state.activeSubagents + 1
+      };
     }
     case "subagent.done": {
-      const newState = { ...state, activeSubagents: Math.max(0, state.activeSubagents - 1) };
-      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => {
+      if (!hasAssistantToolBySubagentId(state, action.params.subagentId)) {
+        return state;
+      }
+      const newState = updateAssistantToolBySubagentId(state, action.params.subagentId, (tool) => {
         const subagent = ensureSubagent(tool, action.params.subagentId);
         return {
           ...tool,
@@ -33609,6 +33620,10 @@ function reducer(state, action) {
           }
         };
       });
+      return {
+        ...newState,
+        activeSubagents: Math.max(0, state.activeSubagents - 1)
+      };
     }
     case "overseer.alert":
       return { ...state, overseerAlerts: action.alerts };
@@ -33855,6 +33870,26 @@ function updateAssistantToolByCallId(state, callId, fn) {
 }
 function updateAssistantToolBySubagentId(state, subagentId, fn) {
   return updateAssistantTool(state, (tool) => tool.subagent?.id === subagentId, fn);
+}
+function hasAssistantToolByCallId(state, callId) {
+  return hasAssistantTool(state, (tool) => tool.callId === callId);
+}
+function hasAssistantToolBySubagentId(state, subagentId) {
+  return hasAssistantTool(state, (tool) => tool.subagent?.id === subagentId);
+}
+function hasAssistantTool(state, match) {
+  for (let msgIndex = state.messages.length - 1; msgIndex >= 0; msgIndex--) {
+    const msg = state.messages[msgIndex];
+    if (msg.role !== "assistant" || !msg.tools?.length) {
+      continue;
+    }
+    for (let toolIndex = msg.tools.length - 1; toolIndex >= 0; toolIndex--) {
+      if (match(msg.tools[toolIndex])) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 function updateToolInMessages(state, callId, fn) {
   const messages = state.messages.map((msg) => {
@@ -80142,8 +80177,8 @@ function RegularToolCallView({
   const displayName = TOOL_NAMES[tool.name] ?? tool.name;
   const param = extractToolParam(tool.name, tool.args);
   const summary = getToolSummary(tool);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, width, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { width, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: displayName }),
       param && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
@@ -80163,7 +80198,7 @@ function getToolSummary(tool) {
   return tool.output;
 }
 function StreamingToolOutput({ output, width }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", flexShrink: 0, children: output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", flexShrink: 0, width: Math.max(0, width - 2), children: output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) });
 }
 function SpawnedAgentToolCallView({
   display,
@@ -80179,8 +80214,8 @@ function SpawnedAgentToolCallView({
     return null;
   }
   const showWaitingState = subagent.running && display.children.length === 0 && !display.collapsedChildren && !subagent.summary;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, width, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { width, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: displayName }),
       param && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
@@ -80189,7 +80224,7 @@ function SpawnedAgentToolCallView({
         ")"
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, flexShrink: 0, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, flexShrink: 0, width: nestedWidth, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "cyan", bold: true, children: display.subagentLabel ?? "agent" }),
@@ -80227,13 +80262,13 @@ function CollapsedToolHistoryView({
     running: display.running,
     isError: display.isError
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, width, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { width, children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolStateDot, { running: dotState.running, isError: dotState.isError }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: display.summary }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " (ctrl+o to expand)" })
     ] }),
-    display.hint && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+    display.hint && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, width: Math.max(0, width - 2), children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
       "\u21B3 ",
       truncate(display.hint, width - 8)
     ] }) })
@@ -80300,7 +80335,7 @@ function ToolResultSummary({
   }
   const firstLine = output.split("\n").find((l) => l.trim().length > 0);
   if (!firstLine) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginLeft: 2, flexShrink: 0, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginLeft: 2, flexShrink: 0, width: Math.max(0, width - 2), children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(firstLine.trim(), width - 6) })
   ] });
@@ -80358,7 +80393,7 @@ var init_ToolCallView = __esm({
 // src/components/AssistantToolBatchView.tsx
 function AssistantToolBatchView({ tools, width, expanded }) {
   const display = buildToolBatchDisplay(tools, { expanded });
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: display.map((item) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolCallView, { item, width }, getToolBatchItemKey(item))) });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, width, children: display.map((item) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolCallView, { item, width }, getToolBatchItemKey(item))) });
 }
 var import_jsx_runtime4;
 var init_AssistantToolBatchView = __esm({
@@ -80498,19 +80533,19 @@ var init_ThinkingIndicator = __esm({
 
 // src/components/ChatView.tsx
 function ChatView({ entries, width, toolHistoryExpanded, measureRef }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, ref: measureRef?.(entry.id), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EntryBlock, { entry, width, toolHistoryExpanded }) }, entry.id)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, width, children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, width, ref: measureRef?.(entry.id), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EntryBlock, { entry, width, toolHistoryExpanded }) }, entry.id)) });
 }
 function UserPromptBlock({ text, attachments, width }) {
   const content = ` \u276F ${text}`;
   const pad = Math.max(0, width - content.length);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, flexShrink: 0, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { backgroundColor: "blackBright", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, flexShrink: 0, width, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { backgroundColor: "blackBright", children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: " \u276F" }),
       " ",
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: text }),
       " ".repeat(pad)
     ] }) }),
-    attachments.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
+    attachments.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { paddingX: 1, width, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "\u21B3  ",
       line
     ] }) }, i))
@@ -80518,7 +80553,7 @@ function UserPromptBlock({ text, attachments, width }) {
 }
 function AssistantTextBlock({ text, streaming, width }) {
   const contentWidth = Math.min(width - 4, 120);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, flexShrink: 0, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, flexShrink: 0, width, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexShrink: 0, minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: BLACK_CIRCLE2 }) }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", flexShrink: 1, flexGrow: 1, children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MarkdownView, { text, width: contentWidth }),
@@ -80526,8 +80561,8 @@ function AssistantTextBlock({ text, streaming, width }) {
     ] })
   ] });
 }
-function ThinkingBlock({ lines, hiddenCount }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, flexShrink: 0, children: [
+function ThinkingBlock({ lines, hiddenCount, width }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, flexShrink: 0, width: Math.max(0, width - 3), children: [
     hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "... (",
       hiddenCount,
@@ -80540,8 +80575,8 @@ function ThinkingBlock({ lines, hiddenCount }) {
     ] }, i))
   ] });
 }
-function ErrorBlock({ message }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, flexShrink: 0, children: [
+function ErrorBlock({ message, width }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, flexShrink: 0, width, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "red", bold: true, children: "Error" }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "red", children: message }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: "press esc to dismiss" })
@@ -80569,13 +80604,13 @@ var init_ChatView = __esm({
         case "assistantText":
           return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AssistantTextBlock, { text: entry.text, streaming: entry.streaming, width });
         case "thinking":
-          return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingBlock, { lines: entry.lines, hiddenCount: entry.hiddenCount });
+          return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingBlock, { lines: entry.lines, hiddenCount: entry.hiddenCount, width });
         case "assistantToolBatch":
           return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AssistantToolBatchView, { tools: entry.tools, width, expanded: toolHistoryExpanded });
         case "indicator":
           return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingIndicator, { model: entry.model });
         case "error":
-          return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBlock, { message: entry.message });
+          return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBlock, { message: entry.message, width });
       }
     });
   }
@@ -80589,7 +80624,7 @@ function TranscriptViewport({
   toolHistoryExpanded,
   width
 }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -viewport.cropTop, flexShrink: 0, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -viewport.cropTop, flexShrink: 0, width, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
     ChatView,
     {
       entries,
@@ -80630,8 +80665,8 @@ function StatusBar(props) {
     parts.push(`\u25B2${drift.drifted} drift`);
   }
   const statusText = parts.join(" \u2219 ");
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { paddingX: 1, gap: 2, width, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexGrow: 1, flexShrink: 1, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }) }),
     notification && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: notification })
   ] });
 }
@@ -81035,7 +81070,7 @@ var init_InputArea = __esm({
       }, { isActive: phase === "input" || phase === "streaming" });
       if (phase !== "input" && phase !== "streaming") return null;
       if (!edit.text) {
-        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { paddingX: 1, children: [
+        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { paddingX: 1, width, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
             "\u276F",
             " "
@@ -81046,7 +81081,7 @@ var init_InputArea = __esm({
       }
       const { line: cursorLine, col: cursorCol } = cursorPosition(edit);
       const lines = edit.text.split("\n");
-      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
+      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { width, children: [
         i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
           "\u276F",
           " "
@@ -81793,7 +81828,7 @@ function App2({ client: client2, inputEvents }) {
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
   return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", width, children: [
       atBottom && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexGrow: 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
         TranscriptViewport,
@@ -81819,7 +81854,7 @@ function App2({ client: client2, inputEvents }) {
     showQuestion && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
     pickerMode && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
+    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
       " \u276F ",
       msg,
       " "

@@ -3,10 +3,10 @@
 // Does NOT guess rendered heights. Does NOT wrap text.
 // Just transforms the data shape for the component layer.
 
-import type { ChatMessage, ToolCall } from "../protocol/types.js"
+import type { ChatMessage, MessageAttachment, ToolCall } from "../protocol/types.js"
 
 export type TranscriptEntry =
-  | { type: "userPrompt"; id: string; text: string }
+  | { type: "userPrompt"; id: string; text: string; attachments: readonly MessageAttachment[] }
   | { type: "assistantText"; id: string; text: string; streaming: boolean }
   | { type: "thinking"; id: string; lines: string[]; hiddenCount: number }
   | { type: "assistantToolBatch"; id: string; tools: ToolCall[] }
@@ -29,7 +29,12 @@ export function buildTranscript(opts: TranscriptOptions): TranscriptEntry[] {
 
   for (const msg of opts.messages) {
     if (msg.role === "user") {
-      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text: msg.text })
+      entries.push({
+        type: "userPrompt",
+        id: `${msg.id}-user`,
+        text: msg.text,
+        attachments: msg.attachments ?? [],
+      })
       continue
     }
 

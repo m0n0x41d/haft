@@ -42,7 +42,7 @@ const EntryBlock = React.memo(function EntryBlock({
 }) {
   switch (entry.type) {
     case "userPrompt":
-      return <UserPromptBlock text={entry.text} width={width} />
+      return <UserPromptBlock text={entry.text} attachments={entry.attachments} width={width} />
     case "assistantText":
       return <AssistantTextBlock text={entry.text} streaming={entry.streaming} width={width} />
     case "thinking":
@@ -58,8 +58,16 @@ const EntryBlock = React.memo(function EntryBlock({
 
 // --- Entry renderers ---
 
-function UserPromptBlock({ text, width }: { text: string; width: number }) {
-  const lines = buildUserPromptDisplayLines(text)
+function UserPromptBlock({
+  text,
+  attachments,
+  width,
+}: {
+  text: string
+  attachments: Extract<TranscriptEntry, { type: "userPrompt" }>["attachments"]
+  width: number
+}) {
+  const lines = buildUserPromptDisplayLines(text, attachments)
 
   return (
     <Box flexDirection="column" marginTop={1} flexShrink={0} width={width}>

@@ -21,7 +21,7 @@ export function estimateEntryHeight(
 ): number {
   switch (entry.type) {
     case "userPrompt":
-      return 1 + countWrappedUserPromptRows(entry.text, width)
+      return 1 + countWrappedUserPromptRows(entry.text, width, entry.attachments)
 
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120))

@@ -283,11 +283,15 @@ export function App({ client, inputEvents }: AppProps) {
       }
     }
     dispatch({ type: "submitted" })
-    const displayParts = [text]
-    for (const a of attachments) {
-      displayParts.push(a.isImage ? `[Image #${a.id}]` : `[${a.name}]`)
-    }
-    dispatch({ type: "msg.update", params: { id: `user-${Date.now()}`, text: displayParts.join("\n"), streaming: false } })
+    dispatch({
+      type: "msg.update",
+      params: {
+        id: `user-${Date.now()}`,
+        text,
+        attachments: toMessageAttachments(attachments),
+        streaming: false,
+      },
+    })
     const submitAttachments = attachments.map((a) => ({ name: a.name, path: a.path, isImage: a.isImage, mimeType: a.isImage ? "image/*" : undefined }))
     client.send("submit", { text, attachments: submitAttachments.length > 0 ? submitAttachments : undefined })
     setAttachments([])
@@ -511,6 +515,17 @@ export function App({ client, inputEvents }: AppProps) {
       />
     </Box>
   )
+}
+
+function toMessageAttachments(items: readonly AttachmentItem[]) {
+  if (items.length === 0) {
+    return undefined
+  }
+
+  return items.map((item) => ({
+    name: item.name,
+    isImage: item.isImage,
+  }))
 }
 
 function pickerTitle(mode: PickerMode): string {

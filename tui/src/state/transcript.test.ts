@@ -8,7 +8,13 @@ test("groups assistant tools into one batch entry", () => {
     {
       id: "user-1",
       role: "user",
-      text: "Fix the TUI\n[file.txt]",
+      text: "Fix the TUI",
+      attachments: [
+        {
+          name: "file.txt",
+          isImage: false,
+        },
+      ],
     },
     {
       id: "assistant-1",
@@ -101,6 +107,12 @@ test("preserves the full multiline user prompt text in transcript entries", () =
         id: "user-1",
         role: "user",
         text: "Fix the transcript\n[not an attachment]\nKeep every line",
+        attachments: [
+          {
+            name: "clipboard.png",
+            isImage: true,
+          },
+        ],
       },
     ],
     streaming: false,
@@ -115,6 +127,12 @@ test("preserves the full multiline user prompt text in transcript entries", () =
       type: "userPrompt",
       id: "user-1-user",
       text: "Fix the transcript\n[not an attachment]\nKeep every line",
+      attachments: [
+        {
+          name: "clipboard.png",
+          isImage: true,
+        },
+      ],
     },
   ])
 })

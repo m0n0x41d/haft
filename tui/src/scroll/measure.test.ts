@@ -102,6 +102,21 @@ test("estimates multiline user prompts from their full preserved text", () => {
     type: "userPrompt",
     id: "user-1",
     text: "first line\n[not an attachment]\nthird line",
+    attachments: [],
+  }
+
+  assert.equal(estimateEntryHeight(entry, 80), 4)
+})
+
+test("counts structured attachments separately from the user prompt text", () => {
+  const entry: TranscriptEntry = {
+    type: "userPrompt",
+    id: "user-1",
+    text: "[not an attachment]",
+    attachments: [
+      { name: "clipboard.png", isImage: true },
+      { name: "spec.md", isImage: false },
+    ],
   }
 
   assert.equal(estimateEntryHeight(entry, 80), 4)

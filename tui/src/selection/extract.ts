@@ -4,6 +4,7 @@
 import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 import { findEntryIndexForLine, type VisibleWindow } from "../scroll/measure.js"
+import { serializeUserPrompt } from "../components/userPrompt.js"
 
 export interface ViewportLayout {
   chatHeight: number
@@ -37,7 +38,7 @@ export function termRowToEntryIndex(
 // Extract readable text from a transcript entry.
 function entryText(entry: TranscriptEntry): string {
   switch (entry.type) {
-    case "userPrompt": return entry.text
+    case "userPrompt": return serializeUserPrompt(entry.text, entry.attachments)
     case "assistantText": return entry.text
     case "thinking": return entry.lines.join("\n")
     case "assistantToolBatch":

@@ -3,6 +3,7 @@
 
 import type {
   ChatMessage,
+  MessageAttachment,
   ToolCall,
   WireMsgInfo,
   WireToolCall,
@@ -135,6 +136,7 @@ export function reducer(state: AppState, action: Action): AppState {
         id: params.id,
         role: existing?.role ?? (params.id.startsWith("user-") ? "user" : "assistant"),
         text: params.text,
+        attachments: params.attachments ?? existing?.attachments,
         thinking: params.thinking,
         tools: mergeToolCollections(existing?.tools, normalizeToolCalls(params.tools)),
       }
@@ -368,9 +370,23 @@ function normalizeMessage(message: WireMsgInfo): ChatMessage {
     id: message.id,
     role: message.role,
     text: message.text,
+    attachments: normalizeMessageAttachments(message.attachments),
     thinking: message.thinking,
     tools: normalizeToolCalls(message.tools),
   }
+}
+
+function normalizeMessageAttachments(
+  attachments?: MessageAttachment[],
+): MessageAttachment[] | undefined {
+  if (!attachments?.length) {
+    return undefined
+  }
+
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    isImage: attachment.isImage,
+  }))
 }
 
 function normalizeToolCalls(tools?: WireToolCall[]): ToolCall[] | undefined {

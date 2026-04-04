@@ -364,3 +364,38 @@ test("matches interleaved subagent events to exact parent tool call ids", () => 
 
   assert.equal(state.activeSubagents, 0)
 })
+
+test("keeps structured attachments separate from the user prompt text", () => {
+  const state = reduceActions([
+    {
+      type: "msg.update",
+      params: {
+        id: "user-1",
+        text: "[not an attachment]",
+        attachments: [
+          {
+            name: "clipboard.png",
+            isImage: true,
+          },
+        ],
+        streaming: false,
+      },
+    },
+  ])
+
+  assert.deepEqual(state.messages, [
+    {
+      id: "user-1",
+      role: "user",
+      text: "[not an attachment]",
+      attachments: [
+        {
+          name: "clipboard.png",
+          isImage: true,
+        },
+      ],
+      thinking: undefined,
+      tools: undefined,
+    },
+  ])
+})

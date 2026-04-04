@@ -376,8 +376,13 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 			"gRPC": {"latency": "18ms", "cost": "$180"},
 		},
 		"non_dominated_set": []string{"REST", "gRPC"},
-		"selected_ref":      "gRPC",
-		"policy_applied":    "Minimize latency within budget.",
+		"pareto_tradeoffs": []map[string]any{
+			{"variant": "REST", "summary": "Lower cost, but slower latency."},
+			{"variant": "gRPC", "summary": "Lowest latency, but higher cost."},
+		},
+		"selected_ref":             "gRPC",
+		"recommendation_rationale": "Latency is the decisive dimension within the accepted budget.",
+		"policy_applied":           "Minimize latency within budget.",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -391,6 +396,12 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	if !strings.Contains(compareResult.DisplayText, "Recommendation (advisory): gRPC") {
 		t.Fatalf("expected advisory recommendation in compare display, got %q", compareResult.DisplayText)
 	}
+	if !strings.Contains(compareResult.DisplayText, "Pareto-front trade-offs:") {
+		t.Fatalf("expected compare display to include Pareto trade-offs, got %q", compareResult.DisplayText)
+	}
+	if !strings.Contains(compareResult.DisplayText, "Recommendation rationale: Latency is the decisive dimension within the accepted budget.") {
+		t.Fatalf("expected compare display to include recommendation rationale, got %q", compareResult.DisplayText)
+	}
 	if strings.Contains(compareResult.DisplayText, "Selected:") {
 		t.Fatalf("compare display still presents recommendation as selection: %q", compareResult.DisplayText)
 	}
@@ -403,6 +414,12 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	fields := portfolio.UnmarshalPortfolioFields()
 	if fields.Comparison == nil || fields.Comparison.ParityPlan == nil {
 		t.Fatal("expected structured parity plan to round-trip through compare tool")
+	}
+	if len(fields.Comparison.ParetoTradeoffs) != 2 {
+		t.Fatalf("expected persisted Pareto trade-offs, got %+v", fields.Comparison.ParetoTradeoffs)
+	}
+	if got := fields.Comparison.RecommendationRationale; got != "Latency is the decisive dimension within the accepted budget." {
+		t.Fatalf("unexpected recommendation rationale: %q", got)
 	}
 	if got := fields.Comparison.ParityPlan.Window; got != "same 15m replay window" {
 		t.Fatalf("parity window = %q", got)

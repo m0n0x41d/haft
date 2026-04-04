@@ -34,6 +34,7 @@ export interface WireMsgInfo {
   id: string
   role: "user" | "assistant"
   text: string
+  attachments?: MessageAttachment[]
   thinking?: string
   tools?: WireToolCall[]
 }
@@ -41,6 +42,7 @@ export interface WireMsgInfo {
 export interface MsgUpdateParams {
   id: string
   text: string
+  attachments?: MessageAttachment[]
   thinking?: string
   tools?: WireToolCall[]
   streaming: boolean
@@ -61,8 +63,14 @@ export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   text: string
+  attachments?: MessageAttachment[]
   thinking?: string
   tools?: ToolCall[]
+}
+
+export interface MessageAttachment {
+  name: string
+  isImage: boolean
 }
 
 export interface SubagentRun {

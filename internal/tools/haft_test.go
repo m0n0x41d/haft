@@ -1012,3 +1012,116 @@ func TestHaftDecisionTool_SuppressesFirstModuleCoverageWarningWhenGoverned(t *te
 		t.Fatal("expected first_module_coverage to remain false for governed module")
 	}
 }
+
+func TestHaftDecisionTool_SchemaIncludesEvidenceAction(t *testing.T) {
+	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
+	schema := tool.Schema()
+
+	properties, ok := schema.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties = %T, want map[string]any", schema.Parameters["properties"])
+	}
+
+	actionProp, ok := properties["action"].(map[string]any)
+	if !ok {
+		t.Fatalf("action property = %T, want map[string]any", properties["action"])
+	}
+
+	enum, ok := actionProp["enum"].([]string)
+	if !ok {
+		t.Fatalf("action enum = %T, want []string", actionProp["enum"])
+	}
+
+	foundEvidence := false
+	for _, action := range enum {
+		if action == "evidence" {
+			foundEvidence = true
+			break
+		}
+	}
+	if !foundEvidence {
+		t.Fatalf("action enum %v does not include evidence", enum)
+	}
+
+	for _, key := range []string{
+		"artifact_ref",
+		"evidence_content",
+		"evidence_type",
+		"evidence_verdict",
+		"carrier_ref",
+		"congruence_level",
+	} {
+		if _, ok := properties[key]; !ok {
+			t.Fatalf("schema missing %q evidence field", key)
+		}
+	}
+}
+
+func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	decisionResult, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Latency wins inside the compared portfolio.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisionRef := decisionResult.Meta.ArtifactRef
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":           "evidence",
+		"artifact_ref":     decisionRef,
+		"evidence_content": "Load test on staging sustained 18ms p95 under the expected request mix.",
+		"evidence_type":    "benchmark",
+		"evidence_verdict": "supports",
+		"carrier_ref":      "reports/loadtest.txt",
+		"congruence_level": 2,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Meta == nil {
+		t.Fatal("expected evidence metadata")
+	}
+	if result.Meta.Kind != "evidence" {
+		t.Fatalf("meta kind = %q, want evidence", result.Meta.Kind)
+	}
+	if result.Meta.ArtifactRef != decisionRef {
+		t.Fatalf("meta artifact ref = %q, want %q", result.Meta.ArtifactRef, decisionRef)
+	}
+	if result.Meta.Operation != "evidence" {
+		t.Fatalf("meta operation = %q, want evidence", result.Meta.Operation)
+	}
+	if !strings.Contains(result.DisplayText, "Evidence attached:") {
+		t.Fatalf("unexpected display text: %s", result.DisplayText)
+	}
+	if !strings.Contains(result.DisplayText, "WLNK:") {
+		t.Fatalf("expected WLNK summary in display text: %s", result.DisplayText)
+	}
+
+	items, err := fixture.store.GetEvidenceItems(fixture.ctx, decisionRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 evidence item, got %d", len(items))
+	}
+
+	item := items[0]
+	if item.Type != "benchmark" {
+		t.Fatalf("evidence type = %q, want benchmark", item.Type)
+	}
+	if item.Verdict != "supports" {
+		t.Fatalf("evidence verdict = %q, want supports", item.Verdict)
+	}
+	if item.CarrierRef != "reports/loadtest.txt" {
+		t.Fatalf("carrier ref = %q, want reports/loadtest.txt", item.CarrierRef)
+	}
+	if item.CongruenceLevel != 2 {
+		t.Fatalf("congruence level = %d, want 2", item.CongruenceLevel)
+	}
+}

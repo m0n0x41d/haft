@@ -22,7 +22,7 @@ When reporting refresh results to the user:
 Common use cases:
 - Problem no longer relevant? → `deprecate`
 - Note superseded by a full decision? → `supersede` with the decision ref
-- Decision still valid but expired? → `waive` with evidence
+- Decision still valid but expired? → `waive` with justification evidence text; if the extension depends on durable benchmark/test/research artifacts, also attach them via `haft_decision(action="evidence", ...)`
 - Problem needs re-examination? → `reopen` (creates new ProblemCard with lineage)
 
 $ARGUMENTS

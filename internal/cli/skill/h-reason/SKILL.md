@@ -99,11 +99,11 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 | Command-driven mode | **supported** | Agents can also be steered with installed `/h-*` commands or prompts. |
 | Refresh (valid_until) | **enforced** | All artifacts (decisions, problems, portfolios) with expired valid_until detected by scan. |
 | Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
-| CL (congruence) | **artifact-level** | Reliability/evidence calculations exist in artifact/runtime code, but not as a `haft_decision` action exposed in the current haft tool schema. |
+| CL (congruence) | **artifact-level** | Reliability/evidence calculations exist in artifact/runtime code. `haft_decision(action="evidence")` stores explicit evidence with CL values, but the tool does not auto-infer CL from arbitrary sources. |
 | F-G-R | **textual** | Formality labels may exist in artifact data, but are not a first-class haft decision-tool workflow step. |
 | NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions in exploration/compare instead. |
 | Impact measurement | **tracked** | `haft_decision(action="measure")` records post-implementation findings against acceptance criteria. |
-| Evidence attachment | **not exposed here** | Do not instruct agents to call `haft_decision(action="evidence")`; that action is not available in the current haft tool schema. |
+| Evidence attachment | **supported** | Use `haft_decision(action="evidence")` to attach explicit benchmark/test/research/audit evidence to an artifact. This complements `baseline` + `measure`; it does not replace post-implementation measurement. |
 
 **Key rule: don't describe textual features as if they compute something.** When you say "WLNK bounds quality," you mean "the user identified what bounds quality" — not that the system calculated it.
 
@@ -246,10 +246,12 @@ After implementing a decision:
    - Run tests (`go test`, `npm test`, `cargo test`) and confirm they pass
    - Read affected files and verify the implementation matches the decision
    - Ask the user to confirm implementation
-3. Call `haft_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
+3. If you have explicit supporting or contradictory artifacts, attach them with `haft_decision(action="evidence", artifact_ref="<id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes")`
+4. Call `haft_decision(action="measure", decision_ref="<id>", findings="...", verdict="accepted")` — record verified results
 
 **Calling measure from memory without verification is a FPF B.5:4.3 violation.**
 **Calling measure without a baseline (when `affected_files` exist) degrades evidence to CL1 self-evidence.**
+**Calling evidence without measure is not enough to close the implementation loop.**
 
 This closes the lemniscate. Without measure, the decision stays open.
 

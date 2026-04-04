@@ -63,4 +63,10 @@ After presenting: if the user confirms, record the decision. If any probe kills 
 
 **Incorporate findings:** The counter-argument and tail scenarios should be captured in `weakest_link`, `admissibility`, or `rollback.triggers` — don't just display them, persist them in the decision record.
 
+## Evidence workflow after deciding
+
+- Use `haft_decision(action="evidence", artifact_ref="<decision-id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes")` when you have explicit supporting or contradictory artifacts.
+- Use `haft_decision(action="baseline", decision_ref="<decision-id>")` before `measure` when the decision has `affected_files`.
+- Use `haft_decision(action="measure", ...)` for post-implementation outcome. Attached evidence complements measure; it does not replace it.
+
 $ARGUMENTS

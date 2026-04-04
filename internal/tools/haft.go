@@ -599,7 +599,7 @@ func normalizeDecisionSelectionValue(value string) string {
 }
 
 // ---------------------------------------------------------------------------
-// HaftDecisionTool — decide with rationale, measure with evidence
+// HaftDecisionTool — decide with rationale, attach evidence, baseline, measure
 // ---------------------------------------------------------------------------
 
 type HaftDecisionTool struct {
@@ -622,18 +622,19 @@ func (t *HaftDecisionTool) Name() string { return "haft_decision" }
 func (t *HaftDecisionTool) Schema() agent.ToolSchema {
 	return agent.ToolSchema{
 		Name: "haft_decision",
-		Description: `Record decisions and measurements.
+		Description: `Record decisions, evidence, and measurements.
 
 Actions:
 - decide: Record a formal decision with rationale (FPF E.9 DRR).
   Includes: selected variant, why selected, invariants, rollback plan, weakest link.
+- evidence: Attach an explicit evidence item to any artifact.
 - baseline: Snapshot affected files after implementation and before measurement.
 - measure: Record measurement results against acceptance criteria.
   Closes the lemniscate cycle with inductive evidence.`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":          map[string]any{"type": "string", "enum": []string{"decide", "baseline", "measure"}, "description": "decide | baseline | measure"},
+				"action":          map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
 				"problem_ref":     map[string]any{"type": "string", "description": "Problem ID (decide)"},
 				"portfolio_ref":   map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
 				"selected_title":  map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
@@ -661,6 +662,12 @@ Actions:
 				"criteria_met":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Passing criteria (measure)"},
 				"criteria_not_met": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Failing criteria (measure)"},
 				"verdict":          map[string]any{"type": "string", "enum": []string{"accepted", "partial", "failed"}, "description": "Verdict (measure)"},
+				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to attach evidence to (evidence)"},
+				"evidence_content": map[string]any{"type": "string", "description": "The evidence itself (evidence)"},
+				"evidence_type":    map[string]any{"type": "string", "description": "measurement | test | research | benchmark | audit (evidence)"},
+				"evidence_verdict": map[string]any{"type": "string", "enum": []string{"supports", "weakens", "refutes"}, "description": "How the evidence bears on the artifact (evidence)"},
+				"carrier_ref":      map[string]any{"type": "string", "description": "File path or URL for the evidence source (evidence)"},
+				"congruence_level": map[string]any{"type": "integer", "description": "CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed (evidence)"},
 				"mode":             map[string]any{"type": "string", "description": "tactical | standard | deep"},
 			},
 			"required": []any{"action"},
@@ -703,6 +710,8 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 			}
 		}
 		return t.decide(ctx, args)
+	case "evidence":
+		return t.evidence(ctx, args)
 	case "baseline":
 		return t.baseline(ctx, args)
 	case "measure":
@@ -763,6 +772,46 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 			Kind:        "decision",
 			ArtifactRef: a.Meta.ID,
 			Operation:   "decide",
+		},
+	}, nil
+}
+
+func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	input := artifact.EvidenceInput{
+		CongruenceLevel: -1,
+		FormalityLevel:  -1,
+		ArtifactRef:     jsonStr(args, "artifact_ref"),
+		Content:         jsonStr(args, "evidence_content"),
+		Type:            jsonStr(args, "evidence_type"),
+		Verdict:         jsonStr(args, "evidence_verdict"),
+		CarrierRef:      jsonStr(args, "carrier_ref"),
+	}
+
+	if level, ok := args["congruence_level"].(float64); ok {
+		input.CongruenceLevel = int(level)
+	}
+
+	item, err := artifact.AttachEvidence(ctx, t.store, input)
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	wlnk := artifact.ComputeWLNKSummary(ctx, t.store, input.ArtifactRef)
+	display := fmt.Sprintf(
+		"Evidence attached: %s [%s]\nArtifact: %s\nVerdict: %s\nWLNK: %s",
+		item.ID,
+		item.Type,
+		input.ArtifactRef,
+		item.Verdict,
+		wlnk.Summary,
+	)
+
+	return agent.ToolResult{
+		DisplayText: display,
+		Meta: &agent.ArtifactMeta{
+			Kind:        "evidence",
+			ArtifactRef: input.ArtifactRef,
+			Operation:   "evidence",
 		},
 	}, nil
 }

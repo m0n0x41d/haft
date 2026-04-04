@@ -2,8 +2,10 @@ package fpf
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,9 +15,6 @@ import (
 func buildTestIndex(t *testing.T) (string, *sql.DB, func()) {
 	t.Helper()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
 	chunks := []SpecChunk{
 		{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Boundary statements need routing.", PatternID: "A.6", Keywords: []string{"boundary", "routing"}, Queries: []string{"How do I route boundary statements?"}, RelatedIDs: []string{"A.6.B"}},
 		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Laws, admissibility, deontics, and work-effects.", PatternID: "A.6.B", Keywords: []string{"boundary", "deontics"}, Queries: []string{"What is the Boundary Norm Square?"}},
@@ -24,12 +23,23 @@ func buildTestIndex(t *testing.T) (string, *sql.DB, func()) {
 		{ID: 4, Heading: "E.9 — Decision Record", Level: 2, Body: "Decision rationale and invariants.", PatternID: "E.9", Keywords: []string{"decision", "record", "drr"}, Queries: []string{"What is a decision record?"}},
 	}
 
+	return buildIndexWithChunks(t, chunks, true)
+}
+
+func buildIndexWithChunks(t *testing.T, chunks []SpecChunk, withMeta bool) (string, *sql.DB, func()) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
 	if err := BuildSpecIndex(dbPath, chunks); err != nil {
 		t.Fatalf("BuildSpecIndex failed: %v", err)
 	}
 
-	if err := SetSpecMeta(dbPath, "fpf_commit", "abc1234"); err != nil {
-		t.Fatalf("SetSpecMeta failed: %v", err)
+	if withMeta {
+		if err := SetSpecMeta(dbPath, "fpf_commit", "abc1234"); err != nil {
+			t.Fatalf("SetSpecMeta failed: %v", err)
+		}
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -231,6 +241,128 @@ func TestSearchSpec_RelatedExpansion(t *testing.T) {
 	}
 }
 
+func TestSearchSpec_RelatedExpansionPrefersTypedEdges(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+			Edges: []SpecEdge{
+				{FromPatternID: "A.6", ToPatternID: "B.1", EdgeType: SpecEdgeTypeBuildsOn},
+				{FromPatternID: "A.6", ToPatternID: "B.2", EdgeType: SpecEdgeTypePrerequisiteFor},
+				{FromPatternID: "A.6", ToPatternID: "B.3", EdgeType: SpecEdgeTypeCoordinatesWith},
+				{FromPatternID: "A.6", ToPatternID: "B.5", EdgeType: SpecEdgeTypeInforms},
+			},
+			RelatedIDs: []string{"B.4"},
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+		{ID: 2, Heading: "B.1 — Builds On Target", Level: 2, Body: "Builds on.", PatternID: "B.1"},
+		{ID: 3, Heading: "B.2 — Prerequisite Target", Level: 2, Body: "Prerequisite.", PatternID: "B.2"},
+		{ID: 4, Heading: "B.3 — Coordinates Target", Level: 2, Body: "Coordinates.", PatternID: "B.3"},
+		{ID: 5, Heading: "B.4 — Related Target", Level: 2, Body: "Related.", PatternID: "B.4"},
+		{ID: 6, Heading: "B.5 — Informs Target", Level: 2, Body: "Informs.", PatternID: "B.5"},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "boundary routing", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, "related")
+	got := resultPatternIDs(relatedResults)
+	want := []string{"B.1", "B.2", "B.3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected related expansion order: got %v want %v", got, want)
+	}
+	if len(relatedResults) == 0 {
+		t.Fatal("expected related results")
+	}
+	if relatedResults[0].Reason != "builds_on via A.6" {
+		t.Fatalf("unexpected related reason: %#v", relatedResults[0])
+	}
+}
+
+func TestSearchSpec_RelatedExpansionFallsBackToWeakerEdges(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:         0,
+			Heading:    "A.6 - Signature Stack & Boundary Discipline",
+			Level:      2,
+			Body:       "Boundary statements need routing.",
+			PatternID:  "A.6",
+			RelatedIDs: []string{"B.9"},
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+		{ID: 2, Heading: "B.9 — Related Target", Level: 2, Body: "Related.", PatternID: "B.9"},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "boundary routing", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, "related")
+	if len(relatedResults) != 1 {
+		t.Fatalf("expected one related fallback result, got %#v", relatedResults)
+	}
+	if relatedResults[0].PatternID != "B.9" {
+		t.Fatalf("unexpected fallback result: %#v", relatedResults[0])
+	}
+	if relatedResults[0].Reason != "related via A.6" {
+		t.Fatalf("unexpected fallback reason: %#v", relatedResults[0])
+	}
+}
+
+func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	for index := 0; index < relatedExpansionLimit+3; index++ {
+		patternID := fmt.Sprintf("B.%d", index+1)
+		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
+			FromPatternID: "A.6",
+			ToPatternID:   patternID,
+			EdgeType:      SpecEdgeTypeBuildsOn,
+		})
+		chunks = append(chunks, SpecChunk{
+			ID:        index + 2,
+			Heading:   patternID + " — Related Target",
+			Level:     2,
+			Body:      "Related.",
+			PatternID: patternID,
+		})
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "boundary routing", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, "related")
+	if len(relatedResults) != relatedExpansionLimit {
+		t.Fatalf("expected %d related results, got %d", relatedExpansionLimit, len(relatedResults))
+	}
+}
+
 func TestSearchSpec_FindsByKeywordFallback(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
@@ -325,4 +457,22 @@ func TestSetSpecMeta_AndGetSpecMeta(t *testing.T) {
 	if val != "abc1234" {
 		t.Fatalf("expected abc1234, got %q", val)
 	}
+}
+
+func filterResultsByTier(results []SpecSearchResult, tier string) []SpecSearchResult {
+	filtered := make([]SpecSearchResult, 0, len(results))
+	for _, result := range results {
+		if result.Tier == tier {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+func resultPatternIDs(results []SpecSearchResult) []string {
+	patternIDs := make([]string, 0, len(results))
+	for _, result := range results {
+		patternIDs = append(patternIDs, result.PatternID)
+	}
+	return patternIDs
 }

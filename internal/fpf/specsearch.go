@@ -28,6 +28,39 @@ type Route struct {
 	Chain       []string
 }
 
+const relatedExpansionLimit = 10
+
+var relatedExpansionPreferredEdgeTypes = []SpecEdgeType{
+	SpecEdgeTypeBuildsOn,
+	SpecEdgeTypePrerequisiteFor,
+	SpecEdgeTypeCoordinatesWith,
+}
+
+var relatedExpansionFallbackEdgeTypes = []SpecEdgeType{
+	SpecEdgeTypeRelated,
+	SpecEdgeTypeConstrains,
+	SpecEdgeTypeInforms,
+	SpecEdgeTypeUsedBy,
+	SpecEdgeTypeRefines,
+	SpecEdgeTypeSpecialisedBy,
+}
+
+type relatedExpansionPolicy struct {
+	MaxResults int
+}
+
+type relatedCandidate struct {
+	FromPatternID string
+	ToPatternID   string
+	Heading       string
+	Snippet       string
+	EdgeType      SpecEdgeType
+}
+
+var defaultRelatedExpansionPolicy = relatedExpansionPolicy{
+	MaxResults: relatedExpansionLimit,
+}
+
 var defaultRoutes = []Route{
 	{
 		ID:          "project-alignment",
@@ -327,35 +360,199 @@ func searchRelated(db *sql.DB, seeds []string) ([]SpecSearchResult, error) {
 	if len(seeds) == 0 {
 		return nil, nil
 	}
+
+	candidates, err := loadRelatedCandidates(db, seeds)
+	if err != nil {
+		return nil, err
+	}
+
+	selected := selectRelatedCandidates(candidates, seeds, defaultRelatedExpansionPolicy)
+	results := buildRelatedResults(selected)
+	return results, nil
+}
+
+func loadRelatedCandidates(db *sql.DB, seeds []string) ([]relatedCandidate, error) {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(seeds)), ",")
 	args := make([]any, 0, len(seeds))
 	for _, seed := range seeds {
 		args = append(args, seed)
 	}
 	rows, err := db.Query(fmt.Sprintf(`
-		SELECT DISTINCT s.pattern_id, s.heading, substr(s.body, 1, 280)
+		SELECT e.from_pattern_id, e.to_pattern_id, e.edge_type, s.heading, substr(s.body, 1, 280)
 		FROM section_edges e
 		JOIN sections s ON s.pattern_id = e.to_pattern_id
 		WHERE e.from_pattern_id IN (%s)
-		LIMIT 10
 	`, placeholders), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var results []SpecSearchResult
+	var candidates []relatedCandidate
 	for rows.Next() {
-		var result SpecSearchResult
-		if err := rows.Scan(&result.PatternID, &result.Heading, &result.Snippet); err != nil {
+		var candidate relatedCandidate
+		var edgeType string
+		if err := rows.Scan(&candidate.FromPatternID, &candidate.ToPatternID, &edgeType, &candidate.Heading, &candidate.Snippet); err != nil {
 			return nil, err
 		}
-		result.Rank = -200
-		result.Tier = "related"
-		result.Reason = "related sections"
+		candidate.EdgeType = SpecEdgeType(edgeType)
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
+}
+
+func selectRelatedCandidates(candidates []relatedCandidate, seeds []string, policy relatedExpansionPolicy) []relatedCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	if policy.MaxResults <= 0 {
+		policy.MaxResults = relatedExpansionLimit
+	}
+
+	seedOrder := buildSeedOrder(seeds)
+	deduped := dedupeRelatedCandidates(candidates, seedOrder)
+	preferred := filterRelatedCandidates(deduped, isPreferredRelatedEdge)
+	fallback := filterRelatedCandidates(deduped, func(candidate relatedCandidate) bool {
+		return !isPreferredRelatedEdge(candidate)
+	})
+
+	sortRelatedCandidates(preferred, seedOrder, relatedExpansionPreferredEdgeTypes)
+	sortRelatedCandidates(fallback, seedOrder, relatedExpansionFallbackEdgeTypes)
+
+	if len(preferred) > 0 {
+		return truncateRelatedCandidates(preferred, policy.MaxResults)
+	}
+
+	return truncateRelatedCandidates(fallback, policy.MaxResults)
+}
+
+func buildRelatedResults(candidates []relatedCandidate) []SpecSearchResult {
+	results := make([]SpecSearchResult, 0, len(candidates))
+	for index, candidate := range candidates {
+		result := SpecSearchResult{
+			PatternID: candidate.ToPatternID,
+			Heading:   candidate.Heading,
+			Snippet:   candidate.Snippet,
+			Rank:      -200 + float64(index),
+			Tier:      "related",
+			Reason:    formatRelatedReason(candidate),
+		}
 		results = append(results, result)
 	}
-	return results, rows.Err()
+	return results
+}
+
+func buildSeedOrder(seeds []string) map[string]int {
+	order := make(map[string]int, len(seeds))
+	for index, seed := range seeds {
+		if _, ok := order[seed]; ok {
+			continue
+		}
+		order[seed] = index
+	}
+	return order
+}
+
+func dedupeRelatedCandidates(candidates []relatedCandidate, seedOrder map[string]int) []relatedCandidate {
+	deduped := make(map[string]relatedCandidate, len(candidates))
+	for _, candidate := range candidates {
+		existing, ok := deduped[candidate.ToPatternID]
+		if ok && !relatedCandidateLess(candidate, existing, seedOrder, relatedExpansionPreferredEdgeTypes, relatedExpansionFallbackEdgeTypes) {
+			continue
+		}
+		deduped[candidate.ToPatternID] = candidate
+	}
+
+	results := make([]relatedCandidate, 0, len(deduped))
+	for _, candidate := range deduped {
+		results = append(results, candidate)
+	}
+	return results
+}
+
+func filterRelatedCandidates(candidates []relatedCandidate, keep func(relatedCandidate) bool) []relatedCandidate {
+	filtered := make([]relatedCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if keep(candidate) {
+			filtered = append(filtered, candidate)
+		}
+	}
+	return filtered
+}
+
+func isPreferredRelatedEdge(candidate relatedCandidate) bool {
+	return edgeOrder(candidate.EdgeType, relatedExpansionPreferredEdgeTypes) >= 0
+}
+
+func sortRelatedCandidates(candidates []relatedCandidate, seedOrder map[string]int, edgeTypes []SpecEdgeType) {
+	sort.Slice(candidates, func(i, j int) bool {
+		return relatedCandidateLess(candidates[i], candidates[j], seedOrder, edgeTypes)
+	})
+}
+
+func relatedCandidateLess(left, right relatedCandidate, seedOrder map[string]int, edgeOrders ...[]SpecEdgeType) bool {
+	leftPriority := candidatePriority(left, edgeOrders...)
+	rightPriority := candidatePriority(right, edgeOrders...)
+	if leftPriority != rightPriority {
+		return leftPriority < rightPriority
+	}
+
+	leftSeedOrder := seedIndex(left.FromPatternID, seedOrder)
+	rightSeedOrder := seedIndex(right.FromPatternID, seedOrder)
+	if leftSeedOrder != rightSeedOrder {
+		return leftSeedOrder < rightSeedOrder
+	}
+
+	if left.ToPatternID != right.ToPatternID {
+		return left.ToPatternID < right.ToPatternID
+	}
+
+	if left.Heading != right.Heading {
+		return left.Heading < right.Heading
+	}
+
+	return left.FromPatternID < right.FromPatternID
+}
+
+func candidatePriority(candidate relatedCandidate, edgeOrders ...[]SpecEdgeType) int {
+	offset := 0
+	for _, edgeTypes := range edgeOrders {
+		order := edgeOrder(candidate.EdgeType, edgeTypes)
+		if order >= 0 {
+			return offset + order
+		}
+		offset += len(edgeTypes)
+	}
+	return offset
+}
+
+func edgeOrder(edgeType SpecEdgeType, edgeTypes []SpecEdgeType) int {
+	for index, candidate := range edgeTypes {
+		if edgeType == candidate {
+			return index
+		}
+	}
+	return -1
+}
+
+func seedIndex(patternID string, order map[string]int) int {
+	index, ok := order[patternID]
+	if ok {
+		return index
+	}
+	return len(order)
+}
+
+func truncateRelatedCandidates(candidates []relatedCandidate, maxResults int) []relatedCandidate {
+	if len(candidates) <= maxResults {
+		return candidates
+	}
+	return candidates[:maxResults]
+}
+
+func formatRelatedReason(candidate relatedCandidate) string {
+	return fmt.Sprintf("%s via %s", candidate.EdgeType, candidate.FromPatternID)
 }
 
 func searchFTS(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) {

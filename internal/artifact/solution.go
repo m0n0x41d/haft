@@ -339,6 +339,9 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	}
 
 	identities := portfolioVariantIdentities(a)
+	if len(identities) == 0 {
+		return nil, "", fmt.Errorf("portfolio %s declares no recoverable variants — repair or re-explore it before comparing", input.PortfolioRef)
+	}
 	if err := validatePortfolioVariantIdentities(identities); err != nil {
 		return nil, "", fmt.Errorf("portfolio %s has ambiguous variant identities: %w", input.PortfolioRef, err)
 	}

@@ -325,6 +325,47 @@ func TestCompareSolutions_RejectsLegacyPortfolioWithDuplicateVariantIDs(t *testi
 	}
 }
 
+func TestCompareSolutions_RejectsPortfolioWithoutRecoverableVariants(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio := &Artifact{
+		Meta: Meta{
+			ID:      "sol-legacy-no-variants",
+			Kind:    KindSolutionPortfolio,
+			Title:   "Legacy empty portfolio",
+			Context: "events",
+			Mode:    ModeStandard,
+		},
+		Body: `# Legacy empty portfolio
+
+Comparison draft with no declared variants.
+`,
+		StructuredData: `{}`,
+	}
+	if err := store.Create(ctx, portfolio); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "10ms"},
+			},
+			NonDominatedSet: []string{"V1"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected compare to reject portfolio without recoverable variants")
+	}
+	if !strings.Contains(err.Error(), `portfolio sol-legacy-no-variants declares no recoverable variants`) {
+		t.Fatalf("unexpected missing-variants error: %v", err)
+	}
+}
+
 func TestCompareSolutions_MissingPortfolio(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

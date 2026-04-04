@@ -89,6 +89,12 @@ func TestExploreSolutions_Success(t *testing.T) {
 	if len(fields.Variants) != 3 {
 		t.Fatalf("expected 3 structured variants, got %d", len(fields.Variants))
 	}
+	if fields.Variants[0].ID != "V1" || fields.Variants[1].ID != "V2" || fields.Variants[2].ID != "V3" {
+		t.Fatalf("expected generated IDs V1/V2/V3, got %q/%q/%q",
+			fields.Variants[0].ID,
+			fields.Variants[1].ID,
+			fields.Variants[2].ID)
+	}
 	if !fields.Variants[1].SteppingStone {
 		t.Error("expected structured stepping stone flag on NATS variant")
 	}
@@ -1014,7 +1020,7 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 	if fields.Comparison.ParityPlan == nil {
 		t.Fatal("expected parity plan in structured comparison payload")
 	}
-	if got := fields.Comparison.ParityPlan.BaselineSet[0]; got != "REST" {
+	if got := fields.Comparison.ParityPlan.BaselineSet[0]; got != "V1" {
 		t.Fatalf("unexpected structured parity baseline: %+v", fields.Comparison.ParityPlan.BaselineSet)
 	}
 }
@@ -1047,7 +1053,7 @@ func TestCompare_ErrorsWhenExploredVariantIsOmittedFromScores(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing explored variant error")
 	}
-	if !strings.Contains(err.Error(), "target dimension 'latency' missing scores for variants: C") {
+	if !strings.Contains(err.Error(), "target dimension 'latency' missing scores for variants: V3") {
 		t.Fatalf("unexpected omission error: %v", err)
 	}
 }
@@ -1096,7 +1102,52 @@ func TestCompare_ErrorsOnScoredVariantOutsideStructuredBaseline(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected scored variant outside baseline error")
 	}
-	if !strings.Contains(err.Error(), `scored variant "GraphQL" is outside the declared compare set`) {
+	if !strings.Contains(err.Error(), `scored variant "V3" is outside the declared compare set`) {
 		t.Fatalf("unexpected parity-set error: %v", err)
+	}
+}
+
+func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "cost"},
+			Scores: map[string]map[string]string{
+				"V1": {"throughput": "200k/s", "cost": "$800"},
+				"V2": {"throughput": "100k/s", "cost": "$200"},
+			},
+			NonDominatedSet: []string{"V1", "V2"},
+			SelectedRef:     "V2",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "**Recommended:** NATS") {
+		t.Fatalf("expected human-readable recommended title, body: %s", a.Body)
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		t.Fatal("expected structured comparison payload")
+	}
+	if _, ok := fields.Comparison.Scores["V1"]; !ok {
+		t.Fatalf("expected structured comparison to keep canonical V1 score key: %+v", fields.Comparison.Scores)
+	}
+	if fields.Comparison.SelectedRef != "V2" {
+		t.Fatalf("expected structured comparison selected_ref to stay canonical, got %q", fields.Comparison.SelectedRef)
 	}
 }

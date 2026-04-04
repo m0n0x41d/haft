@@ -121,6 +121,8 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		title = fmt.Sprintf("Solutions for: %s", ectx.ProblemTitle)
 	}
 
+	materializedVariants := materializeVariantIDs(input.Variants)
+
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("# %s\n\n", title))
 
@@ -128,13 +130,10 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		body.WriteString(fmt.Sprintf("Problem: %s\n\n", input.ProblemRef))
 	}
 
-	body.WriteString(fmt.Sprintf("## Variants (%d)\n\n", len(input.Variants)))
+	body.WriteString(fmt.Sprintf("## Variants (%d)\n\n", len(materializedVariants)))
 
-	for i, v := range input.Variants {
+	for _, v := range materializedVariants {
 		vid := v.ID
-		if vid == "" {
-			vid = fmt.Sprintf("V%d", i+1)
-		}
 		body.WriteString(fmt.Sprintf("### %s. %s\n\n", vid, v.Title))
 
 		if v.Description != "" {
@@ -178,11 +177,8 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 	body.WriteString("## Summary\n\n")
 	body.WriteString("| Variant | Novelty | Diversity Role | Weakest Link | Stepping Stone |\n")
 	body.WriteString("|---------|---------|----------------|-------------|----------------|\n")
-	for i, v := range input.Variants {
+	for _, v := range materializedVariants {
 		vid := v.ID
-		if vid == "" {
-			vid = fmt.Sprintf("V%d", i+1)
-		}
 		ss := "no"
 		if v.SteppingStone {
 			ss = "yes"
@@ -217,7 +213,7 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 
 	sd, _ := json.Marshal(PortfolioFields{
 		ProblemRef:               input.ProblemRef,
-		Variants:                 cloneVariants(input.Variants),
+		Variants:                 cloneVariants(materializedVariants),
 		NoSteppingStoneRationale: input.NoSteppingStoneRationale,
 	})
 	a.StructuredData = string(sd)
@@ -339,14 +335,20 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		mode = ModeStandard
 	}
 
+	identities := portfolioVariantIdentities(a)
+	normalizedResults, err := normalizeComparisonVariantReferences(input.Results, identities)
+	if err != nil {
+		return nil, "", err
+	}
+
 	validationContext := CompareValidationContext{
 		Mode:              mode,
-		PortfolioVariants: portfolioVariantKeys(a),
+		PortfolioVariants: portfolioVariantKeys(identities),
 		ParitySource:      parityPlanSourceNone,
 	}
 
-	if input.Results.ParityPlan != nil {
-		validationContext.ParityPlan = cloneParityPlan(input.Results.ParityPlan)
+	if normalizedResults.ParityPlan != nil {
+		validationContext.ParityPlan = cloneParityPlan(normalizedResults.ParityPlan)
 		validationContext.ParitySource = parityPlanSourceExplicit
 	}
 
@@ -363,23 +365,26 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		validationContext.CharacterizedDimensions = characterizedDimensionsForProblem(prob)
 		if validationContext.ParityPlan == nil {
 			validationContext.ParityPlan, validationContext.ParitySource = resolveParityPlan(prob)
+			validationContext.ParityPlan = normalizeParityPlanVariantReferences(validationContext.ParityPlan, identities)
 		}
 		break
 	}
+
+	input.Results = normalizedResults
 
 	validation, err := ValidateCompareInput(input, validationContext)
 	if err != nil {
 		return nil, "", err
 	}
 
-	normalizedResults := normalizeComparisonResult(input.Results, validation.ComparedVariants)
-	normalizedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
+	validatedResults := normalizeComparisonResult(input.Results, validation.ComparedVariants)
+	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
 
 	// Pure: build comparison section + apply to body
-	a.Body = BuildComparisonBody(a.Body, normalizedResults, validation.ComparedVariants, validation.Warnings)
+	a.Body = BuildComparisonBody(a.Body, validatedResults, validation.ComparedVariants, validation.Warnings)
 
 	fields := a.UnmarshalPortfolioFields()
-	fields.Comparison = cloneComparisonResult(normalizedResults)
+	fields.Comparison = cloneComparisonResult(validatedResults)
 	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 
@@ -581,6 +586,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 // BuildComparisonBody appends comparison results to an existing portfolio body. Pure.
 func BuildComparisonBody(existingBody string, results ComparisonResult, comparedVariants []string, warnings []string) string {
 	var section strings.Builder
+	displayLabels := portfolioVariantDisplayLabels(existingBody)
 	section.WriteString("\n## Comparison\n\n")
 
 	header := "| Variant |"
@@ -594,7 +600,7 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 
 	for _, variantID := range comparedVariants {
 		scores := results.Scores[variantID]
-		row := fmt.Sprintf("| %s |", variantID)
+		row := fmt.Sprintf("| %s |", displayVariantLabel(variantID, displayLabels))
 		for _, d := range results.Dimensions {
 			val := scoreForDimension(scores, d)
 			if isMissingScore(val) {
@@ -627,12 +633,17 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	}
 
 	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Pareto front:** %s\n\n",
-		strings.Join(results.NonDominatedSet, ", ")))
+		strings.Join(displayVariantLabels(results.NonDominatedSet, displayLabels), ", ")))
 
 	if len(results.Incomparable) > 0 {
 		section.WriteString("**Incomparable pairs:**\n")
 		for _, pair := range results.Incomparable {
-			section.WriteString(fmt.Sprintf("- %s vs %s\n", pair[0], pair[1]))
+			labels := displayVariantLabels(pair, displayLabels)
+			if len(labels) == 2 {
+				section.WriteString(fmt.Sprintf("- %s vs %s\n", labels[0], labels[1]))
+				continue
+			}
+			section.WriteString(fmt.Sprintf("- %s\n", strings.Join(labels, " vs ")))
 		}
 		section.WriteString("\n")
 	}
@@ -642,7 +653,7 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	}
 
 	if results.SelectedRef != "" {
-		section.WriteString(fmt.Sprintf("**Recommended:** %s\n\n", results.SelectedRef))
+		section.WriteString(fmt.Sprintf("**Recommended:** %s\n\n", displayVariantLabel(results.SelectedRef, displayLabels)))
 	}
 
 	// Strip existing comparison if present
@@ -669,6 +680,11 @@ type charDim struct {
 	ValidUntil string // measurement freshness (RFC3339 or empty)
 }
 
+type portfolioVariantIdentity struct {
+	Key     string
+	Aliases []string
+}
+
 func hasSteppingStone(variants []Variant) bool {
 	for _, variant := range variants {
 		if variant.SteppingStone {
@@ -691,37 +707,95 @@ func comparedVariantsFromScores(scores map[string]map[string]string) []string {
 	return variants
 }
 
-func portfolioVariantKeys(portfolio *Artifact) []string {
+func materializeVariantIDs(variants []Variant) []Variant {
+	materialized := cloneVariants(variants)
+	for i := range materialized {
+		if strings.TrimSpace(materialized[i].ID) != "" {
+			continue
+		}
+		materialized[i].ID = fmt.Sprintf("V%d", i+1)
+	}
+	return materialized
+}
+
+func portfolioVariantIdentities(portfolio *Artifact) []portfolioVariantIdentity {
 	if portfolio == nil {
 		return nil
 	}
 
 	fields := portfolio.UnmarshalPortfolioFields()
-	keys := portfolioVariantKeysFromStructured(fields.Variants)
-	if len(keys) > 0 {
-		return keys
+	bodyRefs := extractPortfolioVariantRefs(portfolio.Body)
+	if len(fields.Variants) == 0 {
+		return portfolioVariantIdentitiesFromRefs(bodyRefs)
 	}
 
-	return extractPortfolioVariantTitles(portfolio.Body)
-}
-
-func portfolioVariantKeysFromStructured(variants []Variant) []string {
-	var keys []string
-	for _, variant := range variants {
+	var identities []portfolioVariantIdentity
+	for index, variant := range fields.Variants {
 		key := strings.TrimSpace(variant.ID)
+		if key == "" && index < len(bodyRefs) {
+			key = strings.TrimSpace(bodyRefs[index].ID)
+		}
 		if key == "" {
 			key = strings.TrimSpace(variant.Title)
 		}
 		if key == "" {
 			continue
 		}
-		keys = append(keys, key)
+
+		aliases := []string{key}
+		aliases = append(aliases, strings.TrimSpace(variant.Title))
+		if index < len(bodyRefs) {
+			aliases = append(aliases, strings.TrimSpace(bodyRefs[index].ID))
+			aliases = append(aliases, strings.TrimSpace(bodyRefs[index].Title))
+		}
+
+		identities = append(identities, portfolioVariantIdentity{
+			Key:     key,
+			Aliases: dedupeTrimmedStrings(aliases),
+		})
+	}
+
+	return identities
+}
+
+func portfolioVariantIdentitiesFromRefs(refs []portfolioVariantRef) []portfolioVariantIdentity {
+	var identities []portfolioVariantIdentity
+	for _, ref := range refs {
+		key := strings.TrimSpace(ref.ID)
+		if key == "" {
+			key = strings.TrimSpace(ref.Title)
+		}
+		if key == "" {
+			continue
+		}
+
+		identities = append(identities, portfolioVariantIdentity{
+			Key: key,
+			Aliases: dedupeTrimmedStrings([]string{
+				key,
+				ref.ID,
+				ref.Title,
+			}),
+		})
+	}
+	return identities
+}
+
+func portfolioVariantKeys(identities []portfolioVariantIdentity) []string {
+	var keys []string
+	for _, identity := range identities {
+		keys = append(keys, identity.Key)
 	}
 	return dedupeTrimmedStrings(keys)
 }
 
-func extractPortfolioVariantTitles(body string) []string {
-	var titles []string
+type portfolioVariantRef struct {
+	ID    string
+	Title string
+}
+
+func extractPortfolioVariantRefs(body string) []portfolioVariantRef {
+	var refs []portfolioVariantRef
 	lines := strings.Split(body, "\n")
 	inVariants := false
 	for _, line := range lines {
@@ -731,18 +805,65 @@ func extractPortfolioVariantTitles(body string) []string {
 			inVariants = true
 			continue
 		case inVariants && strings.HasPrefix(trimmed, "## "):
-			return dedupeTrimmedStrings(titles)
+			return refs
 		case inVariants && strings.HasPrefix(trimmed, "### "):
 			header := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
 			parts := strings.SplitN(header, ". ", 2)
+			ref := portfolioVariantRef{}
 			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
-				titles = append(titles, parts[1])
+				ref.ID = strings.TrimSpace(parts[0])
+				ref.Title = strings.TrimSpace(parts[1])
+				refs = append(refs, ref)
 				continue
 			}
-			titles = append(titles, header)
+			ref.Title = header
+			refs = append(refs, ref)
 		}
 	}
-	return dedupeTrimmedStrings(titles)
+	return refs
+}
+
+func portfolioVariantDisplayLabels(body string) map[string]string {
+	labels := make(map[string]string)
+	for _, ref := range extractPortfolioVariantRefs(body) {
+		key := strings.TrimSpace(ref.ID)
+		if key == "" {
+			key = strings.TrimSpace(ref.Title)
+		}
+		if key == "" {
+			continue
+		}
+
+		label := strings.TrimSpace(ref.Title)
+		if label == "" {
+			label = key
+		}
+
+		labels[key] = label
+		if strings.TrimSpace(ref.Title) != "" {
+			labels[strings.TrimSpace(ref.Title)] = label
+		}
+	}
+	return labels
+}
+
+func displayVariantLabels(values []string, labels map[string]string) []string {
+	var displayed []string
+	for _, value := range values {
+		displayed = append(displayed, displayVariantLabel(value, labels))
+	}
+	return displayed
+}
+
+func displayVariantLabel(value string, labels map[string]string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return trimmed
+	}
+	if label, ok := labels[trimmed]; ok {
+		return label
+	}
+	return trimmed
 }
 
 func containsString(values []string, target string) bool {
@@ -753,6 +874,20 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func portfolioVariantAliasMap(identities []portfolioVariantIdentity) map[string]string {
+	aliasMap := make(map[string]string)
+	for _, identity := range identities {
+		for _, alias := range identity.Aliases {
+			trimmed := strings.TrimSpace(alias)
+			if trimmed == "" {
+				continue
+			}
+			aliasMap[trimmed] = identity.Key
+		}
+	}
+	return aliasMap
 }
 
 func isMissingScore(value string) bool {
@@ -980,6 +1115,88 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	}
 
 	return cloned
+}
+
+func normalizeComparisonVariantReferences(result ComparisonResult, identities []portfolioVariantIdentity) (ComparisonResult, error) {
+	aliasMap := portfolioVariantAliasMap(identities)
+	normalized := ComparisonResult{
+		Dimensions:    append([]string(nil), result.Dimensions...),
+		Incomparable:  make([][]string, 0, len(result.Incomparable)),
+		PolicyApplied: result.PolicyApplied,
+		SelectedRef:   normalizeVariantReference(result.SelectedRef, aliasMap),
+		ParityPlan:    cloneParityPlan(result.ParityPlan),
+	}
+
+	normalized.NonDominatedSet = normalizeVariantReferences(result.NonDominatedSet, aliasMap)
+	normalized.NonDominatedSet = dedupeTrimmedStrings(normalized.NonDominatedSet)
+
+	if normalized.ParityPlan != nil {
+		normalized.ParityPlan.BaselineSet = normalizeVariantReferences(normalized.ParityPlan.BaselineSet, aliasMap)
+		normalized.ParityPlan.BaselineSet = dedupeTrimmedStrings(normalized.ParityPlan.BaselineSet)
+	}
+
+	if len(result.Scores) > 0 {
+		normalized.Scores = make(map[string]map[string]string, len(result.Scores))
+		for rawKey, scores := range result.Scores {
+			canonicalKey := normalizeVariantReference(rawKey, aliasMap)
+			if canonicalKey == "" {
+				continue
+			}
+			if _, exists := normalized.Scores[canonicalKey]; exists {
+				return ComparisonResult{}, fmt.Errorf("comparison includes duplicate score entries for variant %q", canonicalKey)
+			}
+
+			normalized.Scores[canonicalKey] = make(map[string]string, len(scores))
+			for dimension, value := range scores {
+				normalized.Scores[canonicalKey][dimension] = value
+			}
+		}
+	}
+
+	for _, pair := range result.Incomparable {
+		normalizedPair := normalizeVariantReferences(pair, aliasMap)
+		if len(normalizedPair) == 0 {
+			continue
+		}
+		normalized.Incomparable = append(normalized.Incomparable, normalizedPair)
+	}
+
+	return normalized, nil
+}
+
+func normalizeParityPlanVariantReferences(plan *ParityPlan, identities []portfolioVariantIdentity) *ParityPlan {
+	normalized := cloneParityPlan(plan)
+	if normalized == nil {
+		return nil
+	}
+
+	aliasMap := portfolioVariantAliasMap(identities)
+	normalized.BaselineSet = normalizeVariantReferences(normalized.BaselineSet, aliasMap)
+	normalized.BaselineSet = dedupeTrimmedStrings(normalized.BaselineSet)
+	return normalized
+}
+
+func normalizeVariantReferences(values []string, aliasMap map[string]string) []string {
+	var normalized []string
+	for _, value := range values {
+		normalizedValue := normalizeVariantReference(value, aliasMap)
+		if normalizedValue == "" {
+			continue
+		}
+		normalized = append(normalized, normalizedValue)
+	}
+	return normalized
+}
+
+func normalizeVariantReference(value string, aliasMap map[string]string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if canonical, ok := aliasMap[trimmed]; ok {
+		return canonical
+	}
+	return trimmed
 }
 
 func normalizeComparisonResult(result ComparisonResult, comparedVariants []string) ComparisonResult {

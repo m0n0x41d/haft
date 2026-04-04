@@ -29,6 +29,7 @@ CREATE TABLE evidence (
     verdict TEXT NOT NULL,
     assurance_level TEXT,
     formality_level INTEGER DEFAULT 5 CHECK(formality_level BETWEEN 0 AND 9),
+    congruence_level INTEGER CHECK(congruence_level BETWEEN 0 AND 3),
     claim_scope TEXT DEFAULT '[]',
     carrier_ref TEXT,
     carrier_hash TEXT,

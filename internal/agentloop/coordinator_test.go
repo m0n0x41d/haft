@@ -19,7 +19,8 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 	coord, store, rawDB := setupCoordinatorHarness(t)
 	now := time.Now().UTC()
 
-	createDecisionArtifact(t, ctx, store, "dec-b", now.Add(24*time.Hour))
+	seedCodebaseDependencyGraph(t, ctx, rawDB, now)
+	createDecisionArtifact(t, ctx, store, "dec-b", now.Add(24*time.Hour), []string{"internal/shared/store.go"})
 	err := store.AddEvidenceItem(ctx, &artifact.EvidenceItem{
 		ID:              "ev-b",
 		Type:            "measurement",
@@ -44,7 +45,7 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 		t.Fatalf("sync dependency assurance: %v", err)
 	}
 
-	createDecisionArtifact(t, ctx, store, "dec-a", now.Add(48*time.Hour))
+	createDecisionArtifact(t, ctx, store, "dec-a", now.Add(48*time.Hour), []string{"internal/api/router.go"})
 	err = store.AddEvidenceItem(ctx, &artifact.EvidenceItem{
 		ID:              "ev-a",
 		Type:            "measurement",
@@ -67,19 +68,6 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 	})
 	if err != nil {
 		t.Fatalf("prime primary assurance: %v", err)
-	}
-
-	_, err = rawDB.ExecContext(ctx,
-		`INSERT INTO relations (source_id, target_id, relation_type, congruence_level, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		"dec-a",
-		"dec-b",
-		"dependsOn",
-		3,
-		now.Format(time.RFC3339),
-	)
-	if err != nil {
-		t.Fatalf("insert dependency relation: %v", err)
 	}
 
 	assuranceTuple, weakestLink, err := coord.computeClosedCycleAssurance(ctx, "dec-a", &agent.EvidenceChain{
@@ -108,15 +96,16 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 	var (
 		storedVerdict   string
 		storedFormality int
+		storedCL        int
 		storedScope     string
 		storedLevel     string
 	)
 	err = rawDB.QueryRowContext(ctx, `
-		SELECT verdict, formality_level, claim_scope, assurance_level
+		SELECT verdict, formality_level, congruence_level, claim_scope, assurance_level
 		FROM evidence
 		WHERE id = ?`,
 		"artifact:ev-a",
-	).Scan(&storedVerdict, &storedFormality, &storedScope, &storedLevel)
+	).Scan(&storedVerdict, &storedFormality, &storedCL, &storedScope, &storedLevel)
 	if err != nil {
 		t.Fatalf("query synced evidence: %v", err)
 	}
@@ -126,6 +115,9 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 	}
 	if storedFormality != 2 {
 		t.Fatalf("stored formality = %d, want 2", storedFormality)
+	}
+	if storedCL != 3 {
+		t.Fatalf("stored congruence = %d, want 3", storedCL)
 	}
 	if storedScope != "[\"criterion/latency\"]" {
 		t.Fatalf("stored scope = %q, want latency claim scope", storedScope)
@@ -147,6 +139,59 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 	}
 	if syncedCount != 1 {
 		t.Fatalf("synced evidence count = %d, want 1", syncedCount)
+	}
+
+	var projectedRelations int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM relations
+		WHERE source_id = ? AND target_id = ? AND relation_type = ?`,
+		"dec-a",
+		"dec-b",
+		"dependsOn",
+	).Scan(&projectedRelations)
+	if err != nil {
+		t.Fatalf("count projected relations: %v", err)
+	}
+	if projectedRelations != 1 {
+		t.Fatalf("projected dependency relations = %d, want 1", projectedRelations)
+	}
+}
+
+func TestComputeClosedCycleAssurance_UsesPersistedArtifactCongruence(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, _ := setupCoordinatorHarness(t)
+	now := time.Now().UTC()
+
+	createDecisionArtifact(t, ctx, store, "dec-cl", now.Add(24*time.Hour), []string{"internal/api/self_check.go"})
+	err := store.AddEvidenceItem(ctx, &artifact.EvidenceItem{
+		ID:              "ev-cl",
+		Type:            "measurement",
+		Content:         "Self-evidence without baseline",
+		Verdict:         "accepted",
+		CongruenceLevel: 1,
+		FormalityLevel:  2,
+		ClaimScope:      []string{"criterion/self-check"},
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	}, "dec-cl")
+	if err != nil {
+		t.Fatalf("add evidence: %v", err)
+	}
+
+	assuranceTuple, _, err := coord.computeClosedCycleAssurance(ctx, "dec-cl", &agent.EvidenceChain{
+		DecRef: "dec-cl",
+		Items: []agent.EvidenceItem{
+			agent.NewEvidenceItem(agent.EvidenceMeasure, "verdict: accepted", 1),
+		},
+	})
+	if err != nil {
+		t.Fatalf("compute closed-cycle assurance: %v", err)
+	}
+
+	if assuranceTuple.R != 0.6 {
+		t.Fatalf("R = %.2f, want 0.60 for CL1 persisted evidence", assuranceTuple.R)
 	}
 }
 
@@ -172,6 +217,7 @@ func createDecisionArtifact(
 	store *artifact.Store,
 	id string,
 	validUntil time.Time,
+	affectedFiles []string,
 ) {
 	t.Helper()
 
@@ -190,5 +236,52 @@ func createDecisionArtifact(
 	})
 	if err != nil {
 		t.Fatalf("create decision %s: %v", id, err)
+	}
+
+	files := make([]artifact.AffectedFile, 0, len(affectedFiles))
+	for _, affectedFile := range affectedFiles {
+		files = append(files, artifact.AffectedFile{Path: affectedFile})
+	}
+
+	err = store.SetAffectedFiles(ctx, id, files)
+	if err != nil {
+		t.Fatalf("set affected files for %s: %v", id, err)
+	}
+}
+
+func seedCodebaseDependencyGraph(t *testing.T, ctx context.Context, rawDB *sql.DB, now time.Time) {
+	t.Helper()
+
+	_, err := rawDB.ExecContext(ctx, `
+		INSERT INTO codebase_modules (module_id, path, name, lang, file_count, last_scanned)
+		VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+		"mod-internal-api",
+		"internal/api",
+		"api",
+		"go",
+		2,
+		now.Format(time.RFC3339),
+		"mod-internal-shared",
+		"internal/shared",
+		"shared",
+		"go",
+		1,
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed codebase modules: %v", err)
+	}
+
+	_, err = rawDB.ExecContext(ctx, `
+		INSERT INTO module_dependencies (source_module, target_module, dep_type, file_path, last_scanned)
+		VALUES (?, ?, ?, ?, ?)`,
+		"mod-internal-api",
+		"mod-internal-shared",
+		"import",
+		"internal/api/router.go",
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed module dependency: %v", err)
 	}
 }

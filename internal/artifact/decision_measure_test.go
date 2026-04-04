@@ -69,8 +69,8 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
 		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
 	}
-	if len(items[0].ClaimScope) != 1 || items[0].ClaimScope[0] != "Load test at 100k/s passed (actual: 120k/s)" {
-		t.Errorf("evidence claim_scope = %#v, want criteria_met scope", items[0].ClaimScope)
+	if got := strings.Join(items[0].ClaimScope, " | "); got != "All producers migrated (11/12, payments-legacy pending) | Load test at 100k/s passed (actual: 120k/s)" {
+		t.Errorf("evidence claim_scope = %#v, want measured criteria scope", items[0].ClaimScope)
 	}
 }
 
@@ -272,6 +272,52 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	}
 	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
 		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
+	}
+}
+
+func TestWLNKSummary_FailedCriteriaStillCountAsCovered(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Queue migration",
+		Signal: "Current queue saturates under burst load.",
+		Acceptance: strings.Join([]string{
+			"- P99 latency under 50ms",
+			"- Throughput above 100k events/sec",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+		ProblemRef:    prob.Meta.ID,
+		SelectedTitle: "JetStream",
+		WhySelected:   "Lower operational overhead",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef:    dec.Meta.ID,
+		Findings:       "Latency passed, throughput failed under peak load.",
+		CriteriaMet:    []string{"P99 latency under 50ms"},
+		CriteriaNotMet: []string{"Throughput above 100k events/sec"},
+		Verdict:        "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms,Throughput above 100k events/sec" {
+		t.Fatalf("GEff = %q, want both measured criteria covered", got)
+	}
+	if len(wlnk.CoverageGaps) != 0 {
+		t.Fatalf("CoverageGaps = %#v, want no gaps for explicitly measured failed criteria", wlnk.CoverageGaps)
 	}
 }
 

@@ -25,7 +25,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 		type TEXT,
 		verdict TEXT,
 		valid_until DATETIME,
-		formality_level INTEGER DEFAULT 5
+		formality_level INTEGER DEFAULT 5,
+		congruence_level INTEGER
 	);
 	CREATE TABLE relations (source_id TEXT, target_id TEXT, relation_type TEXT, congruence_level INTEGER);
 	`
@@ -251,6 +252,30 @@ func TestCalculateReliability_FormalityNormalization(t *testing.T) {
 
 	if report.FormalityScore != 2 {
 		t.Errorf("Expected normalized formality score 2, got %d", report.FormalityScore)
+	}
+}
+
+func TestCalculateReliability_PrefersPersistedCongruenceLevel(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		`INSERT INTO evidence (id, holon_id, type, verdict, valid_until, congruence_level)
+		 VALUES ('e1', 'A', 'measurement', 'accepted', ?, 1)`,
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FinalScore != 0.6 {
+		t.Errorf("Expected score 0.6 from persisted CL1 evidence, got %f", report.FinalScore)
 	}
 }
 

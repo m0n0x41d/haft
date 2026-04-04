@@ -250,3 +250,50 @@ func TestHaftDecisionTool_PersistsFirstModuleCoverageFlag(t *testing.T) {
 		t.Fatal("expected first_module_coverage flag to be persisted")
 	}
 }
+
+func TestHaftDecisionTool_SuppressesFirstModuleCoverageWarningWhenGoverned(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO codebase_modules (module_id, path, name, lang, file_count, last_scanned)
+		VALUES ('mod-api', 'internal/api', 'api', 'go', 2, '2026-03-18T12:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), nil)
+	_, err = tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"selected_title": "Existing API gateway",
+		"why_selected":   "The module already has a boundary decision",
+		"affected_files": []string{"internal/api/router.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"selected_title": "Follow-up API change",
+		"why_selected":   "Need to refine the existing ingress decision",
+		"affected_files": []string{"internal/api/server.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.DisplayText, "First decision governing module") {
+		t.Fatalf("expected follow-up decision to skip first-module warning, got: %s", result.DisplayText)
+	}
+
+	decision, err := store.Get(ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.FirstModuleCoverage {
+		t.Fatal("expected first_module_coverage to remain false for governed module")
+	}
+}

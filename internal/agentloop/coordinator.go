@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -730,11 +731,7 @@ func (c *Coordinator) bindCycleArtifact(ctx context.Context, sess *agent.Session
 				Float64("r_eff", rEff).
 				Msg("agent.low_reff_warning")
 			// Inject warning but don't block — agent can still close with low R_eff
-			warningMsg := agent.Message{
-				Role:  agent.RoleSystem,
-				Parts: []agent.Part{agent.TextPart{Text: fmt.Sprintf("[FPF Warning] %s", rEffErr.Error())}},
-			}
-			_ = c.Messages.Save(ctx, &warningMsg)
+			c.recordSystemWarning(ctx, sess.ID, fmt.Sprintf("[FPF Warning] %s", rEffErr.Error()))
 		}
 
 		switch meta.MeasureVerdict {
@@ -1060,7 +1057,7 @@ func (c *Coordinator) computeClosedCycleAssurance(
 		return assuranceTuple, weakestLink, fmt.Errorf("load decision %s: %w", decisionRef, err)
 	}
 
-	activeEvidence, err := c.syncDecisionAssuranceGraph(ctx, dbStore.DB(), decision)
+	activeEvidence, err := c.syncDecisionAssuranceGraph(ctx, dbStore.DB(), decision, make(map[string]struct{}))
 	if err != nil {
 		return assuranceTuple, weakestLink, err
 	}
@@ -1088,17 +1085,38 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 	ctx context.Context,
 	db *sql.DB,
 	decision *artifact.Artifact,
+	visited map[string]struct{},
 ) ([]artifact.EvidenceItem, error) {
 	if decision == nil {
 		return nil, fmt.Errorf("decision artifact is nil")
 	}
+	if _, ok := visited[decision.Meta.ID]; ok {
+		return c.loadActiveArtifactEvidence(ctx, decision.Meta.ID)
+	}
+	visited[decision.Meta.ID] = struct{}{}
 
-	evidenceItems, err := c.ArtifactStore.GetEvidenceItems(ctx, decision.Meta.ID)
+	dependencyRefs, err := c.resolveDecisionDependencyRefs(ctx, db, decision.Meta.ID)
 	if err != nil {
-		return nil, fmt.Errorf("load decision evidence: %w", err)
+		return nil, err
 	}
 
-	activeEvidence := activeArtifactEvidence(evidenceItems)
+	for _, dependencyRef := range dependencyRefs {
+		dependencyDecision, err := c.ArtifactStore.Get(ctx, dependencyRef)
+		if err != nil {
+			return nil, fmt.Errorf("load dependency decision %s: %w", dependencyRef, err)
+		}
+
+		_, err = c.syncDecisionAssuranceGraph(ctx, db, dependencyDecision, visited)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	activeEvidence, err := c.loadActiveArtifactEvidence(ctx, decision.Meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	now := time.Now().UTC()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1107,6 +1125,11 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 	defer func() { _ = tx.Rollback() }()
 
 	err = c.ensureDecisionHolon(ctx, tx, decision, now)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.syncProjectedDecisionRelations(ctx, tx, decision.Meta.ID, dependencyRefs, now)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,9 +1161,9 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO evidence (
 				id, holon_id, type, content, verdict, assurance_level, formality_level,
-				claim_scope, carrier_ref, valid_until, created_at
+				congruence_level, claim_scope, carrier_ref, valid_until, created_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"artifact:"+item.ID,
 			decision.Meta.ID,
 			item.Type,
@@ -1148,6 +1171,7 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 			item.Verdict,
 			assuranceAdapterLevel,
 			item.FormalityLevel,
+			item.CongruenceLevel,
 			scopeJSON,
 			nullIfEmpty(item.CarrierRef),
 			validUntil,
@@ -1164,6 +1188,18 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 	}
 
 	return activeEvidence, nil
+}
+
+func (c *Coordinator) loadActiveArtifactEvidence(
+	ctx context.Context,
+	decisionRef string,
+) ([]artifact.EvidenceItem, error) {
+	evidenceItems, err := c.ArtifactStore.GetEvidenceItems(ctx, decisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("load decision evidence: %w", err)
+	}
+
+	return activeArtifactEvidence(evidenceItems), nil
 }
 
 func (c *Coordinator) ensureDecisionHolon(
@@ -1223,6 +1259,232 @@ func (c *Coordinator) ensureDecisionHolon(
 	}
 
 	return nil
+}
+
+func (c *Coordinator) syncProjectedDecisionRelations(
+	ctx context.Context,
+	tx *sql.Tx,
+	decisionRef string,
+	dependencyRefs []string,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx,
+		`DELETE FROM relations WHERE source_id = ? AND relation_type = 'dependsOn'`,
+		decisionRef,
+	)
+	if err != nil {
+		return fmt.Errorf("clear projected relations for %s: %w", decisionRef, err)
+	}
+
+	for _, dependencyRef := range dependencyRefs {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO relations (
+				source_id, target_id, relation_type, congruence_level, created_at
+			)
+			VALUES (?, ?, ?, ?, ?)`,
+			decisionRef,
+			dependencyRef,
+			"dependsOn",
+			3,
+			now.Format(time.RFC3339),
+		)
+		if err != nil {
+			return fmt.Errorf("project relation %s -> %s: %w", decisionRef, dependencyRef, err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Coordinator) resolveDecisionDependencyRefs(
+	ctx context.Context,
+	db *sql.DB,
+	decisionRef string,
+) ([]string, error) {
+	modules, err := codebase.NewScanner(db).GetModules(ctx)
+	if isOptionalAssuranceQueryError(err) || len(modules) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load codebase modules: %w", err)
+	}
+
+	currentFiles, err := c.ArtifactStore.GetAffectedFiles(ctx, decisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("load affected files for %s: %w", decisionRef, err)
+	}
+
+	currentModules := resolveAffectedModules(modules, currentFiles)
+	if len(currentModules) == 0 {
+		return nil, nil
+	}
+
+	decisionRefs, err := listActiveDecisionRefs(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	dependencySet := make(map[string]struct{})
+
+	for _, candidateRef := range decisionRefs {
+		if candidateRef == decisionRef {
+			continue
+		}
+
+		candidateFiles, err := c.ArtifactStore.GetAffectedFiles(ctx, candidateRef)
+		if err != nil {
+			return nil, fmt.Errorf("load affected files for %s: %w", candidateRef, err)
+		}
+
+		candidateModules := resolveAffectedModules(modules, candidateFiles)
+		if len(candidateModules) == 0 {
+			continue
+		}
+
+		hasDependency, err := hasModuleDependency(ctx, db, currentModules, candidateModules)
+		if isOptionalAssuranceQueryError(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("check module dependency %s -> %s: %w", decisionRef, candidateRef, err)
+		}
+		if hasDependency {
+			dependencySet[candidateRef] = struct{}{}
+		}
+	}
+
+	dependencyRefs := make([]string, 0, len(dependencySet))
+	for dependencyRef := range dependencySet {
+		dependencyRefs = append(dependencyRefs, dependencyRef)
+	}
+	sort.Strings(dependencyRefs)
+
+	return dependencyRefs, nil
+}
+
+func resolveAffectedModules(
+	modules []codebase.Module,
+	affectedFiles []artifact.AffectedFile,
+) []string {
+	moduleSet := make(map[string]struct{})
+
+	for _, affectedFile := range affectedFiles {
+		moduleID := resolveModuleForPath(modules, affectedFile.Path)
+		if moduleID == "" {
+			continue
+		}
+		moduleSet[moduleID] = struct{}{}
+	}
+
+	moduleIDs := make([]string, 0, len(moduleSet))
+	for moduleID := range moduleSet {
+		moduleIDs = append(moduleIDs, moduleID)
+	}
+	sort.Strings(moduleIDs)
+
+	return moduleIDs
+}
+
+func resolveModuleForPath(modules []codebase.Module, filePath string) string {
+	bestMatch := ""
+	bestLen := -1
+
+	for _, module := range modules {
+		prefix := module.Path
+		if prefix == "" {
+			if bestLen < 0 {
+				bestMatch = module.ID
+				bestLen = 0
+			}
+			continue
+		}
+
+		hasPrefix := strings.HasPrefix(filePath, prefix+"/")
+		hasSeparatorPrefix := strings.HasPrefix(filePath, prefix+string(filepath.Separator))
+		if !hasPrefix && !hasSeparatorPrefix {
+			continue
+		}
+		if len(prefix) <= bestLen {
+			continue
+		}
+
+		bestMatch = module.ID
+		bestLen = len(prefix)
+	}
+
+	return bestMatch
+}
+
+func hasModuleDependency(
+	ctx context.Context,
+	db *sql.DB,
+	sourceModules []string,
+	targetModules []string,
+) (bool, error) {
+	for _, sourceModule := range sourceModules {
+		for _, targetModule := range targetModules {
+			var exists int
+			err := db.QueryRowContext(ctx, `
+				SELECT 1
+				FROM module_dependencies
+				WHERE source_module = ? AND target_module = ?
+				LIMIT 1`,
+				sourceModule,
+				targetModule,
+			).Scan(&exists)
+			if err == nil {
+				return true, nil
+			}
+			if err == sql.ErrNoRows {
+				continue
+			}
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+func listActiveDecisionRefs(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id
+		FROM artifacts
+		WHERE kind = ? AND status = ?`,
+		string(artifact.KindDecisionRecord),
+		string(artifact.StatusActive),
+	)
+	if isOptionalAssuranceQueryError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list active decision refs: %w", err)
+	}
+	defer rows.Close()
+
+	refs := make([]string, 0)
+	for rows.Next() {
+		var ref string
+		err = rows.Scan(&ref)
+		if err != nil {
+			return nil, fmt.Errorf("scan active decision ref: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, fmt.Errorf("iterate active decision refs: %w", err)
+	}
+
+	return refs, nil
+}
+
+func isOptionalAssuranceQueryError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.Contains(err.Error(), "no such table")
 }
 
 func activeArtifactEvidence(items []artifact.EvidenceItem) []artifact.EvidenceItem {

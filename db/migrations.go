@@ -286,4 +286,11 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE fpf_state ADD COLUMN epistemic_debt_budget REAL DEFAULT 30.0",
 		},
 	},
+	{
+		Version:     20,
+		Description: "Congruence level on durable evidence",
+		Statements: []string{
+			"ALTER TABLE evidence ADD COLUMN congruence_level INTEGER",
+		},
+	},
 }

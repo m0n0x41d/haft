@@ -49,10 +49,11 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	now := time.Now().UTC()
 
 	// 1. Calculate Self Score (based on Evidence)
-	// B.3.4: Check for expired evidence + evidence source CL penalty
+	// B.3.4: Check for expired evidence + congruence penalty
 	// C.2.3: F_eff = min(F_i) for all evidence (Formality level)
 	rows, err := c.DB.QueryContext(ctx,
-		"SELECT id, type, verdict, COALESCE(valid_until, ''), COALESCE(formality_level, 5) FROM evidence WHERE holon_id = ?", holonID)
+		`SELECT id, type, verdict, COALESCE(valid_until, ''), COALESCE(formality_level, 5), COALESCE(congruence_level, -1)
+		 FROM evidence WHERE holon_id = ?`, holonID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,20 +66,18 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		var evidenceID, evidenceType, verdict string
 		var validUntil string
 		var formalityLevel int
-		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &formalityLevel); err != nil {
+		var congruenceLevel int
+		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &formalityLevel, &congruenceLevel); err != nil {
 			continue
 		}
 		hasEvidence = true
 		_ = evidenceID // Used for potential future logging
 
-		score := reff.VerdictToScore(verdict)
+		effectiveCL := resolveEvidenceCongruenceLevel(evidenceType, congruenceLevel)
+		score := reff.ScoreEvidence(verdict, effectiveCL, validUntil, now)
 
-		// Evidence Source CL Penalty (B.3: external evidence has lower congruence)
-		// internal/audit_report → CL3 (0%), external → CL2 (10%)
-		clPenalty := evidenceTypeToCLPenalty(evidenceType)
-		if clPenalty > 0 {
-			score = math.Max(0, score-clPenalty)
-			report.Factors = append(report.Factors, "External evidence CL2 penalty applied")
+		if effectiveCL < 3 {
+			report.Factors = append(report.Factors, congruencePenaltyFactor(evidenceType, congruenceLevel, effectiveCL))
 		}
 
 		// Evidence Decay Logic (B.3.4: time-based expiration)
@@ -197,17 +196,36 @@ func calculateCLPenalty(cl int) float64 {
 // internal/audit_report = CL3 (same context, no penalty)
 // external = CL2 (similar context, 10% penalty)
 // research = CL1 (different context, 40% penalty)
-func evidenceTypeToCLPenalty(evidenceType string) float64 {
+func evidenceTypeToCongruenceLevel(evidenceType string) int {
 	switch strings.ToLower(evidenceType) {
 	case "internal", "audit_report":
-		return 0.0 // CL3: same context
+		return 3
 	case "external":
-		return 0.1 // CL2: similar context
+		return 2
 	case "research":
-		return 0.4 // CL1: different context
+		return 1
 	default:
-		return 0.0 // Unknown type, no penalty
+		return 3
 	}
+}
+
+func resolveEvidenceCongruenceLevel(evidenceType string, stored int) int {
+	if stored >= 0 && stored <= 3 {
+		return stored
+	}
+	return evidenceTypeToCongruenceLevel(evidenceType)
+}
+
+func congruencePenaltyFactor(evidenceType string, stored int, effective int) string {
+	if stored < 0 {
+		switch strings.ToLower(evidenceType) {
+		case "external":
+			return "External evidence CL2 penalty applied"
+		case "research":
+			return "Research evidence CL1 penalty applied"
+		}
+	}
+	return "Evidence congruence penalty applied"
 }
 
 func normalizeFormalityLevel(level int) int {

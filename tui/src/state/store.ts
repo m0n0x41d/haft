@@ -108,7 +108,7 @@ export type Action =
   | { type: "clear.error" }
   | { type: "clear.notification" }
   | { type: "toggle.autonomy" }
-  | { type: "toggle.yolo" }
+  | { type: "set.yolo"; value: boolean }
   | { type: "toggle.think" }
   | { type: "set.notification"; text: string }
   | { type: "submitted" }
@@ -122,6 +122,7 @@ export function reducer(state: AppState, action: Action): AppState {
         projectRoot: action.projectRoot,
         messages: normalizeMessages(action.messages),
         phase: "input",
+        autoApprove: false,
       }
 
     case "msg.update": {
@@ -314,8 +315,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case "toggle.autonomy":
       return { ...state, mode: state.mode === "symbiotic" ? "autonomous" : "symbiotic" }
 
-    case "toggle.yolo":
-      return { ...state, autoApprove: !state.autoApprove }
+    case "set.yolo":
+      return { ...state, autoApprove: action.value }
 
     case "toggle.think":
       return { ...state, thinkExpanded: !state.thinkExpanded }

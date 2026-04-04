@@ -193,3 +193,23 @@ test("normalizes legacy wire children into explicit subagent state", () => {
   assert.equal(spawnTool.subagent?.tools.length, 1)
   assert.equal(spawnTool.subagent?.tools[0]?.callId, "bash-1")
 })
+
+test("set.yolo enables autoApprove", () => {
+  const state = reducer(initialState(), { type: "set.yolo", value: true })
+  assert.equal(state.autoApprove, true)
+
+  const toggled = reducer(state, { type: "set.yolo", value: false })
+  assert.equal(toggled.autoApprove, false)
+})
+
+test("init resets autoApprove to false", () => {
+  const yoloState = reducer(initialState(), { type: "set.yolo", value: true })
+  assert.equal(yoloState.autoApprove, true)
+
+  const reinit = reducer(yoloState, {
+    type: "init",
+    session: { id: "s2", title: "New", model: "m" },
+    projectRoot: "/repo",
+  })
+  assert.equal(reinit.autoApprove, false)
+})

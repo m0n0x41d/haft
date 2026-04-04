@@ -294,7 +294,10 @@ export function App({ client, inputEvents }: AppProps) {
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
     respondRef.current?.({ action }); respondRef.current = null
     dispatch({ type: "permission.replied" })
-    if (action === "allow_session") dispatch({ type: "set.notification", text: "Auto-approve enabled" })
+    if (action === "allow_session") {
+      dispatch({ type: "set.yolo", value: true })
+      dispatch({ type: "set.notification", text: "YOLO mode enabled" })
+    }
   }, [])
 
   const handleQuestion = useCallback((answer: string) => {
@@ -375,8 +378,9 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
     if (key.ctrl && input === "y") {
-      dispatch({ type: "toggle.yolo" })
-      dispatch({ type: "set.notification", text: state.autoApprove ? "YOLO mode disabled" : "YOLO mode enabled" })
+      const next = !state.autoApprove
+      dispatch({ type: "set.yolo", value: next })
+      dispatch({ type: "set.notification", text: next ? "YOLO mode enabled" : "YOLO mode disabled" })
       return
     }
     if (key.ctrl && input === "m") { openModelPicker(); return }

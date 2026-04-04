@@ -656,7 +656,7 @@ Actions:
 					},
 				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
-				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide)"},
+				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide/evidence)"},
 				"decision_ref":     map[string]any{"type": "string", "description": "Decision ID (measure)"},
 				"findings":         map[string]any{"type": "string", "description": "What was observed (measure)"},
 				"criteria_met":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Passing criteria (measure)"},
@@ -785,6 +785,7 @@ func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (a
 		Type:            jsonStr(args, "evidence_type"),
 		Verdict:         jsonStr(args, "evidence_verdict"),
 		CarrierRef:      jsonStr(args, "carrier_ref"),
+		ValidUntil:      jsonStr(args, "valid_until"),
 	}
 
 	if level, ok := args["congruence_level"].(float64); ok {

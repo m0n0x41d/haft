@@ -93,7 +93,7 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 | Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity/role on the ProblemCard. Persisted via `haft_problem(action="characterize")`. |
 | WLNK | **tracked** | Required label on variants. Haft stores the stated weakest link on explored variants and decisions. |
 | Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
-| Pareto front | **tracked** | You identify the non-dominated set, Haft stores and displays it. Not computed automatically. |
+| Pareto front | **computed + tracked** | Haft derives the non-dominated set from the submitted comparison data, persists it, and displays it. You still need to explain the trade-offs honestly and avoid inventing a front the data does not support. |
 | Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
 | MCP tool mode | **supported** | Agents can call `haft_*` tools directly when the client exposes MCP tools. |
 | Command-driven mode | **supported** | Agents can also be steered with installed `/h-*` commands or prompts. |
@@ -103,7 +103,7 @@ Not all FPF concepts are at the same implementation depth. This matters — don'
 | F-G-R | **textual** | Formality labels may exist in artifact data, but are not a first-class haft decision-tool workflow step. |
 | NQD | **absent** | Multi-dimensional quality vectors are not implemented. Use comparison dimensions in exploration/compare instead. |
 | Impact measurement | **tracked** | `haft_decision(action="measure")` records post-implementation findings against acceptance criteria. |
-| Evidence attachment | **supported** | Use `haft_decision(action="evidence")` to attach explicit benchmark/test/research/audit evidence to an artifact. This complements `baseline` + `measure`; it does not replace post-implementation measurement. |
+| Evidence attachment | **supported** | Use `haft_decision(action="evidence")` to attach explicit benchmark/test/research/audit evidence to an artifact. Set `valid_until` when freshness matters so evidence can decay into stale `R_eff` / refresh signals. This complements `baseline` + `measure`; it does not replace post-implementation measurement. |
 
 **Key rule: don't describe textual features as if they compute something.** When you say "WLNK bounds quality," you mean "the user identified what bounds quality" — not that the system calculated it.
 
@@ -170,7 +170,7 @@ Define dimensions before `/h-explore` or `/h-compare`, then reuse the same chara
 - Apply the pre-declared selection policy
 - Record what was compared, what won, and why
 
-Note: Quint stores your comparison results and Pareto front. It does not compute them for you — you (or the agent doing analysis) determine which variants are non-dominated.
+Note: Quint computes and persists the Pareto front from the submitted comparison data. You still need to explain why variants were dominated, what remains on the front, and what trade-offs the human is being asked to choose between.
 
 **Persist with**: `haft_solution(action="compare", ...)`
 

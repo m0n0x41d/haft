@@ -687,6 +687,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["carrier_ref"].(string); ok {
 			input.CarrierRef = v
 		}
+		if v, ok := args["valid_until"].(string); ok {
+			input.ValidUntil = v
+		}
 		if cl, ok := args["congruence_level"].(float64); ok {
 			input.CongruenceLevel = int(cl)
 		}

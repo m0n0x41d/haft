@@ -65,7 +65,7 @@ After presenting: if the user confirms, record the decision. If any probe kills 
 
 ## Evidence workflow after deciding
 
-- Use `haft_decision(action="evidence", artifact_ref="<decision-id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes")` when you have explicit supporting or contradictory artifacts.
+- Use `haft_decision(action="evidence", artifact_ref="<decision-id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes", valid_until="...")` when you have explicit supporting or contradictory artifacts and their freshness matters.
 - Use `haft_decision(action="baseline", decision_ref="<decision-id>")` before `measure` when the decision has `affected_files`.
 - Use `haft_decision(action="measure", ...)` for post-implementation outcome. Attached evidence complements measure; it does not replace it.
 

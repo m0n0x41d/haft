@@ -115,7 +115,7 @@ The agent captures decisions automatically when it notices them in conversation.
 
 ### Evidence workflow
 
-Use `haft_decision(action="evidence", artifact_ref="...", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes")` to attach explicit evidence to a problem, portfolio, or decision. This feeds WLNK/R_eff directly.
+Use `haft_decision(action="evidence", artifact_ref="...", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes", valid_until="2026-12-31T00:00:00Z")` to attach explicit evidence to a problem, portfolio, or decision. This feeds WLNK/R_eff directly, and `valid_until` lets that evidence age into refresh signals instead of staying fresh forever.
 
 Use `haft_decision(action="measure", ...)` for post-implementation outcome. That call records measurement evidence automatically. If the decision has `affected_files`, run `haft_decision(action="baseline", decision_ref="...")` before `measure`; otherwise the measurement remains CL1 self-evidence.
 

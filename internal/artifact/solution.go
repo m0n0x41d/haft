@@ -794,6 +794,22 @@ const (
 	pairwiseIncomparable
 )
 
+type dimensionComparisonStatus int
+
+const (
+	dimensionComparisonComparable dimensionComparisonStatus = iota
+	dimensionComparisonExcluded
+	dimensionComparisonUnresolved
+)
+
+type parsedScoreKind int
+
+const (
+	parsedScoreUnknown parsedScoreKind = iota
+	parsedScoreNumeric
+	parsedScoreOrdinal
+)
+
 type numericScore struct {
 	Value float64
 	Unit  string
@@ -801,6 +817,12 @@ type numericScore struct {
 
 type ordinalScore struct {
 	Rank int
+}
+
+type parsedScore struct {
+	Kind    parsedScoreKind
+	Numeric numericScore
+	Ordinal ordinalScore
 }
 
 var numericScorePattern = regexp.MustCompile(`^\s*([^\d+\-]*)([+\-]?\d[\d,]*(?:\.\d+)?)([kKmMbB]?)(.*)$`)
@@ -1844,8 +1866,11 @@ func compareVariantPair(
 	for _, spec := range specs {
 		leftValue := scoreForDimension(scores[leftVariant], spec.Name)
 		rightValue := scoreForDimension(scores[rightVariant], spec.Name)
-		comparison, comparable := compareDimensionValues(leftValue, rightValue, spec.Polarity, missingDataPolicy)
-		if !comparable {
+		comparison, status := compareDimensionValues(leftValue, rightValue, spec.Polarity, missingDataPolicy)
+		switch status {
+		case dimensionComparisonExcluded:
+			continue
+		case dimensionComparisonUnresolved:
 			unresolved = true
 			continue
 		}
@@ -1875,46 +1900,50 @@ func compareVariantPair(
 	}
 }
 
-func compareDimensionValues(leftValue string, rightValue string, polarity string, missingDataPolicy string) (int, bool) {
+func compareDimensionValues(
+	leftValue string,
+	rightValue string,
+	polarity string,
+	missingDataPolicy string,
+) (int, dimensionComparisonStatus) {
 	leftTrimmed := strings.TrimSpace(leftValue)
 	rightTrimmed := strings.TrimSpace(rightValue)
 	if normalizeArtifactKey(leftTrimmed) == normalizeArtifactKey(rightTrimmed) {
-		return 0, true
+		return 0, dimensionComparisonComparable
 	}
 
-	if isMissingScore(leftTrimmed) || isMissingScore(rightTrimmed) {
+	leftMissing := isMissingScore(leftTrimmed)
+	rightMissing := isMissingScore(rightTrimmed)
+	if leftMissing || rightMissing {
 		switch missingDataPolicy {
-		case MissingDataPolicyExclude, MissingDataPolicyExplicitAbstain, "":
-			return 0, false
+		case MissingDataPolicyExclude:
+			return 0, dimensionComparisonExcluded
+		case MissingDataPolicyExplicitAbstain, "":
+			return 0, dimensionComparisonUnresolved
 		case MissingDataPolicyZero:
-			if isMissingScore(leftTrimmed) {
-				leftTrimmed = "0"
+			filledLeft, filledRight, ok := zeroFillScoreValues(leftTrimmed, rightTrimmed)
+			if !ok {
+				return 0, dimensionComparisonExcluded
 			}
-			if isMissingScore(rightTrimmed) {
-				rightTrimmed = "0"
-			}
+			leftTrimmed = filledLeft
+			rightTrimmed = filledRight
 		default:
-			return 0, false
+			return 0, dimensionComparisonUnresolved
 		}
 	}
 
-	if leftNumeric, ok := parseNumericScore(leftTrimmed); ok {
-		rightNumeric, rightOK := parseNumericScore(rightTrimmed)
-		if !rightOK || leftNumeric.Unit != rightNumeric.Unit {
-			return 0, false
-		}
-		return orientComparison(compareOrderedValues(leftNumeric.Value, rightNumeric.Value), polarity), true
+	leftScore, leftOK := parseComparableScore(leftTrimmed)
+	rightScore, rightOK := parseComparableScore(rightTrimmed)
+	if !leftOK || !rightOK {
+		return 0, dimensionComparisonUnresolved
 	}
 
-	if leftOrdinal, ok := parseOrdinalScore(leftTrimmed); ok {
-		rightOrdinal, rightOK := parseOrdinalScore(rightTrimmed)
-		if !rightOK {
-			return 0, false
-		}
-		return orientComparison(compareOrderedValues(float64(leftOrdinal.Rank), float64(rightOrdinal.Rank)), polarity), true
+	comparison, comparable := compareParsedScores(leftScore, rightScore, polarity)
+	if !comparable {
+		return 0, dimensionComparisonUnresolved
 	}
 
-	return 0, false
+	return comparison, dimensionComparisonComparable
 }
 
 func orientComparison(raw int, polarity string) int {
@@ -1976,6 +2005,81 @@ func parseOrdinalScore(value string) (ordinalScore, bool) {
 		return ordinalScore{}, false
 	}
 	return ordinalScore{Rank: rank}, true
+}
+
+func parseComparableScore(value string) (parsedScore, bool) {
+	if numeric, ok := parseNumericScore(value); ok {
+		return parsedScore{
+			Kind:    parsedScoreNumeric,
+			Numeric: numeric,
+		}, true
+	}
+
+	if ordinal, ok := parseOrdinalScore(value); ok {
+		return parsedScore{
+			Kind:    parsedScoreOrdinal,
+			Ordinal: ordinal,
+		}, true
+	}
+
+	return parsedScore{}, false
+}
+
+func compareParsedScores(left parsedScore, right parsedScore, polarity string) (int, bool) {
+	if left.Kind != right.Kind {
+		return 0, false
+	}
+
+	switch left.Kind {
+	case parsedScoreNumeric:
+		if left.Numeric.Unit != right.Numeric.Unit {
+			return 0, false
+		}
+		comparison := compareOrderedValues(left.Numeric.Value, right.Numeric.Value)
+		return orientComparison(comparison, polarity), true
+	case parsedScoreOrdinal:
+		comparison := compareOrderedValues(float64(left.Ordinal.Rank), float64(right.Ordinal.Rank))
+		return orientComparison(comparison, polarity), true
+	default:
+		return 0, false
+	}
+}
+
+func zeroFillScoreValues(leftValue string, rightValue string) (string, string, bool) {
+	leftMissing := isMissingScore(leftValue)
+	rightMissing := isMissingScore(rightValue)
+	if leftMissing && rightMissing {
+		return "", "", false
+	}
+
+	if leftMissing {
+		rightScore, ok := parseComparableScore(rightValue)
+		if !ok {
+			return "", "", false
+		}
+		return renderZeroScore(rightScore), rightValue, true
+	}
+
+	if rightMissing {
+		leftScore, ok := parseComparableScore(leftValue)
+		if !ok {
+			return "", "", false
+		}
+		return leftValue, renderZeroScore(leftScore), true
+	}
+
+	return leftValue, rightValue, true
+}
+
+func renderZeroScore(score parsedScore) string {
+	switch score.Kind {
+	case parsedScoreNumeric:
+		return "0" + score.Numeric.Unit
+	case parsedScoreOrdinal:
+		return "none"
+	default:
+		return ""
+	}
 }
 
 var ordinalScoreRanks = map[string]int{

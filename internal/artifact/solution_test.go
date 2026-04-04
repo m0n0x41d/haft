@@ -792,6 +792,64 @@ func TestComputeParetoFront_ExcludesObservationDimensions(t *testing.T) {
 	}
 }
 
+func TestComputeParetoFront_ExcludeSkipsMissingUnitBearingDimension(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "cost"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "18ms"},
+			"V2": {"latency": "42ms", "cost": "$120"},
+		},
+	}
+
+	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "cost", Role: "target", Polarity: "lower_better"},
+	}, MissingDataPolicyExclude)
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", warnings)
+	}
+	if len(front) != 1 || front[0] != "V1" {
+		t.Fatalf("expected exclude policy to keep latency dominance and front [V1], got %+v", front)
+	}
+}
+
+func TestCompareDimensionValues_ZeroFillInheritsNumericUnit(t *testing.T) {
+	comparison, status := compareDimensionValues("", "18ms", "lower_better", MissingDataPolicyZero)
+	if status != dimensionComparisonComparable {
+		t.Fatalf("expected comparable numeric zero-fill status, got %v", status)
+	}
+	if comparison != 1 {
+		t.Fatalf("expected filled zero to beat 18ms on lower_better dimension, got %d", comparison)
+	}
+
+	comparison, status = compareDimensionValues("", "$120", "lower_better", MissingDataPolicyZero)
+	if status != dimensionComparisonComparable {
+		t.Fatalf("expected comparable currency zero-fill status, got %v", status)
+	}
+	if comparison != 1 {
+		t.Fatalf("expected filled zero to beat $120 on lower_better dimension, got %d", comparison)
+	}
+}
+
+func TestCompareDimensionValues_ZeroFillInheritsOrdinalScale(t *testing.T) {
+	comparison, status := compareDimensionValues("", "High", "lower_better", MissingDataPolicyZero)
+	if status != dimensionComparisonComparable {
+		t.Fatalf("expected comparable ordinal zero-fill status, got %v", status)
+	}
+	if comparison != 1 {
+		t.Fatalf("expected filled ordinal zero to beat High on lower_better dimension, got %d", comparison)
+	}
+
+	comparison, status = compareDimensionValues("Low", "", "higher_better", MissingDataPolicyZero)
+	if status != dimensionComparisonComparable {
+		t.Fatalf("expected comparable ordinal zero-fill status, got %v", status)
+	}
+	if comparison != 1 {
+		t.Fatalf("expected Low to beat filled ordinal zero on higher_better dimension, got %d", comparison)
+	}
+}
+
 func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

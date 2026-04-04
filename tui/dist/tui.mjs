@@ -28103,10 +28103,10 @@ var require_react_jsx_runtime_development = __commonJS({
           }
         }
         var jsx17 = jsxWithValidationDynamic;
-        var jsxs13 = jsxWithValidationStatic;
+        var jsxs14 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
         exports.jsx = jsx17;
-        exports.jsxs = jsxs13;
+        exports.jsxs = jsxs14;
       })();
     }
   }
@@ -36074,16 +36074,25 @@ function TranscriptViewport({
   toolHistoryExpanded,
   width
 }) {
-  const cropTop = Math.max(0, viewport.viewTop - viewport.topSpacer);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -cropTop, flexShrink: 0, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
-    ChatView,
-    {
-      entries,
-      width,
-      toolHistoryExpanded,
-      measureRef
-    }
-  ) });
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", flexShrink: 0, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(TranscriptSpacer, { height: viewport.topSpacer }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      ChatView,
+      {
+        entries,
+        width,
+        toolHistoryExpanded,
+        measureRef
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(TranscriptSpacer, { height: viewport.bottomSpacer })
+  ] });
+}
+function TranscriptSpacer({ height }) {
+  if (height <= 0) {
+    return null;
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { height, flexShrink: 0 });
 }
 
 // src/components/StatusBar.tsx
@@ -37212,19 +37221,16 @@ function App2({ client: client2, inputEvents }) {
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
   return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
-      atBottom && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexGrow: 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
-        TranscriptViewport,
-        {
-          entries: visibleEntries,
-          measureRef,
-          viewport: vw,
-          toolHistoryExpanded,
-          width
-        }
-      )
-    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column-reverse", height: chatHeight, overflowY: "hidden", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+      TranscriptViewport,
+      {
+        entries: visibleEntries,
+        measureRef,
+        viewport: vw,
+        toolHistoryExpanded,
+        width
+      }
+    ) }),
     scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { dimColor: true, children: [
       "  ",
       "\u2191",

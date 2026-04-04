@@ -405,9 +405,8 @@ export function App({ client, inputEvents }: AppProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Chat: fixed-height viewport over a measured virtual transcript. */}
-      <Box flexDirection="column" height={chatHeight} overflowY="hidden">
-        {atBottom && <Box flexGrow={1} />}
+      {/* Chat: bottom-anchored viewport over the full virtual transcript. */}
+      <Box flexDirection="column-reverse" height={chatHeight} overflowY="hidden">
         <TranscriptViewport
           entries={visibleEntries}
           measureRef={measureRef}

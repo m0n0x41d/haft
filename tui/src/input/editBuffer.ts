@@ -82,6 +82,36 @@ export const moveEnd = (s: EditState): EditState => {
   return { ...s, cursor: lineEnd === -1 ? s.text.length : lineEnd }
 }
 
+export const moveUp = (s: EditState): EditState => {
+  const cursor = currentBoundary(s.text, s.cursor)
+  const currentLine = currentLineRange(s.text, cursor)
+  const previousLine = previousLineRange(s.text, currentLine.start)
+
+  if (!previousLine) {
+    return s
+  }
+
+  const targetColumn = displayColumnAtOffset(currentLine.text, cursor - currentLine.start)
+  const targetOffset = offsetForDisplayColumn(previousLine.text, targetColumn)
+
+  return { ...s, cursor: previousLine.start + targetOffset }
+}
+
+export const moveDown = (s: EditState): EditState => {
+  const cursor = currentBoundary(s.text, s.cursor)
+  const currentLine = currentLineRange(s.text, cursor)
+  const nextLine = nextLineRange(s.text, currentLine.end)
+
+  if (!nextLine) {
+    return s
+  }
+
+  const targetColumn = displayColumnAtOffset(currentLine.text, cursor - currentLine.start)
+  const targetOffset = offsetForDisplayColumn(nextLine.text, targetColumn)
+
+  return { ...s, cursor: nextLine.start + targetOffset }
+}
+
 export const moveWordLeft = (s: EditState): EditState => {
   if (s.cursor === 0) return s
   let i = s.cursor
@@ -131,4 +161,98 @@ function nextBoundary(
   cursor: number,
 ): number {
   return findNextGraphemeBoundary(text, currentBoundary(text, cursor))
+}
+
+type LineRange = {
+  start: number
+  end: number
+  text: string
+}
+
+function currentLineRange(
+  text: string,
+  cursor: number,
+): LineRange {
+  const start = text.lastIndexOf("\n", cursor - 1) + 1
+  const nextBreak = text.indexOf("\n", cursor)
+  const end = nextBreak === -1 ? text.length : nextBreak
+
+  return {
+    start,
+    end,
+    text: text.slice(start, end),
+  }
+}
+
+function previousLineRange(
+  text: string,
+  currentLineStart: number,
+): LineRange | null {
+  if (currentLineStart === 0) {
+    return null
+  }
+
+  const end = currentLineStart - 1
+  const start = text.lastIndexOf("\n", end - 1) + 1
+
+  return {
+    start,
+    end,
+    text: text.slice(start, end),
+  }
+}
+
+function nextLineRange(
+  text: string,
+  currentLineEnd: number,
+): LineRange | null {
+  if (currentLineEnd >= text.length) {
+    return null
+  }
+
+  const start = currentLineEnd + 1
+  const nextBreak = text.indexOf("\n", start)
+  const end = nextBreak === -1 ? text.length : nextBreak
+
+  return {
+    start,
+    end,
+    text: text.slice(start, end),
+  }
+}
+
+function displayColumnAtOffset(
+  text: string,
+  offset: number,
+): number {
+  const beforeOffset = text.slice(0, offset)
+
+  return segmentGraphemes(beforeOffset)
+    .reduce((width, grapheme) => width + grapheme.width, 0)
+}
+
+function offsetForDisplayColumn(
+  text: string,
+  targetColumn: number,
+): number {
+  const graphemes = segmentGraphemes(text)
+  let width = 0
+  let offset = 0
+
+  for (const grapheme of graphemes) {
+    const nextWidth = width + grapheme.width
+
+    if (nextWidth > targetColumn) {
+      return grapheme.start
+    }
+
+    width = nextWidth
+    offset = grapheme.end
+
+    if (width === targetColumn) {
+      return offset
+    }
+  }
+
+  return text.length
 }

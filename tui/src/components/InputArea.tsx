@@ -14,6 +14,8 @@ import {
   moveRight,
   moveHome,
   moveEnd,
+  moveUp,
+  moveDown,
   moveWordLeft,
   moveWordRight,
 } from "../input/editBuffer.js"
@@ -178,6 +180,13 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
 
     // --- History / Up arrow ---
     if (key.upArrow) {
+      const nextEdit = moveUp(edit)
+
+      if (nextEdit.cursor !== edit.cursor) {
+        setEdit(moveUp)
+        return
+      }
+
       // Empty input: attachments > queue > history
       if (!edit.text) {
         if (hasAttachments && onEnterAttachmentSelection) {
@@ -202,6 +211,13 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
 
     // --- History / Down arrow ---
     if (key.downArrow) {
+      const nextEdit = moveDown(edit)
+
+      if (nextEdit.cursor !== edit.cursor) {
+        setEdit(moveDown)
+        return
+      }
+
       if (isNavigating(historyRef.current)) {
         const result = navigateDown(historyRef.current)
         if (result) {

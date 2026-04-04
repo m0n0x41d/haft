@@ -11,6 +11,8 @@ import {
   moveHome,
   moveLeft,
   moveRight,
+  moveUp,
+  moveDown,
 } from "./editBuffer.js"
 
 test("keeps Ctrl+J-style newline insertion as multiline text", () => {
@@ -30,6 +32,31 @@ test("moves home and end within the current logical line", () => {
 
   assert.equal(moveHome(prompt).cursor, 6)
   assert.equal(moveEnd(prompt).cursor, 10)
+})
+
+test("moves up and down within multiline input before falling back to history", () => {
+  const prompt = {
+    text: "first line\nsecond line\nthird line",
+    cursor: 17,
+  }
+
+  assert.equal(moveUp(prompt).cursor, 6)
+  assert.equal(moveDown(prompt).cursor, 29)
+})
+
+test("keeps display-column alignment when moving across wide glyph lines", () => {
+  const prompt = {
+    text: "ab你你\nabcd",
+    cursor: 3,
+  }
+
+  assert.equal(moveDown(prompt).cursor, 9)
+  assert.equal(moveUp({ ...prompt, cursor: 9 }).cursor, 3)
+})
+
+test("stays put when vertical movement hits the top or bottom line", () => {
+  assert.equal(moveUp({ text: "first\nsecond", cursor: 2 }).cursor, 2)
+  assert.equal(moveDown(fromText("first\nsecond")).cursor, 12)
 })
 
 test("moveLeft and deleteBack treat emoji clusters as one grapheme", () => {

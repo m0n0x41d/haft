@@ -61,7 +61,7 @@ var AgentMigrations = []db.Migration{
 		Version:     6,
 		Description: "Reasoning cycles table",
 		Statements: []string{
-			`CREATE TABLE IF NOT EXISTS reasoning_cycles (
+			`CREATE TABLE IF NOT EXISTS agent_cycles (
 				id TEXT PRIMARY KEY,
 				session_id TEXT NOT NULL,
 				problem_ref TEXT DEFAULT '',
@@ -70,17 +70,16 @@ var AgentMigrations = []db.Migration{
 				phase TEXT NOT NULL DEFAULT 'framer',
 				depth TEXT NOT NULL DEFAULT 'tactical',
 				status TEXT NOT NULL DEFAULT 'active',
-				lineage_ref TEXT DEFAULT '',
-				weakest_link TEXT DEFAULT '',
+				lineage TEXT DEFAULT '',
 				r_eff REAL DEFAULT 0.0,
 				cl_min INTEGER DEFAULT 3,
-				governance TEXT DEFAULT '[]',
-				skip_log TEXT DEFAULT '[]',
+				governance_json TEXT DEFAULT '[]',
+				skip_json TEXT DEFAULT '[]',
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
-			`CREATE INDEX IF NOT EXISTS idx_cycles_session ON reasoning_cycles(session_id)`,
-			`CREATE INDEX IF NOT EXISTS idx_cycles_status ON reasoning_cycles(status)`,
+			`CREATE INDEX IF NOT EXISTS idx_cycles_session ON agent_cycles(session_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_cycles_status ON agent_cycles(status)`,
 		},
 	},
 	{
@@ -94,8 +93,23 @@ var AgentMigrations = []db.Migration{
 		Version:     8,
 		Description: "Persist assurance tuple on reasoning cycles",
 		Statements: []string{
-			"ALTER TABLE reasoning_cycles ADD COLUMN f_eff INTEGER DEFAULT 0",
-			"ALTER TABLE reasoning_cycles ADD COLUMN g_eff TEXT DEFAULT '[]'",
+			"ALTER TABLE agent_cycles ADD COLUMN f_eff INTEGER DEFAULT 0",
+			"ALTER TABLE agent_cycles ADD COLUMN g_eff TEXT DEFAULT '[]'",
+		},
+	},
+	{
+		Version:     9,
+		Description: "Add yolo column to sessions",
+		Statements: []string{
+			"ALTER TABLE agent_sessions ADD COLUMN yolo INTEGER DEFAULT 0",
+		},
+	},
+	{
+		Version:     10,
+		Description: "Rename message columns to match code",
+		Statements: []string{
+			"ALTER TABLE agent_messages RENAME COLUMN parts TO parts_json",
+			"ALTER TABLE agent_messages RENAME COLUMN token_count TO tokens",
 		},
 	},
 }

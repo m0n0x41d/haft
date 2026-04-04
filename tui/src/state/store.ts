@@ -32,6 +32,7 @@ export interface AppState {
   tokensUsed: number
   tokensLimit: number
   mode: "symbiotic" | "autonomous"
+  yolo: boolean
 
   // Cycle (FPF)
   cycle: CycleUpdateParams | null
@@ -49,7 +50,6 @@ export interface AppState {
   phase: "input" | "streaming" | "permission" | "question"
   error: string | null
   notification: string | null
-  autoApprove: boolean
   thinkExpanded: boolean
 
   // Permission (pending request)
@@ -68,6 +68,7 @@ export function initialState(): AppState {
     tokensUsed: 0,
     tokensLimit: 0,
     mode: "symbiotic",
+    yolo: false,
     cycle: null,
     activeSubagents: 0,
     drift: null,
@@ -77,7 +78,6 @@ export function initialState(): AppState {
     phase: "input",
     error: null,
     notification: null,
-    autoApprove: false,
     thinkExpanded: false,
     permissionRequest: null,
     questionRequest: null,
@@ -109,6 +109,7 @@ export type Action =
   | { type: "clear.error" }
   | { type: "clear.notification" }
   | { type: "toggle.autonomy" }
+  | { type: "toggle.yolo" }
   | { type: "toggle.think" }
   | { type: "set.notification"; text: string }
   | { type: "submitted" }
@@ -121,6 +122,8 @@ export function reducer(state: AppState, action: Action): AppState {
         session: action.session,
         projectRoot: action.projectRoot,
         messages: normalizeMessages(action.messages),
+        mode: action.session.interaction === "autonomous" ? "autonomous" : "symbiotic",
+        yolo: action.session.yolo ?? false,
         phase: "input",
       }
 
@@ -336,6 +339,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "toggle.autonomy":
       return { ...state, mode: state.mode === "symbiotic" ? "autonomous" : "symbiotic" }
+
+    case "toggle.yolo":
+      return { ...state, yolo: !state.yolo }
 
     case "toggle.think":
       return { ...state, thinkExpanded: !state.thinkExpanded }

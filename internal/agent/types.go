@@ -208,6 +208,7 @@ type Session struct {
 	CurrentPhase  Phase       `json:"current_phase,omitempty"` // lemniscate phase state
 	Depth         Depth       `json:"depth,omitempty"`         // which phases to include
 	Interaction   Interaction `json:"interaction,omitempty"`   // pause between phases?
+	Yolo          bool        `json:"yolo,omitempty"`
 	ActiveCycleID string      `json:"active_cycle_id,omitempty"`
 	CreatedAt     time.Time   `json:"created_at"`
 	UpdatedAt     time.Time   `json:"updated_at"`

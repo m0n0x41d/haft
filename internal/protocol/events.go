@@ -16,9 +16,11 @@ type Init struct {
 }
 
 type SessionInfo struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Model string `json:"model"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Model       string `json:"model"`
+	Interaction string `json:"interaction,omitempty"`
+	Yolo        bool   `json:"yolo,omitempty"`
 }
 
 type MsgInfo struct {
@@ -188,6 +190,7 @@ type PermissionAsk struct {
 // PermissionReply is the TUI's response to PermissionAsk.
 type PermissionReply struct {
 	Action string `json:"action"` // "allow" | "allow_session" | "deny"
+	Yolo   bool   `json:"yolo,omitempty"`
 }
 
 // QuestionAsk is AskUserQuestion — agent asks the user something.

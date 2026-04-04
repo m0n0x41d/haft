@@ -586,7 +586,7 @@ func (c *Coordinator) executeToolCallsSequential(
 
 		// Permission check
 		level := agent.EvaluatePermission(tc.ToolName, tc.Arguments)
-		if level == agent.PermissionNeedsApproval {
+		if level == agent.PermissionNeedsApproval && !sess.Yolo {
 			reply, err := c.Bus.AskPermission(protocol.PermissionAsk{
 				ToolName: tc.ToolName,
 				Args:     tc.Arguments,
@@ -594,6 +594,9 @@ func (c *Coordinator) executeToolCallsSequential(
 			if err != nil || reply.Action == "deny" {
 				output = "Permission denied by user."
 				isError = true
+			} else if reply.Action == "allow_session" || reply.Yolo {
+				sess.Yolo = true
+				_ = c.Sessions.Update(ctx, sess)
 			}
 		}
 

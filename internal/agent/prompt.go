@@ -150,7 +150,7 @@ CRITICAL RULES:
 - After frame and after explore: STOP and present your work. Wait for user.
 - If the user says "just do it", "go ahead", or toggles autonomous mode — chain without stopping.
 
-### Autonomous mode (Ctrl+Q / Ctrl+A)
+### Autonomous mode (Ctrl+Q)
 When the user enables autonomous mode, your behavior fundamentally changes:
 - You become an EXECUTOR, not a presenter. Act first, report results.
 - Chain all phases without stopping. No "STOP and present" — just work.

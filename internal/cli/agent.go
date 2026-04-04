@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/agentloop"
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -104,20 +104,22 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("project not initialized — run 'haft init' first")
 	}
 
-	// 3. Open DB (WAL + busy timeout, same as board.go)
+	// 3. Open DB through the canonical migrated store path.
 	dbPath, err := projCfg.DBPath()
 	if err != nil {
 		return fmt.Errorf("get DB path: %w", err)
 	}
-	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)"
-	sqlDB, err := sql.Open("sqlite", dsn)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return fmt.Errorf("open DB: %w", err)
 	}
-	defer sqlDB.Close()
+	defer database.Close()
+	if err := database.GetRawDB().Ping(); err != nil {
+		return fmt.Errorf("ping DB: %w", err)
+	}
 
-	// 4. Create session store (runs migrations)
-	store, err := session.NewSQLiteStore(sqlDB)
+	// 4. Create session store (runs agent-specific migrations)
+	store, err := session.NewSQLiteStore(database.GetRawDB())
 	if err != nil {
 		return fmt.Errorf("init session store: %w", err)
 	}
@@ -147,7 +149,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	toolRegistry := tools.NewRegistry(projectRoot)
 
 	// Wire haft kernel tools — same core as MCP server, different transport
-	artStore := artifact.NewStore(sqlDB)
+	artStore := artifact.NewStore(database.GetRawDB())
 	toolRegistry.Register(tools.NewHaftProblemTool(artStore, haftDir))
 	toolRegistry.Register(tools.NewHaftSolutionTool(artStore, haftDir, toolRegistry))
 	toolRegistry.Register(tools.NewHaftDecisionTool(artStore, haftDir, projectRoot, toolRegistry))
@@ -378,7 +380,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 			}
 
 		case protocol.MethodAutonomyToggle:
-			var toggle protocol.AutonomyToggle
+			var toggle protocol.ModeUpdate
 			if err := msg.UnmarshalParams(&toggle); err != nil {
 				return
 			}
@@ -387,6 +389,15 @@ func runAgent(cmd *cobra.Command, args []string) error {
 			} else {
 				sess.Interaction = agent.InteractionSymbiotic
 			}
+			_ = store.Update(cmd.Context(), sess)
+
+		case protocol.MethodYoloToggle:
+			var toggle protocol.ModeUpdate
+			if err := msg.UnmarshalParams(&toggle); err != nil {
+				return
+			}
+			sess.Yolo = toggle.Yolo
+			_ = store.Update(cmd.Context(), sess)
 
 		case protocol.MethodSessionList:
 			if msg.ID != nil {
@@ -403,6 +414,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 						}
 						infos = append(infos, protocol.SessionInfo{
 							ID: s.ID, Title: s.Title, Model: s.Model,
+							Interaction: string(s.Interaction), Yolo: s.Yolo,
 						})
 					}
 					_ = rpc.Respond(*msg.ID, protocol.SessionListResponse{Sessions: infos})
@@ -435,7 +447,10 @@ func runAgent(cmd *cobra.Command, args []string) error {
 						})
 					}
 					_ = rpc.Respond(*msg.ID, protocol.SessionResumeResponse{
-						Session:  protocol.SessionInfo{ID: sess.ID, Title: sess.Title, Model: sess.Model},
+						Session: protocol.SessionInfo{
+							ID: sess.ID, Title: sess.Title, Model: sess.Model,
+							Interaction: string(sess.Interaction), Yolo: sess.Yolo,
+						},
 						Messages: msgInfos,
 					})
 				}()
@@ -511,9 +526,11 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// Send init event
 	_ = bus.SendInit(protocol.Init{
 		Session: protocol.SessionInfo{
-			ID:    sess.ID,
+			ID: sess.ID,
 			Title: sess.Title,
 			Model: sess.Model,
+			Interaction: string(sess.Interaction),
+			Yolo: sess.Yolo,
 		},
 		ProjectRoot: projectRoot,
 	})

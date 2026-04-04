@@ -14,19 +14,35 @@ import type { JsonRpcMessage, PermissionReply, QuestionReply } from "./types.js"
 export type RequestHandler = (method: string, params: unknown, respond: (result: unknown) => void) => void
 export type NotificationHandler = (method: string, params: unknown) => void
 
+interface ReadlineLike {
+  on(event: "line", handler: (line: string) => void): ReadlineLike
+  on(event: "close", handler: () => void): ReadlineLike
+}
+
+type WriteCallback = (err: NodeJS.ErrnoException | null) => void
+type WriteFn = (fd: number, buffer: Buffer, offset: number, length: number, position: number | null, callback: WriteCallback) => unknown
+
+interface JsonRpcClientDeps {
+  createInterface?: () => ReadlineLike
+  write?: WriteFn
+}
+
 export class JsonRpcClient {
   private nextId = 1
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   private onRequest: RequestHandler | null = null
   private onNotification: NotificationHandler | null = null
-  private rl: readline.Interface
+  private rl: ReadlineLike
+  private readonly write: WriteFn
 
   // Async write queue: serializes writes so they never interleave,
   // and uses fs.write(fd) which goes through libuv's threadpool (non-blocking).
+  // A failed write must not poison the queue forever.
   private writeChain: Promise<void> = Promise.resolve()
 
-  constructor() {
-    this.rl = readline.createInterface({ input: process.stdin })
+  constructor(deps: JsonRpcClientDeps = {}) {
+    this.rl = deps.createInterface?.() ?? readline.createInterface({ input: process.stdin })
+    this.write = deps.write ?? fsWrite
     this.rl.on("line", (line) => this.handleLine(line))
     this.rl.on("close", () => process.exit(0))
   }
@@ -107,14 +123,19 @@ export class JsonRpcClient {
   // threadpool) rather than process.stdout.write() which can block in Bun.
   private enqueueWrite(msg: JsonRpcMessage): void {
     const line = JSON.stringify(msg) + "\n"
-    this.writeChain = this.writeChain.then(() => this.writeAsync(line))
+    this.writeChain = this.writeChain
+      .catch(() => {})
+      .then(() => this.writeAsync(line))
+      .catch((err) => {
+        trace(`rpc.write.queue.err ${err instanceof Error ? err.message : String(err)}`)
+      })
   }
 
   private writeAsync(line: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const buf = Buffer.from(line, "utf-8")
       trace(`rpc.write len=${buf.length}`)
-      fsWrite(1, buf, 0, buf.length, null, (err) => {
+      this.write(1, buf, 0, buf.length, null, (err) => {
         if (err) {
           trace(`rpc.write.err ${err.message}`)
           reject(err)

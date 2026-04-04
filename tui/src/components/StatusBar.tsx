@@ -7,6 +7,7 @@ interface Props {
   tokensUsed: number
   tokensLimit: number
   mode: "symbiotic" | "autonomous"
+  yolo: boolean
   streaming: boolean
   subagents: number
   cycle: CycleUpdateParams | null
@@ -17,47 +18,44 @@ interface Props {
 
 // Single line, paddingX=1, gap=2, dimColor for most text
 export function StatusBar(props: Props) {
-  const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, width } = props
+  const { model, tokensUsed, tokensLimit, mode, yolo, streaming, subagents, cycle, drift, notification, width } = props
 
-  // Build status text parts — CC renders this as a single dimColor Text
-  const parts: string[] = []
+  const parts: React.ReactNode[] = [<Text key="model" dimColor>{model}</Text>]
 
-  // Model
-  parts.push(model)
-
-  // Tokens
   if (tokensLimit > 0) {
-    parts.push(`${formatTokens(tokensUsed)}/${formatTokens(tokensLimit)}`)
+    parts.push(<Text key="tokens" dimColor>{formatTokens(tokensUsed)}/{formatTokens(tokensLimit)}</Text>)
   }
 
-  // Mode (only show if not default)
   if (mode === "autonomous") {
-    parts.push("auto")
+    parts.push(<Text key="auto" color="cyanBright" bold>auto</Text>)
   }
 
-  // Subagents
+  if (yolo) {
+    parts.push(<Text key="yolo" color="yellowBright" bold>yolo</Text>)
+  }
+
+  if (streaming) {
+    parts.push(<Text key="streaming" color="greenBright">stream</Text>)
+  }
+
   if (subagents > 0) {
-    parts.push(`${subagents} agent${subagents > 1 ? "s" : ""}`)
+    parts.push(<Text key="subagents" dimColor>{subagents} agent{subagents > 1 ? "s" : ""}</Text>)
   }
 
-  // Cycle
   if (cycle?.problemTitle) {
-    parts.push(`${cycle.phase}: ${cycle.problemTitle}`)
+    parts.push(<Text key="cycle" dimColor>{cycle.phase}: {cycle.problemTitle}</Text>)
   }
 
-  // Drift
   if (drift && drift.drifted > 0) {
-    parts.push(`\u25B2${drift.drifted} drift`)
+    parts.push(<Text key="drift" color="redBright">▲{drift.drifted} drift</Text>)
   }
-
-  const statusText = parts.join(" \u2219 ")
 
   return (
-    <Box paddingX={1} gap={2} width={width}>
+    <Box paddingX={1} gap={1} width={width}>
       <Box flexGrow={1} flexShrink={1}>
-        <Text dimColor wrap="truncate-end">{statusText}</Text>
+        {parts.flatMap((part, index) => index === 0 ? [part] : [<Text key={`sep-${index}`} dimColor> ∙ </Text>, part])}
       </Box>
-      {notification && <Text dimColor>{notification}</Text>}
+      {notification && <Text color="cyanBright">{notification}</Text>}
     </Box>
   )
 }

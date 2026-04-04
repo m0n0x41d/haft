@@ -23,9 +23,10 @@ type Attachment struct {
 // Cancel requests cancellation of the current coordinator run.
 type Cancel struct{}
 
-// AutonomyToggle switches between symbiotic and autonomous mode.
-type AutonomyToggle struct {
-	Autonomous bool `json:"autonomous"`
+// ModeUpdate updates session-level execution modes.
+type ModeUpdate struct {
+	Autonomous bool `json:"autonomous,omitempty"`
+	Yolo       bool `json:"yolo,omitempty"`
 }
 
 // Resize notifies the backend of terminal size change.
@@ -142,6 +143,7 @@ const (
 	MethodSubmit         = "submit"
 	MethodCancel         = "cancel"
 	MethodAutonomyToggle = "autonomy.toggle"
+	MethodYoloToggle     = "yolo.toggle"
 	MethodResize         = "resize"
 
 	// TUI → Backend requests

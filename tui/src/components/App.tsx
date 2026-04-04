@@ -18,7 +18,6 @@ import { INITIAL_SELECTION, reduceSelection, hasSelection, normalizedRange, type
 import { copyToClipboard } from "../selection/clipboard.js"
 import { extractSelection, type ViewportLayout } from "../selection/extract.js"
 import { TranscriptViewport } from "./TranscriptViewport.js"
-import { OverseerPanel, buildOverseerLines } from "./OverseerPanel.js"
 import { StatusBar } from "./StatusBar.js"
 import { InputArea, type InputAreaHandle } from "./InputArea.js"
 import { PermissionDialog } from "./PermissionDialog.js"
@@ -69,10 +68,6 @@ export function App({ client, inputEvents }: AppProps) {
   const nextAttachmentId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
-  const overseerLines = useMemo(
-    () => buildOverseerLines(state.overseerAlerts, state.overseerFindings),
-    [state.overseerAlerts, state.overseerFindings],
-  )
 
   // Stable ref to handleSubmit — protocol handler (registered once) always calls latest version
   const handleSubmitRef = useRef<(text: string) => void>(() => {})
@@ -139,7 +134,7 @@ export function App({ client, inputEvents }: AppProps) {
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
 
   // --- L2: Scroll (measured line-based) ---
-  const bottomRows = BASE_BOTTOM_ROWS + overseerLines.length
+  const bottomRows = BASE_BOTTOM_ROWS
   const chatHeight = Math.max(5, height - bottomRows)
   const { entryHeights, measureRef } = useMeasuredTranscript(
     transcript,
@@ -293,10 +288,15 @@ export function App({ client, inputEvents }: AppProps) {
   handleSubmitRef.current = handleSubmit
 
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
-    respondRef.current?.({ action }); respondRef.current = null
+    const yolo = action === "allow_session"
+    respondRef.current?.({ action, yolo }); respondRef.current = null
     dispatch({ type: "permission.replied" })
-    if (action === "allow_session") dispatch({ type: "set.notification", text: "Auto-approve enabled" })
-  }, [])
+    if (yolo && !state.yolo) {
+      dispatch({ type: "toggle.yolo" })
+      client.send("yolo.toggle", { yolo: true })
+      dispatch({ type: "set.notification", text: "yolo enabled" })
+    }
+  }, [client, state.yolo])
 
   const handleQuestion = useCallback((answer: string) => {
     respondRef.current?.({ answer }); respondRef.current = null
@@ -372,7 +372,14 @@ export function App({ client, inputEvents }: AppProps) {
       const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic"
       dispatch({ type: "toggle.autonomy" })
       client.send("autonomy.toggle", { autonomous: newMode === "autonomous" })
-      dispatch({ type: "set.notification", text: `${newMode} mode` })
+      dispatch({ type: "set.notification", text: newMode === "autonomous" ? "auto enabled" : "auto disabled" })
+      return
+    }
+    if (key.ctrl && input === "y") {
+      const nextYolo = !state.yolo
+      dispatch({ type: "toggle.yolo" })
+      client.send("yolo.toggle", { yolo: nextYolo })
+      dispatch({ type: "set.notification", text: nextYolo ? "yolo enabled" : "yolo disabled" })
       return
     }
     if (key.ctrl && input === "m") { openModelPicker(); return }
@@ -469,13 +476,10 @@ export function App({ client, inputEvents }: AppProps) {
       {/* Bottom separator */}
       <Text dimColor>{"\u2500".repeat(width)}</Text>
 
-      {/* Overseer findings */}
-      {overseerLines.length > 0 && <OverseerPanel lines={overseerLines} />}
-
       {/* Status */}
       <StatusBar
         model={state.session.model} tokensUsed={state.tokensUsed} tokensLimit={state.tokensLimit}
-        mode={state.mode} streaming={state.phase === "streaming"} subagents={state.activeSubagents}
+        mode={state.mode} yolo={state.yolo} streaming={state.phase === "streaming"} subagents={state.activeSubagents}
         cycle={state.cycle} drift={state.drift} notification={state.notification} width={width}
       />
     </Box>

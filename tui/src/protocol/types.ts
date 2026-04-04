@@ -26,6 +26,8 @@ export interface SessionInfo {
   id: string
   title: string
   model: string
+  interaction?: "symbiotic" | "autonomous"
+  yolo?: boolean
 }
 
 export interface WireMsgInfo {
@@ -203,6 +205,7 @@ export interface PermissionAskParams {
 
 export interface PermissionReply {
   action: "allow" | "allow_session" | "deny"
+  yolo?: boolean
 }
 
 export interface QuestionAskParams {

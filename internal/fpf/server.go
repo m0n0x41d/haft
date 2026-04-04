@@ -336,13 +336,27 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"items":       map[string]string{"type": "string"},
 						"description": "(compare) Variant IDs on the Pareto front",
 					},
+					"dominated_variants": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "object"},
+						"description": "(compare) Persisted elimination notes for dominated variants",
+					},
+					"pareto_tradeoffs": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "object"},
+						"description": "(compare) Persisted trade-off notes for Pareto-front variants",
+					},
 					"policy_applied": map[string]string{
 						"type":        "string",
 						"description": "(compare) Selection policy that was applied",
 					},
 					"selected_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Recommended variant ID",
+						"description": "(compare) Advisory recommendation variant ID; the human still chooses",
+					},
+					"recommendation_rationale": map[string]string{
+						"type":        "string",
+						"description": "(compare) Why the advisory recommendation is preferred under the declared policy",
 					},
 					"context": map[string]string{
 						"type":        "string",

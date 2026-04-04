@@ -61,6 +61,30 @@ func TestRetrieveSpec_HydratesFullSectionContent(t *testing.T) {
 	}
 }
 
+func TestRetrieveSpec_SemanticModeUsesExperimentalTier(t *testing.T) {
+	_, db, cleanup := buildRetrievalTestIndex(t)
+	defer cleanup()
+
+	result, err := RetrieveSpec(db, SpecRetrievalRequest{
+		Query: "boundary contract unpacking",
+		Limit: 2,
+		Mode:  SpecRetrievalModeSemantic,
+	})
+	if err != nil {
+		t.Fatalf("RetrieveSpec returned error: %v", err)
+	}
+
+	if len(result.Results) == 0 {
+		t.Fatal("expected semantic retrieval results")
+	}
+	if result.Results[0].Tier != SpecSearchTierSemantic {
+		t.Fatalf("expected semantic tier, got %q", result.Results[0].Tier)
+	}
+	if !strings.Contains(result.Results[0].Reason, "semantic seed") {
+		t.Fatalf("expected semantic reason, got %q", result.Results[0].Reason)
+	}
+}
+
 func buildRetrievalTestIndex(t *testing.T) (string, *sql.DB, func()) {
 	t.Helper()
 

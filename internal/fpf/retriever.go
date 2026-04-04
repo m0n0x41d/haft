@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const SpecRetrievalModeSemantic = "semantic"
+
 // SpecRetrievalRequest captures deterministic spec retrieval controls for
 // higher-level agent, CLI, and MCP surfaces.
 type SpecRetrievalRequest struct {
@@ -12,6 +14,7 @@ type SpecRetrievalRequest struct {
 	Limit int
 	Tier  string
 	Full  bool
+	Mode  string
 }
 
 // SpecRetrievalResult is the structured retrieval response returned to shell
@@ -36,10 +39,7 @@ type SpecRetrievedSection struct {
 // downstream CLI, MCP, and agent surfaces.
 func RetrieveSpec(db *sql.DB, request SpecRetrievalRequest) (SpecRetrievalResult, error) {
 	query := strings.TrimSpace(request.Query)
-	searchResults, err := SearchSpecWithOptions(db, query, SpecSearchOptions{
-		Limit: request.Limit,
-		Tier:  request.Tier,
-	})
+	searchResults, err := retrieveSpecSearchResults(db, query, request)
 	if err != nil {
 		return SpecRetrievalResult{}, err
 	}
@@ -53,6 +53,30 @@ func RetrieveSpec(db *sql.DB, request SpecRetrievalRequest) (SpecRetrievalResult
 		Query:   query,
 		Results: results,
 	}, nil
+}
+
+func retrieveSpecSearchResults(db *sql.DB, query string, request SpecRetrievalRequest) ([]SpecSearchResult, error) {
+	switch normalizeSpecRetrievalMode(request.Mode) {
+	case SpecRetrievalModeSemantic:
+		return SearchSpecSemantically(db, query, SemanticSearchOptions{
+			Limit: request.Limit,
+		})
+	default:
+		return SearchSpecWithOptions(db, query, SpecSearchOptions{
+			Limit: request.Limit,
+			Tier:  request.Tier,
+			Mode:  request.Mode,
+		})
+	}
+}
+
+func normalizeSpecRetrievalMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case SpecRetrievalModeSemantic:
+		return SpecRetrievalModeSemantic
+	}
+	return ""
 }
 
 func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full bool) SpecRetrievedSection {

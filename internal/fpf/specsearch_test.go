@@ -622,12 +622,22 @@ func TestGetSpecSection_HeadingOrPattern(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	body, err := GetSpecSection(db, "E.9")
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name   string
+		lookup string
+	}{
+		{name: "pattern id", lookup: "E.9"},
+		{name: "heading", lookup: "E.9 — Decision Record"},
 	}
-	if !strings.Contains(body, "Decision rationale") {
-		t.Fatalf("unexpected body: %s", body)
+
+	for _, tt := range tests {
+		body, err := GetSpecSection(db, tt.lookup)
+		if err != nil {
+			t.Fatalf("%s lookup failed: %v", tt.name, err)
+		}
+		if !strings.Contains(body, "Decision rationale") {
+			t.Fatalf("%s lookup returned unexpected body: %s", tt.name, body)
+		}
 	}
 }
 

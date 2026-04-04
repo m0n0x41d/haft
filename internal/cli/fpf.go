@@ -26,7 +26,8 @@ Examples:
   haft fpf search "ADI cycle" --limit 5
   haft fpf search "characterization" --full
   haft fpf search "boundary routing" --tier route --explain
-  haft fpf section "3.1. WLNK"
+  haft fpf section "A.6"
+  haft fpf section "A.6 - Signature Stack & Boundary Discipline"
   haft fpf info`,
 }
 
@@ -38,10 +39,16 @@ var fpfSearchCmd = &cobra.Command{
 }
 
 var fpfSectionCmd = &cobra.Command{
-	Use:   "section <heading>",
-	Short: "Get full content of a section by heading",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runFPFSection,
+	Use:   "section <heading-or-pattern-id>",
+	Short: "Get full content of a section by heading or pattern id",
+	Long: `Look up one exact FPF section by either its indexed heading or its pattern id.
+
+Pattern id input uses the same normalization as search, so common formatting
+variants such as "a.6" and "A.6:" still resolve to the canonical section.`,
+	Example: `  haft fpf section "A.6"
+  haft fpf section "A.6 - Signature Stack & Boundary Discipline"`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: runFPFSection,
 }
 
 var fpfInfoCmd = &cobra.Command{
@@ -158,7 +165,7 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 }
 
 func runFPFSection(cmd *cobra.Command, args []string) error {
-	heading := strings.Join(args, " ")
+	lookup := strings.Join(args, " ")
 
 	db, cleanup, err := openFPFDBFunc()
 	if err != nil {
@@ -166,12 +173,12 @@ func runFPFSection(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	body, err := fpf.GetSpecSection(db, heading)
+	body, err := fpf.GetSpecSection(db, lookup)
 	if err != nil {
-		return fmt.Errorf("section not found: %s", heading)
+		return fmt.Errorf("section not found by heading or pattern id: %q", lookup)
 	}
 
-	fmt.Print(present.FormatFPFSection(heading, body))
+	fmt.Print(present.FormatFPFSection(lookup, body))
 	return nil
 }
 

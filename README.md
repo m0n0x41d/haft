@@ -137,6 +137,13 @@ The agent captures decisions automatically when it notices them in conversation.
 
 `haft fpf search` gives you access to the indexed FPF specification — the agent can look up concepts on demand. In MCP-capable clients, the same capability is also available through `haft_query(action="fpf", query="...")`.
 
+If you already know the exact section, use explicit section lookup by heading or pattern id:
+
+```bash
+haft fpf section "A.6"
+haft fpf section "A.6 - Signature Stack & Boundary Discipline"
+```
+
 ---
 
 ## Learn More

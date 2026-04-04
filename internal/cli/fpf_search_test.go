@@ -84,6 +84,66 @@ func TestRunFPFSearch_InvalidTier(t *testing.T) {
 	}
 }
 
+func TestRunFPFSection_LooksUpHeadingAndPatternID(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	tests := []struct {
+		name        string
+		args        []string
+		wantHeading string
+		wantBody    string
+	}{
+		{
+			name:        "pattern id",
+			args:        []string{"A.6"},
+			wantHeading: "## A.6",
+			wantBody:    "TAIL-MARKER",
+		},
+		{
+			name:        "heading",
+			args:        []string{"A.6 - Signature Stack & Boundary Discipline"},
+			wantHeading: "## A.6 - Signature Stack & Boundary Discipline",
+			wantBody:    "TAIL-MARKER",
+		},
+	}
+
+	for _, tt := range tests {
+		output, err := captureStdout(t, func() error {
+			return runFPFSection(nil, tt.args)
+		})
+		if err != nil {
+			t.Fatalf("%s lookup returned error: %v", tt.name, err)
+		}
+		if !strings.Contains(output, tt.wantHeading) {
+			t.Fatalf("%s lookup output missing heading %q:\n%s", tt.name, tt.wantHeading, output)
+		}
+		if !strings.Contains(output, tt.wantBody) {
+			t.Fatalf("%s lookup output missing body marker %q:\n%s", tt.name, tt.wantBody, output)
+		}
+	}
+}
+
+func TestRunFPFSection_NotFoundMentionsHeadingAndPatternID(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	err := runFPFSection(nil, []string{"missing section"})
+	if err == nil {
+		t.Fatal("expected missing section error")
+	}
+	if !strings.Contains(err.Error(), "heading or pattern id") {
+		t.Fatalf("expected error to mention heading or pattern id, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "\"missing section\"") {
+		t.Fatalf("expected error to include the lookup text, got: %v", err)
+	}
+}
+
 func buildFPFSearchTestDB(t *testing.T) string {
 	t.Helper()
 

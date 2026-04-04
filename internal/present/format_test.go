@@ -182,3 +182,140 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Problems: []artifact.ProblemProjection{
+			{
+				Meta: artifact.Meta{
+					ID:     "prob-001",
+					Title:  "Transport choice",
+					Mode:   artifact.ModeStandard,
+					Status: artifact.StatusActive,
+				},
+				Signal:              "Latency variance between protocols",
+				Acceptance:          "Choose the transport with the best latency trade-off",
+				OptimizationTargets: []string{"latency", "operational cost"},
+				PortfolioRefs:       []string{"sol-001"},
+				DecisionRefs:        []string{"dec-001"},
+				Evidence: artifact.ProjectionEvidenceSummary{
+					WLNK: artifact.WLNKSummary{Summary: "no evidence attached"},
+				},
+			},
+		},
+		Portfolios: []artifact.PortfolioProjection{
+			{
+				Meta: artifact.Meta{
+					ID:     "sol-001",
+					Title:  "Solutions for: Transport choice",
+					Mode:   artifact.ModeStandard,
+					Status: artifact.StatusActive,
+				},
+				ProblemRefs:  []string{"prob-001"},
+				DecisionRefs: []string{"dec-001"},
+				Variants: []artifact.Variant{
+					{ID: "V1", Title: "REST"},
+					{ID: "V2", Title: "gRPC"},
+				},
+				Comparison: &artifact.ComparisonResult{
+					NonDominatedSet: []string{"V2"},
+					DominatedVariants: []artifact.DominatedVariantExplanation{
+						{
+							Variant:     "V1",
+							DominatedBy: []string{"V2"},
+							Summary:     "Higher latency with no compensating cost advantage.",
+						},
+					},
+					ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+						{Variant: "V2", Summary: "Best latency, but more tooling overhead than REST."},
+					},
+					PolicyApplied:           "Minimize latency within the accepted cost envelope.",
+					SelectedRef:             "V2",
+					RecommendationRationale: "It keeps latency low while staying inside the current budget tolerance.",
+				},
+				Evidence: artifact.ProjectionEvidenceSummary{
+					WLNK: artifact.WLNKSummary{Summary: "no evidence attached"},
+				},
+			},
+		},
+		Decisions: []artifact.DecisionProjection{
+			{
+				Meta: artifact.Meta{
+					ID:         "dec-001",
+					Title:      "gRPC",
+					Mode:       artifact.ModeStandard,
+					Status:     artifact.StatusActive,
+					ValidUntil: "2026-12-31T00:00:00Z",
+				},
+				ProblemRefs:     []string{"prob-001"},
+				PortfolioRefs:   []string{"sol-001"},
+				SelectedTitle:   "gRPC",
+				SelectionPolicy: "Minimize latency within the accepted cost envelope.",
+				CounterArgument: "Tooling and local debugging remain weaker than the simpler HTTP baseline.",
+				WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
+				Measured:        true,
+				Evidence: artifact.ProjectionEvidenceSummary{
+					MeasurementCount: 1,
+					WLNK: artifact.WLNKSummary{
+						Summary:      "R_eff=0.60 · 2 evidence item(s) · 1 supporting · 1 weakening",
+						REff:         0.60,
+						FEff:         2,
+						WeakestCL:    1,
+						MinFreshness: "2026-07-01T00:00:00Z",
+						CoverageGaps: []string{"operational-cost"},
+					},
+				},
+			},
+		},
+	}
+
+	cases := []struct {
+		view  artifact.ProjectionView
+		wants []string
+	}{
+		{
+			view: artifact.ProjectionViewEngineer,
+			wants: []string{
+				"## Engineer View",
+				"Signal: Latency variance between protocols",
+				"Portfolios: sol-001",
+				"Selected: gRPC",
+			},
+		},
+		{
+			view: artifact.ProjectionViewManager,
+			wants: []string{
+				"## Manager/Status View",
+				"Problems: 0 backlog, 0 in progress, 1 addressed",
+				"Decisions: 0 pending follow-through, 1 measured/shipped, 0 refresh due",
+			},
+		},
+		{
+			view: artifact.ProjectionViewAudit,
+			wants: []string{
+				"## Audit/Evidence View",
+				"Selection policy: Minimize latency within the accepted cost envelope.",
+				"Coverage gaps: operational-cost",
+				"Assurance: R_eff=0.60 | F_eff=2 | weakest CL=1",
+			},
+		},
+		{
+			view: artifact.ProjectionViewCompare,
+			wants: []string{
+				"## Compare/Pareto View",
+				"Computed Pareto front: gRPC",
+				"Dominated variant elimination:",
+				"Recommendation (advisory): gRPC",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		output := present.ProjectionResponse(graph, tc.view)
+		for _, want := range tc.wants {
+			if !strings.Contains(output, want) {
+				t.Fatalf("view %s missing %q:\n%s", tc.view, want, output)
+			}
+		}
+	}
+}

@@ -935,6 +935,18 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		}
 		return present.RelatedResponse(results, file) + navStrip, nil
 
+	case "projection":
+		viewName, _ := args["view"].(string)
+		view, err := artifact.ParseProjectionView(viewName)
+		if err != nil {
+			return "", err
+		}
+		graph, err := artifact.FetchProjectionGraph(ctx, store, contextName)
+		if err != nil {
+			return "", err
+		}
+		return present.ProjectionResponse(graph, view) + navStrip, nil
+
 	case "list":
 		kind, _ := args["kind"].(string)
 		limit := 50

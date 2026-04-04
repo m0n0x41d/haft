@@ -1375,13 +1375,15 @@ Actions:
 - search: FTS5 keyword search across all artifacts.
 - status: Compact dashboard — shipped/pending decisions, stale items, coverage.
 - related: Find decisions affecting a specific file.
+- projection: Render engineer/manager/audit/compare views from the same artifact graph.
 - fpf: Search the FPF specification for formal definitions, aggregation rules, and patterns.`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action": map[string]any{"type": "string", "enum": []string{"search", "status", "related", "fpf"}, "description": "search | status | related | fpf"},
+				"action": map[string]any{"type": "string", "enum": []string{"search", "status", "related", "projection", "fpf"}, "description": "search | status | related | projection | fpf"},
 				"query":  map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
 				"file":   map[string]any{"type": "string", "description": "File path (related)"},
+				"view":   map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare; defaults to engineer"},
 				"limit":  map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
 				"full":   map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
 				"explain": map[string]any{
@@ -1445,6 +1447,17 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 			fmt.Fprintf(&b, "- [%s] %s\n", r.Meta.ID, r.Meta.Title)
 		}
 		return agent.PlainResult(b.String()), nil
+
+	case "projection":
+		view, err := artifact.ParseProjectionView(jsonStr(args, "view"))
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		graph, err := artifact.FetchProjectionGraph(ctx, t.store, "")
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		return agent.PlainResult(present.ProjectionResponse(graph, view)), nil
 
 	case "fpf":
 		query := jsonStr(args, "query")

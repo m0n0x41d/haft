@@ -7,10 +7,11 @@ import (
 
 // QueryInput is the input for query operations.
 type QueryInput struct {
-	Action  string `json:"action"` // search, status, related
+	Action  string `json:"action"` // search, status, related, projection
 	Query   string `json:"query,omitempty"`
 	File    string `json:"file,omitempty"`
 	Context string `json:"context,omitempty"`
+	View    string `json:"view,omitempty"`
 	Limit   int    `json:"limit,omitempty"`
 }
 

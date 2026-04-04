@@ -289,6 +289,31 @@ func TestHaftQueryTool_FPFPassesOptionalSearchControls(t *testing.T) {
 	}
 }
 
+func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftQueryTool(fixture.store, nil)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action": "projection",
+		"view":   "compare",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"## Compare/Pareto View",
+		fixture.comparedPortfolio.Meta.ID,
+		"Computed Pareto front:",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(result.DisplayText, want) {
+			t.Fatalf("projection response missing %q:\n%s", want, result.DisplayText)
+		}
+	}
+}
+
 func TestHaftSolutionTool_ExploreAcceptsNoSteppingStoneRationale(t *testing.T) {
 	store := setupHaftToolStore(t)
 	tool := NewHaftSolutionTool(store, t.TempDir(), nil)

@@ -189,9 +189,6 @@ func runFPFInfo(cmd *cobra.Command, args []string) error {
 	info.BuildTime = indexInfo.BuildTime
 	info.SpecPath = indexInfo.SpecPath
 	info.SchemaVersion = indexInfo.SchemaVersion
-	if strings.TrimSpace(indexInfo.Commit) != "" {
-		info.Source = fmt.Sprintf("https://github.com/ailev/FPF/commit/%s", indexInfo.Commit)
-	}
 
 	fmt.Print(present.FormatFPFInfo(info))
 	return nil

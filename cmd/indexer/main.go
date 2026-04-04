@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -85,7 +84,7 @@ func run() error {
 
 func buildSpecIndexMetadata(specPath string, indexedSections int, explicitCommit string, buildTime time.Time) map[string]string {
 	return map[string]string{
-		"fpf_commit":       resolveSpecCommit(specPath, explicitCommit),
+		"fpf_commit":       resolveSpecCommit(explicitCommit),
 		"indexed_sections": fmt.Sprintf("%d", indexedSections),
 		"build_time":       buildTime.UTC().Format(time.RFC3339),
 		"spec_path":        filepath.Clean(specPath),
@@ -93,15 +92,6 @@ func buildSpecIndexMetadata(specPath string, indexedSections int, explicitCommit
 	}
 }
 
-func resolveSpecCommit(specPath, explicitCommit string) string {
-	if commit := strings.TrimSpace(explicitCommit); commit != "" {
-		return commit
-	}
-
-	output, err := exec.Command("git", "-C", filepath.Dir(specPath), "rev-parse", "HEAD").Output()
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(string(output))
+func resolveSpecCommit(explicitCommit string) string {
+	return strings.TrimSpace(explicitCommit)
 }

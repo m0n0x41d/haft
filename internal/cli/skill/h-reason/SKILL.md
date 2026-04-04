@@ -4,9 +4,9 @@ description: "Think before building. Use when the user asks to reason about, ana
 argument-hint: "[problem, decision, architecture question, trade-off, or 'what's stale?']"
 ---
 
-# Quint Reasoning — Think Before You Build
+# Haft Reasoning — Think Before You Build
 
-This skill activates structured engineering reasoning powered by FPF (First Principles Framework) and Quint Code.
+This skill activates structured engineering reasoning powered by FPF (First Principles Framework) and Haft.
 
 **When to use**: any non-trivial engineering question. Architecture choices, library selection, API design, data model changes, infrastructure decisions, process changes. Also: when the user asks to "think about", "reason about", "evaluate", or "compare" anything significant.
 
@@ -21,7 +21,7 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 ### Path 1: Think and respond (no artifacts)
 **Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?"
 
-The user wants structured thinking, not tool calls. Reason through the problem using FPF principles (weakest link, parity, distinguish object/description/carrier, etc.). Give a well-structured answer. **Do not call quint tools** unless the user explicitly asks to persist something.
+The user wants structured thinking, not tool calls. Reason through the problem using FPF principles (weakest link, parity, distinguish object/description/carrier, etc.). Give a well-structured answer. **Do not call Haft MCP tools** unless the user explicitly asks to persist something.
 
 ### Path 2: Prepare for human-driven cycle (research + wait)
 **Trigger:** "/h-reason [topic], prepare for framing", "let's think about X before deciding", "I want to reason through X"
@@ -39,7 +39,7 @@ The user wants the agent to run the full cycle: frame → explore → decide →
 
 ## What you have
 
-### Quint tools (MCP) — persist reasoning as artifacts
+### Haft tools (MCP) — persist reasoning as artifacts
 
 | Tool | What it does | Slash command |
 |------|-------------|---------------|
@@ -66,14 +66,16 @@ Use for formal FPF definitions, templates, aggregation rules, or conformance che
 
 Not all FPF concepts are at the same implementation depth. This matters — don't present tracked annotations as computed evaluations.
 
-| Concept | Status | What Quint does |
+| Concept | Status | What Haft does |
 |---------|--------|-----------------|
-| Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Quint persists it. |
+| Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Haft persists it. |
 | Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity/role on the ProblemCard. Persisted via `haft_problem(action="characterize")`. |
-| WLNK | **tracked** | Required label on variants. Quint stores the stated weakest link on explored variants and decisions. |
+| WLNK | **tracked** | Required label on variants. Haft stores the stated weakest link on explored variants and decisions. |
 | Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
-| Pareto front | **tracked** | You identify the non-dominated set, Quint stores and displays it. Not computed automatically. |
+| Pareto front | **tracked** | You identify the non-dominated set, Haft stores and displays it. Not computed automatically. |
 | Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
+| MCP tool mode | **supported** | Agents can call `haft_*` tools directly when the client exposes MCP tools. |
+| Command-driven mode | **supported** | Agents can also be steered with installed `/h-*` commands or prompts. |
 | Refresh (valid_until) | **enforced** | All artifacts (decisions, problems, portfolios) with expired valid_until detected by scan. |
 | Refresh triggers | **textual** | Stored in decision body. Only valid_until date is actually scanned. Text triggers are reminders, not automated checks. |
 | CL (congruence) | **artifact-level** | Reliability/evidence calculations exist in artifact/runtime code, but not as a `haft_decision` action exposed in the current haft tool schema. |

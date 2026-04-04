@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog entries keep historical `quint-code`, `quint_*`, and `/q-*` names where they describe behavior, commands, or releases from that era.
+
 ### Added
 
 - **Status column in Decisions tab** — board now shows Shipped/Pending status per decision.

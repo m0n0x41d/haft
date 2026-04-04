@@ -1,9 +1,9 @@
-# Contributing to Quint Code
+# Contributing to Haft
 
 ## Workflow
 
 1. **Create an issue first** — Open an issue with the `proposal` label. Include:
-   - Rationale — either FPF methodology alignment or UX improvement (feature request)
+   - Rationale — either FPF methodology alignment or UX improvement
    - Question or problem statement
    - Proposed solution
 
@@ -29,15 +29,23 @@ git config core.hooksPath .githooks
 # https://golangci-lint.run/welcome/install/
 curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin
 
-# Build
-cd src/mcp
-go build -o ~/.local/bin/quint-code -trimpath .
+# Build the current binary
+go build -o ~/.local/bin/haft -trimpath .
 
 # Run tests
 go test -race ./...
 ```
 
-The pre-commit hook runs the same checks as CI: `go mod tidy`, `golangci-lint`, `go test -race`, `go build`. If it fails, CI will fail too. Fix locally before pushing.
+The GitHub repository path still uses the historical `quint-code` name. The current module and binary are `haft`.
+
+The pre-commit hook runs the same checks as CI: `go mod tidy`, `golangci-lint`, `go test -race`, `go build`. If it fails locally, CI will fail too.
+
+## Documentation expectations
+
+- Current-facing docs should use `haft`, `haft_*`, and `/h-*` naming.
+- Historical references to `quint-code`, `quint_*`, or `.quint/` should stay only where they document release history or migrations.
+- Keep references to Anatoly Levenchuk and FPF intact.
+- Do not forget that both **MCP tool mode** and **command-driven mode** are supported.
 
 ## Want to Help but No Proposal?
 

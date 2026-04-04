@@ -3,10 +3,13 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/fpf"
 	_ "modernc.org/sqlite"
 )
 
@@ -65,6 +68,28 @@ func TestHandleQuintQuery_FPFQueryOnlyStaysBackwardCompatible(t *testing.T) {
 	}
 	if !strings.Contains(result, "── Haft") {
 		t.Fatalf("expected nav strip in output, got:\n%s", result)
+	}
+}
+
+func TestHandleQuintQuery_FPFQueryOnlyUsesSharedDefaultLimit(t *testing.T) {
+	dbPath := buildFPFManyResultsTestDB(t, fpf.DefaultSpecSearchLimit+2)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintQuery(context.Background(), store, t.TempDir(), map[string]any{
+		"action": "fpf",
+		"query":  "governance",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery returned error: %v", err)
+	}
+
+	resultCount := strings.Count(result, "### ")
+	if resultCount != fpf.DefaultSpecSearchLimit {
+		t.Fatalf("expected default limit %d, got %d results:\n%s", fpf.DefaultSpecSearchLimit, resultCount, result)
 	}
 }
 
@@ -147,4 +172,36 @@ func setupCLIArtifactStore(t *testing.T) *artifact.Store {
 	}
 
 	return artifact.NewStore(db)
+}
+
+func buildFPFManyResultsTestDB(t *testing.T, total int) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "fpf-many-results.db")
+	chunks := make([]fpf.SpecChunk, 0, total)
+
+	for index := range total {
+		patternID := fmt.Sprintf("A.%d", index+1)
+		heading := fmt.Sprintf("%s - Governance Pattern %d", patternID, index+1)
+		body := fmt.Sprintf("Governance result %d keeps reasoning explicit.", index+1)
+		keywords := []string{"governance", "policy"}
+		queries := []string{fmt.Sprintf("How do I handle governance case %d?", index+1)}
+
+		chunks = append(chunks, fpf.SpecChunk{
+			ID:        index,
+			Heading:   heading,
+			Level:     2,
+			Body:      body,
+			PatternID: patternID,
+			Keywords:  keywords,
+			Queries:   queries,
+		})
+	}
+
+	if err := fpf.BuildSpecIndex(dbPath, chunks, nil); err != nil {
+		t.Fatalf("BuildSpecIndex failed: %v", err)
+	}
+
+	return dbPath
 }

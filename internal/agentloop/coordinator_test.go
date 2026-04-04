@@ -190,8 +190,8 @@ func TestComputeClosedCycleAssurance_UsesPersistedArtifactCongruence(t *testing.
 		t.Fatalf("compute closed-cycle assurance: %v", err)
 	}
 
-	if assuranceTuple.R != 0.6 {
-		t.Fatalf("R = %.2f, want 0.60 for CL1 persisted evidence", assuranceTuple.R)
+	if assuranceTuple.R != 0.4 {
+		t.Fatalf("R = %.2f, want 0.40 with CL1 cycle evidence preserved", assuranceTuple.R)
 	}
 }
 
@@ -297,6 +297,89 @@ func TestComputeClosedCycleAssurance_PreservesDurableDependenciesWithoutInferenc
 	}
 }
 
+func TestComputeClosedCycleAssurance_MergesProjectedAndManualDependencies(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, rawDB := setupCoordinatorHarness(t)
+	now := time.Now().UTC()
+
+	seedCodebaseDependencyGraph(t, ctx, rawDB, now)
+	createDecisionArtifact(t, ctx, store, "dec-projected", now.Add(24*time.Hour), []string{"internal/shared/store.go"})
+	err := store.AddEvidenceItem(ctx, &artifact.EvidenceItem{
+		ID:              "ev-projected",
+		Type:            "measurement",
+		Content:         "Projected dependency remains healthy",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	}, "dec-projected")
+	if err != nil {
+		t.Fatalf("add projected evidence: %v", err)
+	}
+
+	createDecisionArtifact(t, ctx, store, "dec-manual", now.Add(-24*time.Hour), []string{"internal/manual/dep.go"})
+	err = store.AddEvidenceItem(ctx, &artifact.EvidenceItem{
+		ID:              "ev-manual",
+		Type:            "measurement",
+		Content:         "Manual dependency has expired evidence",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+		ValidUntil:      now.Add(-24 * time.Hour).Format(time.RFC3339),
+	}, "dec-manual")
+	if err != nil {
+		t.Fatalf("add manual evidence: %v", err)
+	}
+
+	createDecisionArtifact(t, ctx, store, "dec-root-merge", now.Add(24*time.Hour), []string{"internal/api/router.go"})
+	_, err = rawDB.ExecContext(ctx, `
+		INSERT INTO relations (source_id, target_id, relation_type, congruence_level, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		"dec-root-merge",
+		"dec-manual",
+		"dependsOn",
+		3,
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed manual dependency relation: %v", err)
+	}
+
+	assuranceTuple, weakestLink, err := coord.computeClosedCycleAssurance(ctx, "dec-root-merge", &agent.EvidenceChain{
+		DecRef: "dec-root-merge",
+		Items: []agent.EvidenceItem{
+			agent.NewEvidenceItem(agent.EvidenceMeasure, "root accepted", 3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("compute assurance with projected and manual dependencies: %v", err)
+	}
+
+	if assuranceTuple.R != 0.1 {
+		t.Fatalf("R = %.2f, want 0.10 when manual dependency is preserved", assuranceTuple.R)
+	}
+	if weakestLink != "dependency dec-manual" {
+		t.Fatalf("weakest link = %q, want dependency dec-manual", weakestLink)
+	}
+
+	var relationCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM relations
+		WHERE source_id = ? AND relation_type = ?`,
+		"dec-root-merge",
+		"dependsOn",
+	).Scan(&relationCount)
+	if err != nil {
+		t.Fatalf("count merged dependency relations: %v", err)
+	}
+	if relationCount != 2 {
+		t.Fatalf("dependency relation count = %d, want 2", relationCount)
+	}
+}
+
 func TestComputeClosedCycleAssurance_PersistsExplicitCycleEvidence(t *testing.T) {
 	t.Parallel()
 
@@ -330,6 +413,9 @@ func TestComputeClosedCycleAssurance_PersistsExplicitCycleEvidence(t *testing.T)
 
 	if assuranceTuple.F != agent.FormalityStructuredInformal {
 		t.Fatalf("F = %d, want %d", assuranceTuple.F, agent.FormalityStructuredInformal)
+	}
+	if assuranceTuple.R != 0.3 {
+		t.Fatalf("R = %.2f, want 0.30 with attached evidence as weakest link", assuranceTuple.R)
 	}
 	if !reflect.DeepEqual(assuranceTuple.G, []string{
 		"criterion/latency",
@@ -418,6 +504,125 @@ func TestComputeClosedCycleAssurance_PersistsExplicitCycleEvidence(t *testing.T)
 	}
 	if stored[1].scope != "[\"criterion/latency\"]" {
 		t.Fatalf("second cycle scope = %q, want latency scope JSON", stored[1].scope)
+	}
+}
+
+func TestComputeClosedCycleAssurance_PreservesDependencyCycleEvidence(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, rawDB := setupCoordinatorHarness(t)
+	now := time.Now().UTC()
+
+	createDecisionArtifact(t, ctx, store, "dec-cycle-dep", now.Add(48*time.Hour), []string{"internal/runtime/dep.go"})
+	dependencyAssurance, _, err := coord.computeClosedCycleAssurance(ctx, "dec-cycle-dep", &agent.EvidenceChain{
+		DecRef: "dec-cycle-dep",
+		Items: []agent.EvidenceItem{
+			agent.NewEvidenceItem(agent.EvidenceMeasure, "dependency accepted", 3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed dependency cycle evidence: %v", err)
+	}
+	if dependencyAssurance.R != 0.8 {
+		t.Fatalf("dependency R = %.2f, want 0.80", dependencyAssurance.R)
+	}
+
+	createDecisionArtifact(t, ctx, store, "dec-cycle-root", now.Add(48*time.Hour), []string{"internal/runtime/root.go"})
+	_, err = rawDB.ExecContext(ctx, `
+		INSERT INTO relations (source_id, target_id, relation_type, congruence_level, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		"dec-cycle-root",
+		"dec-cycle-dep",
+		"dependsOn",
+		3,
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed dependency relation: %v", err)
+	}
+
+	rootAssurance, weakestLink, err := coord.computeClosedCycleAssurance(ctx, "dec-cycle-root", &agent.EvidenceChain{
+		DecRef: "dec-cycle-root",
+		Items: []agent.EvidenceItem{
+			agent.NewEvidenceItem(agent.EvidenceMeasure, "root accepted", 3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("compute root assurance: %v", err)
+	}
+
+	if rootAssurance.R != 0.8 {
+		t.Fatalf("root R = %.2f, want 0.80 when dependency cycle evidence is preserved", rootAssurance.R)
+	}
+	if weakestLink != "dependency dec-cycle-dep" {
+		t.Fatalf("weakest link = %q, want dependency dec-cycle-dep", weakestLink)
+	}
+
+	var cycleEvidenceCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM evidence
+		WHERE holon_id = ? AND assurance_level = ?`,
+		"dec-cycle-dep",
+		cycleAssuranceLevel,
+	).Scan(&cycleEvidenceCount)
+	if err != nil {
+		t.Fatalf("count preserved dependency cycle evidence: %v", err)
+	}
+	if cycleEvidenceCount != 1 {
+		t.Fatalf("dependency cycle evidence count = %d, want 1", cycleEvidenceCount)
+	}
+}
+
+func TestComputeClosedCycleAssurance_PreservesAttachedOnlyCycleScore(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, rawDB := setupCoordinatorHarness(t)
+	now := time.Now().UTC()
+
+	createDecisionArtifact(t, ctx, store, "dec-attached", now.Add(48*time.Hour), []string{"internal/runtime/attached.go"})
+	attached := agent.NewEvidenceItem(agent.EvidenceAttached, "attached criterion/attached", 1)
+	attached.ClaimScope = []string{"criterion/attached"}
+	attached.CapturedAt = now
+
+	chain := &agent.EvidenceChain{
+		DecRef: "dec-attached",
+		Items:  []agent.EvidenceItem{attached},
+	}
+
+	assuranceTuple, weakestLink, err := coord.computeClosedCycleAssurance(ctx, "dec-attached", chain)
+	if err != nil {
+		t.Fatalf("compute assurance with attached-only evidence: %v", err)
+	}
+
+	expected := agent.ComputeAssurance(chain)
+	if assuranceTuple.R != expected.R {
+		t.Fatalf("R = %.2f, want %.2f to match in-memory attached evidence", assuranceTuple.R, expected.R)
+	}
+	if weakestLink != "attached (score: 0.3)" {
+		t.Fatalf("weakest link = %q, want attached (score: 0.3)", weakestLink)
+	}
+
+	var storedType string
+	var storedVerdict string
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT type, verdict
+		FROM evidence
+		WHERE holon_id = ? AND assurance_level = ?`,
+		"dec-attached",
+		cycleAssuranceLevel,
+	).Scan(&storedType, &storedVerdict)
+	if err != nil {
+		t.Fatalf("query attached cycle evidence: %v", err)
+	}
+
+	if storedType != "attached" {
+		t.Fatalf("stored type = %q, want attached", storedType)
+	}
+	if storedVerdict != "partial" {
+		t.Fatalf("stored verdict = %q, want partial", storedVerdict)
 	}
 }
 

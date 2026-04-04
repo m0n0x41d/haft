@@ -24,13 +24,20 @@ type EDBudgetAlert struct {
 // ScoreEvidence computes the effective reliability score for a single evidence item.
 // FPF B.3: R_eff = max(0, base_score - Φ(CL)), with decay override for expired evidence.
 func ScoreEvidence(verdict string, cl int, validUntil string, now time.Time) float64 {
+	return ScoreTypedEvidence("", verdict, cl, validUntil, now)
+}
+
+// ScoreTypedEvidence computes the effective reliability score while preserving
+// evidence-type-specific base scores where the model defines them explicitly.
+func ScoreTypedEvidence(evidenceType string, verdict string, cl int, validUntil string, now time.Time) float64 {
 	if expiry, ok := ParseValidUntil(validUntil); ok && expiry.Before(now) {
 		return 0.1 // expired evidence is weak regardless of verdict (FPF B.3.4)
 	}
 
-	base := VerdictToScore(verdict)
+	base := TypedVerdictToScore(evidenceType, verdict)
 	penalty := CLPenalty(cl)
-	return math.Max(0, base-penalty)
+	score := math.Max(0, base-penalty)
+	return math.Round(score*100) / 100
 }
 
 // VerdictToScore maps evidence verdict to base reliability score.
@@ -44,6 +51,30 @@ func VerdictToScore(verdict string) float64 {
 		return 0.0
 	default:
 		return 0.5 // unknown verdict treated as weakening
+	}
+}
+
+// TypedVerdictToScore maps evidence type + verdict to the base reliability score.
+// Attached evidence keeps its dedicated 0.7 base from the in-memory agent model.
+func TypedVerdictToScore(evidenceType string, verdict string) float64 {
+	switch strings.ToLower(strings.TrimSpace(evidenceType)) {
+	case "explicit_measure":
+		return 0.8
+	case "partial_measure":
+		return 0.5
+	case "attached":
+		return attachedVerdictScore(verdict)
+	default:
+		return VerdictToScore(verdict)
+	}
+}
+
+func attachedVerdictScore(verdict string) float64 {
+	switch strings.ToLower(strings.TrimSpace(verdict)) {
+	case "refutes", "failed", "fail":
+		return 0.0
+	default:
+		return 0.7
 	}
 }
 

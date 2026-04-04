@@ -74,7 +74,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		_ = evidenceID // Used for potential future logging
 
 		effectiveCL := resolveEvidenceCongruenceLevel(evidenceType, congruenceLevel)
-		score := reff.ScoreEvidence(verdict, effectiveCL, validUntil, now)
+		score := reff.ScoreTypedEvidence(evidenceType, verdict, effectiveCL, validUntil, now)
 
 		if effectiveCL < 3 {
 			report.Factors = append(report.Factors, congruencePenaltyFactor(evidenceType, congruenceLevel, effectiveCL))

@@ -232,6 +232,29 @@ func TestCalculateReliability_MixedEvidenceWLNK(t *testing.T) {
 	}
 }
 
+func TestCalculateReliability_AttachedEvidencePreservesDedicatedBaseScore(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, congruence_level) VALUES ('e1', 'A', 'attached', 'partial', ?, 1)",
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert attached evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FinalScore != 0.3 {
+		t.Errorf("Expected score 0.3 for attached evidence, got %f", report.FinalScore)
+	}
+}
+
 func TestCalculateReliability_FormalityNormalization(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

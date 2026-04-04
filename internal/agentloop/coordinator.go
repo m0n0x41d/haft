@@ -1104,7 +1104,7 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 		return nil, fmt.Errorf("decision artifact is nil")
 	}
 	if _, ok := visited[decision.Meta.ID]; ok {
-		return c.loadPersistedAssuranceEvidence(ctx, decision.Meta.ID)
+		return c.loadPersistedAssuranceEvidence(ctx, db, decision.Meta.ID)
 	}
 	visited[decision.Meta.ID] = struct{}{}
 
@@ -1135,7 +1135,11 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 		return nil, err
 	}
 
-	cycleEvidence := buildCycleAssuranceEvidence(decision, chain)
+	cycleEvidence, err := c.activeCycleAssuranceEvidence(ctx, db, decision, chain)
+	if err != nil {
+		return nil, err
+	}
+
 	activeEvidence := combineAssuranceEvidence(artifactEvidence, cycleEvidence)
 	now := time.Now().UTC()
 	tx, err := db.BeginTx(ctx, nil)
@@ -1230,6 +1234,7 @@ func (c *Coordinator) loadActiveArtifactEvidence(
 
 func (c *Coordinator) loadPersistedAssuranceEvidence(
 	ctx context.Context,
+	db *sql.DB,
 	decisionRef string,
 ) ([]assuranceEvidenceRecord, error) {
 	artifactEvidence, err := c.loadActiveArtifactEvidence(ctx, decisionRef)
@@ -1237,7 +1242,12 @@ func (c *Coordinator) loadPersistedAssuranceEvidence(
 		return nil, err
 	}
 
-	return combineAssuranceEvidence(artifactEvidence, nil), nil
+	cycleEvidence, err := c.loadPersistedCycleEvidence(ctx, db, decisionRef)
+	if err != nil {
+		return nil, err
+	}
+
+	return combineAssuranceEvidence(artifactEvidence, cycleEvidence), nil
 }
 
 func (c *Coordinator) ensureDecisionHolon(
@@ -1310,20 +1320,20 @@ func (c *Coordinator) syncProjectedDecisionRelations(
 		return nil
 	}
 
-	_, err := tx.ExecContext(ctx,
-		`DELETE FROM relations WHERE source_id = ? AND relation_type = 'dependsOn'`,
-		decisionRef,
-	)
+	existingRefs, err := c.loadExistingDecisionDependencyRefsTx(ctx, tx, decisionRef)
 	if err != nil {
-		return fmt.Errorf("clear projected relations for %s: %w", decisionRef, err)
+		return err
 	}
 
-	for _, dependencyRef := range projection.Refs {
+	refsToInsert := subtractDependencyRefs(projection.Refs, existingRefs)
+
+	for _, dependencyRef := range refsToInsert {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO relations (
 				source_id, target_id, relation_type, congruence_level, created_at
 			)
-			VALUES (?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(source_id, target_id, relation_type) DO NOTHING`,
 			decisionRef,
 			dependencyRef,
 			"dependsOn",
@@ -1575,6 +1585,79 @@ func combineAssuranceEvidence(
 	return records
 }
 
+func (c *Coordinator) activeCycleAssuranceEvidence(
+	ctx context.Context,
+	db *sql.DB,
+	decision *artifact.Artifact,
+	chain *agent.EvidenceChain,
+) ([]assuranceEvidenceRecord, error) {
+	if chain != nil {
+		return buildCycleAssuranceEvidence(decision, chain), nil
+	}
+
+	return c.loadPersistedCycleEvidence(ctx, db, decision.Meta.ID)
+}
+
+func (c *Coordinator) loadPersistedCycleEvidence(
+	ctx context.Context,
+	db *sql.DB,
+	decisionRef string,
+) ([]assuranceEvidenceRecord, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, type, content, verdict, COALESCE(carrier_ref, ''), congruence_level,
+			formality_level, claim_scope, COALESCE(valid_until, ''), COALESCE(created_at, '')
+		FROM evidence
+		WHERE holon_id = ? AND assurance_level = ?
+		ORDER BY id`,
+		decisionRef,
+		cycleAssuranceLevel,
+	)
+	if isOptionalAssuranceQueryError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load persisted cycle evidence for %s: %w", decisionRef, err)
+	}
+	defer rows.Close()
+
+	records := make([]assuranceEvidenceRecord, 0)
+
+	for rows.Next() {
+		var record assuranceEvidenceRecord
+		var claimScopeJSON string
+		var createdAtRaw string
+
+		err = rows.Scan(
+			&record.ID,
+			&record.Type,
+			&record.Content,
+			&record.Verdict,
+			&record.CarrierRef,
+			&record.CongruenceLevel,
+			&record.FormalityLevel,
+			&claimScopeJSON,
+			&record.ValidUntil,
+			&createdAtRaw,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan persisted cycle evidence for %s: %w", decisionRef, err)
+		}
+
+		record.AssuranceLevel = cycleAssuranceLevel
+		record.Type = normalizePersistedCycleEvidenceType(record.Type, record.Verdict)
+		record.ClaimScope = decodeAssuranceClaimScope(claimScopeJSON)
+		record.CreatedAt = parseAssuranceCreatedAt(createdAtRaw)
+		records = append(records, record)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, fmt.Errorf("iterate persisted cycle evidence for %s: %w", decisionRef, err)
+	}
+
+	return records, nil
+}
+
 func buildCycleAssuranceEvidence(
 	decision *artifact.Artifact,
 	chain *agent.EvidenceChain,
@@ -1630,10 +1713,14 @@ func cycleAssuranceEvidenceID(
 
 func cycleEvidenceType(item agent.EvidenceItem) string {
 	switch item.Type {
+	case agent.EvidenceMeasure:
+		return string(agent.EvidenceMeasure)
+	case agent.EvidencePartial:
+		return string(agent.EvidencePartial)
 	case agent.EvidenceAttached:
-		return "attached"
+		return string(agent.EvidenceAttached)
 	default:
-		return "measurement"
+		return string(item.Type)
 	}
 }
 
@@ -1679,17 +1766,33 @@ func cycleEvidenceCarrierRef(chain *agent.EvidenceChain) string {
 	return "cycle:" + carrierRef
 }
 
+func normalizePersistedCycleEvidenceType(evidenceType string, verdict string) string {
+	switch strings.ToLower(strings.TrimSpace(evidenceType)) {
+	case "measurement":
+		if strings.EqualFold(strings.TrimSpace(verdict), "partial") {
+			return string(agent.EvidencePartial)
+		}
+		return string(agent.EvidenceMeasure)
+	default:
+		return evidenceType
+	}
+}
+
 func (c *Coordinator) activeDecisionDependencyRefs(
 	ctx context.Context,
 	db *sql.DB,
 	decisionRef string,
 	projection dependencyProjection,
 ) ([]string, error) {
-	if projection.Available {
-		return projection.Refs, nil
+	existingRefs, err := c.loadExistingDecisionDependencyRefs(ctx, db, decisionRef)
+	if err != nil {
+		return nil, err
+	}
+	if !projection.Available {
+		return existingRefs, nil
 	}
 
-	return c.loadExistingDecisionDependencyRefs(ctx, db, decisionRef)
+	return mergeDependencyRefs(existingRefs, projection.Refs), nil
 }
 
 func (c *Coordinator) loadExistingDecisionDependencyRefs(
@@ -1729,6 +1832,83 @@ func (c *Coordinator) loadExistingDecisionDependencyRefs(
 	}
 
 	return refs, nil
+}
+
+func (c *Coordinator) loadExistingDecisionDependencyRefsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	decisionRef string,
+) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT target_id
+		FROM relations
+		WHERE source_id = ? AND relation_type = 'dependsOn'
+		ORDER BY target_id`,
+		decisionRef,
+	)
+	if isOptionalAssuranceQueryError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load durable dependency refs for %s: %w", decisionRef, err)
+	}
+	defer rows.Close()
+
+	refs := make([]string, 0)
+
+	for rows.Next() {
+		var ref string
+		err = rows.Scan(&ref)
+		if err != nil {
+			return nil, fmt.Errorf("scan durable dependency ref for %s: %w", decisionRef, err)
+		}
+		refs = append(refs, ref)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, fmt.Errorf("iterate durable dependency refs for %s: %w", decisionRef, err)
+	}
+
+	return refs, nil
+}
+
+func mergeDependencyRefs(left []string, right []string) []string {
+	refSet := make(map[string]struct{})
+	merged := make([]string, 0, len(left)+len(right))
+
+	for _, ref := range append(append([]string{}, left...), right...) {
+		if strings.TrimSpace(ref) == "" {
+			continue
+		}
+		if _, ok := refSet[ref]; ok {
+			continue
+		}
+		refSet[ref] = struct{}{}
+		merged = append(merged, ref)
+	}
+
+	sort.Strings(merged)
+	return merged
+}
+
+func subtractDependencyRefs(left []string, right []string) []string {
+	existing := make(map[string]struct{}, len(right))
+	missing := make([]string, 0, len(left))
+
+	for _, ref := range right {
+		existing[ref] = struct{}{}
+	}
+
+	for _, ref := range left {
+		if _, ok := existing[ref]; ok {
+			continue
+		}
+		missing = append(missing, ref)
+	}
+
+	sort.Strings(missing)
+	return missing
 }
 
 func claimScopeUnion(items []assuranceEvidenceRecord) []string {
@@ -1792,7 +1972,7 @@ func weakestPersistedEvidence(items []assuranceEvidenceRecord) string {
 	now := time.Now().UTC()
 
 	for _, item := range items {
-		score := reff.ScoreEvidence(item.Verdict, item.CongruenceLevel, item.ValidUntil, now)
+		score := reff.ScoreTypedEvidence(item.Type, item.Verdict, item.CongruenceLevel, item.ValidUntil, now)
 		if score >= minScore {
 			continue
 		}
@@ -1812,6 +1992,37 @@ func weakestPersistedEvidence(items []assuranceEvidenceRecord) string {
 	return weakest + fmt.Sprintf(" (score: %.1f)", minScore)
 }
 
+func decodeAssuranceClaimScope(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	var scopes []string
+	err := json.Unmarshal([]byte(raw), &scopes)
+	if err != nil {
+		return nil
+	}
+
+	return scopes
+}
+
+func parseAssuranceCreatedAt(raw string) time.Time {
+	for _, layout := range []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+	} {
+		parsed, err := time.Parse(layout, strings.TrimSpace(raw))
+		if err == nil {
+			return parsed.UTC()
+		}
+	}
+
+	return time.Time{}
+}
+
 func parseAssuranceValidUntil(primary string, fallback string) (any, error) {
 	for _, candidate := range []string{primary, fallback} {
 		candidate = strings.TrimSpace(candidate)
@@ -1819,11 +2030,9 @@ func parseAssuranceValidUntil(primary string, fallback string) (any, error) {
 			continue
 		}
 
-		for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-			parsed, err := time.Parse(layout, candidate)
-			if err == nil {
-				return parsed.UTC(), nil
-			}
+		parsed, ok := reff.ParseValidUntil(candidate)
+		if ok {
+			return parsed.UTC(), nil
 		}
 
 		return nil, fmt.Errorf("unsupported timestamp %q", candidate)

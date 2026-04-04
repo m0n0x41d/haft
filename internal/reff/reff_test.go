@@ -70,3 +70,12 @@ func TestScoreEvidence_DateOnlyExpiry(t *testing.T) {
 		t.Fatalf("ScoreEvidence(date-only expiry) = %v, want 0.1", got)
 	}
 }
+
+func TestScoreTypedEvidence_AttachedPreservesBaseScore(t *testing.T) {
+	now := time.Date(2026, 4, 12, 0, 0, 0, 0, time.UTC)
+	got := ScoreTypedEvidence("attached", "partial", 1, "2026-04-20", now)
+
+	if got != 0.3 {
+		t.Fatalf("ScoreTypedEvidence(attached) = %v, want 0.3", got)
+	}
+}

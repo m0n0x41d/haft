@@ -3,6 +3,7 @@ package fpf
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -26,6 +27,18 @@ type Route struct {
 	Matchers    []string
 	Core        []string
 	Chain       []string
+}
+
+// SpecIndexSchemaVersion identifies the current SQLite index layout contract.
+const SpecIndexSchemaVersion = "1"
+
+// SpecIndexInfo exposes inspectable build provenance for the embedded index.
+type SpecIndexInfo struct {
+	Commit          string
+	IndexedSections string
+	BuildTime       string
+	SpecPath        string
+	SchemaVersion   string
 }
 
 const relatedExpansionLimit = 10
@@ -241,13 +254,49 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 
 // SetSpecMeta writes a key-value pair to the meta table.
 func SetSpecMeta(dbPath, key, value string) error {
+	return SetSpecMetaEntries(dbPath, map[string]string{
+		key: value,
+	})
+}
+
+// SetSpecMetaEntries writes metadata entries to the meta table in one transaction.
+func SetSpecMetaEntries(dbPath string, entries map[string]string) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	_, err = db.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`, key, value)
-	return err
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+
+	keys := make([]string, 0, len(entries))
+	for key := range entries {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		if _, err := stmt.Exec(key, entries[key]); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 // SearchSpec queries the structured index with exact-id, route, related, and FTS fallback tiers.
@@ -678,6 +727,34 @@ func GetSpecMeta(db *sql.DB, key string) (string, error) {
 		return "", err
 	}
 	return val, nil
+}
+
+// GetSpecIndexInfo reads the known build provenance keys from the meta table.
+func GetSpecIndexInfo(db *sql.DB) (SpecIndexInfo, error) {
+	info := SpecIndexInfo{}
+	readers := []struct {
+		key    string
+		target *string
+	}{
+		{key: "fpf_commit", target: &info.Commit},
+		{key: "indexed_sections", target: &info.IndexedSections},
+		{key: "build_time", target: &info.BuildTime},
+		{key: "spec_path", target: &info.SpecPath},
+		{key: "schema_version", target: &info.SchemaVersion},
+	}
+
+	for _, reader := range readers {
+		value, err := GetSpecMeta(db, reader.key)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return SpecIndexInfo{}, err
+		}
+		*reader.target = value
+	}
+
+	return info, nil
 }
 
 func mustJSON(v any) string {

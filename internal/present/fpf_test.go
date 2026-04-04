@@ -71,15 +71,23 @@ func TestFormatFPFSection(t *testing.T) {
 
 func TestFormatFPFInfo(t *testing.T) {
 	output := present.FormatFPFInfo(present.FPFInfo{
-		Version: "dev",
-		Commit:  "abc1234",
-		Source:  "https://github.com/ailev/FPF/commit/abc1234",
+		Version:         "dev",
+		Commit:          "abc1234",
+		Source:          "https://github.com/ailev/FPF/commit/abc1234",
+		IndexedSections: "321",
+		BuildTime:       "2026-03-26T12:34:56Z",
+		SpecPath:        "data/FPF/FPF-Spec.md",
+		SchemaVersion:   "1",
 	})
 
 	checks := []string{
 		"haft fpf version: dev",
+		"FPF index schema version: 1",
 		"FPF upstream commit: abc1234",
 		"FPF source: https://github.com/ailev/FPF/commit/abc1234",
+		"Indexed sections: 321",
+		"Build time: 2026-03-26T12:34:56Z",
+		"Spec path: data/FPF/FPF-Spec.md",
 	}
 
 	for _, check := range checks {

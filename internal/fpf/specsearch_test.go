@@ -565,6 +565,45 @@ func TestSetSpecMeta_AndGetSpecMeta(t *testing.T) {
 	}
 }
 
+func TestSetSpecMetaEntries_AndGetSpecIndexInfo(t *testing.T) {
+	dbPath, db, cleanup := buildIndexWithChunks(t, []SpecChunk{
+		{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Boundary statements need routing.", PatternID: "A.6"},
+	}, false)
+	defer cleanup()
+
+	metadata := map[string]string{
+		"fpf_commit":       "9442ffb733de574859cfd715b5fe67c06c7bb239",
+		"indexed_sections": "1",
+		"build_time":       "2026-03-26T12:34:56Z",
+		"spec_path":        "data/FPF/FPF-Spec.md",
+		"schema_version":   SpecIndexSchemaVersion,
+	}
+	if err := SetSpecMetaEntries(dbPath, metadata); err != nil {
+		t.Fatalf("SetSpecMetaEntries failed: %v", err)
+	}
+
+	info, err := GetSpecIndexInfo(db)
+	if err != nil {
+		t.Fatalf("GetSpecIndexInfo failed: %v", err)
+	}
+
+	if info.Commit != metadata["fpf_commit"] {
+		t.Fatalf("expected commit %q, got %q", metadata["fpf_commit"], info.Commit)
+	}
+	if info.IndexedSections != metadata["indexed_sections"] {
+		t.Fatalf("expected indexed sections %q, got %q", metadata["indexed_sections"], info.IndexedSections)
+	}
+	if info.BuildTime != metadata["build_time"] {
+		t.Fatalf("expected build time %q, got %q", metadata["build_time"], info.BuildTime)
+	}
+	if info.SpecPath != metadata["spec_path"] {
+		t.Fatalf("expected spec path %q, got %q", metadata["spec_path"], info.SpecPath)
+	}
+	if info.SchemaVersion != metadata["schema_version"] {
+		t.Fatalf("expected schema version %q, got %q", metadata["schema_version"], info.SchemaVersion)
+	}
+}
+
 func filterResultsByTier(results []SpecSearchResult, tier string) []SpecSearchResult {
 	filtered := make([]SpecSearchResult, 0, len(results))
 	for _, result := range results {

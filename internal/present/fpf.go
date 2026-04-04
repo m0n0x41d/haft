@@ -23,9 +23,13 @@ type FPFSearchOptions struct {
 
 // FPFInfo contains inspectable FPF index metadata for presentation.
 type FPFInfo struct {
-	Version string
-	Commit  string
-	Source  string
+	Version         string
+	Commit          string
+	Source          string
+	IndexedSections string
+	BuildTime       string
+	SpecPath        string
+	SchemaVersion   string
 }
 
 // FormatFPFSearch renders FPF search results as markdown.
@@ -76,11 +80,23 @@ func FormatFPFInfo(info FPFInfo) string {
 		fmt.Sprintf("haft fpf version: %s", strings.TrimSpace(info.Version)),
 	}
 
+	if schemaVersion := strings.TrimSpace(info.SchemaVersion); schemaVersion != "" {
+		lines = append(lines, fmt.Sprintf("FPF index schema version: %s", schemaVersion))
+	}
 	if commit := strings.TrimSpace(info.Commit); commit != "" {
 		lines = append(lines, fmt.Sprintf("FPF upstream commit: %s", commit))
 	}
 	if source := strings.TrimSpace(info.Source); source != "" {
 		lines = append(lines, fmt.Sprintf("FPF source: %s", source))
+	}
+	if indexedSections := strings.TrimSpace(info.IndexedSections); indexedSections != "" {
+		lines = append(lines, fmt.Sprintf("Indexed sections: %s", indexedSections))
+	}
+	if buildTime := strings.TrimSpace(info.BuildTime); buildTime != "" {
+		lines = append(lines, fmt.Sprintf("Build time: %s", buildTime))
+	}
+	if specPath := strings.TrimSpace(info.SpecPath); specPath != "" {
+		lines = append(lines, fmt.Sprintf("Spec path: %s", specPath))
 	}
 
 	return strings.Join(lines, "\n") + "\n"

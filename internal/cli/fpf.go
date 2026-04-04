@@ -183,10 +183,18 @@ func runFPFInfo(cmd *cobra.Command, args []string) error {
 	info := present.FPFInfo{
 		Version: Version,
 	}
-	commit, err := fpf.GetSpecMeta(db, "fpf_commit")
-	if err == nil {
-		info.Commit = commit
-		info.Source = fmt.Sprintf("https://github.com/ailev/FPF/commit/%s", commit)
+	indexInfo, err := fpf.GetSpecIndexInfo(db)
+	if err != nil {
+		return err
+	}
+
+	info.Commit = indexInfo.Commit
+	info.IndexedSections = indexInfo.IndexedSections
+	info.BuildTime = indexInfo.BuildTime
+	info.SpecPath = indexInfo.SpecPath
+	info.SchemaVersion = indexInfo.SchemaVersion
+	if strings.TrimSpace(indexInfo.Commit) != "" {
+		info.Source = fmt.Sprintf("https://github.com/ailev/FPF/commit/%s", indexInfo.Commit)
 	}
 
 	fmt.Print(present.FormatFPFInfo(info))

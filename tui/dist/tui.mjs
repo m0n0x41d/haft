@@ -35254,7 +35254,6 @@ function OverseerPanel(props) {
 }
 function buildOverseerLines(alerts, findings) {
   const lines = [];
-  let renderedFindings = 0;
   if (alerts.length > 0) {
     lines.push({
       text: formatAlertLine(alerts),
@@ -35269,25 +35268,23 @@ function buildOverseerLines(alerts, findings) {
       text: formatFindingLine(finding),
       tone: "detail"
     });
-    renderedFindings++;
     for (const driftItem of finding.driftItems ?? []) {
-      if (lines.length >= MAX_OVERSEER_LINES) {
-        break;
-      }
       lines.push({
         text: formatDriftLine(driftItem),
         tone: "detail"
       });
     }
   }
-  const hiddenFindings = findings.length - renderedFindings;
-  if (hiddenFindings > 0 && lines.length >= MAX_OVERSEER_LINES) {
-    lines[MAX_OVERSEER_LINES - 1] = {
-      text: `\u2026 +${hiddenFindings} more overseer finding${hiddenFindings === 1 ? "" : "s"}`,
-      tone: "detail"
-    };
+  if (lines.length <= MAX_OVERSEER_LINES) {
+    return lines;
   }
-  return lines;
+  const visibleLines = lines.slice(0, MAX_OVERSEER_LINES - 1);
+  const hiddenLines = lines.length - visibleLines.length;
+  visibleLines.push({
+    text: `\u2026 +${hiddenLines} more overseer detail${hiddenLines === 1 ? "" : "s"}`,
+    tone: "detail"
+  });
+  return visibleLines;
 }
 function formatAlertLine(alerts) {
   const visibleAlerts = alerts.slice(0, 2);

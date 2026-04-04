@@ -364,6 +364,36 @@ func TestCheckDriftDetectsAddedNestedFileFromRootScope(t *testing.T) {
 	}
 }
 
+func TestCheckDriftIgnoresAddedFilesExcludedByGitignore(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, ".gitignore", "generated/\n")
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-016", "Governed root with ignores")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "generated/output.txt", "ignored artifact\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected ignored generated file to stay out of drift, got %#v", reports)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

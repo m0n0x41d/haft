@@ -724,6 +724,7 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	scope = normalizeDriftScope(scope)
 	scopePath := filepath.Join(projectRoot, scope)
 	entries := make([]string, 0)
+	ignoreChecker := codebase.NewIgnoreChecker(projectRoot)
 
 	err := filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -732,16 +733,27 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 			}
 			return walkErr
 		}
-		if entry.IsDir() {
-			return nil
-		}
 
 		relPath, err := filepath.Rel(projectRoot, path)
 		if err != nil {
 			return err
 		}
+		normalizedPath := normalizeProjectPath(relPath)
 
-		entries = append(entries, normalizeProjectPath(relPath))
+		if entry.IsDir() {
+			if codebase.IsExcludedDir(entry.Name()) {
+				return filepath.SkipDir
+			}
+			if ignoreChecker.IsIgnored(normalizedPath) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ignoreChecker.IsIgnored(normalizedPath) {
+			return nil
+		}
+
+		entries = append(entries, normalizedPath)
 		return nil
 	})
 	if os.IsNotExist(err) {

@@ -31,7 +31,6 @@ export function OverseerPanel(props: Props) {
 
 export function buildOverseerLines(alerts: string[], findings: OverseerFindingParams[]): OverseerLine[] {
   const lines: OverseerLine[] = []
-  let renderedFindings = 0
 
   if (alerts.length > 0) {
     lines.push({
@@ -49,13 +48,8 @@ export function buildOverseerLines(alerts: string[], findings: OverseerFindingPa
       text: formatFindingLine(finding),
       tone: "detail",
     })
-    renderedFindings++
 
     for (const driftItem of finding.driftItems ?? []) {
-      if (lines.length >= MAX_OVERSEER_LINES) {
-        break
-      }
-
       lines.push({
         text: formatDriftLine(driftItem),
         tone: "detail",
@@ -63,15 +57,19 @@ export function buildOverseerLines(alerts: string[], findings: OverseerFindingPa
     }
   }
 
-  const hiddenFindings = findings.length - renderedFindings
-  if (hiddenFindings > 0 && lines.length >= MAX_OVERSEER_LINES) {
-    lines[MAX_OVERSEER_LINES - 1] = {
-      text: `… +${hiddenFindings} more overseer finding${hiddenFindings === 1 ? "" : "s"}`,
-      tone: "detail",
-    }
+  if (lines.length <= MAX_OVERSEER_LINES) {
+    return lines
   }
 
-  return lines
+  const visibleLines = lines.slice(0, MAX_OVERSEER_LINES - 1)
+  const hiddenLines = lines.length - visibleLines.length
+
+  visibleLines.push({
+    text: `… +${hiddenLines} more overseer detail${hiddenLines === 1 ? "" : "s"}`,
+    tone: "detail",
+  })
+
+  return visibleLines
 }
 
 function formatAlertLine(alerts: string[]): string {

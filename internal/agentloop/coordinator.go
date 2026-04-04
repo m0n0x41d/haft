@@ -1013,30 +1013,20 @@ type decisionSelectionCandidate struct {
 }
 
 func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) []decisionSelectionCandidate {
-	fields := portfolio.UnmarshalPortfolioFields()
-	candidates := make([]decisionSelectionCandidate, 0, len(fields.Variants))
+	identities, err := artifact.RecoverPortfolioVariantIdentities(portfolio)
+	if err != nil {
+		return nil
+	}
 
-	for _, variant := range fields.Variants {
-		variantRef := strings.TrimSpace(variant.ID)
-		if variantRef == "" {
-			variantRef = strings.TrimSpace(variant.Title)
-		}
-		if variantRef == "" {
+	candidates := make([]decisionSelectionCandidate, 0, len(identities))
+	for _, identity := range identities {
+		if strings.TrimSpace(identity.Key) == "" {
 			continue
 		}
 
-		aliases := []string{
-			variant.ID,
-			variant.Title,
-			"variant " + variant.ID,
-			"option " + variant.ID,
-			"variant " + variant.Title,
-			"option " + variant.Title,
-		}
-
 		candidates = append(candidates, decisionSelectionCandidate{
-			VariantRef: variantRef,
-			Aliases:    normalizeDecisionSelectionAliases(aliases),
+			VariantRef: identity.Key,
+			Aliases:    normalizeDecisionSelectionAliases(decisionSelectionAliasesForIdentity(identity)),
 		})
 	}
 
@@ -1066,11 +1056,29 @@ func detectExplicitDecisionSelection(message string, candidates []decisionSelect
 	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
 		return "", false
 	}
-	if !hasPositiveDecisionSelectionPrefix(trimmedMessage) {
+	selectionText, ok := trimPositiveDecisionSelectionPrefix(trimmedMessage)
+	if !ok {
+		return "", false
+	}
+	if !matchesExplicitDecisionSelectionClause(selectionText, selectedRef, candidates) {
 		return "", false
 	}
 
 	return selectedRef, true
+}
+
+func decisionSelectionAliasesForIdentity(identity artifact.PortfolioVariantIdentity) []string {
+	aliases := append([]string(nil), identity.Aliases...)
+	prefixed := make([]string, 0, len(identity.Aliases)*2)
+
+	for _, alias := range identity.Aliases {
+		prefixed = append(prefixed,
+			"variant "+alias,
+			"option "+alias,
+		)
+	}
+
+	return append(aliases, prefixed...)
 }
 
 func matchingDecisionSelectionRefs(message string, candidates []decisionSelectionCandidate) []string {
@@ -1182,7 +1190,7 @@ func hasNegativeDecisionSelectionPrefix(value string) bool {
 	return false
 }
 
-func hasPositiveDecisionSelectionPrefix(value string) bool {
+func trimPositiveDecisionSelectionPrefix(value string) (string, bool) {
 	prefixes := []string{
 		"choose ",
 		"i choose ",
@@ -1192,32 +1200,60 @@ func hasPositiveDecisionSelectionPrefix(value string) bool {
 		"we pick ",
 		"select ",
 		"i select ",
+		"we select ",
 		"prefer ",
 		"i prefer ",
+		"we prefer ",
 		"go with ",
 		"lets go with ",
 		"let s go with ",
-		"ship ",
-		"use ",
-		"proceed with ",
-		"move forward with ",
-		"lets do ",
-		"let s do ",
 		"my choice is ",
 		"decision is ",
 		"we should choose ",
 		"we should pick ",
-		"we should use ",
+		"we should select ",
 		"we should go with ",
 		"i think we should choose ",
 		"i think we should pick ",
-		"i think we should use ",
+		"i think we should select ",
 		"i think we should go with ",
 	}
 
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(value, prefix) {
-			return true
+			return strings.TrimSpace(strings.TrimPrefix(value, prefix)), true
+		}
+	}
+
+	return "", false
+}
+
+func matchesExplicitDecisionSelectionClause(value, selectedRef string, candidates []decisionSelectionCandidate) bool {
+	reasonPrefixes := []string{
+		"because ",
+		"because of ",
+		"since ",
+		"due to ",
+		"given ",
+		"based on ",
+		"for ",
+	}
+
+	for _, candidate := range candidates {
+		if candidate.VariantRef != selectedRef {
+			continue
+		}
+
+		for _, alias := range candidate.Aliases {
+			if value == alias {
+				return true
+			}
+
+			for _, prefix := range reasonPrefixes {
+				if strings.HasPrefix(value, alias+" "+prefix) {
+					return true
+				}
+			}
 		}
 	}
 

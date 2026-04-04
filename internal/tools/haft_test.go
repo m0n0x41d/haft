@@ -780,6 +780,84 @@ func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *test
 	}
 }
 
+func TestHaftDecisionTool_DecideAcceptsLegacyComparedPortfolioSelection(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Need to keep a legacy compared portfolio working",
+		Acceptance: "Respect the user's selected variant from a legacy compared portfolio",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacyPortfolio := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:      "sol-legacy-compared",
+			Kind:    artifact.KindSolutionPortfolio,
+			Title:   "Legacy compared portfolio",
+			Context: "transport",
+			Mode:    artifact.ModeStandard,
+		},
+		Body: `# Legacy compared portfolio
+
+## Variants (2)
+
+### V1. REST
+
+**Weakest link:** chatty payloads
+
+### V2. gRPC
+
+**Weakest link:** tooling overhead
+
+## Comparison
+
+**Pareto front:** gRPC
+`,
+		StructuredData: `{}`,
+	}
+	if err := store.Create(ctx, legacyPortfolio); err != nil {
+		t.Fatal(err)
+	}
+
+	activeCycle := &agent.Cycle{
+		ID:                   "cyc-legacy-selection",
+		Status:               agent.CycleActive,
+		ProblemRef:           problem.Meta.ID,
+		PortfolioRef:         legacyPortfolio.Meta.ID,
+		ComparedPortfolioRef: legacyPortfolio.Meta.ID,
+		SelectedPortfolioRef: legacyPortfolio.Meta.ID,
+		SelectedVariantRef:   "V2",
+		Phase:                agent.PhaseDecider,
+	}
+
+	registry := &Registry{}
+	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
+		return activeCycle
+	})
+	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
+		return agent.HasDecisionSelection(cycle), nil
+	})
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "The human already chose the legacy gRPC variant after compare.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatalf("expected decision artifact metadata, got guardrail: %s", result.DisplayText)
+	}
+}
+
 func TestHaftDecisionTool_PersistsFirstModuleCoverageFlag(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()

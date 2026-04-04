@@ -475,7 +475,11 @@ func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore
 		return fmt.Errorf("FPF guardrail: unable to load compared portfolio %q for selection verification: %w", cycle.ComparedPortfolioRef, err)
 	}
 
-	variant, ok := selectedVariant(portfolio, cycle.SelectedVariantRef)
+	variant, ok, err := selectedVariant(portfolio, cycle.SelectedVariantRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: unable to validate the human-selected variant in compared portfolio %q: %w",
+			cycle.ComparedPortfolioRef, err)
+	}
 	if !ok {
 		return fmt.Errorf("FPF guardrail: stored user selection %q is not present in compared portfolio %q. Re-run compare and restate the human choice.",
 			cycle.SelectedVariantRef, cycle.ComparedPortfolioRef)
@@ -486,7 +490,7 @@ func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore
 	}
 
 	return fmt.Errorf("FPF guardrail: decide selected_title %q does not match the human-selected variant %q (%s). Record the variant the human chose or ask them to restate their choice.",
-		selectedTitle, variant.ID, variant.Title)
+		selectedTitle, variant.Key, variant.Label)
 }
 
 func bindDecisionPortfolioRef(args map[string]any, cycle *agent.Cycle) error {
@@ -522,29 +526,17 @@ func bindDecisionPortfolioRef(args map[string]any, cycle *agent.Cycle) error {
 	}
 }
 
-func selectedVariant(portfolio *artifact.Artifact, selectedRef string) (artifact.Variant, bool) {
-	fields := portfolio.UnmarshalPortfolioFields()
-	for _, variant := range fields.Variants {
-		if strings.TrimSpace(variant.ID) == selectedRef || strings.TrimSpace(variant.Title) == selectedRef {
-			return variant, true
-		}
-	}
-	return artifact.Variant{}, false
+func selectedVariant(portfolio *artifact.Artifact, selectedRef string) (artifact.PortfolioVariantIdentity, bool, error) {
+	return artifact.ResolvePortfolioVariantIdentity(portfolio, selectedRef)
 }
 
-func decisionMatchesSelectedVariant(selectedTitle string, variant artifact.Variant) bool {
+func decisionMatchesSelectedVariant(selectedTitle string, variant artifact.PortfolioVariantIdentity) bool {
 	normalizedTitle := normalizeDecisionSelectionValue(selectedTitle)
 	if normalizedTitle == "" {
 		return false
 	}
 
-	aliases := []string{
-		variant.ID,
-		variant.Title,
-		variant.ID + " " + variant.Title,
-		"variant " + variant.ID,
-		"option " + variant.ID,
-	}
+	aliases := decisionSelectionAliases(variant)
 
 	for _, alias := range aliases {
 		if normalizeDecisionSelectionValue(alias) == normalizedTitle {
@@ -553,6 +545,19 @@ func decisionMatchesSelectedVariant(selectedTitle string, variant artifact.Varia
 	}
 
 	return false
+}
+
+func decisionSelectionAliases(variant artifact.PortfolioVariantIdentity) []string {
+	aliases := append([]string(nil), variant.Aliases...)
+	aliases = append(aliases,
+		variant.Key+" "+variant.Label,
+		"variant "+variant.Key,
+		"option "+variant.Key,
+		"variant "+variant.Label,
+		"option "+variant.Label,
+	)
+
+	return aliases
 }
 
 func normalizeDecisionSelectionValue(value string) string {

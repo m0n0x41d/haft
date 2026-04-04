@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/agent"
+	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
 func TestInteractionModePrompt_AutonomousChainsFullCycle(t *testing.T) {
@@ -123,10 +124,11 @@ func TestDetectExplicitDecisionSelection(t *testing.T) {
 	}
 
 	cases := map[string]string{
-		"pick variant V2":      "V2",
-		"go with gRPC":         "V2",
-		"actually choose REST": "V1",
-		"V2":                   "V2",
+		"pick variant V2":                  "V2",
+		"go with gRPC":                     "V2",
+		"actually choose REST":             "V1",
+		"choose gRPC because latency wins": "V2",
+		"V2":                               "V2",
 	}
 
 	for input, want := range cases {
@@ -154,11 +156,46 @@ func TestDetectExplicitDecisionSelection_IgnoresFollowUps(t *testing.T) {
 		"can we choose V2?",
 		"variant V2 is bad because of tooling",
 		"do not choose gRPC",
+		"use gRPC benchmarks from the previous run",
+		"proceed with gRPC benchmarks from the previous run",
+		"ship gRPC benchmarks from the previous run",
 	}
 
 	for _, input := range inputs {
 		if got, ok := detectExplicitDecisionSelection(input, candidates); ok {
 			t.Fatalf("detectExplicitDecisionSelection(%q) = %q, want no match", input, got)
 		}
+	}
+}
+
+func TestSelectionCandidatesForPortfolio_UsesRecoverableLegacyVariants(t *testing.T) {
+	t.Parallel()
+
+	portfolio := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:   "sol-legacy",
+			Kind: artifact.KindSolutionPortfolio,
+		},
+		Body: `# Legacy portfolio
+
+## Variants (2)
+
+### V1. REST
+
+### V2. gRPC
+
+## Comparison
+
+Legacy comparison body.
+`,
+		StructuredData: `{}`,
+	}
+
+	selectedRef, ok := detectExplicitDecisionSelection("pick gRPC", selectionCandidatesForPortfolio(portfolio))
+	if !ok {
+		t.Fatal("expected legacy body variants to remain selectable")
+	}
+	if selectedRef != "V2" {
+		t.Fatalf("detectExplicitDecisionSelection legacy = %q, want %q", selectedRef, "V2")
 	}
 }

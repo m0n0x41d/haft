@@ -641,6 +641,51 @@ To have reproducibility and explainability there is a need to measure various as
 	}
 }
 
+func TestFilterIndexChunks_PreservesHeadingOnlyRootPatternShells(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.17 - Canonical Characteristic (A.CHR-NORM)",
+			Level:     2,
+			Body:      "",
+			PatternID: "A.17",
+		},
+		{
+			ID:        1,
+			Heading:   "Empty Section",
+			Level:     2,
+			Body:      "",
+			PatternID: "",
+		},
+		{
+			ID:        2,
+			Heading:   "Short Body",
+			Level:     2,
+			Body:      "too short",
+			PatternID: "B.1",
+		},
+		{
+			ID:        3,
+			Heading:   "Long Body",
+			Level:     2,
+			Body:      "This body is definitely longer than twenty characters.",
+			PatternID: "B.2",
+		},
+	}
+
+	filtered := FilterIndexChunks(chunks)
+
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered chunks, got %#v", filtered)
+	}
+	if filtered[0].PatternID != "A.17" {
+		t.Fatalf("expected heading-only root shell first, got %#v", filtered[0])
+	}
+	if filtered[1].PatternID != "B.2" {
+		t.Fatalf("expected long-body chunk second, got %#v", filtered[1])
+	}
+}
+
 func TestChunkMarkdown_ContentBeforeFirstHeadingSkipped(t *testing.T) {
 	input := `This content has no heading above it.
 

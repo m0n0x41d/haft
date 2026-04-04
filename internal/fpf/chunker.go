@@ -62,6 +62,8 @@ type SpecCatalogEntry struct {
 	Edges      []SpecEdge
 }
 
+const minIndexedBodyLength = 20
+
 // ChunkMarkdown splits a markdown document into chunks by headings.
 // Each chunk contains the heading and all content until the next heading
 // of the same or higher level.
@@ -264,6 +266,28 @@ func shouldKeepHeadingOnlyPatternChunk(chunk SpecChunk) bool {
 		return false
 	}
 	return chunk.Level == 2
+}
+
+// FilterIndexChunks applies the production indexer selection policy to parsed chunks.
+func FilterIndexChunks(chunks []SpecChunk) []SpecChunk {
+	filtered := make([]SpecChunk, 0, len(chunks))
+	for _, chunk := range chunks {
+		if shouldIndexChunk(chunk) {
+			filtered = append(filtered, chunk)
+		}
+	}
+	return filtered
+}
+
+func shouldIndexChunk(chunk SpecChunk) bool {
+	body := strings.TrimSpace(chunk.Body)
+	if len(body) > minIndexedBodyLength {
+		return true
+	}
+	if body != "" {
+		return false
+	}
+	return shouldKeepHeadingOnlyPatternChunk(chunk)
 }
 
 func buildAliases(heading, patternID string) []string {

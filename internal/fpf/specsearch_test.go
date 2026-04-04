@@ -590,6 +590,96 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	}
 }
 
+func TestSearchSpecWithOptions_RelatedTierHonorsRequestedLimitWithinHardCap(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	for index := 0; index < 12; index++ {
+		patternID := fmt.Sprintf("B.%d", index+1)
+		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
+			FromPatternID: "A.6",
+			ToPatternID:   patternID,
+			EdgeType:      SpecEdgeTypeBuildsOn,
+		})
+		chunks = append(chunks, SpecChunk{
+			ID:        index + 2,
+			Heading:   patternID + " — Related Target",
+			Level:     2,
+			Body:      "Related.",
+			PatternID: patternID,
+		})
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: 12,
+		Tier:  SpecSearchTierRelated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
+	if len(relatedResults) != relatedExpansionLimit {
+		t.Fatalf("expected %d related results, got %d", relatedExpansionLimit, len(relatedResults))
+	}
+}
+
+func TestSearchSpecWithOptions_RelatedTierHonorsSmallerRequestedLimit(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	for index := 0; index < 6; index++ {
+		patternID := fmt.Sprintf("B.%d", index+1)
+		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
+			FromPatternID: "A.6",
+			ToPatternID:   patternID,
+			EdgeType:      SpecEdgeTypeBuildsOn,
+		})
+		chunks = append(chunks, SpecChunk{
+			ID:        index + 2,
+			Heading:   patternID + " — Related Target",
+			Level:     2,
+			Body:      "Related.",
+			PatternID: patternID,
+		})
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: 4,
+		Tier:  SpecSearchTierRelated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
+	if len(relatedResults) != 4 {
+		t.Fatalf("expected 4 related results, got %d", len(relatedResults))
+	}
+}
+
 func TestSearchSpec_FindsByKeywordFallback(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()

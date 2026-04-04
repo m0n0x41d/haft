@@ -35,6 +35,11 @@ func run() error {
 		commitSHA = os.Args[3]
 	}
 
+	return buildIndex(specPath, dbPath, commitSHA, routeArtifactPath)
+}
+
+func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
+
 	catalogFile, err := os.Open(specPath)
 	if err != nil {
 		return fmt.Errorf("opening spec for catalog parse: %w", err)
@@ -56,15 +61,9 @@ func run() error {
 		return fmt.Errorf("chunking: %w", err)
 	}
 	chunks = fpf.EnrichChunks(chunks, catalog)
+	filtered := fpf.FilterIndexChunks(chunks)
 
-	var filtered []fpf.SpecChunk
-	for _, c := range chunks {
-		if len(strings.TrimSpace(c.Body)) > 20 {
-			filtered = append(filtered, c)
-		}
-	}
-
-	routes, err := fpf.LoadRoutes(routeArtifactPath)
+	routes, err := fpf.LoadRoutes(routePath)
 	if err != nil {
 		return fmt.Errorf("loading routes: %w", err)
 	}

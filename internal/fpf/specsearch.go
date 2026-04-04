@@ -334,10 +334,7 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		appendResults(routeResults)
 	}
 	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
-		relatedLimit := defaultRelatedExpansionPolicy.MaxResults
-		if options.Tier == SpecSearchTierRelated {
-			relatedLimit = options.Limit
-		}
+		relatedLimit := effectiveRelatedExpansionLimit(options)
 
 		edgeResults, err := searchRelated(db, route.Core, relatedLimit)
 		if err != nil {
@@ -371,6 +368,23 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		results = results[:options.Limit]
 	}
 	return results, nil
+}
+
+func effectiveRelatedExpansionLimit(options SpecSearchOptions) int {
+	if options.Tier != SpecSearchTierRelated {
+		return defaultRelatedExpansionPolicy.MaxResults
+	}
+	return clampRelatedExpansionLimit(options.Limit)
+}
+
+func clampRelatedExpansionLimit(limit int) int {
+	if limit <= 0 {
+		return relatedExpansionLimit
+	}
+	if limit > relatedExpansionLimit {
+		return relatedExpansionLimit
+	}
+	return limit
 }
 
 // NormalizeSpecSearchTier validates and canonicalizes a tier filter.
@@ -434,7 +448,7 @@ func searchRelated(db *sql.DB, seeds []string, maxResults int) ([]SpecSearchResu
 	}
 
 	policy := defaultRelatedExpansionPolicy
-	policy.MaxResults = maxResults
+	policy.MaxResults = clampRelatedExpansionLimit(maxResults)
 
 	selected := selectRelatedCandidates(candidates, seeds, policy)
 	results := buildRelatedResults(selected)

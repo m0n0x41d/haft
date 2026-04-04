@@ -13,6 +13,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
@@ -751,7 +752,7 @@ Actions:
 				"action": map[string]any{"type": "string", "enum": []string{"search", "status", "related", "fpf"}, "description": "search | status | related | fpf"},
 				"query":  map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
 				"file":   map[string]any{"type": "string", "description": "File path (related)"},
-				"limit":  map[string]any{"type": "integer", "description": "(fpf) Max FPF results, default 5"},
+				"limit":  map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
 				"full":   map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
 				"explain": map[string]any{
 					"type":        "boolean",
@@ -825,7 +826,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 		}
 		request := FPFSearchRequest{
 			Query:   query,
-			Limit:   jsonIntDefault(args, "limit", 5),
+			Limit:   jsonIntDefault(args, "limit", fpf.DefaultSpecSearchLimit),
 			Full:    jsonBool(args, "full"),
 			Explain: jsonBool(args, "explain"),
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/fpf"
 
 	_ "modernc.org/sqlite"
 )
@@ -75,7 +76,7 @@ func TestHaftQueryTool_FPFUsesInjectedSearch(t *testing.T) {
 		if request.Query != "A.6" {
 			t.Fatalf("unexpected query %q", request.Query)
 		}
-		if request.Limit != 5 {
+		if request.Limit != fpf.DefaultSpecSearchLimit {
 			t.Fatalf("unexpected limit %d", request.Limit)
 		}
 		if request.Full {

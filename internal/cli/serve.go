@@ -946,7 +946,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		if query == "" {
 			return "", fmt.Errorf("query is required for fpf search")
 		}
-		limit := 10
+		limit := fpf.DefaultSpecSearchLimit
 		if l, ok := args["limit"].(float64); ok {
 			limit = int(l)
 		}

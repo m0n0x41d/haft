@@ -567,7 +567,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
-						"description": "(search) Max results, default 20; (fpf) max results, default 10",
+						"description": fmt.Sprintf("(search) Max results, default 20; (fpf) max results, default %d", DefaultSpecSearchLimit),
 					},
 					"full": map[string]interface{}{
 						"type":        "boolean",

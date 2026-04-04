@@ -27,6 +27,8 @@ const (
 	SpecSearchTierFTS     = "fts"
 )
 
+const DefaultSpecSearchLimit = 10
+
 // SpecSearchOptions controls deterministic retrieval behavior for FPF queries.
 type SpecSearchOptions struct {
 	Limit int
@@ -280,7 +282,7 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 // SearchSpecWithOptions queries the structured index with deterministic search controls.
 func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) ([]SpecSearchResult, error) {
 	if options.Limit <= 0 {
-		options.Limit = 10
+		options.Limit = DefaultSpecSearchLimit
 	}
 
 	normalizedTier, err := NormalizeSpecSearchTier(options.Tier)

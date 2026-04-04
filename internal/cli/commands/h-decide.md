@@ -9,14 +9,21 @@ Create a DecisionRecord — the crown jewel artifact. Must include what was chos
 Use `haft_decision` tool with `action="decide"` and:
 - `selected_title`: name of chosen variant (required)
 - `why_selected`: rationale (required)
+- `selection_policy`: explicit rule used to choose among the compared variants (required)
+- `counterargument`: strongest argument against the chosen option (required)
+- `why_not_others`: at least one key rejected alternative with the reason it lost (required)
 - `problem_ref`: problem ID
 - `portfolio_ref`: portfolio ID
 - `invariants`: what MUST hold at all times
 - `post_conditions`: checklist after (definition of done)
 - `admissibility`: what is NOT acceptable
-- `weakest_link`: what bounds reliability
+- `weakest_link`: selected variant weakest link; what most plausibly breaks this choice (required)
+- `rollback.triggers`: at least one concrete trigger that would force reversal (required)
+- `rollback.steps`: rollback actions to take when a trigger fires
 - `valid_until`: expiry date (YYYY-MM-DD)
 - `affected_files`: files affected
+
+The tool should reject DecisionRecords that omit these anti-self-deception fields. A polished winner story is not enough.
 
 ## Verification Gate (before recording)
 
@@ -30,7 +37,7 @@ Present ONE line to the user:
 >
 > Proceed? (If the counter-argument kills the decision → go back to /h-explore)
 
-Then record the decision. The counter-argument goes into `weakest_link` if it's stronger than the current one.
+Then record the decision. Persist the strongest attack in `counterargument` either way; `weakest_link` names the bounding fragility, while `counterargument` preserves the strongest adversarial case against the choice.
 
 ### Standard/deep mode — full verification
 
@@ -61,7 +68,7 @@ Present ALL five probes to the user BEFORE calling the tool:
 
 After presenting: if the user confirms, record the decision. If any probe kills the decision, go back to /h-explore.
 
-**Incorporate findings:** The counter-argument and tail scenarios should be captured in `weakest_link`, `admissibility`, or `rollback.triggers` — don't just display them, persist them in the decision record.
+**Incorporate findings:** Persist the strongest attack in `counterargument`, keep the bounding fragility in `weakest_link`, record the selection rule in `selection_policy`, keep at least one concrete rejected alternative in `why_not_others`, and capture reversal conditions in `rollback.triggers` — don't just display them, persist them in the decision record.
 
 ## Evidence workflow after deciding
 

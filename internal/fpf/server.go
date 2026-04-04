@@ -413,6 +413,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "string",
 						"description": "(decide) Why this variant was chosen",
 					},
+					"selection_policy": map[string]string{
+						"type":        "string",
+						"description": "(decide) Explicit policy used to choose the winning variant",
+					},
+					"counterargument": map[string]string{
+						"type":        "string",
+						"description": "(decide) Strongest argument against the chosen option",
+					},
 					"why_not_others": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -422,7 +430,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"reason":  map[string]string{"type": "string"},
 							},
 						},
-						"description": "(decide) Why each rejected variant was not selected",
+						"description": "(decide) At least one key rejected alternative and why it lost",
 					},
 					"invariants": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
@@ -451,7 +459,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"steps":        map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
 							"blast_radius": map[string]string{"type": "string"},
 						},
-						"description": "(decide) When and how to reverse",
+						"description": "(decide) When and how to reverse; at least one trigger is required",
 					},
 					"refresh_triggers": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
@@ -459,7 +467,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"weakest_link": map[string]string{
 						"type":        "string",
-						"description": "(decide) What bounds this decision's reliability",
+						"description": "(decide) Selected variant weakest link — what most plausibly breaks this choice",
 					},
 					"problem_ref": map[string]string{
 						"type": "string", "description": "(decide) Single ProblemCard ID. Use problem_refs for multiple.",

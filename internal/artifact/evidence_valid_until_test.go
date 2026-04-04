@@ -12,11 +12,11 @@ func TestAttachEvidence_ExpiredValidUntilDegradesREffAndScan(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	decision, _, err := Decide(ctx, store, haftDir, DecideInput{
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Fresh decision",
 		WhySelected:   "Keep the decision itself active while attached evidence expires",
 		ValidUntil:    time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339),
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

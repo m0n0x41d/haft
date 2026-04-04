@@ -355,11 +355,11 @@ func TestScanStale_REffDegradedDecision(t *testing.T) {
 	haftDir := t.TempDir()
 
 	// Create decision with refuting evidence → R_eff = 0.0
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test decision",
 		WhySelected:   "For testing",
 		ValidUntil:    "2027-01-01T00:00:00Z", // not expired by valid_until
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -397,11 +397,11 @@ func TestScanStale_HealthyEvidenceNotStale(t *testing.T) {
 	haftDir := t.TempDir()
 
 	// Create decision with supporting evidence → R_eff = 1.0
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Healthy decision",
 		WhySelected:   "For testing",
 		ValidUntil:    "2027-01-01T00:00:00Z",
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -439,11 +439,11 @@ func TestScanStale_EpistemicDebtBudgetExceeded(t *testing.T) {
 	}
 
 	createDecisionWithDebt := func(title string, expiredDays int) string {
-		decision, _, err := Decide(ctx, store, haftDir, DecideInput{
+		decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 			SelectedTitle: title,
 			WhySelected:   "For testing",
 			ValidUntil:    now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
-		})
+		}))
 		if err != nil {
 			t.Fatalf("Decide(%s): %v", title, err)
 		}
@@ -522,10 +522,10 @@ func TestScanStale_EpistemicDebtBudgetExceeded_DateOnlyEvidence(t *testing.T) {
 		t.Fatalf("insert fpf_state: %v", err)
 	}
 
-	decision, _, err := Decide(ctx, store, haftDir, DecideInput{
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Date-only evidence",
 		WhySelected:   "For testing",
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

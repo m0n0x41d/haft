@@ -15,7 +15,7 @@ func TestMeasure_Success(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "NATS JetStream",
 		WhySelected:   "Ops simplicity",
 		ValidUntil:    "2027-01-01T00:00:00Z",
@@ -23,7 +23,7 @@ func TestMeasure_Success(t *testing.T) {
 			"All producers migrated",
 			"Load test at 100k/s passed",
 		},
-	})
+	}))
 
 	input := MeasureInput{
 		DecisionRef:    dec.Meta.ID,
@@ -94,10 +94,10 @@ func TestAttachEvidence_Success(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	item, err := AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -170,10 +170,10 @@ func TestWLNKSummary_WithEvidence(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// Add supporting evidence (CL3 = same context)
 	AttachEvidence(ctx, store, EvidenceInput{
@@ -231,12 +231,12 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		ProblemRef:    prob.Meta.ID,
 		SelectedTitle: "JetStream",
 		WhySelected:   "Lower operational overhead",
 		WeakestLink:   "benchmark evidence freshness",
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,11 +292,11 @@ func TestWLNKSummary_AnnotatedCriteriaStillCountAsCovered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		ProblemRef:    prob.Meta.ID,
 		SelectedTitle: "JetStream",
 		WhySelected:   "Lower operational overhead",
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,10 +326,10 @@ func TestWLNKSummary_Refuting(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef: dec.Meta.ID,
@@ -374,10 +374,10 @@ func TestREff_AllSupporting(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -410,10 +410,10 @@ func TestREff_MixedVerdicts(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -440,10 +440,10 @@ func TestREff_AllRefuting(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -462,10 +462,10 @@ func TestREff_CLPenalty(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// CL2: supports(1.0) - 0.1 = 0.9
 	AttachEvidence(ctx, store, EvidenceInput{
@@ -485,10 +485,10 @@ func TestREff_CL1Penalty(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// CL1: supports(1.0) - 0.4 = 0.6
 	AttachEvidence(ctx, store, EvidenceInput{
@@ -508,10 +508,10 @@ func TestREff_CL0Penalty(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// CL0: supports(1.0) - 0.9 = 0.1
 	// This also verifies CL=0 is NOT silently upgraded to CL=3 (known issue S4)
@@ -533,10 +533,10 @@ func TestREff_ExpiredEvidence(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// One fresh supporting, one expired supporting
 	AttachEvidence(ctx, store, EvidenceInput{
@@ -567,10 +567,10 @@ func TestREff_WeakensWithCLPenalty(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
-	})
+	}))
 
 	// weakens(0.5) with CL1 penalty(0.4) = 0.1
 	AttachEvidence(ctx, store, EvidenceInput{

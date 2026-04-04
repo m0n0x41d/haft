@@ -72,6 +72,36 @@ func setupHaftToolStore(t *testing.T) *artifact.Store {
 	return artifact.NewStore(db)
 }
 
+func completeDecisionArgs(args map[string]any) map[string]any {
+	complete := make(map[string]any, len(args)+5)
+	for key, value := range args {
+		complete[key] = value
+	}
+
+	if _, ok := complete["selection_policy"]; !ok {
+		complete["selection_policy"] = "Prefer the option that best satisfies the active acceptance criteria with the least avoidable complexity."
+	}
+	if _, ok := complete["counterargument"]; !ok {
+		complete["counterargument"] = "The chosen option could fail if the simplifying assumptions behind the current comparison do not survive production traffic."
+	}
+	if _, ok := complete["weakest_link"]; !ok {
+		complete["weakest_link"] = "Operational confidence still depends on limited production-grade evidence."
+	}
+	if _, ok := complete["why_not_others"]; !ok {
+		complete["why_not_others"] = []map[string]any{{
+			"variant": "Fallback alternative",
+			"reason":  "It carries more cost or complexity without enough compensating value for the current scope.",
+		}}
+	}
+	if _, ok := complete["rollback"]; !ok {
+		complete["rollback"] = map[string]any{
+			"triggers": []string{"Primary acceptance check regresses after rollout"},
+		}
+	}
+
+	return complete
+}
+
 type decisionToolFixture struct {
 	ctx               context.Context
 	store             *artifact.Store
@@ -581,13 +611,13 @@ func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) 
 	})
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    problem.Meta.ID,
 		"portfolio_ref":  portfolio.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,13 +712,13 @@ func TestHaftDecisionTool_DecideFailsWhenComparedRepairCannotPersist(t *testing.
 	})
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    problem.Meta.ID,
 		"portfolio_ref":  portfolio.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,13 +807,13 @@ func TestHaftDecisionTool_DecideRequiresSelectedVariantToMatchUserChoice(t *test
 	})
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    problem.Meta.ID,
 		"portfolio_ref":  portfolio.Meta.ID,
 		"selected_title": "REST",
 		"why_selected":   "Pretend the agent ignored the user's chosen variant.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,13 +828,13 @@ func TestHaftDecisionTool_DecideRequiresSelectedVariantToMatchUserChoice(t *test
 func TestHaftDecisionTool_DecideRejectsMismatchedPortfolioRef(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    fixture.problem.Meta.ID,
 		"portfolio_ref":  fixture.otherPortfolio.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Latency wins inside the compared portfolio.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -819,12 +849,12 @@ func TestHaftDecisionTool_DecideRejectsMismatchedPortfolioRef(t *testing.T) {
 func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    fixture.problem.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Latency wins inside the compared portfolio.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -838,6 +868,20 @@ func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *test
 	}
 	if !hasArtifactLink(decision.Meta.Links, fixture.comparedPortfolio.Meta.ID, "based_on") {
 		t.Fatalf("expected decision to link to active portfolio %q, links=%v", fixture.comparedPortfolio.Meta.ID, decision.Meta.Links)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.SelectionPolicy == "" {
+		t.Fatal("expected selection_policy in structured data")
+	}
+	if fields.CounterArgument == "" {
+		t.Fatal("expected counterargument in structured data")
+	}
+	if len(fields.WhyNotOthers) == 0 {
+		t.Fatal("expected rejected alternatives in structured data")
+	}
+	if len(fields.RollbackTriggers) == 0 {
+		t.Fatal("expected rollback triggers in structured data")
 	}
 }
 
@@ -905,12 +949,12 @@ func TestHaftDecisionTool_DecideAcceptsLegacyComparedPortfolioSelection(t *testi
 	})
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    problem.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "The human already chose the legacy gRPC variant after compare.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -932,12 +976,12 @@ func TestHaftDecisionTool_PersistsFirstModuleCoverageFlag(t *testing.T) {
 	}
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), nil)
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"selected_title": "Introduce API gateway",
 		"why_selected":   "Need a consistent ingress boundary",
 		"affected_files": []string{"internal/api/router.go"},
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -979,22 +1023,22 @@ func TestHaftDecisionTool_SuppressesFirstModuleCoverageWarningWhenGoverned(t *te
 	}
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), nil)
-	_, err = tool.Execute(ctx, mustJSON(t, map[string]any{
+	_, err = tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"selected_title": "Existing API gateway",
 		"why_selected":   "The module already has a boundary decision",
 		"affected_files": []string{"internal/api/router.go"},
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"selected_title": "Follow-up API change",
 		"why_selected":   "Need to refine the existing ingress decision",
 		"affected_files": []string{"internal/api/server.go"},
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1057,15 +1101,67 @@ func TestHaftDecisionTool_SchemaIncludesEvidenceAction(t *testing.T) {
 	}
 }
 
+func TestHaftDecisionTool_SchemaIncludesAntiSelfDeceptionFields(t *testing.T) {
+	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
+	schema := tool.Schema()
+
+	properties, ok := schema.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties = %T, want map[string]any", schema.Parameters["properties"])
+	}
+
+	for _, key := range []string{
+		"selection_policy",
+		"counterargument",
+		"why_not_others",
+		"rollback",
+		"weakest_link",
+	} {
+		if _, ok := properties[key]; !ok {
+			t.Fatalf("schema missing %q", key)
+		}
+	}
+}
+
+func TestHaftDecisionTool_DecideRejectsIncompleteAntiSelfDeceptionRecord(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	tool := NewHaftDecisionTool(store, t.TempDir(), t.TempDir(), nil)
+
+	_, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"selected_title": "Introduce API gateway",
+		"why_selected":   "Need a consistent ingress boundary",
+	}))
+	if err == nil {
+		t.Fatal("expected validation error for incomplete decision record")
+	}
+
+	required := []string{
+		"selection_policy is required",
+		"counterargument is required",
+		"weakest_link is required",
+		"why_not_others is required",
+		"rollback.triggers is required",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing validation message %q in %q", want, err.Error())
+		}
+	}
+}
+
 func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
+
 	fixture := setupDecisionToolFixture(t)
 
-	decisionResult, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+	decisionResult, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
 		"action":         "decide",
 		"problem_ref":    fixture.problem.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Latency wins inside the compared portfolio.",
-	}))
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}

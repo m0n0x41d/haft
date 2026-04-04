@@ -65,11 +65,11 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	FrameProblem(ctx, store, haftDir, ProblemFrameInput{
 		Title: "Rate limiting", Signal: "Scraper traffic", Context: "api",
 	})
-	Decide(ctx, store, haftDir, DecideInput{
+	Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "x/time/rate",
 		WhySelected:   "Zero deps",
 		ValidUntil:    time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
-	})
+	}))
 	CreateNote(ctx, store, haftDir, NoteInput{
 		Title:     "Using RWMutex",
 		Rationale: "Low contention verified by load test",

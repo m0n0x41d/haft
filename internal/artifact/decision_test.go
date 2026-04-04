@@ -27,10 +27,12 @@ func TestDecide_FullDRR(t *testing.T) {
 	})
 
 	input := DecideInput{
-		ProblemRef:    prob.Meta.ID,
-		PortfolioRef:  portfolio.Meta.ID,
-		SelectedTitle: "NATS JetStream",
-		WhySelected:   "2x throughput headroom, minimal ops for 4-person team",
+		ProblemRef:      prob.Meta.ID,
+		PortfolioRef:    portfolio.Meta.ID,
+		SelectedTitle:   "NATS JetStream",
+		WhySelected:     "2x throughput headroom, minimal ops for 4-person team",
+		SelectionPolicy: "Prefer the variant with enough throughput headroom that still minimizes operational load for the four-person team.",
+		CounterArgument: "Lower ecosystem maturity could leave the team exposed when traffic exceeds the current forecast.",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Kafka", Reason: "Ops burden disproportionate at current scale"},
 		},
@@ -94,6 +96,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !strings.Contains(a.Body, "NATS JetStream") {
 		t.Error("missing selected variant name")
 	}
+	if !strings.Contains(a.Body, "Selection policy") {
+		t.Error("missing selection policy")
+	}
 	if !strings.Contains(a.Body, "at-least-once") {
 		t.Error("missing invariant content")
 	}
@@ -107,6 +112,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	// Check Rationale
 	if !strings.Contains(a.Body, "Kafka") && !strings.Contains(a.Body, "Rejected") {
 		t.Error("missing rejection rationale")
+	}
+	if !strings.Contains(a.Body, "Counterargument") {
+		t.Error("missing counterargument")
 	}
 	if !strings.Contains(a.Body, "Ecosystem maturity") {
 		t.Error("missing weakest link")
@@ -129,6 +137,20 @@ func TestDecide_FullDRR(t *testing.T) {
 		t.Errorf("expected 2 links (problem + portfolio), got %d", len(links))
 	}
 
+	fields := a.UnmarshalDecisionFields()
+	if fields.SelectionPolicy == "" {
+		t.Error("expected selection_policy in structured data")
+	}
+	if fields.CounterArgument == "" {
+		t.Error("expected counterargument in structured data")
+	}
+	if len(fields.WhyNotOthers) != 1 {
+		t.Fatalf("expected one rejected alternative in structured data, got %#v", fields.WhyNotOthers)
+	}
+	if len(fields.RollbackTriggers) != 1 {
+		t.Fatalf("expected rollback trigger in structured data, got %#v", fields.RollbackTriggers)
+	}
+
 	// Check affected files in DB
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
@@ -143,9 +165,18 @@ func TestDecide_Tactical(t *testing.T) {
 	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
 		SelectedTitle:   "x/time/rate for rate limiting",
 		WhySelected:     "Zero deps, per-IP tracking testable in Go",
+		SelectionPolicy: "Prefer the least operationally complex limiter that still keeps per-IP enforcement local to the service.",
+		CounterArgument: "An in-process limiter could fragment enforcement if traffic shifts toward multi-instance bursts.",
+		WhyNotOthers: []RejectionReason{
+			{Variant: "Redis-backed limiter", Reason: "Cross-process coordination was unnecessary at current traffic levels."},
+		},
 		Invariants:      []string{"Rate limit applied per-IP"},
 		RefreshTriggers: []string{"Traffic > 10x current"},
-		Mode:            "tactical",
+		WeakestLink:     "Burst coordination breaks down once the service scales horizontally.",
+		Rollback: &RollbackSpec{
+			Triggers: []string{"429 rate remains above the accepted ceiling after rollout"},
+		},
+		Mode: "tactical",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -182,14 +213,75 @@ func TestDecide_MissingRequired(t *testing.T) {
 	}
 }
 
+func TestDecide_MissingAntiSelfDeceptionFields(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
+		SelectedTitle: "NATS JetStream",
+		WhySelected:   "Lower operational overhead wins.",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing anti-self-deception fields")
+	}
+
+	required := []string{
+		"selection_policy is required",
+		"counterargument is required",
+		"weakest_link is required",
+		"why_not_others is required",
+		"rollback.triggers is required",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing validation message %q in %q", want, err.Error())
+		}
+	}
+}
+
+func TestDecide_RejectsSelectedVariantAsRejectedAlternative(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
+		SelectedTitle:   "NATS JetStream",
+		WhySelected:     "Lower operational overhead wins.",
+		SelectionPolicy: "Prefer the broker with enough throughput headroom and less operational burden.",
+		CounterArgument: "The simpler broker could run out of ecosystem leverage under sustained scale growth.",
+		WeakestLink:     "Ecosystem maturity at the upper traffic envelope.",
+		WhyNotOthers: []RejectionReason{
+			{Variant: "NATS JetStream", Reason: "This should never repeat the selected title."},
+		},
+		Rollback: &RollbackSpec{
+			Triggers: []string{"Producer errors spike after cutover"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid why_not_others")
+	}
+	if !strings.Contains(err.Error(), "must not repeat selected_title") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
 func TestApply_ReturnsBody(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
 	dec, _, _ := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle: "NATS JetStream",
-		WhySelected:   "Ops simplicity",
-		Invariants:    []string{"At-least-once delivery"},
+		SelectedTitle:   "NATS JetStream",
+		WhySelected:     "Ops simplicity",
+		SelectionPolicy: "Prefer the messaging option that reduces operator load without sacrificing delivery guarantees.",
+		CounterArgument: "Operational simplicity could hide capacity limits that only appear under real production traffic.",
+		WhyNotOthers: []RejectionReason{
+			{Variant: "Kafka", Reason: "The extra operating surface was not justified at the current scale."},
+		},
+		Invariants:  []string{"At-least-once delivery"},
+		WeakestLink: "Capacity evidence is thinner than for the more mature alternative.",
+		Rollback: &RollbackSpec{
+			Triggers: []string{"Delivery errors increase after migration"},
+		},
 	})
 
 	body, err := Apply(ctx, store, dec.Meta.ID)
@@ -226,9 +318,18 @@ func TestDecide_InheritsContext(t *testing.T) {
 	})
 
 	a, _, err := Decide(ctx, store, haftDir, DecideInput{
-		ProblemRef:    prob.Meta.ID,
-		SelectedTitle: "JWT with refresh tokens",
-		WhySelected:   "Standard approach, well-understood",
+		ProblemRef:      prob.Meta.ID,
+		SelectedTitle:   "JWT with refresh tokens",
+		WhySelected:     "Standard approach, well-understood",
+		SelectionPolicy: "Prefer the approach with the strongest operator familiarity while still supporting token rotation.",
+		CounterArgument: "Refresh-token sprawl can increase revocation complexity and session abuse risk.",
+		WhyNotOthers: []RejectionReason{
+			{Variant: "Opaque sessions", Reason: "Extra session-store coordination was not needed for the current auth boundary."},
+		},
+		WeakestLink: "Revocation logic is easy to get subtly wrong once multiple clients cache refresh tokens.",
+		Rollback: &RollbackSpec{
+			Triggers: []string{"Token refresh error rate rises after deployment"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

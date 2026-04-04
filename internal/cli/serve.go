@@ -512,6 +512,12 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["why_selected"].(string); ok {
 			input.WhySelected = v
 		}
+		if v, ok := args["selection_policy"].(string); ok {
+			input.SelectionPolicy = v
+		}
+		if v, ok := args["counterargument"].(string); ok {
+			input.CounterArgument = v
+		}
 		if v, ok := args["weakest_link"].(string); ok {
 			input.WeakestLink = v
 		}

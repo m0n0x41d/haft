@@ -1351,10 +1351,10 @@ func TestFrame_RecallRelatedHistory(t *testing.T) {
 	haftDir := t.TempDir()
 
 	// Create an existing decision about caching
-	Decide(ctx, store, haftDir, DecideInput{
+	Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Redis for session cache",
 		WhySelected:   "Low latency, simple ops",
-	})
+	}))
 
 	// Frame a new problem about caching — should recall the decision
 	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
@@ -1379,10 +1379,10 @@ func TestFrame_RecallBySignal(t *testing.T) {
 	haftDir := t.TempDir()
 
 	// Create a decision about Redis
-	Decide(ctx, store, haftDir, DecideInput{
+	Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Redis eviction strategy",
 		WhySelected:   "TTL-based eviction for session tokens",
-	})
+	}))
 
 	// Frame a problem with different title but signal mentions Redis
 	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{

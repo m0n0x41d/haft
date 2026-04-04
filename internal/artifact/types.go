@@ -188,7 +188,13 @@ type ProblemFields struct {
 type DecisionFields struct {
 	SelectedTitle       string               `json:"selected_title"`
 	WhySelected         string               `json:"why_selected"`
+	SelectionPolicy     string               `json:"selection_policy,omitempty"`
+	CounterArgument     string               `json:"counterargument,omitempty"`
 	WeakestLink         string               `json:"weakest_link,omitempty"`
+	WhyNotOthers        []RejectionReason    `json:"why_not_others,omitempty"`
+	RollbackTriggers    []string             `json:"rollback_triggers,omitempty"`
+	RollbackSteps       []string             `json:"rollback_steps,omitempty"`
+	RollbackBlastRadius string               `json:"rollback_blast_radius,omitempty"`
 	Invariants          []string             `json:"invariants,omitempty"`
 	PostConds           []string             `json:"post_conditions,omitempty"`
 	Admissibility       []string             `json:"admissibility,omitempty"`

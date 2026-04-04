@@ -28,6 +28,8 @@ type DecideInput struct {
 	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
 	SelectedTitle       string            `json:"selected_title"`
 	WhySelected         string            `json:"why_selected"`
+	SelectionPolicy     string            `json:"selection_policy"`
+	CounterArgument     string            `json:"counterargument"`
 	WhyNotOthers        []RejectionReason `json:"why_not_others,omitempty"`
 	Invariants          []string          `json:"invariants,omitempty"`
 	PreConditions       []string          `json:"pre_conditions,omitempty"`
@@ -98,13 +100,131 @@ func extractSection(body, heading string) string {
 	return strings.TrimSpace(body[start:])
 }
 
-// BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.
-func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
+func compactStrings(values []string) []string {
+	compacted := make([]string, 0, len(values))
+
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+
+		compacted = append(compacted, trimmed)
+	}
+
+	return compacted
+}
+
+func normalizeRejectionReasons(values []RejectionReason) []RejectionReason {
+	normalized := make([]RejectionReason, 0, len(values))
+
+	for _, value := range values {
+		variant := strings.TrimSpace(value.Variant)
+		reason := strings.TrimSpace(value.Reason)
+		if variant == "" && reason == "" {
+			continue
+		}
+
+		normalized = append(normalized, RejectionReason{Variant: variant, Reason: reason})
+	}
+
+	return normalized
+}
+
+func normalizeRollbackSpec(spec *RollbackSpec) *RollbackSpec {
+	if spec == nil {
+		return nil
+	}
+
+	normalized := &RollbackSpec{
+		Triggers:    compactStrings(spec.Triggers),
+		Steps:       compactStrings(spec.Steps),
+		BlastRadius: strings.TrimSpace(spec.BlastRadius),
+	}
+
+	if len(normalized.Triggers) == 0 && len(normalized.Steps) == 0 && normalized.BlastRadius == "" {
+		return nil
+	}
+
+	return normalized
+}
+
+func normalizeDecisionInput(input DecideInput) DecideInput {
+	input.ProblemRef = strings.TrimSpace(input.ProblemRef)
+	input.ProblemRefs = compactStrings(input.ProblemRefs)
+	input.PortfolioRef = strings.TrimSpace(input.PortfolioRef)
+	input.SelectedTitle = strings.TrimSpace(input.SelectedTitle)
+	input.WhySelected = strings.TrimSpace(input.WhySelected)
+	input.SelectionPolicy = strings.TrimSpace(input.SelectionPolicy)
+	input.CounterArgument = strings.TrimSpace(input.CounterArgument)
+	input.WeakestLink = strings.TrimSpace(input.WeakestLink)
+	input.ValidUntil = strings.TrimSpace(input.ValidUntil)
+	input.Context = strings.TrimSpace(input.Context)
+	input.Mode = strings.TrimSpace(input.Mode)
+	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
+
+	input.WhyNotOthers = normalizeRejectionReasons(input.WhyNotOthers)
+	input.Invariants = compactStrings(input.Invariants)
+	input.PreConditions = compactStrings(input.PreConditions)
+	input.PostConditions = compactStrings(input.PostConditions)
+	input.Admissibility = compactStrings(input.Admissibility)
+	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
+	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
+	input.AffectedFiles = compactStrings(input.AffectedFiles)
+	input.Rollback = normalizeRollbackSpec(input.Rollback)
+
+	return input
+}
+
+func validateDecisionInput(input DecideInput) error {
+	var problems []string
+
 	if input.SelectedTitle == "" {
-		return nil, fmt.Errorf("selected_title is required — what variant was chosen?")
+		problems = append(problems, "selected_title is required — what variant was chosen?")
 	}
 	if input.WhySelected == "" {
-		return nil, fmt.Errorf("why_selected is required — rationale for the choice")
+		problems = append(problems, "why_selected is required — rationale for the choice")
+	}
+	if input.SelectionPolicy == "" {
+		problems = append(problems, "selection_policy is required — state the explicit policy used to choose this option")
+	}
+	if input.CounterArgument == "" {
+		problems = append(problems, "counterargument is required — record the strongest argument against this decision")
+	}
+	if input.WeakestLink == "" {
+		problems = append(problems, "weakest_link is required — state the selected variant's weakest link")
+	}
+	if len(input.WhyNotOthers) == 0 {
+		problems = append(problems, "why_not_others is required — record at least one rejected alternative and why it lost")
+	}
+	if input.Rollback == nil || len(input.Rollback.Triggers) == 0 {
+		problems = append(problems, "rollback.triggers is required — record at least one trigger that would force reversal")
+	}
+
+	for i, rejection := range input.WhyNotOthers {
+		switch {
+		case rejection.Variant == "":
+			problems = append(problems, fmt.Sprintf("why_not_others[%d].variant is required — name the rejected alternative", i))
+		case rejection.Reason == "":
+			problems = append(problems, fmt.Sprintf("why_not_others[%d].reason is required — explain why %q lost", i, rejection.Variant))
+		case strings.EqualFold(rejection.Variant, input.SelectedTitle):
+			problems = append(problems, fmt.Sprintf("why_not_others[%d].variant must not repeat selected_title %q", i, input.SelectedTitle))
+		}
+	}
+
+	if len(problems) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("decision record is incomplete:\n- %s", strings.Join(problems, "\n- "))
+}
+
+// BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.
+func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
+	input = normalizeDecisionInput(input)
+
+	if err := validateDecisionInput(input); err != nil {
+		return nil, err
 	}
 
 	title := input.SelectedTitle
@@ -149,7 +269,8 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	// === Component 2: Decision (the contract) ===
 	body.WriteString("## 2. Decision\n\n")
 	body.WriteString(fmt.Sprintf("**Selected:** %s\n\n", input.SelectedTitle))
-	body.WriteString(fmt.Sprintf("%s\n", input.WhySelected))
+	body.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", input.SelectionPolicy))
+	body.WriteString(fmt.Sprintf("**Why selected:** %s\n\n", input.WhySelected))
 
 	if len(input.Invariants) > 0 {
 		body.WriteString("\n**Invariants:**\n")
@@ -181,7 +302,10 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	// === Component 3: Rationale ===
 	body.WriteString("\n## 3. Rationale\n\n")
+	body.WriteString(fmt.Sprintf("**Counterargument:** %s\n\n", input.CounterArgument))
+	body.WriteString(fmt.Sprintf("**Selected variant weakest link:** %s\n\n", input.WeakestLink))
 	if len(input.WhyNotOthers) > 0 {
+		body.WriteString("**Rejected alternatives:**\n")
 		body.WriteString("| Variant | Verdict | Reason |\n")
 		body.WriteString("|---------|---------|--------|\n")
 		body.WriteString(fmt.Sprintf("| %s | **Selected** | %s |\n", input.SelectedTitle, truncate(input.WhySelected, 60)))
@@ -189,10 +313,6 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 			body.WriteString(fmt.Sprintf("| %s | Rejected | %s |\n", r.Variant, r.Reason))
 		}
 		body.WriteString("\n")
-	}
-
-	if input.WeakestLink != "" {
-		body.WriteString(fmt.Sprintf("**Weakest link:** %s\n\n", input.WeakestLink))
 	}
 
 	if len(input.EvidenceReqs) > 0 {
@@ -208,11 +328,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	if input.Rollback != nil {
 		body.WriteString("**Rollback plan:**\n")
-		if len(input.Rollback.Triggers) > 0 {
-			body.WriteString("Triggers:\n")
-			for _, t := range input.Rollback.Triggers {
-				body.WriteString(fmt.Sprintf("- %s\n", t))
-			}
+		body.WriteString("Triggers:\n")
+		for _, t := range input.Rollback.Triggers {
+			body.WriteString(fmt.Sprintf("- %s\n", t))
 		}
 		if len(input.Rollback.Steps) > 0 {
 			body.WriteString("Steps:\n")
@@ -258,10 +376,25 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		SearchKeywords: input.SearchKeywords,
 	}
 
+	rollbackTriggers := []string(nil)
+	rollbackSteps := []string(nil)
+	rollbackBlastRadius := ""
+	if input.Rollback != nil {
+		rollbackTriggers = input.Rollback.Triggers
+		rollbackSteps = input.Rollback.Steps
+		rollbackBlastRadius = input.Rollback.BlastRadius
+	}
+
 	sd, _ := json.Marshal(DecisionFields{
 		SelectedTitle:       input.SelectedTitle,
 		WhySelected:         input.WhySelected,
+		SelectionPolicy:     input.SelectionPolicy,
+		CounterArgument:     input.CounterArgument,
 		WeakestLink:         input.WeakestLink,
+		WhyNotOthers:        input.WhyNotOthers,
+		RollbackTriggers:    rollbackTriggers,
+		RollbackSteps:       rollbackSteps,
+		RollbackBlastRadius: rollbackBlastRadius,
 		Invariants:          input.Invariants,
 		PostConds:           input.PostConditions,
 		Admissibility:       input.Admissibility,
@@ -305,6 +438,8 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 
 // Decide creates a DecisionRecord artifact. Orchestrates effects around BuildDecisionArtifact.
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
+	input = normalizeDecisionInput(input)
+
 	seq, err := store.NextSequence(ctx, KindDecisionRecord)
 	if err != nil {
 		return nil, "", fmt.Errorf("generate ID: %w", err)

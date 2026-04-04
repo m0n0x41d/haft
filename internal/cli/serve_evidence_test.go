@@ -15,8 +15,18 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle: "Keep attached evidence inspectable",
-		WhySelected:   "Need a decision artifact for the evidence handler",
+		SelectedTitle:   "Keep attached evidence inspectable",
+		WhySelected:     "Need a decision artifact for the evidence handler",
+		SelectionPolicy: "Prefer the smallest decision artifact that still exercises the CLI evidence path against a real decision.",
+		CounterArgument: "A synthetic decision record can miss coupling that appears in a real compare-driven decision.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Attach evidence to a note",
+			Reason:  "This handler test explicitly needs a decision artifact target.",
+		}},
+		WeakestLink: "The decision is synthetic and therefore weaker than a real compared choice.",
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Evidence attachment stops preserving valid_until metadata"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

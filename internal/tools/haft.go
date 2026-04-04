@@ -626,7 +626,8 @@ func (t *HaftDecisionTool) Schema() agent.ToolSchema {
 
 Actions:
 - decide: Record a formal decision with rationale (FPF E.9 DRR).
-  Includes: selected variant, why selected, invariants, rollback plan, weakest link.
+  Includes: selected variant, explicit selection policy, strongest counterargument,
+  rejected alternatives, rollback trigger, invariants, and selected-variant weakest link.
 - evidence: Attach an explicit evidence item to any artifact.
 - baseline: Snapshot affected files after implementation and before measurement.
 - measure: Record measurement results against acceptance criteria.
@@ -634,15 +635,43 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":          map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
-				"problem_ref":     map[string]any{"type": "string", "description": "Problem ID (decide)"},
-				"portfolio_ref":   map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
-				"selected_title":  map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
-				"why_selected":    map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
+				"action":         map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
+				"problem_ref":    map[string]any{"type": "string", "description": "Problem ID (decide)"},
+				"portfolio_ref":  map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
+				"selected_title": map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
+				"why_selected":   map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
+				"selection_policy": map[string]any{
+					"type":        "string",
+					"description": "Explicit policy used to choose among the compared variants (decide)",
+				},
+				"counterargument": map[string]any{
+					"type":        "string",
+					"description": "Strongest argument against the chosen option (decide)",
+				},
+				"why_not_others": map[string]any{
+					"type":        "array",
+					"description": "At least one key rejected alternative and why it lost (decide)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"variant": map[string]any{"type": "string"},
+							"reason":  map[string]any{"type": "string"},
+						},
+					},
+				},
 				"invariants":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What MUST hold (decide)"},
 				"post_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Implementation checklist (decide)"},
 				"admissibility":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What is NOT acceptable (decide)"},
-				"weakest_link":    map[string]any{"type": "string", "description": "What bounds quality (decide)"},
+				"weakest_link":    map[string]any{"type": "string", "description": "Selected variant weakest link — what most plausibly breaks this choice (decide)"},
+				"rollback": map[string]any{
+					"type":        "object",
+					"description": "How and when to reverse the decision (decide). At least one trigger is required.",
+					"properties": map[string]any{
+						"triggers":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"steps":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"blast_radius": map[string]any{"type": "string"},
+					},
+				},
 				"predictions": map[string]any{
 					"type":        "array",
 					"description": "Testable predictions — measure will check each one (decide)",
@@ -729,18 +758,43 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 
 func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.DecideInput{
-		ProblemRef:     jsonStr(args, "problem_ref"),
-		PortfolioRef:   jsonStr(args, "portfolio_ref"),
-		SelectedTitle:  jsonStr(args, "selected_title"),
-		WhySelected:    jsonStr(args, "why_selected"),
-		WeakestLink:    jsonStr(args, "weakest_link"),
-		ValidUntil:     jsonStr(args, "valid_until"),
-		Context:        jsonStr(args, "context"),
-		Mode:           jsonStr(args, "mode"),
-		Invariants:     jsonStrArray(args, "invariants"),
-		PostConditions: jsonStrArray(args, "post_conditions"),
-		Admissibility:  jsonStrArray(args, "admissibility"),
-		AffectedFiles:  jsonStrArray(args, "affected_files"),
+		ProblemRef:      jsonStr(args, "problem_ref"),
+		PortfolioRef:    jsonStr(args, "portfolio_ref"),
+		SelectedTitle:   jsonStr(args, "selected_title"),
+		WhySelected:     jsonStr(args, "why_selected"),
+		SelectionPolicy: jsonStr(args, "selection_policy"),
+		CounterArgument: jsonStr(args, "counterargument"),
+		WeakestLink:     jsonStr(args, "weakest_link"),
+		ValidUntil:      jsonStr(args, "valid_until"),
+		Context:         jsonStr(args, "context"),
+		Mode:            jsonStr(args, "mode"),
+		Invariants:      jsonStrArray(args, "invariants"),
+		PostConditions:  jsonStrArray(args, "post_conditions"),
+		Admissibility:   jsonStrArray(args, "admissibility"),
+		AffectedFiles:   jsonStrArray(args, "affected_files"),
+	}
+
+	if items, ok := args["why_not_others"].([]any); ok {
+		for _, item := range items {
+			value, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			input.WhyNotOthers = append(input.WhyNotOthers, artifact.RejectionReason{
+				Variant: jsonStr(value, "variant"),
+				Reason:  jsonStr(value, "reason"),
+			})
+		}
+	}
+
+	if rawRollback, ok := args["rollback"].(map[string]any); ok {
+		rollback := &artifact.RollbackSpec{
+			BlastRadius: jsonStr(rawRollback, "blast_radius"),
+		}
+		rollback.Triggers = jsonStrArray(rawRollback, "triggers")
+		rollback.Steps = jsonStrArray(rawRollback, "steps")
+		input.Rollback = rollback
 	}
 
 	// Parse predictions

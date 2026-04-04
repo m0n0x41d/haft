@@ -259,12 +259,12 @@ func TestComputeNavState_Decided(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err = Decide(ctx, store, haftDir, DecideInput{
+	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		PortfolioRef:  sol.Meta.ID,
 		SelectedTitle: "Option A",
 		WhySelected:   "faster",
 		Context:       "test-ctx",
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,9 +392,9 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = Decide(ctx, store, haftDir, DecideInput{
+	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		PortfolioRef: sol2.Meta.ID, SelectedTitle: "P", WhySelected: "reason", Context: "c-dec",
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

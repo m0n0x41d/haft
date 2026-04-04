@@ -7,6 +7,7 @@ import {
   estimateQueuedMessageRows,
 } from "./appLayout.js"
 import { estimateAttachmentRows } from "./attachmentLayout.js"
+import { measureInputDisplayRows } from "./inputLayout.js"
 
 test("keeps the legacy four-row footprint for an empty prompt", () => {
   const bottomRows = computeBottomRows({
@@ -87,4 +88,24 @@ test("reserves wrapped attachment rows before the prompt for multiple images", (
   })
 
   assert.equal(rows, 6)
+})
+
+test("includes wrapped empty-input queue hints in the bottom budget", () => {
+  const inputRows = measureInputDisplayRows({
+    text: "",
+    cursor: 0,
+    width: 12,
+    hasQueuedMessages: true,
+  })
+  const bottomRows = computeBottomRows({
+    width: 12,
+    queuedMessages: ["queued"],
+    attachments: [],
+    attachmentSelection: false,
+    inputRows,
+    showInput: true,
+  })
+
+  assert.equal(inputRows, 5)
+  assert.equal(bottomRows, 9)
 })

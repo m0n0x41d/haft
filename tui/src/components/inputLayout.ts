@@ -2,6 +2,8 @@ const INPUT_PROMPT_PREFIX = "\u276F "
 const INPUT_CONTINUATION_PREFIX = "  "
 const INPUT_HORIZONTAL_PADDING = 2
 const INPUT_PREFIX_COLUMNS = INPUT_PROMPT_PREFIX.length
+const EMPTY_INPUT_CURSOR = " "
+const QUEUED_MESSAGES_HINT = "  Press up to edit queued messages"
 
 type CursorLocation = {
   line: number
@@ -17,6 +19,16 @@ export interface InputVisualRow {
 export interface InputLayout {
   contentWidth: number
   rows: InputVisualRow[]
+}
+
+export type InputDisplayRow =
+  | { kind: "editor"; row: InputVisualRow }
+  | { kind: "placeholder"; prefix: string; hint: string }
+  | { kind: "hint"; prefix: string; text: string }
+
+export interface InputDisplayLayout {
+  contentWidth: number
+  rows: InputDisplayRow[]
 }
 
 export function buildInputLayout(
@@ -55,6 +67,40 @@ export function measureInputRows(
   return layout.rows.length
 }
 
+interface BuildInputDisplayLayoutOptions {
+  text: string
+  cursor: number
+  width: number
+  hasQueuedMessages: boolean
+}
+
+export function buildInputDisplayLayout(
+  options: BuildInputDisplayLayoutOptions,
+): InputDisplayLayout {
+  const { text, cursor, width, hasQueuedMessages } = options
+
+  if (text.length === 0) {
+    return buildEmptyInputDisplayLayout(width, hasQueuedMessages)
+  }
+
+  const layout = buildInputLayout(text, cursor, width)
+  const rows = layout.rows
+    .map((row) => ({ kind: "editor", row } satisfies InputDisplayRow))
+
+  return {
+    contentWidth: layout.contentWidth,
+    rows,
+  }
+}
+
+export function measureInputDisplayRows(
+  options: BuildInputDisplayLayoutOptions,
+): number {
+  const layout = buildInputDisplayLayout(options)
+
+  return layout.rows.length
+}
+
 function buildLogicalLineRows(
   line: string,
   lineIndex: number,
@@ -88,6 +134,39 @@ function buildLogicalLineRows(
     : []
 
   return [...rows, ...trailingCursorRows]
+}
+
+function buildEmptyInputDisplayLayout(
+  width: number,
+  hasQueuedMessages: boolean,
+): InputDisplayLayout {
+  const contentWidth = getInputContentWidth(width)
+  const hint = hasQueuedMessages
+    ? QUEUED_MESSAGES_HINT
+    : ""
+  const firstRowHintWidth = Math.max(0, contentWidth - EMPTY_INPUT_CURSOR.length)
+  const firstRowHint = hint.slice(0, firstRowHintWidth)
+  const remainingHint = hint.slice(firstRowHint.length)
+  const continuationRows = wrapLogicalLine(remainingHint, contentWidth)
+    .filter((text) => text.length > 0)
+    .map((text) => ({
+      kind: "hint",
+      prefix: INPUT_CONTINUATION_PREFIX,
+      text,
+    } satisfies InputDisplayRow))
+  const rows: InputDisplayRow[] = [
+    {
+      kind: "placeholder",
+      prefix: INPUT_PROMPT_PREFIX,
+      hint: firstRowHint,
+    },
+    ...continuationRows,
+  ]
+
+  return {
+    contentWidth,
+    rows,
+  }
 }
 
 function wrapLogicalLine(

@@ -26,7 +26,11 @@ import {
   currentText,
   isNavigating,
 } from "../input/history.js"
-import { buildInputLayout, type InputVisualRow } from "./inputLayout.js"
+import {
+  buildInputDisplayLayout,
+  type InputDisplayRow,
+  type InputVisualRow,
+} from "./inputLayout.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
@@ -56,7 +60,12 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
   const historyRef = useRef<History>(emptyHistory)
   const isVisible = phase === "input" || phase === "streaming"
   const layout = isVisible
-    ? buildInputLayout(edit.text, edit.cursor, width)
+    ? buildInputDisplayLayout({
+        text: edit.text,
+        cursor: edit.cursor,
+        width,
+        hasQueuedMessages: hasQueuedMessages ?? false,
+      })
     : null
   const rows = layout?.rows ?? []
   const visualRows = rows.length
@@ -229,22 +238,10 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
 
   if (!isVisible) return null
 
-  // --- Render ---
-  if (!edit.text) {
-    return (
-      <Box paddingX={1} width={width}>
-        <Text>{"\u276F"} </Text>
-        <Text inverse> </Text>
-        {hasQueuedMessages && <Text dimColor>  Press up to edit queued messages</Text>}
-      </Box>
-    )
-  }
-
   return (
     <Box flexDirection="column" paddingX={1} width={width}>
       {rows.map((row, i) => (
         <Box key={i} width={width}>
-          <Text>{row.prefix}</Text>
           {renderInputRow(row)}
         </Box>
       ))}
@@ -252,21 +249,52 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
   )
 }))
 
-function renderInputRow(row: InputVisualRow): React.ReactNode {
-  if (row.cursorColumn === null) {
-    return <Text>{row.text}</Text>
+function renderInputRow(row: InputDisplayRow): React.ReactNode {
+  if (row.kind === "editor") {
+    return renderEditorRow(row.row)
   }
 
-  const beforeCursor = row.text.slice(0, row.cursorColumn)
-  const cursorChar = row.cursorColumn < row.text.length
-    ? row.text[row.cursorColumn]
+  if (row.kind === "placeholder") {
+    return (
+      <>
+        <Text>{row.prefix}</Text>
+        <Text inverse> </Text>
+        {row.hint.length > 0 && <Text dimColor>{row.hint}</Text>}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <Text>{row.prefix}</Text>
+      <Text dimColor>{row.text}</Text>
+    </>
+  )
+}
+
+function renderEditorRow(row: InputVisualRow): React.ReactNode {
+  const cursorColumn = row.cursorColumn
+
+  if (cursorColumn === null) {
+    return (
+      <>
+        <Text>{row.prefix}</Text>
+        <Text>{row.text}</Text>
+      </>
+    )
+  }
+
+  const beforeCursor = row.text.slice(0, cursorColumn)
+  const cursorChar = cursorColumn < row.text.length
+    ? row.text[cursorColumn]
     : " "
-  const afterCursor = row.cursorColumn < row.text.length
-    ? row.text.slice(row.cursorColumn + 1)
+  const afterCursor = cursorColumn < row.text.length
+    ? row.text.slice(cursorColumn + 1)
     : ""
 
   return (
     <>
+      <Text>{row.prefix}</Text>
       {beforeCursor.length > 0 && <Text>{beforeCursor}</Text>}
       <Text inverse>{cursorChar}</Text>
       {afterCursor.length > 0 && <Text>{afterCursor}</Text>}

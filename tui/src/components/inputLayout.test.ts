@@ -1,6 +1,11 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { buildInputLayout, measureInputRows } from "./inputLayout.js"
+import {
+  buildInputDisplayLayout,
+  buildInputLayout,
+  measureInputDisplayRows,
+  measureInputRows,
+} from "./inputLayout.js"
 
 test("wraps a long single-line prompt by available content width", () => {
   const layout = buildInputLayout("abcdefghij", 10, 10)
@@ -40,4 +45,25 @@ test("keeps the cursor visible after an exact-width wrapped line", () => {
   assert.equal(rows, 2)
   assert.equal(layout.rows[1]?.text, "")
   assert.equal(layout.rows[1]?.cursorColumn, 0)
+})
+
+test("wraps the empty-input queued hint into measured prompt rows", () => {
+  const rows = measureInputDisplayRows({
+    text: "",
+    cursor: 0,
+    width: 12,
+    hasQueuedMessages: true,
+  })
+  const layout = buildInputDisplayLayout({
+    text: "",
+    cursor: 0,
+    width: 12,
+    hasQueuedMessages: true,
+  })
+
+  assert.equal(rows, 5)
+  assert.deepEqual(
+    layout.rows.map((row) => row.kind),
+    ["placeholder", "hint", "hint", "hint", "hint"],
+  )
 })

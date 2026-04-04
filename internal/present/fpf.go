@@ -18,6 +18,7 @@ type FPFSearchResult struct {
 type FPFSearchOptions struct {
 	Header       string
 	Enumerate    bool
+	ShowMetadata bool
 	EmptyMessage string
 }
 
@@ -53,7 +54,8 @@ func FormatFPFSearch(results []FPFSearchResult, options FPFSearchOptions) string
 		sb.WriteString(formatFPFResultTitle(result))
 		sb.WriteString("\n\n")
 
-		if metadata := formatFPFResultMetadata(result); metadata != "" {
+		metadata := formatFPFResultMetadata(result, options.ShowMetadata)
+		if metadata != "" {
 			sb.WriteString(metadata)
 			sb.WriteString("\n\n")
 		}
@@ -111,7 +113,11 @@ func formatFPFResultTitle(result FPFSearchResult) string {
 	return patternID + " — " + title
 }
 
-func formatFPFResultMetadata(result FPFSearchResult) string {
+func formatFPFResultMetadata(result FPFSearchResult, showMetadata bool) string {
+	if !showMetadata {
+		return ""
+	}
+
 	tier := strings.TrimSpace(result.Tier)
 	reason := strings.TrimSpace(result.Reason)
 

@@ -27,13 +27,9 @@ func TestCLIAndMCPFPFSearchStayAligned(t *testing.T) {
 
 	cliOutput := formatCLIFPFSearch(results)
 	mcpOutput := formatMCPFPFSearch(results)
-	agentOutput := formatAgentFPFSearch("boundary routing", results)
 
 	if cliOutput != mcpOutput {
 		t.Fatalf("expected CLI and MCP search output to match\nCLI:\n%s\nMCP:\n%s", cliOutput, mcpOutput)
-	}
-	if cliOutput != agentOutput {
-		t.Fatalf("expected CLI and agent search output to match\nCLI:\n%s\nAGENT:\n%s", cliOutput, agentOutput)
 	}
 	if strings.Contains(cliOutput, "tier:") {
 		t.Fatalf("expected shared output to suppress metadata by default, got:\n%s", cliOutput)
@@ -57,7 +53,6 @@ func TestCLIAndMCPFPFSearchStayAligned(t *testing.T) {
 func TestSharedFPFSearchEmptyMessageMatches(t *testing.T) {
 	cliOutput := formatCLIFPFSearch(nil)
 	mcpOutput := formatMCPFPFSearch(nil)
-	agentOutput := formatAgentFPFSearch("boundary routing", nil)
 
 	if cliOutput != "No results found.\n" {
 		t.Fatalf("unexpected CLI empty output %q", cliOutput)
@@ -65,12 +60,9 @@ func TestSharedFPFSearchEmptyMessageMatches(t *testing.T) {
 	if cliOutput != mcpOutput {
 		t.Fatalf("expected empty-state parity, got CLI=%q MCP=%q", cliOutput, mcpOutput)
 	}
-	if cliOutput != agentOutput {
-		t.Fatalf("expected agent empty-state parity, got CLI=%q AGENT=%q", cliOutput, agentOutput)
-	}
 }
 
-func TestAgentFPFSearchUsesSharedShape(t *testing.T) {
+func TestAgentFPFSearchKeepsCompactDefaultShape(t *testing.T) {
 	results := []present.FPFSearchResult{
 		{
 			PatternID: "A.6",
@@ -84,12 +76,12 @@ func TestAgentFPFSearchUsesSharedShape(t *testing.T) {
 	output := formatAgentFPFSearch("A.6", results)
 
 	if strings.Contains(output, "tier:") {
-		t.Fatalf("expected agent output to suppress metadata by default, got:\n%s", output)
+		t.Fatalf("expected agent output to hide metadata, got:\n%s", output)
 	}
-	if !strings.Contains(output, "### 1. A.6 — Signature Stack & Boundary Discipline") {
-		t.Fatalf("expected agent output to use the shared enumerated heading, got:\n%s", output)
+	if strings.Contains(output, "### 1.") {
+		t.Fatalf("expected agent output to stay unnumbered, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Boundary routing body") {
-		t.Fatalf("expected agent output to contain the shared content block, got:\n%s", output)
+	if !strings.Contains(output, "### A.6 — Signature Stack & Boundary Discipline") {
+		t.Fatalf("expected agent heading output, got:\n%s", output)
 	}
 }

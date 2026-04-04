@@ -26,8 +26,9 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 	}
 
 	output := present.FormatFPFSearch(results, present.FPFSearchOptions{
-		Header:    "## FPF Spec: boundary (2 results)",
-		Enumerate: true,
+		Header:       "## FPF Spec: boundary (2 results)",
+		Enumerate:    true,
+		ShowMetadata: true,
 	})
 
 	checks := []string{
@@ -57,6 +58,29 @@ func TestFormatFPFSearch_EmptyMessage(t *testing.T) {
 
 	if output != "No FPF spec matches for: A.6\n" {
 		t.Fatalf("unexpected empty output %q", output)
+	}
+}
+
+func TestFormatFPFSearch_HidesMetadataByDefault(t *testing.T) {
+	results := []present.FPFSearchResult{
+		{
+			PatternID: "A.6",
+			Heading:   "Signature Stack & Boundary Discipline",
+			Tier:      "pattern",
+			Reason:    "exact pattern id",
+			Content:   "Boundary routing body",
+		},
+	}
+
+	output := present.FormatFPFSearch(results, present.FPFSearchOptions{
+		Enumerate: true,
+	})
+
+	if strings.Contains(output, "tier:") {
+		t.Fatalf("expected default formatting to hide metadata, got:\n%s", output)
+	}
+	if !strings.Contains(output, "### 1. A.6 — Signature Stack & Boundary Discipline") {
+		t.Fatalf("expected heading to render, got:\n%s", output)
 	}
 }
 

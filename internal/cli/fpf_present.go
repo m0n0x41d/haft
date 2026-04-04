@@ -13,8 +13,11 @@ func formatMCPFPFSearch(results []present.FPFSearchResult) string {
 }
 
 func formatAgentFPFSearch(query string, results []present.FPFSearchResult) string {
-	_ = query
-	return formatCLIFPFSearch(results)
+	options := present.FPFSearchOptions{
+		EmptyMessage: "No FPF spec matches for: " + query,
+	}
+
+	return present.FormatFPFSearch(results, options)
 }
 
 func sharedFPFSearchOptions() present.FPFSearchOptions {

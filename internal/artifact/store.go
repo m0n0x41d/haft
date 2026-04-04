@@ -144,20 +144,28 @@ func (s *Store) Update(ctx context.Context, a *Artifact) error {
 // ListByKind returns artifacts of a given kind, ordered by creation time descending.
 // If kind is empty, returns all artifacts regardless of kind.
 func (s *Store) ListByKind(ctx context.Context, kind Kind, limit int) ([]*Artifact, error) {
-	if limit <= 0 {
-		limit = 50
-	}
 	var rows *sql.Rows
 	var err error
 	if kind == "" {
-		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-			FROM artifacts ORDER BY created_at DESC LIMIT ?`, limit)
-	} else {
+		if limit > 0 {
+			rows, err = s.db.QueryContext(ctx, `
+				SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+				FROM artifacts ORDER BY created_at DESC LIMIT ?`, limit)
+		} else {
+			rows, err = s.db.QueryContext(ctx, `
+				SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+				FROM artifacts ORDER BY created_at DESC`)
+		}
+	} else if limit > 0 {
 		rows, err = s.db.QueryContext(ctx, `
 			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
 			FROM artifacts WHERE kind = ? ORDER BY created_at DESC LIMIT ?`,
 			string(kind), limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE kind = ? ORDER BY created_at DESC`,
+			string(kind))
 	}
 	if err != nil {
 		return nil, err
@@ -168,14 +176,23 @@ func (s *Store) ListByKind(ctx context.Context, kind Kind, limit int) ([]*Artifa
 
 // ListActiveByKind returns non-deprecated, non-superseded artifacts of the given kind.
 func (s *Store) ListActiveByKind(ctx context.Context, kind Kind, limit int) ([]*Artifact, error) {
-	if limit <= 0 {
-		limit = 50
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if limit > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE kind = ? AND status = 'active'
+			ORDER BY created_at DESC LIMIT ?`,
+			string(kind), limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE kind = ? AND status = 'active'
+			ORDER BY created_at DESC`,
+			string(kind))
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts WHERE kind = ? AND status = 'active'
-		ORDER BY created_at DESC LIMIT ?`,
-		string(kind), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -199,14 +216,21 @@ func (s *Store) ListByContext(ctx context.Context, contextName string) ([]*Artif
 
 // ListActive returns active (non-deprecated, non-superseded) artifacts.
 func (s *Store) ListActive(ctx context.Context, limit int) ([]*Artifact, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts WHERE status NOT IN ('superseded', 'deprecated') ORDER BY updated_at DESC LIMIT ?`,
-		limit,
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if limit > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE status NOT IN ('superseded', 'deprecated') ORDER BY updated_at DESC LIMIT ?`,
+			limit,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts WHERE status NOT IN ('superseded', 'deprecated') ORDER BY updated_at DESC`)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -588,37 +612,44 @@ func (s *Store) LastRefreshScan(ctx context.Context) time.Time {
 
 // EpistemicDebtBudget returns the configured ED budget, or the default when
 // the shared state table or column is unavailable.
-func (s *Store) EpistemicDebtBudget(ctx context.Context) float64 {
-	if !s.tableHasColumn(ctx, "fpf_state", "epistemic_debt_budget") {
-		return DefaultEpistemicDebtBudget
+func (s *Store) EpistemicDebtBudget(ctx context.Context) (float64, error) {
+	hasColumn, err := s.tableHasColumn(ctx, "fpf_state", "epistemic_debt_budget")
+	if err != nil {
+		return DefaultEpistemicDebtBudget, err
+	}
+	if !hasColumn {
+		return DefaultEpistemicDebtBudget, nil
 	}
 
 	var budget sql.NullFloat64
-	err := s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, `
 		SELECT epistemic_debt_budget
 		FROM fpf_state
 		ORDER BY updated_at DESC
 		LIMIT 1`,
 	).Scan(&budget)
+	if err == sql.ErrNoRows {
+		return DefaultEpistemicDebtBudget, nil
+	}
 	if err != nil {
-		return DefaultEpistemicDebtBudget
+		return DefaultEpistemicDebtBudget, fmt.Errorf("query epistemic debt budget: %w", err)
 	}
 	if !budget.Valid {
-		return DefaultEpistemicDebtBudget
+		return DefaultEpistemicDebtBudget, nil
 	}
 	if budget.Float64 < 0 {
-		return 0
+		return 0, nil
 	}
 
-	return budget.Float64
+	return budget.Float64, nil
 }
 
 // --- helpers ---
 
-func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string) bool {
+func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
-		return false
+		return false, fmt.Errorf("inspect table %s: %w", tableName, err)
 	}
 	defer rows.Close()
 
@@ -634,14 +665,14 @@ func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string
 
 		err := rows.Scan(&cid, &name, &kind, &notNull, &defaultVal, &primaryKey)
 		if err != nil {
-			return false
+			return false, fmt.Errorf("scan table info %s: %w", tableName, err)
 		}
 		if name == columnName {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
 }
 
 func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {

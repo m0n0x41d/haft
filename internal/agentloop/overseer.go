@@ -124,10 +124,13 @@ func (o *Overseer) checkStale(ctx context.Context) ([]string, []protocol.Oversee
 	if alertCounts["reff_degraded"] > 0 {
 		alerts = append(alerts, fmt.Sprintf("⚠ %d weak evidence", alertCounts["reff_degraded"]))
 	}
+	if alertCounts["scan_failed"] > 0 {
+		alerts = append(alerts, fmt.Sprintf("⚠ %d scan failures", alertCounts["scan_failed"]))
+	}
 	if alertCounts["ed_budget_exceeded"] > 0 {
 		for _, finding := range findings {
 			if finding.Type == "ed_budget_exceeded" {
-				alerts = append(alerts, fmt.Sprintf("⚠ ED %.1f/%.1f", finding.TotalED, finding.Budget))
+				alerts = append(alerts, fmt.Sprintf("⚠ ED %s/%s", formatEDAlertValue(finding.TotalED), formatEDAlertValue(finding.Budget)))
 				break
 			}
 		}
@@ -140,7 +143,7 @@ func (o *Overseer) checkStale(ctx context.Context) ([]string, []protocol.Oversee
 // still exist and haven't been modified. Reports removed/modified symbols as alerts.
 // This catches invariant violations at function/type granularity — not just file hash.
 func (o *Overseer) checkSymbolDrift(ctx context.Context) []string {
-	decisions, err := o.ArtifactStore.ListByKind(ctx, artifact.KindDecisionRecord, 100)
+	decisions, err := o.ArtifactStore.ListActiveByKind(ctx, artifact.KindDecisionRecord, 0)
 	if err != nil {
 		return nil
 	}
@@ -258,6 +261,8 @@ func buildOverseerFinding(item artifact.StaleItem, findingType string) protocol.
 
 func overseerFindingType(category artifact.StaleCategory) string {
 	switch category {
+	case artifact.StaleCategoryScanFailed:
+		return "scan_failed"
 	case artifact.StaleCategoryEvidenceExpired:
 		return "evidence_expired"
 	case artifact.StaleCategoryREffDegraded:
@@ -269,4 +274,11 @@ func overseerFindingType(category artifact.StaleCategory) string {
 	default:
 		return "decision_stale"
 	}
+}
+
+func formatEDAlertValue(value float64) string {
+	if value < 1.0 {
+		return fmt.Sprintf("%.3f", value)
+	}
+	return fmt.Sprintf("%.1f", value)
 }

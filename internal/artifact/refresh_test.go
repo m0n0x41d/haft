@@ -2,7 +2,9 @@ package artifact
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -480,14 +482,14 @@ func TestScanStale_EpistemicDebtBudgetExceeded(t *testing.T) {
 		t.Fatal("expected epistemic debt budget alert")
 	}
 
-	if debtItem.TotalED != 9.0 {
-		t.Fatalf("total ED = %.1f, want 9.0", debtItem.TotalED)
+	if math.Abs(debtItem.TotalED-9.0) > 0.05 {
+		t.Fatalf("total ED = %.6f, want approx 9.0", debtItem.TotalED)
 	}
 	if debtItem.DebtBudget != 5.0 {
 		t.Fatalf("budget = %.1f, want 5.0", debtItem.DebtBudget)
 	}
-	if debtItem.DebtExcess != 4.0 {
-		t.Fatalf("excess = %.1f, want 4.0", debtItem.DebtExcess)
+	if math.Abs(debtItem.DebtExcess-4.0) > 0.05 {
+		t.Fatalf("excess = %.6f, want approx 4.0", debtItem.DebtExcess)
 	}
 	if len(debtItem.DecisionDebt) != 3 {
 		t.Fatalf("decision debt count = %d, want 3", len(debtItem.DecisionDebt))
@@ -555,4 +557,196 @@ func TestScanStale_EpistemicDebtBudgetExceeded_DateOnlyEvidence(t *testing.T) {
 	}
 
 	t.Fatal("expected epistemic debt alert from date-only evidence")
+}
+
+func TestScanStale_EpistemicDebtBudgetUsesRawAggregate(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO fpf_state (context_id, active_role, epistemic_debt_budget, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		"default", "decide", 0.1, now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert fpf_state: %v", err)
+	}
+
+	for index := 0; index < 3; index++ {
+		decisionID := fmt.Sprintf("dec-raw-%03d", index)
+		createActiveDecisionForScan(t, store, decisionID, fmt.Sprintf("raw-%03d", index), now.Add(time.Duration(index)*time.Minute))
+		addEvidenceForScan(t, store, decisionID, fmt.Sprintf("ev-raw-%03d", index), "supports", now.Add(-58*time.Minute))
+	}
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	debtItem := findStaleItemByCategory(items, StaleCategoryEpistemicDebtExceeded)
+	if debtItem == nil {
+		t.Fatal("expected epistemic debt alert from sub-tenth debts")
+	}
+	if debtItem.TotalED <= debtItem.DebtBudget {
+		t.Fatalf("total ED %.3f should exceed budget %.3f", debtItem.TotalED, debtItem.DebtBudget)
+	}
+}
+
+func TestScanStale_REffDegradedIncludesOldActiveDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	baseTime := time.Now().UTC().Add(-48 * time.Hour)
+
+	createActiveDecisionForScan(t, store, "dec-old-risk", "old risk", baseTime)
+	addEvidenceForScan(t, store, "dec-old-risk", "ev-old-risk", "refutes", baseTime.Add(24*time.Hour))
+
+	for index := 0; index < 100; index++ {
+		decisionID := fmt.Sprintf("dec-new-%03d", index)
+		title := fmt.Sprintf("new-%03d", index)
+		createdAt := baseTime.Add(time.Duration(index+1) * time.Minute)
+		createActiveDecisionForScan(t, store, decisionID, title, createdAt)
+	}
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range items {
+		if item.ID != "dec-old-risk" {
+			continue
+		}
+		if item.Category != StaleCategoryREffDegraded {
+			t.Fatalf("stale category = %q, want %q", item.Category, StaleCategoryREffDegraded)
+		}
+		return
+	}
+
+	t.Fatal("expected degraded old decision to be included")
+}
+
+func TestScanStale_EpistemicDebtIncludesOldActiveDecisionBeyondFiveHundred(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	baseTime := time.Now().UTC().Add(-72 * time.Hour)
+
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO fpf_state (context_id, active_role, epistemic_debt_budget, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		"default", "decide", 0.5, time.Now().UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert fpf_state: %v", err)
+	}
+
+	createActiveDecisionForScan(t, store, "dec-old-debt", "old debt", baseTime)
+	addEvidenceForScan(t, store, "dec-old-debt", "ev-old-debt", "supports", baseTime.Add(-24*time.Hour))
+
+	for index := 0; index < 500; index++ {
+		decisionID := fmt.Sprintf("dec-buffer-%03d", index)
+		title := fmt.Sprintf("buffer-%03d", index)
+		createdAt := baseTime.Add(time.Duration(index+1) * time.Minute)
+		createActiveDecisionForScan(t, store, decisionID, title, createdAt)
+	}
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	debtItem := findStaleItemByCategory(items, StaleCategoryEpistemicDebtExceeded)
+	if debtItem == nil {
+		t.Fatal("expected debt alert beyond 500 newer decisions")
+	}
+	if len(debtItem.DecisionDebt) == 0 || debtItem.DecisionDebt[0].DecisionID != "dec-old-debt" {
+		t.Fatalf("unexpected debt breakdown: %+v", debtItem.DecisionDebt)
+	}
+}
+
+func TestScanStale_EmitsScanFailureItem(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	wrapped := failingArtifactStore{
+		ArtifactStore:      store,
+		findStaleArtifacts: errors.New("stale artifacts unavailable"),
+	}
+
+	items, err := ScanStale(ctx, wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failureItem := findStaleItemByCategory(items, StaleCategoryScanFailed)
+	if failureItem == nil {
+		t.Fatal("expected scan failure item")
+	}
+	if !strings.Contains(failureItem.Reason, "stale artifact scan failed") {
+		t.Fatalf("unexpected failure reason: %q", failureItem.Reason)
+	}
+}
+
+func createActiveDecisionForScan(t *testing.T, store *Store, decisionID, title string, createdAt time.Time) {
+	t.Helper()
+
+	err := store.Create(context.Background(), &Artifact{
+		Meta: Meta{
+			ID:        decisionID,
+			Kind:      KindDecisionRecord,
+			Status:    StatusActive,
+			Title:     title,
+			CreatedAt: createdAt,
+		},
+		Body: "# Decision\n\nscan fixture",
+	})
+	if err != nil {
+		t.Fatalf("create decision %s: %v", decisionID, err)
+	}
+}
+
+func addEvidenceForScan(t *testing.T, store *Store, decisionID, evidenceID, verdict string, validUntil time.Time) {
+	t.Helper()
+
+	err := store.AddEvidenceItem(context.Background(), &EvidenceItem{
+		ID:              evidenceID,
+		Type:            "measure",
+		Content:         evidenceID,
+		Verdict:         verdict,
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+		ValidUntil:      validUntil.Format(time.RFC3339),
+	}, decisionID)
+	if err != nil {
+		t.Fatalf("add evidence %s: %v", evidenceID, err)
+	}
+}
+
+func findStaleItemByCategory(items []StaleItem, category StaleCategory) *StaleItem {
+	for index := range items {
+		if items[index].Category == category {
+			return &items[index]
+		}
+	}
+
+	return nil
+}
+
+type failingArtifactStore struct {
+	ArtifactStore
+	findStaleArtifacts error
+	getEvidenceItems   error
+}
+
+func (s failingArtifactStore) FindStaleArtifacts(ctx context.Context) ([]*Artifact, error) {
+	if s.findStaleArtifacts != nil {
+		return nil, s.findStaleArtifacts
+	}
+	return s.ArtifactStore.FindStaleArtifacts(ctx)
+}
+
+func (s failingArtifactStore) GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error) {
+	if s.getEvidenceItems != nil {
+		return nil, s.getEvidenceItems
+	}
+	return s.ArtifactStore.GetEvidenceItems(ctx, artifactRef)
 }

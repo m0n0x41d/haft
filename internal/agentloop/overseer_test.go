@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,7 +125,7 @@ func TestOverseerCheckEmitsStructuredFindings(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing ed_budget_exceeded finding: %#v", event.Findings)
 	}
-	if debtFinding.TotalED != 2.0 || debtFinding.Budget != 1.0 {
+	if math.Abs(debtFinding.TotalED-2.0) > 0.05 || math.Abs(debtFinding.Budget-1.0) > 0.0001 {
 		t.Fatalf("unexpected debt finding totals: %#v", debtFinding)
 	}
 	if len(debtFinding.DebtBreakdown) != 1 {
@@ -170,6 +172,49 @@ func TestOverseerRun_StopsOnContextCancel(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("overseer did not stop after context cancellation")
+	}
+}
+
+func TestOverseerCheckEmitsScanFailureFinding(t *testing.T) {
+	t.Parallel()
+
+	store := setupOverseerArtifactStore(t)
+	ctx := context.Background()
+	writer := &lockedBuffer{}
+	coordinatorAlerts := make(chan []string, 1)
+
+	overseer := &Overseer{
+		ArtifactStore: failingOverseerArtifactStore{
+			ArtifactStore:      store,
+			findStaleArtifacts: errors.New("stale artifact query failed"),
+		},
+		Bus:             newProtocolBusWithWriter(writer),
+		CoordinatorChan: coordinatorAlerts,
+	}
+
+	overseer.check(ctx)
+
+	event := findOverseerAlertEvent(t, writer.String())
+	if !containsString(event.Alerts, "⚠ 1 scan failures") {
+		t.Fatalf("expected scan failure summary, got %#v", event.Alerts)
+	}
+
+	findings := findingsByType(event.Findings)
+	finding, ok := findings["scan_failed"]
+	if !ok {
+		t.Fatalf("missing scan_failed finding: %#v", event.Findings)
+	}
+	if !strings.Contains(finding.Reason, "stale artifact scan failed") {
+		t.Fatalf("unexpected scan failure reason: %q", finding.Reason)
+	}
+
+	select {
+	case queued := <-coordinatorAlerts:
+		if !containsString(queued, "⚠ 1 scan failures") {
+			t.Fatalf("expected coordinator scan failure alert, got %#v", queued)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected coordinator alerts")
 	}
 }
 
@@ -284,4 +329,16 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+type failingOverseerArtifactStore struct {
+	artifact.ArtifactStore
+	findStaleArtifacts error
+}
+
+func (s failingOverseerArtifactStore) FindStaleArtifacts(ctx context.Context) ([]*artifact.Artifact, error) {
+	if s.findStaleArtifacts != nil {
+		return nil, s.findStaleArtifacts
+	}
+	return s.ArtifactStore.FindStaleArtifacts(ctx)
 }

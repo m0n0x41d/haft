@@ -12,6 +12,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const routeArtifactPath = ".context/fpf-routes.json"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -63,7 +65,12 @@ func run() error {
 		}
 	}
 
-	if err := fpf.BuildSpecIndex(dbPath, filtered); err != nil {
+	routes, err := fpf.LoadRoutes(routeArtifactPath)
+	if err != nil {
+		return fmt.Errorf("loading routes: %w", err)
+	}
+
+	if err := fpf.BuildSpecIndex(dbPath, filtered, routes); err != nil {
 		return fmt.Errorf("building index: %w", err)
 	}
 

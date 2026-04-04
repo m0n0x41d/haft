@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,10 +30,17 @@ func buildTestIndex(t *testing.T) (string, *sql.DB, func()) {
 func buildIndexWithChunks(t *testing.T, chunks []SpecChunk, withMeta bool) (string, *sql.DB, func()) {
 	t.Helper()
 
+	routes := loadRepoRoutes(t)
+	return buildIndexWithChunksAndRoutes(t, chunks, routes, withMeta)
+}
+
+func buildIndexWithChunksAndRoutes(t *testing.T, chunks []SpecChunk, routes []Route, withMeta bool) (string, *sql.DB, func()) {
+	t.Helper()
+
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, routes); err != nil {
 		t.Fatalf("BuildSpecIndex failed: %v", err)
 	}
 
@@ -53,12 +61,29 @@ func buildIndexWithChunks(t *testing.T, chunks []SpecChunk, withMeta bool) (stri
 	return dbPath, db, cleanup
 }
 
+func loadRepoRoutes(t *testing.T) []Route {
+	t.Helper()
+
+	_, filePath, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to resolve test file path")
+	}
+
+	routePath := filepath.Join(filepath.Dir(filePath), "..", "..", ".context", "fpf-routes.json")
+	routes, err := LoadRoutes(routePath)
+	if err != nil {
+		t.Fatalf("LoadRoutes failed: %v", err)
+	}
+
+	return routes
+}
+
 func TestBuildSpecIndex_CreatesDB(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	chunks := []SpecChunk{{ID: 0, Heading: "Test", Level: 1, Body: "Content"}}
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
 		t.Fatalf("BuildSpecIndex failed: %v", err)
 	}
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -71,12 +96,12 @@ func TestBuildSpecIndex_OverwritesExisting(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	chunks := []SpecChunk{{ID: 0, Heading: "V1", Level: 1, Body: "Version 1", PatternID: "A.1"}}
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
 		t.Fatal(err)
 	}
 
 	chunks2 := []SpecChunk{{ID: 0, Heading: "V2", Level: 1, Body: "Version 2", PatternID: "A.2"}}
-	if err := BuildSpecIndex(dbPath, chunks2); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks2, loadRepoRoutes(t)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,7 +140,7 @@ func TestBuildSpecIndex_PersistsTypedEdges(t *testing.T) {
 		{ID: 1, Heading: "B.1 - Target", Level: 2, Body: "Body", PatternID: "B.1"},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,7 +182,7 @@ func TestBuildSpecIndex_FallsBackToRelatedEdges(t *testing.T) {
 		{ID: 1, Heading: "B.2 - Target", Level: 2, Body: "Body", PatternID: "B.2"},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +247,7 @@ func TestBuildSpecIndex_NormalizesPatternIDs(t *testing.T) {
 		},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
 		t.Fatal(err)
 	}
 

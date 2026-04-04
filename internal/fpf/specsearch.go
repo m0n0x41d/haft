@@ -21,12 +21,12 @@ type SpecSearchResult struct {
 }
 
 type Route struct {
-	ID          string
-	Title       string
-	Description string
-	Matchers    []string
-	Core        []string
-	Chain       []string
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Matchers    []string `json:"matchers"`
+	Core        []string `json:"core"`
+	Chain       []string `json:"chain"`
 }
 
 // SpecIndexSchemaVersion identifies the current SQLite index layout contract.
@@ -74,59 +74,8 @@ var defaultRelatedExpansionPolicy = relatedExpansionPolicy{
 	MaxResults: relatedExpansionLimit,
 }
 
-var defaultRoutes = []Route{
-	{
-		ID:          "project-alignment",
-		Title:       "Fastest route to concrete artifacts",
-		Description: "Onboarding into practical FPF artifacts and cycles.",
-		Matchers:    []string{"project", "tomorrow", "artifact", "artifacts", "onboard", "onboarding", "problem card", "drr", "uts"},
-		Core:        []string{"A.0", "A.1", "B.5.1", "E.9", "F.17"},
-		Chain:       []string{"A.0", "A.1", "A.2", "A.3", "B.5.1", "E.9", "F.17"},
-	},
-	{
-		ID:          "boundary-unpacking",
-		Title:       "Boundary discipline and routing",
-		Description: "Boundary statements, contracts, and routing language to the right semantic landing zones.",
-		Matchers:    []string{"boundary", "contract", "routing", "signature stack", "admissibility", "deontic", "service", "promise"},
-		Core:        []string{"A.6", "A.6.B", "A.6.C"},
-		Chain:       []string{"A.6", "A.6.B", "A.6.C", "A.6.8", "F.18"},
-	},
-	{
-		ID:          "language-discovery",
-		Title:       "Language-state and routing cues",
-		Description: "How partial articulation becomes routed, stabilized, and handed off.",
-		Matchers:    []string{"language", "cue", "route", "stabilize", "reopen", "notice", "partial", "articulation"},
-		Core:        []string{"C.2.2a", "A.16", "B.4.1"},
-		Chain:       []string{"C.2.2a", "A.16", "A.16.1", "A.16.2", "B.4.1", "B.5.2.0"},
-	},
-	{
-		ID:          "comparison-selection",
-		Title:       "Characterization, comparison, and selection",
-		Description: "Characteristic spaces, comparison discipline, and selector mechanics.",
-		Matchers:    []string{"compare", "comparison", "pareto", "selector", "selection", "characteristic", "dimension", "normalization"},
-		Core:        []string{"A.17", "A.19", "G.0"},
-		Chain:       []string{"A.17", "A.18", "A.19", "A.19.CN", "A.19.CPM", "G.0"},
-	},
-	{
-		ID:          "generator-portfolio",
-		Title:       "Creative generation and portfolios",
-		Description: "NQD, explore/exploit, portfolios, and creative abduction.",
-		Matchers:    []string{"nqd", "portfolio", "creative", "abduction", "explore", "generator", "diversity"},
-		Core:        []string{"A.0", "B.5.2.1", "G.0"},
-		Chain:       []string{"A.0", "B.5.2", "B.5.2.1", "C.17", "C.18", "C.19", "G.0"},
-	},
-	{
-		ID:          "rewrite-explanation",
-		Title:       "Same-entity rewrite and explanation",
-		Description: "Conservative retextualization and explanation-faithful output transformations.",
-		Matchers:    []string{"rewrite", "summary", "retextualization", "translation", "explanation", "same entity"},
-		Core:        []string{"A.6.3.CR", "E.17.EFP"},
-		Chain:       []string{"A.6.3", "A.6.3.CR", "A.6.3.RT", "E.17", "E.17.EFP"},
-	},
-}
-
-// BuildSpecIndex creates a structured SQLite index from spec chunks.
-func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
+// BuildSpecIndex creates a structured SQLite index from spec chunks and route artifacts.
+func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 	_ = os.Remove(dbPath)
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -243,7 +192,8 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 		}
 	}
 
-	for _, route := range defaultRoutes {
+	for _, route := range routes {
+		route = normalizeRoute(route)
 		if _, err := routeIns.Exec(route.ID, route.Title, route.Description, mustJSON(route.Matchers), mustJSON(route.Core), mustJSON(route.Chain)); err != nil {
 			return fmt.Errorf("insert route %s: %w", route.ID, err)
 		}

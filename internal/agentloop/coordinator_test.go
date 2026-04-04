@@ -840,3 +840,57 @@ Legacy comparison body.
 		t.Fatalf("unexpected repair error: %v", err)
 	}
 }
+
+func TestCaptureDecisionSelection_IgnoresNonSelectionTurnForAmbiguousComparedPortfolio(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, rawDB := setupCoordinatorHarness(t)
+
+	cycleStore, err := session.NewSQLiteStore(rawDB)
+	if err != nil {
+		t.Fatalf("new sqlite cycle store: %v", err)
+	}
+	coord.Cycles = cycleStore
+
+	err = store.Create(ctx, &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "sol-ambiguous-followup",
+			Kind:  artifact.KindSolutionPortfolio,
+			Title: "Ambiguous legacy portfolio",
+		},
+		Body: `# Ambiguous legacy portfolio
+
+## Variants (2)
+
+### V7. Kafka
+
+### V7. NATS
+
+## Comparison
+
+Legacy comparison body.
+`,
+		StructuredData: `{}`,
+	})
+	if err != nil {
+		t.Fatalf("create ambiguous portfolio: %v", err)
+	}
+
+	err = cycleStore.CreateCycle(ctx, &agent.Cycle{
+		ID:                   "cyc-ambiguous-followup",
+		SessionID:            "sess-ambiguous-followup",
+		Phase:                agent.PhaseDecider,
+		Status:               agent.CycleActive,
+		PortfolioRef:         "sol-ambiguous-followup",
+		ComparedPortfolioRef: "sol-ambiguous-followup",
+	})
+	if err != nil {
+		t.Fatalf("create cycle: %v", err)
+	}
+
+	err = coord.captureDecisionSelection(ctx, "sess-ambiguous-followup", "show the table again")
+	if err != nil {
+		t.Fatalf("expected non-selection follow-up to remain a no-op, got %v", err)
+	}
+}

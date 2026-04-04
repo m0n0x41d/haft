@@ -137,3 +137,30 @@ func TestRecoverPortfolioVariantIdentities_RejectsAmbiguousAliases(t *testing.T)
 		t.Fatalf("unexpected ambiguity error: %v", err)
 	}
 }
+
+func TestPreviewPortfolioVariantIdentities_AllowsAmbiguousLegacyPortfolio(t *testing.T) {
+	portfolio := &Artifact{
+		Meta: Meta{
+			ID:    "sol-ambiguous",
+			Kind:  KindSolutionPortfolio,
+			Title: "Ambiguous variants",
+		},
+		Body: `# Ambiguous variants
+
+## Variants (2)
+
+### V1. REST
+
+**Weakest link:** chatty payloads
+
+### V1. gRPC
+
+**Weakest link:** tooling overhead
+`,
+	}
+
+	identities := PreviewPortfolioVariantIdentities(portfolio)
+	if len(identities) != 2 {
+		t.Fatalf("expected preview identities without validation failure, got %+v", identities)
+	}
+}

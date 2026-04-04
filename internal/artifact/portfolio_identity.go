@@ -10,6 +10,14 @@ type PortfolioVariantIdentity struct {
 	Aliases []string
 }
 
+// PreviewPortfolioVariantIdentities returns the recoverable variant identities
+// without validating ambiguity. Use this only for lightweight intent detection
+// ahead of stricter validation.
+func PreviewPortfolioVariantIdentities(portfolio *Artifact) []PortfolioVariantIdentity {
+	identities := portfolioVariantIdentities(portfolio)
+	return materializePortfolioVariantIdentities(identities)
+}
+
 // RecoverPortfolioVariantIdentities returns the canonical variant identities
 // that can be recovered from a portfolio's structured data and legacy body.
 func RecoverPortfolioVariantIdentities(portfolio *Artifact) ([]PortfolioVariantIdentity, error) {
@@ -21,16 +29,7 @@ func RecoverPortfolioVariantIdentities(portfolio *Artifact) ([]PortfolioVariantI
 		return nil, err
 	}
 
-	recovered := make([]PortfolioVariantIdentity, 0, len(identities))
-	for _, identity := range identities {
-		recovered = append(recovered, PortfolioVariantIdentity{
-			Key:     strings.TrimSpace(identity.Key),
-			Label:   strings.TrimSpace(identity.Label),
-			Aliases: append([]string(nil), identity.Aliases...),
-		})
-	}
-
-	return recovered, nil
+	return materializePortfolioVariantIdentities(identities), nil
 }
 
 // ResolvePortfolioVariantIdentity maps a stored or user-provided variant
@@ -61,4 +60,17 @@ func ResolvePortfolioVariantIdentity(portfolio *Artifact, ref string) (Portfolio
 	}
 
 	return PortfolioVariantIdentity{}, false, nil
+}
+
+func materializePortfolioVariantIdentities(identities []portfolioVariantIdentity) []PortfolioVariantIdentity {
+	recovered := make([]PortfolioVariantIdentity, 0, len(identities))
+	for _, identity := range identities {
+		recovered = append(recovered, PortfolioVariantIdentity{
+			Key:     strings.TrimSpace(identity.Key),
+			Label:   strings.TrimSpace(identity.Label),
+			Aliases: append([]string(nil), identity.Aliases...),
+		})
+	}
+
+	return recovered
 }

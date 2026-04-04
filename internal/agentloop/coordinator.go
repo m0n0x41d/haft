@@ -992,6 +992,9 @@ func (c *Coordinator) captureDecisionSelection(ctx context.Context, sessionID, u
 	if err != nil {
 		return nil
 	}
+	if !attemptsExplicitDecisionSelection(userText, previewSelectionCandidatesForPortfolio(portfolio)) {
+		return nil
+	}
 
 	candidates, err := selectionCandidatesForPortfolio(portfolio)
 	if err != nil {
@@ -1024,6 +1027,15 @@ func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) ([]decisionSe
 		return nil, err
 	}
 
+	return decisionSelectionCandidatesFromIdentities(identities), nil
+}
+
+func previewSelectionCandidatesForPortfolio(portfolio *artifact.Artifact) []decisionSelectionCandidate {
+	identities := artifact.PreviewPortfolioVariantIdentities(portfolio)
+	return decisionSelectionCandidatesFromIdentities(identities)
+}
+
+func decisionSelectionCandidatesFromIdentities(identities []artifact.PortfolioVariantIdentity) []decisionSelectionCandidate {
 	candidates := make([]decisionSelectionCandidate, 0, len(identities))
 	for _, identity := range identities {
 		if strings.TrimSpace(identity.Key) == "" {
@@ -1036,7 +1048,7 @@ func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) ([]decisionSe
 		})
 	}
 
-	return candidates, nil
+	return candidates
 }
 
 func detectExplicitDecisionSelection(message string, candidates []decisionSelectionCandidate) (string, bool) {
@@ -1054,13 +1066,16 @@ func detectExplicitDecisionSelection(message string, candidates []decisionSelect
 	}
 
 	selectedRef := matches[0]
-	if isExactDecisionSelectionAlias(normalizedMessage, selectedRef, candidates) {
+	if matchesExplicitDecisionSelectionClause(normalizedMessage, selectedRef, candidates) {
 		return selectedRef, true
 	}
 
 	trimmedMessage := trimDecisionSelectionLeadIn(normalizedMessage)
 	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
 		return "", false
+	}
+	if matchesExplicitDecisionSelectionClause(trimmedMessage, selectedRef, candidates) {
+		return selectedRef, true
 	}
 	selectionText, ok := trimPositiveDecisionSelectionPrefix(trimmedMessage)
 	if !ok {
@@ -1071,20 +1086,6 @@ func detectExplicitDecisionSelection(message string, candidates []decisionSelect
 	}
 
 	return selectedRef, true
-}
-
-func decisionSelectionAliasesForIdentity(identity artifact.PortfolioVariantIdentity) []string {
-	aliases := append([]string(nil), identity.Aliases...)
-	prefixed := make([]string, 0, len(identity.Aliases)*2)
-
-	for _, alias := range identity.Aliases {
-		prefixed = append(prefixed,
-			"variant "+alias,
-			"option "+alias,
-		)
-	}
-
-	return append(aliases, prefixed...)
 }
 
 func matchingDecisionSelectionRefs(message string, candidates []decisionSelectionCandidate) []string {
@@ -1104,21 +1105,6 @@ func matchingDecisionSelectionRefs(message string, candidates []decisionSelectio
 	}
 
 	return matches
-}
-
-func isExactDecisionSelectionAlias(message, selectedRef string, candidates []decisionSelectionCandidate) bool {
-	for _, candidate := range candidates {
-		if candidate.VariantRef != selectedRef {
-			continue
-		}
-		for _, alias := range candidate.Aliases {
-			if message == alias {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func normalizeDecisionSelectionAliases(values []string) []string {
@@ -1250,6 +1236,46 @@ func matchesExplicitDecisionSelectionClause(value, selectedRef string, candidate
 	return false
 }
 
+func matchesAnyExplicitDecisionSelectionClause(value string, candidates []decisionSelectionCandidate) bool {
+	for _, candidate := range candidates {
+		for _, alias := range candidate.Aliases {
+			if matchesDecisionSelectionAlias(value, alias) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func attemptsExplicitDecisionSelection(message string, candidates []decisionSelectionCandidate) bool {
+	normalizedMessage := normalizeDecisionSelectionText(message)
+	if normalizedMessage == "" {
+		return false
+	}
+	if strings.Contains(message, "?") {
+		return false
+	}
+	if matchesAnyExplicitDecisionSelectionClause(normalizedMessage, candidates) {
+		return true
+	}
+
+	trimmedMessage := trimDecisionSelectionLeadIn(normalizedMessage)
+	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
+		return false
+	}
+	if matchesAnyExplicitDecisionSelectionClause(trimmedMessage, candidates) {
+		return true
+	}
+
+	selectionText, ok := trimPositiveDecisionSelectionPrefix(trimmedMessage)
+	if !ok {
+		return false
+	}
+
+	return matchesAnyExplicitDecisionSelectionClause(selectionText, candidates)
+}
+
 func matchesDecisionSelectionAlias(value, alias string) bool {
 	if value == alias {
 		return true
@@ -1312,6 +1338,20 @@ func hasDecisionSelectionFillerSuffix(value, alias string) bool {
 	}
 
 	return true
+}
+
+func decisionSelectionAliasesForIdentity(identity artifact.PortfolioVariantIdentity) []string {
+	aliases := append([]string(nil), identity.Aliases...)
+	prefixed := make([]string, 0, len(identity.Aliases)*2)
+
+	for _, alias := range identity.Aliases {
+		prefixed = append(prefixed,
+			"variant "+alias,
+			"option "+alias,
+		)
+	}
+
+	return append(aliases, prefixed...)
 }
 
 func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {

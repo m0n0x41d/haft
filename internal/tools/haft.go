@@ -299,7 +299,7 @@ Actions:
 				"scores":                      map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
 				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Pareto front variants (compare)"},
 				"incomparable":                map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "description": "Pairs that are intentionally incomparable (compare)"},
-				"selected_ref":                map[string]any{"type": "string", "description": "Selected variant (compare)"},
+				"selected_ref":                map[string]any{"type": "string", "description": "Advisory recommendation variant (compare); the human still chooses in delegated mode"},
 				"policy_applied":              map[string]any{"type": "string", "description": "Selection rule used (compare)"},
 				"parity_plan":                 parityPlanSchema("Structured parity plan for compare-time enforcement"),
 			},
@@ -414,7 +414,18 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 		return agent.ToolResult{}, err
 	}
 
-	display := fmt.Sprintf("Comparison recorded.\nID: %s\nFile: %s\nSelected: %s", a.Meta.ID, filePath, input.Results.SelectedRef)
+	displayLines := []string{
+		"Comparison recorded.",
+		fmt.Sprintf("ID: %s", a.Meta.ID),
+		fmt.Sprintf("File: %s", filePath),
+	}
+	if input.Results.SelectedRef != "" {
+		displayLines = append(displayLines,
+			fmt.Sprintf("Recommendation (advisory): %s", input.Results.SelectedRef),
+			"Human choice remains open until decide.",
+		)
+	}
+	display := strings.Join(displayLines, "\n")
 	return agent.ToolResult{
 		DisplayText: display,
 		Meta: &agent.ArtifactMeta{

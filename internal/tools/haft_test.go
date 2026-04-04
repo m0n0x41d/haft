@@ -267,6 +267,12 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	if compareResult.Meta.ComparedPortfolioRef != exploreResult.Meta.ArtifactRef {
 		t.Fatalf("ComparedPortfolioRef = %q, want %q", compareResult.Meta.ComparedPortfolioRef, exploreResult.Meta.ArtifactRef)
 	}
+	if !strings.Contains(compareResult.DisplayText, "Recommendation (advisory): gRPC") {
+		t.Fatalf("expected advisory recommendation in compare display, got %q", compareResult.DisplayText)
+	}
+	if strings.Contains(compareResult.DisplayText, "Selected:") {
+		t.Fatalf("compare display still presents recommendation as selection: %q", compareResult.DisplayText)
+	}
 
 	portfolio, err := store.Get(ctx, compareResult.Meta.ArtifactRef)
 	if err != nil {

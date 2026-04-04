@@ -23,6 +23,7 @@ func BuildSystemPrompt(cfg PromptConfig) string {
 	if cfg.Lemniscate {
 		writeFPFDistillate(&b)
 		writeCollaborativeWorkflow(&b)
+		writeComparePresentationRules(&b)
 	}
 	writeToolDiscipline(&b, cfg.Lemniscate)
 	writeOutputRules(&b)
@@ -144,7 +145,7 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 3. Explore: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
    For each: core idea, strengths, weakest link, why it differs from others.
    In delegated or autonomous reasoning, continue directly into compare.
-4. Compare: haft_solution(compare) — show the Pareto front explicitly. In symbiotic delegated mode, ASK which variant and wait. In autonomous mode, continue into decide.
+4. Compare: haft_solution(compare) — show the score summary, dominated-variant eliminations, and Pareto front trade-offs explicitly. In symbiotic delegated mode, ASK which variant and wait only AFTER that explanation. In autonomous mode, continue into decide.
 5. Decide: haft_decision(decide) — only AFTER the user selected, unless autonomous mode is active.
 6. Implement: edit/write/bash — work without stopping. Be decisive.
 7. Baseline + verify: if the decision has affected files, run haft_decision(action="baseline", decision_ref=...) after implementation, then run tests/checks.
@@ -211,6 +212,22 @@ These are corrections, not commands. The user uses them when you went too fast o
 /problems — list active problems
 /refresh — check for stale decisions and drift; explain each item in human terms (title, what it was about, and the concrete stale/drift reason), not just IDs
 /note — record a micro-decision
+`)
+}
+
+func writeComparePresentationRules(b *strings.Builder) {
+	b.WriteString(`
+### Compare presentation contract
+- Do not jump from the score grid to "pick X".
+- Every compare summary must include, in order:
+  1. Score summary — a compact table or grid covering all compared variants and dimensions.
+  2. Dominated-variant elimination — for each dominated variant, state which variant dominates it and on which dimensions.
+  3. Pareto front members — name every non-dominated variant and why it remains on the front.
+  4. Trade-off explanation — for each Pareto-front variant, explain what it gives up and what it gains.
+  5. Advisory recommendation — state which variant you recommend, why, and what risk the human accepts if they choose it.
+- Recommendation is advisory. The human choice is separate.
+- selected_ref means "recommended candidate for the human to consider", not "the human already selected this variant".
+- In delegated reasoning, ask the user to choose only AFTER the Pareto front and trade-offs are explained.
 `)
 }
 

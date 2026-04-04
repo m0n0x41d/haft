@@ -377,6 +377,83 @@ func TestEvidenceItems(t *testing.T) {
 	}
 }
 
+func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	if _, err := store.DB().ExecContext(ctx, `
+		DROP TABLE evidence_items;
+		CREATE TABLE evidence_items (
+			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
+			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
+			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			valid_until TEXT, created_at TEXT NOT NULL
+		)`); err != nil {
+		t.Fatalf("recreate legacy evidence_items: %v", err)
+	}
+
+	store.Create(ctx, &Artifact{Meta: Meta{ID: "dec-legacy", Kind: KindDecisionRecord, Title: "Legacy"}, Body: "d"})
+	if _, err := store.DB().ExecContext(ctx, `
+		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"evid-legacy", "dec-legacy", "measurement", "legacy row", "supports", "carrier-1", 3, 5, "", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		t.Fatalf("insert legacy evidence item: %v", err)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, "dec-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if len(items[0].ClaimScope) != 0 {
+		t.Fatalf("expected empty claim scope, got %v", items[0].ClaimScope)
+	}
+}
+
+func TestAddEvidenceItem_LegacySchemaWithoutClaimScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	if _, err := store.DB().ExecContext(ctx, `
+		DROP TABLE evidence_items;
+		CREATE TABLE evidence_items (
+			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
+			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
+			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			valid_until TEXT, created_at TEXT NOT NULL
+		)`); err != nil {
+		t.Fatalf("recreate legacy evidence_items: %v", err)
+	}
+
+	store.Create(ctx, &Artifact{Meta: Meta{ID: "dec-legacy-write", Kind: KindDecisionRecord, Title: "Legacy Write"}, Body: "d"})
+
+	item := &EvidenceItem{
+		ID:              "evid-legacy-write",
+		Type:            "measurement",
+		Content:         "legacy insert",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  5,
+		ClaimScope:      []string{"latency"},
+	}
+	if err := store.AddEvidenceItem(ctx, item, "dec-legacy-write"); err != nil {
+		t.Fatalf("add evidence item: %v", err)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, "dec-legacy-write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if len(items[0].ClaimScope) != 0 {
+		t.Fatalf("expected empty claim scope, got %v", items[0].ClaimScope)
+	}
+}
+
 func TestNextSequence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

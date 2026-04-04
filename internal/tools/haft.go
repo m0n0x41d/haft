@@ -134,6 +134,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 
 		// Find related solution and decision artifacts
 		portfolioRef := ""
+		comparedPortfolioRef := ""
 		decisionRef := ""
 		related, _ := artifact.FetchSearchResults(ctx, t.store, ref, 20)
 		for _, r := range related {
@@ -141,6 +142,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			case artifact.KindSolutionPortfolio:
 				if portfolioRef == "" {
 					portfolioRef = r.Meta.ID
+					comparedPortfolioRef = resolveComparedPortfolioRef(ctx, t.store, r.Meta.ID)
 				}
 			case artifact.KindDecisionRecord:
 				if decisionRef == "" {
@@ -161,11 +163,12 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		return agent.ToolResult{
 			DisplayText: b.String(),
 			Meta: &agent.ArtifactMeta{
-				Kind:              "problem",
-				ArtifactRef:       a.Meta.ID,
-				Operation:         "adopt",
-				AdoptPortfolioRef: portfolioRef,
-				AdoptDecisionRef:  decisionRef,
+				Kind:                 "problem",
+				ArtifactRef:          a.Meta.ID,
+				Operation:            "adopt",
+				AdoptPortfolioRef:    portfolioRef,
+				ComparedPortfolioRef: comparedPortfolioRef,
+				AdoptDecisionRef:     decisionRef,
 			},
 		}, nil
 
@@ -414,11 +417,25 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	return agent.ToolResult{
 		DisplayText: display,
 		Meta: &agent.ArtifactMeta{
-			Kind:        "solution",
-			ArtifactRef: a.Meta.ID,
-			Operation:   "compare",
+			Kind:                 "solution",
+			ArtifactRef:          a.Meta.ID,
+			Operation:            "compare",
+			ComparedPortfolioRef: a.Meta.ID,
 		},
 	}, nil
+}
+
+func resolveComparedPortfolioRef(ctx context.Context, store artifact.ArtifactStore, portfolioRef string) string {
+	if strings.TrimSpace(portfolioRef) == "" {
+		return ""
+	}
+
+	portfolio, err := store.Get(ctx, portfolioRef)
+	if err != nil || !artifact.PortfolioHasComparison(portfolio) {
+		return ""
+	}
+
+	return portfolio.Meta.ID
 }
 
 // ---------------------------------------------------------------------------

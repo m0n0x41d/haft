@@ -3,6 +3,7 @@ package artifact
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -229,6 +230,22 @@ func (a *Artifact) UnmarshalPortfolioFields() PortfolioFields {
 	var pf PortfolioFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
 	return pf
+}
+
+// PortfolioHasComparison reports whether a portfolio already contains
+// persisted comparison output in structured data or legacy rendered form.
+func PortfolioHasComparison(a *Artifact) bool {
+	if a == nil || a.Meta.Kind != KindSolutionPortfolio {
+		return false
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison != nil {
+		return true
+	}
+
+	return strings.Contains(a.Body, "## Comparison") ||
+		strings.Contains(a.Body, "## Non-Dominated Set")
 }
 
 // GenerateID creates a deterministic artifact ID.

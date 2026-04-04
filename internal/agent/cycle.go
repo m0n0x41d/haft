@@ -21,7 +21,10 @@ func DerivePhaseFromCycle(cycle *Cycle) Phase {
 		return PhaseWorker
 	}
 	if cycle.PortfolioRef != "" {
-		return PhaseDecider
+		if cycle.ComparedPortfolioRef == cycle.PortfolioRef {
+			return PhaseDecider
+		}
+		return PhaseExplorer
 	}
 	if cycle.ProblemRef != "" {
 		return PhaseExplorer
@@ -112,6 +115,7 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 			updated.ProblemRef = meta.ArtifactRef
 			if meta.AdoptPortfolioRef != "" {
 				updated.PortfolioRef = meta.AdoptPortfolioRef
+				updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
 			}
 			if meta.AdoptDecisionRef != "" {
 				updated.DecisionRef = meta.AdoptDecisionRef
@@ -121,9 +125,13 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 	case "solution":
 		if meta.Operation == "explore" {
 			updated.PortfolioRef = meta.ArtifactRef
+			updated.ComparedPortfolioRef = ""
 			bound = true
 		}
-		// compare updates existing portfolio — no new ref, no bind
+		if meta.Operation == "compare" {
+			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
+			bound = updated.ComparedPortfolioRef != ""
+		}
 	case "decision":
 		if meta.Operation == "decide" {
 			updated.DecisionRef = meta.ArtifactRef

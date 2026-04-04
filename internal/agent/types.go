@@ -324,8 +324,9 @@ type ArtifactMeta struct {
 	Governance  *GovernanceMeta // non-nil when framer proposes ceremony level
 
 	// Adopt-specific: related refs found for the adopted problem.
-	AdoptPortfolioRef string // existing solution portfolio
-	AdoptDecisionRef  string // existing decision
+	AdoptPortfolioRef    string // existing solution portfolio
+	ComparedPortfolioRef string // exact portfolio with persisted comparison data
+	AdoptDecisionRef     string // existing decision
 
 	// Measure-specific: verdict from haft_decision(measure).
 	MeasureVerdict string // "accepted" | "partial" | "failed"
@@ -360,21 +361,22 @@ const (
 // Binds artifact refs as they're created, tracks governance decisions,
 // and carries assurance metrics. Session.ActiveCycleID points here.
 type Cycle struct {
-	ID           string         `json:"id"`
-	SessionID    string         `json:"session_id"`
-	ProblemRef   string         `json:"problem_ref,omitempty"`
-	PortfolioRef string         `json:"portfolio_ref,omitempty"`
-	DecisionRef  string         `json:"decision_ref,omitempty"`
-	Phase        Phase          `json:"phase"`
-	Depth        Depth          `json:"depth"`
-	Status       CycleStatus    `json:"status"`
-	LineageRef   string         `json:"lineage_ref,omitempty"` // previous cycle (reframe after measure fail)
-	WeakestLink  string         `json:"weakest_link,omitempty"`
-	Assurance    AssuranceTuple `json:"assurance"`
-	REff         float64        `json:"r_eff"`
-	CLMin        int            `json:"cl_min"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID                   string         `json:"id"`
+	SessionID            string         `json:"session_id"`
+	ProblemRef           string         `json:"problem_ref,omitempty"`
+	PortfolioRef         string         `json:"portfolio_ref,omitempty"`
+	ComparedPortfolioRef string         `json:"compared_portfolio_ref,omitempty"`
+	DecisionRef          string         `json:"decision_ref,omitempty"`
+	Phase                Phase          `json:"phase"`
+	Depth                Depth          `json:"depth"`
+	Status               CycleStatus    `json:"status"`
+	LineageRef           string         `json:"lineage_ref,omitempty"` // previous cycle (reframe after measure fail)
+	WeakestLink          string         `json:"weakest_link,omitempty"`
+	Assurance            AssuranceTuple `json:"assurance"`
+	REff                 float64        `json:"r_eff"`
+	CLMin                int            `json:"cl_min"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
 
 	// Structured governance and skip records (JSON-serialized in DB)
 	Governance []GovernanceEntry `json:"governance,omitempty"`

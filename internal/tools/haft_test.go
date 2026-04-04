@@ -262,6 +262,9 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	if compareResult.Meta == nil {
 		t.Fatal("expected comparison artifact metadata")
 	}
+	if compareResult.Meta.ComparedPortfolioRef != exploreResult.Meta.ArtifactRef {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", compareResult.Meta.ComparedPortfolioRef, exploreResult.Meta.ArtifactRef)
+	}
 
 	portfolio, err := store.Get(ctx, compareResult.Meta.ArtifactRef)
 	if err != nil {
@@ -274,6 +277,64 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	}
 	if got := fields.Comparison.ParityPlan.Window; got != "same 15m replay window" {
 		t.Fatalf("parity window = %q", got)
+	}
+}
+
+func TestResolveComparedPortfolioRef_RequiresPersistedComparison(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:  "Transport choice",
+		Signal: "Latency variance between protocols",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep the existing request-response semantics",
+			},
+			{
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != "" {
+		t.Fatalf("resolveComparedPortfolioRef = %q, want empty before compare", got)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			SelectedRef:     "gRPC",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != portfolio.Meta.ID {
+		t.Fatalf("resolveComparedPortfolioRef = %q, want %q after compare", got, portfolio.Meta.ID)
 	}
 }
 

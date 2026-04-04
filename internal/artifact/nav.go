@@ -69,7 +69,7 @@ func ComputeNavState(ctx context.Context, store ArtifactStore, contextName strin
 		state.Mode = d.Meta.Mode
 	case len(portfolios) > 0:
 		p := portfolios[0]
-		if strings.Contains(p.Body, "## Comparison") || strings.Contains(p.Body, "## Non-Dominated Set") {
+		if PortfolioHasComparison(p) {
 			state.DerivedStatus = DerivedCompared
 			state.NextAction = `/h-decide (record decision)`
 		} else {

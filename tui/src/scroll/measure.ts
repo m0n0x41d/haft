@@ -4,6 +4,7 @@
 import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
 import { estimateToolBatchDisplayHeight } from "../components/toolBatch.js"
+import { countWrappedUserPromptRows } from "../components/userPrompt.js"
 
 export const DEFAULT_OVERSCAN_ROWS = 8
 
@@ -20,7 +21,7 @@ export function estimateEntryHeight(
 ): number {
   switch (entry.type) {
     case "userPrompt":
-      return 1 + 1 + entry.attachments.length
+      return 1 + countWrappedUserPromptRows(entry.text, width)
 
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120))

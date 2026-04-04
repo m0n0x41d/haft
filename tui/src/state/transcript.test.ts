@@ -93,3 +93,28 @@ test("keeps the thinking indicator when streaming has no text or tools yet", () 
     },
   ])
 })
+
+test("preserves the full multiline user prompt text in transcript entries", () => {
+  const entries = buildTranscript({
+    messages: [
+      {
+        id: "user-1",
+        role: "user",
+        text: "Fix the transcript\n[not an attachment]\nKeep every line",
+      },
+    ],
+    streaming: false,
+    streamingMsgId: null,
+    thinkExpanded: false,
+    error: null,
+    model: "model",
+  })
+
+  assert.deepEqual(entries, [
+    {
+      type: "userPrompt",
+      id: "user-1-user",
+      text: "Fix the transcript\n[not an attachment]\nKeep every line",
+    },
+  ])
+})

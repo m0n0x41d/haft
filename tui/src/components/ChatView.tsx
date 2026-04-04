@@ -8,6 +8,7 @@ import type { TranscriptEntry } from "../state/transcript.js"
 import { MarkdownView } from "./MarkdownView.js"
 import { AssistantToolBatchView } from "./AssistantToolBatchView.js"
 import { ThinkingIndicator } from "./ThinkingIndicator.js"
+import { buildUserPromptDisplayLines } from "./userPrompt.js"
 
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
@@ -41,7 +42,7 @@ const EntryBlock = React.memo(function EntryBlock({
 }) {
   switch (entry.type) {
     case "userPrompt":
-      return <UserPromptBlock text={entry.text} attachments={entry.attachments} width={width} />
+      return <UserPromptBlock text={entry.text} width={width} />
     case "assistantText":
       return <AssistantTextBlock text={entry.text} streaming={entry.streaming} width={width} />
     case "thinking":
@@ -57,20 +58,16 @@ const EntryBlock = React.memo(function EntryBlock({
 
 // --- Entry renderers ---
 
-function UserPromptBlock({ text, attachments, width }: { text: string; attachments: string[]; width: number }) {
-  const content = ` \u276F ${text}`
-  const pad = Math.max(0, width - content.length)
+function UserPromptBlock({ text, width }: { text: string; width: number }) {
+  const lines = buildUserPromptDisplayLines(text)
 
   return (
     <Box flexDirection="column" marginTop={1} flexShrink={0} width={width}>
-      <Box width={width}>
-        <Text backgroundColor="blackBright">
-          <Text dimColor>{" \u276F"}</Text> <Text bold>{text}</Text>{" ".repeat(pad)}
-        </Text>
-      </Box>
-      {attachments.map((line, i) => (
-        <Box key={i} paddingX={1} width={width}>
-          <Text dimColor>{"\u21B3  "}{line}</Text>
+      {lines.map((line, index) => (
+        <Box key={index} width={width}>
+          <Text backgroundColor="blackBright" bold wrap="wrap">
+            {line}
+          </Text>
         </Box>
       ))}
     </Box>

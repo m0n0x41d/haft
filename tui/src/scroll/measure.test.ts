@@ -97,6 +97,16 @@ test("estimates collapsed tool batches from their displayed rows", () => {
   assert.ok(estimateEntryHeight(entry, 80, { toolHistoryExpanded: true }) > 3)
 })
 
+test("estimates multiline user prompts from their full preserved text", () => {
+  const entry: TranscriptEntry = {
+    type: "userPrompt",
+    id: "user-1",
+    text: "first line\n[not an attachment]\nthird line",
+  }
+
+  assert.equal(estimateEntryHeight(entry, 80), 4)
+})
+
 test("prefers fresh estimates while active transcript entries are still growing", () => {
   const entries: TranscriptEntry[] = [
     {

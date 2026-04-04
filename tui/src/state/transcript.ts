@@ -6,7 +6,7 @@
 import type { ChatMessage, ToolCall } from "../protocol/types.js"
 
 export type TranscriptEntry =
-  | { type: "userPrompt"; id: string; text: string; attachments: string[] }
+  | { type: "userPrompt"; id: string; text: string }
   | { type: "assistantText"; id: string; text: string; streaming: boolean }
   | { type: "thinking"; id: string; lines: string[]; hiddenCount: number }
   | { type: "assistantToolBatch"; id: string; tools: ToolCall[] }
@@ -29,10 +29,7 @@ export function buildTranscript(opts: TranscriptOptions): TranscriptEntry[] {
 
   for (const msg of opts.messages) {
     if (msg.role === "user") {
-      const lines = msg.text.split("\n")
-      const text = lines[0] ?? ""
-      const attachments = lines.slice(1).filter((l) => l.startsWith("["))
-      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text, attachments })
+      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text: msg.text })
       continue
     }
 

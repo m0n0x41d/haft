@@ -14,6 +14,7 @@ var patternIDDigitSuffixRE = regexp.MustCompile(`^(\d+)([A-Za-z]+)$`)
 var patternIDWordRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 var quotedQueryRE = regexp.MustCompile(`"([^"]+)"`)
 var dependencyClauseLabelRE = regexp.MustCompile(`(?:^|[.;]\s+)([A-Za-z][A-Za-z /-]+):`)
+var trailingParentheticalRE = regexp.MustCompile(`^(.*)\(([^()]+)\)\s*$`)
 
 type SpecEdgeType string
 
@@ -247,11 +248,156 @@ func buildAliases(heading, patternID string) []string {
 	if patternID != "" {
 		aliases = append(aliases, patternID)
 	}
-	cleanHeading := cleanMarkdownText(heading)
-	if cleanHeading != "" {
-		aliases = append(aliases, cleanHeading)
+	cleanHeading := normalizeAliasText(heading)
+	if cleanHeading == "" {
+		return normalizeAliases(aliases)
 	}
-	return dedupeStrings(aliases)
+
+	aliases = append(aliases, cleanHeading)
+
+	title := stripHeadingPatternID(cleanHeading, patternID)
+	if title != "" && title != cleanHeading {
+		aliases = append(aliases, title)
+	}
+
+	for _, candidate := range []string{cleanHeading, title} {
+		left, right, ok := splitAliasPair(candidate)
+		if ok {
+			aliases = append(aliases, left, right)
+			if base, alias, ok := splitTrailingParenthetical(right); ok {
+				aliases = append(aliases, base)
+				if isTechnicalAlias(alias) {
+					aliases = append(aliases, alias)
+				}
+			}
+		}
+
+		base, alias, ok := splitTrailingParenthetical(candidate)
+		if ok {
+			aliases = append(aliases, base)
+			if isTechnicalAlias(alias) {
+				aliases = append(aliases, alias)
+			}
+		}
+	}
+
+	return normalizeAliases(aliases)
+}
+
+func normalizeAliasText(text string) string {
+	replacer := strings.NewReplacer("“", "", "”", "", "‘", "", "’", "", `"`, "", "'", "")
+	text = replacer.Replace(text)
+	text = cleanMarkdownText(text)
+	text = strings.TrimSpace(strings.Trim(text, " -:;,.[]{}"))
+	return text
+}
+
+func normalizeAliases(aliases []string) []string {
+	result := make([]string, 0, len(aliases))
+	seen := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		normalized := normalizeAliasText(alias)
+		if normalized == "" {
+			continue
+		}
+
+		key := strings.ToLower(normalized)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+
+		seen[key] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func stripHeadingPatternID(text, patternID string) string {
+	if patternID == "" {
+		return ""
+	}
+
+	text = normalizeAliasText(text)
+	patternID = normalizeAliasText(patternID)
+	if !strings.HasPrefix(text, patternID) {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(strings.TrimPrefix(text, patternID))
+	trimmed = strings.TrimLeft(trimmed, "-:; ")
+	return normalizeAliasText(trimmed)
+}
+
+func splitAliasPair(text string) (string, string, bool) {
+	text = normalizeAliasText(text)
+	if text == "" {
+		return "", "", false
+	}
+
+	parts := strings.SplitN(text, " - ", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+
+	left := normalizeAliasText(parts[0])
+	right := normalizeAliasText(parts[1])
+	if left == "" || right == "" {
+		return "", "", false
+	}
+
+	return left, right, true
+}
+
+func splitTrailingParenthetical(text string) (string, string, bool) {
+	text = normalizeAliasText(text)
+	if text == "" {
+		return "", "", false
+	}
+
+	match := trailingParentheticalRE.FindStringSubmatch(text)
+	if len(match) != 3 {
+		return "", "", false
+	}
+
+	base := normalizeAliasText(match[1])
+	alias := normalizeAliasText(match[2])
+	if base == "" || alias == "" {
+		return "", "", false
+	}
+
+	return base, alias, true
+}
+
+func isTechnicalAlias(text string) bool {
+	text = normalizeAliasText(text)
+	if text == "" {
+		return false
+	}
+
+	if strings.Contains(text, " / ") || strings.Contains(text, " -> ") {
+		return false
+	}
+
+	if extractPatternID(text) != "" {
+		return true
+	}
+
+	if strings.Contains(text, " ") {
+		return false
+	}
+
+	hasUpper := false
+	hasMarker := false
+	for _, r := range text {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r == '.' || r == '-' || r == '_' || (r >= '0' && r <= '9'):
+			hasMarker = true
+		}
+	}
+
+	return hasUpper && hasMarker
 }
 
 func splitMarkdownTableRow(line string) []string {
@@ -325,6 +471,8 @@ func cleanMarkdownText(text string) string {
 	text = replacer.Replace(text)
 	text = strings.ReplaceAll(text, "—", "-")
 	text = strings.ReplaceAll(text, "–", "-")
+	text = strings.ReplaceAll(text, "‑", "-")
+	text = strings.ReplaceAll(text, "−", "-")
 	text = strings.Join(strings.Fields(text), " ")
 	return strings.TrimSpace(text)
 }

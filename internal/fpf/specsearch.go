@@ -803,6 +803,7 @@ func normalizeChunkForIndex(chunk SpecChunk) SpecChunk {
 	if chunk.PatternID != "" {
 		chunk.Aliases = appendUnique(chunk.Aliases, chunk.PatternID)
 	}
+	chunk.Aliases = normalizeAliases(chunk.Aliases)
 
 	return chunk
 }

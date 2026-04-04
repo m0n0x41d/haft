@@ -1,6 +1,7 @@
 package fpf
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -257,6 +258,91 @@ func TestParseSpecCatalog_FallsBackToRelatedIDsForUntypedDependencies(t *testing
 	}
 }
 
+func TestBuildAliases_ExtractsHeadingVariants(t *testing.T) {
+	tests := []struct {
+		name      string
+		heading   string
+		patternID string
+		want      []string
+	}{
+		{
+			name:      "boundary title without parenthetical noise",
+			heading:   "A.6.B — Boundary Norm Square (Laws / Admissibility / Deontics / Work‑Effects)",
+			patternID: "A.6.B",
+			want: []string{
+				"A.6.B",
+				"Boundary Norm Square",
+			},
+		},
+		{
+			name:      "catalog title splits technical and prose names",
+			heading:   "A.CHR‑NORM — Canonical “Characteristic” & rename (Dimension/Axis → Characteristic)",
+			patternID: "A.17",
+			want: []string{
+				"A.CHR-NORM",
+				"Canonical Characteristic & rename",
+			},
+		},
+		{
+			name:      "technical alias in trailing parenthetical",
+			heading:   "A.17 - Canonical “Characteristic” (A.CHR‑NORM)",
+			patternID: "A.17",
+			want: []string{
+				"Canonical Characteristic",
+				"A.CHR-NORM",
+			},
+		},
+		{
+			name:      "technical and prose split by dash",
+			heading:   "A.6.3.CR - ConservativeRetextualization — same-described-entity textual re-expression",
+			patternID: "A.6.3.CR",
+			want: []string{
+				"ConservativeRetextualization",
+				"same-described-entity textual re-expression",
+			},
+		},
+		{
+			name:      "parenthetical technical alias",
+			heading:   "A.6.8 - Service Polysemy Unpacking (RPR‑SERV)",
+			patternID: "A.6.8",
+			want: []string{
+				"Service Polysemy Unpacking",
+				"RPR-SERV",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			aliases := buildAliases(tt.heading, tt.patternID)
+			for _, alias := range tt.want {
+				if !containsAlias(aliases, alias) {
+					t.Fatalf("aliases for %q missing %q: %#v", tt.heading, alias, aliases)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeAliases_DeduplicatesVariants(t *testing.T) {
+	aliases := normalizeAliases([]string{
+		` Canonical “Characteristic” `,
+		`Canonical "Characteristic"`,
+		`canonical characteristic`,
+		`A.CHR‑NORM`,
+		`A.CHR-NORM`,
+		``,
+	})
+
+	want := []string{
+		"Canonical Characteristic",
+		"A.CHR-NORM",
+	}
+	if !reflect.DeepEqual(aliases, want) {
+		t.Fatalf("normalizeAliases() = %#v, want %#v", aliases, want)
+	}
+}
+
 func TestNormalizePatternID_CommonForms(t *testing.T) {
 	tests := []struct {
 		input string
@@ -281,6 +367,15 @@ func TestNormalizePatternID_CommonForms(t *testing.T) {
 			t.Fatalf("normalizePatternID(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
+}
+
+func containsAlias(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestChunkMarkdown_NormalizesPatternIDs(t *testing.T) {

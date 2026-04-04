@@ -700,6 +700,28 @@ func TestSearchSpec_ExactPatternLookupNormalizesVariants(t *testing.T) {
 	}
 }
 
+func TestNormalizeChunkForIndex_NormalizesAliases(t *testing.T) {
+	chunk := SpecChunk{
+		PatternID: "A.17",
+		Aliases: []string{
+			` Canonical “Characteristic” `,
+			`Canonical "Characteristic"`,
+			`A.CHR‑NORM`,
+			`a.chr-norm`,
+		},
+	}
+
+	got := normalizeChunkForIndex(chunk)
+	want := []string{
+		"Canonical Characteristic",
+		"A.CHR-NORM",
+		"A.17",
+	}
+	if !reflect.DeepEqual(got.Aliases, want) {
+		t.Fatalf("normalizeChunkForIndex aliases = %#v, want %#v", got.Aliases, want)
+	}
+}
+
 func TestSearchSpecWithOptions_TierFiltersRemainTierSpecific(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()

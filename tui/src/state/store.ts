@@ -220,8 +220,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, cycle: action.params }
 
     case "subagent.start": {
-      const newState = { ...state, activeSubagents: state.activeSubagents + 1 }
-      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => ({
+      if (!action.params.parentCallId) {
+        return state
+      }
+      if (!hasAssistantToolByCallId(state, action.params.parentCallId)) {
+        return state
+      }
+
+      const newState = updateAssistantToolByCallId(state, action.params.parentCallId, (tool) => ({
         ...tool,
         subagent: {
           ...ensureSubagent(tool, action.params.subagentId),
@@ -231,11 +237,19 @@ export function reducer(state: AppState, action: Action): AppState {
           running: true,
         },
       }))
+
+      return {
+        ...newState,
+        activeSubagents: state.activeSubagents + 1,
+      }
     }
 
     case "subagent.done": {
-      const newState = { ...state, activeSubagents: Math.max(0, state.activeSubagents - 1) }
-      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => {
+      if (!hasAssistantToolBySubagentId(state, action.params.subagentId)) {
+        return state
+      }
+
+      const newState = updateAssistantToolBySubagentId(state, action.params.subagentId, (tool) => {
         const subagent = ensureSubagent(tool, action.params.subagentId)
         return {
           ...tool,
@@ -248,6 +262,11 @@ export function reducer(state: AppState, action: Action): AppState {
           },
         }
       })
+
+      return {
+        ...newState,
+        activeSubagents: Math.max(0, state.activeSubagents - 1),
+      }
     }
 
     case "overseer.alert":
@@ -561,6 +580,31 @@ function updateAssistantToolBySubagentId(
   fn: (tool: ToolCall) => ToolCall,
 ): AppState {
   return updateAssistantTool(state, (tool) => tool.subagent?.id === subagentId, fn)
+}
+
+function hasAssistantToolByCallId(state: AppState, callId: string): boolean {
+  return hasAssistantTool(state, (tool) => tool.callId === callId)
+}
+
+function hasAssistantToolBySubagentId(state: AppState, subagentId: string): boolean {
+  return hasAssistantTool(state, (tool) => tool.subagent?.id === subagentId)
+}
+
+function hasAssistantTool(state: AppState, match: (tool: ToolCall) => boolean): boolean {
+  for (let msgIndex = state.messages.length - 1; msgIndex >= 0; msgIndex--) {
+    const msg = state.messages[msgIndex]
+    if (msg.role !== "assistant" || !msg.tools?.length) {
+      continue
+    }
+
+    for (let toolIndex = msg.tools.length - 1; toolIndex >= 0; toolIndex--) {
+      if (match(msg.tools[toolIndex])) {
+        return true
+      }
+    }
+  }
+
+  return false
 }
 
 function updateToolInMessages(

@@ -102,6 +102,11 @@ func (c *Coordinator) SpawnSubagent(
 		return nil, fmt.Errorf("max concurrent subagents reached (%d)", agent.MaxConcurrentSubagents)
 	}
 
+	parentCallID := tools.ActiveToolCallID(ctx)
+	if parentCallID == "" {
+		return nil, fmt.Errorf("spawn_agent requires an active parent tool call ID")
+	}
+
 	subagentID := "sub_" + uuid.NewString()[:8]
 
 	// Model: use override if specified, else parent's model
@@ -151,8 +156,6 @@ func (c *Coordinator) SpawnSubagent(
 		Result:    resultCh,
 	}
 	c.Subagents.Add(handle)
-
-	parentCallID := tools.ActiveToolCallID(ctx)
 
 	logger.Info().Str("component", "agent").
 		Str("subagent_id", subagentID).

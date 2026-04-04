@@ -58,10 +58,11 @@ func TestSpawnSubagentEmitsParentCallID(t *testing.T) {
 	t.Parallel()
 
 	writer := &lockedBuffer{}
+	sessions := &sessionStoreStub{}
 	coordinator := &Coordinator{
 		Provider:  providerStub{},
 		Tools:     tools.NewRegistry(t.TempDir()),
-		Sessions:  &sessionStoreStub{},
+		Sessions:  sessions,
 		Messages:  &messageStoreStub{},
 		Bus:       newProtocolBusWithWriter(writer),
 		Subagents: NewSubagentTracker(),
@@ -87,6 +88,48 @@ func TestSpawnSubagentEmitsParentCallID(t *testing.T) {
 	}
 	if event.SubagentID == "" {
 		t.Fatal("subagentId should not be empty")
+	}
+	if sessions.createCalls != 1 {
+		t.Fatalf("createCalls = %d, want 1", sessions.createCalls)
+	}
+}
+
+func TestSpawnSubagentRequiresParentCallID(t *testing.T) {
+	t.Parallel()
+
+	writer := &lockedBuffer{}
+	sessions := &sessionStoreStub{}
+	coordinator := &Coordinator{
+		Provider:  providerStub{},
+		Tools:     tools.NewRegistry(t.TempDir()),
+		Sessions:  sessions,
+		Messages:  &messageStoreStub{},
+		Bus:       newProtocolBusWithWriter(writer),
+		Subagents: NewSubagentTracker(),
+	}
+
+	parentSession := &agent.Session{ID: "sess_parent", Model: "test-model"}
+	subagentDef := agent.SubagentDef{Name: "explore", MaxSteps: 1}
+
+	handle, err := coordinator.SpawnSubagent(context.Background(), parentSession, subagentDef, "inspect the repo")
+
+	if err == nil {
+		t.Fatal("SpawnSubagent() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "active parent tool call ID") {
+		t.Fatalf("error = %q, want active parent tool call ID", err.Error())
+	}
+	if handle != nil {
+		t.Fatal("handle should be nil when parent call ID is missing")
+	}
+	if sessions.createCalls != 0 {
+		t.Fatalf("createCalls = %d, want 0", sessions.createCalls)
+	}
+	if coordinator.Subagents.ActiveCount() != 0 {
+		t.Fatalf("active subagents = %d, want 0", coordinator.Subagents.ActiveCount())
+	}
+	if strings.TrimSpace(writer.String()) != "" {
+		t.Fatalf("unexpected bus output: %q", writer.String())
 	}
 }
 
@@ -119,9 +162,14 @@ func (providerStub) Stream(
 
 func (providerStub) ModelID() string { return "test-model" }
 
-type sessionStoreStub struct{}
+type sessionStoreStub struct {
+	createCalls int
+}
 
-func (*sessionStoreStub) Create(_ context.Context, _ *agent.Session) error { return nil }
+func (s *sessionStoreStub) Create(_ context.Context, _ *agent.Session) error {
+	s.createCalls++
+	return nil
+}
 func (*sessionStoreStub) Get(_ context.Context, _ string) (*agent.Session, error) {
 	return nil, nil
 }

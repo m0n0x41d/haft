@@ -193,3 +193,174 @@ test("normalizes legacy wire children into explicit subagent state", () => {
   assert.equal(spawnTool.subagent?.tools.length, 1)
   assert.equal(spawnTool.subagent?.tools[0]?.callId, "bash-1")
 })
+
+test("ignores unmatched subagent lifecycle events", () => {
+  const state = reduceActions([
+    {
+      type: "msg.update",
+      params: {
+        id: "msg-1",
+        text: "",
+        streaming: true,
+        tools: [
+          {
+            callId: "spawn-1",
+            name: "spawn_agent",
+            args: "{\"task\":\"Investigate scroll issue\"}",
+            running: true,
+          },
+        ],
+      },
+    },
+    {
+      type: "subagent.start",
+      params: {
+        subagentId: "sub-missing",
+        parentCallId: "spawn-missing",
+        name: "research",
+        task: "Should not attach",
+      },
+    },
+    {
+      type: "tool.start",
+      params: {
+        callId: "bash-missing",
+        name: "bash",
+        args: "{\"command\":\"pwd\"}",
+        subagentId: "sub-missing",
+      },
+    },
+    {
+      type: "subagent.done",
+      params: {
+        subagentId: "sub-missing",
+        summary: "Should be ignored",
+        isError: false,
+      },
+    },
+  ])
+
+  const spawnTool = state.messages[0]?.tools?.[0]
+
+  assert.ok(spawnTool)
+  assert.equal(spawnTool.subagent, undefined)
+  assert.equal(state.activeSubagents, 0)
+})
+
+test("matches interleaved subagent events to exact parent tool call ids", () => {
+  const state = reduceActions([
+    {
+      type: "msg.update",
+      params: {
+        id: "msg-1",
+        text: "",
+        streaming: true,
+        tools: [
+          {
+            callId: "spawn-1",
+            name: "spawn_agent",
+            args: "{\"task\":\"Inspect viewport\"}",
+            running: true,
+          },
+          {
+            callId: "spawn-2",
+            name: "spawn_agent",
+            args: "{\"task\":\"Inspect subagent ordering\"}",
+            running: true,
+          },
+        ],
+      },
+    },
+    {
+      type: "subagent.start",
+      params: {
+        subagentId: "sub-2",
+        parentCallId: "spawn-2",
+        name: "ordering",
+        task: "Inspect subagent ordering",
+      },
+    },
+    {
+      type: "subagent.start",
+      params: {
+        subagentId: "sub-1",
+        parentCallId: "spawn-1",
+        name: "viewport",
+        task: "Inspect viewport",
+      },
+    },
+    {
+      type: "tool.start",
+      params: {
+        callId: "bash-2",
+        name: "bash",
+        args: "{\"command\":\"git status\"}",
+        subagentId: "sub-2",
+      },
+    },
+    {
+      type: "tool.start",
+      params: {
+        callId: "grep-1",
+        name: "grep",
+        args: "{\"pattern\":\"viewport\"}",
+        subagentId: "sub-1",
+      },
+    },
+    {
+      type: "tool.done",
+      params: {
+        callId: "grep-1",
+        name: "grep",
+        output: "viewport.tsx:42",
+        isError: false,
+        subagentId: "sub-1",
+      },
+    },
+    {
+      type: "tool.done",
+      params: {
+        callId: "bash-2",
+        name: "bash",
+        output: "working tree clean",
+        isError: false,
+        subagentId: "sub-2",
+      },
+    },
+    {
+      type: "subagent.done",
+      params: {
+        subagentId: "sub-1",
+        summary: "viewport summary",
+        isError: false,
+      },
+    },
+    {
+      type: "subagent.done",
+      params: {
+        subagentId: "sub-2",
+        summary: "ordering summary",
+        isError: false,
+      },
+    },
+  ])
+
+  const firstSpawn = state.messages[0]?.tools?.[0]
+  const secondSpawn = state.messages[0]?.tools?.[1]
+
+  assert.ok(firstSpawn)
+  assert.ok(secondSpawn)
+  assert.equal(firstSpawn.subagent?.id, "sub-1")
+  assert.equal(firstSpawn.subagent?.name, "viewport")
+  assert.equal(firstSpawn.subagent?.summary, "viewport summary")
+  assert.equal(firstSpawn.subagent?.tools[0]?.callId, "grep-1")
+  assert.equal(firstSpawn.subagent?.tools[0]?.output, "viewport.tsx:42")
+
+  assert.equal(secondSpawn.subagent?.id, "sub-2")
+  assert.equal(secondSpawn.subagent?.name, "ordering")
+  assert.equal(secondSpawn.subagent?.summary, "ordering summary")
+  assert.equal(secondSpawn.subagent?.tools[0]?.callId, "bash-2")
+  assert.equal(secondSpawn.subagent?.tools[0]?.output, "working tree clean")
+
+  assert.equal(state.activeSubagents, 0)
+})

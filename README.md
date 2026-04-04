@@ -160,12 +160,17 @@ haft fpf search "A.6"
 haft fpf search "a6:"
 haft fpf search "boundary routing" --tier route --explain
 haft fpf search "decision record" --full
+haft fpf semantic-search "boundary contract unpacking" --explain
 haft fpf section "A.6"
 haft fpf section "A.6 - Signature Stack & Boundary Discipline"
 haft fpf info
 ```
 
 Pattern ids are normalized, so common forms such as `A.6`, `a.6`, `A6`, and `A.6:` resolve to the same canonical section. `haft fpf section` supports exact lookup by heading or pattern id, while `haft fpf search` is the better entry point for route-aware discovery and explainable tiered search.
+
+### Experimental semantic prototype
+
+`haft fpf semantic-search` is an explicit experiment, not the default retriever. It preserves exact pattern-id lookup, can seed from route matches when the query clearly maps there, and otherwise uses a local TF-IDF vector model over spec-derived text fields. That keeps the supported deterministic route-aware path intact while still letting us compare a vector-style experiment against the golden-query harness. Keep using `haft fpf search` for the supported behavior; use `semantic-search` only when you want to inspect or evaluate the prototype.
 
 ---
 

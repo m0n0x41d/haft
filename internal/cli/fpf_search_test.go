@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/tools"
 	_ "modernc.org/sqlite"
 )
 
@@ -69,6 +70,86 @@ func TestRunFPFSearch_FullFlagLoadsFullSectionBody(t *testing.T) {
 	}
 	if !strings.Contains(fullOutput, "TAIL-MARKER") {
 		t.Fatalf("expected --full output to include the complete section body, got:\n%s", fullOutput)
+	}
+}
+
+func TestRunFPFSemanticSearch_ExplainAndFull(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	restoreFlags := stubFPFSemanticSearchFlags(t, 1, true, true)
+	defer restoreFlags()
+
+	output, err := captureStdout(t, func() error {
+		return runFPFSemanticSearch(nil, []string{"boundary", "contract", "unpacking"})
+	})
+	if err != nil {
+		t.Fatalf("runFPFSemanticSearch returned error: %v", err)
+	}
+	if !strings.Contains(output, "tier: semantic · semantic seed Boundary discipline and routing") {
+		t.Fatalf("expected semantic explain metadata, got:\n%s", output)
+	}
+	if !strings.Contains(output, "TAIL-MARKER") {
+		t.Fatalf("expected semantic --full output to include the full section body, got:\n%s", output)
+	}
+}
+
+func TestRetrieveEmbeddedFPF_ReturnsStructuredResults(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
+		Query: "A.6",
+		Limit: 1,
+		Full:  true,
+	})
+	if err != nil {
+		t.Fatalf("retrieveEmbeddedFPF returned error: %v", err)
+	}
+
+	if retrieval.Query != "A.6" {
+		t.Fatalf("expected query to round-trip, got %q", retrieval.Query)
+	}
+	if len(retrieval.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(retrieval.Results))
+	}
+	if retrieval.Results[0].Tier != fpf.SpecSearchTierPattern {
+		t.Fatalf("expected pattern tier, got %#v", retrieval.Results[0])
+	}
+	if !strings.Contains(retrieval.Results[0].Content, "TAIL-MARKER") {
+		t.Fatalf("expected full retrieval helper to hydrate the section body, got %#v", retrieval.Results[0])
+	}
+}
+
+func TestBuildFPFSearchFunc_UsesSharedRetriever(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	search := buildFPFSearchFunc()
+	output, err := search(tools.FPFSearchRequest{
+		Query:   "A.6",
+		Limit:   1,
+		Full:    true,
+		Explain: true,
+	})
+	if err != nil {
+		t.Fatalf("buildFPFSearchFunc search returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "### A.6 - Signature Stack & Boundary Discipline") {
+		t.Fatalf("expected agent output to include the shared retrieval heading, got:\n%s", output)
+	}
+	if !strings.Contains(output, "tier: pattern · exact pattern id") {
+		t.Fatalf("expected agent output to keep explain metadata, got:\n%s", output)
+	}
+	if !strings.Contains(output, "TAIL-MARKER") {
+		t.Fatalf("expected agent output to use the shared full-content retrieval, got:\n%s", output)
 	}
 }
 
@@ -257,6 +338,24 @@ func stubFPFSearchFlags(t *testing.T, limit int, full bool, explain bool, tier s
 		fpfSearchFull = originalFull
 		fpfSearchExplain = originalExplain
 		fpfSearchTier = originalTier
+	}
+}
+
+func stubFPFSemanticSearchFlags(t *testing.T, limit int, full bool, explain bool) func() {
+	t.Helper()
+
+	originalLimit := fpfSemanticSearchLimit
+	originalFull := fpfSemanticSearchFull
+	originalExplain := fpfSemanticSearchExplain
+
+	fpfSemanticSearchLimit = limit
+	fpfSemanticSearchFull = full
+	fpfSemanticSearchExplain = explain
+
+	return func() {
+		fpfSemanticSearchLimit = originalLimit
+		fpfSemanticSearchFull = originalFull
+		fpfSemanticSearchExplain = originalExplain
 	}
 }
 

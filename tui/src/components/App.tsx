@@ -295,6 +295,7 @@ export function App({ client, inputEvents }: AppProps) {
     respondRef.current?.({ action }); respondRef.current = null
     dispatch({ type: "permission.replied" })
     if (action === "allow_session") {
+      autoApproveRef.current = true
       dispatch({ type: "set.yolo", value: true })
       dispatch({ type: "set.notification", text: "YOLO mode enabled" })
     }
@@ -379,6 +380,7 @@ export function App({ client, inputEvents }: AppProps) {
     }
     if (key.ctrl && input === "y") {
       const next = !state.autoApprove
+      autoApproveRef.current = next
       dispatch({ type: "set.yolo", value: next })
       dispatch({ type: "set.notification", text: next ? "YOLO mode enabled" : "YOLO mode disabled" })
       return

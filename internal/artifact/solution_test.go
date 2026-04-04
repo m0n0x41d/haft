@@ -1018,3 +1018,85 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 		t.Fatalf("unexpected structured parity baseline: %+v", fields.Comparison.ParityPlan.BaselineSet)
 	}
 }
+
+func TestCompare_ErrorsWhenExploredVariantIsOmittedFromScores(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("A", "ops complexity", "Keep the implementation inside the existing service boundary"),
+			testVariant("B", "tooling overhead", "Move the workflow to a dedicated worker service"),
+			testVariant("C", "migration cost", "Adopt a managed external platform"),
+		},
+		NoSteppingStoneRationale: "All three options are direct implementation candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"A": {"latency": "20ms"},
+				"B": {"latency": "15ms"},
+			},
+			NonDominatedSet: []string{"B"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing explored variant error")
+	}
+	if !strings.Contains(err.Error(), "target dimension 'latency' missing scores for variants: C") {
+		t.Fatalf("unexpected omission error: %v", err)
+	}
+}
+
+func TestCompare_ErrorsOnScoredVariantOutsideStructuredBaseline(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Transport choice", Signal: "Latency variance", Context: "api",
+	})
+	CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{{Name: "latency", Role: "target"}},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"REST", "gRPC"},
+			Window:            "same 15m replay window",
+			Budget:            "$200/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("REST", "chatty serialization", "Keep the existing HTTP semantics"),
+			testVariant("gRPC", "tooling overhead", "Adopt binary RPC for lower-latency transport"),
+			testVariant("GraphQL", "resolver complexity", "Adopt a graph-based query boundary"),
+		},
+		NoSteppingStoneRationale: "All three transports are direct architecture candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST":    {"latency": "42ms"},
+				"gRPC":    {"latency": "18ms"},
+				"GraphQL": {"latency": "55ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected scored variant outside baseline error")
+	}
+	if !strings.Contains(err.Error(), `scored variant "GraphQL" is outside the declared compare set`) {
+		t.Fatalf("unexpected parity-set error: %v", err)
+	}
+}

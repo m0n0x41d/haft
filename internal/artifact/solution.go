@@ -46,6 +46,7 @@ const (
 // CompareValidationContext carries the pure inputs needed for compare-time validation.
 type CompareValidationContext struct {
 	Mode                    Mode
+	PortfolioVariants       []string
 	CharacterizedDimensions []charDim
 	ParityPlan              *ParityPlan
 	ParitySource            parityPlanSource
@@ -337,8 +338,9 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	}
 
 	validationContext := CompareValidationContext{
-		Mode:         mode,
-		ParitySource: parityPlanSourceNone,
+		Mode:              mode,
+		PortfolioVariants: portfolioVariantKeys(a),
+		ParitySource:      parityPlanSourceNone,
 	}
 
 	if input.Results.ParityPlan != nil {
@@ -368,13 +370,14 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		return nil, "", err
 	}
 
-	input.Results.ParityPlan = cloneParityPlan(validation.EffectiveParity)
+	normalizedResults := normalizeComparisonResult(input.Results, validation.ComparedVariants)
+	normalizedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
 
 	// Pure: build comparison section + apply to body
-	a.Body = BuildComparisonBody(a.Body, input.Results, validation.Warnings)
+	a.Body = BuildComparisonBody(a.Body, normalizedResults, validation.ComparedVariants, validation.Warnings)
 
 	fields := a.UnmarshalPortfolioFields()
-	fields.Comparison = cloneComparisonResult(input.Results)
+	fields.Comparison = cloneComparisonResult(normalizedResults)
 	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 
@@ -425,24 +428,14 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		return result, fmt.Errorf("non_dominated_set is required — which variants are on the Pareto front?")
 	}
 
-	comparedVariants := comparedVariantsFromScores(input.Results.Scores)
-	if len(comparedVariants) == 0 {
+	rawScoredVariants := comparedVariantsFromScores(input.Results.Scores)
+	if len(rawScoredVariants) == 0 {
 		return result, fmt.Errorf("scores must include at least one compared variant")
-	}
-
-	for _, variantID := range input.Results.NonDominatedSet {
-		if _, ok := input.Results.Scores[variantID]; !ok {
-			return result, fmt.Errorf("non_dominated_set variant %q has no score entry", variantID)
-		}
-	}
-	if input.Results.SelectedRef != "" {
-		if _, ok := input.Results.Scores[input.Results.SelectedRef]; !ok {
-			return result, fmt.Errorf("selected_ref %q has no score entry", input.Results.SelectedRef)
-		}
 	}
 
 	var warnings []string
 	effectiveParity := cloneParityPlan(ctx.ParityPlan)
+	comparedVariants := dedupeTrimmedStrings(ctx.PortfolioVariants)
 	switch {
 	case ctx.ParitySource == parityPlanSourceExplicit:
 		if err := ValidateParityPlan(*effectiveParity); err != nil {
@@ -474,6 +467,13 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	}
 
 	if result.EffectiveParity != nil && result.EffectiveParity.IsStructured() {
+		if len(comparedVariants) > 0 {
+			for _, variantID := range result.EffectiveParity.BaselineSet {
+				if !containsString(comparedVariants, variantID) {
+					return result, fmt.Errorf("parity plan baseline variant %q is not declared in the portfolio", variantID)
+				}
+			}
+		}
 		for _, variantID := range result.EffectiveParity.BaselineSet {
 			if _, ok := input.Results.Scores[variantID]; !ok {
 				return result, fmt.Errorf("parity plan baseline variant %q has no score entry", variantID)
@@ -481,7 +481,41 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		}
 		comparedVariants = append([]string(nil), result.EffectiveParity.BaselineSet...)
 	}
+	if len(comparedVariants) == 0 {
+		comparedVariants = append([]string(nil), rawScoredVariants...)
+	}
 	result.ComparedVariants = append([]string(nil), comparedVariants...)
+
+	for _, variantID := range rawScoredVariants {
+		if containsString(comparedVariants, variantID) {
+			continue
+		}
+		return result, fmt.Errorf("scored variant %q is outside the declared compare set", variantID)
+	}
+
+	for _, variantID := range input.Results.NonDominatedSet {
+		if !containsString(comparedVariants, variantID) {
+			return result, fmt.Errorf("non_dominated_set variant %q is outside the declared compare set", variantID)
+		}
+		if _, ok := input.Results.Scores[variantID]; !ok {
+			return result, fmt.Errorf("non_dominated_set variant %q has no score entry", variantID)
+		}
+	}
+	if input.Results.SelectedRef != "" {
+		if !containsString(comparedVariants, input.Results.SelectedRef) {
+			return result, fmt.Errorf("selected_ref %q is outside the declared compare set", input.Results.SelectedRef)
+		}
+		if _, ok := input.Results.Scores[input.Results.SelectedRef]; !ok {
+			return result, fmt.Errorf("selected_ref %q has no score entry", input.Results.SelectedRef)
+		}
+	}
+	for _, pair := range input.Results.Incomparable {
+		for _, variantID := range pair {
+			if !containsString(comparedVariants, variantID) {
+				return result, fmt.Errorf("incomparable variant %q is outside the declared compare set", variantID)
+			}
+		}
+	}
 
 	charByName := make(map[string]charDim)
 	compareDims := make(map[string]string)
@@ -543,7 +577,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 }
 
 // BuildComparisonBody appends comparison results to an existing portfolio body. Pure.
-func BuildComparisonBody(existingBody string, results ComparisonResult, warnings []string) string {
+func BuildComparisonBody(existingBody string, results ComparisonResult, comparedVariants []string, warnings []string) string {
 	var section strings.Builder
 	section.WriteString("\n## Comparison\n\n")
 
@@ -556,7 +590,7 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, warnings
 	section.WriteString(header + "\n")
 	section.WriteString(sep + "\n")
 
-	for _, variantID := range comparedVariantsFromScores(results.Scores) {
+	for _, variantID := range comparedVariants {
 		scores := results.Scores[variantID]
 		row := fmt.Sprintf("| %s |", variantID)
 		for _, d := range results.Dimensions {
@@ -653,6 +687,70 @@ func comparedVariantsFromScores(scores map[string]map[string]string) []string {
 	}
 	sort.Strings(variants)
 	return variants
+}
+
+func portfolioVariantKeys(portfolio *Artifact) []string {
+	if portfolio == nil {
+		return nil
+	}
+
+	fields := portfolio.UnmarshalPortfolioFields()
+	keys := portfolioVariantKeysFromStructured(fields.Variants)
+	if len(keys) > 0 {
+		return keys
+	}
+
+	return extractPortfolioVariantTitles(portfolio.Body)
+}
+
+func portfolioVariantKeysFromStructured(variants []Variant) []string {
+	var keys []string
+	for _, variant := range variants {
+		key := strings.TrimSpace(variant.ID)
+		if key == "" {
+			key = strings.TrimSpace(variant.Title)
+		}
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return dedupeTrimmedStrings(keys)
+}
+
+func extractPortfolioVariantTitles(body string) []string {
+	var titles []string
+	lines := strings.Split(body, "\n")
+	inVariants := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "## Variants"):
+			inVariants = true
+			continue
+		case inVariants && strings.HasPrefix(trimmed, "## "):
+			return dedupeTrimmedStrings(titles)
+		case inVariants && strings.HasPrefix(trimmed, "### "):
+			header := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
+			parts := strings.SplitN(header, ". ", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				titles = append(titles, parts[1])
+				continue
+			}
+			titles = append(titles, header)
+		}
+	}
+	return dedupeTrimmedStrings(titles)
+}
+
+func containsString(values []string, target string) bool {
+	normalizedTarget := strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == normalizedTarget {
+			return true
+		}
+	}
+	return false
 }
 
 func isMissingScore(value string) bool {
@@ -894,6 +992,38 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	}
 
 	return cloned
+}
+
+func normalizeComparisonResult(result ComparisonResult, comparedVariants []string) ComparisonResult {
+	normalized := ComparisonResult{
+		Dimensions:      append([]string(nil), result.Dimensions...),
+		NonDominatedSet: append([]string(nil), result.NonDominatedSet...),
+		PolicyApplied:   result.PolicyApplied,
+		SelectedRef:     result.SelectedRef,
+		ParityPlan:      cloneParityPlan(result.ParityPlan),
+	}
+
+	for _, pair := range result.Incomparable {
+		normalized.Incomparable = append(normalized.Incomparable, append([]string(nil), pair...))
+	}
+
+	if len(result.Scores) == 0 {
+		return normalized
+	}
+
+	normalized.Scores = make(map[string]map[string]string, len(comparedVariants))
+	for _, variantID := range comparedVariants {
+		scores := result.Scores[variantID]
+		if scores == nil {
+			continue
+		}
+		normalized.Scores[variantID] = make(map[string]string, len(scores))
+		for dimension, value := range scores {
+			normalized.Scores[variantID][dimension] = value
+		}
+	}
+
+	return normalized
 }
 
 func cloneVariants(variants []Variant) []Variant {

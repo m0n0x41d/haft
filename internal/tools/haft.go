@@ -427,16 +427,28 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 }
 
 func resolveComparedPortfolioRef(ctx context.Context, store artifact.ArtifactStore, portfolioRef string) string {
-	if strings.TrimSpace(portfolioRef) == "" {
-		return ""
+	return artifact.ResolveComparedPortfolioRef(ctx, store, portfolioRef)
+}
+
+func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store artifact.ArtifactStore, registry *Registry) *agent.Cycle {
+	if cycle == nil || store == nil {
+		return cycle
+	}
+	if strings.TrimSpace(cycle.PortfolioRef) == "" || cycle.ComparedPortfolioRef != "" {
+		return cycle
 	}
 
-	portfolio, err := store.Get(ctx, portfolioRef)
-	if err != nil || !artifact.PortfolioHasComparison(portfolio) {
-		return ""
+	comparedPortfolioRef := artifact.ResolveComparedPortfolioRef(ctx, store, cycle.PortfolioRef)
+	if comparedPortfolioRef == "" {
+		return cycle
 	}
 
-	return portfolio.Meta.ID
+	repaired := *cycle
+	repaired.ComparedPortfolioRef = comparedPortfolioRef
+	repaired.Phase = agent.DerivePhaseFromCycle(&repaired)
+	_ = registry.UpdateCycle(ctx, &repaired)
+
+	return &repaired
 }
 
 // ---------------------------------------------------------------------------
@@ -521,7 +533,9 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 	case "decide":
 		// FPF guardrails: requires explored variants + user consent (Transformer Mandate)
 		if t.registry != nil {
-			if err := agent.CanDecide(t.registry.ActiveCycle(ctx), t.registry.UserConsented(ctx)); err != nil {
+			cycle := t.registry.ActiveCycle(ctx)
+			cycle = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
+			if err := agent.CanDecide(cycle, t.registry.UserConsented(ctx)); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}

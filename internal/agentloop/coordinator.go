@@ -102,6 +102,9 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 			cycle, _ := c.Cycles.GetActiveCycle(ctx, sessID)
 			return cycle
 		})
+		c.Tools.SetCycleUpdater(func(ctx context.Context, cycle *agent.Cycle) error {
+			return c.Cycles.UpdateCycle(ctx, cycle)
+		})
 
 		// Wire Transformer Mandate consent checker:
 		// Returns true if a user message exists after the last successful

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/fpf"
 
@@ -336,6 +337,103 @@ func TestResolveComparedPortfolioRef_RequiresPersistedComparison(t *testing.T) {
 
 	if got := resolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != portfolio.Meta.ID {
 		t.Fatalf("resolveComparedPortfolioRef = %q, want %q after compare", got, portfolio.Meta.ID)
+	}
+}
+
+func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:  "Transport choice",
+		Signal: "Latency variance between protocols",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep the existing request-response semantics",
+			},
+			{
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			SelectedRef:     "gRPC",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activeCycle := &agent.Cycle{
+		ID:           "cyc-legacy",
+		Status:       agent.CycleActive,
+		ProblemRef:   problem.Meta.ID,
+		PortfolioRef: portfolio.Meta.ID,
+		Phase:        agent.PhaseExplorer,
+	}
+
+	var persisted *agent.Cycle
+	registry := &Registry{}
+	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
+		return activeCycle
+	})
+	registry.SetCycleUpdater(func(_ context.Context, repaired *agent.Cycle) error {
+		copy := *repaired
+		persisted = &copy
+		activeCycle = &copy
+		return nil
+	})
+	registry.SetConsentChecker(func(context.Context) bool {
+		return true
+	})
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    problem.Meta.ID,
+		"portfolio_ref":  portfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected decision artifact metadata")
+	}
+	if persisted == nil {
+		t.Fatal("expected repaired cycle to be persisted")
+	}
+	if persisted.ComparedPortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", persisted.ComparedPortfolioRef, portfolio.Meta.ID)
+	}
+	if persisted.Phase != agent.PhaseDecider {
+		t.Fatalf("Phase = %s, want %s", persisted.Phase, agent.PhaseDecider)
 	}
 }
 

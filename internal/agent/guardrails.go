@@ -42,16 +42,24 @@ func CanCompare(cycle *Cycle) error {
 // CanDecide checks if haft_decision(decide) is allowed.
 // Requires:
 //   - Solution portfolio exists (explored variants) — FPF B.5.2
-//   - User has responded after explore (Transformer Mandate) — unless autonomous
+//   - Completed compare for the active portfolio
+//   - User has responded after explore/compare (Transformer Mandate) — unless autonomous
 //
 // userRespondedAfterExplore should be true if a user message exists in history
-// after the last explore tool call. Pass true in autonomous mode.
+// after the last explore or compare tool call. Pass true in autonomous mode.
 func CanDecide(cycle *Cycle, userRespondedAfterExplore bool) error {
 	if cycle == nil || cycle.PortfolioRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_decision(decide)",
 			Missing:  "explored variants",
 			Guidance: "Explore at least 2 variants first: haft_solution(action=\"explore\", variants=[...]). FPF B.5.2 requires rival candidates.",
+		}
+	}
+	if cycle.ComparedPortfolioRef == "" || cycle.ComparedPortfolioRef != cycle.PortfolioRef {
+		return &GuardrailError{
+			Tool:     "haft_decision(decide)",
+			Missing:  "completed comparison for the active portfolio",
+			Guidance: "Compare the active variants first: haft_solution(action=\"compare\", portfolio_ref=...) and show the Pareto front before deciding.",
 		}
 	}
 	if !userRespondedAfterExplore {

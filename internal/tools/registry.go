@@ -17,7 +17,10 @@ type ToolExecutor interface {
 // CycleResolver provides active cycle state to tools for guardrail checks.
 type CycleResolver func(ctx context.Context) *agent.Cycle
 
-// UserConsentChecker checks if a user message exists after the last explore.
+// CycleUpdater persists repaired cycle state after tool-side recovery.
+type CycleUpdater func(ctx context.Context, cycle *agent.Cycle) error
+
+// UserConsentChecker checks if a user message exists after the last solution action.
 // Returns true in autonomous mode (user explicitly delegated).
 type UserConsentChecker func(ctx context.Context) bool
 
@@ -26,6 +29,7 @@ type Registry struct {
 	tools          map[string]ToolExecutor
 	order          []string // insertion order for stable listing
 	cycleResolver  CycleResolver
+	cycleUpdater   CycleUpdater
 	consentChecker UserConsentChecker
 	readFiles      map[string]bool // tracks files read in current session (for read-before-edit)
 }
@@ -48,6 +52,11 @@ func (r *Registry) SetCycleResolver(resolver CycleResolver) {
 	r.cycleResolver = resolver
 }
 
+// SetCycleUpdater sets the function that tools use to persist repaired cycles.
+func (r *Registry) SetCycleUpdater(updater CycleUpdater) {
+	r.cycleUpdater = updater
+}
+
 // ActiveCycle returns the current active cycle, or nil if none.
 func (r *Registry) ActiveCycle(ctx context.Context) *agent.Cycle {
 	if r.cycleResolver == nil {
@@ -56,12 +65,20 @@ func (r *Registry) ActiveCycle(ctx context.Context) *agent.Cycle {
 	return r.cycleResolver(ctx)
 }
 
+// UpdateCycle persists cycle changes when an updater is available.
+func (r *Registry) UpdateCycle(ctx context.Context, cycle *agent.Cycle) error {
+	if r.cycleUpdater == nil || cycle == nil {
+		return nil
+	}
+	return r.cycleUpdater(ctx, cycle)
+}
+
 // SetConsentChecker sets the function that checks Transformer Mandate compliance.
 func (r *Registry) SetConsentChecker(checker UserConsentChecker) {
 	r.consentChecker = checker
 }
 
-// UserConsented returns true if user has responded since the last explore.
+// UserConsented returns true if user has responded since the last solution action.
 // Returns true if no checker is set (backwards compatibility).
 func (r *Registry) UserConsented(ctx context.Context) bool {
 	if r.consentChecker == nil {

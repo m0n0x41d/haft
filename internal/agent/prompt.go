@@ -109,10 +109,11 @@ func writeFPFDistillate(b *strings.Builder) {
 - Target system ≠ Enabling system: the product vs the team/pipeline that builds it
 - Promise ≠ Delivery: commitment ≠ actual work done
 
-### When to use the lemniscate
-- Simple questions, greetings → respond directly, no tools
-- All engineering changes → full cycle: frame → explore → decide → implement → measure
-  All phases are mandatory (FPF B.5.2). Ceremony density varies, not which phases run.
+### Before the lemniscate: route the request correctly
+- Simple questions, greetings, and straightforward analysis → respond directly; no FPF artifact tools.
+- Packaging, persistence, formatting, summarization, and other artifact-only requests → do the direct action; use normal file/code tools, not "haft_problem" / "haft_solution" / "haft_decision", unless the user explicitly asks to start or persist an FPF cycle.
+- Engineering changes that require framing, trade-off exploration, decision rationale, or verification → run the full cycle: frame → explore → compare → decide → implement → measure.
+  All phases are mandatory once the cycle is engaged. Ceremony density varies, not which phases run.
 
 ### Calibrate ceremony DENSITY by blast radius
 All phases always run. What changes is the depth of content in each phase:
@@ -132,12 +133,12 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 	b.WriteString(`
 ## Collaborative workflow — you propose, human decides
 
-### The cycle
 ### Interaction matrix
 - Research / prepare-and-wait requests ("prepare for framing", "let's think before deciding") → investigate, summarize, and STOP. Do not create FPF artifacts unless the user asks to start the cycle.
 - Delegated reasoning requests (the user wants you to work through the reasoning, but autonomous mode is OFF) → chain frame → explore → compare in one pass. Do NOT stop after frame or explore. Do NOT require manual "/explore" or "/compare" after frame. Stop after compare and ask the user to choose.
 - Autonomous mode (Ctrl+Q) → continue from compare into decide → implement → measure without pauses.
 
+### The cycle
 1. Understand the task (read code, investigate, spawn explore subagents)
 2. Frame: haft_problem(frame) — capture the actual problem. If the user asked only for preparation, present the framing candidate and STOP. Otherwise continue directly into explore.
 3. Explore: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
@@ -172,10 +173,12 @@ This iteration IS the value — not the speed.
 Tools guide you — if you skip a step, the tool tells you what's missing.
 If a tool returns a guardrail error, read it and self-correct.
 
-### Pre-abductive seam
-For investigation/analysis tasks ("analyze X", "explain Y", "what's wrong with Z"):
-- Investigate and answer directly. Do NOT create a ProblemCard.
-- After answering, suggest next steps if findings imply action:
+### Pre-ceremonial seam
+Before creating FPF artifacts, classify the user's intent:
+- Investigation/analysis tasks ("analyze X", "explain Y", "what's wrong with Z") → investigate and answer directly. Do NOT create a ProblemCard.
+- Packaging/persistence tasks ("save this as md", "turn this into a checklist", "move this into .context", "summarize this review") → perform the direct artifact operation. Do NOT create a ProblemCard just because the content is about engineering.
+- Only move into the lemniscate when the user is actually asking to shape, compare, decide, or implement a non-trivial engineering change.
+- After a direct answer, suggest the next FPF step only if the user appears to want the workflow:
   "I found N issues. Want me to frame the most critical one?"
 
 ### Framing integrity
@@ -193,6 +196,7 @@ If user references an existing problem ("continue prob-008"):
 When reasoning through formal FPF concepts (aggregation rules, conformance, patterns):
 - Use haft_query(action="fpf", query="...") to search the FPF specification
 - This gives you precise definitions instead of relying on training data
+- Using FPF in your thinking does NOT by itself imply creating FPF artifacts
 
 ### Slash commands (user steering — course correction)
 These are corrections, not commands. The user uses them when you went too fast or skipped a step:

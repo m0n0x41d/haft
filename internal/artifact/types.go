@@ -1,6 +1,7 @@
 package artifact
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -246,6 +247,21 @@ func PortfolioHasComparison(a *Artifact) bool {
 
 	return strings.Contains(a.Body, "## Comparison") ||
 		strings.Contains(a.Body, "## Non-Dominated Set")
+}
+
+// ResolveComparedPortfolioRef reports the portfolio ref only when the stored
+// portfolio already contains persisted comparison output.
+func ResolveComparedPortfolioRef(ctx context.Context, store ArtifactStore, portfolioRef string) string {
+	if strings.TrimSpace(portfolioRef) == "" {
+		return ""
+	}
+
+	portfolio, err := store.Get(ctx, portfolioRef)
+	if err != nil || !PortfolioHasComparison(portfolio) {
+		return ""
+	}
+
+	return portfolio.Meta.ID
 }
 
 // GenerateID creates a deterministic artifact ID.

@@ -42,11 +42,12 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 	}
 
 	cycle := &agent.Cycle{
-		ID:        "cyc-001",
-		SessionID: sess.ID,
-		Phase:     agent.PhaseMeasure,
-		Depth:     agent.DepthStandard,
-		Status:    agent.CycleComplete,
+		ID:                   "cyc-001",
+		SessionID:            sess.ID,
+		Phase:                agent.PhaseMeasure,
+		Depth:                agent.DepthStandard,
+		Status:               agent.CycleComplete,
+		ComparedPortfolioRef: "port-001",
 		Assurance: agent.AssuranceTuple{
 			F: 2,
 			G: []string{"criterion/latency", "criterion/throughput"},
@@ -76,7 +77,11 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 	if stored.REff != 0.72 {
 		t.Errorf("REff = %.2f, want 0.72", stored.REff)
 	}
+	if stored.ComparedPortfolioRef != "port-001" {
+		t.Errorf("ComparedPortfolioRef = %q, want port-001", stored.ComparedPortfolioRef)
+	}
 
+	cycle.ComparedPortfolioRef = "port-002"
 	cycle.Assurance = agent.AssuranceTuple{
 		F: 1,
 		G: []string{"criterion/latency"},
@@ -101,5 +106,114 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 	}
 	if updated.REff != 0.41 {
 		t.Errorf("updated REff = %.2f, want 0.41", updated.REff)
+	}
+	if updated.ComparedPortfolioRef != "port-002" {
+		t.Errorf("updated ComparedPortfolioRef = %q, want port-002", updated.ComparedPortfolioRef)
+	}
+}
+
+func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration11(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "session.db")
+	sqlDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	_, err = sqlDB.Exec(`
+		CREATE TABLE agent_schema_version (
+			version INTEGER PRIMARY KEY,
+			applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		INSERT INTO agent_schema_version (version) VALUES
+			(1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+		CREATE TABLE agent_sessions (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			current_phase TEXT DEFAULT '',
+			depth TEXT DEFAULT 'standard',
+			interaction TEXT DEFAULT 'symbiotic',
+			parent_id TEXT DEFAULT '',
+			active_cycle_id TEXT DEFAULT '',
+			yolo INTEGER DEFAULT 0
+		);
+		CREATE TABLE agent_messages (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			parts_json TEXT NOT NULL,
+			model TEXT DEFAULT '',
+			tokens INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		t.Fatalf("seed partial agent schema: %v", err)
+	}
+
+	store, err := NewSQLiteStore(sqlDB)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+
+	var applied int
+	err = sqlDB.QueryRow(`SELECT COUNT(*) FROM agent_schema_version WHERE version = 11`).Scan(&applied)
+	if err != nil {
+		t.Fatalf("read migration 11 marker: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("migration 11 marker count = %d, want 1", applied)
+	}
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	sess := &agent.Session{
+		ID:        "sess-restore",
+		Title:     "repair test",
+		Model:     "test-model",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.Create(ctx, sess); err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+
+	cycle := &agent.Cycle{
+		ID:                   "cyc-restore",
+		SessionID:            sess.ID,
+		Phase:                agent.PhaseExplorer,
+		Status:               agent.CycleActive,
+		ComparedPortfolioRef: "portfolio-compare",
+		Assurance: agent.AssuranceTuple{
+			F: 1,
+			G: []string{"criterion/speed"},
+			R: 0.55,
+		},
+		CLMin:     2,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.CreateCycle(ctx, cycle); err != nil {
+		t.Fatalf("CreateCycle: %v", err)
+	}
+
+	stored, err := store.GetCycle(ctx, cycle.ID)
+	if err != nil {
+		t.Fatalf("GetCycle: %v", err)
+	}
+	if stored.ComparedPortfolioRef != "portfolio-compare" {
+		t.Fatalf("ComparedPortfolioRef = %q, want portfolio-compare", stored.ComparedPortfolioRef)
+	}
+	if stored.Assurance.F != 1 {
+		t.Fatalf("Assurance.F = %d, want 1", stored.Assurance.F)
+	}
+	if stored.REff != 0.55 {
+		t.Fatalf("REff = %.2f, want 0.55", stored.REff)
 	}
 }

@@ -503,7 +503,7 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
 	}
 
-	for index := 0; index < relatedExpansionLimit+3; index++ {
+	for index := 0; index < relatedExpansionSafetyLimit+3; index++ {
 		patternID := fmt.Sprintf("B.%d", index+1)
 		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
 			FromPatternID: "A.6",
@@ -522,7 +522,7 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	for index := 0; index < 3; index++ {
 		patternID := fmt.Sprintf("Z.%d", index+1)
 		chunks = append(chunks, SpecChunk{
-			ID:        relatedExpansionLimit + index + 5,
+			ID:        relatedExpansionSafetyLimit + index + 5,
 			Heading:   patternID + " — Fallback Target",
 			Level:     2,
 			Body:      "Fallback.",
@@ -533,18 +533,66 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
 	defer cleanup()
 
-	results, err := SearchSpec(db, "boundary routing", 50)
+	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: relatedExpansionSafetyLimit + 10,
+		Tier:  SpecSearchTierRelated,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	relatedResults := filterResultsByTier(results, "related")
-	if len(relatedResults) != relatedExpansionLimit {
-		t.Fatalf("expected %d related results, got %d", relatedExpansionLimit, len(relatedResults))
-	}
+	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
 	got := resultPatternIDs(relatedResults)
+	if len(relatedResults) != relatedExpansionSafetyLimit {
+		t.Fatalf("expected %d related results, got %d (%v)", relatedExpansionSafetyLimit, len(relatedResults), got)
+	}
 	if containsString(got, "Z.1") || containsString(got, "Z.2") || containsString(got, "Z.3") {
 		t.Fatalf("expected cap to exclude fallback overflow, got %v", got)
+	}
+}
+
+func TestSearchSpecWithOptions_RelatedTierHonorsRequestedLimit(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	for index := 0; index < 12; index++ {
+		patternID := fmt.Sprintf("B.%d", index+1)
+		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
+			FromPatternID: "A.6",
+			ToPatternID:   patternID,
+			EdgeType:      SpecEdgeTypeBuildsOn,
+		})
+		chunks = append(chunks, SpecChunk{
+			ID:        index + 2,
+			Heading:   patternID + " — Related Target",
+			Level:     2,
+			Body:      "Related.",
+			PatternID: patternID,
+		})
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: 12,
+		Tier:  SpecSearchTierRelated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
+	if len(relatedResults) != 12 {
+		t.Fatalf("expected 12 related results, got %d", len(relatedResults))
 	}
 }
 

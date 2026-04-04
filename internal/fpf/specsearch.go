@@ -56,7 +56,8 @@ type SpecIndexInfo struct {
 	SchemaVersion   string
 }
 
-const relatedExpansionLimit = 10
+const relatedExpansionDefaultLimit = 10
+const relatedExpansionSafetyLimit = 50
 
 var relatedExpansionPreferredEdgeTypes = []SpecEdgeType{
 	SpecEdgeTypeBuildsOn,
@@ -86,7 +87,7 @@ type relatedCandidate struct {
 }
 
 var defaultRelatedExpansionPolicy = relatedExpansionPolicy{
-	MaxResults: relatedExpansionLimit,
+	MaxResults: relatedExpansionDefaultLimit,
 }
 
 // BuildSpecIndex creates a structured SQLite index from spec chunks and route artifacts.
@@ -331,7 +332,7 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		appendResults(routeResults)
 	}
 	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
-		edgeResults, err := searchRelated(db, route.Core)
+		edgeResults, err := searchRelated(db, route.Core, relatedExpansionPolicyForLimit(options.Limit))
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +416,21 @@ func searchRoute(db *sql.DB, route Route) ([]SpecSearchResult, error) {
 	return results, nil
 }
 
-func searchRelated(db *sql.DB, seeds []string) ([]SpecSearchResult, error) {
+func relatedExpansionPolicyForLimit(limit int) relatedExpansionPolicy {
+	maxResults := limit
+	if maxResults <= 0 {
+		maxResults = relatedExpansionDefaultLimit
+	}
+	if maxResults > relatedExpansionSafetyLimit {
+		maxResults = relatedExpansionSafetyLimit
+	}
+
+	return relatedExpansionPolicy{
+		MaxResults: maxResults,
+	}
+}
+
+func searchRelated(db *sql.DB, seeds []string, policy relatedExpansionPolicy) ([]SpecSearchResult, error) {
 	if len(seeds) == 0 {
 		return nil, nil
 	}
@@ -425,7 +440,7 @@ func searchRelated(db *sql.DB, seeds []string) ([]SpecSearchResult, error) {
 		return nil, err
 	}
 
-	selected := selectRelatedCandidates(candidates, seeds, defaultRelatedExpansionPolicy)
+	selected := selectRelatedCandidates(candidates, seeds, policy)
 	results := buildRelatedResults(selected)
 	return results, nil
 }
@@ -466,7 +481,10 @@ func selectRelatedCandidates(candidates []relatedCandidate, seeds []string, poli
 	}
 
 	if policy.MaxResults <= 0 {
-		policy.MaxResults = relatedExpansionLimit
+		policy.MaxResults = relatedExpansionDefaultLimit
+	}
+	if policy.MaxResults > relatedExpansionSafetyLimit {
+		policy.MaxResults = relatedExpansionSafetyLimit
 	}
 
 	seedOrder := buildSeedOrder(seeds)

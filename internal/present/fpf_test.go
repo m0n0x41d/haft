@@ -84,6 +84,27 @@ func TestFormatFPFSearch_HidesMetadataByDefault(t *testing.T) {
 	}
 }
 
+func TestFormatFPFSearch_DoesNotDuplicateCaseVariantPatternPrefix(t *testing.T) {
+	results := []present.FPFSearchResult{
+		{
+			PatternID: "G.CORE",
+			Heading:   "G.Core - Part G Core Invariants",
+			Content:   "Part G core invariants.",
+		},
+	}
+
+	output := present.FormatFPFSearch(results, present.FPFSearchOptions{
+		Enumerate: true,
+	})
+
+	if strings.Contains(output, "G.CORE — G.Core - Part G Core Invariants") {
+		t.Fatalf("expected case-insensitive prefix detection, got:\n%s", output)
+	}
+	if !strings.Contains(output, "### 1. G.Core - Part G Core Invariants") {
+		t.Fatalf("expected original heading without duplicated prefix, got:\n%s", output)
+	}
+}
+
 func TestFormatFPFSection(t *testing.T) {
 	output := present.FormatFPFSection("A.6", "Section body\n")
 	want := "## A.6\n\nSection body\n"
@@ -97,7 +118,6 @@ func TestFormatFPFInfo(t *testing.T) {
 	output := present.FormatFPFInfo(present.FPFInfo{
 		Version:         "dev",
 		Commit:          "abc1234",
-		Source:          "https://github.com/ailev/FPF/commit/abc1234",
 		IndexedSections: "321",
 		BuildTime:       "2026-03-26T12:34:56Z",
 		SpecPath:        "data/FPF/FPF-Spec.md",
@@ -108,7 +128,6 @@ func TestFormatFPFInfo(t *testing.T) {
 		"haft fpf version: dev",
 		"FPF index schema version: 1",
 		"FPF upstream commit: abc1234",
-		"FPF source: https://github.com/ailev/FPF/commit/abc1234",
 		"Indexed sections: 321",
 		"Build time: 2026-03-26T12:34:56Z",
 		"Spec path: data/FPF/FPF-Spec.md",

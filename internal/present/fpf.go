@@ -26,7 +26,6 @@ type FPFSearchOptions struct {
 type FPFInfo struct {
 	Version         string
 	Commit          string
-	Source          string
 	IndexedSections string
 	BuildTime       string
 	SpecPath        string
@@ -88,9 +87,6 @@ func FormatFPFInfo(info FPFInfo) string {
 	if commit := strings.TrimSpace(info.Commit); commit != "" {
 		lines = append(lines, fmt.Sprintf("FPF upstream commit: %s", commit))
 	}
-	if source := strings.TrimSpace(info.Source); source != "" {
-		lines = append(lines, fmt.Sprintf("FPF source: %s", source))
-	}
 	if indexedSections := strings.TrimSpace(info.IndexedSections); indexedSections != "" {
 		lines = append(lines, fmt.Sprintf("Indexed sections: %s", indexedSections))
 	}
@@ -107,7 +103,13 @@ func FormatFPFInfo(info FPFInfo) string {
 func formatFPFResultTitle(result FPFSearchResult) string {
 	title := strings.TrimSpace(result.Heading)
 	patternID := strings.TrimSpace(result.PatternID)
-	if patternID == "" || strings.Contains(title, patternID) {
+	if patternID == "" {
+		return title
+	}
+
+	titleFolded := strings.ToUpper(title)
+	patternFolded := strings.ToUpper(patternID)
+	if strings.Contains(titleFolded, patternFolded) {
 		return title
 	}
 	return patternID + " — " + title

@@ -18,6 +18,7 @@ import { INITIAL_SELECTION, reduceSelection, hasSelection, normalizedRange, type
 import { copyToClipboard } from "../selection/clipboard.js"
 import { extractSelection, type ViewportLayout } from "../selection/extract.js"
 import { ChatView } from "./ChatView.js"
+import { OverseerPanel, buildOverseerLines } from "./OverseerPanel.js"
 import { StatusBar } from "./StatusBar.js"
 import { InputArea, type InputAreaHandle } from "./InputArea.js"
 import { PermissionDialog } from "./PermissionDialog.js"
@@ -43,7 +44,7 @@ const SLASH_COMMANDS: PickerItem[] = [
 ]
 
 // Bottom area: separator + queued + input + separator + status
-const BOTTOM_ROWS = 4
+const BASE_BOTTOM_ROWS = 4
 
 interface AppProps {
   client: JsonRpcClient
@@ -67,6 +68,10 @@ export function App({ client, inputEvents }: AppProps) {
   const nextAttachmentId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
+  const overseerLines = useMemo(
+    () => buildOverseerLines(state.overseerAlerts, state.overseerFindings),
+    [state.overseerAlerts, state.overseerFindings],
+  )
 
   // Stable ref to handleSubmit — protocol handler (registered once) always calls latest version
   const handleSubmitRef = useRef<(text: string) => void>(() => {})
@@ -122,7 +127,8 @@ export function App({ client, inputEvents }: AppProps) {
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
 
   // --- L2: Scroll (line-based) ---
-  const chatHeight = Math.max(5, height - BOTTOM_ROWS)
+  const bottomRows = BASE_BOTTOM_ROWS + overseerLines.length
+  const chatHeight = Math.max(5, height - bottomRows)
   const entryHeights = useMemo(() => measureTranscript(transcript, width), [transcript, width])
   const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
@@ -186,7 +192,7 @@ export function App({ client, inputEvents }: AppProps) {
         case "subagent.done": dispatch({ type: "subagent.done", params: p }); break
         case "overseer.alert":
           trace(`overseer.alert alerts=${JSON.stringify(p.alerts).slice(0, 200)}`)
-          dispatch({ type: "overseer.alert", alerts: p.alerts })
+          dispatch({ type: "overseer.alert", params: p })
           trace("overseer.alert dispatch done")
           break
         case "drift.update": dispatch({ type: "drift.update", params: p }); break
@@ -431,6 +437,9 @@ export function App({ client, inputEvents }: AppProps) {
 
       {/* Bottom separator */}
       <Text dimColor>{"\u2500".repeat(width)}</Text>
+
+      {/* Overseer findings */}
+      {overseerLines.length > 0 && <OverseerPanel lines={overseerLines} />}
 
       {/* Status */}
       <StatusBar

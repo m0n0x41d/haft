@@ -722,11 +722,6 @@ func detectAddedFiles(
 
 func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	scope = normalizeDriftScope(scope)
-
-	if scope == "." {
-		return listRootScopeFiles(projectRoot)
-	}
-
 	scopePath := filepath.Join(projectRoot, scope)
 	entries := make([]string, 0)
 
@@ -759,26 +754,6 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	sort.Strings(entries)
 
 	return entries, nil
-}
-
-func listRootScopeFiles(projectRoot string) ([]string, error) {
-	dirEntries, err := os.ReadDir(projectRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	files := make([]string, 0, len(dirEntries))
-	for _, entry := range dirEntries {
-		if entry.IsDir() {
-			continue
-		}
-
-		files = append(files, normalizeProjectPath(entry.Name()))
-	}
-
-	sort.Strings(files)
-
-	return files, nil
 }
 
 func normalizeDriftScope(scope string) string {

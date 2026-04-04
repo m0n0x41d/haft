@@ -28102,10 +28102,10 @@ var require_react_jsx_runtime_development = __commonJS({
             return jsxWithValidation(type, props, key, false);
           }
         }
-        var jsx15 = jsxWithValidationDynamic;
+        var jsx16 = jsxWithValidationDynamic;
         var jsxs13 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
-        exports.jsx = jsx15;
+        exports.jsx = jsx16;
         exports.jsxs = jsxs13;
       })();
     }
@@ -33835,6 +33835,7 @@ function initialState() {
     activeSubagents: 0,
     drift: null,
     overseerAlerts: [],
+    overseerFindings: [],
     lsp: null,
     phase: "input",
     error: null,
@@ -33883,7 +33884,7 @@ function reducer(state, action) {
     case "tool.start": {
       const { params } = action;
       if (params.subagentId) {
-        return updateLastAssistantTool(state, params.subagentId, (parent) => ({
+        return updateAssistantToolBySubagentId(state, params.subagentId, (parent) => ({
           ...parent,
           children: [...parent.children ?? [], {
             callId: params.callId,
@@ -33946,20 +33947,11 @@ function reducer(state, action) {
       return { ...state, cycle: action.params };
     case "subagent.start": {
       const newState = { ...state, activeSubagents: state.activeSubagents + 1 };
-      return updateLastAssistant(newState, (msg) => {
-        const tools = [...msg.tools ?? []];
-        for (let i = tools.length - 1; i >= 0; i--) {
-          if (tools[i].name === "spawn_agent" && !tools[i].subagentId) {
-            tools[i] = { ...tools[i], subagentId: action.params.subagentId };
-            break;
-          }
-        }
-        return { ...msg, tools };
-      });
+      return updateAssistantToolByCallId(newState, action.params.parentCallId, (tool) => tool.name !== "spawn_agent" ? tool : { ...tool, subagentId: action.params.subagentId });
     }
     case "subagent.done": {
       const newState = { ...state, activeSubagents: Math.max(0, state.activeSubagents - 1) };
-      return updateLastAssistantTool(newState, action.params.subagentId, (tool) => ({
+      return updateAssistantToolBySubagentId(newState, action.params.subagentId, (tool) => ({
         ...tool,
         running: false,
         output: action.params.summary,
@@ -33967,7 +33959,11 @@ function reducer(state, action) {
       }));
     }
     case "overseer.alert":
-      return { ...state, overseerAlerts: action.alerts };
+      return {
+        ...state,
+        overseerAlerts: action.params.alerts,
+        overseerFindings: action.params.findings ?? []
+      };
     case "drift.update":
       return { ...state, drift: action.params };
     case "lsp.update":
@@ -34041,26 +34037,36 @@ function updateLastAssistant(state, fn) {
   }
   return state;
 }
-function updateLastAssistantTool(state, subagentId, fn) {
-  return updateLastAssistant(state, (msg) => {
-    const tools = [...msg.tools ?? []];
-    for (let i = tools.length - 1; i >= 0; i--) {
-      if (tools[i].subagentId === subagentId || tools[i].callId === subagentId) {
-        tools[i] = fn(tools[i]);
-        return { ...msg, tools };
-      }
+function updateAssistantTool(state, match, fn) {
+  const messages = [...state.messages];
+  for (let msgIndex = messages.length - 1; msgIndex >= 0; msgIndex--) {
+    const msg = messages[msgIndex];
+    if (msg.role !== "assistant" || !msg.tools?.length) {
+      continue;
     }
-    return msg;
-  });
+    const tools = [...msg.tools];
+    for (let toolIndex = tools.length - 1; toolIndex >= 0; toolIndex--) {
+      if (!match(tools[toolIndex])) {
+        continue;
+      }
+      tools[toolIndex] = fn(tools[toolIndex]);
+      messages[msgIndex] = { ...msg, tools };
+      return { ...state, messages };
+    }
+  }
+  return state;
+}
+function updateAssistantToolByCallId(state, callId, fn) {
+  return updateAssistantTool(state, (tool) => tool.callId === callId, fn);
+}
+function updateAssistantToolBySubagentId(state, subagentId, fn) {
+  return updateAssistantTool(state, (tool) => tool.subagentId === subagentId, fn);
 }
 function updateToolInMessages(state, callId, fn) {
-  return updateLastAssistant(state, (msg) => ({
-    ...msg,
-    tools: msg.tools?.map((t) => t.callId === callId ? fn(t) : t)
-  }));
+  return updateAssistantToolByCallId(state, callId, fn);
 }
 function updateChildTool(state, subagentId, callId, fn) {
-  return updateLastAssistantTool(state, subagentId, (parent) => ({
+  return updateAssistantToolBySubagentId(state, subagentId, (parent) => ({
     ...parent,
     children: parent.children?.map((c) => c.callId === callId ? fn(c) : c)
   }));
@@ -35237,8 +35243,80 @@ function ErrorBlock({ message }) {
   ] });
 }
 
-// src/components/StatusBar.tsx
+// src/components/OverseerPanel.tsx
 var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+var MAX_OVERSEER_LINES = 4;
+function OverseerPanel(props) {
+  if (props.lines.length === 0) {
+    return null;
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: props.lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: line.tone === "alert" ? "yellow" : void 0, dimColor: line.tone === "detail", wrap: "truncate-end", children: line.text }, index)) });
+}
+function buildOverseerLines(alerts, findings) {
+  const lines = [];
+  let renderedFindings = 0;
+  if (alerts.length > 0) {
+    lines.push({
+      text: formatAlertLine(alerts),
+      tone: "alert"
+    });
+  }
+  for (const finding of findings) {
+    if (lines.length >= MAX_OVERSEER_LINES) {
+      break;
+    }
+    lines.push({
+      text: formatFindingLine(finding),
+      tone: "detail"
+    });
+    renderedFindings++;
+    for (const driftItem of finding.driftItems ?? []) {
+      if (lines.length >= MAX_OVERSEER_LINES) {
+        break;
+      }
+      lines.push({
+        text: formatDriftLine(driftItem),
+        tone: "detail"
+      });
+    }
+  }
+  const hiddenFindings = findings.length - renderedFindings;
+  if (hiddenFindings > 0 && lines.length >= MAX_OVERSEER_LINES) {
+    lines[MAX_OVERSEER_LINES - 1] = {
+      text: `\u2026 +${hiddenFindings} more overseer finding${hiddenFindings === 1 ? "" : "s"}`,
+      tone: "detail"
+    };
+  }
+  return lines;
+}
+function formatAlertLine(alerts) {
+  const visibleAlerts = alerts.slice(0, 2);
+  const hiddenAlerts = alerts.length - visibleAlerts.length;
+  const suffix = hiddenAlerts > 0 ? ` \xB7 +${hiddenAlerts} more` : "";
+  return `Overseer: ${visibleAlerts.join(" \xB7 ")}${suffix}`;
+}
+function formatFindingLine(finding) {
+  const target = finding.title ?? finding.artifactId ?? finding.type;
+  return `${target}: ${finding.summary}`;
+}
+function formatDriftLine(driftItem) {
+  const status = driftItem.status.toUpperCase();
+  const linesChanged = driftItem.linesChanged ? ` ${driftItem.linesChanged}` : "";
+  const invariants = formatInvariantSummary(driftItem.invariants ?? []);
+  return `${status} ${driftItem.path}${linesChanged}${invariants}`;
+}
+function formatInvariantSummary(invariants) {
+  if (invariants.length === 0) {
+    return "";
+  }
+  const visibleInvariants = invariants.slice(0, 2);
+  const hiddenInvariants = invariants.length - visibleInvariants.length;
+  const suffix = hiddenInvariants > 0 ? `; +${hiddenInvariants} more` : "";
+  return ` | inv: ${visibleInvariants.join("; ")}${suffix}`;
+}
+
+// src/components/StatusBar.tsx
+var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
 function StatusBar(props) {
   const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, width } = props;
   const parts = [];
@@ -35259,9 +35337,9 @@ function StatusBar(props) {
     parts.push(`\u25B2${drift.drifted} drift`);
   }
   const statusText = parts.join(" \u2219 ");
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
-    notification && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: notification })
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
+    notification && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { dimColor: true, children: notification })
   ] });
 }
 function formatTokens(n) {
@@ -35479,7 +35557,7 @@ function detectMediaType(buf) {
 }
 
 // src/components/InputArea.tsx
-var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
 var InputArea = import_react31.default.memo((0, import_react31.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages }, ref) {
   const [edit, setEdit] = (0, import_react31.useState)(empty);
   const historyRef = (0, import_react31.useRef)(emptyHistory);
@@ -35620,27 +35698,27 @@ var InputArea = import_react31.default.memo((0, import_react31.forwardRef)(funct
   }, { isActive: phase === "input" || phase === "streaming" });
   if (phase !== "input" && phase !== "streaming") return null;
   if (!edit.text) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { paddingX: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { paddingX: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
         "\u276F",
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { inverse: true, children: " " }),
-      hasQueuedMessages && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { dimColor: true, children: "  Press up to edit queued messages" })
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { inverse: true, children: " " }),
+      hasQueuedMessages && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: "  Press up to edit queued messages" })
     ] });
   }
   const { line: cursorLine, col: cursorCol } = cursorPosition(edit);
   const lines = edit.text.split("\n");
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
-    i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { children: [
+    i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
       "\u276F",
       " "
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: "  " }),
-    i === cursorLine ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line.slice(0, cursorCol) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { inverse: true, children: cursorCol < line.length ? line[cursorCol] : " " }),
-      cursorCol < line.length && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line.slice(cursorCol + 1) })
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: line })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: "  " }),
+    i === cursorLine ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: line.slice(0, cursorCol) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { inverse: true, children: cursorCol < line.length ? line[cursorCol] : " " }),
+      cursorCol < line.length && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: line.slice(cursorCol + 1) })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: line })
   ] }, i)) });
 }));
 async function checkClipboardImage(onPasteImage) {
@@ -35658,36 +35736,36 @@ async function checkClipboardImage(onPasteImage) {
 var import_react32 = __toESM(require_react(), 1);
 
 // src/components/DiffView.tsx
-var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
 function DiffView({ diff: diff2, width }) {
   const lines = diff2.split("\n");
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DiffLine, { line, width }, i)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(DiffLine, { line, width }, i)) });
 }
 function DiffLine({ line, width }) {
   const truncated = line.length > width ? line.slice(0, width - 1) + "\u2026" : line;
   if (line.startsWith("@@")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyan", children: truncated });
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "cyan", children: truncated });
   }
   if (line.startsWith("+++") || line.startsWith("---")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyan", dimColor: true, children: truncated });
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "cyan", dimColor: true, children: truncated });
   }
   if (line.startsWith("+")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "green", bold: true, children: "+" }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "green", backgroundColor: "blackBright", children: truncated.slice(1) })
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "green", bold: true, children: "+" }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "green", backgroundColor: "blackBright", children: truncated.slice(1) })
     ] });
   }
   if (line.startsWith("-")) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "red", bold: true, children: "-" }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "red", backgroundColor: "blackBright", children: truncated.slice(1) })
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "red", bold: true, children: "-" }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: "red", backgroundColor: "blackBright", children: truncated.slice(1) })
     ] });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: truncated });
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: truncated });
 }
 
 // src/components/PermissionDialog.tsx
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
 var PermissionDialog = import_react32.default.memo(function PermissionDialog2({ request, onRespond, width }) {
   useInput((input, key) => {
     switch (input) {
@@ -35708,7 +35786,7 @@ var PermissionDialog = import_react32.default.memo(function PermissionDialog2({ 
   });
   const boxWidth = Math.min(width - 4, 70);
   const param = extractMainParam(request.args, boxWidth - 4);
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -35718,31 +35796,31 @@ var PermissionDialog = import_react32.default.memo(function PermissionDialog2({ 
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "yellow", bold: true, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { color: "yellow", bold: true, children: [
           "Allow ",
           request.toolName,
           "?"
         ] }),
-        request.description && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: request.description }),
-        param && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: param }),
-        request.diff && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          request.adds !== void 0 && request.dels !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "green", children: [
+        request.description && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: request.description }),
+        param && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { children: param }),
+        request.diff && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          request.adds !== void 0 && request.dels !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { color: "green", children: [
               "+",
               request.adds
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: " " }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: "red", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { children: " " }),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Text, { color: "red", children: [
               "-",
               request.dels
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(DiffView, { diff: request.diff.slice(0, 800), width: boxWidth - 4 })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(DiffView, { diff: request.diff.slice(0, 800), width: boxWidth - 4 })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { marginTop: 1, gap: 2, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " y allow " }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "blue", color: "white", bold: true, children: " a all " }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " n deny " })
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { marginTop: 1, gap: 2, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " y allow " }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { backgroundColor: "blue", color: "white", bold: true, children: " a all " }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " n deny " })
         ] })
       ]
     }
@@ -35761,7 +35839,7 @@ function extractMainParam(args, max) {
 
 // src/components/QuestionDialog.tsx
 var import_react33 = __toESM(require_react(), 1);
-var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 var QuestionDialog = import_react33.default.memo(function QuestionDialog2({ question, options, onRespond, width }) {
   const [answer, setAnswer] = (0, import_react33.useState)("");
   const [selectedOption, setSelectedOption] = (0, import_react33.useState)(0);
@@ -35785,7 +35863,7 @@ var QuestionDialog = import_react33.default.memo(function QuestionDialog2({ ques
       setAnswer((a) => a + input);
     }
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -35795,21 +35873,21 @@ var QuestionDialog = import_react33.default.memo(function QuestionDialog2({ ques
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: "cyan", bold: true, children: "Agent question" }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { wrap: "wrap", children: question }),
-        options && options.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          options.map((opt, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: i === selectedOption ? "cyan" : void 0, children: i === selectedOption ? "> " : "  " }),
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: i === selectedOption, children: opt })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: "cyan", bold: true, children: "Agent question" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { wrap: "wrap", children: question }),
+        options && options.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          options.map((opt, i) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: i === selectedOption ? "cyan" : void 0, children: i === selectedOption ? "> " : "  " }),
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { bold: i === selectedOption, children: opt })
           ] }, opt)),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "\u2191\u2193 navigate \xB7 Enter select" })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: true, color: "white", children: "> " }),
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { children: answer }),
-            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: "white", inverse: true, children: " " })
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "\u2191\u2193 navigate \xB7 Enter select" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { bold: true, color: "white", children: "> " }),
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { children: answer }),
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: "white", inverse: true, children: " " })
           ] }),
-          !answer && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { dimColor: true, children: "Type your answer..." })
+          !answer && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "Type your answer..." })
         ] })
       ]
     }
@@ -35818,7 +35896,7 @@ var QuestionDialog = import_react33.default.memo(function QuestionDialog2({ ques
 
 // src/components/Picker.tsx
 var import_react34 = __toESM(require_react(), 1);
-var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
 function Picker({ title, items, onSelect, onCancel, width }) {
   const [filter, setFilter] = (0, import_react34.useState)("");
   const [cursor, setCursor] = (0, import_react34.useState)(0);
@@ -35860,7 +35938,7 @@ function Picker({ title, items, onSelect, onCancel, width }) {
     }
   });
   const boxWidth = Math.min(width - 4, 60);
-  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -35870,30 +35948,30 @@ function Picker({ title, items, onSelect, onCancel, width }) {
       paddingY: 1,
       width: boxWidth,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: "blue", bold: true, children: title }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginTop: 1, children: filter ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { color: "blue", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { color: "blue", bold: true, children: title }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { marginTop: 1, children: filter ? /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { color: "blue", children: [
             "/ ",
             filter
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { children: "_" })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "Type to filter" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "No matches" }) : filtered.slice(0, maxVisible).map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: i === cursor ? "blue" : void 0, children: i === cursor ? "> " : "  " }),
-            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { bold: i === cursor, color: i === cursor ? "white" : void 0, children: item.label }),
-            item.desc && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { children: "_" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: "Type to filter" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: "No matches" }) : filtered.slice(0, maxVisible).map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { color: i === cursor ? "blue" : void 0, children: i === cursor ? "> " : "  " }),
+            /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { bold: i === cursor, color: i === cursor ? "white" : void 0, children: item.label }),
+            item.desc && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
               " ",
               truncate2(item.desc, boxWidth - item.label.length - 6)
             ] })
           ] }, item.id)),
-          filtered.length > maxVisible && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
+          filtered.length > maxVisible && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
             "  ... and ",
             filtered.length - maxVisible,
             " more"
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { dimColor: true, children: "Esc cancel \xB7 \u2191\u2193 navigate \xB7 Enter select" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: "Esc cancel \xB7 \u2191\u2193 navigate \xB7 Enter select" }) })
       ]
     }
   );
@@ -35906,7 +35984,7 @@ function truncate2(s, max) {
 
 // src/components/Attachments.tsx
 var import_react35 = __toESM(require_react(), 1);
-var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime13 = __toESM(require_jsx_runtime(), 1);
 function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
   const [cursor, setCursor] = (0, import_react35.useState)(0);
   useInput((_input, key) => {
@@ -35931,13 +36009,13 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
     }
   }, { isActive: selectionMode });
   if (items.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Box_default, { paddingX: 1, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { paddingX: 1, children: [
     items.map((item, i) => {
       const isSelected = selectionMode && i === cursor;
       const label = item.isImage ? `[Image #${item.id}]` : `[${item.name}]`;
-      return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Box_default, { marginRight: 1, children: isSelected ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { inverse: true, bold: true, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Text, { dimColor: true, children: label }) }, item.id);
+      return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { marginRight: 1, children: isSelected ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { inverse: true, bold: true, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { dimColor: true, children: label }) }, item.id);
     }),
-    selectionMode && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
+    selectionMode && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
       "\u2192",
       " to next",
       " \xB7 ",
@@ -35945,7 +36023,7 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
       " \xB7 ",
       "Esc to cancel"
     ] }),
-    !selectionMode && /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(Text, { dimColor: true, children: [
+    !selectionMode && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
       "(",
       "\u2191",
       " to select)"
@@ -35954,7 +36032,7 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
 }
 
 // src/components/App.tsx
-var import_jsx_runtime13 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
 var SLASH_COMMANDS = [
   { id: "/compact", label: "/compact", desc: "Compress context window" },
   { id: "/model", label: "/model", desc: "Switch model" },
@@ -35969,7 +36047,7 @@ var SLASH_COMMANDS = [
   { id: "/note", label: "/note", desc: "Record a micro-decision" },
   { id: "/search", label: "/search", desc: "Search past decisions" }
 ];
-var BOTTOM_ROWS = 4;
+var BASE_BOTTOM_ROWS = 4;
 function App2({ client: client2, inputEvents }) {
   const [state, dispatch] = (0, import_react36.useReducer)(reducer, initialState());
   const { exit } = use_app_default();
@@ -35986,6 +36064,10 @@ function App2({ client: client2, inputEvents }) {
   const nextAttachmentId = (0, import_react36.useRef)(1);
   const phaseRef = (0, import_react36.useRef)(state.phase);
   phaseRef.current = state.phase;
+  const overseerLines = (0, import_react36.useMemo)(
+    () => buildOverseerLines(state.overseerAlerts, state.overseerFindings),
+    [state.overseerAlerts, state.overseerFindings]
+  );
   const handleSubmitRef = (0, import_react36.useRef)(() => {
   });
   const [, setRedrawTick] = (0, import_react36.useState)(0);
@@ -36029,7 +36111,8 @@ function App2({ client: client2, inputEvents }) {
     error: state.error,
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
-  const chatHeight = Math.max(5, height - BOTTOM_ROWS);
+  const bottomRows = BASE_BOTTOM_ROWS + overseerLines.length;
+  const chatHeight = Math.max(5, height - bottomRows);
   const entryHeights = (0, import_react36.useMemo)(() => measureTranscript(transcript, width), [transcript, width]);
   const { state: scrollState, scroll, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
@@ -36109,7 +36192,7 @@ function App2({ client: client2, inputEvents }) {
           break;
         case "overseer.alert":
           trace(`overseer.alert alerts=${JSON.stringify(p.alerts).slice(0, 200)}`);
-          dispatch({ type: "overseer.alert", alerts: p.alerts });
+          dispatch({ type: "overseer.alert", params: p });
           trace("overseer.alert dispatch done");
           break;
         case "drift.update":
@@ -36337,12 +36420,12 @@ function App2({ client: client2, inputEvents }) {
   });
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
-  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
-      atBottom && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexGrow: 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexDirection: "column", marginTop: vw.cropTop > 0 ? -vw.cropTop : void 0, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ChatView, { entries: visibleEntries, width }) })
+  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", children: [
+      atBottom && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexGrow: 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexDirection: "column", marginTop: vw.cropTop > 0 ? -vw.cropTop : void 0, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ChatView, { entries: visibleEntries, width }) })
     ] }),
-    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { dimColor: true, children: [
+    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { dimColor: true, children: [
       "  ",
       "\u2191",
       " ",
@@ -36351,20 +36434,20 @@ function App2({ client: client2, inputEvents }) {
       "\u2193",
       " / PgDn to scroll down)"
     ] }),
-    showPermission && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
-    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
-    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
+    showPermission && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
+    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
+    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
       " \u276F ",
       msg,
       " "
     ] }) }, i)) }),
-    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Attachments, { items: attachments, onRemove: (id) => {
+    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Attachments, { items: attachments, onRemove: (id) => {
       setAttachments((a) => a.filter((x) => x.id !== id));
       if (attachments.length <= 1) setAttachmentSelection(false);
     }, selectionMode: attachmentSelection, onExitSelection: () => setAttachmentSelection(false) }),
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
       InputArea,
       {
         ref: inputRef,
@@ -36391,8 +36474,9 @@ function App2({ client: client2, inputEvents }) {
         hasQueuedMessages: queuedMessages.length > 0
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    overseerLines.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(OverseerPanel, { lines: overseerLines }),
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
       StatusBar,
       {
         model: state.session.model,
@@ -36786,7 +36870,7 @@ function createInputRouter(ttyInput, onStdinResume) {
 }
 
 // src/index.tsx
-var import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
 trace("tui.start");
 var terminal = openTerminal();
 trace("tui.terminal_opened");
@@ -36833,7 +36917,7 @@ router.events.on("force-exit", () => {
 trace("tui.pre_render");
 var client = new JsonRpcClient();
 render_default(
-  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InputProvider, { value: router.events, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(App2, { client, inputEvents: router.events }) }),
+  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(InputProvider, { value: router.events, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(App2, { client, inputEvents: router.events }) }),
   {
     stdin: router.inkStdin,
     stdout: terminal.output,

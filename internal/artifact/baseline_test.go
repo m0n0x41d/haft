@@ -323,6 +323,47 @@ func TestCheckDriftDetectsAddedFileInGovernedScope(t *testing.T) {
 	}
 }
 
+func TestCheckDriftDetectsAddedNestedFileFromRootScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-015", "Governed repository root")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "pkg/nested/new.go", "package nested\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+
+	files := reports[0].Files
+	if len(files) != 1 {
+		t.Fatalf("expected 1 drift item, got %d", len(files))
+	}
+	if files[0].Path != "pkg/nested/new.go" {
+		t.Fatalf("drift path = %q, want pkg/nested/new.go", files[0].Path)
+	}
+	if files[0].Status != DriftAdded {
+		t.Fatalf("drift status = %s, want %s", files[0].Status, DriftAdded)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

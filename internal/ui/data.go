@@ -135,7 +135,7 @@ func LoadBoardData(store *artifact.Store, db *sql.DB, projectName, projectRoot s
 		}
 		hasDrift := false
 		for _, f := range r.Files {
-			if f.Status == artifact.DriftModified || f.Status == artifact.DriftMissing {
+			if f.Status == artifact.DriftModified || f.Status == artifact.DriftAdded || f.Status == artifact.DriftMissing {
 				hasDrift = true
 				break
 			}

@@ -775,7 +775,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 			hasDrift := false
 			var driftedFiles []string
 			for _, f := range r.Files {
-				if f.Status == artifact.DriftModified || f.Status == artifact.DriftMissing {
+				if f.Status == artifact.DriftModified || f.Status == artifact.DriftAdded || f.Status == artifact.DriftMissing {
 					hasDrift = true
 					driftedFiles = append(driftedFiles, f.Path)
 				}

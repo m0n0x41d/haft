@@ -294,12 +294,15 @@ func formatDecisionStaleReason(report DriftReport) string {
 	}
 
 	modified := 0
+	added := 0
 	missing := 0
 	noBaseline := 0
 	for _, file := range report.Files {
 		switch file.Status {
 		case DriftModified:
 			modified++
+		case DriftAdded:
+			added++
 		case DriftMissing:
 			missing++
 		case DriftNoBaseline:
@@ -308,6 +311,9 @@ func formatDecisionStaleReason(report DriftReport) string {
 	}
 
 	summary := fmt.Sprintf("code drift — %d modified", modified)
+	if added > 0 {
+		summary += fmt.Sprintf(", %d added", added)
+	}
 	if missing > 0 {
 		summary += fmt.Sprintf(", %d missing", missing)
 	}

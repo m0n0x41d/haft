@@ -134,9 +134,10 @@ type OverseerFinding struct {
 }
 
 type OverseerDriftItem struct {
-	Path         string `json:"path"`
-	Status       string `json:"status"`
-	LinesChanged string `json:"linesChanged,omitempty"`
+	Path         string   `json:"path"`
+	Status       string   `json:"status"`
+	LinesChanged string   `json:"linesChanged,omitempty"`
+	Invariants   []string `json:"invariants,omitempty"`
 }
 
 type OverseerDebtBreakdown struct {

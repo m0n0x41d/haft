@@ -44,6 +44,9 @@ func TestOverseerCheckEmitsStructuredFindings(t *testing.T) {
 			ValidUntil: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		},
 		Body: "# Decision\n\nKeep this module stable.",
+		StructuredData: mustMarshalJSON(t, artifact.DecisionFields{
+			Invariants: []string{"Keep Foo deterministic"},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("create decision: %v", err)
@@ -138,6 +141,9 @@ func TestOverseerCheckEmitsStructuredFindings(t *testing.T) {
 	}
 	if driftFinding.DriftItems[0].Status != "modified" {
 		t.Fatalf("drift status = %q, want modified", driftFinding.DriftItems[0].Status)
+	}
+	if len(driftFinding.DriftItems[0].Invariants) != 1 || driftFinding.DriftItems[0].Invariants[0] != "Keep Foo deterministic" {
+		t.Fatalf("drift invariants = %#v, want decision invariants", driftFinding.DriftItems[0].Invariants)
 	}
 
 	select {
@@ -320,6 +326,17 @@ func findingsByType(findings []protocol.OverseerFinding) map[string]protocol.Ove
 		result[finding.Type] = finding
 	}
 	return result
+}
+
+func mustMarshalJSON(t *testing.T, value any) string {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json: %v", err)
+	}
+
+	return string(data)
 }
 
 func containsString(values []string, target string) bool {

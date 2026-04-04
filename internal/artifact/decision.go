@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -484,6 +485,16 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		}
 	}
 
+	driftManifests, err := buildDriftScopeManifests(projectRoot, files)
+	if err != nil {
+		return nil, fmt.Errorf("build drift manifests: %w", err)
+	}
+
+	err = persistDriftManifests(ctx, store, a, driftManifests)
+	if err != nil {
+		return nil, fmt.Errorf("persist drift manifests: %w", err)
+	}
+
 	logger.ArtifactOp("baseline", input.DecisionRef, string(a.Meta.Kind))
 	logger.Debug().Str("decision_ref", input.DecisionRef).
 		Int("files", len(files)).
@@ -505,14 +516,21 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	var reports []DriftReport
 
 	for _, d := range decisions {
+		decisionArtifact, err := store.Get(ctx, d.Meta.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get decision %s: %w", d.Meta.ID, err)
+		}
+
 		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
 		if err != nil || len(files) == 0 {
 			continue
 		}
 
+		decisionFields := decisionArtifact.UnmarshalDecisionFields()
+
 		report := DriftReport{
 			DecisionID:    d.Meta.ID,
-			DecisionTitle: d.Meta.Title,
+			DecisionTitle: decisionArtifact.Meta.Title,
 		}
 
 		// Check if any file has a baseline hash
@@ -559,8 +577,9 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if err != nil {
 				// File doesn't exist or can't be read
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftMissing,
+					Path:       f.Path,
+					Status:     DriftMissing,
+					Invariants: copyDriftInvariants(decisionFields.Invariants),
 				})
 				hasDrift = true
 				continue
@@ -572,9 +591,23 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 					Path:         f.Path,
 					Status:       DriftModified,
 					LinesChanged: lines,
+					Invariants:   copyDriftInvariants(decisionFields.Invariants),
 				})
 				hasDrift = true
 			}
+		}
+
+		addedFiles, err := detectAddedFiles(projectRoot, files, decisionFields.DriftManifests)
+		if err != nil {
+			return nil, fmt.Errorf("detect added files for %s: %w", d.Meta.ID, err)
+		}
+		for _, path := range addedFiles {
+			report.Files = append(report.Files, DriftItem{
+				Path:       path,
+				Status:     DriftAdded,
+				Invariants: copyDriftInvariants(decisionFields.Invariants),
+			})
+			hasDrift = true
 		}
 
 		// Only include reports with drift or missing baselines
@@ -586,6 +619,186 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	logger.Debug().Int("drift_reports", len(reports)).Msg("drift.check.complete")
 
 	return reports, nil
+}
+
+func persistDriftManifests(
+	ctx context.Context,
+	store ArtifactStore,
+	artifact *Artifact,
+	manifests []DriftScopeManifest,
+) error {
+	if artifact.Meta.Kind != KindDecisionRecord {
+		return nil
+	}
+
+	fields := artifact.UnmarshalDecisionFields()
+	fields.DriftManifests = manifests
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return fmt.Errorf("marshal decision fields: %w", err)
+	}
+
+	updated := *artifact
+	updated.StructuredData = string(data)
+
+	return store.Update(ctx, &updated)
+}
+
+func buildDriftScopeManifests(projectRoot string, files []AffectedFile) ([]DriftScopeManifest, error) {
+	scopeSet := make(map[string]struct{})
+	scopes := make([]string, 0, len(files))
+
+	for _, file := range files {
+		scope := normalizeDriftScope(filepath.Dir(file.Path))
+		if _, ok := scopeSet[scope]; ok {
+			continue
+		}
+		scopeSet[scope] = struct{}{}
+		scopes = append(scopes, scope)
+	}
+
+	sort.Strings(scopes)
+
+	manifests := make([]DriftScopeManifest, 0, len(scopes))
+	for _, scope := range scopes {
+		scopeFiles, err := listScopeFiles(projectRoot, scope)
+		if err != nil {
+			return nil, fmt.Errorf("list scope %s: %w", scope, err)
+		}
+
+		manifests = append(manifests, DriftScopeManifest{
+			Scope: scope,
+			Files: scopeFiles,
+		})
+	}
+
+	return manifests, nil
+}
+
+func detectAddedFiles(
+	projectRoot string,
+	files []AffectedFile,
+	manifests []DriftScopeManifest,
+) ([]string, error) {
+	if len(manifests) == 0 {
+		return nil, nil
+	}
+
+	baselinedFiles := make(map[string]struct{})
+	governedFiles := make(map[string]struct{})
+	addedFiles := make([]string, 0)
+
+	for _, file := range files {
+		governedFiles[normalizeProjectPath(file.Path)] = struct{}{}
+	}
+	for _, manifest := range manifests {
+		for _, path := range manifest.Files {
+			baselinedFiles[normalizeProjectPath(path)] = struct{}{}
+		}
+
+		scopeFiles, err := listScopeFiles(projectRoot, manifest.Scope)
+		if err != nil {
+			return nil, fmt.Errorf("list scope %s: %w", manifest.Scope, err)
+		}
+
+		for _, path := range scopeFiles {
+			normalizedPath := normalizeProjectPath(path)
+			if _, ok := baselinedFiles[normalizedPath]; ok {
+				continue
+			}
+			if _, ok := governedFiles[normalizedPath]; ok {
+				continue
+			}
+			governedFiles[normalizedPath] = struct{}{}
+			addedFiles = append(addedFiles, normalizedPath)
+		}
+	}
+
+	sort.Strings(addedFiles)
+
+	return addedFiles, nil
+}
+
+func listScopeFiles(projectRoot string, scope string) ([]string, error) {
+	scope = normalizeDriftScope(scope)
+
+	if scope == "." {
+		return listRootScopeFiles(projectRoot)
+	}
+
+	scopePath := filepath.Join(projectRoot, scope)
+	entries := make([]string, 0)
+
+	err := filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return err
+		}
+
+		entries = append(entries, normalizeProjectPath(relPath))
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(entries)
+
+	return entries, nil
+}
+
+func listRootScopeFiles(projectRoot string) ([]string, error) {
+	dirEntries, err := os.ReadDir(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]string, 0, len(dirEntries))
+	for _, entry := range dirEntries {
+		if entry.IsDir() {
+			continue
+		}
+
+		files = append(files, normalizeProjectPath(entry.Name()))
+	}
+
+	sort.Strings(files)
+
+	return files, nil
+}
+
+func normalizeDriftScope(scope string) string {
+	scope = filepath.ToSlash(filepath.Clean(strings.TrimSpace(scope)))
+	if scope == "" || scope == "/" {
+		return "."
+	}
+	return scope
+}
+
+func normalizeProjectPath(path string) string {
+	return filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+}
+
+func copyDriftInvariants(invariants []string) []string {
+	if len(invariants) == 0 {
+		return nil
+	}
+
+	return append([]string(nil), invariants...)
 }
 
 // hashFile computes SHA-256 of a file's contents.

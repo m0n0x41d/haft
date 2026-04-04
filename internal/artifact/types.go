@@ -184,13 +184,20 @@ type ProblemFields struct {
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	SelectedTitle       string   `json:"selected_title"`
-	WhySelected         string   `json:"why_selected"`
-	WeakestLink         string   `json:"weakest_link,omitempty"`
-	Invariants          []string `json:"invariants,omitempty"`
-	PostConds           []string `json:"post_conditions,omitempty"`
-	Admissibility       []string `json:"admissibility,omitempty"`
-	FirstModuleCoverage bool     `json:"first_module_coverage,omitempty"`
+	SelectedTitle       string               `json:"selected_title"`
+	WhySelected         string               `json:"why_selected"`
+	WeakestLink         string               `json:"weakest_link,omitempty"`
+	Invariants          []string             `json:"invariants,omitempty"`
+	PostConds           []string             `json:"post_conditions,omitempty"`
+	Admissibility       []string             `json:"admissibility,omitempty"`
+	FirstModuleCoverage bool                 `json:"first_module_coverage,omitempty"`
+	DriftManifests      []DriftScopeManifest `json:"drift_manifests,omitempty"`
+}
+
+// DriftScopeManifest stores the baseline file set for one governed scope.
+type DriftScopeManifest struct {
+	Scope string   `json:"scope"`
+	Files []string `json:"files,omitempty"`
 }
 
 // UnmarshalProblemFields extracts structured fields from an artifact's StructuredData.
@@ -354,6 +361,7 @@ type DriftStatus string
 const (
 	DriftNone       DriftStatus = "no_drift"
 	DriftModified   DriftStatus = "modified"
+	DriftAdded      DriftStatus = "added"
 	DriftMissing    DriftStatus = "file_missing"
 	DriftNoBaseline DriftStatus = "no_baseline"
 )
@@ -363,6 +371,7 @@ type DriftItem struct {
 	Path         string      `json:"path"`
 	Status       DriftStatus `json:"status"`
 	LinesChanged string      `json:"lines_changed,omitempty"` // e.g., "+8 -2"
+	Invariants   []string    `json:"invariants,omitempty"`
 }
 
 // DriftReport describes drift for a single decision.

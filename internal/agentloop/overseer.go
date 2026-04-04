@@ -239,6 +239,7 @@ func buildOverseerFinding(item artifact.StaleItem, findingType string) protocol.
 				Path:         driftItem.Path,
 				Status:       string(driftItem.Status),
 				LinesChanged: driftItem.LinesChanged,
+				Invariants:   append([]string(nil), driftItem.Invariants...),
 			})
 		}
 	}

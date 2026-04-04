@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -275,6 +277,52 @@ func TestCheckDriftReportsNoBaseline(t *testing.T) {
 	}
 }
 
+func TestCheckDriftDetectsAddedFileInGovernedScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "pkg/base.go", "package pkg\n")
+
+	dec := createTestDecision(t, store, "dec-test-014", "Governed package")
+	setDecisionInvariants(t, ctx, store, dec.Meta.ID, []string{"Preserve the pkg package boundary"})
+
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "pkg/base.go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "pkg/extra.go", "package pkg\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+
+	files := reports[0].Files
+	if len(files) != 1 {
+		t.Fatalf("expected 1 drift item, got %d", len(files))
+	}
+	if files[0].Path != "pkg/extra.go" {
+		t.Fatalf("drift path = %q, want pkg/extra.go", files[0].Path)
+	}
+	if files[0].Status != DriftAdded {
+		t.Fatalf("drift status = %s, want %s", files[0].Status, DriftAdded)
+	}
+	if !reflect.DeepEqual(files[0].Invariants, []string{"Preserve the pkg package boundary"}) {
+		t.Fatalf("invariants = %#v, want decision invariants", files[0].Invariants)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -427,6 +475,30 @@ func createTestDecisionAt(t *testing.T, store *Store, id, title string, createdA
 		t.Fatal(err)
 	}
 	return a
+}
+
+func setDecisionInvariants(t *testing.T, ctx context.Context, store *Store, decisionID string, invariants []string) {
+	t.Helper()
+
+	artifact, err := store.Get(ctx, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := artifact.UnmarshalDecisionFields()
+	fields.Invariants = invariants
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact.StructuredData = string(data)
+
+	err = store.Update(ctx, artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func containsDriftReport(reports []DriftReport, decisionID string) bool {

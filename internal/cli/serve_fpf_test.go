@@ -63,6 +63,32 @@ func TestHandleQuintQuery_FPFQueryOnlyStaysBackwardCompatible(t *testing.T) {
 	if !strings.Contains(result, "### 1. A.6 - Signature Stack & Boundary Discipline") {
 		t.Fatalf("expected pattern result in output, got:\n%s", result)
 	}
+	if !strings.Contains(result, "── Haft") {
+		t.Fatalf("expected nav strip in output, got:\n%s", result)
+	}
+}
+
+func TestHandleQuintQuery_FPFEmptyStateKeepsNavStrip(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintQuery(context.Background(), store, t.TempDir(), map[string]any{
+		"action": "fpf",
+		"query":  "definitely-not-present",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery returned error: %v", err)
+	}
+	if !strings.Contains(result, "No results found.") {
+		t.Fatalf("expected empty-state message, got:\n%s", result)
+	}
+	if !strings.Contains(result, "── Haft") {
+		t.Fatalf("expected nav strip in empty-state output, got:\n%s", result)
+	}
 }
 
 func setupCLIArtifactStore(t *testing.T) *artifact.Store {

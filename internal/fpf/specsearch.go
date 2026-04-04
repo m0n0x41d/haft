@@ -22,10 +22,16 @@ type SpecSearchResult struct {
 }
 
 const (
-	SpecSearchTierPattern = "pattern"
-	SpecSearchTierRoute   = "route"
-	SpecSearchTierRelated = "related"
-	SpecSearchTierFTS     = "fts"
+	SpecSearchTierPattern   = "pattern"
+	SpecSearchTierDrillDown = "drilldown"
+	SpecSearchTierRoute     = "route"
+	SpecSearchTierRelated   = "related"
+	SpecSearchTierFTS       = "fts"
+)
+
+const (
+	SpecSearchModeDefault = "default"
+	SpecSearchModeTree    = "tree"
 )
 
 const DefaultSpecSearchLimit = 10
@@ -34,6 +40,7 @@ const DefaultSpecSearchLimit = 10
 type SpecSearchOptions struct {
 	Limit int
 	Tier  string
+	Mode  string
 }
 
 type Route struct {
@@ -294,6 +301,12 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 	}
 	options.Tier = normalizedTier
 
+	normalizedMode, err := NormalizeSpecSearchMode(options.Mode)
+	if err != nil {
+		return nil, err
+	}
+	options.Mode = normalizedMode
+
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -322,33 +335,50 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		}
 	}
 
-	route, err := classifyRoute(db, query)
-	if err != nil {
-		return nil, err
-	}
-	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRoute) {
-		routeResults, err := searchRoute(db, *route)
+	if shouldUseTreeDrillDown(options) {
+		if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierDrillDown) {
+			drillDownResults, err := searchTreeDrillDown(db, query, options.Limit)
+			if err != nil {
+				return nil, err
+			}
+			appendResults(drillDownResults)
+		}
+		if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierFTS) {
+			ftsResults, err := searchFTS(db, query, options.Limit*2)
+			if err != nil {
+				return nil, err
+			}
+			appendResults(ftsResults)
+		}
+	} else {
+		route, err := classifyRoute(db, query)
 		if err != nil {
 			return nil, err
 		}
-		appendResults(routeResults)
-	}
-	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
-		relatedLimit := effectiveRelatedExpansionLimit(options)
+		if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRoute) {
+			routeResults, err := searchRoute(db, *route)
+			if err != nil {
+				return nil, err
+			}
+			appendResults(routeResults)
+		}
+		if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
+			relatedLimit := effectiveRelatedExpansionLimit(options)
 
-		edgeResults, err := searchRelated(db, route.Core, relatedLimit)
-		if err != nil {
-			return nil, err
+			edgeResults, err := searchRelated(db, route.Core, relatedLimit)
+			if err != nil {
+				return nil, err
+			}
+			appendResults(edgeResults)
 		}
-		appendResults(edgeResults)
-	}
 
-	if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierFTS) {
-		ftsResults, err := searchFTS(db, query, options.Limit*2)
-		if err != nil {
-			return nil, err
+		if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierFTS) {
+			ftsResults, err := searchFTS(db, query, options.Limit*2)
+			if err != nil {
+				return nil, err
+			}
+			appendResults(ftsResults)
 		}
-		appendResults(ftsResults)
 	}
 
 	results := make([]SpecSearchResult, 0, len(resultsMap))
@@ -391,15 +421,32 @@ func clampRelatedExpansionLimit(limit int) int {
 func NormalizeSpecSearchTier(tier string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(tier))
 	switch normalized {
-	case "", SpecSearchTierPattern, SpecSearchTierRoute, SpecSearchTierRelated, SpecSearchTierFTS:
+	case "", SpecSearchTierPattern, SpecSearchTierDrillDown, SpecSearchTierRoute, SpecSearchTierRelated, SpecSearchTierFTS:
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("unsupported search tier %q (want pattern, route, related, or fts)", tier)
+		return "", fmt.Errorf("unsupported search tier %q (want pattern, drilldown, route, related, or fts)", tier)
 	}
 }
 
 func shouldIncludeSpecSearchTier(filter string, tier string) bool {
 	return filter == "" || filter == tier
+}
+
+// NormalizeSpecSearchMode validates and canonicalizes an experimental search mode.
+func NormalizeSpecSearchMode(mode string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	switch normalized {
+	case "", SpecSearchModeDefault:
+		return "", nil
+	case SpecSearchModeTree:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported search mode %q (want tree)", mode)
+	}
+}
+
+func shouldUseTreeDrillDown(options SpecSearchOptions) bool {
+	return options.Mode == SpecSearchModeTree || options.Tier == SpecSearchTierDrillDown
 }
 
 func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {

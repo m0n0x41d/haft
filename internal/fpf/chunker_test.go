@@ -33,8 +33,8 @@ Nested content.
 	}
 
 	tests := []struct {
-		heading string
-		level   int
+		heading      string
+		level        int
 		bodyContains string
 	}{
 		{"Title", 1, "Some intro text."},
@@ -53,6 +53,207 @@ Nested content.
 		if !strings.Contains(chunks[i].Body, tt.bodyContains) {
 			t.Errorf("chunk[%d].Body should contain %q, got %q", i, tt.bodyContains, chunks[i].Body)
 		}
+	}
+}
+
+func TestChunkMarkdown_ExtractsPatternAndParentIDs(t *testing.T) {
+	input := `## A.6 - Signature Stack & Boundary Discipline
+
+Top body.
+
+### A.6:4 - Solution
+
+Body.
+`
+	chunks, err := ChunkMarkdown(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	if chunks[0].PatternID != "A.6" {
+		t.Fatalf("expected A.6, got %q", chunks[0].PatternID)
+	}
+	if chunks[1].PatternID != "A.6:4" {
+		t.Fatalf("expected A.6:4, got %q", chunks[1].PatternID)
+	}
+	if chunks[1].ParentPatternID != "A.6" {
+		t.Fatalf("expected parent A.6, got %q", chunks[1].ParentPatternID)
+	}
+}
+
+func TestParseSpecCatalog_ExtractsMetadata(t *testing.T) {
+	input := `| A.6 | **Signature Stack & Boundary Discipline** | Stable | *Keywords:* boundary, routing. *Queries:* "What is A.6?", "How do I route boundary statements?" | **Builds on:** E.8, A.6.B. |
+| A.16 | **Language-State Transduction Coordination** | Stable | *Keywords:* language-state, route. *Queries:* "How do cues get routed?" | **Coordinates with:** B.4.1 |
+`
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := catalog["A.6"]
+	if !ok {
+		t.Fatal("expected A.6 entry")
+	}
+	if len(entry.Keywords) == 0 || entry.Keywords[0] != "boundary" {
+		t.Fatalf("unexpected keywords: %#v", entry.Keywords)
+	}
+	if len(entry.Queries) != 2 {
+		t.Fatalf("unexpected queries: %#v", entry.Queries)
+	}
+	if len(entry.Edges) != 2 {
+		t.Fatalf("unexpected typed edges: %#v", entry.Edges)
+	}
+	if entry.Edges[0].EdgeType != SpecEdgeTypeBuildsOn {
+		t.Fatalf("unexpected edge type: %#v", entry.Edges)
+	}
+}
+
+func TestEnrichChunks_OverlaysCatalogMetadata(t *testing.T) {
+	chunks := []SpecChunk{{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Body", PatternID: "A.6"}}
+	catalog := map[string]SpecCatalogEntry{
+		"A.6": {
+			PatternID:  "A.6",
+			Title:      "Signature Stack & Boundary Discipline",
+			Keywords:   []string{"boundary", "routing"},
+			Queries:    []string{"How do I route boundary statements?"},
+			RelatedIDs: []string{"A.6.B"},
+			Edges: []SpecEdge{{
+				FromPatternID: "A.6",
+				ToPatternID:   "E.8",
+				EdgeType:      SpecEdgeTypeBuildsOn,
+			}},
+		},
+	}
+
+	enriched := EnrichChunks(chunks, catalog)
+	if len(enriched[0].Keywords) != 2 {
+		t.Fatalf("expected keywords, got %#v", enriched[0].Keywords)
+	}
+	if len(enriched[0].Queries) != 1 {
+		t.Fatalf("expected queries, got %#v", enriched[0].Queries)
+	}
+	if len(enriched[0].RelatedIDs) != 1 || enriched[0].RelatedIDs[0] != "A.6.B" {
+		t.Fatalf("unexpected related ids: %#v", enriched[0].RelatedIDs)
+	}
+	if len(enriched[0].Edges) != 1 || enriched[0].Edges[0].EdgeType != SpecEdgeTypeBuildsOn {
+		t.Fatalf("unexpected edges: %#v", enriched[0].Edges)
+	}
+}
+
+func TestParseSpecCatalog_ExtractsTypedDependencyEdges(t *testing.T) {
+	input := `| A.1 | **Builds On** | Stable | *Keywords:* build. | **Builds on:** B.1. |
+| A.2 | **Prerequisite** | Stable | *Keywords:* pre. | **Is a prerequisite for:** B.2. |
+| A.3 | **Coordinates** | Stable | *Keywords:* coord. | **Coordinates with:** B.3. |
+| A.4 | **Constrains** | Stable | *Keywords:* constrain. | **Constrains:** B.4. |
+| A.5 | **Informs** | Stable | *Keywords:* inform. | **Informs:** B.5. |
+| A.6 | **Used** | Stable | *Keywords:* used. | **Used by:** B.6. |
+| A.7 | **Refines** | Stable | *Keywords:* refine. | **Refines:** B.7. |
+| A.8 | **Specialised** | Stable | *Keywords:* special. | **Specialised by:** B.8. |
+`
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		patternID string
+		want      SpecEdge
+	}{
+		{
+			patternID: "A.1",
+			want: SpecEdge{
+				FromPatternID: "A.1",
+				ToPatternID:   "B.1",
+				EdgeType:      SpecEdgeTypeBuildsOn,
+			},
+		},
+		{
+			patternID: "A.2",
+			want: SpecEdge{
+				FromPatternID: "A.2",
+				ToPatternID:   "B.2",
+				EdgeType:      SpecEdgeTypePrerequisiteFor,
+			},
+		},
+		{
+			patternID: "A.3",
+			want: SpecEdge{
+				FromPatternID: "A.3",
+				ToPatternID:   "B.3",
+				EdgeType:      SpecEdgeTypeCoordinatesWith,
+			},
+		},
+		{
+			patternID: "A.4",
+			want: SpecEdge{
+				FromPatternID: "A.4",
+				ToPatternID:   "B.4",
+				EdgeType:      SpecEdgeTypeConstrains,
+			},
+		},
+		{
+			patternID: "A.5",
+			want: SpecEdge{
+				FromPatternID: "A.5",
+				ToPatternID:   "B.5",
+				EdgeType:      SpecEdgeTypeInforms,
+			},
+		},
+		{
+			patternID: "A.6",
+			want: SpecEdge{
+				FromPatternID: "A.6",
+				ToPatternID:   "B.6",
+				EdgeType:      SpecEdgeTypeUsedBy,
+			},
+		},
+		{
+			patternID: "A.7",
+			want: SpecEdge{
+				FromPatternID: "A.7",
+				ToPatternID:   "B.7",
+				EdgeType:      SpecEdgeTypeRefines,
+			},
+		},
+		{
+			patternID: "A.8",
+			want: SpecEdge{
+				FromPatternID: "A.8",
+				ToPatternID:   "B.8",
+				EdgeType:      SpecEdgeTypeSpecialisedBy,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		entry := catalog[tt.patternID]
+		if len(entry.Edges) != 1 {
+			t.Fatalf("%s: unexpected edges: %#v", tt.patternID, entry.Edges)
+		}
+		if entry.Edges[0] != tt.want {
+			t.Fatalf("%s: edge = %#v, want %#v", tt.patternID, entry.Edges[0], tt.want)
+		}
+	}
+}
+
+func TestParseSpecCatalog_FallsBackToRelatedIDsForUntypedDependencies(t *testing.T) {
+	input := `| A.9 | **Fallback** | Stable | *Keywords:* fallback. | **Links to:** B.9, C.9. |
+`
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry := catalog["A.9"]
+	if len(entry.Edges) != 0 {
+		t.Fatalf("unexpected typed edges: %#v", entry.Edges)
+	}
+	if len(entry.RelatedIDs) != 2 {
+		t.Fatalf("unexpected related ids: %#v", entry.RelatedIDs)
+	}
+	if entry.RelatedIDs[0] != "B.9" || entry.RelatedIDs[1] != "C.9" {
+		t.Fatalf("unexpected related ids: %#v", entry.RelatedIDs)
 	}
 }
 
@@ -128,7 +329,6 @@ func TestChunkMarkdown_NotAHeading(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	// The non-headings should be in the body
 	if !strings.Contains(chunks[0].Body, "##NotAHeading") {
 		t.Error("non-heading line should be in body")
 	}

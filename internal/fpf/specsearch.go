@@ -2,21 +2,86 @@ package fpf
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
 // SpecSearchResult represents a single FPF spec search hit.
 type SpecSearchResult struct {
-	Heading string
-	Snippet string
-	Rank    float64
+	PatternID string
+	Heading   string
+	Snippet   string
+	Rank      float64
+	Tier      string
+	Reason    string
 }
 
-// BuildSpecIndex creates an FTS5-indexed SQLite database from spec chunks.
+type Route struct {
+	ID          string
+	Title       string
+	Description string
+	Matchers    []string
+	Core        []string
+	Chain       []string
+}
+
+var defaultRoutes = []Route{
+	{
+		ID:          "project-alignment",
+		Title:       "Fastest route to concrete artifacts",
+		Description: "Onboarding into practical FPF artifacts and cycles.",
+		Matchers:    []string{"project", "tomorrow", "artifact", "artifacts", "onboard", "onboarding", "problem card", "drr", "uts"},
+		Core:        []string{"A.0", "A.1", "B.5.1", "E.9", "F.17"},
+		Chain:       []string{"A.0", "A.1", "A.2", "A.3", "B.5.1", "E.9", "F.17"},
+	},
+	{
+		ID:          "boundary-unpacking",
+		Title:       "Boundary discipline and routing",
+		Description: "Boundary statements, contracts, and routing language to the right semantic landing zones.",
+		Matchers:    []string{"boundary", "contract", "routing", "signature stack", "admissibility", "deontic", "service", "promise"},
+		Core:        []string{"A.6", "A.6.B", "A.6.C"},
+		Chain:       []string{"A.6", "A.6.B", "A.6.C", "A.6.8", "F.18"},
+	},
+	{
+		ID:          "language-discovery",
+		Title:       "Language-state and routing cues",
+		Description: "How partial articulation becomes routed, stabilized, and handed off.",
+		Matchers:    []string{"language", "cue", "route", "stabilize", "reopen", "notice", "partial", "articulation"},
+		Core:        []string{"C.2.2a", "A.16", "B.4.1"},
+		Chain:       []string{"C.2.2a", "A.16", "A.16.1", "A.16.2", "B.4.1", "B.5.2.0"},
+	},
+	{
+		ID:          "comparison-selection",
+		Title:       "Characterization, comparison, and selection",
+		Description: "Characteristic spaces, comparison discipline, and selector mechanics.",
+		Matchers:    []string{"compare", "comparison", "pareto", "selector", "selection", "characteristic", "dimension", "normalization"},
+		Core:        []string{"A.17", "A.19", "G.0"},
+		Chain:       []string{"A.17", "A.18", "A.19", "A.19.CN", "A.19.CPM", "G.0"},
+	},
+	{
+		ID:          "generator-portfolio",
+		Title:       "Creative generation and portfolios",
+		Description: "NQD, explore/exploit, portfolios, and creative abduction.",
+		Matchers:    []string{"nqd", "portfolio", "creative", "abduction", "explore", "generator", "diversity"},
+		Core:        []string{"A.0", "B.5.2.1", "G.0"},
+		Chain:       []string{"A.0", "B.5.2", "B.5.2.1", "C.17", "C.18", "C.19", "G.0"},
+	},
+	{
+		ID:          "rewrite-explanation",
+		Title:       "Same-entity rewrite and explanation",
+		Description: "Conservative retextualization and explanation-faithful output transformations.",
+		Matchers:    []string{"rewrite", "summary", "retextualization", "translation", "explanation", "same entity"},
+		Core:        []string{"A.6.3.CR", "E.17.EFP"},
+		Chain:       []string{"A.6.3", "A.6.3.CR", "A.6.3.RT", "E.17", "E.17.EFP"},
+	},
+}
+
+// BuildSpecIndex creates a structured SQLite index from spec chunks.
 func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
-	_ = os.Remove(dbPath) // fresh build
+	_ = os.Remove(dbPath)
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -25,7 +90,31 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 	defer func() { _ = db.Close() }()
 
 	stmts := []string{
-		`CREATE VIRTUAL TABLE fpf_fts USING fts5(heading, body, tokenize='porter unicode61')`,
+		`CREATE TABLE sections (
+			id INTEGER PRIMARY KEY,
+			pattern_id TEXT,
+			heading TEXT NOT NULL,
+			level INTEGER NOT NULL,
+			body TEXT NOT NULL,
+			parent_pattern_id TEXT,
+			keywords_json TEXT NOT NULL DEFAULT '[]',
+			queries_json TEXT NOT NULL DEFAULT '[]',
+			aliases_json TEXT NOT NULL DEFAULT '[]'
+		)`,
+		`CREATE VIRTUAL TABLE fpf_fts USING fts5(pattern_id, heading, body, keywords, queries, aliases, tokenize='porter unicode61')`,
+		`CREATE TABLE section_edges (
+			from_pattern_id TEXT NOT NULL,
+			to_pattern_id TEXT NOT NULL,
+			edge_type TEXT NOT NULL
+		)`,
+		`CREATE TABLE routes (
+			route_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL,
+			matchers_json TEXT NOT NULL,
+			core_json TEXT NOT NULL,
+			chain_json TEXT NOT NULL
+		)`,
 		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)`,
 	}
 	for _, s := range stmts {
@@ -38,17 +127,81 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 	if err != nil {
 		return err
 	}
-	ins, err := tx.Prepare(`INSERT INTO fpf_fts (heading, body) VALUES (?, ?)`)
+
+	secIns, err := tx.Prepare(`INSERT INTO sections (id, pattern_id, heading, level, body, parent_pattern_id, keywords_json, queries_json, aliases_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = ins.Close() }()
+	defer func() { _ = secIns.Close() }()
 
+	ftsIns, err := tx.Prepare(`INSERT INTO fpf_fts (pattern_id, heading, body, keywords, queries, aliases) VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ftsIns.Close() }()
+
+	edgeIns, err := tx.Prepare(`INSERT INTO section_edges (from_pattern_id, to_pattern_id, edge_type) VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = edgeIns.Close() }()
+
+	routeIns, err := tx.Prepare(`INSERT INTO routes (route_id, title, description, matchers_json, core_json, chain_json) VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = routeIns.Close() }()
+
+	seenEdges := make(map[string]struct{})
 	for _, c := range chunks {
-		if _, err := ins.Exec(c.Heading, c.Body); err != nil {
-			return fmt.Errorf("insert chunk %d: %w", c.ID, err)
+		keywordsJSON := mustJSON(c.Keywords)
+		queriesJSON := mustJSON(c.Queries)
+		aliasesJSON := mustJSON(c.Aliases)
+		if _, err := secIns.Exec(c.ID, nullIfEmpty(c.PatternID), c.Heading, c.Level, c.Body, nullIfEmpty(c.ParentPatternID), keywordsJSON, queriesJSON, aliasesJSON); err != nil {
+			return fmt.Errorf("insert section %d: %w", c.ID, err)
+		}
+		if _, err := ftsIns.Exec(c.PatternID, c.Heading, c.Body, strings.Join(c.Keywords, " "), strings.Join(c.Queries, " "), strings.Join(c.Aliases, " ")); err != nil {
+			return fmt.Errorf("insert fts section %d: %w", c.ID, err)
+		}
+		for _, edge := range c.Edges {
+			if edge.FromPatternID == "" || edge.ToPatternID == "" || edge.FromPatternID == edge.ToPatternID {
+				continue
+			}
+			key := edgeKey(edge)
+			if _, ok := seenEdges[key]; ok {
+				continue
+			}
+			seenEdges[key] = struct{}{}
+			if _, err := edgeIns.Exec(edge.FromPatternID, edge.ToPatternID, edge.EdgeType); err != nil {
+				return fmt.Errorf("insert edge %s: %w", key, err)
+			}
+		}
+		for _, related := range c.RelatedIDs {
+			if c.PatternID == "" || related == "" || related == c.PatternID {
+				continue
+			}
+			edge := SpecEdge{
+				FromPatternID: c.PatternID,
+				ToPatternID:   related,
+				EdgeType:      SpecEdgeTypeRelated,
+			}
+			key := edgeKey(edge)
+			if _, ok := seenEdges[key]; ok {
+				continue
+			}
+			seenEdges[key] = struct{}{}
+			if _, err := edgeIns.Exec(edge.FromPatternID, edge.ToPatternID, edge.EdgeType); err != nil {
+				return fmt.Errorf("insert edge %s: %w", key, err)
+			}
 		}
 	}
+
+	for _, route := range defaultRoutes {
+		if _, err := routeIns.Exec(route.ID, route.Title, route.Description, mustJSON(route.Matchers), mustJSON(route.Core), mustJSON(route.Chain)); err != nil {
+			return fmt.Errorf("insert route %s: %w", route.ID, err)
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -63,13 +216,149 @@ func SetSpecMeta(dbPath, key, value string) error {
 	return err
 }
 
-// SearchSpec queries the FTS5 index and returns matching sections.
+// SearchSpec queries the structured index with exact-id, route, related, and FTS fallback tiers.
 func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
 
-	// Build FTS5 query: quote each term for prefix matching
+	resultsMap := make(map[string]SpecSearchResult)
+	appendResults := func(results []SpecSearchResult) {
+		for _, result := range results {
+			key := result.PatternID + "|" + result.Heading
+			if existing, ok := resultsMap[key]; ok {
+				if result.Rank < existing.Rank {
+					resultsMap[key] = result
+				}
+				continue
+			}
+			resultsMap[key] = result
+		}
+	}
+
+	if patternID := extractPatternID(query); patternID != "" {
+		if result, err := searchByPatternID(db, patternID); err == nil {
+			appendResults([]SpecSearchResult{result})
+		}
+	}
+
+	route, err := classifyRoute(db, query)
+	if err != nil {
+		return nil, err
+	}
+	if route != nil {
+		routeResults, err := searchRoute(db, *route)
+		if err != nil {
+			return nil, err
+		}
+		appendResults(routeResults)
+		edgeResults, err := searchRelated(db, route.Core)
+		if err != nil {
+			return nil, err
+		}
+		appendResults(edgeResults)
+	}
+
+	ftsResults, err := searchFTS(db, query, limit*2)
+	if err != nil {
+		return nil, err
+	}
+	appendResults(ftsResults)
+
+	results := make([]SpecSearchResult, 0, len(resultsMap))
+	for _, result := range resultsMap {
+		results = append(results, result)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Rank == results[j].Rank {
+			if results[i].PatternID == results[j].PatternID {
+				return results[i].Heading < results[j].Heading
+			}
+			return results[i].PatternID < results[j].PatternID
+		}
+		return results[i].Rank < results[j].Rank
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {
+	var result SpecSearchResult
+	err := db.QueryRow(`
+		SELECT pattern_id, heading, substr(body, 1, 280)
+		FROM sections
+		WHERE pattern_id = ?
+	`, patternID).Scan(&result.PatternID, &result.Heading, &result.Snippet)
+	if err != nil {
+		return SpecSearchResult{}, err
+	}
+	result.Rank = -1000
+	result.Tier = "pattern"
+	result.Reason = "exact pattern id"
+	return result, nil
+}
+
+func searchRoute(db *sql.DB, route Route) ([]SpecSearchResult, error) {
+	patternIDs := append([]string{}, route.Core...)
+	if len(patternIDs) == 0 {
+		patternIDs = append(patternIDs, route.Chain...)
+	}
+	results := make([]SpecSearchResult, 0, len(patternIDs))
+	for i, patternID := range patternIDs {
+		result, err := searchByPatternID(db, patternID)
+		if err != nil {
+			continue
+		}
+		result.Rank = -500 + float64(i)
+		result.Tier = "route"
+		result.Reason = route.Title
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func searchRelated(db *sql.DB, seeds []string) ([]SpecSearchResult, error) {
+	if len(seeds) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(seeds)), ",")
+	args := make([]any, 0, len(seeds))
+	for _, seed := range seeds {
+		args = append(args, seed)
+	}
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT DISTINCT s.pattern_id, s.heading, substr(s.body, 1, 280)
+		FROM section_edges e
+		JOIN sections s ON s.pattern_id = e.to_pattern_id
+		WHERE e.from_pattern_id IN (%s)
+		LIMIT 10
+	`, placeholders), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []SpecSearchResult
+	for rows.Next() {
+		var result SpecSearchResult
+		if err := rows.Scan(&result.PatternID, &result.Heading, &result.Snippet); err != nil {
+			return nil, err
+		}
+		result.Rank = -200
+		result.Tier = "related"
+		result.Reason = "related sections"
+		results = append(results, result)
+	}
+	return results, rows.Err()
+}
+
+func searchFTS(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) {
 	terms := strings.Fields(query)
 	var ftsTerms []string
 	for _, t := range terms {
@@ -77,10 +366,26 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 		ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, t))
 	}
 	ftsQuery := strings.Join(ftsTerms, " OR ")
+	if len(terms) > 1 {
+		var andTerms []string
+		for _, t := range terms {
+			quoted := strings.ReplaceAll(t, `"`, `""`)
+			andTerms = append(andTerms, fmt.Sprintf(`"%s"*`, quoted))
+		}
+		andQuery := strings.Join(andTerms, " ")
+		results, err := runFTSQuery(db, andQuery, limit)
+		if err == nil && len(results) > 0 {
+			return results, nil
+		}
+	}
+	return runFTSQuery(db, ftsQuery, limit)
+}
 
+func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, error) {
 	rows, err := db.Query(`
-		SELECT heading, snippet(fpf_fts, 1, '>>>', '<<<', '...', 64), rank
+		SELECT s.pattern_id, s.heading, snippet(fpf_fts, 2, '>>>', '<<<', '...', 64), rank
 		FROM fpf_fts
+		JOIN sections s ON s.id = fpf_fts.rowid - 1
 		WHERE fpf_fts MATCH ?
 		ORDER BY rank
 		LIMIT ?
@@ -93,18 +398,63 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 	var results []SpecSearchResult
 	for rows.Next() {
 		var r SpecSearchResult
-		if err := rows.Scan(&r.Heading, &r.Snippet, &r.Rank); err != nil {
+		if err := rows.Scan(&r.PatternID, &r.Heading, &r.Snippet, &r.Rank); err != nil {
 			return nil, err
 		}
+		r.Tier = "fts"
+		r.Reason = "keyword match"
 		results = append(results, r)
 	}
 	return results, rows.Err()
 }
 
-// GetSpecSection returns the complete body of a section by heading.
-func GetSpecSection(db *sql.DB, heading string) (string, error) {
+func classifyRoute(db *sql.DB, query string) (*Route, error) {
+	rows, err := db.Query(`SELECT route_id, title, description, matchers_json, core_json, chain_json FROM routes`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	queryLower := strings.ToLower(query)
+	bestScore := 0
+	var best Route
+	for rows.Next() {
+		var route Route
+		var matchersJSON, coreJSON, chainJSON string
+		if err := rows.Scan(&route.ID, &route.Title, &route.Description, &matchersJSON, &coreJSON, &chainJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(matchersJSON), &route.Matchers); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(coreJSON), &route.Core); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(chainJSON), &route.Chain); err != nil {
+			return nil, err
+		}
+
+		score := 0
+		for _, matcher := range route.Matchers {
+			if strings.Contains(queryLower, strings.ToLower(matcher)) {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			best = route
+		}
+	}
+	if bestScore == 0 {
+		return nil, nil
+	}
+	return &best, nil
+}
+
+// GetSpecSection returns the complete body of a section by heading or pattern id.
+func GetSpecSection(db *sql.DB, headingOrPattern string) (string, error) {
 	var body string
-	err := db.QueryRow(`SELECT body FROM fpf_fts WHERE heading = ?`, heading).Scan(&body)
+	err := db.QueryRow(`SELECT body FROM sections WHERE heading = ? OR pattern_id = ? ORDER BY CASE WHEN pattern_id = ? THEN 0 ELSE 1 END LIMIT 1`, headingOrPattern, headingOrPattern, headingOrPattern).Scan(&body)
 	if err != nil {
 		return "", err
 	}
@@ -119,4 +469,16 @@ func GetSpecMeta(db *sql.DB, key string) (string, error) {
 		return "", err
 	}
 	return val, nil
+}
+
+func mustJSON(v any) string {
+	data, _ := json.Marshal(v)
+	return string(data)
+}
+
+func nullIfEmpty(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }

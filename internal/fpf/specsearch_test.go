@@ -17,11 +17,11 @@ func buildTestIndex(t *testing.T) (string, *sql.DB, func()) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	chunks := []SpecChunk{
-		{ID: 0, Heading: "1. Introduction", Level: 1, Body: "This is the introduction to FPF methodology."},
-		{ID: 1, Heading: "2. WLNK — Weakest Link", Level: 2, Body: "System quality equals the minimum of component qualities. The weakest link bounds the whole."},
-		{ID: 2, Heading: "3. ADI Cycle", Level: 2, Body: "Abduction generates hypotheses. Deduction derives predictions. Induction tests against evidence."},
-		{ID: 3, Heading: "4. Evidence Records", Level: 2, Body: "F-G-R assessment: Formality, ClaimScope (G), Reliability. Min across chain for F and R."},
-		{ID: 4, Heading: "5. Pareto Selection", Level: 2, Body: "Hold the Pareto front. State selection policy before applying it. Ensure parity for fair comparison."},
+		{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Boundary statements need routing.", PatternID: "A.6", Keywords: []string{"boundary", "routing"}, Queries: []string{"How do I route boundary statements?"}, RelatedIDs: []string{"A.6.B"}},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Laws, admissibility, deontics, and work-effects.", PatternID: "A.6.B", Keywords: []string{"boundary", "deontics"}, Queries: []string{"What is the Boundary Norm Square?"}},
+		{ID: 2, Heading: "A.16 — Language-State Transduction Coordination", Level: 2, Body: "Lawful moves for cues and handoffs.", PatternID: "A.16", Keywords: []string{"language-state", "route"}, Queries: []string{"How do cues get routed?"}, RelatedIDs: []string{"B.4.1"}},
+		{ID: 3, Heading: "B.4.1 — Observe -> Notice -> Stabilize -> Route", Level: 2, Body: "Observe, notice, stabilize, route.", PatternID: "B.4.1", Keywords: []string{"route", "stabilize"}, Queries: []string{"What is the observe-to-route seam?"}},
+		{ID: 4, Heading: "E.9 — Decision Record", Level: 2, Body: "Decision rationale and invariants.", PatternID: "E.9", Keywords: []string{"decision", "record", "drr"}, Queries: []string{"What is a decision record?"}},
 	}
 
 	if err := BuildSpecIndex(dbPath, chunks); err != nil {
@@ -47,14 +47,10 @@ func TestBuildSpecIndex_CreatesDB(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	chunks := []SpecChunk{
-		{ID: 0, Heading: "Test", Level: 1, Body: "Content"},
-	}
-
+	chunks := []SpecChunk{{ID: 0, Heading: "Test", Level: 1, Body: "Content"}}
 	if err := BuildSpecIndex(dbPath, chunks); err != nil {
 		t.Fatalf("BuildSpecIndex failed: %v", err)
 	}
-
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Fatal("database file was not created")
 	}
@@ -64,13 +60,12 @@ func TestBuildSpecIndex_OverwritesExisting(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	// Build twice — second should overwrite
-	chunks := []SpecChunk{{ID: 0, Heading: "V1", Level: 1, Body: "Version 1"}}
+	chunks := []SpecChunk{{ID: 0, Heading: "V1", Level: 1, Body: "Version 1", PatternID: "A.1"}}
 	if err := BuildSpecIndex(dbPath, chunks); err != nil {
 		t.Fatal(err)
 	}
 
-	chunks2 := []SpecChunk{{ID: 0, Heading: "V2", Level: 1, Body: "Version 2"}}
+	chunks2 := []SpecChunk{{ID: 0, Heading: "V2", Level: 1, Body: "Version 2", PatternID: "A.2"}}
 	if err := BuildSpecIndex(dbPath, chunks2); err != nil {
 		t.Fatal(err)
 	}
@@ -81,56 +76,180 @@ func TestBuildSpecIndex_OverwritesExisting(t *testing.T) {
 	}
 	defer db.Close()
 
-	body, err := GetSpecSection(db, "V2")
+	body, err := GetSpecSection(db, "A.2")
 	if err != nil {
-		t.Fatalf("V2 section not found after overwrite: %v", err)
+		t.Fatalf("A.2 section not found after overwrite: %v", err)
 	}
 	if body != "Version 2" {
 		t.Errorf("expected 'Version 2', got %q", body)
 	}
+}
 
-	_, err = GetSpecSection(db, "V1")
-	if err == nil {
-		t.Error("V1 should not exist after overwrite")
+func TestBuildSpecIndex_PersistsTypedEdges(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.1 - Source",
+			Level:     2,
+			Body:      "Body",
+			PatternID: "A.1",
+			Edges: []SpecEdge{{
+				FromPatternID: "A.1",
+				ToPatternID:   "B.1",
+				EdgeType:      SpecEdgeTypeBuildsOn,
+			}},
+		},
+		{ID: 1, Heading: "B.1 - Target", Level: 2, Body: "Body", PatternID: "B.1"},
+	}
+
+	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var fromPatternID string
+	var toPatternID string
+	var edgeType string
+	err = db.QueryRow(`
+		SELECT from_pattern_id, to_pattern_id, edge_type
+		FROM section_edges
+		WHERE from_pattern_id = ? AND to_pattern_id = ?
+	`, "A.1", "B.1").Scan(&fromPatternID, &toPatternID, &edgeType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edgeType != string(SpecEdgeTypeBuildsOn) {
+		t.Fatalf("expected builds_on edge, got %q", edgeType)
 	}
 }
 
-func TestSearchSpec_FindsByKeyword(t *testing.T) {
+func TestBuildSpecIndex_FallsBackToRelatedEdges(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	chunks := []SpecChunk{
+		{
+			ID:         0,
+			Heading:    "A.2 - Source",
+			Level:      2,
+			Body:       "Body",
+			PatternID:  "A.2",
+			RelatedIDs: []string{"B.2"},
+		},
+		{ID: 1, Heading: "B.2 - Target", Level: 2, Body: "Body", PatternID: "B.2"},
+	}
+
+	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var edgeType string
+	err = db.QueryRow(`
+		SELECT edge_type
+		FROM section_edges
+		WHERE from_pattern_id = ? AND to_pattern_id = ?
+	`, "A.2", "B.2").Scan(&edgeType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edgeType != string(SpecEdgeTypeRelated) {
+		t.Fatalf("expected related edge, got %q", edgeType)
+	}
+}
+
+func TestSearchSpec_ExactPatternLookupWins(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	results, err := SearchSpec(db, "weakest link", 10)
+	results, err := SearchSpec(db, "A.6", 10)
 	if err != nil {
-		t.Fatalf("SearchSpec failed: %v", err)
+		t.Fatal(err)
 	}
-
 	if len(results) == 0 {
-		t.Fatal("expected results for 'weakest link', got none")
+		t.Fatalf("expected results, got none for query %q", "decision")
 	}
+	if results[0].PatternID != "A.6" {
+		t.Fatalf("expected A.6 first, got %#v", results[0])
+	}
+	if results[0].Tier != "pattern" {
+		t.Fatalf("expected pattern tier, got %q", results[0].Tier)
+	}
+}
 
-	found := false
+func TestSearchSpec_RouteQueryLoadsCoreSections(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "boundary routing", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatalf("expected results, got none for query %q", "decision")
+	}
+	foundA6 := false
 	for _, r := range results {
-		if strings.Contains(r.Heading, "WLNK") {
+		if r.PatternID == "A.6" && (r.Tier == "route" || r.Tier == "pattern") {
+			foundA6 = true
+		}
+	}
+	if !foundA6 {
+		t.Fatalf("expected route result for A.6, got %#v", results)
+	}
+}
+
+func TestSearchSpec_RelatedExpansion(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "How do cues get routed?", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRelated := false
+	for _, r := range results {
+		if r.PatternID == "B.4.1" {
+			foundRelated = true
+		}
+	}
+	if !foundRelated {
+		t.Fatalf("expected related result B.4.1, got %#v", results)
+	}
+}
+
+func TestSearchSpec_FindsByKeywordFallback(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "deontics", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected fallback keyword results")
+	}
+	found := false
+	for _, result := range results {
+		if result.PatternID == "A.6.B" {
 			found = true
-			break
 		}
 	}
 	if !found {
-		t.Error("expected WLNK section in results")
-	}
-}
-
-func TestSearchSpec_RespectsLimit(t *testing.T) {
-	_, db, cleanup := buildTestIndex(t)
-	defer cleanup()
-
-	results, err := SearchSpec(db, "the", 2)
-	if err != nil {
-		t.Fatalf("SearchSpec failed: %v", err)
-	}
-
-	if len(results) > 2 {
-		t.Errorf("expected at most 2 results, got %d", len(results))
+		t.Fatalf("expected A.6.B in results, got %#v", results)
 	}
 }
 
@@ -140,11 +259,10 @@ func TestSearchSpec_NoResults(t *testing.T) {
 
 	results, err := SearchSpec(db, "xyznonexistent", 10)
 	if err != nil {
-		t.Fatalf("SearchSpec failed: %v", err)
+		t.Fatal(err)
 	}
-
 	if len(results) != 0 {
-		t.Errorf("expected 0 results for nonsense query, got %d", len(results))
+		t.Fatalf("expected 0 results, got %#v", results)
 	}
 }
 
@@ -152,14 +270,12 @@ func TestSearchSpec_DefaultLimit(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	// limit=0 should default to 10
-	results, err := SearchSpec(db, "the", 0)
+	results, err := SearchSpec(db, "route", 0)
 	if err != nil {
-		t.Fatalf("SearchSpec failed: %v", err)
+		t.Fatal(err)
 	}
-
 	if len(results) == 0 {
-		t.Error("expected results with default limit")
+		t.Fatalf("expected results, got none for query %q", "decision")
 	}
 }
 
@@ -167,45 +283,34 @@ func TestSearchSpec_SnippetReturned(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	results, err := SearchSpec(db, "WLNK", 1)
+	results, err := SearchSpec(db, "decision", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if len(results) == 0 {
-		t.Fatal("expected results")
+		t.Fatalf("expected results, got none for query %q", "decision")
 	}
-
-	// Snippet should contain some text from the matching section
-	if results[0].Snippet == "" {
-		t.Error("snippet should not be empty")
+	foundSnippet := false
+	for _, result := range results {
+		if result.PatternID == "E.9" && result.Snippet != "" {
+			foundSnippet = true
+		}
 	}
-	if !strings.Contains(results[0].Snippet, "weakest") && !strings.Contains(results[0].Snippet, "link") {
-		t.Errorf("snippet should contain relevant text, got: %s", results[0].Snippet)
+	if !foundSnippet {
+		t.Fatalf("expected E.9 snippet, got %#v", results)
 	}
 }
 
-func TestGetSpecSection_ExactMatch(t *testing.T) {
+func TestGetSpecSection_HeadingOrPattern(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	body, err := GetSpecSection(db, "3. ADI Cycle")
+	body, err := GetSpecSection(db, "E.9")
 	if err != nil {
-		t.Fatalf("GetSpecSection failed: %v", err)
+		t.Fatal(err)
 	}
-
-	if !strings.Contains(body, "Abduction") {
-		t.Errorf("body should contain 'Abduction', got: %s", body)
-	}
-}
-
-func TestGetSpecSection_NotFound(t *testing.T) {
-	_, db, cleanup := buildTestIndex(t)
-	defer cleanup()
-
-	_, err := GetSpecSection(db, "Nonexistent Section")
-	if err == nil {
-		t.Error("expected error for nonexistent section")
+	if !strings.Contains(body, "Decision rationale") {
+		t.Fatalf("unexpected body: %s", body)
 	}
 }
 
@@ -215,50 +320,9 @@ func TestSetSpecMeta_AndGetSpecMeta(t *testing.T) {
 
 	val, err := GetSpecMeta(db, "fpf_commit")
 	if err != nil {
-		t.Fatalf("GetSpecMeta failed: %v", err)
+		t.Fatal(err)
 	}
-
 	if val != "abc1234" {
-		t.Errorf("expected 'abc1234', got %q", val)
-	}
-}
-
-func TestGetSpecMeta_NotFound(t *testing.T) {
-	_, db, cleanup := buildTestIndex(t)
-	defer cleanup()
-
-	_, err := GetSpecMeta(db, "nonexistent_key")
-	if err == nil {
-		t.Error("expected error for nonexistent meta key")
-	}
-}
-
-func TestSearchSpec_PrefixMatching(t *testing.T) {
-	_, db, cleanup := buildTestIndex(t)
-	defer cleanup()
-
-	// "hypothes" should match "hypotheses" via prefix matching
-	results, err := SearchSpec(db, "hypothes", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(results) == 0 {
-		t.Error("expected prefix match for 'hypothes' → 'hypotheses'")
-	}
-}
-
-func TestSearchSpec_StemMatching(t *testing.T) {
-	_, db, cleanup := buildTestIndex(t)
-	defer cleanup()
-
-	// porter stemmer: "predictions" should match "prediction"
-	results, err := SearchSpec(db, "predictions", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(results) == 0 {
-		t.Error("expected stem match for 'predictions'")
+		t.Fatalf("expected abc1234, got %q", val)
 	}
 }

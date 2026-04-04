@@ -33,7 +33,19 @@ const (
 	loopHardRepeats = 5   // red: hard stop
 
 	assuranceAdapterLevel = "artifact_adapter"
+	cycleAssuranceLevel   = "cycle_adapter"
 )
+
+type assuranceEvidenceRecord struct {
+	artifact.EvidenceItem
+	AssuranceLevel string
+	CreatedAt      time.Time
+}
+
+type dependencyProjection struct {
+	Available bool
+	Refs      []string
+}
 
 // Coordinator runs a single ReAct loop per user turn.
 // v2: No phase machine. FPF enforced by tool guardrails.
@@ -1057,7 +1069,7 @@ func (c *Coordinator) computeClosedCycleAssurance(
 		return assuranceTuple, weakestLink, fmt.Errorf("load decision %s: %w", decisionRef, err)
 	}
 
-	activeEvidence, err := c.syncDecisionAssuranceGraph(ctx, dbStore.DB(), decision, make(map[string]struct{}))
+	activeEvidence, err := c.syncDecisionAssuranceGraph(ctx, dbStore.DB(), decision, chain, make(map[string]struct{}))
 	if err != nil {
 		return assuranceTuple, weakestLink, err
 	}
@@ -1085,17 +1097,23 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 	ctx context.Context,
 	db *sql.DB,
 	decision *artifact.Artifact,
+	chain *agent.EvidenceChain,
 	visited map[string]struct{},
-) ([]artifact.EvidenceItem, error) {
+) ([]assuranceEvidenceRecord, error) {
 	if decision == nil {
 		return nil, fmt.Errorf("decision artifact is nil")
 	}
 	if _, ok := visited[decision.Meta.ID]; ok {
-		return c.loadActiveArtifactEvidence(ctx, decision.Meta.ID)
+		return c.loadPersistedAssuranceEvidence(ctx, decision.Meta.ID)
 	}
 	visited[decision.Meta.ID] = struct{}{}
 
-	dependencyRefs, err := c.resolveDecisionDependencyRefs(ctx, db, decision.Meta.ID)
+	projection, err := c.resolveDecisionDependencyRefs(ctx, db, decision.Meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	dependencyRefs, err := c.activeDecisionDependencyRefs(ctx, db, decision.Meta.ID, projection)
 	if err != nil {
 		return nil, err
 	}
@@ -1106,17 +1124,19 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 			return nil, fmt.Errorf("load dependency decision %s: %w", dependencyRef, err)
 		}
 
-		_, err = c.syncDecisionAssuranceGraph(ctx, db, dependencyDecision, visited)
+		_, err = c.syncDecisionAssuranceGraph(ctx, db, dependencyDecision, nil, visited)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	activeEvidence, err := c.loadActiveArtifactEvidence(ctx, decision.Meta.ID)
+	artifactEvidence, err := c.loadActiveArtifactEvidence(ctx, decision.Meta.ID)
 	if err != nil {
 		return nil, err
 	}
 
+	cycleEvidence := buildCycleAssuranceEvidence(decision, chain)
+	activeEvidence := combineAssuranceEvidence(artifactEvidence, cycleEvidence)
 	now := time.Now().UTC()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1129,15 +1149,16 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 		return nil, err
 	}
 
-	err = c.syncProjectedDecisionRelations(ctx, tx, decision.Meta.ID, dependencyRefs, now)
+	err = c.syncProjectedDecisionRelations(ctx, tx, decision.Meta.ID, projection, now)
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`DELETE FROM evidence WHERE holon_id = ? AND assurance_level = ?`,
+		`DELETE FROM evidence WHERE holon_id = ? AND assurance_level IN (?, ?)`,
 		decision.Meta.ID,
 		assuranceAdapterLevel,
+		cycleAssuranceLevel,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("clear adapter evidence: %w", err)
@@ -1158,24 +1179,29 @@ func (c *Coordinator) syncDecisionAssuranceGraph(
 			return nil, fmt.Errorf("parse valid_until for %s: %w", item.ID, err)
 		}
 
+		createdAt := item.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = now
+		}
+
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO evidence (
 				id, holon_id, type, content, verdict, assurance_level, formality_level,
 				congruence_level, claim_scope, carrier_ref, valid_until, created_at
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			"artifact:"+item.ID,
+			item.ID,
 			decision.Meta.ID,
 			item.Type,
 			item.Content,
 			item.Verdict,
-			assuranceAdapterLevel,
+			item.AssuranceLevel,
 			item.FormalityLevel,
 			item.CongruenceLevel,
 			scopeJSON,
 			nullIfEmpty(item.CarrierRef),
 			validUntil,
-			now.Format(time.RFC3339),
+			createdAt.Format(time.RFC3339),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("persist assurance evidence %s: %w", item.ID, err)
@@ -1200,6 +1226,18 @@ func (c *Coordinator) loadActiveArtifactEvidence(
 	}
 
 	return activeArtifactEvidence(evidenceItems), nil
+}
+
+func (c *Coordinator) loadPersistedAssuranceEvidence(
+	ctx context.Context,
+	decisionRef string,
+) ([]assuranceEvidenceRecord, error) {
+	artifactEvidence, err := c.loadActiveArtifactEvidence(ctx, decisionRef)
+	if err != nil {
+		return nil, err
+	}
+
+	return combineAssuranceEvidence(artifactEvidence, nil), nil
 }
 
 func (c *Coordinator) ensureDecisionHolon(
@@ -1265,9 +1303,13 @@ func (c *Coordinator) syncProjectedDecisionRelations(
 	ctx context.Context,
 	tx *sql.Tx,
 	decisionRef string,
-	dependencyRefs []string,
+	projection dependencyProjection,
 	now time.Time,
 ) error {
+	if !projection.Available {
+		return nil
+	}
+
 	_, err := tx.ExecContext(ctx,
 		`DELETE FROM relations WHERE source_id = ? AND relation_type = 'dependsOn'`,
 		decisionRef,
@@ -1276,7 +1318,7 @@ func (c *Coordinator) syncProjectedDecisionRelations(
 		return fmt.Errorf("clear projected relations for %s: %w", decisionRef, err)
 	}
 
-	for _, dependencyRef := range dependencyRefs {
+	for _, dependencyRef := range projection.Refs {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO relations (
 				source_id, target_id, relation_type, congruence_level, created_at
@@ -1300,28 +1342,31 @@ func (c *Coordinator) resolveDecisionDependencyRefs(
 	ctx context.Context,
 	db *sql.DB,
 	decisionRef string,
-) ([]string, error) {
+) (dependencyProjection, error) {
 	modules, err := codebase.NewScanner(db).GetModules(ctx)
 	if isOptionalAssuranceQueryError(err) || len(modules) == 0 {
-		return nil, nil
+		return dependencyProjection{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load codebase modules: %w", err)
+		return dependencyProjection{}, fmt.Errorf("load codebase modules: %w", err)
 	}
 
 	currentFiles, err := c.ArtifactStore.GetAffectedFiles(ctx, decisionRef)
 	if err != nil {
-		return nil, fmt.Errorf("load affected files for %s: %w", decisionRef, err)
+		return dependencyProjection{}, fmt.Errorf("load affected files for %s: %w", decisionRef, err)
 	}
 
 	currentModules := resolveAffectedModules(modules, currentFiles)
 	if len(currentModules) == 0 {
-		return nil, nil
+		return dependencyProjection{}, nil
 	}
 
-	decisionRefs, err := listActiveDecisionRefs(ctx, db)
+	decisionRefs, available, err := listActiveDecisionRefs(ctx, db)
 	if err != nil {
-		return nil, err
+		return dependencyProjection{}, err
+	}
+	if !available {
+		return dependencyProjection{}, nil
 	}
 
 	dependencySet := make(map[string]struct{})
@@ -1333,7 +1378,7 @@ func (c *Coordinator) resolveDecisionDependencyRefs(
 
 		candidateFiles, err := c.ArtifactStore.GetAffectedFiles(ctx, candidateRef)
 		if err != nil {
-			return nil, fmt.Errorf("load affected files for %s: %w", candidateRef, err)
+			return dependencyProjection{}, fmt.Errorf("load affected files for %s: %w", candidateRef, err)
 		}
 
 		candidateModules := resolveAffectedModules(modules, candidateFiles)
@@ -1343,10 +1388,10 @@ func (c *Coordinator) resolveDecisionDependencyRefs(
 
 		hasDependency, err := hasModuleDependency(ctx, db, currentModules, candidateModules)
 		if isOptionalAssuranceQueryError(err) {
-			return nil, nil
+			return dependencyProjection{}, nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("check module dependency %s -> %s: %w", decisionRef, candidateRef, err)
+			return dependencyProjection{}, fmt.Errorf("check module dependency %s -> %s: %w", decisionRef, candidateRef, err)
 		}
 		if hasDependency {
 			dependencySet[candidateRef] = struct{}{}
@@ -1359,7 +1404,10 @@ func (c *Coordinator) resolveDecisionDependencyRefs(
 	}
 	sort.Strings(dependencyRefs)
 
-	return dependencyRefs, nil
+	return dependencyProjection{
+		Available: true,
+		Refs:      dependencyRefs,
+	}, nil
 }
 
 func resolveAffectedModules(
@@ -1445,7 +1493,7 @@ func hasModuleDependency(
 	return false, nil
 }
 
-func listActiveDecisionRefs(ctx context.Context, db *sql.DB) ([]string, error) {
+func listActiveDecisionRefs(ctx context.Context, db *sql.DB) ([]string, bool, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id
 		FROM artifacts
@@ -1454,10 +1502,10 @@ func listActiveDecisionRefs(ctx context.Context, db *sql.DB) ([]string, error) {
 		string(artifact.StatusActive),
 	)
 	if isOptionalAssuranceQueryError(err) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list active decision refs: %w", err)
+		return nil, false, fmt.Errorf("list active decision refs: %w", err)
 	}
 	defer rows.Close()
 
@@ -1466,17 +1514,17 @@ func listActiveDecisionRefs(ctx context.Context, db *sql.DB) ([]string, error) {
 		var ref string
 		err = rows.Scan(&ref)
 		if err != nil {
-			return nil, fmt.Errorf("scan active decision ref: %w", err)
+			return nil, false, fmt.Errorf("scan active decision ref: %w", err)
 		}
 		refs = append(refs, ref)
 	}
 
 	err = rows.Err()
 	if err != nil {
-		return nil, fmt.Errorf("iterate active decision refs: %w", err)
+		return nil, false, fmt.Errorf("iterate active decision refs: %w", err)
 	}
 
-	return refs, nil
+	return refs, true, nil
 }
 
 func isOptionalAssuranceQueryError(err error) bool {
@@ -1500,7 +1548,190 @@ func activeArtifactEvidence(items []artifact.EvidenceItem) []artifact.EvidenceIt
 	return active
 }
 
-func claimScopeUnion(items []artifact.EvidenceItem) []string {
+func combineAssuranceEvidence(
+	artifactItems []artifact.EvidenceItem,
+	cycleItems []assuranceEvidenceRecord,
+) []assuranceEvidenceRecord {
+	records := make([]assuranceEvidenceRecord, 0, len(artifactItems)+len(cycleItems))
+
+	for _, item := range artifactItems {
+		records = append(records, assuranceEvidenceRecord{
+			EvidenceItem: artifact.EvidenceItem{
+				ID:              "artifact:" + item.ID,
+				Type:            item.Type,
+				Content:         item.Content,
+				Verdict:         item.Verdict,
+				CarrierRef:      item.CarrierRef,
+				CongruenceLevel: item.CongruenceLevel,
+				FormalityLevel:  item.FormalityLevel,
+				ClaimScope:      append([]string(nil), item.ClaimScope...),
+				ValidUntil:      item.ValidUntil,
+			},
+			AssuranceLevel: assuranceAdapterLevel,
+		})
+	}
+
+	records = append(records, cycleItems...)
+	return records
+}
+
+func buildCycleAssuranceEvidence(
+	decision *artifact.Artifact,
+	chain *agent.EvidenceChain,
+) []assuranceEvidenceRecord {
+	if decision == nil || chain == nil {
+		return nil
+	}
+	if strings.TrimSpace(chain.DecRef) != "" && chain.DecRef != decision.Meta.ID {
+		return nil
+	}
+
+	explicitIndex := 0
+	records := make([]assuranceEvidenceRecord, 0, len(chain.Items))
+
+	for _, item := range chain.Items {
+		if !item.Type.IsExplicitEvidence() {
+			continue
+		}
+
+		explicitIndex++
+		records = append(records, assuranceEvidenceRecord{
+			EvidenceItem: artifact.EvidenceItem{
+				ID:              cycleAssuranceEvidenceID(decision, chain, explicitIndex),
+				Type:            cycleEvidenceType(item),
+				Content:         cycleEvidenceContent(item),
+				Verdict:         cycleEvidenceVerdict(item),
+				CarrierRef:      cycleEvidenceCarrierRef(chain),
+				CongruenceLevel: item.CL,
+				FormalityLevel:  item.Formality,
+				ClaimScope:      append([]string(nil), item.ClaimScope...),
+				ValidUntil:      decision.Meta.ValidUntil,
+			},
+			AssuranceLevel: cycleAssuranceLevel,
+			CreatedAt:      item.CapturedAt,
+		})
+	}
+
+	return records
+}
+
+func cycleAssuranceEvidenceID(
+	decision *artifact.Artifact,
+	chain *agent.EvidenceChain,
+	explicitIndex int,
+) string {
+	prefix := decision.Meta.ID
+	if chain != nil && strings.TrimSpace(chain.CycleRef) != "" {
+		prefix = chain.CycleRef
+	}
+
+	return fmt.Sprintf("cycle:%s:%03d", prefix, explicitIndex)
+}
+
+func cycleEvidenceType(item agent.EvidenceItem) string {
+	switch item.Type {
+	case agent.EvidenceAttached:
+		return "attached"
+	default:
+		return "measurement"
+	}
+}
+
+func cycleEvidenceContent(item agent.EvidenceItem) string {
+	content := strings.TrimSpace(item.Detail)
+	if content != "" {
+		return content
+	}
+
+	return string(item.Type)
+}
+
+func cycleEvidenceVerdict(item agent.EvidenceItem) string {
+	switch item.Type {
+	case agent.EvidenceMeasure:
+		return "accepted"
+	case agent.EvidencePartial:
+		return "partial"
+	default:
+		if item.BaseScore <= 0 {
+			return "failed"
+		}
+		if item.BaseScore >= 1 {
+			return "accepted"
+		}
+		return "partial"
+	}
+}
+
+func cycleEvidenceCarrierRef(chain *agent.EvidenceChain) string {
+	if chain == nil {
+		return ""
+	}
+
+	carrierRef := strings.TrimSpace(chain.CycleRef)
+	if carrierRef == "" {
+		carrierRef = strings.TrimSpace(chain.DecRef)
+	}
+	if carrierRef == "" {
+		return ""
+	}
+
+	return "cycle:" + carrierRef
+}
+
+func (c *Coordinator) activeDecisionDependencyRefs(
+	ctx context.Context,
+	db *sql.DB,
+	decisionRef string,
+	projection dependencyProjection,
+) ([]string, error) {
+	if projection.Available {
+		return projection.Refs, nil
+	}
+
+	return c.loadExistingDecisionDependencyRefs(ctx, db, decisionRef)
+}
+
+func (c *Coordinator) loadExistingDecisionDependencyRefs(
+	ctx context.Context,
+	db *sql.DB,
+	decisionRef string,
+) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT target_id
+		FROM relations
+		WHERE source_id = ? AND relation_type = 'dependsOn'
+		ORDER BY target_id`,
+		decisionRef,
+	)
+	if isOptionalAssuranceQueryError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load durable dependency refs for %s: %w", decisionRef, err)
+	}
+	defer rows.Close()
+
+	refs := make([]string, 0)
+
+	for rows.Next() {
+		var ref string
+		err = rows.Scan(&ref)
+		if err != nil {
+			return nil, fmt.Errorf("scan durable dependency ref for %s: %w", decisionRef, err)
+		}
+		refs = append(refs, ref)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, fmt.Errorf("iterate durable dependency refs for %s: %w", decisionRef, err)
+	}
+
+	return refs, nil
+}
+
+func claimScopeUnion(items []assuranceEvidenceRecord) []string {
 	seen := make(map[string]struct{})
 	union := make([]string, 0)
 
@@ -1555,7 +1786,7 @@ func weakestChainLink(chain *agent.EvidenceChain) string {
 	return weakest + fmt.Sprintf(" (score: %.1f)", minScore)
 }
 
-func weakestPersistedEvidence(items []artifact.EvidenceItem) string {
+func weakestPersistedEvidence(items []assuranceEvidenceRecord) string {
 	minScore := 1.0
 	weakest := ""
 	now := time.Now().UTC()

@@ -11,6 +11,7 @@ type FPFSearchResult struct {
 	Heading   string
 	Tier      string
 	Reason    string
+	Summary   string
 	Content   string
 }
 
@@ -122,15 +123,23 @@ func formatFPFResultMetadata(result FPFSearchResult, showMetadata bool) string {
 
 	tier := strings.TrimSpace(result.Tier)
 	reason := strings.TrimSpace(result.Reason)
+	summary := strings.TrimSpace(result.Summary)
+	lines := make([]string, 0, 2)
 
 	switch {
 	case tier != "" && reason != "":
-		return fmt.Sprintf("tier: %s · %s", tier, reason)
+		lines = append(lines, fmt.Sprintf("tier: %s · %s", tier, reason))
 	case tier != "":
-		return "tier: " + tier
-	default:
-		return reason
+		lines = append(lines, "tier: "+tier)
+	case reason != "":
+		lines = append(lines, reason)
 	}
+
+	if summary != "" {
+		lines = append(lines, "summary: "+summary)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func ensureTrailingNewline(text string) string {

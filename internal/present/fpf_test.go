@@ -14,6 +14,7 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 			Heading:   "Signature Stack & Boundary Discipline",
 			Tier:      "pattern",
 			Reason:    "exact pattern id",
+			Summary:   "Keep boundary claims evolvable by routing each statement to the right layer.",
 			Content:   "Boundary routing body",
 		},
 		{
@@ -35,6 +36,7 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 		"## FPF Spec: boundary (2 results)",
 		"### 1. A.6 — Signature Stack & Boundary Discipline",
 		"tier: pattern · exact pattern id",
+		"summary: Keep boundary claims evolvable by routing each statement to the right layer.",
 		"Boundary routing body",
 		"### 2. A.6.B — Boundary Norm Square",
 		"tier: route · Boundary discipline and routing",
@@ -68,6 +70,7 @@ func TestFormatFPFSearch_HidesMetadataByDefault(t *testing.T) {
 			Heading:   "Signature Stack & Boundary Discipline",
 			Tier:      "pattern",
 			Reason:    "exact pattern id",
+			Summary:   "Keep boundary claims evolvable by routing each statement to the right layer.",
 			Content:   "Boundary routing body",
 		},
 	}
@@ -78,6 +81,9 @@ func TestFormatFPFSearch_HidesMetadataByDefault(t *testing.T) {
 
 	if strings.Contains(output, "tier:") {
 		t.Fatalf("expected default formatting to hide metadata, got:\n%s", output)
+	}
+	if strings.Contains(output, "summary:") {
+		t.Fatalf("expected default formatting to hide summaries, got:\n%s", output)
 	}
 	if !strings.Contains(output, "### 1. A.6 — Signature Stack & Boundary Discipline") {
 		t.Fatalf("expected heading to render, got:\n%s", output)

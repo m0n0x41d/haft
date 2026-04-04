@@ -34,6 +34,9 @@ func TestHandleQuintQuery_FPFSupportsExplainFullAndLimit(t *testing.T) {
 	if !strings.Contains(result, "tier: route · Boundary discipline and routing") {
 		t.Fatalf("expected explain metadata in output, got:\n%s", result)
 	}
+	if !strings.Contains(result, "summary: Boundary routing keeps claims on the right layer.") {
+		t.Fatalf("expected explain output to include the section summary, got:\n%s", result)
+	}
 	if !strings.Contains(result, "TAIL-MARKER") {
 		t.Fatalf("expected full output to include the complete section body, got:\n%s", result)
 	}

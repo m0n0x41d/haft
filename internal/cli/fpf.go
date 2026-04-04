@@ -157,6 +157,7 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 			Heading:   r.Heading,
 			Tier:      r.Tier,
 			Reason:    r.Reason,
+			Summary:   r.Summary,
 			Content:   content,
 		})
 	}

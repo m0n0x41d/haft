@@ -983,6 +983,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 				Heading:   r.Heading,
 				Tier:      r.Tier,
 				Reason:    r.Reason,
+				Summary:   r.Summary,
 				Content:   content,
 			})
 		}

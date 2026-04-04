@@ -572,12 +572,15 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
 	defer cleanup()
 
-	results, err := SearchSpec(db, "boundary routing", 50)
+	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: relatedExpansionLimit,
+		Tier:  SpecSearchTierRelated,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	relatedResults := filterResultsByTier(results, "related")
+	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
 	got := resultPatternIDs(relatedResults)
 	if len(relatedResults) != relatedExpansionLimit {
 		t.Fatalf("expected %d related results, got %d (%v)", relatedExpansionLimit, len(relatedResults), got)

@@ -583,6 +583,7 @@ func buildFPFSearchFunc() tools.FPFSearchFunc {
 				Heading:   r.Heading,
 				Tier:      r.Tier,
 				Reason:    r.Reason,
+				Summary:   r.Summary,
 				Content:   content,
 			})
 		}

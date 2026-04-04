@@ -30,6 +30,9 @@ func TestRunFPFSearch_ExplainTierAndLimit(t *testing.T) {
 	if !strings.Contains(output, "tier: route · Boundary discipline and routing") {
 		t.Fatalf("expected explain metadata in route output, got:\n%s", output)
 	}
+	if !strings.Contains(output, "summary: Boundary routing keeps claims on the right layer.") {
+		t.Fatalf("expected explain output to include the section summary, got:\n%s", output)
+	}
 	if strings.Contains(output, "tier: fts") {
 		t.Fatalf("expected tier filter to exclude fts results, got:\n%s", output)
 	}
@@ -178,7 +181,7 @@ func buildFPFSearchTestDB(t *testing.T) string {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "fpf-test.db")
-	body := strings.Repeat("Boundary routing body ", 20) + "TAIL-MARKER"
+	body := "Boundary routing keeps claims on the right layer. " + strings.Repeat("Boundary routing body ", 20) + "TAIL-MARKER"
 
 	chunks := []fpf.SpecChunk{
 		{

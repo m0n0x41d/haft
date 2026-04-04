@@ -8,6 +8,7 @@ interface TranscriptViewportProps {
   entries: readonly TranscriptEntry[]
   measureRef: (entryId: string) => (node: DOMElement | null) => void
   viewport: VisibleWindow
+  toolHistoryExpanded: boolean
   width: number
 }
 
@@ -15,25 +16,22 @@ export function TranscriptViewport({
   entries,
   measureRef,
   viewport,
+  toolHistoryExpanded,
   width,
 }: TranscriptViewportProps) {
-  const topOffset = viewport.viewTop === 0
-    ? 0
-    : -viewport.viewTop
+  // Only crop the overscanned rows above the mounted slice. Shifting by the
+  // full absolute transcript offset creates giant offscreen margins that Ink
+  // can compress oddly while live tool batches keep growing.
+  const cropTop = Math.max(0, viewport.viewTop - viewport.topSpacer)
 
   return (
-    <Box flexDirection="column" marginTop={topOffset}>
-      <TranscriptSpacer height={viewport.topSpacer} />
-      <ChatView entries={entries} width={width} measureRef={measureRef} />
-      <TranscriptSpacer height={viewport.bottomSpacer} />
+    <Box flexDirection="column" marginTop={-cropTop} flexShrink={0}>
+      <ChatView
+        entries={entries}
+        width={width}
+        toolHistoryExpanded={toolHistoryExpanded}
+        measureRef={measureRef}
+      />
     </Box>
   )
-}
-
-function TranscriptSpacer({ height }: { height: number }) {
-  if (height <= 0) {
-    return null
-  }
-
-  return <Box height={height} flexShrink={0} />
 }

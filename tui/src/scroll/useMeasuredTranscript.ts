@@ -11,11 +11,13 @@ export interface UseMeasuredTranscriptResult {
 export function useMeasuredTranscript(
   entries: readonly TranscriptEntry[],
   width: number,
+  toolHistoryExpanded: boolean,
 ): UseMeasuredTranscriptResult {
   const measuredHeightsRef = useRef(new Map<string, number>())
   const entryNodesRef = useRef(new Map<string, DOMElement>())
   const refCacheRef = useRef(new Map<string, (node: DOMElement | null) => void>())
   const previousWidthRef = useRef(width)
+  const previousToolHistoryExpandedRef = useRef(toolHistoryExpanded)
   const [version, setVersion] = useState(0)
 
   if (previousWidthRef.current !== width) {
@@ -61,6 +63,31 @@ export function useMeasuredTranscript(
     }
   }, [entries])
 
+  useEffect(() => {
+    if (previousToolHistoryExpandedRef.current === toolHistoryExpanded) {
+      return
+    }
+
+    previousToolHistoryExpandedRef.current = toolHistoryExpanded
+    let cacheChanged = false
+
+    for (const entry of entries) {
+      if (entry.type !== "assistantToolBatch") {
+        continue
+      }
+
+      if (!measuredHeightsRef.current.delete(entry.id)) {
+        continue
+      }
+
+      cacheChanged = true
+    }
+
+    if (cacheChanged) {
+      setVersion((currentVersion) => currentVersion + 1)
+    }
+  }, [entries, toolHistoryExpanded])
+
   useLayoutEffect(() => {
     let cacheChanged = false
 
@@ -88,8 +115,13 @@ export function useMeasuredTranscript(
   })
 
   const entryHeights = useMemo(
-    () => resolveEntryHeights(entries, width, measuredHeightsRef.current),
-    [entries, width, version],
+    () => resolveEntryHeights(
+      entries,
+      width,
+      measuredHeightsRef.current,
+      { toolHistoryExpanded },
+    ),
+    [entries, width, version, toolHistoryExpanded],
   )
 
   const measureRef = useCallback((entryId: string) => {

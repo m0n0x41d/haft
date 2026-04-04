@@ -28103,10 +28103,10 @@ var require_react_jsx_runtime_development = __commonJS({
           }
         }
         var jsx17 = jsxWithValidationDynamic;
-        var jsxs14 = jsxWithValidationStatic;
+        var jsxs13 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
         exports.jsx = jsx17;
-        exports.jsxs = jsxs14;
+        exports.jsxs = jsxs13;
       })();
     }
   }
@@ -34395,49 +34395,313 @@ function isAtBottom(state) {
   return state.offset === 0;
 }
 
+// src/components/toolBatch.ts
+function buildToolBatchDisplay(tools, options = {}) {
+  const expanded = options.expanded ?? false;
+  const regularTools = tools.filter((tool) => !isSpawnAgentTool(tool));
+  const spawnedAgentTools = tools.filter(isSpawnAgentTool);
+  const regularItems = buildRegularItems(regularTools, expanded);
+  const spawnedAgentItems = spawnedAgentTools.map((tool) => buildSpawnedAgentDisplay(tool, expanded));
+  return [...regularItems, ...spawnedAgentItems];
+}
+function estimateToolBatchDisplayHeight(tools, width, options = {}) {
+  const items = buildToolBatchDisplay(tools, options);
+  return items.reduce(
+    (height, item) => height + estimateToolBatchItemHeight(item, width),
+    0
+  );
+}
+function isSpawnAgentTool(tool) {
+  return tool.name === "spawn_agent";
+}
+function formatSubagentLabel(subagent) {
+  const rawParts = [subagent.name.trim(), subagent.task.trim()];
+  const filledParts = rawParts.filter((part) => part.length > 0);
+  const uniqueParts = filledParts.filter((part, index) => {
+    return filledParts.indexOf(part) === index;
+  });
+  return uniqueParts.join(" - ") || "agent";
+}
+function getToolBatchItemKey(item) {
+  if (item.kind === "collapsedHistory") {
+    return item.id;
+  }
+  return item.tool.callId;
+}
+function extractToolParam(name, args) {
+  const KEY_MAP = {
+    bash: "command",
+    read: "path",
+    write: "path",
+    edit: "path",
+    multiedit: "path",
+    glob: "pattern",
+    grep: "pattern",
+    spawn_agent: "task",
+    fetch: "url",
+    web_search: "query",
+    lsp_references: "symbol",
+    lsp_diagnostics: "path"
+  };
+  const key = KEY_MAP[name];
+  if (!key) {
+    return null;
+  }
+  try {
+    return JSON.parse(args)[key] ?? null;
+  } catch {
+    return null;
+  }
+}
+function buildRegularItems(tools, expanded) {
+  const items = [];
+  let index = 0;
+  while (index < tools.length) {
+    const currentTool = tools[index];
+    if (expanded || !isCollapsibleHistoryTool(currentTool)) {
+      items.push(buildRegularToolDisplay(currentTool));
+      index += 1;
+      continue;
+    }
+    let nextIndex = index + 1;
+    while (nextIndex < tools.length && isCollapsibleHistoryTool(tools[nextIndex])) {
+      nextIndex += 1;
+    }
+    const toolRun = tools.slice(index, nextIndex);
+    if (!shouldCollapseToolRun(toolRun)) {
+      items.push(...toolRun.map(buildRegularToolDisplay));
+      index = nextIndex;
+      continue;
+    }
+    items.push(buildCollapsedHistoryDisplay(toolRun));
+    index = nextIndex;
+  }
+  return items;
+}
+function buildRegularToolDisplay(tool) {
+  return {
+    kind: "regular",
+    tool
+  };
+}
+function estimateToolBatchItemHeight(item, width) {
+  if (item.kind === "collapsedHistory") {
+    return estimateCollapsedHistoryHeight(item, width);
+  }
+  if (item.kind === "spawnedAgent") {
+    return estimateSpawnedAgentHeight(item, width);
+  }
+  return estimateRegularToolHeight(item.tool);
+}
+function buildSpawnedAgentDisplay(tool, expanded) {
+  const subagent = tool.subagent;
+  const subagentTools = subagent?.tools ?? [];
+  const collapseSubagentChildren = shouldCollapseSubagentHistory(subagent, expanded);
+  const children = collapseSubagentChildren ? [] : buildToolBatchDisplay(subagentTools, { expanded });
+  return {
+    kind: "spawnedAgent",
+    tool,
+    subagentLabel: subagent ? formatSubagentLabel(subagent) : void 0,
+    children,
+    collapsedChildren: collapseSubagentChildren ? buildCollapsedHistoryDisplay(subagentTools) : void 0
+  };
+}
+function estimateSpawnedAgentHeight(item, width) {
+  const subagent = item.tool.subagent;
+  const nestedWidth = Math.max(24, width - 2);
+  if (!subagent) {
+    return estimateRegularToolHeight(item.tool);
+  }
+  const showWaitingState = subagent.running && item.children.length === 0 && !item.collapsedChildren && !subagent.summary;
+  const collapsedHeight = item.collapsedChildren ? estimateCollapsedHistoryHeight(item.collapsedChildren, nestedWidth) : 0;
+  const childHeight = item.children.reduce(
+    (height, child) => height + estimateToolBatchItemHeight(child, nestedWidth),
+    0
+  );
+  const summaryHeight = subagent.summary && !subagent.running ? 1 : 0;
+  return 3 + collapsedHeight + childHeight + summaryHeight + (showWaitingState ? 1 : 0);
+}
+function shouldCollapseSubagentHistory(subagent, expanded) {
+  if (!subagent || expanded) {
+    return false;
+  }
+  return shouldCollapseToolRun(subagent.tools);
+}
+function shouldCollapseToolRun(tools) {
+  if (tools.length >= 4) {
+    return true;
+  }
+  const toolNames = tools.map((tool) => tool.name);
+  const uniqueToolNames = new Set(toolNames);
+  return uniqueToolNames.size < toolNames.length;
+}
+function estimateRegularToolHeight(tool) {
+  const summary = tool.subagent?.summary ?? tool.output;
+  const streamingHeight = tool.output && tool.running ? Math.min(3, tool.output.split("\n").length) : 0;
+  const summaryHeight = summary && !tool.running ? 1 : 0;
+  return 2 + summaryHeight + streamingHeight;
+}
+function buildCollapsedHistoryDisplay(tools) {
+  const summary = summarizeToolRun(tools);
+  const hint = extractLatestHint(tools);
+  const running = tools.some((tool) => tool.running);
+  const isError = tools.some((tool) => tool.isError);
+  const firstCallId = tools[0]?.callId ?? "tool-history";
+  const lastCallId = tools[tools.length - 1]?.callId ?? "tool-history";
+  return {
+    kind: "collapsedHistory",
+    id: `collapsed-${firstCallId}-${lastCallId}`,
+    tools,
+    summary,
+    hint,
+    running,
+    isError
+  };
+}
+function estimateCollapsedHistoryHeight(item, width) {
+  if (!item.hint) {
+    return 2;
+  }
+  const hintWidth = Math.max(1, width - 8);
+  const hintHeight = item.hint.split("\n").reduce((height, line) => height + countWrappedLines(line, hintWidth), 0);
+  return 2 + hintHeight;
+}
+function summarizeToolRun(tools) {
+  const counts = {
+    search: 0,
+    read: 0,
+    bash: 0,
+    fetch: 0,
+    other: 0
+  };
+  for (const tool of tools) {
+    const category = categorizeTool(tool);
+    counts[category] += 1;
+  }
+  const parts = [
+    counts.search > 0 ? `searched ${counts.search} ${pluralize(counts.search, "pattern")}` : null,
+    counts.read > 0 ? `read ${counts.read} ${pluralize(counts.read, "file")}` : null,
+    counts.bash > 0 ? `ran ${counts.bash} bash ${pluralize(counts.bash, "command")}` : null,
+    counts.fetch > 0 ? `fetched ${counts.fetch} ${pluralize(counts.fetch, "resource")}` : null,
+    counts.other > 0 ? `ran ${counts.other} ${pluralize(counts.other, "tool call")}` : null
+  ].filter((part) => Boolean(part));
+  if (parts.length === 0) {
+    return `Ran ${tools.length} ${pluralize(tools.length, "tool call")}`;
+  }
+  return capitalize(parts.join(", "));
+}
+function extractLatestHint(tools) {
+  const hint = [...tools].reverse().map(extractToolHint).find((candidate) => candidate !== void 0);
+  return hint;
+}
+function extractToolHint(tool) {
+  const param = extractToolParam(tool.name, tool.args);
+  if (!param) {
+    return void 0;
+  }
+  if (tool.name === "bash") {
+    return formatCommandHint(param);
+  }
+  if (tool.name === "grep" || tool.name === "glob" || tool.name === "web_search") {
+    return `"${param}"`;
+  }
+  return param;
+}
+function isCollapsibleHistoryTool(tool) {
+  const COLLAPSIBLE_TOOL_NAMES = /* @__PURE__ */ new Set([
+    "bash",
+    "read",
+    "grep",
+    "glob",
+    "fetch",
+    "web_search",
+    "tool_search",
+    "lsp_references",
+    "lsp_diagnostics"
+  ]);
+  return COLLAPSIBLE_TOOL_NAMES.has(tool.name);
+}
+function categorizeTool(tool) {
+  if (tool.name === "read") {
+    return "read";
+  }
+  if (tool.name === "grep" || tool.name === "glob" || tool.name === "tool_search") {
+    return "search";
+  }
+  if (tool.name === "bash") {
+    return "bash";
+  }
+  if (tool.name === "fetch" || tool.name === "web_search") {
+    return "fetch";
+  }
+  return "other";
+}
+function formatCommandHint(command) {
+  const normalizedLines = command.split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length > 0);
+  const compactCommand = normalizedLines.join(" && ");
+  const prefix = "$ ";
+  return `${prefix}${compactCommand}`;
+}
+function pluralize(count, noun) {
+  if (count === 1) {
+    return noun;
+  }
+  return `${noun}s`;
+}
+function capitalize(text) {
+  const firstChar = text[0];
+  if (!firstChar) {
+    return text;
+  }
+  return `${firstChar.toUpperCase()}${text.slice(1)}`;
+}
+function countWrappedLines(text, width) {
+  if (!text) {
+    return 1;
+  }
+  return text.split("\n").reduce((height, line) => height + Math.max(1, Math.ceil(line.length / width)), 0);
+}
+
 // src/scroll/measure.ts
 var DEFAULT_OVERSCAN_ROWS = 8;
-function estimateEntryHeight(entry, width) {
+function estimateEntryHeight(entry, width, options = {}) {
   switch (entry.type) {
     case "userPrompt":
       return 1 + 1 + entry.attachments.length;
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120));
-      return 1 + countWrappedLines(entry.text, contentWidth);
+      return 1 + countWrappedLines2(entry.text, contentWidth);
     }
     case "thinking":
       return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length);
     case "assistantToolBatch":
-      return entry.tools.reduce((sum, tool) => sum + measureToolCall(tool), 0);
+      return estimateToolBatchDisplayHeight(
+        entry.tools,
+        width,
+        { expanded: options.toolHistoryExpanded ?? false }
+      );
     case "indicator":
       return 2;
     case "error":
       return 6;
   }
 }
-function measureToolCall(tool) {
-  let height = 2;
-  const summary = tool.subagent?.summary ?? tool.output;
-  if (summary && !tool.running) {
-    height += 1;
-  }
-  if (tool.output && tool.running) {
-    height += Math.min(3, tool.output.split("\n").length);
-  }
-  if (tool.subagent?.tools.length) {
-    if (tool.subagent.tools.length > 5) {
-      height += 1;
-    }
-    height += Math.min(5, tool.subagent.tools.length);
-  }
-  return height;
-}
-function countWrappedLines(text, width) {
+function countWrappedLines2(text, width) {
   if (!text) return 1;
   return text.split("\n").reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0);
 }
-function resolveEntryHeights(entries, width, measuredHeights) {
-  return entries.map((entry) => measuredHeights.get(entry.id) ?? estimateEntryHeight(entry, width));
+function resolveEntryHeights(entries, width, measuredHeights, options = {}) {
+  return entries.map((entry) => {
+    const estimatedHeight = estimateEntryHeight(entry, width, options);
+    const measuredHeight = measuredHeights.get(entry.id);
+    if (measuredHeight === void 0) {
+      return estimatedHeight;
+    }
+    if (shouldPreferEstimatedHeight(entry)) {
+      return Math.max(measuredHeight, estimatedHeight);
+    }
+    return measuredHeight;
+  });
 }
 function scaleMeasuredHeights(measuredHeights, prevWidth, nextWidth) {
   if (prevWidth <= 0 || nextWidth <= 0 || prevWidth === nextWidth) {
@@ -34464,6 +34728,32 @@ function computeOffsets(heights) {
     offsets[index + 1] = linePos;
   }
   return offsets;
+}
+function shouldPreferEstimatedHeight(entry) {
+  switch (entry.type) {
+    case "assistantText":
+      return entry.streaming;
+    case "thinking":
+      return true;
+    case "assistantToolBatch":
+      return hasActiveToolCall(entry.tools);
+    default:
+      return false;
+  }
+}
+function hasActiveToolCall(tools) {
+  return tools.some((tool) => {
+    if (tool.running) {
+      return true;
+    }
+    if (tool.subagent?.running) {
+      return true;
+    }
+    if (!tool.subagent?.tools.length) {
+      return false;
+    }
+    return hasActiveToolCall(tool.subagent.tools);
+  });
 }
 function computeVisibleWindow(offsets, offset, viewportSize, overscanRows = DEFAULT_OVERSCAN_ROWS) {
   const entryCount = Math.max(0, offsets.length - 1);
@@ -34588,11 +34878,12 @@ function useScroll(inputEvents, entryHeights, viewportSize) {
 
 // src/scroll/useMeasuredTranscript.ts
 var import_react26 = __toESM(require_react(), 1);
-function useMeasuredTranscript(entries, width) {
+function useMeasuredTranscript(entries, width, toolHistoryExpanded) {
   const measuredHeightsRef = (0, import_react26.useRef)(/* @__PURE__ */ new Map());
   const entryNodesRef = (0, import_react26.useRef)(/* @__PURE__ */ new Map());
   const refCacheRef = (0, import_react26.useRef)(/* @__PURE__ */ new Map());
   const previousWidthRef = (0, import_react26.useRef)(width);
+  const previousToolHistoryExpandedRef = (0, import_react26.useRef)(toolHistoryExpanded);
   const [version, setVersion] = (0, import_react26.useState)(0);
   if (previousWidthRef.current !== width) {
     scaleMeasuredHeights(
@@ -34628,6 +34919,25 @@ function useMeasuredTranscript(entries, width) {
       setVersion((currentVersion) => currentVersion + 1);
     }
   }, [entries]);
+  (0, import_react26.useEffect)(() => {
+    if (previousToolHistoryExpandedRef.current === toolHistoryExpanded) {
+      return;
+    }
+    previousToolHistoryExpandedRef.current = toolHistoryExpanded;
+    let cacheChanged = false;
+    for (const entry of entries) {
+      if (entry.type !== "assistantToolBatch") {
+        continue;
+      }
+      if (!measuredHeightsRef.current.delete(entry.id)) {
+        continue;
+      }
+      cacheChanged = true;
+    }
+    if (cacheChanged) {
+      setVersion((currentVersion) => currentVersion + 1);
+    }
+  }, [entries, toolHistoryExpanded]);
   (0, import_react26.useLayoutEffect)(() => {
     let cacheChanged = false;
     for (const [entryId, entryNode] of entryNodesRef.current) {
@@ -34648,8 +34958,13 @@ function useMeasuredTranscript(entries, width) {
     }
   });
   const entryHeights = (0, import_react26.useMemo)(
-    () => resolveEntryHeights(entries, width, measuredHeightsRef.current),
-    [entries, width, version]
+    () => resolveEntryHeights(
+      entries,
+      width,
+      measuredHeightsRef.current,
+      { toolHistoryExpanded }
+    ),
+    [entries, width, version, toolHistoryExpanded]
   );
   const measureRef = (0, import_react26.useCallback)((entryId) => {
     let entryRef = refCacheRef.current.get(entryId);
@@ -35327,44 +35642,29 @@ function InlineMarkdown({ text }) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: parts });
 }
 
-// src/components/toolBatch.ts
-function buildToolBatchDisplay(tools) {
-  const regularTools = tools.filter((tool) => !isSpawnAgentTool(tool));
-  const spawnedAgentTools = tools.filter(isSpawnAgentTool);
-  const orderedTools = [...regularTools, ...spawnedAgentTools];
-  return orderedTools.map(buildToolDisplay);
-}
-function isSpawnAgentTool(tool) {
-  return tool.name === "spawn_agent";
-}
-function formatSubagentLabel(subagent) {
-  const rawParts = [subagent.name.trim(), subagent.task.trim()];
-  const filledParts = rawParts.filter((part) => part.length > 0);
-  const uniqueParts = filledParts.filter((part, index) => {
-    return filledParts.indexOf(part) === index;
-  });
-  return uniqueParts.join(" - ") || "agent";
-}
-function buildToolDisplay(tool) {
-  return {
-    tool,
-    kind: isSpawnAgentTool(tool) ? "spawnedAgent" : "regular",
-    subagentLabel: tool.subagent ? formatSubagentLabel(tool.subagent) : void 0,
-    children: tool.subagent?.tools.map(buildToolDisplay) ?? []
-  };
-}
-
 // src/components/ToolCallView.tsx
 var import_react29 = __toESM(require_react(), 1);
 var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
 var BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF";
-function ToolCallView({ display, width, depth = 0 }) {
+function ToolCallView({ item, width, depth = 0 }) {
+  if (item.kind === "collapsedHistory") {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CollapsedToolHistoryView, { display: item, width, depth });
+  }
+  if (item.kind === "spawnedAgent") {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SpawnedAgentToolCallView, { display: item, width, depth });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(RegularToolCallView, { display: item, width, depth });
+}
+function RegularToolCallView({
+  display,
+  width,
+  depth
+}) {
   const { tool } = display;
   const displayName = TOOL_NAMES[tool.name] ?? tool.name;
-  const param = extractParam(tool.name, tool.args);
+  const param = extractToolParam(tool.name, tool.args);
   const summary = getToolSummary(tool);
-  const nestedWidth = Math.max(24, width - 2);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: displayName }),
@@ -35375,8 +35675,7 @@ function ToolCallView({ display, width, depth = 0 }) {
       ] })
     ] }),
     summary && !tool.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolResultSummary, { output: summary, toolName: tool.name, width }),
-    tool.output && tool.running && !tool.subagent && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(StreamingToolOutput, { output: tool.output, width }),
-    display.kind === "spawnedAgent" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SpawnedAgentView, { display, width: nestedWidth, depth: depth + 1 })
+    tool.output && tool.running && !tool.subagent && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(StreamingToolOutput, { output: tool.output, width })
   ] });
 }
 function getToolSummary(tool) {
@@ -35386,36 +35685,80 @@ function getToolSummary(tool) {
   return tool.output;
 }
 function StreamingToolOutput({ output, width }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", children: output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, flexDirection: "column", flexShrink: 0, children: output.split("\n").slice(-3).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(line, width - 6) }, i)) });
 }
-function SpawnedAgentView({
+function SpawnedAgentToolCallView({
   display,
   width,
   depth
 }) {
+  const tool = display.tool;
+  const displayName = TOOL_NAMES[tool.name] ?? tool.name;
+  const param = extractToolParam(tool.name, tool.args);
+  const nestedWidth = Math.max(24, width - 2);
   const subagent = display.tool.subagent;
   if (!subagent) {
     return null;
   }
-  const showWaitingState = subagent.running && display.children.length === 0 && !subagent.summary;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, children: [
+  const showWaitingState = subagent.running && display.children.length === 0 && !display.collapsedChildren && !subagent.summary;
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "cyan", bold: true, children: display.subagentLabel ?? "agent" }),
-      subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " (running)" }),
-      subagent.isError && !subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "red", children: " (failed)" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolDot, { tool }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, children: displayName }),
+      param && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+        " (",
+        truncate(param, width - displayName.length - 8),
+        ")"
+      ] })
     ] }),
-    showWaitingState && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "waiting for tool activity" }) }),
-    display.children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      ToolCallView,
-      {
-        display: child,
-        width,
-        depth
-      },
-      child.tool.callId
-    )),
-    subagent.summary && !subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolResultSummary, { output: subagent.summary, toolName: display.tool.name, width })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginLeft: 2, flexShrink: 0, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "cyan", bold: true, children: display.subagentLabel ?? "agent" }),
+        subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " (running)" }),
+        subagent.isError && !subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "red", children: " (failed)" })
+      ] }),
+      showWaitingState && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "waiting for tool activity" }) }),
+      display.collapsedChildren && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        ToolCallView,
+        {
+          item: display.collapsedChildren,
+          width: nestedWidth,
+          depth: depth + 1
+        }
+      ),
+      display.children.map((child) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        ToolCallView,
+        {
+          item: child,
+          width: nestedWidth,
+          depth: depth + 1
+        },
+        child.kind === "collapsedHistory" ? child.id : child.tool.callId
+      )),
+      subagent.summary && !subagent.running && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolResultSummary, { output: subagent.summary, toolName: display.tool.name, width: nestedWidth })
+    ] })
+  ] });
+}
+function CollapsedToolHistoryView({
+  display,
+  width,
+  depth
+}) {
+  const dotState = {
+    running: display.running,
+    isError: display.isError
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, marginTop: 1, marginLeft: depth > 0 ? 2 : 0, flexShrink: 0, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ToolStateDot, { running: dotState.running, isError: dotState.isError }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: display.summary }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: " (ctrl+o to expand)" })
+    ] }),
+    display.hint && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginLeft: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { dimColor: true, children: [
+      "\u21B3 ",
+      truncate(display.hint, width - 8)
+    ] }) })
   ] });
 }
 function ToolDot({ tool }) {
@@ -35429,6 +35772,23 @@ function ToolDot({ tool }) {
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: blink ? BLACK_CIRCLE : " " }) });
   }
   if (tool.isError) {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "red", children: BLACK_CIRCLE }) });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "green", children: BLACK_CIRCLE }) });
+}
+function ToolStateDot({ running, isError }) {
+  const [blink, setBlink] = import_react29.default.useState(true);
+  import_react29.default.useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = setInterval(() => setBlink((currentBlink) => !currentBlink), 500);
+    return () => clearInterval(timer);
+  }, [running]);
+  if (running) {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "yellow", children: blink ? BLACK_CIRCLE : " " }) });
+  }
+  if (isError) {
     return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "red", children: BLACK_CIRCLE }) });
   }
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: "green", children: BLACK_CIRCLE }) });
@@ -35462,7 +35822,7 @@ function ToolResultSummary({
   }
   const firstLine = output.split("\n").find((l) => l.trim().length > 0);
   if (!firstLine) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginLeft: 2, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { marginLeft: 2, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: "\u21B3 " }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { dimColor: true, children: truncate(firstLine.trim(), width - 6) })
   ] });
@@ -35500,31 +35860,6 @@ var TOOL_NAMES = {
   task_update: "TaskUpdate",
   task_output: "TaskOutput"
 };
-function extractParam(name, args) {
-  const KEY_MAP = {
-    bash: "command",
-    read: "path",
-    write: "path",
-    edit: "path",
-    multiedit: "path",
-    glob: "pattern",
-    grep: "pattern",
-    spawn_agent: "task",
-    haft_problem: "action",
-    haft_solution: "action",
-    haft_decision: "action",
-    haft_query: "action",
-    haft_note: "title",
-    web_search: "query"
-  };
-  const key = KEY_MAP[name];
-  if (!key) return null;
-  try {
-    return JSON.parse(args)[key] ?? null;
-  } catch {
-    return null;
-  }
-}
 function truncate(s, max) {
   if (max < 4) return "";
   if (s.length <= max) return s;
@@ -35533,9 +35868,9 @@ function truncate(s, max) {
 
 // src/components/AssistantToolBatchView.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
-function AssistantToolBatchView({ tools, width }) {
-  const display = buildToolBatchDisplay(tools);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", children: display.map((item) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolCallView, { display: item, width }, item.tool.callId)) });
+function AssistantToolBatchView({ tools, width, expanded }) {
+  const display = buildToolBatchDisplay(tools, { expanded });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: display.map((item) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ToolCallView, { item, width }, getToolBatchItemKey(item))) });
 }
 
 // src/components/ThinkingIndicator.tsx
@@ -35659,10 +35994,14 @@ function ThinkingIndicator({ model }) {
 // src/components/ChatView.tsx
 var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 var BLACK_CIRCLE2 = process.platform === "darwin" ? "\u23FA" : "\u25CF";
-function ChatView({ entries, width, measureRef }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", ref: measureRef?.(entry.id), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EntryBlock, { entry, width }) }, entry.id)) });
+function ChatView({ entries, width, toolHistoryExpanded, measureRef }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, ref: measureRef?.(entry.id), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EntryBlock, { entry, width, toolHistoryExpanded }) }, entry.id)) });
 }
-var EntryBlock = import_react31.default.memo(function EntryBlock2({ entry, width }) {
+var EntryBlock = import_react31.default.memo(function EntryBlock2({
+  entry,
+  width,
+  toolHistoryExpanded
+}) {
   switch (entry.type) {
     case "userPrompt":
       return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(UserPromptBlock, { text: entry.text, attachments: entry.attachments, width });
@@ -35671,7 +36010,7 @@ var EntryBlock = import_react31.default.memo(function EntryBlock2({ entry, width
     case "thinking":
       return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingBlock, { lines: entry.lines, hiddenCount: entry.hiddenCount });
     case "assistantToolBatch":
-      return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AssistantToolBatchView, { tools: entry.tools, width });
+      return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AssistantToolBatchView, { tools: entry.tools, width, expanded: toolHistoryExpanded });
     case "indicator":
       return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingIndicator, { model: entry.model });
     case "error":
@@ -35681,7 +36020,7 @@ var EntryBlock = import_react31.default.memo(function EntryBlock2({ entry, width
 function UserPromptBlock({ text, attachments, width }) {
   const content = ` \u276F ${text}`;
   const pad = Math.max(0, width - content.length);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { backgroundColor: "blackBright", children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: " \u276F" }),
       " ",
@@ -35696,7 +36035,7 @@ function UserPromptBlock({ text, attachments, width }) {
 }
 function AssistantTextBlock({ text, streaming, width }) {
   const contentWidth = Math.min(width - 4, 120);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "row", marginTop: 1, paddingX: 1, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexShrink: 0, minWidth: 2, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: BLACK_CIRCLE2 }) }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", flexShrink: 1, flexGrow: 1, children: [
       /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(MarkdownView, { text, width: contentWidth }),
@@ -35705,7 +36044,7 @@ function AssistantTextBlock({ text, streaming, width }) {
   ] });
 }
 function ThinkingBlock({ lines, hiddenCount }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginLeft: 3, flexShrink: 0, children: [
     hiddenCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "... (",
       hiddenCount,
@@ -35719,7 +36058,7 @@ function ThinkingBlock({ lines, hiddenCount }) {
   ] });
 }
 function ErrorBlock({ message }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "red", paddingX: 1, marginTop: 1, flexShrink: 0, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "red", bold: true, children: "Error" }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "red", children: message }),
     /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: "press esc to dismiss" })
@@ -35732,20 +36071,19 @@ function TranscriptViewport({
   entries,
   measureRef,
   viewport,
+  toolHistoryExpanded,
   width
 }) {
-  const topOffset = viewport.viewTop === 0 ? 0 : -viewport.viewTop;
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", marginTop: topOffset, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(TranscriptSpacer, { height: viewport.topSpacer }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ChatView, { entries, width, measureRef }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(TranscriptSpacer, { height: viewport.bottomSpacer })
-  ] });
-}
-function TranscriptSpacer({ height }) {
-  if (height <= 0) {
-    return null;
-  }
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { height, flexShrink: 0 });
+  const cropTop = Math.max(0, viewport.viewTop - viewport.topSpacer);
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -cropTop, flexShrink: 0, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+    ChatView,
+    {
+      entries,
+      width,
+      toolHistoryExpanded,
+      measureRef
+    }
+  ) });
 }
 
 // src/components/StatusBar.tsx
@@ -36489,6 +36827,7 @@ function App2({ client: client2, inputEvents }) {
   const height = stdout?.rows ?? 24;
   const [pickerMode, setPickerMode] = (0, import_react37.useState)(null);
   const [pickerItems, setPickerItems] = (0, import_react37.useState)([]);
+  const [toolHistoryExpanded, setToolHistoryExpanded] = (0, import_react37.useState)(false);
   const respondRef = (0, import_react37.useRef)(null);
   const inputRef = (0, import_react37.useRef)(null);
   const [queuedMessages, setQueuedMessages] = (0, import_react37.useState)([]);
@@ -36550,7 +36889,11 @@ function App2({ client: client2, inputEvents }) {
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
   const chatHeight = Math.max(5, height - BOTTOM_ROWS);
-  const { entryHeights, measureRef } = useMeasuredTranscript(transcript, width);
+  const { entryHeights, measureRef } = useMeasuredTranscript(
+    transcript,
+    width,
+    toolHistoryExpanded
+  );
   const { state: scrollState, scroll, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
     entryHeights,
@@ -36812,6 +37155,17 @@ function App2({ client: client2, inputEvents }) {
       openModelPicker();
       return;
     }
+    if (key.ctrl && input === "o") {
+      setToolHistoryExpanded((expanded) => {
+        const nextExpanded = !expanded;
+        dispatch({
+          type: "set.notification",
+          text: nextExpanded ? "Expanded tool history" : "Collapsed tool history"
+        });
+        return nextExpanded;
+      });
+      return;
+    }
     if (key.escape) {
       if (state.error) {
         dispatch({ type: "clear.error" });
@@ -36866,6 +37220,7 @@ function App2({ client: client2, inputEvents }) {
           entries: visibleEntries,
           measureRef,
           viewport: vw,
+          toolHistoryExpanded,
           width
         }
       )

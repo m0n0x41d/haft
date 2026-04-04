@@ -1,7 +1,13 @@
 import React from "react"
 import { Box, Text } from "ink"
 import type { ToolCall } from "../protocol/types.js"
-import type { ToolDisplay } from "./toolBatch.js"
+import type {
+  CollapsedToolGroupDisplay,
+  RegularToolDisplay,
+  SpawnedAgentToolDisplay,
+  ToolBatchItemDisplay,
+} from "./toolBatch.js"
+import { extractToolParam } from "./toolBatch.js"
 
 const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 
@@ -9,22 +15,41 @@ const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 // Tool calls use simple colored dot.
 
 interface Props {
-  display: ToolDisplay
+  item: ToolBatchItemDisplay
   width: number
   depth?: number
 }
 
 // ⎿ prefix (2 chars) + ToolDot + bold name + (params)
 // All aligned at paddingX={1} from parent
-export function ToolCallView({ display, width, depth = 0 }: Props) {
+export function ToolCallView({ item, width, depth = 0 }: Props) {
+  if (item.kind === "collapsedHistory") {
+    return <CollapsedToolHistoryView display={item} width={width} depth={depth} />
+  }
+
+  if (item.kind === "spawnedAgent") {
+    return <SpawnedAgentToolCallView display={item} width={width} depth={depth} />
+  }
+
+  return <RegularToolCallView display={item} width={width} depth={depth} />
+}
+
+function RegularToolCallView({
+  display,
+  width,
+  depth,
+}: {
+  display: RegularToolDisplay
+  width: number
+  depth: number
+}) {
   const { tool } = display
   const displayName = TOOL_NAMES[tool.name] ?? tool.name
-  const param = extractParam(tool.name, tool.args)
+  const param = extractToolParam(tool.name, tool.args)
   const summary = getToolSummary(tool)
-  const nestedWidth = Math.max(24, width - 2)
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0}>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
       {/* Header: dot Name (param) */}
       <Box>
         <ToolDot tool={tool} />
@@ -43,10 +68,6 @@ export function ToolCallView({ display, width, depth = 0 }: Props) {
       {tool.output && tool.running && !tool.subagent && (
         <StreamingToolOutput output={tool.output} width={width} />
       )}
-
-      {display.kind === "spawnedAgent" && (
-        <SpawnedAgentView display={display} width={nestedWidth} depth={depth + 1} />
-      )}
     </Box>
   )
 }
@@ -61,7 +82,7 @@ function getToolSummary(tool: ToolCall): string | undefined {
 
 function StreamingToolOutput({ output, width }: { output: string; width: number }) {
   return (
-    <Box marginLeft={2} flexDirection="column">
+    <Box marginLeft={2} flexDirection="column" flexShrink={0}>
       {output.split("\n").slice(-3).map((line, i) => (
         <Text key={i} dimColor>{truncate(line, width - 6)}</Text>
       ))}
@@ -69,49 +90,106 @@ function StreamingToolOutput({ output, width }: { output: string; width: number 
   )
 }
 
-function SpawnedAgentView({
+function SpawnedAgentToolCallView({
   display,
   width,
   depth,
 }: {
-  display: ToolDisplay
+  display: SpawnedAgentToolDisplay
   width: number
   depth: number
 }) {
+  const tool = display.tool
+  const displayName = TOOL_NAMES[tool.name] ?? tool.name
+  const param = extractToolParam(tool.name, tool.args)
+  const nestedWidth = Math.max(24, width - 2)
   const subagent = display.tool.subagent
 
   if (!subagent) {
     return null
   }
 
-  const showWaitingState = subagent.running && display.children.length === 0 && !subagent.summary
+  const showWaitingState =
+    subagent.running &&
+    display.children.length === 0 &&
+    !display.collapsedChildren &&
+    !subagent.summary
 
   return (
-    <Box flexDirection="column" marginLeft={2}>
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
       <Box>
-        <Text dimColor>{"\u21B3 "}</Text>
-        <Text color="cyan" bold>{display.subagentLabel ?? "agent"}</Text>
-        {subagent.running && <Text dimColor>{" (running)"}</Text>}
-        {subagent.isError && !subagent.running && <Text color="red">{" (failed)"}</Text>}
+        <ToolDot tool={tool} />
+        <Text bold>{displayName}</Text>
+        {param && (
+          <Text dimColor> ({truncate(param, width - displayName.length - 8)})</Text>
+        )}
       </Box>
 
-      {showWaitingState && (
-        <Box marginLeft={2}>
-          <Text dimColor>waiting for tool activity</Text>
+      <Box flexDirection="column" marginLeft={2} flexShrink={0}>
+        <Box>
+          <Text dimColor>{"\u21B3 "}</Text>
+          <Text color="cyan" bold>{display.subagentLabel ?? "agent"}</Text>
+          {subagent.running && <Text dimColor>{" (running)"}</Text>}
+          {subagent.isError && !subagent.running && <Text color="red">{" (failed)"}</Text>}
         </Box>
-      )}
 
-      {display.children.map((child) => (
-        <ToolCallView
-          key={child.tool.callId}
-          display={child}
-          width={width}
-          depth={depth}
-        />
-      ))}
+        {showWaitingState && (
+          <Box marginLeft={2}>
+            <Text dimColor>waiting for tool activity</Text>
+          </Box>
+        )}
 
-      {subagent.summary && !subagent.running && (
-        <ToolResultSummary output={subagent.summary} toolName={display.tool.name} width={width} />
+        {display.collapsedChildren && (
+          <ToolCallView
+            item={display.collapsedChildren}
+            width={nestedWidth}
+            depth={depth + 1}
+          />
+        )}
+
+        {display.children.map((child) => (
+          <ToolCallView
+            key={child.kind === "collapsedHistory" ? child.id : child.tool.callId}
+            item={child}
+            width={nestedWidth}
+            depth={depth + 1}
+          />
+        ))}
+
+        {subagent.summary && !subagent.running && (
+          <ToolResultSummary output={subagent.summary} toolName={display.tool.name} width={nestedWidth} />
+        )}
+      </Box>
+    </Box>
+  )
+}
+
+function CollapsedToolHistoryView({
+  display,
+  width,
+  depth,
+}: {
+  display: CollapsedToolGroupDisplay
+  width: number
+  depth: number
+}) {
+  const dotState = {
+    running: display.running,
+    isError: display.isError,
+  }
+
+  return (
+    <Box flexDirection="column" paddingX={1} marginTop={1} marginLeft={depth > 0 ? 2 : 0} flexShrink={0}>
+      <Box>
+        <ToolStateDot running={dotState.running} isError={dotState.isError} />
+        <Text dimColor>{display.summary}</Text>
+        <Text dimColor>{" (ctrl+o to expand)"}</Text>
+      </Box>
+
+      {display.hint && (
+        <Box marginLeft={2}>
+          <Text dimColor>{"\u21B3 "}{truncate(display.hint, width - 8)}</Text>
+        </Box>
       )}
     </Box>
   )
@@ -132,6 +210,29 @@ function ToolDot({ tool }: { tool: ToolCall }) {
   if (tool.isError) {
     return <Box minWidth={2}><Text color="red">{BLACK_CIRCLE}</Text></Box>
   }
+  return <Box minWidth={2}><Text color="green">{BLACK_CIRCLE}</Text></Box>
+}
+
+function ToolStateDot({ running, isError }: { running: boolean; isError: boolean }) {
+  const [blink, setBlink] = React.useState(true)
+
+  React.useEffect(() => {
+    if (!running) {
+      return
+    }
+
+    const timer = setInterval(() => setBlink((currentBlink) => !currentBlink), 500)
+    return () => clearInterval(timer)
+  }, [running])
+
+  if (running) {
+    return <Box minWidth={2}><Text color="yellow">{blink ? BLACK_CIRCLE : " "}</Text></Box>
+  }
+
+  if (isError) {
+    return <Box minWidth={2}><Text color="red">{BLACK_CIRCLE}</Text></Box>
+  }
+
   return <Box minWidth={2}><Text color="green">{BLACK_CIRCLE}</Text></Box>
 }
 
@@ -167,7 +268,7 @@ function ToolResultSummary({
   if (!firstLine) return null
 
   return (
-    <Box marginLeft={2}>
+    <Box marginLeft={2} flexShrink={0}>
       <Text dimColor>{"\u21B3 "}</Text>
       <Text dimColor>{truncate(firstLine.trim(), width - 6)}</Text>
     </Box>
@@ -185,18 +286,6 @@ const TOOL_NAMES: Record<string, string> = {
   lsp_diagnostics: "LSP", lsp_references: "LSP", lsp_restart: "LSP",
   task_create: "TaskCreate", task_get: "TaskGet", task_list: "TaskList",
   task_stop: "TaskStop", task_update: "TaskUpdate", task_output: "TaskOutput",
-}
-
-function extractParam(name: string, args: string): string | null {
-  const KEY_MAP: Record<string, string> = {
-    bash: "command", read: "path", write: "path", edit: "path", multiedit: "path",
-    glob: "pattern", grep: "pattern", spawn_agent: "task",
-    haft_problem: "action", haft_solution: "action", haft_decision: "action",
-    haft_query: "action", haft_note: "title", web_search: "query",
-  }
-  const key = KEY_MAP[name]
-  if (!key) return null
-  try { return JSON.parse(args)[key] ?? null } catch { return null }
 }
 
 function truncate(s: string, max: number): string {

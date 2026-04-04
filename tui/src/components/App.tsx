@@ -59,6 +59,7 @@ export function App({ client, inputEvents }: AppProps) {
 
   const [pickerMode, setPickerMode] = useState<PickerMode>(null)
   const [pickerItems, setPickerItems] = useState<PickerItem[]>([])
+  const [toolHistoryExpanded, setToolHistoryExpanded] = useState(false)
   const respondRef = useRef<((result: unknown) => void) | null>(null)
   const inputRef = useRef<InputAreaHandle>(null)
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
@@ -133,7 +134,11 @@ export function App({ client, inputEvents }: AppProps) {
 
   // --- L2: Scroll (measured line-based) ---
   const chatHeight = Math.max(5, height - BOTTOM_ROWS)
-  const { entryHeights, measureRef } = useMeasuredTranscript(transcript, width)
+  const { entryHeights, measureRef } = useMeasuredTranscript(
+    transcript,
+    width,
+    toolHistoryExpanded,
+  )
   const { state: scrollState, scroll, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
     entryHeights,
@@ -364,6 +369,17 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
     if (key.ctrl && input === "m") { openModelPicker(); return }
+    if (key.ctrl && input === "o") {
+      setToolHistoryExpanded((expanded) => {
+        const nextExpanded = !expanded
+        dispatch({
+          type: "set.notification",
+          text: nextExpanded ? "Expanded tool history" : "Collapsed tool history",
+        })
+        return nextExpanded
+      })
+      return
+    }
     // Escape: cancel streaming, clear error, or clear scroll
     if (key.escape) {
       if (state.error) { dispatch({ type: "clear.error" }); return }
@@ -396,6 +412,7 @@ export function App({ client, inputEvents }: AppProps) {
           entries={visibleEntries}
           measureRef={measureRef}
           viewport={vw}
+          toolHistoryExpanded={toolHistoryExpanded}
           width={width}
         />
       </Box>

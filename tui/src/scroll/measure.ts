@@ -3,12 +3,21 @@
 
 import type { ToolCall } from "../protocol/types.js"
 import type { TranscriptEntry } from "../state/transcript.js"
+import { estimateToolBatchDisplayHeight } from "../components/toolBatch.js"
 
 export const DEFAULT_OVERSCAN_ROWS = 8
 
+export interface EntryHeightOptions {
+  toolHistoryExpanded?: boolean
+}
+
 // Approximate terminal-row height of a single transcript entry.
 // Used until the mounted entry has a measured Yoga height.
-export function estimateEntryHeight(entry: TranscriptEntry, width: number): number {
+export function estimateEntryHeight(
+  entry: TranscriptEntry,
+  width: number,
+  options: EntryHeightOptions = {},
+): number {
   switch (entry.type) {
     case "userPrompt":
       return 1 + 1 + entry.attachments.length
@@ -22,7 +31,11 @@ export function estimateEntryHeight(entry: TranscriptEntry, width: number): numb
       return (entry.hiddenCount > 0 ? 1 : 0) + Math.max(1, entry.lines.length)
 
     case "assistantToolBatch":
-      return entry.tools.reduce((sum, tool) => sum + measureToolCall(tool), 0)
+      return estimateToolBatchDisplayHeight(
+        entry.tools,
+        width,
+        { expanded: options.toolHistoryExpanded ?? false },
+      )
 
     case "indicator":
       return 2
@@ -30,26 +43,6 @@ export function estimateEntryHeight(entry: TranscriptEntry, width: number): numb
     case "error":
       return 6
   }
-}
-
-function measureToolCall(tool: ToolCall): number {
-  let height = 2 // marginTop(1) + header(1)
-  const summary = tool.subagent?.summary ?? tool.output
-
-  if (summary && !tool.running) {
-    height += 1
-  }
-  if (tool.output && tool.running) {
-    height += Math.min(3, tool.output.split("\n").length)
-  }
-  if (tool.subagent?.tools.length) {
-    if (tool.subagent.tools.length > 5) {
-      height += 1
-    }
-    height += Math.min(5, tool.subagent.tools.length)
-  }
-
-  return height
 }
 
 // Count terminal rows for text, accounting for line wrapping at width boundary.
@@ -66,8 +59,22 @@ export function resolveEntryHeights(
   entries: readonly TranscriptEntry[],
   width: number,
   measuredHeights: ReadonlyMap<string, number>,
+  options: EntryHeightOptions = {},
 ): number[] {
-  return entries.map((entry) => measuredHeights.get(entry.id) ?? estimateEntryHeight(entry, width))
+  return entries.map((entry) => {
+    const estimatedHeight = estimateEntryHeight(entry, width, options)
+    const measuredHeight = measuredHeights.get(entry.id)
+
+    if (measuredHeight === undefined) {
+      return estimatedHeight
+    }
+
+    if (shouldPreferEstimatedHeight(entry)) {
+      return Math.max(measuredHeight, estimatedHeight)
+    }
+
+    return measuredHeight
+  })
 }
 
 export function scaleMeasuredHeights(
@@ -110,6 +117,37 @@ export function computeOffsets(heights: readonly number[]): number[] {
   }
 
   return offsets
+}
+
+function shouldPreferEstimatedHeight(entry: TranscriptEntry): boolean {
+  switch (entry.type) {
+    case "assistantText":
+      return entry.streaming
+    case "thinking":
+      return true
+    case "assistantToolBatch":
+      return hasActiveToolCall(entry.tools)
+    default:
+      return false
+  }
+}
+
+function hasActiveToolCall(tools: readonly ToolCall[]): boolean {
+  return tools.some((tool) => {
+    if (tool.running) {
+      return true
+    }
+
+    if (tool.subagent?.running) {
+      return true
+    }
+
+    if (!tool.subagent?.tools.length) {
+      return false
+    }
+
+    return hasActiveToolCall(tool.subagent.tools)
+  })
 }
 
 export interface VisibleWindow {

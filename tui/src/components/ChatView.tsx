@@ -14,22 +14,31 @@ const BLACK_CIRCLE = process.platform === "darwin" ? "\u23FA" : "\u25CF"
 interface Props {
   entries: readonly TranscriptEntry[]
   width: number
+  toolHistoryExpanded: boolean
   measureRef?: (entryId: string) => (node: DOMElement | null) => void
 }
 
-export function ChatView({ entries, width, measureRef }: Props) {
+export function ChatView({ entries, width, toolHistoryExpanded, measureRef }: Props) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" flexShrink={0}>
       {entries.map((entry) => (
-        <Box key={entry.id} flexDirection="column" ref={measureRef?.(entry.id)}>
-          <EntryBlock entry={entry} width={width} />
+        <Box key={entry.id} flexDirection="column" flexShrink={0} ref={measureRef?.(entry.id)}>
+          <EntryBlock entry={entry} width={width} toolHistoryExpanded={toolHistoryExpanded} />
         </Box>
       ))}
     </Box>
   )
 }
 
-const EntryBlock = React.memo(function EntryBlock({ entry, width }: { entry: TranscriptEntry; width: number }) {
+const EntryBlock = React.memo(function EntryBlock({
+  entry,
+  width,
+  toolHistoryExpanded,
+}: {
+  entry: TranscriptEntry
+  width: number
+  toolHistoryExpanded: boolean
+}) {
   switch (entry.type) {
     case "userPrompt":
       return <UserPromptBlock text={entry.text} attachments={entry.attachments} width={width} />
@@ -38,7 +47,7 @@ const EntryBlock = React.memo(function EntryBlock({ entry, width }: { entry: Tra
     case "thinking":
       return <ThinkingBlock lines={entry.lines} hiddenCount={entry.hiddenCount} />
     case "assistantToolBatch":
-      return <AssistantToolBatchView tools={entry.tools} width={width} />
+      return <AssistantToolBatchView tools={entry.tools} width={width} expanded={toolHistoryExpanded} />
     case "indicator":
       return <ThinkingIndicator model={entry.model} />
     case "error":
@@ -53,7 +62,7 @@ function UserPromptBlock({ text, attachments, width }: { text: string; attachmen
   const pad = Math.max(0, width - content.length)
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" marginTop={1} flexShrink={0}>
       <Box>
         <Text backgroundColor="blackBright">
           <Text dimColor>{" \u276F"}</Text> <Text bold>{text}</Text>{" ".repeat(pad)}
@@ -72,7 +81,7 @@ function AssistantTextBlock({ text, streaming, width }: { text: string; streamin
   const contentWidth = Math.min(width - 4, 120)
 
   return (
-    <Box flexDirection="row" marginTop={1} paddingX={1}>
+    <Box flexDirection="row" marginTop={1} paddingX={1} flexShrink={0}>
       <Box flexShrink={0} minWidth={2}>
         <Text>{BLACK_CIRCLE}</Text>
       </Box>
@@ -86,7 +95,7 @@ function AssistantTextBlock({ text, streaming, width }: { text: string; streamin
 
 function ThinkingBlock({ lines, hiddenCount }: { lines: string[]; hiddenCount: number }) {
   return (
-    <Box flexDirection="column" marginLeft={3}>
+    <Box flexDirection="column" marginLeft={3} flexShrink={0}>
       {hiddenCount > 0 && (
         <Text dimColor>{"... ("}{hiddenCount}{" lines hidden, press t to expand)"}</Text>
       )}
@@ -99,7 +108,7 @@ function ThinkingBlock({ lines, hiddenCount }: { lines: string[]; hiddenCount: n
 
 function ErrorBlock({ message }: { message: string }) {
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1} flexShrink={0}>
       <Text color="red" bold>Error</Text>
       <Text color="red">{message}</Text>
       <Text dimColor>press esc to dismiss</Text>

@@ -4,6 +4,7 @@ import type { TranscriptEntry } from "../state/transcript.js"
 import {
   computeOffsets,
   computeVisibleWindow,
+  estimateEntryHeight,
   findEntryIndexForLine,
   resolveEntryHeights,
   scaleMeasuredHeights,
@@ -43,6 +44,70 @@ test("falls back to estimated heights until an entry has been measured", () => {
   const heights = resolveEntryHeights(entries, 80, measuredHeights)
 
   assert.deepEqual(heights, [9, 2])
+})
+
+test("estimates collapsed tool batches from their displayed rows", () => {
+  const entry: TranscriptEntry = {
+    type: "assistantToolBatch",
+    id: "tools-1",
+    tools: [
+      {
+        callId: "bash-1",
+        name: "bash",
+        args: "{\"command\":\"git status\"}",
+        output: "ok",
+        running: false,
+      },
+      {
+        callId: "bash-2",
+        name: "bash",
+        args: "{\"command\":\"git diff --stat\"}",
+        output: "ok",
+        running: false,
+      },
+      {
+        callId: "bash-3",
+        name: "bash",
+        args: "{\"command\":\"git log --oneline -3\"}",
+        output: "ok",
+        running: false,
+      },
+    ],
+  }
+
+  assert.equal(estimateEntryHeight(entry, 80), 3)
+  assert.ok(estimateEntryHeight(entry, 80, { toolHistoryExpanded: true }) > 3)
+})
+
+test("prefers fresh estimates while active transcript entries are still growing", () => {
+  const entries: TranscriptEntry[] = [
+    {
+      type: "assistantText",
+      id: "assistant-1",
+      text: "alpha\nbeta\ngamma\ndelta",
+      streaming: true,
+    },
+    {
+      type: "assistantToolBatch",
+      id: "tools-1",
+      tools: [
+        {
+          callId: "bash-1",
+          name: "bash",
+          args: "{\"command\":\"git status\"}",
+          output: "line 1\nline 2\nline 3",
+          running: true,
+        },
+      ],
+    },
+  ]
+  const measuredHeights = new Map<string, number>([
+    ["assistant-1", 2],
+    ["tools-1", 2],
+  ])
+  const heights = resolveEntryHeights(entries, 80, measuredHeights)
+
+  assert.deepEqual(heights, [5, 5])
 })
 
 test("rescales cached measurements for terminal width changes", () => {

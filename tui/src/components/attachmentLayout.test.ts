@@ -4,6 +4,7 @@ import {
   buildAttachmentRows,
   clampAttachmentCursor,
   moveAttachmentCursor,
+  estimateAttachmentRows,
 } from "./attachmentLayout.js"
 
 test("wraps multiple attachment chips into visible rows", () => {
@@ -45,4 +46,21 @@ test("keeps attachment selection cursor in range after navigation and removal", 
   assert.equal(moveAttachmentCursor(1, "left", 3), 0)
   assert.equal(clampAttachmentCursor(2, 2), 1)
   assert.equal(clampAttachmentCursor(0, 0), 0)
+})
+
+test("counts wrapped rows for a single long attachment label", () => {
+  const rows = estimateAttachmentRows({
+    items: [
+      {
+        id: 1,
+        name: "averyverylongattachmentname.txt",
+        path: "/tmp/averyverylongattachmentname.txt",
+        isImage: false,
+      },
+    ],
+    selectionMode: false,
+    width: 14,
+  })
+
+  assert.equal(rows, 5)
 })

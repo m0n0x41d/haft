@@ -90,6 +90,26 @@ test("reserves wrapped attachment rows before the prompt for multiple images", (
   assert.equal(rows, 6)
 })
 
+test("includes wrapped long attachment names in the bottom budget", () => {
+  const bottomRows = computeBottomRows({
+    width: 14,
+    queuedMessages: [],
+    attachments: [
+      {
+        id: 1,
+        name: "averyverylongattachmentname.txt",
+        path: "/tmp/averyverylongattachmentname.txt",
+        isImage: false,
+      },
+    ],
+    attachmentSelection: false,
+    inputRows: estimateInputRows(""),
+    showInput: true,
+  })
+
+  assert.equal(bottomRows, 9)
+})
+
 test("includes wrapped empty-input queue hints in the bottom budget", () => {
   const inputRows = measureInputDisplayRows({
     text: "",

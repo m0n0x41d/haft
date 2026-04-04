@@ -43,7 +43,13 @@ export function buildAttachmentRows(options: BuildAttachmentRowsOptions): Attach
 }
 
 export function estimateAttachmentRows(options: Omit<BuildAttachmentRowsOptions, "selectedIndex">): number {
-  return buildAttachmentRows(options).length
+  const { width } = options
+  const contentWidth = Math.max(1, width - HORIZONTAL_PADDING)
+  const rows = buildAttachmentRows(options)
+
+  return rows
+    .map((row) => estimateRenderedAttachmentRowHeight(row, contentWidth))
+    .reduce((sum, height) => sum + height, 0)
 }
 
 export function moveAttachmentCursor(
@@ -117,6 +123,21 @@ function formatAttachmentLabel(item: AttachmentItem): string {
 
 function getHintText(selectionMode: boolean): string {
   return selectionMode ? SELECTION_HINT : DEFAULT_HINT
+}
+
+function estimateRenderedAttachmentRowHeight(
+  row: AttachmentRow,
+  contentWidth: number,
+): number {
+  if (row.type === "hint") {
+    return 1
+  }
+
+  const rowText = row.items
+    .map((item) => item.label)
+    .join(" ")
+
+  return wrapText(rowText, contentWidth).length
 }
 
 function wrapText(text: string, width: number): string[] {

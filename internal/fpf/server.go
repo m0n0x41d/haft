@@ -334,16 +334,40 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"non_dominated_set": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "(compare) Variant IDs on the Pareto front",
+						"description": "(compare) Advisory Pareto-front claim; runtime computes and stores the front from scores",
 					},
 					"dominated_variants": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]string{"type": "object"},
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"variant": map[string]string{
+									"type": "string",
+								},
+								"dominated_by": map[string]interface{}{
+									"type":  "array",
+									"items": map[string]string{"type": "string"},
+								},
+								"summary": map[string]string{
+									"type": "string",
+								},
+							},
+						},
 						"description": "(compare) Persisted elimination notes for dominated variants",
 					},
 					"pareto_tradeoffs": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]string{"type": "object"},
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"variant": map[string]string{
+									"type": "string",
+								},
+								"summary": map[string]string{
+									"type": "string",
+								},
+							},
+						},
 						"description": "(compare) Persisted trade-off notes for Pareto-front variants",
 					},
 					"policy_applied": map[string]string{

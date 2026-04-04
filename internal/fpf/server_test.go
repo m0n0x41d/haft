@@ -88,6 +88,48 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 		}
 	}
 
+	dominatedVariants, ok := compareSchema["dominated_variants"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("dominated_variants schema missing or wrong type: %#v", compareSchema["dominated_variants"])
+	}
+
+	dominatedItems, ok := dominatedVariants["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("dominated_variants items missing or wrong type: %#v", dominatedVariants["items"])
+	}
+
+	dominatedProperties, ok := dominatedItems["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("dominated_variants properties missing or wrong type: %#v", dominatedItems["properties"])
+	}
+
+	for _, key := range []string{"variant", "dominated_by", "summary"} {
+		if _, ok := dominatedProperties[key]; !ok {
+			t.Fatalf("expected dominated_variants item schema to expose %q", key)
+		}
+	}
+
+	paretoTradeoffs, ok := compareSchema["pareto_tradeoffs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("pareto_tradeoffs schema missing or wrong type: %#v", compareSchema["pareto_tradeoffs"])
+	}
+
+	paretoItems, ok := paretoTradeoffs["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("pareto_tradeoffs items missing or wrong type: %#v", paretoTradeoffs["items"])
+	}
+
+	paretoProperties, ok := paretoItems["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("pareto_tradeoffs properties missing or wrong type: %#v", paretoItems["properties"])
+	}
+
+	for _, key := range []string{"variant", "summary"} {
+		if _, ok := paretoProperties[key]; !ok {
+			t.Fatalf("expected pareto_tradeoffs item schema to expose %q", key)
+		}
+	}
+
 	selectedRef, ok := compareSchema["selected_ref"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("selected_ref schema missing or wrong type: %#v", compareSchema["selected_ref"])

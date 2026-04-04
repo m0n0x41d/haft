@@ -16,24 +16,31 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 
 ## Context-aware entry — read what the user actually wants
 
-**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. There are three distinct paths:
+**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. FPF reasoning and FPF artifact persistence are different things. There are four distinct paths:
 
 ### Path 1: Think and respond (no artifacts)
 **Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?"
 
 The user wants structured thinking, not tool calls. Reason through the problem using FPF principles (weakest link, parity, distinguish object/description/carrier, etc.). Give a well-structured answer. **Do not call Haft MCP tools** unless the user explicitly asks to persist something.
 
-### Path 2: Prepare for human-driven cycle (research + wait)
+This also applies when the user says things like "use FPF in your thinking". That means use FPF as a reasoning discipline, not automatically as an artifact workflow.
+
+### Path 2: Direct operational/artifact action (no FPF artifacts)
+**Trigger:** "save this as md", "make this a ranked list", "turn this into a checklist", "move this to .context", "summarize what you found"
+
+The user wants packaging, persistence, formatting, or summarization. Do the direct action with normal tools. **Do not call Haft MCP tools** just because the content concerns engineering.
+
+### Path 3: Prepare for human-driven cycle (research + wait)
 **Trigger:** "/h-reason [topic], prepare for framing", "let's think about X before deciding", "I want to reason through X"
 
 The user wants to drive the cycle themselves. Gather context (read relevant code, search existing decisions, research). Present findings. **Stop and wait** for the user to decide the next step — they will call `/h-frame`, `/h-char`, etc. when ready.
 
-### Path 3: Full autonomous cycle (agent drives)
+### Path 4: Full autonomous cycle (agent drives)
 **Trigger:** "/h-reason [topic] and implement", "figure out the best approach and do it", "fix everything", explicit delegation to agent
 
-The user wants the agent to run the full cycle: frame → explore → decide → implement. Only in this mode does the agent drive without pausing.
+The user wants the agent to run the full cycle: frame → explore → compare → decide → implement. Only in this mode does the agent drive without pausing.
 
-**If unclear which path:** default to Path 2 (prepare and wait). Never default to Path 3. Ask: "Want me to think this through and present options, or drive the full cycle and implement?"
+**If unclear which path:** default to Path 3 (prepare and wait). Never default to Path 4. Ask: "Want me to think this through and present options, do the direct artifact action, or drive the full cycle and implement?"
 
 ---
 
@@ -44,21 +51,33 @@ The user wants the agent to run the full cycle: frame → explore → decide →
 | Tool | What it does | Slash command |
 |------|-------------|---------------|
 | `haft_note` | Record micro-decisions with rationale validation | `/h-note` |
-| `haft_problem` | Frame problems; characterization is currently done inline in reasoning | `/h-frame`, `/h-char` |
+| `haft_problem` | Frame problems and persist characterization dimensions on the ProblemCard | `/h-frame`, `/h-char` |
 | `haft_solution` | Explore variants, compare and identify Pareto front | `/h-explore`, `/h-compare` |
 | `haft_decision` | Decide with formal rationale; record measurement results | `/h-decide` |
 | `haft_refresh` | Detect stale decisions, manage lifecycle | `/h-refresh` |
-| `haft_query` | Search, status dashboard, file-to-decision lookup | `/h-search`, `/h-status` |
+| `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec lookup | `/h-search`, `/h-status` |
 
-### FPF spec search — deep methodology reference
+### FPF spec lookup — prefer MCP when available
 
-```bash
-haft fpf search "<query>"        # keyword search
-haft fpf search "<query>" --full # full section content
-haft fpf section "<heading>"     # exact section
+In MCP-native clients, use `haft_query(action="fpf", query="...")` first. `query` is required. `limit`, `full`, and `explain` are optional.
+
+```text
+haft_query(action="fpf", query="A.6")
+haft_query(action="fpf", query="How do I route boundary statements?", limit=3, explain=true)
+haft_query(action="fpf", query="Boundary Norm Square", full=true)
 ```
 
-Use for formal FPF definitions, templates, aggregation rules, or conformance checklists.
+In shell-only environments, use the CLI:
+
+```bash
+haft fpf search "<query>"          # tiered retrieval: exact pattern id -> routes -> related -> keyword fallback
+haft fpf search "A.6"              # exact pattern lookup by pattern id
+haft fpf search "boundary routing" # route-aware natural-language lookup
+haft fpf search "<query>" --full   # full section content
+haft fpf section "<heading-or-id>" # exact heading or pattern id
+```
+
+Use exact pattern ids directly when you know them. Use route-style natural-language queries for concept lookup through the indexed spec. Use `--full` or `full=true` when you need the full section body instead of snippets.
 
 ---
 
@@ -127,7 +146,9 @@ Define the **characteristic space** before evaluating options. Without explicit 
 - Ensure **parity** — same inputs, same scope, same budget across all options (you enforce this, Quint stores your parity rules)
 - Keep it **multi-dimensional** — never collapse to a single score unless the fold is explicit
 
-**Persisting is not available as a separate step in the current runtime.** Define dimensions in reasoning, then include them in `haft_solution(action="compare", ...)`.
+**Persist with**: `haft_problem(action="characterize", problem_ref="...", dimensions=[...], parity_rules="...")`
+
+Define dimensions before `/h-explore` or `/h-compare`, then reuse the same characterized space during comparison instead of inventing dimensions mid-stream.
 
 > RAG: `haft fpf search "characterization CHR"`
 
@@ -200,7 +221,7 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 
 ## Proactive agent behavior
 
-When you have Quint tools available, use them **automatically** — don't wait for the user to ask.
+When you have Quint tools available, use them automatically only when the task actually calls for persisted reasoning artifacts. Availability of tools is not itself a reason to create artifacts.
 
 ### Auto-capture mode (always on)
 
@@ -246,6 +267,8 @@ These require explicit user action — don't auto-trigger:
 - `/h-compare` — parity comparison
 - `/h-decide` — formal decision record
 
+Direct operational requests should stay direct. Do not escalate them into `/h-frame` just because they touch engineering content.
+
 ### NavStrip interpretation
 
 The `── Quint ──` strip appended to tool responses shows current state and available actions. Key rules:
@@ -253,18 +276,24 @@ The `── Quint ──` strip appended to tool responses shows current state a
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
 - **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
 - **Fewer steps ≠ fewer checkpoints.** Tactical mode has fewer FPF steps but the same human consent requirement at each transition.
-- **Path 3 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through Available actions without pausing.
+- **Path 4 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through Available actions without pausing.
 
 ---
 
 ## RAG search reference
 
-Use `haft fpf search` when you need formal FPF definitions, templates, aggregation rules, conformance checklists, or patterns (A.*/B.*/C.*/F.*).
+Use MCP-native FPF lookup when tools are available. Fall back to `haft fpf` in shell-first environments. Reach for this when you need formal definitions, templates, aggregation rules, conformance checklists, or exact pattern-id lookup.
+
+```text
+haft_query(action="fpf", query="problem card PROB")
+haft_query(action="fpf", query="A.6", full=true)
+haft_query(action="fpf", query="How do I route boundary statements?", limit=3, explain=true)
+```
 
 ```bash
-haft fpf search "<query>"
-haft fpf search "<query>" --full
-haft fpf section "<heading>"
+haft fpf search "problem card PROB"
+haft fpf search "A.6" --full
+haft fpf section "A.6"
 ```
 
 ---

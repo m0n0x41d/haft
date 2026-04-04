@@ -6,7 +6,7 @@ description: "Define comparison dimensions for a framed problem"
 
 Define the characteristic space — what dimensions matter and how they're measured. Without this, comparisons are arbitrary.
 
-Current runtime does not persist characterization as a standalone artifact. Use this step to prepare comparison dimensions, then carry them into `/h-explore` and `/h-compare`.
+Current runtime persists characterization on the ProblemCard via `haft_problem(action="characterize")`. Define dimensions once, keep parity rules explicit, then carry that same characterized space into `/h-explore` and `/h-compare`.
 
 Recommended fields to define in your reasoning:
 - `name`: dimension name (e.g., "throughput", "ops complexity")

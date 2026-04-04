@@ -71,7 +71,7 @@ func ComputeNavState(ctx context.Context, store ArtifactStore, contextName strin
 		p := portfolios[0]
 		if PortfolioHasComparison(p) {
 			state.DerivedStatus = DerivedCompared
-			state.NextAction = `/h-decide (record decision)`
+			state.NextAction = `/h-decide (record the human's chosen variant)`
 		} else {
 			state.DerivedStatus = DerivedExploring
 			if p.Meta.Mode == ModeTactical || p.Meta.Mode == ModeNote {

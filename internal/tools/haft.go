@@ -300,9 +300,33 @@ Actions:
 				"scores":                      map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
 				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Pareto front variants (compare)"},
 				"incomparable":                map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "description": "Pairs that are intentionally incomparable (compare)"},
-				"selected_ref":                map[string]any{"type": "string", "description": "Advisory recommendation variant (compare); the human still chooses in delegated mode"},
-				"policy_applied":              map[string]any{"type": "string", "description": "Selection rule used (compare)"},
-				"parity_plan":                 parityPlanSchema("Structured parity plan for compare-time enforcement"),
+				"dominated_variants": map[string]any{
+					"type":        "array",
+					"description": "Persisted elimination reasoning for dominated variants (compare)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"variant":      map[string]any{"type": "string"},
+							"dominated_by": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"summary":      map[string]any{"type": "string"},
+						},
+					},
+				},
+				"pareto_tradeoffs": map[string]any{
+					"type":        "array",
+					"description": "Persisted trade-off notes for Pareto-front variants (compare)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"variant": map[string]any{"type": "string"},
+							"summary": map[string]any{"type": "string"},
+						},
+					},
+				},
+				"selected_ref":             map[string]any{"type": "string", "description": "Advisory recommendation variant (compare); the human still chooses in delegated mode"},
+				"recommendation_rationale": map[string]any{"type": "string", "description": "Why the recommendation is advised, separated from the human choice (compare)"},
+				"policy_applied":           map[string]any{"type": "string", "description": "Selection rule used (compare)"},
+				"parity_plan":              parityPlanSchema("Structured parity plan for compare-time enforcement"),
 			},
 			"required": []any{"action"},
 		},
@@ -402,10 +426,13 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	input.Results.Dimensions = jsonStrArray(args, "dimensions")
 	input.Results.NonDominatedSet = jsonStrArray(args, "non_dominated_set")
 	input.Results.SelectedRef = jsonStr(args, "selected_ref")
+	input.Results.RecommendationRationale = jsonStr(args, "recommendation_rationale")
 	input.Results.PolicyApplied = jsonStr(args, "policy_applied")
 
 	_ = jsonDecodeArg(args, "scores", &input.Results.Scores)
 	_ = jsonDecodeArg(args, "incomparable", &input.Results.Incomparable)
+	_ = jsonDecodeArg(args, "dominated_variants", &input.Results.DominatedVariants)
+	_ = jsonDecodeArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
 	if parityPlan, ok := jsonParityPlan(args, "parity_plan"); ok {
 		input.Results.ParityPlan = parityPlan
 	}
@@ -415,20 +442,15 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 		return agent.ToolResult{}, err
 	}
 
-	displayLines := []string{
-		"Comparison recorded.",
-		fmt.Sprintf("ID: %s", a.Meta.ID),
-		fmt.Sprintf("File: %s", filePath),
+	var display strings.Builder
+	display.WriteString("Comparison recorded.\n")
+	display.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	if filePath != "" {
+		display.WriteString(fmt.Sprintf("File: %s\n", filePath))
 	}
-	if input.Results.SelectedRef != "" {
-		displayLines = append(displayLines,
-			fmt.Sprintf("Recommendation (advisory): %s", input.Results.SelectedRef),
-			"Human choice remains open until decide.",
-		)
-	}
-	display := strings.Join(displayLines, "\n")
+	display.WriteString(present.ComparisonSummary(a))
 	return agent.ToolResult{
-		DisplayText: display,
+		DisplayText: display.String(),
 		Meta: &agent.ArtifactMeta{
 			Kind:                 "solution",
 			ArtifactRef:          a.Meta.ID,

@@ -1,6 +1,13 @@
 // Pure cursor-aware text editing. All functions: EditState -> EditState.
 // Cursor is a 0-based index — it sits BEFORE the character at that index.
 
+import {
+  findNextGraphemeBoundary,
+  findPreviousGraphemeBoundary,
+  normalizeGraphemeBoundaryLeft,
+  segmentGraphemes,
+} from "./graphemes.js"
+
 export type EditState = {
   readonly text: string
   readonly cursor: number
@@ -25,19 +32,21 @@ export const insertAt = (s: EditState, str: string): EditState => ({
 // --- Deletion ---
 
 export const deleteBack = (s: EditState): EditState =>
-  s.cursor === 0
+  currentBoundary(s.text, s.cursor) === 0
     ? s
     : {
-        text: s.text.slice(0, s.cursor - 1) + s.text.slice(s.cursor),
-        cursor: s.cursor - 1,
+        text: s.text.slice(0, previousBoundary(s.text, s.cursor))
+          + s.text.slice(currentBoundary(s.text, s.cursor)),
+        cursor: previousBoundary(s.text, s.cursor),
       }
 
 export const deleteForward = (s: EditState): EditState =>
-  s.cursor >= s.text.length
+  currentBoundary(s.text, s.cursor) >= s.text.length
     ? s
     : {
-        text: s.text.slice(0, s.cursor) + s.text.slice(s.cursor + 1),
-        cursor: s.cursor,
+        text: s.text.slice(0, currentBoundary(s.text, s.cursor))
+          + s.text.slice(nextBoundary(s.text, s.cursor)),
+        cursor: currentBoundary(s.text, s.cursor),
       }
 
 const isWordChar = (ch: string): boolean =>
@@ -54,10 +63,14 @@ export const deleteWordBack = (s: EditState): EditState => {
 // --- Movement ---
 
 export const moveLeft = (s: EditState): EditState =>
-  s.cursor === 0 ? s : { ...s, cursor: s.cursor - 1 }
+  currentBoundary(s.text, s.cursor) === 0
+    ? s
+    : { ...s, cursor: previousBoundary(s.text, s.cursor) }
 
 export const moveRight = (s: EditState): EditState =>
-  s.cursor >= s.text.length ? s : { ...s, cursor: s.cursor + 1 }
+  currentBoundary(s.text, s.cursor) >= s.text.length
+    ? s
+    : { ...s, cursor: nextBoundary(s.text, s.cursor) }
 
 export const moveHome = (s: EditState): EditState => {
   const lineStart = s.text.lastIndexOf("\n", s.cursor - 1) + 1
@@ -90,7 +103,32 @@ export const moveWordRight = (s: EditState): EditState => {
 export const cursorPosition = (
   s: EditState,
 ): { line: number; col: number } => {
-  const before = s.text.slice(0, s.cursor)
+  const before = s.text.slice(0, currentBoundary(s.text, s.cursor))
   const lines = before.split("\n")
-  return { line: lines.length - 1, col: lines[lines.length - 1]!.length }
+  const currentLine = lines[lines.length - 1] ?? ""
+  const col = segmentGraphemes(currentLine)
+    .reduce((width, grapheme) => width + grapheme.width, 0)
+
+  return { line: lines.length - 1, col }
+}
+
+function currentBoundary(
+  text: string,
+  cursor: number,
+): number {
+  return normalizeGraphemeBoundaryLeft(text, cursor)
+}
+
+function previousBoundary(
+  text: string,
+  cursor: number,
+): number {
+  return findPreviousGraphemeBoundary(text, currentBoundary(text, cursor))
+}
+
+function nextBoundary(
+  text: string,
+  cursor: number,
+): number {
+  return findNextGraphemeBoundary(text, currentBoundary(text, cursor))
 }

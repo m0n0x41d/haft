@@ -211,7 +211,11 @@ func TestComputeNavState_Compared(t *testing.T) {
 			Dimensions:      []string{"speed", "cost"},
 			Scores:          map[string]map[string]string{"Option A": {"speed": "fast", "cost": "high"}, "Option B": {"speed": "slow", "cost": "low"}},
 			NonDominatedSet: []string{"Option A", "Option B"},
-			PolicyApplied:   "optimize speed",
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Option A", Summary: "Higher speed, but higher cost."},
+				{Variant: "Option B", Summary: "Lower cost, but lower speed."},
+			},
+			PolicyApplied: "optimize speed",
 		},
 	})
 	if err != nil {
@@ -225,6 +229,9 @@ func TestComputeNavState_Compared(t *testing.T) {
 	}
 	if !strings.Contains(state.NextAction, "/h-decide") {
 		t.Errorf("NextAction should contain /h-decide, got %q", state.NextAction)
+	}
+	if !strings.Contains(state.NextAction, "human's chosen variant") {
+		t.Errorf("NextAction should make the human decision boundary explicit, got %q", state.NextAction)
 	}
 }
 
@@ -347,8 +354,19 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
 		PortfolioRef: sol.Meta.ID,
 		Results: ComparisonResult{
-			Dimensions: []string{"d1"}, NonDominatedSet: []string{"X"},
-			Scores: map[string]map[string]string{"X": {"d1": "good"}, "Y": {"d1": "ok"}},
+			Dimensions:      []string{"d1"},
+			NonDominatedSet: []string{"X"},
+			Scores:          map[string]map[string]string{"X": {"d1": "good"}, "Y": {"d1": "ok"}},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Y",
+					DominatedBy: []string{"X"},
+					Summary:     "Worse on the only compared dimension.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "X", Summary: "Best value on the compared dimension."},
+			},
 		},
 	})
 	if err != nil {

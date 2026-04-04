@@ -155,12 +155,19 @@ export function createInputRouter(
       const afterStart = str.slice(startIdx + PASTE_START.length)
       const endIdx = afterStart.indexOf(PASTE_END)
       if (endIdx >= 0) {
-        pasteBuffer = afterStart.slice(0, endIdx)
+        pasteBuffer = stripMouse(afterStart.slice(0, endIdx))
+        if (pasteBuffer.length > MAX_PASTE_BYTES) {
+          abortPaste()
+          return
+        }
         flushPaste()
         const afterEnd = afterStart.slice(endIdx + PASTE_END.length)
         if (afterEnd) processChunk(afterEnd)
       } else {
-        pasteBuffer = afterStart
+        pasteBuffer = stripMouse(afterStart)
+        if (pasteBuffer.length > MAX_PASTE_BYTES) {
+          abortPaste()
+        }
       }
       return
     }

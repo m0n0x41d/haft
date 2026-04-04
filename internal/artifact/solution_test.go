@@ -236,8 +236,20 @@ func TestCompareSolutions_Success(t *testing.T) {
 				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low", "cost": "$100"},
 			},
 			NonDominatedSet: []string{"Kafka", "NATS"},
-			PolicyApplied:   "Minimize ops complexity at sufficient throughput (>50k/s)",
-			SelectedRef:     "NATS",
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"NATS"},
+					Summary:     "Lower throughput with no compensating simplicity or cost advantage over NATS.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but accepts the highest ops complexity and cost."},
+				{Variant: "NATS", Summary: "Minimizes ops complexity and cost, but gives up throughput headroom."},
+			},
+			PolicyApplied:           "Minimize ops complexity at sufficient throughput (>50k/s)",
+			SelectedRef:             "NATS",
+			RecommendationRationale: "NATS clears the throughput floor while minimizing operational burden.",
 		},
 	}
 
@@ -255,11 +267,225 @@ func TestCompareSolutions_Success(t *testing.T) {
 	if !strings.Contains(a.Body, "Kafka, NATS") {
 		t.Error("missing Pareto front members")
 	}
-	if !strings.Contains(a.Body, "**Recommended:** NATS") {
+	if !strings.Contains(a.Body, "## Dominated Variant Elimination") {
+		t.Error("missing dominated variant elimination section")
+	}
+	if !strings.Contains(a.Body, "## Pareto Front Trade-Offs") {
+		t.Error("missing Pareto front trade-offs section")
+	}
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS") {
 		t.Error("missing recommendation")
+	}
+	if !strings.Contains(a.Body, "**Recommendation rationale:** NATS clears the throughput floor while minimizing operational burden.") {
+		t.Error("missing recommendation rationale")
 	}
 	if a.Meta.Version != 2 {
 		t.Errorf("version = %d, want 2 after comparison", a.Meta.Version)
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		t.Fatal("expected structured comparison payload")
+	}
+	if len(fields.Comparison.DominatedVariants) != 1 {
+		t.Fatalf("expected 1 dominated variant explanation, got %+v", fields.Comparison.DominatedVariants)
+	}
+	if len(fields.Comparison.ParetoTradeoffs) != 2 {
+		t.Fatalf("expected 2 Pareto trade-offs, got %+v", fields.Comparison.ParetoTradeoffs)
+	}
+}
+
+func TestCompareSolutions_RejectsMissingDominatedVariantExplanation(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse existing Redis footprint for the fastest rollout"),
+		},
+		NoSteppingStoneRationale: "All three options are evaluated as direct end-state candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "ops complexity"},
+			Scores: map[string]map[string]string{
+				"Kafka":         {"throughput": "200k/s", "ops complexity": "High"},
+				"NATS":          {"throughput": "100k/s", "ops complexity": "Low"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low"},
+			},
+			NonDominatedSet: []string{"Kafka"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Kafka"},
+					Summary:     "Lower throughput without enough operational upside.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but carries the highest operating burden."},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected dominated-variant coverage error")
+	}
+	if !strings.Contains(err.Error(), "dominated_variants must explain every compared variant outside the Pareto front") {
+		t.Fatalf("unexpected dominated-variant coverage error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "V3") {
+		t.Fatalf("expected missing dominated variant ID in error, got %v", err)
+	}
+}
+
+func TestCompareSolutions_RejectsDuplicateDominatedVariantExplanation(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse existing Redis footprint for the fastest rollout"),
+		},
+		NoSteppingStoneRationale: "All three options are evaluated as direct end-state candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "ops complexity"},
+			Scores: map[string]map[string]string{
+				"Kafka":         {"throughput": "200k/s", "ops complexity": "High"},
+				"NATS":          {"throughput": "100k/s", "ops complexity": "Low"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low"},
+			},
+			NonDominatedSet: []string{"Kafka"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Kafka"},
+					Summary:     "Lower throughput without enough operational upside.",
+				},
+				{
+					Variant:     "V2",
+					DominatedBy: []string{"Kafka"},
+					Summary:     "Repeated explanation should fail validation.",
+				},
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"Kafka"},
+					Summary:     "Lower throughput and no cost advantage over the front.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but carries the highest operating burden."},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate dominated-variant coverage error")
+	}
+	if !strings.Contains(err.Error(), "dominated_variants must explain each dominated variant exactly once") {
+		t.Fatalf("unexpected dominated-variant duplicate error: %v", err)
+	}
+}
+
+func TestCompareSolutions_RejectsMissingParetoTradeoff(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse existing Redis footprint for the fastest rollout"),
+		},
+		NoSteppingStoneRationale: "All three options are evaluated as direct end-state candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "ops complexity"},
+			Scores: map[string]map[string]string{
+				"Kafka":         {"throughput": "200k/s", "ops complexity": "High"},
+				"NATS":          {"throughput": "100k/s", "ops complexity": "Low"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low"},
+			},
+			NonDominatedSet: []string{"Kafka", "NATS"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"NATS"},
+					Summary:     "Lower throughput with no compensating simplicity or cost advantage over NATS.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but accepts the highest ops complexity."},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected Pareto trade-off coverage error")
+	}
+	if !strings.Contains(err.Error(), "pareto_tradeoffs must explain every Pareto-front variant") {
+		t.Fatalf("unexpected pareto trade-off coverage error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "V2") {
+		t.Fatalf("expected missing Pareto variant ID in error, got %v", err)
+	}
+}
+
+func TestCompareSolutions_RejectsDuplicateParetoTradeoff(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse existing Redis footprint for the fastest rollout"),
+		},
+		NoSteppingStoneRationale: "All three options are evaluated as direct end-state candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "ops complexity"},
+			Scores: map[string]map[string]string{
+				"Kafka":         {"throughput": "200k/s", "ops complexity": "High"},
+				"NATS":          {"throughput": "100k/s", "ops complexity": "Low"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low"},
+			},
+			NonDominatedSet: []string{"Kafka", "NATS"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"NATS"},
+					Summary:     "Lower throughput with no compensating simplicity or cost advantage over NATS.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but accepts the highest ops complexity."},
+				{Variant: "V1", Summary: "Repeated explanation should fail validation."},
+				{Variant: "NATS", Summary: "Minimizes ops complexity, but gives up throughput headroom."},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate Pareto trade-off error")
+	}
+	if !strings.Contains(err.Error(), "pareto_tradeoffs must explain each Pareto-front variant exactly once") {
+		t.Fatalf("unexpected pareto trade-off duplicate error: %v", err)
 	}
 }
 
@@ -449,7 +675,17 @@ func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 			Dimensions:      []string{"speed"},
 			Scores:          map[string]map[string]string{"A": {"speed": "fast"}, "B": {"speed": "slow"}},
 			NonDominatedSet: []string{"A"},
-			SelectedRef:     "A",
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "B",
+					DominatedBy: []string{"A"},
+					Summary:     "Lower speed with no offsetting advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "A", Summary: "Fastest option in the current comparison set."},
+			},
+			SelectedRef: "A",
 		},
 	})
 
@@ -460,7 +696,17 @@ func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 			Dimensions:      []string{"cost"},
 			Scores:          map[string]map[string]string{"A": {"cost": "high"}, "B": {"cost": "low"}},
 			NonDominatedSet: []string{"B"},
-			SelectedRef:     "B",
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher cost with no compensating advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest cost option in the current comparison set."},
+			},
+			SelectedRef: "B",
 		},
 	})
 
@@ -476,7 +722,7 @@ func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 	if !strings.Contains(a.Body, "cost") {
 		t.Error("missing new comparison dimension 'cost'")
 	}
-	if !strings.Contains(a.Body, "**Recommended:** B") {
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** B") {
 		t.Error("missing updated recommendation")
 	}
 }
@@ -550,6 +796,16 @@ func TestCompare_ErrorsOnMissingCharacterizedDimensions(t *testing.T) {
 				"Memcached": {"latency": "0.5ms"},
 			},
 			NonDominatedSet: []string{"Memcached"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis",
+					DominatedBy: []string{"Memcached"},
+					Summary:     "Higher latency with no offsetting benefit on the compared dimensions.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Memcached", Summary: "Wins the current comparison on latency."},
+			},
 		},
 	})
 	if err == nil {
@@ -602,6 +858,16 @@ func TestCompare_NoWarningsWhenFullCoverage(t *testing.T) {
 				"Memcached": {"latency": "0.5ms", "cost": "$50"},
 			},
 			NonDominatedSet: []string{"Memcached"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis",
+					DominatedBy: []string{"Memcached"},
+					Summary:     "Higher latency and higher cost than Memcached in this run.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Memcached", Summary: "Best latency and cost in the compared pair."},
+			},
 		},
 	})
 	if err != nil {
@@ -638,6 +904,16 @@ func TestCompare_WarnsWithoutParityPlanInStandardMode(t *testing.T) {
 			Dimensions:      []string{"speed"},
 			Scores:          map[string]map[string]string{"A": {"speed": "fast"}, "B": {"speed": "slow"}},
 			NonDominatedSet: []string{"A"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "B",
+					DominatedBy: []string{"A"},
+					Summary:     "Lower speed with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "A", Summary: "Best speed result among the compared variants."},
+			},
 		},
 	})
 	if err != nil {
@@ -684,6 +960,10 @@ func TestCompare_ErrorsOnAsymmetricScoring(t *testing.T) {
 				"CockroachDB": {"throughput": "100k/s"},
 			},
 			NonDominatedSet: []string{"Postgres", "CockroachDB"},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Postgres", Summary: "Lower cost, but lower throughput headroom."},
+				{Variant: "CockroachDB", Summary: "Higher throughput, but incomplete cost evidence in this fixture."},
+			},
 		},
 	})
 	if err == nil {
@@ -735,6 +1015,10 @@ func TestCompare_ParityChecklist(t *testing.T) {
 				"CockroachDB": {"throughput": "100k/s", "cost": "$800"},
 			},
 			NonDominatedSet: []string{"Postgres", "CockroachDB"},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Postgres", Summary: "Lower cost, but lower throughput headroom."},
+				{Variant: "CockroachDB", Summary: "Higher throughput, but materially higher cost."},
+			},
 		},
 	})
 	if err != nil {
@@ -962,6 +1246,10 @@ func TestCompare_WarnsOnExpiredDimensionMeasurement(t *testing.T) {
 				"B": {"latency": "5ms", "cost": "$200"},
 			},
 			NonDominatedSet: []string{"A", "B"},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "A", Summary: "Lower cost, but worse latency."},
+				{Variant: "B", Summary: "Lower latency, but higher cost."},
+			},
 		},
 	})
 	if err == nil {
@@ -1128,7 +1416,11 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 				"gRPC": {"latency": "18ms", "cost": "$180"},
 			},
 			NonDominatedSet: []string{"REST", "gRPC"},
-			SelectedRef:     "gRPC",
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "REST", Summary: "Lower cost, but higher latency."},
+				{Variant: "gRPC", Summary: "Lower latency, but higher cost."},
+			},
+			SelectedRef: "gRPC",
 		},
 	})
 	if err != nil {
@@ -1173,6 +1465,21 @@ func TestCompare_ErrorsWhenExploredVariantIsOmittedFromScores(t *testing.T) {
 				"B": {"latency": "15ms"},
 			},
 			NonDominatedSet: []string{"B"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher latency than B in the compared subset.",
+				},
+				{
+					Variant:     "C",
+					DominatedBy: []string{"B"},
+					Summary:     "Missing score should still require an elimination explanation.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest latency among the declared variants."},
+			},
 		},
 	})
 	if err == nil {
@@ -1241,8 +1548,9 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 		Variants: []Variant{
 			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
 			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse the existing Redis footprint for the fastest rollout"),
 		},
-		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
+		NoSteppingStoneRationale: "All options are direct implementation candidates.",
 	})
 
 	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
@@ -1252,16 +1560,29 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 			Scores: map[string]map[string]string{
 				"V1": {"throughput": "200k/s", "cost": "$800"},
 				"V2": {"throughput": "100k/s", "cost": "$200"},
+				"V3": {"throughput": "80k/s", "cost": "$250"},
 			},
 			NonDominatedSet: []string{"V1", "V2"},
-			SelectedRef:     "V2",
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"NATS"},
+					Summary:     "Lower throughput with no offsetting cost advantage over NATS.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Highest throughput, highest cost."},
+				{Variant: "NATS", Summary: "Lower cost, lower throughput headroom."},
+			},
+			SelectedRef:             "V2",
+			RecommendationRationale: "Use the lower-cost option when both remain on the frontier.",
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(a.Body, "**Recommended:** NATS") {
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS") {
 		t.Fatalf("expected human-readable recommended title, body: %s", a.Body)
 	}
 
@@ -1274,5 +1595,17 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 	}
 	if fields.Comparison.SelectedRef != "V2" {
 		t.Fatalf("expected structured comparison selected_ref to stay canonical, got %q", fields.Comparison.SelectedRef)
+	}
+	if got := fields.Comparison.DominatedVariants[0].Variant; got != "V3" {
+		t.Fatalf("expected dominated variant explanation to stay canonical, got %q", got)
+	}
+	if got := fields.Comparison.DominatedVariants[0].DominatedBy[0]; got != "V2" {
+		t.Fatalf("expected dominated_by alias to normalize to V2, got %q", got)
+	}
+	if got := fields.Comparison.ParetoTradeoffs[0].Variant; got != "V1" {
+		t.Fatalf("expected Pareto trade-off alias to normalize to V1, got %q", got)
+	}
+	if got := fields.Comparison.RecommendationRationale; got != "Use the lower-cost option when both remain on the frontier." {
+		t.Fatalf("unexpected recommendation rationale: %q", got)
 	}
 }

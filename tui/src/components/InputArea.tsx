@@ -26,6 +26,7 @@ import {
   currentText,
   isNavigating,
 } from "../input/history.js"
+import { segmentGraphemes } from "../input/graphemes.js"
 import {
   buildInputDisplayLayout,
   type InputDisplayRow,
@@ -273,9 +274,9 @@ function renderInputRow(row: InputDisplayRow): React.ReactNode {
 }
 
 function renderEditorRow(row: InputVisualRow): React.ReactNode {
-  const cursorColumn = row.cursorColumn
+  const cursorOffset = row.cursorOffset
 
-  if (cursorColumn === null) {
+  if (cursorOffset === null) {
     return (
       <>
         <Text>{row.prefix}</Text>
@@ -284,12 +285,12 @@ function renderEditorRow(row: InputVisualRow): React.ReactNode {
     )
   }
 
-  const beforeCursor = row.text.slice(0, cursorColumn)
-  const cursorChar = cursorColumn < row.text.length
-    ? row.text[cursorColumn]
-    : " "
-  const afterCursor = cursorColumn < row.text.length
-    ? row.text.slice(cursorColumn + 1)
+  const beforeCursor = row.text.slice(0, cursorOffset)
+  const afterCursorBoundary = row.text.slice(cursorOffset)
+  const cursorChar = segmentGraphemes(afterCursorBoundary)[0]?.text
+    ?? " "
+  const afterCursor = afterCursorBoundary.length > 0
+    ? afterCursorBoundary.slice(cursorChar.length)
     : ""
 
   return (

@@ -337,15 +337,29 @@ type PortfolioFields struct {
 	NoSteppingStoneRationale string            `json:"no_stepping_stone_rationale,omitempty"`
 }
 
+type DominatedVariantExplanation struct {
+	Variant     string   `json:"variant"`
+	DominatedBy []string `json:"dominated_by,omitempty"`
+	Summary     string   `json:"summary"`
+}
+
+type ParetoTradeoffNote struct {
+	Variant string `json:"variant"`
+	Summary string `json:"summary"`
+}
+
 // ComparisonResult holds the outcome of comparing variants.
 type ComparisonResult struct {
-	Dimensions      []string                     `json:"dimensions"`
-	Scores          map[string]map[string]string `json:"scores"` // variant_id -> dimension -> value
-	NonDominatedSet []string                     `json:"non_dominated_set"`
-	Incomparable    [][]string                   `json:"incomparable,omitempty"`
-	PolicyApplied   string                       `json:"policy_applied,omitempty"`
-	SelectedRef     string                       `json:"selected_ref,omitempty"`
-	ParityPlan      *ParityPlan                  `json:"parity_plan,omitempty"`
+	Dimensions              []string                      `json:"dimensions"`
+	Scores                  map[string]map[string]string  `json:"scores"` // variant_id -> dimension -> value
+	NonDominatedSet         []string                      `json:"non_dominated_set"`
+	Incomparable            [][]string                    `json:"incomparable,omitempty"`
+	DominatedVariants       []DominatedVariantExplanation `json:"dominated_variants,omitempty"`
+	ParetoTradeoffs         []ParetoTradeoffNote          `json:"pareto_tradeoffs,omitempty"`
+	PolicyApplied           string                        `json:"policy_applied,omitempty"`
+	SelectedRef             string                        `json:"selected_ref,omitempty"`
+	RecommendationRationale string                        `json:"recommendation_rationale,omitempty"`
+	ParityPlan              *ParityPlan                   `json:"parity_plan,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.

@@ -122,7 +122,7 @@ test("keeps a narrow image chip within the bottom budget", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 7)
+  assert.equal(bottomRows, 8)
 })
 
 test("includes wrapped empty-input queue hints in the bottom budget", () => {

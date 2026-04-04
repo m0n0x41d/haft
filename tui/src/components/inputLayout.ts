@@ -1,3 +1,8 @@
+import {
+  normalizeGraphemeBoundaryLeft,
+  segmentGraphemes,
+} from "../input/graphemes.js"
+
 const INPUT_PROMPT_PREFIX = "\u276F "
 const INPUT_CONTINUATION_PREFIX = "  "
 const INPUT_HORIZONTAL_PADDING = 2
@@ -7,13 +12,20 @@ const QUEUED_MESSAGES_HINT = "  Press up to edit queued messages"
 
 type CursorLocation = {
   line: number
-  column: number
+  offset: number
+}
+
+interface WrappedLineSegment {
+  text: string
+  start: number
+  end: number
+  width: number
 }
 
 export interface InputVisualRow {
   prefix: string
   text: string
-  cursorColumn: number | null
+  cursorOffset: number | null
 }
 
 export interface InputLayout {
@@ -29,6 +41,13 @@ export type InputDisplayRow =
 export interface InputDisplayLayout {
   contentWidth: number
   rows: InputDisplayRow[]
+}
+
+interface BuildInputDisplayLayoutOptions {
+  text: string
+  cursor: number
+  width: number
+  hasQueuedMessages: boolean
 }
 
 export function buildInputLayout(
@@ -62,16 +81,7 @@ export function measureInputRows(
   cursor: number,
   width: number,
 ): number {
-  const layout = buildInputLayout(text, cursor, width)
-
-  return layout.rows.length
-}
-
-interface BuildInputDisplayLayoutOptions {
-  text: string
-  cursor: number
-  width: number
-  hasQueuedMessages: boolean
+  return buildInputLayout(text, cursor, width).rows.length
 }
 
 export function buildInputDisplayLayout(
@@ -96,9 +106,7 @@ export function buildInputDisplayLayout(
 export function measureInputDisplayRows(
   options: BuildInputDisplayLayoutOptions,
 ): number {
-  const layout = buildInputDisplayLayout(options)
-
-  return layout.rows.length
+  return buildInputDisplayLayout(options).rows.length
 }
 
 function buildLogicalLineRows(
@@ -108,32 +116,32 @@ function buildLogicalLineRows(
   contentWidth: number,
 ): InputVisualRow[] {
   const segments = wrapLogicalLine(line, contentWidth)
-  const rows = segments.map((segment, segmentIndex) => ({
+  const editorRows = segments.map((segment, segmentIndex) => ({
     prefix: getRowPrefix(lineIndex, segmentIndex),
-    text: segment,
-    cursorColumn: getCursorColumn(
-      line,
+    text: segment.text,
+    cursorOffset: getCursorOffset(
       lineIndex,
       segmentIndex,
-      segments.length,
+      segments,
+      segment,
       cursorLocation,
-      contentWidth,
     ),
   }))
   const trailingCursorRows = needsTrailingCursorRow(
-    line,
     lineIndex,
-    cursorLocation,
+    line.length,
+    segments,
     contentWidth,
+    cursorLocation,
   )
     ? [{
         prefix: INPUT_CONTINUATION_PREFIX,
         text: "",
-        cursorColumn: 0,
+        cursorOffset: 0,
       }]
     : []
 
-  return [...rows, ...trailingCursorRows]
+  return [...editorRows, ...trailingCursorRows]
 }
 
 function buildEmptyInputDisplayLayout(
@@ -145,9 +153,12 @@ function buildEmptyInputDisplayLayout(
     ? QUEUED_MESSAGES_HINT
     : ""
   const firstRowHintWidth = Math.max(0, contentWidth - EMPTY_INPUT_CURSOR.length)
-  const firstRowHint = hint.slice(0, firstRowHintWidth)
+  const firstRowHint = firstRowHintWidth > 0
+    ? (wrapLogicalLine(hint, firstRowHintWidth)[0]?.text ?? "")
+    : ""
   const remainingHint = hint.slice(firstRowHint.length)
   const continuationRows = wrapLogicalLine(remainingHint, contentWidth)
+    .map((segment) => segment.text)
     .filter((text) => text.length > 0)
     .map((text) => ({
       kind: "hint",
@@ -172,77 +183,113 @@ function buildEmptyInputDisplayLayout(
 function wrapLogicalLine(
   line: string,
   contentWidth: number,
-): string[] {
+): WrappedLineSegment[] {
   if (line.length === 0) {
-    return [""]
+    return [{
+      text: "",
+      start: 0,
+      end: 0,
+      width: 0,
+    }]
   }
 
-  const segments: string[] = []
-  let start = 0
+  const graphemes = segmentGraphemes(line)
+  const segments: WrappedLineSegment[] = []
+  let segmentStart = 0
+  let segmentEnd = 0
+  let segmentWidth = 0
+  let segmentText = ""
 
-  while (start < line.length) {
-    const end = start + contentWidth
+  for (const grapheme of graphemes) {
+    const nextWidth = segmentWidth + grapheme.width
+    const shouldWrap = segmentText.length > 0 && nextWidth > contentWidth
 
-    segments.push(line.slice(start, end))
-    start = end
+    if (shouldWrap) {
+      segments.push({
+        text: segmentText,
+        start: segmentStart,
+        end: segmentEnd,
+        width: segmentWidth,
+      })
+      segmentStart = grapheme.start
+      segmentEnd = grapheme.end
+      segmentWidth = grapheme.width
+      segmentText = grapheme.text
+      continue
+    }
+
+    if (segmentText.length === 0) {
+      segmentStart = grapheme.start
+    }
+
+    segmentEnd = grapheme.end
+    segmentWidth = nextWidth
+    segmentText += grapheme.text
   }
+
+  segments.push({
+    text: segmentText,
+    start: segmentStart,
+    end: segmentEnd,
+    width: segmentWidth,
+  })
 
   return segments
 }
 
-function getCursorColumn(
-  line: string,
+function getCursorOffset(
   lineIndex: number,
   segmentIndex: number,
-  segmentCount: number,
+  segments: readonly WrappedLineSegment[],
+  segment: WrappedLineSegment,
   cursorLocation: CursorLocation,
-  contentWidth: number,
 ): number | null {
   if (lineIndex !== cursorLocation.line) {
     return null
   }
 
-  const segmentStart = segmentIndex * contentWidth
-  const isLastSegment = segmentIndex === segmentCount - 1
-  const segmentLimit = isLastSegment
-    ? line.length
-    : segmentStart + contentWidth
+  const isLastSegment = segmentIndex === segments.length - 1
+  const lineOffset = cursorLocation.offset
 
-  if (cursorLocation.column < segmentStart) {
+  if (lineOffset < segment.start) {
     return null
   }
 
-  if (cursorLocation.column < segmentLimit) {
-    return cursorLocation.column - segmentStart
-  }
-
-  if (!isLastSegment) {
+  if (lineOffset > segment.end) {
     return null
   }
 
-  if (line.length < segmentStart + contentWidth) {
-    return segmentLimit - segmentStart
+  if (lineOffset === segment.end && !isLastSegment) {
+    return null
   }
 
-  return null
+  const rowOffset = lineOffset - segment.start
+
+  return normalizeGraphemeBoundaryLeft(segment.text, rowOffset)
 }
 
 function needsTrailingCursorRow(
-  line: string,
   lineIndex: number,
-  cursorLocation: CursorLocation,
+  lineLength: number,
+  segments: readonly WrappedLineSegment[],
   contentWidth: number,
+  cursorLocation: CursorLocation,
 ): boolean {
   if (lineIndex !== cursorLocation.line) {
     return false
   }
 
-  if (line.length === 0) {
+  if (lineLength === 0) {
     return false
   }
 
-  return cursorLocation.column === line.length
-    && line.length % contentWidth === 0
+  if (cursorLocation.offset !== lineLength) {
+    return false
+  }
+
+  const lastSegment = segments[segments.length - 1]
+
+  return (lastSegment?.width ?? 0) >= contentWidth
 }
 
 function getRowPrefix(
@@ -266,7 +313,7 @@ function getCursorLocation(
 
   return {
     line: logicalLines.length - 1,
-    column: currentLine.length,
+    offset: currentLine.length,
   }
 }
 

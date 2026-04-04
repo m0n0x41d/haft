@@ -18,8 +18,11 @@ Use `haft_solution` tool with `action="compare"` and:
 - `dimensions`: comparison dimension names
 - `scores`: scores per variant — `{"V1": {"throughput": "100k/s", "cost": "$200"}}`
 - `non_dominated_set`: variant IDs on the Pareto front (REQUIRED)
+- `dominated_variants`: persisted elimination notes — `[{"variant":"V3","dominated_by":["V1"],"summary":"Lower throughput with no compensating cost or simplicity win."}]`
+- `pareto_tradeoffs`: persisted frontier trade-off notes — `[{"variant":"V1","summary":"Best throughput, but highest ops cost."}]`
 - `policy_applied`: selection policy that was used
 - `selected_ref`: advisory recommendation variant ID. In delegated reasoning this is not the human's selection; it is the candidate you recommend the human consider.
+- `recommendation_rationale`: why that advisory recommendation wins under the declared policy
 
 State the selection policy BEFORE seeing results. Ensure parity — same inputs, same scope across all options.
 

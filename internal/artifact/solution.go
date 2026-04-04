@@ -525,6 +525,46 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 			return result, fmt.Errorf("selected_ref %q has no score entry", input.Results.SelectedRef)
 		}
 	}
+	for _, note := range input.Results.DominatedVariants {
+		variantID := strings.TrimSpace(note.Variant)
+		if variantID == "" {
+			return result, fmt.Errorf("dominated_variants entry is missing variant")
+		}
+		if !containsString(comparedVariants, variantID) {
+			return result, fmt.Errorf("dominated_variants variant %q is outside the declared compare set", variantID)
+		}
+		if containsString(input.Results.NonDominatedSet, variantID) {
+			return result, fmt.Errorf("dominated_variants variant %q is on the Pareto front — move its explanation to pareto_tradeoffs", variantID)
+		}
+		if strings.TrimSpace(note.Summary) == "" {
+			return result, fmt.Errorf("dominated_variants variant %q is missing summary", variantID)
+		}
+		for _, dominator := range note.DominatedBy {
+			if !containsString(comparedVariants, dominator) {
+				return result, fmt.Errorf("dominated_by variant %q is outside the declared compare set", dominator)
+			}
+		}
+	}
+	for _, note := range input.Results.ParetoTradeoffs {
+		variantID := strings.TrimSpace(note.Variant)
+		if variantID == "" {
+			return result, fmt.Errorf("pareto_tradeoffs entry is missing variant")
+		}
+		if !containsString(input.Results.NonDominatedSet, variantID) {
+			return result, fmt.Errorf("pareto_tradeoffs variant %q is not on the Pareto front", variantID)
+		}
+		if strings.TrimSpace(note.Summary) == "" {
+			return result, fmt.Errorf("pareto_tradeoffs variant %q is missing summary", variantID)
+		}
+	}
+	if err := validateComparisonExplanationCoverage(
+		comparedVariants,
+		input.Results.NonDominatedSet,
+		input.Results.DominatedVariants,
+		input.Results.ParetoTradeoffs,
+	); err != nil {
+		return result, err
+	}
 	for _, pair := range input.Results.Incomparable {
 		for _, variantID := range pair {
 			if !containsString(comparedVariants, variantID) {
@@ -645,6 +685,32 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Pareto front:** %s\n\n",
 		strings.Join(displayVariantLabels(results.NonDominatedSet, displayLabels), ", ")))
 
+	if len(results.DominatedVariants) > 0 {
+		section.WriteString("## Dominated Variant Elimination\n\n")
+		for _, note := range results.DominatedVariants {
+			variantLabel := displayVariantLabel(note.Variant, displayLabels)
+			summary := strings.TrimSpace(note.Summary)
+			dominatedBy := strings.Join(displayVariantLabels(note.DominatedBy, displayLabels), ", ")
+			switch {
+			case dominatedBy != "":
+				section.WriteString(fmt.Sprintf("- %s — dominated by %s. %s\n", variantLabel, dominatedBy, summary))
+			default:
+				section.WriteString(fmt.Sprintf("- %s — %s\n", variantLabel, summary))
+			}
+		}
+		section.WriteString("\n")
+	}
+
+	if len(results.ParetoTradeoffs) > 0 {
+		section.WriteString("## Pareto Front Trade-Offs\n\n")
+		for _, note := range results.ParetoTradeoffs {
+			variantLabel := displayVariantLabel(note.Variant, displayLabels)
+			summary := strings.TrimSpace(note.Summary)
+			section.WriteString(fmt.Sprintf("- %s — %s\n", variantLabel, summary))
+		}
+		section.WriteString("\n")
+	}
+
 	if len(results.Incomparable) > 0 {
 		section.WriteString("**Incomparable pairs:**\n")
 		for _, pair := range results.Incomparable {
@@ -663,7 +729,11 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	}
 
 	if results.SelectedRef != "" {
-		section.WriteString(fmt.Sprintf("**Recommended:** %s\n\n", displayVariantLabel(results.SelectedRef, displayLabels)))
+		section.WriteString(fmt.Sprintf("**Recommendation (advisory):** %s\n\n", displayVariantLabel(results.SelectedRef, displayLabels)))
+	}
+
+	if strings.TrimSpace(results.RecommendationRationale) != "" {
+		section.WriteString(fmt.Sprintf("**Recommendation rationale:** %s\n\n", strings.TrimSpace(results.RecommendationRationale)))
 	}
 
 	// Strip existing comparison if present
@@ -963,6 +1033,103 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+func validateComparisonExplanationCoverage(
+	comparedVariants []string,
+	nonDominatedSet []string,
+	dominatedVariants []DominatedVariantExplanation,
+	paretoTradeoffs []ParetoTradeoffNote,
+) error {
+	expectedDominated := comparisonExplanationExpectations(comparedVariants, nonDominatedSet)
+	if err := validateDominatedVariantCoverage(expectedDominated, dominatedVariants); err != nil {
+		return err
+	}
+
+	expectedPareto := dedupeTrimmedStrings(nonDominatedSet)
+	if err := validateParetoTradeoffCoverage(expectedPareto, paretoTradeoffs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func comparisonExplanationExpectations(comparedVariants []string, nonDominatedSet []string) []string {
+	var expected []string
+	for _, variantID := range comparedVariants {
+		if containsString(nonDominatedSet, variantID) {
+			continue
+		}
+		expected = append(expected, strings.TrimSpace(variantID))
+	}
+	return dedupeTrimmedStrings(expected)
+}
+
+func validateDominatedVariantCoverage(expected []string, notes []DominatedVariantExplanation) error {
+	seen := make(map[string]int, len(notes))
+	for _, note := range notes {
+		variantID := strings.TrimSpace(note.Variant)
+		if variantID == "" {
+			continue
+		}
+		seen[variantID]++
+	}
+
+	if duplicates := duplicateComparisonExplanations(seen); len(duplicates) > 0 {
+		return fmt.Errorf("dominated_variants must explain each dominated variant exactly once; duplicate entries for: %s",
+			strings.Join(duplicates, ", "))
+	}
+	if missing := missingComparisonExplanations(expected, seen); len(missing) > 0 {
+		return fmt.Errorf("dominated_variants must explain every compared variant outside the Pareto front; missing: %s",
+			strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+func validateParetoTradeoffCoverage(expected []string, notes []ParetoTradeoffNote) error {
+	seen := make(map[string]int, len(notes))
+	for _, note := range notes {
+		variantID := strings.TrimSpace(note.Variant)
+		if variantID == "" {
+			continue
+		}
+		seen[variantID]++
+	}
+
+	if duplicates := duplicateComparisonExplanations(seen); len(duplicates) > 0 {
+		return fmt.Errorf("pareto_tradeoffs must explain each Pareto-front variant exactly once; duplicate entries for: %s",
+			strings.Join(duplicates, ", "))
+	}
+	if missing := missingComparisonExplanations(expected, seen); len(missing) > 0 {
+		return fmt.Errorf("pareto_tradeoffs must explain every Pareto-front variant; missing: %s",
+			strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+func duplicateComparisonExplanations(seen map[string]int) []string {
+	var duplicates []string
+	for variantID, count := range seen {
+		if count <= 1 {
+			continue
+		}
+		duplicates = append(duplicates, variantID)
+	}
+	sort.Strings(duplicates)
+	return duplicates
+}
+
+func missingComparisonExplanations(expected []string, seen map[string]int) []string {
+	var missing []string
+	for _, variantID := range expected {
+		if seen[variantID] == 0 {
+			missing = append(missing, variantID)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
 func portfolioVariantAliasMap(identities []portfolioVariantIdentity) map[string]string {
 	aliasMap := make(map[string]string)
 	for _, identity := range identities {
@@ -1180,11 +1347,14 @@ func cloneParityPlan(plan *ParityPlan) *ParityPlan {
 
 func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	cloned := &ComparisonResult{
-		Dimensions:      append([]string(nil), result.Dimensions...),
-		NonDominatedSet: append([]string(nil), result.NonDominatedSet...),
-		PolicyApplied:   result.PolicyApplied,
-		SelectedRef:     result.SelectedRef,
-		ParityPlan:      cloneParityPlan(result.ParityPlan),
+		Dimensions:              append([]string(nil), result.Dimensions...),
+		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
+		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
+		PolicyApplied:           result.PolicyApplied,
+		SelectedRef:             result.SelectedRef,
+		RecommendationRationale: result.RecommendationRationale,
+		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
 
 	for _, pair := range result.Incomparable {
@@ -1204,14 +1374,63 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	return cloned
 }
 
+func cloneDominatedVariantExplanations(notes []DominatedVariantExplanation) []DominatedVariantExplanation {
+	cloned := make([]DominatedVariantExplanation, 0, len(notes))
+	for _, note := range notes {
+		cloned = append(cloned, DominatedVariantExplanation{
+			Variant:     note.Variant,
+			DominatedBy: append([]string(nil), note.DominatedBy...),
+			Summary:     note.Summary,
+		})
+	}
+	return cloned
+}
+
+func cloneParetoTradeoffNotes(notes []ParetoTradeoffNote) []ParetoTradeoffNote {
+	cloned := make([]ParetoTradeoffNote, 0, len(notes))
+	for _, note := range notes {
+		cloned = append(cloned, ParetoTradeoffNote{
+			Variant: note.Variant,
+			Summary: note.Summary,
+		})
+	}
+	return cloned
+}
+
+func normalizeDominatedVariantExplanations(notes []DominatedVariantExplanation, aliasMap map[string]string) []DominatedVariantExplanation {
+	normalized := make([]DominatedVariantExplanation, 0, len(notes))
+	for _, note := range notes {
+		normalized = append(normalized, DominatedVariantExplanation{
+			Variant:     normalizeVariantReference(note.Variant, aliasMap),
+			DominatedBy: dedupeTrimmedStrings(normalizeVariantReferences(note.DominatedBy, aliasMap)),
+			Summary:     strings.TrimSpace(note.Summary),
+		})
+	}
+	return normalized
+}
+
+func normalizeParetoTradeoffNotes(notes []ParetoTradeoffNote, aliasMap map[string]string) []ParetoTradeoffNote {
+	normalized := make([]ParetoTradeoffNote, 0, len(notes))
+	for _, note := range notes {
+		normalized = append(normalized, ParetoTradeoffNote{
+			Variant: normalizeVariantReference(note.Variant, aliasMap),
+			Summary: strings.TrimSpace(note.Summary),
+		})
+	}
+	return normalized
+}
+
 func normalizeComparisonVariantReferences(result ComparisonResult, identities []portfolioVariantIdentity) (ComparisonResult, error) {
 	aliasMap := portfolioVariantAliasMap(identities)
 	normalized := ComparisonResult{
-		Dimensions:    append([]string(nil), result.Dimensions...),
-		Incomparable:  make([][]string, 0, len(result.Incomparable)),
-		PolicyApplied: result.PolicyApplied,
-		SelectedRef:   normalizeVariantReference(result.SelectedRef, aliasMap),
-		ParityPlan:    cloneParityPlan(result.ParityPlan),
+		Dimensions:              append([]string(nil), result.Dimensions...),
+		Incomparable:            make([][]string, 0, len(result.Incomparable)),
+		DominatedVariants:       normalizeDominatedVariantExplanations(result.DominatedVariants, aliasMap),
+		ParetoTradeoffs:         normalizeParetoTradeoffNotes(result.ParetoTradeoffs, aliasMap),
+		PolicyApplied:           result.PolicyApplied,
+		SelectedRef:             normalizeVariantReference(result.SelectedRef, aliasMap),
+		RecommendationRationale: strings.TrimSpace(result.RecommendationRationale),
+		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
 
 	normalized.NonDominatedSet = normalizeVariantReferences(result.NonDominatedSet, aliasMap)
@@ -1288,11 +1507,14 @@ func normalizeVariantReference(value string, aliasMap map[string]string) string 
 
 func normalizeComparisonResult(result ComparisonResult, comparedVariants []string) ComparisonResult {
 	normalized := ComparisonResult{
-		Dimensions:      append([]string(nil), result.Dimensions...),
-		NonDominatedSet: append([]string(nil), result.NonDominatedSet...),
-		PolicyApplied:   result.PolicyApplied,
-		SelectedRef:     result.SelectedRef,
-		ParityPlan:      cloneParityPlan(result.ParityPlan),
+		Dimensions:              append([]string(nil), result.Dimensions...),
+		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
+		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
+		PolicyApplied:           result.PolicyApplied,
+		SelectedRef:             result.SelectedRef,
+		RecommendationRationale: result.RecommendationRationale,
+		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
 
 	for _, pair := range result.Incomparable {

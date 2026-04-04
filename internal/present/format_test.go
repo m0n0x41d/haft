@@ -1,6 +1,7 @@
 package present_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -120,5 +121,64 @@ func TestProblemResponse_NoRecallWhenAbsent(t *testing.T) {
 
 	if strings.Contains(response, "Related History") {
 		t.Error("frame response should NOT show Related History when not in body")
+	}
+}
+
+func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
+	fields, err := json.Marshal(artifact.PortfolioFields{
+		Variants: []artifact.Variant{
+			{ID: "V1", Title: "Kafka"},
+			{ID: "V2", Title: "NATS"},
+			{ID: "V3", Title: "Redis Streams"},
+		},
+		Comparison: &artifact.ComparisonResult{
+			NonDominatedSet: []string{"V1", "V2"},
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "V3",
+					DominatedBy: []string{"V2"},
+					Summary:     "Lower throughput with no compensating operations win.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "V1", Summary: "Best throughput, but highest ops cost."},
+				{Variant: "V2", Summary: "Best ops simplicity, but lower headroom than Kafka."},
+			},
+			PolicyApplied:           "Minimize operations load above the throughput floor.",
+			SelectedRef:             "V2",
+			RecommendationRationale: "Meets the throughput floor while minimizing operational burden.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "sol-001",
+			Kind:  artifact.KindSolutionPortfolio,
+			Title: "Transport portfolio",
+		},
+		StructuredData: string(fields),
+	}
+
+	response := present.SolutionResponse("compare", a, "/tmp/sol.md", "\n-- nav --\n")
+
+	required := []string{
+		"File: /tmp/sol.md",
+		"Pareto front: Kafka, NATS",
+		"Dominated variant elimination:",
+		"Redis Streams: dominated by NATS. Lower throughput with no compensating operations win.",
+		"Pareto-front trade-offs:",
+		"Kafka: Best throughput, but highest ops cost.",
+		"Recommendation (advisory): NATS",
+		"Recommendation rationale: Meets the throughput floor while minimizing operational burden.",
+		"Human choice remains open until decide.",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(response, want) {
+			t.Fatalf("compare response missing %q:\n%s", want, response)
+		}
 	}
 }

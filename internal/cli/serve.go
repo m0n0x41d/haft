@@ -472,6 +472,11 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["selected_ref"].(string); ok {
 			input.Results.SelectedRef = v
 		}
+		if v, ok := args["recommendation_rationale"].(string); ok {
+			input.Results.RecommendationRationale = v
+		}
+		_ = parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants)
+		_ = parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
 		if input.PortfolioRef == "" {
 			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
 			if p != nil {
@@ -1103,6 +1108,24 @@ func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]ma
 		}
 	}
 	return result
+}
+
+func parseJSONArg(args map[string]any, key string, target any) bool {
+	value, ok := args[key]
+	if !ok {
+		return false
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+
+	if err := json.Unmarshal(data, target); err != nil {
+		return false
+	}
+
+	return true
 }
 
 // parseVariants handles MCP client serialization of the variants array.

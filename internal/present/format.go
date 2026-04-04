@@ -314,23 +314,149 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 	case "compare":
 		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", a.Meta.Title))
 		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
-
-		if idx := strings.Index(a.Body, "**Pareto front:**"); idx != -1 {
-			end := strings.Index(a.Body[idx:], "\n")
-			if end > 0 {
-				sb.WriteString(a.Body[idx:idx+end] + "\n")
-			}
+		if filePath != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
-		if idx := strings.Index(a.Body, "**Recommended:**"); idx != -1 {
-			end := strings.Index(a.Body[idx:], "\n")
-			if end > 0 {
-				sb.WriteString(a.Body[idx:idx+end] + "\n")
-			}
+		summary := ComparisonSummary(a)
+		if summary != "" {
+			sb.WriteString(summary)
 		}
 	}
 
 	sb.WriteString(navStrip)
 	return sb.String()
+}
+
+// ComparisonSummary builds a user-facing summary for a compared portfolio.
+func ComparisonSummary(a *artifact.Artifact) string {
+	if a == nil {
+		return ""
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison != nil {
+		return structuredComparisonSummary(*fields.Comparison, solutionVariantLabels(fields.Variants))
+	}
+
+	return legacyComparisonSummary(a.Body)
+}
+
+func structuredComparisonSummary(result artifact.ComparisonResult, labels map[string]string) string {
+	lines := make([]string, 0, 8)
+	paretoFront := strings.Join(displayComparisonVariantLabels(result.NonDominatedSet, labels), ", ")
+	if paretoFront != "" {
+		lines = append(lines, fmt.Sprintf("Pareto front: %s", paretoFront))
+	}
+
+	if len(result.DominatedVariants) > 0 {
+		lines = append(lines, "Dominated variant elimination:")
+		for _, note := range result.DominatedVariants {
+			variantLabel := displayComparisonVariantLabel(note.Variant, labels)
+			summary := strings.TrimSpace(note.Summary)
+			dominatedBy := strings.Join(displayComparisonVariantLabels(note.DominatedBy, labels), ", ")
+			switch {
+			case dominatedBy != "":
+				lines = append(lines, fmt.Sprintf("- %s: dominated by %s. %s", variantLabel, dominatedBy, summary))
+			default:
+				lines = append(lines, fmt.Sprintf("- %s: %s", variantLabel, summary))
+			}
+		}
+	}
+
+	if len(result.ParetoTradeoffs) > 0 {
+		lines = append(lines, "Pareto-front trade-offs:")
+		for _, note := range result.ParetoTradeoffs {
+			variantLabel := displayComparisonVariantLabel(note.Variant, labels)
+			lines = append(lines, fmt.Sprintf("- %s: %s", variantLabel, strings.TrimSpace(note.Summary)))
+		}
+	}
+
+	if strings.TrimSpace(result.PolicyApplied) != "" {
+		lines = append(lines, fmt.Sprintf("Selection policy: %s", strings.TrimSpace(result.PolicyApplied)))
+	}
+
+	if strings.TrimSpace(result.SelectedRef) != "" {
+		lines = append(lines, fmt.Sprintf("Recommendation (advisory): %s", displayComparisonVariantLabel(result.SelectedRef, labels)))
+		if strings.TrimSpace(result.RecommendationRationale) != "" {
+			lines = append(lines, fmt.Sprintf("Recommendation rationale: %s", strings.TrimSpace(result.RecommendationRationale)))
+		}
+		lines = append(lines, "Human choice remains open until decide.")
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func legacyComparisonSummary(body string) string {
+	lines := make([]string, 0, 2)
+	markers := []struct {
+		Needle string
+		Label  string
+	}{
+		{Needle: "**Pareto front:**", Label: "Pareto front:"},
+		{Needle: "**Recommendation (advisory):**", Label: "Recommendation (advisory):"},
+		{Needle: "**Recommended:**", Label: "Recommendation (advisory):"},
+	}
+
+	for _, marker := range markers {
+		idx := strings.Index(body, marker.Needle)
+		if idx == -1 {
+			continue
+		}
+
+		end := strings.Index(body[idx:], "\n")
+		if end <= 0 {
+			continue
+		}
+
+		value := strings.TrimSpace(strings.TrimPrefix(body[idx:idx+end], marker.Needle))
+		if value == "" {
+			continue
+		}
+
+		lines = append(lines, fmt.Sprintf("%s %s", marker.Label, value))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func solutionVariantLabels(variants []artifact.Variant) map[string]string {
+	labels := make(map[string]string, len(variants))
+	for _, variant := range variants {
+		title := strings.TrimSpace(variant.Title)
+		id := strings.TrimSpace(variant.ID)
+		if id != "" && title != "" {
+			labels[id] = title
+		}
+		if title != "" {
+			labels[title] = title
+		}
+	}
+	return labels
+}
+
+func displayComparisonVariantLabels(values []string, labels map[string]string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, displayComparisonVariantLabel(value, labels))
+	}
+	return result
+}
+
+func displayComparisonVariantLabel(value string, labels map[string]string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if label, ok := labels[trimmed]; ok {
+		return label
+	}
+	return trimmed
 }
 
 // MissingProblemResponse returns prescriptive guidance when problem is missing.

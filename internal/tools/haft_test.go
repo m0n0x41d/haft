@@ -131,8 +131,12 @@ func setupDecisionToolFixture(t *testing.T) decisionToolFixture {
 				"V2": {"latency": "18ms", "cost": "$180"},
 			},
 			NonDominatedSet: []string{"V1", "V2"},
-			SelectedRef:     "V2",
-			PolicyApplied:   "Minimize latency within budget.",
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "V1", Summary: "Lower cost, but higher latency."},
+				{Variant: "V2", Summary: "Lower latency, but higher cost."},
+			},
+			SelectedRef:   "V2",
+			PolicyApplied: "Minimize latency within budget.",
 		},
 	})
 	if err != nil {
@@ -472,7 +476,17 @@ func TestResolveComparedPortfolioRef_RequiresPersistedComparison(t *testing.T) {
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
-			SelectedRef:     "gRPC",
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
+			},
+			SelectedRef: "gRPC",
 		},
 	})
 	if err != nil {
@@ -526,7 +540,17 @@ func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) 
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
-			SelectedRef:     "gRPC",
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
+			},
+			SelectedRef: "gRPC",
 		},
 	})
 	if err != nil {
@@ -623,7 +647,17 @@ func TestHaftDecisionTool_DecideFailsWhenComparedRepairCannotPersist(t *testing.
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
-			SelectedRef:     "gRPC",
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
+			},
+			SelectedRef: "gRPC",
 		},
 	})
 	if err != nil {
@@ -708,7 +742,17 @@ func TestHaftDecisionTool_DecideRequiresSelectedVariantToMatchUserChoice(t *test
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
-			SelectedRef:     "gRPC",
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
+			},
+			SelectedRef: "gRPC",
 		},
 	})
 	if err != nil {

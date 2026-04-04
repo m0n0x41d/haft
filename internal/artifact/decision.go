@@ -22,26 +22,27 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef      string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
-	ProblemRefs     []string          `json:"problem_refs,omitempty"` // multiple problems
-	PortfolioRef    string            `json:"portfolio_ref,omitempty"`
-	SelectedTitle   string            `json:"selected_title"`
-	WhySelected     string            `json:"why_selected"`
-	WhyNotOthers    []RejectionReason `json:"why_not_others,omitempty"`
-	Invariants      []string          `json:"invariants,omitempty"`
-	PreConditions   []string          `json:"pre_conditions,omitempty"`
-	PostConditions  []string          `json:"post_conditions,omitempty"`
-	Admissibility   []string          `json:"admissibility,omitempty"`
-	EvidenceReqs    []string          `json:"evidence_requirements,omitempty"`
-	Rollback        *RollbackSpec     `json:"rollback,omitempty"`
-	RefreshTriggers []string          `json:"refresh_triggers,omitempty"`
-	WeakestLink     string            `json:"weakest_link,omitempty"`
-	ValidUntil      string            `json:"valid_until,omitempty"`
-	Context         string            `json:"context,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	AffectedFiles   []string          `json:"affected_files,omitempty"`
-	Predictions     []PredictionInput `json:"predictions,omitempty"`
-	SearchKeywords  string            `json:"search_keywords,omitempty"`
+	ProblemRef          string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
+	ProblemRefs         []string          `json:"problem_refs,omitempty"` // multiple problems
+	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
+	SelectedTitle       string            `json:"selected_title"`
+	WhySelected         string            `json:"why_selected"`
+	WhyNotOthers        []RejectionReason `json:"why_not_others,omitempty"`
+	Invariants          []string          `json:"invariants,omitempty"`
+	PreConditions       []string          `json:"pre_conditions,omitempty"`
+	PostConditions      []string          `json:"post_conditions,omitempty"`
+	Admissibility       []string          `json:"admissibility,omitempty"`
+	EvidenceReqs        []string          `json:"evidence_requirements,omitempty"`
+	Rollback            *RollbackSpec     `json:"rollback,omitempty"`
+	RefreshTriggers     []string          `json:"refresh_triggers,omitempty"`
+	WeakestLink         string            `json:"weakest_link,omitempty"`
+	ValidUntil          string            `json:"valid_until,omitempty"`
+	Context             string            `json:"context,omitempty"`
+	Mode                string            `json:"mode,omitempty"`
+	AffectedFiles       []string          `json:"affected_files,omitempty"`
+	Predictions         []PredictionInput `json:"predictions,omitempty"`
+	SearchKeywords      string            `json:"search_keywords,omitempty"`
+	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
 }
 
 // PredictionInput is a testable claim that measure should verify.
@@ -257,12 +258,13 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	}
 
 	sd, _ := json.Marshal(DecisionFields{
-		SelectedTitle: input.SelectedTitle,
-		WhySelected:   input.WhySelected,
-		WeakestLink:   input.WeakestLink,
-		Invariants:    input.Invariants,
-		PostConds:     input.PostConditions,
-		Admissibility: input.Admissibility,
+		SelectedTitle:       input.SelectedTitle,
+		WhySelected:         input.WhySelected,
+		WeakestLink:         input.WeakestLink,
+		Invariants:          input.Invariants,
+		PostConds:           input.PostConditions,
+		Admissibility:       input.Admissibility,
+		FirstModuleCoverage: input.FirstModuleCoverage,
 	})
 	a.StructuredData = string(sd)
 
@@ -943,11 +945,11 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		parts = append(parts, fmt.Sprintf("%d REFUTING", result.Refuting))
 	}
 	if result.MinFreshness != "" {
-		if t, err := time.Parse(time.RFC3339, result.MinFreshness); err == nil {
-			if t.Before(now) {
+		if expiry, ok := reff.ParseValidUntil(result.MinFreshness); ok {
+			if expiry.Before(now) {
 				parts = append(parts, "STALE evidence")
 			} else {
-				days := int(t.Sub(now).Hours() / 24)
+				days := int(expiry.Sub(now).Hours() / 24)
 				parts = append(parts, fmt.Sprintf("freshest expires in %dd", days))
 			}
 		}

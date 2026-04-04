@@ -184,12 +184,13 @@ type ProblemFields struct {
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	SelectedTitle string   `json:"selected_title"`
-	WhySelected   string   `json:"why_selected"`
-	WeakestLink   string   `json:"weakest_link,omitempty"`
-	Invariants    []string `json:"invariants,omitempty"`
-	PostConds     []string `json:"post_conditions,omitempty"`
-	Admissibility []string `json:"admissibility,omitempty"`
+	SelectedTitle       string   `json:"selected_title"`
+	WhySelected         string   `json:"why_selected"`
+	WeakestLink         string   `json:"weakest_link,omitempty"`
+	Invariants          []string `json:"invariants,omitempty"`
+	PostConds           []string `json:"post_conditions,omitempty"`
+	Admissibility       []string `json:"admissibility,omitempty"`
+	FirstModuleCoverage bool     `json:"first_module_coverage,omitempty"`
 }
 
 // UnmarshalProblemFields extracts structured fields from an artifact's StructuredData.

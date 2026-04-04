@@ -199,8 +199,8 @@ func LoadBoardData(store *artifact.Store, db *sql.DB, projectName, projectRoot s
 		if d.Meta.ValidUntil == "" {
 			continue
 		}
-		exp, err := time.Parse(time.RFC3339, d.Meta.ValidUntil)
-		if err != nil {
+		exp, ok := reff.ParseValidUntil(d.Meta.ValidUntil)
+		if !ok {
 			continue
 		}
 		daysLeft := int(exp.Sub(now).Hours() / 24)
@@ -326,8 +326,8 @@ func loadEvidenceStats(ctx context.Context, db *sql.DB, data *BoardData) {
 		}
 
 		if validUntil != "" {
-			exp, err := time.Parse(time.RFC3339, validUntil)
-			if err == nil && exp.Before(now) {
+			exp, ok := reff.ParseValidUntil(validUntil)
+			if ok && exp.Before(now) {
 				data.EvidenceExpired++
 			}
 		}

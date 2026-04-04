@@ -215,8 +215,8 @@ func buildExpiredStaleItem(a *Artifact, now time.Time) StaleItem {
 
 	if a.Meta.ValidUntil != "" {
 		item.ValidUntil = a.Meta.ValidUntil
-		validUntil, err := time.Parse(time.RFC3339, a.Meta.ValidUntil)
-		if err == nil && validUntil.Before(now) {
+		validUntil, ok := reff.ParseValidUntil(a.Meta.ValidUntil)
+		if ok && validUntil.Before(now) {
 			days := int(now.Sub(validUntil).Hours() / 24)
 			item.DaysStale = days
 			item.Reason = fmt.Sprintf(
@@ -336,8 +336,8 @@ func computeDecisionDebtBreakdown(ctx context.Context, store ArtifactStore, now 
 				continue
 			}
 
-			validUntil, err := time.Parse(time.RFC3339, item.ValidUntil)
-			if err != nil {
+			validUntil, ok := reff.ParseValidUntil(item.ValidUntil)
+			if !ok {
 				continue
 			}
 

@@ -505,3 +505,54 @@ func TestScanStale_EpistemicDebtBudgetExceeded(t *testing.T) {
 		t.Fatalf("reason should include decision breakdown, got %q", debtItem.Reason)
 	}
 }
+
+func TestScanStale_EpistemicDebtBudgetExceeded_DateOnlyEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO fpf_state (context_id, active_role, epistemic_debt_budget, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		"default", "decide", 1.0, time.Now().UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert fpf_state: %v", err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, DecideInput{
+		SelectedTitle: "Date-only evidence",
+		WhySelected:   "For testing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     decision.Meta.ID,
+		Content:         "evidence with date-only expiry",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2020-01-01",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range items {
+		if item.Category != StaleCategoryEpistemicDebtExceeded {
+			continue
+		}
+		if item.TotalED <= 0 {
+			t.Fatalf("expected positive debt for date-only expiry, got %+v", item)
+		}
+		return
+	}
+
+	t.Fatal("expected epistemic debt alert from date-only evidence")
+}

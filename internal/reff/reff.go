@@ -5,6 +5,7 @@ package reff
 
 import (
 	"math"
+	"strings"
 	"time"
 )
 
@@ -23,10 +24,8 @@ type EDBudgetAlert struct {
 // ScoreEvidence computes the effective reliability score for a single evidence item.
 // FPF B.3: R_eff = max(0, base_score - Φ(CL)), with decay override for expired evidence.
 func ScoreEvidence(verdict string, cl int, validUntil string, now time.Time) float64 {
-	if validUntil != "" {
-		if t, err := time.Parse(time.RFC3339, validUntil); err == nil && t.Before(now) {
-			return 0.1 // expired evidence is weak regardless of verdict (FPF B.3.4)
-		}
+	if expiry, ok := ParseValidUntil(validUntil); ok && expiry.Before(now) {
+		return 0.1 // expired evidence is weak regardless of verdict (FPF B.3.4)
 	}
 
 	base := VerdictToScore(verdict)
@@ -36,16 +35,54 @@ func ScoreEvidence(verdict string, cl int, validUntil string, now time.Time) flo
 
 // VerdictToScore maps evidence verdict to base reliability score.
 func VerdictToScore(verdict string) float64 {
-	switch verdict {
-	case "supports", "accepted":
+	switch strings.ToLower(strings.TrimSpace(verdict)) {
+	case "supports", "accepted", "pass":
 		return 1.0
-	case "weakens", "partial":
+	case "weakens", "partial", "degrade":
 		return 0.5
-	case "refutes", "failed":
+	case "refutes", "failed", "fail":
 		return 0.0
 	default:
 		return 0.5 // unknown verdict treated as weakening
 	}
+}
+
+// ParseValidUntil accepts RFC3339 timestamps and YYYY-MM-DD values.
+// Date-only inputs are interpreted as valid through the end of that UTC day.
+func ParseValidUntil(raw string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+
+	layouts := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999 -0700",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05 -0700",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, trimmed)
+		if err == nil {
+			return parsed.UTC(), true
+		}
+	}
+
+	dateOnly, err := time.Parse("2006-01-02", trimmed)
+	if err == nil {
+		year, month, day := dateOnly.Date()
+		endOfDay := time.Date(year, month, day, 23, 59, 59, 0, time.UTC)
+		return endOfDay, true
+	}
+
+	if monotonic := strings.Index(trimmed, " m="); monotonic != -1 {
+		return ParseValidUntil(trimmed[:monotonic])
+	}
+
+	return time.Time{}, false
 }
 
 // CLPenalty returns the congruence level penalty per FPF B.3.

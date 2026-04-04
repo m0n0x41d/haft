@@ -254,6 +254,28 @@ func TestCalculateReliability_FormalityNormalization(t *testing.T) {
 	}
 }
 
+func TestCalculateReliability_DateOnlyValidity(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, formality_level) VALUES ('e1', 'A', 'internal', 'pass', '2020-01-01', 2)",
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FinalScore != 0.1 {
+		t.Errorf("Expected expired date-only evidence to decay to 0.1, got %f", report.FinalScore)
+	}
+}
+
 func TestCalculateReliability_AcceptsArtifactVerdicts(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

@@ -38,7 +38,7 @@ type ComparisonDimension struct {
 	Polarity     string `json:"polarity,omitempty"` // higher_better, lower_better
 	Role         string `json:"role,omitempty"`     // constraint, target, observation (default: target)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
-	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339)
+	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339 or YYYY-MM-DD)
 }
 
 // BuildProblemArtifact constructs a ProblemCard from input. Pure — no side effects.

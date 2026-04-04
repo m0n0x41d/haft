@@ -548,10 +548,13 @@ func TestVerdictToScore(t *testing.T) {
 	}{
 		{"supports", 1.0},
 		{"accepted", 1.0},
+		{"pass", 1.0},
 		{"weakens", 0.5},
 		{"partial", 0.5},
+		{"degrade", 0.5},
 		{"refutes", 0.0},
 		{"failed", 0.0},
+		{"fail", 0.0},
 		{"unknown", 0.5},
 		{"", 0.5},
 	}
@@ -610,6 +613,18 @@ func TestScoreEvidence_Decay(t *testing.T) {
 	}
 	got = scoreEvidence(perpetual, now)
 	assertREff(t, got, 0.9) // 1.0 - 0.1 CL2 penalty
+}
+
+func TestScoreEvidence_Decay_DateOnly(t *testing.T) {
+	now := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+
+	expired := EvidenceItem{
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2026-06-01",
+	}
+	got := scoreEvidence(expired, now)
+	assertREff(t, got, 0.1)
 }
 
 func assertREff(t *testing.T, got, want float64) {

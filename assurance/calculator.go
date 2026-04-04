@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 type AssuranceReport struct {
@@ -50,7 +52,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	// B.3.4: Check for expired evidence + evidence source CL penalty
 	// C.2.3: F_eff = min(F_i) for all evidence (Formality level)
 	rows, err := c.DB.QueryContext(ctx,
-		"SELECT id, type, verdict, valid_until, COALESCE(formality_level, 5) FROM evidence WHERE holon_id = ?", holonID)
+		"SELECT id, type, verdict, COALESCE(valid_until, ''), COALESCE(formality_level, 5) FROM evidence WHERE holon_id = ?", holonID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +63,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
-		var validUntil *time.Time
+		var validUntil string
 		var formalityLevel int
 		if err := rows.Scan(&evidenceID, &evidenceType, &verdict, &validUntil, &formalityLevel); err != nil {
 			continue
@@ -69,7 +71,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		hasEvidence = true
 		_ = evidenceID // Used for potential future logging
 
-		score := scoreForVerdict(verdict)
+		score := reff.VerdictToScore(verdict)
 
 		// Evidence Source CL Penalty (B.3: external evidence has lower congruence)
 		// internal/audit_report → CL3 (0%), external → CL2 (10%)
@@ -80,7 +82,7 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 		}
 
 		// Evidence Decay Logic (B.3.4: time-based expiration)
-		if validUntil != nil && now.After(*validUntil) {
+		if expiry, ok := reff.ParseValidUntil(validUntil); ok && now.After(expiry) {
 			report.Factors = append(report.Factors, "Evidence expired (Decay applied)")
 			score = 0.1                // Penalty for expiration, not zero but close
 			report.DecayPenalty += 0.9 // Track how much was lost
@@ -205,19 +207,6 @@ func evidenceTypeToCLPenalty(evidenceType string) float64 {
 		return 0.4 // CL1: different context
 	default:
 		return 0.0 // Unknown type, no penalty
-	}
-}
-
-func scoreForVerdict(verdict string) float64 {
-	switch strings.ToLower(strings.TrimSpace(verdict)) {
-	case "pass", "accepted", "supports":
-		return 1.0
-	case "degrade", "partial", "weakens":
-		return 0.5
-	case "fail", "failed", "refutes":
-		return 0.0
-	default:
-		return 0.0
 	}
 }
 

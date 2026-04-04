@@ -72,10 +72,11 @@ Actions:
 							"polarity":       map[string]any{"type": "string"},
 							"role":           map[string]any{"type": "string"},
 							"how_to_measure": map[string]any{"type": "string"},
-							"valid_until":    map[string]any{"type": "string"},
+							"valid_until":    map[string]any{"type": "string", "description": "Dimension freshness deadline (RFC3339 or YYYY-MM-DD)"},
 						},
 					},
 				},
+				"parity_plan": parityPlanSchema("Structured parity plan for fair comparison (characterize)"),
 			},
 			"required": []any{"action"},
 		},
@@ -203,13 +204,9 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			ParityRules: jsonStr(args, "parity_rules"),
 		}
 
-		// Parse dimensions
-		if dims, ok := args["dimensions"]; ok {
-			data, _ := json.Marshal(dims)
-			var parsed []artifact.ComparisonDimension
-			if json.Unmarshal(data, &parsed) == nil {
-				input.Dimensions = parsed
-			}
+		_ = jsonDecodeArg(args, "dimensions", &input.Dimensions)
+		if parityPlan, ok := jsonParityPlan(args, "parity_plan"); ok {
+			input.ParityPlan = parityPlan
 		}
 
 		if len(input.Dimensions) == 0 {
@@ -273,24 +270,34 @@ Actions:
 				"portfolio_ref": map[string]any{"type": "string", "description": "Portfolio ID to compare (compare)"},
 				"variants": map[string]any{
 					"type":        "array",
-					"description": "Solution variants (explore). Each needs: title, description, weakest_link, strengths[], risks[]",
+					"description": "Solution variants (explore). Each needs title, weakest_link, and novelty_marker. If stepping_stone=true, stepping_stone_basis is required.",
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"title":          map[string]any{"type": "string"},
-							"description":    map[string]any{"type": "string"},
-							"weakest_link":   map[string]any{"type": "string"},
-							"strengths":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"risks":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"stepping_stone": map[string]any{"type": "boolean"},
+							"id":                   map[string]any{"type": "string"},
+							"title":                map[string]any{"type": "string"},
+							"description":          map[string]any{"type": "string"},
+							"weakest_link":         map[string]any{"type": "string"},
+							"novelty_marker":       map[string]any{"type": "string"},
+							"strengths":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"risks":                map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"stepping_stone":       map[string]any{"type": "boolean"},
+							"stepping_stone_basis": map[string]any{"type": "string"},
+							"diversity_role":       map[string]any{"type": "string"},
+							"assumption_notes":     map[string]any{"type": "string"},
+							"rollback_notes":       map[string]any{"type": "string"},
+							"evidence_refs":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
 					},
 				},
-				"dimensions":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Comparison dimensions (compare)"},
-				"scores":            map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
-				"non_dominated_set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Pareto front variants (compare)"},
-				"selected_ref":      map[string]any{"type": "string", "description": "Selected variant (compare)"},
-				"policy_applied":    map[string]any{"type": "string", "description": "Selection rule used (compare)"},
+				"no_stepping_stone_rationale": map[string]any{"type": "string", "description": "Required when no variant is a stepping stone"},
+				"dimensions":                  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Comparison dimensions (compare)"},
+				"scores":                      map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
+				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Pareto front variants (compare)"},
+				"incomparable":                map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "description": "Pairs that are intentionally incomparable (compare)"},
+				"selected_ref":                map[string]any{"type": "string", "description": "Selected variant (compare)"},
+				"policy_applied":              map[string]any{"type": "string", "description": "Selection rule used (compare)"},
+				"parity_plan":                 parityPlanSchema("Structured parity plan for compare-time enforcement"),
 			},
 			"required": []any{"action"},
 		},
@@ -350,18 +357,13 @@ func (t *HaftSolutionTool) Execute(ctx context.Context, argsJSON string) (agent.
 
 func (t *HaftSolutionTool) explore(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.ExploreInput{
-		ProblemRef: jsonStr(args, "problem_ref"),
-		Context:    jsonStr(args, "context"),
-		Mode:       jsonStr(args, "mode"),
+		ProblemRef:               jsonStr(args, "problem_ref"),
+		Context:                  jsonStr(args, "context"),
+		Mode:                     jsonStr(args, "mode"),
+		NoSteppingStoneRationale: jsonStr(args, "no_stepping_stone_rationale"),
 	}
 
-	if variants, ok := args["variants"]; ok {
-		data, _ := json.Marshal(variants)
-		var parsed []artifact.Variant
-		if json.Unmarshal(data, &parsed) == nil {
-			input.Variants = parsed
-		}
-	}
+	_ = jsonDecodeArg(args, "variants", &input.Variants)
 
 	if len(input.Variants) < 2 {
 		return agent.ToolResult{}, fmt.Errorf("at least 2 variants required for exploration")
@@ -397,12 +399,10 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	input.Results.SelectedRef = jsonStr(args, "selected_ref")
 	input.Results.PolicyApplied = jsonStr(args, "policy_applied")
 
-	if scores, ok := args["scores"]; ok {
-		data, _ := json.Marshal(scores)
-		var parsed map[string]map[string]string
-		if json.Unmarshal(data, &parsed) == nil {
-			input.Results.Scores = parsed
-		}
+	_ = jsonDecodeArg(args, "scores", &input.Results.Scores)
+	_ = jsonDecodeArg(args, "incomparable", &input.Results.Incomparable)
+	if parityPlan, ok := jsonParityPlan(args, "parity_plan"); ok {
+		input.Results.ParityPlan = parityPlan
 	}
 
 	a, filePath, err := artifact.CompareSolutions(ctx, t.store, t.haftDir, input)
@@ -478,7 +478,7 @@ Actions:
 					},
 				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
-				"valid_until":      map[string]any{"type": "string", "description": "Expiry date YYYY-MM-DD (decide)"},
+				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide)"},
 				"decision_ref":     map[string]any{"type": "string", "description": "Decision ID (measure)"},
 				"findings":         map[string]any{"type": "string", "description": "What was observed (measure)"},
 				"criteria_met":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Passing criteria (measure)"},
@@ -548,13 +548,16 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		}
 	}
 
+	gaps := t.coverageGaps(ctx, input.AffectedFiles)
+	input.FirstModuleCoverage = len(gaps) > 0
+
 	a, filePath, err := artifact.Decide(ctx, t.store, t.haftDir, input)
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
 
 	display := fmt.Sprintf("Decision recorded: %s\nID: %s\nFile: %s\nSelected: %s", a.Meta.Title, a.Meta.ID, filePath, input.SelectedTitle)
-	coverageWarnings := t.coverageWarnings(ctx, input.AffectedFiles)
+	coverageWarnings := formatCoverageWarnings(gaps)
 	if len(coverageWarnings) > 0 {
 		display += "\n\n" + strings.Join(coverageWarnings, "\n")
 	}
@@ -569,7 +572,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 	}, nil
 }
 
-func (t *HaftDecisionTool) coverageWarnings(ctx context.Context, affectedFiles []string) []string {
+func (t *HaftDecisionTool) coverageGaps(ctx context.Context, affectedFiles []string) []codebase.ModuleGovernanceGap {
 	if len(affectedFiles) == 0 {
 		return nil
 	}
@@ -580,10 +583,16 @@ func (t *HaftDecisionTool) coverageWarnings(ctx context.Context, affectedFiles [
 	}
 
 	gaps, err := codebase.FindFirstDecisionModules(ctx, dbStore.DB(), affectedFiles)
-	if err != nil || len(gaps) == 0 {
+	if err != nil {
 		return nil
 	}
+	return gaps
+}
 
+func formatCoverageWarnings(gaps []codebase.ModuleGovernanceGap) []string {
+	if len(gaps) == 0 {
+		return nil
+	}
 	warnings := make([]string, 0, len(gaps)*2)
 
 	for _, gap := range gaps {
@@ -950,4 +959,62 @@ func jsonStrArray(args map[string]any, key string) []string {
 		}
 	}
 	return nil
+}
+
+func jsonDecodeArg(args map[string]any, key string, target any) bool {
+	value, ok := args[key]
+	if !ok {
+		return false
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+
+	if err := json.Unmarshal(data, target); err != nil {
+		return false
+	}
+
+	return true
+}
+
+func jsonParityPlan(args map[string]any, key string) (*artifact.ParityPlan, bool) {
+	var plan artifact.ParityPlan
+	if !jsonDecodeArg(args, key, &plan) {
+		return nil, false
+	}
+
+	return &plan, true
+}
+
+func parityPlanSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "object",
+		"description": description,
+		"properties": map[string]any{
+			"baseline_set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"window":       map[string]any{"type": "string"},
+			"budget":       map[string]any{"type": "string"},
+			"missing_data_policy": map[string]any{
+				"type": "string",
+				"enum": []string{
+					artifact.MissingDataPolicyExplicitAbstain,
+					artifact.MissingDataPolicyZero,
+					artifact.MissingDataPolicyExclude,
+				},
+			},
+			"normalization": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"dimension": map[string]any{"type": "string"},
+						"method":    map[string]any{"type": "string"},
+					},
+				},
+			},
+			"pinned_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+	}
 }

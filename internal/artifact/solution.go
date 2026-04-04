@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // ExploreInput is the input for creating a SolutionPortfolio with variants.
@@ -808,21 +810,7 @@ func parityChecklistWarnings(dims []charDim) []string {
 }
 
 func parseComparisonExpiry(raw string) (time.Time, bool) {
-	if strings.TrimSpace(raw) == "" {
-		return time.Time{}, false
-	}
-
-	parsed, err := time.Parse(time.RFC3339, raw)
-	if err == nil {
-		return parsed, true
-	}
-
-	parsed, err = time.Parse("2006-01-02", raw)
-	if err == nil {
-		return parsed, true
-	}
-
-	return time.Time{}, false
+	return reff.ParseValidUntil(raw)
 }
 
 func characterizedDimensionsForProblem(problem *Artifact) []charDim {

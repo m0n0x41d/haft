@@ -257,6 +257,80 @@ func TestParseSpecCatalog_FallsBackToRelatedIDsForUntypedDependencies(t *testing
 	}
 }
 
+func TestNormalizePatternID_CommonForms(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "a.6", want: "A.6"},
+		{input: "A6", want: "A.6"},
+		{input: "A.6:", want: "A.6"},
+		{input: "A.6.B", want: "A.6.B"},
+		{input: "A.6:4.1", want: "A.6:4.1"},
+		{input: "c.2.2A", want: "C.2.2a"},
+		{input: "a.19.cn", want: "A.19.CN"},
+	}
+
+	for _, tt := range tests {
+		got := normalizePatternID(tt.input)
+		if got != tt.want {
+			t.Fatalf("normalizePatternID(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestChunkMarkdown_NormalizesPatternIDs(t *testing.T) {
+	input := `## a6 - Signature Stack & Boundary Discipline
+
+Top body.
+
+### c.2.2A - Language-State Space
+
+Nested body.
+`
+
+	chunks, err := ChunkMarkdown(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	if chunks[0].PatternID != "A.6" {
+		t.Fatalf("expected A.6, got %q", chunks[0].PatternID)
+	}
+	if chunks[1].PatternID != "C.2.2a" {
+		t.Fatalf("expected C.2.2a, got %q", chunks[1].PatternID)
+	}
+	if chunks[1].ParentPatternID != "A.6" {
+		t.Fatalf("expected parent A.6, got %q", chunks[1].ParentPatternID)
+	}
+}
+
+func TestParseSpecCatalog_NormalizesPatternVariants(t *testing.T) {
+	input := `| a6 | **Signature Stack & Boundary Discipline** | Stable | *Keywords:* boundary. | **Builds on:** a.6.b, c.2.2A. |
+`
+
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := catalog["A.6"]
+	if !ok {
+		t.Fatal("expected normalized A.6 entry")
+	}
+	if len(entry.Edges) != 2 {
+		t.Fatalf("unexpected typed edges: %#v", entry.Edges)
+	}
+
+	gotTargets := []string{entry.Edges[0].ToPatternID, entry.Edges[1].ToPatternID}
+	wantTargets := []string{"A.6.B", "C.2.2a"}
+	if !strings.EqualFold(strings.Join(gotTargets, ","), strings.Join(wantTargets, ",")) {
+		t.Fatalf("unexpected edge targets: got %v want %v", gotTargets, wantTargets)
+	}
+}
+
 func TestChunkMarkdown_EmptyBodiesSkipped(t *testing.T) {
 	input := `## Empty Section
 ## Has Content

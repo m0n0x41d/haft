@@ -200,6 +200,61 @@ func TestSearchSpec_ExactPatternLookupWins(t *testing.T) {
 	}
 }
 
+func TestBuildSpecIndex_NormalizesPatternIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	chunks := []SpecChunk{
+		{
+			ID:         0,
+			Heading:    "A.6 - Signature Stack & Boundary Discipline",
+			Level:      2,
+			Body:       "Boundary statements need routing.",
+			PatternID:  "a6",
+			RelatedIDs: []string{"a.6.b"},
+		},
+		{
+			ID:        1,
+			Heading:   "A.6.B - Boundary Norm Square",
+			Level:     2,
+			Body:      "Norm square.",
+			PatternID: "a.6.b",
+		},
+	}
+
+	if err := BuildSpecIndex(dbPath, chunks); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var storedPatternID string
+	err = db.QueryRow(`SELECT pattern_id FROM sections WHERE heading = ?`, "A.6 - Signature Stack & Boundary Discipline").Scan(&storedPatternID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedPatternID != "A.6" {
+		t.Fatalf("expected normalized pattern id A.6, got %q", storedPatternID)
+	}
+
+	var edgeType string
+	err = db.QueryRow(`
+		SELECT edge_type
+		FROM section_edges
+		WHERE from_pattern_id = ? AND to_pattern_id = ?
+	`, "A.6", "A.6.B").Scan(&edgeType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edgeType != string(SpecEdgeTypeRelated) {
+		t.Fatalf("expected related edge, got %q", edgeType)
+	}
+}
+
 func TestSearchSpec_RouteQueryLoadsCoreSections(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
@@ -443,6 +498,57 @@ func TestGetSpecSection_HeadingOrPattern(t *testing.T) {
 	}
 	if !strings.Contains(body, "Decision rationale") {
 		t.Fatalf("unexpected body: %s", body)
+	}
+}
+
+func TestSearchSpec_ExactPatternLookupNormalizesVariants(t *testing.T) {
+	chunks := []SpecChunk{
+		{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Boundary statements need routing.", PatternID: "A.6"},
+		{ID: 1, Heading: "A.6.B - Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+		{ID: 2, Heading: "A.6:4.1 - Worked Example", Level: 3, Body: "Worked example.", PatternID: "A.6:4.1"},
+		{ID: 3, Heading: "C.2.2a - Language-State Space", Level: 2, Body: "Language-state chart.", PatternID: "C.2.2a"},
+		{ID: 4, Heading: "A.19.CN - CN-frame", Level: 2, Body: "Comparability and normalization.", PatternID: "A.19.CN"},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	tests := []struct {
+		query          string
+		wantPatternID  string
+		wantBodySubstr string
+	}{
+		{query: "a.6", wantPatternID: "A.6", wantBodySubstr: "Boundary statements"},
+		{query: "A6", wantPatternID: "A.6", wantBodySubstr: "Boundary statements"},
+		{query: "A.6:", wantPatternID: "A.6", wantBodySubstr: "Boundary statements"},
+		{query: "a.6.b", wantPatternID: "A.6.B", wantBodySubstr: "Norm square"},
+		{query: "a.6:4.1", wantPatternID: "A.6:4.1", wantBodySubstr: "Worked example"},
+		{query: "c.2.2A", wantPatternID: "C.2.2a", wantBodySubstr: "Language-state chart"},
+		{query: "a.19.cn", wantPatternID: "A.19.CN", wantBodySubstr: "Comparability and normalization"},
+	}
+
+	for _, tt := range tests {
+		results, err := SearchSpec(db, tt.query, 5)
+		if err != nil {
+			t.Fatalf("SearchSpec(%q) error: %v", tt.query, err)
+		}
+		if len(results) == 0 {
+			t.Fatalf("SearchSpec(%q) returned no results", tt.query)
+		}
+		if results[0].PatternID != tt.wantPatternID {
+			t.Fatalf("SearchSpec(%q) first pattern = %q, want %q", tt.query, results[0].PatternID, tt.wantPatternID)
+		}
+		if results[0].Tier != "pattern" {
+			t.Fatalf("SearchSpec(%q) first tier = %q, want pattern", tt.query, results[0].Tier)
+		}
+
+		body, err := GetSpecSection(db, tt.query)
+		if err != nil {
+			t.Fatalf("GetSpecSection(%q) error: %v", tt.query, err)
+		}
+		if !strings.Contains(body, tt.wantBodySubstr) {
+			t.Fatalf("GetSpecSection(%q) body = %q, want substring %q", tt.query, body, tt.wantBodySubstr)
+		}
 	}
 }
 

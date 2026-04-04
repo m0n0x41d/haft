@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var patternIDRE = regexp.MustCompile(`\b(?:[A-K]\.\d+(?:\.\d+)*(?:\.[A-Z]+)?(?:[:]\d+(?:\.\d+)*)?|[A-K]\.\d+(?:\.\d+)*(?:\.[A-Z]+)?)\b`)
+var patternIDCandidateRE = regexp.MustCompile(`(?i)\b[A-K](?:\.?\d+[a-z]*)(?:\.(?:\d+[a-z]*|[a-z][a-z0-9]*))*(?::\d+(?:\.\d+)*)?\b`)
+var patternIDDigitsRE = regexp.MustCompile(`^\d+$`)
+var patternIDDigitSuffixRE = regexp.MustCompile(`^(\d+)([A-Za-z]+)$`)
+var patternIDWordRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 var quotedQueryRE = regexp.MustCompile(`"([^"]+)"`)
 var dependencyClauseLabelRE = regexp.MustCompile(`([A-Za-z][A-Za-z /-]+):`)
 
@@ -226,13 +229,17 @@ func parseMarkdownHeading(line string) (level int, text string, ok bool) {
 }
 
 func extractPatternID(text string) string {
-	match := patternIDRE.FindString(text)
-	return strings.TrimSpace(match)
+	match := patternIDCandidateRE.FindString(text)
+	return normalizePatternID(match)
 }
 
 func extractPatternIDs(text string) []string {
-	matches := patternIDRE.FindAllString(text, -1)
-	return dedupeStrings(matches)
+	matches := patternIDCandidateRE.FindAllString(text, -1)
+	normalized := make([]string, 0, len(matches))
+	for _, match := range matches {
+		normalized = append(normalized, normalizePatternID(match))
+	}
+	return dedupeStrings(normalized)
 }
 
 func buildAliases(heading, patternID string) []string {
@@ -320,6 +327,108 @@ func cleanMarkdownText(text string) string {
 	text = strings.ReplaceAll(text, "–", "-")
 	text = strings.Join(strings.Fields(text), " ")
 	return strings.TrimSpace(text)
+}
+
+func normalizePatternID(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, "\"'`.,;!?)]}")
+	if text == "" {
+		return ""
+	}
+
+	parts := strings.SplitN(text, ":", 2)
+	base := normalizePatternBase(parts[0])
+	if base == "" {
+		return ""
+	}
+
+	if len(parts) == 1 {
+		return base
+	}
+
+	suffix := normalizePatternNumericPath(parts[1])
+	if suffix == "" {
+		return base
+	}
+
+	return base + ":" + suffix
+}
+
+func normalizePatternBase(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) < 2 {
+		return ""
+	}
+
+	prefix := strings.ToUpper(string(text[0]))
+	if !isPatternPrefix(prefix) {
+		return ""
+	}
+
+	remainder := strings.TrimSpace(text[1:])
+	if remainder == "" {
+		return ""
+	}
+	if !strings.HasPrefix(remainder, ".") {
+		remainder = "." + remainder
+	}
+
+	rawSegments := strings.Split(strings.TrimPrefix(remainder, "."), ".")
+	segments := make([]string, 0, len(rawSegments))
+	for _, rawSegment := range rawSegments {
+		segment := normalizePatternSegment(rawSegment)
+		if segment == "" {
+			return ""
+		}
+		segments = append(segments, segment)
+	}
+
+	return prefix + "." + strings.Join(segments, ".")
+}
+
+func normalizePatternNumericPath(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	rawSegments := strings.Split(text, ".")
+	segments := make([]string, 0, len(rawSegments))
+	for _, rawSegment := range rawSegments {
+		segment := strings.TrimSpace(rawSegment)
+		if !patternIDDigitsRE.MatchString(segment) {
+			return ""
+		}
+		segments = append(segments, segment)
+	}
+
+	return strings.Join(segments, ".")
+}
+
+func normalizePatternSegment(segment string) string {
+	segment = strings.TrimSpace(segment)
+	if segment == "" {
+		return ""
+	}
+
+	if patternIDDigitsRE.MatchString(segment) {
+		return segment
+	}
+
+	match := patternIDDigitSuffixRE.FindStringSubmatch(segment)
+	if len(match) == 3 {
+		return match[1] + strings.ToLower(match[2])
+	}
+
+	if patternIDWordRE.MatchString(segment) {
+		return strings.ToUpper(segment)
+	}
+
+	return ""
+}
+
+func isPatternPrefix(prefix string) bool {
+	return len(prefix) == 1 && prefix[0] >= 'A' && prefix[0] <= 'K'
 }
 
 func appendUnique(dst []string, items ...string) []string {

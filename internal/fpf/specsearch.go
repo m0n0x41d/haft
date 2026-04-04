@@ -187,6 +187,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk) error {
 
 	seenEdges := make(map[string]struct{})
 	for _, c := range chunks {
+		c = normalizeChunkForIndex(c)
 		keywordsJSON := mustJSON(c.Keywords)
 		queriesJSON := mustJSON(c.Queries)
 		aliasesJSON := mustJSON(c.Aliases)
@@ -322,6 +323,8 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 }
 
 func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {
+	patternID = normalizePatternID(patternID)
+
 	var result SpecSearchResult
 	err := db.QueryRow(`
 		SELECT pattern_id, heading, substr(body, 1, 280)
@@ -650,8 +653,17 @@ func classifyRoute(db *sql.DB, query string) (*Route, error) {
 
 // GetSpecSection returns the complete body of a section by heading or pattern id.
 func GetSpecSection(db *sql.DB, headingOrPattern string) (string, error) {
+	headingOrPattern = strings.TrimSpace(headingOrPattern)
+	normalizedPatternID := normalizePatternID(headingOrPattern)
+
 	var body string
-	err := db.QueryRow(`SELECT body FROM sections WHERE heading = ? OR pattern_id = ? ORDER BY CASE WHEN pattern_id = ? THEN 0 ELSE 1 END LIMIT 1`, headingOrPattern, headingOrPattern, headingOrPattern).Scan(&body)
+	err := db.QueryRow(`
+		SELECT body
+		FROM sections
+		WHERE heading = ? OR (? <> '' AND pattern_id = ?)
+		ORDER BY CASE WHEN (? <> '' AND pattern_id = ?) THEN 0 ELSE 1 END
+		LIMIT 1
+	`, headingOrPattern, normalizedPatternID, normalizedPatternID, normalizedPatternID, normalizedPatternID).Scan(&body)
 	if err != nil {
 		return "", err
 	}
@@ -678,4 +690,26 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+func normalizeChunkForIndex(chunk SpecChunk) SpecChunk {
+	chunk.PatternID = normalizePatternID(chunk.PatternID)
+	chunk.ParentPatternID = normalizePatternID(chunk.ParentPatternID)
+
+	for index, relatedID := range chunk.RelatedIDs {
+		chunk.RelatedIDs[index] = normalizePatternID(relatedID)
+	}
+	chunk.RelatedIDs = dedupeStrings(chunk.RelatedIDs)
+
+	for index, edge := range chunk.Edges {
+		chunk.Edges[index].FromPatternID = normalizePatternID(edge.FromPatternID)
+		chunk.Edges[index].ToPatternID = normalizePatternID(edge.ToPatternID)
+	}
+	chunk.Edges = appendUniqueEdges(nil, chunk.Edges...)
+
+	if chunk.PatternID != "" {
+		chunk.Aliases = appendUnique(chunk.Aliases, chunk.PatternID)
+	}
+
+	return chunk
 }

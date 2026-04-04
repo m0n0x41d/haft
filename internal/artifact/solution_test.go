@@ -191,6 +191,25 @@ func TestExploreSolutions_RequiresSteppingStoneBasis(t *testing.T) {
 	}
 }
 
+func TestExploreSolutions_RejectsDuplicateExplicitVariantIDs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := ExploreSolutions(ctx, store, t.TempDir(), ExploreInput{
+		Variants: []Variant{
+			{ID: "V7", Title: "Kafka", WeakestLink: "ops complexity", NoveltyMarker: "Maximize throughput with established streaming ecosystem"},
+			{ID: "V7", Title: "NATS", WeakestLink: "ecosystem maturity", NoveltyMarker: "Lean embedded broker with simpler cluster operations"},
+		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
+	})
+	if err == nil {
+		t.Fatal("expected duplicate variant identity error")
+	}
+	if !strings.Contains(err.Error(), `variant identity "V7" is duplicated`) {
+		t.Fatalf("unexpected duplicate ID error: %v", err)
+	}
+}
+
 func TestCompareSolutions_Success(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -1011,6 +1030,9 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(a.Body, "Baseline set: REST, gRPC") {
+		t.Fatalf("expected parity plan baseline to render human-readable labels, body: %s", a.Body)
 	}
 
 	fields := a.UnmarshalPortfolioFields()

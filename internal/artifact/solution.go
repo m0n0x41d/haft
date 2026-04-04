@@ -86,6 +86,9 @@ func ValidateExploreInput(input ExploreInput) error {
 	if !hasSteppingStone(input.Variants) && strings.TrimSpace(input.NoSteppingStoneRationale) == "" {
 		return fmt.Errorf("at least one variant must be a stepping stone or no_stepping_stone_rationale must explain why no stepping stones exist")
 	}
+	if err := ValidateVariantIdentitySet(materializeVariantIDs(input.Variants)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -615,7 +618,8 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	if results.ParityPlan != nil {
 		section.WriteString("**Parity plan:**\n")
 		if len(results.ParityPlan.BaselineSet) > 0 {
-			section.WriteString(fmt.Sprintf("- Baseline set: %s\n", strings.Join(results.ParityPlan.BaselineSet, ", ")))
+			section.WriteString(fmt.Sprintf("- Baseline set: %s\n",
+				strings.Join(displayVariantLabels(results.ParityPlan.BaselineSet, displayLabels), ", ")))
 		}
 		if results.ParityPlan.Window != "" {
 			section.WriteString(fmt.Sprintf("- Window: %s\n", results.ParityPlan.Window))
@@ -716,6 +720,41 @@ func materializeVariantIDs(variants []Variant) []Variant {
 		materialized[i].ID = fmt.Sprintf("V%d", i+1)
 	}
 	return materialized
+}
+
+func ValidateVariantIdentitySet(variants []Variant) error {
+	seenKeys := make(map[string]string)
+	seenAliases := make(map[string]string)
+	for _, variant := range variants {
+		key := strings.TrimSpace(variant.ID)
+		if key == "" {
+			key = strings.TrimSpace(variant.Title)
+		}
+		if key == "" {
+			continue
+		}
+
+		if priorTitle, exists := seenKeys[key]; exists {
+			return fmt.Errorf("variant identity %q is duplicated between %q and %q", key, priorTitle, variant.Title)
+		}
+		seenKeys[key] = variant.Title
+
+		aliases := []string{
+			key,
+			strings.TrimSpace(variant.Title),
+		}
+		for _, alias := range dedupeTrimmedStrings(aliases) {
+			if alias == "" {
+				continue
+			}
+			if priorKey, exists := seenAliases[alias]; exists && priorKey != key {
+				return fmt.Errorf("variant alias %q is ambiguous between %q and %q", alias, priorKey, key)
+			}
+			seenAliases[alias] = key
+		}
+	}
+
+	return nil
 }
 
 func portfolioVariantIdentities(portfolio *Artifact) []portfolioVariantIdentity {

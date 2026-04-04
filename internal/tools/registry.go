@@ -20,18 +20,20 @@ type CycleResolver func(ctx context.Context) *agent.Cycle
 // CycleUpdater persists repaired cycle state after tool-side recovery.
 type CycleUpdater func(ctx context.Context, cycle *agent.Cycle) error
 
-// UserConsentChecker checks if a user message exists after the last solution action.
+// DecisionBoundaryChecker reports whether the compare -> decide boundary has
+// an explicit post-compare user selection. It is only consulted before
+// haft_decision(decide); compare remains callable without another user message.
 // Returns true in autonomous mode (user explicitly delegated).
-type UserConsentChecker func(ctx context.Context) bool
+type DecisionBoundaryChecker func(ctx context.Context) bool
 
 // Registry holds all available tools.
 type Registry struct {
-	tools          map[string]ToolExecutor
-	order          []string // insertion order for stable listing
-	cycleResolver  CycleResolver
-	cycleUpdater   CycleUpdater
-	consentChecker UserConsentChecker
-	readFiles      map[string]bool // tracks files read in current session (for read-before-edit)
+	tools                   map[string]ToolExecutor
+	order                   []string // insertion order for stable listing
+	cycleResolver           CycleResolver
+	cycleUpdater            CycleUpdater
+	decisionBoundaryChecker DecisionBoundaryChecker
+	readFiles               map[string]bool // tracks files read in current session (for read-before-edit)
 }
 
 // MarkFileRead records that a file was read in this session.
@@ -73,18 +75,19 @@ func (r *Registry) UpdateCycle(ctx context.Context, cycle *agent.Cycle) error {
 	return r.cycleUpdater(ctx, cycle)
 }
 
-// SetConsentChecker sets the function that checks Transformer Mandate compliance.
-func (r *Registry) SetConsentChecker(checker UserConsentChecker) {
-	r.consentChecker = checker
+// SetDecisionBoundaryChecker sets the function that checks whether the
+// Transformer Mandate has been satisfied at the compare -> decide boundary.
+func (r *Registry) SetDecisionBoundaryChecker(checker DecisionBoundaryChecker) {
+	r.decisionBoundaryChecker = checker
 }
 
-// UserConsented returns true if user has responded since the last solution action.
-// Returns true if no checker is set (backwards compatibility).
-func (r *Registry) UserConsented(ctx context.Context) bool {
-	if r.consentChecker == nil {
+// DecisionBoundarySatisfied returns true when a post-compare user selection is
+// available. Returns true if no checker is set (backwards compatibility).
+func (r *Registry) DecisionBoundarySatisfied(ctx context.Context) bool {
+	if r.decisionBoundaryChecker == nil {
 		return true
 	}
-	return r.consentChecker(ctx)
+	return r.decisionBoundaryChecker(ctx)
 }
 
 // NewRegistry creates a registry with all builtin tools registered.

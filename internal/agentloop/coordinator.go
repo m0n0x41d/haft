@@ -106,40 +106,15 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 			return c.Cycles.UpdateCycle(ctx, cycle)
 		})
 
-		// Wire Transformer Mandate consent checker:
-		// Returns true if a user message exists after the last successful
-		// solution tool call (explore or compare),
-		// OR if interaction mode is autonomous (user explicitly delegated).
-		c.Tools.SetConsentChecker(func(ctx context.Context) bool {
-			if sess.Interaction == agent.InteractionAutonomous {
-				return true // user delegated — skip consent check
-			}
-			// Check message history: was there a user message after the last
-			// successful solution action?
+		// Wire Transformer Mandate decision-boundary checker.
+		// Compare remains callable without another user response; the pause is
+		// enforced only at compare -> decide unless autonomous mode is active.
+		c.Tools.SetDecisionBoundaryChecker(func(ctx context.Context) bool {
 			msgs, err := c.Messages.ListBySession(ctx, sessID)
 			if err != nil {
 				return true // on error, don't block
 			}
-			lastSolutionIdx := -1
-			lastUserIdx := -1
-			for i, msg := range msgs {
-				for _, part := range msg.Parts {
-					if tp, ok := part.(agent.ToolResultPart); ok {
-						if tp.ToolName == "haft_solution" && !tp.IsError {
-							lastSolutionIdx = i
-						}
-					}
-				}
-				if msg.Role == agent.RoleUser {
-					lastUserIdx = i
-				}
-			}
-			// No solution action yet → no consent needed (pre-compare phase)
-			if lastSolutionIdx == -1 {
-				return true
-			}
-			// User message after explore/compare → consent given
-			return lastUserIdx > lastSolutionIdx
+			return decisionBoundarySatisfied(sess.Interaction, msgs)
 		})
 
 		// Restore active cycle state to TUI (or clear if none)
@@ -949,6 +924,44 @@ func truncateToolOutput(output string) string {
 			fmt.Sprintf("\n... (%d more lines)", lines-maxOutputLines)
 	}
 	return output
+}
+
+func decisionBoundarySatisfied(interaction agent.Interaction, msgs []agent.Message) bool {
+	if interaction == agent.InteractionAutonomous {
+		return true
+	}
+
+	lastSolutionIdx := -1
+	lastUserIdx := -1
+
+	for i, msg := range msgs {
+		if msg.Role == agent.RoleUser {
+			lastUserIdx = i
+		}
+		if hasSuccessfulSolutionResult(msg) {
+			lastSolutionIdx = i
+		}
+	}
+
+	if lastSolutionIdx == -1 {
+		return true
+	}
+
+	return lastUserIdx > lastSolutionIdx
+}
+
+func hasSuccessfulSolutionResult(msg agent.Message) bool {
+	for _, part := range msg.Parts {
+		result, ok := part.(agent.ToolResultPart)
+		if !ok {
+			continue
+		}
+		if result.ToolName == "haft_solution" && !result.IsError {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c *Coordinator) saveToolResult(ctx context.Context, sess *agent.Session, callID, toolName, output string, isError bool, history *[]agent.Message) {

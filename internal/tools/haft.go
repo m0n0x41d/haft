@@ -531,11 +531,11 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 
 	switch action {
 	case "decide":
-		// FPF guardrails: requires explored variants + user consent (Transformer Mandate)
+		// FPF guardrails: requires compared variants + decision-boundary user selection
 		if t.registry != nil {
 			cycle := t.registry.ActiveCycle(ctx)
 			cycle = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
-			if err := agent.CanDecide(cycle, t.registry.UserConsented(ctx)); err != nil {
+			if err := agent.CanDecide(cycle, t.registry.DecisionBoundarySatisfied(ctx)); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}

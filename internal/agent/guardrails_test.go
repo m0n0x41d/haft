@@ -39,6 +39,26 @@ func TestCanDecide_RejectsStaleComparedPortfolio(t *testing.T) {
 	}
 }
 
+func TestCanCompare_AllowsActivePortfolioBeforeUserSelection(t *testing.T) {
+	cycle := &Cycle{PortfolioRef: "port-1"}
+
+	if err := CanCompare(cycle); err != nil {
+		t.Fatalf("CanCompare: %v", err)
+	}
+}
+
+func TestCanDecide_RequiresUserSelectionAfterCompare(t *testing.T) {
+	cycle := &Cycle{PortfolioRef: "port-1", ComparedPortfolioRef: "port-1"}
+
+	err := CanDecide(cycle, false)
+	if err == nil {
+		t.Fatal("expected decision boundary guardrail")
+	}
+	if !strings.Contains(err.Error(), "compare -> decide boundary") {
+		t.Fatalf("error = %q", err.Error())
+	}
+}
+
 func TestCanDecide_AllowsComparedActivePortfolio(t *testing.T) {
 	cycle := &Cycle{PortfolioRef: "port-1", ComparedPortfolioRef: "port-1"}
 

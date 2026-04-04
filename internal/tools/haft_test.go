@@ -408,7 +408,7 @@ func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) 
 		activeCycle = &copy
 		return nil
 	})
-	registry.SetConsentChecker(func(context.Context) bool {
+	registry.SetDecisionBoundaryChecker(func(context.Context) bool {
 		return true
 	})
 

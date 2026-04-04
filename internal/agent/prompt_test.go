@@ -45,6 +45,7 @@ func TestBuildSystemPrompt_StopsDelegatedReasoningAtCompare(t *testing.T) {
 	required := []string{
 		`If the user asked only for preparation, present the framing candidate and STOP.`,
 		`In symbiotic delegated mode, ASK which variant and wait.`,
+		`Transformer Mandate applies at the compare -> decide boundary.`,
 		`Autonomous mode skips the remaining pause after compare and carries through implementation.`,
 	}
 

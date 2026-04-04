@@ -155,6 +155,7 @@ CRITICAL RULES:
 - Show the Pareto front when comparing — which variants are non-dominated and on which dimensions.
 - Research-only preparation stops before the artifact cycle or after presenting preparation notes.
 - Delegated reasoning continues through frame → explore → compare without extra user re-triggers.
+- Transformer Mandate applies at the compare -> decide boundary. It does NOT require another user response before frame, explore, or compare in delegated reasoning.
 - Autonomous mode skips the remaining pause after compare and carries through implementation.
 
 ### Autonomous mode (Ctrl+Q)

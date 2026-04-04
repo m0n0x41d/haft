@@ -43,11 +43,12 @@ func CanCompare(cycle *Cycle) error {
 // Requires:
 //   - Solution portfolio exists (explored variants) — FPF B.5.2
 //   - Completed compare for the active portfolio
-//   - User has responded after explore/compare (Transformer Mandate) — unless autonomous
+//   - User has responded after compare (Transformer Mandate) — unless autonomous
 //
-// userRespondedAfterExplore should be true if a user message exists in history
-// after the last explore or compare tool call. Pass true in autonomous mode.
-func CanDecide(cycle *Cycle, userRespondedAfterExplore bool) error {
+// userSelectedAfterCompare should be true if a user message exists in history
+// after the latest successful solution step. In the valid decide path that is
+// the active compare result. Pass true in autonomous mode.
+func CanDecide(cycle *Cycle, userSelectedAfterCompare bool) error {
 	if cycle == nil || cycle.PortfolioRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_decision(decide)",
@@ -62,11 +63,11 @@ func CanDecide(cycle *Cycle, userRespondedAfterExplore bool) error {
 			Guidance: "Compare the active variants first: haft_solution(action=\"compare\", portfolio_ref=...) and show the Pareto front before deciding.",
 		}
 	}
-	if !userRespondedAfterExplore {
+	if !userSelectedAfterCompare {
 		return &GuardrailError{
 			Tool:     "haft_decision(decide)",
 			Missing:  "user selection",
-			Guidance: "Present the variants to the user and wait for their choice. The Transformer Mandate (FPF A.12) requires the human to select — the system proposes, the human decides.",
+			Guidance: "Present the compare summary to the user and wait for their choice. The Transformer Mandate (FPF A.12) applies at the compare -> decide boundary: you may frame, explore, and compare when delegated, but the human selects before haft_decision(action=\"decide\").",
 		}
 	}
 	return nil

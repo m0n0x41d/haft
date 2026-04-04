@@ -32,3 +32,72 @@ func TestInteractionModePrompt_SymbioticIsEmpty(t *testing.T) {
 		t.Fatalf("prompt = %q, want empty", prompt)
 	}
 }
+
+func TestDecisionBoundarySatisfied_RequiresPostCompareUserSelection(t *testing.T) {
+	t.Parallel()
+
+	messages := []agent.Message{
+		{
+			Role: agent.RoleTool,
+			Parts: []agent.Part{
+				agent.ToolResultPart{ToolName: "haft_solution"},
+			},
+		},
+		{
+			Role: agent.RoleUser,
+			Parts: []agent.Part{
+				agent.TextPart{Text: "keep going"},
+			},
+		},
+		{
+			Role: agent.RoleTool,
+			Parts: []agent.Part{
+				agent.ToolResultPart{ToolName: "haft_solution"},
+			},
+		},
+	}
+
+	if decisionBoundarySatisfied(agent.InteractionSymbiotic, messages) {
+		t.Fatal("expected compare -> decide boundary to remain blocked without a post-compare user selection")
+	}
+}
+
+func TestDecisionBoundarySatisfied_AllowsPostCompareUserSelection(t *testing.T) {
+	t.Parallel()
+
+	messages := []agent.Message{
+		{
+			Role: agent.RoleTool,
+			Parts: []agent.Part{
+				agent.ToolResultPart{ToolName: "haft_solution"},
+			},
+		},
+		{
+			Role: agent.RoleUser,
+			Parts: []agent.Part{
+				agent.TextPart{Text: "pick variant B"},
+			},
+		},
+	}
+
+	if !decisionBoundarySatisfied(agent.InteractionSymbiotic, messages) {
+		t.Fatal("expected post-compare user selection to satisfy decision boundary")
+	}
+}
+
+func TestDecisionBoundarySatisfied_AutonomousSkipsPause(t *testing.T) {
+	t.Parallel()
+
+	messages := []agent.Message{
+		{
+			Role: agent.RoleTool,
+			Parts: []agent.Part{
+				agent.ToolResultPart{ToolName: "haft_solution"},
+			},
+		},
+	}
+
+	if !decisionBoundarySatisfied(agent.InteractionAutonomous, messages) {
+		t.Fatal("expected autonomous mode to skip the compare -> decide pause")
+	}
+}

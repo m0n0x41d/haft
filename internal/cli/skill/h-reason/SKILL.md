@@ -38,7 +38,7 @@ The user wants to drive the cycle themselves. Gather context (read relevant code
 ### Path 4: Delegated reasoning (agent drives through compare, then waits)
 **Trigger:** "/h-reason [topic], go ahead", "work through the options and bring me a recommendation", "frame it and compare approaches", natural-language delegation like "давай" / "do it" / "go ahead" when autonomous mode is NOT enabled
 
-The user wants the agent to drive the reasoning work, but not to make the final choice. Run frame → characterize if needed → explore → compare in one pass. **Do not stop after frame. Do not require a manual `/h-explore` or `/h-compare` step after frame.** Stop after compare, show the Pareto front, and ask the human to choose.
+The user wants the agent to drive the reasoning work, but not to make the final choice. Run frame → characterize if needed → explore → compare in one pass. **Do not stop after frame. Do not require a manual `/h-explore` or `/h-compare` step after frame.** Stop after compare, show the Pareto front, and ask the human to choose. The Transformer Mandate applies at the compare → decide boundary: the agent may frame/explore/compare when delegated, but the human still chooses the winning variant before `/h-decide`.
 
 ### Path 5: Full autonomous cycle (agent drives)
 **Trigger:** "/h-reason [topic] and implement", "figure out the best approach and do it", "fix everything", explicit delegation to agent
@@ -269,7 +269,7 @@ This closes the lemniscate. Without measure, the decision stays open.
 Slash commands are steering handles, not always mandatory triggers:
 - In **Path 3** (research + wait), the user explicitly triggers `/h-frame`, `/h-char`, `/h-explore`, or `/h-compare` when ready.
 - In **Path 4** (delegated reasoning), natural-language delegation like "давай", "do it", or "go ahead" is enough to continue through frame → explore → compare without waiting for a manual `/h-explore`.
-- In symbiotic reasoning, stop at comparison and wait for the human's choice before `/h-decide`.
+- In symbiotic reasoning, stop at comparison and wait for the human's post-compare choice before `/h-decide`.
 - `/h-frame` — full problem framing (diagnostic conversation)
 - `/h-explore` — variant generation
 - `/h-compare` — parity comparison
@@ -283,7 +283,7 @@ The `── Quint ──` strip appended to tool responses shows current state a
 
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
 - **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
-- **Fewer steps ≠ fewer checkpoints.** Tactical mode has fewer FPF steps but the same human consent requirement at each transition.
+- **Fewer steps ≠ a weaker decision boundary.** Tactical mode may skip some artifacts, but in delegated reasoning it still may auto-advance through frame/explore/compare; the mandatory pause is the post-compare human choice before `/h-decide`.
 - **Path 3 vs Path 4:** In research + wait mode, do not auto-advance from Available actions. In delegated reasoning mode, you may advance through frame/explore/compare without extra slash commands.
 - **Path 5 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through decide/implement/measure without pausing.
 

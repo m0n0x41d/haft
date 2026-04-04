@@ -1923,7 +1923,7 @@ func compareDimensionValues(
 		case MissingDataPolicyZero:
 			filledLeft, filledRight, ok := zeroFillScoreValues(leftTrimmed, rightTrimmed)
 			if !ok {
-				return 0, dimensionComparisonExcluded
+				return 0, dimensionComparisonUnresolved
 			}
 			leftTrimmed = filledLeft
 			rightTrimmed = filledRight

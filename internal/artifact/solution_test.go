@@ -850,6 +850,16 @@ func TestCompareDimensionValues_ZeroFillInheritsOrdinalScale(t *testing.T) {
 	}
 }
 
+func TestCompareDimensionValues_ZeroFillTreatsMalformedPeerAsUnresolved(t *testing.T) {
+	comparison, status := compareDimensionValues("", "unknown", "lower_better", MissingDataPolicyZero)
+	if status != dimensionComparisonUnresolved {
+		t.Fatalf("expected unresolved status for malformed zero-fill peer, got %v", status)
+	}
+	if comparison != 0 {
+		t.Fatalf("expected no comparison result for malformed zero-fill peer, got %d", comparison)
+	}
+}
+
 func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -1,4 +1,4 @@
-import React, { useState, useImperativeHandle, forwardRef, useRef } from "react"
+import React, { useState, useImperativeHandle, forwardRef, useRef, useEffect } from "react"
 import { Box, Text } from "ink"
 import { trace } from "../debug.js"
 import { useInput } from "../hooks/useInput.js"
@@ -27,6 +27,7 @@ import {
   currentText,
   isNavigating,
 } from "../input/history.js"
+import { estimateInputRows } from "./appLayout.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
@@ -40,6 +41,7 @@ interface Props {
   hasAttachments?: boolean
   width: number
   hasQueuedMessages?: boolean
+  onRowsChange?: (rows: number) => void
 }
 
 export interface InputAreaHandle {
@@ -48,16 +50,24 @@ export interface InputAreaHandle {
 }
 
 export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function InputArea(
-  { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages },
+  { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange },
   ref,
 ) {
   const [edit, setEdit] = useState<EditState>(empty)
   const historyRef = useRef<History>(emptyHistory)
+  const isVisible = phase === "input" || phase === "streaming"
+  const visualRows = isVisible
+    ? estimateInputRows(edit.text)
+    : 0
 
   useImperativeHandle(ref, () => ({
     insert(text: string) { setEdit((s) => insertAt(s, text)) },
     getValue() { return edit.text },
   }), [edit.text])
+
+  useEffect(() => {
+    onRowsChange?.(visualRows)
+  }, [visualRows, onRowsChange])
 
   useInput((input, key) => {
     if (phase !== "input" && phase !== "streaming") return
@@ -214,9 +224,9 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
       }
       setEdit((s) => insertAt(s, input))
     }
-  }, { isActive: phase === "input" || phase === "streaming" })
+  }, { isActive: isVisible })
 
-  if (phase !== "input" && phase !== "streaming") return null
+  if (!isVisible) return null
 
   // --- Render ---
   if (!edit.text) {

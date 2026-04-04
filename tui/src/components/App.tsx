@@ -24,6 +24,7 @@ import { PermissionDialog } from "./PermissionDialog.js"
 import { QuestionDialog } from "./QuestionDialog.js"
 import { Picker, type PickerItem } from "./Picker.js"
 import { Attachments, type AttachmentItem } from "./Attachments.js"
+import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
 
 type PickerMode = null | "sessions" | "models" | "files" | "commands"
 
@@ -41,9 +42,6 @@ const SLASH_COMMANDS: PickerItem[] = [
   { id: "/note", label: "/note", desc: "Record a micro-decision" },
   { id: "/search", label: "/search", desc: "Search past decisions" },
 ]
-
-// Bottom area: separator + queued + input + separator + status
-const BASE_BOTTOM_ROWS = 4
 
 interface AppProps {
   client: JsonRpcClient
@@ -65,6 +63,7 @@ export function App({ client, inputEvents }: AppProps) {
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentSelection, setAttachmentSelection] = useState(false)
+  const [inputRows, setInputRows] = useState(() => estimateInputRows(""))
   const nextAttachmentId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
@@ -134,8 +133,15 @@ export function App({ client, inputEvents }: AppProps) {
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model])
 
   // --- L2: Scroll (measured line-based) ---
-  const bottomRows = BASE_BOTTOM_ROWS
-  const chatHeight = Math.max(5, height - bottomRows)
+  const showInput = !pickerMode && (state.phase === "input" || state.phase === "streaming")
+  const bottomRows = useMemo(() => computeBottomRows({
+    width,
+    queuedMessages,
+    attachments,
+    inputRows,
+    showInput,
+  }), [width, queuedMessages, attachments, inputRows, showInput])
+  const chatHeight = computeChatHeight(height, bottomRows)
   const { entryHeights, measureRef } = useMeasuredTranscript(
     transcript,
     width,
@@ -471,6 +477,7 @@ export function App({ client, inputEvents }: AppProps) {
         hasAttachments={attachments.length > 0}
         width={width}
         hasQueuedMessages={queuedMessages.length > 0}
+        onRowsChange={setInputRows}
       />
 
       {/* Bottom separator */}

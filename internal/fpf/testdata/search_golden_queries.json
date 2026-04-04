@@ -1,0 +1,55 @@
+[
+  {
+    "name": "exact pattern lookup",
+    "query": "A.6",
+    "expected_tier": "pattern",
+    "top_n": 1,
+    "minimum_hits": 1,
+    "expected_pattern_ids": ["A.6"]
+  },
+  {
+    "name": "boundary route retrieval",
+    "query": "How do I handle boundary contract routing with admissibility, deontic, and promise language?",
+    "route_id": "boundary-unpacking",
+    "expected_tier": "route",
+    "top_n": 3,
+    "minimum_hits": 2,
+    "expected_pattern_ids": ["A.6", "A.6.B", "A.6.C"]
+  },
+  {
+    "name": "language-state route retrieval",
+    "query": "How do I notice a partial articulation, stabilize the cue, and route it?",
+    "route_id": "language-discovery",
+    "expected_tier": "route",
+    "top_n": 3,
+    "minimum_hits": 2,
+    "expected_pattern_ids": ["C.2.2a", "A.16", "B.4.1"]
+  },
+  {
+    "name": "comparison route retrieval",
+    "query": "How do I compare options with Pareto selection, dimensions, and normalization?",
+    "route_id": "comparison-selection",
+    "expected_tier": "route",
+    "top_n": 3,
+    "minimum_hits": 2,
+    "expected_pattern_ids": ["A.17:4", "A.19.CPM", "G.0"]
+  },
+  {
+    "name": "creative generation route retrieval",
+    "query": "How should I explore a creative generator portfolio while preserving diversity?",
+    "route_id": "generator-portfolio",
+    "expected_tier": "route",
+    "top_n": 3,
+    "minimum_hits": 2,
+    "expected_pattern_ids": ["A.0", "B.5.2.1", "G.0"]
+  },
+  {
+    "name": "decision record lookup",
+    "query": "design rationale change management",
+    "search_tier": "fts",
+    "expected_tier": "fts",
+    "top_n": 3,
+    "minimum_hits": 1,
+    "expected_pattern_ids": ["E.9", "E.9:4"]
+  }
+]

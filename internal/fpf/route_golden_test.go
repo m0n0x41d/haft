@@ -2,12 +2,9 @@ package fpf
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
-	"strings"
 	"testing"
 )
 
@@ -19,8 +16,8 @@ type routeGoldenCase struct {
 }
 
 func TestSearchSpec_RouteGoldenQueries(t *testing.T) {
-	routes := loadRouteGoldenRoutes(t)
-	chunks := loadRouteGoldenSpecChunks(t, routes)
+	routes := loadGoldenRoutes(t)
+	chunks := loadGoldenSpecChunksForPatternIDs(t, collectRoutePatternIDs(routes))
 	_, db, cleanup := buildIndexWithChunksAndRoutes(t, chunks, routes, false)
 	defer cleanup()
 
@@ -105,41 +102,6 @@ func loadRouteGoldenCases(t *testing.T) []routeGoldenCase {
 	return cases
 }
 
-func loadRouteGoldenRoutes(t *testing.T) []Route {
-	t.Helper()
-
-	path := filepath.Join(testRepoRoot(t), ".context", "fpf-routes.json")
-	routes, err := LoadRoutes(path)
-	if err != nil {
-		t.Fatalf("LoadRoutes(%q) failed: %v", path, err)
-	}
-
-	return routes
-}
-
-func loadRouteGoldenSpecChunks(t *testing.T, routes []Route) []SpecChunk {
-	t.Helper()
-
-	path := filepath.Join(testRepoRoot(t), ".context", "FPF-Spec.md")
-	catalogFile := mustOpenFile(t, path)
-	catalog, err := ParseSpecCatalog(catalogFile)
-	_ = catalogFile.Close()
-	if err != nil {
-		t.Fatalf("ParseSpecCatalog(%q) failed: %v", path, err)
-	}
-
-	chunkFile := mustOpenFile(t, path)
-	chunks, err := ChunkMarkdown(chunkFile)
-	_ = chunkFile.Close()
-	if err != nil {
-		t.Fatalf("ChunkMarkdown(%q) failed: %v", path, err)
-	}
-
-	chunks = EnrichChunks(chunks, catalog)
-	chunks = filterRouteGoldenSpecChunks(chunks, routes)
-	return chunks
-}
-
 func indexRoutesByID(routes []Route) map[string]Route {
 	indexed := make(map[string]Route, len(routes))
 	for _, route := range routes {
@@ -147,61 +109,6 @@ func indexRoutesByID(routes []Route) map[string]Route {
 	}
 
 	return indexed
-}
-
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("os.ReadFile(%q) failed: %v", path, err)
-	}
-
-	return data
-}
-
-func mustOpenFile(t *testing.T, path string) *os.File {
-	t.Helper()
-
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("os.Open(%q) failed: %v", path, err)
-	}
-
-	return file
-}
-
-func filterRouteGoldenSpecChunks(chunks []SpecChunk, routes []Route) []SpecChunk {
-	routePatternIDs := collectRoutePatternIDs(routes)
-	filtered := make([]SpecChunk, 0, len(chunks))
-	for _, chunk := range chunks {
-		if chunk.PatternID == "" {
-			continue
-		}
-		if _, ok := routePatternIDs[chunk.PatternID]; !ok {
-			continue
-		}
-		if len(strings.TrimSpace(chunk.Body)) <= 20 {
-			continue
-		}
-		filtered = append(filtered, chunk)
-	}
-
-	return filtered
-}
-
-func collectRoutePatternIDs(routes []Route) map[string]struct{} {
-	patternIDs := make(map[string]struct{})
-	for _, route := range routes {
-		for _, patternID := range route.Core {
-			patternIDs[patternID] = struct{}{}
-		}
-		for _, patternID := range route.Chain {
-			patternIDs[patternID] = struct{}{}
-		}
-	}
-
-	return patternIDs
 }
 
 func routeGoldenSearchLimit(expectedPatternIDs []string) int {
@@ -219,21 +126,4 @@ func hasPatternIDPrefix(patternIDs []string, prefix []string) bool {
 	}
 
 	return reflect.DeepEqual(patternIDs[:len(prefix)], prefix)
-}
-
-func testPackageDir(t *testing.T) string {
-	t.Helper()
-
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-
-	return filepath.Dir(filename)
-}
-
-func testRepoRoot(t *testing.T) string {
-	t.Helper()
-
-	return filepath.Clean(filepath.Join(testPackageDir(t), "..", ".."))
 }

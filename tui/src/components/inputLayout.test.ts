@@ -68,6 +68,18 @@ test("keeps emoji rows on grapheme boundaries", () => {
   assert.equal(layout.rows[0]?.cursorOffset, 0)
 })
 
+test("wraps emoji presentation clusters under the non-Bun width fallback", () => {
+  const layout = withRuntimeStringWidth(undefined, () =>
+    buildInputLayout("❤️❤️", 4, 7),
+  )
+
+  assert.deepEqual(
+    layout.rows.map((row) => row.text),
+    ["❤️", "❤️"],
+  )
+  assert.equal(layout.rows[1]?.cursorOffset, 2)
+})
+
 test("wraps the empty-input queued hint into measured prompt rows", () => {
   const rows = measureInputDisplayRows({
     text: "",
@@ -88,3 +100,26 @@ test("wraps the empty-input queued hint into measured prompt rows", () => {
     ["placeholder", "hint", "hint", "hint", "hint"],
   )
 })
+
+function withRuntimeStringWidth<T>(
+  runtimeStringWidth: ((value: string) => number) | undefined,
+  run: () => T,
+): T {
+  const runtime = globalThis as {
+    Bun?: { stringWidth?: (value: string) => number }
+  }
+
+  if (!runtime.Bun) {
+    return run()
+  }
+
+  const original = runtime.Bun.stringWidth
+
+  runtime.Bun.stringWidth = runtimeStringWidth
+
+  try {
+    return run()
+  } finally {
+    runtime.Bun.stringWidth = original
+  }
+}

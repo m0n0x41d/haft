@@ -5,15 +5,22 @@ type GraphemeSegment = {
   width: 1 | 2
 }
 
+type StringWidthFn = (value: string) => number
+
 const graphemeSegmenter = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 })
 
-const bunStringWidth = (
-  globalThis as {
-    Bun?: { stringWidth?: (value: string) => number }
-  }
-).Bun?.stringWidth
+const emojiPresentationRegex = /\p{Emoji_Presentation}/u
+const emojiModifierRegex = /\p{Emoji_Modifier}/u
+const emojiRegex = /\p{Emoji}/u
+const extendedPictographicRegex = /\p{Extended_Pictographic}/u
+const markRegex = /\p{Mark}/u
+const regionalIndicatorFlagRegex = /^(?:\p{Regional_Indicator}){2}$/u
+const keycapSequenceRegex = /^[#*0-9]\uFE0F?\u20E3$/u
+
+const emojiVariationSelector = "\uFE0F"
+const zeroWidthJoiner = "\u200D"
 
 export function segmentGraphemes(text: string): GraphemeSegment[] {
   return [...graphemeSegmenter.segment(text)].map(({ segment, index }) => ({
@@ -22,6 +29,17 @@ export function segmentGraphemes(text: string): GraphemeSegment[] {
     end: index + segment.length,
     width: measureGraphemeWidth(segment),
   }))
+}
+
+export function measureGraphemeWidth(
+  grapheme: string,
+  runtimeStringWidth: StringWidthFn | null = getRuntimeStringWidth(),
+): 1 | 2 {
+  const fallbackWidth = measureFallbackGraphemeWidth(grapheme)
+  const runtimeWidth = measureRuntimeGraphemeWidth(grapheme, runtimeStringWidth)
+  const maxWidth = Math.max(fallbackWidth, runtimeWidth)
+
+  return maxWidth > 1 ? 2 : 1
 }
 
 export function normalizeGraphemeBoundaryLeft(
@@ -84,16 +102,67 @@ function clampOffset(text: string, offset: number): number {
   return Math.max(0, Math.min(offset, text.length))
 }
 
-function measureGraphemeWidth(grapheme: string): 1 | 2 {
-  const width = bunStringWidth?.(grapheme)
-
-  if (typeof width === "number") {
-    return width > 1 ? 2 : 1
+function getRuntimeStringWidth(): StringWidthFn | null {
+  const runtime = globalThis as {
+    Bun?: { stringWidth?: StringWidthFn }
   }
 
-  const codePoint = grapheme.codePointAt(0) ?? 0
+  return runtime.Bun?.stringWidth ?? null
+}
 
-  return isWideCodePoint(codePoint) ? 2 : 1
+function measureRuntimeGraphemeWidth(
+  grapheme: string,
+  runtimeStringWidth: StringWidthFn | null,
+): number {
+  const width = runtimeStringWidth?.(grapheme)
+
+  if (typeof width !== "number" || !Number.isFinite(width)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(2, Math.ceil(width)))
+}
+
+function measureFallbackGraphemeWidth(grapheme: string): 1 | 2 {
+  const isEmojiCluster = regionalIndicatorFlagRegex.test(grapheme)
+    || keycapSequenceRegex.test(grapheme)
+    || emojiPresentationRegex.test(grapheme)
+    || (grapheme.includes(emojiVariationSelector) && emojiRegex.test(grapheme))
+    || (grapheme.includes(zeroWidthJoiner) && extendedPictographicRegex.test(grapheme))
+    || (emojiModifierRegex.test(grapheme) && extendedPictographicRegex.test(grapheme))
+
+  if (isEmojiCluster) {
+    return 2
+  }
+
+  const codePoints = [...grapheme]
+    .map((char) => char.codePointAt(0) ?? 0)
+    .filter((codePoint) => isVisibleWidthCodePoint(codePoint))
+  const hasWideCodePoint = codePoints.some((codePoint) => isWideCodePoint(codePoint))
+
+  return hasWideCodePoint ? 2 : 1
+}
+
+function isVisibleWidthCodePoint(codePoint: number): boolean {
+  if (codePoint === 0x200D) {
+    return false
+  }
+
+  if (codePoint >= 0xFE00 && codePoint <= 0xFE0F) {
+    return false
+  }
+
+  if (codePoint >= 0xE0100 && codePoint <= 0xE01EF) {
+    return false
+  }
+
+  if (codePoint >= 0xE0020 && codePoint <= 0xE007F) {
+    return false
+  }
+
+  const char = String.fromCodePoint(codePoint)
+
+  return !markRegex.test(char)
 }
 
 function isWideCodePoint(codePoint: number): boolean {

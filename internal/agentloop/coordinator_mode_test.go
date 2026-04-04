@@ -14,13 +14,43 @@ func TestInteractionModePrompt_AutonomousChainsFullCycle(t *testing.T) {
 
 	required := []string{
 		`## [MODE: AUTONOMOUS — ACTIVE NOW]`,
-		`frame → explore → compare → decide → implement → measure`,
-		`SKIP all "STOP and present" checkpoints.`,
+		`Only after the request is classified as autonomous execution should you chain frame → explore → compare → decide → implement → measure without pauses.`,
+		`Once the request is already classified as autonomous execution, SKIP the remaining "STOP and present" checkpoints.`,
 	}
 
 	for _, want := range required {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q", want)
+		}
+	}
+}
+
+func TestInteractionModePrompt_AutonomousDoesNotOverrideRequestClassification(t *testing.T) {
+	t.Parallel()
+
+	prompt := interactionModePrompt(agent.InteractionAutonomous)
+
+	required := []string{
+		`It does NOT by itself reclassify direct-response, research-only, delegated-reasoning, or compare-only requests into implementation work.`,
+		`If the request is direct response / direct action, answer directly.`,
+		`If the request is research / prepare-and-wait, investigate and STOP.`,
+		`If the request is delegated reasoning without implementation delegation, continue through compare and then wait for the human choice.`,
+	}
+
+	for _, want := range required {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q", want)
+		}
+	}
+
+	forbidden := []string{
+		`This OVERRIDES the collaborative workflow rules above.`,
+		`When the user says "do it" or "давай" — that means START WORKING NOW, not "explain your plan."`,
+	}
+
+	for _, banned := range forbidden {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("prompt still contains contradictory wording %q", banned)
 		}
 	}
 }

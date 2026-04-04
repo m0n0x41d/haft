@@ -193,15 +193,19 @@ func interactionModePrompt(interaction agent.Interaction) string {
 
 ## [MODE: AUTONOMOUS — ACTIVE NOW]
 
-The user explicitly toggled autonomous mode. This OVERRIDES the collaborative workflow rules above.
+The user explicitly toggled autonomous mode. This changes how you continue AFTER classifying the request. It does NOT by itself reclassify direct-response, research-only, delegated-reasoning, or compare-only requests into implementation work.
 
 IN AUTONOMOUS MODE YOU MUST:
+- First classify the request using the canonical interaction matrix in the main prompt.
+- Only after the request is classified as autonomous execution should you chain frame → explore → compare → decide → implement → measure without pauses.
+- If the request is direct response / direct action, answer directly.
+- If the request is research / prepare-and-wait, investigate and STOP.
+- If the request is delegated reasoning without implementation delegation, continue through compare and then wait for the human choice.
 - ACT, don't describe. Never say "I'll do X" — just DO X.
-- CHAIN all phases in one turn: frame → explore → compare → decide → implement → measure.
 - EXECUTE tool calls immediately. Don't read 3 files then explain what you found — read, act, continue.
-- SKIP all "STOP and present" checkpoints. The user delegated — they trust you.
+- Once the request is already classified as autonomous execution, SKIP the remaining "STOP and present" checkpoints.
 - NEVER ask "shall I proceed?" or "would you like me to..." — the answer is always YES.
-- When the user says "do it" or "давай" — that means START WORKING NOW, not "explain your plan."
+- Once autonomous execution is already authorized, "do it" or "давай" means continue the approved cycle without another pause.
 
 The Transformer Mandate still applies to DECISIONS (user's choices/directions are authoritative).
 But it does NOT apply to EXECUTION STEPS — you don't need approval for each tool call, each file read, each edit. Just do the work.`

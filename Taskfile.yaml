@@ -6,6 +6,8 @@ vars:
   TUI_DIR: tui
   TUI_BUNDLE: tui/dist/tui.mjs
   TUI_INSTALL_DIR: ~/.haft/tui
+  FPF_SPEC: data/FPF/FPF-Spec.md
+  FPF_DB: internal/cli/fpf.db
 
 tasks:
   default:
@@ -34,9 +36,21 @@ tasks:
     generates:
       - '{{.TUI_BUNDLE}}'
 
+  fpf-index:
+    desc: Rebuild embedded FPF SQLite index from FPF-Spec.md
+    cmds:
+      - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}}
+    sources:
+      - '{{.FPF_SPEC}}'
+      - .context/fpf-routes.json
+      - cmd/indexer/**/*.go
+      - internal/fpf/**/*.go
+    generates:
+      - '{{.FPF_DB}}'
+
   build:
     desc: Build Go binary + TUI bundle
-    deps: [tui]
+    deps: [tui, fpf-index]
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
@@ -44,7 +58,7 @@ tasks:
 
   install:
     desc: Build and install haft (binary + TUI) locally
-    deps: [tui]
+    deps: [tui, fpf-index]
     cmds:
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - mkdir -p {{.TUI_INSTALL_DIR}}
@@ -54,6 +68,7 @@ tasks:
 
   dev:
     desc: Build Go binary only (TUI runs from source via bun)
+    deps: [fpf-index]
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
 

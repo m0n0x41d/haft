@@ -16,7 +16,6 @@ import {
   moveEnd,
   moveWordLeft,
   moveWordRight,
-  cursorPosition,
 } from "../input/editBuffer.js"
 import {
   type History,
@@ -27,7 +26,7 @@ import {
   currentText,
   isNavigating,
 } from "../input/history.js"
-import { estimateInputRows } from "./appLayout.js"
+import { buildInputLayout, type InputVisualRow } from "./inputLayout.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
@@ -56,9 +55,11 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
   const [edit, setEdit] = useState<EditState>(empty)
   const historyRef = useRef<History>(emptyHistory)
   const isVisible = phase === "input" || phase === "streaming"
-  const visualRows = isVisible
-    ? estimateInputRows(edit.text)
-    : 0
+  const layout = isVisible
+    ? buildInputLayout(edit.text, edit.cursor, width)
+    : null
+  const rows = layout?.rows ?? []
+  const visualRows = rows.length
 
   useImperativeHandle(ref, () => ({
     insert(text: string) { setEdit((s) => insertAt(s, text)) },
@@ -239,28 +240,39 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
     )
   }
 
-  const { line: cursorLine, col: cursorCol } = cursorPosition(edit)
-  const lines = edit.text.split("\n")
-
   return (
     <Box flexDirection="column" paddingX={1} width={width}>
-      {lines.map((line, i) => (
+      {rows.map((row, i) => (
         <Box key={i} width={width}>
-          {i === 0 ? <Text>{"\u276F"} </Text> : <Text>{"  "}</Text>}
-          {i === cursorLine ? (
-            <>
-              <Text>{line.slice(0, cursorCol)}</Text>
-              <Text inverse>{cursorCol < line.length ? line[cursorCol] : " "}</Text>
-              {cursorCol < line.length && <Text>{line.slice(cursorCol + 1)}</Text>}
-            </>
-          ) : (
-            <Text>{line}</Text>
-          )}
+          <Text>{row.prefix}</Text>
+          {renderInputRow(row)}
         </Box>
       ))}
     </Box>
   )
 }))
+
+function renderInputRow(row: InputVisualRow): React.ReactNode {
+  if (row.cursorColumn === null) {
+    return <Text>{row.text}</Text>
+  }
+
+  const beforeCursor = row.text.slice(0, row.cursorColumn)
+  const cursorChar = row.cursorColumn < row.text.length
+    ? row.text[row.cursorColumn]
+    : " "
+  const afterCursor = row.cursorColumn < row.text.length
+    ? row.text.slice(row.cursorColumn + 1)
+    : ""
+
+  return (
+    <>
+      {beforeCursor.length > 0 && <Text>{beforeCursor}</Text>}
+      <Text inverse>{cursorChar}</Text>
+      {afterCursor.length > 0 && <Text>{afterCursor}</Text>}
+    </>
+  )
+}
 
 // Async clipboard image check
 import { getImageFromClipboard } from "../terminal/clipboard.js"

@@ -66,3 +66,27 @@ func TestCanDecide_AllowsComparedActivePortfolio(t *testing.T) {
 		t.Fatalf("CanDecide: %v", err)
 	}
 }
+
+func TestHasDecisionSelection_RequiresMatchingComparedPortfolio(t *testing.T) {
+	cycle := &Cycle{
+		ComparedPortfolioRef: "port-1",
+		SelectedPortfolioRef: "port-old",
+		SelectedVariantRef:   "V2",
+	}
+
+	if HasDecisionSelection(cycle) {
+		t.Fatal("expected stale selection to be rejected")
+	}
+}
+
+func TestHasDecisionSelection_AllowsActiveSelection(t *testing.T) {
+	cycle := &Cycle{
+		ComparedPortfolioRef: "port-1",
+		SelectedPortfolioRef: "port-1",
+		SelectedVariantRef:   "V2",
+	}
+
+	if !HasDecisionSelection(cycle) {
+		t.Fatal("expected active selection to satisfy the boundary")
+	}
+}

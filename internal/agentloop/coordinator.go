@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -109,12 +110,8 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 		// Wire Transformer Mandate decision-boundary checker.
 		// Compare remains callable without another user response; the pause is
 		// enforced only at compare -> decide unless autonomous mode is active.
-		c.Tools.SetDecisionBoundaryChecker(func(ctx context.Context) bool {
-			msgs, err := c.Messages.ListBySession(ctx, sessID)
-			if err != nil {
-				return true // on error, don't block
-			}
-			return decisionBoundarySatisfied(sess.Interaction, msgs)
+		c.Tools.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
+			return decisionBoundarySatisfied(sess.Interaction, cycle), nil
 		})
 
 		// Restore active cycle state to TUI (or clear if none)
@@ -136,6 +133,10 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 	}
 	if err := c.Messages.Save(ctx, userMsg); err != nil {
 		c.Bus.SendError(fmt.Sprintf("save user message: %s", err))
+		return
+	}
+	if err := c.captureDecisionSelection(ctx, sess.ID, userMsg.Text()); err != nil {
+		c.Bus.SendError(fmt.Sprintf("persist decision selection: %s", err))
 		return
 	}
 
@@ -926,49 +927,21 @@ func truncateToolOutput(output string) string {
 	return output
 }
 
-func decisionBoundarySatisfied(interaction agent.Interaction, msgs []agent.Message) bool {
+func decisionBoundarySatisfied(interaction agent.Interaction, cycle *agent.Cycle) bool {
 	if interaction == agent.InteractionAutonomous {
 		return true
 	}
-
-	lastSolutionIdx := -1
-	lastUserIdx := -1
-
-	for i, msg := range msgs {
-		if msg.Role == agent.RoleUser {
-			lastUserIdx = i
-		}
-		if hasSuccessfulSolutionResult(msg) {
-			lastSolutionIdx = i
-		}
-	}
-
-	if lastSolutionIdx == -1 {
-		return true
-	}
-
-	return lastUserIdx > lastSolutionIdx
-}
-
-func hasSuccessfulSolutionResult(msg agent.Message) bool {
-	for _, part := range msg.Parts {
-		result, ok := part.(agent.ToolResultPart)
-		if !ok {
-			continue
-		}
-		if result.ToolName == "haft_solution" && !result.IsError {
-			return true
-		}
-	}
-
-	return false
+	return agent.HasDecisionSelection(cycle)
 }
 
 func (c *Coordinator) saveToolResult(ctx context.Context, sess *agent.Session, callID, toolName, output string, isError bool, history *[]agent.Message) {
 	msg := &agent.Message{
 		ID: newMsgID(), SessionID: sess.ID, Role: agent.RoleTool,
 		Parts: []agent.Part{agent.ToolResultPart{
-			ToolCallID: callID, ToolName: toolName, Content: output, IsError: isError,
+			ToolCallID: callID,
+			ToolName:   toolName,
+			Content:    output,
+			IsError:    isError,
 		}},
 		CreatedAt: time.Now().UTC(),
 	}
@@ -992,6 +965,259 @@ func textFromParts(parts []agent.Part) string {
 		}
 	}
 	return b.String()
+}
+
+func (c *Coordinator) captureDecisionSelection(ctx context.Context, sessionID, userText string) error {
+	if c.Cycles == nil || c.ArtifactStore == nil {
+		return nil
+	}
+
+	if normalizeDecisionSelectionText(userText) == "" {
+		return nil
+	}
+
+	cycle, err := c.Cycles.GetActiveCycle(ctx, sessionID)
+	if err != nil || cycle == nil {
+		return err
+	}
+	if cycle.ComparedPortfolioRef == "" || cycle.ComparedPortfolioRef != cycle.PortfolioRef {
+		return nil
+	}
+
+	portfolio, err := c.ArtifactStore.Get(ctx, cycle.ComparedPortfolioRef)
+	if err != nil {
+		return nil
+	}
+
+	selectedVariantRef, ok := detectExplicitDecisionSelection(userText, selectionCandidatesForPortfolio(portfolio))
+	if !ok {
+		return nil
+	}
+	if cycle.SelectedPortfolioRef == cycle.ComparedPortfolioRef && cycle.SelectedVariantRef == selectedVariantRef {
+		return nil
+	}
+
+	updated := *cycle
+	updated.SelectedPortfolioRef = cycle.ComparedPortfolioRef
+	updated.SelectedVariantRef = selectedVariantRef
+	return c.Cycles.UpdateCycle(ctx, &updated)
+}
+
+type decisionSelectionCandidate struct {
+	VariantRef string
+	Aliases    []string
+}
+
+func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) []decisionSelectionCandidate {
+	fields := portfolio.UnmarshalPortfolioFields()
+	candidates := make([]decisionSelectionCandidate, 0, len(fields.Variants))
+
+	for _, variant := range fields.Variants {
+		variantRef := strings.TrimSpace(variant.ID)
+		if variantRef == "" {
+			variantRef = strings.TrimSpace(variant.Title)
+		}
+		if variantRef == "" {
+			continue
+		}
+
+		aliases := []string{
+			variant.ID,
+			variant.Title,
+			"variant " + variant.ID,
+			"option " + variant.ID,
+			"variant " + variant.Title,
+			"option " + variant.Title,
+		}
+
+		candidates = append(candidates, decisionSelectionCandidate{
+			VariantRef: variantRef,
+			Aliases:    normalizeDecisionSelectionAliases(aliases),
+		})
+	}
+
+	return candidates
+}
+
+func detectExplicitDecisionSelection(message string, candidates []decisionSelectionCandidate) (string, bool) {
+	normalizedMessage := normalizeDecisionSelectionText(message)
+	if normalizedMessage == "" {
+		return "", false
+	}
+	if strings.Contains(message, "?") {
+		return "", false
+	}
+
+	matches := matchingDecisionSelectionRefs(normalizedMessage, candidates)
+	if len(matches) != 1 {
+		return "", false
+	}
+
+	selectedRef := matches[0]
+	if isExactDecisionSelectionAlias(normalizedMessage, selectedRef, candidates) {
+		return selectedRef, true
+	}
+
+	trimmedMessage := trimDecisionSelectionLeadIn(normalizedMessage)
+	if hasNegativeDecisionSelectionPrefix(trimmedMessage) {
+		return "", false
+	}
+	if !hasPositiveDecisionSelectionPrefix(trimmedMessage) {
+		return "", false
+	}
+
+	return selectedRef, true
+}
+
+func matchingDecisionSelectionRefs(message string, candidates []decisionSelectionCandidate) []string {
+	paddedMessage := " " + message + " "
+	matches := make([]string, 0, len(candidates))
+
+	for _, candidate := range candidates {
+		for _, alias := range candidate.Aliases {
+			if alias == "" {
+				continue
+			}
+			if strings.Contains(paddedMessage, " "+alias+" ") {
+				matches = append(matches, candidate.VariantRef)
+				break
+			}
+		}
+	}
+
+	return matches
+}
+
+func isExactDecisionSelectionAlias(message, selectedRef string, candidates []decisionSelectionCandidate) bool {
+	for _, candidate := range candidates {
+		if candidate.VariantRef != selectedRef {
+			continue
+		}
+		for _, alias := range candidate.Aliases {
+			if message == alias {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func normalizeDecisionSelectionAliases(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	aliases := make([]string, 0, len(values))
+
+	for _, value := range values {
+		normalized := normalizeDecisionSelectionText(value)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		aliases = append(aliases, normalized)
+	}
+
+	return aliases
+}
+
+func normalizeDecisionSelectionText(value string) string {
+	lowered := strings.ToLower(strings.TrimSpace(value))
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsLetter(r), unicode.IsNumber(r):
+			return r
+		case unicode.IsSpace(r):
+			return ' '
+		default:
+			return ' '
+		}
+	}, lowered)
+
+	return strings.Join(strings.Fields(cleaned), " ")
+}
+
+func trimDecisionSelectionLeadIn(value string) string {
+	leadIns := []string{"ok ", "okay ", "so ", "then ", "actually ", "alright ", "all right "}
+	trimmed := value
+
+	for {
+		updated := trimmed
+		for _, leadIn := range leadIns {
+			if strings.HasPrefix(updated, leadIn) {
+				updated = strings.TrimSpace(strings.TrimPrefix(updated, leadIn))
+				break
+			}
+		}
+		if updated == trimmed {
+			return trimmed
+		}
+		trimmed = updated
+	}
+}
+
+func hasNegativeDecisionSelectionPrefix(value string) bool {
+	prefixes := []string{
+		"dont choose ",
+		"do not choose ",
+		"dont pick ",
+		"do not pick ",
+		"dont use ",
+		"do not use ",
+		"dont go with ",
+		"do not go with ",
+	}
+
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasPositiveDecisionSelectionPrefix(value string) bool {
+	prefixes := []string{
+		"choose ",
+		"i choose ",
+		"we choose ",
+		"pick ",
+		"i pick ",
+		"we pick ",
+		"select ",
+		"i select ",
+		"prefer ",
+		"i prefer ",
+		"go with ",
+		"lets go with ",
+		"let s go with ",
+		"ship ",
+		"use ",
+		"proceed with ",
+		"move forward with ",
+		"lets do ",
+		"let s do ",
+		"my choice is ",
+		"decision is ",
+		"we should choose ",
+		"we should pick ",
+		"we should use ",
+		"we should go with ",
+		"i think we should choose ",
+		"i think we should pick ",
+		"i think we should use ",
+		"i think we should go with ",
+	}
+
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {

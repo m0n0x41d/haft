@@ -43,11 +43,12 @@ func CanCompare(cycle *Cycle) error {
 // Requires:
 //   - Solution portfolio exists (explored variants) — FPF B.5.2
 //   - Completed compare for the active portfolio
-//   - User has responded after compare (Transformer Mandate) — unless autonomous
+//   - Explicit user selection recorded for the active compared portfolio
+//     (Transformer Mandate) — unless autonomous
 //
-// userSelectedAfterCompare should be true if a user message exists in history
-// after the latest successful solution step. In the valid decide path that is
-// the active compare result. Pass true in autonomous mode.
+// userSelectedAfterCompare should be true if the active cycle records an
+// explicit human selection for the active compared portfolio. Pass true in
+// autonomous mode.
 func CanDecide(cycle *Cycle, userSelectedAfterCompare bool) error {
 	if cycle == nil || cycle.PortfolioRef == "" {
 		return &GuardrailError{
@@ -71,6 +72,21 @@ func CanDecide(cycle *Cycle, userSelectedAfterCompare bool) error {
 		}
 	}
 	return nil
+}
+
+// HasDecisionSelection reports whether the cycle records an explicit human
+// choice for the currently active compared portfolio.
+func HasDecisionSelection(cycle *Cycle) bool {
+	if cycle == nil {
+		return false
+	}
+	if strings.TrimSpace(cycle.ComparedPortfolioRef) == "" {
+		return false
+	}
+	if cycle.SelectedPortfolioRef != cycle.ComparedPortfolioRef {
+		return false
+	}
+	return strings.TrimSpace(cycle.SelectedVariantRef) != ""
 }
 
 // CanMeasure checks if haft_decision(measure) is allowed.

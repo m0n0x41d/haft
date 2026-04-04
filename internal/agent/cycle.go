@@ -115,6 +115,8 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 			updated.ProblemRef = meta.ArtifactRef
 			updated.PortfolioRef = meta.AdoptPortfolioRef
 			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
+			updated.SelectedPortfolioRef = ""
+			updated.SelectedVariantRef = ""
 			updated.DecisionRef = meta.AdoptDecisionRef
 			bound = true
 		}
@@ -122,10 +124,14 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 		if meta.Operation == "explore" {
 			updated.PortfolioRef = meta.ArtifactRef
 			updated.ComparedPortfolioRef = ""
+			updated.SelectedPortfolioRef = ""
+			updated.SelectedVariantRef = ""
 			bound = true
 		}
 		if meta.Operation == "compare" {
 			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
+			updated.SelectedPortfolioRef = ""
+			updated.SelectedVariantRef = ""
 			bound = updated.ComparedPortfolioRef != ""
 		}
 	case "decision":

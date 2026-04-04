@@ -24,7 +24,7 @@ type CycleUpdater func(ctx context.Context, cycle *agent.Cycle) error
 // an explicit post-compare user selection. It is only consulted before
 // haft_decision(decide); compare remains callable without another user message.
 // Returns true in autonomous mode (user explicitly delegated).
-type DecisionBoundaryChecker func(ctx context.Context) bool
+type DecisionBoundaryChecker func(ctx context.Context, cycle *agent.Cycle) (bool, error)
 
 // Registry holds all available tools.
 type Registry struct {
@@ -83,11 +83,11 @@ func (r *Registry) SetDecisionBoundaryChecker(checker DecisionBoundaryChecker) {
 
 // DecisionBoundarySatisfied returns true when a post-compare user selection is
 // available. Returns true if no checker is set (backwards compatibility).
-func (r *Registry) DecisionBoundarySatisfied(ctx context.Context) bool {
+func (r *Registry) DecisionBoundarySatisfied(ctx context.Context, cycle *agent.Cycle) (bool, error) {
 	if r.decisionBoundaryChecker == nil {
-		return true
+		return true, nil
 	}
-	return r.decisionBoundaryChecker(ctx)
+	return r.decisionBoundaryChecker(ctx, cycle)
 }
 
 // NewRegistry creates a registry with all builtin tools registered.

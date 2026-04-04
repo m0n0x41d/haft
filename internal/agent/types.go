@@ -366,6 +366,8 @@ type Cycle struct {
 	ProblemRef           string         `json:"problem_ref,omitempty"`
 	PortfolioRef         string         `json:"portfolio_ref,omitempty"`
 	ComparedPortfolioRef string         `json:"compared_portfolio_ref,omitempty"`
+	SelectedPortfolioRef string         `json:"selected_portfolio_ref,omitempty"`
+	SelectedVariantRef   string         `json:"selected_variant_ref,omitempty"`
 	DecisionRef          string         `json:"decision_ref,omitempty"`
 	Phase                Phase          `json:"phase"`
 	Depth                Depth          `json:"depth"`

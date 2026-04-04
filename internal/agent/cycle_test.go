@@ -3,7 +3,13 @@ package agent
 import "testing"
 
 func TestBindArtifact_CompareBindsComparedPortfolioRef(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, ProblemRef: "prob-1", PortfolioRef: "port-1"}
+	cycle := &Cycle{
+		Status:               CycleActive,
+		ProblemRef:           "prob-1",
+		PortfolioRef:         "port-1",
+		SelectedPortfolioRef: "port-1",
+		SelectedVariantRef:   "V1",
+	}
 
 	updated := BindArtifact(cycle, ArtifactMeta{
 		Kind:                 "solution",
@@ -16,13 +22,23 @@ func TestBindArtifact_CompareBindsComparedPortfolioRef(t *testing.T) {
 	if updated.ComparedPortfolioRef != "port-2" {
 		t.Fatalf("ComparedPortfolioRef = %q, want port-2", updated.ComparedPortfolioRef)
 	}
+	if updated.SelectedPortfolioRef != "" || updated.SelectedVariantRef != "" {
+		t.Fatalf("selection = (%q, %q), want cleared", updated.SelectedPortfolioRef, updated.SelectedVariantRef)
+	}
 	if updated.Phase != PhaseExplorer {
 		t.Fatalf("Phase = %s, want %s", updated.Phase, PhaseExplorer)
 	}
 }
 
 func TestBindArtifact_ExploreClearsComparedPortfolioRef(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, ProblemRef: "prob-1", PortfolioRef: "port-old", ComparedPortfolioRef: "port-old"}
+	cycle := &Cycle{
+		Status:               CycleActive,
+		ProblemRef:           "prob-1",
+		PortfolioRef:         "port-old",
+		ComparedPortfolioRef: "port-old",
+		SelectedPortfolioRef: "port-old",
+		SelectedVariantRef:   "V2",
+	}
 
 	updated := BindArtifact(cycle, ArtifactMeta{Kind: "solution", Operation: "explore", ArtifactRef: "port-new"})
 	if updated == nil {
@@ -33,6 +49,9 @@ func TestBindArtifact_ExploreClearsComparedPortfolioRef(t *testing.T) {
 	}
 	if updated.ComparedPortfolioRef != "" {
 		t.Fatalf("ComparedPortfolioRef = %q, want empty", updated.ComparedPortfolioRef)
+	}
+	if updated.SelectedPortfolioRef != "" || updated.SelectedVariantRef != "" {
+		t.Fatalf("selection = (%q, %q), want cleared", updated.SelectedPortfolioRef, updated.SelectedVariantRef)
 	}
 	if updated.Phase != PhaseExplorer {
 		t.Fatalf("Phase = %s, want %s", updated.Phase, PhaseExplorer)
@@ -57,6 +76,8 @@ func TestBindArtifact_AdoptClearsComparedPortfolioWhenAdoptedPortfolioWasNotComp
 		ProblemRef:           "prob-old",
 		PortfolioRef:         "port-old",
 		ComparedPortfolioRef: "port-old",
+		SelectedPortfolioRef: "port-old",
+		SelectedVariantRef:   "V1",
 	}
 
 	updated := BindArtifact(cycle, ArtifactMeta{
@@ -74,6 +95,9 @@ func TestBindArtifact_AdoptClearsComparedPortfolioWhenAdoptedPortfolioWasNotComp
 	if updated.ComparedPortfolioRef != "" {
 		t.Fatalf("ComparedPortfolioRef = %q, want empty", updated.ComparedPortfolioRef)
 	}
+	if updated.SelectedPortfolioRef != "" || updated.SelectedVariantRef != "" {
+		t.Fatalf("selection = (%q, %q), want cleared", updated.SelectedPortfolioRef, updated.SelectedVariantRef)
+	}
 	if updated.Phase != PhaseExplorer {
 		t.Fatalf("Phase = %s, want %s", updated.Phase, PhaseExplorer)
 	}
@@ -85,6 +109,8 @@ func TestBindArtifact_AdoptClearsStaleRefsWhenNewProblemHasNoRelatedArtifacts(t 
 		ProblemRef:           "prob-old",
 		PortfolioRef:         "port-old",
 		ComparedPortfolioRef: "port-old",
+		SelectedPortfolioRef: "port-old",
+		SelectedVariantRef:   "V2",
 		DecisionRef:          "dec-old",
 	}
 
@@ -104,6 +130,9 @@ func TestBindArtifact_AdoptClearsStaleRefsWhenNewProblemHasNoRelatedArtifacts(t 
 	}
 	if updated.ComparedPortfolioRef != "" {
 		t.Fatalf("ComparedPortfolioRef = %q, want empty", updated.ComparedPortfolioRef)
+	}
+	if updated.SelectedPortfolioRef != "" || updated.SelectedVariantRef != "" {
+		t.Fatalf("selection = (%q, %q), want cleared", updated.SelectedPortfolioRef, updated.SelectedVariantRef)
 	}
 	if updated.DecisionRef != "" {
 		t.Fatalf("DecisionRef = %q, want empty", updated.DecisionRef)

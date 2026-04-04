@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,6 +70,126 @@ func setupHaftToolStore(t *testing.T) *artifact.Store {
 	}
 
 	return artifact.NewStore(db)
+}
+
+type decisionToolFixture struct {
+	ctx               context.Context
+	store             *artifact.Store
+	haftDir           string
+	problem           *artifact.Artifact
+	comparedPortfolio *artifact.Artifact
+	otherPortfolio    *artifact.Artifact
+	activeCycle       *agent.Cycle
+	registry          *Registry
+	tool              *HaftDecisionTool
+}
+
+func setupDecisionToolFixture(t *testing.T) decisionToolFixture {
+	t.Helper()
+
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comparedPortfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				ID:            "V1",
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep the existing request-response semantics",
+			},
+			{
+				ID:            "V2",
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: comparedPortfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency", "cost"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "42ms", "cost": "$120"},
+				"V2": {"latency": "18ms", "cost": "$180"},
+			},
+			NonDominatedSet: []string{"V1", "V2"},
+			SelectedRef:     "V2",
+			PolicyApplied:   "Minimize latency within budget.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherPortfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				ID:            "X1",
+				Title:         "WebSocket",
+				WeakestLink:   "connection lifecycle complexity",
+				NoveltyMarker: "Keep long-lived duplex sessions",
+			},
+			{
+				ID:            "X2",
+				Title:         "SSE",
+				WeakestLink:   "server-to-client only",
+				NoveltyMarker: "Use unidirectional event streams",
+			},
+		},
+		NoSteppingStoneRationale: "Both alternatives are transport candidates outside the compared portfolio.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activeCycle := &agent.Cycle{
+		ID:                   "cyc-active",
+		Status:               agent.CycleActive,
+		Phase:                agent.PhaseDecider,
+		ProblemRef:           problem.Meta.ID,
+		PortfolioRef:         comparedPortfolio.Meta.ID,
+		ComparedPortfolioRef: comparedPortfolio.Meta.ID,
+		SelectedPortfolioRef: comparedPortfolio.Meta.ID,
+		SelectedVariantRef:   "V2",
+	}
+
+	registry := &Registry{}
+	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
+		return activeCycle
+	})
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
+
+	return decisionToolFixture{
+		ctx:               ctx,
+		store:             store,
+		haftDir:           haftDir,
+		problem:           problem,
+		comparedPortfolio: comparedPortfolio,
+		otherPortfolio:    otherPortfolio,
+		activeCycle:       activeCycle,
+		registry:          registry,
+		tool:              tool,
+	}
 }
 
 func TestHaftQueryTool_FPFUsesInjectedSearch(t *testing.T) {
@@ -414,8 +535,8 @@ func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) 
 		activeCycle = &copy
 		return nil
 	})
-	registry.SetDecisionBoundaryChecker(func(context.Context) bool {
-		return true
+	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
+		return cycle != nil, nil
 	})
 
 	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
@@ -440,6 +561,222 @@ func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) 
 	}
 	if persisted.Phase != agent.PhaseDecider {
 		t.Fatalf("Phase = %s, want %s", persisted.Phase, agent.PhaseDecider)
+	}
+}
+
+func TestHaftDecisionTool_DecideFailsWhenComparedRepairCannotPersist(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:  "Transport choice",
+		Signal: "Latency variance between protocols",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep the existing request-response semantics",
+			},
+			{
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			SelectedRef:     "gRPC",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := &Registry{}
+	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
+		return &agent.Cycle{
+			ID:           "cyc-legacy",
+			Status:       agent.CycleActive,
+			ProblemRef:   problem.Meta.ID,
+			PortfolioRef: portfolio.Meta.ID,
+			Phase:        agent.PhaseExplorer,
+		}
+	})
+	registry.SetCycleUpdater(func(context.Context, *agent.Cycle) error {
+		return fmt.Errorf("disk full")
+	})
+	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
+		return cycle != nil, nil
+	})
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    problem.Meta.ID,
+		"portfolio_ref":  portfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta != nil {
+		t.Fatal("expected guardrail result, not a decision artifact")
+	}
+	if !strings.Contains(result.DisplayText, "could not persist the compared-portfolio repair") {
+		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
+	}
+}
+
+func TestHaftDecisionTool_DecideRequiresSelectedVariantToMatchUserChoice(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:  "Transport choice",
+		Signal: "Latency variance between protocols",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep the existing request-response semantics",
+			},
+			{
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			SelectedRef:     "gRPC",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := &Registry{}
+	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
+		return &agent.Cycle{
+			ID:                   "cyc-select",
+			Status:               agent.CycleActive,
+			ProblemRef:           problem.Meta.ID,
+			PortfolioRef:         portfolio.Meta.ID,
+			ComparedPortfolioRef: portfolio.Meta.ID,
+			SelectedPortfolioRef: portfolio.Meta.ID,
+			SelectedVariantRef:   "V2",
+			Phase:                agent.PhaseDecider,
+		}
+	})
+	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
+		return agent.HasDecisionSelection(cycle), nil
+	})
+
+	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    problem.Meta.ID,
+		"portfolio_ref":  portfolio.Meta.ID,
+		"selected_title": "REST",
+		"why_selected":   "Pretend the agent ignored the user's chosen variant.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta != nil {
+		t.Fatal("expected guardrail result, not a decision artifact")
+	}
+	if !strings.Contains(result.DisplayText, "does not match the human-selected variant") {
+		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
+	}
+}
+
+func TestHaftDecisionTool_DecideRejectsMismatchedPortfolioRef(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.otherPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Latency wins inside the compared portfolio.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta != nil {
+		t.Fatal("expected guardrail result, not a decision artifact")
+	}
+	if !strings.Contains(result.DisplayText, "active compared portfolio") {
+		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
+	}
+}
+
+func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Latency wins inside the compared portfolio.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected decision artifact metadata")
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasArtifactLink(decision.Meta.Links, fixture.comparedPortfolio.Meta.ID, "based_on") {
+		t.Fatalf("expected decision to link to active portfolio %q, links=%v", fixture.comparedPortfolio.Meta.ID, decision.Meta.Links)
 	}
 }
 
@@ -478,6 +815,16 @@ func TestHaftDecisionTool_PersistsFirstModuleCoverageFlag(t *testing.T) {
 	if !fields.FirstModuleCoverage {
 		t.Fatal("expected first_module_coverage flag to be persisted")
 	}
+}
+
+func hasArtifactLink(links []artifact.Link, ref, linkType string) bool {
+	for _, link := range links {
+		if link.Ref == ref && link.Type == linkType {
+			return true
+		}
+	}
+
+	return false
 }
 
 func TestHaftDecisionTool_SuppressesFirstModuleCoverageWarningWhenGoverned(t *testing.T) {

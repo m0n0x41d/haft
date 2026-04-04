@@ -48,6 +48,8 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 		Depth:                agent.DepthStandard,
 		Status:               agent.CycleComplete,
 		ComparedPortfolioRef: "port-001",
+		SelectedPortfolioRef: "port-001",
+		SelectedVariantRef:   "V2",
 		Assurance: agent.AssuranceTuple{
 			F: 2,
 			G: []string{"criterion/latency", "criterion/throughput"},
@@ -80,8 +82,16 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 	if stored.ComparedPortfolioRef != "port-001" {
 		t.Errorf("ComparedPortfolioRef = %q, want port-001", stored.ComparedPortfolioRef)
 	}
+	if stored.SelectedPortfolioRef != "port-001" {
+		t.Errorf("SelectedPortfolioRef = %q, want port-001", stored.SelectedPortfolioRef)
+	}
+	if stored.SelectedVariantRef != "V2" {
+		t.Errorf("SelectedVariantRef = %q, want V2", stored.SelectedVariantRef)
+	}
 
 	cycle.ComparedPortfolioRef = "port-002"
+	cycle.SelectedPortfolioRef = "port-002"
+	cycle.SelectedVariantRef = "V1"
 	cycle.Assurance = agent.AssuranceTuple{
 		F: 1,
 		G: []string{"criterion/latency"},
@@ -110,9 +120,15 @@ func TestSQLiteStore_PersistsCycleAssuranceTuple(t *testing.T) {
 	if updated.ComparedPortfolioRef != "port-002" {
 		t.Errorf("updated ComparedPortfolioRef = %q, want port-002", updated.ComparedPortfolioRef)
 	}
+	if updated.SelectedPortfolioRef != "port-002" {
+		t.Errorf("updated SelectedPortfolioRef = %q, want port-002", updated.SelectedPortfolioRef)
+	}
+	if updated.SelectedVariantRef != "V1" {
+		t.Errorf("updated SelectedVariantRef = %q, want V1", updated.SelectedVariantRef)
+	}
 }
 
-func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration11(t *testing.T) {
+func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration12(t *testing.T) {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "session.db")
@@ -162,12 +178,12 @@ func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration11(t *testing.T) {
 	}
 
 	var applied int
-	err = sqlDB.QueryRow(`SELECT COUNT(*) FROM agent_schema_version WHERE version = 11`).Scan(&applied)
+	err = sqlDB.QueryRow(`SELECT COUNT(*) FROM agent_schema_version WHERE version = 12`).Scan(&applied)
 	if err != nil {
-		t.Fatalf("read migration 11 marker: %v", err)
+		t.Fatalf("read migration 12 marker: %v", err)
 	}
 	if applied != 1 {
-		t.Fatalf("migration 11 marker count = %d, want 1", applied)
+		t.Fatalf("migration 12 marker count = %d, want 1", applied)
 	}
 
 	ctx := context.Background()
@@ -190,6 +206,8 @@ func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration11(t *testing.T) {
 		Phase:                agent.PhaseExplorer,
 		Status:               agent.CycleActive,
 		ComparedPortfolioRef: "portfolio-compare",
+		SelectedPortfolioRef: "portfolio-compare",
+		SelectedVariantRef:   "V2",
 		Assurance: agent.AssuranceTuple{
 			F: 1,
 			G: []string{"criterion/speed"},
@@ -209,6 +227,12 @@ func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration11(t *testing.T) {
 	}
 	if stored.ComparedPortfolioRef != "portfolio-compare" {
 		t.Fatalf("ComparedPortfolioRef = %q, want portfolio-compare", stored.ComparedPortfolioRef)
+	}
+	if stored.SelectedPortfolioRef != "portfolio-compare" {
+		t.Fatalf("SelectedPortfolioRef = %q, want portfolio-compare", stored.SelectedPortfolioRef)
+	}
+	if stored.SelectedVariantRef != "V2" {
+		t.Fatalf("SelectedVariantRef = %q, want V2", stored.SelectedVariantRef)
 	}
 	if stored.Assurance.F != 1 {
 		t.Fatalf("Assurance.F = %d, want 1", stored.Assurance.F)

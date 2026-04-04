@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -441,25 +442,133 @@ func resolveComparedPortfolioRef(ctx context.Context, store artifact.ArtifactSto
 	return artifact.ResolveComparedPortfolioRef(ctx, store, portfolioRef)
 }
 
-func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store artifact.ArtifactStore, registry *Registry) *agent.Cycle {
-	if cycle == nil || store == nil {
-		return cycle
+func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store artifact.ArtifactStore, registry *Registry) (*agent.Cycle, error) {
+	if cycle == nil || store == nil || registry == nil {
+		return cycle, nil
 	}
 	if strings.TrimSpace(cycle.PortfolioRef) == "" || cycle.ComparedPortfolioRef != "" {
-		return cycle
+		return cycle, nil
 	}
 
 	comparedPortfolioRef := artifact.ResolveComparedPortfolioRef(ctx, store, cycle.PortfolioRef)
 	if comparedPortfolioRef == "" {
-		return cycle
+		return cycle, nil
 	}
 
 	repaired := *cycle
 	repaired.ComparedPortfolioRef = comparedPortfolioRef
 	repaired.Phase = agent.DerivePhaseFromCycle(&repaired)
-	_ = registry.UpdateCycle(ctx, &repaired)
+	if err := registry.UpdateCycle(ctx, &repaired); err != nil {
+		return cycle, fmt.Errorf("persist compared portfolio repair: %w", err)
+	}
 
-	return &repaired
+	return &repaired, nil
+}
+
+func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle, selectedTitle string) error {
+	if !agent.HasDecisionSelection(cycle) || store == nil {
+		return nil
+	}
+
+	portfolio, err := store.Get(ctx, cycle.ComparedPortfolioRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: unable to load compared portfolio %q for selection verification: %w", cycle.ComparedPortfolioRef, err)
+	}
+
+	variant, ok := selectedVariant(portfolio, cycle.SelectedVariantRef)
+	if !ok {
+		return fmt.Errorf("FPF guardrail: stored user selection %q is not present in compared portfolio %q. Re-run compare and restate the human choice.",
+			cycle.SelectedVariantRef, cycle.ComparedPortfolioRef)
+	}
+
+	if decisionMatchesSelectedVariant(selectedTitle, variant) {
+		return nil
+	}
+
+	return fmt.Errorf("FPF guardrail: decide selected_title %q does not match the human-selected variant %q (%s). Record the variant the human chose or ask them to restate their choice.",
+		selectedTitle, variant.ID, variant.Title)
+}
+
+func bindDecisionPortfolioRef(args map[string]any, cycle *agent.Cycle) error {
+	if cycle == nil {
+		return nil
+	}
+
+	activePortfolioRef := strings.TrimSpace(cycle.ComparedPortfolioRef)
+	if activePortfolioRef == "" {
+		activePortfolioRef = strings.TrimSpace(cycle.PortfolioRef)
+	}
+	if activePortfolioRef == "" {
+		return nil
+	}
+
+	requestedPortfolioRef := strings.TrimSpace(jsonStr(args, "portfolio_ref"))
+	if requestedPortfolioRef == "" {
+		args["portfolio_ref"] = activePortfolioRef
+		return nil
+	}
+
+	if requestedPortfolioRef == activePortfolioRef {
+		return nil
+	}
+
+	return &agent.GuardrailError{
+		Tool:    "haft_decision(decide)",
+		Missing: "portfolio_ref aligned with the active compared portfolio",
+		Guidance: fmt.Sprintf(
+			"Decide against the active compared portfolio %q. Omit portfolio_ref to use it automatically, or pass that exact value.",
+			activePortfolioRef,
+		),
+	}
+}
+
+func selectedVariant(portfolio *artifact.Artifact, selectedRef string) (artifact.Variant, bool) {
+	fields := portfolio.UnmarshalPortfolioFields()
+	for _, variant := range fields.Variants {
+		if strings.TrimSpace(variant.ID) == selectedRef || strings.TrimSpace(variant.Title) == selectedRef {
+			return variant, true
+		}
+	}
+	return artifact.Variant{}, false
+}
+
+func decisionMatchesSelectedVariant(selectedTitle string, variant artifact.Variant) bool {
+	normalizedTitle := normalizeDecisionSelectionValue(selectedTitle)
+	if normalizedTitle == "" {
+		return false
+	}
+
+	aliases := []string{
+		variant.ID,
+		variant.Title,
+		variant.ID + " " + variant.Title,
+		"variant " + variant.ID,
+		"option " + variant.ID,
+	}
+
+	for _, alias := range aliases {
+		if normalizeDecisionSelectionValue(alias) == normalizedTitle {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizeDecisionSelectionValue(value string) string {
+	lowered := strings.ToLower(strings.TrimSpace(value))
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsLetter(r), unicode.IsNumber(r):
+			return r
+		case unicode.IsSpace(r):
+			return ' '
+		default:
+			return ' '
+		}
+	}, lowered)
+
+	return strings.Join(strings.Fields(cleaned), " ")
 }
 
 // ---------------------------------------------------------------------------
@@ -545,8 +654,24 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 		// FPF guardrails: requires compared variants + decision-boundary user selection
 		if t.registry != nil {
 			cycle := t.registry.ActiveCycle(ctx)
-			cycle = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
-			if err := agent.CanDecide(cycle, t.registry.DecisionBoundarySatisfied(ctx)); err != nil {
+			var err error
+			cycle, err = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
+			if err != nil {
+				return agent.PlainResult(fmt.Sprintf("FPF guardrail: haft_decision(decide) could not persist the compared-portfolio repair required for this cycle. %s", err.Error())), nil
+			}
+
+			selectionSatisfied, err := t.registry.DecisionBoundarySatisfied(ctx, cycle)
+			if err != nil {
+				return agent.PlainResult(fmt.Sprintf("FPF guardrail: haft_decision(decide) could not verify the compare -> decide selection boundary. %s", err.Error())), nil
+			}
+
+			if err := agent.CanDecide(cycle, selectionSatisfied); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindDecisionPortfolioRef(args, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateDecisionSelection(ctx, t.store, cycle, jsonStr(args, "selected_title")); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}

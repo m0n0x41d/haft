@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -30,7 +29,7 @@ func buildTestIndex(t *testing.T) (string, *sql.DB, func()) {
 func buildIndexWithChunks(t *testing.T, chunks []SpecChunk, withMeta bool) (string, *sql.DB, func()) {
 	t.Helper()
 
-	routes := loadRepoRoutes(t)
+	routes := testRoutesForChunks(chunks)
 	return buildIndexWithChunksAndRoutes(t, chunks, routes, withMeta)
 }
 
@@ -61,21 +60,59 @@ func buildIndexWithChunksAndRoutes(t *testing.T, chunks []SpecChunk, routes []Ro
 	return dbPath, db, cleanup
 }
 
-func loadRepoRoutes(t *testing.T) []Route {
-	t.Helper()
+func testRoutesForChunks(chunks []SpecChunk) []Route {
+	patternIDs := collectChunkPatternIDs(normalizeChunksForIndex(chunks))
+	routes := make([]Route, 0, 2)
 
-	_, filePath, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("failed to resolve test file path")
+	if hasAllPatternIDs(patternIDs, "A.6", "A.6.B") {
+		routes = append(routes, Route{
+			ID:          "boundary-unpacking",
+			Title:       "Boundary discipline and routing",
+			Description: "Boundary statements, contracts, and routing language.",
+			Matchers:    []string{"boundary", "contract", "routing", "deontic"},
+			Core:        []string{"A.6", "A.6.B"},
+			Chain:       []string{"A.6", "A.6.B"},
+		})
 	}
 
-	routePath := filepath.Join(filepath.Dir(filePath), "..", "..", ".context", "fpf-routes.json")
-	routes, err := LoadRoutes(routePath)
-	if err != nil {
-		t.Fatalf("LoadRoutes failed: %v", err)
+	if hasAllPatternIDs(patternIDs, "A.16", "B.4.1") {
+		chain := make([]string, 0, 5)
+		if hasAllPatternIDs(patternIDs, "C.2.2a") {
+			chain = append(chain, "C.2.2a")
+		}
+		chain = append(chain, "A.16")
+		if hasAllPatternIDs(patternIDs, "A.16.1") {
+			chain = append(chain, "A.16.1")
+		}
+		if hasAllPatternIDs(patternIDs, "A.16.2") {
+			chain = append(chain, "A.16.2")
+		}
+		chain = append(chain, "B.4.1")
+		if hasAllPatternIDs(patternIDs, "B.5.2.0") {
+			chain = append(chain, "B.5.2.0")
+		}
+
+		routes = append(routes, Route{
+			ID:          "language-discovery",
+			Title:       "Language-state and routing cues",
+			Description: "How partial articulation becomes routed and stabilized.",
+			Matchers:    []string{"language", "cue", "route", "stabilize", "routed"},
+			Core:        []string{"A.16", "B.4.1"},
+			Chain:       chain,
+		})
 	}
 
 	return routes
+}
+
+func hasAllPatternIDs(patternIDs map[string]struct{}, ids ...string) bool {
+	for _, id := range ids {
+		if _, ok := patternIDs[id]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 func TestBuildSpecIndex_CreatesDB(t *testing.T) {
@@ -83,7 +120,7 @@ func TestBuildSpecIndex_CreatesDB(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	chunks := []SpecChunk{{ID: 0, Heading: "Test", Level: 1, Body: "Content"}}
-	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
 		t.Fatalf("BuildSpecIndex failed: %v", err)
 	}
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -96,12 +133,12 @@ func TestBuildSpecIndex_OverwritesExisting(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	chunks := []SpecChunk{{ID: 0, Heading: "V1", Level: 1, Body: "Version 1", PatternID: "A.1"}}
-	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
 		t.Fatal(err)
 	}
 
 	chunks2 := []SpecChunk{{ID: 0, Heading: "V2", Level: 1, Body: "Version 2", PatternID: "A.2"}}
-	if err := BuildSpecIndex(dbPath, chunks2, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks2, testRoutesForChunks(chunks2)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +177,7 @@ func TestBuildSpecIndex_PersistsTypedEdges(t *testing.T) {
 		{ID: 1, Heading: "B.1 - Target", Level: 2, Body: "Body", PatternID: "B.1"},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -182,7 +219,7 @@ func TestBuildSpecIndex_FallsBackToRelatedEdges(t *testing.T) {
 		{ID: 1, Heading: "B.2 - Target", Level: 2, Body: "Body", PatternID: "B.2"},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -247,7 +284,7 @@ func TestBuildSpecIndex_NormalizesPatternIDs(t *testing.T) {
 		},
 	}
 
-	if err := BuildSpecIndex(dbPath, chunks, loadRepoRoutes(t)); err != nil {
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -355,15 +392,27 @@ func TestSearchSpec_RelatedExpansionPrefersTypedEdges(t *testing.T) {
 
 	relatedResults := filterResultsByTier(results, "related")
 	got := resultPatternIDs(relatedResults)
-	want := []string{"B.1", "B.2", "B.3"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected related expansion order: got %v want %v", got, want)
+	wantPrefix := []string{"B.1", "B.2", "B.3"}
+	if len(got) != 5 {
+		t.Fatalf("unexpected related expansion count: got %v", got)
 	}
-	if len(relatedResults) == 0 {
-		t.Fatal("expected related results")
+	if !reflect.DeepEqual(got[:3], wantPrefix) {
+		t.Fatalf("unexpected preferred-edge order: got %v want prefix %v", got, wantPrefix)
 	}
-	if relatedResults[0].Reason != "builds_on via A.6" {
-		t.Fatalf("unexpected related reason: %#v", relatedResults[0])
+
+	buildsOnResult := findResultByPatternID(relatedResults, "B.1")
+	if buildsOnResult == nil || buildsOnResult.Reason != "builds_on via A.6" {
+		t.Fatalf("unexpected builds_on reason: %#v", buildsOnResult)
+	}
+
+	relatedResult := findResultByPatternID(relatedResults, "B.4")
+	if relatedResult == nil || relatedResult.Reason != "related via A.6" {
+		t.Fatalf("unexpected fallback reason: %#v", relatedResult)
+	}
+
+	informsResult := findResultByPatternID(relatedResults, "B.5")
+	if informsResult == nil || informsResult.Reason != "informs via A.6" {
+		t.Fatalf("unexpected weaker-edge reason: %#v", informsResult)
 	}
 }
 
@@ -401,6 +450,42 @@ func TestSearchSpec_RelatedExpansionFallsBackToWeakerEdges(t *testing.T) {
 	}
 }
 
+func TestSearchSpec_RelatedExpansionPrefersWeakTypedEdgesOverGenericRelated(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.6 - Signature Stack & Boundary Discipline",
+			Level:     2,
+			Body:      "Boundary statements need routing.",
+			PatternID: "A.6",
+			Edges: []SpecEdge{
+				{FromPatternID: "A.6", ToPatternID: "B.1", EdgeType: SpecEdgeTypeConstrains},
+				{FromPatternID: "A.6", ToPatternID: "B.2", EdgeType: SpecEdgeTypeInforms},
+			},
+			RelatedIDs: []string{"B.3"},
+		},
+		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+		{ID: 2, Heading: "B.1 — Constrains Target", Level: 2, Body: "Constrains.", PatternID: "B.1"},
+		{ID: 3, Heading: "B.2 — Informs Target", Level: 2, Body: "Informs.", PatternID: "B.2"},
+		{ID: 4, Heading: "B.3 — Related Target", Level: 2, Body: "Related.", PatternID: "B.3"},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpec(db, "boundary routing", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relatedResults := filterResultsByTier(results, "related")
+	got := resultPatternIDs(relatedResults)
+	want := []string{"B.1", "B.2", "B.3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected weak-edge fallback order: got %v want %v", got, want)
+	}
+}
+
 func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	chunks := []SpecChunk{
 		{
@@ -409,6 +494,11 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 			Level:     2,
 			Body:      "Boundary statements need routing.",
 			PatternID: "A.6",
+			RelatedIDs: []string{
+				"Z.1",
+				"Z.2",
+				"Z.3",
+			},
 		},
 		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
 	}
@@ -429,6 +519,17 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 		})
 	}
 
+	for index := 0; index < 3; index++ {
+		patternID := fmt.Sprintf("Z.%d", index+1)
+		chunks = append(chunks, SpecChunk{
+			ID:        relatedExpansionLimit + index + 5,
+			Heading:   patternID + " — Fallback Target",
+			Level:     2,
+			Body:      "Fallback.",
+			PatternID: patternID,
+		})
+	}
+
 	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
 	defer cleanup()
 
@@ -440,6 +541,10 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	relatedResults := filterResultsByTier(results, "related")
 	if len(relatedResults) != relatedExpansionLimit {
 		t.Fatalf("expected %d related results, got %d", relatedExpansionLimit, len(relatedResults))
+	}
+	got := resultPatternIDs(relatedResults)
+	if containsString(got, "Z.1") || containsString(got, "Z.2") || containsString(got, "Z.3") {
+		t.Fatalf("expected cap to exclude fallback overflow, got %v", got)
 	}
 }
 
@@ -533,6 +638,10 @@ func TestSearchSpec_ExactPatternLookupNormalizesVariants(t *testing.T) {
 		{ID: 2, Heading: "A.6:4.1 - Worked Example", Level: 3, Body: "Worked example.", PatternID: "A.6:4.1"},
 		{ID: 3, Heading: "C.2.2a - Language-State Space", Level: 2, Body: "Language-state chart.", PatternID: "C.2.2a"},
 		{ID: 4, Heading: "A.19.CN - CN-frame", Level: 2, Body: "Comparability and normalization.", PatternID: "A.19.CN"},
+		{ID: 5, Heading: "G.Core - Part G Core Invariants", Level: 2, Body: "Part G core invariants.", PatternID: "G.Core"},
+		{ID: 6, Heading: "G.Core:1 - Problem frame", Level: 3, Body: "Problem frame.", PatternID: "G.Core:1"},
+		{ID: 7, Heading: "A.0:End - End", Level: 3, Body: "End marker.", PatternID: "A.0:End"},
+		{ID: 8, Heading: "C.3.A:A.1 - Purpose & fit", Level: 5, Body: "Annex purpose.", PatternID: "C.3.A:A.1"},
 	}
 
 	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
@@ -550,6 +659,10 @@ func TestSearchSpec_ExactPatternLookupNormalizesVariants(t *testing.T) {
 		{query: "a.6:4.1", wantPatternID: "A.6:4.1", wantBodySubstr: "Worked example"},
 		{query: "c.2.2A", wantPatternID: "C.2.2a", wantBodySubstr: "Language-state chart"},
 		{query: "a.19.cn", wantPatternID: "A.19.CN", wantBodySubstr: "Comparability and normalization"},
+		{query: "g.core", wantPatternID: "G.CORE", wantBodySubstr: "Part G core invariants"},
+		{query: "g.core:1", wantPatternID: "G.CORE:1", wantBodySubstr: "Problem frame"},
+		{query: "a.0:end", wantPatternID: "A.0:END", wantBodySubstr: "End marker"},
+		{query: "c.3.a:a.1", wantPatternID: "C.3.A:A.1", wantBodySubstr: "Annex purpose"},
 	}
 
 	for _, tt := range tests {
@@ -645,4 +758,22 @@ func resultPatternIDs(results []SpecSearchResult) []string {
 		patternIDs = append(patternIDs, result.PatternID)
 	}
 	return patternIDs
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func findResultByPatternID(results []SpecSearchResult, patternID string) *SpecSearchResult {
+	for index := range results {
+		if results[index].PatternID == patternID {
+			return &results[index]
+		}
+	}
+	return nil
 }

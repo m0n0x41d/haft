@@ -961,9 +961,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 			return "", fmt.Errorf("fpf search: %w", err)
 		}
 		if len(results) == 0 {
-			return present.FormatFPFSearch(nil, present.FPFSearchOptions{
-				EmptyMessage: fmt.Sprintf("No FPF spec results for: %s", query),
-			}), nil
+			return formatMCPFPFSearch(nil), nil
 		}
 
 		formattedResults := make([]present.FPFSearchResult, 0, len(results))
@@ -976,10 +974,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 				Content:   r.Snippet,
 			})
 		}
-		return present.FormatFPFSearch(formattedResults, present.FPFSearchOptions{
-			Header:    fmt.Sprintf("## FPF Spec: %s (%d results)", query, len(results)),
-			Enumerate: true,
-		}) + navStrip, nil
+		return formatMCPFPFSearch(formattedResults), nil
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', 'coverage', or 'fpf'", action)

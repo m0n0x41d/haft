@@ -563,9 +563,7 @@ func buildFPFSearchFunc() tools.FPFSearchFunc {
 			return "", err
 		}
 		if len(results) == 0 {
-			return present.FormatFPFSearch(nil, present.FPFSearchOptions{
-				EmptyMessage: "No FPF spec matches for: " + query,
-			}), nil
+			return formatAgentFPFSearch(query, nil), nil
 		}
 
 		formattedResults := make([]present.FPFSearchResult, 0, len(results))
@@ -578,6 +576,6 @@ func buildFPFSearchFunc() tools.FPFSearchFunc {
 				Content:   r.Snippet,
 			})
 		}
-		return present.FormatFPFSearch(formattedResults, present.FPFSearchOptions{}), nil
+		return formatAgentFPFSearch(query, formattedResults), nil
 	}
 }

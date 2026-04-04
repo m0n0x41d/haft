@@ -45,7 +45,7 @@ var fpfSectionCmd = &cobra.Command{
 
 var fpfInfoCmd = &cobra.Command{
 	Use:   "info",
-	Short: "Show FPF index version and upstream commit",
+	Short: "Show FPF index version and provenance metadata",
 	RunE:  runFPFInfo,
 }
 
@@ -115,9 +115,7 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(results) == 0 {
-		fmt.Print(present.FormatFPFSearch(nil, present.FPFSearchOptions{
-			EmptyMessage: "No results found.",
-		}))
+		fmt.Print(formatCLIFPFSearch(nil))
 		return nil
 	}
 
@@ -140,9 +138,7 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	fmt.Print(present.FormatFPFSearch(formattedResults, present.FPFSearchOptions{
-		Enumerate: true,
-	}))
+	fmt.Print(formatCLIFPFSearch(formattedResults))
 	return nil
 }
 

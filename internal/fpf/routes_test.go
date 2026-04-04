@@ -45,6 +45,59 @@ func TestParseRoutes_NormalizesRouteArtifact(t *testing.T) {
 	}
 }
 
+func TestParseRoutes_RejectsInvalidRouteShape(t *testing.T) {
+	tests := []struct {
+		name     string
+		artifact string
+		wantErr  string
+	}{
+		{
+			name: "missing matcher",
+			artifact: `{
+				"routes": [
+					{
+						"id": "boundary-unpacking",
+						"title": "Boundary discipline and routing",
+						"description": "Boundary statements.",
+						"matchers": [],
+						"core": ["A.6"],
+						"chain": ["A.6", "A.6.B"]
+					}
+				]
+			}`,
+			wantErr: `route "boundary-unpacking" must define at least one matcher`,
+		},
+		{
+			name: "core outside chain",
+			artifact: `{
+				"routes": [
+					{
+						"id": "boundary-unpacking",
+						"title": "Boundary discipline and routing",
+						"description": "Boundary statements.",
+						"matchers": ["boundary"],
+						"core": ["A.6.C"],
+						"chain": ["A.6", "A.6.B"]
+					}
+				]
+			}`,
+			wantErr: `route "boundary-unpacking" core pattern "A.6.C" must also appear in chain`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseRoutes(strings.NewReader(test.artifact))
+			if err == nil {
+				t.Fatal("ParseRoutes unexpectedly succeeded")
+			}
+			if !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("unexpected error: got %q want substring %q", err.Error(), test.wantErr)
+			}
+		})
+	}
+}
+
 func TestBuildSpecIndex_PersistsRoutesFromArtifact(t *testing.T) {
 	tmpDir := t.TempDir()
 	routePath := filepath.Join(tmpDir, "routes.json")
@@ -118,5 +171,45 @@ func TestBuildSpecIndex_PersistsRoutesFromArtifact(t *testing.T) {
 	}
 	if chainJSON != `["A.6","A.6.B","A.6.C"]` {
 		t.Fatalf("unexpected chain json: %q", chainJSON)
+	}
+}
+
+func TestBuildSpecIndex_RejectsRoutesReferencingUnknownSections(t *testing.T) {
+	tmpDir := t.TempDir()
+	routePath := filepath.Join(tmpDir, "routes.json")
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	artifact := `{
+		"routes": [
+			{
+				"id": "boundary-unpacking",
+				"title": "Boundary discipline and routing",
+				"description": "Boundary statements.",
+				"matchers": ["boundary", "contract"],
+				"core": ["A.6", "A.6.X"],
+				"chain": ["A.6", "A.6.B", "A.6.X"]
+			}
+		]
+	}`
+	if err := os.WriteFile(routePath, []byte(artifact), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	routes, err := LoadRoutes(routePath)
+	if err != nil {
+		t.Fatalf("LoadRoutes failed: %v", err)
+	}
+
+	chunks := []SpecChunk{
+		{ID: 0, Heading: "A.6 - Boundary", Level: 2, Body: "Boundary statements.", PatternID: "A.6"},
+		{ID: 1, Heading: "A.6.B - Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	err = BuildSpecIndex(dbPath, chunks, routes)
+	if err == nil {
+		t.Fatal("BuildSpecIndex unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), `route "boundary-unpacking" references unknown section "A.6.X"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

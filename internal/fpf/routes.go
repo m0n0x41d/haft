@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -52,6 +53,10 @@ func ParseRoutes(r io.Reader) ([]Route, error) {
 		routes = append(routes, normalizeRoute(route))
 	}
 
+	if err := validateRouteShape(routes); err != nil {
+		return nil, err
+	}
+
 	return routes, nil
 }
 
@@ -71,4 +76,91 @@ func normalizeRoutePatternIDs(patternIDs []string) []string {
 		normalized = append(normalized, normalizePatternID(patternID))
 	}
 	return dedupeStrings(normalized)
+}
+
+func validateRouteShape(routes []Route) error {
+	issues := make([]string, 0)
+
+	for _, route := range routes {
+		routeRef := routeReference(route)
+		if len(route.Matchers) == 0 {
+			issues = append(issues, fmt.Sprintf("route %q must define at least one matcher", routeRef))
+		}
+
+		chainSet := makeStringSet(route.Chain)
+		for _, patternID := range route.Core {
+			if _, ok := chainSet[patternID]; ok {
+				continue
+			}
+			issues = append(issues, fmt.Sprintf("route %q core pattern %q must also appear in chain", routeRef, patternID))
+		}
+	}
+
+	return joinRouteValidationIssues(issues)
+}
+
+func validateRouteReferences(routes []Route, chunks []SpecChunk) error {
+	indexedPatternIDs := collectChunkPatternIDs(chunks)
+	issues := make([]string, 0)
+
+	for _, route := range routes {
+		routeRef := routeReference(route)
+		referencedPatternIDs := append([]string{}, route.Core...)
+		referencedPatternIDs = append(referencedPatternIDs, route.Chain...)
+		referencedPatternIDs = dedupeStrings(referencedPatternIDs)
+
+		for _, patternID := range referencedPatternIDs {
+			if _, ok := indexedPatternIDs[patternID]; ok {
+				continue
+			}
+			issues = append(issues, fmt.Sprintf("route %q references unknown section %q", routeRef, patternID))
+		}
+	}
+
+	return joinRouteValidationIssues(issues)
+}
+
+func routeReference(route Route) string {
+	if route.ID != "" {
+		return route.ID
+	}
+	if route.Title != "" {
+		return route.Title
+	}
+	return "<unnamed>"
+}
+
+func collectChunkPatternIDs(chunks []SpecChunk) map[string]struct{} {
+	patternIDs := make(map[string]struct{}, len(chunks))
+
+	for _, chunk := range chunks {
+		if chunk.PatternID == "" {
+			continue
+		}
+		patternIDs[chunk.PatternID] = struct{}{}
+	}
+
+	return patternIDs
+}
+
+func makeStringSet(items []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(items))
+
+	for _, item := range items {
+		if item == "" {
+			continue
+		}
+		set[item] = struct{}{}
+	}
+
+	return set
+}
+
+func joinRouteValidationIssues(issues []string) error {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	sort.Strings(issues)
+	return fmt.Errorf("invalid route artifact: %s", strings.Join(issues, "; "))
 }

@@ -50,12 +50,12 @@ var relatedExpansionPreferredEdgeTypes = []SpecEdgeType{
 }
 
 var relatedExpansionFallbackEdgeTypes = []SpecEdgeType{
-	SpecEdgeTypeRelated,
 	SpecEdgeTypeConstrains,
 	SpecEdgeTypeInforms,
 	SpecEdgeTypeUsedBy,
 	SpecEdgeTypeRefines,
 	SpecEdgeTypeSpecialisedBy,
+	SpecEdgeTypeRelated,
 }
 
 type relatedExpansionPolicy struct {
@@ -76,6 +76,16 @@ var defaultRelatedExpansionPolicy = relatedExpansionPolicy{
 
 // BuildSpecIndex creates a structured SQLite index from spec chunks and route artifacts.
 func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
+	normalizedChunks := normalizeChunksForIndex(chunks)
+	normalizedRoutes := normalizeRoutesForIndex(routes)
+
+	if err := validateRouteShape(normalizedRoutes); err != nil {
+		return fmt.Errorf("validate routes: %w", err)
+	}
+	if err := validateRouteReferences(normalizedRoutes, normalizedChunks); err != nil {
+		return fmt.Errorf("validate routes: %w", err)
+	}
+
 	_ = os.Remove(dbPath)
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -148,8 +158,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 	defer func() { _ = routeIns.Close() }()
 
 	seenEdges := make(map[string]struct{})
-	for _, c := range chunks {
-		c = normalizeChunkForIndex(c)
+	for _, c := range normalizedChunks {
 		keywordsJSON := mustJSON(c.Keywords)
 		queriesJSON := mustJSON(c.Queries)
 		aliasesJSON := mustJSON(c.Aliases)
@@ -192,8 +201,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 		}
 	}
 
-	for _, route := range routes {
-		route = normalizeRoute(route)
+	for _, route := range normalizedRoutes {
 		if _, err := routeIns.Exec(route.ID, route.Title, route.Description, mustJSON(route.Matchers), mustJSON(route.Core), mustJSON(route.Chain)); err != nil {
 			return fmt.Errorf("insert route %s: %w", route.ID, err)
 		}
@@ -422,11 +430,9 @@ func selectRelatedCandidates(candidates []relatedCandidate, seeds []string, poli
 	sortRelatedCandidates(preferred, seedOrder, relatedExpansionPreferredEdgeTypes)
 	sortRelatedCandidates(fallback, seedOrder, relatedExpansionFallbackEdgeTypes)
 
-	if len(preferred) > 0 {
-		return truncateRelatedCandidates(preferred, policy.MaxResults)
-	}
-
-	return truncateRelatedCandidates(fallback, policy.MaxResults)
+	selected := appendRelatedCandidates(preferred, fallback)
+	selected = truncateRelatedCandidates(selected, policy.MaxResults)
+	return selected
 }
 
 func buildRelatedResults(candidates []relatedCandidate) []SpecSearchResult {
@@ -551,6 +557,19 @@ func truncateRelatedCandidates(candidates []relatedCandidate, maxResults int) []
 		return candidates
 	}
 	return candidates[:maxResults]
+}
+
+func appendRelatedCandidates(groups ...[]relatedCandidate) []relatedCandidate {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+
+	combined := make([]relatedCandidate, 0, total)
+	for _, group := range groups {
+		combined = append(combined, group...)
+	}
+	return combined
 }
 
 func formatRelatedReason(candidate relatedCandidate) string {
@@ -739,4 +758,24 @@ func normalizeChunkForIndex(chunk SpecChunk) SpecChunk {
 	}
 
 	return chunk
+}
+
+func normalizeChunksForIndex(chunks []SpecChunk) []SpecChunk {
+	normalized := make([]SpecChunk, 0, len(chunks))
+
+	for _, chunk := range chunks {
+		normalized = append(normalized, normalizeChunkForIndex(chunk))
+	}
+
+	return normalized
+}
+
+func normalizeRoutesForIndex(routes []Route) []Route {
+	normalized := make([]Route, 0, len(routes))
+
+	for _, route := range routes {
+		normalized = append(normalized, normalizeRoute(route))
+	}
+
+	return normalized
 }

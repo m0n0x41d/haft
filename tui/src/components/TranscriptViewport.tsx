@@ -8,7 +8,6 @@ interface TranscriptViewportProps {
   entries: readonly TranscriptEntry[]
   measureRef: (entryId: string) => (node: DOMElement | null) => void
   viewport: VisibleWindow
-  viewportHeight: number
   width: number
 }
 

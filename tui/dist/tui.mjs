@@ -36866,7 +36866,6 @@ function App2({ client: client2, inputEvents }) {
           entries: visibleEntries,
           measureRef,
           viewport: vw,
-          viewportHeight: chatHeight,
           width
         }
       )

@@ -396,7 +396,6 @@ export function App({ client, inputEvents }: AppProps) {
           entries={visibleEntries}
           measureRef={measureRef}
           viewport={vw}
-          viewportHeight={chatHeight}
           width={width}
         />
       </Box>

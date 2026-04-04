@@ -87,6 +87,7 @@ export function App({ client, inputEvents }: AppProps) {
       end: 0,
       viewTop: 0,
       viewBottom: 0,
+      cropTop: 0,
       topSpacer: 0,
       bottomSpacer: 0,
       totalLines: 0,
@@ -405,8 +406,9 @@ export function App({ client, inputEvents }: AppProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Chat: bottom-anchored viewport over the full virtual transcript. */}
-      <Box flexDirection="column-reverse" height={chatHeight} overflowY="hidden">
+      {/* Chat: fixed-height viewport over the cropped mounted transcript slice. */}
+      <Box flexDirection="column" height={chatHeight} overflowY="hidden">
+        {atBottom && <Box flexGrow={1} />}
         <TranscriptViewport
           entries={visibleEntries}
           measureRef={measureRef}

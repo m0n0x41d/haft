@@ -20,6 +20,24 @@ test("computes a measured virtual window with overscan spacers", () => {
     end: 4,
     viewTop: 10,
     viewBottom: 18,
+    cropTop: 6,
+    topSpacer: 4,
+    bottomSpacer: 0,
+    totalLines: 18,
+  })
+})
+
+test("tracks a crop offset for non-zero scroll windows", () => {
+  const heights = [4, 6, 5, 3]
+  const offsets = computeOffsets(heights)
+  const window = computeVisibleWindow(offsets, 3, 8, 2)
+
+  assert.deepEqual(window, {
+    start: 1,
+    end: 4,
+    viewTop: 7,
+    viewBottom: 15,
+    cropTop: 3,
     topSpacer: 4,
     bottomSpacer: 0,
     totalLines: 18,

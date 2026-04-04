@@ -20,23 +20,13 @@ export function TranscriptViewport({
   width,
 }: TranscriptViewportProps) {
   return (
-    <Box flexDirection="column" flexShrink={0}>
-      <TranscriptSpacer height={viewport.topSpacer} />
+    <Box flexDirection="column" marginTop={-viewport.cropTop} flexShrink={0}>
       <ChatView
         entries={entries}
         width={width}
         toolHistoryExpanded={toolHistoryExpanded}
         measureRef={measureRef}
       />
-      <TranscriptSpacer height={viewport.bottomSpacer} />
     </Box>
   )
-}
-
-function TranscriptSpacer({ height }: { height: number }) {
-  if (height <= 0) {
-    return null
-  }
-
-  return <Box height={height} flexShrink={0} />
 }

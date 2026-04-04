@@ -6,7 +6,7 @@
   "main": "src/index.tsx",
   "scripts": {
     "dev": "tsx src/index.tsx",
-    "build": "esbuild src/index.tsx --bundle --platform=node --format=esm --outfile=dist/tui.mjs --external:yoga-wasm-web --external:@aspect-build/rules_js --external:react-devtools-core --external:cli-highlight --external:highlight.js",
+    "build": "esbuild src/bundle.ts --bundle --platform=node --format=esm --outfile=dist/tui.mjs --alias:react-devtools-core=./src/stubs/react-devtools-core.ts --external:yoga-wasm-web --external:@aspect-build/rules_js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -155,6 +155,7 @@ export interface VisibleWindow {
   end: number
   viewTop: number
   viewBottom: number
+  cropTop: number
   topSpacer: number
   bottomSpacer: number
   totalLines: number
@@ -174,6 +175,7 @@ export function computeVisibleWindow(
       end: 0,
       viewTop: 0,
       viewBottom: 0,
+      cropTop: 0,
       topSpacer: 0,
       bottomSpacer: 0,
       totalLines: 0,
@@ -194,6 +196,7 @@ export function computeVisibleWindow(
     end,
     viewTop,
     viewBottom,
+    cropTop: Math.max(0, viewTop - (offsets[start] ?? 0)),
     topSpacer: offsets[start] ?? 0,
     bottomSpacer: totalLines - (offsets[end] ?? totalLines),
     totalLines,

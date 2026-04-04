@@ -20,7 +20,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/hooks"
 	"github.com/m0n0x41d/haft/internal/jsonrpc"
 	"github.com/m0n0x41d/haft/internal/lsp"
-	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
@@ -546,41 +545,15 @@ func runAgent(cmd *cobra.Command, args []string) error {
 // Uses the embedded FPF spec database (same as `haft fpf search`).
 func buildFPFSearchFunc() tools.FPFSearchFunc {
 	return func(request tools.FPFSearchRequest) (string, error) {
-		db, cleanup, err := openFPFDB()
-		if err != nil {
-			return "", fmt.Errorf("open fpf db: %w", err)
-		}
-		defer cleanup()
-
-		results, err := fpf.SearchSpecWithOptions(db, request.Query, fpf.SpecSearchOptions{
+		retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
+			Query: request.Query,
 			Limit: request.Limit,
+			Full:  request.Full,
 		})
 		if err != nil {
 			return "", err
 		}
-		if len(results) == 0 {
-			return formatAgentFPFSearchWithExplain(request.Query, nil, request.Explain), nil
-		}
 
-		formattedResults := make([]present.FPFSearchResult, 0, len(results))
-		for _, r := range results {
-			content := r.Snippet
-			if request.Full {
-				body, err := fpf.GetSpecSection(db, firstNonEmpty(r.PatternID, r.Heading))
-				if err == nil {
-					content = body
-				}
-			}
-
-			formattedResults = append(formattedResults, present.FPFSearchResult{
-				PatternID: r.PatternID,
-				Heading:   r.Heading,
-				Tier:      r.Tier,
-				Reason:    r.Reason,
-				Summary:   r.Summary,
-				Content:   content,
-			})
-		}
-		return formatAgentFPFSearchWithExplain(request.Query, formattedResults, request.Explain), nil
+		return formatAgentFPFSearchWithExplain(retrieval.Query, presentFPFRetrieval(retrieval.Results), request.Explain), nil
 	}
 }

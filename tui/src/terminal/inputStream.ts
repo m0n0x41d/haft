@@ -226,6 +226,14 @@ export function createInputRouter(
       ttyInput.removeListener("data", onData)
       if (pasteTimer) clearTimeout(pasteTimer)
       if (pasteDeadlineTimer) clearTimeout(pasteDeadlineTimer)
+      try {
+        if (ttyInput.isRaw) {
+          ttyInput.setRawMode(false)
+        }
+      } catch {
+        // Terminal teardown must stay best-effort.
+      }
+      ttyInput.pause()
     },
   }
 }

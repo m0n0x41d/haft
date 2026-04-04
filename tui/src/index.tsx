@@ -27,6 +27,32 @@ import { preloadHighlighter } from "./rendering/highlight.js"
 
 trace("tui.start")
 
+type FatalBoundaryProps = {
+  children: React.ReactNode
+  onFatal: (error: Error, info: React.ErrorInfo) => void
+}
+
+type FatalBoundaryState = {
+  hasError: boolean
+}
+
+class FatalErrorBoundary extends React.Component<FatalBoundaryProps, FatalBoundaryState> {
+  state: FatalBoundaryState = { hasError: false }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    this.setState({ hasError: true })
+    this.props.onFatal(error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null
+    }
+
+    return this.props.children
+  }
+}
+
 // L0: open terminal
 const terminal = openTerminal()
 trace("tui.terminal_opened")
@@ -53,6 +79,17 @@ function cleanup() {
   router.destroy()
 }
 
+function handleFatalRender(error: Error, info: React.ErrorInfo) {
+  const detail = [error.stack ?? error.message, info.componentStack]
+    .filter((part): part is string => Boolean(part))
+    .join("\n")
+
+  trace(`tui.render_error ${detail}`)
+  cleanup()
+  console.error("haft TUI crashed:", detail || error.message)
+  setTimeout(() => process.exit(1), 0)
+}
+
 process.on("exit", cleanup)
 process.on("SIGINT", () => { cleanup(); process.exit(130) })
 process.on("SIGTERM", () => { cleanup(); process.exit(143) })
@@ -75,9 +112,11 @@ const client = new JsonRpcClient()
 // Ink gets the dummy stdin — it never receives input data.
 // All input goes through our EventEmitter → useInput hooks.
 render(
-  <InputProvider value={router.events}>
-    <App client={client} inputEvents={router.events} />
-  </InputProvider>,
+  <FatalErrorBoundary onFatal={handleFatalRender}>
+    <InputProvider value={router.events}>
+      <App client={client} inputEvents={router.events} />
+    </InputProvider>
+  </FatalErrorBoundary>,
   {
     stdin: router.inkStdin as any,
     stdout: terminal.output,

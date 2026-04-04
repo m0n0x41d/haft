@@ -356,11 +356,11 @@ func runAgent(cmd *cobra.Command, args []string) error {
 						Data:     data,
 					})
 				} else if att.Content != "" {
-					parts = append(parts, agent.TextPart{Text: fmt.Sprintf("[File: %s]\n%s", att.Name, att.Content)})
+					parts = append(parts, agent.TextPart{Text: persistedFileAttachmentText(att.Name, att.Content)})
 				} else if att.Path != "" {
 					data, err := os.ReadFile(att.Path)
 					if err == nil {
-						parts = append(parts, agent.TextPart{Text: fmt.Sprintf("[File: %s]\n%s", att.Name, string(data))})
+						parts = append(parts, agent.TextPart{Text: persistedFileAttachmentText(att.Name, string(data))})
 					}
 				}
 			}
@@ -441,18 +441,12 @@ func runAgent(cmd *cobra.Command, args []string) error {
 						return
 					}
 					sess = oldSess
-					var msgInfos []protocol.MsgInfo
-					for _, m := range msgs {
-						msgInfos = append(msgInfos, protocol.MsgInfo{
-							ID: m.ID, Role: string(m.Role), Text: m.Text(),
-						})
-					}
 					_ = rpc.Respond(*msg.ID, protocol.SessionResumeResponse{
 						Session: protocol.SessionInfo{
 							ID: sess.ID, Title: sess.Title, Model: sess.Model,
 							Interaction: string(sess.Interaction), Yolo: sess.Yolo,
 						},
-						Messages: msgInfos,
+						Messages: msgsToMsgInfos(msgs),
 					})
 				}()
 			}

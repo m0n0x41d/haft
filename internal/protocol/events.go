@@ -23,21 +23,28 @@ type SessionInfo struct {
 	Yolo        bool   `json:"yolo,omitempty"`
 }
 
+type MessageAttachment struct {
+	Name    string `json:"name"`
+	IsImage bool   `json:"isImage"`
+}
+
 type MsgInfo struct {
-	ID       string     `json:"id"`
-	Role     string     `json:"role"` // "user" | "assistant"
-	Text     string     `json:"text"`
-	Thinking string     `json:"thinking,omitempty"`
-	Tools    []ToolCall `json:"tools,omitempty"`
+	ID          string              `json:"id"`
+	Role        string              `json:"role"` // "user" | "assistant"
+	Text        string              `json:"text"`
+	Attachments []MessageAttachment `json:"attachments,omitempty"`
+	Thinking    string              `json:"thinking,omitempty"`
+	Tools       []ToolCall          `json:"tools,omitempty"`
 }
 
 // MsgUpdate carries streaming assistant message state.
 type MsgUpdate struct {
-	ID        string     `json:"id"`
-	Text      string     `json:"text"`
-	Thinking  string     `json:"thinking,omitempty"`
-	Tools     []ToolCall `json:"tools,omitempty"`
-	Streaming bool       `json:"streaming"`
+	ID          string              `json:"id"`
+	Text        string              `json:"text"`
+	Attachments []MessageAttachment `json:"attachments,omitempty"`
+	Thinking    string              `json:"thinking,omitempty"`
+	Tools       []ToolCall          `json:"tools,omitempty"`
+	Streaming   bool                `json:"streaming"`
 }
 
 type ToolCall struct {

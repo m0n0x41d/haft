@@ -495,7 +495,7 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 
 // CheckDrift compares current file state against stored baseline hashes for all active decisions.
 func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([]DriftReport, error) {
-	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 500)
+	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
 	}
@@ -505,10 +505,6 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	var reports []DriftReport
 
 	for _, d := range decisions {
-		if d.Meta.Status != StatusActive {
-			continue
-		}
-
 		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
 		if err != nil || len(files) == 0 {
 			continue

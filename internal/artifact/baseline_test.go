@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestBaselineStoresHashes(t *testing.T) {
@@ -311,6 +313,50 @@ func TestScanStaleIncludesDrift(t *testing.T) {
 	}
 }
 
+func TestCheckDriftIncludesOldActiveDecisionBeyondFiveHundred(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	createdAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	writeTestFile(t, projectRoot, "drift-old.go", "package orig\n")
+
+	oldDecision := createTestDecisionAt(t, store, "dec-test-500-old", "Old drift", createdAt)
+	err := store.SetAffectedFiles(ctx, oldDecision.Meta.ID, []AffectedFile{{Path: "drift-old.go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: oldDecision.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for index := 0; index < 500; index++ {
+		id := fmt.Sprintf("dec-test-500-new-%03d", index)
+		title := fmt.Sprintf("Newer decision %03d", index)
+		newerCreatedAt := createdAt.Add(time.Duration(index+1) * time.Second)
+		createTestDecisionAt(t, store, id, title, newerCreatedAt)
+	}
+
+	writeTestFile(t, projectRoot, "drift-old.go", "package changed\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsDriftReport(reports, oldDecision.Meta.ID) {
+		t.Fatalf("expected drift report for %s beyond 500 newer decisions", oldDecision.Meta.ID)
+	}
+
+	items, err := ScanStale(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsStaleItem(items, oldDecision.Meta.ID) {
+		t.Fatalf("expected stale scan to include %s beyond 500 newer decisions", oldDecision.Meta.ID)
+	}
+}
+
 // TestFormatDriftResponse_LikelyImplemented moved to internal/present/format_test.go
 
 func TestCheckDriftReportsNoBaseline_LikelyImplementedFalseWithoutGit(t *testing.T) {
@@ -360,12 +406,20 @@ func hashTestFile(t *testing.T, root, path string) string {
 
 func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact {
 	t.Helper()
+
+	return createTestDecisionAt(t, store, id, title, time.Time{})
+}
+
+func createTestDecisionAt(t *testing.T, store *Store, id, title string, createdAt time.Time) *Artifact {
+	t.Helper()
+
 	a := &Artifact{
 		Meta: Meta{
-			ID:     id,
-			Kind:   KindDecisionRecord,
-			Title:  title,
-			Status: StatusActive,
+			ID:        id,
+			Kind:      KindDecisionRecord,
+			Title:     title,
+			Status:    StatusActive,
+			CreatedAt: createdAt,
 		},
 		Body: "# " + title + "\n\nTest decision.\n",
 	}
@@ -373,4 +427,24 @@ func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact 
 		t.Fatal(err)
 	}
 	return a
+}
+
+func containsDriftReport(reports []DriftReport, decisionID string) bool {
+	for _, report := range reports {
+		if report.DecisionID == decisionID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsStaleItem(items []StaleItem, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+
+	return false
 }

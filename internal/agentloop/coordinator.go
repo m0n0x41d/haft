@@ -104,24 +104,26 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 		})
 
 		// Wire Transformer Mandate consent checker:
-		// Returns true if a user message exists after the last explore tool call,
+		// Returns true if a user message exists after the last successful
+		// solution tool call (explore or compare),
 		// OR if interaction mode is autonomous (user explicitly delegated).
 		c.Tools.SetConsentChecker(func(ctx context.Context) bool {
 			if sess.Interaction == agent.InteractionAutonomous {
 				return true // user delegated — skip consent check
 			}
-			// Check message history: was there a user message after the last explore?
+			// Check message history: was there a user message after the last
+			// successful solution action?
 			msgs, err := c.Messages.ListBySession(ctx, sessID)
 			if err != nil {
 				return true // on error, don't block
 			}
-			lastExploreIdx := -1
+			lastSolutionIdx := -1
 			lastUserIdx := -1
 			for i, msg := range msgs {
 				for _, part := range msg.Parts {
 					if tp, ok := part.(agent.ToolResultPart); ok {
 						if tp.ToolName == "haft_solution" && !tp.IsError {
-							lastExploreIdx = i
+							lastSolutionIdx = i
 						}
 					}
 				}
@@ -129,12 +131,12 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 					lastUserIdx = i
 				}
 			}
-			// No explore yet → no consent needed (pre-explore phase)
-			if lastExploreIdx == -1 {
+			// No solution action yet → no consent needed (pre-compare phase)
+			if lastSolutionIdx == -1 {
 				return true
 			}
-			// User message after explore → consent given
-			return lastUserIdx > lastExploreIdx
+			// User message after explore/compare → consent given
+			return lastUserIdx > lastSolutionIdx
 		})
 
 		// Restore active cycle state to TUI (or clear if none)
@@ -181,25 +183,7 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 	// Build system prompt: unified prompt + repo map (dynamic, invalidated after edits)
 	systemPrompt := c.SystemPrompt
 
-	// Inject interaction mode — the LLM must know if autonomous mode is active
-	if sess.Interaction == agent.InteractionAutonomous {
-		systemPrompt += `
-
-## [MODE: AUTONOMOUS — ACTIVE NOW]
-
-The user explicitly toggled autonomous mode. This OVERRIDES the collaborative workflow rules above.
-
-IN AUTONOMOUS MODE YOU MUST:
-- ACT, don't describe. Never say "I'll do X" — just DO X.
-- CHAIN all phases in one turn: frame → explore → decide → implement → measure.
-- EXECUTE tool calls immediately. Don't read 3 files then explain what you found — read, act, continue.
-- SKIP all "STOP and present" checkpoints. The user delegated — they trust you.
-- NEVER ask "shall I proceed?" or "would you like me to..." — the answer is always YES.
-- When the user says "do it" or "давай" — that means START WORKING NOW, not "explain your plan."
-
-The Transformer Mandate still applies to DECISIONS (user's choices/directions are authoritative).
-But it does NOT apply to EXECUTION STEPS — you don't need approval for each tool call, each file read, each edit. Just do the work.`
-	}
+	systemPrompt += interactionModePrompt(sess.Interaction)
 
 	// Inject repo map (lazy rebuild after edits)
 	if repoMap := c.getRepoMap(); repoMap != "" {
@@ -219,6 +203,29 @@ But it does NOT apply to EXECUTION STEPS — you don't need approval for each to
 	if isFirstTurn && firstUserText != "" {
 		go c.generateTitle(sess, firstUserText)
 	}
+}
+
+func interactionModePrompt(interaction agent.Interaction) string {
+	if interaction != agent.InteractionAutonomous {
+		return ""
+	}
+
+	return `
+
+## [MODE: AUTONOMOUS — ACTIVE NOW]
+
+The user explicitly toggled autonomous mode. This OVERRIDES the collaborative workflow rules above.
+
+IN AUTONOMOUS MODE YOU MUST:
+- ACT, don't describe. Never say "I'll do X" — just DO X.
+- CHAIN all phases in one turn: frame → explore → compare → decide → implement → measure.
+- EXECUTE tool calls immediately. Don't read 3 files then explain what you found — read, act, continue.
+- SKIP all "STOP and present" checkpoints. The user delegated — they trust you.
+- NEVER ask "shall I proceed?" or "would you like me to..." — the answer is always YES.
+- When the user says "do it" or "давай" — that means START WORKING NOW, not "explain your plan."
+
+The Transformer Mandate still applies to DECISIONS (user's choices/directions are authoritative).
+But it does NOT apply to EXECUTION STEPS — you don't need approval for each tool call, each file read, each edit. Just do the work.`
 }
 
 // ---------------------------------------------------------------------------

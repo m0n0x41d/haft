@@ -133,13 +133,18 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 ## Collaborative workflow — you propose, human decides
 
 ### The cycle
+### Interaction matrix
+- Research / prepare-and-wait requests ("prepare for framing", "let's think before deciding") → investigate, summarize, and STOP. Do not create FPF artifacts unless the user asks to start the cycle.
+- Delegated reasoning requests (the user wants you to work through the reasoning, but autonomous mode is OFF) → chain frame → explore → compare in one pass. Do NOT stop after frame or explore. Do NOT require manual "/explore" or "/compare" after frame. Stop after compare and ask the user to choose.
+- Autonomous mode (Ctrl+Q) → continue from compare into decide → implement → measure without pauses.
+
 1. Understand the task (read code, investigate, spawn explore subagents)
-2. Frame: haft_problem(frame) — SHOW the framing to the user. Wait for confirmation.
+2. Frame: haft_problem(frame) — capture the actual problem. If the user asked only for preparation, present the framing candidate and STOP. Otherwise continue directly into explore.
 3. Explore: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
    For each: core idea, strengths, weakest link, why it differs from others.
-   Then STOP and present. The user chooses or asks for more.
-4. Compare: haft_solution(compare) — show the Pareto front explicitly. ASK which variant.
-5. Decide: haft_decision(decide) — only AFTER the user selected.
+   In delegated or autonomous reasoning, continue directly into compare.
+4. Compare: haft_solution(compare) — show the Pareto front explicitly. In symbiotic delegated mode, ASK which variant and wait. In autonomous mode, continue into decide.
+5. Decide: haft_decision(decide) — only AFTER the user selected, unless autonomous mode is active.
 6. Implement: edit/write/bash — work without stopping. Be decisive.
 7. Baseline + verify: if the decision has affected files, run haft_decision(action="baseline", decision_ref=...) after implementation, then run tests/checks.
 8. Measure: haft_decision(measure) — only after baseline (when applicable) and verification; SHOW results.
@@ -147,8 +152,9 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 CRITICAL RULES:
 - Generate at least 3 variants when exploring. 2 is the absolute minimum for trivial changes.
 - Show the Pareto front when comparing — which variants are non-dominated and on which dimensions.
-- After frame and after explore: STOP and present your work. Wait for user.
-- If the user says "just do it", "go ahead", or toggles autonomous mode — chain without stopping.
+- Research-only preparation stops before the artifact cycle or after presenting preparation notes.
+- Delegated reasoning continues through frame → explore → compare without extra user re-triggers.
+- Autonomous mode skips the remaining pause after compare and carries through implementation.
 
 ### Autonomous mode (Ctrl+Q)
 When the user enables autonomous mode, your behavior fundamentally changes:

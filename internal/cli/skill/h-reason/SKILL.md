@@ -16,7 +16,7 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 
 ## Context-aware entry — read what the user actually wants
 
-**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. FPF reasoning and FPF artifact persistence are different things. There are four distinct paths:
+**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. FPF reasoning and FPF artifact persistence are different things. There are five distinct paths:
 
 ### Path 1: Think and respond (no artifacts)
 **Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?"
@@ -35,12 +35,17 @@ The user wants packaging, persistence, formatting, or summarization. Do the dire
 
 The user wants to drive the cycle themselves. Gather context (read relevant code, search existing decisions, research). Present findings. **Stop and wait** for the user to decide the next step — they will call `/h-frame`, `/h-char`, etc. when ready.
 
-### Path 4: Full autonomous cycle (agent drives)
+### Path 4: Delegated reasoning (agent drives through compare, then waits)
+**Trigger:** "/h-reason [topic], go ahead", "work through the options and bring me a recommendation", "frame it and compare approaches", natural-language delegation like "давай" / "do it" / "go ahead" when autonomous mode is NOT enabled
+
+The user wants the agent to drive the reasoning work, but not to make the final choice. Run frame → characterize if needed → explore → compare in one pass. **Do not stop after frame. Do not require a manual `/h-explore` or `/h-compare` step after frame.** Stop after compare, show the Pareto front, and ask the human to choose.
+
+### Path 5: Full autonomous cycle (agent drives)
 **Trigger:** "/h-reason [topic] and implement", "figure out the best approach and do it", "fix everything", explicit delegation to agent
 
 The user wants the agent to run the full cycle: frame → explore → compare → decide → implement. Only in this mode does the agent drive without pausing.
 
-**If unclear which path:** default to Path 3 (prepare and wait). Never default to Path 4. Ask: "Want me to think this through and present options, do the direct artifact action, or drive the full cycle and implement?"
+**If unclear which path:** default to Path 3 (prepare and wait). Never default to Path 5. Ask: "Want me to think this through and present options, drive the reasoning through compare and stop for your choice, or drive the full cycle and implement?"
 
 ---
 
@@ -259,9 +264,12 @@ This closes the lemniscate. Without measure, the decision stays open.
 - **When dev says "let's just do X" without rationale**: ask "why X?" before recording
 - **When auto-captured note conflicts with an active decision**: surface the conflict clearly
 
-### Escalation (user-triggered)
+### User steering
 
-These require explicit user action — don't auto-trigger:
+Slash commands are steering handles, not always mandatory triggers:
+- In **Path 3** (research + wait), the user explicitly triggers `/h-frame`, `/h-char`, `/h-explore`, or `/h-compare` when ready.
+- In **Path 4** (delegated reasoning), natural-language delegation like "давай", "do it", or "go ahead" is enough to continue through frame → explore → compare without waiting for a manual `/h-explore`.
+- In symbiotic reasoning, stop at comparison and wait for the human's choice before `/h-decide`.
 - `/h-frame` — full problem framing (diagnostic conversation)
 - `/h-explore` — variant generation
 - `/h-compare` — parity comparison
@@ -276,7 +284,8 @@ The `── Quint ──` strip appended to tool responses shows current state a
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
 - **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
 - **Fewer steps ≠ fewer checkpoints.** Tactical mode has fewer FPF steps but the same human consent requirement at each transition.
-- **Path 4 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through Available actions without pausing.
+- **Path 3 vs Path 4:** In research + wait mode, do not auto-advance from Available actions. In delegated reasoning mode, you may advance through frame/explore/compare without extra slash commands.
+- **Path 5 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through decide/implement/measure without pausing.
 
 ---
 

@@ -135,14 +135,31 @@ The agent captures decisions automatically when it notices them in conversation.
 
 `/h-reason` gives your AI agent an FPF-native operating system for engineering decisions: problem framing before solutions, characterization before comparison, parity enforcement, evidence with congruence penalties, weakest-link assurance, and the lemniscate cycle that closes itself when evidence ages or measurements fail.
 
-`haft fpf search` gives you access to the indexed FPF specification — the agent can look up concepts on demand. In MCP-capable clients, the same capability is also available through `haft_query(action="fpf", query="...")`.
+`haft fpf search` gives you access to the indexed FPF specification. The retrieval path is local and tiered: exact pattern id lookup first, then route-aware concept matches, then bounded related-section expansion, then keyword fallback. In MCP-capable clients, the same retrieval core is available through `haft_query(action="fpf", query="...")`.
 
-If you already know the exact section, use explicit section lookup by heading or pattern id:
+### Refresh the FPF index
 
 ```bash
+task fpf-index
+```
+
+This rebuilds `internal/cli/fpf.db` from `data/FPF/FPF-Spec.md` and the route artifacts used during indexing. That SQLite database is a build artifact embedded into the `haft` binary, so after regenerating it, run `task build`, `task install`, or `task dev` before expecting a rebuilt binary to serve the new index. Use `haft fpf info` to inspect the embedded index provenance when debugging stale results.
+
+### Query the indexed spec
+
+Use exact pattern ids when you know the section, and route-style natural-language queries when you know the concept:
+
+```bash
+haft fpf search "A.6"
+haft fpf search "a6:"
+haft fpf search "boundary routing" --tier route --explain
+haft fpf search "decision record" --full
 haft fpf section "A.6"
 haft fpf section "A.6 - Signature Stack & Boundary Discipline"
+haft fpf info
 ```
+
+Pattern ids are normalized, so common forms such as `A.6`, `a.6`, `A6`, and `A.6:` resolve to the same canonical section. `haft fpf section` supports exact lookup by heading or pattern id, while `haft fpf search` is the better entry point for route-aware discovery and explainable tiered search.
 
 ---
 

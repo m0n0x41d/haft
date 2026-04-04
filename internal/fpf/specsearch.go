@@ -20,6 +20,19 @@ type SpecSearchResult struct {
 	Reason    string
 }
 
+const (
+	SpecSearchTierPattern = "pattern"
+	SpecSearchTierRoute   = "route"
+	SpecSearchTierRelated = "related"
+	SpecSearchTierFTS     = "fts"
+)
+
+// SpecSearchOptions controls deterministic retrieval behavior for FPF queries.
+type SpecSearchOptions struct {
+	Limit int
+	Tier  string
+}
+
 type Route struct {
 	ID          string   `json:"id"`
 	Title       string   `json:"title"`
@@ -259,9 +272,23 @@ func SetSpecMetaEntries(dbPath string, entries map[string]string) error {
 
 // SearchSpec queries the structured index with exact-id, route, related, and FTS fallback tiers.
 func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) {
-	if limit <= 0 {
-		limit = 10
+	return SearchSpecWithOptions(db, query, SpecSearchOptions{
+		Limit: limit,
+	})
+}
+
+// SearchSpecWithOptions queries the structured index with deterministic search controls.
+func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) ([]SpecSearchResult, error) {
+	if options.Limit <= 0 {
+		options.Limit = 10
 	}
+
+	normalizedTier, err := NormalizeSpecSearchTier(options.Tier)
+	if err != nil {
+		return nil, err
+	}
+	options.Tier = normalizedTier
+
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -281,9 +308,12 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 		}
 	}
 
-	if patternID := extractPatternID(query); patternID != "" {
-		if result, err := searchByPatternID(db, patternID); err == nil {
-			appendResults([]SpecSearchResult{result})
+	if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierPattern) {
+		patternID := extractPatternID(query)
+		if patternID != "" {
+			if result, err := searchByPatternID(db, patternID); err == nil {
+				appendResults([]SpecSearchResult{result})
+			}
 		}
 	}
 
@@ -291,12 +321,14 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 	if err != nil {
 		return nil, err
 	}
-	if route != nil {
+	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRoute) {
 		routeResults, err := searchRoute(db, *route)
 		if err != nil {
 			return nil, err
 		}
 		appendResults(routeResults)
+	}
+	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
 		edgeResults, err := searchRelated(db, route.Core)
 		if err != nil {
 			return nil, err
@@ -304,11 +336,13 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 		appendResults(edgeResults)
 	}
 
-	ftsResults, err := searchFTS(db, query, limit*2)
-	if err != nil {
-		return nil, err
+	if shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierFTS) {
+		ftsResults, err := searchFTS(db, query, options.Limit*2)
+		if err != nil {
+			return nil, err
+		}
+		appendResults(ftsResults)
 	}
-	appendResults(ftsResults)
 
 	results := make([]SpecSearchResult, 0, len(resultsMap))
 	for _, result := range resultsMap {
@@ -323,10 +357,25 @@ func SearchSpec(db *sql.DB, query string, limit int) ([]SpecSearchResult, error)
 		}
 		return results[i].Rank < results[j].Rank
 	})
-	if len(results) > limit {
-		results = results[:limit]
+	if len(results) > options.Limit {
+		results = results[:options.Limit]
 	}
 	return results, nil
+}
+
+// NormalizeSpecSearchTier validates and canonicalizes a tier filter.
+func NormalizeSpecSearchTier(tier string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(tier))
+	switch normalized {
+	case "", SpecSearchTierPattern, SpecSearchTierRoute, SpecSearchTierRelated, SpecSearchTierFTS:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported search tier %q (want pattern, route, related, or fts)", tier)
+	}
+}
+
+func shouldIncludeSpecSearchTier(filter string, tier string) bool {
+	return filter == "" || filter == tier
 }
 
 func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {
@@ -342,7 +391,7 @@ func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {
 		return SpecSearchResult{}, err
 	}
 	result.Rank = -1000
-	result.Tier = "pattern"
+	result.Tier = SpecSearchTierPattern
 	result.Reason = "exact pattern id"
 	return result, nil
 }
@@ -354,14 +403,12 @@ func searchRoute(db *sql.DB, route Route) ([]SpecSearchResult, error) {
 	}
 	results := make([]SpecSearchResult, 0, len(patternIDs))
 	for i, patternID := range patternIDs {
-		result, err := searchByPatternID(db, patternID)
-		if err != nil {
-			continue
+		if result, err := searchByPatternID(db, patternID); err == nil {
+			result.Rank = -500 + float64(i)
+			result.Tier = SpecSearchTierRoute
+			result.Reason = route.Title
+			results = append(results, result)
 		}
-		result.Rank = -500 + float64(i)
-		result.Tier = "route"
-		result.Reason = route.Title
-		results = append(results, result)
 	}
 	return results, nil
 }
@@ -443,7 +490,7 @@ func buildRelatedResults(candidates []relatedCandidate) []SpecSearchResult {
 			Heading:   candidate.Heading,
 			Snippet:   candidate.Snippet,
 			Rank:      -200 + float64(index),
-			Tier:      "related",
+			Tier:      SpecSearchTierRelated,
 			Reason:    formatRelatedReason(candidate),
 		}
 		results = append(results, result)
@@ -619,7 +666,7 @@ func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, er
 		if err := rows.Scan(&r.PatternID, &r.Heading, &r.Snippet, &r.Rank); err != nil {
 			return nil, err
 		}
-		r.Tier = "fts"
+		r.Tier = SpecSearchTierFTS
 		r.Reason = "keyword match"
 		results = append(results, r)
 	}

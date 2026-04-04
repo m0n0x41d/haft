@@ -3,7 +3,12 @@ package cli
 import "github.com/m0n0x41d/haft/internal/present"
 
 func formatCLIFPFSearch(results []present.FPFSearchResult) string {
+	return formatCLIFPFSearchWithExplain(results, false)
+}
+
+func formatCLIFPFSearchWithExplain(results []present.FPFSearchResult, explain bool) string {
 	options := sharedFPFSearchOptions()
+	options.ShowMetadata = explain
 	return present.FormatFPFSearch(results, options)
 }
 

@@ -690,6 +690,55 @@ func TestSearchSpec_ExactPatternLookupNormalizesVariants(t *testing.T) {
 	}
 }
 
+func TestSearchSpecWithOptions_TierFiltersRemainTierSpecific(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	tests := []struct {
+		name      string
+		query     string
+		tier      string
+		wantCount int
+	}{
+		{name: "route", query: "boundary", tier: SpecSearchTierRoute, wantCount: 2},
+		{name: "fts", query: "boundary", tier: SpecSearchTierFTS, wantCount: 2},
+	}
+
+	for _, tt := range tests {
+		results, err := SearchSpecWithOptions(db, tt.query, SpecSearchOptions{
+			Limit: 10,
+			Tier:  tt.tier,
+		})
+		if err != nil {
+			t.Fatalf("%s tier search error: %v", tt.name, err)
+		}
+		if len(results) != tt.wantCount {
+			t.Fatalf("%s tier returned %d results, want %d", tt.name, len(results), tt.wantCount)
+		}
+		for _, result := range results {
+			if result.Tier != tt.tier {
+				t.Fatalf("%s tier returned mixed tier result %#v", tt.name, result)
+			}
+		}
+	}
+}
+
+func TestSearchSpecWithOptions_InvalidTier(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	_, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+		Limit: 5,
+		Tier:  "bogus",
+	})
+	if err == nil {
+		t.Fatal("expected invalid tier error")
+	}
+	if !strings.Contains(err.Error(), "unsupported search tier") {
+		t.Fatalf("unexpected invalid tier error: %v", err)
+	}
+}
+
 func TestSetSpecMeta_AndGetSpecMeta(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()

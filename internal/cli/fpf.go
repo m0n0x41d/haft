@@ -25,12 +25,13 @@ Examples:
   haft fpf search "WLNK weak link"
   haft fpf search "ADI cycle" --limit 5
   haft fpf search "characterization" --full
+  haft fpf search "boundary routing" --tier route --explain
   haft fpf section "3.1. WLNK"
   haft fpf info`,
 }
 
 var fpfSearchCmd = &cobra.Command{
-	Use:   "search <query> [--limit N] [--full]",
+	Use:   "search <query> [--limit N] [--full] [--explain] [--tier TIER]",
 	Short: "Search FPF spec by keyword",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runFPFSearch,
@@ -50,13 +51,19 @@ var fpfInfoCmd = &cobra.Command{
 }
 
 var (
-	fpfSearchLimit int
-	fpfSearchFull  bool
+	fpfSearchLimit   int
+	fpfSearchFull    bool
+	fpfSearchExplain bool
+	fpfSearchTier    string
 )
+
+var openFPFDBFunc = openFPFDB
 
 func init() {
 	fpfSearchCmd.Flags().IntVar(&fpfSearchLimit, "limit", 10, "Maximum number of results")
 	fpfSearchCmd.Flags().BoolVar(&fpfSearchFull, "full", false, "Show full section content instead of snippets")
+	fpfSearchCmd.Flags().BoolVar(&fpfSearchExplain, "explain", false, "Show why each result matched")
+	fpfSearchCmd.Flags().StringVar(&fpfSearchTier, "tier", "", "Restrict results to one tier: pattern, route, related, or fts")
 
 	fpfCmd.AddCommand(fpfSearchCmd)
 	fpfCmd.AddCommand(fpfSectionCmd)
@@ -103,19 +110,27 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("empty query")
 	}
 
-	db, cleanup, err := openFPFDB()
+	normalizedTier, err := fpf.NormalizeSpecSearchTier(fpfSearchTier)
+	if err != nil {
+		return fmt.Errorf("invalid --tier: %w", err)
+	}
+
+	db, cleanup, err := openFPFDBFunc()
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	results, err := fpf.SearchSpec(db, query, fpfSearchLimit)
+	results, err := fpf.SearchSpecWithOptions(db, query, fpf.SpecSearchOptions{
+		Limit: fpfSearchLimit,
+		Tier:  normalizedTier,
+	})
 	if err != nil {
 		return fmt.Errorf("search error: %w", err)
 	}
 
 	if len(results) == 0 {
-		fmt.Print(formatCLIFPFSearch(nil))
+		fmt.Print(formatCLIFPFSearchWithExplain(nil, fpfSearchExplain))
 		return nil
 	}
 
@@ -138,14 +153,14 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	fmt.Print(formatCLIFPFSearch(formattedResults))
+	fmt.Print(formatCLIFPFSearchWithExplain(formattedResults, fpfSearchExplain))
 	return nil
 }
 
 func runFPFSection(cmd *cobra.Command, args []string) error {
 	heading := strings.Join(args, " ")
 
-	db, cleanup, err := openFPFDB()
+	db, cleanup, err := openFPFDBFunc()
 	if err != nil {
 		return err
 	}
@@ -170,7 +185,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func runFPFInfo(cmd *cobra.Command, args []string) error {
-	db, cleanup, err := openFPFDB()
+	db, cleanup, err := openFPFDBFunc()
 	if err != nil {
 		return err
 	}

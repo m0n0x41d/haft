@@ -260,6 +260,9 @@ func TestSearchSpec_ExactPatternLookupWins(t *testing.T) {
 	if results[0].Tier != "pattern" {
 		t.Fatalf("expected pattern tier, got %q", results[0].Tier)
 	}
+	if results[0].Summary != "Boundary statements need routing." {
+		t.Fatalf("expected summary to be indexed, got %q", results[0].Summary)
+	}
 }
 
 func TestBuildSpecIndex_NormalizesPatternIDs(t *testing.T) {
@@ -314,6 +317,42 @@ func TestBuildSpecIndex_NormalizesPatternIDs(t *testing.T) {
 	}
 	if edgeType != string(SpecEdgeTypeRelated) {
 		t.Fatalf("expected related edge, got %q", edgeType)
+	}
+}
+
+func TestBuildSpecIndex_PersistsSectionSummary(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.2.8:4.1 - Normative definition",
+			Level:     4,
+			Body:      "A `U.Commitment` is a governance object with explicit scope. Additional detail follows later.",
+			PatternID: "A.2.8:4.1",
+		},
+	}
+
+	if err := BuildSpecIndex(dbPath, chunks, testRoutesForChunks(chunks)); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var summary string
+	err = db.QueryRow(`SELECT summary FROM sections WHERE pattern_id = ?`, "A.2.8:4.1").Scan(&summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "A U.Commitment is a governance object with explicit scope."
+	if summary != want {
+		t.Fatalf("summary = %q, want %q", summary, want)
 	}
 }
 
@@ -503,7 +542,7 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
 	}
 
-	for index := 0; index < relatedExpansionSafetyLimit+3; index++ {
+	for index := 0; index < relatedExpansionLimit+3; index++ {
 		patternID := fmt.Sprintf("B.%d", index+1)
 		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
 			FromPatternID: "A.6",
@@ -522,7 +561,7 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	for index := 0; index < 3; index++ {
 		patternID := fmt.Sprintf("Z.%d", index+1)
 		chunks = append(chunks, SpecChunk{
-			ID:        relatedExpansionSafetyLimit + index + 5,
+			ID:        relatedExpansionLimit + index + 5,
 			Heading:   patternID + " — Fallback Target",
 			Level:     2,
 			Body:      "Fallback.",
@@ -533,66 +572,18 @@ func TestSearchSpec_RelatedExpansionIsBounded(t *testing.T) {
 	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
 	defer cleanup()
 
-	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
-		Limit: relatedExpansionSafetyLimit + 10,
-		Tier:  SpecSearchTierRelated,
-	})
+	results, err := SearchSpec(db, "boundary routing", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
+	relatedResults := filterResultsByTier(results, "related")
 	got := resultPatternIDs(relatedResults)
-	if len(relatedResults) != relatedExpansionSafetyLimit {
-		t.Fatalf("expected %d related results, got %d (%v)", relatedExpansionSafetyLimit, len(relatedResults), got)
+	if len(relatedResults) != relatedExpansionLimit {
+		t.Fatalf("expected %d related results, got %d (%v)", relatedExpansionLimit, len(relatedResults), got)
 	}
 	if containsString(got, "Z.1") || containsString(got, "Z.2") || containsString(got, "Z.3") {
 		t.Fatalf("expected cap to exclude fallback overflow, got %v", got)
-	}
-}
-
-func TestSearchSpecWithOptions_RelatedTierHonorsRequestedLimit(t *testing.T) {
-	chunks := []SpecChunk{
-		{
-			ID:        0,
-			Heading:   "A.6 - Signature Stack & Boundary Discipline",
-			Level:     2,
-			Body:      "Boundary statements need routing.",
-			PatternID: "A.6",
-		},
-		{ID: 1, Heading: "A.6.B — Boundary Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
-	}
-
-	for index := 0; index < 12; index++ {
-		patternID := fmt.Sprintf("B.%d", index+1)
-		chunks[0].Edges = append(chunks[0].Edges, SpecEdge{
-			FromPatternID: "A.6",
-			ToPatternID:   patternID,
-			EdgeType:      SpecEdgeTypeBuildsOn,
-		})
-		chunks = append(chunks, SpecChunk{
-			ID:        index + 2,
-			Heading:   patternID + " — Related Target",
-			Level:     2,
-			Body:      "Related.",
-			PatternID: patternID,
-		})
-	}
-
-	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
-	defer cleanup()
-
-	results, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
-		Limit: 12,
-		Tier:  SpecSearchTierRelated,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	relatedResults := filterResultsByTier(results, SpecSearchTierRelated)
-	if len(relatedResults) != 12 {
-		t.Fatalf("expected 12 related results, got %d", len(relatedResults))
 	}
 }
 
@@ -767,6 +758,61 @@ func TestNormalizeChunkForIndex_NormalizesAliases(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Aliases, want) {
 		t.Fatalf("normalizeChunkForIndex aliases = %#v, want %#v", got.Aliases, want)
+	}
+}
+
+func TestSearchSpec_HeadingOnlyRootPatternAliasLookup(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.17 - Canonical Characteristic (A.CHR-NORM)",
+			Level:     2,
+			Body:      "",
+			Summary:   "Canonical Characteristic (A.CHR-NORM)",
+			PatternID: "A.17",
+			Aliases:   []string{"A.17", "A.CHR-NORM", "Canonical Characteristic"},
+		},
+		{
+			ID:              1,
+			Heading:         "A.17:1 - Context",
+			Level:           3,
+			Body:            "To have reproducibility and explainability there is a need to measure various aspects.",
+			PatternID:       "A.17:1",
+			ParentPatternID: "A.17",
+		},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	patternResults, err := SearchSpec(db, "A.17", 5)
+	if err != nil {
+		t.Fatalf("SearchSpec(A.17) error: %v", err)
+	}
+	if len(patternResults) == 0 {
+		t.Fatal("expected pattern results for A.17")
+	}
+	if patternResults[0].PatternID != "A.17" || patternResults[0].Tier != SpecSearchTierPattern {
+		t.Fatalf("unexpected A.17 lookup result: %#v", patternResults[0])
+	}
+
+	aliasResults, err := SearchSpec(db, "A.CHR-NORM", 5)
+	if err != nil {
+		t.Fatalf("SearchSpec(A.CHR-NORM) error: %v", err)
+	}
+	if len(aliasResults) == 0 {
+		t.Fatal("expected alias results for A.CHR-NORM")
+	}
+	if aliasResults[0].PatternID != "A.17" {
+		t.Fatalf("expected A.17 for alias lookup, got %#v", aliasResults[0])
+	}
+
+	body, err := GetSpecSection(db, "A.17")
+	if err != nil {
+		t.Fatalf("GetSpecSection(A.17) error: %v", err)
+	}
+	if body != "Canonical Characteristic (A.CHR-NORM)" {
+		t.Fatalf("GetSpecSection(A.17) = %q, want summary fallback", body)
 	}
 }
 

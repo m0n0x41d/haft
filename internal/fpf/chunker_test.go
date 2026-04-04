@@ -183,6 +183,44 @@ func TestEnrichChunks_OverlaysCatalogMetadata(t *testing.T) {
 	}
 }
 
+func TestBuildSectionSummary_PrefersQuotedPurposeLine(t *testing.T) {
+	heading := "A.6 - Signature Stack & Boundary Discipline"
+	body := `> **Type:** Architectural (A)
+> **Status:** Stable
+> **Purpose (one line):** Keep boundary claims evolvable by routing each statement to the right layer.
+
+Canonical companion. The square itself is specified elsewhere.`
+
+	got := buildSectionSummary(heading, body)
+	want := "Keep boundary claims evolvable by routing each statement to the right layer."
+	if got != want {
+		t.Fatalf("buildSectionSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSectionSummary_PrefersLeadingSentence(t *testing.T) {
+	heading := "A.2.8:4.1 - Normative definition"
+	body := "A `U.Commitment` is a governance object with explicit scope. Additional elaboration follows in later sentences."
+
+	got := buildSectionSummary(heading, body)
+	want := "A U.Commitment is a governance object with explicit scope."
+	if got != want {
+		t.Fatalf("buildSectionSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSectionSummary_StripsOrderedListMarkers(t *testing.T) {
+	heading := "A.5:4 - Solution"
+	body := `1. **Kernel minimality (C-5).** Domain knowledge stays outside the kernel by default.
+2. **Boundary packaging.** Reusable bundles are published as signatures.`
+
+	got := buildSectionSummary(heading, body)
+	want := "Kernel minimality (C-5)."
+	if got != want {
+		t.Fatalf("buildSectionSummary() = %q, want %q", got, want)
+	}
+}
+
 func TestParseSpecCatalog_ExtractsTypedDependencyEdges(t *testing.T) {
 	input := `| A.1 | **Builds On** | Stable | *Keywords:* build. | **Builds on:** B.1. |
 | A.2 | **Prerequisite** | Stable | *Keywords:* pre. | **Is a prerequisite for:** B.2. |
@@ -560,6 +598,46 @@ Real content here.
 
 	if chunks[0].Heading != "Has Content" {
 		t.Errorf("expected heading 'Has Content', got %q", chunks[0].Heading)
+	}
+}
+
+func TestChunkMarkdown_KeepsHeadingOnlyRootPatternSections(t *testing.T) {
+	input := `## A.17 - Canonical “Characteristic” (A.CHR‑NORM)
+
+### A.17:1 - Context
+
+To have reproducibility and explainability there is a need to measure various aspects.
+`
+
+	chunks, err := ChunkMarkdown(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+
+	root := chunks[0]
+	if root.PatternID != "A.17" {
+		t.Fatalf("expected root pattern A.17, got %q", root.PatternID)
+	}
+	if root.Body != "" {
+		t.Fatalf("expected empty body for heading-only root pattern, got %q", root.Body)
+	}
+	if root.Summary != "Canonical Characteristic (A.CHR-NORM)" {
+		t.Fatalf("expected summary fallback, got %q", root.Summary)
+	}
+	if !containsAlias(root.Aliases, "A.CHR-NORM") {
+		t.Fatalf("expected technical alias to be preserved, got %#v", root.Aliases)
+	}
+
+	child := chunks[1]
+	if child.PatternID != "A.17:1" {
+		t.Fatalf("expected child pattern A.17:1, got %q", child.PatternID)
+	}
+	if child.ParentPatternID != "A.17" {
+		t.Fatalf("expected child parent A.17, got %q", child.ParentPatternID)
 	}
 }
 

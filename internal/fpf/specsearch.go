@@ -14,6 +14,7 @@ import (
 type SpecSearchResult struct {
 	PatternID string
 	Heading   string
+	Summary   string
 	Snippet   string
 	Rank      float64
 	Tier      string
@@ -45,7 +46,7 @@ type Route struct {
 }
 
 // SpecIndexSchemaVersion identifies the current SQLite index layout contract.
-const SpecIndexSchemaVersion = "1"
+const SpecIndexSchemaVersion = "2"
 
 // SpecIndexInfo exposes inspectable build provenance for the embedded index.
 type SpecIndexInfo struct {
@@ -56,8 +57,7 @@ type SpecIndexInfo struct {
 	SchemaVersion   string
 }
 
-const relatedExpansionDefaultLimit = 10
-const relatedExpansionSafetyLimit = 50
+const relatedExpansionLimit = 10
 
 var relatedExpansionPreferredEdgeTypes = []SpecEdgeType{
 	SpecEdgeTypeBuildsOn,
@@ -82,12 +82,13 @@ type relatedCandidate struct {
 	FromPatternID string
 	ToPatternID   string
 	Heading       string
+	Summary       string
 	Snippet       string
 	EdgeType      SpecEdgeType
 }
 
 var defaultRelatedExpansionPolicy = relatedExpansionPolicy{
-	MaxResults: relatedExpansionDefaultLimit,
+	MaxResults: relatedExpansionLimit,
 }
 
 // BuildSpecIndex creates a structured SQLite index from spec chunks and route artifacts.
@@ -117,6 +118,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 			heading TEXT NOT NULL,
 			level INTEGER NOT NULL,
 			body TEXT NOT NULL,
+			summary TEXT NOT NULL DEFAULT '',
 			parent_pattern_id TEXT,
 			keywords_json TEXT NOT NULL DEFAULT '[]',
 			queries_json TEXT NOT NULL DEFAULT '[]',
@@ -149,7 +151,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 		return err
 	}
 
-	secIns, err := tx.Prepare(`INSERT INTO sections (id, pattern_id, heading, level, body, parent_pattern_id, keywords_json, queries_json, aliases_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	secIns, err := tx.Prepare(`INSERT INTO sections (id, pattern_id, heading, level, body, summary, parent_pattern_id, keywords_json, queries_json, aliases_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -178,7 +180,7 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 		keywordsJSON := mustJSON(c.Keywords)
 		queriesJSON := mustJSON(c.Queries)
 		aliasesJSON := mustJSON(c.Aliases)
-		if _, err := secIns.Exec(c.ID, nullIfEmpty(c.PatternID), c.Heading, c.Level, c.Body, nullIfEmpty(c.ParentPatternID), keywordsJSON, queriesJSON, aliasesJSON); err != nil {
+		if _, err := secIns.Exec(c.ID, nullIfEmpty(c.PatternID), c.Heading, c.Level, c.Body, c.Summary, nullIfEmpty(c.ParentPatternID), keywordsJSON, queriesJSON, aliasesJSON); err != nil {
 			return fmt.Errorf("insert section %d: %w", c.ID, err)
 		}
 		if _, err := ftsIns.Exec(c.PatternID, c.Heading, c.Body, strings.Join(c.Keywords, " "), strings.Join(c.Queries, " "), strings.Join(c.Aliases, " ")); err != nil {
@@ -332,7 +334,12 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		appendResults(routeResults)
 	}
 	if route != nil && shouldIncludeSpecSearchTier(options.Tier, SpecSearchTierRelated) {
-		edgeResults, err := searchRelated(db, route.Core, relatedExpansionPolicyForLimit(options.Limit))
+		relatedLimit := defaultRelatedExpansionPolicy.MaxResults
+		if options.Tier == SpecSearchTierRelated {
+			relatedLimit = options.Limit
+		}
+
+		edgeResults, err := searchRelated(db, route.Core, relatedLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -386,10 +393,10 @@ func searchByPatternID(db *sql.DB, patternID string) (SpecSearchResult, error) {
 
 	var result SpecSearchResult
 	err := db.QueryRow(`
-		SELECT pattern_id, heading, substr(body, 1, 280)
+		SELECT pattern_id, heading, summary, substr(body, 1, 280)
 		FROM sections
 		WHERE pattern_id = ?
-	`, patternID).Scan(&result.PatternID, &result.Heading, &result.Snippet)
+	`, patternID).Scan(&result.PatternID, &result.Heading, &result.Summary, &result.Snippet)
 	if err != nil {
 		return SpecSearchResult{}, err
 	}
@@ -416,21 +423,7 @@ func searchRoute(db *sql.DB, route Route) ([]SpecSearchResult, error) {
 	return results, nil
 }
 
-func relatedExpansionPolicyForLimit(limit int) relatedExpansionPolicy {
-	maxResults := limit
-	if maxResults <= 0 {
-		maxResults = relatedExpansionDefaultLimit
-	}
-	if maxResults > relatedExpansionSafetyLimit {
-		maxResults = relatedExpansionSafetyLimit
-	}
-
-	return relatedExpansionPolicy{
-		MaxResults: maxResults,
-	}
-}
-
-func searchRelated(db *sql.DB, seeds []string, policy relatedExpansionPolicy) ([]SpecSearchResult, error) {
+func searchRelated(db *sql.DB, seeds []string, maxResults int) ([]SpecSearchResult, error) {
 	if len(seeds) == 0 {
 		return nil, nil
 	}
@@ -439,6 +432,9 @@ func searchRelated(db *sql.DB, seeds []string, policy relatedExpansionPolicy) ([
 	if err != nil {
 		return nil, err
 	}
+
+	policy := defaultRelatedExpansionPolicy
+	policy.MaxResults = maxResults
 
 	selected := selectRelatedCandidates(candidates, seeds, policy)
 	results := buildRelatedResults(selected)
@@ -452,7 +448,7 @@ func loadRelatedCandidates(db *sql.DB, seeds []string) ([]relatedCandidate, erro
 		args = append(args, seed)
 	}
 	rows, err := db.Query(fmt.Sprintf(`
-		SELECT e.from_pattern_id, e.to_pattern_id, e.edge_type, s.heading, substr(s.body, 1, 280)
+		SELECT e.from_pattern_id, e.to_pattern_id, e.edge_type, s.heading, s.summary, substr(s.body, 1, 280)
 		FROM section_edges e
 		JOIN sections s ON s.pattern_id = e.to_pattern_id
 		WHERE e.from_pattern_id IN (%s)
@@ -466,7 +462,7 @@ func loadRelatedCandidates(db *sql.DB, seeds []string) ([]relatedCandidate, erro
 	for rows.Next() {
 		var candidate relatedCandidate
 		var edgeType string
-		if err := rows.Scan(&candidate.FromPatternID, &candidate.ToPatternID, &edgeType, &candidate.Heading, &candidate.Snippet); err != nil {
+		if err := rows.Scan(&candidate.FromPatternID, &candidate.ToPatternID, &edgeType, &candidate.Heading, &candidate.Summary, &candidate.Snippet); err != nil {
 			return nil, err
 		}
 		candidate.EdgeType = SpecEdgeType(edgeType)
@@ -481,10 +477,7 @@ func selectRelatedCandidates(candidates []relatedCandidate, seeds []string, poli
 	}
 
 	if policy.MaxResults <= 0 {
-		policy.MaxResults = relatedExpansionDefaultLimit
-	}
-	if policy.MaxResults > relatedExpansionSafetyLimit {
-		policy.MaxResults = relatedExpansionSafetyLimit
+		policy.MaxResults = relatedExpansionLimit
 	}
 
 	seedOrder := buildSeedOrder(seeds)
@@ -508,6 +501,7 @@ func buildRelatedResults(candidates []relatedCandidate) []SpecSearchResult {
 		result := SpecSearchResult{
 			PatternID: candidate.ToPatternID,
 			Heading:   candidate.Heading,
+			Summary:   candidate.Summary,
 			Snippet:   candidate.Snippet,
 			Rank:      -200 + float64(index),
 			Tier:      SpecSearchTierRelated,
@@ -668,7 +662,7 @@ func searchFTS(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) 
 
 func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, error) {
 	rows, err := db.Query(`
-		SELECT s.pattern_id, s.heading, snippet(fpf_fts, 2, '>>>', '<<<', '...', 64), rank
+		SELECT s.pattern_id, s.heading, s.summary, snippet(fpf_fts, 2, '>>>', '<<<', '...', 64), rank
 		FROM fpf_fts
 		JOIN sections s ON s.id = fpf_fts.rowid - 1
 		WHERE fpf_fts MATCH ?
@@ -683,9 +677,11 @@ func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, er
 	var results []SpecSearchResult
 	for rows.Next() {
 		var r SpecSearchResult
-		if err := rows.Scan(&r.PatternID, &r.Heading, &r.Snippet, &r.Rank); err != nil {
+		var patternID sql.NullString
+		if err := rows.Scan(&patternID, &r.Heading, &r.Summary, &r.Snippet, &r.Rank); err != nil {
 			return nil, err
 		}
+		r.PatternID = patternID.String
 		r.Tier = SpecSearchTierFTS
 		r.Reason = "keyword match"
 		results = append(results, r)
@@ -737,22 +733,27 @@ func classifyRoute(db *sql.DB, query string) (*Route, error) {
 }
 
 // GetSpecSection returns the complete body of a section by heading or pattern id.
+// For heading-only pattern shells, it falls back to the indexed summary.
 func GetSpecSection(db *sql.DB, headingOrPattern string) (string, error) {
 	headingOrPattern = strings.TrimSpace(headingOrPattern)
 	normalizedPatternID := normalizePatternID(headingOrPattern)
 
 	var body string
+	var summary string
 	err := db.QueryRow(`
-		SELECT body
+		SELECT body, summary
 		FROM sections
 		WHERE heading = ? OR (? <> '' AND pattern_id = ?)
 		ORDER BY CASE WHEN (? <> '' AND pattern_id = ?) THEN 0 ELSE 1 END
 		LIMIT 1
-	`, headingOrPattern, normalizedPatternID, normalizedPatternID, normalizedPatternID, normalizedPatternID).Scan(&body)
+	`, headingOrPattern, normalizedPatternID, normalizedPatternID, normalizedPatternID, normalizedPatternID).Scan(&body, &summary)
 	if err != nil {
 		return "", err
 	}
-	return body, nil
+	if strings.TrimSpace(body) != "" {
+		return body, nil
+	}
+	return summary, nil
 }
 
 // GetSpecMeta reads a value from the meta table.
@@ -808,6 +809,8 @@ func nullIfEmpty(s string) any {
 func normalizeChunkForIndex(chunk SpecChunk) SpecChunk {
 	chunk.PatternID = normalizePatternID(chunk.PatternID)
 	chunk.ParentPatternID = normalizePatternID(chunk.ParentPatternID)
+	chunk.Summary = firstNonEmpty(chunk.Summary, buildSectionSummary(chunk.Heading, chunk.Body))
+	chunk.Summary = cleanMarkdownText(chunk.Summary)
 
 	for index, relatedID := range chunk.RelatedIDs {
 		chunk.RelatedIDs[index] = normalizePatternID(relatedID)

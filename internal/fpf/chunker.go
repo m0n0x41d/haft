@@ -14,6 +14,7 @@ var patternIDDigitSuffixRE = regexp.MustCompile(`^(\d+)([A-Za-z]+)$`)
 var patternIDWordRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 var dependencyClauseLabelRE = regexp.MustCompile(`(?:^|[.;]\s+)([A-Za-z][A-Za-z /-]+):`)
 var trailingParentheticalRE = regexp.MustCompile(`^(.*)\(([^()]+)\)\s*$`)
+var orderedListMarkerRE = regexp.MustCompile(`^\d+[.)]\s+`)
 
 type SpecEdgeType string
 
@@ -41,6 +42,7 @@ type SpecChunk struct {
 	Heading         string
 	Level           int
 	Body            string
+	Summary         string
 	PatternID       string
 	ParentPatternID string
 	Keywords        []string
@@ -83,16 +85,18 @@ func ChunkMarkdown(r io.Reader) ([]SpecChunk, error) {
 
 	flush := func() {
 		body := strings.TrimSpace(currentBody.String())
-		if currentHeading != "" && body != "" {
-			chunks = append(chunks, SpecChunk{
-				ID:              id,
-				Heading:         currentHeading,
-				Level:           currentLevel,
-				Body:            body,
-				PatternID:       currentPatternID,
-				ParentPatternID: currentParentPatternID,
-				Aliases:         buildAliases(currentHeading, currentPatternID),
-			})
+		chunk := SpecChunk{
+			ID:              id,
+			Heading:         currentHeading,
+			Level:           currentLevel,
+			Body:            body,
+			Summary:         buildSectionSummary(currentHeading, body),
+			PatternID:       currentPatternID,
+			ParentPatternID: currentParentPatternID,
+			Aliases:         buildAliases(currentHeading, currentPatternID),
+		}
+		if shouldKeepChunk(chunk) {
+			chunks = append(chunks, chunk)
 			id++
 		}
 		currentBody.Reset()
@@ -240,6 +244,26 @@ func extractPatternIDs(text string) []string {
 		normalized = append(normalized, normalizePatternID(match))
 	}
 	return dedupeStrings(normalized)
+}
+
+func shouldKeepChunk(chunk SpecChunk) bool {
+	if strings.TrimSpace(chunk.Heading) == "" {
+		return false
+	}
+	if strings.TrimSpace(chunk.Body) != "" {
+		return true
+	}
+	return shouldKeepHeadingOnlyPatternChunk(chunk)
+}
+
+func shouldKeepHeadingOnlyPatternChunk(chunk SpecChunk) bool {
+	if chunk.PatternID == "" {
+		return false
+	}
+	if strings.Contains(chunk.PatternID, ":") {
+		return false
+	}
+	return chunk.Level == 2
 }
 
 func buildAliases(heading, patternID string) []string {
@@ -528,6 +552,226 @@ func cleanMarkdownText(text string) string {
 	text = strings.ReplaceAll(text, "−", "-")
 	text = strings.Join(strings.Fields(text), " ")
 	return strings.TrimSpace(text)
+}
+
+func buildSectionSummary(heading, body string) string {
+	paragraphs := splitSummaryParagraphs(body)
+
+	for _, paragraph := range paragraphs {
+		summary := firstNonEmpty(extractQuotedSummary(paragraph), summarizeParagraph(paragraph))
+		if summary != "" {
+			return summary
+		}
+	}
+
+	return fallbackSectionSummary(heading)
+}
+
+func splitSummaryParagraphs(body string) []string {
+	lines := strings.Split(body, "\n")
+	paragraphs := make([]string, 0, len(lines))
+	current := make([]string, 0, 8)
+	inCodeFence := false
+
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		paragraphs = append(paragraphs, strings.Join(current, "\n"))
+		current = current[:0]
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			flush()
+			inCodeFence = !inCodeFence
+			continue
+		}
+		if inCodeFence {
+			continue
+		}
+		if trimmed == "" {
+			flush()
+			continue
+		}
+		current = append(current, line)
+	}
+
+	flush()
+	return paragraphs
+}
+
+func extractQuotedSummary(paragraph string) string {
+	lines := strings.Split(paragraph, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, ">") {
+			return ""
+		}
+	}
+
+	for _, line := range lines {
+		candidate := trimSummaryLinePrefix(line)
+		candidate = cleanMarkdownText(candidate)
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+
+		lower := strings.ToLower(candidate)
+		if !strings.Contains(lower, "purpose:") && !strings.Contains(lower, "purpose (one line):") {
+			continue
+		}
+
+		summary := candidate
+		if index := strings.Index(candidate, ":"); index >= 0 {
+			summary = strings.TrimSpace(candidate[index+1:])
+		}
+		summary = extractLeadingSentence(summary)
+		if summary != "" {
+			return summary
+		}
+	}
+
+	return ""
+}
+
+func summarizeParagraph(paragraph string) string {
+	if isMetadataParagraph(paragraph) || isMarkdownTableParagraph(paragraph) {
+		return ""
+	}
+
+	text := collapseSummaryParagraph(paragraph)
+	if text == "" {
+		return ""
+	}
+
+	return firstNonEmpty(extractLeadingSentence(text), text)
+}
+
+func isMetadataParagraph(paragraph string) bool {
+	lines := strings.Split(paragraph, "\n")
+	if len(lines) == 0 {
+		return false
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, ">") {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isMarkdownTableParagraph(paragraph string) bool {
+	lines := strings.Split(paragraph, "\n")
+	if len(lines) == 0 {
+		return false
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "|") {
+			return false
+		}
+	}
+
+	return true
+}
+
+func collapseSummaryParagraph(paragraph string) string {
+	lines := strings.Split(paragraph, "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = trimSummaryLinePrefix(line)
+		line = cleanMarkdownText(line)
+		if line == "" {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+
+	return cleanMarkdownText(strings.Join(cleaned, " "))
+}
+
+func trimSummaryLinePrefix(line string) string {
+	line = strings.TrimSpace(line)
+	for {
+		switch {
+		case strings.HasPrefix(line, ">"):
+			line = strings.TrimSpace(strings.TrimPrefix(line, ">"))
+		case strings.HasPrefix(line, "- "):
+			line = strings.TrimSpace(strings.TrimPrefix(line, "- "))
+		case strings.HasPrefix(line, "* "):
+			line = strings.TrimSpace(strings.TrimPrefix(line, "* "))
+		case strings.HasPrefix(line, "+ "):
+			line = strings.TrimSpace(strings.TrimPrefix(line, "+ "))
+		case orderedListMarkerRE.MatchString(line):
+			line = orderedListMarkerRE.ReplaceAllString(line, "")
+			line = strings.TrimSpace(line)
+		default:
+			return line
+		}
+	}
+}
+
+func extractLeadingSentence(text string) string {
+	text = cleanMarkdownText(text)
+	if text == "" {
+		return ""
+	}
+
+	for index := 0; index < len(text); index++ {
+		switch text[index] {
+		case '.', '!', '?':
+			if !isSentenceBoundary(text, index) {
+				continue
+			}
+			end := advanceSentenceBoundary(text, index+1)
+			return strings.TrimSpace(text[:end])
+		}
+	}
+
+	return ""
+}
+
+func isSentenceBoundary(text string, index int) bool {
+	next := advanceSentenceBoundary(text, index+1)
+	return next == len(text) || text[next] == ' '
+}
+
+func advanceSentenceBoundary(text string, index int) int {
+	for index < len(text) {
+		switch text[index] {
+		case '"', '\'', ')', ']', '}':
+			index++
+		default:
+			return index
+		}
+	}
+	return index
+}
+
+func fallbackSectionSummary(heading string) string {
+	patternID := extractPatternID(heading)
+	title := stripHeadingPatternID(heading, patternID)
+	return firstNonEmpty(title, cleanMarkdownText(heading))
 }
 
 func normalizePatternID(text string) string {

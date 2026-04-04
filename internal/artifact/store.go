@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // Store handles artifact persistence in SQLite.
@@ -291,41 +294,54 @@ func (s *Store) SearchByAffectedFile(ctx context.Context, filePath string) ([]*A
 
 // FindStaleDecisions returns decisions past their valid_until or with refresh_due status.
 func (s *Store) FindStaleDecisions(ctx context.Context) ([]*Artifact, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts
-		WHERE kind = ? AND (
-			status = 'refresh_due'
-			OR (valid_until != '' AND valid_until < ?)
-		)
-		ORDER BY valid_until ASC`,
-		string(KindDecisionRecord), now,
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts
+			WHERE kind = ? AND (
+				status = 'refresh_due'
+				OR valid_until != ''
+			)
+			ORDER BY valid_until ASC`,
+		string(KindDecisionRecord),
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanArtifacts(rows)
+
+	artifacts, err := scanArtifacts(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	filtered := filterStaleArtifacts(artifacts, now)
+	return filtered, nil
 }
 
 // FindStaleArtifacts returns any artifacts (not just decisions) past their valid_until.
 // This catches stale ProblemCards, expired characterizations, and old portfolios.
 func (s *Store) FindStaleArtifacts(ctx context.Context) ([]*Artifact, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
-		FROM artifacts
-		WHERE status NOT IN ('superseded', 'deprecated')
-		AND valid_until != '' AND valid_until < ?
-		ORDER BY kind, valid_until ASC`,
-		now,
+			SELECT id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at
+			FROM artifacts
+			WHERE status NOT IN ('superseded', 'deprecated')
+			AND valid_until != ''
+			ORDER BY kind, valid_until ASC`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanArtifacts(rows)
+
+	artifacts, err := scanArtifacts(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	filtered := filterStaleArtifacts(artifacts, now)
+	return filtered, nil
 }
 
 // NextSequence returns the next sequence number for a given kind on a given date.
@@ -649,4 +665,52 @@ func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
 		result = append(result, &a)
 	}
 	return result, rows.Err()
+}
+
+func filterStaleArtifacts(artifacts []*Artifact, now time.Time) []*Artifact {
+	filtered := make([]*Artifact, 0, len(artifacts))
+
+	for _, artifact := range artifacts {
+		if artifact == nil {
+			continue
+		}
+		if artifact.Meta.Status == StatusRefreshDue {
+			filtered = append(filtered, artifact)
+			continue
+		}
+		if !isExpiredValidUntil(artifact.Meta.ValidUntil, now) {
+			continue
+		}
+		filtered = append(filtered, artifact)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		left := staleSortKey(filtered[i].Meta.ValidUntil)
+		right := staleSortKey(filtered[j].Meta.ValidUntil)
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		if filtered[i].Meta.Kind != filtered[j].Meta.Kind {
+			return filtered[i].Meta.Kind < filtered[j].Meta.Kind
+		}
+		return filtered[i].Meta.ID < filtered[j].Meta.ID
+	})
+
+	return filtered
+}
+
+func isExpiredValidUntil(validUntil string, now time.Time) bool {
+	expiry, ok := reff.ParseValidUntil(validUntil)
+	if !ok {
+		return false
+	}
+	return expiry.Before(now)
+}
+
+func staleSortKey(validUntil string) time.Time {
+	expiry, ok := reff.ParseValidUntil(validUntil)
+	if !ok {
+		return time.Time{}
+	}
+	return expiry
 }

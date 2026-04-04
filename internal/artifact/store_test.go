@@ -284,6 +284,62 @@ func TestFindStaleDecisions(t *testing.T) {
 	}
 }
 
+func TestFindStaleDecisions_DateOnlyCurrentDayNotStale(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-today", Kind: KindDecisionRecord, Title: "Today", ValidUntil: today},
+		Body: "still valid through end of day",
+	})
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-yesterday", Kind: KindDecisionRecord, Title: "Yesterday", ValidUntil: yesterday},
+		Body: "expired at prior end of day",
+	})
+
+	stale, err := store.FindStaleDecisions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("expected 1 stale decision, got %d", len(stale))
+	}
+	if stale[0].Meta.ID != "dec-yesterday" {
+		t.Fatalf("expected dec-yesterday, got %s", stale[0].Meta.ID)
+	}
+}
+
+func TestFindStaleArtifacts_DateOnlyCurrentDayNotStale(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "prob-today", Kind: KindProblemCard, Title: "Today", ValidUntil: today},
+		Body: "still valid through end of day",
+	})
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "prob-yesterday", Kind: KindProblemCard, Title: "Yesterday", ValidUntil: yesterday},
+		Body: "expired at prior end of day",
+	})
+
+	stale, err := store.FindStaleArtifacts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("expected 1 stale artifact, got %d", len(stale))
+	}
+	if stale[0].Meta.ID != "prob-yesterday" {
+		t.Fatalf("expected prob-yesterday, got %s", stale[0].Meta.ID)
+	}
+}
+
 func TestEvidenceItems(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

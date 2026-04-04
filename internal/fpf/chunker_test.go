@@ -110,6 +110,47 @@ func TestParseSpecCatalog_ExtractsMetadata(t *testing.T) {
 	}
 }
 
+func TestParseSpecCatalog_ExtractsQueriesFromSmartQuotes(t *testing.T) {
+	input := `| E.17.0 | **U.MultiViewDescribing — Viewpoints, Views & Correspondences** | New | Keywords: multi-view describing, viewpoint, view. Queries: “How to organise multiple descriptions of one object-of-talk?”, “How are viewpoints, views and correspondences structured in FPF?”, “How do viewpoint libraries generalise ISO 42010 for non-architectural descriptions?” | Builds on: C.2.1. |
+`
+
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry := catalog["E.17.0"]
+	want := []string{
+		"How to organise multiple descriptions of one object-of-talk?",
+		"How are viewpoints, views and correspondences structured in FPF?",
+		"How do viewpoint libraries generalise ISO 42010 for non-architectural descriptions?",
+	}
+	if !reflect.DeepEqual(entry.Queries, want) {
+		t.Fatalf("queries = %#v, want %#v", entry.Queries, want)
+	}
+}
+
+func TestParseSpecCatalog_NormalizesMixedQueryForms(t *testing.T) {
+	input := `| A.6.8 | **Service Polysemy Unpacking (RPR-SERV)** | Stable | *Keywords:* service polysemy, facet unpacking. *Queries:* "How to unpack service talk in FPF?";  serviceSituation lens , "promise content vs service access point", “RPR-SERV rules”. | **Builds on:** A.6.P. |
+`
+
+	catalog, err := ParseSpecCatalog(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entry := catalog["A.6.8"]
+	want := []string{
+		"How to unpack service talk in FPF?",
+		"serviceSituation lens",
+		"promise content vs service access point",
+		"RPR-SERV rules",
+	}
+	if !reflect.DeepEqual(entry.Queries, want) {
+		t.Fatalf("queries = %#v, want %#v", entry.Queries, want)
+	}
+}
+
 func TestEnrichChunks_OverlaysCatalogMetadata(t *testing.T) {
 	chunks := []SpecChunk{{ID: 0, Heading: "A.6 - Signature Stack & Boundary Discipline", Level: 2, Body: "Body", PatternID: "A.6"}}
 	catalog := map[string]SpecCatalogEntry{

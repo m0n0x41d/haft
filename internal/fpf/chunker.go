@@ -12,7 +12,6 @@ var patternIDCandidateRE = regexp.MustCompile(`(?i)\b(?:[A-K]\d+[A-Za-z0-9.:]*|[
 var patternIDDigitsRE = regexp.MustCompile(`^\d+$`)
 var patternIDDigitSuffixRE = regexp.MustCompile(`^(\d+)([A-Za-z]+)$`)
 var patternIDWordRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
-var quotedQueryRE = regexp.MustCompile(`"([^"]+)"`)
 var dependencyClauseLabelRE = regexp.MustCompile(`(?:^|[.;]\s+)([A-Za-z][A-Za-z /-]+):`)
 var trailingParentheticalRE = regexp.MustCompile(`^(.*)\(([^()]+)\)\s*$`)
 
@@ -442,15 +441,9 @@ func parseQueries(text string) []string {
 		return nil
 	}
 	segment := text[start+len("queries:"):]
-	quoted := quotedQueryRE.FindAllStringSubmatch(segment, -1)
-	if len(quoted) > 0 {
-		queries := make([]string, 0, len(quoted))
-		for _, match := range quoted {
-			queries = append(queries, strings.TrimSpace(match[1]))
-		}
-		return dedupeStrings(queries)
-	}
-	return splitList(segment)
+	segment = normalizeQueryListText(segment)
+	queries := splitQueryList(segment)
+	return dedupeStrings(queries)
 }
 
 func splitList(text string) []string {
@@ -464,6 +457,66 @@ func splitList(text string) []string {
 		}
 	}
 	return dedupeStrings(items)
+}
+
+func normalizeQueryListText(text string) string {
+	replacer := strings.NewReplacer(
+		"“", `"`,
+		"”", `"`,
+		"\u00a0", " ",
+	)
+	text = replacer.Replace(text)
+	text = strings.TrimSpace(text)
+	return strings.TrimRight(text, ". ")
+}
+
+func splitQueryList(text string) []string {
+	var (
+		items   []string
+		current strings.Builder
+		inQuote bool
+	)
+
+	flush := func() {
+		query := normalizeQueryItem(current.String())
+		if query == "" {
+			current.Reset()
+			return
+		}
+
+		items = append(items, query)
+		current.Reset()
+	}
+
+	for _, r := range text {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case !inQuote && (r == ',' || r == ';'):
+			flush()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	flush()
+	return items
+}
+
+func normalizeQueryItem(text string) string {
+	replacer := strings.NewReplacer(
+		"“", `"`,
+		"”", `"`,
+		"\u00a0", " ",
+	)
+	text = replacer.Replace(text)
+	text = cleanMarkdownText(text)
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, `"`)
+	text = strings.TrimSpace(text)
+	text = strings.TrimRight(text, ".,;:")
+	text = strings.TrimSpace(text)
+	return text
 }
 
 func cleanMarkdownText(text string) string {

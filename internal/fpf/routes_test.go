@@ -83,6 +83,54 @@ func TestParseRoutes_RejectsInvalidRouteShape(t *testing.T) {
 			}`,
 			wantErr: `route "boundary-unpacking" core pattern "A.6.C" must also appear in chain`,
 		},
+		{
+			name: "invalid core pattern id",
+			artifact: `{
+				"routes": [
+					{
+						"id": "boundary-unpacking",
+						"title": "Boundary discipline and routing",
+						"description": "Boundary statements.",
+						"matchers": ["boundary"],
+						"core": ["A..6"],
+						"chain": ["A.6", "A.6.B"]
+					}
+				]
+			}`,
+			wantErr: `route "boundary-unpacking" has invalid core pattern "A..6"`,
+		},
+		{
+			name: "invalid chain pattern id",
+			artifact: `{
+				"routes": [
+					{
+						"id": "boundary-unpacking",
+						"title": "Boundary discipline and routing",
+						"description": "Boundary statements.",
+						"matchers": ["boundary"],
+						"core": ["A.6"],
+						"chain": ["A.6", "Z.1"]
+					}
+				]
+			}`,
+			wantErr: `route "boundary-unpacking" has invalid chain pattern "Z.1"`,
+		},
+		{
+			name: "missing resolved sections",
+			artifact: `{
+				"routes": [
+					{
+						"id": "boundary-unpacking",
+						"title": "Boundary discipline and routing",
+						"description": "Boundary statements.",
+						"matchers": ["boundary"],
+						"core": [],
+						"chain": []
+					}
+				]
+			}`,
+			wantErr: `route "boundary-unpacking" must define at least one resolved core or chain pattern`,
+		},
 	}
 
 	for _, test := range tests {
@@ -95,6 +143,35 @@ func TestParseRoutes_RejectsInvalidRouteShape(t *testing.T) {
 				t.Fatalf("unexpected error: got %q want substring %q", err.Error(), test.wantErr)
 			}
 		})
+	}
+}
+
+func TestBuildSpecIndex_RejectsRoutesWithMalformedPatternIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	routes := []Route{
+		{
+			ID:          "boundary-unpacking",
+			Title:       "Boundary discipline and routing",
+			Description: "Boundary statements.",
+			Matchers:    []string{"boundary", "contract"},
+			Core:        []string{"A..6"},
+			Chain:       []string{"A.6", "A.6.B"},
+		},
+	}
+
+	chunks := []SpecChunk{
+		{ID: 0, Heading: "A.6 - Boundary", Level: 2, Body: "Boundary statements.", PatternID: "A.6"},
+		{ID: 1, Heading: "A.6.B - Norm Square", Level: 2, Body: "Norm square.", PatternID: "A.6.B"},
+	}
+
+	err := BuildSpecIndex(dbPath, chunks, routes)
+	if err == nil {
+		t.Fatal("BuildSpecIndex unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), `route "boundary-unpacking" has invalid core pattern "A..6"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

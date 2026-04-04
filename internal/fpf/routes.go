@@ -13,6 +13,8 @@ type routeArtifactFile struct {
 	Routes []Route `json:"routes"`
 }
 
+const invalidRoutePatternIDPrefix = "__invalid_route_pattern__:"
+
 // LoadRoutes reads route definitions from a build-time artifact file.
 func LoadRoutes(path string) ([]Route, error) {
 	file, err := os.Open(path)
@@ -73,9 +75,23 @@ func normalizeRoute(route Route) Route {
 func normalizeRoutePatternIDs(patternIDs []string) []string {
 	normalized := make([]string, 0, len(patternIDs))
 	for _, patternID := range patternIDs {
-		normalized = append(normalized, normalizePatternID(patternID))
+		normalized = append(normalized, normalizeRoutePatternID(patternID))
 	}
 	return dedupeStrings(normalized)
+}
+
+func normalizeRoutePatternID(patternID string) string {
+	normalizedPatternID := normalizePatternID(patternID)
+	if normalizedPatternID != "" {
+		return normalizedPatternID
+	}
+
+	rawPatternID := strings.TrimSpace(patternID)
+	if rawPatternID == "" {
+		return invalidRoutePatternIDPrefix
+	}
+
+	return invalidRoutePatternIDPrefix + rawPatternID
 }
 
 func validateRouteShape(routes []Route) error {
@@ -87,8 +103,22 @@ func validateRouteShape(routes []Route) error {
 			issues = append(issues, fmt.Sprintf("route %q must define at least one matcher", routeRef))
 		}
 
-		chainSet := makeStringSet(route.Chain)
+		corePatternIDs, coreIssues := filterResolvedRoutePatternIDs(routeRef, "core", route.Core)
+		chainPatternIDs, chainIssues := filterResolvedRoutePatternIDs(routeRef, "chain", route.Chain)
+		issues = append(issues, coreIssues...)
+		issues = append(issues, chainIssues...)
+
+		resolvedPatternIDs := append([]string{}, corePatternIDs...)
+		resolvedPatternIDs = append(resolvedPatternIDs, chainPatternIDs...)
+		if len(dedupeStrings(resolvedPatternIDs)) == 0 {
+			issues = append(issues, fmt.Sprintf("route %q must define at least one resolved core or chain pattern", routeRef))
+		}
+
+		chainSet := makeStringSet(chainPatternIDs)
 		for _, patternID := range route.Core {
+			if isInvalidRoutePatternID(patternID) {
+				continue
+			}
 			if _, ok := chainSet[patternID]; ok {
 				continue
 			}
@@ -163,4 +193,33 @@ func joinRouteValidationIssues(issues []string) error {
 
 	sort.Strings(issues)
 	return fmt.Errorf("invalid route artifact: %s", strings.Join(issues, "; "))
+}
+
+func filterResolvedRoutePatternIDs(routeRef, fieldName string, patternIDs []string) ([]string, []string) {
+	resolvedPatternIDs := make([]string, 0, len(patternIDs))
+	issues := make([]string, 0)
+
+	for _, patternID := range patternIDs {
+		if !isInvalidRoutePatternID(patternID) {
+			resolvedPatternIDs = append(resolvedPatternIDs, patternID)
+			continue
+		}
+
+		issues = append(issues, fmt.Sprintf("route %q has invalid %s pattern %q", routeRef, fieldName, rawRoutePatternID(patternID)))
+	}
+
+	return dedupeStrings(resolvedPatternIDs), issues
+}
+
+func isInvalidRoutePatternID(patternID string) bool {
+	return strings.HasPrefix(patternID, invalidRoutePatternIDPrefix)
+}
+
+func rawRoutePatternID(patternID string) string {
+	rawPatternID := strings.TrimPrefix(patternID, invalidRoutePatternIDPrefix)
+	if rawPatternID != "" {
+		return rawPatternID
+	}
+
+	return ""
 }

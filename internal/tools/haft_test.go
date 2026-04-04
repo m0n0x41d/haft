@@ -333,6 +333,42 @@ func TestHaftSolutionTool_ExploreAcceptsNoSteppingStoneRationale(t *testing.T) {
 	}
 }
 
+func TestHaftSolutionTool_ExploreDefaultsMissingProblemRefToActiveCycle(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftSolutionTool(fixture.store, fixture.haftDir, fixture.registry)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action": "explore",
+		"variants": []map[string]any{
+			{
+				"title":          "Batch worker",
+				"weakest_link":   "queue drain latency",
+				"novelty_marker": "Move the heavy work into periodic batches",
+			},
+			{
+				"title":          "Streaming worker",
+				"weakest_link":   "steady-state operational cost",
+				"novelty_marker": "Process each task as a continuously running stream",
+			},
+		},
+		"no_stepping_stone_rationale": "Both worker layouts are intended as direct end-state candidates.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected artifact metadata")
+	}
+
+	portfolio, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasArtifactLink(portfolio.Meta.Links, fixture.problem.Meta.ID, "based_on") {
+		t.Fatalf("expected explored portfolio to link to active problem %q, links=%v", fixture.problem.Meta.ID, portfolio.Meta.Links)
+	}
+}
+
 func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()
@@ -457,6 +493,60 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 	}
 	if got := fields.Comparison.ParityPlan.Window; got != "same 15m replay window" {
 		t.Fatalf("parity window = %q", got)
+	}
+}
+
+func TestHaftSolutionTool_CompareDefaultsMissingPortfolioRefToActiveCycle(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftSolutionTool(fixture.store, fixture.haftDir, fixture.registry)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":     "compare",
+		"dimensions": []string{"latency", "cost"},
+		"scores": map[string]map[string]string{
+			"V1": {"latency": "42ms", "cost": "$120"},
+			"V2": {"latency": "18ms", "cost": "$180"},
+		},
+		"non_dominated_set": []string{"V1", "V2"},
+		"pareto_tradeoffs": []map[string]any{
+			{"variant": "V1", "summary": "Lower cost, but slower latency."},
+			{"variant": "V2", "summary": "Lower latency, but higher cost."},
+		},
+		"selected_ref":   "V2",
+		"policy_applied": "Minimize latency within budget.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected comparison artifact metadata")
+	}
+	if result.Meta.ComparedPortfolioRef != fixture.comparedPortfolio.Meta.ID {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", result.Meta.ComparedPortfolioRef, fixture.comparedPortfolio.Meta.ID)
+	}
+}
+
+func TestHaftSolutionTool_CompareRejectsForeignPortfolioRef(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftSolutionTool(fixture.store, fixture.haftDir, fixture.registry)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": fixture.otherPortfolio.Meta.ID,
+		"dimensions":    []string{"latency"},
+		"scores": map[string]map[string]string{
+			"X1": {"latency": "30ms"},
+			"X2": {"latency": "25ms"},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta != nil {
+		t.Fatal("expected guardrail result, not comparison metadata")
+	}
+	if !strings.Contains(result.DisplayText, "active portfolio") {
+		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
 	}
 }
 
@@ -882,6 +972,58 @@ func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *test
 	}
 	if len(fields.RollbackTriggers) == 0 {
 		t.Fatal("expected rollback triggers in structured data")
+	}
+}
+
+func TestHaftDecisionTool_MeasureRejectsForeignDecisionRef(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	activeDecision, _, err := artifact.Decide(fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:      fixture.problem.Meta.ID,
+		PortfolioRef:    fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle:   "gRPC",
+		WhySelected:     "Latency wins inside the active compared portfolio.",
+		SelectionPolicy: "Minimize latency within budget.",
+		CounterArgument: "Operational cost could outweigh the latency benefit.",
+		WeakestLink:     "Production evidence is still limited.",
+		WhyNotOthers:    []artifact.RejectionReason{{Variant: "REST", Reason: "Higher latency with no compensating advantage for the current scope."}},
+		Rollback:        &artifact.RollbackSpec{Triggers: []string{"Latency regressions after rollout"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foreignDecision, _, err := artifact.Decide(fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:      fixture.problem.Meta.ID,
+		PortfolioRef:    fixture.otherPortfolio.Meta.ID,
+		SelectedTitle:   "WebSocket",
+		WhySelected:     "The foreign portfolio keeps duplex connections available.",
+		SelectionPolicy: "Prioritize persistent duplex transport.",
+		CounterArgument: "Connection lifecycle complexity may be unjustified for the current workload.",
+		WeakestLink:     "Stateful connections raise operational complexity.",
+		WhyNotOthers:    []artifact.RejectionReason{{Variant: "SSE", Reason: "It cannot satisfy the duplex requirement."}},
+		Rollback:        &artifact.RollbackSpec{Triggers: []string{"Connection churn exceeds the operating budget"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.activeCycle.DecisionRef = activeDecision.Meta.ID
+
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":       "measure",
+		"decision_ref": foreignDecision.Meta.ID,
+		"findings":     "Measured the wrong decision on purpose.",
+		"verdict":      "accepted",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta != nil {
+		t.Fatal("expected guardrail result, not measurement metadata")
+	}
+	if !strings.Contains(result.DisplayText, "active decision") {
+		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
 	}
 }
 

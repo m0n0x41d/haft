@@ -16,11 +16,18 @@ import (
 // CanExplore checks if haft_solution(explore) is allowed.
 // Requires: problem framed (ProblemRef on cycle).
 func CanExplore(cycle *Cycle) error {
-	if cycle == nil || cycle.ProblemRef == "" {
+	if cycle == nil || cycle.Status != CycleActive || cycle.ProblemRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_solution(explore)",
 			Missing:  "problem frame bound to active cycle",
 			Guidance: "Frame a new problem: haft_problem(action=\"frame\", signal=..., acceptance=...) OR adopt an existing one: haft_problem(action=\"adopt\", ref=\"prob-...\"). Note: characterize does not create a cycle — you need frame or adopt first.",
+		}
+	}
+	if cycle.DecisionRef != "" {
+		return &GuardrailError{
+			Tool:     "haft_solution(explore)",
+			Missing:  "an undecided active cycle",
+			Guidance: "This cycle already has a recorded decision. Run baseline/measure on that decision, or frame/adopt a new problem before exploring another option set.",
 		}
 	}
 	return nil
@@ -29,11 +36,18 @@ func CanExplore(cycle *Cycle) error {
 // CanCompare checks if haft_solution(compare) is allowed.
 // Requires: solution portfolio exists (PortfolioRef on cycle).
 func CanCompare(cycle *Cycle) error {
-	if cycle == nil || cycle.PortfolioRef == "" {
+	if cycle == nil || cycle.Status != CycleActive || cycle.PortfolioRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_solution(compare)",
 			Missing:  "solution portfolio",
 			Guidance: "Explore variants first: haft_solution(action=\"explore\", variants=[...])",
+		}
+	}
+	if cycle.DecisionRef != "" {
+		return &GuardrailError{
+			Tool:     "haft_solution(compare)",
+			Missing:  "an undecided active cycle",
+			Guidance: "This cycle already has a recorded decision. Baseline/measure that decision, or frame/adopt a new problem before comparing again.",
 		}
 	}
 	return nil
@@ -50,11 +64,18 @@ func CanCompare(cycle *Cycle) error {
 // explicit human selection for the active compared portfolio. Pass true in
 // autonomous mode.
 func CanDecide(cycle *Cycle, userSelectedAfterCompare bool) error {
-	if cycle == nil || cycle.PortfolioRef == "" {
+	if cycle == nil || cycle.Status != CycleActive || cycle.PortfolioRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_decision(decide)",
 			Missing:  "explored variants",
 			Guidance: "Explore at least 2 variants first: haft_solution(action=\"explore\", variants=[...]). FPF B.5.2 requires rival candidates.",
+		}
+	}
+	if cycle.DecisionRef != "" {
+		return &GuardrailError{
+			Tool:     "haft_decision(decide)",
+			Missing:  "an undecided active cycle",
+			Guidance: "This cycle already has a decision. Run baseline/measure for that decision, or frame/adopt a new problem before recording another one.",
 		}
 	}
 	if cycle.ComparedPortfolioRef == "" || cycle.ComparedPortfolioRef != cycle.PortfolioRef {
@@ -89,10 +110,23 @@ func HasDecisionSelection(cycle *Cycle) bool {
 	return strings.TrimSpace(cycle.SelectedVariantRef) != ""
 }
 
+// CanBaseline checks if haft_decision(baseline) is allowed.
+// Requires: an active cycle with a recorded decision.
+func CanBaseline(cycle *Cycle) error {
+	if cycle == nil || cycle.Status != CycleActive || cycle.DecisionRef == "" {
+		return &GuardrailError{
+			Tool:     "haft_decision(baseline)",
+			Missing:  "decision record",
+			Guidance: "Record a decision first: haft_decision(action=\"decide\", selected_title=..., why_selected=...)",
+		}
+	}
+	return nil
+}
+
 // CanMeasure checks if haft_decision(measure) is allowed.
 // Requires: decision exists (DecisionRef on cycle).
 func CanMeasure(cycle *Cycle) error {
-	if cycle == nil || cycle.DecisionRef == "" {
+	if cycle == nil || cycle.Status != CycleActive || cycle.DecisionRef == "" {
 		return &GuardrailError{
 			Tool:     "haft_decision(measure)",
 			Missing:  "decision record",

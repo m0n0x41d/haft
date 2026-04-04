@@ -205,6 +205,7 @@ func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration12(t *testing.T) {
 		SessionID:            sess.ID,
 		Phase:                agent.PhaseExplorer,
 		Status:               agent.CycleActive,
+		PortfolioRef:         "portfolio-compare",
 		ComparedPortfolioRef: "portfolio-compare",
 		SelectedPortfolioRef: "portfolio-compare",
 		SelectedVariantRef:   "V2",
@@ -239,5 +240,63 @@ func TestNewSQLiteStore_RepairsMissingCyclesTableForMigration12(t *testing.T) {
 	}
 	if stored.REff != 0.55 {
 		t.Fatalf("REff = %.2f, want 0.55", stored.REff)
+	}
+}
+
+func TestSQLiteStore_CreateCycleCanonicalizesActiveCycleState(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "session.db")
+	sqlDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	store, err := NewSQLiteStore(sqlDB)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	sess := &agent.Session{
+		ID:        "sess-canonical",
+		Title:     "canonical cycle test",
+		Model:     "test-model",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.Create(ctx, sess); err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+
+	cycle := &agent.Cycle{
+		ID:                   "cyc-canonical",
+		SessionID:            sess.ID,
+		Phase:                agent.PhaseFramer,
+		Status:               agent.CycleActive,
+		ProblemRef:           "prob-001",
+		PortfolioRef:         "sol-001",
+		ComparedPortfolioRef: "sol-stale",
+		SelectedPortfolioRef: "sol-stale",
+		SelectedVariantRef:   "V2",
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	if err := store.CreateCycle(ctx, cycle); err != nil {
+		t.Fatalf("CreateCycle: %v", err)
+	}
+
+	stored, err := store.GetCycle(ctx, cycle.ID)
+	if err != nil {
+		t.Fatalf("GetCycle: %v", err)
+	}
+	if stored.Phase != agent.PhaseExplorer {
+		t.Fatalf("Phase = %s, want %s", stored.Phase, agent.PhaseExplorer)
+	}
+	if stored.SelectedPortfolioRef != "" || stored.SelectedVariantRef != "" {
+		t.Fatalf("selection = (%q, %q), want cleared", stored.SelectedPortfolioRef, stored.SelectedVariantRef)
 	}
 }

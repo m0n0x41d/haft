@@ -345,7 +345,14 @@ func (t *HaftSolutionTool) Execute(ctx context.Context, argsJSON string) (agent.
 	case "explore":
 		// FPF guardrail: requires problem frame
 		if t.registry != nil {
-			if err := agent.CanExplore(t.registry.ActiveCycle(ctx)); err != nil {
+			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
+			if err := agent.CanExplore(cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleProblemBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindExploreProblemRef(args, cycle); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}
@@ -353,7 +360,20 @@ func (t *HaftSolutionTool) Execute(ctx context.Context, argsJSON string) (agent.
 	case "compare":
 		// FPF guardrail: requires solution portfolio
 		if t.registry != nil {
-			if err := agent.CanCompare(t.registry.ActiveCycle(ctx)); err != nil {
+			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
+			if err := agent.CanCompare(cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleProblemBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCyclePortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCyclePortfolioMatchesProblem(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindComparePortfolioRef(args, cycle); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}
@@ -485,6 +505,248 @@ func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store a
 	}
 
 	return &repaired, nil
+}
+
+func canonicalCycle(cycle *agent.Cycle) *agent.Cycle {
+	return agent.CanonicalizeCycleForPersistence(cycle)
+}
+
+func hasBasedOnLink(links []artifact.Link, ref string) bool {
+	targetRef := strings.TrimSpace(ref)
+	if targetRef == "" {
+		return false
+	}
+
+	for _, link := range links {
+		if link.Type != "based_on" {
+			continue
+		}
+		if strings.TrimSpace(link.Ref) == targetRef {
+			return true
+		}
+	}
+
+	return false
+}
+
+func validateCycleProblemBinding(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
+	if cycle == nil || store == nil || strings.TrimSpace(cycle.ProblemRef) == "" {
+		return nil
+	}
+
+	problem, err := store.Get(ctx, cycle.ProblemRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: active cycle problem %q could not be loaded. Re-frame or adopt the correct problem before continuing.", cycle.ProblemRef)
+	}
+	if problem.Meta.Kind != artifact.KindProblemCard {
+		return fmt.Errorf("FPF guardrail: active cycle problem %q is a %s, not a ProblemCard. Repair the cycle or adopt the correct problem before continuing.",
+			cycle.ProblemRef, problem.Meta.Kind)
+	}
+
+	return nil
+}
+
+func validateCyclePortfolioBinding(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
+	if cycle == nil || store == nil || strings.TrimSpace(cycle.PortfolioRef) == "" {
+		return nil
+	}
+
+	portfolio, err := store.Get(ctx, cycle.PortfolioRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: active portfolio %q could not be loaded. Re-explore within the current cycle or adopt the correct portfolio.", cycle.PortfolioRef)
+	}
+	if portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
+		return fmt.Errorf("FPF guardrail: active portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
+			cycle.PortfolioRef, portfolio.Meta.Kind)
+	}
+
+	return nil
+}
+
+func validateCyclePortfolioMatchesProblem(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
+	if cycle == nil || store == nil || strings.TrimSpace(cycle.PortfolioRef) == "" || strings.TrimSpace(cycle.ProblemRef) == "" {
+		return nil
+	}
+
+	portfolio, err := store.Get(ctx, cycle.PortfolioRef)
+	if err != nil || portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
+		return nil
+	}
+	if hasBasedOnLink(portfolio.Meta.Links, cycle.ProblemRef) {
+		return nil
+	}
+
+	return fmt.Errorf("FPF guardrail: active portfolio %q is not based on the active problem %q. Re-explore inside this cycle or adopt the matching problem/portfolio pair.",
+		cycle.PortfolioRef, cycle.ProblemRef)
+}
+
+func validateCycleComparedPortfolioBinding(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
+	if cycle == nil || store == nil || strings.TrimSpace(cycle.ComparedPortfolioRef) == "" {
+		return nil
+	}
+	if strings.TrimSpace(cycle.PortfolioRef) == "" {
+		return fmt.Errorf("FPF guardrail: cycle has compared portfolio %q without an active portfolio. Repair or re-explore before deciding.", cycle.ComparedPortfolioRef)
+	}
+	if cycle.ComparedPortfolioRef != cycle.PortfolioRef {
+		return fmt.Errorf("FPF guardrail: active compared portfolio %q does not match active portfolio %q. Re-run compare on the active portfolio before deciding.",
+			cycle.ComparedPortfolioRef, cycle.PortfolioRef)
+	}
+
+	comparedPortfolio, err := store.Get(ctx, cycle.ComparedPortfolioRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: compared portfolio %q could not be loaded. Re-run compare or repair the cycle before deciding.", cycle.ComparedPortfolioRef)
+	}
+	if comparedPortfolio.Meta.Kind != artifact.KindSolutionPortfolio {
+		return fmt.Errorf("FPF guardrail: compared portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
+			cycle.ComparedPortfolioRef, comparedPortfolio.Meta.Kind)
+	}
+	if !artifact.PortfolioHasComparison(comparedPortfolio) {
+		return fmt.Errorf("FPF guardrail: compared portfolio %q has no persisted comparison output. Run haft_solution(action=\"compare\") on the active portfolio before deciding.",
+			cycle.ComparedPortfolioRef)
+	}
+
+	return nil
+}
+
+func validateCycleDecisionBinding(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
+	if cycle == nil || store == nil || strings.TrimSpace(cycle.DecisionRef) == "" {
+		return nil
+	}
+
+	decision, err := store.Get(ctx, cycle.DecisionRef)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: active decision %q could not be loaded. Re-record the decision or repair the cycle before baselining/measuring.", cycle.DecisionRef)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return fmt.Errorf("FPF guardrail: active decision %q is a %s, not a DecisionRecord. Repair the cycle before baselining/measuring.",
+			cycle.DecisionRef, decision.Meta.Kind)
+	}
+	if cycle.ProblemRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.ProblemRef) {
+		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active problem %q. Repair the cycle before baselining/measuring.",
+			cycle.DecisionRef, cycle.ProblemRef)
+	}
+	if cycle.PortfolioRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.PortfolioRef) {
+		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active portfolio %q. Repair the cycle before baselining/measuring.",
+			cycle.DecisionRef, cycle.PortfolioRef)
+	}
+
+	return nil
+}
+
+func bindExploreProblemRef(args map[string]any, cycle *agent.Cycle) error {
+	if cycle == nil {
+		return nil
+	}
+
+	activeProblemRef := strings.TrimSpace(cycle.ProblemRef)
+	if activeProblemRef == "" {
+		return nil
+	}
+
+	requestedProblemRef := strings.TrimSpace(jsonStr(args, "problem_ref"))
+	if requestedProblemRef == "" {
+		args["problem_ref"] = activeProblemRef
+		return nil
+	}
+	if requestedProblemRef == activeProblemRef {
+		return nil
+	}
+
+	return &agent.GuardrailError{
+		Tool:    "haft_solution(explore)",
+		Missing: "problem_ref aligned with the active problem",
+		Guidance: fmt.Sprintf(
+			"Explore against the active problem %q. Omit problem_ref to use it automatically, or pass that exact value.",
+			activeProblemRef,
+		),
+	}
+}
+
+func bindComparePortfolioRef(args map[string]any, cycle *agent.Cycle) error {
+	if cycle == nil {
+		return nil
+	}
+
+	activePortfolioRef := strings.TrimSpace(cycle.PortfolioRef)
+	if activePortfolioRef == "" {
+		return nil
+	}
+
+	requestedPortfolioRef := strings.TrimSpace(jsonStr(args, "portfolio_ref"))
+	if requestedPortfolioRef == "" {
+		args["portfolio_ref"] = activePortfolioRef
+		return nil
+	}
+	if requestedPortfolioRef == activePortfolioRef {
+		return nil
+	}
+
+	return &agent.GuardrailError{
+		Tool:    "haft_solution(compare)",
+		Missing: "portfolio_ref aligned with the active portfolio",
+		Guidance: fmt.Sprintf(
+			"Compare the active portfolio %q. Omit portfolio_ref to use it automatically, or pass that exact value.",
+			activePortfolioRef,
+		),
+	}
+}
+
+func bindDecisionProblemRef(args map[string]any, cycle *agent.Cycle) error {
+	if cycle == nil {
+		return nil
+	}
+
+	activeProblemRef := strings.TrimSpace(cycle.ProblemRef)
+	if activeProblemRef == "" {
+		return nil
+	}
+
+	requestedProblemRef := strings.TrimSpace(jsonStr(args, "problem_ref"))
+	if requestedProblemRef == "" {
+		args["problem_ref"] = activeProblemRef
+		return nil
+	}
+	if requestedProblemRef == activeProblemRef {
+		return nil
+	}
+
+	return &agent.GuardrailError{
+		Tool:    "haft_decision(decide)",
+		Missing: "problem_ref aligned with the active problem",
+		Guidance: fmt.Sprintf(
+			"Decide against the active problem %q. Omit problem_ref to use it automatically, or pass that exact value.",
+			activeProblemRef,
+		),
+	}
+}
+
+func bindDecisionRef(args map[string]any, cycle *agent.Cycle, toolName string) error {
+	if cycle == nil {
+		return nil
+	}
+
+	activeDecisionRef := strings.TrimSpace(cycle.DecisionRef)
+	if activeDecisionRef == "" {
+		return nil
+	}
+
+	requestedDecisionRef := strings.TrimSpace(jsonStr(args, "decision_ref"))
+	if requestedDecisionRef == "" {
+		args["decision_ref"] = activeDecisionRef
+		return nil
+	}
+	if requestedDecisionRef == activeDecisionRef {
+		return nil
+	}
+
+	return &agent.GuardrailError{
+		Tool:    toolName,
+		Missing: "decision_ref aligned with the active decision",
+		Guidance: fmt.Sprintf(
+			"Use the active decision %q. Omit decision_ref to use it automatically, or pass that exact value.",
+			activeDecisionRef,
+		),
+	}
 }
 
 func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle, selectedTitle string) error {
@@ -716,7 +978,7 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 	case "decide":
 		// FPF guardrails: requires compared variants + decision-boundary user selection
 		if t.registry != nil {
-			cycle := t.registry.ActiveCycle(ctx)
+			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
 			var err error
 			cycle, err = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
 			if err != nil {
@@ -731,6 +993,18 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 			if err := agent.CanDecide(cycle, selectionSatisfied); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
+			if err := validateCycleProblemBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCyclePortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleComparedPortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindDecisionProblemRef(args, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
 			if err := bindDecisionPortfolioRef(args, cycle); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
@@ -742,11 +1016,58 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 	case "evidence":
 		return t.evidence(ctx, args)
 	case "baseline":
+		if t.registry != nil {
+			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
+			var err error
+			cycle, err = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
+			if err != nil {
+				return agent.PlainResult(fmt.Sprintf("FPF guardrail: haft_decision(baseline) could not persist the compared-portfolio repair required for this cycle. %s", err.Error())), nil
+			}
+			if err := agent.CanBaseline(cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleProblemBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCyclePortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleComparedPortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleDecisionBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindDecisionRef(args, cycle, "haft_decision(baseline)"); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+		}
 		return t.baseline(ctx, args)
 	case "measure":
 		// FPF guardrail: requires decision
 		if t.registry != nil {
-			if err := agent.CanMeasure(t.registry.ActiveCycle(ctx)); err != nil {
+			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
+			var err error
+			cycle, err = repairComparedPortfolioRef(ctx, cycle, t.store, t.registry)
+			if err != nil {
+				return agent.PlainResult(fmt.Sprintf("FPF guardrail: haft_decision(measure) could not persist the compared-portfolio repair required for this cycle. %s", err.Error())), nil
+			}
+			if err := agent.CanMeasure(cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleProblemBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCyclePortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleComparedPortfolioBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := validateCycleDecisionBinding(ctx, t.store, cycle); err != nil {
+				return agent.PlainResult(err.Error()), nil
+			}
+			if err := bindDecisionRef(args, cycle, "haft_decision(measure)"); err != nil {
 				return agent.PlainResult(err.Error()), nil
 			}
 		}

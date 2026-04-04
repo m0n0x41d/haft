@@ -208,6 +208,9 @@ func (s *SQLiteStore) CreateCycle(ctx context.Context, cycle *agent.Cycle) error
 	if cycle.UpdatedAt.IsZero() {
 		cycle.UpdatedAt = cycle.CreatedAt
 	}
+	if normalized := agent.CanonicalizeCycleForPersistence(cycle); normalized != nil {
+		*cycle = *normalized
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO agent_cycles (id, session_id, phase, status, lineage, problem_ref, portfolio_ref, compared_portfolio_ref, selected_portfolio_ref, selected_variant_ref, decision_ref, r_eff, cl_min, skip_json, governance_json, f_eff, g_eff, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -221,6 +224,10 @@ func (s *SQLiteStore) CreateCycle(ctx context.Context, cycle *agent.Cycle) error
 
 func (s *SQLiteStore) UpdateCycle(ctx context.Context, cycle *agent.Cycle) error {
 	cycle.UpdatedAt = time.Now().UTC()
+	if normalized := agent.CanonicalizeCycleForPersistence(cycle); normalized != nil {
+		normalized.UpdatedAt = cycle.UpdatedAt
+		*cycle = *normalized
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE agent_cycles SET phase = ?, status = ?, lineage = ?, problem_ref = ?, portfolio_ref = ?, compared_portfolio_ref = ?, selected_portfolio_ref = ?, selected_variant_ref = ?, decision_ref = ?,
 		        r_eff = ?, cl_min = ?, skip_json = ?, governance_json = ?, f_eff = ?, g_eff = ?, updated_at = ?

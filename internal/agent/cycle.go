@@ -1,6 +1,9 @@
 package agent
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ---------------------------------------------------------------------------
 // L1: Cycle Derivation — state functions for cycle management.
@@ -30,6 +33,70 @@ func DerivePhaseFromCycle(cycle *Cycle) Phase {
 		return PhaseExplorer
 	}
 	return PhaseFramer
+}
+
+func clearSelectionState(cycle *Cycle) {
+	if cycle == nil {
+		return
+	}
+
+	cycle.SelectedPortfolioRef = ""
+	cycle.SelectedVariantRef = ""
+}
+
+func clearDecisionPath(cycle *Cycle) {
+	if cycle == nil {
+		return
+	}
+
+	cycle.ComparedPortfolioRef = ""
+	clearSelectionState(cycle)
+	cycle.DecisionRef = ""
+}
+
+func clearSolutionPath(cycle *Cycle) {
+	if cycle == nil {
+		return
+	}
+
+	cycle.PortfolioRef = ""
+	clearDecisionPath(cycle)
+}
+
+// CanonicalizeCycleForPersistence keeps persisted active-cycle state aligned
+// with the canonical contract:
+// frame/adopt -> problem
+// explore -> portfolio
+// compare -> compared portfolio + optional user selection
+// decide -> decision
+// baseline/measure -> same active decision chain
+func CanonicalizeCycleForPersistence(cycle *Cycle) *Cycle {
+	if cycle == nil {
+		return nil
+	}
+
+	updated := *cycle
+	updated.ProblemRef = strings.TrimSpace(updated.ProblemRef)
+	updated.PortfolioRef = strings.TrimSpace(updated.PortfolioRef)
+	updated.ComparedPortfolioRef = strings.TrimSpace(updated.ComparedPortfolioRef)
+	updated.SelectedPortfolioRef = strings.TrimSpace(updated.SelectedPortfolioRef)
+	updated.SelectedVariantRef = strings.TrimSpace(updated.SelectedVariantRef)
+	updated.DecisionRef = strings.TrimSpace(updated.DecisionRef)
+
+	if updated.Status != CycleActive {
+		return &updated
+	}
+
+	hasActiveSelection := updated.ComparedPortfolioRef != "" &&
+		updated.ComparedPortfolioRef == updated.PortfolioRef &&
+		updated.SelectedPortfolioRef == updated.ComparedPortfolioRef &&
+		updated.SelectedVariantRef != ""
+	if !hasActiveSelection {
+		clearSelectionState(&updated)
+	}
+
+	updated.Phase = DerivePhaseFromCycle(&updated)
+	return &updated
 }
 
 // ValidateTransition checks if moving to the proposed phase is legal
@@ -108,30 +175,28 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 	switch meta.Kind {
 	case "problem":
 		if meta.Operation == "frame" {
+			clearSolutionPath(&updated)
 			updated.ProblemRef = meta.ArtifactRef
 			bound = true
 		}
 		if meta.Operation == "adopt" {
+			clearSolutionPath(&updated)
 			updated.ProblemRef = meta.ArtifactRef
 			updated.PortfolioRef = meta.AdoptPortfolioRef
 			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
-			updated.SelectedPortfolioRef = ""
-			updated.SelectedVariantRef = ""
+			clearSelectionState(&updated)
 			updated.DecisionRef = meta.AdoptDecisionRef
 			bound = true
 		}
 	case "solution":
 		if meta.Operation == "explore" {
+			clearDecisionPath(&updated)
 			updated.PortfolioRef = meta.ArtifactRef
-			updated.ComparedPortfolioRef = ""
-			updated.SelectedPortfolioRef = ""
-			updated.SelectedVariantRef = ""
 			bound = true
 		}
 		if meta.Operation == "compare" {
 			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
-			updated.SelectedPortfolioRef = ""
-			updated.SelectedVariantRef = ""
+			clearSelectionState(&updated)
 			bound = updated.ComparedPortfolioRef != ""
 		}
 	case "decision":

@@ -263,6 +263,68 @@ func TestCompareSolutions_Success(t *testing.T) {
 	}
 }
 
+func TestCompareSolutions_RejectsLegacyPortfolioWithDuplicateVariantIDs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	fields, err := json.Marshal(PortfolioFields{
+		Variants: []Variant{
+			{ID: "V7", Title: "Kafka", WeakestLink: "ops complexity", NoveltyMarker: "Maximize throughput with established streaming ecosystem"},
+			{ID: "V7", Title: "NATS", WeakestLink: "ecosystem maturity", NoveltyMarker: "Lean embedded broker with simpler cluster operations"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio := &Artifact{
+		Meta: Meta{
+			ID:      "sol-legacy-duplicate-id",
+			Kind:    KindSolutionPortfolio,
+			Title:   "Legacy ambiguous portfolio",
+			Context: "events",
+			Mode:    ModeStandard,
+		},
+		Body: `# Legacy ambiguous portfolio
+
+## Variants (2)
+
+### V7. Kafka
+
+**Weakest link:** ops complexity
+
+### V7. NATS
+
+**Weakest link:** ecosystem maturity
+`,
+		StructuredData: string(fields),
+	}
+	if err := store.Create(ctx, portfolio); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V7": {"latency": "10ms"},
+			},
+			NonDominatedSet: []string{"V7"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected compare to reject ambiguous stored portfolio identities")
+	}
+	if !strings.Contains(err.Error(), `portfolio sol-legacy-duplicate-id has ambiguous variant identities`) {
+		t.Fatalf("unexpected portfolio identity error: %v", err)
+	}
+	if !strings.Contains(err.Error(), `variant identity "V7" is duplicated`) {
+		t.Fatalf("expected duplicate identity detail, got %v", err)
+	}
+}
+
 func TestCompareSolutions_MissingPortfolio(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

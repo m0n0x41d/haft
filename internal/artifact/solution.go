@@ -339,6 +339,9 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	}
 
 	identities := portfolioVariantIdentities(a)
+	if err := validatePortfolioVariantIdentities(identities); err != nil {
+		return nil, "", fmt.Errorf("portfolio %s has ambiguous variant identities: %w", input.PortfolioRef, err)
+	}
 	normalizedResults, err := normalizeComparisonVariantReferences(input.Results, identities)
 	if err != nil {
 		return nil, "", err
@@ -686,6 +689,7 @@ type charDim struct {
 
 type portfolioVariantIdentity struct {
 	Key     string
+	Label   string
 	Aliases []string
 }
 
@@ -723,26 +727,29 @@ func materializeVariantIDs(variants []Variant) []Variant {
 }
 
 func ValidateVariantIdentitySet(variants []Variant) error {
+	return validatePortfolioVariantIdentities(variantIdentitiesFromVariants(variants))
+}
+
+func validatePortfolioVariantIdentities(identities []portfolioVariantIdentity) error {
 	seenKeys := make(map[string]string)
 	seenAliases := make(map[string]string)
-	for _, variant := range variants {
-		key := strings.TrimSpace(variant.ID)
-		if key == "" {
-			key = strings.TrimSpace(variant.Title)
-		}
+	for _, identity := range identities {
+		key := strings.TrimSpace(identity.Key)
 		if key == "" {
 			continue
 		}
 
-		if priorTitle, exists := seenKeys[key]; exists {
-			return fmt.Errorf("variant identity %q is duplicated between %q and %q", key, priorTitle, variant.Title)
+		label := strings.TrimSpace(identity.Label)
+		if label == "" {
+			label = key
 		}
-		seenKeys[key] = variant.Title
 
-		aliases := []string{
-			key,
-			strings.TrimSpace(variant.Title),
+		if priorLabel, exists := seenKeys[key]; exists {
+			return fmt.Errorf("variant identity %q is duplicated between %q and %q", key, priorLabel, label)
 		}
+		seenKeys[key] = label
+
+		aliases := append([]string{key}, identity.Aliases...)
 		for _, alias := range dedupeTrimmedStrings(aliases) {
 			if alias == "" {
 				continue
@@ -755,6 +762,29 @@ func ValidateVariantIdentitySet(variants []Variant) error {
 	}
 
 	return nil
+}
+
+func variantIdentitiesFromVariants(variants []Variant) []portfolioVariantIdentity {
+	var identities []portfolioVariantIdentity
+	for _, variant := range variants {
+		key := strings.TrimSpace(variant.ID)
+		if key == "" {
+			key = strings.TrimSpace(variant.Title)
+		}
+		if key == "" {
+			continue
+		}
+
+		identities = append(identities, portfolioVariantIdentity{
+			Key:   key,
+			Label: strings.TrimSpace(variant.Title),
+			Aliases: dedupeTrimmedStrings([]string{
+				key,
+				strings.TrimSpace(variant.Title),
+			}),
+		})
+	}
+	return identities
 }
 
 func portfolioVariantIdentities(portfolio *Artifact) []portfolioVariantIdentity {
@@ -781,6 +811,14 @@ func portfolioVariantIdentities(portfolio *Artifact) []portfolioVariantIdentity 
 			continue
 		}
 
+		label := strings.TrimSpace(variant.Title)
+		if label == "" && index < len(bodyRefs) {
+			label = strings.TrimSpace(bodyRefs[index].Title)
+		}
+		if label == "" {
+			label = key
+		}
+
 		aliases := []string{key}
 		aliases = append(aliases, strings.TrimSpace(variant.Title))
 		if index < len(bodyRefs) {
@@ -790,6 +828,7 @@ func portfolioVariantIdentities(portfolio *Artifact) []portfolioVariantIdentity 
 
 		identities = append(identities, portfolioVariantIdentity{
 			Key:     key,
+			Label:   label,
 			Aliases: dedupeTrimmedStrings(aliases),
 		})
 	}
@@ -808,8 +847,14 @@ func portfolioVariantIdentitiesFromRefs(refs []portfolioVariantRef) []portfolioV
 			continue
 		}
 
+		label := strings.TrimSpace(ref.Title)
+		if label == "" {
+			label = key
+		}
+
 		identities = append(identities, portfolioVariantIdentity{
-			Key: key,
+			Key:   key,
+			Label: label,
 			Aliases: dedupeTrimmedStrings([]string{
 				key,
 				ref.ID,

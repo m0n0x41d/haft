@@ -757,6 +757,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	}
 
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:              evidID,
 		Type:            "measurement",
@@ -764,7 +765,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
 		FormalityLevel:  2,
-		ClaimScope:      measuredCriteriaScope(input.CriteriaMet, input.CriteriaNotMet),
+		ClaimScope:      measuredCriteriaScope(input.CriteriaMet, input.CriteriaNotMet, scopeCandidates),
 		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)
@@ -1029,11 +1030,21 @@ func computeClaimCoverage(items []EvidenceItem) []string {
 	return normalizeClaimScope(scope)
 }
 
-func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string) []string {
+func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeCandidates []string) []string {
 	scope := make([]string, 0, len(criteriaMet)+len(criteriaNotMet))
 	scope = append(scope, criteriaMet...)
 	scope = append(scope, criteriaNotMet...)
-	return normalizeClaimScope(scope)
+	scope = normalizeClaimScope(scope)
+
+	aliasIndex := buildCriterionAliasIndex(scopeCandidates)
+	resolved := make([]string, 0, len(scope))
+
+	for _, item := range scope {
+		resolvedItem := resolveMeasuredCriterion(item, aliasIndex)
+		resolved = append(resolved, resolvedItem)
+	}
+
+	return normalizeClaimScope(resolved)
 }
 
 func differenceScope(expected []string, covered []string) []string {
@@ -1088,6 +1099,16 @@ func explicitAcceptanceScope(ctx context.Context, store ArtifactStore, artifactI
 	return scope, len(scope) > 0
 }
 
+func measurementScopeCandidates(ctx context.Context, store ArtifactStore, decision *Artifact) []string {
+	scope := make([]string, 0)
+	scope = append(scope, decision.UnmarshalDecisionFields().PostConds...)
+
+	acceptanceScope, _ := explicitAcceptanceScope(ctx, store, decision.Meta.ID)
+	scope = append(scope, acceptanceScope...)
+
+	return normalizeClaimScope(scope)
+}
+
 func explicitAcceptanceCriteria(acceptance string) []string {
 	lines := strings.Split(acceptance, "\n")
 	criteria := make([]string, 0, len(lines))
@@ -1113,6 +1134,138 @@ func explicitAcceptanceCriteria(acceptance string) []string {
 	}
 
 	return normalizeClaimScope(criteria)
+}
+
+func buildCriterionAliasIndex(candidates []string) map[string]string {
+	counts := make(map[string]int)
+	aliases := make(map[string]string)
+
+	for _, candidate := range normalizeClaimScope(candidates) {
+		for _, key := range criterionAliasKeys(candidate) {
+			counts[key]++
+			if _, exists := aliases[key]; exists {
+				continue
+			}
+			aliases[key] = candidate
+		}
+	}
+
+	index := make(map[string]string)
+
+	for key, candidate := range aliases {
+		if counts[key] != 1 {
+			continue
+		}
+		index[key] = candidate
+	}
+
+	return index
+}
+
+func resolveMeasuredCriterion(value string, aliasIndex map[string]string) string {
+	for _, key := range criterionAliasKeys(value) {
+		candidate, ok := aliasIndex[key]
+		if ok {
+			return candidate
+		}
+	}
+
+	trimmed := stripTrailingCriterionAnnotations(value)
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	return strings.TrimSpace(value)
+}
+
+func criterionAliasKeys(value string) []string {
+	keys := make([]string, 0, 2)
+
+	exactKey := criterionMatchKey(value)
+	if exactKey != "" {
+		keys = append(keys, exactKey)
+	}
+
+	trimmedKey := criterionMatchKey(stripTrailingCriterionAnnotations(value))
+	if trimmedKey != "" && trimmedKey != exactKey {
+		keys = append(keys, trimmedKey)
+	}
+
+	return keys
+}
+
+func criterionMatchKey(value string) string {
+	trimmed := trimCriterionLeadMarkers(value)
+	trimmed = strings.ToLower(strings.TrimSpace(trimmed))
+	fields := strings.Fields(trimmed)
+	return strings.Join(fields, " ")
+}
+
+func stripTrailingCriterionAnnotations(value string) string {
+	trimmed := trimCriterionLeadMarkers(value)
+	trimmed = strings.TrimSpace(trimmed)
+	trimmed = strings.TrimRight(trimmed, ".,;:")
+
+	for {
+		next, changed := trimTrailingCriterionGroup(trimmed, '(', ')')
+		if changed {
+			trimmed = strings.TrimSpace(next)
+			trimmed = strings.TrimRight(trimmed, ".,;:")
+			continue
+		}
+
+		next, changed = trimTrailingCriterionGroup(trimmed, '[', ']')
+		if changed {
+			trimmed = strings.TrimSpace(next)
+			trimmed = strings.TrimRight(trimmed, ".,;:")
+			continue
+		}
+
+		return strings.TrimSpace(trimmed)
+	}
+}
+
+func trimCriterionLeadMarkers(value string) string {
+	trimmed := strings.TrimSpace(value)
+
+	switch {
+	case strings.HasPrefix(trimmed, "- [ ] "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ] "))
+	case strings.HasPrefix(trimmed, "- [x] "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- [x] "))
+	case strings.HasPrefix(trimmed, "- "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+	case strings.HasPrefix(trimmed, "* "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "* "))
+	default:
+		return trimmed
+	}
+}
+
+func trimTrailingCriterionGroup(value string, open byte, close byte) (string, bool) {
+	if value == "" {
+		return value, false
+	}
+	if value[len(value)-1] != close {
+		return value, false
+	}
+
+	depth := 0
+
+	for i := len(value) - 1; i >= 0; i-- {
+		switch value[i] {
+		case close:
+			depth++
+		case open:
+			depth--
+			if depth == 0 {
+				return value[:i], true
+			}
+		}
+	}
+
+	return value, false
 }
 
 func formatAssuranceSummary(summary WLNKSummary) string {

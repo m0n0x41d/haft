@@ -69,8 +69,8 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
 		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
 	}
-	if got := strings.Join(items[0].ClaimScope, " | "); got != "All producers migrated (11/12, payments-legacy pending) | Load test at 100k/s passed (actual: 120k/s)" {
-		t.Errorf("evidence claim_scope = %#v, want measured criteria scope", items[0].ClaimScope)
+	if got := strings.Join(items[0].ClaimScope, " | "); got != "All producers migrated | Load test at 100k/s passed" {
+		t.Errorf("evidence claim_scope = %#v, want canonical measured criteria scope", items[0].ClaimScope)
 	}
 }
 
@@ -275,7 +275,7 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	}
 }
 
-func TestWLNKSummary_FailedCriteriaStillCountAsCovered(t *testing.T) {
+func TestWLNKSummary_AnnotatedCriteriaStillCountAsCovered(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -304,8 +304,8 @@ func TestWLNKSummary_FailedCriteriaStillCountAsCovered(t *testing.T) {
 	_, err = Measure(ctx, store, haftDir, MeasureInput{
 		DecisionRef:    dec.Meta.ID,
 		Findings:       "Latency passed, throughput failed under peak load.",
-		CriteriaMet:    []string{"P99 latency under 50ms"},
-		CriteriaNotMet: []string{"Throughput above 100k events/sec"},
+		CriteriaMet:    []string{"P99 latency under 50ms (observed: 42ms)"},
+		CriteriaNotMet: []string{"Throughput above 100k events/sec (observed: 87k events/sec)"},
 		Verdict:        "partial",
 	})
 	if err != nil {

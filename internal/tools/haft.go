@@ -131,7 +131,11 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.PlainResult(fmt.Sprintf("Problem '%s' not found. Use haft_problem(select) to list active problems.", ref)), nil
 		}
 		if a.Meta.Kind != artifact.KindProblemCard {
-			return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a ProblemCard.", ref, a.Meta.Kind)), nil
+			return agent.PlainResult(
+				present.ApplyFPFAnswerHygiene(
+					fmt.Sprintf("'%s' is a %s, not a ProblemCard.", ref, a.Meta.Kind),
+				),
+			), nil
 		}
 
 		// Find related solution and decision artifacts
@@ -539,8 +543,13 @@ func validateCycleProblemBinding(ctx context.Context, store artifact.ArtifactSto
 		return fmt.Errorf("FPF guardrail: active cycle problem %q could not be loaded. Re-frame or adopt the correct problem before continuing.", cycle.ProblemRef)
 	}
 	if problem.Meta.Kind != artifact.KindProblemCard {
-		return fmt.Errorf("FPF guardrail: active cycle problem %q is a %s, not a ProblemCard. Repair the cycle or adopt the correct problem before continuing.",
-			cycle.ProblemRef, problem.Meta.Kind)
+		return fmt.Errorf("%s",
+			present.ApplyFPFAnswerHygiene(
+				fmt.Sprintf("FPF guardrail: active cycle problem %q is a %s, not a ProblemCard. Repair the cycle or adopt the correct problem before continuing.",
+					cycle.ProblemRef, problem.Meta.Kind,
+				),
+			),
+		)
 	}
 
 	return nil
@@ -556,8 +565,13 @@ func validateCyclePortfolioBinding(ctx context.Context, store artifact.ArtifactS
 		return fmt.Errorf("FPF guardrail: active portfolio %q could not be loaded. Re-explore within the current cycle or adopt the correct portfolio.", cycle.PortfolioRef)
 	}
 	if portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
-		return fmt.Errorf("FPF guardrail: active portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
-			cycle.PortfolioRef, portfolio.Meta.Kind)
+		return fmt.Errorf("%s",
+			present.ApplyFPFAnswerHygiene(
+				fmt.Sprintf("FPF guardrail: active portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
+					cycle.PortfolioRef, portfolio.Meta.Kind,
+				),
+			),
+		)
 	}
 
 	return nil
@@ -597,8 +611,13 @@ func validateCycleComparedPortfolioBinding(ctx context.Context, store artifact.A
 		return fmt.Errorf("FPF guardrail: compared portfolio %q could not be loaded. Re-run compare or repair the cycle before deciding.", cycle.ComparedPortfolioRef)
 	}
 	if comparedPortfolio.Meta.Kind != artifact.KindSolutionPortfolio {
-		return fmt.Errorf("FPF guardrail: compared portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
-			cycle.ComparedPortfolioRef, comparedPortfolio.Meta.Kind)
+		return fmt.Errorf("%s",
+			present.ApplyFPFAnswerHygiene(
+				fmt.Sprintf("FPF guardrail: compared portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
+					cycle.ComparedPortfolioRef, comparedPortfolio.Meta.Kind,
+				),
+			),
+		)
 	}
 	if !artifact.PortfolioHasComparison(comparedPortfolio) {
 		return fmt.Errorf("FPF guardrail: compared portfolio %q has no persisted comparison output. Run haft_solution(action=\"compare\") on the active portfolio before deciding.",
@@ -618,8 +637,13 @@ func validateCycleDecisionBinding(ctx context.Context, store artifact.ArtifactSt
 		return fmt.Errorf("FPF guardrail: active decision %q could not be loaded. Re-record the decision or repair the cycle before baselining/measuring.", cycle.DecisionRef)
 	}
 	if decision.Meta.Kind != artifact.KindDecisionRecord {
-		return fmt.Errorf("FPF guardrail: active decision %q is a %s, not a DecisionRecord. Repair the cycle before baselining/measuring.",
-			cycle.DecisionRef, decision.Meta.Kind)
+		return fmt.Errorf("%s",
+			present.ApplyFPFAnswerHygiene(
+				fmt.Sprintf("FPF guardrail: active decision %q is a %s, not a DecisionRecord. Repair the cycle before baselining/measuring.",
+					cycle.DecisionRef, decision.Meta.Kind,
+				),
+			),
+		)
 	}
 	if cycle.ProblemRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.ProblemRef) {
 		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active problem %q. Repair the cycle before baselining/measuring.",
@@ -1263,8 +1287,12 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 		return agent.PlainResult(fmt.Sprintf("Decision '%s' not found. If you're in tactical mode, report findings as text instead.", decisionRef)), nil
 	}
 	if a.Meta.Kind != artifact.KindDecisionRecord {
-		return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a DecisionRecord. You likely passed a problem ID. "+
-			"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, a.Meta.Kind)), nil
+		return agent.PlainResult(
+			present.ApplyFPFAnswerHygiene(
+				fmt.Sprintf("'%s' is a %s, not a DecisionRecord. You likely passed a problem ID. "+
+					"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, a.Meta.Kind),
+			),
+		), nil
 	}
 
 	files, err := t.store.GetAffectedFiles(ctx, decisionRef)
@@ -1389,7 +1417,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 		}
 		var b strings.Builder
 		for _, r := range results {
-			fmt.Fprintf(&b, "- [%s] %s (%s)\n", r.Meta.ID, r.Meta.Title, r.Meta.Kind)
+			fmt.Fprintf(&b, "- [%s] %s (%s)\n", r.Meta.ID, r.Meta.Title, present.UserFacingArtifactKindLabel(string(r.Meta.Kind)))
 		}
 		return agent.PlainResult(b.String()), nil
 

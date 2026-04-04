@@ -71,7 +71,7 @@ func NoteResponse(a *artifact.Artifact, filePath string, validation artifact.Not
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // NoteRejection builds the response when a note is rejected.
@@ -99,7 +99,7 @@ func NoteRejection(validation artifact.NoteValidation, navStrip string) string {
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // ReconcileResponse formats the reconcile results.
@@ -109,7 +109,7 @@ func ReconcileResponse(overlaps []artifact.ReconcileOverlap, navStrip string) st
 	if len(overlaps) == 0 {
 		sb.WriteString("No note-decision overlaps found. Notes and decisions are clean.\n")
 		sb.WriteString(navStrip)
-		return sb.String()
+		return ApplyFPFAnswerHygiene(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("## Note-Decision Overlaps (%d found)\n\n", len(overlaps)))
@@ -123,7 +123,7 @@ func ReconcileResponse(overlaps []artifact.ReconcileOverlap, navStrip string) st
 	}
 	sb.WriteString("\nUse `haft_refresh(action=\"deprecate\", artifact_ref=\"<note-id>\", reason=\"superseded by decision\")` to clean up.\n")
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // ScanResponse formats the stale scan results.
@@ -133,7 +133,7 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 	if len(items) == 0 {
 		sb.WriteString("No stale artifacts found. All decisions, problems, and notes are current.\n")
 		sb.WriteString(navStrip)
-		return sb.String()
+		return ApplyFPFAnswerHygiene(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("## Refresh Due (%d artifact(s))\n\n", len(items)))
@@ -142,6 +142,7 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 		if kindLabel == "" {
 			kindLabel = "DecisionRecord"
 		}
+		kindLabel = UserFacingArtifactKindLabel(kindLabel)
 		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
 		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
 	}
@@ -154,7 +155,7 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 	sb.WriteString("\nUse `artifact_ref` parameter with any artifact ID (note, problem, decision, portfolio).\n")
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // RefreshActionResponse formats the result of a refresh action.
@@ -168,7 +169,7 @@ func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact
 	case artifact.RefreshReopen:
 		sb.WriteString(fmt.Sprintf("Reopened: %s → status: refresh_due\n", dec.Meta.Title))
 		if newProb != nil {
-			sb.WriteString(fmt.Sprintf("New ProblemCard: %s (%s)\n", newProb.Meta.Title, newProb.Meta.ID))
+			sb.WriteString(fmt.Sprintf("New problem: %s (%s)\n", newProb.Meta.Title, newProb.Meta.ID))
 			sb.WriteString("Use /q-explore to find new solutions.\n")
 		}
 	case artifact.RefreshSupersede:
@@ -178,7 +179,7 @@ func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // BaselineResponse formats the result of a baseline action.
@@ -189,7 +190,7 @@ func BaselineResponse(decisionRef string, files []artifact.AffectedFile, navStri
 		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
 	}
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // DriftResponse formats drift check results for the agent.
@@ -199,7 +200,7 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 	if len(reports) == 0 {
 		sb.WriteString("No drift detected. All baselined decisions match current file state.\n")
 		sb.WriteString(navStrip)
-		return sb.String()
+		return ApplyFPFAnswerHygiene(sb.String())
 	}
 
 	driftCount := 0
@@ -268,7 +269,7 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // DecisionResponse builds the MCP tool response.
@@ -297,7 +298,7 @@ func DecisionResponse(action string, a *artifact.Artifact, filePath string, extr
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // SolutionResponse builds the MCP tool response.
@@ -387,7 +388,7 @@ func structuredComparisonSummary(result artifact.ComparisonResult, labels map[st
 		return ""
 	}
 
-	return strings.Join(lines, "\n") + "\n"
+	return ApplyFPFAnswerHygiene(strings.Join(lines, "\n") + "\n")
 }
 
 func legacyComparisonSummary(body string) string {
@@ -462,13 +463,13 @@ func displayComparisonVariantLabel(value string, labels map[string]string) strin
 
 // MissingProblemResponse returns prescriptive guidance when problem is missing.
 func MissingProblemResponse(navStrip string) string {
-	return "No active ProblemCard found.\n\n" +
+	return ApplyFPFAnswerHygiene("No active ProblemCard found.\n\n" +
 		"Frame the problem first:\n" +
 		"  /q-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
 		"Or explore directly in tactical mode:\n" +
 		"  haft_solution(action=\"explore\", variants=[...])\n" +
 		"  → will create a lightweight ProblemCard from context\n" +
-		navStrip
+		navStrip)
 }
 
 // ProblemResponse builds the MCP tool response for a framed problem.
@@ -497,20 +498,21 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // SearchResponse formats FTS5 search results as markdown.
 func SearchResponse(results []*artifact.Artifact, query string) string {
 	if len(results) == 0 {
-		return fmt.Sprintf("No results found for: %s\n", query)
+		return ApplyFPFAnswerHygiene(fmt.Sprintf("No results found for: %s\n", query))
 	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("## Search: %s (%d results)\n\n", query, len(results)))
 
 	for i, a := range results {
-		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] `%s`\n", i+1, a.Meta.Title, a.Meta.Kind, a.Meta.ID))
+		kindLabel := UserFacingArtifactKindLabel(string(a.Meta.Kind))
+		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] `%s`\n", i+1, a.Meta.Title, kindLabel, a.Meta.ID))
 		if a.Meta.Context != "" {
 			sb.WriteString(fmt.Sprintf("   Context: %s", a.Meta.Context))
 		}
@@ -533,7 +535,7 @@ func SearchResponse(results []*artifact.Artifact, query string) string {
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // StatusResponse formats the status dashboard from pre-fetched data.
@@ -642,17 +644,22 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("No artifacts found. Use /q-note or /q-frame to get started.\n")
 	}
 
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // ListResponse formats artifacts of a given kind as markdown.
 func ListResponse(data artifact.ListData) string {
 	if len(data.Artifacts) == 0 {
-		return fmt.Sprintf("No %s artifacts found.\n", data.Kind)
+		kindHeading := UserFacingArtifactKindHeading(string(data.Kind), 0)
+		kindHeading = strings.ToLower(kindHeading)
+		if kindHeading == "" {
+			kindHeading = strings.ToLower(strings.TrimSpace(string(data.Kind)))
+		}
+		return ApplyFPFAnswerHygiene(fmt.Sprintf("No %s found.\n", kindHeading))
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## %s (%d)\n\n", data.Kind, len(data.Artifacts)))
+	sb.WriteString(fmt.Sprintf("## %s (%d)\n\n", UserFacingArtifactKindHeading(string(data.Kind), len(data.Artifacts)), len(data.Artifacts)))
 
 	for i, a := range data.Artifacts {
 		line := fmt.Sprintf("%d. **%s** `%s`", i+1, a.Meta.Title, a.Meta.ID)
@@ -672,20 +679,21 @@ func ListResponse(data artifact.ListData) string {
 		sb.WriteString(line + "\n")
 	}
 
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // RelatedResponse formats artifacts linked to a file path as markdown.
 func RelatedResponse(results []*artifact.Artifact, filePath string) string {
 	if len(results) == 0 {
-		return fmt.Sprintf("No decisions found affecting: %s\n", filePath)
+		return ApplyFPFAnswerHygiene(fmt.Sprintf("No decisions found affecting: %s\n", filePath))
 	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("## Decisions affecting: %s\n\n", filePath))
 
 	for _, a := range results {
-		sb.WriteString(fmt.Sprintf("- **%s** [%s] `%s`", a.Meta.Title, a.Meta.Kind, a.Meta.ID))
+		kindLabel := UserFacingArtifactKindLabel(string(a.Meta.Kind))
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] `%s`", a.Meta.Title, kindLabel, a.Meta.ID))
 		if a.Meta.Status == artifact.StatusRefreshDue {
 			sb.WriteString(" ⚠ REFRESH DUE")
 		} else if a.Meta.Status == artifact.StatusSuperseded {
@@ -694,7 +702,7 @@ func RelatedResponse(results []*artifact.Artifact, filePath string) string {
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }
 
 // ProblemsListResponse formats a list of problems with pre-fetched enrichment data. Pure.
@@ -705,7 +713,7 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 		sb.WriteString("No active problems found.\n")
 		sb.WriteString("Use /q-frame to frame a new problem.\n")
 		sb.WriteString(navStrip)
-		return sb.String()
+		return ApplyFPFAnswerHygiene(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("## Active Problems (%d)\n\n", len(items)))
@@ -759,5 +767,5 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 	}
 
 	sb.WriteString(navStrip)
-	return sb.String()
+	return ApplyFPFAnswerHygiene(sb.String())
 }

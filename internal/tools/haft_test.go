@@ -1294,6 +1294,36 @@ func TestHaftDecisionTool_DecideRejectsIncompleteAntiSelfDeceptionRecord(t *test
 	}
 }
 
+func TestHaftDecisionTool_MeasureWrongKindUsesPlainLanguage(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	tool := NewHaftDecisionTool(store, t.TempDir(), t.TempDir(), nil)
+
+	problem, _, err := artifact.FrameProblem(ctx, store, t.TempDir(), artifact.ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":       "measure",
+		"decision_ref": problem.Meta.ID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(result.DisplayText, "DecisionRecord") {
+		t.Fatalf("expected plain-language kind label, got %q", result.DisplayText)
+	}
+	if !strings.Contains(result.DisplayText, "not a decision") {
+		t.Fatalf("expected plain-language mismatch message, got %q", result.DisplayText)
+	}
+}
+
 func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
 
 	fixture := setupDecisionToolFixture(t)

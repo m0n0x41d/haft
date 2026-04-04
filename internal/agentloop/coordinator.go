@@ -32,8 +32,10 @@ const (
 	loopWarnRepeats = 3   // yellow: inject warning, don't stop
 	loopHardRepeats = 5   // red: hard stop
 
-	assuranceAdapterLevel = "artifact_adapter"
-	cycleAssuranceLevel   = "cycle_adapter"
+	assuranceAdapterLevel       = "artifact_adapter"
+	cycleAssuranceLevel         = "cycle_adapter"
+	manualDependencyRelation    = "dependsOn"
+	projectedDependencyRelation = "dependsOnProjected"
 )
 
 type assuranceEvidenceRecord struct {
@@ -1320,12 +1322,22 @@ func (c *Coordinator) syncProjectedDecisionRelations(
 		return nil
 	}
 
-	existingRefs, err := c.loadExistingDecisionDependencyRefsTx(ctx, tx, decisionRef)
+	manualRefs, err := c.loadDecisionDependencyRefsTx(ctx, tx, decisionRef, manualDependencyRelation)
 	if err != nil {
 		return err
 	}
 
-	refsToInsert := subtractDependencyRefs(projection.Refs, existingRefs)
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM relations
+		WHERE source_id = ? AND relation_type = ?`,
+		decisionRef,
+		projectedDependencyRelation,
+	)
+	if err != nil {
+		return fmt.Errorf("clear projected relations for %s: %w", decisionRef, err)
+	}
+
+	refsToInsert := subtractDependencyRefs(projection.Refs, manualRefs)
 
 	for _, dependencyRef := range refsToInsert {
 		_, err = tx.ExecContext(ctx, `
@@ -1336,7 +1348,7 @@ func (c *Coordinator) syncProjectedDecisionRelations(
 			ON CONFLICT(source_id, target_id, relation_type) DO NOTHING`,
 			decisionRef,
 			dependencyRef,
-			"dependsOn",
+			projectedDependencyRelation,
 			3,
 			now.Format(time.RFC3339),
 		)
@@ -1784,34 +1796,41 @@ func (c *Coordinator) activeDecisionDependencyRefs(
 	decisionRef string,
 	projection dependencyProjection,
 ) ([]string, error) {
-	existingRefs, err := c.loadExistingDecisionDependencyRefs(ctx, db, decisionRef)
+	manualRefs, err := c.loadDecisionDependencyRefs(ctx, db, decisionRef, manualDependencyRelation)
+	if err != nil {
+		return nil, err
+	}
+
+	projectedRefs, err := c.loadDecisionDependencyRefs(ctx, db, decisionRef, projectedDependencyRelation)
 	if err != nil {
 		return nil, err
 	}
 	if !projection.Available {
-		return existingRefs, nil
+		return mergeDependencyRefs(manualRefs, projectedRefs), nil
 	}
 
-	return mergeDependencyRefs(existingRefs, projection.Refs), nil
+	return mergeDependencyRefs(manualRefs, projection.Refs), nil
 }
 
-func (c *Coordinator) loadExistingDecisionDependencyRefs(
+func (c *Coordinator) loadDecisionDependencyRefs(
 	ctx context.Context,
 	db *sql.DB,
 	decisionRef string,
+	relationType string,
 ) ([]string, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT target_id
 		FROM relations
-		WHERE source_id = ? AND relation_type = 'dependsOn'
+		WHERE source_id = ? AND relation_type = ?
 		ORDER BY target_id`,
 		decisionRef,
+		relationType,
 	)
 	if isOptionalAssuranceQueryError(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load durable dependency refs for %s: %w", decisionRef, err)
+		return nil, fmt.Errorf("load %s dependency refs for %s: %w", relationType, decisionRef, err)
 	}
 	defer rows.Close()
 
@@ -1821,36 +1840,38 @@ func (c *Coordinator) loadExistingDecisionDependencyRefs(
 		var ref string
 		err = rows.Scan(&ref)
 		if err != nil {
-			return nil, fmt.Errorf("scan durable dependency ref for %s: %w", decisionRef, err)
+			return nil, fmt.Errorf("scan %s dependency ref for %s: %w", relationType, decisionRef, err)
 		}
 		refs = append(refs, ref)
 	}
 
 	err = rows.Err()
 	if err != nil {
-		return nil, fmt.Errorf("iterate durable dependency refs for %s: %w", decisionRef, err)
+		return nil, fmt.Errorf("iterate %s dependency refs for %s: %w", relationType, decisionRef, err)
 	}
 
 	return refs, nil
 }
 
-func (c *Coordinator) loadExistingDecisionDependencyRefsTx(
+func (c *Coordinator) loadDecisionDependencyRefsTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	decisionRef string,
+	relationType string,
 ) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT target_id
 		FROM relations
-		WHERE source_id = ? AND relation_type = 'dependsOn'
+		WHERE source_id = ? AND relation_type = ?
 		ORDER BY target_id`,
 		decisionRef,
+		relationType,
 	)
 	if isOptionalAssuranceQueryError(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load durable dependency refs for %s: %w", decisionRef, err)
+		return nil, fmt.Errorf("load %s dependency refs for %s: %w", relationType, decisionRef, err)
 	}
 	defer rows.Close()
 
@@ -1860,14 +1881,14 @@ func (c *Coordinator) loadExistingDecisionDependencyRefsTx(
 		var ref string
 		err = rows.Scan(&ref)
 		if err != nil {
-			return nil, fmt.Errorf("scan durable dependency ref for %s: %w", decisionRef, err)
+			return nil, fmt.Errorf("scan %s dependency ref for %s: %w", relationType, decisionRef, err)
 		}
 		refs = append(refs, ref)
 	}
 
 	err = rows.Err()
 	if err != nil {
-		return nil, fmt.Errorf("iterate durable dependency refs for %s: %w", decisionRef, err)
+		return nil, fmt.Errorf("iterate %s dependency refs for %s: %w", relationType, decisionRef, err)
 	}
 
 	return refs, nil

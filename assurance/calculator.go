@@ -111,16 +111,16 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	// B.3: R_eff = max(0, min(R_dep) - Penalty(CL))
 	// Relation directionality:
 	//   - componentOf: Part → Whole (source is part OF target)
-	//   - dependsOn:   Dependent → Dependency (source DEPENDS ON target)
+	//   - dependsOn / dependsOnProjected: source DEPENDS ON target
 	// When calculating reliability for holonID:
 	//   - componentOf: find rows where target_id = holonID, dependency is source_id
-	//   - dependsOn:   find rows where source_id = holonID, dependency is target_id
+	//   - dependsOn*:  find rows where source_id = holonID, dependency is target_id
 	depRows, err := c.DB.QueryContext(ctx, `
 		SELECT source_id AS dep_id, congruence_level FROM relations
 		WHERE target_id = ? AND relation_type = 'componentOf'
 		UNION
 		SELECT target_id AS dep_id, congruence_level FROM relations
-		WHERE source_id = ? AND relation_type = 'dependsOn'`, holonID, holonID)
+		WHERE source_id = ? AND relation_type IN ('dependsOn', 'dependsOnProjected')`, holonID, holonID)
 
 	if err != nil {
 		return nil, err

@@ -148,7 +148,7 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 		WHERE source_id = ? AND target_id = ? AND relation_type = ?`,
 		"dec-a",
 		"dec-b",
-		"dependsOn",
+		projectedDependencyRelation,
 	).Scan(&projectedRelations)
 	if err != nil {
 		t.Fatalf("count projected relations: %v", err)
@@ -364,19 +364,84 @@ func TestComputeClosedCycleAssurance_MergesProjectedAndManualDependencies(t *tes
 		t.Fatalf("weakest link = %q, want dependency dec-manual", weakestLink)
 	}
 
-	var relationCount int
+	var projectedRelationCount int
 	err = rawDB.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM relations
 		WHERE source_id = ? AND relation_type = ?`,
 		"dec-root-merge",
-		"dependsOn",
-	).Scan(&relationCount)
+		projectedDependencyRelation,
+	).Scan(&projectedRelationCount)
 	if err != nil {
-		t.Fatalf("count merged dependency relations: %v", err)
+		t.Fatalf("count projected dependency relations: %v", err)
 	}
-	if relationCount != 2 {
-		t.Fatalf("dependency relation count = %d, want 2", relationCount)
+	if projectedRelationCount != 1 {
+		t.Fatalf("projected dependency relation count = %d, want 1", projectedRelationCount)
+	}
+
+	var manualRelationCount int
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM relations
+		WHERE source_id = ? AND relation_type = ?`,
+		"dec-root-merge",
+		manualDependencyRelation,
+	).Scan(&manualRelationCount)
+	if err != nil {
+		t.Fatalf("count manual dependency relations: %v", err)
+	}
+	if manualRelationCount != 1 {
+		t.Fatalf("manual dependency relation count = %d, want 1", manualRelationCount)
+	}
+
+	err = store.SetAffectedFiles(ctx, "dec-root-merge", []artifact.AffectedFile{{Path: "internal/shared/root.go"}})
+	if err != nil {
+		t.Fatalf("update root affected files: %v", err)
+	}
+
+	assuranceTuple, weakestLink, err = coord.computeClosedCycleAssurance(ctx, "dec-root-merge", &agent.EvidenceChain{
+		DecRef: "dec-root-merge",
+		Items: []agent.EvidenceItem{
+			agent.NewEvidenceItem(agent.EvidenceMeasure, "root accepted after graph change", 3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("recompute assurance after graph change: %v", err)
+	}
+
+	if assuranceTuple.R != 0.1 {
+		t.Fatalf("R after graph change = %.2f, want 0.10 from preserved manual dependency", assuranceTuple.R)
+	}
+	if weakestLink != "dependency dec-manual" {
+		t.Fatalf("weakest link after graph change = %q, want dependency dec-manual", weakestLink)
+	}
+
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM relations
+		WHERE source_id = ? AND relation_type = ?`,
+		"dec-root-merge",
+		projectedDependencyRelation,
+	).Scan(&projectedRelationCount)
+	if err != nil {
+		t.Fatalf("count stale projected dependency relations: %v", err)
+	}
+	if projectedRelationCount != 0 {
+		t.Fatalf("projected dependency relation count after graph change = %d, want 0", projectedRelationCount)
+	}
+
+	err = rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM relations
+		WHERE source_id = ? AND relation_type = ?`,
+		"dec-root-merge",
+		manualDependencyRelation,
+	).Scan(&manualRelationCount)
+	if err != nil {
+		t.Fatalf("count preserved manual dependency relations: %v", err)
+	}
+	if manualRelationCount != 1 {
+		t.Fatalf("manual dependency relation count after graph change = %d, want 1", manualRelationCount)
 	}
 }
 

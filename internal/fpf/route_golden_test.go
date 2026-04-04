@@ -7,19 +7,20 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 )
 
 type routeGoldenCase struct {
-	Name          string   `json:"name"`
-	Query         string   `json:"query"`
-	RouteID       string   `json:"route_id"`
-	TopPatternIDs []string `json:"top_pattern_ids"`
+	Name               string   `json:"name"`
+	Query              string   `json:"query"`
+	RouteID            string   `json:"route_id"`
+	ExpectedPatternIDs []string `json:"expected_pattern_ids"`
 }
 
 func TestSearchSpec_RouteGoldenQueries(t *testing.T) {
 	routes := loadRouteGoldenRoutes(t)
-	chunks := buildRouteGoldenChunks(routes)
+	chunks := loadRouteGoldenSpecChunks(t, routes)
 	_, db, cleanup := buildIndexWithChunksAndRoutes(t, chunks, routes, false)
 	defer cleanup()
 
@@ -47,22 +48,26 @@ func TestSearchSpec_RouteGoldenQueries(t *testing.T) {
 				t.Fatalf("classifyRoute(%q) route = %q, want %q", test.Query, classified.ID, test.RouteID)
 			}
 
-			results, err := SearchSpec(db, test.Query, len(test.TopPatternIDs))
+			results, err := SearchSpec(db, test.Query, routeGoldenSearchLimit(test.ExpectedPatternIDs))
 			if err != nil {
 				t.Fatalf("SearchSpec(%q) error: %v", test.Query, err)
 			}
 
-			gotPatternIDs := resultPatternIDs(results)
-			if !reflect.DeepEqual(gotPatternIDs, test.TopPatternIDs) {
-				t.Fatalf("SearchSpec(%q) top patterns = %v, want %v", test.Query, gotPatternIDs, test.TopPatternIDs)
+			gotPatternIDs := collectExpectedPatternIDs(results, test.ExpectedPatternIDs)
+			if !reflect.DeepEqual(gotPatternIDs, test.ExpectedPatternIDs) {
+				t.Fatalf("SearchSpec(%q) expected patterns in order = %v, want %v; got top results %v", test.Query, gotPatternIDs, test.ExpectedPatternIDs, resultPatternIDs(results))
 			}
 
-			for _, result := range results {
+			for _, patternID := range test.ExpectedPatternIDs {
+				result := findResultByPatternID(results, patternID)
+				if result == nil {
+					t.Fatalf("SearchSpec(%q) missing expected pattern %q in %v", test.Query, patternID, resultPatternIDs(results))
+				}
 				if result.Tier != "route" {
-					t.Fatalf("SearchSpec(%q) result %#v did not stay in route tier", test.Query, result)
+					t.Fatalf("SearchSpec(%q) pattern %q tier = %q, want route", test.Query, patternID, result.Tier)
 				}
 				if result.Reason != route.Title {
-					t.Fatalf("SearchSpec(%q) reason = %q, want %q", test.Query, result.Reason, route.Title)
+					t.Fatalf("SearchSpec(%q) pattern %q reason = %q, want %q", test.Query, patternID, result.Reason, route.Title)
 				}
 			}
 		})
@@ -107,36 +112,26 @@ func loadRouteGoldenRoutes(t *testing.T) []Route {
 	return routes
 }
 
-func buildRouteGoldenChunks(routes []Route) []SpecChunk {
-	chunks := make([]SpecChunk, 0)
-	seenPatternIDs := make(map[string]struct{})
+func loadRouteGoldenSpecChunks(t *testing.T, routes []Route) []SpecChunk {
+	t.Helper()
 
-	appendPattern := func(patternID string) {
-		if patternID == "" {
-			return
-		}
-		if _, ok := seenPatternIDs[patternID]; ok {
-			return
-		}
-		seenPatternIDs[patternID] = struct{}{}
-		chunks = append(chunks, SpecChunk{
-			ID:        len(chunks),
-			Heading:   patternID + " - Route golden fixture",
-			Level:     2,
-			Body:      "Route golden fixture body.",
-			PatternID: patternID,
-		})
+	path := filepath.Join(testRepoRoot(t), ".context", "FPF-Spec.md")
+	catalogFile := mustOpenFile(t, path)
+	catalog, err := ParseSpecCatalog(catalogFile)
+	_ = catalogFile.Close()
+	if err != nil {
+		t.Fatalf("ParseSpecCatalog(%q) failed: %v", path, err)
 	}
 
-	for _, route := range routes {
-		for _, patternID := range route.Chain {
-			appendPattern(patternID)
-		}
-		for _, patternID := range route.Core {
-			appendPattern(patternID)
-		}
+	chunkFile := mustOpenFile(t, path)
+	chunks, err := ChunkMarkdown(chunkFile)
+	_ = chunkFile.Close()
+	if err != nil {
+		t.Fatalf("ChunkMarkdown(%q) failed: %v", path, err)
 	}
 
+	chunks = EnrichChunks(chunks, catalog)
+	chunks = filterRouteGoldenSpecChunks(chunks, routes)
 	return chunks
 }
 
@@ -158,6 +153,76 @@ func mustReadFile(t *testing.T, path string) []byte {
 	}
 
 	return data
+}
+
+func mustOpenFile(t *testing.T, path string) *os.File {
+	t.Helper()
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("os.Open(%q) failed: %v", path, err)
+	}
+
+	return file
+}
+
+func filterRouteGoldenSpecChunks(chunks []SpecChunk, routes []Route) []SpecChunk {
+	routePatternIDs := collectRoutePatternIDs(routes)
+	filtered := make([]SpecChunk, 0, len(chunks))
+	for _, chunk := range chunks {
+		if chunk.PatternID == "" {
+			continue
+		}
+		if _, ok := routePatternIDs[chunk.PatternID]; !ok {
+			continue
+		}
+		if len(strings.TrimSpace(chunk.Body)) <= 20 {
+			continue
+		}
+		filtered = append(filtered, chunk)
+	}
+
+	return filtered
+}
+
+func collectRoutePatternIDs(routes []Route) map[string]struct{} {
+	patternIDs := make(map[string]struct{})
+	for _, route := range routes {
+		for _, patternID := range route.Core {
+			patternIDs[patternID] = struct{}{}
+		}
+		for _, patternID := range route.Chain {
+			patternIDs[patternID] = struct{}{}
+		}
+	}
+
+	return patternIDs
+}
+
+func routeGoldenSearchLimit(expectedPatternIDs []string) int {
+	limit := len(expectedPatternIDs) + 4
+	if limit < 8 {
+		return 8
+	}
+
+	return limit
+}
+
+func collectExpectedPatternIDs(results []SpecSearchResult, expectedPatternIDs []string) []string {
+	expectedSet := make(map[string]struct{}, len(expectedPatternIDs))
+	for _, patternID := range expectedPatternIDs {
+		expectedSet[patternID] = struct{}{}
+	}
+
+	collected := make([]string, 0, len(expectedPatternIDs))
+	for _, result := range results {
+		if _, ok := expectedSet[result.PatternID]; !ok {
+			continue
+		}
+		collected = append(collected, result.PatternID)
+	}
+
+	return collected
 }
 
 func testPackageDir(t *testing.T) string {

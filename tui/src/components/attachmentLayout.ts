@@ -26,6 +26,7 @@ interface BuildAttachmentRowsOptions {
 const HORIZONTAL_PADDING = 2
 const DEFAULT_HINT = "(↑ to select)"
 const SELECTION_HINT = "→ to next · Delete to remove · Esc to cancel"
+const ELLIPSIS = "…"
 
 export function buildAttachmentRows(options: BuildAttachmentRowsOptions): AttachmentRow[] {
   const { items, selectionMode, selectedIndex = 0, width } = options
@@ -43,13 +44,9 @@ export function buildAttachmentRows(options: BuildAttachmentRowsOptions): Attach
 }
 
 export function estimateAttachmentRows(options: Omit<BuildAttachmentRowsOptions, "selectedIndex">): number {
-  const { width } = options
-  const contentWidth = Math.max(1, width - HORIZONTAL_PADDING)
   const rows = buildAttachmentRows(options)
 
-  return rows
-    .map((row) => estimateRenderedAttachmentRowHeight(row, contentWidth))
-    .reduce((sum, height) => sum + height, 0)
+  return rows.length
 }
 
 export function moveAttachmentCursor(
@@ -88,9 +85,11 @@ function buildItemRows(
 
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]
+    const rawLabel = formatAttachmentLabel(item)
+    const boundedLabel = truncateAttachmentLabel(rawLabel, contentWidth)
     const displayItem: AttachmentDisplayItem = {
       id: item.id,
-      label: formatAttachmentLabel(item),
+      label: boundedLabel,
       selected: selectionMode && index === selectedIndex,
     }
     const itemWidth = displayItem.label.length
@@ -125,19 +124,39 @@ function getHintText(selectionMode: boolean): string {
   return selectionMode ? SELECTION_HINT : DEFAULT_HINT
 }
 
-function estimateRenderedAttachmentRowHeight(
-  row: AttachmentRow,
-  contentWidth: number,
-): number {
-  if (row.type === "hint") {
-    return 1
+function truncateAttachmentLabel(label: string, width: number): string {
+  if (label.length <= width) {
+    return label
   }
 
-  const rowText = row.items
-    .map((item) => item.label)
-    .join(" ")
+  if (width <= 1) {
+    return ELLIPSIS
+  }
 
-  return wrapText(rowText, contentWidth).length
+  if (label.startsWith("[") && label.endsWith("]")) {
+    return truncateBracketedLabel(label, width)
+  }
+
+  return truncatePlainLabel(label, width)
+}
+
+function truncateBracketedLabel(label: string, width: number): string {
+  if (width <= 2) {
+    return ELLIPSIS
+  }
+
+  const inner = label.slice(1, -1)
+  const visibleInnerWidth = Math.max(0, width - 3)
+  const visibleInner = inner.slice(0, visibleInnerWidth)
+
+  return `[${visibleInner}${ELLIPSIS}]`
+}
+
+function truncatePlainLabel(label: string, width: number): string {
+  const visibleWidth = Math.max(0, width - 1)
+  const visibleText = label.slice(0, visibleWidth)
+
+  return `${visibleText}${ELLIPSIS}`
 }
 
 function wrapText(text: string, width: number): string[] {

@@ -62,5 +62,55 @@ test("counts wrapped rows for a single long attachment label", () => {
     width: 14,
   })
 
-  assert.equal(rows, 5)
+  assert.equal(rows, 3)
+})
+
+test("truncates an image chip before packing on a narrow terminal", () => {
+  const rows = buildAttachmentRows({
+    items: [
+      { id: 1, name: "clip.png", path: "/tmp/clip.png", isImage: true },
+    ],
+    selectionMode: false,
+    selectedIndex: 0,
+    width: 8,
+  })
+
+  assert.deepEqual(rows, [
+    {
+      type: "items",
+      items: [
+        { id: 1, label: "[Ima…]", selected: false },
+      ],
+    },
+    { type: "hint", text: "(↑ to " },
+    { type: "hint", text: "select" },
+    { type: "hint", text: ")" },
+  ])
+})
+
+test("truncates long filenames before packing attachment rows", () => {
+  const rows = buildAttachmentRows({
+    items: [
+      {
+        id: 1,
+        name: "averyverylongattachmentname.txt",
+        path: "/tmp/averyverylongattachmentname.txt",
+        isImage: false,
+      },
+    ],
+    selectionMode: false,
+    selectedIndex: 0,
+    width: 12,
+  })
+
+  assert.deepEqual(rows, [
+    {
+      type: "items",
+      items: [
+        { id: 1, label: "[averyve…]", selected: false },
+      ],
+    },
+    { type: "hint", text: "(↑ to sele" },
+    { type: "hint", text: "ct)" },
+  ])
 })

@@ -107,7 +107,22 @@ test("includes wrapped long attachment names in the bottom budget", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 9)
+  assert.equal(bottomRows, 7)
+})
+
+test("keeps a narrow image chip within the bottom budget", () => {
+  const bottomRows = computeBottomRows({
+    width: 8,
+    queuedMessages: [],
+    attachments: [
+      { id: 1, name: "clip.png", path: "/tmp/clip.png", isImage: true },
+    ],
+    attachmentSelection: false,
+    inputRows: estimateInputRows(""),
+    showInput: true,
+  })
+
+  assert.equal(bottomRows, 7)
 })
 
 test("includes wrapped empty-input queue hints in the bottom budget", () => {

@@ -71,6 +71,9 @@ func TestReasoningSourcesRejectKnownContradictoryPhrases(t *testing.T) {
 		`Path 5`,
 		`"давай" / "do it" / "go ahead" = START WORKING`,
 		`After frame and after explore: STOP and present your work. Wait for user.`,
+		"`/h-frame` → `/h-decide`",
+		"tactical skips exploration",
+		"Tactical mode may skip some artifacts",
 	}
 
 	for name, content := range sources {

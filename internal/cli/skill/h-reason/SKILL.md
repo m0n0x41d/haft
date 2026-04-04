@@ -204,11 +204,13 @@ When reopening a stale decision, the new ProblemCard inherits lineage: prior cha
 | Mode | When | Flow |
 |------|------|------|
 | **note** | Micro-decisions during coding | `/h-note` — done |
-| **tactical** | Reversible, <2 weeks blast radius | `/h-frame` → `/h-decide` |
-| **standard** | Most architectural decisions | define dimensions → `/h-explore` → `/h-compare` → `/h-decide` |
-| **deep** | Irreversible, security, cross-team | All standard + rich parity, runbook, refresh triggers |
+| **tactical** | Reversible, <2 weeks blast radius | compact frame → compact explore → compact compare → `/h-decide` |
+| **standard** | Most architectural decisions | full frame → define dimensions → `/h-explore` → `/h-compare` → `/h-decide` |
+| **deep** | Irreversible, security, cross-team | all standard steps + rich parity, runbook, refresh triggers |
 
-**Default is tactical.** Escalate when: hard to reverse, multiple teams affected, or problem framing is unclear.
+**Default is tactical depth.** Escalate when: hard to reverse, multiple teams affected, or problem framing is unclear.
+Depth changes how much evidence and structure you show, not whether explore/compare exist.
+If a flow reaches `/h-decide`, it must first pass through `/h-explore` and `/h-compare` for the active portfolio.
 
 ---
 
@@ -279,8 +281,8 @@ Direct operational requests should stay direct. Do not escalate them into `/h-fr
 The `── Quint ──` strip appended to tool responses shows current state and available actions. Key rules:
 
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
-- **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
-- **Fewer steps ≠ a weaker decision boundary.** Tactical mode may skip some artifacts, but in delegated reasoning it still may auto-advance through frame/explore/compare; the mandatory pause is the post-compare human choice before `/h-decide`.
+- **Mode determines ceremony depth, not whether decide may bypass exploration/comparison.** The Available line reflects the current state, but any path that reaches `/h-decide` must already have an explored and compared active portfolio.
+- **Fewer words ≠ a weaker decision boundary.** Tactical depth keeps frame/explore/compare compact; it does not license jumping straight from frame to decide.
 - **Research / prepare-and-wait vs delegated reasoning:** In research + wait mode, do not auto-advance from Available actions. In delegated reasoning mode, you may advance through frame/explore/compare without extra slash commands.
 - **Autonomous execution override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") and autonomy is enabled may the agent proceed through decide/implement/measure without pausing.
 

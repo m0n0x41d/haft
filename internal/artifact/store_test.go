@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,10 +35,20 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			claim_scope TEXT DEFAULT '[]',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,
+		`CREATE TABLE fpf_state (
+			context_id TEXT PRIMARY KEY,
+			active_role TEXT,
+			epistemic_debt_budget REAL DEFAULT 30.0,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE audit_log (
+			id TEXT PRIMARY KEY,
+			timestamp TEXT NOT NULL,
+			operation TEXT NOT NULL)`,
 		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
 		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
 			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords) VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
@@ -273,6 +284,62 @@ func TestFindStaleDecisions(t *testing.T) {
 	}
 }
 
+func TestFindStaleDecisions_DateOnlyCurrentDayNotStale(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-today", Kind: KindDecisionRecord, Title: "Today", ValidUntil: today},
+		Body: "still valid through end of day",
+	})
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-yesterday", Kind: KindDecisionRecord, Title: "Yesterday", ValidUntil: yesterday},
+		Body: "expired at prior end of day",
+	})
+
+	stale, err := store.FindStaleDecisions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("expected 1 stale decision, got %d", len(stale))
+	}
+	if stale[0].Meta.ID != "dec-yesterday" {
+		t.Fatalf("expected dec-yesterday, got %s", stale[0].Meta.ID)
+	}
+}
+
+func TestFindStaleArtifacts_DateOnlyCurrentDayNotStale(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "prob-today", Kind: KindProblemCard, Title: "Today", ValidUntil: today},
+		Body: "still valid through end of day",
+	})
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "prob-yesterday", Kind: KindProblemCard, Title: "Yesterday", ValidUntil: yesterday},
+		Body: "expired at prior end of day",
+	})
+
+	stale, err := store.FindStaleArtifacts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 {
+		t.Fatalf("expected 1 stale artifact, got %d", len(stale))
+	}
+	if stale[0].Meta.ID != "prob-yesterday" {
+		t.Fatalf("expected prob-yesterday, got %s", stale[0].Meta.ID)
+	}
+}
+
 func TestEvidenceItems(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -286,6 +353,7 @@ func TestEvidenceItems(t *testing.T) {
 		Verdict:         "supports",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimScope:      []string{"throughput", "latency", "throughput"},
 	}
 	if err := store.AddEvidenceItem(ctx, item, "dec-001"); err != nil {
 		t.Fatal(err)
@@ -300,6 +368,12 @@ func TestEvidenceItems(t *testing.T) {
 	}
 	if items[0].Content != "Load test: 100k events/sec, p99 < 50ms" {
 		t.Errorf("content mismatch")
+	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("formality mismatch: got %d want 2", items[0].FormalityLevel)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
+		t.Errorf("claim scope mismatch: got %q", got)
 	}
 }
 

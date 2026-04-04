@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestBaselineStoresHashes(t *testing.T) {
@@ -273,6 +277,123 @@ func TestCheckDriftReportsNoBaseline(t *testing.T) {
 	}
 }
 
+func TestCheckDriftDetectsAddedFileInGovernedScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "pkg/base.go", "package pkg\n")
+
+	dec := createTestDecision(t, store, "dec-test-014", "Governed package")
+	setDecisionInvariants(t, ctx, store, dec.Meta.ID, []string{"Preserve the pkg package boundary"})
+
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "pkg/base.go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "pkg/extra.go", "package pkg\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+
+	files := reports[0].Files
+	if len(files) != 1 {
+		t.Fatalf("expected 1 drift item, got %d", len(files))
+	}
+	if files[0].Path != "pkg/extra.go" {
+		t.Fatalf("drift path = %q, want pkg/extra.go", files[0].Path)
+	}
+	if files[0].Status != DriftAdded {
+		t.Fatalf("drift status = %s, want %s", files[0].Status, DriftAdded)
+	}
+	if !reflect.DeepEqual(files[0].Invariants, []string{"Preserve the pkg package boundary"}) {
+		t.Fatalf("invariants = %#v, want decision invariants", files[0].Invariants)
+	}
+}
+
+func TestCheckDriftDetectsAddedNestedFileFromRootScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-015", "Governed repository root")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "pkg/nested/new.go", "package nested\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+
+	files := reports[0].Files
+	if len(files) != 1 {
+		t.Fatalf("expected 1 drift item, got %d", len(files))
+	}
+	if files[0].Path != "pkg/nested/new.go" {
+		t.Fatalf("drift path = %q, want pkg/nested/new.go", files[0].Path)
+	}
+	if files[0].Status != DriftAdded {
+		t.Fatalf("drift status = %s, want %s", files[0].Status, DriftAdded)
+	}
+}
+
+func TestCheckDriftIgnoresAddedFilesExcludedByGitignore(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, ".gitignore", "generated/\n")
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-016", "Governed root with ignores")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "generated/output.txt", "ignored artifact\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected ignored generated file to stay out of drift, got %#v", reports)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -308,6 +429,50 @@ func TestScanStaleIncludesDrift(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected drifted decision in ScanStale results")
+	}
+}
+
+func TestCheckDriftIncludesOldActiveDecisionBeyondFiveHundred(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	createdAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	writeTestFile(t, projectRoot, "drift-old.go", "package orig\n")
+
+	oldDecision := createTestDecisionAt(t, store, "dec-test-500-old", "Old drift", createdAt)
+	err := store.SetAffectedFiles(ctx, oldDecision.Meta.ID, []AffectedFile{{Path: "drift-old.go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: oldDecision.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for index := 0; index < 500; index++ {
+		id := fmt.Sprintf("dec-test-500-new-%03d", index)
+		title := fmt.Sprintf("Newer decision %03d", index)
+		newerCreatedAt := createdAt.Add(time.Duration(index+1) * time.Second)
+		createTestDecisionAt(t, store, id, title, newerCreatedAt)
+	}
+
+	writeTestFile(t, projectRoot, "drift-old.go", "package changed\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsDriftReport(reports, oldDecision.Meta.ID) {
+		t.Fatalf("expected drift report for %s beyond 500 newer decisions", oldDecision.Meta.ID)
+	}
+
+	items, err := ScanStale(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsStaleItem(items, oldDecision.Meta.ID) {
+		t.Fatalf("expected stale scan to include %s beyond 500 newer decisions", oldDecision.Meta.ID)
 	}
 }
 
@@ -360,12 +525,20 @@ func hashTestFile(t *testing.T, root, path string) string {
 
 func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact {
 	t.Helper()
+
+	return createTestDecisionAt(t, store, id, title, time.Time{})
+}
+
+func createTestDecisionAt(t *testing.T, store *Store, id, title string, createdAt time.Time) *Artifact {
+	t.Helper()
+
 	a := &Artifact{
 		Meta: Meta{
-			ID:     id,
-			Kind:   KindDecisionRecord,
-			Title:  title,
-			Status: StatusActive,
+			ID:        id,
+			Kind:      KindDecisionRecord,
+			Title:     title,
+			Status:    StatusActive,
+			CreatedAt: createdAt,
 		},
 		Body: "# " + title + "\n\nTest decision.\n",
 	}
@@ -373,4 +546,48 @@ func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact 
 		t.Fatal(err)
 	}
 	return a
+}
+
+func setDecisionInvariants(t *testing.T, ctx context.Context, store *Store, decisionID string, invariants []string) {
+	t.Helper()
+
+	artifact, err := store.Get(ctx, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := artifact.UnmarshalDecisionFields()
+	fields.Invariants = invariants
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact.StructuredData = string(data)
+
+	err = store.Update(ctx, artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func containsDriftReport(reports []DriftReport, decisionID string) bool {
+	for _, report := range reports {
+		if report.DecisionID == decisionID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsStaleItem(items []StaleItem, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+
+	return false
 }

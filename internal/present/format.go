@@ -225,6 +225,8 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 				switch f.Status {
 				case artifact.DriftModified:
 					sb.WriteString(fmt.Sprintf("  **MODIFIED** %s %s\n", f.Path, f.LinesChanged))
+				case artifact.DriftAdded:
+					sb.WriteString(fmt.Sprintf("  **ADDED** %s\n", f.Path))
 				case artifact.DriftMissing:
 					sb.WriteString(fmt.Sprintf("  **FILE MISSING** %s\n", f.Path))
 				}

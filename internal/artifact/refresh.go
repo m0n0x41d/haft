@@ -3,10 +3,12 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/reff"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -42,80 +44,89 @@ func (r RefreshInput) ResolveRef() string {
 	return r.DecisionRef
 }
 
+const DefaultEpistemicDebtBudget = 30.0
+
+type StaleCategory string
+
+const (
+	StaleCategoryEvidenceExpired       StaleCategory = "evidence_expired"
+	StaleCategoryREffDegraded          StaleCategory = "reff_degraded"
+	StaleCategoryDecisionStale         StaleCategory = "decision_stale"
+	StaleCategoryEpistemicDebtExceeded StaleCategory = "epistemic_debt_exceeded"
+	StaleCategoryScanFailed            StaleCategory = "scan_failed"
+)
+
+type DecisionDebtBreakdown struct {
+	DecisionID      string  `json:"decision_id"`
+	DecisionTitle   string  `json:"decision_title"`
+	TotalED         float64 `json:"total_ed"`
+	ExpiredEvidence int     `json:"expired_evidence"`
+	MostOverdueDays int     `json:"most_overdue_days"`
+}
+
 // StaleItem describes one stale artifact with details.
 type StaleItem struct {
-	ID         string
-	Title      string
-	Kind       string
-	Reason     string
-	ValidUntil string
-	DaysStale  int
+	ID           string
+	Title        string
+	Kind         string
+	Category     StaleCategory
+	Reason       string
+	ValidUntil   string
+	DaysStale    int
+	REff         float64
+	DriftItems   []DriftItem
+	TotalED      float64
+	DebtBudget   float64
+	DebtExcess   float64
+	DecisionDebt []DecisionDebtBreakdown
+}
+
+type decisionDebtAccumulator struct {
+	DecisionID      string
+	DecisionTitle   string
+	RawTotalED      float64
+	ExpiredEvidence int
+	MostOverdueDays int
 }
 
 // ScanStale finds all stale decisions and returns actionable info.
 // If projectRoot is non-empty, also checks for file drift on baselined decisions.
 func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) ([]StaleItem, error) {
-	// Check both decisions and all other artifact types
-	staleDecisions, err := store.FindStaleDecisions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	staleOther, _ := store.FindStaleArtifacts(ctx)
-
-	// Merge, dedup by ID
-	seen := make(map[string]bool)
-	var stale []*Artifact
-	for _, a := range staleDecisions {
-		if !seen[a.Meta.ID] {
-			stale = append(stale, a)
-			seen[a.Meta.ID] = true
-		}
-	}
-	for _, a := range staleOther {
-		if !seen[a.Meta.ID] {
-			stale = append(stale, a)
-			seen[a.Meta.ID] = true
-		}
-	}
-
 	now := time.Now().UTC()
 	var items []StaleItem
+	seenItems := make(map[string]struct{})
 
-	for _, a := range stale {
-		item := StaleItem{
-			ID:    a.Meta.ID,
-			Title: a.Meta.Title,
-			Kind:  string(a.Meta.Kind),
+	addItem := func(item StaleItem) {
+		key := fmt.Sprintf("%s|%s", item.ID, item.Category)
+		if item.ID == "" {
+			key = fmt.Sprintf("%s|%s", item.Title, item.Category)
 		}
-
-		if a.Meta.Status == StatusRefreshDue {
-			item.Reason = "manually marked refresh_due"
+		if _, ok := seenItems[key]; ok {
+			return
 		}
-
-		if a.Meta.ValidUntil != "" {
-			item.ValidUntil = a.Meta.ValidUntil
-			if t, err := time.Parse(time.RFC3339, a.Meta.ValidUntil); err == nil {
-				if t.Before(now) {
-					days := int(now.Sub(t).Hours() / 24)
-					item.DaysStale = days
-					item.Reason = fmt.Sprintf("expired %d day(s) ago, debt: %.1f (%s)", days, float64(days), t.Format("2006-01-02"))
-				}
-			}
-		}
-
-		if item.Reason == "" {
-			item.Reason = "refresh_due"
-		}
-
+		seenItems[key] = struct{}{}
 		items = append(items, item)
 	}
 
-	// Check active decisions with evidence for R_eff degradation
-	decisions, _ := store.ListByKind(ctx, KindDecisionRecord, 100)
+	staleArtifacts := collectStaleArtifacts(ctx, store, addItem)
+	for _, a := range staleArtifacts {
+		addItem(buildExpiredStaleItem(a, now))
+	}
+
+	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
+	if err != nil {
+		addItem(buildScanFailureItem("active decision scan", err))
+	}
 	for _, d := range decisions {
-		if d.Meta.Status != StatusActive || seen[d.Meta.ID] {
+		evidenceItems, evidenceErr := store.GetEvidenceItems(ctx, d.Meta.ID)
+		if evidenceErr != nil {
+			addItem(buildScanFailureItem("R_eff scan for "+d.Meta.ID, evidenceErr))
 			continue
 		}
+		if len(evidenceItems) == 0 {
+			continue
+		}
+
 		wlnk := ComputeWLNKSummary(ctx, store, d.Meta.ID)
 		if !wlnk.HasEvidence {
 			continue
@@ -125,68 +136,361 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 			if wlnk.REff < 0.3 {
 				reason = fmt.Sprintf("AT RISK — evidence degraded (R_eff: %.2f) — consider reopen or supersede", wlnk.REff)
 			}
-			items = append(items, StaleItem{
-				ID:     d.Meta.ID,
-				Title:  d.Meta.Title,
-				Kind:   string(d.Meta.Kind),
-				Reason: reason,
+			addItem(StaleItem{
+				ID:       d.Meta.ID,
+				Title:    d.Meta.Title,
+				Kind:     string(d.Meta.Kind),
+				Category: StaleCategoryREffDegraded,
+				Reason:   reason,
+				REff:     roundTenths(wlnk.REff),
 			})
-			seen[d.Meta.ID] = true
 		}
 	}
 
 	// Check for file drift if projectRoot is provided
 	if len(projectRoot) > 0 && projectRoot[0] != "" {
 		driftReports, driftErr := CheckDrift(ctx, store, projectRoot[0])
-		if driftErr == nil {
-			for _, r := range driftReports {
-				if seen[r.DecisionID] {
-					continue
-				}
-				if !r.HasBaseline {
-					reason := fmt.Sprintf("no baseline — %d file(s) unmonitored", len(r.Files))
-					if r.LikelyImplemented {
-						reason += " — git activity detected after decision date"
-					}
-					items = append(items, StaleItem{
-						ID:     r.DecisionID,
-						Title:  r.DecisionTitle,
-						Kind:   string(KindDecisionRecord),
-						Reason: reason,
-					})
-				} else {
-					// Count drifted files
-					drifted := 0
-					missing := 0
-					for _, f := range r.Files {
-						switch f.Status {
-						case DriftModified:
-							drifted++
-						case DriftMissing:
-							missing++
-						}
-					}
-					reason := fmt.Sprintf("code drift — %d file(s) modified", drifted)
-					if missing > 0 {
-						reason += fmt.Sprintf(", %d file(s) missing", missing)
-					}
-					items = append(items, StaleItem{
-						ID:     r.DecisionID,
-						Title:  r.DecisionTitle,
-						Kind:   string(KindDecisionRecord),
-						Reason: reason,
-					})
-				}
-			}
+		if driftErr != nil {
+			addItem(buildScanFailureItem("drift scan", driftErr))
+		}
+		for _, r := range driftReports {
+			addItem(buildDecisionStaleItem(r))
 		}
 	}
 
-	// Sort by debt descending — most overdue first
+	budget, budgetErr := store.EpistemicDebtBudget(ctx)
+	if budgetErr != nil {
+		addItem(buildScanFailureItem("epistemic debt budget", budgetErr))
+	}
+
+	breakdown, totalED, debtFailures := computeDecisionDebtBreakdown(ctx, store, decisions, now)
+	for _, failure := range debtFailures {
+		addItem(failure)
+	}
+
+	if budgetErr == nil {
+		alert := reff.CheckEDBudget(totalED, budget)
+		if alert != nil {
+			addItem(StaleItem{
+				ID:           "system/epistemic-debt",
+				Title:        "Epistemic debt budget",
+				Kind:         "System",
+				Category:     StaleCategoryEpistemicDebtExceeded,
+				Reason:       formatEDBudgetReason(*alert, breakdown),
+				TotalED:      alert.TotalED,
+				DebtBudget:   alert.Budget,
+				DebtExcess:   alert.Excess,
+				DecisionDebt: breakdown,
+			})
+		}
+	}
+
+	// Sort the highest-risk findings first while keeping artifact-level urgency visible.
 	sort.Slice(items, func(i, j int) bool {
-		return items[i].DaysStale > items[j].DaysStale
+		left := staleCategoryPriority(items[i].Category)
+		right := staleCategoryPriority(items[j].Category)
+		if left != right {
+			return left < right
+		}
+		if items[i].DaysStale != items[j].DaysStale {
+			return items[i].DaysStale > items[j].DaysStale
+		}
+		if items[i].TotalED != items[j].TotalED {
+			return items[i].TotalED > items[j].TotalED
+		}
+		if items[i].REff != items[j].REff {
+			return items[i].REff < items[j].REff
+		}
+		return items[i].Title < items[j].Title
 	})
 
 	return items, nil
+}
+
+func collectStaleArtifacts(ctx context.Context, store ArtifactStore, addItem func(StaleItem)) []*Artifact {
+	staleDecisions, decisionErr := store.FindStaleDecisions(ctx)
+	if decisionErr != nil {
+		addItem(buildScanFailureItem("stale decision scan", decisionErr))
+	}
+
+	staleOther, otherErr := store.FindStaleArtifacts(ctx)
+	if otherErr != nil {
+		addItem(buildScanFailureItem("stale artifact scan", otherErr))
+	}
+
+	seenArtifacts := make(map[string]bool)
+	stale := make([]*Artifact, 0, len(staleDecisions)+len(staleOther))
+
+	appendUnique := func(artifacts []*Artifact) {
+		for _, artifact := range artifacts {
+			if seenArtifacts[artifact.Meta.ID] {
+				continue
+			}
+			seenArtifacts[artifact.Meta.ID] = true
+			stale = append(stale, artifact)
+		}
+	}
+
+	appendUnique(staleDecisions)
+	appendUnique(staleOther)
+
+	return stale
+}
+
+func buildExpiredStaleItem(a *Artifact, now time.Time) StaleItem {
+	item := StaleItem{
+		ID:       a.Meta.ID,
+		Title:    a.Meta.Title,
+		Kind:     string(a.Meta.Kind),
+		Category: StaleCategoryEvidenceExpired,
+	}
+
+	if a.Meta.Status == StatusRefreshDue {
+		item.Reason = "manually marked refresh_due"
+	}
+
+	if a.Meta.ValidUntil != "" {
+		item.ValidUntil = a.Meta.ValidUntil
+		validUntil, ok := reff.ParseValidUntil(a.Meta.ValidUntil)
+		if ok && validUntil.Before(now) {
+			days := int(now.Sub(validUntil).Hours() / 24)
+			item.DaysStale = days
+			item.Reason = fmt.Sprintf(
+				"expired %d day(s) ago, debt: %.1f (%s)",
+				days,
+				roundTenths(reff.ComputeED(validUntil, now, 1.0)),
+				validUntil.Format("2006-01-02"),
+			)
+		}
+	}
+
+	if item.Reason == "" {
+		item.Reason = "refresh_due"
+	}
+
+	return item
+}
+
+func buildDecisionStaleItem(report DriftReport) StaleItem {
+	reason := formatDecisionStaleReason(report)
+
+	return StaleItem{
+		ID:         report.DecisionID,
+		Title:      report.DecisionTitle,
+		Kind:       string(KindDecisionRecord),
+		Category:   StaleCategoryDecisionStale,
+		Reason:     reason,
+		DriftItems: report.Files,
+	}
+}
+
+func formatDecisionStaleReason(report DriftReport) string {
+	if !report.HasBaseline {
+		reason := fmt.Sprintf("no baseline — %d file(s) unmonitored", len(report.Files))
+		if report.LikelyImplemented {
+			reason += " — git activity detected after decision date"
+		}
+		return reason
+	}
+
+	modified := 0
+	added := 0
+	missing := 0
+	noBaseline := 0
+	for _, file := range report.Files {
+		switch file.Status {
+		case DriftModified:
+			modified++
+		case DriftAdded:
+			added++
+		case DriftMissing:
+			missing++
+		case DriftNoBaseline:
+			noBaseline++
+		}
+	}
+
+	summary := fmt.Sprintf("code drift — %d modified", modified)
+	if added > 0 {
+		summary += fmt.Sprintf(", %d added", added)
+	}
+	if missing > 0 {
+		summary += fmt.Sprintf(", %d missing", missing)
+	}
+	if noBaseline > 0 {
+		summary += fmt.Sprintf(", %d unbaselined", noBaseline)
+	}
+
+	details := summarizeDriftItems(report.Files, 3)
+	if details == "" {
+		return summary
+	}
+
+	return summary + " — " + details
+}
+
+func summarizeDriftItems(items []DriftItem, limit int) string {
+	if len(items) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		description := fmt.Sprintf("%s (%s)", item.Path, item.Status)
+		if item.LinesChanged != "" {
+			description += " " + item.LinesChanged
+		}
+		parts = append(parts, description)
+	}
+
+	if len(parts) <= limit {
+		return strings.Join(parts, ", ")
+	}
+
+	visible := strings.Join(parts[:limit], ", ")
+	hidden := len(parts) - limit
+	return fmt.Sprintf("%s, +%d more", visible, hidden)
+}
+
+func computeDecisionDebtBreakdown(ctx context.Context, store ArtifactStore, decisions []*Artifact, now time.Time) ([]DecisionDebtBreakdown, float64, []StaleItem) {
+	accumulators := make([]decisionDebtAccumulator, 0)
+	failures := make([]StaleItem, 0)
+	for _, decision := range decisions {
+		evidenceItems, err := store.GetEvidenceItems(ctx, decision.Meta.ID)
+		if err != nil {
+			failures = append(failures, buildScanFailureItem("ED scan for "+decision.Meta.ID, err))
+			continue
+		}
+
+		rawTotalED := 0.0
+		expiredCount := 0
+		mostOverdueDays := 0
+
+		for _, item := range evidenceItems {
+			if item.Verdict == "superseded" || item.ValidUntil == "" {
+				continue
+			}
+
+			validUntil, ok := reff.ParseValidUntil(item.ValidUntil)
+			if !ok {
+				continue
+			}
+
+			ed := reff.ComputeED(validUntil, now, 1.0)
+			if ed <= 0 {
+				continue
+			}
+
+			expiredCount++
+			rawTotalED += ed
+
+			overdueDays := int(now.Sub(validUntil).Hours() / 24)
+			if overdueDays > mostOverdueDays {
+				mostOverdueDays = overdueDays
+			}
+		}
+
+		if rawTotalED <= 0 {
+			continue
+		}
+
+		accumulators = append(accumulators, decisionDebtAccumulator{
+			DecisionID:      decision.Meta.ID,
+			DecisionTitle:   decision.Meta.Title,
+			RawTotalED:      rawTotalED,
+			ExpiredEvidence: expiredCount,
+			MostOverdueDays: mostOverdueDays,
+		})
+	}
+
+	sort.Slice(accumulators, func(i, j int) bool {
+		if accumulators[i].RawTotalED != accumulators[j].RawTotalED {
+			return accumulators[i].RawTotalED > accumulators[j].RawTotalED
+		}
+		return accumulators[i].DecisionID < accumulators[j].DecisionID
+	})
+
+	totalED := 0.0
+	breakdown := make([]DecisionDebtBreakdown, 0, len(accumulators))
+	for _, item := range accumulators {
+		totalED += item.RawTotalED
+		breakdown = append(breakdown, DecisionDebtBreakdown{
+			DecisionID:      item.DecisionID,
+			DecisionTitle:   item.DecisionTitle,
+			TotalED:         item.RawTotalED,
+			ExpiredEvidence: item.ExpiredEvidence,
+			MostOverdueDays: item.MostOverdueDays,
+		})
+	}
+
+	return breakdown, totalED, failures
+}
+
+func formatEDBudgetReason(alert reff.EDBudgetAlert, breakdown []DecisionDebtBreakdown) string {
+	reason := fmt.Sprintf(
+		"epistemic debt budget exceeded: %s / %s (excess %s)",
+		formatEDValue(alert.TotalED),
+		formatEDValue(alert.Budget),
+		formatEDValue(alert.Excess),
+	)
+	if len(breakdown) == 0 {
+		return reason
+	}
+
+	parts := make([]string, 0, len(breakdown))
+	for _, item := range breakdown {
+		part := fmt.Sprintf("%s %s", item.DecisionID, formatEDValue(item.TotalED))
+		parts = append(parts, part)
+	}
+
+	return reason + " — " + summarizeStrings(parts, 3)
+}
+
+func summarizeStrings(parts []string, limit int) string {
+	if len(parts) <= limit {
+		return strings.Join(parts, ", ")
+	}
+
+	visible := strings.Join(parts[:limit], ", ")
+	return fmt.Sprintf("%s, +%d more", visible, len(parts)-limit)
+}
+
+func staleCategoryPriority(category StaleCategory) int {
+	switch category {
+	case StaleCategoryScanFailed:
+		return 0
+	case StaleCategoryEpistemicDebtExceeded:
+		return 1
+	case StaleCategoryEvidenceExpired:
+		return 2
+	case StaleCategoryREffDegraded:
+		return 3
+	case StaleCategoryDecisionStale:
+		return 4
+	default:
+		return 5
+	}
+}
+
+func roundTenths(value float64) float64 {
+	return math.Round(value*10) / 10
+}
+
+func formatEDValue(value float64) string {
+	if value < 1.0 {
+		return fmt.Sprintf("%.3f", value)
+	}
+	return fmt.Sprintf("%.1f", value)
+}
+
+func buildScanFailureItem(stage string, err error) StaleItem {
+	return StaleItem{
+		ID:       "system/scan-failure/" + strings.ReplaceAll(stage, " ", "-"),
+		Title:    "Refresh scan failure",
+		Kind:     "System",
+		Category: StaleCategoryScanFailed,
+		Reason:   fmt.Sprintf("%s failed: %v", stage, err),
+	}
 }
 
 // WaiveArtifact extends an artifact's validity with justification.

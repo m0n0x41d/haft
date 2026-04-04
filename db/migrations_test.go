@@ -104,3 +104,22 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 		t.Errorf("Expected %d kernelMigrations, got %d (not idempotent)", len(kernelMigrations), count)
 	}
 }
+
+func TestRunMigrations_AddsEpistemicDebtBudget(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	defer store.Close()
+
+	var budget sql.NullFloat64
+	err = store.conn.QueryRow(
+		"SELECT epistemic_debt_budget FROM fpf_state LIMIT 1",
+	).Scan(&budget)
+	if err != nil && err != sql.ErrNoRows {
+		t.Fatalf("query epistemic_debt_budget: %v", err)
+	}
+}

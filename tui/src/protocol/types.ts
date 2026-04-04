@@ -136,8 +136,41 @@ export interface SubagentDoneParams {
   isError: boolean
 }
 
+export interface OverseerDriftItemParams {
+  path: string
+  status: string
+  linesChanged?: string
+  invariants?: string[]
+}
+
+export interface OverseerDebtBreakdownParams {
+  decisionId: string
+  decisionTitle: string
+  totalED: number
+  expiredEvidence: number
+  mostOverdueDays: number
+}
+
+export interface OverseerFindingParams {
+  type: string
+  category?: string
+  artifactId?: string
+  title?: string
+  kind?: string
+  summary: string
+  reason?: string
+  daysStale?: number
+  rEff?: number
+  totalED?: number
+  budget?: number
+  excess?: number
+  driftItems?: OverseerDriftItemParams[]
+  debtBreakdown?: OverseerDebtBreakdownParams[]
+}
+
 export interface OverseerAlertParams {
   alerts: string[]
+  findings?: OverseerFindingParams[]
 }
 
 export interface DriftUpdateParams {

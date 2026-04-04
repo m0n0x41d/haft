@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,26 +23,27 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef      string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
-	ProblemRefs     []string          `json:"problem_refs,omitempty"` // multiple problems
-	PortfolioRef    string            `json:"portfolio_ref,omitempty"`
-	SelectedTitle   string            `json:"selected_title"`
-	WhySelected     string            `json:"why_selected"`
-	WhyNotOthers    []RejectionReason `json:"why_not_others,omitempty"`
-	Invariants      []string          `json:"invariants,omitempty"`
-	PreConditions   []string          `json:"pre_conditions,omitempty"`
-	PostConditions  []string          `json:"post_conditions,omitempty"`
-	Admissibility   []string          `json:"admissibility,omitempty"`
-	EvidenceReqs    []string          `json:"evidence_requirements,omitempty"`
-	Rollback        *RollbackSpec     `json:"rollback,omitempty"`
-	RefreshTriggers []string          `json:"refresh_triggers,omitempty"`
-	WeakestLink     string            `json:"weakest_link,omitempty"`
-	ValidUntil      string            `json:"valid_until,omitempty"`
-	Context         string            `json:"context,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	AffectedFiles   []string          `json:"affected_files,omitempty"`
-	Predictions     []PredictionInput `json:"predictions,omitempty"`
-	SearchKeywords  string            `json:"search_keywords,omitempty"`
+	ProblemRef          string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
+	ProblemRefs         []string          `json:"problem_refs,omitempty"` // multiple problems
+	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
+	SelectedTitle       string            `json:"selected_title"`
+	WhySelected         string            `json:"why_selected"`
+	WhyNotOthers        []RejectionReason `json:"why_not_others,omitempty"`
+	Invariants          []string          `json:"invariants,omitempty"`
+	PreConditions       []string          `json:"pre_conditions,omitempty"`
+	PostConditions      []string          `json:"post_conditions,omitempty"`
+	Admissibility       []string          `json:"admissibility,omitempty"`
+	EvidenceReqs        []string          `json:"evidence_requirements,omitempty"`
+	Rollback            *RollbackSpec     `json:"rollback,omitempty"`
+	RefreshTriggers     []string          `json:"refresh_triggers,omitempty"`
+	WeakestLink         string            `json:"weakest_link,omitempty"`
+	ValidUntil          string            `json:"valid_until,omitempty"`
+	Context             string            `json:"context,omitempty"`
+	Mode                string            `json:"mode,omitempty"`
+	AffectedFiles       []string          `json:"affected_files,omitempty"`
+	Predictions         []PredictionInput `json:"predictions,omitempty"`
+	SearchKeywords      string            `json:"search_keywords,omitempty"`
+	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
 }
 
 // PredictionInput is a testable claim that measure should verify.
@@ -256,12 +259,13 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	}
 
 	sd, _ := json.Marshal(DecisionFields{
-		SelectedTitle: input.SelectedTitle,
-		WhySelected:   input.WhySelected,
-		WeakestLink:   input.WeakestLink,
-		Invariants:    input.Invariants,
-		PostConds:     input.PostConditions,
-		Admissibility: input.Admissibility,
+		SelectedTitle:       input.SelectedTitle,
+		WhySelected:         input.WhySelected,
+		WeakestLink:         input.WeakestLink,
+		Invariants:          input.Invariants,
+		PostConds:           input.PostConditions,
+		Admissibility:       input.Admissibility,
+		FirstModuleCoverage: input.FirstModuleCoverage,
 	})
 	a.StructuredData = string(sd)
 
@@ -481,6 +485,16 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		}
 	}
 
+	driftManifests, err := buildDriftScopeManifests(projectRoot, files)
+	if err != nil {
+		return nil, fmt.Errorf("build drift manifests: %w", err)
+	}
+
+	err = persistDriftManifests(ctx, store, a, driftManifests)
+	if err != nil {
+		return nil, fmt.Errorf("persist drift manifests: %w", err)
+	}
+
 	logger.ArtifactOp("baseline", input.DecisionRef, string(a.Meta.Kind))
 	logger.Debug().Str("decision_ref", input.DecisionRef).
 		Int("files", len(files)).
@@ -492,7 +506,7 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 
 // CheckDrift compares current file state against stored baseline hashes for all active decisions.
 func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([]DriftReport, error) {
-	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 500)
+	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
 	}
@@ -502,8 +516,9 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	var reports []DriftReport
 
 	for _, d := range decisions {
-		if d.Meta.Status != StatusActive {
-			continue
+		decisionArtifact, err := store.Get(ctx, d.Meta.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get decision %s: %w", d.Meta.ID, err)
 		}
 
 		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
@@ -511,9 +526,11 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			continue
 		}
 
+		decisionFields := decisionArtifact.UnmarshalDecisionFields()
+
 		report := DriftReport{
 			DecisionID:    d.Meta.ID,
-			DecisionTitle: d.Meta.Title,
+			DecisionTitle: decisionArtifact.Meta.Title,
 		}
 
 		// Check if any file has a baseline hash
@@ -560,8 +577,9 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if err != nil {
 				// File doesn't exist or can't be read
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftMissing,
+					Path:       f.Path,
+					Status:     DriftMissing,
+					Invariants: copyDriftInvariants(decisionFields.Invariants),
 				})
 				hasDrift = true
 				continue
@@ -573,9 +591,23 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 					Path:         f.Path,
 					Status:       DriftModified,
 					LinesChanged: lines,
+					Invariants:   copyDriftInvariants(decisionFields.Invariants),
 				})
 				hasDrift = true
 			}
+		}
+
+		addedFiles, err := detectAddedFiles(projectRoot, files, decisionFields.DriftManifests)
+		if err != nil {
+			return nil, fmt.Errorf("detect added files for %s: %w", d.Meta.ID, err)
+		}
+		for _, path := range addedFiles {
+			report.Files = append(report.Files, DriftItem{
+				Path:       path,
+				Status:     DriftAdded,
+				Invariants: copyDriftInvariants(decisionFields.Invariants),
+			})
+			hasDrift = true
 		}
 
 		// Only include reports with drift or missing baselines
@@ -587,6 +619,173 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	logger.Debug().Int("drift_reports", len(reports)).Msg("drift.check.complete")
 
 	return reports, nil
+}
+
+func persistDriftManifests(
+	ctx context.Context,
+	store ArtifactStore,
+	artifact *Artifact,
+	manifests []DriftScopeManifest,
+) error {
+	if artifact.Meta.Kind != KindDecisionRecord {
+		return nil
+	}
+
+	fields := artifact.UnmarshalDecisionFields()
+	fields.DriftManifests = manifests
+
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return fmt.Errorf("marshal decision fields: %w", err)
+	}
+
+	updated := *artifact
+	updated.StructuredData = string(data)
+
+	return store.Update(ctx, &updated)
+}
+
+func buildDriftScopeManifests(projectRoot string, files []AffectedFile) ([]DriftScopeManifest, error) {
+	scopeSet := make(map[string]struct{})
+	scopes := make([]string, 0, len(files))
+
+	for _, file := range files {
+		scope := normalizeDriftScope(filepath.Dir(file.Path))
+		if _, ok := scopeSet[scope]; ok {
+			continue
+		}
+		scopeSet[scope] = struct{}{}
+		scopes = append(scopes, scope)
+	}
+
+	sort.Strings(scopes)
+
+	manifests := make([]DriftScopeManifest, 0, len(scopes))
+	for _, scope := range scopes {
+		scopeFiles, err := listScopeFiles(projectRoot, scope)
+		if err != nil {
+			return nil, fmt.Errorf("list scope %s: %w", scope, err)
+		}
+
+		manifests = append(manifests, DriftScopeManifest{
+			Scope: scope,
+			Files: scopeFiles,
+		})
+	}
+
+	return manifests, nil
+}
+
+func detectAddedFiles(
+	projectRoot string,
+	files []AffectedFile,
+	manifests []DriftScopeManifest,
+) ([]string, error) {
+	if len(manifests) == 0 {
+		return nil, nil
+	}
+
+	baselinedFiles := make(map[string]struct{})
+	governedFiles := make(map[string]struct{})
+	addedFiles := make([]string, 0)
+
+	for _, file := range files {
+		governedFiles[normalizeProjectPath(file.Path)] = struct{}{}
+	}
+	for _, manifest := range manifests {
+		for _, path := range manifest.Files {
+			baselinedFiles[normalizeProjectPath(path)] = struct{}{}
+		}
+
+		scopeFiles, err := listScopeFiles(projectRoot, manifest.Scope)
+		if err != nil {
+			return nil, fmt.Errorf("list scope %s: %w", manifest.Scope, err)
+		}
+
+		for _, path := range scopeFiles {
+			normalizedPath := normalizeProjectPath(path)
+			if _, ok := baselinedFiles[normalizedPath]; ok {
+				continue
+			}
+			if _, ok := governedFiles[normalizedPath]; ok {
+				continue
+			}
+			governedFiles[normalizedPath] = struct{}{}
+			addedFiles = append(addedFiles, normalizedPath)
+		}
+	}
+
+	sort.Strings(addedFiles)
+
+	return addedFiles, nil
+}
+
+func listScopeFiles(projectRoot string, scope string) ([]string, error) {
+	scope = normalizeDriftScope(scope)
+	scopePath := filepath.Join(projectRoot, scope)
+	entries := make([]string, 0)
+	ignoreChecker := codebase.NewIgnoreChecker(projectRoot)
+
+	err := filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+
+		relPath, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return err
+		}
+		normalizedPath := normalizeProjectPath(relPath)
+
+		if entry.IsDir() {
+			if codebase.IsExcludedDir(entry.Name()) {
+				return filepath.SkipDir
+			}
+			if ignoreChecker.IsIgnored(normalizedPath) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ignoreChecker.IsIgnored(normalizedPath) {
+			return nil
+		}
+
+		entries = append(entries, normalizedPath)
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(entries)
+
+	return entries, nil
+}
+
+func normalizeDriftScope(scope string) string {
+	scope = filepath.ToSlash(filepath.Clean(strings.TrimSpace(scope)))
+	if scope == "" || scope == "/" {
+		return "."
+	}
+	return scope
+}
+
+func normalizeProjectPath(path string) string {
+	return filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+}
+
+func copyDriftInvariants(invariants []string) []string {
+	if len(invariants) == 0 {
+		return nil
+	}
+
+	return append([]string(nil), invariants...)
 }
 
 // hashFile computes SHA-256 of a file's contents.
@@ -661,14 +860,15 @@ type MeasureInput struct {
 // JSON decodes missing fields as 0, which is a valid CL value (opposed context).
 // Callers from MCP should set these to -1 when the user doesn't provide them.
 type EvidenceInput struct {
-	ArtifactRef     string `json:"artifact_ref"`
-	Content         string `json:"content"`
-	Type            string `json:"type"`    // measurement, test, research, benchmark, audit
-	Verdict         string `json:"verdict"` // supports, weakens, refutes
-	CarrierRef      string `json:"carrier_ref,omitempty"`
-	CongruenceLevel int    `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
-	FormalityLevel  int    `json:"formality_level"`  // 0-9; -1 = not provided (defaults to 5)
-	ValidUntil      string `json:"valid_until,omitempty"`
+	ArtifactRef     string   `json:"artifact_ref"`
+	Content         string   `json:"content"`
+	Type            string   `json:"type"`    // measurement, test, research, benchmark, audit
+	Verdict         string   `json:"verdict"` // supports, weakens, refutes
+	CarrierRef      string   `json:"carrier_ref,omitempty"`
+	CongruenceLevel int      `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
+	FormalityLevel  int      `json:"formality_level"`  // F0-F3; legacy 0-9 inputs are normalized
+	ClaimScope      []string `json:"claim_scope,omitempty"`
+	ValidUntil      string   `json:"valid_until,omitempty"`
 }
 
 // Measure records post-implementation impact against the DRR's acceptance criteria.
@@ -757,13 +957,16 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	}
 
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:              evidID,
 		Type:            "measurement",
 		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
-		FormalityLevel:  5,
+		FormalityLevel:  2,
+		ClaimScope:      measuredCriteriaScope(input.CriteriaMet, input.CriteriaNotMet, scopeCandidates),
+		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)
 	}
@@ -798,7 +1001,7 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		input.CongruenceLevel = 3
 	}
 	if input.FormalityLevel < 0 {
-		input.FormalityLevel = 5
+		input.FormalityLevel = defaultEvidenceFormalityLevel(input.Type)
 	}
 
 	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
@@ -810,7 +1013,8 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		Verdict:         input.Verdict,
 		CarrierRef:      input.CarrierRef,
 		CongruenceLevel: input.CongruenceLevel,
-		FormalityLevel:  input.FormalityLevel,
+		FormalityLevel:  normalizeFormalityLevel(input.FormalityLevel),
+		ClaimScope:      normalizeClaimScope(input.ClaimScope),
 		ValidUntil:      input.ValidUntil,
 	}
 
@@ -830,12 +1034,17 @@ type WLNKSummary struct {
 	Supporting    int
 	Weakening     int
 	Refuting      int
-	HasEvidence   bool    // true if at least one evidence item exists
-	REff          float64 // computed: min(effective_score) across evidence chain
-	MinFreshness  string  // earliest valid_until across all evidence
-	WeakestCL     int     // minimum congruence level
-	WeakestF      int     // minimum formality level
-	Summary       string  // human-readable one-liner
+	HasEvidence   bool     // true if at least one evidence item exists
+	FEff          int      // computed: min(formality_level_i) across evidence chain
+	GEff          []string // computed: union(claim_scope_i) across evidence chain
+	REff          float64  // computed: min(effective_score) across evidence chain
+	MinFreshness  string   // earliest valid_until across all evidence
+	WeakestCL     int      // minimum congruence level
+	WeakestF      int      // compatibility alias for FEff
+	ExpectedScope []string // explicit acceptance identifiers, when available
+	CoverageGaps  []string // expected scope not covered by GEff
+	CoverageKnown bool     // false when the problem frame has no explicit identifiers
+	Summary       string   // human-readable one-liner
 }
 
 // ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
@@ -848,8 +1057,11 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result := WLNKSummary{
 		ArtifactID: artifactID,
 		WeakestCL:  3,
-		WeakestF:   9,
+		FEff:       0,
+		WeakestF:   0,
 	}
+	result.ExpectedScope, result.CoverageKnown = explicitAcceptanceScope(ctx, store, artifactID)
+	result.CoverageGaps = append(result.CoverageGaps, result.ExpectedScope...)
 
 	items, err := store.GetEvidenceItems(ctx, artifactID)
 	if err != nil || len(items) == 0 {
@@ -874,6 +1086,7 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result.HasEvidence = true
 	now := time.Now().UTC()
 	minREff := 1.0
+	minFormality := 3
 
 	for _, e := range activeItems {
 		switch e.Verdict {
@@ -888,8 +1101,8 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		if e.CongruenceLevel < result.WeakestCL {
 			result.WeakestCL = e.CongruenceLevel
 		}
-		if e.FormalityLevel < result.WeakestF && e.FormalityLevel > 0 {
-			result.WeakestF = e.FormalityLevel
+		if e.FormalityLevel < minFormality {
+			minFormality = e.FormalityLevel
 		}
 
 		if e.ValidUntil != "" {
@@ -905,10 +1118,19 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		}
 	}
 
+	result.FEff = minFormality
+	result.WeakestF = minFormality
+	result.GEff = computeClaimCoverage(activeItems)
 	result.REff = minREff
+	if result.CoverageKnown {
+		result.CoverageGaps = differenceScope(result.ExpectedScope, result.GEff)
+	} else {
+		result.CoverageGaps = nil
+	}
 
 	// Build summary
 	var parts []string
+	parts = append(parts, formatAssuranceSummary(result))
 	parts = append(parts, fmt.Sprintf("%d evidence item(s)", result.EvidenceCount))
 	if result.Supporting > 0 {
 		parts = append(parts, fmt.Sprintf("%d supporting", result.Supporting))
@@ -919,13 +1141,12 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	if result.Refuting > 0 {
 		parts = append(parts, fmt.Sprintf("%d REFUTING", result.Refuting))
 	}
-	parts = append(parts, fmt.Sprintf("R_eff: %.2f", result.REff))
 	if result.MinFreshness != "" {
-		if t, err := time.Parse(time.RFC3339, result.MinFreshness); err == nil {
-			if t.Before(now) {
+		if expiry, ok := reff.ParseValidUntil(result.MinFreshness); ok {
+			if expiry.Before(now) {
 				parts = append(parts, "STALE evidence")
 			} else {
-				days := int(t.Sub(now).Hours() / 24)
+				days := int(expiry.Sub(now).Hours() / 24)
 				parts = append(parts, fmt.Sprintf("freshest expires in %dd", days))
 			}
 		}
@@ -933,6 +1154,9 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	if result.WeakestCL < 3 {
 		clLabels := map[int]string{0: "opposed", 1: "different context", 2: "similar context"}
 		parts = append(parts, fmt.Sprintf("weakest CL: %s", clLabels[result.WeakestCL]))
+	}
+	if len(result.CoverageGaps) > 0 {
+		parts = append(parts, "coverage gaps: "+strings.Join(result.CoverageGaps, ", "))
 	}
 
 	result.Summary = strings.Join(parts, ", ")
@@ -942,6 +1166,333 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 // scoreEvidence delegates to reff.ScoreEvidence (single source of truth).
 func scoreEvidence(e EvidenceItem, now time.Time) float64 {
 	return reff.ScoreEvidence(e.Verdict, e.CongruenceLevel, e.ValidUntil, now)
+}
+
+func defaultEvidenceFormalityLevel(evidenceType string) int {
+	switch strings.ToLower(strings.TrimSpace(evidenceType)) {
+	case "measurement", "test", "benchmark", "audit":
+		return 2
+	case "research":
+		return 1
+	default:
+		return 1
+	}
+}
+
+func normalizeFormalityLevel(level int) int {
+	switch {
+	case level < 0:
+		return 0
+	case level <= 3:
+		return level
+	case level <= 5:
+		return 1
+	case level <= 8:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func normalizeClaimScope(scope []string) []string {
+	if len(scope) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(scope))
+	normalized := make([]string, 0, len(scope))
+
+	for _, item := range scope {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	sort.Strings(normalized)
+
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func computeClaimCoverage(items []EvidenceItem) []string {
+	scope := make([]string, 0, len(items))
+	for _, item := range items {
+		scope = append(scope, item.ClaimScope...)
+	}
+	return normalizeClaimScope(scope)
+}
+
+func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeCandidates []string) []string {
+	scope := make([]string, 0, len(criteriaMet)+len(criteriaNotMet))
+	scope = append(scope, criteriaMet...)
+	scope = append(scope, criteriaNotMet...)
+	scope = normalizeClaimScope(scope)
+
+	aliasIndex := buildCriterionAliasIndex(scopeCandidates)
+	resolved := make([]string, 0, len(scope))
+
+	for _, item := range scope {
+		resolvedItem := resolveMeasuredCriterion(item, aliasIndex)
+		resolved = append(resolved, resolvedItem)
+	}
+
+	return normalizeClaimScope(resolved)
+}
+
+func differenceScope(expected []string, covered []string) []string {
+	if len(expected) == 0 {
+		return nil
+	}
+
+	coveredSet := make(map[string]struct{}, len(covered))
+	for _, item := range covered {
+		coveredSet[item] = struct{}{}
+	}
+
+	gaps := make([]string, 0, len(expected))
+	for _, item := range expected {
+		if _, ok := coveredSet[item]; ok {
+			continue
+		}
+		gaps = append(gaps, item)
+	}
+
+	return gaps
+}
+
+func explicitAcceptanceScope(ctx context.Context, store ArtifactStore, artifactID string) ([]string, bool) {
+	artifactItem, err := store.Get(ctx, artifactID)
+	if err != nil {
+		return nil, false
+	}
+
+	if artifactItem.Meta.Kind == KindProblemCard {
+		scope := explicitAcceptanceCriteria(artifactItem.UnmarshalProblemFields().Acceptance)
+		return scope, len(scope) > 0
+	}
+
+	if artifactItem.Meta.Kind != KindDecisionRecord {
+		return nil, false
+	}
+
+	scope := make([]string, 0)
+	for _, link := range artifactItem.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+		problem, err := store.Get(ctx, link.Ref)
+		if err != nil || problem.Meta.Kind != KindProblemCard {
+			continue
+		}
+		scope = append(scope, explicitAcceptanceCriteria(problem.UnmarshalProblemFields().Acceptance)...)
+	}
+
+	scope = normalizeClaimScope(scope)
+	return scope, len(scope) > 0
+}
+
+func measurementScopeCandidates(ctx context.Context, store ArtifactStore, decision *Artifact) []string {
+	scope := make([]string, 0)
+	scope = append(scope, decision.UnmarshalDecisionFields().PostConds...)
+
+	acceptanceScope, _ := explicitAcceptanceScope(ctx, store, decision.Meta.ID)
+	scope = append(scope, acceptanceScope...)
+
+	return normalizeClaimScope(scope)
+}
+
+func explicitAcceptanceCriteria(acceptance string) []string {
+	lines := strings.Split(acceptance, "\n")
+	criteria := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(trimmed, "- [ ] "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ] ")))
+		case strings.HasPrefix(trimmed, "- [x] "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- [x] ")))
+		case strings.HasPrefix(trimmed, "- "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+		case strings.HasPrefix(trimmed, "* "):
+			criteria = append(criteria, strings.TrimSpace(strings.TrimPrefix(trimmed, "* ")))
+		default:
+			return nil
+		}
+	}
+
+	return normalizeClaimScope(criteria)
+}
+
+func buildCriterionAliasIndex(candidates []string) map[string]string {
+	counts := make(map[string]int)
+	aliases := make(map[string]string)
+
+	for _, candidate := range normalizeClaimScope(candidates) {
+		for _, key := range criterionAliasKeys(candidate) {
+			counts[key]++
+			if _, exists := aliases[key]; exists {
+				continue
+			}
+			aliases[key] = candidate
+		}
+	}
+
+	index := make(map[string]string)
+
+	for key, candidate := range aliases {
+		if counts[key] != 1 {
+			continue
+		}
+		index[key] = candidate
+	}
+
+	return index
+}
+
+func resolveMeasuredCriterion(value string, aliasIndex map[string]string) string {
+	for _, key := range criterionAliasKeys(value) {
+		candidate, ok := aliasIndex[key]
+		if ok {
+			return candidate
+		}
+	}
+
+	trimmed := stripTrailingCriterionAnnotations(value)
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	return strings.TrimSpace(value)
+}
+
+func criterionAliasKeys(value string) []string {
+	keys := make([]string, 0, 2)
+
+	exactKey := criterionMatchKey(value)
+	if exactKey != "" {
+		keys = append(keys, exactKey)
+	}
+
+	trimmedKey := criterionMatchKey(stripTrailingCriterionAnnotations(value))
+	if trimmedKey != "" && trimmedKey != exactKey {
+		keys = append(keys, trimmedKey)
+	}
+
+	return keys
+}
+
+func criterionMatchKey(value string) string {
+	trimmed := trimCriterionLeadMarkers(value)
+	trimmed = strings.ToLower(strings.TrimSpace(trimmed))
+	fields := strings.Fields(trimmed)
+	return strings.Join(fields, " ")
+}
+
+func stripTrailingCriterionAnnotations(value string) string {
+	trimmed := trimCriterionLeadMarkers(value)
+	trimmed = strings.TrimSpace(trimmed)
+	trimmed = strings.TrimRight(trimmed, ".,;:")
+
+	for {
+		next, changed := trimTrailingCriterionGroup(trimmed, '(', ')')
+		if changed {
+			trimmed = strings.TrimSpace(next)
+			trimmed = strings.TrimRight(trimmed, ".,;:")
+			continue
+		}
+
+		next, changed = trimTrailingCriterionGroup(trimmed, '[', ']')
+		if changed {
+			trimmed = strings.TrimSpace(next)
+			trimmed = strings.TrimRight(trimmed, ".,;:")
+			continue
+		}
+
+		return strings.TrimSpace(trimmed)
+	}
+}
+
+func trimCriterionLeadMarkers(value string) string {
+	trimmed := strings.TrimSpace(value)
+
+	switch {
+	case strings.HasPrefix(trimmed, "- [ ] "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- [ ] "))
+	case strings.HasPrefix(trimmed, "- [x] "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- [x] "))
+	case strings.HasPrefix(trimmed, "- "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+	case strings.HasPrefix(trimmed, "* "):
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, "* "))
+	default:
+		return trimmed
+	}
+}
+
+func trimTrailingCriterionGroup(value string, open byte, close byte) (string, bool) {
+	if value == "" {
+		return value, false
+	}
+	if value[len(value)-1] != close {
+		return value, false
+	}
+
+	depth := 0
+
+	for i := len(value) - 1; i >= 0; i-- {
+		switch value[i] {
+		case close:
+			depth++
+		case open:
+			depth--
+			if depth == 0 {
+				return value[:i], true
+			}
+		}
+	}
+
+	return value, false
+}
+
+func formatAssuranceSummary(summary WLNKSummary) string {
+	formality := fmt.Sprintf("F%d (%s)", summary.FEff, formalityLabel(summary.FEff))
+	coverage := "G: no claim scope"
+	switch {
+	case summary.CoverageKnown:
+		coverage = fmt.Sprintf("G: %d/%d criteria covered", len(summary.GEff), len(summary.ExpectedScope))
+	case len(summary.GEff) > 0:
+		coverage = fmt.Sprintf("G: %d covered (acceptance ids unavailable)", len(summary.GEff))
+	}
+	return fmt.Sprintf("Assurance: %s | %s | R: %.2f", formality, coverage, summary.REff)
+}
+
+func formalityLabel(level int) string {
+	switch level {
+	case 0:
+		return "unsubstantiated"
+	case 1:
+		return "structured-informal"
+	case 2:
+		return "structured-formal"
+	case 3:
+		return "proof-grade"
+	default:
+		return "unknown"
+	}
 }
 
 // modeRank maps Mode to a numeric rank for comparison.

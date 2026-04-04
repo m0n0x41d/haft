@@ -18,6 +18,7 @@ func TestMeasure_Success(t *testing.T) {
 	dec, _, _ := Decide(ctx, store, haftDir, DecideInput{
 		SelectedTitle: "NATS JetStream",
 		WhySelected:   "Ops simplicity",
+		ValidUntil:    "2027-01-01T00:00:00Z",
 		PostConditions: []string{
 			"All producers migrated",
 			"Load test at 100k/s passed",
@@ -62,6 +63,15 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].Verdict != "partial" {
 		t.Errorf("evidence verdict = %q, want partial", items[0].Verdict)
 	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("evidence formality = %d, want 2", items[0].FormalityLevel)
+	}
+	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
+		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
+	}
+	if got := strings.Join(items[0].ClaimScope, " | "); got != "All producers migrated | Load test at 100k/s passed" {
+		t.Errorf("evidence claim_scope = %#v, want canonical measured criteria scope", items[0].ClaimScope)
+	}
 }
 
 func TestMeasure_MissingRequired(t *testing.T) {
@@ -97,6 +107,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 		CarrierRef:      "benchmarks/nats_load_test.md",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimScope:      []string{"throughput", "latency", "throughput"},
 		ValidUntil:      "2026-06-01T00:00:00Z",
 	})
 	if err != nil {
@@ -114,6 +125,12 @@ func TestAttachEvidence_Success(t *testing.T) {
 	items, _ := store.GetEvidenceItems(ctx, dec.Meta.ID)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(items))
+	}
+	if items[0].FormalityLevel != 2 {
+		t.Errorf("stored formality = %d, want normalized F2", items[0].FormalityLevel)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
+		t.Errorf("stored claim_scope = %q, want deduplicated scope", got)
 	}
 }
 
@@ -197,6 +214,113 @@ func TestWLNKSummary_WithEvidence(t *testing.T) {
 	}
 }
 
+func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Queue migration",
+		Signal: "Current queue saturates under burst load.",
+		Acceptance: strings.Join([]string{
+			"- P99 latency under 50ms",
+			"- Throughput above 100k events/sec",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+		ProblemRef:    prob.Meta.ID,
+		SelectedTitle: "JetStream",
+		WhySelected:   "Lower operational overhead",
+		WeakestLink:   "benchmark evidence freshness",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Load test passed on staging",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  7,
+		ClaimScope:      []string{"P99 latency under 50ms"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if wlnk.FEff != 2 {
+		t.Errorf("FEff = %d, want 2", wlnk.FEff)
+	}
+	if !wlnk.CoverageKnown {
+		t.Fatal("expected explicit acceptance coverage")
+	}
+	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms" {
+		t.Errorf("GEff = %q, want covered criterion", got)
+	}
+	if got := strings.Join(wlnk.CoverageGaps, ","); got != "Throughput above 100k events/sec" {
+		t.Errorf("CoverageGaps = %q, want uncovered criterion", got)
+	}
+	if !strings.Contains(wlnk.Summary, "Assurance: F2 (structured-formal)") {
+		t.Errorf("summary should show structured assurance: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
+		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
+	}
+}
+
+func TestWLNKSummary_AnnotatedCriteriaStillCountAsCovered(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Queue migration",
+		Signal: "Current queue saturates under burst load.",
+		Acceptance: strings.Join([]string{
+			"- P99 latency under 50ms",
+			"- Throughput above 100k events/sec",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dec, _, err := Decide(ctx, store, haftDir, DecideInput{
+		ProblemRef:    prob.Meta.ID,
+		SelectedTitle: "JetStream",
+		WhySelected:   "Lower operational overhead",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef:    dec.Meta.ID,
+		Findings:       "Latency passed, throughput failed under peak load.",
+		CriteriaMet:    []string{"P99 latency under 50ms (observed: 42ms)"},
+		CriteriaNotMet: []string{"Throughput above 100k events/sec (observed: 87k events/sec)"},
+		Verdict:        "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms,Throughput above 100k events/sec" {
+		t.Fatalf("GEff = %q, want both measured criteria covered", got)
+	}
+	if len(wlnk.CoverageGaps) != 0 {
+		t.Fatalf("CoverageGaps = %#v, want no gaps for explicitly measured failed criteria", wlnk.CoverageGaps)
+	}
+}
+
 func TestWLNKSummary_Refuting(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -276,7 +400,7 @@ func TestREff_AllSupporting(t *testing.T) {
 	}
 	// supports=1.0, CL3 penalty=0.0 → effective=1.0, min=1.0
 	assertREff(t, wlnk.REff, 1.0)
-	if !strings.Contains(wlnk.Summary, "R_eff: 1.00") {
+	if !strings.Contains(wlnk.Summary, "R: 1.00") {
 		t.Errorf("summary should show R_eff: %q", wlnk.Summary)
 	}
 }
@@ -470,10 +594,13 @@ func TestVerdictToScore(t *testing.T) {
 	}{
 		{"supports", 1.0},
 		{"accepted", 1.0},
+		{"pass", 1.0},
 		{"weakens", 0.5},
 		{"partial", 0.5},
+		{"degrade", 0.5},
 		{"refutes", 0.0},
 		{"failed", 0.0},
+		{"fail", 0.0},
 		{"unknown", 0.5},
 		{"", 0.5},
 	}
@@ -532,6 +659,18 @@ func TestScoreEvidence_Decay(t *testing.T) {
 	}
 	got = scoreEvidence(perpetual, now)
 	assertREff(t, got, 0.9) // 1.0 - 0.1 CL2 penalty
+}
+
+func TestScoreEvidence_Decay_DateOnly(t *testing.T) {
+	now := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+
+	expired := EvidenceItem{
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      "2026-06-01",
+	}
+	got := scoreEvidence(expired, now)
+	assertREff(t, got, 0.1)
 }
 
 func assertREff(t *testing.T, got, want float64) {

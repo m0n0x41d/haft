@@ -19,11 +19,11 @@ func TestFrameProblem_Success(t *testing.T) {
 			"Must maintain <500ms p99 latency",
 			"Cannot break existing merchant integrations",
 		},
-		OptimizationTargets:  []string{"Reduce webhook failure rate to <1%"},
+		OptimizationTargets:   []string{"Reduce webhook failure rate to <1%"},
 		ObservationIndicators: []string{"CPU utilization on webhook workers"},
-		Acceptance:           "Failure rate below 1% for 7 consecutive days",
-		BlastRadius:          "All merchant integrations",
-		Reversibility:        "medium",
+		Acceptance:            "Failure rate below 1% for 7 consecutive days",
+		BlastRadius:           "All merchant integrations",
+		Reversibility:         "medium",
 	}
 
 	a, filePath, err := FrameProblem(ctx, store, haftDir, input)
@@ -156,6 +156,87 @@ func TestCharacterizeProblem_Success(t *testing.T) {
 	}
 	if a.Meta.Version != 2 {
 		t.Errorf("version = %d, want 2 after update", a.Meta.Version)
+	}
+
+	fields := a.UnmarshalProblemFields()
+	if len(fields.Characterizations) != 1 {
+		t.Fatalf("expected 1 structured characterization, got %d", len(fields.Characterizations))
+	}
+	if fields.Characterizations[0].ParityPlan == nil {
+		t.Fatal("expected legacy parity rules to be preserved in structured parity plan")
+	}
+	if got := fields.Characterizations[0].ParityPlan.PinnedConditions[0]; got != "All candidates tested with same 50k events/sec load profile" {
+		t.Fatalf("unexpected pinned condition: %q", got)
+	}
+}
+
+func TestCharacterizeProblem_StoresStructuredParityPlan(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "API transport", Signal: "Latency variance between transports",
+	})
+
+	a, _, err := CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency", Role: "target"},
+			{Name: "cost", Role: "constraint"},
+		},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"REST", "gRPC"},
+			Window:            "same 15m replay window",
+			Budget:            "$200/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+			Normalization:     []NormRule{{Dimension: "latency", Method: "p99"}},
+			PinnedConditions:  []string{"Same dataset and region"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := a.UnmarshalProblemFields()
+	if len(fields.Characterizations) != 1 {
+		t.Fatalf("expected 1 characterization, got %d", len(fields.Characterizations))
+	}
+	plan := fields.Characterizations[0].ParityPlan
+	if plan == nil {
+		t.Fatal("expected structured parity plan")
+	}
+	if got := plan.MissingDataPolicy; got != MissingDataPolicyExplicitAbstain {
+		t.Fatalf("missing_data_policy = %q", got)
+	}
+	if !strings.Contains(a.Body, "Parity plan") {
+		t.Fatalf("expected parity plan to be rendered into body, body: %s", a.Body)
+	}
+}
+
+func TestCharacterizeProblem_RejectsIncompleteParityPlan(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "API transport", Signal: "Latency variance between transports",
+	})
+
+	_, _, err := CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{{Name: "latency"}},
+		ParityPlan: &ParityPlan{
+			BaselineSet: []string{"REST", "gRPC"},
+			Window:      "same 15m replay window",
+			Budget:      "$200/month",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected incomplete parity plan to be rejected")
+	}
+	if !strings.Contains(err.Error(), "missing_data_policy") {
+		t.Fatalf("expected missing_data_policy error, got %v", err)
 	}
 }
 

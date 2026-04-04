@@ -203,18 +203,24 @@ func (s *SQLiteStore) CreateCycle(ctx context.Context, cycle *agent.Cycle) error
 	if cycle.UpdatedAt.IsZero() {
 		cycle.UpdatedAt = cycle.CreatedAt
 	}
+	cycle.REff = cycle.Assurance.R
 	govJSON, _ := json.Marshal(cycle.Governance)
+	gEffJSON := "[]"
+	if len(cycle.Assurance.G) > 0 {
+		data, _ := json.Marshal(cycle.Assurance.G)
+		gEffJSON = string(data)
+	}
 	skipJSON, _ := json.Marshal(cycle.SkipLog)
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO reasoning_cycles
 		 (id, session_id, problem_ref, portfolio_ref, decision_ref, phase, depth,
-		  status, lineage_ref, weakest_link, r_eff, cl_min, governance, skip_log,
+		  status, lineage_ref, weakest_link, r_eff, f_eff, g_eff, cl_min, governance, skip_log,
 		  created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cycle.ID, cycle.SessionID, cycle.ProblemRef, cycle.PortfolioRef,
 		cycle.DecisionRef, string(cycle.Phase), string(cycle.Depth),
 		string(cycle.Status), cycle.LineageRef, cycle.WeakestLink,
-		cycle.REff, cycle.CLMin, string(govJSON), string(skipJSON),
+		cycle.REff, cycle.Assurance.F, string(gEffJSON), cycle.CLMin, string(govJSON), string(skipJSON),
 		cycle.CreatedAt.Format(time.RFC3339), cycle.UpdatedAt.Format(time.RFC3339),
 	)
 	return err
@@ -223,7 +229,7 @@ func (s *SQLiteStore) CreateCycle(ctx context.Context, cycle *agent.Cycle) error
 func (s *SQLiteStore) GetCycle(ctx context.Context, id string) (*agent.Cycle, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, session_id, problem_ref, portfolio_ref, decision_ref, phase, depth,
-		        status, lineage_ref, weakest_link, r_eff, cl_min, governance, skip_log,
+		        status, lineage_ref, weakest_link, r_eff, f_eff, g_eff, cl_min, governance, skip_log,
 		        created_at, updated_at
 		 FROM reasoning_cycles WHERE id = ?`, id)
 	return scanCycle(row)
@@ -231,17 +237,23 @@ func (s *SQLiteStore) GetCycle(ctx context.Context, id string) (*agent.Cycle, er
 
 func (s *SQLiteStore) UpdateCycle(ctx context.Context, cycle *agent.Cycle) error {
 	cycle.UpdatedAt = time.Now().UTC()
+	cycle.REff = cycle.Assurance.R
 	govJSON, _ := json.Marshal(cycle.Governance)
+	gEffJSON := "[]"
+	if len(cycle.Assurance.G) > 0 {
+		data, _ := json.Marshal(cycle.Assurance.G)
+		gEffJSON = string(data)
+	}
 	skipJSON, _ := json.Marshal(cycle.SkipLog)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE reasoning_cycles SET
 		 problem_ref = ?, portfolio_ref = ?, decision_ref = ?, phase = ?, depth = ?,
-		 status = ?, lineage_ref = ?, weakest_link = ?, r_eff = ?, cl_min = ?,
+		 status = ?, lineage_ref = ?, weakest_link = ?, r_eff = ?, f_eff = ?, g_eff = ?, cl_min = ?,
 		 governance = ?, skip_log = ?, updated_at = ?
 		 WHERE id = ?`,
 		cycle.ProblemRef, cycle.PortfolioRef, cycle.DecisionRef,
 		string(cycle.Phase), string(cycle.Depth), string(cycle.Status),
-		cycle.LineageRef, cycle.WeakestLink, cycle.REff, cycle.CLMin,
+		cycle.LineageRef, cycle.WeakestLink, cycle.REff, cycle.Assurance.F, string(gEffJSON), cycle.CLMin,
 		string(govJSON), string(skipJSON),
 		cycle.UpdatedAt.Format(time.RFC3339), cycle.ID,
 	)
@@ -251,7 +263,7 @@ func (s *SQLiteStore) UpdateCycle(ctx context.Context, cycle *agent.Cycle) error
 func (s *SQLiteStore) GetActiveCycle(ctx context.Context, sessionID string) (*agent.Cycle, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, session_id, problem_ref, portfolio_ref, decision_ref, phase, depth,
-		        status, lineage_ref, weakest_link, r_eff, cl_min, governance, skip_log,
+		        status, lineage_ref, weakest_link, r_eff, f_eff, g_eff, cl_min, governance, skip_log,
 		        created_at, updated_at
 		 FROM reasoning_cycles WHERE session_id = ? AND status = 'active'
 		 ORDER BY created_at DESC LIMIT 1`, sessionID)
@@ -261,7 +273,7 @@ func (s *SQLiteStore) GetActiveCycle(ctx context.Context, sessionID string) (*ag
 func (s *SQLiteStore) ListCyclesBySession(ctx context.Context, sessionID string) ([]agent.Cycle, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, problem_ref, portfolio_ref, decision_ref, phase, depth,
-		        status, lineage_ref, weakest_link, r_eff, cl_min, governance, skip_log,
+		        status, lineage_ref, weakest_link, r_eff, f_eff, g_eff, cl_min, governance, skip_log,
 		        created_at, updated_at
 		 FROM reasoning_cycles WHERE session_id = ?
 		 ORDER BY created_at ASC`, sessionID)
@@ -325,11 +337,11 @@ func scanMessage(rows *sql.Rows) (*agent.Message, error) {
 
 func scanCycle(row rowScanner) (*agent.Cycle, error) {
 	var c agent.Cycle
-	var phase, depth, status, createdAt, updatedAt, govJSON, skipJSON string
+	var phase, depth, status, createdAt, updatedAt, govJSON, gEffJSON, skipJSON string
 	err := row.Scan(
 		&c.ID, &c.SessionID, &c.ProblemRef, &c.PortfolioRef, &c.DecisionRef,
 		&phase, &depth, &status, &c.LineageRef, &c.WeakestLink,
-		&c.REff, &c.CLMin, &govJSON, &skipJSON, &createdAt, &updatedAt,
+		&c.REff, &c.Assurance.F, &gEffJSON, &c.CLMin, &govJSON, &skipJSON, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -337,8 +349,10 @@ func scanCycle(row rowScanner) (*agent.Cycle, error) {
 	c.Phase = agent.Phase(phase)
 	c.Depth = agent.Depth(depth)
 	c.Status = agent.CycleStatus(status)
+	c.Assurance.R = c.REff
 	c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	c.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	_ = json.Unmarshal([]byte(gEffJSON), &c.Assurance.G)
 	_ = json.Unmarshal([]byte(govJSON), &c.Governance)
 	_ = json.Unmarshal([]byte(skipJSON), &c.SkipLog)
 	return &c, nil

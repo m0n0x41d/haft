@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,6 +36,13 @@ type CoverageReport struct {
 	PartialCount int
 	BlindCount   int
 	Modules      []ModuleCoverage
+}
+
+// ModuleGovernanceGap reports that a module touched by a new decision has no
+// prior active decision coverage.
+type ModuleGovernanceGap struct {
+	Module Module
+	Files  []string
 }
 
 // ComputeCoverage calculates decision coverage for all modules.
@@ -171,6 +179,72 @@ func FormatCoverageResponse(report *CoverageReport) string {
 	}
 
 	return sb.String()
+}
+
+// FindFirstDecisionModules returns touched modules that currently have no
+// active decision coverage. The caller can use this to warn that a decision is
+// establishing the first explicit architectural context for a module.
+func FindFirstDecisionModules(ctx context.Context, db *sql.DB, affectedFiles []string) ([]ModuleGovernanceGap, error) {
+	if len(affectedFiles) == 0 {
+		return nil, nil
+	}
+
+	report, err := ComputeCoverage(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	if report == nil || report.TotalModules == 0 {
+		return nil, nil
+	}
+
+	scanner := NewScanner(db)
+	moduleFiles := make(map[string]map[string]struct{})
+	moduleCoverage := make(map[string]ModuleCoverage, len(report.Modules))
+	moduleIndex := make(map[string]Module, len(report.Modules))
+
+	for _, coverage := range report.Modules {
+		moduleCoverage[coverage.Module.ID] = coverage
+		moduleIndex[coverage.Module.ID] = coverage.Module
+	}
+
+	for _, filePath := range affectedFiles {
+		moduleID, err := scanner.ResolveFileToModule(ctx, filePath)
+		if err != nil || moduleID == "" {
+			continue
+		}
+
+		if _, ok := moduleFiles[moduleID]; !ok {
+			moduleFiles[moduleID] = make(map[string]struct{})
+		}
+		moduleFiles[moduleID][filePath] = struct{}{}
+	}
+
+	gaps := make([]ModuleGovernanceGap, 0, len(moduleFiles))
+
+	for moduleID, files := range moduleFiles {
+		coverage, ok := moduleCoverage[moduleID]
+		if ok && coverage.Status != CoverageBlind && coverage.DecisionCount > 0 {
+			continue
+		}
+
+		module := moduleIndex[moduleID]
+		fileList := make([]string, 0, len(files))
+		for filePath := range files {
+			fileList = append(fileList, filePath)
+		}
+		sort.Strings(fileList)
+
+		gaps = append(gaps, ModuleGovernanceGap{
+			Module: module,
+			Files:  fileList,
+		})
+	}
+
+	sort.Slice(gaps, func(i, j int) bool {
+		return gaps[i].Module.Path < gaps[j].Module.Path
+	})
+
+	return gaps, nil
 }
 
 // EnrichDriftWithImpact adds dependency propagation to drift reports.

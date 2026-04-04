@@ -90,4 +90,12 @@ var AgentMigrations = []db.Migration{
 			"ALTER TABLE agent_sessions ADD COLUMN active_cycle_id TEXT DEFAULT ''",
 		},
 	},
+	{
+		Version:     8,
+		Description: "Persist assurance tuple on reasoning cycles",
+		Statements: []string{
+			"ALTER TABLE reasoning_cycles ADD COLUMN f_eff INTEGER DEFAULT 0",
+			"ALTER TABLE reasoning_cycles ADD COLUMN g_eff TEXT DEFAULT '[]'",
+		},
+	},
 }

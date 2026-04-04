@@ -112,7 +112,40 @@ type SubagentDone struct {
 
 // OverseerAlert carries background health findings.
 type OverseerAlert struct {
-	Alerts []string `json:"alerts"`
+	Alerts   []string          `json:"alerts"`
+	Findings []OverseerFinding `json:"findings,omitempty"`
+}
+
+type OverseerFinding struct {
+	Type          string                  `json:"type"`
+	Category      string                  `json:"category,omitempty"`
+	ArtifactID    string                  `json:"artifactId,omitempty"`
+	Title         string                  `json:"title,omitempty"`
+	Kind          string                  `json:"kind,omitempty"`
+	Summary       string                  `json:"summary"`
+	Reason        string                  `json:"reason,omitempty"`
+	DaysStale     int                     `json:"daysStale,omitempty"`
+	REff          float64                 `json:"rEff,omitempty"`
+	TotalED       float64                 `json:"totalED,omitempty"`
+	Budget        float64                 `json:"budget,omitempty"`
+	Excess        float64                 `json:"excess,omitempty"`
+	DriftItems    []OverseerDriftItem     `json:"driftItems,omitempty"`
+	DebtBreakdown []OverseerDebtBreakdown `json:"debtBreakdown,omitempty"`
+}
+
+type OverseerDriftItem struct {
+	Path         string   `json:"path"`
+	Status       string   `json:"status"`
+	LinesChanged string   `json:"linesChanged,omitempty"`
+	Invariants   []string `json:"invariants,omitempty"`
+}
+
+type OverseerDebtBreakdown struct {
+	DecisionID      string  `json:"decisionId"`
+	DecisionTitle   string  `json:"decisionTitle"`
+	TotalED         float64 `json:"totalED"`
+	ExpiredEvidence int     `json:"expiredEvidence"`
+	MostOverdueDays int     `json:"mostOverdueDays"`
 }
 
 // DriftUpdate carries file/spec drift state.

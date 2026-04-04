@@ -20,9 +20,10 @@ func TestDecide_FullDRR(t *testing.T) {
 	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "Kafka", WeakestLink: "ops complexity"},
-			{Title: "NATS JetStream", WeakestLink: "ecosystem maturity"},
+			testVariant("Kafka", "ops complexity", "Max throughput with established broker operations"),
+			testVariant("NATS JetStream", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
 		},
+		NoSteppingStoneRationale: "Both candidates are production-target options rather than exploratory stepping stones.",
 	})
 
 	input := DecideInput{
@@ -40,11 +41,11 @@ func TestDecide_FullDRR(t *testing.T) {
 			"Load test passed: 100k events/sec, p99 < 50ms",
 			"DB polling path alive as hot standby for 30 days",
 		},
-		Admissibility:  []string{"Fire-and-forget delivery", "Single-node production deployment"},
-		EvidenceReqs:   []string{"Load test at 100k events/sec", "Producer error rate < 0.1%"},
+		Admissibility:   []string{"Fire-and-forget delivery", "Single-node production deployment"},
+		EvidenceReqs:    []string{"Load test at 100k events/sec", "Producer error rate < 0.1%"},
 		RefreshTriggers: []string{"Throughput exceeds 80k/s sustained", "NATS major CVE"},
-		WeakestLink:    "Ecosystem maturity — fewer case studies at >50k events/sec",
-		ValidUntil:     "2026-09-16T00:00:00Z",
+		WeakestLink:     "Ecosystem maturity — fewer case studies at >50k events/sec",
+		ValidUntil:      "2026-09-16T00:00:00Z",
 		Rollback: &RollbackSpec{
 			Triggers:    []string{"Producer error rate > 1% for > 5 minutes"},
 			Steps:       []string{"Feature flag: route events back to DB polling", "Drain NATS queues"},

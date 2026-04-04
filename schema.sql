@@ -29,6 +29,8 @@ CREATE TABLE evidence (
     verdict TEXT NOT NULL,
     assurance_level TEXT,
     formality_level INTEGER DEFAULT 5 CHECK(formality_level BETWEEN 0 AND 9),
+    congruence_level INTEGER CHECK(congruence_level BETWEEN 0 AND 3),
+    claim_scope TEXT DEFAULT '[]',
     carrier_ref TEXT,
     carrier_hash TEXT,
     carrier_commit TEXT,
@@ -114,6 +116,7 @@ CREATE TABLE fpf_state (
     last_commit TEXT,
     last_commit_at DATETIME,
     assurance_threshold REAL DEFAULT 0.8 CHECK(assurance_threshold BETWEEN 0.0 AND 1.0),
+    epistemic_debt_budget REAL DEFAULT 30.0,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

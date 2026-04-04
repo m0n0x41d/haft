@@ -178,12 +178,13 @@ func BuildSkipEntry(phase Phase, reason, acceptedRisk, residualEvidence, reopenT
 }
 
 // CompleteCycle marks a cycle as complete after successful measurement.
-func CompleteCycle(cycle *Cycle, weakestLink string, rEff float64) *Cycle {
+func CompleteCycle(cycle *Cycle, weakestLink string, assurance AssuranceTuple) *Cycle {
 	updated := *cycle
 	updated.Status = CycleComplete
 	updated.Phase = PhaseReady
 	updated.WeakestLink = weakestLink
-	updated.REff = rEff
+	updated.Assurance = assurance
+	updated.REff = assurance.R
 	updated.UpdatedAt = time.Now().UTC()
 	return &updated
 }

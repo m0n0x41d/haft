@@ -692,6 +692,38 @@ func TestCoverageComputation(t *testing.T) {
 	}
 }
 
+func TestFindFirstDecisionModules(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	now := "2026-03-18T12:00:00Z"
+	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-auth', 'internal/auth', 'auth', 'go', 3, ?)`, now)
+	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-api', 'internal/api', 'api', 'go', 2, ?)`, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'internal/auth/auth.go', '')`)
+
+	gaps, err := FindFirstDecisionModules(ctx, db, []string{
+		"internal/auth/middleware.go",
+		"internal/api/server.go",
+		"internal/api/router.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(gaps) != 1 {
+		t.Fatalf("expected 1 uncovered module, got %d: %#v", len(gaps), gaps)
+	}
+	if gaps[0].Module.ID != "mod-api" {
+		t.Fatalf("expected api module gap, got %#v", gaps[0].Module)
+	}
+
+	wantFiles := []string{"internal/api/router.go", "internal/api/server.go"}
+	if strings.Join(gaps[0].Files, ",") != strings.Join(wantFiles, ",") {
+		t.Fatalf("gap files = %#v, want %#v", gaps[0].Files, wantFiles)
+	}
+}
+
 // --- Self-hosting test ---
 
 func TestSelfHostGoDetection(t *testing.T) {

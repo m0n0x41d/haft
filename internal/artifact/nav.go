@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // NavState holds the computed navigation state for a context.
@@ -112,8 +114,8 @@ func ComputeNavState(ctx context.Context, store ArtifactStore, contextName strin
 		for _, s := range stale {
 			reason := "refresh_due"
 			if s.Meta.ValidUntil != "" {
-				if t, err := time.Parse(time.RFC3339, s.Meta.ValidUntil); err == nil && t.Before(now) {
-					reason = fmt.Sprintf("expired %s", t.Format("2006-01-02"))
+				if expiry, ok := reff.ParseValidUntil(s.Meta.ValidUntil); ok && expiry.Before(now) {
+					reason = fmt.Sprintf("expired %s", expiry.Format("2006-01-02"))
 				}
 			}
 			state.StaleItems = append(state.StaleItems, fmt.Sprintf("%s: %s (%s)", s.Meta.ID, s.Meta.Title, reason))

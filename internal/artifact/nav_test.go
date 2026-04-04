@@ -124,9 +124,10 @@ func TestComputeNavState_ExploringTactical(t *testing.T) {
 	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "Option A", WeakestLink: "complexity"},
-			{Title: "Option B", WeakestLink: "performance"},
+			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
+			testVariant("Option B", "performance", "Optimize for throughput headroom"),
 		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -158,9 +159,10 @@ func TestComputeNavState_ExploringStandard(t *testing.T) {
 	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "Option A", WeakestLink: "complexity"},
-			{Title: "Option B", WeakestLink: "performance"},
+			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
+			testVariant("Option B", "performance", "Optimize for throughput headroom"),
 		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -194,9 +196,10 @@ func TestComputeNavState_Compared(t *testing.T) {
 	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "Option A", WeakestLink: "complexity"},
-			{Title: "Option B", WeakestLink: "performance"},
+			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
+			testVariant("Option B", "performance", "Optimize for throughput headroom"),
 		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -240,9 +243,10 @@ func TestComputeNavState_Decided(t *testing.T) {
 	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "Option A", WeakestLink: "complexity"},
-			{Title: "Option B", WeakestLink: "performance"},
+			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
+			testVariant("Option B", "performance", "Optimize for throughput headroom"),
 		},
+		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -312,8 +316,10 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob.Meta.ID,
 		Variants: []Variant{
-			{Title: "A", WeakestLink: "w"}, {Title: "B", WeakestLink: "w"},
+			testVariant("A", "w", "Optimize for minimal moving parts"),
+			testVariant("B", "w", "Optimize for future scaling margin"),
 		},
+		NoSteppingStoneRationale: "Both options are evaluated as production-ready endpoints.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -330,8 +336,10 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob2.Meta.ID,
 		Variants: []Variant{
-			{Title: "X", WeakestLink: "w"}, {Title: "Y", WeakestLink: "w"},
+			testVariant("X", "w", "Keep the integration surface small"),
+			testVariant("Y", "w", "Bias toward operational elasticity"),
 		},
+		NoSteppingStoneRationale: "The compared options are both end-state candidates.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -358,8 +366,10 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	sol2, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: prob3.Meta.ID,
 		Variants: []Variant{
-			{Title: "P", WeakestLink: "w"}, {Title: "Q", WeakestLink: "w"},
+			testVariant("P", "w", "Prioritize delivery speed"),
+			testVariant("Q", "w", "Prioritize runtime efficiency"),
 		},
+		NoSteppingStoneRationale: "Both tactical choices are direct endpoints.",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -16,8 +16,7 @@ import type {
   SubagentRun,
   SubagentStartParams,
   SubagentDoneParams,
-  DriftUpdateParams,
-  LspUpdateParams,
+  OverseerAlertParams, OverseerFindingParams, DriftUpdateParams, LspUpdateParams,
 } from "../protocol/types.js"
 
 export interface AppState {
@@ -43,6 +42,7 @@ export interface AppState {
   // Drift / Health
   drift: DriftUpdateParams | null
   overseerAlerts: string[]
+  overseerFindings: OverseerFindingParams[]
   lsp: LspUpdateParams | null
 
   // UI
@@ -72,6 +72,7 @@ export function initialState(): AppState {
     activeSubagents: 0,
     drift: null,
     overseerAlerts: [],
+    overseerFindings: [],
     lsp: null,
     phase: "input",
     error: null,
@@ -96,7 +97,7 @@ export type Action =
   | { type: "cycle.update"; params: CycleUpdateParams }
   | { type: "subagent.start"; params: SubagentStartParams }
   | { type: "subagent.done"; params: SubagentDoneParams }
-  | { type: "overseer.alert"; alerts: string[] }
+  | { type: "overseer.alert"; params: OverseerAlertParams }
   | { type: "drift.update"; params: DriftUpdateParams }
   | { type: "lsp.update"; params: LspUpdateParams }
   | { type: "error"; message: string }
@@ -270,7 +271,11 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case "overseer.alert":
-      return { ...state, overseerAlerts: action.alerts }
+      return {
+        ...state,
+        overseerAlerts: action.params.alerts,
+        overseerFindings: action.params.findings ?? [],
+      }
 
     case "drift.update":
       return { ...state, drift: action.params }

@@ -271,4 +271,26 @@ var kernelMigrations = []Migration{
 			"CREATE INDEX IF NOT EXISTS idx_affected_symbols_artifact ON affected_symbols(artifact_id)",
 		},
 	},
+	{
+		Version:     18,
+		Description: "Claim scope on persisted evidence",
+		Statements: []string{
+			"ALTER TABLE evidence ADD COLUMN claim_scope TEXT DEFAULT '[]'",
+			"ALTER TABLE evidence_items ADD COLUMN claim_scope TEXT DEFAULT '[]'",
+		},
+	},
+	{
+		Version:     19,
+		Description: "Epistemic debt budget on shared FPF state",
+		Statements: []string{
+			"ALTER TABLE fpf_state ADD COLUMN epistemic_debt_budget REAL DEFAULT 30.0",
+		},
+	},
+	{
+		Version:     20,
+		Description: "Congruence level on durable evidence",
+		Statements: []string{
+			"ALTER TABLE evidence ADD COLUMN congruence_level INTEGER",
+		},
+	},
 }

@@ -172,23 +172,32 @@ type Artifact struct {
 
 // ProblemFields holds structured data for a ProblemCard. Stored as JSON in StructuredData.
 type ProblemFields struct {
-	Signal                string   `json:"signal"`
-	Constraints           []string `json:"constraints,omitempty"`
-	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
-	ObservationIndicators []string `json:"observation_indicators,omitempty"`
-	Acceptance            string   `json:"acceptance,omitempty"`
-	BlastRadius           string   `json:"blast_radius,omitempty"`
-	Reversibility         string   `json:"reversibility,omitempty"`
+	Signal                string                     `json:"signal"`
+	Constraints           []string                   `json:"constraints,omitempty"`
+	OptimizationTargets   []string                   `json:"optimization_targets,omitempty"`
+	ObservationIndicators []string                   `json:"observation_indicators,omitempty"`
+	Acceptance            string                     `json:"acceptance,omitempty"`
+	BlastRadius           string                     `json:"blast_radius,omitempty"`
+	Reversibility         string                     `json:"reversibility,omitempty"`
+	Characterizations     []CharacterizationSnapshot `json:"characterizations,omitempty"`
 }
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	SelectedTitle string   `json:"selected_title"`
-	WhySelected   string   `json:"why_selected"`
-	WeakestLink   string   `json:"weakest_link,omitempty"`
-	Invariants    []string `json:"invariants,omitempty"`
-	PostConds     []string `json:"post_conditions,omitempty"`
-	Admissibility []string `json:"admissibility,omitempty"`
+	SelectedTitle       string               `json:"selected_title"`
+	WhySelected         string               `json:"why_selected"`
+	WeakestLink         string               `json:"weakest_link,omitempty"`
+	Invariants          []string             `json:"invariants,omitempty"`
+	PostConds           []string             `json:"post_conditions,omitempty"`
+	Admissibility       []string             `json:"admissibility,omitempty"`
+	FirstModuleCoverage bool                 `json:"first_module_coverage,omitempty"`
+	DriftManifests      []DriftScopeManifest `json:"drift_manifests,omitempty"`
+}
+
+// DriftScopeManifest stores the baseline file set for one governed scope.
+type DriftScopeManifest struct {
+	Scope string   `json:"scope"`
+	Files []string `json:"files,omitempty"`
 }
 
 // UnmarshalProblemFields extracts structured fields from an artifact's StructuredData.
@@ -212,6 +221,16 @@ func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
 	return df
 }
 
+// UnmarshalPortfolioFields extracts structured fields from an artifact's StructuredData.
+func (a *Artifact) UnmarshalPortfolioFields() PortfolioFields {
+	if a.StructuredData == "" {
+		return PortfolioFields{}
+	}
+	var pf PortfolioFields
+	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
+	return pf
+}
+
 // GenerateID creates a deterministic artifact ID.
 func GenerateID(kind Kind, seq int) string {
 	date := time.Now().Format("20060102")
@@ -225,16 +244,64 @@ func GenerateID(kind Kind, seq int) string {
 
 // Variant represents a solution option in a SolutionPortfolio.
 type Variant struct {
-	ID              string   `json:"id"`
-	Title           string   `json:"title"`
-	Description     string   `json:"description"`
-	Strengths       []string `json:"strengths,omitempty"`
-	WeakestLink     string   `json:"weakest_link"`
-	Risks           []string `json:"risks,omitempty"`
-	SteppingStone   bool     `json:"stepping_stone,omitempty"`
-	AssumptionNotes string   `json:"assumption_notes,omitempty"`
-	RollbackNotes   string   `json:"rollback_notes,omitempty"`
-	EvidenceRefs    []string `json:"evidence_refs,omitempty"`
+	ID                 string   `json:"id"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	Strengths          []string `json:"strengths,omitempty"`
+	WeakestLink        string   `json:"weakest_link"`
+	NoveltyMarker      string   `json:"novelty_marker,omitempty"`
+	Risks              []string `json:"risks,omitempty"`
+	SteppingStone      bool     `json:"stepping_stone,omitempty"`
+	SteppingStoneBasis string   `json:"stepping_stone_basis,omitempty"`
+	DiversityRole      string   `json:"diversity_role,omitempty"`
+	AssumptionNotes    string   `json:"assumption_notes,omitempty"`
+	RollbackNotes      string   `json:"rollback_notes,omitempty"`
+	EvidenceRefs       []string `json:"evidence_refs,omitempty"`
+}
+
+const (
+	MissingDataPolicyExplicitAbstain = "explicit_abstain"
+	MissingDataPolicyZero            = "zero"
+	MissingDataPolicyExclude         = "exclude"
+)
+
+// NormRule captures a single normalization rule for a comparison dimension.
+type NormRule struct {
+	Dimension string `json:"dimension"`
+	Method    string `json:"method"`
+}
+
+// ParityPlan captures the conditions under which a comparison is fair.
+type ParityPlan struct {
+	BaselineSet       []string   `json:"baseline_set,omitempty"`
+	Window            string     `json:"window,omitempty"`
+	Budget            string     `json:"budget,omitempty"`
+	Normalization     []NormRule `json:"normalization,omitempty"`
+	MissingDataPolicy string     `json:"missing_data_policy,omitempty"`
+	PinnedConditions  []string   `json:"pinned_conditions,omitempty"`
+}
+
+// IsStructured reports whether the plan is complete enough for strict parity enforcement.
+func (p ParityPlan) IsStructured() bool {
+	return len(p.BaselineSet) > 0 &&
+		p.Window != "" &&
+		p.Budget != "" &&
+		p.MissingDataPolicy != ""
+}
+
+// CharacterizationSnapshot stores a single characterization revision in structured form.
+type CharacterizationSnapshot struct {
+	Version    int                   `json:"version"`
+	Dimensions []ComparisonDimension `json:"dimensions,omitempty"`
+	ParityPlan *ParityPlan           `json:"parity_plan,omitempty"`
+}
+
+// PortfolioFields holds structured data for a SolutionPortfolio. Stored as JSON in StructuredData.
+type PortfolioFields struct {
+	ProblemRef               string            `json:"problem_ref,omitempty"`
+	Variants                 []Variant         `json:"variants,omitempty"`
+	Comparison               *ComparisonResult `json:"comparison,omitempty"`
+	NoSteppingStoneRationale string            `json:"no_stepping_stone_rationale,omitempty"`
 }
 
 // ComparisonResult holds the outcome of comparing variants.
@@ -245,18 +312,20 @@ type ComparisonResult struct {
 	Incomparable    [][]string                   `json:"incomparable,omitempty"`
 	PolicyApplied   string                       `json:"policy_applied,omitempty"`
 	SelectedRef     string                       `json:"selected_ref,omitempty"`
+	ParityPlan      *ParityPlan                  `json:"parity_plan,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.
 type EvidenceItem struct {
-	ID              string `json:"id"`
-	Type            string `json:"type"` // measurement, test, research, benchmark, audit
-	Content         string `json:"content"`
-	Verdict         string `json:"verdict,omitempty"` // supports, weakens, refutes
-	CarrierRef      string `json:"carrier_ref,omitempty"`
-	CongruenceLevel int    `json:"congruence_level,omitempty"` // 0-3
-	FormalityLevel  int    `json:"formality_level,omitempty"`  // 0-9
-	ValidUntil      string `json:"valid_until,omitempty"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"` // measurement, test, research, benchmark, audit
+	Content         string   `json:"content"`
+	Verdict         string   `json:"verdict,omitempty"` // supports, weakens, refutes
+	CarrierRef      string   `json:"carrier_ref,omitempty"`
+	CongruenceLevel int      `json:"congruence_level,omitempty"` // 0-3
+	FormalityLevel  int      `json:"formality_level,omitempty"`  // F0-F3 (legacy 0-9 normalized on read)
+	ClaimScope      []string `json:"claim_scope,omitempty"`
+	ValidUntil      string   `json:"valid_until,omitempty"`
 }
 
 // WriteWarning is returned when the operation succeeded but with non-fatal warnings.
@@ -292,6 +361,7 @@ type DriftStatus string
 const (
 	DriftNone       DriftStatus = "no_drift"
 	DriftModified   DriftStatus = "modified"
+	DriftAdded      DriftStatus = "added"
 	DriftMissing    DriftStatus = "file_missing"
 	DriftNoBaseline DriftStatus = "no_baseline"
 )
@@ -301,6 +371,7 @@ type DriftItem struct {
 	Path         string      `json:"path"`
 	Status       DriftStatus `json:"status"`
 	LinesChanged string      `json:"lines_changed,omitempty"` // e.g., "+8 -2"
+	Invariants   []string    `json:"invariants,omitempty"`
 }
 
 // DriftReport describes drift for a single decision.

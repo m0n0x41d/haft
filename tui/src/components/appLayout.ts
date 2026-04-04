@@ -1,4 +1,7 @@
-import type { AttachmentItem } from "./Attachments.js"
+import {
+  estimateAttachmentRows,
+  type AttachmentItem,
+} from "./attachmentLayout.js"
 
 const TOP_SEPARATOR_ROWS = 1
 const BOTTOM_SEPARATOR_ROWS = 1
@@ -8,15 +11,27 @@ interface BottomLayoutOptions {
   width: number
   queuedMessages: readonly string[]
   attachments: readonly AttachmentItem[]
+  attachmentSelection: boolean
   inputRows: number
   showInput: boolean
 }
 
 export function computeBottomRows(options: BottomLayoutOptions): number {
-  const { width, queuedMessages, attachments, inputRows, showInput } = options
+  const {
+    width,
+    queuedMessages,
+    attachments,
+    attachmentSelection,
+    inputRows,
+    showInput,
+  } = options
 
   const queuedRows = estimateQueuedMessageRows(queuedMessages, width)
-  const attachmentRows = estimateAttachmentRows(attachments)
+  const attachmentRows = estimateAttachmentRows({
+    items: attachments,
+    selectionMode: attachmentSelection,
+    width,
+  })
   const visibleInputRows = showInput
     ? Math.max(1, inputRows)
     : 0
@@ -52,12 +67,6 @@ export function estimateQueuedMessageRows(
 
     return sum + countWrappedLines(decoratedMessage, contentWidth)
   }, 0)
-}
-
-export function estimateAttachmentRows(
-  attachments: readonly AttachmentItem[],
-): number {
-  return attachments.length > 0 ? 1 : 0
 }
 
 function countWrappedLines(text: string, width: number): number {

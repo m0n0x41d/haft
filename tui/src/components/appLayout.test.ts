@@ -3,16 +3,17 @@ import { test } from "node:test"
 import {
   computeBottomRows,
   computeChatHeight,
-  estimateAttachmentRows,
   estimateInputRows,
   estimateQueuedMessageRows,
 } from "./appLayout.js"
+import { estimateAttachmentRows } from "./attachmentLayout.js"
 
 test("keeps the legacy four-row footprint for an empty prompt", () => {
   const bottomRows = computeBottomRows({
     width: 80,
     queuedMessages: [],
     attachments: [],
+    attachmentSelection: false,
     inputRows: estimateInputRows(""),
     showInput: true,
   })
@@ -28,11 +29,12 @@ test("adds queued rows, one attachment strip row, and multiline input rows", () 
       { id: 1, name: "Image #1", path: "/tmp/one.png", isImage: true },
       { id: 2, name: "notes.md", path: "/tmp/notes.md", isImage: false },
     ],
+    attachmentSelection: false,
     inputRows: estimateInputRows("alpha\nbeta\ngamma"),
     showInput: true,
   })
 
-  assert.equal(bottomRows, 9)
+  assert.equal(bottomRows, 10)
 })
 
 test("wraps queued message rows to the available terminal width", () => {
@@ -46,6 +48,7 @@ test("drops input rows when the prompt is hidden", () => {
     width: 80,
     queuedMessages: [],
     attachments: [],
+    attachmentSelection: false,
     inputRows: estimateInputRows("alpha\nbeta"),
     showInput: false,
   })
@@ -57,10 +60,31 @@ test("collapses the transcript before keeping a stale minimum height", () => {
   assert.equal(computeChatHeight(6, 8), 0)
 })
 
-test("reports a single attachment strip row when attachments are present", () => {
-  const rows = estimateAttachmentRows([
-    { id: 1, name: "clip.png", path: "/tmp/clip.png", isImage: true },
-  ])
+test("reserves rows for a pasted image plus multiline prompt text", () => {
+  const bottomRows = computeBottomRows({
+    width: 32,
+    queuedMessages: [],
+    attachments: [
+      { id: 1, name: "clip.png", path: "/tmp/clip.png", isImage: true },
+    ],
+    attachmentSelection: false,
+    inputRows: estimateInputRows("first line\nsecond line\nthird line"),
+    showInput: true,
+  })
 
-  assert.equal(rows, 1)
+  assert.equal(bottomRows, 8)
+})
+
+test("reserves wrapped attachment rows before the prompt for multiple images", () => {
+  const rows = estimateAttachmentRows({
+    items: [
+      { id: 1, name: "clip-1.png", path: "/tmp/clip-1.png", isImage: true },
+      { id: 2, name: "clip-2.png", path: "/tmp/clip-2.png", isImage: true },
+      { id: 3, name: "clip-3.png", path: "/tmp/clip-3.png", isImage: true },
+    ],
+    selectionMode: true,
+    width: 18,
+  })
+
+  assert.equal(rows, 6)
 })

@@ -81810,14 +81810,14 @@ function App2({ client: client2, inputEvents }) {
       setRedrawTick((t) => t + 1);
       return;
     }
-    if (key.ctrl && (input === "q" || input === "y")) {
+    if (key.ctrl && input === "q") {
       const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic";
       dispatch({ type: "toggle.autonomy" });
       client2.send("autonomy.toggle", { autonomous: newMode === "autonomous" });
-      dispatch({ type: "set.notification", text: `${newMode} mode` });
+      dispatch({ type: "set.notification", text: newMode === "autonomous" ? "auto enabled" : "auto disabled" });
       return;
     }
-    if (key.ctrl && input === "t") {
+    if (key.ctrl && input === "y") {
       const nextYolo = !state.yolo;
       dispatch({ type: "toggle.yolo" });
       client2.send("yolo.toggle", { yolo: nextYolo });

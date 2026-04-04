@@ -23,7 +23,8 @@ import { InputArea, type InputAreaHandle } from "./InputArea.js"
 import { PermissionDialog } from "./PermissionDialog.js"
 import { QuestionDialog } from "./QuestionDialog.js"
 import { Picker, type PickerItem } from "./Picker.js"
-import { Attachments, type AttachmentItem } from "./Attachments.js"
+import { Attachments } from "./Attachments.js"
+import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
 
 type PickerMode = null | "sessions" | "models" | "files" | "commands"
@@ -138,9 +139,10 @@ export function App({ client, inputEvents }: AppProps) {
     width,
     queuedMessages,
     attachments,
+    attachmentSelection,
     inputRows,
     showInput,
-  }), [width, queuedMessages, attachments, inputRows, showInput])
+  }), [width, queuedMessages, attachments, attachmentSelection, inputRows, showInput])
   const chatHeight = computeChatHeight(height, bottomRows)
   const { entryHeights, measureRef } = useMeasuredTranscript(
     transcript,
@@ -291,6 +293,18 @@ export function App({ client, inputEvents }: AppProps) {
     setAttachments([])
     setAttachmentSelection(false)
   }, [client, attachments])
+
+  const handleRemoveAttachment = useCallback((id: number) => {
+    setAttachments((current) => {
+      const next = current.filter((item) => item.id !== id)
+
+      if (next.length === 0) {
+        setAttachmentSelection(false)
+      }
+
+      return next
+    })
+  }, [])
   handleSubmitRef.current = handleSubmit
 
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
@@ -461,7 +475,13 @@ export function App({ client, inputEvents }: AppProps) {
 
       {/* Attachments */}
       {attachments.length > 0 && (
-        <Attachments items={attachments} onRemove={(id) => { setAttachments((a) => a.filter((x) => x.id !== id)); if (attachments.length <= 1) setAttachmentSelection(false) }} selectionMode={attachmentSelection} onExitSelection={() => setAttachmentSelection(false)} />
+        <Attachments
+          items={attachments}
+          onRemove={handleRemoveAttachment}
+          selectionMode={attachmentSelection}
+          onExitSelection={() => setAttachmentSelection(false)}
+          width={width}
+        />
       )}
 
       {/* Input */}

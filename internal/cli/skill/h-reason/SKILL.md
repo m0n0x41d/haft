@@ -41,9 +41,11 @@ The user wants to drive the cycle themselves. Gather context (read relevant code
 The user wants the agent to drive the reasoning work, but not to make the final choice. Run frame → characterize if needed → explore → compare in one pass. **Do not stop after frame. Do not require a manual `/h-explore` or `/h-compare` step after frame.** Stop after compare, show the Pareto front, and ask the human to choose. The Transformer Mandate applies at the compare → decide boundary: the agent may frame/explore/compare when delegated, but the human still chooses the winning variant before `/h-decide`.
 
 ### Path 5: Full autonomous cycle (agent drives)
-**Trigger:** "/h-reason [topic] and implement", "figure out the best approach and do it", "fix everything", explicit delegation to agent
+**Trigger:** "/h-reason [topic] and implement" or equivalent implementation delegation ONLY when autonomous mode is already enabled for the session (Ctrl+Q / interaction=autonomous).
 
 The user wants the agent to run the full cycle: frame → explore → compare → decide → implement. Only in this mode does the agent drive without pausing.
+
+If autonomous mode is OFF, phrases like "figure out the best approach and do it" or "fix everything" are NOT enough to skip the compare → decide pause by themselves. Treat them as Path 4 delegated reasoning or ask whether the user wants to enable autonomous execution.
 
 **If unclear which path:** default to Path 3 (prepare and wait). Never default to Path 5. Ask: "Want me to think this through and present options, drive the reasoning through compare and stop for your choice, or drive the full cycle and implement?"
 

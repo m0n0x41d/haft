@@ -78,3 +78,37 @@ func TestBindArtifact_AdoptClearsComparedPortfolioWhenAdoptedPortfolioWasNotComp
 		t.Fatalf("Phase = %s, want %s", updated.Phase, PhaseExplorer)
 	}
 }
+
+func TestBindArtifact_AdoptClearsStaleRefsWhenNewProblemHasNoRelatedArtifacts(t *testing.T) {
+	cycle := &Cycle{
+		Status:               CycleActive,
+		ProblemRef:           "prob-old",
+		PortfolioRef:         "port-old",
+		ComparedPortfolioRef: "port-old",
+		DecisionRef:          "dec-old",
+	}
+
+	updated := BindArtifact(cycle, ArtifactMeta{
+		Kind:        "problem",
+		Operation:   "adopt",
+		ArtifactRef: "prob-new",
+	})
+	if updated == nil {
+		t.Fatal("expected updated cycle")
+	}
+	if updated.ProblemRef != "prob-new" {
+		t.Fatalf("ProblemRef = %q, want prob-new", updated.ProblemRef)
+	}
+	if updated.PortfolioRef != "" {
+		t.Fatalf("PortfolioRef = %q, want empty", updated.PortfolioRef)
+	}
+	if updated.ComparedPortfolioRef != "" {
+		t.Fatalf("ComparedPortfolioRef = %q, want empty", updated.ComparedPortfolioRef)
+	}
+	if updated.DecisionRef != "" {
+		t.Fatalf("DecisionRef = %q, want empty", updated.DecisionRef)
+	}
+	if updated.Phase != PhaseExplorer {
+		t.Fatalf("Phase = %s, want %s", updated.Phase, PhaseExplorer)
+	}
+}

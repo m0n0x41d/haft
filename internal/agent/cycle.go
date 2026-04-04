@@ -113,13 +113,9 @@ func BindArtifact(cycle *Cycle, meta ArtifactMeta) *Cycle {
 		}
 		if meta.Operation == "adopt" {
 			updated.ProblemRef = meta.ArtifactRef
-			if meta.AdoptPortfolioRef != "" {
-				updated.PortfolioRef = meta.AdoptPortfolioRef
-				updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
-			}
-			if meta.AdoptDecisionRef != "" {
-				updated.DecisionRef = meta.AdoptDecisionRef
-			}
+			updated.PortfolioRef = meta.AdoptPortfolioRef
+			updated.ComparedPortfolioRef = meta.ComparedPortfolioRef
+			updated.DecisionRef = meta.AdoptDecisionRef
 			bound = true
 		}
 	case "solution":

@@ -16,38 +16,33 @@ This skill activates structured engineering reasoning powered by FPF (First Prin
 
 ## Context-aware entry — read what the user actually wants
 
-**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. FPF reasoning and FPF artifact persistence are different things. There are five distinct paths:
+**Before doing anything, assess the user's intent from context and arguments.** Do NOT always fall through into the full FPF cycle. FPF reasoning and FPF artifact persistence are different things. Use this canonical interaction matrix:
 
-### Path 1: Think and respond (no artifacts)
-**Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?"
+### Direct response / direct action
+**Trigger:** "think about X", "what do you think about X", "analyze X", "is this the right approach?", "what are our options?", "save this as md", "make this a ranked list", "turn this into a checklist", "move this to .context", "summarize what you found"
 
-The user wants structured thinking, not tool calls. Reason through the problem using FPF principles (weakest link, parity, distinguish object/description/carrier, etc.). Give a well-structured answer. **Do not call Haft MCP tools** unless the user explicitly asks to persist something.
+The user wants structured thinking, packaging, persistence, formatting, or summarization. Reason through the problem or do the direct artifact work with normal tools. **Do not call Haft MCP tools** unless the user explicitly asks to persist something.
 
 This also applies when the user says things like "use FPF in your thinking". That means use FPF as a reasoning discipline, not automatically as an artifact workflow.
 
-### Path 2: Direct operational/artifact action (no FPF artifacts)
-**Trigger:** "save this as md", "make this a ranked list", "turn this into a checklist", "move this to .context", "summarize what you found"
-
-The user wants packaging, persistence, formatting, or summarization. Do the direct action with normal tools. **Do not call Haft MCP tools** just because the content concerns engineering.
-
-### Path 3: Prepare for human-driven cycle (research + wait)
+### Research / prepare-and-wait
 **Trigger:** "/h-reason [topic], prepare for framing", "let's think about X before deciding", "I want to reason through X"
 
 The user wants to drive the cycle themselves. Gather context (read relevant code, search existing decisions, research). Present findings. **Stop and wait** for the user to decide the next step — they will call `/h-frame`, `/h-char`, etc. when ready.
 
-### Path 4: Delegated reasoning (agent drives through compare, then waits)
+### Delegated reasoning
 **Trigger:** "/h-reason [topic], go ahead", "work through the options and bring me a recommendation", "frame it and compare approaches", natural-language delegation like "давай" / "do it" / "go ahead" when autonomous mode is NOT enabled
 
 The user wants the agent to drive the reasoning work, but not to make the final choice. Run frame → characterize if needed → explore → compare in one pass. **Do not stop after frame. Do not require a manual `/h-explore` or `/h-compare` step after frame.** Stop after compare, show the Pareto front, and ask the human to choose. The Transformer Mandate applies at the compare → decide boundary: the agent may frame/explore/compare when delegated, but the human still chooses the winning variant before `/h-decide`.
 
-### Path 5: Full autonomous cycle (agent drives)
+### Autonomous execution
 **Trigger:** "/h-reason [topic] and implement" or equivalent implementation delegation ONLY when autonomous mode is already enabled for the session (Ctrl+Q / interaction=autonomous).
 
 The user wants the agent to run the full cycle: frame → explore → compare → decide → implement. Only in this mode does the agent drive without pausing.
 
-If autonomous mode is OFF, phrases like "figure out the best approach and do it" or "fix everything" are NOT enough to skip the compare → decide pause by themselves. Treat them as Path 4 delegated reasoning or ask whether the user wants to enable autonomous execution.
+If autonomous mode is OFF, phrases like "figure out the best approach and do it" or "fix everything" are NOT enough to skip the compare → decide pause by themselves. Treat them as delegated reasoning or ask whether the user wants to enable autonomous execution.
 
-**If unclear which path:** default to Path 3 (prepare and wait). Never default to Path 5. Ask: "Want me to think this through and present options, drive the reasoning through compare and stop for your choice, or drive the full cycle and implement?"
+**If unclear which mode:** default to research / prepare-and-wait. Never default to autonomous execution. Ask: "Want me to answer directly, prepare and wait, drive the reasoning through compare and stop for your choice, or drive the full cycle and implement?"
 
 ---
 
@@ -269,8 +264,8 @@ This closes the lemniscate. Without measure, the decision stays open.
 ### User steering
 
 Slash commands are steering handles, not always mandatory triggers:
-- In **Path 3** (research + wait), the user explicitly triggers `/h-frame`, `/h-char`, `/h-explore`, or `/h-compare` when ready.
-- In **Path 4** (delegated reasoning), natural-language delegation like "давай", "do it", or "go ahead" is enough to continue through frame → explore → compare without waiting for a manual `/h-explore`.
+- In **research / prepare-and-wait** mode, the user explicitly triggers `/h-frame`, `/h-char`, `/h-explore`, or `/h-compare` when ready.
+- In **delegated reasoning** mode, natural-language delegation like "давай", "do it", or "go ahead" is enough to continue through frame → explore → compare without waiting for a manual `/h-explore`.
 - In symbiotic reasoning, stop at comparison and wait for the human's post-compare choice before `/h-decide`.
 - `/h-frame` — full problem framing (diagnostic conversation)
 - `/h-explore` — variant generation
@@ -286,8 +281,8 @@ The `── Quint ──` strip appended to tool responses shows current state a
 - **"Available:" = menu for the user, not instructions for the agent.** Do not auto-execute these actions.
 - **Mode determines flow shape** — tactical skips exploration; standard includes explore/compare. The Available line reflects the current mode.
 - **Fewer steps ≠ a weaker decision boundary.** Tactical mode may skip some artifacts, but in delegated reasoning it still may auto-advance through frame/explore/compare; the mandatory pause is the post-compare human choice before `/h-decide`.
-- **Path 3 vs Path 4:** In research + wait mode, do not auto-advance from Available actions. In delegated reasoning mode, you may advance through frame/explore/compare without extra slash commands.
-- **Path 5 override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") may the agent proceed through decide/implement/measure without pausing.
+- **Research / prepare-and-wait vs delegated reasoning:** In research + wait mode, do not auto-advance from Available actions. In delegated reasoning mode, you may advance through frame/explore/compare without extra slash commands.
+- **Autonomous execution override:** Only when the user has explicitly delegated full autonomy ("and implement", "fix everything") and autonomy is enabled may the agent proceed through decide/implement/measure without pausing.
 
 ---
 

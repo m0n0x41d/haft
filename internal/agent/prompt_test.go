@@ -15,8 +15,11 @@ func TestBuildSystemPrompt_ResearchOnlyAndDelegatedReasoningMatrix(t *testing.T)
 	})
 
 	required := []string{
+		`### Canonical interaction matrix`,
+		`Direct response / direct action requests`,
 		`Research / prepare-and-wait requests`,
 		`Delegated reasoning requests`,
+		`Autonomous execution requests`,
 		`frame → explore → compare`,
 		`Do NOT stop after frame or explore.`,
 		`Do NOT require manual "/explore" or "/compare" after frame.`,
@@ -30,6 +33,10 @@ func TestBuildSystemPrompt_ResearchOnlyAndDelegatedReasoningMatrix(t *testing.T)
 
 	if strings.Contains(prompt, "After frame and after explore: STOP and present your work. Wait for user.") {
 		t.Fatal("prompt still contains blanket stop-after-frame instruction")
+	}
+
+	if strings.Contains(prompt, `"давай" / "do it" / "go ahead" = START WORKING`) {
+		t.Fatal("prompt still treats ordinary go-ahead language as unconditional autonomous execution")
 	}
 }
 

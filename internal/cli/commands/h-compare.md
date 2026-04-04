@@ -6,6 +6,13 @@ description: "Compare solution variants fairly on the Pareto front"
 
 Run a parity comparison across variants using defined dimensions. Identifies the Pareto front (non-dominated set).
 
+## Fit in the canonical interaction matrix
+
+- **Direct response / direct action**: do not use `/h-compare`; answer directly or do the packaging task.
+- **Research / prepare-and-wait**: gather context and stop; the human may invoke `/h-compare` later when ready.
+- **Delegated reasoning**: use `/h-compare` after frame/explore, present the Pareto front and recommendation, then stop for the human's choice.
+- **Autonomous execution**: use the same comparison standard, but continue into `/h-decide` and implementation only when full autonomy is explicitly enabled.
+
 Use `haft_solution` tool with `action="compare"` and:
 - `portfolio_ref`: SolutionPortfolio ID (auto-detected if only one active)
 - `dimensions`: comparison dimension names

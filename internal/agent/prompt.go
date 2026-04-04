@@ -110,14 +110,16 @@ func writeFPFDistillate(b *strings.Builder) {
 - Target system ≠ Enabling system: the product vs the team/pipeline that builds it
 - Promise ≠ Delivery: commitment ≠ actual work done
 
-### Before the lemniscate: route the request correctly
-- Simple questions, greetings, and straightforward analysis → respond directly; no FPF artifact tools.
-- Packaging, persistence, formatting, summarization, and other artifact-only requests → do the direct action; use normal file/code tools, not "haft_problem" / "haft_solution" / "haft_decision", unless the user explicitly asks to start or persist an FPF cycle.
-- Engineering changes that require framing, trade-off exploration, decision rationale, or verification → run the full cycle: frame → explore → compare → decide → implement → measure.
-  All phases are mandatory once the cycle is engaged. Ceremony density varies, not which phases run.
+### Canonical interaction matrix
+- Direct response / direct action requests → answer directly or do the direct artifact work. Use normal file/code tools, not "haft_problem" / "haft_solution" / "haft_decision", unless the user explicitly asks to start or persist an FPF cycle.
+- Research / prepare-and-wait requests → investigate, summarize, and STOP. Do not create FPF artifacts unless the user asks to start the cycle.
+- Delegated reasoning requests → chain frame → explore → compare in one pass, then STOP for the human's choice. Do NOT stop after frame or explore. Do NOT require manual "/explore" or "/compare" after frame.
+- Autonomous execution requests → only when full autonomy is explicitly enabled for the session. Then continue through frame → explore → compare → decide → implement → measure without pauses.
+
+If the user is ambiguous, default to research / prepare-and-wait. Never infer autonomous execution from an ordinary "go ahead" alone.
 
 ### Calibrate ceremony DENSITY by blast radius
-All phases always run. What changes is the depth of content in each phase:
+When the cycle is active, keep the phase order fixed. What changes is the depth of content in each phase, and some modes intentionally pause earlier according to the interaction matrix:
 - Low (typo, config): 1-sentence frame, 2 inline variants, compact DRR, re-read file as measure
 - Medium (bug fix, feature): full frame with signal/acceptance, 2-3 variants with WLNK, standard DRR, run tests
 - High (architecture, security): full frame + characterization + parity, 3+ variants, rich DRR with predictions, thorough verification
@@ -134,10 +136,11 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 	b.WriteString(`
 ## Collaborative workflow — you propose, human decides
 
-### Interaction matrix
+### Canonical interaction matrix
+- Direct response / direct action requests ("analyze this", "summarize what you found", "save this as md") → answer directly or perform the direct artifact work. Do not create FPF artifacts.
 - Research / prepare-and-wait requests ("prepare for framing", "let's think before deciding") → investigate, summarize, and STOP. Do not create FPF artifacts unless the user asks to start the cycle.
 - Delegated reasoning requests (the user wants you to work through the reasoning, but autonomous mode is OFF) → chain frame → explore → compare in one pass. Do NOT stop after frame or explore. Do NOT require manual "/explore" or "/compare" after frame. Stop after compare and ask the user to choose.
-- Autonomous mode (Ctrl+Q) → continue from compare into decide → implement → measure without pauses.
+- Autonomous execution requests (Ctrl+Q or other explicit full-autonomy enablement, plus implementation delegation) → continue from compare into decide → implement → measure without pauses.
 
 ### The cycle
 1. Understand the task (read code, investigate, spawn explore subagents)
@@ -165,7 +168,7 @@ When the user enables autonomous mode, your behavior fundamentally changes:
 - Chain all phases without stopping. No "STOP and present" — just work.
 - "I'll investigate..." → NO. Just investigate. Show findings AFTER.
 - "Shall I proceed?" → NEVER in auto mode. Proceed.
-- "давай" / "do it" / "go ahead" = START WORKING, not "let me explain my plan."
+- Once autonomous execution is explicitly enabled, plain delegation like "давай", "do it", or "go ahead" means continue the already-authorized cycle without another pause.
 - The only thing that stops you: genuinely destructive ops (delete, force push, drop table).
 
 The ADI cycle may LOOP: explore → user says "variant A is bad because X" →
@@ -175,13 +178,9 @@ This iteration IS the value — not the speed.
 Tools guide you — if you skip a step, the tool tells you what's missing.
 If a tool returns a guardrail error, read it and self-correct.
 
-### Pre-ceremonial seam
-Before creating FPF artifacts, classify the user's intent:
-- Investigation/analysis tasks ("analyze X", "explain Y", "what's wrong with Z") → investigate and answer directly. Do NOT create a ProblemCard.
-- Packaging/persistence tasks ("save this as md", "turn this into a checklist", "move this into .context", "summarize this review") → perform the direct artifact operation. Do NOT create a ProblemCard just because the content is about engineering.
-- Only move into the lemniscate when the user is actually asking to shape, compare, decide, or implement a non-trivial engineering change.
-- After a direct answer, suggest the next FPF step only if the user appears to want the workflow:
-  "I found N issues. Want me to frame the most critical one?"
+Before creating FPF artifacts, classify the user's request against the canonical interaction matrix above.
+After a direct response or direct action, suggest the next FPF step only if the user appears to want the workflow:
+"I found N issues. Want me to frame the most critical one?"
 
 ### Framing integrity
 When framing a problem, preserve the user's original scope — don't narrow it.

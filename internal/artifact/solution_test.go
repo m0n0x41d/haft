@@ -233,7 +233,7 @@ func TestCompareSolutions_Success(t *testing.T) {
 			Scores: map[string]map[string]string{
 				"Kafka":         {"throughput": "200k/s", "ops complexity": "High", "cost": "$800"},
 				"NATS":          {"throughput": "100k/s", "ops complexity": "Low", "cost": "$200"},
-				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low", "cost": "$100"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low", "cost": "$250"},
 			},
 			NonDominatedSet: []string{"Kafka", "NATS"},
 			DominatedVariants: []DominatedVariantExplanation{
@@ -631,7 +631,7 @@ func TestCompareSolutions_NoDimensions(t *testing.T) {
 	}
 }
 
-func TestCompareSolutions_NoPareto(t *testing.T) {
+func TestCompareSolutions_ComputesParetoFrontWithoutNonDominatedSet(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -644,14 +644,151 @@ func TestCompareSolutions_NoPareto(t *testing.T) {
 		NoSteppingStoneRationale: "Both options are direct candidates.",
 	})
 
-	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
 		PortfolioRef: p.Meta.ID,
 		Results: ComparisonResult{
-			Dimensions: []string{"speed"},
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"A": {"latency": "10ms"},
+				"B": {"latency": "5ms"},
+			},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher latency with no offsetting advantage in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest latency in the compared pair."},
+			},
 		},
 	})
-	if err == nil {
-		t.Error("expected error for missing non_dominated_set")
+	if err != nil {
+		t.Fatalf("expected compare to compute the Pareto front, got %v", err)
+	}
+	if !strings.Contains(a.Body, "**Computed Pareto front:** B") {
+		t.Fatalf("expected computed Pareto front in body, got %s", a.Body)
+	}
+}
+
+func TestCompareSolutions_WarnsWhenAdvisoryParetoSetDisagrees(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("Kafka", "ops complexity", "Maximize throughput with established streaming ecosystem"),
+			testVariant("NATS", "ecosystem maturity", "Lean embedded broker with simpler cluster operations"),
+			testVariant("Redis Streams", "durability risk", "Reuse existing Redis footprint for the fastest rollout"),
+		},
+		NoSteppingStoneRationale: "All options are direct implementation candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"throughput", "ops complexity", "cost"},
+			Scores: map[string]map[string]string{
+				"Kafka":         {"throughput": "200k/s", "ops complexity": "High", "cost": "$800"},
+				"NATS":          {"throughput": "100k/s", "ops complexity": "Low", "cost": "$200"},
+				"Redis Streams": {"throughput": "80k/s", "ops complexity": "Low", "cost": "$250"},
+			},
+			NonDominatedSet: []string{"Kafka"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "Redis Streams",
+					DominatedBy: []string{"NATS"},
+					Summary:     "Lower throughput with no compensating simplicity or cost advantage over NATS.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Kafka", Summary: "Maximizes throughput, but carries the highest operating burden."},
+				{Variant: "NATS", Summary: "Minimizes ops complexity and cost, but gives up throughput headroom."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Body, "provided non_dominated_set disagrees with the computed Pareto front") {
+		t.Fatalf("expected advisory-front mismatch warning, body: %s", a.Body)
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		t.Fatal("expected structured comparison payload")
+	}
+	if got := fields.Comparison.NonDominatedSet; len(got) != 2 || got[0] != "V1" || got[1] != "V2" {
+		t.Fatalf("expected stored computed front [V1 V2], got %+v", got)
+	}
+}
+
+func TestComputeParetoFront_SimpleDominance(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "cost"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "42ms", "cost": "$180"},
+			"V2": {"latency": "18ms", "cost": "$120"},
+		},
+	}
+
+	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "cost", Role: "target", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", warnings)
+	}
+	if len(front) != 1 || front[0] != "V2" {
+		t.Fatalf("expected front [V2], got %+v", front)
+	}
+}
+
+func TestComputeParetoFront_KeepsTiesAndMissingScoresOnFront(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "cost"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "cost": "$100"},
+			"V2": {"latency": "10ms", "cost": "$100"},
+			"V3": {"latency": "8ms"},
+		},
+	}
+
+	front, warnings := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "cost", Role: "target", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", warnings)
+	}
+	if !sameTrimmedSet(front, []string{"V1", "V2", "V3"}) {
+		t.Fatalf("expected missing-score abstain to keep all variants on the front, got %+v", front)
+	}
+}
+
+func TestComputeParetoFront_ExcludesObservationDimensions(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"throughput", "page count"},
+		Scores: map[string]map[string]string{
+			"V1": {"throughput": "100k/s", "page count": "10"},
+			"V2": {"throughput": "80k/s", "page count": "1"},
+		},
+	}
+
+	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "throughput", Role: "target", Polarity: "higher_better"},
+		{Name: "page count", Role: "observation", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", warnings)
+	}
+	if len(front) != 1 || front[0] != "V1" {
+		t.Fatalf("expected observation dimension to be ignored and V1 to dominate, got %+v", front)
 	}
 }
 

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,9 +59,10 @@ type CompareValidationContext struct {
 
 // CompareValidationResult carries the pure outputs of compare-time validation.
 type CompareValidationResult struct {
-	Warnings         []string
-	EffectiveParity  *ParityPlan
-	ComparedVariants []string
+	Warnings            []string
+	EffectiveParity     *ParityPlan
+	ComparedVariants    []string
+	ComputedParetoFront []string
 }
 
 // ValidateExploreInput checks variant constraints. Pure.
@@ -387,6 +391,7 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	}
 
 	validatedResults := normalizeComparisonResult(input.Results, validation.ComparedVariants)
+	validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
 	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
 
 	// Pure: build comparison section + apply to body
@@ -439,9 +444,6 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	result := CompareValidationResult{}
 	if len(input.Results.Dimensions) == 0 {
 		return result, fmt.Errorf("at least one comparison dimension is required")
-	}
-	if len(input.Results.NonDominatedSet) == 0 {
-		return result, fmt.Errorf("non_dominated_set is required — which variants are on the Pareto front?")
 	}
 
 	rawScoredVariants := comparedVariantsFromScores(input.Results.Scores)
@@ -533,9 +535,6 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		if !containsString(comparedVariants, variantID) {
 			return result, fmt.Errorf("dominated_variants variant %q is outside the declared compare set", variantID)
 		}
-		if containsString(input.Results.NonDominatedSet, variantID) {
-			return result, fmt.Errorf("dominated_variants variant %q is on the Pareto front — move its explanation to pareto_tradeoffs", variantID)
-		}
 		if strings.TrimSpace(note.Summary) == "" {
 			return result, fmt.Errorf("dominated_variants variant %q is missing summary", variantID)
 		}
@@ -550,20 +549,12 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		if variantID == "" {
 			return result, fmt.Errorf("pareto_tradeoffs entry is missing variant")
 		}
-		if !containsString(input.Results.NonDominatedSet, variantID) {
-			return result, fmt.Errorf("pareto_tradeoffs variant %q is not on the Pareto front", variantID)
+		if !containsString(comparedVariants, variantID) {
+			return result, fmt.Errorf("pareto_tradeoffs variant %q is outside the declared compare set", variantID)
 		}
 		if strings.TrimSpace(note.Summary) == "" {
 			return result, fmt.Errorf("pareto_tradeoffs variant %q is missing summary", variantID)
 		}
-	}
-	if err := validateComparisonExplanationCoverage(
-		comparedVariants,
-		input.Results.NonDominatedSet,
-		input.Results.DominatedVariants,
-		input.Results.ParetoTradeoffs,
-	); err != nil {
-		return result, err
 	}
 	for _, pair := range input.Results.Incomparable {
 		for _, variantID := range pair {
@@ -608,6 +599,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		}
 	}
 
+	missingDataPolicy := comparisonMissingDataPolicy(result.EffectiveParity)
 	for _, dimension := range input.Results.Dimensions {
 		role := "target"
 		if characterized, ok := charByName[normalizeArtifactKey(dimension)]; ok && characterized.Role != "" {
@@ -621,13 +613,45 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		if len(missingVariants) == 0 {
 			continue
 		}
+		if missingDataPolicy == MissingDataPolicyExclude || missingDataPolicy == MissingDataPolicyZero {
+			warnings = append(warnings,
+				fmt.Sprintf("dimension '%s' has missing scores for variants %s; continuing under missing_data_policy=%s",
+					dimension, strings.Join(missingVariants, ", "), missingDataPolicy))
+			continue
+		}
 		if role == "constraint" {
 			return result, fmt.Errorf("constraint dimension '%s' missing values for variants: %s", dimension, strings.Join(missingVariants, ", "))
 		}
 		return result, fmt.Errorf("target dimension '%s' missing scores for variants: %s", dimension, strings.Join(missingVariants, ", "))
 	}
 
+	computedFront, computeWarnings := computeParetoFront(
+		input.Results,
+		comparedVariants,
+		ctx.CharacterizedDimensions,
+		missingDataPolicy,
+	)
+	result.ComputedParetoFront = computedFront
+	warnings = append(warnings, computeWarnings...)
+	if len(input.Results.NonDominatedSet) > 0 && !sameTrimmedSet(input.Results.NonDominatedSet, computedFront) {
+		warnings = append(warnings,
+			fmt.Sprintf("provided non_dominated_set disagrees with the computed Pareto front; storing computed front: %s",
+				strings.Join(computedFront, ", ")))
+	}
+	if input.Results.SelectedRef != "" && !containsString(computedFront, input.Results.SelectedRef) {
+		warnings = append(warnings,
+			fmt.Sprintf("selected_ref %q is outside the computed Pareto front; verify that the compared dimensions capture the real selection policy",
+				input.Results.SelectedRef))
+	}
 	warnings = append(warnings, parityChecklistWarnings(ctx.CharacterizedDimensions)...)
+	if err := validateComparisonExplanationCoverage(
+		comparedVariants,
+		computedFront,
+		input.Results.DominatedVariants,
+		input.Results.ParetoTradeoffs,
+	); err != nil {
+		return result, err
+	}
 	result.Warnings = warnings
 	return result, nil
 }
@@ -682,7 +706,7 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 		section.WriteString("\n")
 	}
 
-	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Pareto front:** %s\n\n",
+	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Computed Pareto front:** %s\n\n",
 		strings.Join(displayVariantLabels(results.NonDominatedSet, displayLabels), ", ")))
 
 	if len(results.DominatedVariants) > 0 {
@@ -757,8 +781,29 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 type charDim struct {
 	Name       string
 	Role       string // constraint, target, observation
+	Polarity   string // higher_better, lower_better
 	ValidUntil string // measurement freshness (RFC3339 or empty)
 }
+
+type pairwiseDominance int
+
+const (
+	pairwiseTie pairwiseDominance = iota
+	pairwiseLeftDominates
+	pairwiseRightDominates
+	pairwiseIncomparable
+)
+
+type numericScore struct {
+	Value float64
+	Unit  string
+}
+
+type ordinalScore struct {
+	Rank int
+}
+
+var numericScorePattern = regexp.MustCompile(`^\s*([^\d+\-]*)([+\-]?\d[\d,]*(?:\.\d+)?)([kKmMbB]?)(.*)$`)
 
 type portfolioVariantIdentity struct {
 	Key     string
@@ -1189,7 +1234,7 @@ func parityChecklistWarnings(dims []charDim) []string {
 				fmt.Sprintf("  - CONSTRAINT '%s': is it satisfied by all variants?", dimension.Name))
 		case "observation":
 			warnings = append(warnings,
-				fmt.Sprintf("  - OBSERVE '%s': monitored under same conditions? (don't optimize)", dimension.Name))
+				fmt.Sprintf("  - OBSERVE '%s': monitored under same conditions? (excluded from Pareto dominance)", dimension.Name))
 		default:
 			warnings = append(warnings,
 				fmt.Sprintf("  - TARGET '%s': measured under same conditions for all variants?", dimension.Name))
@@ -1231,9 +1276,11 @@ func structuredCharacterizedDimensions(snapshot CharacterizationSnapshot) []char
 		if role == "" {
 			role = "target"
 		}
+		polarity := strings.TrimSpace(dimension.Polarity)
 		dims = append(dims, charDim{
 			Name:       strings.TrimSpace(dimension.Name),
 			Role:       role,
+			Polarity:   polarity,
 			ValidUntil: strings.TrimSpace(dimension.ValidUntil),
 		})
 	}
@@ -1584,6 +1631,29 @@ func dedupeTrimmedStrings(values []string) []string {
 	return deduped
 }
 
+func sameTrimmedSet(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	leftSet := dedupeTrimmedStrings(left)
+	rightSet := dedupeTrimmedStrings(right)
+	if len(leftSet) != len(rightSet) {
+		return false
+	}
+
+	sort.Strings(leftSet)
+	sort.Strings(rightSet)
+
+	for index := range leftSet {
+		if leftSet[index] != rightSet[index] {
+			return false
+		}
+	}
+
+	return true
+}
+
 // extractCharacterizedDimensions parses dimension names and roles from the latest
 // Characterization table in a ProblemCard body. Returns nil if no characterization found.
 func extractCharacterizedDimensions(body string) []string {
@@ -1612,6 +1682,7 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 	inTable := false
 	hasRoleColumn := false
 	hasValidUntilColumn := false
+	hasPolarityColumn := false
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
@@ -1623,6 +1694,7 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 		if strings.Contains(line, "Dimension") {
 			hasRoleColumn = strings.Contains(line, "Role")
 			hasValidUntilColumn = strings.Contains(line, "Valid Until")
+			hasPolarityColumn = strings.Contains(line, "Polarity")
 			inTable = true
 			continue
 		}
@@ -1648,6 +1720,19 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 				role = r
 			}
 		}
+		polarity := ""
+		if hasPolarityColumn {
+			polarityIndex := 4
+			if hasRoleColumn {
+				polarityIndex = 5
+			}
+			if polarityIndex < len(parts) {
+				value := strings.TrimSpace(parts[polarityIndex])
+				if value != "" && value != "-" {
+					polarity = value
+				}
+			}
+		}
 		validUntil := ""
 		if hasValidUntilColumn {
 			// Valid Until is the last data column
@@ -1656,9 +1741,317 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 				validUntil = lastCol
 			}
 		}
-		dims = append(dims, charDim{Name: name, Role: role, ValidUntil: validUntil})
+		dims = append(dims, charDim{Name: name, Role: role, Polarity: polarity, ValidUntil: validUntil})
 	}
 	return dims
+}
+
+func computeParetoFront(
+	results ComparisonResult,
+	comparedVariants []string,
+	characterized []charDim,
+	missingDataPolicy string,
+) ([]string, []string) {
+	specs, warnings := effectiveDominanceDimensions(results.Dimensions, characterized)
+	if len(specs) == 0 {
+		warnings = append(warnings, "computed Pareto front is conservative because no dominance-relevant dimensions could be derived")
+		return append([]string(nil), comparedVariants...), warnings
+	}
+
+	dominatedBy := make(map[string]map[string]bool, len(comparedVariants))
+	for _, variantID := range comparedVariants {
+		dominatedBy[variantID] = make(map[string]bool)
+	}
+
+	for leftIndex := 0; leftIndex < len(comparedVariants); leftIndex++ {
+		leftVariant := comparedVariants[leftIndex]
+		for rightIndex := leftIndex + 1; rightIndex < len(comparedVariants); rightIndex++ {
+			rightVariant := comparedVariants[rightIndex]
+			relation := compareVariantPair(
+				leftVariant,
+				rightVariant,
+				results.Scores,
+				specs,
+				missingDataPolicy,
+			)
+			switch relation {
+			case pairwiseLeftDominates:
+				dominatedBy[rightVariant][leftVariant] = true
+			case pairwiseRightDominates:
+				dominatedBy[leftVariant][rightVariant] = true
+			}
+		}
+	}
+
+	var nonDominated []string
+	for _, variantID := range comparedVariants {
+		if len(dominatedBy[variantID]) != 0 {
+			continue
+		}
+		nonDominated = append(nonDominated, variantID)
+	}
+
+	return nonDominated, warnings
+}
+
+func effectiveDominanceDimensions(compareDimensions []string, characterized []charDim) ([]charDim, []string) {
+	charByName := make(map[string]charDim, len(characterized))
+	for _, dimension := range characterized {
+		charByName[normalizeArtifactKey(dimension.Name)] = dimension
+	}
+
+	specs := make([]charDim, 0, len(compareDimensions))
+	warnings := make([]string, 0, len(compareDimensions))
+	for _, dimensionName := range compareDimensions {
+		spec := charDim{
+			Name:     dimensionName,
+			Role:     "target",
+			Polarity: inferDimensionPolarity(dimensionName),
+		}
+		if characterizedDimension, ok := charByName[normalizeArtifactKey(dimensionName)]; ok {
+			spec.Role = characterizedDimension.Role
+			spec.Polarity = characterizedDimension.Polarity
+			if spec.Polarity == "" {
+				spec.Polarity = inferDimensionPolarity(dimensionName)
+			}
+		}
+		if spec.Role == "observation" {
+			continue
+		}
+		if spec.Polarity == "" {
+			warnings = append(warnings,
+				fmt.Sprintf("dimension '%s' has no polarity; excluding it from Pareto dominance computation", dimensionName))
+			continue
+		}
+		specs = append(specs, spec)
+	}
+
+	return specs, warnings
+}
+
+func compareVariantPair(
+	leftVariant string,
+	rightVariant string,
+	scores map[string]map[string]string,
+	specs []charDim,
+	missingDataPolicy string,
+) pairwiseDominance {
+	leftBetter := false
+	rightBetter := false
+	unresolved := false
+	comparableDimensions := 0
+
+	for _, spec := range specs {
+		leftValue := scoreForDimension(scores[leftVariant], spec.Name)
+		rightValue := scoreForDimension(scores[rightVariant], spec.Name)
+		comparison, comparable := compareDimensionValues(leftValue, rightValue, spec.Polarity, missingDataPolicy)
+		if !comparable {
+			unresolved = true
+			continue
+		}
+
+		comparableDimensions++
+		switch comparison {
+		case 1:
+			leftBetter = true
+		case -1:
+			rightBetter = true
+		}
+	}
+
+	switch {
+	case comparableDimensions == 0:
+		return pairwiseIncomparable
+	case unresolved:
+		return pairwiseIncomparable
+	case leftBetter && !rightBetter:
+		return pairwiseLeftDominates
+	case rightBetter && !leftBetter:
+		return pairwiseRightDominates
+	case !leftBetter && !rightBetter:
+		return pairwiseTie
+	default:
+		return pairwiseIncomparable
+	}
+}
+
+func compareDimensionValues(leftValue string, rightValue string, polarity string, missingDataPolicy string) (int, bool) {
+	leftTrimmed := strings.TrimSpace(leftValue)
+	rightTrimmed := strings.TrimSpace(rightValue)
+	if normalizeArtifactKey(leftTrimmed) == normalizeArtifactKey(rightTrimmed) {
+		return 0, true
+	}
+
+	if isMissingScore(leftTrimmed) || isMissingScore(rightTrimmed) {
+		switch missingDataPolicy {
+		case MissingDataPolicyExclude, MissingDataPolicyExplicitAbstain, "":
+			return 0, false
+		case MissingDataPolicyZero:
+			if isMissingScore(leftTrimmed) {
+				leftTrimmed = "0"
+			}
+			if isMissingScore(rightTrimmed) {
+				rightTrimmed = "0"
+			}
+		default:
+			return 0, false
+		}
+	}
+
+	if leftNumeric, ok := parseNumericScore(leftTrimmed); ok {
+		rightNumeric, rightOK := parseNumericScore(rightTrimmed)
+		if !rightOK || leftNumeric.Unit != rightNumeric.Unit {
+			return 0, false
+		}
+		return orientComparison(compareOrderedValues(leftNumeric.Value, rightNumeric.Value), polarity), true
+	}
+
+	if leftOrdinal, ok := parseOrdinalScore(leftTrimmed); ok {
+		rightOrdinal, rightOK := parseOrdinalScore(rightTrimmed)
+		if !rightOK {
+			return 0, false
+		}
+		return orientComparison(compareOrderedValues(float64(leftOrdinal.Rank), float64(rightOrdinal.Rank)), polarity), true
+	}
+
+	return 0, false
+}
+
+func orientComparison(raw int, polarity string) int {
+	switch strings.TrimSpace(polarity) {
+	case "higher_better":
+		return raw
+	case "lower_better":
+		return -raw
+	default:
+		return 0
+	}
+}
+
+func compareOrderedValues(left float64, right float64) int {
+	if math.Abs(left-right) < 1e-9 {
+		return 0
+	}
+	if left > right {
+		return 1
+	}
+	return -1
+}
+
+func parseNumericScore(value string) (numericScore, bool) {
+	matches := numericScorePattern.FindStringSubmatch(value)
+	if len(matches) != 5 {
+		return numericScore{}, false
+	}
+
+	numberValue, err := strconv.ParseFloat(strings.ReplaceAll(matches[2], ",", ""), 64)
+	if err != nil {
+		return numericScore{}, false
+	}
+
+	multiplier := 1.0
+	switch strings.ToLower(matches[3]) {
+	case "k":
+		multiplier = 1_000
+	case "m":
+		multiplier = 1_000_000
+	case "b":
+		multiplier = 1_000_000_000
+	}
+
+	unit := normalizeNumericUnit(matches[1] + matches[4])
+	return numericScore{
+		Value: numberValue * multiplier,
+		Unit:  unit,
+	}, true
+}
+
+func normalizeNumericUnit(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+}
+
+func parseOrdinalScore(value string) (ordinalScore, bool) {
+	rank, ok := ordinalScoreRanks[normalizeArtifactKey(value)]
+	if !ok {
+		return ordinalScore{}, false
+	}
+	return ordinalScore{Rank: rank}, true
+}
+
+var ordinalScoreRanks = map[string]int{
+	"none":      0,
+	"very low":  1,
+	"minimal":   1,
+	"low":       2,
+	"small":     2,
+	"slow":      2,
+	"limited":   2,
+	"medium":    3,
+	"moderate":  3,
+	"ok":        3,
+	"high":      4,
+	"large":     4,
+	"fast":      4,
+	"good":      4,
+	"very high": 5,
+	"severe":    5,
+	"best":      5,
+}
+
+func inferDimensionPolarity(name string) string {
+	normalized := normalizeArtifactKey(name)
+	for _, hint := range []string{
+		"latency",
+		"cost",
+		"complexity",
+		"overhead",
+		"error",
+		"risk",
+		"time",
+		"duration",
+		"load",
+		"cpu",
+		"memory",
+		"page",
+		"downtime",
+		"variance",
+	} {
+		if strings.Contains(normalized, hint) {
+			return "lower_better"
+		}
+	}
+
+	for _, hint := range []string{
+		"throughput",
+		"speed",
+		"availability",
+		"reliability",
+		"accuracy",
+		"coverage",
+		"headroom",
+		"novelty",
+		"value",
+		"quality",
+	} {
+		if strings.Contains(normalized, hint) {
+			return "higher_better"
+		}
+	}
+
+	return ""
+}
+
+func comparisonMissingDataPolicy(plan *ParityPlan) string {
+	if plan == nil {
+		return MissingDataPolicyExplicitAbstain
+	}
+
+	policy := strings.TrimSpace(plan.MissingDataPolicy)
+	if policy == "" {
+		return MissingDataPolicyExplicitAbstain
+	}
+
+	return policy
 }
 
 // jaccardSimilarity computes Jaccard index (intersection/union) of word sets from two texts.

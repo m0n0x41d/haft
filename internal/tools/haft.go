@@ -298,7 +298,7 @@ Actions:
 				"no_stepping_stone_rationale": map[string]any{"type": "string", "description": "Required when no variant is a stepping stone"},
 				"dimensions":                  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Comparison dimensions (compare)"},
 				"scores":                      map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
-				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Pareto front variants (compare)"},
+				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Advisory Pareto-front claim (compare). Runtime computes and stores the front from scores."},
 				"incomparable":                map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "description": "Pairs that are intentionally incomparable (compare)"},
 				"dominated_variants": map[string]any{
 					"type":        "array",

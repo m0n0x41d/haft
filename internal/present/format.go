@@ -345,7 +345,7 @@ func structuredComparisonSummary(result artifact.ComparisonResult, labels map[st
 	lines := make([]string, 0, 8)
 	paretoFront := strings.Join(displayComparisonVariantLabels(result.NonDominatedSet, labels), ", ")
 	if paretoFront != "" {
-		lines = append(lines, fmt.Sprintf("Pareto front: %s", paretoFront))
+		lines = append(lines, fmt.Sprintf("Computed Pareto front: %s", paretoFront))
 	}
 
 	if len(result.DominatedVariants) > 0 {
@@ -396,6 +396,7 @@ func legacyComparisonSummary(body string) string {
 		Needle string
 		Label  string
 	}{
+		{Needle: "**Computed Pareto front:**", Label: "Computed Pareto front:"},
 		{Needle: "**Pareto front:**", Label: "Pareto front:"},
 		{Needle: "**Recommendation (advisory):**", Label: "Recommendation (advisory):"},
 		{Needle: "**Recommended:**", Label: "Recommendation (advisory):"},

@@ -166,7 +166,7 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 
 	required := []string{
 		"File: /tmp/sol.md",
-		"Pareto front: Kafka, NATS",
+		"Computed Pareto front: Kafka, NATS",
 		"Dominated variant elimination:",
 		"Redis Streams: dominated by NATS. Lower throughput with no compensating operations win.",
 		"Pareto-front trade-offs:",

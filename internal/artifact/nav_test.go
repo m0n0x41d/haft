@@ -354,9 +354,9 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
 		PortfolioRef: sol.Meta.ID,
 		Results: ComparisonResult{
-			Dimensions:      []string{"d1"},
+			Dimensions:      []string{"speed"},
 			NonDominatedSet: []string{"X"},
-			Scores:          map[string]map[string]string{"X": {"d1": "good"}, "Y": {"d1": "ok"}},
+			Scores:          map[string]map[string]string{"X": {"speed": "fast"}, "Y": {"speed": "slow"}},
 			DominatedVariants: []DominatedVariantExplanation{
 				{
 					Variant:     "Y",

@@ -126,7 +126,10 @@ func TestDetectExplicitDecisionSelection(t *testing.T) {
 	cases := map[string]string{
 		"pick variant V2":                  "V2",
 		"go with gRPC":                     "V2",
+		"go with gRPC then":                "V2",
+		"pick V2 please":                   "V2",
 		"actually choose REST":             "V1",
+		"choose REST now":                  "V1",
 		"choose gRPC because latency wins": "V2",
 		"V2":                               "V2",
 	}
@@ -191,7 +194,12 @@ Legacy comparison body.
 		StructuredData: `{}`,
 	}
 
-	selectedRef, ok := detectExplicitDecisionSelection("pick gRPC", selectionCandidatesForPortfolio(portfolio))
+	candidates, err := selectionCandidatesForPortfolio(portfolio)
+	if err != nil {
+		t.Fatalf("selectionCandidatesForPortfolio legacy: %v", err)
+	}
+
+	selectedRef, ok := detectExplicitDecisionSelection("pick gRPC", candidates)
 	if !ok {
 		t.Fatal("expected legacy body variants to remain selectable")
 	}

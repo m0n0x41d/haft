@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/session"
 )
 
 func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependencies(t *testing.T) {
@@ -779,5 +781,62 @@ func seedCodebaseDependencyGraph(t *testing.T, ctx context.Context, rawDB *sql.D
 	)
 	if err != nil {
 		t.Fatalf("seed module dependency: %v", err)
+	}
+}
+
+func TestCaptureDecisionSelection_ReturnsRepairErrorForAmbiguousComparedPortfolio(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	coord, store, rawDB := setupCoordinatorHarness(t)
+
+	cycleStore, err := session.NewSQLiteStore(rawDB)
+	if err != nil {
+		t.Fatalf("new sqlite cycle store: %v", err)
+	}
+	coord.Cycles = cycleStore
+
+	err = store.Create(ctx, &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "sol-ambiguous",
+			Kind:  artifact.KindSolutionPortfolio,
+			Title: "Ambiguous legacy portfolio",
+		},
+		Body: `# Ambiguous legacy portfolio
+
+## Variants (2)
+
+### V7. Kafka
+
+### V7. NATS
+
+## Comparison
+
+Legacy comparison body.
+`,
+		StructuredData: `{}`,
+	})
+	if err != nil {
+		t.Fatalf("create ambiguous portfolio: %v", err)
+	}
+
+	err = cycleStore.CreateCycle(ctx, &agent.Cycle{
+		ID:                   "cyc-ambiguous",
+		SessionID:            "sess-ambiguous",
+		Phase:                agent.PhaseDecider,
+		Status:               agent.CycleActive,
+		PortfolioRef:         "sol-ambiguous",
+		ComparedPortfolioRef: "sol-ambiguous",
+	})
+	if err != nil {
+		t.Fatalf("create cycle: %v", err)
+	}
+
+	err = coord.captureDecisionSelection(ctx, "sess-ambiguous", "pick V7")
+	if err == nil {
+		t.Fatal("expected ambiguous compared portfolio to surface a repair error")
+	}
+	if !strings.Contains(err.Error(), "Repair the portfolio identity set or re-run compare before deciding") {
+		t.Fatalf("unexpected repair error: %v", err)
 	}
 }

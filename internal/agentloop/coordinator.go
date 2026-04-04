@@ -993,7 +993,13 @@ func (c *Coordinator) captureDecisionSelection(ctx context.Context, sessionID, u
 		return nil
 	}
 
-	selectedVariantRef, ok := detectExplicitDecisionSelection(userText, selectionCandidatesForPortfolio(portfolio))
+	candidates, err := selectionCandidatesForPortfolio(portfolio)
+	if err != nil {
+		return fmt.Errorf("FPF guardrail: cannot record the human choice for compared portfolio %q: %w. Repair the portfolio identity set or re-run compare before deciding",
+			cycle.ComparedPortfolioRef, err)
+	}
+
+	selectedVariantRef, ok := detectExplicitDecisionSelection(userText, candidates)
 	if !ok {
 		return nil
 	}
@@ -1012,10 +1018,10 @@ type decisionSelectionCandidate struct {
 	Aliases    []string
 }
 
-func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) []decisionSelectionCandidate {
+func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) ([]decisionSelectionCandidate, error) {
 	identities, err := artifact.RecoverPortfolioVariantIdentities(portfolio)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	candidates := make([]decisionSelectionCandidate, 0, len(identities))
@@ -1030,7 +1036,7 @@ func selectionCandidatesForPortfolio(portfolio *artifact.Artifact) []decisionSel
 		})
 	}
 
-	return candidates
+	return candidates, nil
 }
 
 func detectExplicitDecisionSelection(message string, candidates []decisionSelectionCandidate) (string, bool) {
@@ -1229,6 +1235,38 @@ func trimPositiveDecisionSelectionPrefix(value string) (string, bool) {
 }
 
 func matchesExplicitDecisionSelectionClause(value, selectedRef string, candidates []decisionSelectionCandidate) bool {
+	for _, candidate := range candidates {
+		if candidate.VariantRef != selectedRef {
+			continue
+		}
+
+		for _, alias := range candidate.Aliases {
+			if matchesDecisionSelectionAlias(value, alias) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func matchesDecisionSelectionAlias(value, alias string) bool {
+	if value == alias {
+		return true
+	}
+
+	if hasDecisionSelectionReasonSuffix(value, alias) {
+		return true
+	}
+
+	if hasDecisionSelectionFillerSuffix(value, alias) {
+		return true
+	}
+
+	return false
+}
+
+func hasDecisionSelectionReasonSuffix(value, alias string) bool {
 	reasonPrefixes := []string{
 		"because ",
 		"because of ",
@@ -1239,25 +1277,41 @@ func matchesExplicitDecisionSelectionClause(value, selectedRef string, candidate
 		"for ",
 	}
 
-	for _, candidate := range candidates {
-		if candidate.VariantRef != selectedRef {
-			continue
-		}
-
-		for _, alias := range candidate.Aliases {
-			if value == alias {
-				return true
-			}
-
-			for _, prefix := range reasonPrefixes {
-				if strings.HasPrefix(value, alias+" "+prefix) {
-					return true
-				}
-			}
+	for _, prefix := range reasonPrefixes {
+		if strings.HasPrefix(value, alias+" "+prefix) {
+			return true
 		}
 	}
 
 	return false
+}
+
+func hasDecisionSelectionFillerSuffix(value, alias string) bool {
+	if !strings.HasPrefix(value, alias+" ") {
+		return false
+	}
+
+	tail := strings.TrimSpace(strings.TrimPrefix(value, alias))
+	if tail == "" {
+		return true
+	}
+
+	fillers := map[string]struct{}{
+		"then":    {},
+		"please":  {},
+		"now":     {},
+		"okay":    {},
+		"ok":      {},
+		"alright": {},
+	}
+
+	for _, token := range strings.Fields(tail) {
+		if _, ok := fillers[token]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {

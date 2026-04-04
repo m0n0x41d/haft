@@ -12,12 +12,13 @@ interface Props {
   cycle: CycleUpdateParams | null
   drift: DriftUpdateParams | null
   notification: string | null
+  autoApprove: boolean
   width: number
 }
 
 // Single line, paddingX=1, gap=2, dimColor for most text
 export function StatusBar(props: Props) {
-  const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, width } = props
+  const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, autoApprove, width } = props
 
   // Build status text parts — CC renders this as a single dimColor Text
   const parts: string[] = []
@@ -34,6 +35,9 @@ export function StatusBar(props: Props) {
   if (mode === "autonomous") {
     parts.push("auto")
   }
+
+  // YOLO — rendered separately as colored text, but reserve position in flow
+  // (handled below in JSX)
 
   // Subagents
   if (subagents > 0) {
@@ -55,6 +59,7 @@ export function StatusBar(props: Props) {
   return (
     <Box paddingX={1} gap={2}>
       <Text dimColor wrap="truncate-end">{statusText}</Text>
+      {autoApprove && <Text color="yellow" bold>YOLO</Text>}
       {notification && <Text dimColor>{notification}</Text>}
     </Box>
   )

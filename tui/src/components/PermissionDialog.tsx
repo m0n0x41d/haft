@@ -58,9 +58,9 @@ export const PermissionDialog = React.memo(function PermissionDialog({ request, 
       )}
 
       <Box marginTop={1} gap={2}>
-        <Text backgroundColor="green" color="black" bold> y allow </Text>
-        <Text backgroundColor="blue" color="white" bold> a all </Text>
-        <Text backgroundColor="red" color="white" bold> n deny </Text>
+        <Text backgroundColor="green" color="black" bold> 1 y allow </Text>
+        <Text backgroundColor="cyan" color="black" bold> 2 a session </Text>
+        <Text backgroundColor="red" color="white" bold> 3 n deny </Text>
       </Box>
     </Box>
   )

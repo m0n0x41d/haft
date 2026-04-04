@@ -34034,6 +34034,8 @@ function reducer(state, action) {
       return { ...state, notification: null };
     case "toggle.autonomy":
       return { ...state, mode: state.mode === "symbiotic" ? "autonomous" : "symbiotic" };
+    case "toggle.yolo":
+      return { ...state, autoApprove: !state.autoApprove };
     case "toggle.think":
       return { ...state, thinkExpanded: !state.thinkExpanded };
     case "set.notification":
@@ -36089,7 +36091,7 @@ function TranscriptViewport({
 // src/components/StatusBar.tsx
 var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
 function StatusBar(props) {
-  const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, width } = props;
+  const { model, tokensUsed, tokensLimit, mode, streaming, subagents, cycle, drift, notification, autoApprove, width } = props;
   const parts = [];
   parts.push(model);
   if (tokensLimit > 0) {
@@ -36110,6 +36112,7 @@ function StatusBar(props) {
   const statusText = parts.join(" \u2219 ");
   return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { paddingX: 1, gap: 2, children: [
     /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, wrap: "truncate-end", children: statusText }),
+    autoApprove && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "yellow", bold: true, children: "YOLO" }),
     notification && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: notification })
   ] });
 }
@@ -36589,9 +36592,9 @@ var PermissionDialog = import_react33.default.memo(function PermissionDialog2({ 
           /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(DiffView, { diff: request.diff.slice(0, 800), width: boxWidth - 4 })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { marginTop: 1, gap: 2, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " y allow " }),
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "blue", color: "white", bold: true, children: " a all " }),
-          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " n deny " })
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "green", color: "black", bold: true, children: " 1 y allow " }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "cyan", color: "black", bold: true, children: " 2 a session " }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { backgroundColor: "red", color: "white", bold: true, children: " 3 n deny " })
         ] })
       ]
     }
@@ -36836,6 +36839,8 @@ function App2({ client: client2, inputEvents }) {
   const nextAttachmentId = (0, import_react37.useRef)(1);
   const phaseRef = (0, import_react37.useRef)(state.phase);
   phaseRef.current = state.phase;
+  const autoApproveRef = (0, import_react37.useRef)(state.autoApprove);
+  autoApproveRef.current = state.autoApprove;
   const handleSubmitRef = (0, import_react37.useRef)(() => {
   });
   const [, setRedrawTick] = (0, import_react37.useState)(0);
@@ -37009,6 +37014,10 @@ function App2({ client: client2, inputEvents }) {
     client2.setRequestHandler((method, params, respond) => {
       const p = params;
       if (method === "permission.ask") {
+        if (autoApproveRef.current) {
+          respond({ action: "allow" });
+          return;
+        }
         dispatch({ type: "permission.ask", id: 0, toolName: p.toolName, args: p.args, description: p.description, diff: p.diff, adds: p.adds, dels: p.dels });
         respondRef.current = respond;
       } else if (method === "question.ask") {
@@ -37151,6 +37160,11 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "set.notification", text: `${newMode} mode` });
       return;
     }
+    if (key.ctrl && input === "y") {
+      dispatch({ type: "toggle.yolo" });
+      dispatch({ type: "set.notification", text: state.autoApprove ? "YOLO mode disabled" : "YOLO mode enabled" });
+      return;
+    }
     if (key.ctrl && input === "m") {
       openModelPicker();
       return;
@@ -37287,6 +37301,7 @@ function App2({ client: client2, inputEvents }) {
         cycle: state.cycle,
         drift: state.drift,
         notification: state.notification,
+        autoApprove: state.autoApprove,
         width
       }
     )

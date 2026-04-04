@@ -68,6 +68,8 @@ export function App({ client, inputEvents }: AppProps) {
   const nextAttachmentId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
+  const autoApproveRef = useRef(state.autoApprove)
+  autoApproveRef.current = state.autoApprove
 
   // Stable ref to handleSubmit — protocol handler (registered once) always calls latest version
   const handleSubmitRef = useRef<(text: string) => void>(() => {})
@@ -230,6 +232,10 @@ export function App({ client, inputEvents }: AppProps) {
     client.setRequestHandler((method, params, respond) => {
       const p = params as any
       if (method === "permission.ask") {
+        if (autoApproveRef.current) {
+          respond({ action: "allow" })
+          return
+        }
         dispatch({ type: "permission.ask", id: 0, toolName: p.toolName, args: p.args, description: p.description, diff: p.diff, adds: p.adds, dels: p.dels })
         respondRef.current = respond
       } else if (method === "question.ask") {
@@ -368,6 +374,11 @@ export function App({ client, inputEvents }: AppProps) {
       dispatch({ type: "set.notification", text: `${newMode} mode` })
       return
     }
+    if (key.ctrl && input === "y") {
+      dispatch({ type: "toggle.yolo" })
+      dispatch({ type: "set.notification", text: state.autoApprove ? "YOLO mode disabled" : "YOLO mode enabled" })
+      return
+    }
     if (key.ctrl && input === "m") { openModelPicker(); return }
     if (key.ctrl && input === "o") {
       setToolHistoryExpanded((expanded) => {
@@ -466,7 +477,8 @@ export function App({ client, inputEvents }: AppProps) {
       <StatusBar
         model={state.session.model} tokensUsed={state.tokensUsed} tokensLimit={state.tokensLimit}
         mode={state.mode} streaming={state.phase === "streaming"} subagents={state.activeSubagents}
-        cycle={state.cycle} drift={state.drift} notification={state.notification} width={width}
+        cycle={state.cycle} drift={state.drift} notification={state.notification}
+        autoApprove={state.autoApprove} width={width}
       />
     </Box>
   )

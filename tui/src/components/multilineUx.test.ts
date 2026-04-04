@@ -6,7 +6,7 @@ import { buildInputDisplayLayout, measureInputDisplayRows } from "./inputLayout.
 import { computeBottomRows, computeChatHeight } from "./appLayout.js"
 import { buildUserPromptDisplayLines } from "./userPrompt.js"
 import { createInputRouter } from "../terminal/inputStream.js"
-import { empty, insertAt, moveEnd, moveHome, cursorPosition } from "../input/editBuffer.js"
+import { empty, insertAt, moveDown, moveEnd, moveHome, moveUp, cursorPosition } from "../input/editBuffer.js"
 import { emptyHistory, currentText, navigateUp, push } from "../input/history.js"
 
 // Contract tests for tui/MULTILINE_UX_CHECKLIST.md.
@@ -154,4 +154,20 @@ test("round-trips multiline history into transcript rendering without attachment
       "   [image: clipboard.png]",
     ],
   )
+})
+
+test("keeps up and down arrows inside a multiline prompt until the boundary", () => {
+  const prompt = {
+    text: "first line\nsecond line\nthird line",
+    cursor: 17,
+  }
+  const movedUp = moveUp(prompt)
+  const movedDown = moveDown(prompt)
+  const firstLine = { ...prompt, cursor: 6 }
+  const lastLine = { ...prompt, cursor: 29 }
+
+  assert.equal(movedUp.cursor, 6)
+  assert.equal(movedDown.cursor, 29)
+  assert.equal(moveUp(firstLine).cursor, firstLine.cursor)
+  assert.equal(moveDown(lastLine).cursor, lastLine.cursor)
 })

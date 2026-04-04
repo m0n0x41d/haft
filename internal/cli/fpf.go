@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
 )
@@ -114,24 +115,34 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(results) == 0 {
-		fmt.Println("No results found.")
+		fmt.Print(present.FormatFPFSearch(nil, present.FPFSearchOptions{
+			EmptyMessage: "No results found.",
+		}))
 		return nil
 	}
 
-	for i, r := range results {
-		fmt.Printf("### %d. %s\n\n", i+1, r.Heading)
+	formattedResults := make([]present.FPFSearchResult, 0, len(results))
+	for _, r := range results {
+		content := r.Snippet
 		if fpfSearchFull {
-			body, err := fpf.GetSpecSection(db, r.Heading)
+			body, err := fpf.GetSpecSection(db, firstNonEmpty(r.PatternID, r.Heading))
 			if err == nil {
-				fmt.Println(body)
-			} else {
-				fmt.Println(r.Snippet)
+				content = body
 			}
-		} else {
-			fmt.Println(r.Snippet)
 		}
-		fmt.Println()
+
+		formattedResults = append(formattedResults, present.FPFSearchResult{
+			PatternID: r.PatternID,
+			Heading:   r.Heading,
+			Tier:      r.Tier,
+			Reason:    r.Reason,
+			Content:   content,
+		})
 	}
+
+	fmt.Print(present.FormatFPFSearch(formattedResults, present.FPFSearchOptions{
+		Enumerate: true,
+	}))
 	return nil
 }
 
@@ -149,8 +160,17 @@ func runFPFSection(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("section not found: %s", heading)
 	}
 
-	fmt.Printf("## %s\n\n%s\n", heading, body)
+	fmt.Print(present.FormatFPFSection(heading, body))
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func runFPFInfo(cmd *cobra.Command, args []string) error {
@@ -160,12 +180,15 @@ func runFPFInfo(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	fmt.Printf("haft fpf version: %s\n", Version)
-
+	info := present.FPFInfo{
+		Version: Version,
+	}
 	commit, err := fpf.GetSpecMeta(db, "fpf_commit")
 	if err == nil {
-		fmt.Printf("FPF upstream commit: %s\n", commit)
-		fmt.Printf("FPF source: https://github.com/ailev/FPF/commit/%s\n", commit)
+		info.Commit = commit
+		info.Source = fmt.Sprintf("https://github.com/ailev/FPF/commit/%s", commit)
 	}
+
+	fmt.Print(present.FormatFPFInfo(info))
 	return nil
 }

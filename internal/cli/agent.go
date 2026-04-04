@@ -20,6 +20,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/hooks"
 	"github.com/m0n0x41d/haft/internal/jsonrpc"
 	"github.com/m0n0x41d/haft/internal/lsp"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
@@ -526,11 +527,11 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// Send init event
 	_ = bus.SendInit(protocol.Init{
 		Session: protocol.SessionInfo{
-			ID: sess.ID,
-			Title: sess.Title,
-			Model: sess.Model,
+			ID:          sess.ID,
+			Title:       sess.Title,
+			Model:       sess.Model,
 			Interaction: string(sess.Interaction),
-			Yolo: sess.Yolo,
+			Yolo:        sess.Yolo,
 		},
 		ProjectRoot: projectRoot,
 	})
@@ -562,13 +563,21 @@ func buildFPFSearchFunc() tools.FPFSearchFunc {
 			return "", err
 		}
 		if len(results) == 0 {
-			return "No FPF spec matches for: " + query, nil
+			return present.FormatFPFSearch(nil, present.FPFSearchOptions{
+				EmptyMessage: "No FPF spec matches for: " + query,
+			}), nil
 		}
 
-		var b strings.Builder
+		formattedResults := make([]present.FPFSearchResult, 0, len(results))
 		for _, r := range results {
-			fmt.Fprintf(&b, "### %s\n%s\n\n", r.Heading, r.Snippet)
+			formattedResults = append(formattedResults, present.FPFSearchResult{
+				PatternID: r.PatternID,
+				Heading:   r.Heading,
+				Tier:      r.Tier,
+				Reason:    r.Reason,
+				Content:   r.Snippet,
+			})
 		}
-		return b.String(), nil
+		return present.FormatFPFSearch(formattedResults, present.FPFSearchOptions{}), nil
 	}
 }

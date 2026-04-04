@@ -269,6 +269,10 @@ func TestNormalizePatternID_CommonForms(t *testing.T) {
 		{input: "A.6:4.1", want: "A.6:4.1"},
 		{input: "c.2.2A", want: "C.2.2a"},
 		{input: "a.19.cn", want: "A.19.CN"},
+		{input: "g.core", want: "G.CORE"},
+		{input: "g.core:1", want: "G.CORE:1"},
+		{input: "a.0:end", want: "A.0:END"},
+		{input: "c.3.a:a.1", want: "C.3.A:A.1"},
 	}
 
 	for _, tt := range tests {
@@ -287,14 +291,22 @@ Top body.
 ### c.2.2A - Language-State Space
 
 Nested body.
+
+## G.Core - Part G Core Invariants
+
+Core body.
+
+### G.Core:1 - Problem frame
+
+Problem frame body.
 `
 
 	chunks, err := ChunkMarkdown(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(chunks) != 2 {
-		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	if len(chunks) != 4 {
+		t.Fatalf("expected 4 chunks, got %d", len(chunks))
 	}
 	if chunks[0].PatternID != "A.6" {
 		t.Fatalf("expected A.6, got %q", chunks[0].PatternID)
@@ -305,10 +317,20 @@ Nested body.
 	if chunks[1].ParentPatternID != "A.6" {
 		t.Fatalf("expected parent A.6, got %q", chunks[1].ParentPatternID)
 	}
+	if chunks[2].PatternID != "G.CORE" {
+		t.Fatalf("expected G.CORE, got %q", chunks[2].PatternID)
+	}
+	if chunks[3].PatternID != "G.CORE:1" {
+		t.Fatalf("expected G.CORE:1, got %q", chunks[3].PatternID)
+	}
+	if chunks[3].ParentPatternID != "G.CORE" {
+		t.Fatalf("expected parent G.CORE, got %q", chunks[3].ParentPatternID)
+	}
 }
 
 func TestParseSpecCatalog_NormalizesPatternVariants(t *testing.T) {
 	input := `| a6 | **Signature Stack & Boundary Discipline** | Stable | *Keywords:* boundary. | **Builds on:** a.6.b, c.2.2A. |
+| g.core | **Part G Core Invariants** | Draft | *Keywords:* core. | **Builds on:** g.0. **Used by:** g.core:1. |
 `
 
 	catalog, err := ParseSpecCatalog(strings.NewReader(input))
@@ -328,6 +350,60 @@ func TestParseSpecCatalog_NormalizesPatternVariants(t *testing.T) {
 	wantTargets := []string{"A.6.B", "C.2.2a"}
 	if !strings.EqualFold(strings.Join(gotTargets, ","), strings.Join(wantTargets, ",")) {
 		t.Fatalf("unexpected edge targets: got %v want %v", gotTargets, wantTargets)
+	}
+
+	coreEntry, ok := catalog["G.CORE"]
+	if !ok {
+		t.Fatal("expected normalized G.CORE entry")
+	}
+	if len(coreEntry.Edges) != 2 {
+		t.Fatalf("unexpected G.CORE typed edges: %#v", coreEntry.Edges)
+	}
+	if coreEntry.Edges[0].ToPatternID != "G.0" && coreEntry.Edges[1].ToPatternID != "G.0" {
+		t.Fatalf("expected G.0 dependency in %#v", coreEntry.Edges)
+	}
+	if coreEntry.Edges[0].ToPatternID != "G.CORE:1" && coreEntry.Edges[1].ToPatternID != "G.CORE:1" {
+		t.Fatalf("expected G.CORE:1 dependency in %#v", coreEntry.Edges)
+	}
+}
+
+func TestParseDependencyEdges_NormalizesNamedRootDescendants(t *testing.T) {
+	edges, relatedIDs := parseDependencyEdges("G.CORE", "Builds on: g.0. Used by: g.core:1.")
+
+	if len(relatedIDs) != 0 {
+		t.Fatalf("unexpected fallback related ids: %#v", relatedIDs)
+	}
+	if len(edges) != 2 {
+		t.Fatalf("unexpected typed edges: %#v", edges)
+	}
+
+	gotTargets := []string{edges[0].ToPatternID, edges[1].ToPatternID}
+	wantTargets := []string{"G.0", "G.CORE:1"}
+	if !strings.EqualFold(strings.Join(gotTargets, ","), strings.Join(wantTargets, ",")) {
+		t.Fatalf("unexpected edge targets: got %v want %v", gotTargets, wantTargets)
+	}
+}
+
+func TestExtractPatternIDs_PrefersColonDescendants(t *testing.T) {
+	got := extractPatternIDs("g.core:1")
+	want := []string{"G.CORE:1"}
+
+	if !strings.EqualFold(strings.Join(got, ","), strings.Join(want, ",")) {
+		t.Fatalf("unexpected pattern ids: got %v want %v", got, want)
+	}
+}
+
+func TestParseDependencyClauses_SplitsMultipleClauses(t *testing.T) {
+	got := parseDependencyClauses("Builds on: g.0. Used by: g.core:1.")
+
+	if len(got) != 2 {
+		t.Fatalf("unexpected clauses: %#v", got)
+	}
+	if got[0].Label != "Builds on" || got[0].Value != "g.0" {
+		t.Fatalf("unexpected first clause: %#v", got[0])
+	}
+	if got[1].Label != "Used by" || got[1].Value != "g.core:1" {
+		t.Fatalf("unexpected second clause: %#v", got[1])
 	}
 }
 

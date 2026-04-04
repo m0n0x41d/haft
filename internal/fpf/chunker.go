@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-var patternIDCandidateRE = regexp.MustCompile(`(?i)\b[A-K](?:\.?\d+[a-z]*)(?:\.(?:\d+[a-z]*|[a-z][a-z0-9]*))*(?::\d+(?:\.\d+)*)?\b`)
+var patternIDCandidateRE = regexp.MustCompile(`(?i)\b(?:[A-K]\d+[A-Za-z0-9.:]*|[A-K]\.[A-Za-z0-9]+(?:[.:][A-Za-z0-9]+)*)\b`)
 var patternIDDigitsRE = regexp.MustCompile(`^\d+$`)
 var patternIDDigitSuffixRE = regexp.MustCompile(`^(\d+)([A-Za-z]+)$`)
 var patternIDWordRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 var quotedQueryRE = regexp.MustCompile(`"([^"]+)"`)
-var dependencyClauseLabelRE = regexp.MustCompile(`([A-Za-z][A-Za-z /-]+):`)
+var dependencyClauseLabelRE = regexp.MustCompile(`(?:^|[.;]\s+)([A-Za-z][A-Za-z /-]+):`)
 
 type SpecEdgeType string
 
@@ -346,7 +346,7 @@ func normalizePatternID(text string) string {
 		return base
 	}
 
-	suffix := normalizePatternNumericPath(parts[1])
+	suffix := normalizePatternPath(parts[1])
 	if suffix == "" {
 		return base
 	}
@@ -370,6 +370,9 @@ func normalizePatternBase(text string) string {
 		return ""
 	}
 	if !strings.HasPrefix(remainder, ".") {
+		if !patternIDDigitsRE.MatchString(string(remainder[0])) {
+			return ""
+		}
 		remainder = "." + remainder
 	}
 
@@ -386,7 +389,7 @@ func normalizePatternBase(text string) string {
 	return prefix + "." + strings.Join(segments, ".")
 }
 
-func normalizePatternNumericPath(text string) string {
+func normalizePatternPath(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
@@ -395,8 +398,8 @@ func normalizePatternNumericPath(text string) string {
 	rawSegments := strings.Split(text, ".")
 	segments := make([]string, 0, len(rawSegments))
 	for _, rawSegment := range rawSegments {
-		segment := strings.TrimSpace(rawSegment)
-		if !patternIDDigitsRE.MatchString(segment) {
+		segment := normalizePatternSegment(rawSegment)
+		if segment == "" {
 			return ""
 		}
 		segments = append(segments, segment)

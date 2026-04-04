@@ -53,9 +53,14 @@ func TestSearchSpec_RouteGoldenQueries(t *testing.T) {
 				t.Fatalf("SearchSpec(%q) error: %v", test.Query, err)
 			}
 
-			gotPatternIDs := collectExpectedPatternIDs(results, test.ExpectedPatternIDs)
-			if !reflect.DeepEqual(gotPatternIDs, test.ExpectedPatternIDs) {
-				t.Fatalf("SearchSpec(%q) expected patterns in order = %v, want %v; got top results %v", test.Query, gotPatternIDs, test.ExpectedPatternIDs, resultPatternIDs(results))
+			topPatternIDs := resultPatternIDs(results)
+			if !hasPatternIDPrefix(topPatternIDs, test.ExpectedPatternIDs) {
+				t.Fatalf("SearchSpec(%q) top patterns = %v, want prefix %v", test.Query, topPatternIDs, test.ExpectedPatternIDs)
+			}
+
+			routePatternIDs := resultPatternIDs(filterResultsByTier(results, "route"))
+			if !hasPatternIDPrefix(routePatternIDs, test.ExpectedPatternIDs) {
+				t.Fatalf("SearchSpec(%q) route-tier patterns = %v, want prefix %v", test.Query, routePatternIDs, test.ExpectedPatternIDs)
 			}
 
 			for _, patternID := range test.ExpectedPatternIDs {
@@ -208,21 +213,12 @@ func routeGoldenSearchLimit(expectedPatternIDs []string) int {
 	return limit
 }
 
-func collectExpectedPatternIDs(results []SpecSearchResult, expectedPatternIDs []string) []string {
-	expectedSet := make(map[string]struct{}, len(expectedPatternIDs))
-	for _, patternID := range expectedPatternIDs {
-		expectedSet[patternID] = struct{}{}
+func hasPatternIDPrefix(patternIDs []string, prefix []string) bool {
+	if len(patternIDs) < len(prefix) {
+		return false
 	}
 
-	collected := make([]string, 0, len(expectedPatternIDs))
-	for _, result := range results {
-		if _, ok := expectedSet[result.PatternID]; !ok {
-			continue
-		}
-		collected = append(collected, result.PatternID)
-	}
-
-	return collected
+	return reflect.DeepEqual(patternIDs[:len(prefix)], prefix)
 }
 
 func testPackageDir(t *testing.T) string {

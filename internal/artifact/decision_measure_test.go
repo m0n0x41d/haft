@@ -461,6 +461,87 @@ func TestWLNKSummary_UsesCanonicalClaimScopeForExplicitClaimRefs(t *testing.T) {
 	}
 }
 
+func TestMeasure_RollsBackDecisionAndEvidenceWhenMeasurementInsertFails(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Decision state and measurement evidence must commit together.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.AddEvidenceItem(ctx, &EvidenceItem{
+		ID:              "evid-existing-measurement",
+		Type:            "measurement",
+		Content:         "Earlier measurement",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+	}, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.DB().ExecContext(ctx, `
+		CREATE TRIGGER fail_measurement_insert
+		BEFORE INSERT ON evidence_items
+		WHEN NEW.type = 'measurement'
+		BEGIN
+			SELECT RAISE(ABORT, 'measurement insert failed');
+		END`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Latency passed under the rollout load test.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 42ms)",
+		},
+		Verdict: "accepted",
+	})
+	if err == nil {
+		t.Fatal("expected measurement insert failure")
+	}
+	if !strings.Contains(err.Error(), "measurement insert failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(reloaded.Body, "## Impact Measurement") {
+		t.Fatalf("decision body should roll back when measurement insert fails, got:\n%s", reloaded.Body)
+	}
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusUnverified,
+	})
+
+	items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected original evidence to remain after rollback, got %d item(s)", len(items))
+	}
+	if items[0].Verdict != "accepted" {
+		t.Fatalf("existing evidence verdict = %q, want accepted after rollback", items[0].Verdict)
+	}
+}
+
 func assertDecisionPredictionStatuses(t *testing.T, decision *Artifact, want []ClaimStatus) {
 	t.Helper()
 

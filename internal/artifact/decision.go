@@ -1198,15 +1198,6 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 
 	a.Body += section.String()
 
-	if err := store.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("update decision: %w", err)
-	}
-
-	// Supersede previous measurements on this artifact (FPF F.10:6.1 — newer evidence replaces older within the same Window)
-	if err := store.SupersedeEvidenceByType(ctx, input.DecisionRef, "measurement"); err != nil {
-		logger.Warn().Err(err).Str("decision_ref", input.DecisionRef).Msg("failed to supersede old measurements")
-	}
-
 	// Record as evidence item
 	// CL based on verification quality: baseline exists = CL3, no baseline = CL1 (self-evidence, FPF A.12)
 	measureCL := 1 // default: self-evidence (no independent verification)
@@ -1215,7 +1206,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	}
 
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
-	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
+	evidenceItem := &EvidenceItem{
 		ID:              evidID,
 		Type:            "measurement",
 		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
@@ -1225,8 +1216,10 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		ClaimRefs:       claimRefs,
 		ClaimScope:      claimScope,
 		ValidUntil:      a.Meta.ValidUntil,
-	}, input.DecisionRef); err != nil {
-		return nil, fmt.Errorf("record evidence: %w", err)
+	}
+
+	if err := store.CommitMeasurement(ctx, a, evidenceItem); err != nil {
+		return nil, fmt.Errorf("record measurement: %w", err)
 	}
 
 	writeFileQuiet(haftDir, a)

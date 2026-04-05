@@ -48,6 +48,7 @@ type ArtifactStore interface {
 	AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifactRef string) error
 	GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error)
 	SupersedeEvidenceByType(ctx context.Context, artifactRef string, evidenceType string) error
+	CommitMeasurement(ctx context.Context, decision *Artifact, item *EvidenceItem) error
 
 	// Timing
 	LastRefreshScan(ctx context.Context) time.Time

@@ -18,6 +18,10 @@ type Store struct {
 	db *sql.DB
 }
 
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // Compile-time check: Store must implement ArtifactStore.
 var _ ArtifactStore = (*Store)(nil)
 
@@ -119,10 +123,14 @@ func (s *Store) Get(ctx context.Context, id string) (*Artifact, error) {
 
 // Update modifies an existing artifact.
 func (s *Store) Update(ctx context.Context, a *Artifact) error {
+	return s.updateArtifactWithExec(ctx, s.db, a)
+}
+
+func (s *Store) updateArtifactWithExec(ctx context.Context, execer sqlExecer, a *Artifact) error {
 	a.Meta.UpdatedAt = time.Now().UTC()
 	a.Meta.Version++
 
-	result, err := s.db.ExecContext(ctx, `
+	result, err := execer.ExecContext(ctx, `
 		UPDATE artifacts SET kind=?, version=?, status=?, context=?, mode=?, title=?, content=?, valid_until=?, updated_at=?, search_keywords=?, structured_data=?
 		WHERE id=?`,
 		string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
@@ -533,6 +541,10 @@ func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]Af
 
 // AddEvidenceItem adds an evidence item linked to an artifact.
 func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifactRef string) error {
+	return s.addEvidenceItemWithExec(ctx, s.db, item, artifactRef)
+}
+
+func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
 	formality := normalizeFormalityLevel(item.FormalityLevel)
 	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
 	if err != nil {
@@ -598,7 +610,7 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 		strings.Join(placeholders, ", "),
 	)
 
-	_, err = s.db.ExecContext(ctx, query, args...)
+	_, err = execer.ExecContext(ctx, query, args...)
 	return err
 }
 
@@ -684,10 +696,35 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 // SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.
 // Used by Measure to supersede previous measurements (FPF F.10:6.1 — newer evidence replaces older).
 func (s *Store) SupersedeEvidenceByType(ctx context.Context, artifactRef string, evidenceType string) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.supersedeEvidenceByTypeWithExec(ctx, s.db, artifactRef, evidenceType)
+}
+
+func (s *Store) supersedeEvidenceByTypeWithExec(ctx context.Context, execer sqlExecer, artifactRef string, evidenceType string) error {
+	_, err := execer.ExecContext(ctx,
 		`UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = ? AND verdict != 'superseded'`,
 		artifactRef, evidenceType)
 	return err
+}
+
+// CommitMeasurement atomically updates a decision and replaces its active measurement evidence.
+func (s *Store) CommitMeasurement(ctx context.Context, decision *Artifact, item *EvidenceItem) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := s.updateArtifactWithExec(ctx, tx, decision); err != nil {
+		return err
+	}
+	if err := s.supersedeEvidenceByTypeWithExec(ctx, tx, decision.Meta.ID, item.Type); err != nil {
+		return err
+	}
+	if err := s.addEvidenceItemWithExec(ctx, tx, item, decision.Meta.ID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // LastRefreshScan returns the timestamp of the last haft_refresh:scan call from audit_log.

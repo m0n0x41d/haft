@@ -244,7 +244,7 @@ type DecisionFields struct {
 	CounterArgument      string               `json:"counterargument,omitempty"`
 	WeakestLink          string               `json:"weakest_link,omitempty"`
 	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
-	Predictions          []PredictionInput    `json:"predictions,omitempty"`
+	Predictions          []DecisionPrediction `json:"predictions,omitempty"`
 	PreConditions        []string             `json:"pre_conditions,omitempty"`
 	RollbackTriggers     []string             `json:"rollback_triggers,omitempty"`
 	RollbackSteps        []string             `json:"rollback_steps,omitempty"`
@@ -282,6 +282,7 @@ func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
 	}
 	var df DecisionFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &df)
+	df.Predictions = normalizeDecisionPredictions(df.Predictions)
 	return df
 }
 
@@ -422,6 +423,25 @@ type ComparisonResult struct {
 	SelectedRef             string                        `json:"selected_ref,omitempty"`
 	RecommendationRationale string                        `json:"recommendation_rationale,omitempty"`
 	ParityPlan              *ParityPlan                   `json:"parity_plan,omitempty"`
+}
+
+// ClaimStatus is the canonical runtime verification state for a prediction or claim.
+type ClaimStatus string
+
+const (
+	ClaimStatusUnverified   ClaimStatus = "unverified"
+	ClaimStatusSupported    ClaimStatus = "supported"
+	ClaimStatusWeakened     ClaimStatus = "weakened"
+	ClaimStatusRefuted      ClaimStatus = "refuted"
+	ClaimStatusInconclusive ClaimStatus = "inconclusive"
+)
+
+// DecisionPrediction is the canonical stored runtime state for one decision prediction.
+type DecisionPrediction struct {
+	Claim      string      `json:"claim"`
+	Observable string      `json:"observable"`
+	Threshold  string      `json:"threshold"`
+	Status     ClaimStatus `json:"status,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.

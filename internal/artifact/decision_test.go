@@ -434,8 +434,9 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 
 	fields := decision.UnmarshalDecisionFields()
-	if !reflect.DeepEqual(fields.Predictions, input.Predictions) {
-		t.Fatalf("predictions in structured state = %#v, want %#v", fields.Predictions, input.Predictions)
+	wantPredictions := newDecisionPredictions(input.Predictions)
+	if !reflect.DeepEqual(fields.Predictions, wantPredictions) {
+		t.Fatalf("predictions in structured state = %#v, want %#v", fields.Predictions, wantPredictions)
 	}
 
 	if !strings.Contains(decision.Body, "**Predictions:**") {
@@ -454,8 +455,8 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 
 	reloadedFields := reloaded.UnmarshalDecisionFields()
-	if !reflect.DeepEqual(reloadedFields.Predictions, input.Predictions) {
-		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, input.Predictions)
+	if !reflect.DeepEqual(reloadedFields.Predictions, wantPredictions) {
+		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, wantPredictions)
 	}
 }
 
@@ -525,5 +526,30 @@ func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) 
 	}
 	if len(reloadedFields.RefreshTriggers) != 0 {
 		t.Fatalf("legacy decision should decode with no refresh triggers, got %#v", reloadedFields.RefreshTriggers)
+	}
+}
+
+func TestArtifact_UnmarshalDecisionFields_DefaultsLegacyPredictionStatus(t *testing.T) {
+	decision := &Artifact{
+		StructuredData: `{
+			"selected_title":"Legacy decision",
+			"why_selected":"Already shipped",
+			"predictions":[
+				{"claim":"Latency stays under 50ms","observable":"publish latency p99","threshold":"< 50ms"}
+			]
+		}`,
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+
+	wantPredictions := []DecisionPrediction{{
+		Claim:      "Latency stays under 50ms",
+		Observable: "publish latency p99",
+		Threshold:  "< 50ms",
+		Status:     ClaimStatusUnverified,
+	}}
+
+	if !reflect.DeepEqual(fields.Predictions, wantPredictions) {
+		t.Fatalf("legacy predictions = %#v, want %#v", fields.Predictions, wantPredictions)
 	}
 }

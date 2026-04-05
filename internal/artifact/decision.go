@@ -318,7 +318,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		CounterArgument:      input.CounterArgument,
 		WeakestLink:          input.WeakestLink,
 		WhyNotOthers:         input.WhyNotOthers,
-		Predictions:          input.Predictions,
+		Predictions:          newDecisionPredictions(input.Predictions),
 		PreConditions:        input.PreConditions,
 		RollbackTriggers:     rollbackTriggers,
 		RollbackSteps:        rollbackSteps,

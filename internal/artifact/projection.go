@@ -81,19 +81,22 @@ type PortfolioProjection struct {
 
 // DecisionProjection is the graph node used for audience-specific rendering.
 type DecisionProjection struct {
-	Meta             Meta
-	NeedsRefresh     bool
-	ProblemRefs      []string
-	PortfolioRefs    []string
-	SelectedTitle    string
-	WhySelected      string
-	SelectionPolicy  string
-	CounterArgument  string
-	WeakestLink      string
-	WhyNotOthers     []RejectionReason
-	RollbackTriggers []string
-	Evidence         ProjectionEvidenceSummary
-	Measured         bool
+	Meta                 Meta
+	NeedsRefresh         bool
+	ProblemRefs          []string
+	PortfolioRefs        []string
+	SelectedTitle        string
+	WhySelected          string
+	SelectionPolicy      string
+	CounterArgument      string
+	WeakestLink          string
+	WhyNotOthers         []RejectionReason
+	PreConditions        []string
+	EvidenceRequirements []string
+	RollbackTriggers     []string
+	RefreshTriggers      []string
+	Evidence             ProjectionEvidenceSummary
+	Measured             bool
 }
 
 // FetchProjectionGraph builds a deterministic graph snapshot that can be rendered
@@ -170,25 +173,29 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 		fields := decision.UnmarshalDecisionFields()
 		portfolioRefs := projectionLinkRefs(decision.Meta.Links, portfolioIDs)
 		problemRefs := projectionDecisionProblemRefs(
+			fields.ProblemRefs,
 			projectionLinkRefs(decision.Meta.Links, problemIDs),
 			decision.Meta.Links,
 			portfolioProblemRefs,
 		)
 
 		graph.Decisions = append(graph.Decisions, DecisionProjection{
-			Meta:             decision.Meta,
-			NeedsRefresh:     projectionNeedsRefresh(decision.Meta, now),
-			ProblemRefs:      problemRefs,
-			PortfolioRefs:    portfolioRefs,
-			SelectedTitle:    strings.TrimSpace(fields.SelectedTitle),
-			WhySelected:      strings.TrimSpace(fields.WhySelected),
-			SelectionPolicy:  strings.TrimSpace(fields.SelectionPolicy),
-			CounterArgument:  strings.TrimSpace(fields.CounterArgument),
-			WeakestLink:      strings.TrimSpace(fields.WeakestLink),
-			WhyNotOthers:     cloneRejectionReasons(fields.WhyNotOthers),
-			RollbackTriggers: cloneStringSlice(fields.RollbackTriggers),
-			Evidence:         buildProjectionEvidenceSummary(ctx, store, decision.Meta.ID),
-			Measured:         hasMeasurement(ctx, store, decision.Meta.ID),
+			Meta:                 decision.Meta,
+			NeedsRefresh:         projectionNeedsRefresh(decision.Meta, now),
+			ProblemRefs:          problemRefs,
+			PortfolioRefs:        portfolioRefs,
+			SelectedTitle:        strings.TrimSpace(fields.SelectedTitle),
+			WhySelected:          strings.TrimSpace(fields.WhySelected),
+			SelectionPolicy:      strings.TrimSpace(fields.SelectionPolicy),
+			CounterArgument:      strings.TrimSpace(fields.CounterArgument),
+			WeakestLink:          strings.TrimSpace(fields.WeakestLink),
+			WhyNotOthers:         cloneRejectionReasons(fields.WhyNotOthers),
+			PreConditions:        cloneStringSlice(fields.PreConditions),
+			EvidenceRequirements: cloneStringSlice(fields.EvidenceRequirements),
+			RollbackTriggers:     cloneStringSlice(fields.RollbackTriggers),
+			RefreshTriggers:      cloneStringSlice(fields.RefreshTriggers),
+			Evidence:             buildProjectionEvidenceSummary(ctx, store, decision.Meta.ID),
+			Measured:             hasMeasurement(ctx, store, decision.Meta.ID),
 		})
 	}
 
@@ -356,11 +363,16 @@ func projectionPortfolioProblemRefs(portfolio *Artifact, problemIDs map[string]s
 }
 
 func projectionDecisionProblemRefs(
+	structuredProblemRefs []string,
 	directProblemRefs []string,
 	links []Link,
 	portfolioProblemRefs map[string][]string,
 ) []string {
-	resolvedRefs := cloneStringSlice(directProblemRefs)
+	resolvedRefs := cloneStringSlice(structuredProblemRefs)
+
+	for _, problemRef := range directProblemRefs {
+		resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+	}
 
 	for _, link := range links {
 		if link.Type != "based_on" {

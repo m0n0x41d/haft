@@ -139,6 +139,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	}
 
 	fields := a.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(fields.ProblemRefs, []string{prob.Meta.ID}) {
+		t.Fatalf("problem refs in structured state = %#v, want [%q]", fields.ProblemRefs, prob.Meta.ID)
+	}
 	if fields.SelectionPolicy == "" {
 		t.Error("expected selection_policy in structured data")
 	}
@@ -150,6 +153,34 @@ func TestDecide_FullDRR(t *testing.T) {
 	}
 	if len(fields.RollbackTriggers) != 1 {
 		t.Fatalf("expected rollback trigger in structured data, got %#v", fields.RollbackTriggers)
+	}
+	if !reflect.DeepEqual(fields.PreConditions, input.PreConditions) {
+		t.Fatalf("pre-conditions in structured state = %#v, want %#v", fields.PreConditions, input.PreConditions)
+	}
+	if !reflect.DeepEqual(fields.EvidenceRequirements, input.EvidenceReqs) {
+		t.Fatalf("evidence requirements in structured state = %#v, want %#v", fields.EvidenceRequirements, input.EvidenceReqs)
+	}
+	if !reflect.DeepEqual(fields.RefreshTriggers, input.RefreshTriggers) {
+		t.Fatalf("refresh triggers in structured state = %#v, want %#v", fields.RefreshTriggers, input.RefreshTriggers)
+	}
+
+	reloaded, err := store.Get(ctx, a.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(reloadedFields.ProblemRefs, fields.ProblemRefs) {
+		t.Fatalf("reloaded problem refs = %#v, want %#v", reloadedFields.ProblemRefs, fields.ProblemRefs)
+	}
+	if !reflect.DeepEqual(reloadedFields.PreConditions, fields.PreConditions) {
+		t.Fatalf("reloaded pre-conditions = %#v, want %#v", reloadedFields.PreConditions, fields.PreConditions)
+	}
+	if !reflect.DeepEqual(reloadedFields.EvidenceRequirements, fields.EvidenceRequirements) {
+		t.Fatalf("reloaded evidence requirements = %#v, want %#v", reloadedFields.EvidenceRequirements, fields.EvidenceRequirements)
+	}
+	if !reflect.DeepEqual(reloadedFields.RefreshTriggers, fields.RefreshTriggers) {
+		t.Fatalf("reloaded refresh triggers = %#v, want %#v", reloadedFields.RefreshTriggers, fields.RefreshTriggers)
 	}
 
 	// Check affected files in DB
@@ -444,6 +475,18 @@ func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) 
 	if len(fields.Predictions) != 0 {
 		t.Fatalf("expected no structured predictions, got %#v", fields.Predictions)
 	}
+	if len(fields.ProblemRefs) != 0 {
+		t.Fatalf("expected no structured problem refs, got %#v", fields.ProblemRefs)
+	}
+	if len(fields.PreConditions) != 0 {
+		t.Fatalf("expected no structured pre-conditions, got %#v", fields.PreConditions)
+	}
+	if len(fields.EvidenceRequirements) != 0 {
+		t.Fatalf("expected no structured evidence requirements, got %#v", fields.EvidenceRequirements)
+	}
+	if len(fields.RefreshTriggers) != 0 {
+		t.Fatalf("expected no structured refresh triggers, got %#v", fields.RefreshTriggers)
+	}
 	if strings.Contains(decision.Body, "**Predictions:**") {
 		t.Fatalf("decision body should omit the predictions section when none were declared:\n%s", decision.Body)
 	}
@@ -470,5 +513,17 @@ func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) 
 	reloadedFields := reloaded.UnmarshalDecisionFields()
 	if len(reloadedFields.Predictions) != 0 {
 		t.Fatalf("legacy decision should decode with no predictions, got %#v", reloadedFields.Predictions)
+	}
+	if len(reloadedFields.ProblemRefs) != 0 {
+		t.Fatalf("legacy decision should decode with no problem refs, got %#v", reloadedFields.ProblemRefs)
+	}
+	if len(reloadedFields.PreConditions) != 0 {
+		t.Fatalf("legacy decision should decode with no pre-conditions, got %#v", reloadedFields.PreConditions)
+	}
+	if len(reloadedFields.EvidenceRequirements) != 0 {
+		t.Fatalf("legacy decision should decode with no evidence requirements, got %#v", reloadedFields.EvidenceRequirements)
+	}
+	if len(reloadedFields.RefreshTriggers) != 0 {
+		t.Fatalf("legacy decision should decode with no refresh triggers, got %#v", reloadedFields.RefreshTriggers)
 	}
 }

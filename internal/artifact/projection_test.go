@@ -2,6 +2,8 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -289,6 +291,81 @@ func TestFetchProjectionGraph_DerivesDecisionProblemRefsThroughHiddenPortfolio(t
 	problemNode := graph.Problems[0]
 	if len(problemNode.DecisionRefs) != 1 || problemNode.DecisionRefs[0] != decision.Meta.ID {
 		t.Fatalf("expected hidden portfolio lineage to back-propagate the decision, got %+v", problemNode.DecisionRefs)
+	}
+}
+
+func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionState(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+		Context:    "payments",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	structuredData, err := json.Marshal(DecisionFields{
+		ProblemRefs:          []string{problem.Meta.ID},
+		SelectedTitle:        "gRPC",
+		WhySelected:          "It meets the latency target with acceptable operating cost.",
+		SelectionPolicy:      "Minimize latency within the accepted cost envelope.",
+		CounterArgument:      "Tooling and rollout complexity are still meaningful costs.",
+		WeakestLink:          "Operational confidence still depends on limited production-grade evidence.",
+		PreConditions:        []string{"Replay benchmark harness ready"},
+		EvidenceRequirements: []string{"Replay benchmark with pinned protocol versions"},
+		RefreshTriggers:      []string{"Latency budget regresses under production mix"},
+		RollbackTriggers:     []string{"Cutover error rate exceeds the accepted ceiling"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision := &Artifact{
+		Meta: Meta{
+			ID:      "dec-structured-problem-refs",
+			Kind:    KindDecisionRecord,
+			Status:  StatusActive,
+			Context: "payments",
+			Title:   "gRPC",
+		},
+		Body:           "# gRPC\n",
+		StructuredData: string(structuredData),
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := FetchProjectionGraph(ctx, store, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(graph.Problems) != 1 || len(graph.Decisions) != 1 {
+		t.Fatalf("unexpected graph sizes: problems=%d decisions=%d", len(graph.Problems), len(graph.Decisions))
+	}
+
+	decisionNode := graph.Decisions[0]
+	if !reflect.DeepEqual(decisionNode.ProblemRefs, []string{problem.Meta.ID}) {
+		t.Fatalf("expected structured problem refs to survive into the projection graph, got %+v", decisionNode.ProblemRefs)
+	}
+	if !reflect.DeepEqual(decisionNode.PreConditions, []string{"Replay benchmark harness ready"}) {
+		t.Fatalf("expected structured pre-conditions in projection graph, got %+v", decisionNode.PreConditions)
+	}
+	if !reflect.DeepEqual(decisionNode.EvidenceRequirements, []string{"Replay benchmark with pinned protocol versions"}) {
+		t.Fatalf("expected structured evidence requirements in projection graph, got %+v", decisionNode.EvidenceRequirements)
+	}
+	if !reflect.DeepEqual(decisionNode.RefreshTriggers, []string{"Latency budget regresses under production mix"}) {
+		t.Fatalf("expected structured refresh triggers in projection graph, got %+v", decisionNode.RefreshTriggers)
+	}
+
+	problemNode := graph.Problems[0]
+	if len(problemNode.DecisionRefs) != 1 || problemNode.DecisionRefs[0] != decision.Meta.ID {
+		t.Fatalf("expected structured decision problem refs to back-propagate to the problem, got %+v", problemNode.DecisionRefs)
 	}
 }
 

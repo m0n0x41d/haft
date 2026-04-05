@@ -311,20 +311,24 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	}
 
 	decisionFields := DecisionFields{
-		SelectedTitle:       input.SelectedTitle,
-		WhySelected:         input.WhySelected,
-		SelectionPolicy:     input.SelectionPolicy,
-		CounterArgument:     input.CounterArgument,
-		WeakestLink:         input.WeakestLink,
-		WhyNotOthers:        input.WhyNotOthers,
-		Predictions:         input.Predictions,
-		RollbackTriggers:    rollbackTriggers,
-		RollbackSteps:       rollbackSteps,
-		RollbackBlastRadius: rollbackBlastRadius,
-		Invariants:          input.Invariants,
-		PostConds:           input.PostConditions,
-		Admissibility:       input.Admissibility,
-		FirstModuleCoverage: input.FirstModuleCoverage,
+		ProblemRefs:          dctx.ProblemRefs,
+		SelectedTitle:        input.SelectedTitle,
+		WhySelected:          input.WhySelected,
+		SelectionPolicy:      input.SelectionPolicy,
+		CounterArgument:      input.CounterArgument,
+		WeakestLink:          input.WeakestLink,
+		WhyNotOthers:         input.WhyNotOthers,
+		Predictions:          input.Predictions,
+		PreConditions:        input.PreConditions,
+		RollbackTriggers:     rollbackTriggers,
+		RollbackSteps:        rollbackSteps,
+		RollbackBlastRadius:  rollbackBlastRadius,
+		Invariants:           input.Invariants,
+		PostConds:            input.PostConditions,
+		Admissibility:        input.Admissibility,
+		EvidenceRequirements: input.EvidenceReqs,
+		RefreshTriggers:      input.RefreshTriggers,
+		FirstModuleCoverage:  input.FirstModuleCoverage,
 	}
 
 	if len(input.Invariants) > 0 {
@@ -334,9 +338,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		}
 	}
 
-	if len(input.PreConditions) > 0 {
+	if len(decisionFields.PreConditions) > 0 {
 		body.WriteString("\n**Pre-conditions:**\n")
-		for _, pc := range input.PreConditions {
+		for _, pc := range decisionFields.PreConditions {
 			body.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
 		}
 	}
@@ -378,9 +382,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n")
 	}
 
-	if len(input.EvidenceReqs) > 0 {
+	if len(decisionFields.EvidenceRequirements) > 0 {
 		body.WriteString("**Evidence requirements:**\n")
-		for _, e := range input.EvidenceReqs {
+		for _, e := range decisionFields.EvidenceRequirements {
 			body.WriteString(fmt.Sprintf("- %s\n", e))
 		}
 		body.WriteString("\n")
@@ -422,9 +426,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n")
 	}
 
-	if len(input.RefreshTriggers) > 0 {
+	if len(decisionFields.RefreshTriggers) > 0 {
 		body.WriteString("**Refresh triggers:**\n")
-		for _, rt := range input.RefreshTriggers {
+		for _, rt := range decisionFields.RefreshTriggers {
 			body.WriteString(fmt.Sprintf("- %s\n", rt))
 		}
 		body.WriteString("\n")

@@ -237,21 +237,25 @@ type ProblemFields struct {
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	SelectedTitle       string               `json:"selected_title"`
-	WhySelected         string               `json:"why_selected"`
-	SelectionPolicy     string               `json:"selection_policy,omitempty"`
-	CounterArgument     string               `json:"counterargument,omitempty"`
-	WeakestLink         string               `json:"weakest_link,omitempty"`
-	WhyNotOthers        []RejectionReason    `json:"why_not_others,omitempty"`
-	Predictions         []PredictionInput    `json:"predictions,omitempty"`
-	RollbackTriggers    []string             `json:"rollback_triggers,omitempty"`
-	RollbackSteps       []string             `json:"rollback_steps,omitempty"`
-	RollbackBlastRadius string               `json:"rollback_blast_radius,omitempty"`
-	Invariants          []string             `json:"invariants,omitempty"`
-	PostConds           []string             `json:"post_conditions,omitempty"`
-	Admissibility       []string             `json:"admissibility,omitempty"`
-	FirstModuleCoverage bool                 `json:"first_module_coverage,omitempty"`
-	DriftManifests      []DriftScopeManifest `json:"drift_manifests,omitempty"`
+	ProblemRefs          []string             `json:"problem_refs,omitempty"`
+	SelectedTitle        string               `json:"selected_title"`
+	WhySelected          string               `json:"why_selected"`
+	SelectionPolicy      string               `json:"selection_policy,omitempty"`
+	CounterArgument      string               `json:"counterargument,omitempty"`
+	WeakestLink          string               `json:"weakest_link,omitempty"`
+	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
+	Predictions          []PredictionInput    `json:"predictions,omitempty"`
+	PreConditions        []string             `json:"pre_conditions,omitempty"`
+	RollbackTriggers     []string             `json:"rollback_triggers,omitempty"`
+	RollbackSteps        []string             `json:"rollback_steps,omitempty"`
+	RollbackBlastRadius  string               `json:"rollback_blast_radius,omitempty"`
+	Invariants           []string             `json:"invariants,omitempty"`
+	PostConds            []string             `json:"post_conditions,omitempty"`
+	Admissibility        []string             `json:"admissibility,omitempty"`
+	EvidenceRequirements []string             `json:"evidence_requirements,omitempty"`
+	RefreshTriggers      []string             `json:"refresh_triggers,omitempty"`
+	FirstModuleCoverage  bool                 `json:"first_module_coverage,omitempty"`
+	DriftManifests       []DriftScopeManifest `json:"drift_manifests,omitempty"`
 }
 
 // DriftScopeManifest stores the baseline file set for one governed scope.

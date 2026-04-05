@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
   createPromptSubmission,
+  drainPromptSubmissions,
   hasSubmittableText,
   restoreQueuedSubmission,
   shiftPromptSubmissions,
@@ -65,4 +66,27 @@ test("restoring a queued draft keeps keyboard ownership with the prompt", () => 
   assert.equal(restored.attachmentSelection, false)
   assert.equal(restored.draft?.attachments[0]?.name, "image.png")
   assert.equal(edited.text, "queued prompt updated")
+})
+
+test("drains queued local slash commands until the first real submission", () => {
+  const queued = [
+    createPromptSubmission("/help", []),
+    createPromptSubmission("real prompt", [
+      { id: 1, name: "image.png", path: "/tmp/image.png", isImage: true },
+    ]),
+    createPromptSubmission("later prompt", []),
+  ]
+  const drained = drainPromptSubmissions(queued, (submission) => {
+    return submission.text === "/help"
+  })
+
+  assert.deepEqual(
+    submissionTexts(drained.replay),
+    ["/help", "real prompt"],
+  )
+  assert.deepEqual(
+    submissionTexts(drained.remaining),
+    ["later prompt"],
+  )
+  assert.equal(drained.replay[1]?.attachments[0]?.name, "image.png")
 })

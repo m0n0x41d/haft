@@ -28,8 +28,8 @@ import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
 import {
   createPromptSubmission,
+  drainPromptSubmissions,
   restoreQueuedSubmission,
-  shiftPromptSubmissions,
   submissionTexts,
   type PromptSubmission,
 } from "./promptSubmission.js"
@@ -50,6 +50,29 @@ const SLASH_COMMANDS: PickerItem[] = [
   { id: "/note", label: "/note", desc: "Record a micro-decision" },
   { id: "/search", label: "/search", desc: "Search past decisions" },
 ]
+
+const LOCAL_ONLY_SLASH_COMMANDS = new Set([
+  "/compact",
+  "/help",
+  "/model",
+  "/resume",
+])
+
+function leadingSlashCommand(text: string): string | null {
+  if (!text.startsWith("/")) {
+    return null
+  }
+
+  const [command] = text.split(" ")
+
+  return command ?? null
+}
+
+function isLocalOnlySlashCommand(text: string): boolean {
+  const command = leadingSlashCommand(text)
+
+  return command !== null && LOCAL_ONLY_SLASH_COMMANDS.has(command)
+}
 
 interface AppProps {
   client: JsonRpcClient
@@ -80,8 +103,8 @@ export function App({ client, inputEvents }: AppProps) {
     [queuedMessages],
   )
 
-  // Stable ref to replay a queued submission after streaming finishes.
-  const replaySubmissionRef = useRef<(submission: PromptSubmission) => void>(() => {})
+  // Stable ref to replay the drained queued prefix after streaming finishes.
+  const replayQueueRef = useRef<(submissions: readonly PromptSubmission[]) => void>(() => {})
 
   // Syntax highlighting applies lazily — no forced re-render on load.
   // Components pick up highlighting on their next natural render cycle.
@@ -237,15 +260,17 @@ export function App({ client, inputEvents }: AppProps) {
           }
           dispatch({ type: "coord.done" })
           setQueuedMessages((submissions) => {
-            const shifted = shiftPromptSubmissions(submissions)
+            const drained = drainPromptSubmissions(submissions, (submission) => {
+              return isLocalOnlySlashCommand(submission.text)
+            })
 
-            if (shifted.current) {
-              const current = shifted.current
+            if (drained.replay.length > 0) {
+              const replay = drained.replay
 
-              setTimeout(() => replaySubmissionRef.current(current), 100)
+              setTimeout(() => replayQueueRef.current(replay), 100)
             }
 
-            return shifted.remaining
+            return drained.remaining
           })
           break
       }
@@ -327,11 +352,11 @@ export function App({ client, inputEvents }: AppProps) {
   }, [client])
 
   const handleSlashCommand = useCallback((text: string): boolean => {
-    if (!text.startsWith("/")) {
+    const cmd = leadingSlashCommand(text)
+
+    if (!cmd) {
       return false
     }
-
-    const cmd = text.split(" ")[0]
 
     switch (cmd) {
       case "/model":
@@ -356,11 +381,16 @@ export function App({ client, inputEvents }: AppProps) {
 
   const replaySubmission = useCallback((submission: PromptSubmission) => {
     if (handleSlashCommand(submission.text)) {
-      return
+      return false
     }
 
     sendSubmission(submission)
+    return true
   }, [handleSlashCommand, sendSubmission])
+
+  const replayQueuedSubmissions = useCallback((submissions: readonly PromptSubmission[]) => {
+    submissions.some((submission) => replaySubmission(submission))
+  }, [replaySubmission])
 
   const handleSubmit = useCallback((text: string) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
@@ -393,7 +423,7 @@ export function App({ client, inputEvents }: AppProps) {
       return next
     })
   }, [])
-  replaySubmissionRef.current = replaySubmission
+  replayQueueRef.current = replayQueuedSubmissions
 
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
     const yolo = action === "allow_session"

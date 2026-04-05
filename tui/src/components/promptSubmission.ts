@@ -16,6 +16,11 @@ export interface RestoredQueuedSubmission {
   attachmentSelection: boolean
 }
 
+export interface DrainedPromptSubmissions {
+  replay: PromptSubmission[]
+  remaining: PromptSubmission[]
+}
+
 export function hasSubmittableText(text: string): boolean {
   return text.trim().length > 0
 }
@@ -56,6 +61,25 @@ export function restoreQueuedSubmission(
     draft: shifted.current,
     remaining: shifted.remaining,
     attachmentSelection: false,
+  }
+}
+
+export function drainPromptSubmissions(
+  submissions: readonly PromptSubmission[],
+  shouldContinueDraining: (submission: PromptSubmission) => boolean,
+): DrainedPromptSubmissions {
+  const stopIndex = submissions.findIndex((submission) => {
+    return !shouldContinueDraining(submission)
+  })
+  const replayCount = stopIndex === -1 ? submissions.length : stopIndex + 1
+  const replay = submissions
+    .slice(0, replayCount)
+    .map(clonePromptSubmission)
+  const remaining = submissions.slice(replayCount)
+
+  return {
+    replay,
+    remaining: [...remaining],
   }
 }
 

@@ -141,6 +141,9 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001,claim-002" {
 		t.Fatalf("measurement claim_refs = %q, want claim-001,claim-002", got)
 	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Latency stays under 50ms,Throughput stays above 100k events/sec" {
+		t.Fatalf("measurement claim_scope = %q, want canonical claim scope", got)
+	}
 
 	reloaded, err := store.Get(ctx, dec.Meta.ID)
 	if err != nil {
@@ -369,8 +372,8 @@ func TestAttachEvidence_Success(t *testing.T) {
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-002" {
 		t.Errorf("stored claim_refs = %q, want claim-002", got)
 	}
-	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
-		t.Errorf("stored claim_scope = %q, want deduplicated scope", got)
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Throughput stays above 100k events/sec" {
+		t.Errorf("stored claim_scope = %q, want canonical scope for explicit claim refs", got)
 	}
 }
 
@@ -409,6 +412,49 @@ func TestAttachEvidence_ResolvesClaimRefsFromLegacyScope(t *testing.T) {
 	}
 	if got := strings.Join(item.ClaimScope, ","); got != "latency" {
 		t.Fatalf("claim_scope = %q, want latency", got)
+	}
+}
+
+func TestWLNKSummary_UsesCanonicalClaimScopeForExplicitClaimRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "latency",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef: dec.Meta.ID,
+		Content:     "Throughput evidence only.",
+		Type:        "benchmark",
+		Verdict:     "supports",
+		ClaimRefs:   []string{"claim-002"},
+		ClaimScope:  []string{"latency", "throughput"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if got := strings.Join(wlnk.GEff, ","); got != "Throughput stays above 100k events/sec" {
+		t.Fatalf("GEff = %q, want canonical scope for explicit claim refs", got)
 	}
 }
 

@@ -1138,10 +1138,6 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	criteriaMetScope := measuredCriteriaScope(input.CriteriaMet, nil, scopeCandidates)
 	criteriaNotMetScope := measuredCriteriaScope(nil, input.CriteriaNotMet, scopeCandidates)
-	claimScope := make([]string, 0, len(criteriaMetScope)+len(criteriaNotMetScope))
-	claimScope = append(claimScope, criteriaMetScope...)
-	claimScope = append(claimScope, criteriaNotMetScope...)
-	claimScope = normalizeClaimScope(claimScope)
 
 	decisionFields := a.UnmarshalDecisionFields()
 	claimRefs := measuredDecisionClaimRefs(
@@ -1160,6 +1156,14 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		criteriaNotMetScope,
 	)
 	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
+
+	claimScope := decisionClaimScopeFromRefs(decisionFields.Claims, claimRefs)
+	if len(claimScope) == 0 {
+		claimScope = make([]string, 0, len(criteriaMetScope)+len(criteriaNotMetScope))
+		claimScope = append(claimScope, criteriaMetScope...)
+		claimScope = append(claimScope, criteriaNotMetScope...)
+		claimScope = normalizeClaimScope(claimScope)
+	}
 
 	sd, err := json.Marshal(decisionFields)
 	if err != nil {
@@ -1249,16 +1253,21 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	}
 	input.ClaimRefs = normalizeClaimRefs(input.ClaimRefs)
 	input.ClaimScope = normalizeClaimScope(input.ClaimScope)
+	hasExplicitClaimRefs := len(input.ClaimRefs) > 0
 
 	if artifactItem.Meta.Kind == KindDecisionRecord {
-		claimRefs, err := resolveDecisionEvidenceClaimRefs(artifactItem.UnmarshalDecisionFields().Claims, input.ClaimRefs, input.ClaimScope)
+		decisionClaims := artifactItem.UnmarshalDecisionFields().Claims
+		claimRefs, err := resolveDecisionEvidenceClaimRefs(decisionClaims, input.ClaimRefs, input.ClaimScope)
 		if err != nil {
 			return nil, err
 		}
 
 		input.ClaimRefs = claimRefs
+		if hasExplicitClaimRefs {
+			input.ClaimScope = decisionClaimScopeFromRefs(decisionClaims, input.ClaimRefs)
+		}
 		if len(input.ClaimScope) == 0 {
-			input.ClaimScope = decisionClaimScopeFromRefs(artifactItem.UnmarshalDecisionFields().Claims, input.ClaimRefs)
+			input.ClaimScope = decisionClaimScopeFromRefs(decisionClaims, input.ClaimRefs)
 		}
 	}
 	if artifactItem.Meta.Kind != KindDecisionRecord && len(input.ClaimRefs) > 0 {

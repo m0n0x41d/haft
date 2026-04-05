@@ -101,14 +101,6 @@ export function summarizeQueuedPromptText(text: string): string {
   return `${singleLine.slice(0, QUEUE_PREVIEW_CHAR_LIMIT - 3)}...`
 }
 
-export function collapsedPromptDisplayText(text: string): string | null {
-  if (!shouldCollapsePromptText(text)) {
-    return null
-  }
-
-  return formatCollapsedRowsInserted(countPromptRows(text))
-}
-
 function collectCollapsedPasteIds(text: string): Set<number> {
   const ids = new Set<number>()
 

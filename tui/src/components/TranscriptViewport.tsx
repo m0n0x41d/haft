@@ -20,13 +20,19 @@ export function TranscriptViewport({
   width,
 }: TranscriptViewportProps) {
   return (
-    <Box flexDirection="column" marginTop={-viewport.cropTop} flexShrink={0} width={width}>
-      <ChatView
-        entries={entries}
-        width={width}
-        toolHistoryExpanded={toolHistoryExpanded}
-        measureRef={measureRef}
-      />
+    <Box flexDirection="column" marginTop={-viewport.topSpacer} flexShrink={0} width={width}>
+      {viewport.topSpacer > 0 && <Box flexShrink={0} height={viewport.topSpacer} />}
+
+      <Box flexDirection="column" marginTop={-viewport.cropTop} flexShrink={0} width={width}>
+        <ChatView
+          entries={entries}
+          width={width}
+          toolHistoryExpanded={toolHistoryExpanded}
+          measureRef={measureRef}
+        />
+      </Box>
+
+      {viewport.bottomSpacer > 0 && <Box flexShrink={0} height={viewport.bottomSpacer} />}
     </Box>
   )
 }

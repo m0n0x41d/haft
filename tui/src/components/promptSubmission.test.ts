@@ -3,6 +3,7 @@ import { test } from "node:test"
 import {
   createPromptSubmission,
   drainPromptSubmissions,
+  expandPromptSubmissionText,
   hasSubmittableText,
   leadingSlashCommand,
   queuedPromptReplayDisposition,
@@ -93,6 +94,23 @@ test("summarizes large queued prompt previews without mutating the submission", 
 
   assert.deepEqual(submissionTexts(queued), ["[40 rows inserted]"])
   assert.equal(queued[0]?.text, largePrompt)
+})
+
+test("expands hidden pasted bodies into the final submitted text", () => {
+  const submission = createPromptSubmission(
+    "prefix [40 rows inserted #7] suffix",
+    [],
+    [{
+      id: 7,
+      text: "expanded article body",
+      rowCount: 40,
+    }],
+  )
+
+  assert.equal(
+    expandPromptSubmissionText(submission),
+    "prefix expanded article body suffix",
+  )
 })
 
 test("classifies queued slash commands by replay behavior", () => {

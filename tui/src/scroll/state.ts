@@ -3,6 +3,8 @@
 // No React, no Ink, no side effects.
 
 export interface ScrollState {
+  // Live-tail following vs explicit reading mode.
+  mode: "sticky" | "reading"
   // Lines scrolled back from bottom. 0 = at bottom (sticky).
   offset: number
   // Total rendered lines across all transcript entries
@@ -22,7 +24,7 @@ export type ScrollCommand =
   | { type: "resize"; viewportSize: number }
 
 export function initialScroll(): ScrollState {
-  return { offset: 0, totalLines: 0, viewportSize: 20 }
+  return { mode: "sticky", offset: 0, totalLines: 0, viewportSize: 20 }
 }
 
 function clampOffset(offset: number, totalLines: number, viewportSize: number): number {
@@ -34,28 +36,28 @@ export function reduceScroll(state: ScrollState, cmd: ScrollCommand): ScrollStat
 
   switch (cmd.type) {
     case "wheelUp":
-      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), max) }
+      return moveIntoReadingMode(state, state.offset + (cmd.amount ?? 3))
 
     case "wheelDown":
-      return { ...state, offset: Math.max(0, state.offset - (cmd.amount ?? 3)) }
+      return moveIntoReadingMode(state, state.offset - (cmd.amount ?? 3))
 
     case "pageUp":
-      return { ...state, offset: Math.min(state.offset + state.viewportSize, max) }
+      return moveIntoReadingMode(state, state.offset + state.viewportSize)
 
     case "pageDown":
-      return { ...state, offset: Math.max(0, state.offset - state.viewportSize) }
+      return moveIntoReadingMode(state, state.offset - state.viewportSize)
 
     case "home":
-      return { ...state, offset: max }
+      return moveIntoReadingMode(state, max)
 
     case "end":
-      return { ...state, offset: 0 }
+      return { ...state, mode: "sticky", offset: 0 }
 
     case "contentChanged": {
-      const wasAtBottom = state.offset === 0
-      if (wasAtBottom) {
-        return { ...state, totalLines: cmd.newTotalLines }
+      if (state.mode === "sticky") {
+        return { ...state, totalLines: cmd.newTotalLines, offset: 0 }
       }
+
       // Preserve viewing position: shift offset by the delta in total lines
       const delta = cmd.newTotalLines - state.totalLines
       return {
@@ -71,6 +73,26 @@ export function reduceScroll(state: ScrollState, cmd: ScrollCommand): ScrollStat
         viewportSize: cmd.viewportSize,
         offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize),
       }
+  }
+}
+
+function moveIntoReadingMode(
+  state: ScrollState,
+  nextOffset: number,
+): ScrollState {
+  const offset = clampOffset(
+    nextOffset,
+    state.totalLines,
+    state.viewportSize,
+  )
+  const mode = offset > 0 || state.mode === "reading"
+    ? "reading"
+    : "sticky"
+
+  return {
+    ...state,
+    mode,
+    offset,
   }
 }
 

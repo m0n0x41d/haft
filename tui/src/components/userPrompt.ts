@@ -1,5 +1,4 @@
 import type { MessageAttachment } from "../protocol/types.js"
-import { collapsedPromptDisplayText } from "./pastedText.js"
 
 export const USER_PROMPT_PREFIX = " ❯ "
 export const USER_PROMPT_CONTINUATION = "   "
@@ -8,16 +7,6 @@ export function buildUserPromptDisplayLines(
   text: string,
   attachments: readonly MessageAttachment[] = [],
 ): string[] {
-  const collapsedText = collapsedPromptDisplayText(text)
-
-  if (collapsedText) {
-    const attachmentDisplayLines = attachments.map((attachment) => (
-      `${USER_PROMPT_CONTINUATION}${formatUserPromptAttachmentLabel(attachment)}`
-    ))
-
-    return [`${USER_PROMPT_PREFIX}${collapsedText}`, ...attachmentDisplayLines]
-  }
-
   const sourceLines = text.split("\n")
   const [firstLine = "", ...continuationLines] = sourceLines
   const firstDisplayLine = `${USER_PROMPT_PREFIX}${firstLine}`

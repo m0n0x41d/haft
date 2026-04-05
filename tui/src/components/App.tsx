@@ -6,7 +6,7 @@ import { useInput } from "../hooks/useInput.js"
 import { trace } from "../debug.js"
 import type { EventEmitter } from "node:events"
 import type { JsonRpcClient } from "../protocol/client.js"
-import type { SessionListResponse, ModelListResponse, FileListResponse } from "../protocol/types.js"
+import type { SessionListResponse, ModelListResponse, FileListResponse, MsgUpdateParams } from "../protocol/types.js"
 import { initialState, reducer } from "../state/store.js"
 import { buildTranscript } from "../state/transcript.js"
 import { useScroll } from "../scroll/useScroll.js"
@@ -26,9 +26,11 @@ import { Picker, type PickerItem } from "./Picker.js"
 import { Attachments } from "./Attachments.js"
 import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
+import { createStreamUpdateBuffer } from "./streamUpdateBuffer.js"
 import {
   createPromptSubmission,
   drainPromptSubmissions,
+  expandPromptSubmissionText,
   leadingSlashCommand,
   restoreQueuedSubmission,
   shouldResumeQueuedReplayAfterCommandResolution,
@@ -38,7 +40,6 @@ import {
 } from "./promptSubmission.js"
 import {
   collapsePastedText,
-  expandCollapsedPastes,
   filterReferencedCollapsedPastes,
   type CollapsedPaste,
 } from "./pastedText.js"
@@ -139,21 +140,19 @@ export function App({ client, inputEvents }: AppProps) {
     return () => { inputEvents.off("paste", handler) }
   }, [inputEvents])
 
-  // Throttle streaming updates
-  const pendingUpdate = useRef<any>(null)
-  const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const throttledMsgUpdate = useCallback((params: any) => {
-    pendingUpdate.current = params
-    if (!throttleTimer.current) {
-      throttleTimer.current = setTimeout(() => {
-        if (pendingUpdate.current) {
-          dispatch({ type: "msg.update", params: pendingUpdate.current })
-          pendingUpdate.current = null
-        }
-        throttleTimer.current = null
-      }, 250)
-    }
+  const dispatchStreamUpdate = useCallback((params: MsgUpdateParams, reason: string) => {
+    trace("stream_update_flushed", {
+      reason,
+      streaming: params.streaming,
+      textLength: params.text.length,
+      thinkingLength: params.thinking?.length ?? 0,
+      toolCount: params.tools?.length ?? 0,
+    })
+    dispatch({ type: "msg.update", params })
   }, [])
+  const streamUpdateBufferRef = useRef(createStreamUpdateBuffer({
+    onFlush: dispatchStreamUpdate,
+  }))
 
   // --- L3: Transcript ---
   const transcript = useMemo(() => buildTranscript({
@@ -181,7 +180,7 @@ export function App({ client, inputEvents }: AppProps) {
     width,
     toolHistoryExpanded,
   )
-  const { state: scrollState, scroll, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
+  const { state: scrollState, scroll, unreadBelow, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
     entryHeights,
     chatHeight,
@@ -223,6 +222,9 @@ export function App({ client, inputEvents }: AppProps) {
       const drained = drainPromptSubmissions(submissions)
 
       if (drained.replay.length > 0) {
+        trace("queue_replay_start", {
+          count: drained.replay.length,
+        })
         const replay = drained.replay
 
         setTimeout(() => replayQueueRef.current(replay), 100)
@@ -230,6 +232,47 @@ export function App({ client, inputEvents }: AppProps) {
 
       return drained.remaining
     })
+  }, [])
+
+  const flushBufferedStream = useCallback((
+    reason: string,
+    overrides?: Partial<MsgUpdateParams>,
+  ) => {
+    return streamUpdateBufferRef.current.flush(reason, overrides)
+  }, [])
+  const replaceBufferedStream = useCallback((
+    params: MsgUpdateParams,
+    reason: string,
+  ) => {
+    streamUpdateBufferRef.current.replace(params, reason)
+  }, [])
+  const finishStreaming = useCallback((
+    reason: string,
+    options: { resumeQueue: boolean },
+  ) => {
+    const flushedPending = flushBufferedStream(reason, { streaming: false })
+    const shouldFinalize = phaseRef.current === "streaming" || flushedPending
+
+    if (!shouldFinalize) {
+      return
+    }
+
+    trace("stream_finished", {
+      reason,
+      flushedPending,
+      resumeQueue: options.resumeQueue,
+    })
+    dispatch({ type: "coord.done" })
+
+    if (options.resumeQueue) {
+      resumeQueuedMessages()
+    }
+  }, [flushBufferedStream, resumeQueuedMessages])
+
+  useEffect(() => {
+    return () => {
+      streamUpdateBufferRef.current.clear()
+    }
   }, [])
 
   // --- Protocol ---
@@ -241,11 +284,17 @@ export function App({ client, inputEvents }: AppProps) {
         case "init":
           dispatch({ type: "init", session: p.session, projectRoot: p.projectRoot, messages: p.messages }); break
         case "msg.update":
-          if (p.streaming) { throttledMsgUpdate(p) }
-          else {
-            if (throttleTimer.current) { clearTimeout(throttleTimer.current); throttleTimer.current = null }
-            dispatch({ type: "msg.update", params: p })
+          trace("stream_update_received", {
+            streaming: p.streaming,
+            textLength: p.text.length,
+            thinkingLength: p.thinking?.length ?? 0,
+            toolCount: p.tools?.length ?? 0,
+          })
+          if (p.streaming) {
+            streamUpdateBufferRef.current.push(p)
+            break
           }
+          replaceBufferedStream(p, "final_msg_update")
           break
         case "tool.start": dispatch({ type: "tool.start", params: p }); break
         case "tool.progress": dispatch({ type: "tool.progress", params: p }); break
@@ -262,16 +311,12 @@ export function App({ client, inputEvents }: AppProps) {
           break
         case "drift.update": dispatch({ type: "drift.update", params: p }); break
         case "lsp.update": dispatch({ type: "lsp.update", params: p }); break
-        case "error": dispatch({ type: "error", message: p.message }); break
+        case "error":
+          finishStreaming("stream_error", { resumeQueue: false })
+          dispatch({ type: "error", message: p.message })
+          break
         case "coord.done":
-          if (throttleTimer.current) { clearTimeout(throttleTimer.current); throttleTimer.current = null }
-          if (pendingUpdate.current) {
-            pendingUpdate.current.streaming = false
-            dispatch({ type: "msg.update", params: pendingUpdate.current })
-            pendingUpdate.current = null
-          }
-          dispatch({ type: "coord.done" })
-          resumeQueuedMessages()
+          finishStreaming("coord_done", { resumeQueue: true })
           break
       }
     })
@@ -287,7 +332,7 @@ export function App({ client, inputEvents }: AppProps) {
       }
     })
 
-  }, [client, resumeQueuedMessages]) // eslint-disable-line react-hooks/exhaustive-deps — handlers registered once
+  }, [client, finishStreaming, replaceBufferedStream]) // eslint-disable-line react-hooks/exhaustive-deps — handlers registered once
 
   // Forward terminal resize to backend (also sends initial size on mount)
   useEffect(() => {
@@ -345,21 +390,14 @@ export function App({ client, inputEvents }: AppProps) {
   }, [client, resumeQueuedMessages])
 
   const sendSubmission = useCallback((submission: PromptSubmission) => {
-    const referencedPastes = filterReferencedCollapsedPastes(
-      submission.text,
-      submission.pastes,
-    )
-    const expandedText = expandCollapsedPastes(
-      submission.text,
-      referencedPastes,
-    )
+    const expandedText = expandPromptSubmissionText(submission)
 
     dispatch({ type: "submitted" })
     dispatch({
       type: "msg.update",
       params: {
         id: `user-${Date.now()}`,
-        text: submission.text,
+        text: expandedText,
         attachments: toMessageAttachments(submission.attachments),
         streaming: false,
       },
@@ -374,6 +412,7 @@ export function App({ client, inputEvents }: AppProps) {
 
     client.send("submit", {
       text: expandedText,
+      displayText: submission.text,
       attachments: submitAttachments.length > 0 ? submitAttachments : undefined,
     })
   }, [client])
@@ -440,30 +479,36 @@ export function App({ client, inputEvents }: AppProps) {
 
   const replayQueuedSubmissions = useCallback((submissions: readonly PromptSubmission[]) => {
     submissions.some((submission) => replaySubmission(submission))
+    trace("queue_replay_finish", {
+      requested: submissions.length,
+      processed: submissions.length > 0 ? 1 : 0,
+    })
   }, [replaySubmission])
 
   const handleSubmit = useCallback((text: string) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
     const submission = createPromptSubmission(text, attachments, draftPastes)
+    const historyText = expandPromptSubmissionText(submission)
 
     if (phaseRef.current === "streaming") {
       setQueuedMessages((current) => [...current, submission])
       setAttachments([])
       setDraftPastes([])
       setAttachmentSelection(false)
-      return
+      return historyText
     }
 
     const commandResult = handleSlashCommand(text, false)
 
     if (commandResult !== "unhandled") {
-      return
+      return historyText
     }
 
     sendSubmission(submission)
     setAttachments([])
     setDraftPastes([])
     setAttachmentSelection(false)
+    return historyText
   }, [attachments, draftPastes, handleSlashCommand, sendSubmission])
 
   const handleRemoveAttachment = useCallback((id: number) => {
@@ -582,13 +627,13 @@ export function App({ client, inputEvents }: AppProps) {
     // Ctrl+C ALWAYS works — never blocked
     if (key.ctrl && input === "c") {
       trace(`ctrl-c phase=${state.phase}`)
-      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }) }
+      if (state.phase === "streaming") { client.send("cancel", {}); finishStreaming("ctrl_c_cancel", { resumeQueue: false }) }
       else exit()
       return
     }
     // Ctrl+D — exit (same as Ctrl+C when not streaming)
     if (key.ctrl && input === "d") {
-      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }) }
+      if (state.phase === "streaming") { client.send("cancel", {}); finishStreaming("ctrl_d_cancel", { resumeQueue: false }) }
       else exit()
       return
     }
@@ -630,7 +675,7 @@ export function App({ client, inputEvents }: AppProps) {
     // Escape: cancel streaming, clear error, or clear scroll
     if (key.escape) {
       if (state.error) { dispatch({ type: "clear.error" }); return }
-      if (state.phase === "streaming") { client.send("cancel", {}); dispatch({ type: "coord.done" }); return }
+      if (state.phase === "streaming") { client.send("cancel", {}); finishStreaming("escape_cancel", { resumeQueue: false }); return }
       return
     }
 
@@ -665,8 +710,14 @@ export function App({ client, inputEvents }: AppProps) {
       </Box>
 
       {/* Scroll indicator */}
-      {scrollState.offset > 0 && (
-        <Text dimColor>  {"\u2191"} {scrollState.offset} lines above (Shift+{"\u2193"} / PgDn to scroll down)</Text>
+      {(scrollState.offset > 0 || unreadBelow > 0) && (
+        <Text dimColor>
+          {"  "}
+          {scrollState.offset > 0 && <>{`\u2191 ${scrollState.offset} lines above`}</>}
+          {scrollState.offset > 0 && unreadBelow > 0 && <>{" \u2219 "}</>}
+          {unreadBelow > 0 && <>{`\u2193 ${unreadBelow} new below`}</>}
+          {" (Ctrl+End live)"}
+        </Text>
       )}
 
       {/* Overlays */}

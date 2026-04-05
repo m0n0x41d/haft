@@ -2,7 +2,6 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
   collapsePastedText,
-  collapsedPromptDisplayText,
   expandCollapsedPastes,
   filterReferencedCollapsedPastes,
   summarizeQueuedPromptText,
@@ -49,9 +48,8 @@ test("drops hidden pasted bodies that are no longer referenced", () => {
   }])
 })
 
-test("collapses large raw user prompts on display and queue previews", () => {
+test("collapses large raw prompts in queue previews", () => {
   const prompt = Array.from({ length: 28 }, (_, index) => `paragraph ${index + 1}`).join("\n")
 
-  assert.equal(collapsedPromptDisplayText(prompt), "[28 rows inserted]")
   assert.equal(summarizeQueuedPromptText(prompt), "[28 rows inserted]")
 })

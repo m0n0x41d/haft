@@ -137,13 +137,13 @@ test("round-trips multiline history into transcript rendering without attachment
   )
 })
 
-test("collapses large raw transcript prompts into a compact display line", () => {
+test("keeps large submitted transcript prompts fully visible", () => {
   const prompt = Array.from({ length: 32 }, (_, index) => `article line ${index + 1}`).join("\n")
+  const lines = buildUserPromptDisplayLines(prompt)
 
-  assert.deepEqual(
-    buildUserPromptDisplayLines(prompt),
-    [" ❯ [32 rows inserted]"],
-  )
+  assert.equal(lines.length, 32)
+  assert.equal(lines[0], " ❯ article line 1")
+  assert.equal(lines[31], "   article line 32")
 })
 
 test("keeps up and down arrows inside a multiline prompt until the boundary", () => {

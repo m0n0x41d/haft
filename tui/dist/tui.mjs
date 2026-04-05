@@ -1377,7 +1377,7 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useReducer(reducer2, initialArg, init);
         }
-        function useRef6(initialValue) {
+        function useRef7(initialValue) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useRef(initialValue);
         }
@@ -2019,14 +2019,14 @@ var require_react_development = __commonJS({
               var thenableResult = result;
               var wasAwaited = false;
               var thenable = {
-                then: function(resolve, reject) {
+                then: function(resolve2, reject) {
                   wasAwaited = true;
                   thenableResult.then(function(returnValue2) {
                     popActScope(prevActScopeDepth);
                     if (actScopeDepth === 0) {
-                      recursivelyFlushAsyncActWork(returnValue2, resolve, reject);
+                      recursivelyFlushAsyncActWork(returnValue2, resolve2, reject);
                     } else {
-                      resolve(returnValue2);
+                      resolve2(returnValue2);
                     }
                   }, function(error2) {
                     popActScope(prevActScopeDepth);
@@ -2056,20 +2056,20 @@ var require_react_development = __commonJS({
                   ReactCurrentActQueue.current = null;
                 }
                 var _thenable = {
-                  then: function(resolve, reject) {
+                  then: function(resolve2, reject) {
                     if (ReactCurrentActQueue.current === null) {
                       ReactCurrentActQueue.current = [];
-                      recursivelyFlushAsyncActWork(returnValue, resolve, reject);
+                      recursivelyFlushAsyncActWork(returnValue, resolve2, reject);
                     } else {
-                      resolve(returnValue);
+                      resolve2(returnValue);
                     }
                   }
                 };
                 return _thenable;
               } else {
                 var _thenable2 = {
-                  then: function(resolve, reject) {
-                    resolve(returnValue);
+                  then: function(resolve2, reject) {
+                    resolve2(returnValue);
                   }
                 };
                 return _thenable2;
@@ -2085,7 +2085,7 @@ var require_react_development = __commonJS({
             actScopeDepth = prevActScopeDepth;
           }
         }
-        function recursivelyFlushAsyncActWork(returnValue, resolve, reject) {
+        function recursivelyFlushAsyncActWork(returnValue, resolve2, reject) {
           {
             var queue = ReactCurrentActQueue.current;
             if (queue !== null) {
@@ -2094,16 +2094,16 @@ var require_react_development = __commonJS({
                 enqueueTask(function() {
                   if (queue.length === 0) {
                     ReactCurrentActQueue.current = null;
-                    resolve(returnValue);
+                    resolve2(returnValue);
                   } else {
-                    recursivelyFlushAsyncActWork(returnValue, resolve, reject);
+                    recursivelyFlushAsyncActWork(returnValue, resolve2, reject);
                   }
                 });
               } catch (error2) {
                 reject(error2);
               }
             } else {
-              resolve(returnValue);
+              resolve2(returnValue);
             }
           }
         }
@@ -2171,7 +2171,7 @@ var require_react_development = __commonJS({
         exports.useLayoutEffect = useLayoutEffect4;
         exports.useMemo = useMemo8;
         exports.useReducer = useReducer3;
-        exports.useRef = useRef6;
+        exports.useRef = useRef7;
         exports.useState = useState10;
         exports.useSyncExternalStore = useSyncExternalStore;
         exports.useTransition = useTransition;
@@ -9948,7 +9948,7 @@ var require_react_reconciler_development = __commonJS({
         var HostPortal = 4;
         var HostComponent = 5;
         var HostText = 6;
-        var Fragment2 = 7;
+        var Fragment3 = 7;
         var Mode = 8;
         var ContextConsumer = 9;
         var ContextProvider = 10;
@@ -10088,7 +10088,7 @@ var require_react_reconciler_development = __commonJS({
               return "DehydratedFragment";
             case ForwardRef:
               return getWrappedName$1(type, type.render, "ForwardRef");
-            case Fragment2:
+            case Fragment3:
               return "Fragment";
             case HostComponent:
               return type;
@@ -13222,7 +13222,7 @@ var require_react_reconciler_development = __commonJS({
             }
           }
           function updateFragment2(returnFiber, current2, fragment, lanes, key) {
-            if (current2 === null || current2.tag !== Fragment2) {
+            if (current2 === null || current2.tag !== Fragment3) {
               var created = createFiberFromFragment(fragment, returnFiber.mode, lanes, key);
               created.return = returnFiber;
               return created;
@@ -13625,7 +13625,7 @@ var require_react_reconciler_development = __commonJS({
               if (child.key === key) {
                 var elementType = element.type;
                 if (elementType === REACT_FRAGMENT_TYPE) {
-                  if (child.tag === Fragment2) {
+                  if (child.tag === Fragment3) {
                     deleteRemainingChildren(returnFiber, child.sibling);
                     var existing = useFiber(child, element.props.children);
                     existing.return = returnFiber;
@@ -19116,7 +19116,7 @@ var require_react_reconciler_development = __commonJS({
               var _resolvedProps2 = workInProgress2.elementType === type ? _unresolvedProps2 : resolveDefaultProps(type, _unresolvedProps2);
               return updateForwardRef(current2, workInProgress2, type, _resolvedProps2, renderLanes2);
             }
-            case Fragment2:
+            case Fragment3:
               return updateFragment(current2, workInProgress2, renderLanes2);
             case Mode:
               return updateMode(current2, workInProgress2, renderLanes2);
@@ -19553,7 +19553,7 @@ var require_react_reconciler_development = __commonJS({
             case SimpleMemoComponent:
             case FunctionComponent:
             case ForwardRef:
-            case Fragment2:
+            case Fragment3:
             case Mode:
             case Profiler:
             case ContextConsumer:
@@ -24321,7 +24321,7 @@ var require_react_reconciler_development = __commonJS({
           return fiber;
         }
         function createFiberFromFragment(elements, mode, lanes, key) {
-          var fiber = createFiber(Fragment2, elements, key, mode);
+          var fiber = createFiber(Fragment3, elements, key, mode);
           fiber.lanes = lanes;
           return fiber;
         }
@@ -32890,8 +32890,8 @@ var init_ink = __esm({
         }
       }
       async waitUntilExit() {
-        this.exitPromise ||= new Promise((resolve, reject) => {
-          this.resolveExitPromise = resolve;
+        this.exitPromise ||= new Promise((resolve2, reject) => {
+          this.resolveExitPromise = resolve2;
           this.rejectExitPromise = reject;
         });
         return this.exitPromise;
@@ -33198,11 +33198,58 @@ var init_build2 = __esm({
 });
 
 // src/debug.ts
-function trace(_label) {
+import { appendFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
+function resolveTraceConfig(env3 = process.env, pid = process.pid) {
+  const enabled = env3.HAFT_TUI_TRACE === "1";
+  const requestedPath = env3.HAFT_TUI_TRACE_FILE?.trim();
+  const fallbackPath = resolve(tmpdir(), `haft-tui-${pid}.log`);
+  const filePath = requestedPath && requestedPath.length > 0 ? resolve(requestedPath) : fallbackPath;
+  return { enabled, filePath };
 }
+function createFileWriter(filePath) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  return {
+    write(line) {
+      try {
+        appendFileSync(filePath, `${line}
+`, "utf8");
+      } catch {
+      }
+    }
+  };
+}
+function createTraceLogger(options = {}) {
+  const now = options.now ?? Date.now;
+  const config = resolveTraceConfig(options.env, options.pid);
+  const writer = options.writer ?? (config.enabled ? createFileWriter(config.filePath) : null);
+  const startMs = now();
+  return {
+    config,
+    trace(event, fields = {}) {
+      if (!config.enabled) {
+        return;
+      }
+      const record = {
+        event,
+        file: config.filePath,
+        ms: now() - startMs,
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        ...fields
+      };
+      writer?.write(JSON.stringify(record));
+    }
+  };
+}
+function trace(event, fields) {
+  traceLogger.trace(event, fields);
+}
+var traceLogger;
 var init_debug = __esm({
   "src/debug.ts"() {
     "use strict";
+    traceLogger = createTraceLogger();
   }
 });
 
@@ -34035,7 +34082,7 @@ var init_transcript = __esm({
 
 // src/scroll/state.ts
 function initialScroll() {
-  return { offset: 0, totalLines: 0, viewportSize: 20 };
+  return { mode: "sticky", offset: 0, totalLines: 0, viewportSize: 20 };
 }
 function clampOffset(offset, totalLines, viewportSize) {
   return Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
@@ -34044,21 +34091,20 @@ function reduceScroll(state, cmd) {
   const max = Math.max(0, state.totalLines - state.viewportSize);
   switch (cmd.type) {
     case "wheelUp":
-      return { ...state, offset: Math.min(state.offset + (cmd.amount ?? 3), max) };
+      return moveIntoReadingMode(state, state.offset + (cmd.amount ?? 3));
     case "wheelDown":
-      return { ...state, offset: Math.max(0, state.offset - (cmd.amount ?? 3)) };
+      return moveIntoReadingMode(state, state.offset - (cmd.amount ?? 3));
     case "pageUp":
-      return { ...state, offset: Math.min(state.offset + state.viewportSize, max) };
+      return moveIntoReadingMode(state, state.offset + state.viewportSize);
     case "pageDown":
-      return { ...state, offset: Math.max(0, state.offset - state.viewportSize) };
+      return moveIntoReadingMode(state, state.offset - state.viewportSize);
     case "home":
-      return { ...state, offset: max };
+      return moveIntoReadingMode(state, max);
     case "end":
-      return { ...state, offset: 0 };
+      return { ...state, mode: "sticky", offset: 0 };
     case "contentChanged": {
-      const wasAtBottom = state.offset === 0;
-      if (wasAtBottom) {
-        return { ...state, totalLines: cmd.newTotalLines };
+      if (state.mode === "sticky") {
+        return { ...state, totalLines: cmd.newTotalLines, offset: 0 };
       }
       const delta = cmd.newTotalLines - state.totalLines;
       return {
@@ -34074,6 +34120,19 @@ function reduceScroll(state, cmd) {
         offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize)
       };
   }
+}
+function moveIntoReadingMode(state, nextOffset) {
+  const offset = clampOffset(
+    nextOffset,
+    state.totalLines,
+    state.viewportSize
+  );
+  const mode = offset > 0 || state.mode === "reading" ? "reading" : "sticky";
+  return {
+    ...state,
+    mode,
+    offset
+  };
 }
 function isAtBottom(state) {
   return state.offset === 0;
@@ -34356,99 +34415,8 @@ var init_toolBatch = __esm({
   }
 });
 
-// src/components/pastedText.ts
-function countPromptRows(text) {
-  if (text.length === 0) {
-    return 1;
-  }
-  return text.split("\n").length;
-}
-function shouldCollapsePromptText(text) {
-  return text.length >= COLLAPSE_CHAR_THRESHOLD || countPromptRows(text) >= COLLAPSE_ROW_THRESHOLD;
-}
-function formatCollapsedRowsInserted(rowCount, id) {
-  if (id === void 0) {
-    return `[${rowCount} rows inserted]`;
-  }
-  return `[${rowCount} rows inserted #${id}]`;
-}
-function collapsePastedText(text, nextId) {
-  if (!shouldCollapsePromptText(text)) {
-    return {
-      displayText: text,
-      pastes: []
-    };
-  }
-  const rowCount = countPromptRows(text);
-  const paste = {
-    id: nextId,
-    text,
-    rowCount
-  };
-  return {
-    displayText: formatCollapsedRowsInserted(rowCount, nextId),
-    pastes: [paste]
-  };
-}
-function expandCollapsedPastes(text, pastes) {
-  const pastesById = new Map(
-    pastes.map((paste) => [paste.id, paste.text])
-  );
-  return text.replace(COLLAPSED_PASTE_PATTERN, (match, _rows, idText) => {
-    const id = Number.parseInt(idText, 10);
-    const pastedText = pastesById.get(id);
-    return pastedText ?? match;
-  });
-}
-function filterReferencedCollapsedPastes(text, pastes) {
-  const referencedIds = collectCollapsedPasteIds(text);
-  return pastes.filter((paste) => referencedIds.has(paste.id));
-}
-function summarizeQueuedPromptText(text) {
-  if (shouldCollapsePromptText(text)) {
-    return formatCollapsedRowsInserted(countPromptRows(text));
-  }
-  const singleLine = text.replace(/\s+/g, " ").trim();
-  if (singleLine.length <= QUEUE_PREVIEW_CHAR_LIMIT) {
-    return singleLine;
-  }
-  return `${singleLine.slice(0, QUEUE_PREVIEW_CHAR_LIMIT - 3)}...`;
-}
-function collapsedPromptDisplayText(text) {
-  if (!shouldCollapsePromptText(text)) {
-    return null;
-  }
-  return formatCollapsedRowsInserted(countPromptRows(text));
-}
-function collectCollapsedPasteIds(text) {
-  const ids = /* @__PURE__ */ new Set();
-  for (const match of text.matchAll(COLLAPSED_PASTE_PATTERN)) {
-    const id = Number.parseInt(match[2] ?? "", 10);
-    if (Number.isNaN(id)) {
-      continue;
-    }
-    ids.add(id);
-  }
-  return ids;
-}
-var COLLAPSE_ROW_THRESHOLD, COLLAPSE_CHAR_THRESHOLD, QUEUE_PREVIEW_CHAR_LIMIT, COLLAPSED_PASTE_PATTERN;
-var init_pastedText = __esm({
-  "src/components/pastedText.ts"() {
-    "use strict";
-    COLLAPSE_ROW_THRESHOLD = 24;
-    COLLAPSE_CHAR_THRESHOLD = 4e3;
-    QUEUE_PREVIEW_CHAR_LIMIT = 120;
-    COLLAPSED_PASTE_PATTERN = /\[(\d+) rows inserted #(\d+)\]/g;
-  }
-});
-
 // src/components/userPrompt.ts
 function buildUserPromptDisplayLines(text, attachments = []) {
-  const collapsedText = collapsedPromptDisplayText(text);
-  if (collapsedText) {
-    const attachmentDisplayLines2 = attachments.map((attachment) => `${USER_PROMPT_CONTINUATION}${formatUserPromptAttachmentLabel(attachment)}`);
-    return [`${USER_PROMPT_PREFIX}${collapsedText}`, ...attachmentDisplayLines2];
-  }
   const sourceLines = text.split("\n");
   const [firstLine = "", ...continuationLines] = sourceLines;
   const firstDisplayLine = `${USER_PROMPT_PREFIX}${firstLine}`;
@@ -34479,7 +34447,6 @@ var USER_PROMPT_PREFIX, USER_PROMPT_CONTINUATION;
 var init_userPrompt = __esm({
   "src/components/userPrompt.ts"() {
     "use strict";
-    init_pastedText();
     USER_PROMPT_PREFIX = " \u276F ";
     USER_PROMPT_CONTINUATION = "   ";
   }
@@ -34678,6 +34645,34 @@ function useScroll(inputEvents, entryHeights, viewportSize) {
     [entryHeights]
   );
   const totalLines = entryOffsets[entryOffsets.length - 1] ?? 0;
+  const previousTotalLinesRef = (0, import_react25.useRef)(totalLines);
+  const previousWindowRef = (0, import_react25.useRef)(null);
+  const previousModeRef = (0, import_react25.useRef)(state.mode);
+  const visibleWindow = (0, import_react25.useMemo)(
+    () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
+    [entryOffsets, state.offset, state.viewportSize]
+  );
+  const unreadBelow = state.mode === "reading" ? Math.max(0, totalLines - visibleWindow.viewBottom) : 0;
+  const emitScroll = (0, import_react25.useCallback)((cmd) => {
+    switch (cmd.type) {
+      case "wheelUp":
+      case "pageUp":
+      case "home":
+        trace("user_scrolled_up", {
+          cmd: cmd.type,
+          mode: state.mode,
+          offset: state.offset
+        });
+        break;
+      case "end":
+        trace("jump_to_bottom", {
+          mode: state.mode,
+          offset: state.offset
+        });
+        break;
+    }
+    dispatch(cmd);
+  }, [state.mode, state.offset]);
   (0, import_react25.useEffect)(() => {
     dispatch({ type: "contentChanged", newTotalLines: totalLines });
   }, [totalLines]);
@@ -34687,22 +34682,60 @@ function useScroll(inputEvents, entryHeights, viewportSize) {
   (0, import_react25.useEffect)(() => {
     if (!inputEvents) return;
     const handler = (ev) => {
-      if (ev.type === "wheelUp") dispatch({ type: "wheelUp" });
-      else if (ev.type === "wheelDown") dispatch({ type: "wheelDown" });
+      if (ev.type === "wheelUp") emitScroll({ type: "wheelUp" });
+      else if (ev.type === "wheelDown") emitScroll({ type: "wheelDown" });
     };
     inputEvents.on("input", handler);
     return () => {
       inputEvents.off("input", handler);
     };
-  }, [inputEvents]);
-  const scroll = (0, import_react25.useCallback)((cmd) => dispatch(cmd), []);
-  const visibleWindow = (0, import_react25.useMemo)(
-    () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
-    [entryOffsets, state.offset, state.viewportSize]
-  );
+  }, [emitScroll, inputEvents]);
+  const scroll = (0, import_react25.useCallback)((cmd) => emitScroll(cmd), [emitScroll]);
+  (0, import_react25.useEffect)(() => {
+    const previousTotalLines = previousTotalLinesRef.current;
+    if (previousTotalLines !== totalLines) {
+      trace("content_changed", {
+        mode: state.mode,
+        offset: state.offset,
+        totalLines,
+        delta: totalLines - previousTotalLines,
+        viewportSize: state.viewportSize
+      });
+      previousTotalLinesRef.current = totalLines;
+    }
+  }, [state.mode, state.offset, state.viewportSize, totalLines]);
+  (0, import_react25.useEffect)(() => {
+    const previousWindow = previousWindowRef.current;
+    if (!previousWindow || previousWindow.start !== visibleWindow.start || previousWindow.end !== visibleWindow.end || previousWindow.viewTop !== visibleWindow.viewTop || previousWindow.viewBottom !== visibleWindow.viewBottom) {
+      trace("render_range_changed", {
+        mode: state.mode,
+        start: visibleWindow.start,
+        end: visibleWindow.end,
+        viewTop: visibleWindow.viewTop,
+        viewBottom: visibleWindow.viewBottom,
+        totalLines: visibleWindow.totalLines,
+        unreadBelow
+      });
+      previousWindowRef.current = visibleWindow;
+    }
+  }, [state.mode, unreadBelow, visibleWindow]);
+  (0, import_react25.useEffect)(() => {
+    const previousMode = previousModeRef.current;
+    if (previousMode !== state.mode) {
+      trace("scroll_mode_changed", {
+        from: previousMode,
+        to: state.mode,
+        offset: state.offset,
+        unreadBelow
+      });
+      previousModeRef.current = state.mode;
+    }
+  }, [state.mode, state.offset, unreadBelow]);
   return {
     state,
     scroll,
+    scrollMode: state.mode,
+    unreadBelow,
     entryOffsets,
     visibleWindow,
     isAtBottom: isAtBottom(state)
@@ -34713,6 +34746,7 @@ var init_useScroll = __esm({
   "src/scroll/useScroll.ts"() {
     "use strict";
     import_react25 = __toESM(require_react(), 1);
+    init_debug();
     init_state();
     init_measure();
   }
@@ -36103,10 +36137,10 @@ var require_react_jsx_runtime_development = __commonJS({
           }
         }
         var jsx17 = jsxWithValidationDynamic;
-        var jsxs13 = jsxWithValidationStatic;
+        var jsxs14 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
         exports.jsx = jsx17;
-        exports.jsxs = jsxs13;
+        exports.jsxs = jsxs14;
       })();
     }
   }
@@ -80763,15 +80797,19 @@ function TranscriptViewport({
   toolHistoryExpanded,
   width
 }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -viewport.cropTop, flexShrink: 0, width, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
-    ChatView,
-    {
-      entries,
-      width,
-      toolHistoryExpanded,
-      measureRef
-    }
-  ) });
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", marginTop: -viewport.topSpacer, flexShrink: 0, width, children: [
+    viewport.topSpacer > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexShrink: 0, height: viewport.topSpacer }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", marginTop: -viewport.cropTop, flexShrink: 0, width, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      ChatView,
+      {
+        entries,
+        width,
+        toolHistoryExpanded,
+        measureRef
+      }
+    ) }),
+    viewport.bottomSpacer > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexShrink: 0, height: viewport.bottomSpacer })
+  ] });
 }
 var import_jsx_runtime7;
 var init_TranscriptViewport = __esm({
@@ -81322,6 +81360,86 @@ var init_inputLayout = __esm({
   }
 });
 
+// src/components/pastedText.ts
+function countPromptRows(text) {
+  if (text.length === 0) {
+    return 1;
+  }
+  return text.split("\n").length;
+}
+function shouldCollapsePromptText(text) {
+  return text.length >= COLLAPSE_CHAR_THRESHOLD || countPromptRows(text) >= COLLAPSE_ROW_THRESHOLD;
+}
+function formatCollapsedRowsInserted(rowCount, id) {
+  if (id === void 0) {
+    return `[${rowCount} rows inserted]`;
+  }
+  return `[${rowCount} rows inserted #${id}]`;
+}
+function collapsePastedText(text, nextId) {
+  if (!shouldCollapsePromptText(text)) {
+    return {
+      displayText: text,
+      pastes: []
+    };
+  }
+  const rowCount = countPromptRows(text);
+  const paste = {
+    id: nextId,
+    text,
+    rowCount
+  };
+  return {
+    displayText: formatCollapsedRowsInserted(rowCount, nextId),
+    pastes: [paste]
+  };
+}
+function expandCollapsedPastes(text, pastes) {
+  const pastesById = new Map(
+    pastes.map((paste) => [paste.id, paste.text])
+  );
+  return text.replace(COLLAPSED_PASTE_PATTERN, (match, _rows, idText) => {
+    const id = Number.parseInt(idText, 10);
+    const pastedText = pastesById.get(id);
+    return pastedText ?? match;
+  });
+}
+function filterReferencedCollapsedPastes(text, pastes) {
+  const referencedIds = collectCollapsedPasteIds(text);
+  return pastes.filter((paste) => referencedIds.has(paste.id));
+}
+function summarizeQueuedPromptText(text) {
+  if (shouldCollapsePromptText(text)) {
+    return formatCollapsedRowsInserted(countPromptRows(text));
+  }
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= QUEUE_PREVIEW_CHAR_LIMIT) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, QUEUE_PREVIEW_CHAR_LIMIT - 3)}...`;
+}
+function collectCollapsedPasteIds(text) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const match of text.matchAll(COLLAPSED_PASTE_PATTERN)) {
+    const id = Number.parseInt(match[2] ?? "", 10);
+    if (Number.isNaN(id)) {
+      continue;
+    }
+    ids.add(id);
+  }
+  return ids;
+}
+var COLLAPSE_ROW_THRESHOLD, COLLAPSE_CHAR_THRESHOLD, QUEUE_PREVIEW_CHAR_LIMIT, COLLAPSED_PASTE_PATTERN;
+var init_pastedText = __esm({
+  "src/components/pastedText.ts"() {
+    "use strict";
+    COLLAPSE_ROW_THRESHOLD = 24;
+    COLLAPSE_CHAR_THRESHOLD = 4e3;
+    QUEUE_PREVIEW_CHAR_LIMIT = 120;
+    COLLAPSED_PASTE_PATTERN = /\[(\d+) rows inserted #(\d+)\]/g;
+  }
+});
+
 // src/components/promptSubmission.ts
 function hasSubmittableText(text) {
   return text.trim().length > 0;
@@ -81335,6 +81453,16 @@ function createPromptSubmission(text, attachments, pastes = []) {
 }
 function submissionTexts(submissions) {
   return submissions.map((submission) => summarizeQueuedPromptText(submission.text));
+}
+function expandPromptSubmissionText(submission) {
+  const referencedPastes = filterReferencedCollapsedPastes(
+    submission.text,
+    submission.pastes
+  );
+  return expandCollapsedPastes(
+    submission.text,
+    referencedPastes
+  );
 }
 function leadingSlashCommand(text) {
   if (!text.startsWith("/")) {
@@ -81401,11 +81529,11 @@ var init_promptSubmission = __esm({
 // src/terminal/clipboard.ts
 import { spawn as spawn2 } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir as tmpdir2 } from "node:os";
 import { join } from "node:path";
 function run(cmd, args, opts = {}) {
   const { timeoutMs = 3e3, captureStdout = true } = opts;
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     const proc = spawn2(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     const chunks = [];
     if (captureStdout) {
@@ -81418,7 +81546,7 @@ function run(cmd, args, opts = {}) {
     const finish = (code) => {
       if (settled) return;
       settled = true;
-      resolve({ code, stdout: captureStdout ? Buffer.concat(chunks).toString("utf-8") : "" });
+      resolve2({ code, stdout: captureStdout ? Buffer.concat(chunks).toString("utf-8") : "" });
     };
     proc.on("close", (code) => finish(code));
     proc.on("error", () => finish(null));
@@ -81462,7 +81590,7 @@ async function getImageDarwin() {
   trace(`clipboard: step1 done code=${check.code} type=${imgType}`);
   if (check.code !== 0 || imgType === "none" || imgType === "") return null;
   trace("clipboard: step2 save to file");
-  const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`);
+  const imgPath = join(tmpdir2(), `haft-paste-${Date.now()}.png`);
   const typeClass = imgType === "jpeg" ? "\xABclass JPEG\xBB" : "\xABclass PNGf\xBB";
   const save = await run("osascript", [
     "-e",
@@ -81497,7 +81625,7 @@ async function getImageLinux() {
     'xclip -selection clipboard -t TARGETS -o 2>/dev/null | grep -qE "image/(png|jpeg)" || wl-paste -l 2>/dev/null | grep -qE "image/(png|jpeg)"'
   ], { timeoutMs: 2e3 });
   if (check.code !== 0) return null;
-  const imgPath = join(tmpdir(), `haft-paste-${Date.now()}.png`);
+  const imgPath = join(tmpdir2(), `haft-paste-${Date.now()}.png`);
   const save = await run("sh", [
     "-c",
     `xclip -selection clipboard -t image/png -o > "${imgPath}" 2>/dev/null || wl-paste --type image/png > "${imgPath}" 2>/dev/null`
@@ -81631,8 +81759,8 @@ var init_InputArea = __esm({
             return;
           }
           if (hasSubmittableText(edit.text)) {
-            historyRef.current = push(historyRef.current, edit.text);
-            onSubmit(edit.text);
+            const historyText = onSubmit(edit.text);
+            historyRef.current = push(historyRef.current, historyText ?? edit.text);
             setEdit(empty);
           }
           return;
@@ -82292,6 +82420,70 @@ var init_appLayout = __esm({
   }
 });
 
+// src/components/streamUpdateBuffer.ts
+function createStreamUpdateBuffer(options) {
+  const delayMs = options.delayMs ?? DEFAULT_DELAY_MS;
+  const schedule = options.schedule ?? setTimeout;
+  const cancel = options.cancel ?? clearTimeout;
+  let pending = null;
+  let timer = null;
+  function clearTimer() {
+    if (!timer) {
+      return;
+    }
+    cancel(timer);
+    timer = null;
+  }
+  function dispatch(update, reason) {
+    options.onFlush(update, reason);
+  }
+  function flushPending(reason, overrides = {}) {
+    if (!pending) {
+      clearTimer();
+      return false;
+    }
+    const update = { ...pending, ...overrides };
+    pending = null;
+    clearTimer();
+    dispatch(update, reason);
+    return true;
+  }
+  return {
+    push(update) {
+      pending = update;
+      if (timer) {
+        return;
+      }
+      timer = schedule(() => {
+        timer = null;
+        flushPending("scheduled_flush");
+      }, delayMs);
+    },
+    flush(reason, overrides) {
+      return flushPending(reason, overrides);
+    },
+    replace(update, reason) {
+      pending = null;
+      clearTimer();
+      dispatch(update, reason);
+    },
+    clear() {
+      pending = null;
+      clearTimer();
+    },
+    hasPending() {
+      return pending !== null;
+    }
+  };
+}
+var DEFAULT_DELAY_MS;
+var init_streamUpdateBuffer = __esm({
+  "src/components/streamUpdateBuffer.ts"() {
+    "use strict";
+    DEFAULT_DELAY_MS = 32;
+  }
+});
+
 // src/components/App.tsx
 function App2({ client: client2, inputEvents }) {
   const [state, dispatch] = (0, import_react37.useReducer)(reducer, initialState());
@@ -82356,20 +82548,19 @@ function App2({ client: client2, inputEvents }) {
       inputEvents.off("paste", handler);
     };
   }, [inputEvents]);
-  const pendingUpdate = (0, import_react37.useRef)(null);
-  const throttleTimer = (0, import_react37.useRef)(null);
-  const throttledMsgUpdate = (0, import_react37.useCallback)((params) => {
-    pendingUpdate.current = params;
-    if (!throttleTimer.current) {
-      throttleTimer.current = setTimeout(() => {
-        if (pendingUpdate.current) {
-          dispatch({ type: "msg.update", params: pendingUpdate.current });
-          pendingUpdate.current = null;
-        }
-        throttleTimer.current = null;
-      }, 250);
-    }
+  const dispatchStreamUpdate = (0, import_react37.useCallback)((params, reason) => {
+    trace("stream_update_flushed", {
+      reason,
+      streaming: params.streaming,
+      textLength: params.text.length,
+      thinkingLength: params.thinking?.length ?? 0,
+      toolCount: params.tools?.length ?? 0
+    });
+    dispatch({ type: "msg.update", params });
   }, []);
+  const streamUpdateBufferRef = (0, import_react37.useRef)(createStreamUpdateBuffer({
+    onFlush: dispatchStreamUpdate
+  }));
   const transcript = (0, import_react37.useMemo)(() => buildTranscript({
     messages: state.messages,
     streaming: state.phase === "streaming",
@@ -82393,7 +82584,7 @@ function App2({ client: client2, inputEvents }) {
     width,
     toolHistoryExpanded
   );
-  const { state: scrollState, scroll, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
+  const { state: scrollState, scroll, unreadBelow, entryOffsets, visibleWindow: vw, isAtBottom: atBottom } = useScroll(
     inputEvents,
     entryHeights,
     chatHeight
@@ -82430,11 +82621,41 @@ function App2({ client: client2, inputEvents }) {
     setQueuedMessages((submissions) => {
       const drained = drainPromptSubmissions(submissions);
       if (drained.replay.length > 0) {
+        trace("queue_replay_start", {
+          count: drained.replay.length
+        });
         const replay = drained.replay;
         setTimeout(() => replayQueueRef.current(replay), 100);
       }
       return drained.remaining;
     });
+  }, []);
+  const flushBufferedStream = (0, import_react37.useCallback)((reason, overrides) => {
+    return streamUpdateBufferRef.current.flush(reason, overrides);
+  }, []);
+  const replaceBufferedStream = (0, import_react37.useCallback)((params, reason) => {
+    streamUpdateBufferRef.current.replace(params, reason);
+  }, []);
+  const finishStreaming = (0, import_react37.useCallback)((reason, options) => {
+    const flushedPending = flushBufferedStream(reason, { streaming: false });
+    const shouldFinalize = phaseRef.current === "streaming" || flushedPending;
+    if (!shouldFinalize) {
+      return;
+    }
+    trace("stream_finished", {
+      reason,
+      flushedPending,
+      resumeQueue: options.resumeQueue
+    });
+    dispatch({ type: "coord.done" });
+    if (options.resumeQueue) {
+      resumeQueuedMessages();
+    }
+  }, [flushBufferedStream, resumeQueuedMessages]);
+  (0, import_react37.useEffect)(() => {
+    return () => {
+      streamUpdateBufferRef.current.clear();
+    };
   }, []);
   (0, import_react37.useEffect)(() => {
     client2.setNotificationHandler((method, params) => {
@@ -82445,15 +82666,17 @@ function App2({ client: client2, inputEvents }) {
           dispatch({ type: "init", session: p.session, projectRoot: p.projectRoot, messages: p.messages });
           break;
         case "msg.update":
+          trace("stream_update_received", {
+            streaming: p.streaming,
+            textLength: p.text.length,
+            thinkingLength: p.thinking?.length ?? 0,
+            toolCount: p.tools?.length ?? 0
+          });
           if (p.streaming) {
-            throttledMsgUpdate(p);
-          } else {
-            if (throttleTimer.current) {
-              clearTimeout(throttleTimer.current);
-              throttleTimer.current = null;
-            }
-            dispatch({ type: "msg.update", params: p });
+            streamUpdateBufferRef.current.push(p);
+            break;
           }
+          replaceBufferedStream(p, "final_msg_update");
           break;
         case "tool.start":
           dispatch({ type: "tool.start", params: p });
@@ -82491,20 +82714,11 @@ function App2({ client: client2, inputEvents }) {
           dispatch({ type: "lsp.update", params: p });
           break;
         case "error":
+          finishStreaming("stream_error", { resumeQueue: false });
           dispatch({ type: "error", message: p.message });
           break;
         case "coord.done":
-          if (throttleTimer.current) {
-            clearTimeout(throttleTimer.current);
-            throttleTimer.current = null;
-          }
-          if (pendingUpdate.current) {
-            pendingUpdate.current.streaming = false;
-            dispatch({ type: "msg.update", params: pendingUpdate.current });
-            pendingUpdate.current = null;
-          }
-          dispatch({ type: "coord.done" });
-          resumeQueuedMessages();
+          finishStreaming("coord_done", { resumeQueue: true });
           break;
       }
     });
@@ -82518,7 +82732,7 @@ function App2({ client: client2, inputEvents }) {
         respondRef.current = respond;
       }
     });
-  }, [client2, resumeQueuedMessages]);
+  }, [client2, finishStreaming, replaceBufferedStream]);
   (0, import_react37.useEffect)(() => {
     client2.send("resize", { width, height });
   }, [client2, width, height]);
@@ -82565,20 +82779,13 @@ function App2({ client: client2, inputEvents }) {
     }
   }, [client2, resumeQueuedMessages]);
   const sendSubmission = (0, import_react37.useCallback)((submission) => {
-    const referencedPastes = filterReferencedCollapsedPastes(
-      submission.text,
-      submission.pastes
-    );
-    const expandedText = expandCollapsedPastes(
-      submission.text,
-      referencedPastes
-    );
+    const expandedText = expandPromptSubmissionText(submission);
     dispatch({ type: "submitted" });
     dispatch({
       type: "msg.update",
       params: {
         id: `user-${Date.now()}`,
-        text: submission.text,
+        text: expandedText,
         attachments: toMessageAttachments(submission.attachments),
         streaming: false
       }
@@ -82591,6 +82798,7 @@ function App2({ client: client2, inputEvents }) {
     }));
     client2.send("submit", {
       text: expandedText,
+      displayText: submission.text,
       attachments: submitAttachments.length > 0 ? submitAttachments : void 0
     });
   }, [client2]);
@@ -82640,25 +82848,31 @@ function App2({ client: client2, inputEvents }) {
   }, [handleSlashCommand, sendSubmission]);
   const replayQueuedSubmissions = (0, import_react37.useCallback)((submissions) => {
     submissions.some((submission) => replaySubmission(submission));
+    trace("queue_replay_finish", {
+      requested: submissions.length,
+      processed: submissions.length > 0 ? 1 : 0
+    });
   }, [replaySubmission]);
   const handleSubmit = (0, import_react37.useCallback)((text) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
     const submission = createPromptSubmission(text, attachments, draftPastes);
+    const historyText = expandPromptSubmissionText(submission);
     if (phaseRef.current === "streaming") {
       setQueuedMessages((current) => [...current, submission]);
       setAttachments([]);
       setDraftPastes([]);
       setAttachmentSelection(false);
-      return;
+      return historyText;
     }
     const commandResult = handleSlashCommand(text, false);
     if (commandResult !== "unhandled") {
-      return;
+      return historyText;
     }
     sendSubmission(submission);
     setAttachments([]);
     setDraftPastes([]);
     setAttachmentSelection(false);
+    return historyText;
   }, [attachments, draftPastes, handleSlashCommand, sendSubmission]);
   const handleRemoveAttachment = (0, import_react37.useCallback)((id) => {
     setAttachments((current) => {
@@ -82755,14 +82969,14 @@ function App2({ client: client2, inputEvents }) {
       trace(`ctrl-c phase=${state.phase}`);
       if (state.phase === "streaming") {
         client2.send("cancel", {});
-        dispatch({ type: "coord.done" });
+        finishStreaming("ctrl_c_cancel", { resumeQueue: false });
       } else exit();
       return;
     }
     if (key.ctrl && input === "d") {
       if (state.phase === "streaming") {
         client2.send("cancel", {});
-        dispatch({ type: "coord.done" });
+        finishStreaming("ctrl_d_cancel", { resumeQueue: false });
       } else exit();
       return;
     }
@@ -82810,7 +83024,7 @@ function App2({ client: client2, inputEvents }) {
       }
       if (state.phase === "streaming") {
         client2.send("cancel", {});
-        dispatch({ type: "coord.done" });
+        finishStreaming("escape_cancel", { resumeQueue: false });
         return;
       }
       return;
@@ -82862,14 +83076,12 @@ function App2({ client: client2, inputEvents }) {
         }
       )
     ] }),
-    scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { dimColor: true, children: [
+    (scrollState.offset > 0 || unreadBelow > 0) && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { dimColor: true, children: [
       "  ",
-      "\u2191",
-      " ",
-      scrollState.offset,
-      " lines above (Shift+",
-      "\u2193",
-      " / PgDn to scroll down)"
+      scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2191 ${scrollState.offset} lines above` }),
+      scrollState.offset > 0 && unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: " \u2219 " }),
+      unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2193 ${unreadBelow} new below` }),
+      " (Ctrl+End live)"
     ] }),
     showPermission && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
     showQuestion && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
@@ -83007,6 +83219,7 @@ var init_App2 = __esm({
     await init_Picker();
     await init_Attachments();
     init_appLayout();
+    init_streamUpdateBuffer();
     init_promptSubmission();
     init_pastedText();
     import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
@@ -83067,8 +83280,8 @@ var init_client = __esm({
       async request(method, params) {
         const id = this.nextId++;
         const msg = { jsonrpc: "2.0", method, params, id };
-        return new Promise((resolve, reject) => {
-          this.pending.set(id, { resolve, reject });
+        return new Promise((resolve2, reject) => {
+          this.pending.set(id, { resolve: resolve2, reject });
           this.enqueueWrite(msg);
         });
       }
@@ -83122,7 +83335,7 @@ var init_client = __esm({
         });
       }
       writeAsync(line) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           const buf = Buffer.from(line, "utf-8");
           trace(`rpc.write len=${buf.length}`);
           this.write(1, buf, 0, buf.length, null, (err) => {
@@ -83130,7 +83343,7 @@ var init_client = __esm({
               trace(`rpc.write.err ${err.message}`);
               reject(err);
             } else {
-              resolve();
+              resolve2();
             }
           });
         });

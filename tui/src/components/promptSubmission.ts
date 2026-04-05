@@ -1,5 +1,7 @@
 import type { AttachmentItem } from "./attachmentLayout.js"
 import {
+  expandCollapsedPastes,
+  filterReferencedCollapsedPastes,
   summarizeQueuedPromptText,
   type CollapsedPaste,
 } from "./pastedText.js"
@@ -57,6 +59,20 @@ export function submissionTexts(
   submissions: readonly PromptSubmission[],
 ): string[] {
   return submissions.map((submission) => summarizeQueuedPromptText(submission.text))
+}
+
+export function expandPromptSubmissionText(
+  submission: PromptSubmission,
+): string {
+  const referencedPastes = filterReferencedCollapsedPastes(
+    submission.text,
+    submission.pastes,
+  )
+
+  return expandCollapsedPastes(
+    submission.text,
+    referencedPastes,
+  )
 }
 
 export function leadingSlashCommand(text: string): string | null {

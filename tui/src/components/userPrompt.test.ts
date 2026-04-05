@@ -19,3 +19,12 @@ test("formats multiline user prompts without stripping bracket-prefixed lines", 
     "   [attachment: spec.md]",
   ])
 })
+
+test("shows submitted large prompts in full instead of collapsing them", () => {
+  const prompt = Array.from({ length: 30 }, (_, index) => `article line ${index + 1}`).join("\n")
+  const lines = buildUserPromptDisplayLines(prompt)
+
+  assert.equal(lines.length, 30)
+  assert.equal(lines[0], " ❯ article line 1")
+  assert.equal(lines[29], "   article line 30")
+})

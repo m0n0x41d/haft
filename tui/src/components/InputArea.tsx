@@ -41,7 +41,7 @@ import {
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
-  onSubmit: (text: string) => void
+  onSubmit: (text: string) => string | void
   onAtMention?: () => void
   onSlashCommand?: () => void
   onPopQueue?: () => PromptSubmission | null
@@ -108,8 +108,8 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         return
       }
       if (hasSubmittableText(edit.text)) {
-        historyRef.current = push(historyRef.current, edit.text)
-        onSubmit(edit.text)
+        const historyText = onSubmit(edit.text)
+        historyRef.current = push(historyRef.current, historyText ?? edit.text)
         setEdit(empty)
       }
       return

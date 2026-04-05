@@ -158,6 +158,25 @@ func normalizeRollbackSpec(spec *RollbackSpec) *RollbackSpec {
 	return normalized
 }
 
+func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
+	normalized := make([]PredictionInput, 0, len(values))
+
+	for _, value := range values {
+		prediction := PredictionInput{
+			Claim:      strings.TrimSpace(value.Claim),
+			Observable: strings.TrimSpace(value.Observable),
+			Threshold:  strings.TrimSpace(value.Threshold),
+		}
+		if prediction.Claim == "" && prediction.Observable == "" && prediction.Threshold == "" {
+			continue
+		}
+
+		normalized = append(normalized, prediction)
+	}
+
+	return normalized
+}
+
 func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.ProblemRef = strings.TrimSpace(input.ProblemRef)
 	input.ProblemRefs = compactStrings(input.ProblemRefs)
@@ -180,6 +199,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
 	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
 	input.AffectedFiles = compactStrings(input.AffectedFiles)
+	input.Predictions = normalizePredictionInputs(input.Predictions)
 	input.Rollback = normalizeRollbackSpec(input.Rollback)
 
 	return input
@@ -281,6 +301,32 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	body.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", input.SelectionPolicy))
 	body.WriteString(fmt.Sprintf("**Why selected:** %s\n\n", input.WhySelected))
 
+	rollbackTriggers := []string(nil)
+	rollbackSteps := []string(nil)
+	rollbackBlastRadius := ""
+	if input.Rollback != nil {
+		rollbackTriggers = input.Rollback.Triggers
+		rollbackSteps = input.Rollback.Steps
+		rollbackBlastRadius = input.Rollback.BlastRadius
+	}
+
+	decisionFields := DecisionFields{
+		SelectedTitle:       input.SelectedTitle,
+		WhySelected:         input.WhySelected,
+		SelectionPolicy:     input.SelectionPolicy,
+		CounterArgument:     input.CounterArgument,
+		WeakestLink:         input.WeakestLink,
+		WhyNotOthers:        input.WhyNotOthers,
+		Predictions:         input.Predictions,
+		RollbackTriggers:    rollbackTriggers,
+		RollbackSteps:       rollbackSteps,
+		RollbackBlastRadius: rollbackBlastRadius,
+		Invariants:          input.Invariants,
+		PostConds:           input.PostConditions,
+		Admissibility:       input.Admissibility,
+		FirstModuleCoverage: input.FirstModuleCoverage,
+	}
+
 	if len(input.Invariants) > 0 {
 		body.WriteString("\n**Invariants:**\n")
 		for _, inv := range input.Invariants {
@@ -340,6 +386,21 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n")
 	}
 
+	if len(decisionFields.Predictions) > 0 {
+		body.WriteString("**Predictions:**\n")
+		body.WriteString("| Claim | Observable | Threshold |\n")
+		body.WriteString("|-------|------------|-----------|\n")
+		for _, prediction := range decisionFields.Predictions {
+			body.WriteString(fmt.Sprintf(
+				"| %s | %s | %s |\n",
+				escapeMarkdownTableCell(prediction.Claim),
+				escapeMarkdownTableCell(prediction.Observable),
+				escapeMarkdownTableCell(prediction.Threshold),
+			))
+		}
+		body.WriteString("\n")
+	}
+
 	// === Component 4: Consequences ===
 	body.WriteString("## 4. Consequences\n\n")
 
@@ -393,30 +454,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		SearchKeywords: input.SearchKeywords,
 	}
 
-	rollbackTriggers := []string(nil)
-	rollbackSteps := []string(nil)
-	rollbackBlastRadius := ""
-	if input.Rollback != nil {
-		rollbackTriggers = input.Rollback.Triggers
-		rollbackSteps = input.Rollback.Steps
-		rollbackBlastRadius = input.Rollback.BlastRadius
-	}
-
-	sd, _ := json.Marshal(DecisionFields{
-		SelectedTitle:       input.SelectedTitle,
-		WhySelected:         input.WhySelected,
-		SelectionPolicy:     input.SelectionPolicy,
-		CounterArgument:     input.CounterArgument,
-		WeakestLink:         input.WeakestLink,
-		WhyNotOthers:        input.WhyNotOthers,
-		RollbackTriggers:    rollbackTriggers,
-		RollbackSteps:       rollbackSteps,
-		RollbackBlastRadius: rollbackBlastRadius,
-		Invariants:          input.Invariants,
-		PostConds:           input.PostConditions,
-		Admissibility:       input.Admissibility,
-		FirstModuleCoverage: input.FirstModuleCoverage,
-	})
+	sd, _ := json.Marshal(decisionFields)
 	a.StructuredData = string(sd)
 
 	return a, nil

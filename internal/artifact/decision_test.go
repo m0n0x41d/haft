@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -372,5 +373,102 @@ func TestDecide_InheritsContext(t *testing.T) {
 
 	if a.Meta.Context != "auth" {
 		t.Errorf("context = %q, want auth (inherited from problem)", a.Meta.Context)
+	}
+}
+
+func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	input := completeDecision(DecideInput{
+		SelectedTitle: "NATS JetStream",
+		WhySelected:   "Operational simplicity still leaves room to verify the throughput bet explicitly.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Migration keeps p99 publish latency below 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms under projected load",
+			},
+			{
+				Claim:      "Producer error rate stays below 0.1%",
+				Observable: "producer error rate",
+				Threshold:  "< 0.1% during rollout week",
+			},
+		},
+	})
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(fields.Predictions, input.Predictions) {
+		t.Fatalf("predictions in structured state = %#v, want %#v", fields.Predictions, input.Predictions)
+	}
+
+	if !strings.Contains(decision.Body, "**Predictions:**") {
+		t.Fatalf("decision body should render predictions:\n%s", decision.Body)
+	}
+	if !strings.Contains(decision.Body, "| Claim | Observable | Threshold |") {
+		t.Fatalf("decision body should render predictions in canonical table form:\n%s", decision.Body)
+	}
+	if !strings.Contains(decision.Body, "publish latency p99") {
+		t.Fatalf("decision body should include rendered prediction details:\n%s", decision.Body)
+	}
+
+	reloaded, err := store.Get(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(reloadedFields.Predictions, input.Predictions) {
+		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, input.Predictions)
+	}
+}
+
+func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "NATS JetStream",
+		WhySelected:   "The prediction section should stay absent when nothing was declared.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.Predictions) != 0 {
+		t.Fatalf("expected no structured predictions, got %#v", fields.Predictions)
+	}
+	if strings.Contains(decision.Body, "**Predictions:**") {
+		t.Fatalf("decision body should omit the predictions section when none were declared:\n%s", decision.Body)
+	}
+
+	legacy := &Artifact{
+		Meta: Meta{
+			ID:     "dec-legacy-predictions",
+			Kind:   KindDecisionRecord,
+			Title:  "Legacy decision",
+			Status: StatusActive,
+		},
+		Body:           "# Legacy decision\n",
+		StructuredData: `{"selected_title":"Legacy decision","why_selected":"Already shipped"}`,
+	}
+	if err := store.Create(ctx, legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, legacy.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if len(reloadedFields.Predictions) != 0 {
+		t.Fatalf("legacy decision should decode with no predictions, got %#v", reloadedFields.Predictions)
 	}
 }

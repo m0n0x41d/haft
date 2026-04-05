@@ -243,6 +243,7 @@ type DecisionFields struct {
 	CounterArgument     string               `json:"counterargument,omitempty"`
 	WeakestLink         string               `json:"weakest_link,omitempty"`
 	WhyNotOthers        []RejectionReason    `json:"why_not_others,omitempty"`
+	Predictions         []PredictionInput    `json:"predictions,omitempty"`
 	RollbackTriggers    []string             `json:"rollback_triggers,omitempty"`
 	RollbackSteps       []string             `json:"rollback_steps,omitempty"`
 	RollbackBlastRadius string               `json:"rollback_blast_radius,omitempty"`

@@ -95,6 +95,7 @@ func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 			if decision.SelectionPolicy != "" {
 				sb.WriteString(fmt.Sprintf("Policy: %s\n", decision.SelectionPolicy))
 			}
+			writeProjectionDecisionPredictions(&sb, "Predictions", decision.Predictions)
 			writeProjectionDecisionSlice(&sb, "Pre-conditions", decision.PreConditions)
 			writeProjectionDecisionSlice(&sb, "Evidence requirements", decision.EvidenceRequirements)
 			writeProjectionDecisionSlice(&sb, "Rollback triggers", decision.RollbackTriggers)
@@ -185,6 +186,7 @@ func auditProjectionResponse(graph artifact.ProjectionGraph) string {
 			if decision.WeakestLink != "" {
 				sb.WriteString(fmt.Sprintf("Weakest link: %s\n", decision.WeakestLink))
 			}
+			writeProjectionDecisionPredictions(&sb, "Predictions", decision.Predictions)
 			sb.WriteString(fmt.Sprintf("Evidence: %s\n", decision.Evidence.WLNK.Summary))
 			if len(decision.Evidence.WLNK.CoverageGaps) > 0 {
 				sb.WriteString(fmt.Sprintf("Coverage gaps: %s\n", strings.Join(decision.Evidence.WLNK.CoverageGaps, ", ")))
@@ -310,4 +312,43 @@ func writeProjectionDecisionSlice(sb *strings.Builder, label string, values []st
 	}
 
 	sb.WriteString(fmt.Sprintf("%s: %s\n", label, strings.Join(values, ", ")))
+}
+
+func writeProjectionDecisionPredictions(sb *strings.Builder, label string, predictions []artifact.DecisionPrediction) {
+	if len(predictions) == 0 {
+		return
+	}
+
+	sb.WriteString(label)
+	sb.WriteString(":\n")
+
+	for _, prediction := range predictions {
+		sb.WriteString("- ")
+		sb.WriteString(formatProjectionDecisionPrediction(prediction))
+		sb.WriteString("\n")
+	}
+}
+
+func formatProjectionDecisionPrediction(prediction artifact.DecisionPrediction) string {
+	parts := make([]string, 0, 2)
+	claim := strings.TrimSpace(prediction.Claim)
+	observable := strings.TrimSpace(prediction.Observable)
+	threshold := strings.TrimSpace(prediction.Threshold)
+
+	if claim != "" {
+		parts = append(parts, claim)
+	}
+	if observable != "" || threshold != "" {
+		details := make([]string, 0, 2)
+		if observable != "" {
+			details = append(details, "observable: "+observable)
+		}
+		if threshold != "" {
+			details = append(details, "threshold: "+threshold)
+		}
+		parts = append(parts, "("+strings.Join(details, "; ")+")")
+	}
+
+	status := strings.TrimSpace(string(prediction.Status))
+	return status + ": " + strings.Join(parts, " ")
 }

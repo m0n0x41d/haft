@@ -91,6 +91,7 @@ type DecisionProjection struct {
 	CounterArgument      string
 	WeakestLink          string
 	WhyNotOthers         []RejectionReason
+	Predictions          []DecisionPrediction
 	PreConditions        []string
 	EvidenceRequirements []string
 	RollbackTriggers     []string
@@ -190,6 +191,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 			CounterArgument:      strings.TrimSpace(fields.CounterArgument),
 			WeakestLink:          strings.TrimSpace(fields.WeakestLink),
 			WhyNotOthers:         cloneRejectionReasons(fields.WhyNotOthers),
+			Predictions:          cloneDecisionPredictions(fields.Predictions),
 			PreConditions:        cloneStringSlice(fields.PreConditions),
 			EvidenceRequirements: cloneStringSlice(fields.EvidenceRequirements),
 			RollbackTriggers:     cloneStringSlice(fields.RollbackTriggers),
@@ -477,6 +479,16 @@ func cloneRejectionReasons(values []RejectionReason) []RejectionReason {
 	}
 
 	cloned := make([]RejectionReason, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func cloneDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
+	if len(values) == 0 {
+		return nil
+	}
+
+	cloned := make([]DecisionPrediction, len(values))
 	copy(cloned, values)
 	return cloned
 }

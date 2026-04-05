@@ -310,12 +310,20 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 	}
 
 	structuredData, err := json.Marshal(DecisionFields{
-		ProblemRefs:          []string{problem.Meta.ID},
-		SelectedTitle:        "gRPC",
-		WhySelected:          "It meets the latency target with acceptable operating cost.",
-		SelectionPolicy:      "Minimize latency within the accepted cost envelope.",
-		CounterArgument:      "Tooling and rollout complexity are still meaningful costs.",
-		WeakestLink:          "Operational confidence still depends on limited production-grade evidence.",
+		ProblemRefs:     []string{problem.Meta.ID},
+		SelectedTitle:   "gRPC",
+		WhySelected:     "It meets the latency target with acceptable operating cost.",
+		SelectionPolicy: "Minimize latency within the accepted cost envelope.",
+		CounterArgument: "Tooling and rollout complexity are still meaningful costs.",
+		WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
+		Predictions: []DecisionPrediction{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+				Status:     ClaimStatusSupported,
+			},
+		},
 		PreConditions:        []string{"Replay benchmark harness ready"},
 		EvidenceRequirements: []string{"Replay benchmark with pinned protocol versions"},
 		RefreshTriggers:      []string{"Latency budget regresses under production mix"},
@@ -353,6 +361,14 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 	if !reflect.DeepEqual(decisionNode.ProblemRefs, []string{problem.Meta.ID}) {
 		t.Fatalf("expected structured problem refs to survive into the projection graph, got %+v", decisionNode.ProblemRefs)
 	}
+	if !reflect.DeepEqual(decisionNode.Predictions, []DecisionPrediction{{
+		Claim:      "Latency stays under 50ms",
+		Observable: "publish latency p99",
+		Threshold:  "< 50ms",
+		Status:     ClaimStatusSupported,
+	}}) {
+		t.Fatalf("expected structured predictions in projection graph, got %+v", decisionNode.Predictions)
+	}
 	if !reflect.DeepEqual(decisionNode.PreConditions, []string{"Replay benchmark harness ready"}) {
 		t.Fatalf("expected structured pre-conditions in projection graph, got %+v", decisionNode.PreConditions)
 	}
@@ -366,6 +382,76 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 	problemNode := graph.Problems[0]
 	if len(problemNode.DecisionRefs) != 1 || problemNode.DecisionRefs[0] != decision.Meta.ID {
 		t.Fatalf("expected structured decision problem refs to back-propagate to the problem, got %+v", problemNode.DecisionRefs)
+	}
+}
+
+func TestFetchProjectionGraph_UpdatesProjectedPredictionStatusesAfterMeasure(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Predictable operational envelope",
+		Context:       "payments",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	graphBeforeMeasure, err := FetchProjectionGraph(ctx, store, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []ClaimStatus{
+		graphBeforeMeasure.Decisions[0].Predictions[0].Status,
+		graphBeforeMeasure.Decisions[0].Predictions[1].Status,
+	}; !reflect.DeepEqual(got, []ClaimStatus{ClaimStatusUnverified, ClaimStatusUnverified}) {
+		t.Fatalf("expected unverified predictions before measure, got %#v", got)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: decision.Meta.ID,
+		Findings:    "Latency passed, throughput regressed under peak load.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 44ms)",
+		},
+		CriteriaNotMet: []string{
+			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+		},
+		Verdict: "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	graphAfterMeasure, err := FetchProjectionGraph(ctx, store, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := []ClaimStatus{
+		graphAfterMeasure.Decisions[0].Predictions[0].Status,
+		graphAfterMeasure.Decisions[0].Predictions[1].Status,
+	}
+	want := []ClaimStatus{
+		ClaimStatusSupported,
+		ClaimStatusRefuted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("projected prediction statuses = %#v, want %#v", got, want)
 	}
 }
 

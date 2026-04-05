@@ -316,7 +316,21 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				SelectionPolicy: "Minimize latency within the accepted cost envelope.",
 				CounterArgument: "Tooling and local debugging remain weaker than the simpler HTTP baseline.",
 				WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
-				Measured:        true,
+				Predictions: []artifact.DecisionPrediction{
+					{
+						Claim:      "Latency stays under 50ms",
+						Observable: "publish latency p99",
+						Threshold:  "< 50ms",
+						Status:     artifact.ClaimStatusSupported,
+					},
+					{
+						Claim:      "Throughput stays above 100k events/sec",
+						Observable: "throughput",
+						Threshold:  "> 100k events/sec",
+						Status:     artifact.ClaimStatusInconclusive,
+					},
+				},
+				Measured: true,
 				Evidence: artifact.ProjectionEvidenceSummary{
 					MeasurementCount: 1,
 					WLNK: artifact.WLNKSummary{
@@ -343,6 +357,8 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				"Signal: Latency variance between protocols",
 				"Portfolios: sol-001",
 				"Selected: gRPC",
+				"Predictions:",
+				"supported: Latency stays under 50ms (observable: publish latency p99; threshold: < 50ms)",
 			},
 		},
 		{
@@ -358,6 +374,7 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			wants: []string{
 				"## Audit/Evidence View",
 				"Selection policy: Minimize latency within the accepted cost envelope.",
+				"inconclusive: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
 				"Coverage gaps: operational-cost",
 				"Assurance: R_eff=0.60 | F_eff=2 | weakest CL=1",
 			},
@@ -380,5 +397,53 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				t.Fatalf("view %s missing %q:\n%s", tc.view, want, output)
 			}
 		}
+	}
+}
+
+func TestProjectionResponse_ChangesWhenPredictionStatusChanges(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Decisions: []artifact.DecisionProjection{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-001",
+					Title: "gRPC",
+				},
+				Predictions: []artifact.DecisionPrediction{
+					{
+						Claim:      "Latency stays under 50ms",
+						Observable: "publish latency p99",
+						Threshold:  "< 50ms",
+						Status:     artifact.ClaimStatusUnverified,
+					},
+				},
+			},
+		},
+	}
+
+	engineerBefore := present.ProjectionResponse(graph, artifact.ProjectionViewEngineer)
+	auditBefore := present.ProjectionResponse(graph, artifact.ProjectionViewAudit)
+
+	graph.Decisions[0].Predictions[0].Status = artifact.ClaimStatusSupported
+
+	engineerAfter := present.ProjectionResponse(graph, artifact.ProjectionViewEngineer)
+	auditAfter := present.ProjectionResponse(graph, artifact.ProjectionViewAudit)
+
+	if !strings.Contains(engineerBefore, "unverified: Latency stays under 50ms") {
+		t.Fatalf("expected engineer projection to show initial prediction status, got:\n%s", engineerBefore)
+	}
+	if !strings.Contains(auditBefore, "unverified: Latency stays under 50ms") {
+		t.Fatalf("expected audit projection to show initial prediction status, got:\n%s", auditBefore)
+	}
+	if !strings.Contains(engineerAfter, "supported: Latency stays under 50ms") {
+		t.Fatalf("expected engineer projection to show updated prediction status, got:\n%s", engineerAfter)
+	}
+	if !strings.Contains(auditAfter, "supported: Latency stays under 50ms") {
+		t.Fatalf("expected audit projection to show updated prediction status, got:\n%s", auditAfter)
+	}
+	if engineerBefore == engineerAfter {
+		t.Fatalf("expected engineer projection output to change after status update")
+	}
+	if auditBefore == auditAfter {
+		t.Fatalf("expected audit projection output to change after status update")
 	}
 }

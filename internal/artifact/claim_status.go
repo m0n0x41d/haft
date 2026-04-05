@@ -266,7 +266,7 @@ func normalizeDecisionEvidenceBinding(
 			return nil, nil, err
 		}
 
-		if len(scopeRefs) > 0 && !sameClaimRefSet(validatedRefs, scopeRefs) {
+		if len(scopeRefs) > 0 && !claimRefsSubset(scopeRefs, validatedRefs) {
 			return nil, nil, fmt.Errorf(
 				"claim_scope resolves to %s, which does not match explicit claim_refs %s",
 				strings.Join(scopeRefs, ", "),
@@ -282,22 +282,18 @@ func normalizeDecisionEvidenceBinding(
 	return validatedRefs, derivedScope, nil
 }
 
-func sameClaimRefSet(left []string, right []string) bool {
-	left = normalizeClaimRefs(left)
-	right = normalizeClaimRefs(right)
+func claimRefsSubset(subset []string, superset []string) bool {
+	subset = normalizeClaimRefs(subset)
+	superset = normalizeClaimRefs(superset)
 
-	if len(left) != len(right) {
-		return false
+	supersetIndex := make(map[string]struct{}, len(superset))
+
+	for _, ref := range superset {
+		supersetIndex[ref] = struct{}{}
 	}
 
-	leftSet := make(map[string]struct{}, len(left))
-
-	for _, ref := range left {
-		leftSet[ref] = struct{}{}
-	}
-
-	for _, ref := range right {
-		if _, ok := leftSet[ref]; !ok {
+	for _, ref := range subset {
+		if _, ok := supersetIndex[ref]; !ok {
 			return false
 		}
 	}
@@ -346,12 +342,79 @@ func mergeDecisionCoverageScope(
 	claimRefs []string,
 	scope []string,
 ) []string {
+	coverageRefs := mergedDecisionCoverageRefs(claims, claimRefs, scope)
+	claimScope := decisionClaimScopeFromRefs(claims, coverageRefs)
+	unresolvedScope := unresolvedDecisionCoverageScope(claims, coverageRefs, scope)
+	mergedScope := make([]string, 0, len(claimScope)+len(unresolvedScope))
+	mergedScope = append(mergedScope, claimScope...)
+	mergedScope = append(mergedScope, unresolvedScope...)
+
+	return normalizeClaimScope(mergedScope)
+}
+
+func mergedDecisionCoverageRefs(
+	claims []DecisionClaim,
+	claimRefs []string,
+	scope []string,
+) []string {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	normalizedRefs := normalizeClaimRefs(claimRefs)
+
+	if len(normalizedClaims) == 0 {
+		return normalizedRefs
+	}
+
+	scopeRefs, _ := resolveDecisionEvidenceClaimRefs(
+		normalizedClaims,
+		nil,
+		scope,
+	)
+	mergedRefs := make([]string, 0, len(normalizedRefs)+len(scopeRefs))
+	mergedRefs = append(mergedRefs, normalizedRefs...)
+	mergedRefs = append(mergedRefs, scopeRefs...)
+
+	return normalizeClaimRefs(mergedRefs)
+}
+
+func unresolvedDecisionCoverageScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	scope []string,
+) []string {
+	normalizedClaims := normalizeDecisionClaims(claims)
 	normalizedScope := normalizeClaimScope(scope)
-	if len(normalizedScope) > 0 {
+
+	if len(normalizedScope) == 0 {
+		return nil
+	}
+	if len(normalizedClaims) == 0 {
 		return normalizedScope
 	}
 
-	return decisionClaimScopeFromRefs(claims, claimRefs)
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	measuredRefSet := make(map[string]struct{}, len(claimRefs))
+	unresolvedScope := make([]string, 0, len(normalizedScope))
+
+	for _, ref := range normalizeClaimRefs(claimRefs) {
+		measuredRefSet[ref] = struct{}{}
+	}
+
+	for _, item := range normalizedScope {
+		index, ok := resolvePredictionAlias(item, aliasIndex)
+		if !ok {
+			unresolvedScope = append(unresolvedScope, item)
+			continue
+		}
+
+		claimID := normalizedClaims[index].ID
+		if _, measured := measuredRefSet[claimID]; measured {
+			continue
+		}
+
+		unresolvedScope = append(unresolvedScope, item)
+	}
+
+	return normalizeClaimScope(unresolvedScope)
 }
 
 func decisionClaimScopeLabelIndex(claims []DecisionClaim) map[string]string {

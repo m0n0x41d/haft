@@ -1446,7 +1446,7 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result.GEff = computeClaimCoverage(activeItems, decisionClaims)
 	result.REff = minREff
 	if result.CoverageKnown {
-		result.CoverageGaps = differenceScope(result.ExpectedScope, result.GEff)
+		result.CoverageGaps = differenceScope(result.ExpectedScope, activeItems, decisionClaims)
 	} else {
 		result.CoverageGaps = nil
 	}
@@ -1577,25 +1577,80 @@ func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeC
 	return normalizeClaimScope(resolved)
 }
 
-func differenceScope(expected []string, covered []string) []string {
+func differenceScope(expected []string, items []EvidenceItem, claims []DecisionClaim) []string {
 	if len(expected) == 0 {
 		return nil
 	}
 
-	coveredSet := make(map[string]struct{}, len(covered))
-	for _, item := range covered {
-		coveredSet[item] = struct{}{}
-	}
-
+	coveredKeys := coverageIdentityKeySet(items, claims)
 	gaps := make([]string, 0, len(expected))
+
 	for _, item := range expected {
-		if _, ok := coveredSet[item]; ok {
+		identityKey := coverageIdentityKey(item, claims)
+		if identityKey == "" {
+			gaps = append(gaps, item)
+			continue
+		}
+		if _, ok := coveredKeys[identityKey]; ok {
 			continue
 		}
 		gaps = append(gaps, item)
 	}
 
 	return gaps
+}
+
+func coverageIdentityKeySet(items []EvidenceItem, claims []DecisionClaim) map[string]struct{} {
+	identityKeys := make(map[string]struct{})
+
+	for _, item := range items {
+		coverageRefs := mergedDecisionCoverageRefs(
+			claims,
+			item.ClaimRefs,
+			item.ClaimScope,
+		)
+		unresolvedScope := unresolvedDecisionCoverageScope(
+			claims,
+			coverageRefs,
+			item.ClaimScope,
+		)
+
+		for _, ref := range coverageRefs {
+			identityKeys[coverageClaimRefKey(ref)] = struct{}{}
+		}
+		for _, scopeItem := range unresolvedScope {
+			identityKeys[coverageLiteralScopeKey(scopeItem)] = struct{}{}
+		}
+	}
+
+	return identityKeys
+}
+
+func coverageIdentityKey(scope string, claims []DecisionClaim) string {
+	normalizedScope := normalizeClaimScope([]string{scope})
+
+	if len(normalizedScope) == 0 {
+		return ""
+	}
+
+	coverageRefs := mergedDecisionCoverageRefs(
+		claims,
+		nil,
+		normalizedScope,
+	)
+	if len(coverageRefs) > 0 {
+		return coverageClaimRefKey(coverageRefs[0])
+	}
+
+	return coverageLiteralScopeKey(normalizedScope[0])
+}
+
+func coverageClaimRefKey(ref string) string {
+	return "claim:" + strings.TrimSpace(ref)
+}
+
+func coverageLiteralScopeKey(scope string) string {
+	return "scope:" + strings.TrimSpace(scope)
 }
 
 func explicitAcceptanceScope(ctx context.Context, store ArtifactStore, artifactID string) ([]string, bool) {

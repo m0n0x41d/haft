@@ -10,34 +10,28 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 
 ### Added
 
-- **Status column in Decisions tab** — board now shows Shipped/Pending status per decision.
-- **FPF spec search as MCP action** — `quint_query(action="fpf", query="...")` searches the embedded FPF specification inline. No more switching to Bash for `quint-code fpf search`. Skill RAG hints updated to use MCP action.
-- **Structured data on artifacts** — new `structured_data` JSON column (migration 16). `ProblemFields` and `DecisionFields` stored as canonical structured JSON alongside markdown body. `BuildDecisionArtifact` reads structured fields from linked problem instead of re-parsing markdown. Backward compatible — falls back to markdown extraction for older artifacts.
-- **Architecture documentation** — `ARCHITECTURE.md` with full layer hierarchy, compilation chain, and per-layer specifications (concepts, functions, inexpressible states, dependencies).
+- **Standalone Haft runtime** — local-first `haft agent` / TUI flow with persisted sessions, checkpointed vs autonomous execution, permission and question dialogs, model/session pickers, compaction, spawned subagents, and a typed JSON-RPC protocol between UI and runtime.
+- **Claim-aware decision kernel** — decisions now persist canonical structured claims, predictions, claim-bound evidence, live measurement status, and deterministic Pareto/coverage state instead of relying on markdown-only reconstruction.
+- **Deterministic projections** — projection views now render the same artifact graph for different audiences, including engineer, manager, audit, compare, delegated-agent brief, and change-rationale handoff surfaces.
+- **Route-aware FPF retrieval** — indexed section summaries, route expansion, explain/full controls, golden-query evaluation, tree drill-down, and experimental semantic retrieval over the embedded FPF corpus.
+- **Broader codebase awareness** — C/C++ module and include detection, symbol hashing, richer module/dependency scanning, and module-governance reporting in status/coverage flows.
+- **Expanded client integrations** — `haft init` now installs MCP/command surfaces for Claude Code, Cursor, Gemini CLI, Codex CLI/App, and Air while keeping the same local binary/runtime.
 
 ### Changed
 
-- **Functional architecture layering** — complete kernel refactoring with zero MCP contract changes:
-  - `ArtifactStore` interface (26 methods) — all domain functions accept interface, not concrete Store. Compile-time checked.
-  - Pure `Build*` functions for all domain modules (Problem, Note, Decision, Explore, Compare, Waive, Supersede, Deprecate, RefreshReport, Lineage). Orchestrators are thin: fetch → pure build → persist.
-  - `internal/present` package — 17 pure formatting functions extracted from artifact. One-way dependency (present → artifact), no cycles. Zero store access in presentation layer.
-  - `serve.go` handler split — `makeV5Handler` reduced to ~15 lines. Named hooks: `dispatchTool`, `logToolEntry`, `applyCrossProjectRecall`, `applyCrossProjectIndex`, `applyRefreshReminder`.
-  - `query.go` split into `FetchSearchResults`/`FetchStatusData`/`FetchListData`/`FetchRelatedArtifacts` (data, artifact package) + `SearchResponse`/`StatusResponse`/`ListResponse`/`RelatedResponse` (format, present package).
-  - Type validation: `ParseKind`/`ParseStatus`/`ParseMode` enforced at all boundaries (MCP input, file parsing, DB reads). Validation maps unexported.
-  - `interface{}` → `any` throughout serve.go (Go 1.18+).
-- **FTS5 search quality improvements:**
-  - AND-default with OR fallback for multi-term queries (precision ~3-5x improvement).
-  - `bm25` column weighting: title=10x, kind=5x, search_keywords=3x, content=1x.
-  - Stop-word filter replacing `len > 2` heuristic — preserves technical 2-char terms (Go, CI, DB, IO, UI).
-  - Search keywords instruction added to q-reason skill with quality rules (what to generate, what not).
-- **Board no longer reloads data on tab switch** — 3-second periodic refresh provides sufficient data freshness. Removes per-switch overhead.
+- **Product identity is now Haft-first** — binary, docs, commands, skills, and MCP tool names use `haft`, `haft_*`, and `/h-*`; historical `quint-code` repository paths remain only where compatibility still requires them.
+- **Core architecture was refactored into explicit layers** — artifact build/store logic, presentation formatting, protocol transport, agent runtime, and TUI shell now live as clearer functional boundaries with purer `Build*`/formatting paths and thinner orchestration shells.
+- **Agent execution moved beyond slash-command steering** — the repo now supports both MCP/plugin workflows and a standalone agent/TUI loop, with persisted execution mode aliases and compatibility bridges for older symbiotic/collaborative terminology.
+- **Provider/model support expanded** — the registry and CLI now support multi-provider model discovery/switching with GPT-5.4-class defaults/fallbacks instead of the older 5.3-era baseline.
+- **FPF search quality improved materially** — deterministic route lookup, better weighting/sanitization, explicit section summaries, and MCP-accessible spec search replaced the older narrower retrieval path.
 
 ### Fixed
 
-- **Drift scan requires diff review before action** — `FormatDriftResponse` adds a guard: "REQUIRED: read `git diff` on modified files before taking action." Classification rubric (cosmetic/material/incidental) presented to agent. Prevents agents from summarizing drift as "expected" without reading diffs.
-- **Drift output uses raw signals instead of interpretive labels** — "likely implemented" / "not yet implemented" labels replaced with "git activity detected after decision date" / "no git activity detected after decision date". Tool outputs observable facts; agent performs all interpretation.
-- **`quint_problem(action="select")` returns deprecated problems** — `SelectProblems` and `FindActiveProblem` applied status filter in Go after a SQL `LIMIT`, so deprecated rows could push active ones out of the result window. Added `ListActiveByKind` with SQL-level `status = 'active'` filter. ([#38](https://github.com/m0n0x41d/quint-code/issues/38))
-- **Raw type casts on DB read** — `store.Get()` and `scanArtifacts()` now use `ParseKind`/`ParseStatus`/`ParseMode` instead of raw `Kind(string)` casts, with graceful fallback for older data.
+- **`haft serve` / plugin mode now matches the core claim model** — served MCP schema and handlers understand predictions, strict decision/measurement arrays, claim refs/scope, and projection views instead of lagging behind the direct runtime.
+- **Slash-command guidance no longer points users at stale `/q-*` actions** — note validation, nav strips, MCP presentation text, and h-reason docs now consistently steer users through the `h-*` surface, with `/h-view` as the advanced projection entry point.
+- **Large pasted prompts no longer explode the TUI** — oversized pasted text is collapsed to `[N rows inserted]` placeholders in the input/queue/transcript UI, while the raw content is preserved and expanded only at submit time.
+- **Queued follow-up messages preserve real prompt state** — multiline text, attachments, and hidden collapsed-paste payloads now survive queueing, replay, and draft restore paths without truncation or accidental `trim()` damage.
+- **Decision/evidence integrity issues were tightened across the branch** — malformed compare/measure payloads now fail loudly, Pareto fronts are computed deterministically, and claim/evidence bindings keep canonical scope instead of silently degrading.
 
 ## [5.3.1] — 2026-03-25
 

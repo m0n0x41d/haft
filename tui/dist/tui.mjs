@@ -82669,6 +82669,15 @@ function App2({ client: client2, inputEvents }) {
       return next;
     });
   }, []);
+  const handleInputTextChange = (0, import_react37.useCallback)((text) => {
+    setDraftPastes((current) => {
+      const next = filterReferencedCollapsedPastes(text, current);
+      if (sameCollapsedPastes(current, next)) {
+        return current;
+      }
+      return next;
+    });
+  }, []);
   replayQueueRef.current = replayQueuedSubmissions;
   const handlePermission = (0, import_react37.useCallback)((action) => {
     const yolo = action === "allow_session";
@@ -82916,9 +82925,7 @@ function App2({ client: client2, inputEvents }) {
         width,
         hasQueuedMessages: queuedMessages.length > 0,
         onRowsChange: setInputRows,
-        onTextChange: (text) => {
-          setDraftPastes((current) => filterReferencedCollapsedPastes(text, current));
-        }
+        onTextChange: handleInputTextChange
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
@@ -82967,6 +82974,15 @@ function formatSize(bytes) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
+}
+function sameCollapsedPastes(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((paste, index) => {
+    const other = right[index];
+    return other !== void 0 && paste.id === other.id && paste.rowCount === other.rowCount && paste.text === other.text;
+  });
 }
 var import_react37, import_jsx_runtime15, SLASH_COMMANDS;
 var init_App2 = __esm({

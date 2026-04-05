@@ -355,7 +355,7 @@ export function App({ client, inputEvents }: AppProps) {
   const handleSlashCommand = useCallback((
     text: string,
     fromQueuedReplay: boolean,
-  ): "unhandled" | "continue" | "pause" => {
+  ): "unhandled" | "pause" => {
     const cmd = leadingSlashCommand(text)
     const shouldResumeOnCancel =
       fromQueuedReplay &&
@@ -405,9 +405,6 @@ export function App({ client, inputEvents }: AppProps) {
   const replaySubmission = useCallback((submission: PromptSubmission) => {
     const commandResult = handleSlashCommand(submission.text, true)
 
-    if (commandResult === "continue") {
-      return false
-    }
     if (commandResult === "pause") {
       return true
     }

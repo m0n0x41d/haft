@@ -120,6 +120,27 @@ test("replays queued help alone and leaves later prompts pending", () => {
   assert.equal(queued[1]?.attachments[0]?.name, "image.png")
 })
 
+test("replays only the next queued prompt and leaves the rest pending", () => {
+  const queued = [
+    createPromptSubmission("real prompt", [
+      { id: 1, name: "image.png", path: "/tmp/image.png", isImage: true },
+    ]),
+    createPromptSubmission("later prompt", []),
+    createPromptSubmission("/help", []),
+  ]
+  const drained = drainPromptSubmissions(queued)
+
+  assert.deepEqual(
+    submissionTexts(drained.replay),
+    ["real prompt"],
+  )
+  assert.deepEqual(
+    submissionTexts(drained.remaining),
+    ["later prompt", "/help"],
+  )
+  assert.equal(queued[0]?.attachments[0]?.name, "image.png")
+})
+
 test("stops queued replay before a model picker command", () => {
   const queued = [
     createPromptSubmission("/model", []),

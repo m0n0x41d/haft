@@ -22,7 +22,6 @@ export interface DrainedPromptSubmissions {
 }
 
 export type QueuedPromptReplayDisposition =
-  | "continue"
   | "pause"
   | "submit"
 
@@ -120,18 +119,12 @@ export function restoreQueuedSubmission(
 export function drainPromptSubmissions(
   submissions: readonly PromptSubmission[],
 ): DrainedPromptSubmissions {
-  const stopIndex = submissions.findIndex((submission) => {
-    return queuedPromptReplayDisposition(submission.text) !== "continue"
-  })
-  const replayCount = stopIndex === -1 ? submissions.length : stopIndex + 1
-  const replay = submissions
-    .slice(0, replayCount)
-    .map(clonePromptSubmission)
-  const remaining = submissions.slice(replayCount)
+  const shifted = shiftPromptSubmissions(submissions)
+  const replay = shifted.current ? [shifted.current] : []
 
   return {
     replay,
-    remaining: [...remaining],
+    remaining: shifted.remaining,
   }
 }
 

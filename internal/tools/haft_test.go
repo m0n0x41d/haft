@@ -1000,6 +1000,45 @@ func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *test
 	}
 }
 
+func TestHaftDecisionTool_DecideDisplayIncludesFullDecisionBody(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":           "decide",
+		"problem_ref":      fixture.problem.Meta.ID,
+		"selected_title":   "gRPC",
+		"why_selected":     "Latency wins inside the compared portfolio.",
+		"selection_policy": "Minimize latency within the approved cost envelope.",
+		"counterargument":  "Protocol migration complexity could erase the latency gain.",
+		"why_not_others": []map[string]any{{
+			"variant": "REST",
+			"reason":  "Latency tails stay above the accepted bound.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"Latency exceeds the approved p99 after rollout"},
+		},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"## 2. Decision",
+		"**Selection policy:** Minimize latency within the approved cost envelope.",
+		"## 3. Rationale",
+		"**Counterargument:** Protocol migration complexity could erase the latency gain.",
+		"**Rejected alternatives:**",
+		"## 4. Consequences",
+		"Latency exceeds the approved p99 after rollout",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(result.DisplayText, want) {
+			t.Fatalf("expected direct decide display to include %q, got:\n%s", want, result.DisplayText)
+		}
+	}
+}
+
 func TestHaftDecisionTool_MeasureRejectsForeignDecisionRef(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 

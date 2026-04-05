@@ -1159,7 +1159,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		return agent.ToolResult{}, err
 	}
 
-	display := fmt.Sprintf("Decision recorded: %s\nID: %s\nFile: %s\nSelected: %s", a.Meta.Title, a.Meta.ID, filePath, input.SelectedTitle)
+	display := present.DecisionResponse("decide", a, filePath, "", "")
 	coverageWarnings := formatCoverageWarnings(gaps)
 	if len(coverageWarnings) > 0 {
 		display += "\n\n" + strings.Join(coverageWarnings, "\n")

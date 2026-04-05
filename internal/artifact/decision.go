@@ -100,6 +100,15 @@ func extractSection(body, heading string) string {
 	return strings.TrimSpace(body[start:])
 }
 
+func escapeMarkdownTableCell(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.ReplaceAll(value, "\n", "<br>")
+	value = strings.ReplaceAll(value, "|", "\\|")
+
+	return value
+}
+
 func compactStrings(values []string) []string {
 	compacted := make([]string, 0, len(values))
 
@@ -308,9 +317,17 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("**Rejected alternatives:**\n")
 		body.WriteString("| Variant | Verdict | Reason |\n")
 		body.WriteString("|---------|---------|--------|\n")
-		body.WriteString(fmt.Sprintf("| %s | **Selected** | %s |\n", input.SelectedTitle, truncate(input.WhySelected, 60)))
+		body.WriteString(fmt.Sprintf(
+			"| %s | **Selected** | %s |\n",
+			escapeMarkdownTableCell(input.SelectedTitle),
+			escapeMarkdownTableCell(truncate(input.WhySelected, 60)),
+		))
 		for _, r := range input.WhyNotOthers {
-			body.WriteString(fmt.Sprintf("| %s | Rejected | %s |\n", r.Variant, r.Reason))
+			body.WriteString(fmt.Sprintf(
+				"| %s | Rejected | %s |\n",
+				escapeMarkdownTableCell(r.Variant),
+				escapeMarkdownTableCell(r.Reason),
+			))
 		}
 		body.WriteString("\n")
 	}

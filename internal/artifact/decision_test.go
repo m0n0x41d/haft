@@ -194,6 +194,41 @@ func TestDecide_Tactical(t *testing.T) {
 	}
 }
 
+func TestDecide_EscapesRejectedAlternativeTableCells(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
+		SelectedTitle:   "gRPC | v2",
+		WhySelected:     "Line 1\nLine 2 | more",
+		SelectionPolicy: "Prefer the transport that stays within the latency budget with the fewest avoidable moving parts.",
+		CounterArgument: "Migration friction could outweigh the latency gain if the rollout path is rougher than expected.",
+		WhyNotOthers: []RejectionReason{
+			{
+				Variant: "REST | v1\nlegacy",
+				Reason:  "Higher latency\nNeeds | extra gateways",
+			},
+		},
+		WeakestLink: "Rollout complexity under mixed-protocol traffic.",
+		Rollback: &RollbackSpec{
+			Triggers: []string{"Latency budget regresses after cutover"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	selectedRow := "| gRPC \\| v2 | **Selected** | Line 1<br>Line 2 \\| more |"
+	if !strings.Contains(a.Body, selectedRow) {
+		t.Fatalf("selected rationale row did not escape table cell content:\n%s", a.Body)
+	}
+
+	rejectedRow := "| REST \\| v1<br>legacy | Rejected | Higher latency<br>Needs \\| extra gateways |"
+	if !strings.Contains(a.Body, rejectedRow) {
+		t.Fatalf("rejected rationale row did not escape table cell content:\n%s", a.Body)
+	}
+}
+
 func TestDecide_MissingRequired(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

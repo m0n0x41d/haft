@@ -623,6 +623,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "boolean",
 						"description": "(fpf) Show why each result matched",
 					},
+					"mode": map[string]interface{}{
+						"type":        "string",
+						"description": "(fpf) Experimental retrieval mode; currently supports tree",
+					},
 				},
 				"required": []string{"action"},
 			},

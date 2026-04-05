@@ -147,7 +147,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 	for _, portfolio := range portfolios {
 		portfolioIDs[portfolio.Meta.ID] = struct{}{}
 		fields := portfolio.UnmarshalPortfolioFields()
-		problemRefs := projectionLinkRefs(portfolio.Meta.Links, problemIDs)
+		problemRefs := projectionPortfolioProblemRefs(portfolio, problemIDs)
 
 		portfolioProblemRefs[portfolio.Meta.ID] = cloneStringSlice(problemRefs)
 
@@ -162,12 +162,16 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 		})
 	}
 
+	if err := hydrateProjectionPortfolioProblemRefs(ctx, store, decisions, problemIDs, portfolioProblemRefs); err != nil {
+		return ProjectionGraph{}, err
+	}
+
 	for _, decision := range decisions {
 		fields := decision.UnmarshalDecisionFields()
 		portfolioRefs := projectionLinkRefs(decision.Meta.Links, portfolioIDs)
 		problemRefs := projectionDecisionProblemRefs(
 			projectionLinkRefs(decision.Meta.Links, problemIDs),
-			portfolioRefs,
+			decision.Meta.Links,
 			portfolioProblemRefs,
 		)
 
@@ -281,6 +285,37 @@ func buildProjectionEvidenceSummary(ctx context.Context, store ArtifactStore, ar
 	}
 }
 
+func hydrateProjectionPortfolioProblemRefs(
+	ctx context.Context,
+	store ArtifactStore,
+	decisions []*Artifact,
+	problemIDs map[string]struct{},
+	portfolioProblemRefs map[string][]string,
+) error {
+	for _, decision := range decisions {
+		for _, link := range decision.Meta.Links {
+			if link.Type != "based_on" {
+				continue
+			}
+			if _, ok := portfolioProblemRefs[link.Ref]; ok {
+				continue
+			}
+
+			linkedArtifact, err := store.Get(ctx, link.Ref)
+			if err != nil {
+				continue
+			}
+			if linkedArtifact.Meta.Kind != KindSolutionPortfolio {
+				continue
+			}
+
+			portfolioProblemRefs[link.Ref] = projectionPortfolioProblemRefs(linkedArtifact, problemIDs)
+		}
+	}
+
+	return nil
+}
+
 func projectionLinkRefs(links []Link, allowed map[string]struct{}) []string {
 	refs := make([]string, 0, len(links))
 	seen := make(map[string]struct{}, len(links))
@@ -304,15 +339,35 @@ func projectionLinkRefs(links []Link, allowed map[string]struct{}) []string {
 	return refs
 }
 
+func projectionPortfolioProblemRefs(portfolio *Artifact, problemIDs map[string]struct{}) []string {
+	if portfolio == nil {
+		return nil
+	}
+
+	fields := portfolio.UnmarshalPortfolioFields()
+	problemRefs := projectionLinkRefs(portfolio.Meta.Links, problemIDs)
+
+	if _, ok := problemIDs[fields.ProblemRef]; ok {
+		problemRefs = appendUniqueString(problemRefs, fields.ProblemRef)
+	}
+
+	sort.Strings(problemRefs)
+	return problemRefs
+}
+
 func projectionDecisionProblemRefs(
 	directProblemRefs []string,
-	portfolioRefs []string,
+	links []Link,
 	portfolioProblemRefs map[string][]string,
 ) []string {
 	resolvedRefs := cloneStringSlice(directProblemRefs)
 
-	for _, portfolioRef := range portfolioRefs {
-		problemRefs := portfolioProblemRefs[portfolioRef]
+	for _, link := range links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		problemRefs := portfolioProblemRefs[link.Ref]
 
 		for _, problemRef := range problemRefs {
 			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)

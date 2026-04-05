@@ -40,45 +40,26 @@ func run() error {
 }
 
 func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
-
-	catalogFile, err := os.Open(specPath)
+	corpus, err := fpf.LoadSpecIndexCorpus(specPath)
 	if err != nil {
-		return fmt.Errorf("opening spec for catalog parse: %w", err)
+		return fmt.Errorf("load production spec corpus: %w", err)
 	}
-	catalog, err := fpf.ParseSpecCatalog(catalogFile)
-	_ = catalogFile.Close()
-	if err != nil {
-		return fmt.Errorf("parse catalog: %w", err)
-	}
-
-	f, err := os.Open(specPath)
-	if err != nil {
-		return fmt.Errorf("opening spec: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	chunks, err := fpf.ChunkMarkdown(f)
-	if err != nil {
-		return fmt.Errorf("chunking: %w", err)
-	}
-	chunks = fpf.EnrichChunks(chunks, catalog)
-	filtered := fpf.FilterIndexChunks(chunks)
 
 	routes, err := fpf.LoadRoutes(routePath)
 	if err != nil {
 		return fmt.Errorf("loading routes: %w", err)
 	}
 
-	if err := fpf.BuildSpecIndex(dbPath, filtered, routes); err != nil {
+	if err := fpf.BuildSpecIndex(dbPath, corpus.Indexed, routes); err != nil {
 		return fmt.Errorf("building index: %w", err)
 	}
 
-	metadata := buildSpecIndexMetadata(specPath, len(filtered), commitSHA, time.Now().UTC())
+	metadata := buildSpecIndexMetadata(specPath, len(corpus.Indexed), commitSHA, time.Now().UTC())
 	if err := fpf.SetSpecMetaEntries(dbPath, metadata); err != nil {
 		return fmt.Errorf("setting meta: %w", err)
 	}
 
-	fmt.Printf("Indexed %d chunks (from %d total) into %s\n", len(filtered), len(chunks), dbPath)
+	fmt.Printf("Indexed %d chunks (from %d total) into %s\n", len(corpus.Indexed), len(corpus.Chunks), dbPath)
 	return nil
 }
 

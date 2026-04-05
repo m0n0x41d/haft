@@ -958,6 +958,33 @@ func TestSearchSpecWithOptions_InvalidTier(t *testing.T) {
 	}
 }
 
+func TestSearchSpecWithOptions_RejectsTreeRouteAndRelatedTierMix(t *testing.T) {
+	_, db, cleanup := buildTestIndex(t)
+	defer cleanup()
+
+	tests := []struct {
+		name string
+		tier string
+	}{
+		{name: "route", tier: SpecSearchTierRoute},
+		{name: "related", tier: SpecSearchTierRelated},
+	}
+
+	for _, tt := range tests {
+		_, err := SearchSpecWithOptions(db, "boundary routing", SpecSearchOptions{
+			Limit: 5,
+			Tier:  tt.tier,
+			Mode:  SpecSearchModeTree,
+		})
+		if err == nil {
+			t.Fatalf("%s tier: expected incompatible tree-mode error", tt.name)
+		}
+		if !strings.Contains(err.Error(), "does not support tier") {
+			t.Fatalf("%s tier: unexpected incompatible tree-mode error: %v", tt.name, err)
+		}
+	}
+}
+
 func TestSetSpecMeta_AndGetSpecMeta(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()

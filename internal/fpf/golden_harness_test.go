@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -24,22 +23,12 @@ func loadGoldenSpecChunks(t *testing.T) []SpecChunk {
 	t.Helper()
 
 	path := filepath.Join(testRepoRoot(t), ".context", "FPF-Spec.md")
-	catalogFile := mustOpenFile(t, path)
-	catalog, err := ParseSpecCatalog(catalogFile)
-	_ = catalogFile.Close()
+	corpus, err := LoadSpecIndexCorpus(path)
 	if err != nil {
-		t.Fatalf("ParseSpecCatalog(%q) failed: %v", path, err)
+		t.Fatalf("LoadSpecIndexCorpus(%q) failed: %v", path, err)
 	}
 
-	chunkFile := mustOpenFile(t, path)
-	chunks, err := ChunkMarkdown(chunkFile)
-	_ = chunkFile.Close()
-	if err != nil {
-		t.Fatalf("ChunkMarkdown(%q) failed: %v", path, err)
-	}
-
-	chunks = EnrichChunks(chunks, catalog)
-	return chunks
+	return reindexGoldenSpecChunks(corpus.Indexed)
 }
 
 func loadGoldenSpecChunksForPatternIDs(t *testing.T, patternIDs map[string]struct{}) []SpecChunk {
@@ -50,7 +39,7 @@ func loadGoldenSpecChunksForPatternIDs(t *testing.T, patternIDs map[string]struc
 }
 
 func filterGoldenSpecChunks(chunks []SpecChunk, patternIDs map[string]struct{}) []SpecChunk {
-	filtered := make([]SpecChunk, 0, len(chunks))
+	selected := make([]SpecChunk, 0, len(chunks))
 	for _, chunk := range chunks {
 		if chunk.PatternID == "" {
 			continue
@@ -58,12 +47,10 @@ func filterGoldenSpecChunks(chunks []SpecChunk, patternIDs map[string]struct{}) 
 		if _, ok := patternIDs[chunk.PatternID]; !ok {
 			continue
 		}
-		if len(strings.TrimSpace(chunk.Body)) <= 20 {
-			continue
-		}
-		filtered = append(filtered, chunk)
+		selected = append(selected, chunk)
 	}
 
+	filtered := FilterIndexChunks(selected)
 	return reindexGoldenSpecChunks(filtered)
 }
 
@@ -100,17 +87,6 @@ func mustReadFile(t *testing.T, path string) []byte {
 	}
 
 	return data
-}
-
-func mustOpenFile(t *testing.T, path string) *os.File {
-	t.Helper()
-
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("os.Open(%q) failed: %v", path, err)
-	}
-
-	return file
 }
 
 func testPackageDir(t *testing.T) string {

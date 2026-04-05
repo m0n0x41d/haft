@@ -31,6 +31,22 @@ func TestUserFacingArtifactKindLabel_UsesPlainLanguage(t *testing.T) {
 	assertLintCleanGeneratedText(t, outputs...)
 }
 
+func TestApplyFPFAnswerHygiene_RewritesOnlySafeRules(t *testing.T) {
+	input := "ProblemCard ready; selected_ref must remain literal."
+
+	output := present.ApplyFPFAnswerHygiene(input)
+
+	if !strings.Contains(output, "problem ready") {
+		t.Fatalf("expected rewrite-safe artifact kind replacement, got %q", output)
+	}
+	if !strings.Contains(output, "selected_ref") {
+		t.Fatalf("expected lint-only field name to remain literal, got %q", output)
+	}
+	if strings.Contains(output, "recommended variant") {
+		t.Fatalf("expected lint-only field name to stay unrevised, got %q", output)
+	}
+}
+
 func TestLintFPFAnswer_FlagsInternalCompareFields(t *testing.T) {
 	issues := present.LintFPFAnswer("selected_ref disagrees with non_dominated_set")
 
@@ -69,6 +85,17 @@ func TestSearchResponse_UsesPlainArtifactKindLabels(t *testing.T) {
 
 	if !strings.Contains(output, "[decision]") {
 		t.Fatalf("expected plain artifact label, got:\n%s", output)
+	}
+}
+
+func TestSearchResponse_PreservesLiteralQueryText(t *testing.T) {
+	output := present.SearchResponse(nil, "selected_ref")
+
+	if !strings.Contains(output, "selected_ref") {
+		t.Fatalf("expected literal query echo, got %q", output)
+	}
+	if strings.Contains(output, "recommended variant") {
+		t.Fatalf("expected raw query to stay exact, got %q", output)
 	}
 }
 

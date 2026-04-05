@@ -276,6 +276,21 @@ func TestRunFPFSearch_InvalidMode(t *testing.T) {
 	}
 }
 
+func TestRunFPFSearch_TreeModeRejectsRouteTier(t *testing.T) {
+	restoreFlags := stubFPFSearchFlags(t, 10, false, false, fpf.SpecSearchTierRoute, fpf.SpecSearchModeTree)
+	defer restoreFlags()
+
+	_, err := captureStdout(t, func() error {
+		return runFPFSearch(nil, []string{"boundary"})
+	})
+	if err == nil {
+		t.Fatal("expected incompatible mode+tier error")
+	}
+	if !strings.Contains(err.Error(), "does not support tier") {
+		t.Fatalf("unexpected incompatible mode+tier error: %v", err)
+	}
+}
+
 func TestRunFPFSection_LooksUpHeadingAndPatternID(t *testing.T) {
 	dbPath := buildFPFSearchTestDB(t)
 

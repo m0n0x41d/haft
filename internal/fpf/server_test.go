@@ -8,7 +8,9 @@ import (
 	"testing"
 )
 
-func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
+func mustListToolProperties(t *testing.T, toolName string) map[string]interface{} {
+	t.Helper()
+
 	server := NewServer()
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
@@ -16,7 +18,7 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	request := JSONRPCRequest{
 		JSONRPC: "2.0",
 		Method:  "tools/list",
-		ID:      "req-1",
+		ID:      "req-schema",
 	}
 
 	stdout := os.Stdout
@@ -40,8 +42,9 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var response map[string]interface{}
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
+	response := map[string]interface{}{}
+	err = json.Unmarshal(responseBytes, &response)
+	if err != nil {
 		t.Fatalf("unmarshal tools/list response: %v\n%s", err, string(responseBytes))
 	}
 
@@ -55,32 +58,34 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 		t.Fatalf("tools missing or wrong type: %#v", result["tools"])
 	}
 
-	var compareSchema map[string]interface{}
 	for _, rawTool := range tools {
 		tool, ok := rawTool.(map[string]interface{})
 		if !ok {
 			t.Fatalf("tool entry has wrong type: %#v", rawTool)
 		}
-		if tool["name"] != "haft_solution" {
+		if tool["name"] != toolName {
 			continue
 		}
 
 		inputSchema, ok := tool["inputSchema"].(map[string]interface{})
 		if !ok {
-			t.Fatalf("haft_solution inputSchema missing or wrong type: %#v", tool["inputSchema"])
+			t.Fatalf("%s inputSchema missing or wrong type: %#v", toolName, tool["inputSchema"])
 		}
 
 		properties, ok := inputSchema["properties"].(map[string]interface{})
 		if !ok {
-			t.Fatalf("haft_solution properties missing or wrong type: %#v", inputSchema["properties"])
+			t.Fatalf("%s properties missing or wrong type: %#v", toolName, inputSchema["properties"])
 		}
-		compareSchema = properties
-		break
+
+		return properties
 	}
 
-	if compareSchema == nil {
-		t.Fatal("haft_solution tool schema not found")
-	}
+	t.Fatalf("%s tool schema not found", toolName)
+	return nil
+}
+
+func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
+	compareSchema := mustListToolProperties(t, "haft_solution")
 
 	for _, key := range []string{"dominated_variants", "pareto_tradeoffs", "recommendation_rationale"} {
 		if _, ok := compareSchema[key]; !ok {
@@ -142,78 +147,7 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 }
 
 func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) {
-	server := NewServer()
-	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
-		return "", nil
-	})
-	request := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/list",
-		ID:      "req-2",
-	}
-
-	stdout := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.Stdout = stdout
-	}()
-
-	os.Stdout = writer
-	server.handleToolsList(request)
-
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	responseBytes, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var response map[string]interface{}
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		t.Fatalf("unmarshal tools/list response: %v\n%s", err, string(responseBytes))
-	}
-
-	result, ok := response["result"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("result missing or wrong type: %#v", response["result"])
-	}
-
-	tools, ok := result["tools"].([]interface{})
-	if !ok {
-		t.Fatalf("tools missing or wrong type: %#v", result["tools"])
-	}
-
-	var decisionSchema map[string]interface{}
-	for _, rawTool := range tools {
-		tool, ok := rawTool.(map[string]interface{})
-		if !ok {
-			t.Fatalf("tool entry has wrong type: %#v", rawTool)
-		}
-		if tool["name"] != "haft_decision" {
-			continue
-		}
-
-		inputSchema, ok := tool["inputSchema"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("haft_decision inputSchema missing or wrong type: %#v", tool["inputSchema"])
-		}
-
-		properties, ok := inputSchema["properties"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("haft_decision properties missing or wrong type: %#v", inputSchema["properties"])
-		}
-		decisionSchema = properties
-		break
-	}
-
-	if decisionSchema == nil {
-		t.Fatal("haft_decision tool schema not found")
-	}
+	decisionSchema := mustListToolProperties(t, "haft_decision")
 
 	validUntil, ok := decisionSchema["valid_until"].(map[string]interface{})
 	if !ok {
@@ -223,5 +157,19 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	description, _ := validUntil["description"].(string)
 	if description != "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)" {
 		t.Fatalf("unexpected valid_until description: %q", description)
+	}
+}
+
+func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+
+	mode, ok := querySchema["mode"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("mode schema missing or wrong type: %#v", querySchema["mode"])
+	}
+
+	description, _ := mode["description"].(string)
+	if description != "(fpf) Experimental retrieval mode; currently supports tree" {
+		t.Fatalf("unexpected mode description: %q", description)
 	}
 }

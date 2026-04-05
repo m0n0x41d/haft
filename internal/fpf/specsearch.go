@@ -307,6 +307,10 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 	}
 	options.Mode = normalizedMode
 
+	if err := ValidateSpecSearchControls(options.Tier, options.Mode); err != nil {
+		return nil, err
+	}
+
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -398,6 +402,27 @@ func SearchSpecWithOptions(db *sql.DB, query string, options SpecSearchOptions) 
 		results = results[:options.Limit]
 	}
 	return results, nil
+}
+
+// ValidateSpecSearchControls rejects tier/mode combinations that the search
+// dispatcher cannot lawfully produce.
+func ValidateSpecSearchControls(tier string, mode string) error {
+	if mode != SpecSearchModeTree {
+		return nil
+	}
+
+	switch tier {
+	case "", SpecSearchTierPattern, SpecSearchTierDrillDown, SpecSearchTierFTS:
+		return nil
+	case SpecSearchTierRoute, SpecSearchTierRelated:
+		return fmt.Errorf(
+			"search mode %q does not support tier %q (want empty, pattern, drilldown, or fts)",
+			mode,
+			tier,
+		)
+	default:
+		return nil
+	}
 }
 
 func effectiveRelatedExpansionLimit(options SpecSearchOptions) int {

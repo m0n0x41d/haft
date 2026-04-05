@@ -23,7 +23,7 @@ type NoteValidation struct {
 	OK        bool
 	Warnings  []string
 	Conflicts []ConflictInfo
-	Suggest   string // suggested alternative action (e.g., "/q-frame")
+	Suggest   string // suggested alternative action (e.g., "/h-frame")
 }
 
 // ConflictInfo describes a conflict with an existing decision.
@@ -69,7 +69,7 @@ func ValidateNote(ctx context.Context, store ArtifactStore, input NoteInput) Not
 			if overlap.Similarity > 0.7 {
 				v.OK = false
 				v.Warnings = append(v.Warnings, fmt.Sprintf(
-					"Decision %s (%s) already covers this topic (%.0f%% of note words found in decision). Notes are for observations and discoveries, not architectural choices. Use /q-decide for decisions.",
+					"Decision %s (%s) already covers this topic (%.0f%% of note words found in decision). Notes are for observations and discoveries, not architectural choices. Use /h-decide for decisions.",
 					overlap.DecisionID, overlap.DecisionTitle, overlap.Similarity*100,
 				))
 				return v
@@ -105,9 +105,9 @@ func ValidateNote(ctx context.Context, store ArtifactStore, input NoteInput) Not
 
 	// Check 4: Scope — is this too big for a note?
 	if len(input.AffectedFiles) > 3 {
-		v.Suggest = "/q-frame"
+		v.Suggest = "/h-frame"
 		v.Warnings = append(v.Warnings, fmt.Sprintf(
-			"This note affects %d files. Consider using /q-frame for a proper problem exploration.",
+			"This note affects %d files. Consider using /h-frame for a proper problem exploration.",
 			len(input.AffectedFiles),
 		))
 	}
@@ -116,9 +116,9 @@ func ValidateNote(ctx context.Context, store ArtifactStore, input NoteInput) Not
 	rationaleLower := strings.ToLower(input.Rationale)
 	for _, kw := range architecturalKeywords {
 		if strings.Contains(titleLower, kw) || strings.Contains(rationaleLower, kw) {
-			v.Suggest = "/q-frame"
+			v.Suggest = "/h-frame"
 			v.Warnings = append(v.Warnings, fmt.Sprintf(
-				"This sounds like an architectural change (%q detected). Consider /q-frame instead of a note.",
+				"This sounds like an architectural change (%q detected). Consider /h-frame instead of a note.",
 				kw,
 			))
 			break

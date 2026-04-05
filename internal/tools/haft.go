@@ -1337,13 +1337,28 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 		}
 	}
 
+	criteriaMet, err := jsonStrictStringArray(args, "criteria_met")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	criteriaNotMet, err := jsonStrictStringArray(args, "criteria_not_met")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	measurements, err := jsonStrictStringArray(args, "measurements")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	input := artifact.MeasureInput{
 		DecisionRef:    decisionRef,
 		Findings:       jsonStr(args, "findings"),
 		Verdict:        jsonStr(args, "verdict"),
-		CriteriaMet:    jsonStrArray(args, "criteria_met"),
-		CriteriaNotMet: jsonStrArray(args, "criteria_not_met"),
-		Measurements:   jsonStrArray(args, "measurements"),
+		CriteriaMet:    criteriaMet,
+		CriteriaNotMet: criteriaNotMet,
+		Measurements:   measurements,
 	}
 
 	result, err := artifact.Measure(ctx, t.store, t.haftDir, input)

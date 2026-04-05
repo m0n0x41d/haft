@@ -401,7 +401,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		if input.ProblemRef == "" {
 			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
 			if err != nil || prob == nil {
-				return "No active problem found.\nUse /q-frame to create one first.\n" +
+				return "No active problem found.\nUse /h-frame to create one first.\n" +
 					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 			input.ProblemRef = prob.Meta.ID
@@ -482,7 +482,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			if p != nil {
 				input.PortfolioRef = p.Meta.ID
 			} else {
-				return "No active solution portfolio found.\nUse /q-explore to create variants first.\n" +
+				return "No active solution portfolio found.\nUse /h-explore to create variants first.\n" +
 					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
@@ -506,6 +506,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 	switch action {
 	case "decide":
 		input := artifact.DecideInput{Context: contextName}
+		var err error
 		if v, ok := args["selected_title"].(string); ok {
 			input.SelectedTitle = v
 		}
@@ -524,7 +525,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
 		}
-		input.ProblemRefs = parseStringArrayFromArgs(args, "problem_refs")
+		if input.ProblemRefs, err = parseStrictStringArrayFromArgs(args, "problem_refs"); err != nil {
+			return "", err
+		}
 		if v, ok := args["portfolio_ref"].(string); ok {
 			input.PortfolioRef = v
 		}
@@ -534,51 +537,38 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
-		input.Invariants = parseStringArrayFromArgs(args, "invariants")
-		input.PreConditions = parseStringArrayFromArgs(args, "pre_conditions")
-		input.PostConditions = parseStringArrayFromArgs(args, "post_conditions")
-		input.Admissibility = parseStringArrayFromArgs(args, "admissibility")
-		input.EvidenceReqs = parseStringArrayFromArgs(args, "evidence_requirements")
-		input.RefreshTriggers = parseStringArrayFromArgs(args, "refresh_triggers")
-		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+		if input.Invariants, err = parseStrictStringArrayFromArgs(args, "invariants"); err != nil {
+			return "", err
+		}
+		if input.PreConditions, err = parseStrictStringArrayFromArgs(args, "pre_conditions"); err != nil {
+			return "", err
+		}
+		if input.PostConditions, err = parseStrictStringArrayFromArgs(args, "post_conditions"); err != nil {
+			return "", err
+		}
+		if input.Admissibility, err = parseStrictStringArrayFromArgs(args, "admissibility"); err != nil {
+			return "", err
+		}
+		if input.EvidenceReqs, err = parseStrictStringArrayFromArgs(args, "evidence_requirements"); err != nil {
+			return "", err
+		}
+		if input.RefreshTriggers, err = parseStrictStringArrayFromArgs(args, "refresh_triggers"); err != nil {
+			return "", err
+		}
+		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {
+			return "", err
+		}
 		if v, ok := args["search_keywords"].(string); ok {
 			input.SearchKeywords = v
 		}
-
-		if rb, ok := args["rollback"].(map[string]any); ok {
-			rollback := &artifact.RollbackSpec{}
-			if items, ok := rb["triggers"].([]any); ok {
-				for _, item := range items {
-					if s, ok := item.(string); ok {
-						rollback.Triggers = append(rollback.Triggers, s)
-					}
-				}
-			}
-			if items, ok := rb["steps"].([]any); ok {
-				for _, item := range items {
-					if s, ok := item.(string); ok {
-						rollback.Steps = append(rollback.Steps, s)
-					}
-				}
-			}
-			if v, ok := rb["blast_radius"].(string); ok {
-				rollback.BlastRadius = v
-			}
-			input.Rollback = rollback
+		if input.Rollback, err = parseStrictRollbackSpecFromArgs(args, "rollback"); err != nil {
+			return "", err
 		}
-		if items, ok := args["why_not_others"].([]any); ok {
-			for _, item := range items {
-				if m, ok := item.(map[string]any); ok {
-					rr := artifact.RejectionReason{}
-					if v, ok := m["variant"].(string); ok {
-						rr.Variant = v
-					}
-					if v, ok := m["reason"].(string); ok {
-						rr.Reason = v
-					}
-					input.WhyNotOthers = append(input.WhyNotOthers, rr)
-				}
-			}
+		if input.WhyNotOthers, err = parseStrictRejectionReasonsFromArgs(args, "why_not_others"); err != nil {
+			return "", err
+		}
+		if input.Predictions, err = parsePredictionInputsFromArgs(args, "predictions"); err != nil {
+			return "", err
 		}
 		if input.PortfolioRef == "" {
 			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
@@ -607,7 +597,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			if len(decisions) > 0 {
 				decisionRef = decisions[0].Meta.ID
 			} else {
-				return "No decision found.\nUse /q-decide to finalize a decision first.\n" +
+				return "No decision found.\nUse /h-decide to finalize a decision first.\n" +
 					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
@@ -621,6 +611,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 	case "measure":
 		input := artifact.MeasureInput{}
+		var err error
 		if v, ok := args["decision_ref"].(string); ok {
 			input.DecisionRef = v
 		}
@@ -630,9 +621,15 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["verdict"].(string); ok {
 			input.Verdict = v
 		}
-		input.CriteriaMet = parseStringArrayFromArgs(args, "criteria_met")
-		input.CriteriaNotMet = parseStringArrayFromArgs(args, "criteria_not_met")
-		input.Measurements = parseStringArrayFromArgs(args, "measurements")
+		if input.CriteriaMet, err = parseStrictStringArrayFromArgs(args, "criteria_met"); err != nil {
+			return "", err
+		}
+		if input.CriteriaNotMet, err = parseStrictStringArrayFromArgs(args, "criteria_not_met"); err != nil {
+			return "", err
+		}
+		if input.Measurements, err = parseStrictStringArrayFromArgs(args, "measurements"); err != nil {
+			return "", err
+		}
 		// Auto-detect decision
 		if input.DecisionRef == "" {
 			decisions, _ := store.ListByKind(ctx, artifact.KindDecisionRecord, 1)
@@ -678,6 +675,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			CongruenceLevel: -1, // sentinel: "not provided", will default to 3
 			FormalityLevel:  -1, // sentinel: "not provided", will default to 5
 		}
+		var err error
 		if v, ok := args["artifact_ref"].(string); ok {
 			input.ArtifactRef = v
 		}
@@ -701,6 +699,12 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 		if fl, ok := args["formality_level"].(float64); ok {
 			input.FormalityLevel = int(fl)
+		}
+		if input.ClaimRefs, err = parseStrictStringArrayFromArgs(args, "claim_refs"); err != nil {
+			return "", err
+		}
+		if input.ClaimScope, err = parseStrictStringArrayFromArgs(args, "claim_scope"); err != nil {
+			return "", err
 		}
 
 		item, err := artifact.AttachEvidence(ctx, store, input)
@@ -995,7 +999,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		return formatMCPFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), explain) + navStrip, nil
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'list', 'coverage', or 'fpf'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', or 'fpf'", action)
 	}
 }
 
@@ -1019,6 +1023,105 @@ func parseStringArrayFromArgs(args map[string]any, key string) []string {
 		}
 	}
 	return nil
+}
+
+func parseStrictStringArrayFromArgs(args map[string]any, key string) ([]string, error) {
+	var values []string
+
+	present, err := decodeStrictArgFromArgs(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of strings", key)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return values, nil
+}
+
+func parseStrictRejectionReasonsFromArgs(args map[string]any, key string) ([]artifact.RejectionReason, error) {
+	var values []artifact.RejectionReason
+
+	present, err := decodeStrictArgFromArgs(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of rejection reasons", key)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return values, nil
+}
+
+func parseStrictRollbackSpecFromArgs(args map[string]any, key string) (*artifact.RollbackSpec, error) {
+	var value artifact.RollbackSpec
+
+	present, err := decodeStrictArgFromArgs(args, key, &value)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an object with rollback fields", key)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return &value, nil
+}
+
+func parsePredictionInputsFromArgs(args map[string]any, key string) ([]artifact.PredictionInput, error) {
+	var predictions []artifact.PredictionInput
+
+	present, err := decodeStrictArgFromArgs(args, key, &predictions)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of prediction objects", key)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	for index, value := range predictions {
+		claim := strings.TrimSpace(value.Claim)
+		observable := strings.TrimSpace(value.Observable)
+		threshold := strings.TrimSpace(value.Threshold)
+
+		if claim == "" && observable == "" && threshold == "" {
+			return nil, fmt.Errorf("%s[%d] must declare at least one non-empty field", key, index)
+		}
+		if claim == "" || observable == "" || threshold == "" {
+			return nil, fmt.Errorf("%s[%d] must include claim, observable, and threshold", key, index)
+		}
+	}
+
+	return predictions, nil
+}
+
+func decodeStrictArgFromArgs(args map[string]any, key string, target any) (bool, error) {
+	raw, ok := args[key]
+	if !ok {
+		return false, nil
+	}
+
+	data, err := strictArgBytes(raw)
+	if err != nil {
+		return true, err
+	}
+
+	if err := json.Unmarshal(data, target); err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
+func strictArgBytes(value any) ([]byte, error) {
+	text, ok := value.(string)
+	if ok {
+		trimmed := strings.TrimSpace(text)
+		if trimmed != "" && (trimmed[0] == '[' || trimmed[0] == '{') {
+			return []byte(trimmed), nil
+		}
+	}
+
+	return json.Marshal(value)
 }
 
 // parseDimensions handles MCP client serialization of comparison dimensions.

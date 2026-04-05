@@ -57,7 +57,7 @@ If autonomous mode is OFF, phrases like "figure out the best approach and do it"
 | `haft_solution` | Explore variants, compare and identify Pareto front | `/h-explore`, `/h-compare` |
 | `haft_decision` | Decide with formal rationale; record measurement results | `/h-decide` |
 | `haft_refresh` | Detect stale decisions, manage lifecycle | `/h-refresh` |
-| `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec lookup | `/h-search`, `/h-status` |
+| `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec lookup, deterministic audience projections | `/h-search`, `/h-status`, `/h-view` |
 
 ### FPF spec lookup — prefer MCP when available
 
@@ -180,12 +180,27 @@ Note: Quint computes and persists the Pareto front from the submitted comparison
 
 The decision record should contain:
 - **Invariants** — what MUST hold at all times
+- **Pre-conditions** — what must be true before implementation begins
 - **Post-conditions** — checklist for implementation completion
 - **Admissibility** — what is NOT acceptable
+- **Evidence requirements** — what proof the follow-through loop must gather
+- **Predictions** — falsifiable claims with `claim`, `observable`, and `threshold`
+- **Refresh triggers** — concrete signals that should reopen or re-evaluate the decision
 - **Valid-until date** — when to re-evaluate automatically
 - **Weakest link** — your assessment of what bounds reliability
 
 **Persist with**: `haft_decision(action="decide", ...)`
+
+### 5b. Publish or hand off the same state without re-narrating it
+
+Use projections only when reasoning already exists and you need a safe boundary-crossing view:
+
+- `/h-view brief` for delegated-agent implementation handoff
+- `/h-view rationale` for PR/change rationale
+- `/h-view audit` for evidence/assurance review
+- `/h-view compare` for the current Pareto/trade-off surface
+
+Projection commands do not create new semantics. They render the same artifact graph for a different audience so the next human or agent sees canonical state instead of a fresh paraphrase.
 
 ### 6. Detect staleness and refresh
 

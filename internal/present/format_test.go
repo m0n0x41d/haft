@@ -13,7 +13,7 @@ func TestNavStrip_AvailableGuardLine(t *testing.T) {
 	state := artifact.NavState{
 		DerivedStatus: artifact.DerivedFramed,
 		Mode:          artifact.ModeTactical,
-		NextAction:    `/q-explore (generate variants) | /q-decide (decide directly)`,
+		NextAction:    `/h-explore (generate variants) | /h-decide (decide directly)`,
 	}
 
 	output := present.NavStrip(state)
@@ -46,12 +46,12 @@ func TestNavStrip_AllFieldsRendered(t *testing.T) {
 		DerivedStatus: artifact.DerivedExploring,
 		PortfolioInfo: "API redesign",
 		StaleCount:    2,
-		NextAction:    "/q-compare (compare variants)",
+		NextAction:    "/h-compare (compare variants)",
 	}
 
 	output := present.NavStrip(state)
 
-	for _, want := range []string{"Context: payments", "Mode: standard", "Status: EXPLORING", "Portfolio: API redesign", "Stale: 2", "Available:", "/q-compare"} {
+	for _, want := range []string{"Context: payments", "Mode: standard", "Status: EXPLORING", "Portfolio: API redesign", "Stale: 2", "Available:", "/h-compare"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output missing %q:\n%s", want, output)
 		}

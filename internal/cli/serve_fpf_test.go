@@ -168,7 +168,8 @@ func setupCLIArtifactStore(t *testing.T) *artifact.Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
-			claim_scope TEXT DEFAULT '[]', valid_until TEXT, created_at TEXT NOT NULL)`,
+			claim_refs TEXT DEFAULT '[]', claim_scope TEXT DEFAULT '[]',
+			valid_until TEXT, created_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,

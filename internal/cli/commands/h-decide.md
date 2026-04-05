@@ -13,10 +13,16 @@ Use `haft_decision` tool with `action="decide"` and:
 - `counterargument`: strongest argument against the chosen option (required)
 - `why_not_others`: at least one key rejected alternative with the reason it lost (required)
 - `problem_ref`: problem ID
+- `problem_refs`: additional problem IDs this decision also addresses when one decision closes multiple linked problem statements
 - `portfolio_ref`: portfolio ID
+- `pre_conditions`: conditions that must already hold before implementation starts
 - `invariants`: what MUST hold at all times
 - `post_conditions`: checklist after (definition of done)
 - `admissibility`: what is NOT acceptable
+- `evidence_requirements`: explicit evidence the implementation/review loop must gather
+- `refresh_triggers`: concrete future conditions that should trigger re-evaluation
+- `search_keywords`: compact retrieval aliases for later recall
+- `predictions`: falsifiable claims to verify later; each item MUST include `claim`, `observable`, and `threshold`
 - `weakest_link`: selected variant weakest link; what most plausibly breaks this choice (required)
 - `rollback.triggers`: at least one concrete trigger that would force reversal (required)
 - `rollback.steps`: rollback actions to take when a trigger fires
@@ -70,10 +76,38 @@ After presenting: if the user confirms, record the decision. If any probe kills 
 
 **Incorporate findings:** Persist the strongest attack in `counterargument`, keep the bounding fragility in `weakest_link`, record the selection rule in `selection_policy`, keep at least one concrete rejected alternative in `why_not_others`, and capture reversal conditions in `rollback.triggers` — don't just display them, persist them in the decision record.
 
+## ALIVE decision contract
+
+When the decision is important enough to govern implementation rather than merely document a choice, persist the operational contract too:
+
+- `pre_conditions`: use for prerequisites such as "benchmark reproduced in CI" or "schema freeze approved"
+- `evidence_requirements`: use for proof obligations such as "p99 latency < 20ms in replay benchmark"
+- `refresh_triggers`: use for future drift/reopen triggers such as "error budget breached for two releases"
+- `predictions`: use for measurable expectations that `haft_decision(action="measure")` can later confirm or weaken
+
+Good prediction example:
+
+```text
+predictions=[
+  {
+    "claim": "Throughput stays above 100k events/sec",
+    "observable": "throughput",
+    "threshold": "> 100k events/sec"
+  }
+]
+```
+
 ## Evidence workflow after deciding
 
-- Use `haft_decision(action="evidence", artifact_ref="<decision-id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes", valid_until="...")` when you have explicit supporting or contradictory artifacts and their freshness matters.
+- Use `haft_decision(action="evidence", artifact_ref="<decision-id>", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes", claim_refs=[...], claim_scope=[...], valid_until="...")` when you have explicit supporting or contradictory artifacts and their freshness matters.
 - Use `haft_decision(action="baseline", decision_ref="<decision-id>")` before `measure` when the decision has `affected_files`.
 - Use `haft_decision(action="measure", ...)` for post-implementation outcome. Attached evidence complements measure; it does not replace it.
+
+Attach evidence to the narrowest justified scope:
+
+- `claim_refs`: explicit claim identifiers when the evidence targets a named claim
+- `claim_scope`: semantic scope labels when the evidence targets a slice such as `latency`, `throughput`, or `migration-safety`
+
+Use `claim_scope` even when stable claim IDs are not available yet. This keeps later audit/projection views anchored to the same semantic state instead of free-form narration.
 
 $ARGUMENTS

@@ -170,7 +170,7 @@ func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact
 		sb.WriteString(fmt.Sprintf("Reopened: %s → status: refresh_due\n", dec.Meta.Title))
 		if newProb != nil {
 			sb.WriteString(fmt.Sprintf("New problem: %s (%s)\n", newProb.Meta.Title, newProb.Meta.ID))
-			sb.WriteString("Use /q-explore to find new solutions.\n")
+			sb.WriteString("Use /h-explore to find new solutions.\n")
 		}
 	case artifact.RefreshSupersede:
 		sb.WriteString(fmt.Sprintf("Superseded: %s\n", dec.Meta.Title))
@@ -465,7 +465,7 @@ func displayComparisonVariantLabel(value string, labels map[string]string) strin
 func MissingProblemResponse(navStrip string) string {
 	return "No active problem found.\n\n" +
 		"Frame the problem first:\n" +
-		"  /q-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
+		"  /h-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
 		"Or explore directly in tactical mode:\n" +
 		"  haft_solution(action=\"explore\", variants=[...])\n" +
 		"  → will create a lightweight problem from context\n" +
@@ -578,7 +578,7 @@ func StatusResponse(data artifact.StatusData) string {
 		cap := 5
 		for i, s := range data.StaleItems {
 			if i >= cap {
-				sb.WriteString(fmt.Sprintf("- ... and %d more (use /q-refresh to see all)\n", len(data.StaleItems)-cap))
+				sb.WriteString(fmt.Sprintf("- ... and %d more (use /h-refresh to see all)\n", len(data.StaleItems)-cap))
 				break
 			}
 			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", s.Title, s.ID, s.Reason))
@@ -641,7 +641,7 @@ func StatusResponse(data artifact.StatusData) string {
 		len(data.AddressedProblems) > 0 ||
 		len(data.RecentNotes) > 0
 	if !hasAny {
-		sb.WriteString("No artifacts found. Use /q-note or /q-frame to get started.\n")
+		sb.WriteString("No artifacts found. Use /h-note or /h-frame to get started.\n")
 	}
 
 	return sb.String()
@@ -711,7 +711,7 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 
 	if len(items) == 0 {
 		sb.WriteString("No active problems found.\n")
-		sb.WriteString("Use /q-frame to frame a new problem.\n")
+		sb.WriteString("Use /h-frame to frame a new problem.\n")
 		sb.WriteString(navStrip)
 		return sb.String()
 	}

@@ -158,6 +158,50 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	if description != "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)" {
 		t.Fatalf("unexpected valid_until description: %q", description)
 	}
+
+	for _, key := range []string{"predictions", "claim_refs", "claim_scope"} {
+		if _, ok := decisionSchema[key]; !ok {
+			t.Fatalf("expected decision schema to expose %q", key)
+		}
+	}
+}
+
+func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	predictions, ok := decisionSchema["predictions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("predictions schema missing or wrong type: %#v", decisionSchema["predictions"])
+	}
+
+	items, ok := predictions["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("prediction items schema missing or wrong type: %#v", predictions["items"])
+	}
+
+	required, ok := items["required"].([]interface{})
+	if !ok {
+		t.Fatalf("prediction required fields missing or wrong type: %#v", items["required"])
+	}
+
+	got := make([]string, 0, len(required))
+	for _, item := range required {
+		value, ok := item.(string)
+		if !ok {
+			t.Fatalf("prediction required item has wrong type: %#v", item)
+		}
+		got = append(got, value)
+	}
+
+	want := []string{"claim", "observable", "threshold"}
+	if len(got) != len(want) {
+		t.Fatalf("prediction required fields = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("prediction required fields = %v, want %v", got, want)
+		}
+	}
 }
 
 func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
@@ -171,5 +215,19 @@ func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
 	description, _ := mode["description"].(string)
 	if description != "(fpf) Experimental retrieval mode; currently supports tree" {
 		t.Fatalf("unexpected mode description: %q", description)
+	}
+}
+
+func TestHandleToolsList_QuerySchemaIncludesProjectionView(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+
+	view, ok := querySchema["view"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("view schema missing or wrong type: %#v", querySchema["view"])
+	}
+
+	description, _ := view["description"].(string)
+	if description != "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale" {
+		t.Fatalf("unexpected view description: %q", description)
 	}
 }

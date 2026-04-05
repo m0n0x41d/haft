@@ -1906,6 +1906,46 @@ func TestHaftDecisionTool_MeasureRoundTripsMeasurements(t *testing.T) {
 	}
 }
 
+func TestHaftDecisionTool_MeasureRejectsMalformedMeasurements(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	decision, _, err := artifact.Decide(fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:      fixture.problem.Meta.ID,
+		PortfolioRef:    fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle:   "gRPC",
+		WhySelected:     "Malformed measurement transport must fail instead of dropping values.",
+		SelectionPolicy: "Minimize latency within budget.",
+		CounterArgument: "Strict parsing could reject callers with broken measurement payloads.",
+		WeakestLink:     "Broken payloads at the transport boundary still depend on caller discipline.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "REST",
+			Reason:  "Higher latency with no compensating advantage in the measured workload.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Latency budget regresses after rollout"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":       "measure",
+		"decision_ref": decision.Meta.ID,
+		"findings":     "Replay benchmark payload was malformed.",
+		"measurements": []any{"p99 latency: 18ms", 42},
+		"verdict":      "accepted",
+	}))
+	if err == nil {
+		t.Fatal("expected malformed measurements to be rejected")
+	}
+
+	if !strings.Contains(err.Error(), "measurements must be an array of strings") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestHaftQueryTool_ProjectionEngineerRendersDecisionRuntimeFields(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)

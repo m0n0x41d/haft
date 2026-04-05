@@ -465,6 +465,19 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) When to re-evaluate this decision",
 					},
+					"predictions": map[string]interface{}{
+						"type":        "array",
+						"description": "(decide) Testable predictions — measure will check each one",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"claim":      map[string]string{"type": "string"},
+								"observable": map[string]string{"type": "string"},
+								"threshold":  map[string]string{"type": "string"},
+							},
+							"required": []string{"claim", "observable", "threshold"},
+						},
+					},
 					"weakest_link": map[string]string{
 						"type":        "string",
 						"description": "(decide) Selected variant weakest link — what most plausibly breaks this choice",
@@ -530,6 +543,16 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"congruence_level": map[string]interface{}{
 						"type": "integer", "description": "(evidence) CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed",
 					},
+					"claim_refs": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "(evidence) Exact decision claim IDs this evidence binds to when available",
+					},
+					"claim_scope": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "(evidence) Fallback claim scope labels for older artifacts or non-claim evidence",
+					},
 					"context": map[string]string{"type": "string", "description": "Optional context name"},
 					"mode":    map[string]string{"type": "string", "description": "(decide) tactical, standard (default), deep"},
 				},
@@ -586,14 +609,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Search past decisions, check status, find related artifacts, list all artifacts by kind, or show module coverage. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
+			Description: "Search past decisions, check status, find related artifacts, render audience projections, list all artifacts by kind, or show module coverage. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'projection' renders deterministic audience views, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "related", "list", "coverage", "fpf"},
-						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec",
+						"enum":        []interface{}{"search", "status", "related", "projection", "list", "coverage", "fpf"},
+						"description": "search=FTS5 keyword search, status=compact dashboard, related=by file path, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -610,6 +633,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"context": map[string]string{
 						"type":        "string",
 						"description": "Optional context filter",
+					},
+					"view": map[string]string{
+						"type":        "string",
+						"description": "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale",
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",

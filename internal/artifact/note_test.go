@@ -70,8 +70,8 @@ func TestValidateNote_ArchitecturalKeywords(t *testing.T) {
 			Title:     tt.title,
 			Rationale: tt.rationale,
 		})
-		if v.Suggest != "/q-frame" {
-			t.Errorf("expected /q-frame suggestion for %q, got %q", tt.title, v.Suggest)
+		if v.Suggest != "/h-frame" {
+			t.Errorf("expected /h-frame suggestion for %q, got %q", tt.title, v.Suggest)
 		}
 	}
 }
@@ -82,8 +82,8 @@ func TestValidateNote_TooManyFiles(t *testing.T) {
 		Rationale:     "Switching from fmt to zerolog for structured logging",
 		AffectedFiles: []string{"a.go", "b.go", "c.go", "d.go"},
 	})
-	if v.Suggest != "/q-frame" {
-		t.Errorf("expected /q-frame suggestion for >3 files, got %q", v.Suggest)
+	if v.Suggest != "/h-frame" {
+		t.Errorf("expected /h-frame suggestion for >3 files, got %q", v.Suggest)
 	}
 }
 

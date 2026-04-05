@@ -961,6 +961,7 @@ Actions:
 							"observable": map[string]any{"type": "string", "description": "How to verify (test name, command, file check)"},
 							"threshold":  map[string]any{"type": "string", "description": "What counts as passing"},
 						},
+						"required": []string{"claim", "observable", "threshold"},
 					},
 				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
@@ -971,6 +972,7 @@ Actions:
 				"findings":         map[string]any{"type": "string", "description": "What was observed (measure)"},
 				"criteria_met":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Passing criteria (measure)"},
 				"criteria_not_met": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Failing criteria (measure)"},
+				"measurements":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Concrete measured values recorded during verification (measure)"},
 				"verdict":          map[string]any{"type": "string", "enum": []string{"accepted", "partial", "failed"}, "description": "Verdict (measure)"},
 				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to attach evidence to (evidence)"},
 				"evidence_content": map[string]any{"type": "string", "description": "The evidence itself (evidence)"},
@@ -1341,6 +1343,7 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 		Verdict:        jsonStr(args, "verdict"),
 		CriteriaMet:    jsonStrArray(args, "criteria_met"),
 		CriteriaNotMet: jsonStrArray(args, "criteria_not_met"),
+		Measurements:   jsonStrArray(args, "measurements"),
 	}
 
 	result, err := artifact.Measure(ctx, t.store, t.haftDir, input)
@@ -1775,11 +1778,12 @@ func jsonStrictPredictionInputs(args map[string]any, key string) ([]artifact.Pre
 		observable := strings.TrimSpace(value.Observable)
 		threshold := strings.TrimSpace(value.Threshold)
 
-		if claim != "" || observable != "" || threshold != "" {
-			continue
+		if claim == "" && observable == "" && threshold == "" {
+			return nil, fmt.Errorf("%s[%d] must declare at least one non-empty field", key, index)
 		}
-
-		return nil, fmt.Errorf("%s[%d] must declare at least one non-empty field", key, index)
+		if claim == "" || observable == "" || threshold == "" {
+			return nil, fmt.Errorf("%s[%d] must include claim, observable, and threshold", key, index)
+		}
 	}
 
 	return values, nil

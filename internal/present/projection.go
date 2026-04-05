@@ -95,6 +95,10 @@ func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 			if decision.SelectionPolicy != "" {
 				sb.WriteString(fmt.Sprintf("Policy: %s\n", decision.SelectionPolicy))
 			}
+			writeProjectionDecisionSlice(&sb, "Pre-conditions", decision.PreConditions)
+			writeProjectionDecisionSlice(&sb, "Evidence requirements", decision.EvidenceRequirements)
+			writeProjectionDecisionSlice(&sb, "Rollback triggers", decision.RollbackTriggers)
+			writeProjectionDecisionSlice(&sb, "Refresh triggers", decision.RefreshTriggers)
 			sb.WriteString("\n")
 		}
 	}
@@ -298,4 +302,12 @@ func projectionVariantTitles(variants []artifact.Variant) []string {
 
 	sort.Strings(titles)
 	return titles
+}
+
+func writeProjectionDecisionSlice(sb *strings.Builder, label string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+
+	sb.WriteString(fmt.Sprintf("%s: %s\n", label, strings.Join(values, ", ")))
 }

@@ -241,11 +241,31 @@ func validateDecisionInput(input DecideInput) error {
 		}
 	}
 
+	for i, prediction := range input.Predictions {
+		problems = append(problems, predictionValidationProblems(i, prediction)...)
+	}
+
 	if len(problems) == 0 {
 		return nil
 	}
 
 	return fmt.Errorf("decision record is incomplete:\n- %s", strings.Join(problems, "\n- "))
+}
+
+func predictionValidationProblems(index int, prediction PredictionInput) []string {
+	problems := []string{}
+
+	if prediction.Claim == "" {
+		problems = append(problems, fmt.Sprintf("predictions[%d].claim is required — predictions must include claim, observable, and threshold together", index))
+	}
+	if prediction.Observable == "" {
+		problems = append(problems, fmt.Sprintf("predictions[%d].observable is required — predictions must include claim, observable, and threshold together", index))
+	}
+	if prediction.Threshold == "" {
+		problems = append(problems, fmt.Sprintf("predictions[%d].threshold is required — predictions must include claim, observable, and threshold together", index))
+	}
+
+	return problems
 }
 
 // BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.

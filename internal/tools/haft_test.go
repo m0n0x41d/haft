@@ -1416,6 +1416,40 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 	}
 }
 
+func TestHaftDecisionTool_SchemaIncludesMeasureMeasurementsAndCompletePredictions(t *testing.T) {
+	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
+	schema := tool.Schema()
+
+	properties, ok := schema.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties = %T, want map[string]any", schema.Parameters["properties"])
+	}
+
+	if _, ok := properties["measurements"]; !ok {
+		t.Fatal("schema missing \"measurements\"")
+	}
+
+	predictions, ok := properties["predictions"].(map[string]any)
+	if !ok {
+		t.Fatalf("predictions schema = %T, want map[string]any", properties["predictions"])
+	}
+
+	items, ok := predictions["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("prediction items schema = %T, want map[string]any", predictions["items"])
+	}
+
+	required, ok := items["required"].([]string)
+	if !ok {
+		t.Fatalf("prediction required schema = %T, want []string", items["required"])
+	}
+
+	want := []string{"claim", "observable", "threshold"}
+	if strings.Join(required, ",") != strings.Join(want, ",") {
+		t.Fatalf("prediction required fields = %v, want %v", required, want)
+	}
+}
+
 func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
@@ -1528,6 +1562,127 @@ func TestHaftDecisionTool_DecideLegacyPayloadStillWorksWithoutExtendedFields(t *
 	} {
 		if strings.Contains(decision.Body, unexpected) {
 			t.Fatalf("legacy payload should omit %q:\n%s", unexpected, decision.Body)
+		}
+	}
+}
+
+func TestHaftDecisionTool_DecideRejectsPartialPredictions(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	_, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Incomplete prediction payloads should be rejected before persistence.",
+		"predictions": []map[string]any{
+			{"claim": "Latency stays below 20ms"},
+		},
+	})))
+	if err == nil {
+		t.Fatal("expected validation error for partial predictions")
+	}
+	if !strings.Contains(err.Error(), "predictions[0] must include claim, observable, and threshold") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestHaftDecisionTool_MeasureRoundTripsMeasurements(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	decision, _, err := artifact.Decide(fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:      fixture.problem.Meta.ID,
+		PortfolioRef:    fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle:   "gRPC",
+		WhySelected:     "Measurement transport should preserve concrete measured values.",
+		SelectionPolicy: "Minimize latency within budget.",
+		CounterArgument: "Measured improvements could disappear outside the replay environment.",
+		WeakestLink:     "Real workload variance may differ from staged replay traffic.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "REST",
+			Reason:  "Higher latency with no compensating advantage in the measured workload.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Latency budget regresses after rollout"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":           "measure",
+		"decision_ref":     decision.Meta.ID,
+		"findings":         "Replay benchmark stayed within the latency budget.",
+		"measurements":     []string{"p99 latency: 18ms", "error rate: 0.05%"},
+		"criteria_met":     []string{"p99 latency stays below 20ms"},
+		"criteria_not_met": []string{},
+		"verdict":          "accepted",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := fixture.store.Get(fixture.ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"**Measurements:**",
+		"- p99 latency: 18ms",
+		"- error rate: 0.05%",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(updated.Body, want) {
+			t.Fatalf("measurement body missing %q:\n%s", want, updated.Body)
+		}
+	}
+}
+
+func TestHaftQueryTool_ProjectionEngineerRendersDecisionRuntimeFields(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	_, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":                "decide",
+		"problem_ref":           fixture.problem.Meta.ID,
+		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
+		"selected_title":        "gRPC",
+		"why_selected":          "Engineer projection should surface the structured operational contract.",
+		"pre_conditions":        []string{"Benchmarks reproduced in CI", "Consumer schema freeze approved"},
+		"evidence_requirements": []string{"p99 latency stays below 20ms", "Generated clients compile in CI"},
+		"refresh_triggers":      []string{"Latency budget regresses after rollout"},
+		"rollback": map[string]any{
+			"triggers": []string{"Cutover error rate exceeds the accepted ceiling"},
+		},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queryTool := NewHaftQueryTool(fixture.store, nil)
+	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action": "projection",
+		"view":   "engineer",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"Pre-conditions: Benchmarks reproduced in CI, Consumer schema freeze approved",
+		"Evidence requirements: p99 latency stays below 20ms, Generated clients compile in CI",
+		"Rollback triggers: Cutover error rate exceeds the accepted ceiling",
+		"Refresh triggers: Latency budget regresses after rollout",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(result.DisplayText, want) {
+			t.Fatalf("projection response missing %q:\n%s", want, result.DisplayText)
 		}
 	}
 }

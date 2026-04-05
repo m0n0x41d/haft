@@ -553,3 +553,32 @@ func TestArtifact_UnmarshalDecisionFields_DefaultsLegacyPredictionStatus(t *test
 		t.Fatalf("legacy predictions = %#v, want %#v", fields.Predictions, wantPredictions)
 	}
 }
+
+func TestDecide_RejectsPartialPredictions(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "NATS JetStream",
+		WhySelected:   "Predictions must be complete before they become canonical runtime state.",
+		Predictions: []PredictionInput{
+			{
+				Claim: "Latency stays below 50ms",
+			},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected validation error for partial prediction")
+	}
+
+	required := []string{
+		"predictions[0].observable is required",
+		"predictions[0].threshold is required",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing validation message %q in %q", want, err.Error())
+		}
+	}
+}

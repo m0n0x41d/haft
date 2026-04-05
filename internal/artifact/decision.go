@@ -167,9 +167,6 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 			Observable: strings.TrimSpace(value.Observable),
 			Threshold:  strings.TrimSpace(value.Threshold),
 		}
-		if prediction.Claim == "" && prediction.Observable == "" && prediction.Threshold == "" {
-			continue
-		}
 
 		normalized = append(normalized, prediction)
 	}
@@ -254,15 +251,24 @@ func validateDecisionInput(input DecideInput) error {
 
 func predictionValidationProblems(index int, prediction PredictionInput) []string {
 	problems := []string{}
+	missingCount := 0
 
 	if prediction.Claim == "" {
+		missingCount++
 		problems = append(problems, fmt.Sprintf("predictions[%d].claim is required — predictions must include claim, observable, and threshold together", index))
 	}
 	if prediction.Observable == "" {
+		missingCount++
 		problems = append(problems, fmt.Sprintf("predictions[%d].observable is required — predictions must include claim, observable, and threshold together", index))
 	}
 	if prediction.Threshold == "" {
+		missingCount++
 		problems = append(problems, fmt.Sprintf("predictions[%d].threshold is required — predictions must include claim, observable, and threshold together", index))
+	}
+	if missingCount > 0 {
+		problems = append([]string{
+			fmt.Sprintf("predictions[%d] must include claim, observable, and threshold together", index),
+		}, problems...)
 	}
 
 	return problems
@@ -1147,7 +1153,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	)
 	decisionFields.Claims = adjudicateDecisionClaims(
 		decisionFields.Claims,
-		true,
+		claimRefs,
 		input.CriteriaMet,
 		criteriaMetScope,
 		input.CriteriaNotMet,

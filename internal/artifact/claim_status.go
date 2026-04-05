@@ -321,7 +321,7 @@ func ClaimStatusFromPredictionMeasureMatch(match PredictionMeasureMatch) ClaimSt
 
 func adjudicateDecisionClaims(
 	claims []DecisionClaim,
-	measurementRecorded bool,
+	measuredClaimRefs []string,
 	criteriaMet []string,
 	criteriaMetScope []string,
 	criteriaNotMet []string,
@@ -335,9 +335,22 @@ func adjudicateDecisionClaims(
 	aliasIndex := buildDecisionClaimAliasIndex(normalized)
 	metMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaMet, criteriaMetScope)
 	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaNotMet, criteriaNotMetScope)
+	measuredRefs := normalizeClaimRefs(measuredClaimRefs)
+	measuredRefSet := make(map[string]struct{}, len(measuredRefs))
 	updated := make([]DecisionClaim, 0, len(normalized))
 
+	for _, ref := range measuredRefs {
+		measuredRefSet[ref] = struct{}{}
+	}
+
 	for index, claim := range normalized {
+		_, measuredByRef := measuredRefSet[claim.ID]
+		measurementRecorded := measuredByRef || metMatches[index] || notMetMatches[index]
+		if !measurementRecorded {
+			updated = append(updated, claim)
+			continue
+		}
+
 		match := PredictionMeasureMatch{
 			MeasurementRecorded: measurementRecorded,
 			CriteriaMet:         metMatches[index],

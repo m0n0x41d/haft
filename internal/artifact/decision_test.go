@@ -611,3 +611,52 @@ func TestDecide_RejectsPartialPredictions(t *testing.T) {
 		}
 	}
 }
+
+func TestDecide_RejectsEmptyPredictions(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name        string
+		predictions []PredictionInput
+	}{
+		{
+			name:        "all empty",
+			predictions: []PredictionInput{{}},
+		},
+		{
+			name: "whitespace only",
+			predictions: []PredictionInput{{
+				Claim:      "   ",
+				Observable: "\t",
+				Threshold:  "\n",
+			}},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+				SelectedTitle: "NATS JetStream",
+				WhySelected:   "Empty predictions must be rejected instead of silently disappearing.",
+				Predictions:   testCase.predictions,
+			}))
+			if err == nil {
+				t.Fatal("expected validation error for empty prediction")
+			}
+
+			required := []string{
+				"predictions[0] must include claim, observable, and threshold together",
+				"predictions[0].claim is required",
+				"predictions[0].observable is required",
+				"predictions[0].threshold is required",
+			}
+
+			for _, want := range required {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("missing validation message %q in %q", want, err.Error())
+				}
+			}
+		})
+	}
+}

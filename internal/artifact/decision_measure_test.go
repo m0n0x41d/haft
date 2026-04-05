@@ -206,11 +206,11 @@ func TestMeasure_UpdatesPredictionStatusToMixedResults(t *testing.T) {
 	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
 		ClaimStatusSupported,
 		ClaimStatusRefuted,
-		ClaimStatusInconclusive,
+		ClaimStatusUnverified,
 	})
 }
 
-func TestMeasure_UpdatesPredictionStatusToInconclusiveWhenNothingMatches(t *testing.T) {
+func TestMeasure_PreservesUnverifiedPredictionStatusWhenNothingMatches(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -248,7 +248,68 @@ func TestMeasure_UpdatesPredictionStatusToInconclusiveWhenNothingMatches(t *test
 	}
 
 	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
-		ClaimStatusInconclusive,
+		ClaimStatusUnverified,
+	})
+}
+
+func TestMeasure_PreservesPreviouslySupportedPredictionsWhenLaterMeasurementDoesNotTouchThem(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Prediction state should only move when the measurement touches that claim.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Both rollout checks passed.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 42ms)",
+			"Throughput stays above 100k events/sec (observed: 120k events/sec)",
+		},
+		Verdict: "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "The follow-up run only rechecked throughput and it regressed.",
+		CriteriaNotMet: []string{
+			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+		},
+		Verdict: "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusSupported,
+		ClaimStatusRefuted,
 	})
 }
 

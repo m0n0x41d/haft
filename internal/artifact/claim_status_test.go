@@ -98,3 +98,52 @@ func TestClaimStatusFromPredictionMeasureMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestAdjudicateDecisionClaims_PreservesUnmatchedStatus(t *testing.T) {
+	claims := []DecisionClaim{
+		{
+			ID:         "claim-001",
+			Claim:      "Latency stays under 50ms",
+			Observable: "publish latency p99",
+			Threshold:  "< 50ms",
+			Status:     ClaimStatusSupported,
+		},
+		{
+			ID:         "claim-002",
+			Claim:      "Throughput stays above 100k events/sec",
+			Observable: "throughput",
+			Threshold:  "> 100k events/sec",
+			Status:     ClaimStatusSupported,
+		},
+	}
+
+	got := adjudicateDecisionClaims(
+		claims,
+		[]string{"claim-002"},
+		nil,
+		nil,
+		[]string{"Throughput stays above 100k events/sec (observed: 87k events/sec)"},
+		[]string{"Throughput stays above 100k events/sec"},
+	)
+
+	want := []DecisionClaim{
+		{
+			ID:         "claim-001",
+			Claim:      "Latency stays under 50ms",
+			Observable: "publish latency p99",
+			Threshold:  "< 50ms",
+			Status:     ClaimStatusSupported,
+		},
+		{
+			ID:         "claim-002",
+			Claim:      "Throughput stays above 100k events/sec",
+			Observable: "throughput",
+			Threshold:  "> 100k events/sec",
+			Status:     ClaimStatusRefuted,
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("adjudicateDecisionClaims() = %#v, want %#v", got, want)
+	}
+}

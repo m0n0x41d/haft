@@ -1371,6 +1371,12 @@ func TestFrame_RecallRelatedHistory(t *testing.T) {
 	if !strings.Contains(prob.Body, "Redis") || !strings.Contains(prob.Body, "cache") {
 		t.Error("related history should include the cache decision")
 	}
+	if !strings.Contains(prob.Body, "[decision]") {
+		t.Fatalf("related history should use plain-language kind labels, got:\n%s", prob.Body)
+	}
+	if strings.Contains(prob.Body, "[DecisionRecord]") {
+		t.Fatalf("related history should not leak internal kind labels, got:\n%s", prob.Body)
+	}
 }
 
 func TestFrame_RecallBySignal(t *testing.T) {

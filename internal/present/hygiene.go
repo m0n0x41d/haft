@@ -1,6 +1,10 @@
 package present
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
+)
 
 // FPFAnswerHygieneIssue reports an internal term that leaked into user-facing text.
 type FPFAnswerHygieneIssue struct {
@@ -57,51 +61,12 @@ func LintGeneratedText(fragments ...string) []FPFAnswerHygieneIssue {
 
 // UserFacingArtifactKindLabel renders internal artifact kinds as plain language.
 func UserFacingArtifactKindLabel(kind string) string {
-	switch strings.TrimSpace(kind) {
-	case "ProblemCard":
-		return "problem"
-	case "SolutionPortfolio":
-		return "solution portfolio"
-	case "DecisionRecord":
-		return "decision"
-	case "EvidencePack":
-		return "evidence pack"
-	case "RefreshReport":
-		return "refresh report"
-	default:
-		return strings.TrimSpace(kind)
-	}
+	label := artifact.Kind(strings.TrimSpace(kind)).UserFacingLabel()
+	return label
 }
 
 // UserFacingArtifactKindHeading renders artifact kinds as a list heading.
 func UserFacingArtifactKindHeading(kind string, count int) string {
-	switch strings.TrimSpace(kind) {
-	case "ProblemCard":
-		if count == 1 {
-			return "Problem"
-		}
-		return "Problems"
-	case "SolutionPortfolio":
-		if count == 1 {
-			return "Solution Portfolio"
-		}
-		return "Solution Portfolios"
-	case "DecisionRecord":
-		if count == 1 {
-			return "Decision"
-		}
-		return "Decisions"
-	case "EvidencePack":
-		if count == 1 {
-			return "Evidence Pack"
-		}
-		return "Evidence Packs"
-	case "RefreshReport":
-		if count == 1 {
-			return "Refresh Report"
-		}
-		return "Refresh Reports"
-	default:
-		return strings.TrimSpace(kind)
-	}
+	heading := artifact.Kind(strings.TrimSpace(kind)).UserFacingHeading(count)
+	return heading
 }

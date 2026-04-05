@@ -78,6 +78,57 @@ func (k Kind) Dir() string {
 	}
 }
 
+// UserFacingLabel renders artifact kinds as plain-language labels.
+func (k Kind) UserFacingLabel() string {
+	switch k {
+	case KindProblemCard:
+		return "problem"
+	case KindSolutionPortfolio:
+		return "solution portfolio"
+	case KindDecisionRecord:
+		return "decision"
+	case KindEvidencePack:
+		return "evidence pack"
+	case KindRefreshReport:
+		return "refresh report"
+	default:
+		return strings.TrimSpace(string(k))
+	}
+}
+
+// UserFacingHeading renders artifact kinds as list headings.
+func (k Kind) UserFacingHeading(count int) string {
+	switch k {
+	case KindProblemCard:
+		if count == 1 {
+			return "Problem"
+		}
+		return "Problems"
+	case KindSolutionPortfolio:
+		if count == 1 {
+			return "Solution Portfolio"
+		}
+		return "Solution Portfolios"
+	case KindDecisionRecord:
+		if count == 1 {
+			return "Decision"
+		}
+		return "Decisions"
+	case KindEvidencePack:
+		if count == 1 {
+			return "Evidence Pack"
+		}
+		return "Evidence Packs"
+	case KindRefreshReport:
+		if count == 1 {
+			return "Refresh Report"
+		}
+		return "Refresh Reports"
+	default:
+		return strings.TrimSpace(string(k))
+	}
+}
+
 // Status represents artifact lifecycle status.
 type Status string
 

@@ -93,7 +93,7 @@ func TestProblemResponse_ShowsRecall(t *testing.T) {
 			Title: "Test problem",
 			Mode:  artifact.ModeStandard,
 		},
-		Body: "# Test\n\n## Signal\n\nSomething\n\n## Related History\n\n- [DecisionRecord] **Redis cache** `dec-001`\n",
+		Body: "# Test\n\n## Signal\n\nSomething\n\n## Related History\n\n- [decision] **Redis cache** `dec-001`\n",
 	}
 
 	response := present.ProblemResponse("frame", a, "/tmp/test.md", "\n-- nav --\n")
@@ -107,7 +107,7 @@ func TestProblemResponse_ShowsRecall(t *testing.T) {
 }
 
 func TestProblemResponse_PreservesBodyVerbatim(t *testing.T) {
-	relatedHistory := "## Related History\n\n- [DecisionRecord] **Fix DecisionRecord parser** `dec-001`\n"
+	relatedHistory := "## Related History\n\n- [decision] **Fix DecisionRecord parser** `dec-001`\n"
 	a := &artifact.Artifact{
 		Meta: artifact.Meta{
 			ID:    "prob-001",

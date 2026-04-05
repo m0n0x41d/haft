@@ -2249,7 +2249,8 @@ func recallRelated(ctx context.Context, store ArtifactStore, query string) strin
 	var sb strings.Builder
 	sb.WriteString("\n## Related History\n\n")
 	for _, r := range related {
-		sb.WriteString(fmt.Sprintf("- [%s] **%s** `%s`\n", r.Meta.Kind, r.Meta.Title, r.Meta.ID))
+		kindLabel := r.Meta.Kind.UserFacingLabel()
+		sb.WriteString(fmt.Sprintf("- [%s] **%s** `%s`\n", kindLabel, r.Meta.Title, r.Meta.ID))
 	}
 	return sb.String()
 }

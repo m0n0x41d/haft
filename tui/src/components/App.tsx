@@ -477,6 +477,17 @@ export function App({ client, inputEvents }: AppProps) {
       return next
     })
   }, [])
+  const handleInputTextChange = useCallback((text: string) => {
+    setDraftPastes((current) => {
+      const next = filterReferencedCollapsedPastes(text, current)
+
+      if (sameCollapsedPastes(current, next)) {
+        return current
+      }
+
+      return next
+    })
+  }, [])
   replayQueueRef.current = replayQueuedSubmissions
 
   const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
@@ -718,9 +729,7 @@ export function App({ client, inputEvents }: AppProps) {
         width={width}
         hasQueuedMessages={queuedMessages.length > 0}
         onRowsChange={setInputRows}
-        onTextChange={(text) => {
-          setDraftPastes((current) => filterReferencedCollapsedPastes(text, current))
-        }}
+        onTextChange={handleInputTextChange}
       />
 
       {/* Bottom separator */}
@@ -761,4 +770,22 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`
+}
+
+function sameCollapsedPastes(
+  left: readonly CollapsedPaste[],
+  right: readonly CollapsedPaste[],
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  return left.every((paste, index) => {
+    const other = right[index]
+
+    return other !== undefined
+      && paste.id === other.id
+      && paste.rowCount === other.rowCount
+      && paste.text === other.text
+  })
 }

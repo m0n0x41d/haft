@@ -34,13 +34,14 @@ import {
   type InputDisplayRow,
   type InputVisualRow,
 } from "./inputLayout.js"
+import type { PromptSubmission } from "./promptSubmission.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
   onSubmit: (text: string) => void
   onAtMention?: () => void
   onSlashCommand?: () => void
-  onPopQueue?: () => string[] | null
+  onPopQueue?: () => PromptSubmission | null
   onEnterAttachmentSelection?: () => void
   onPasteImage?: (path: string) => void
   onTerminalScroll?: (direction: "up" | "down", amount?: number) => void
@@ -195,8 +196,8 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         }
         if (hasQueuedMessages && onPopQueue) {
           const queued = onPopQueue()
-          if (queued && queued.length > 0) {
-            setEdit(fromText(queued.join("\n")))
+          if (queued) {
+            setEdit(fromText(queued.text))
           }
           return
         }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -83,7 +84,7 @@ func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
 
 func buildSpecIndexMetadata(specPath string, indexedSections int, explicitCommit string, buildTime time.Time) map[string]string {
 	return map[string]string{
-		"fpf_commit":       resolveSpecCommit(explicitCommit),
+		"fpf_commit":       resolveSpecCommit(explicitCommit, specPath),
 		"indexed_sections": fmt.Sprintf("%d", indexedSections),
 		"build_time":       buildTime.UTC().Format(time.RFC3339),
 		"spec_path":        filepath.Clean(specPath),
@@ -91,6 +92,37 @@ func buildSpecIndexMetadata(specPath string, indexedSections int, explicitCommit
 	}
 }
 
-func resolveSpecCommit(explicitCommit string) string {
-	return strings.TrimSpace(explicitCommit)
+func resolveSpecCommit(explicitCommit, specPath string) string {
+	commit := strings.TrimSpace(explicitCommit)
+	if commit != "" {
+		return commit
+	}
+
+	return detectSpecCommit(specPath)
+}
+
+func detectSpecCommit(specPath string) string {
+	gitDir, err := specGitLookupDir(specPath)
+	if err != nil {
+		return ""
+	}
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = gitDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+func specGitLookupDir(specPath string) (string, error) {
+	absPath, err := filepath.Abs(specPath)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Dir(absPath), nil
 }

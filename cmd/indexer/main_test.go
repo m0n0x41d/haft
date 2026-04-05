@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,7 +12,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestResolveSpecCommit_UsesOnlyExplicitCommit(t *testing.T) {
+func TestResolveSpecCommit(t *testing.T) {
+	specPath := filepath.Join(t.TempDir(), "FPF-Spec.md")
+
 	tests := []struct {
 		name           string
 		explicitCommit string
@@ -30,23 +33,64 @@ func TestResolveSpecCommit_UsesOnlyExplicitCommit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := resolveSpecCommit(tt.explicitCommit)
+		got := resolveSpecCommit(tt.explicitCommit, specPath)
 		if got != tt.want {
 			t.Fatalf("%s: resolveSpecCommit(%q) = %q, want %q", tt.name, tt.explicitCommit, got, tt.want)
 		}
 	}
 }
 
-func TestBuildSpecIndexMetadata_DoesNotInventCommitProvenance(t *testing.T) {
+func TestResolveSpecCommit_DetectsGitCommitFromSpecPath(t *testing.T) {
+	repoDir := t.TempDir()
+	specDir := filepath.Join(repoDir, "data", "FPF")
+	specPath := filepath.Join(specDir, "FPF-Spec.md")
+
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatalf("mkdir spec dir: %v", err)
+	}
+	if err := os.WriteFile(specPath, []byte("# spec\n"), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "init")
+
+	want := strings.TrimSpace(runGit(t, repoDir, "rev-parse", "HEAD"))
+	got := resolveSpecCommit("", specPath)
+
+	if got != want {
+		t.Fatalf("resolveSpecCommit() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSpecIndexMetadata_LeavesCommitEmptyOutsideGit(t *testing.T) {
 	buildTime := time.Date(2026, time.March, 26, 12, 34, 56, 0, time.UTC)
-	metadata := buildSpecIndexMetadata("data/FPF/FPF-Spec.md", 42, "", buildTime)
+	specPath := filepath.Join(t.TempDir(), "FPF-Spec.md")
+	metadata := buildSpecIndexMetadata(specPath, 42, "", buildTime)
 
 	if metadata["fpf_commit"] != "" {
-		t.Fatalf("expected empty fpf_commit without explicit upstream revision, got %q", metadata["fpf_commit"])
+		t.Fatalf("expected empty fpf_commit outside git, got %q", metadata["fpf_commit"])
 	}
 	if metadata["indexed_sections"] != "42" {
 		t.Fatalf("unexpected indexed_sections %q", metadata["indexed_sections"])
 	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+
+	return string(output)
 }
 
 func TestBuildIndex_PreservesHeadingOnlyRootPatternShells(t *testing.T) {

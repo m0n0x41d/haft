@@ -26,6 +26,13 @@ import { Picker, type PickerItem } from "./Picker.js"
 import { Attachments } from "./Attachments.js"
 import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
+import {
+  createPromptSubmission,
+  restoreQueuedSubmission,
+  shiftPromptSubmissions,
+  submissionTexts,
+  type PromptSubmission,
+} from "./promptSubmission.js"
 
 type PickerMode = null | "sessions" | "models" | "files" | "commands"
 
@@ -61,16 +68,20 @@ export function App({ client, inputEvents }: AppProps) {
   const [toolHistoryExpanded, setToolHistoryExpanded] = useState(false)
   const respondRef = useRef<((result: unknown) => void) | null>(null)
   const inputRef = useRef<InputAreaHandle>(null)
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [queuedMessages, setQueuedMessages] = useState<PromptSubmission[]>([])
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentSelection, setAttachmentSelection] = useState(false)
   const [inputRows, setInputRows] = useState(() => estimateInputRows(""))
   const nextAttachmentId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
+  const queuedMessageTexts = useMemo(
+    () => submissionTexts(queuedMessages),
+    [queuedMessages],
+  )
 
-  // Stable ref to handleSubmit — protocol handler (registered once) always calls latest version
-  const handleSubmitRef = useRef<(text: string) => void>(() => {})
+  // Stable ref to replay a queued submission after streaming finishes.
+  const replaySubmissionRef = useRef<(submission: PromptSubmission) => void>(() => {})
 
   // Syntax highlighting applies lazily — no forced re-render on load.
   // Components pick up highlighting on their next natural render cycle.
@@ -137,12 +148,12 @@ export function App({ client, inputEvents }: AppProps) {
   const showInput = !pickerMode && (state.phase === "input" || state.phase === "streaming")
   const bottomRows = useMemo(() => computeBottomRows({
     width,
-    queuedMessages,
+    queuedMessages: queuedMessageTexts,
     attachments,
     attachmentSelection,
     inputRows,
     showInput,
-  }), [width, queuedMessages, attachments, attachmentSelection, inputRows, showInput])
+  }), [width, queuedMessageTexts, attachments, attachmentSelection, inputRows, showInput])
   const chatHeight = computeChatHeight(height, bottomRows)
   const { entryHeights, measureRef } = useMeasuredTranscript(
     transcript,
@@ -225,13 +236,16 @@ export function App({ client, inputEvents }: AppProps) {
             pendingUpdate.current = null
           }
           dispatch({ type: "coord.done" })
-          setQueuedMessages((q) => {
-            if (q.length > 0) {
-              const next = q[0]
-              setTimeout(() => handleSubmitRef.current(next), 100)
-              return q.slice(1)
+          setQueuedMessages((submissions) => {
+            const shifted = shiftPromptSubmissions(submissions)
+
+            if (shifted.current) {
+              const current = shifted.current
+
+              setTimeout(() => replaySubmissionRef.current(current), 100)
             }
-            return q
+
+            return shifted.remaining
           })
           break
       }
@@ -263,70 +277,6 @@ export function App({ client, inputEvents }: AppProps) {
   }, [state.notification])
 
   // --- Handlers ---
-  const handleSubmit = useCallback((text: string) => {
-    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
-    if (phaseRef.current === "streaming") {
-      setQueuedMessages((q) => [...q, text])
-      return
-    }
-    if (text.startsWith("/")) {
-      const cmd = text.split(" ")[0]
-      switch (cmd) {
-        case "/model": openModelPicker(); return
-        case "/resume": openSessionPicker(); return
-        case "/compact":
-          client.request("compact", {}).then((r: any) => {
-            dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
-          }).catch((e: Error) => dispatch({ type: "error", message: e.message }))
-          return
-        case "/help": setPickerMode("commands"); setPickerItems(SLASH_COMMANDS); return
-      }
-    }
-    dispatch({ type: "submitted" })
-    dispatch({
-      type: "msg.update",
-      params: {
-        id: `user-${Date.now()}`,
-        text,
-        attachments: toMessageAttachments(attachments),
-        streaming: false,
-      },
-    })
-    const submitAttachments = attachments.map((a) => ({ name: a.name, path: a.path, isImage: a.isImage, mimeType: a.isImage ? "image/*" : undefined }))
-    client.send("submit", { text, attachments: submitAttachments.length > 0 ? submitAttachments : undefined })
-    setAttachments([])
-    setAttachmentSelection(false)
-  }, [client, attachments])
-
-  const handleRemoveAttachment = useCallback((id: number) => {
-    setAttachments((current) => {
-      const next = current.filter((item) => item.id !== id)
-
-      if (next.length === 0) {
-        setAttachmentSelection(false)
-      }
-
-      return next
-    })
-  }, [])
-  handleSubmitRef.current = handleSubmit
-
-  const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
-    const yolo = action === "allow_session"
-    respondRef.current?.({ action, yolo }); respondRef.current = null
-    dispatch({ type: "permission.replied" })
-    if (yolo && !state.yolo) {
-      dispatch({ type: "toggle.yolo" })
-      client.send("yolo.toggle", { yolo: true })
-      dispatch({ type: "set.notification", text: "yolo enabled" })
-    }
-  }, [client, state.yolo])
-
-  const handleQuestion = useCallback((answer: string) => {
-    respondRef.current?.({ answer }); respondRef.current = null
-    dispatch({ type: "question.replied" })
-  }, [])
-
   const openFilePicker = useCallback(async () => {
     try {
       const resp = await client.request<FileListResponse>("file.list", { limit: 200 })
@@ -350,6 +300,116 @@ export function App({ client, inputEvents }: AppProps) {
       setPickerMode("sessions")
     } catch (e: any) { dispatch({ type: "error", message: `session list: ${e.message}` }) }
   }, [client])
+
+  const sendSubmission = useCallback((submission: PromptSubmission) => {
+    dispatch({ type: "submitted" })
+    dispatch({
+      type: "msg.update",
+      params: {
+        id: `user-${Date.now()}`,
+        text: submission.text,
+        attachments: toMessageAttachments(submission.attachments),
+        streaming: false,
+      },
+    })
+
+    const submitAttachments = submission.attachments.map((attachment) => ({
+      name: attachment.name,
+      path: attachment.path,
+      isImage: attachment.isImage,
+      mimeType: attachment.isImage ? "image/*" : undefined,
+    }))
+
+    client.send("submit", {
+      text: submission.text,
+      attachments: submitAttachments.length > 0 ? submitAttachments : undefined,
+    })
+  }, [client])
+
+  const handleSlashCommand = useCallback((text: string): boolean => {
+    if (!text.startsWith("/")) {
+      return false
+    }
+
+    const cmd = text.split(" ")[0]
+
+    switch (cmd) {
+      case "/model":
+        openModelPicker()
+        return true
+      case "/resume":
+        openSessionPicker()
+        return true
+      case "/compact":
+        client.request("compact", {}).then((r: any) => {
+          dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
+        }).catch((e: Error) => dispatch({ type: "error", message: e.message }))
+        return true
+      case "/help":
+        setPickerMode("commands")
+        setPickerItems(SLASH_COMMANDS)
+        return true
+      default:
+        return false
+    }
+  }, [client, openModelPicker, openSessionPicker])
+
+  const replaySubmission = useCallback((submission: PromptSubmission) => {
+    if (handleSlashCommand(submission.text)) {
+      return
+    }
+
+    sendSubmission(submission)
+  }, [handleSlashCommand, sendSubmission])
+
+  const handleSubmit = useCallback((text: string) => {
+    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
+    const submission = createPromptSubmission(text, attachments)
+
+    if (phaseRef.current === "streaming") {
+      setQueuedMessages((current) => [...current, submission])
+      setAttachments([])
+      setAttachmentSelection(false)
+      return
+    }
+
+    if (handleSlashCommand(text)) {
+      return
+    }
+
+    sendSubmission(submission)
+    setAttachments([])
+    setAttachmentSelection(false)
+  }, [attachments, handleSlashCommand, sendSubmission])
+
+  const handleRemoveAttachment = useCallback((id: number) => {
+    setAttachments((current) => {
+      const next = current.filter((item) => item.id !== id)
+
+      if (next.length === 0) {
+        setAttachmentSelection(false)
+      }
+
+      return next
+    })
+  }, [])
+  replaySubmissionRef.current = replaySubmission
+
+  const handlePermission = useCallback((action: "allow" | "allow_session" | "deny") => {
+    const yolo = action === "allow_session"
+    respondRef.current?.({ action, yolo }); respondRef.current = null
+    dispatch({ type: "permission.replied" })
+    if (yolo && !state.yolo) {
+      dispatch({ type: "toggle.yolo" })
+      client.send("yolo.toggle", { yolo: true })
+      dispatch({ type: "set.notification", text: "yolo enabled" })
+    }
+  }, [client, state.yolo])
+
+  const handleQuestion = useCallback((answer: string) => {
+    respondRef.current?.({ answer }); respondRef.current = null
+    dispatch({ type: "question.replied" })
+  }, [])
 
   const handlePickerSelect = useCallback((item: PickerItem) => {
     const mode = pickerMode; setPickerMode(null)
@@ -471,8 +531,8 @@ export function App({ client, inputEvents }: AppProps) {
       {/* Queued messages */}
       {queuedMessages.length > 0 && (
         <Box flexDirection="column" paddingX={1} width={width}>
-          {queuedMessages.map((msg, i) => (
-            <Box key={i} width={width}><Text backgroundColor="blackBright" dimColor>{" \u276F "}{msg}{" "}</Text></Box>
+          {queuedMessageTexts.map((message, index) => (
+            <Box key={index} width={width}><Text backgroundColor="blackBright" dimColor>{" \u276F "}{message}{" "}</Text></Box>
           ))}
         </Box>
       )}
@@ -495,7 +555,24 @@ export function App({ client, inputEvents }: AppProps) {
         onSubmit={handleSubmit}
         onAtMention={openFilePicker}
         onSlashCommand={() => { setPickerMode("commands"); setPickerItems(SLASH_COMMANDS) }}
-        onPopQueue={() => { if (queuedMessages.length === 0) return null; const m = [...queuedMessages]; setQueuedMessages([]); return m }}
+        onPopQueue={() => {
+          if (queuedMessages.length === 0) {
+            return null
+          }
+
+          const restored = restoreQueuedSubmission(queuedMessages)
+          const draft = restored.draft
+
+          if (!draft) {
+            return null
+          }
+
+          setQueuedMessages(restored.remaining)
+          setAttachments(draft.attachments)
+          setAttachmentSelection(restored.attachmentSelection)
+
+          return draft
+        }}
         onEnterAttachmentSelection={() => setAttachmentSelection(true)}
         onPasteImage={(path) => { const id = nextAttachmentId.current++; setAttachments((a) => [...a, { id, name: `Image #${id}`, path, isImage: true }]) }}
         hasAttachments={attachments.length > 0}

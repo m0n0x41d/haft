@@ -39,7 +39,7 @@ tasks:
   fpf-index:
     desc: Rebuild embedded FPF SQLite index from FPF-Spec.md
     cmds:
-      - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}}
+      - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}} "$(git rev-parse HEAD 2>/dev/null || true)"
     sources:
       - '{{.FPF_SPEC}}'
       - .context/fpf-routes.json

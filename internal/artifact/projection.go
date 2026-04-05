@@ -12,10 +12,11 @@ import (
 type ProjectionView string
 
 const (
-	ProjectionViewEngineer ProjectionView = "engineer"
-	ProjectionViewManager  ProjectionView = "manager"
-	ProjectionViewAudit    ProjectionView = "audit"
-	ProjectionViewCompare  ProjectionView = "compare"
+	ProjectionViewEngineer       ProjectionView = "engineer"
+	ProjectionViewManager        ProjectionView = "manager"
+	ProjectionViewAudit          ProjectionView = "audit"
+	ProjectionViewCompare        ProjectionView = "compare"
+	ProjectionViewDelegatedAgent ProjectionView = "delegated-agent"
 )
 
 // ParseProjectionView normalizes supported aliases into one canonical view name.
@@ -31,8 +32,10 @@ func ParseProjectionView(raw string) (ProjectionView, error) {
 		return ProjectionViewAudit, nil
 	case "compare", "pareto", "compare/pareto":
 		return ProjectionViewCompare, nil
+	case "delegated-agent", "delegated", "brief", "handoff", "delegated-agent/brief", "delegated agent", "delegated agent brief":
+		return ProjectionViewDelegatedAgent, nil
 	default:
-		return "", fmt.Errorf("invalid projection view %q (valid: engineer, manager, audit, compare)", raw)
+		return "", fmt.Errorf("invalid projection view %q (valid: engineer, manager, audit, compare, delegated-agent)", raw)
 	}
 }
 
@@ -85,6 +88,7 @@ type DecisionProjection struct {
 	NeedsRefresh         bool
 	ProblemRefs          []string
 	PortfolioRefs        []string
+	AffectedFiles        []string
 	SelectedTitle        string
 	WhySelected          string
 	SelectionPolicy      string
@@ -92,7 +96,9 @@ type DecisionProjection struct {
 	WeakestLink          string
 	WhyNotOthers         []RejectionReason
 	Predictions          []DecisionPrediction
+	Invariants           []string
 	PreConditions        []string
+	Admissibility        []string
 	EvidenceRequirements []string
 	RollbackTriggers     []string
 	RefreshTriggers      []string
@@ -179,12 +185,17 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 			decision.Meta.Links,
 			portfolioProblemRefs,
 		)
+		affectedFiles, err := projectionAffectedFilePaths(ctx, store, decision.Meta.ID)
+		if err != nil {
+			return ProjectionGraph{}, err
+		}
 
 		graph.Decisions = append(graph.Decisions, DecisionProjection{
 			Meta:                 decision.Meta,
 			NeedsRefresh:         projectionNeedsRefresh(decision.Meta, now),
 			ProblemRefs:          problemRefs,
 			PortfolioRefs:        portfolioRefs,
+			AffectedFiles:        affectedFiles,
 			SelectedTitle:        strings.TrimSpace(fields.SelectedTitle),
 			WhySelected:          strings.TrimSpace(fields.WhySelected),
 			SelectionPolicy:      strings.TrimSpace(fields.SelectionPolicy),
@@ -192,7 +203,9 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 			WeakestLink:          strings.TrimSpace(fields.WeakestLink),
 			WhyNotOthers:         cloneRejectionReasons(fields.WhyNotOthers),
 			Predictions:          cloneDecisionPredictions(fields.Predictions),
+			Invariants:           cloneStringSlice(fields.Invariants),
 			PreConditions:        cloneStringSlice(fields.PreConditions),
+			Admissibility:        cloneStringSlice(fields.Admissibility),
 			EvidenceRequirements: cloneStringSlice(fields.EvidenceRequirements),
 			RollbackTriggers:     cloneStringSlice(fields.RollbackTriggers),
 			RefreshTriggers:      cloneStringSlice(fields.RefreshTriggers),
@@ -292,6 +305,26 @@ func buildProjectionEvidenceSummary(ctx context.Context, store ArtifactStore, ar
 		MeasurementCount: measurementCount,
 		WLNK:             ComputeWLNKSummary(ctx, store, artifactID),
 	}
+}
+
+func projectionAffectedFilePaths(ctx context.Context, store ArtifactStore, artifactID string) ([]string, error) {
+	files, err := store.GetAffectedFiles(ctx, artifactID)
+	if err != nil {
+		return nil, err
+	}
+
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		path := strings.TrimSpace(file.Path)
+		if path == "" {
+			continue
+		}
+
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func hydrateProjectionPortfolioProblemRefs(

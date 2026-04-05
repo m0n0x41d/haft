@@ -312,10 +312,13 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				},
 				ProblemRefs:     []string{"prob-001"},
 				PortfolioRefs:   []string{"sol-001"},
+				AffectedFiles:   []string{"internal/transport/contracts.proto", "internal/transport/grpc.go"},
 				SelectedTitle:   "gRPC",
 				SelectionPolicy: "Minimize latency within the accepted cost envelope.",
 				CounterArgument: "Tooling and local debugging remain weaker than the simpler HTTP baseline.",
 				WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
+				Invariants:      []string{"p99 latency remains below 50ms during cutover"},
+				Admissibility:   []string{"No silent message loss during protocol migration"},
 				Predictions: []artifact.DecisionPrediction{
 					{
 						Claim:      "Latency stays under 50ms",
@@ -330,7 +333,8 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 						Status:     artifact.ClaimStatusInconclusive,
 					},
 				},
-				Measured: true,
+				RollbackTriggers: []string{"Error budget exceeds 2% during canary"},
+				Measured:         true,
 				Evidence: artifact.ProjectionEvidenceSummary{
 					MeasurementCount: 1,
 					WLNK: artifact.WLNKSummary{
@@ -386,6 +390,20 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				"Computed Pareto front: gRPC",
 				"Dominated variant elimination:",
 				"Recommendation (advisory): gRPC",
+			},
+		},
+		{
+			view: artifact.ProjectionViewDelegatedAgent,
+			wants: []string{
+				"## Delegated-Agent Brief",
+				"Selected decision: gRPC `dec-001`",
+				"Affected files: internal/transport/contracts.proto, internal/transport/grpc.go",
+				"Invariants: p99 latency remains below 50ms during cutover",
+				"Admissibility: No silent message loss during protocol migration",
+				"Rollback triggers: Error budget exceeds 2% during canary",
+				"Open claim risks:",
+				"weakest link: Operational confidence still depends on limited production-grade evidence.",
+				"inconclusive: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
 			},
 		},
 	}
@@ -445,5 +463,50 @@ func TestProjectionResponse_ChangesWhenPredictionStatusChanges(t *testing.T) {
 	}
 	if auditBefore == auditAfter {
 		t.Fatalf("expected audit projection output to change after status update")
+	}
+}
+
+func TestProjectionResponse_DelegatedBriefKeepsSupportedClaimsOutOfOpenRiskList(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Decisions: []artifact.DecisionProjection{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-001",
+					Title: "gRPC",
+				},
+				SelectedTitle: "gRPC",
+				WeakestLink:   "Operational confidence still depends on limited production-grade evidence.",
+				Predictions: []artifact.DecisionPrediction{
+					{
+						Claim:      "Latency stays under 50ms",
+						Observable: "publish latency p99",
+						Threshold:  "< 50ms",
+						Status:     artifact.ClaimStatusSupported,
+					},
+					{
+						Claim:      "Throughput stays above 100k events/sec",
+						Observable: "throughput",
+						Threshold:  "> 100k events/sec",
+						Status:     artifact.ClaimStatusRefuted,
+					},
+				},
+			},
+		},
+	}
+
+	output := present.ProjectionResponse(graph, artifact.ProjectionViewDelegatedAgent)
+
+	if strings.Contains(output, "supported: Latency stays under 50ms") {
+		t.Fatalf("expected supported claim to stay out of open risk list, got:\n%s", output)
+	}
+
+	required := []string{
+		"weakest link: Operational confidence still depends on limited production-grade evidence.",
+		"refuted: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
+	}
+	for _, want := range required {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected delegated brief to contain %q, got:\n%s", want, output)
+		}
 	}
 }

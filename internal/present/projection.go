@@ -19,6 +19,8 @@ func ProjectionResponse(graph artifact.ProjectionGraph, view artifact.Projection
 		return auditProjectionResponse(graph)
 	case artifact.ProjectionViewCompare:
 		return compareProjectionResponse(graph)
+	case artifact.ProjectionViewDelegatedAgent:
+		return delegatedAgentProjectionResponse(graph)
 	default:
 		return fmt.Sprintf("Unsupported projection view: %s\n", view)
 	}
@@ -257,6 +259,27 @@ func compareProjectionResponse(graph artifact.ProjectionGraph) string {
 	return sb.String()
 }
 
+func delegatedAgentProjectionResponse(graph artifact.ProjectionGraph) string {
+	if len(graph.Decisions) == 0 {
+		return "No active decisions available for the delegated-agent brief.\n"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Delegated-Agent Brief\n\n")
+
+	for _, decision := range graph.Decisions {
+		sb.WriteString(fmt.Sprintf("### Selected decision: %s `%s`\n\n", projectionDecisionLabel(decision), decision.Meta.ID))
+		writeProjectionDecisionSlice(&sb, "Affected files", decision.AffectedFiles)
+		writeProjectionDecisionSlice(&sb, "Invariants", decision.Invariants)
+		writeProjectionDecisionSlice(&sb, "Admissibility", decision.Admissibility)
+		writeProjectionDecisionSlice(&sb, "Rollback triggers", decision.RollbackTriggers)
+		writeProjectionDecisionSlice(&sb, "Open claim risks", projectionDecisionOpenClaimRisks(decision))
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 func projectionGraphEmpty(graph artifact.ProjectionGraph) bool {
 	return len(graph.Problems) == 0 && len(graph.Portfolios) == 0 && len(graph.Decisions) == 0
 }
@@ -304,6 +327,43 @@ func projectionVariantTitles(variants []artifact.Variant) []string {
 
 	sort.Strings(titles)
 	return titles
+}
+
+func projectionDecisionLabel(decision artifact.DecisionProjection) string {
+	label := strings.TrimSpace(decision.SelectedTitle)
+	if label != "" {
+		return label
+	}
+
+	label = strings.TrimSpace(decision.Meta.Title)
+	if label != "" {
+		return label
+	}
+
+	return decision.Meta.ID
+}
+
+func projectionDecisionOpenClaimRisks(decision artifact.DecisionProjection) []string {
+	risks := make([]string, 0, len(decision.Predictions)+1)
+	weakestLink := strings.TrimSpace(decision.WeakestLink)
+	if weakestLink != "" {
+		risks = append(risks, "weakest link: "+weakestLink)
+	}
+
+	for _, prediction := range decision.Predictions {
+		status := prediction.Status
+		if status == "" {
+			status = artifact.ClaimStatusUnverified
+		}
+		if status == artifact.ClaimStatusSupported {
+			continue
+		}
+
+		prediction.Status = status
+		risks = append(risks, formatProjectionDecisionPrediction(prediction))
+	}
+
+	return risks
 }
 
 func writeProjectionDecisionSlice(sb *strings.Builder, label string, values []string) {

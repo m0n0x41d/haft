@@ -316,6 +316,8 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 		SelectionPolicy: "Minimize latency within the accepted cost envelope.",
 		CounterArgument: "Tooling and rollout complexity are still meaningful costs.",
 		WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
+		Invariants:      []string{"p99 latency remains below 50ms during cutover"},
+		Admissibility:   []string{"No silent message loss during protocol migration"},
 		Predictions: []DecisionPrediction{
 			{
 				Claim:      "Latency stays under 50ms",
@@ -347,6 +349,12 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 	if err := store.Create(ctx, decision); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SetAffectedFiles(ctx, decision.Meta.ID, []AffectedFile{
+		{Path: "internal/transport/contracts.proto"},
+		{Path: "internal/transport/grpc.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	graph, err := FetchProjectionGraph(ctx, store, "payments")
 	if err != nil {
@@ -368,6 +376,15 @@ func TestFetchProjectionGraph_UsesStructuredDecisionFieldsForQueryableDecisionSt
 		Status:     ClaimStatusSupported,
 	}}) {
 		t.Fatalf("expected structured predictions in projection graph, got %+v", decisionNode.Predictions)
+	}
+	if !reflect.DeepEqual(decisionNode.AffectedFiles, []string{"internal/transport/contracts.proto", "internal/transport/grpc.go"}) {
+		t.Fatalf("expected affected files in projection graph, got %+v", decisionNode.AffectedFiles)
+	}
+	if !reflect.DeepEqual(decisionNode.Invariants, []string{"p99 latency remains below 50ms during cutover"}) {
+		t.Fatalf("expected invariants in projection graph, got %+v", decisionNode.Invariants)
+	}
+	if !reflect.DeepEqual(decisionNode.Admissibility, []string{"No silent message loss during protocol migration"}) {
+		t.Fatalf("expected admissibility in projection graph, got %+v", decisionNode.Admissibility)
 	}
 	if !reflect.DeepEqual(decisionNode.PreConditions, []string{"Replay benchmark harness ready"}) {
 		t.Fatalf("expected structured pre-conditions in projection graph, got %+v", decisionNode.PreConditions)
@@ -457,13 +474,17 @@ func TestFetchProjectionGraph_UpdatesProjectedPredictionStatusesAfterMeasure(t *
 
 func TestParseProjectionView_SupportsAliases(t *testing.T) {
 	cases := map[string]ProjectionView{
-		"":               ProjectionViewEngineer,
-		"status":         ProjectionViewManager,
-		"evidence":       ProjectionViewAudit,
-		"pareto":         ProjectionViewCompare,
-		"manager":        ProjectionViewManager,
-		"compare":        ProjectionViewCompare,
-		"manager/status": ProjectionViewManager,
+		"":                ProjectionViewEngineer,
+		"status":          ProjectionViewManager,
+		"evidence":        ProjectionViewAudit,
+		"pareto":          ProjectionViewCompare,
+		"brief":           ProjectionViewDelegatedAgent,
+		"delegated":       ProjectionViewDelegatedAgent,
+		"handoff":         ProjectionViewDelegatedAgent,
+		"delegated-agent": ProjectionViewDelegatedAgent,
+		"manager":         ProjectionViewManager,
+		"compare":         ProjectionViewCompare,
+		"manager/status":  ProjectionViewManager,
 	}
 
 	for input, want := range cases {

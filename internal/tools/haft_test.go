@@ -338,6 +338,68 @@ func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
 	}
 }
 
+func TestHaftQueryTool_ProjectionDelegatedBriefUsesCanonicalHandoffFields(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	_, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Delegated handoff should render canonical fields only.",
+		"weakest_link":   "Operational confidence still depends on limited production-grade evidence.",
+		"invariants":     []string{"p99 latency remains below 50ms during cutover"},
+		"admissibility":  []string{"No silent message loss during protocol migration"},
+		"affected_files": []string{"internal/transport/grpc.go", "internal/transport/contracts.proto"},
+		"predictions": []map[string]any{
+			{
+				"claim":      "Latency stays under 50ms",
+				"observable": "publish latency p99",
+				"threshold":  "< 50ms",
+			},
+			{
+				"claim":      "Throughput stays above 100k events/sec",
+				"observable": "throughput",
+				"threshold":  "> 100k events/sec",
+			},
+		},
+		"rollback": map[string]any{
+			"triggers": []string{"Error budget exceeds 2% during canary"},
+		},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queryTool := NewHaftQueryTool(fixture.store, nil)
+	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action": "projection",
+		"view":   "brief",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"## Delegated-Agent Brief",
+		"Selected decision: gRPC",
+		"Affected files: internal/transport/contracts.proto, internal/transport/grpc.go",
+		"Invariants: p99 latency remains below 50ms during cutover",
+		"Admissibility: No silent message loss during protocol migration",
+		"Rollback triggers: Error budget exceeds 2% during canary",
+		"Open claim risks:",
+		"weakest link: Operational confidence still depends on limited production-grade evidence.",
+		"unverified: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(result.DisplayText, want) {
+			t.Fatalf("projection response missing %q:\n%s", want, result.DisplayText)
+		}
+	}
+}
+
 func TestHaftQueryTool_ProjectionHonorsContextFilter(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()

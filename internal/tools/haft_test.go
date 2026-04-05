@@ -1393,6 +1393,145 @@ func TestHaftDecisionTool_SchemaIncludesAntiSelfDeceptionFields(t *testing.T) {
 	}
 }
 
+func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) {
+	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
+	schema := tool.Schema()
+
+	properties, ok := schema.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties = %T, want map[string]any", schema.Parameters["properties"])
+	}
+
+	for _, key := range []string{
+		"context",
+		"problem_refs",
+		"pre_conditions",
+		"evidence_requirements",
+		"refresh_triggers",
+		"search_keywords",
+	} {
+		if _, ok := properties[key]; !ok {
+			t.Fatalf("schema missing %q", key)
+		}
+	}
+}
+
+func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	additionalProblem, _, err := artifact.FrameProblem(fixture.ctx, fixture.store, fixture.haftDir, artifact.ProblemFrameInput{
+		Title:      "Transport rollback coverage",
+		Signal:     "Rollback criteria are under-specified",
+		Acceptance: "Decision ties transport rollout to rollback evidence",
+		Context:    "transport",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":                "decide",
+		"context":               "transport",
+		"problem_ref":           fixture.problem.Meta.ID,
+		"problem_refs":          []string{fixture.problem.Meta.ID, additionalProblem.Meta.ID},
+		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
+		"selected_title":        "gRPC",
+		"why_selected":          "Lower latency with schema-checked client generation.",
+		"pre_conditions":        []string{"Benchmarks reproduced in CI", "Consumer schema freeze approved"},
+		"evidence_requirements": []string{"p99 latency stays below 20ms", "Generated clients compile in CI"},
+		"refresh_triggers":      []string{"Latency budget regresses after rollout", "Generated clients fail across two releases"},
+		"search_keywords":       "grpc transport latency schema rollback",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if decision.Meta.Context != "transport" {
+		t.Fatalf("decision context = %q, want transport", decision.Meta.Context)
+	}
+	if decision.SearchKeywords != "grpc transport latency schema rollback" {
+		t.Fatalf("search keywords = %q", decision.SearchKeywords)
+	}
+
+	for _, want := range []string{
+		"**Pre-conditions:**",
+		"- [ ] Benchmarks reproduced in CI",
+		"- [ ] Consumer schema freeze approved",
+		"**Evidence requirements:**",
+		"- p99 latency stays below 20ms",
+		"- Generated clients compile in CI",
+		"**Refresh triggers:**",
+		"- Latency budget regresses after rollout",
+		"- Generated clients fail across two releases",
+	} {
+		if !strings.Contains(decision.Body, want) {
+			t.Fatalf("decision body missing %q:\n%s", want, decision.Body)
+		}
+	}
+
+	links, err := fixture.store.GetLinks(fixture.ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedRefs := map[string]bool{
+		fixture.problem.Meta.ID:           false,
+		additionalProblem.Meta.ID:         false,
+		fixture.comparedPortfolio.Meta.ID: false,
+	}
+
+	for _, link := range links {
+		if _, ok := expectedRefs[link.Ref]; ok {
+			expectedRefs[link.Ref] = true
+		}
+	}
+
+	for ref, found := range expectedRefs {
+		if !found {
+			t.Fatalf("decision links missing ref %q: %+v", ref, links)
+		}
+	}
+}
+
+func TestHaftDecisionTool_DecideLegacyPayloadStillWorksWithoutExtendedFields(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if decision.SearchKeywords != "" {
+		t.Fatalf("expected empty search keywords for legacy payload, got %q", decision.SearchKeywords)
+	}
+
+	for _, unexpected := range []string{
+		"**Pre-conditions:**",
+		"**Evidence requirements:**",
+		"**Refresh triggers:**",
+	} {
+		if strings.Contains(decision.Body, unexpected) {
+			t.Fatalf("legacy payload should omit %q:\n%s", unexpected, decision.Body)
+		}
+	}
+}
+
 func TestHaftDecisionTool_DecideRejectsIncompleteAntiSelfDeceptionRecord(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()

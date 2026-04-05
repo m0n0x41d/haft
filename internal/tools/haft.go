@@ -904,6 +904,7 @@ Actions:
 			"properties": map[string]any{
 				"action":         map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
 				"problem_ref":    map[string]any{"type": "string", "description": "Problem ID (decide)"},
+				"problem_refs":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Problem IDs this decision addresses (decide)"},
 				"portfolio_ref":  map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
 				"selected_title": map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
 				"why_selected":   map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
@@ -927,9 +928,15 @@ Actions:
 					},
 				},
 				"invariants":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What MUST hold (decide)"},
+				"pre_conditions":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What MUST be true before implementation (decide)"},
 				"post_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Implementation checklist (decide)"},
 				"admissibility":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What is NOT acceptable (decide)"},
-				"weakest_link":    map[string]any{"type": "string", "description": "Selected variant weakest link — what most plausibly breaks this choice (decide)"},
+				"evidence_requirements": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "What to measure or prove during implementation (decide)",
+				},
+				"weakest_link": map[string]any{"type": "string", "description": "Selected variant weakest link — what most plausibly breaks this choice (decide)"},
 				"rollback": map[string]any{
 					"type":        "object",
 					"description": "How and when to reverse the decision (decide). At least one trigger is required.",
@@ -938,6 +945,11 @@ Actions:
 						"steps":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						"blast_radius": map[string]any{"type": "string"},
 					},
+				},
+				"refresh_triggers": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "When to re-evaluate this decision (decide)",
 				},
 				"predictions": map[string]any{
 					"type":        "array",
@@ -953,6 +965,8 @@ Actions:
 				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
 				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide/evidence)"},
+				"context":          map[string]any{"type": "string", "description": "Optional context name (decide)"},
+				"search_keywords":  map[string]any{"type": "string", "description": "Space-separated synonyms and related terms for search enrichment (decide)"},
 				"decision_ref":     map[string]any{"type": "string", "description": "Decision ID (measure)"},
 				"findings":         map[string]any{"type": "string", "description": "What was observed (measure)"},
 				"criteria_met":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Passing criteria (measure)"},
@@ -1085,6 +1099,7 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.DecideInput{
 		ProblemRef:      jsonStr(args, "problem_ref"),
+		ProblemRefs:     jsonStrArray(args, "problem_refs"),
 		PortfolioRef:    jsonStr(args, "portfolio_ref"),
 		SelectedTitle:   jsonStr(args, "selected_title"),
 		WhySelected:     jsonStr(args, "why_selected"),
@@ -1095,9 +1110,13 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		Context:         jsonStr(args, "context"),
 		Mode:            jsonStr(args, "mode"),
 		Invariants:      jsonStrArray(args, "invariants"),
+		PreConditions:   jsonStrArray(args, "pre_conditions"),
 		PostConditions:  jsonStrArray(args, "post_conditions"),
 		Admissibility:   jsonStrArray(args, "admissibility"),
+		EvidenceReqs:    jsonStrArray(args, "evidence_requirements"),
+		RefreshTriggers: jsonStrArray(args, "refresh_triggers"),
 		AffectedFiles:   jsonStrArray(args, "affected_files"),
+		SearchKeywords:  jsonStr(args, "search_keywords"),
 	}
 
 	if items, ok := args["why_not_others"].([]any); ok {

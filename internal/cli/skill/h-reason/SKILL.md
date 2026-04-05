@@ -270,7 +270,7 @@ This closes the lemniscate. Without measure, the decision stays open.
 Slash commands are steering handles, not always mandatory triggers:
 - In **research / prepare-and-wait** mode, the user explicitly triggers `/h-frame`, `/h-char`, `/h-explore`, or `/h-compare` when ready.
 - In **delegated reasoning** mode, natural-language delegation like "давай", "do it", or "go ahead" is enough to continue through frame → explore → compare without waiting for a manual `/h-explore`.
-- In symbiotic reasoning, stop at comparison and wait for the human's post-compare choice before `/h-decide`.
+- In checkpointed reasoning, stop at comparison and wait for the human's post-compare choice before `/h-decide`.
 - `/h-frame` — full problem framing (diagnostic conversation)
 - `/h-explore` — variant generation
 - `/h-compare` — parity comparison

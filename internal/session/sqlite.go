@@ -57,7 +57,7 @@ func (s *SQLiteStore) Create(ctx context.Context, sess *agent.Session) error {
 func (s *SQLiteStore) Get(ctx context.Context, id string) (*agent.Session, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, COALESCE(parent_id, ''), title, model, COALESCE(current_phase, ''),
-		        COALESCE(depth, 'standard'), COALESCE(interaction, 'symbiotic'), COALESCE(yolo, 0),
+		        COALESCE(depth, 'standard'), COALESCE(interaction, 'checkpointed'), COALESCE(yolo, 0),
 		        COALESCE(active_cycle_id, ''), created_at, updated_at
 		 FROM agent_sessions WHERE id = ?`, id)
 	return scanSession(row)
@@ -83,7 +83,7 @@ func (s *SQLiteStore) ListRecent(ctx context.Context, limit int) ([]agent.Sessio
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, COALESCE(parent_id, ''), title, model, COALESCE(current_phase, ''),
-		        COALESCE(depth, 'standard'), COALESCE(interaction, 'symbiotic'), COALESCE(yolo, 0),
+		        COALESCE(depth, 'standard'), COALESCE(interaction, 'checkpointed'), COALESCE(yolo, 0),
 		        COALESCE(active_cycle_id, ''), created_at, updated_at
 		 FROM agent_sessions WHERE COALESCE(parent_id, '') = ''
 		 ORDER BY updated_at DESC LIMIT ?`, limit)

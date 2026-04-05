@@ -560,10 +560,13 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
     if (key.ctrl && input === "q") {
-      const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic"
+      const newMode = state.mode === "checkpointed" ? "autonomous" : "checkpointed"
       dispatch({ type: "toggle.autonomy" })
       client.send("autonomy.toggle", { mode: newMode })
-      dispatch({ type: "set.notification", text: newMode === "autonomous" ? "auto enabled" : "auto disabled" })
+      dispatch({
+        type: "set.notification",
+        text: newMode === "autonomous" ? "autonomous mode enabled" : "checkpointed mode enabled",
+      })
       return
     }
     if (key.ctrl && input === "y") {

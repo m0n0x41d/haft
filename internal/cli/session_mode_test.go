@@ -11,7 +11,7 @@ func TestApplyModeUpdateUsesCanonicalExecutionMode(t *testing.T) {
 	t.Helper()
 
 	sess := &agent.Session{}
-	sess.SetExecutionMode(agent.ExecutionModeSymbiotic)
+	sess.SetExecutionMode(agent.ExecutionModeCheckpointed)
 
 	updated := applyModeUpdate(sess, protocol.ModeUpdate{Mode: "autonomous"})
 	if !updated {
@@ -34,6 +34,21 @@ func TestApplyModeUpdateIgnoresUnknownMode(t *testing.T) {
 	}
 	if sess.ExecutionMode() != agent.ExecutionModeAutonomous {
 		t.Fatalf("ExecutionMode = %q, want autonomous", sess.ExecutionMode())
+	}
+}
+
+func TestApplyModeUpdateAcceptsLegacyCheckpointAliases(t *testing.T) {
+	t.Helper()
+
+	sess := &agent.Session{}
+	sess.SetExecutionMode(agent.ExecutionModeAutonomous)
+
+	updated := applyModeUpdate(sess, protocol.ModeUpdate{Mode: "symbiotic"})
+	if !updated {
+		t.Fatal("applyModeUpdate returned false, want true")
+	}
+	if sess.ExecutionMode() != agent.ExecutionModeCheckpointed {
+		t.Fatalf("ExecutionMode = %q, want checkpointed", sess.ExecutionMode())
 	}
 }
 

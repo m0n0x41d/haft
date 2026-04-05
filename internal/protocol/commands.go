@@ -31,6 +31,15 @@ type ModeUpdate struct {
 	Yolo bool   `json:"yolo,omitempty"`
 }
 
+func normalizeModeValue(raw string) string {
+	switch raw {
+	case "checkpointed", "collaborative", "symbiotic":
+		return "checkpointed"
+	default:
+		return raw
+	}
+}
+
 func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
 	type modeUpdatePayload struct {
 		Mode       string `json:"mode,omitempty"`
@@ -43,7 +52,7 @@ func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	m.Mode = payload.Mode
+	m.Mode = normalizeModeValue(payload.Mode)
 	m.Yolo = payload.Yolo
 
 	if payload.Mode != "" {
@@ -56,7 +65,7 @@ func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
 		m.Mode = "autonomous"
 		return nil
 	}
-	m.Mode = "symbiotic"
+	m.Mode = "checkpointed"
 	return nil
 }
 

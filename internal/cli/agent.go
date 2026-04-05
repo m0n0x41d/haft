@@ -221,7 +221,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
-	sess.SetExecutionMode(agent.ExecutionModeSymbiotic)
+	sess.SetExecutionMode(agent.ExecutionModeCheckpointed)
 	if err := store.Create(cmd.Context(), sess); err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

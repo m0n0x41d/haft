@@ -6,7 +6,7 @@ interface Props {
   model: string
   tokensUsed: number
   tokensLimit: number
-  mode: "symbiotic" | "autonomous"
+  mode: "checkpointed" | "autonomous"
   yolo: boolean
   streaming: boolean
   subagents: number
@@ -26,9 +26,10 @@ export function StatusBar(props: Props) {
     parts.push(<Text key="tokens" dimColor>{formatTokens(tokensUsed)}/{formatTokens(tokensLimit)}</Text>)
   }
 
-  if (mode === "autonomous") {
-    parts.push(<Text key="auto" color="cyanBright" bold>auto</Text>)
-  }
+  const modeLabel = mode === "autonomous"
+    ? <Text key="mode" color="cyanBright" bold>autonomous</Text>
+    : <Text key="mode" dimColor>checkpointed</Text>
+  parts.push(modeLabel)
 
   if (yolo) {
     parts.push(<Text key="yolo" color="yellowBright" bold>yolo</Text>)

@@ -22,12 +22,18 @@ export interface InitParams {
   messages?: WireMsgInfo[]
 }
 
+export type SessionModeWire =
+  | "checkpointed"
+  | "autonomous"
+  | "collaborative"
+  | "symbiotic"
+
 export interface SessionInfo {
   id: string
   title: string
   model: string
-  mode?: "symbiotic" | "autonomous"
-  interaction?: "symbiotic" | "autonomous"
+  mode?: SessionModeWire
+  interaction?: SessionModeWire
   yolo?: boolean
 }
 

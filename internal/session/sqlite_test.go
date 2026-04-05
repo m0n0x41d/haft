@@ -330,16 +330,25 @@ func TestSQLiteStore_CreateCanonicalizesSessionExecutionMode(t *testing.T) {
 	if err := store.Create(ctx, sess); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if sess.ExecutionMode() != agent.ExecutionModeSymbiotic {
-		t.Fatalf("ExecutionMode = %q, want symbiotic", sess.ExecutionMode())
+	if sess.ExecutionMode() != agent.ExecutionModeCheckpointed {
+		t.Fatalf("ExecutionMode = %q, want checkpointed", sess.ExecutionMode())
+	}
+
+	var rawInteraction string
+	err = sqlDB.QueryRow(`SELECT interaction FROM agent_sessions WHERE id = ?`, sess.ID).Scan(&rawInteraction)
+	if err != nil {
+		t.Fatalf("read stored interaction: %v", err)
+	}
+	if rawInteraction != "checkpointed" {
+		t.Fatalf("stored interaction = %q, want checkpointed", rawInteraction)
 	}
 
 	stored, err := store.Get(ctx, sess.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if stored.ExecutionMode() != agent.ExecutionModeSymbiotic {
-		t.Fatalf("stored ExecutionMode = %q, want symbiotic", stored.ExecutionMode())
+	if stored.ExecutionMode() != agent.ExecutionModeCheckpointed {
+		t.Fatalf("stored ExecutionMode = %q, want checkpointed", stored.ExecutionMode())
 	}
 }
 
@@ -383,7 +392,7 @@ func TestSQLiteStore_GetNormalizesPersistedLegacyInteraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if stored.ExecutionMode() != agent.ExecutionModeSymbiotic {
-		t.Fatalf("ExecutionMode = %q, want symbiotic", stored.ExecutionMode())
+	if stored.ExecutionMode() != agent.ExecutionModeCheckpointed {
+		t.Fatalf("ExecutionMode = %q, want checkpointed", stored.ExecutionMode())
 	}
 }

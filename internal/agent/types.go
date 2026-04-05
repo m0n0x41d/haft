@@ -261,26 +261,39 @@ const (
 type ExecutionMode string
 
 const (
-	ExecutionModeSymbiotic  ExecutionMode = "symbiotic"  // pause between phases for user input
-	ExecutionModeAutonomous ExecutionMode = "autonomous" // auto-chain phases, no pauses
+	ExecutionModeCheckpointed ExecutionMode = "checkpointed" // pause at checkpoints for user input
+	ExecutionModeAutonomous   ExecutionMode = "autonomous"   // auto-chain phases, no pauses
 )
 
-// Interaction is the legacy name used by existing guardrail code.
+const (
+	legacyExecutionModeCollaborative = "collaborative"
+	legacyExecutionModeSymbiotic     = "symbiotic"
+)
+
+// Legacy aliases kept so the surrounding runtime can migrate incrementally.
+const (
+	ExecutionModeCollaborative ExecutionMode = ExecutionModeCheckpointed
+	ExecutionModeSymbiotic     ExecutionMode = ExecutionModeCheckpointed
+)
+
+// Interaction is the legacy field name used by existing guardrail code.
 type Interaction = ExecutionMode
 
 const (
-	InteractionSymbiotic  = ExecutionModeSymbiotic
-	InteractionAutonomous = ExecutionModeAutonomous
+	InteractionCheckpointed  = ExecutionModeCheckpointed
+	InteractionCollaborative = ExecutionModeCheckpointed
+	InteractionSymbiotic     = ExecutionModeCheckpointed
+	InteractionAutonomous    = ExecutionModeAutonomous
 )
 
 func ParseExecutionMode(raw string) (ExecutionMode, bool) {
-	switch ExecutionMode(raw) {
-	case ExecutionModeSymbiotic:
-		return ExecutionModeSymbiotic, true
-	case ExecutionModeAutonomous:
+	switch raw {
+	case string(ExecutionModeCheckpointed), legacyExecutionModeCollaborative, legacyExecutionModeSymbiotic:
+		return ExecutionModeCheckpointed, true
+	case string(ExecutionModeAutonomous):
 		return ExecutionModeAutonomous, true
 	default:
-		return ExecutionModeSymbiotic, false
+		return ExecutionModeCheckpointed, false
 	}
 }
 
@@ -289,14 +302,14 @@ func NormalizeExecutionMode(raw string) ExecutionMode {
 	if ok {
 		return mode
 	}
-	return ExecutionModeSymbiotic
+	return ExecutionModeCheckpointed
 }
 
 func ExecutionModeFromAutonomous(enabled bool) ExecutionMode {
 	if enabled {
 		return ExecutionModeAutonomous
 	}
-	return ExecutionModeSymbiotic
+	return ExecutionModeCheckpointed
 }
 
 func (s Session) ExecutionMode() ExecutionMode {

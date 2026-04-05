@@ -17,8 +17,10 @@ import type {
   SubagentRun,
   SubagentStartParams,
   SubagentDoneParams,
-  OverseerAlertParams, OverseerFindingParams, DriftUpdateParams, LspUpdateParams,
+  OverseerAlertParams, OverseerFindingParams, DriftUpdateParams, LspUpdateParams, SessionModeWire,
 } from "../protocol/types.js"
+
+type SessionMode = "checkpointed" | "autonomous"
 
 export interface AppState {
   // Session
@@ -32,7 +34,7 @@ export interface AppState {
   // Status
   tokensUsed: number
   tokensLimit: number
-  mode: "symbiotic" | "autonomous"
+  mode: SessionMode
   yolo: boolean
 
   // Cycle (FPF)
@@ -68,7 +70,7 @@ export function initialState(): AppState {
     streamingMsgId: null,
     tokensUsed: 0,
     tokensLimit: 0,
-    mode: "symbiotic",
+    mode: "checkpointed",
     yolo: false,
     cycle: null,
     activeSubagents: 0,
@@ -118,13 +120,13 @@ export type Action =
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "init": {
-      const sessionMode = action.session.mode ?? action.session.interaction
+      const sessionMode = normalizeSessionMode(action.session.mode ?? action.session.interaction)
       return {
         ...state,
         session: action.session,
         projectRoot: action.projectRoot,
         messages: normalizeMessages(action.messages),
-        mode: sessionMode === "autonomous" ? "autonomous" : "symbiotic",
+        mode: sessionMode,
         yolo: action.session.yolo ?? false,
         phase: "input",
       }
@@ -342,7 +344,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, notification: null }
 
     case "toggle.autonomy":
-      return { ...state, mode: state.mode === "symbiotic" ? "autonomous" : "symbiotic" }
+      return { ...state, mode: state.mode === "checkpointed" ? "autonomous" : "checkpointed" }
 
     case "toggle.yolo":
       return { ...state, yolo: !state.yolo }
@@ -362,6 +364,10 @@ export function reducer(state: AppState, action: Action): AppState {
 }
 
 // --- Immutable state update helpers ---
+
+function normalizeSessionMode(mode?: SessionModeWire): SessionMode {
+  return mode === "autonomous" ? "autonomous" : "checkpointed"
+}
 
 function normalizeMessages(messages?: WireMsgInfo[]): ChatMessage[] {
   return messages?.map(normalizeMessage) ?? []

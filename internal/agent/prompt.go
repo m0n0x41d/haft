@@ -148,7 +148,7 @@ func writeCollaborativeWorkflow(b *strings.Builder) {
 3. Explore: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
    For each: core idea, strengths, weakest link, why it differs from others.
    In delegated or autonomous reasoning, continue directly into compare.
-4. Compare: haft_solution(compare) — show the score summary, dominated-variant eliminations, and Pareto front trade-offs explicitly. In symbiotic delegated mode, ASK which variant and wait only AFTER that explanation. In autonomous mode, continue into decide.
+4. Compare: haft_solution(compare) — show the score summary, dominated-variant eliminations, and Pareto front trade-offs explicitly. In checkpointed delegated mode, ASK which variant and wait only AFTER that explanation. In autonomous mode, continue into decide.
 5. Decide: haft_decision(decide) — only AFTER the user selected, unless autonomous mode is active.
 6. Implement: edit/write/bash — work without stopping. Be decisive.
 7. Baseline + verify: if the decision has affected files, run haft_decision(action="baseline", decision_ref=...) after implementation, then run tests/checks.

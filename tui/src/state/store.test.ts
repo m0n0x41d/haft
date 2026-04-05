@@ -194,6 +194,16 @@ test("normalizes legacy wire children into explicit subagent state", () => {
   assert.equal(spawnTool.subagent?.tools[0]?.callId, "bash-1")
 })
 
+test("normalizes legacy checkpoint mode labels from the wire", () => {
+  const state = reducer(initialState(), {
+    type: "init",
+    session: { id: "session-1", title: "Title", model: "model", mode: "symbiotic" },
+    projectRoot: "/repo",
+  })
+
+  assert.equal(state.mode, "checkpointed")
+})
+
 test("ignores unmatched subagent lifecycle events", () => {
   const state = reduceActions([
     {

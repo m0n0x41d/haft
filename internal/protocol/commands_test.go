@@ -21,6 +21,40 @@ func TestModeUpdateUnmarshalUsesTypedMode(t *testing.T) {
 	}
 }
 
+func TestModeUpdateUnmarshalCanonicalizesLegacyModeLabels(t *testing.T) {
+	t.Helper()
+
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{
+			name: "legacy symbiotic label",
+			json: `{"mode":"symbiotic"}`,
+			want: "checkpointed",
+		},
+		{
+			name: "legacy collaborative label",
+			json: `{"mode":"collaborative"}`,
+			want: "checkpointed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var update ModeUpdate
+			err := json.Unmarshal([]byte(tt.json), &update)
+			if err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if update.Mode != tt.want {
+				t.Fatalf("Mode = %q, want %q", update.Mode, tt.want)
+			}
+		})
+	}
+}
+
 func TestModeUpdateUnmarshalBridgesLegacyAutonomousBool(t *testing.T) {
 	t.Helper()
 
@@ -37,12 +71,12 @@ func TestModeUpdateUnmarshalBridgesLegacyAutonomousBool(t *testing.T) {
 		{
 			name: "legacy false",
 			json: `{"autonomous":false}`,
-			want: "symbiotic",
+			want: "checkpointed",
 		},
 		{
 			name: "mode wins over legacy bool",
-			json: `{"mode":"symbiotic","autonomous":true}`,
-			want: "symbiotic",
+			json: `{"mode":"checkpointed","autonomous":true}`,
+			want: "checkpointed",
 		},
 	}
 

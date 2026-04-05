@@ -22,7 +22,7 @@ func BuildSystemPrompt(cfg PromptConfig) string {
 	writeSWEDiscipline(&b)
 	if cfg.Lemniscate {
 		writeFPFDistillate(&b)
-		writeCollaborativeWorkflow(&b)
+		writeCheckpointedWorkflow(&b)
 		writeComparePresentationRules(&b)
 	}
 	writeToolDiscipline(&b, cfg.Lemniscate)
@@ -132,9 +132,9 @@ When the cycle is active, keep the phase order fixed. What changes is the depth 
 `)
 }
 
-func writeCollaborativeWorkflow(b *strings.Builder) {
+func writeCheckpointedWorkflow(b *strings.Builder) {
 	b.WriteString(`
-## Collaborative workflow — you propose, human decides
+## Checkpointed workflow — you propose, human decides
 
 ### Canonical interaction matrix
 - Direct response / direct action requests ("analyze this", "summarize what you found", "save this as md") → answer directly or perform the direct artifact work. Do not create FPF artifacts.

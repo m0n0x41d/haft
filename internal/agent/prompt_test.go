@@ -15,6 +15,7 @@ func TestBuildSystemPrompt_ResearchOnlyAndDelegatedReasoningMatrix(t *testing.T)
 	})
 
 	required := []string{
+		`## Checkpointed workflow — you propose, human decides`,
 		`### Canonical interaction matrix`,
 		`Direct response / direct action requests`,
 		`Research / prepare-and-wait requests`,
@@ -37,6 +38,10 @@ func TestBuildSystemPrompt_ResearchOnlyAndDelegatedReasoningMatrix(t *testing.T)
 
 	if strings.Contains(prompt, `"давай" / "do it" / "go ahead" = START WORKING`) {
 		t.Fatal("prompt still treats ordinary go-ahead language as unconditional autonomous execution")
+	}
+
+	if strings.Contains(prompt, "## Collaborative workflow — you propose, human decides") {
+		t.Fatal("prompt still exposes collaborative as the canonical workflow label")
 	}
 }
 

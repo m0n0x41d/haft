@@ -42,9 +42,10 @@ func normalizeModeValue(raw string) string {
 
 func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
 	type modeUpdatePayload struct {
-		Mode       string `json:"mode,omitempty"`
-		Autonomous *bool  `json:"autonomous,omitempty"`
-		Yolo       bool   `json:"yolo,omitempty"`
+		Interaction string `json:"interaction,omitempty"`
+		Mode        string `json:"mode,omitempty"`
+		Autonomous  *bool  `json:"autonomous,omitempty"`
+		Yolo        bool   `json:"yolo,omitempty"`
 	}
 
 	var payload modeUpdatePayload
@@ -56,6 +57,10 @@ func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
 	m.Yolo = payload.Yolo
 
 	if payload.Mode != "" {
+		return nil
+	}
+	m.Mode = normalizeModeValue(payload.Interaction)
+	if payload.Interaction != "" {
 		return nil
 	}
 	if payload.Autonomous == nil {

@@ -342,14 +342,13 @@ func mergeDecisionCoverageScope(
 	claimRefs []string,
 	scope []string,
 ) []string {
-	coverageRefs := mergedDecisionCoverageRefs(claims, claimRefs, scope)
-	claimScope := decisionClaimScopeFromRefs(claims, coverageRefs)
-	unresolvedScope := unresolvedDecisionCoverageScope(claims, coverageRefs, scope)
-	mergedScope := make([]string, 0, len(claimScope)+len(unresolvedScope))
-	mergedScope = append(mergedScope, claimScope...)
-	mergedScope = append(mergedScope, unresolvedScope...)
+	normalizedScope := normalizeClaimScope(scope)
 
-	return normalizeClaimScope(mergedScope)
+	if len(normalizedScope) > 0 {
+		return normalizedScope
+	}
+
+	return decisionClaimScopeFromRefs(claims, claimRefs)
 }
 
 func mergedDecisionCoverageRefs(

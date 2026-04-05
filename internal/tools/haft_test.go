@@ -378,6 +378,130 @@ func TestHaftQueryTool_ProjectionHonorsContextFilter(t *testing.T) {
 	}
 }
 
+func TestHaftProblemTool_AdoptFindsLinkedDecisionWithoutFTSCarrierMatch(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+		Context:    "payments",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				ID:            "V1",
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep JSON request-response semantics",
+			},
+			{
+				ID:            "V2",
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Adopt binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: artifact.ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "42ms"},
+				"V2": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"V2"},
+			DominatedVariants: []artifact.DominatedVariantExplanation{
+				{
+					Variant:     "V1",
+					DominatedBy: []string{"V2"},
+					Summary:     "Higher latency with no compensating advantage.",
+				},
+			},
+			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
+				{Variant: "V2", Summary: "Best latency in the compared set."},
+			},
+			SelectedRef:   "V2",
+			PolicyApplied: "Minimize latency within budget.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemRef:      problem.Meta.ID,
+		PortfolioRef:    portfolio.Meta.ID,
+		SelectedTitle:   "gRPC",
+		WhySelected:     "Lower latency is worth the tooling overhead for the current scope.",
+		SelectionPolicy: "Prefer the transport that minimizes latency within the accepted budget envelope.",
+		CounterArgument: "The tooling overhead could outweigh the latency gain outside the current workload profile.",
+		WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "REST",
+			Reason:  "Higher latency with no compensating advantage for the current scope.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Latency budget regresses after rollout"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	searchResults, err := artifact.FetchSearchResults(ctx, store, problem.Meta.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range searchResults {
+		if item.Meta.ID == decision.Meta.ID {
+			t.Fatalf("FTS unexpectedly found decision %q by problem ref; adopt regression needs a link-only lookup scenario", decision.Meta.ID)
+		}
+	}
+
+	problemTool := NewHaftProblemTool(store, haftDir)
+	result, err := problemTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action": "adopt",
+		"ref":    problem.Meta.ID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(result.DisplayText, "Found portfolio: "+portfolio.Meta.ID) {
+		t.Fatalf("expected adopt result to surface linked portfolio:\n%s", result.DisplayText)
+	}
+	if !strings.Contains(result.DisplayText, "Found decision: "+decision.Meta.ID) {
+		t.Fatalf("expected adopt result to surface linked decision:\n%s", result.DisplayText)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected adopt metadata")
+	}
+	if result.Meta.AdoptPortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("AdoptPortfolioRef = %q, want %q", result.Meta.AdoptPortfolioRef, portfolio.Meta.ID)
+	}
+	if result.Meta.ComparedPortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", result.Meta.ComparedPortfolioRef, portfolio.Meta.ID)
+	}
+	if result.Meta.AdoptDecisionRef != decision.Meta.ID {
+		t.Fatalf("AdoptDecisionRef = %q, want %q", result.Meta.AdoptDecisionRef, decision.Meta.ID)
+	}
+}
+
 func TestHaftSolutionTool_ExploreAcceptsNoSteppingStoneRationale(t *testing.T) {
 	store := setupHaftToolStore(t)
 	tool := NewHaftSolutionTool(store, t.TempDir(), nil)

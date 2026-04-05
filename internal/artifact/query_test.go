@@ -162,3 +162,79 @@ func TestFetchRelatedArtifacts_EmptyPath(t *testing.T) {
 		t.Error("expected error for empty file path")
 	}
 }
+
+func TestResolveProblemAdoptionRefs_FindsLinkedDecisionAndComparedPortfolio(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+		Context:    "payments",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("REST", "chatty payloads", "Keep JSON request-response semantics"),
+			testVariant("gRPC", "tooling overhead", "Adopt binary RPC with generated clients"),
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "42ms"},
+				"V2": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"V2"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "V1",
+					DominatedBy: []string{"V2"},
+					Summary:     "Higher latency with no compensating advantage.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "V2", Summary: "Best latency in the compared set."},
+			},
+			SelectedRef:   "V2",
+			PolicyApplied: "Minimize latency within budget.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  portfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "Lower latency is worth the tooling overhead for the current scope.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refs := ResolveProblemAdoptionRefs(ctx, store, problem.Meta.ID)
+	if refs.PortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("PortfolioRef = %q, want %q", refs.PortfolioRef, portfolio.Meta.ID)
+	}
+	if refs.ComparedPortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", refs.ComparedPortfolioRef, portfolio.Meta.ID)
+	}
+	if refs.DecisionRef != decision.Meta.ID {
+		t.Fatalf("DecisionRef = %q, want %q", refs.DecisionRef, decision.Meta.ID)
+	}
+}

@@ -135,24 +135,10 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a problem.", ref, kindLabel)), nil
 		}
 
-		// Find related solution and decision artifacts
-		portfolioRef := ""
-		comparedPortfolioRef := ""
-		decisionRef := ""
-		related, _ := artifact.FetchSearchResults(ctx, t.store, ref, 20)
-		for _, r := range related {
-			switch r.Meta.Kind {
-			case artifact.KindSolutionPortfolio:
-				if portfolioRef == "" {
-					portfolioRef = r.Meta.ID
-					comparedPortfolioRef = resolveComparedPortfolioRef(ctx, t.store, r.Meta.ID)
-				}
-			case artifact.KindDecisionRecord:
-				if decisionRef == "" {
-					decisionRef = r.Meta.ID
-				}
-			}
-		}
+		relatedRefs := artifact.ResolveProblemAdoptionRefs(ctx, t.store, ref)
+		portfolioRef := relatedRefs.PortfolioRef
+		comparedPortfolioRef := relatedRefs.ComparedPortfolioRef
+		decisionRef := relatedRefs.DecisionRef
 
 		var b strings.Builder
 		fmt.Fprintf(&b, "Adopted problem: %s\nID: %s\n", a.Meta.Title, a.Meta.ID)

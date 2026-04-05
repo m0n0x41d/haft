@@ -3,6 +3,8 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 )
 
 // QueryInput is the input for query operations.
@@ -24,6 +26,62 @@ func FetchSearchResults(ctx context.Context, store ArtifactStore, query string, 
 		limit = 20
 	}
 	return store.Search(ctx, query, limit)
+}
+
+// ProblemAdoptionRefs captures the linked artifacts needed to resume work on a problem.
+type ProblemAdoptionRefs struct {
+	PortfolioRef         string
+	ComparedPortfolioRef string
+	DecisionRef          string
+}
+
+// ResolveProblemAdoptionRefs discovers linked artifacts for problem adoption by
+// traversing artifact relationships rather than searching carriers with FTS.
+func ResolveProblemAdoptionRefs(ctx context.Context, store ArtifactStore, problemRef string) ProblemAdoptionRefs {
+	targetRef := strings.TrimSpace(problemRef)
+	if store == nil || targetRef == "" {
+		return ProblemAdoptionRefs{}
+	}
+
+	relatedArtifacts := relatedArtifactsByTarget(ctx, store, targetRef)
+	portfolioCandidates := filterArtifactsByKind(relatedArtifacts, KindSolutionPortfolio)
+	visiblePortfolios := filterArtifactsByStatus(portfolioCandidates, adoptionIncludesStatus)
+
+	comparedPortfolio := selectLatestArtifact(visiblePortfolios, func(item *Artifact) bool {
+		return ResolveComparedPortfolioRef(ctx, store, item.Meta.ID) != ""
+	})
+
+	portfolio := comparedPortfolio
+	if portfolio == nil {
+		portfolio = selectLatestArtifact(visiblePortfolios, func(*Artifact) bool { return true })
+	}
+
+	decisionCandidates := filterArtifactsByStatus(
+		filterArtifactsByKind(relatedArtifacts, KindDecisionRecord),
+		adoptionIncludesStatus,
+	)
+
+	for _, portfolioCandidate := range portfolioCandidates {
+		portfolioDecisions := relatedArtifactsByTarget(ctx, store, portfolioCandidate.Meta.ID)
+		portfolioDecisions = filterArtifactsByKind(portfolioDecisions, KindDecisionRecord)
+		portfolioDecisions = filterArtifactsByStatus(portfolioDecisions, adoptionIncludesStatus)
+		decisionCandidates = appendUniqueArtifacts(decisionCandidates, portfolioDecisions...)
+	}
+
+	decision := selectLatestArtifact(decisionCandidates, func(*Artifact) bool { return true })
+
+	refs := ProblemAdoptionRefs{}
+	if portfolio != nil {
+		refs.PortfolioRef = portfolio.Meta.ID
+	}
+	if comparedPortfolio != nil {
+		refs.ComparedPortfolioRef = comparedPortfolio.Meta.ID
+	}
+	if decision != nil {
+		refs.DecisionRef = decision.Meta.ID
+	}
+
+	return refs
 }
 
 // StatusData holds all data needed to render the status dashboard.
@@ -176,6 +234,110 @@ func FetchRelatedArtifacts(ctx context.Context, store ArtifactStore, filePath st
 		return nil, fmt.Errorf("file path is required")
 	}
 	return store.SearchByAffectedFile(ctx, filePath)
+}
+
+func relatedArtifactsByTarget(ctx context.Context, store ArtifactStore, targetRef string) []*Artifact {
+	backlinks, err := store.GetBacklinks(ctx, targetRef)
+	if err != nil {
+		return nil
+	}
+
+	artifacts := make([]*Artifact, 0, len(backlinks))
+
+	for _, backlink := range backlinks {
+		if backlink.Type != "based_on" {
+			continue
+		}
+
+		artifactItem, err := store.Get(ctx, backlink.Ref)
+		if err != nil {
+			continue
+		}
+
+		artifacts = appendUniqueArtifacts(artifacts, artifactItem)
+	}
+
+	sortArtifactsNewestFirst(artifacts)
+	return artifacts
+}
+
+func filterArtifactsByKind(artifacts []*Artifact, kind Kind) []*Artifact {
+	result := make([]*Artifact, 0, len(artifacts))
+
+	for _, artifactItem := range artifacts {
+		if artifactItem.Meta.Kind != kind {
+			continue
+		}
+
+		result = append(result, artifactItem)
+	}
+
+	return result
+}
+
+func filterArtifactsByStatus(artifacts []*Artifact, include func(Status) bool) []*Artifact {
+	result := make([]*Artifact, 0, len(artifacts))
+
+	for _, artifactItem := range artifacts {
+		if !include(artifactItem.Meta.Status) {
+			continue
+		}
+
+		result = append(result, artifactItem)
+	}
+
+	return result
+}
+
+func appendUniqueArtifacts(existing []*Artifact, candidates ...*Artifact) []*Artifact {
+	seen := make(map[string]struct{}, len(existing))
+
+	for _, item := range existing {
+		seen[item.Meta.ID] = struct{}{}
+	}
+
+	for _, candidate := range candidates {
+		if candidate == nil {
+			continue
+		}
+		if _, ok := seen[candidate.Meta.ID]; ok {
+			continue
+		}
+
+		seen[candidate.Meta.ID] = struct{}{}
+		existing = append(existing, candidate)
+	}
+
+	return existing
+}
+
+func sortArtifactsNewestFirst(artifacts []*Artifact) {
+	sort.SliceStable(artifacts, func(left int, right int) bool {
+		leftCreated := artifacts[left].Meta.CreatedAt
+		rightCreated := artifacts[right].Meta.CreatedAt
+
+		if leftCreated.Equal(rightCreated) {
+			return artifacts[left].Meta.ID < artifacts[right].Meta.ID
+		}
+
+		return leftCreated.After(rightCreated)
+	})
+}
+
+func selectLatestArtifact(artifacts []*Artifact, include func(*Artifact) bool) *Artifact {
+	for _, artifactItem := range artifacts {
+		if !include(artifactItem) {
+			continue
+		}
+
+		return artifactItem
+	}
+
+	return nil
+}
+
+func adoptionIncludesStatus(status Status) bool {
+	return status == StatusActive || status == StatusRefreshDue
 }
 
 // hasMeasurement checks if a decision has any measurement evidence (type=measurement, verdict not superseded).

@@ -3,6 +3,7 @@ package fpf
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func TestSearchSpecSemantically_DropsZeroSimilarityTail(t *testing.T) {
 	defer cleanup()
 
 	artifactPath := filepath.Join(t.TempDir(), "semantic-test.json.gz")
-	embedder := newSemanticTestEmbedder()
+	embedder := newDeterministicSemanticTestEmbedder()
 
 	if err := BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
 		t.Fatalf("BuildSemanticArtifact returned error: %v", err)
@@ -59,14 +60,14 @@ func TestSearchSpecSemantically_DropsZeroSimilarityTail(t *testing.T) {
 	}
 }
 
-func TestSearchSpecSemantically_FullCorpusNoisyQueriesShowSemanticGain(t *testing.T) {
+func TestSearchSpecSemantically_FullCorpusNoisyQueriesShowSemanticGainWithDeterministicTestEmbedder(t *testing.T) {
 	routes := loadGoldenRoutes(t)
 	chunks := loadGoldenSpecChunks(t)
 	_, db, cleanup := buildIndexWithChunksAndRoutes(t, chunks, routes, false)
 	defer cleanup()
 
 	artifactPath := filepath.Join(t.TempDir(), "semantic-full.json.gz")
-	embedder := newSemanticTestEmbedder()
+	embedder := newDeterministicSemanticTestEmbedder()
 	if err := BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
 		t.Fatalf("BuildSemanticArtifact returned error: %v", err)
 	}
@@ -156,7 +157,9 @@ type semanticTestEmbedder struct {
 	descriptor SemanticEmbedderDescriptor
 }
 
-func newSemanticTestEmbedder() semanticTestEmbedder {
+// newDeterministicSemanticTestEmbedder is a keyword-axis stub for unit tests.
+// It validates artifact/query plumbing without claiming live model quality.
+func newDeterministicSemanticTestEmbedder() semanticTestEmbedder {
 	return semanticTestEmbedder{
 		descriptor: SemanticEmbedderDescriptor{
 			Provider:   "test",
@@ -209,7 +212,7 @@ func TestBuildSemanticArtifactData_RoundTripsMetadata(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()
 
-	artifact, err := BuildSemanticArtifactData(context.Background(), db, newSemanticTestEmbedder())
+	artifact, err := BuildSemanticArtifactData(context.Background(), db, newDeterministicSemanticTestEmbedder())
 	if err != nil {
 		t.Fatalf("BuildSemanticArtifactData returned error: %v", err)
 	}
@@ -225,5 +228,47 @@ func TestBuildSemanticArtifactData_RoundTripsMetadata(t *testing.T) {
 	}
 	if artifact.Version != SemanticArtifactVersion {
 		t.Fatalf("unexpected semantic artifact version: %q", artifact.Version)
+	}
+}
+
+func TestWriteSemanticArtifact_EncodeFailurePreservesExistingArtifact(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "semantic-artifact.json.gz")
+	original := SemanticArtifact{
+		Version:    SemanticArtifactVersion,
+		Provider:   "test",
+		Model:      "original",
+		Dimensions: 3,
+		Documents: []SemanticArtifactDocument{{
+			PatternID: "A.6",
+			Vector:    []float32{1, 0, 0},
+		}},
+	}
+
+	if err := WriteSemanticArtifact(path, original); err != nil {
+		t.Fatalf("WriteSemanticArtifact(original) returned error: %v", err)
+	}
+
+	broken := SemanticArtifact{
+		Version:    SemanticArtifactVersion,
+		Provider:   "test",
+		Model:      "broken",
+		Dimensions: 1,
+		Documents: []SemanticArtifactDocument{{
+			PatternID: "E.9",
+			Vector:    []float32{float32(math.NaN())},
+		}},
+	}
+
+	err := WriteSemanticArtifact(path, broken)
+	if err == nil {
+		t.Fatal("expected encode failure for NaN vector")
+	}
+
+	loaded, err := LoadSemanticArtifact(path)
+	if err != nil {
+		t.Fatalf("LoadSemanticArtifact returned error after failed overwrite: %v", err)
+	}
+	if loaded.Model != original.Model {
+		t.Fatalf("expected original artifact to survive failed overwrite, got %#v", loaded)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -166,23 +167,44 @@ func WriteSemanticArtifact(path string, artifact SemanticArtifact) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("semantic artifact path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create semantic artifact dir: %w", err)
 	}
 
-	file, err := os.Create(path)
+	file, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create semantic artifact: %w", err)
 	}
+	if err := file.Chmod(0o644); err != nil {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+		return fmt.Errorf("chmod semantic artifact temp file: %w", err)
+	}
 
+	tempPath := file.Name()
 	writer := fileWriterForSemanticArtifact(path, file)
-	defer func() { _ = writer.Close() }()
+	cleanup := true
+	defer func() {
+		if !cleanup {
+			return
+		}
+		_ = os.Remove(tempPath)
+	}()
 
 	encoder := json.NewEncoder(writer)
 	if err := encoder.Encode(artifact); err != nil {
+		_ = writer.Close()
 		return fmt.Errorf("encode semantic artifact: %w", err)
 	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("finalize semantic artifact: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("install semantic artifact: %w", err)
+	}
 
+	cleanup = false
 	return nil
 }
 
@@ -461,11 +483,32 @@ func (writer semanticWriteCloser) Write(p []byte) (int, error) {
 
 func (writer semanticWriteCloser) Close() error {
 	closeErr := writer.writer.Close()
+	syncErr := writer.file.Sync()
 	fileErr := writer.file.Close()
 	if closeErr != nil {
 		return closeErr
 	}
+	if syncErr != nil {
+		return syncErr
+	}
 	return fileErr
+}
+
+type semanticPlainWriteCloser struct {
+	file *os.File
+}
+
+func (writer semanticPlainWriteCloser) Write(p []byte) (int, error) {
+	return writer.file.Write(p)
+}
+
+func (writer semanticPlainWriteCloser) Close() error {
+	syncErr := writer.file.Sync()
+	closeErr := writer.file.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
 }
 
 func fileReaderForSemanticArtifact(path string, file *os.File) (interface {
@@ -487,12 +530,9 @@ func fileReaderForSemanticArtifact(path string, file *os.File) (interface {
 	}, nil
 }
 
-func fileWriterForSemanticArtifact(path string, file *os.File) interface {
-	Write(p []byte) (int, error)
-	Close() error
-} {
+func fileWriterForSemanticArtifact(path string, file *os.File) io.WriteCloser {
 	if !strings.HasSuffix(strings.ToLower(path), ".gz") {
-		return file
+		return semanticPlainWriteCloser{file: file}
 	}
 
 	return semanticWriteCloser{

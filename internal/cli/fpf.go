@@ -65,8 +65,9 @@ remains the authoritative deterministic retriever. "semantic-search" uses an
 optional embedding artifact built by "haft fpf semantic-index": exact
 pattern-id preservation, deterministic route seeds when classification is
 clear, and embedding cosine ranking over the full indexed FPF corpus. The
-full-corpus noisy-query harness decides whether that experiment adds anything
-useful before broader rollout.`,
+full-corpus noisy-query harness gives a deterministic wiring/proxy check
+before broader rollout; live embedding quality still needs explicit
+measurement with the built artifact.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runFPFSemanticSearch,
 }

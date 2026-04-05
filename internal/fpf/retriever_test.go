@@ -68,7 +68,7 @@ func TestRetrieveSpec_SemanticModeUsesExperimentalTier(t *testing.T) {
 	defer cleanup()
 
 	artifactPath := filepath.Join(t.TempDir(), "semantic-retriever.json.gz")
-	embedder := newSemanticTestEmbedder()
+	embedder := newDeterministicSemanticTestEmbedder()
 	if err := BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
 		t.Fatalf("BuildSemanticArtifact returned error: %v", err)
 	}

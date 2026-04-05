@@ -1157,13 +1157,12 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	)
 	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
-	claimScope := decisionClaimScopeFromRefs(decisionFields.Claims, claimRefs)
-	if len(claimScope) == 0 {
-		claimScope = make([]string, 0, len(criteriaMetScope)+len(criteriaNotMetScope))
-		claimScope = append(claimScope, criteriaMetScope...)
-		claimScope = append(claimScope, criteriaNotMetScope...)
-		claimScope = normalizeClaimScope(claimScope)
-	}
+	claimScope := decisionMeasurementCoverageScope(
+		decisionFields.Claims,
+		claimRefs,
+		criteriaMetScope,
+		criteriaNotMetScope,
+	)
 
 	sd, err := json.Marshal(decisionFields)
 	if err != nil {
@@ -1518,14 +1517,12 @@ func computeClaimCoverage(items []EvidenceItem, claims []DecisionClaim) []string
 }
 
 func evidenceCoverageScope(item EvidenceItem, claims []DecisionClaim) []string {
-	if len(item.ClaimRefs) > 0 {
-		resolvedScope := decisionClaimScopeFromRefs(claims, item.ClaimRefs)
-		if len(resolvedScope) > 0 {
-			return resolvedScope
-		}
+	scope := normalizeClaimScope(item.ClaimScope)
+	if len(scope) > 0 {
+		return scope
 	}
 
-	return normalizeClaimScope(item.ClaimScope)
+	return decisionClaimScopeFromRefs(claims, item.ClaimRefs)
 }
 
 func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeCandidates []string) []string {

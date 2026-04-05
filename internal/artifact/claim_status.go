@@ -260,6 +260,10 @@ func normalizeDecisionEvidenceBinding(
 		return nil, nil, err
 	}
 
+	if len(normalizedScope) > 0 {
+		return validatedRefs, normalizedScope, nil
+	}
+
 	derivedScope := decisionClaimScopeFromRefs(normalizedClaims, validatedRefs)
 
 	return validatedRefs, derivedScope, nil
@@ -274,23 +278,7 @@ func decisionClaimScopeFromRefs(claims []DecisionClaim, refs []string) []string 
 	}
 
 	claimScope := make([]string, 0, len(normalizedRefs))
-	claimIndex := make(map[string]string, len(normalizedClaims))
-
-	for _, claim := range normalizedClaims {
-		scope := strings.TrimSpace(claim.Claim)
-
-		if scope == "" {
-			scope = strings.TrimSpace(claim.Observable)
-		}
-		if scope == "" {
-			scope = strings.TrimSpace(claim.Threshold)
-		}
-		if scope == "" {
-			scope = claim.ID
-		}
-
-		claimIndex[claim.ID] = scope
-	}
+	claimIndex := decisionClaimScopeLabelIndex(normalizedClaims)
 
 	for _, ref := range normalizedRefs {
 		scope, ok := claimIndex[ref]
@@ -301,6 +289,89 @@ func decisionClaimScopeFromRefs(claims []DecisionClaim, refs []string) []string 
 	}
 
 	return normalizeClaimScope(claimScope)
+}
+
+func decisionMeasurementCoverageScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	criteriaMetScope []string,
+	criteriaNotMetScope []string,
+) []string {
+	scope := make([]string, 0, len(criteriaMetScope)+len(criteriaNotMetScope))
+	scope = append(scope, criteriaMetScope...)
+	scope = append(scope, criteriaNotMetScope...)
+	scope = normalizeClaimScope(scope)
+
+	if len(scope) > 0 {
+		return scope
+	}
+
+	return decisionClaimScopeFromRefs(claims, claimRefs)
+}
+
+func decisionClaimScopeLabelIndex(claims []DecisionClaim) map[string]string {
+	baseCounts := make(map[string]int, len(claims))
+	expandedCounts := make(map[string]int, len(claims))
+	index := make(map[string]string, len(claims))
+
+	for _, claim := range claims {
+		baseLabel := primaryDecisionClaimScopeLabel(claim)
+		expandedLabel := expandedDecisionClaimScopeLabel(claim)
+		baseCounts[baseLabel]++
+		expandedCounts[expandedLabel]++
+	}
+
+	for _, claim := range claims {
+		baseLabel := primaryDecisionClaimScopeLabel(claim)
+		expandedLabel := expandedDecisionClaimScopeLabel(claim)
+		label := baseLabel
+
+		if baseCounts[baseLabel] > 1 {
+			label = expandedLabel
+		}
+		if expandedCounts[expandedLabel] > 1 {
+			label = expandedLabel + " | " + claim.ID
+		}
+
+		index[claim.ID] = label
+	}
+
+	return index
+}
+
+func primaryDecisionClaimScopeLabel(claim DecisionClaim) string {
+	candidates := []string{
+		strings.TrimSpace(claim.Claim),
+		strings.TrimSpace(claim.Observable),
+		strings.TrimSpace(claim.Threshold),
+		strings.TrimSpace(claim.ID),
+	}
+
+	return firstNonEmptyString(candidates)
+}
+
+func expandedDecisionClaimScopeLabel(claim DecisionClaim) string {
+	parts := compactStrings([]string{
+		strings.TrimSpace(claim.Claim),
+		strings.TrimSpace(claim.Observable),
+		strings.TrimSpace(claim.Threshold),
+	})
+
+	if len(parts) == 0 {
+		return strings.TrimSpace(claim.ID)
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+func firstNonEmptyString(values []string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+
+	return ""
 }
 
 func measuredDecisionClaimRefs(

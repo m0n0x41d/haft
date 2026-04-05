@@ -141,8 +141,8 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001,claim-002" {
 		t.Fatalf("measurement claim_refs = %q, want claim-001,claim-002", got)
 	}
-	if got := strings.Join(items[0].ClaimScope, ","); got != "Latency stays under 50ms,Throughput stays above 100k events/sec" {
-		t.Fatalf("measurement claim_scope = %q, want canonical claim scope", got)
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Throughput stays above 100k events/sec,publish latency p99 < 50ms" {
+		t.Fatalf("measurement claim_scope = %q, want preserved measured scope", got)
 	}
 
 	reloaded, err := store.Get(ctx, dec.Meta.ID)
@@ -154,6 +154,62 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 		ClaimStatusSupported,
 		ClaimStatusSupported,
 	})
+}
+
+func TestMeasure_PreservesMeasuredClaimCoverageAndNonClaimCriteria(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Mixed coverage should keep both claim and non-claim scope.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+		},
+		PostConditions: []string{
+			"Rollback drill completed",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Latency passed and the rollback drill completed.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 42ms)",
+			"Rollback drill completed",
+		},
+		Verdict: "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 evidence item, got %d", len(items))
+	}
+	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001" {
+		t.Fatalf("measurement claim_refs = %q, want claim-001", got)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Rollback drill completed,publish latency p99 < 50ms" {
+		t.Fatalf("measurement claim_scope = %q, want preserved measured and non-claim scope", got)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if got := strings.Join(wlnk.GEff, ","); got != "Rollback drill completed,publish latency p99 < 50ms" {
+		t.Fatalf("GEff = %q, want preserved measured coverage", got)
+	}
 }
 
 func TestMeasure_UpdatesPredictionStatusToMixedResults(t *testing.T) {
@@ -367,7 +423,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
 		ClaimRefs:       []string{"claim-002"},
-		ClaimScope:      []string{"throughput", "latency", "throughput"},
+		ClaimScope:      []string{"Throughput stays above 100k events/sec"},
 		ValidUntil:      "2026-06-01T00:00:00Z",
 	})
 	if err != nil {
@@ -381,7 +437,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 		t.Errorf("type = %q", item.Type)
 	}
 	if got := strings.Join(item.ClaimScope, ","); got != "Throughput stays above 100k events/sec" {
-		t.Errorf("returned claim_scope = %q, want canonical scope for explicit claim refs", got)
+		t.Errorf("returned claim_scope = %q, want preserved explicit claim scope", got)
 	}
 
 	// Verify stored
@@ -396,7 +452,48 @@ func TestAttachEvidence_Success(t *testing.T) {
 		t.Errorf("stored claim_refs = %q, want claim-002", got)
 	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "Throughput stays above 100k events/sec" {
-		t.Errorf("stored claim_scope = %q, want canonical scope for explicit claim refs", got)
+		t.Errorf("stored claim_scope = %q, want preserved explicit claim scope", got)
+	}
+}
+
+func TestAttachEvidence_PreservesExplicitClaimScopeAlongsideClaimRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "latency",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+
+	item, err := AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef: dec.Meta.ID,
+		Content:     "Contradictory binding.",
+		Type:        "benchmark",
+		Verdict:     "supports",
+		ClaimRefs:   []string{"claim-002"},
+		ClaimScope:  []string{"throughput", "latency", "throughput"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(item.ClaimRefs, ","); got != "claim-002" {
+		t.Fatalf("claim_refs = %q, want claim-002", got)
+	}
+	if got := strings.Join(item.ClaimScope, ","); got != "latency,throughput" {
+		t.Fatalf("claim_scope = %q, want preserved explicit scope", got)
 	}
 }
 
@@ -438,12 +535,22 @@ func TestAttachEvidence_ResolvesClaimRefsFromLegacyScope(t *testing.T) {
 	}
 }
 
-func TestWLNKSummary_UsesCanonicalClaimScopeForExplicitClaimRefs(t *testing.T) {
+func TestWLNKSummary_PrefersStoredClaimScopeOverClaimTextForCoverage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Latency budget",
+		Signal:     "Tail latency regression blocks rollout.",
+		Acceptance: "- P99 latency under 50ms",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
 		Predictions: []PredictionInput{
@@ -466,18 +573,66 @@ func TestWLNKSummary_UsesCanonicalClaimScopeForExplicitClaimRefs(t *testing.T) {
 	err = store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:         "evid-throughput-only",
 		Type:       "benchmark",
-		Content:    "Throughput evidence only.",
+		Content:    "Latency evidence only.",
 		Verdict:    "supports",
-		ClaimRefs:  []string{"claim-002"},
-		ClaimScope: []string{"latency", "throughput"},
+		ClaimRefs:  []string{"claim-001"},
+		ClaimScope: []string{"P99 latency under 50ms"},
 	}, dec.Meta.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	if got := strings.Join(wlnk.GEff, ","); got != "Throughput stays above 100k events/sec" {
-		t.Fatalf("GEff = %q, want canonical scope for explicit claim refs", got)
+	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms" {
+		t.Fatalf("GEff = %q, want stored claim scope", got)
+	}
+	if len(wlnk.CoverageGaps) != 0 {
+		t.Fatalf("CoverageGaps = %#v, want none", wlnk.CoverageGaps)
+	}
+}
+
+func TestWLNKSummary_KeepsDistinctCoverageForClaimsWithSharedText(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Coverage must not collapse exact claim refs with shared text.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "consumer latency p99",
+				Threshold:  "< 50ms",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.AddEvidenceItem(ctx, &EvidenceItem{
+		ID:        "evid-duplicate-claim-text",
+		Type:      "benchmark",
+		Content:   "Both latency measurements passed.",
+		Verdict:   "supports",
+		ClaimRefs: []string{"claim-001", "claim-002"},
+	}, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if got := len(wlnk.GEff); got != 2 {
+		t.Fatalf("len(GEff) = %d, want 2 distinct claim coverage entries", got)
+	}
+	if got := strings.Join(wlnk.GEff, ","); got != "Latency stays under 50ms | consumer latency p99 | < 50ms,Latency stays under 50ms | publish latency p99 | < 50ms" {
+		t.Fatalf("GEff = %q, want distinct canonical labels for both claim refs", got)
 	}
 }
 

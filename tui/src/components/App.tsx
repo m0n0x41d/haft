@@ -31,6 +31,7 @@ import {
   drainPromptSubmissions,
   leadingSlashCommand,
   restoreQueuedSubmission,
+  shouldResumeQueuedReplayAfterPickerCancel,
   submissionTexts,
   type PromptSubmission,
 } from "./promptSubmission.js"
@@ -83,6 +84,7 @@ export function App({ client, inputEvents }: AppProps) {
 
   // Stable ref to replay the drained queued prefix after streaming finishes.
   const replayQueueRef = useRef<(submissions: readonly PromptSubmission[]) => void>(() => {})
+  const resumeQueuedOnPickerCancelRef = useRef(false)
 
   // Syntax highlighting applies lazily — no forced re-render on load.
   // Components pick up highlighting on their next natural render cycle.
@@ -364,12 +366,16 @@ export function App({ client, inputEvents }: AppProps) {
     const commandResult = handleSlashCommand(submission.text)
 
     if (commandResult === "continue") {
+      resumeQueuedOnPickerCancelRef.current = false
       return false
     }
     if (commandResult === "pause") {
+      resumeQueuedOnPickerCancelRef.current =
+        shouldResumeQueuedReplayAfterPickerCancel(submission.text)
       return true
     }
 
+    resumeQueuedOnPickerCancelRef.current = false
     sendSubmission(submission)
     return true
   }, [handleSlashCommand, sendSubmission])
@@ -429,8 +435,26 @@ export function App({ client, inputEvents }: AppProps) {
     dispatch({ type: "question.replied" })
   }, [])
 
+  const handlePickerCancel = useCallback(() => {
+    const shouldResume = resumeQueuedOnPickerCancelRef.current
+
+    resumeQueuedOnPickerCancelRef.current = false
+    setPickerMode(null)
+
+    if (shouldResume) {
+      resumeQueuedMessages()
+    }
+  }, [resumeQueuedMessages])
+
   const handlePickerSelect = useCallback((item: PickerItem) => {
-    const mode = pickerMode; setPickerMode(null)
+    const mode = pickerMode
+
+    resumeQueuedOnPickerCancelRef.current =
+      mode === "commands" &&
+      queuedMessages.length > 0 &&
+      shouldResumeQueuedReplayAfterPickerCancel(item.id)
+
+    setPickerMode(null)
     switch (mode) {
       case "models":
         client.request("model.switch", { model: item.id })
@@ -453,7 +477,7 @@ export function App({ client, inputEvents }: AppProps) {
       }
       case "commands": handleSubmit(item.id); break
     }
-  }, [pickerMode, client, state.projectRoot, handleSubmit, resumeQueuedMessages])
+  }, [pickerMode, queuedMessages.length, client, state.projectRoot, handleSubmit, resumeQueuedMessages])
 
   // --- Keyboard scroll + global shortcuts ---
   // Our useInput uses useEventCallback internally — handler closures are
@@ -552,7 +576,7 @@ export function App({ client, inputEvents }: AppProps) {
       {/* Overlays */}
       {showPermission && <PermissionDialog request={state.permissionRequest!} onRespond={handlePermission} width={width} />}
       {showQuestion && <QuestionDialog question={state.questionRequest!.question} options={state.questionRequest!.options} onRespond={handleQuestion} width={width} />}
-      {pickerMode && <Picker title={pickerTitle(pickerMode)} items={pickerItems} onSelect={handlePickerSelect} onCancel={() => setPickerMode(null)} width={width} />}
+      {pickerMode && <Picker title={pickerTitle(pickerMode)} items={pickerItems} onSelect={handlePickerSelect} onCancel={handlePickerCancel} width={width} />}
 
       {/* Separator */}
       <Text dimColor>{"\u2500".repeat(width)}</Text>

@@ -7,6 +7,7 @@ import {
   leadingSlashCommand,
   queuedPromptReplayDisposition,
   restoreQueuedSubmission,
+  shouldResumeQueuedReplayAfterPickerCancel,
   shiftPromptSubmissions,
   submissionTexts,
 } from "./promptSubmission.js"
@@ -73,7 +74,7 @@ test("restoring a queued draft keeps keyboard ownership with the prompt", () => 
 test("classifies queued slash commands by replay behavior", () => {
   assert.equal(leadingSlashCommand("/help later"), "/help")
   assert.equal(leadingSlashCommand("real prompt"), null)
-  assert.equal(queuedPromptReplayDisposition("/help"), "continue")
+  assert.equal(queuedPromptReplayDisposition("/help"), "pause")
   assert.equal(queuedPromptReplayDisposition("/model"), "pause")
   assert.equal(queuedPromptReplayDisposition("/resume"), "pause")
   assert.equal(queuedPromptReplayDisposition("/compact"), "pause")
@@ -81,7 +82,13 @@ test("classifies queued slash commands by replay behavior", () => {
   assert.equal(queuedPromptReplayDisposition("real prompt"), "submit")
 })
 
-test("drains queued help until the first real submission", () => {
+test("marks only queued help for replay-on-cancel continuation", () => {
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/help"), true)
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/model"), false)
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("real prompt"), false)
+})
+
+test("replays queued help alone and leaves later prompts pending", () => {
   const queued = [
     createPromptSubmission("/help", []),
     createPromptSubmission("real prompt", [
@@ -93,13 +100,13 @@ test("drains queued help until the first real submission", () => {
 
   assert.deepEqual(
     submissionTexts(drained.replay),
-    ["/help", "real prompt"],
+    ["/help"],
   )
   assert.deepEqual(
     submissionTexts(drained.remaining),
-    ["later prompt"],
+    ["real prompt", "later prompt"],
   )
-  assert.equal(drained.replay[1]?.attachments[0]?.name, "image.png")
+  assert.equal(queued[1]?.attachments[0]?.name, "image.png")
 })
 
 test("stops queued replay before a model picker command", () => {

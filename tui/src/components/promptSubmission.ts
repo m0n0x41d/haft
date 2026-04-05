@@ -26,12 +26,9 @@ export type QueuedPromptReplayDisposition =
   | "pause"
   | "submit"
 
-const DRAINABLE_LOCAL_SLASH_COMMANDS = new Set([
-  "/help",
-])
-
 const PAUSING_LOCAL_SLASH_COMMANDS = new Set([
   "/compact",
+  "/help",
   "/model",
   "/resume",
 ])
@@ -74,14 +71,19 @@ export function queuedPromptReplayDisposition(
   if (command === null) {
     return "submit"
   }
-  if (DRAINABLE_LOCAL_SLASH_COMMANDS.has(command)) {
-    return "continue"
-  }
   if (PAUSING_LOCAL_SLASH_COMMANDS.has(command)) {
     return "pause"
   }
 
   return "submit"
+}
+
+export function shouldResumeQueuedReplayAfterPickerCancel(
+  text: string,
+): boolean {
+  const command = leadingSlashCommand(text)
+
+  return command === "/help"
 }
 
 export function shiftPromptSubmissions(

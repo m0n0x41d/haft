@@ -1173,7 +1173,7 @@ type WLNKSummary struct {
 	FEff          int      // computed: min(formality_level_i) across evidence chain
 	GEff          []string // computed: union(claim_scope_i) across evidence chain
 	REff          float64  // computed: min(effective_score) across evidence chain
-	MinFreshness  string   // earliest valid_until across all evidence
+	MinFreshness  string   // earliest parsed valid_until across all evidence, preserving the original carrier string
 	WeakestCL     int      // minimum congruence level
 	WeakestF      int      // compatibility alias for FEff
 	ExpectedScope []string // explicit acceptance identifiers, when available
@@ -1222,6 +1222,8 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	now := time.Now().UTC()
 	minREff := 1.0
 	minFormality := 3
+	minFreshnessAt := time.Time{}
+	hasMinFreshness := false
 
 	for _, e := range activeItems {
 		switch e.Verdict {
@@ -1240,9 +1242,12 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 			minFormality = e.FormalityLevel
 		}
 
-		if e.ValidUntil != "" {
-			if result.MinFreshness == "" || e.ValidUntil < result.MinFreshness {
+		expiry, ok := reff.ParseValidUntil(e.ValidUntil)
+		if ok {
+			if !hasMinFreshness || expiry.Before(minFreshnessAt) {
+				minFreshnessAt = expiry
 				result.MinFreshness = e.ValidUntil
+				hasMinFreshness = true
 			}
 		}
 

@@ -484,7 +484,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "string", "description": "(apply) DecisionRecord ID to generate brief from",
 					},
 					"valid_until": map[string]string{
-						"type": "string", "description": "(decide/evidence) Expiry date (RFC3339)",
+						"type": "string", "description": "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)",
 					},
 					"affected_files": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},

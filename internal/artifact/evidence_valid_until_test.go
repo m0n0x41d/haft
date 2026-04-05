@@ -68,3 +68,44 @@ func TestAttachEvidence_ExpiredValidUntilDegradesREffAndScan(t *testing.T) {
 
 	t.Fatal("decision with expired attached evidence should appear in stale scan")
 }
+
+func TestComputeWLNKSummary_MinFreshnessUsesParsedTimeOrdering(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Normalize freshness comparison",
+		WhySelected:   "Mixed valid_until carriers should compare by time, not lexicographically",
+		ValidUntil:    time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	validUntilValues := []string{
+		"2026-01-02",
+		"2026-01-02T00:30:00+02:00",
+		"2026-01-01T23:00:00Z",
+	}
+
+	for _, validUntil := range validUntilValues {
+		_, err = AttachEvidence(ctx, store, EvidenceInput{
+			ArtifactRef:     decision.Meta.ID,
+			Content:         "freshness ordering fixture",
+			Type:            "benchmark",
+			Verdict:         "supports",
+			CongruenceLevel: 3,
+			ValidUntil:      validUntil,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, decision.Meta.ID)
+	want := "2026-01-02T00:30:00+02:00"
+	if wlnk.MinFreshness != want {
+		t.Fatalf("MinFreshness = %q, want %q", wlnk.MinFreshness, want)
+	}
+}

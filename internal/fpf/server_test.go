@@ -221,7 +221,7 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	}
 
 	description, _ := validUntil["description"].(string)
-	if description != "(decide/evidence) Expiry date (RFC3339)" {
+	if description != "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)" {
 		t.Fatalf("unexpected valid_until description: %q", description)
 	}
 }

@@ -29,6 +29,7 @@ import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLa
 import {
   createPromptSubmission,
   drainPromptSubmissions,
+  leadingSlashCommand,
   restoreQueuedSubmission,
   submissionTexts,
   type PromptSubmission,
@@ -50,29 +51,6 @@ const SLASH_COMMANDS: PickerItem[] = [
   { id: "/note", label: "/note", desc: "Record a micro-decision" },
   { id: "/search", label: "/search", desc: "Search past decisions" },
 ]
-
-const LOCAL_ONLY_SLASH_COMMANDS = new Set([
-  "/compact",
-  "/help",
-  "/model",
-  "/resume",
-])
-
-function leadingSlashCommand(text: string): string | null {
-  if (!text.startsWith("/")) {
-    return null
-  }
-
-  const [command] = text.split(" ")
-
-  return command ?? null
-}
-
-function isLocalOnlySlashCommand(text: string): boolean {
-  const command = leadingSlashCommand(text)
-
-  return command !== null && LOCAL_ONLY_SLASH_COMMANDS.has(command)
-}
 
 interface AppProps {
   client: JsonRpcClient
@@ -220,6 +198,20 @@ export function App({ client, inputEvents }: AppProps) {
     return () => { inputEvents.off("input", handler) }
   }, [inputEvents])
 
+  const resumeQueuedMessages = useCallback(() => {
+    setQueuedMessages((submissions) => {
+      const drained = drainPromptSubmissions(submissions)
+
+      if (drained.replay.length > 0) {
+        const replay = drained.replay
+
+        setTimeout(() => replayQueueRef.current(replay), 100)
+      }
+
+      return drained.remaining
+    })
+  }, [])
+
   // --- Protocol ---
   useEffect(() => {
     client.setNotificationHandler((method, params) => {
@@ -259,19 +251,7 @@ export function App({ client, inputEvents }: AppProps) {
             pendingUpdate.current = null
           }
           dispatch({ type: "coord.done" })
-          setQueuedMessages((submissions) => {
-            const drained = drainPromptSubmissions(submissions, (submission) => {
-              return isLocalOnlySlashCommand(submission.text)
-            })
-
-            if (drained.replay.length > 0) {
-              const replay = drained.replay
-
-              setTimeout(() => replayQueueRef.current(replay), 100)
-            }
-
-            return drained.remaining
-          })
+          resumeQueuedMessages()
           break
       }
     })
@@ -287,7 +267,7 @@ export function App({ client, inputEvents }: AppProps) {
       }
     })
 
-  }, [client]) // eslint-disable-line react-hooks/exhaustive-deps — handlers registered once
+  }, [client, resumeQueuedMessages]) // eslint-disable-line react-hooks/exhaustive-deps — handlers registered once
 
   // Forward terminal resize to backend (also sends initial size on mount)
   useEffect(() => {
@@ -351,37 +331,43 @@ export function App({ client, inputEvents }: AppProps) {
     })
   }, [client])
 
-  const handleSlashCommand = useCallback((text: string): boolean => {
+  const handleSlashCommand = useCallback((text: string): "unhandled" | "continue" | "pause" => {
     const cmd = leadingSlashCommand(text)
 
     if (!cmd) {
-      return false
+      return "unhandled"
     }
 
     switch (cmd) {
       case "/model":
         openModelPicker()
-        return true
+        return "pause"
       case "/resume":
         openSessionPicker()
-        return true
+        return "pause"
       case "/compact":
         client.request("compact", {}).then((r: any) => {
           dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
+          resumeQueuedMessages()
         }).catch((e: Error) => dispatch({ type: "error", message: e.message }))
-        return true
+        return "pause"
       case "/help":
         setPickerMode("commands")
         setPickerItems(SLASH_COMMANDS)
-        return true
+        return "continue"
       default:
-        return false
+        return "unhandled"
     }
-  }, [client, openModelPicker, openSessionPicker])
+  }, [client, openModelPicker, openSessionPicker, resumeQueuedMessages])
 
   const replaySubmission = useCallback((submission: PromptSubmission) => {
-    if (handleSlashCommand(submission.text)) {
+    const commandResult = handleSlashCommand(submission.text)
+
+    if (commandResult === "continue") {
       return false
+    }
+    if (commandResult === "pause") {
+      return true
     }
 
     sendSubmission(submission)
@@ -403,7 +389,9 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
 
-    if (handleSlashCommand(text)) {
+    const commandResult = handleSlashCommand(text)
+
+    if (commandResult !== "unhandled") {
       return
     }
 
@@ -444,8 +432,19 @@ export function App({ client, inputEvents }: AppProps) {
   const handlePickerSelect = useCallback((item: PickerItem) => {
     const mode = pickerMode; setPickerMode(null)
     switch (mode) {
-      case "models": client.request("model.switch", { model: item.id }).catch((e: any) => dispatch({ type: "error", message: e.message })); break
-      case "sessions": client.request("session.resume", { sessionId: item.id }).then((r: any) => dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages })).catch((e: any) => dispatch({ type: "error", message: e.message })); break
+      case "models":
+        client.request("model.switch", { model: item.id })
+          .then(() => resumeQueuedMessages())
+          .catch((e: any) => dispatch({ type: "error", message: e.message }))
+        break
+      case "sessions":
+        client.request("session.resume", { sessionId: item.id })
+          .then((r: any) => {
+            dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages })
+            resumeQueuedMessages()
+          })
+          .catch((e: any) => dispatch({ type: "error", message: e.message }))
+        break
       case "files": {
         const isImg = /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(item.id)
         const id = nextAttachmentId.current++
@@ -454,7 +453,7 @@ export function App({ client, inputEvents }: AppProps) {
       }
       case "commands": handleSubmit(item.id); break
     }
-  }, [pickerMode, client, state.projectRoot, handleSubmit])
+  }, [pickerMode, client, state.projectRoot, handleSubmit, resumeQueuedMessages])
 
   // --- Keyboard scroll + global shortcuts ---
   // Our useInput uses useEventCallback internally — handler closures are

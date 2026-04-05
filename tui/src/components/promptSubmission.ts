@@ -21,6 +21,21 @@ export interface DrainedPromptSubmissions {
   remaining: PromptSubmission[]
 }
 
+export type QueuedPromptReplayDisposition =
+  | "continue"
+  | "pause"
+  | "submit"
+
+const DRAINABLE_LOCAL_SLASH_COMMANDS = new Set([
+  "/help",
+])
+
+const PAUSING_LOCAL_SLASH_COMMANDS = new Set([
+  "/compact",
+  "/model",
+  "/resume",
+])
+
 export function hasSubmittableText(text: string): boolean {
   return text.trim().length > 0
 }
@@ -39,6 +54,34 @@ export function submissionTexts(
   submissions: readonly PromptSubmission[],
 ): string[] {
   return submissions.map((submission) => submission.text)
+}
+
+export function leadingSlashCommand(text: string): string | null {
+  if (!text.startsWith("/")) {
+    return null
+  }
+
+  const [command] = text.split(" ")
+
+  return command ?? null
+}
+
+export function queuedPromptReplayDisposition(
+  text: string,
+): QueuedPromptReplayDisposition {
+  const command = leadingSlashCommand(text)
+
+  if (command === null) {
+    return "submit"
+  }
+  if (DRAINABLE_LOCAL_SLASH_COMMANDS.has(command)) {
+    return "continue"
+  }
+  if (PAUSING_LOCAL_SLASH_COMMANDS.has(command)) {
+    return "pause"
+  }
+
+  return "submit"
 }
 
 export function shiftPromptSubmissions(
@@ -66,10 +109,9 @@ export function restoreQueuedSubmission(
 
 export function drainPromptSubmissions(
   submissions: readonly PromptSubmission[],
-  shouldContinueDraining: (submission: PromptSubmission) => boolean,
 ): DrainedPromptSubmissions {
   const stopIndex = submissions.findIndex((submission) => {
-    return !shouldContinueDraining(submission)
+    return queuedPromptReplayDisposition(submission.text) !== "continue"
   })
   const replayCount = stopIndex === -1 ? submissions.length : stopIndex + 1
   const replay = submissions

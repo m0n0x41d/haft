@@ -4,6 +4,8 @@ import {
   createPromptSubmission,
   drainPromptSubmissions,
   hasSubmittableText,
+  leadingSlashCommand,
+  queuedPromptReplayDisposition,
   restoreQueuedSubmission,
   shiftPromptSubmissions,
   submissionTexts,
@@ -68,7 +70,18 @@ test("restoring a queued draft keeps keyboard ownership with the prompt", () => 
   assert.equal(edited.text, "queued prompt updated")
 })
 
-test("drains queued local slash commands until the first real submission", () => {
+test("classifies queued slash commands by replay behavior", () => {
+  assert.equal(leadingSlashCommand("/help later"), "/help")
+  assert.equal(leadingSlashCommand("real prompt"), null)
+  assert.equal(queuedPromptReplayDisposition("/help"), "continue")
+  assert.equal(queuedPromptReplayDisposition("/model"), "pause")
+  assert.equal(queuedPromptReplayDisposition("/resume"), "pause")
+  assert.equal(queuedPromptReplayDisposition("/compact"), "pause")
+  assert.equal(queuedPromptReplayDisposition("/search"), "submit")
+  assert.equal(queuedPromptReplayDisposition("real prompt"), "submit")
+})
+
+test("drains queued help until the first real submission", () => {
   const queued = [
     createPromptSubmission("/help", []),
     createPromptSubmission("real prompt", [
@@ -76,9 +89,7 @@ test("drains queued local slash commands until the first real submission", () =>
     ]),
     createPromptSubmission("later prompt", []),
   ]
-  const drained = drainPromptSubmissions(queued, (submission) => {
-    return submission.text === "/help"
-  })
+  const drained = drainPromptSubmissions(queued)
 
   assert.deepEqual(
     submissionTexts(drained.replay),
@@ -89,4 +100,55 @@ test("drains queued local slash commands until the first real submission", () =>
     ["later prompt"],
   )
   assert.equal(drained.replay[1]?.attachments[0]?.name, "image.png")
+})
+
+test("stops queued replay before a model picker command", () => {
+  const queued = [
+    createPromptSubmission("/model", []),
+    createPromptSubmission("real prompt", []),
+  ]
+  const drained = drainPromptSubmissions(queued)
+
+  assert.deepEqual(
+    submissionTexts(drained.replay),
+    ["/model"],
+  )
+  assert.deepEqual(
+    submissionTexts(drained.remaining),
+    ["real prompt"],
+  )
+})
+
+test("stops queued replay before a resume picker command", () => {
+  const queued = [
+    createPromptSubmission("/resume", []),
+    createPromptSubmission("real prompt", []),
+  ]
+  const drained = drainPromptSubmissions(queued)
+
+  assert.deepEqual(
+    submissionTexts(drained.replay),
+    ["/resume"],
+  )
+  assert.deepEqual(
+    submissionTexts(drained.remaining),
+    ["real prompt"],
+  )
+})
+
+test("stops queued replay before compaction completes", () => {
+  const queued = [
+    createPromptSubmission("/compact", []),
+    createPromptSubmission("real prompt", []),
+  ]
+  const drained = drainPromptSubmissions(queued)
+
+  assert.deepEqual(
+    submissionTexts(drained.replay),
+    ["/compact"],
+  )
+  assert.deepEqual(
+    submissionTexts(drained.remaining),
+    ["real prompt"],
+  )
 })

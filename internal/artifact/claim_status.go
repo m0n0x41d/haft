@@ -290,8 +290,14 @@ func sameClaimRefSet(left []string, right []string) bool {
 		return false
 	}
 
-	for index := range left {
-		if left[index] != right[index] {
+	leftSet := make(map[string]struct{}, len(left))
+
+	for _, ref := range left {
+		leftSet[ref] = struct{}{}
+	}
+
+	for _, ref := range right {
+		if _, ok := leftSet[ref]; !ok {
 			return false
 		}
 	}
@@ -340,55 +346,12 @@ func mergeDecisionCoverageScope(
 	claimRefs []string,
 	scope []string,
 ) []string {
-	claimScope := decisionClaimScopeFromRefs(claims, claimRefs)
-	unresolvedScope := unresolvedDecisionCoverageScope(claims, claimRefs, scope)
-	mergedScope := make([]string, 0, len(claimScope)+len(unresolvedScope))
-	mergedScope = append(mergedScope, claimScope...)
-	mergedScope = append(mergedScope, unresolvedScope...)
-
-	return normalizeClaimScope(mergedScope)
-}
-
-func unresolvedDecisionCoverageScope(
-	claims []DecisionClaim,
-	claimRefs []string,
-	scope []string,
-) []string {
-	normalizedClaims := normalizeDecisionClaims(claims)
-	normalizedRefs := normalizeClaimRefs(claimRefs)
 	normalizedScope := normalizeClaimScope(scope)
-
-	if len(normalizedScope) == 0 {
-		return nil
-	}
-	if len(normalizedClaims) == 0 {
+	if len(normalizedScope) > 0 {
 		return normalizedScope
 	}
 
-	measuredRefSet := make(map[string]struct{}, len(normalizedRefs))
-	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
-	unresolved := make([]string, 0, len(normalizedScope))
-
-	for _, ref := range normalizedRefs {
-		measuredRefSet[ref] = struct{}{}
-	}
-
-	for _, item := range normalizedScope {
-		index, ok := resolvePredictionAlias(item, aliasIndex)
-		if !ok {
-			unresolved = append(unresolved, item)
-			continue
-		}
-
-		claimID := normalizedClaims[index].ID
-		if _, measured := measuredRefSet[claimID]; measured {
-			continue
-		}
-
-		unresolved = append(unresolved, item)
-	}
-
-	return normalizeClaimScope(unresolved)
+	return decisionClaimScopeFromRefs(claims, claimRefs)
 }
 
 func decisionClaimScopeLabelIndex(claims []DecisionClaim) map[string]string {

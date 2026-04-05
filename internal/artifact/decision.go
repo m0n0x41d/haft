@@ -1803,7 +1803,11 @@ func formatAssuranceSummary(summary WLNKSummary) string {
 	coverage := "G: no claim scope"
 	switch {
 	case summary.CoverageKnown:
-		coverage = fmt.Sprintf("G: %d/%d criteria covered", len(summary.GEff), len(summary.ExpectedScope))
+		coveredCriteria := len(summary.ExpectedScope) - len(summary.CoverageGaps)
+		if coveredCriteria < 0 {
+			coveredCriteria = 0
+		}
+		coverage = fmt.Sprintf("G: %d/%d criteria covered", coveredCriteria, len(summary.ExpectedScope))
 	case len(summary.GEff) > 0:
 		coverage = fmt.Sprintf("G: %d covered (acceptance ids unavailable)", len(summary.GEff))
 	}

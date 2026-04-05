@@ -538,6 +538,10 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 	if err != nil {
 		return err
 	}
+	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	if err != nil {
+		return err
+	}
 
 	scopeJSON := "[]"
 	if scope := normalizeClaimScope(item.ClaimScope); len(scope) > 0 {
@@ -548,24 +552,51 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 		scopeJSON = string(data)
 	}
 
-	query := `
-		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	claimRefsJSON := "[]"
+	if claimRefs := normalizeClaimRefs(item.ClaimRefs); len(claimRefs) > 0 {
+		data, err := json.Marshal(claimRefs)
+		if err != nil {
+			return fmt.Errorf("marshal claim_refs: %w", err)
+		}
+		claimRefsJSON = string(data)
+	}
+
+	columns := []string{
+		"id",
+		"artifact_ref",
+		"type",
+		"content",
+		"verdict",
+		"carrier_ref",
+		"congruence_level",
+		"formality_level",
+	}
 	args := []any{
 		item.ID, artifactRef, item.Type, item.Content, item.Verdict,
 		item.CarrierRef, item.CongruenceLevel, formality,
-		item.ValidUntil, time.Now().UTC().Format(time.RFC3339),
 	}
 	if hasClaimScope {
-		query = `
-			INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, claim_scope, valid_until, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		args = []any{
-			item.ID, artifactRef, item.Type, item.Content, item.Verdict,
-			item.CarrierRef, item.CongruenceLevel, formality, scopeJSON,
-			item.ValidUntil, time.Now().UTC().Format(time.RFC3339),
-		}
+		columns = append(columns, "claim_scope")
+		args = append(args, scopeJSON)
 	}
+	if hasClaimRefs {
+		columns = append(columns, "claim_refs")
+		args = append(args, claimRefsJSON)
+	}
+
+	columns = append(columns, "valid_until", "created_at")
+	args = append(args, item.ValidUntil, time.Now().UTC().Format(time.RFC3339))
+
+	placeholders := make([]string, len(columns))
+	for index := range placeholders {
+		placeholders[index] = "?"
+	}
+
+	query := fmt.Sprintf(
+		"INSERT INTO evidence_items (%s) VALUES (%s)",
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "),
+	)
 
 	_, err = s.db.ExecContext(ctx, query, args...)
 	return err
@@ -577,15 +608,32 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 	if err != nil {
 		return nil, err
 	}
-
-	query := `
-		SELECT id, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until
-		FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC`
-	if hasClaimScope {
-		query = `
-			SELECT id, type, content, verdict, carrier_ref, congruence_level, formality_level, claim_scope, valid_until
-			FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC`
+	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	if err != nil {
+		return nil, err
 	}
+
+	columns := []string{
+		"id",
+		"type",
+		"content",
+		"verdict",
+		"carrier_ref",
+		"congruence_level",
+		"formality_level",
+	}
+	if hasClaimScope {
+		columns = append(columns, "claim_scope")
+	}
+	if hasClaimRefs {
+		columns = append(columns, "claim_refs")
+	}
+	columns = append(columns, "valid_until")
+
+	query := fmt.Sprintf(
+		"SELECT %s FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC",
+		strings.Join(columns, ", "),
+	)
 
 	rows, err := s.db.QueryContext(ctx, query, artifactRef)
 	if err != nil {
@@ -596,17 +644,25 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 	var items []EvidenceItem
 	for rows.Next() {
 		var e EvidenceItem
-		var verdict, carrierRef, claimScope, validUntil sql.NullString
+		var verdict, carrierRef, claimScope, claimRefs, validUntil sql.NullString
+		dest := []any{
+			&e.ID,
+			&e.Type,
+			&e.Content,
+			&verdict,
+			&carrierRef,
+			&e.CongruenceLevel,
+			&e.FormalityLevel,
+		}
 		if hasClaimScope {
-			if err := rows.Scan(&e.ID, &e.Type, &e.Content, &verdict, &carrierRef,
-				&e.CongruenceLevel, &e.FormalityLevel, &claimScope, &validUntil); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := rows.Scan(&e.ID, &e.Type, &e.Content, &verdict, &carrierRef,
-				&e.CongruenceLevel, &e.FormalityLevel, &validUntil); err != nil {
-				return nil, err
-			}
+			dest = append(dest, &claimScope)
+		}
+		if hasClaimRefs {
+			dest = append(dest, &claimRefs)
+		}
+		dest = append(dest, &validUntil)
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
 		}
 		e.Verdict = verdict.String
 		e.CarrierRef = carrierRef.String
@@ -614,6 +670,10 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 		if claimScope.String != "" {
 			_ = json.Unmarshal([]byte(claimScope.String), &e.ClaimScope)
 			e.ClaimScope = normalizeClaimScope(e.ClaimScope)
+		}
+		if claimRefs.String != "" {
+			_ = json.Unmarshal([]byte(claimRefs.String), &e.ClaimRefs)
+			e.ClaimRefs = normalizeClaimRefs(e.ClaimRefs)
 		}
 		e.ValidUntil = validUntil.String
 		items = append(items, e)

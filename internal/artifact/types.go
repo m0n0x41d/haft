@@ -501,6 +501,7 @@ type EvidenceItem struct {
 	CarrierRef      string   `json:"carrier_ref,omitempty"`
 	CongruenceLevel int      `json:"congruence_level,omitempty"` // 0-3
 	FormalityLevel  int      `json:"formality_level,omitempty"`  // F0-F3 (legacy 0-9 normalized on read)
+	ClaimRefs       []string `json:"claim_refs,omitempty"`
 	ClaimScope      []string `json:"claim_scope,omitempty"`
 	ValidUntil      string   `json:"valid_until,omitempty"`
 }

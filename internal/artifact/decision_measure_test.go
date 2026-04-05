@@ -73,6 +73,9 @@ func TestMeasure_Success(t *testing.T) {
 	if got := strings.Join(items[0].ClaimScope, " | "); got != "All producers migrated | Load test at 100k/s passed" {
 		t.Errorf("evidence claim_scope = %#v, want canonical measured criteria scope", items[0].ClaimScope)
 	}
+	if len(items[0].ClaimRefs) != 0 {
+		t.Errorf("evidence claim_refs = %#v, want none without structured claims", items[0].ClaimRefs)
+	}
 }
 
 func TestMeasure_MissingRequired(t *testing.T) {
@@ -126,6 +129,17 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 evidence item, got %d", len(items))
+	}
+	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001,claim-002" {
+		t.Fatalf("measurement claim_refs = %q, want claim-001,claim-002", got)
 	}
 
 	reloaded, err := store.Get(ctx, dec.Meta.ID)
@@ -246,6 +260,18 @@ func TestAttachEvidence_Success(t *testing.T) {
 	dec, _, _ := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Test",
 		WhySelected:   "Because",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "latency",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
 	}))
 
 	item, err := AttachEvidence(ctx, store, EvidenceInput{
@@ -256,6 +282,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 		CarrierRef:      "benchmarks/nats_load_test.md",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimRefs:       []string{"claim-002"},
 		ClaimScope:      []string{"throughput", "latency", "throughput"},
 		ValidUntil:      "2026-06-01T00:00:00Z",
 	})
@@ -278,8 +305,49 @@ func TestAttachEvidence_Success(t *testing.T) {
 	if items[0].FormalityLevel != 2 {
 		t.Errorf("stored formality = %d, want normalized F2", items[0].FormalityLevel)
 	}
+	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-002" {
+		t.Errorf("stored claim_refs = %q, want claim-002", got)
+	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
 		t.Errorf("stored claim_scope = %q, want deduplicated scope", got)
+	}
+}
+
+func TestAttachEvidence_ResolvesClaimRefsFromLegacyScope(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Test",
+		WhySelected:   "Because",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "latency",
+				Threshold:  "< 50ms",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef: dec.Meta.ID,
+		Content:     "Load test: p99 latency stayed at 42ms.",
+		Type:        "benchmark",
+		Verdict:     "supports",
+		ClaimScope:  []string{"latency"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(item.ClaimRefs, ","); got != "claim-001" {
+		t.Fatalf("claim_refs = %q, want claim-001", got)
+	}
+	if got := strings.Join(item.ClaimScope, ","); got != "latency" {
+		t.Fatalf("claim_scope = %q, want latency", got)
 	}
 }
 

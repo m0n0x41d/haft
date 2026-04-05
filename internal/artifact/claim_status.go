@@ -30,6 +30,33 @@ func normalizeClaimStatus(value ClaimStatus) ClaimStatus {
 	return ClaimStatusUnverified
 }
 
+func normalizeClaimRefs(refs []string) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(refs))
+	normalized := make([]string, 0, len(refs))
+
+	for _, ref := range refs {
+		trimmed := strings.TrimSpace(ref)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	return normalized
+}
+
 func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
 	claims := make([]DecisionClaim, 0, len(inputs))
 
@@ -153,6 +180,124 @@ func canonicalDecisionClaimID(index int) string {
 
 func normalizeDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
 	return decisionPredictionsFromClaims(decisionClaimsFromPredictions(values))
+}
+
+func resolveDecisionEvidenceClaimRefs(claims []DecisionClaim, explicitRefs []string, scope []string) ([]string, error) {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	normalizedRefs := normalizeClaimRefs(explicitRefs)
+
+	if len(normalizedClaims) == 0 {
+		if len(normalizedRefs) == 0 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("claim_refs require a decision with structured claims")
+	}
+
+	if len(normalizedRefs) > 0 {
+		claimIndex := make(map[string]struct{}, len(normalizedClaims))
+
+		for _, claim := range normalizedClaims {
+			claimIndex[claim.ID] = struct{}{}
+		}
+
+		invalidRefs := make([]string, 0)
+
+		for _, ref := range normalizedRefs {
+			if _, ok := claimIndex[ref]; ok {
+				continue
+			}
+			invalidRefs = append(invalidRefs, ref)
+		}
+
+		if len(invalidRefs) > 0 {
+			return nil, fmt.Errorf("unknown claim_refs: %s", strings.Join(invalidRefs, ", "))
+		}
+
+		return normalizedRefs, nil
+	}
+
+	normalizedScope := normalizeClaimScope(scope)
+	if len(normalizedScope) == 0 {
+		return nil, nil
+	}
+
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	resolvedRefs := make([]string, 0, len(normalizedScope))
+
+	for _, item := range normalizedScope {
+		index, ok := resolvePredictionAlias(item, aliasIndex)
+		if !ok {
+			continue
+		}
+		resolvedRefs = append(resolvedRefs, normalizedClaims[index].ID)
+	}
+
+	return normalizeClaimRefs(resolvedRefs), nil
+}
+
+func decisionClaimScopeFromRefs(claims []DecisionClaim, refs []string) []string {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	normalizedRefs := normalizeClaimRefs(refs)
+
+	if len(normalizedClaims) == 0 || len(normalizedRefs) == 0 {
+		return nil
+	}
+
+	claimScope := make([]string, 0, len(normalizedRefs))
+	claimIndex := make(map[string]string, len(normalizedClaims))
+
+	for _, claim := range normalizedClaims {
+		scope := strings.TrimSpace(claim.Claim)
+
+		if scope == "" {
+			scope = strings.TrimSpace(claim.Observable)
+		}
+		if scope == "" {
+			scope = strings.TrimSpace(claim.Threshold)
+		}
+		if scope == "" {
+			scope = claim.ID
+		}
+
+		claimIndex[claim.ID] = scope
+	}
+
+	for _, ref := range normalizedRefs {
+		scope, ok := claimIndex[ref]
+		if !ok {
+			continue
+		}
+		claimScope = append(claimScope, scope)
+	}
+
+	return normalizeClaimScope(claimScope)
+}
+
+func measuredDecisionClaimRefs(
+	claims []DecisionClaim,
+	criteriaMet []string,
+	criteriaMetScope []string,
+	criteriaNotMet []string,
+	criteriaNotMetScope []string,
+) []string {
+	normalized := normalizeDecisionClaims(claims)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	aliasIndex := buildDecisionClaimAliasIndex(normalized)
+	metMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaMet, criteriaMetScope)
+	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaNotMet, criteriaNotMetScope)
+	claimRefs := make([]string, 0, len(normalized))
+
+	for index, claim := range normalized {
+		if !metMatches[index] && !notMetMatches[index] {
+			continue
+		}
+		claimRefs = append(claimRefs, claim.ID)
+	}
+
+	return normalizeClaimRefs(claimRefs)
 }
 
 // ClaimStatusFromPredictionMeasureMatch maps one measurement-to-prediction relation

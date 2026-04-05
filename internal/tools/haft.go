@@ -966,6 +966,8 @@ Actions:
 				"evidence_verdict": map[string]any{"type": "string", "enum": []string{"supports", "weakens", "refutes"}, "description": "How the evidence bears on the artifact (evidence)"},
 				"carrier_ref":      map[string]any{"type": "string", "description": "File path or URL for the evidence source (evidence)"},
 				"congruence_level": map[string]any{"type": "integer", "description": "CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed (evidence)"},
+				"claim_refs":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact decision claim IDs this evidence binds to when available (evidence)"},
+				"claim_scope":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Fallback claim scope labels for older artifacts or non-claim evidence (evidence)"},
 				"mode":             map[string]any{"type": "string", "description": "tactical | standard | deep"},
 			},
 			"required": []any{"action"},
@@ -1190,6 +1192,16 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 }
 
 func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	claimRefs, err := jsonStrictStringArray(args, "claim_refs")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	claimScope, err := jsonStrictStringArray(args, "claim_scope")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	input := artifact.EvidenceInput{
 		CongruenceLevel: -1,
 		FormalityLevel:  -1,
@@ -1198,6 +1210,8 @@ func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (a
 		Type:            jsonStr(args, "evidence_type"),
 		Verdict:         jsonStr(args, "evidence_verdict"),
 		CarrierRef:      jsonStr(args, "carrier_ref"),
+		ClaimRefs:       claimRefs,
+		ClaimScope:      claimScope,
 		ValidUntil:      jsonStr(args, "valid_until"),
 	}
 

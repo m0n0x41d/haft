@@ -1082,6 +1082,7 @@ type EvidenceInput struct {
 	CarrierRef      string   `json:"carrier_ref,omitempty"`
 	CongruenceLevel int      `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
 	FormalityLevel  int      `json:"formality_level"`  // F0-F3; legacy 0-9 inputs are normalized
+	ClaimRefs       []string `json:"claim_refs,omitempty"`
 	ClaimScope      []string `json:"claim_scope,omitempty"`
 	ValidUntil      string   `json:"valid_until,omitempty"`
 }
@@ -1137,6 +1138,13 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	claimScope = normalizeClaimScope(claimScope)
 
 	decisionFields := a.UnmarshalDecisionFields()
+	claimRefs := measuredDecisionClaimRefs(
+		decisionFields.Claims,
+		input.CriteriaMet,
+		criteriaMetScope,
+		input.CriteriaNotMet,
+		criteriaNotMetScope,
+	)
 	decisionFields.Claims = adjudicateDecisionClaims(
 		decisionFields.Claims,
 		true,
@@ -1204,6 +1212,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
 		FormalityLevel:  2,
+		ClaimRefs:       claimRefs,
 		ClaimScope:      claimScope,
 		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
@@ -1228,9 +1237,26 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	}
 
 	// Verify artifact exists
-	_, err := store.Get(ctx, input.ArtifactRef)
+	artifactItem, err := store.Get(ctx, input.ArtifactRef)
 	if err != nil {
 		return nil, fmt.Errorf("artifact %s not found: %w", input.ArtifactRef, err)
+	}
+	input.ClaimRefs = normalizeClaimRefs(input.ClaimRefs)
+	input.ClaimScope = normalizeClaimScope(input.ClaimScope)
+
+	if artifactItem.Meta.Kind == KindDecisionRecord {
+		claimRefs, err := resolveDecisionEvidenceClaimRefs(artifactItem.UnmarshalDecisionFields().Claims, input.ClaimRefs, input.ClaimScope)
+		if err != nil {
+			return nil, err
+		}
+
+		input.ClaimRefs = claimRefs
+		if len(input.ClaimScope) == 0 {
+			input.ClaimScope = decisionClaimScopeFromRefs(artifactItem.UnmarshalDecisionFields().Claims, input.ClaimRefs)
+		}
+	}
+	if artifactItem.Meta.Kind != KindDecisionRecord && len(input.ClaimRefs) > 0 {
+		return nil, fmt.Errorf("claim_refs require a decision artifact with structured claims")
 	}
 
 	if input.Type == "" {
@@ -1253,7 +1279,8 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		CarrierRef:      input.CarrierRef,
 		CongruenceLevel: input.CongruenceLevel,
 		FormalityLevel:  normalizeFormalityLevel(input.FormalityLevel),
-		ClaimScope:      normalizeClaimScope(input.ClaimScope),
+		ClaimRefs:       input.ClaimRefs,
+		ClaimScope:      input.ClaimScope,
 		ValidUntil:      input.ValidUntil,
 	}
 

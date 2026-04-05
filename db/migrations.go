@@ -293,4 +293,11 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE evidence ADD COLUMN congruence_level INTEGER",
 		},
 	},
+	{
+		Version:     21,
+		Description: "Exact claim refs on persisted artifact evidence",
+		Statements: []string{
+			"ALTER TABLE evidence_items ADD COLUMN claim_refs TEXT DEFAULT '[]'",
+		},
+	},
 }

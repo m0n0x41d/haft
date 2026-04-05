@@ -38,6 +38,7 @@ func setupHaftToolStore(t *testing.T) *artifact.Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			claim_refs TEXT DEFAULT '[]',
 			claim_scope TEXT DEFAULT '[]', valid_until TEXT, created_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
@@ -1488,6 +1489,8 @@ func TestHaftDecisionTool_SchemaIncludesEvidenceAction(t *testing.T) {
 		"evidence_verdict",
 		"carrier_ref",
 		"congruence_level",
+		"claim_refs",
+		"claim_scope",
 	} {
 		if _, ok := properties[key]; !ok {
 			t.Fatalf("schema missing %q evidence field", key)
@@ -1926,6 +1929,13 @@ func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
 		"problem_ref":    fixture.problem.Meta.ID,
 		"selected_title": "gRPC",
 		"why_selected":   "Latency wins inside the compared portfolio.",
+		"predictions": []map[string]any{
+			{
+				"claim":      "First request after warmup stays below 20ms",
+				"observable": "latency",
+				"threshold":  "< 20ms",
+			},
+		},
 	})))
 	if err != nil {
 		t.Fatal(err)
@@ -1940,6 +1950,7 @@ func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
 		"evidence_verdict": "supports",
 		"carrier_ref":      "reports/loadtest.txt",
 		"congruence_level": 2,
+		"claim_refs":       []string{"claim-001"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -1984,5 +1995,11 @@ func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
 	}
 	if item.CongruenceLevel != 2 {
 		t.Fatalf("congruence level = %d, want 2", item.CongruenceLevel)
+	}
+	if got := strings.Join(item.ClaimRefs, ","); got != "claim-001" {
+		t.Fatalf("claim refs = %q, want claim-001", got)
+	}
+	if got := strings.Join(item.ClaimScope, ","); got != "First request after warmup stays below 20ms" {
+		t.Fatalf("claim scope = %q, want derived fallback scope", got)
 	}
 }

@@ -35,6 +35,7 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			claim_refs TEXT DEFAULT '[]',
 			claim_scope TEXT DEFAULT '[]',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
@@ -353,6 +354,7 @@ func TestEvidenceItems(t *testing.T) {
 		Verdict:         "supports",
 		CongruenceLevel: 3,
 		FormalityLevel:  7,
+		ClaimRefs:       []string{"claim-002", "claim-001", "claim-002"},
 		ClaimScope:      []string{"throughput", "latency", "throughput"},
 	}
 	if err := store.AddEvidenceItem(ctx, item, "dec-001"); err != nil {
@@ -374,6 +376,9 @@ func TestEvidenceItems(t *testing.T) {
 	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
 		t.Errorf("claim scope mismatch: got %q", got)
+	}
+	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-002,claim-001" {
+		t.Errorf("claim refs mismatch: got %q", got)
 	}
 }
 
@@ -409,6 +414,9 @@ func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
 	}
 	if len(items[0].ClaimScope) != 0 {
 		t.Fatalf("expected empty claim scope, got %v", items[0].ClaimScope)
+	}
+	if len(items[0].ClaimRefs) != 0 {
+		t.Fatalf("expected empty claim refs, got %v", items[0].ClaimRefs)
 	}
 }
 
@@ -451,6 +459,56 @@ func TestAddEvidenceItem_LegacySchemaWithoutClaimScope(t *testing.T) {
 	}
 	if len(items[0].ClaimScope) != 0 {
 		t.Fatalf("expected empty claim scope, got %v", items[0].ClaimScope)
+	}
+	if len(items[0].ClaimRefs) != 0 {
+		t.Fatalf("expected empty claim refs, got %v", items[0].ClaimRefs)
+	}
+}
+
+func TestAddEvidenceItem_LegacySchemaWithoutClaimRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	if _, err := store.DB().ExecContext(ctx, `
+		DROP TABLE evidence_items;
+		CREATE TABLE evidence_items (
+			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
+			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
+			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			claim_scope TEXT DEFAULT '[]',
+			valid_until TEXT, created_at TEXT NOT NULL
+		)`); err != nil {
+		t.Fatalf("recreate legacy evidence_items: %v", err)
+	}
+
+	store.Create(ctx, &Artifact{Meta: Meta{ID: "dec-legacy-refs", Kind: KindDecisionRecord, Title: "Legacy Refs"}, Body: "d"})
+
+	item := &EvidenceItem{
+		ID:              "evid-legacy-refs",
+		Type:            "measurement",
+		Content:         "legacy insert",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  5,
+		ClaimRefs:       []string{"claim-001"},
+		ClaimScope:      []string{"latency"},
+	}
+	if err := store.AddEvidenceItem(ctx, item, "dec-legacy-refs"); err != nil {
+		t.Fatalf("add evidence item: %v", err)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, "dec-legacy-refs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if len(items[0].ClaimRefs) != 0 {
+		t.Fatalf("expected empty claim refs, got %v", items[0].ClaimRefs)
+	}
+	if got := strings.Join(items[0].ClaimScope, ","); got != "latency" {
+		t.Fatalf("claim scope = %q, want latency", got)
 	}
 }
 

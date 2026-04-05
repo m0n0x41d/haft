@@ -1253,22 +1253,20 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	}
 	input.ClaimRefs = normalizeClaimRefs(input.ClaimRefs)
 	input.ClaimScope = normalizeClaimScope(input.ClaimScope)
-	hasExplicitClaimRefs := len(input.ClaimRefs) > 0
 
 	if artifactItem.Meta.Kind == KindDecisionRecord {
 		decisionClaims := artifactItem.UnmarshalDecisionFields().Claims
-		claimRefs, err := resolveDecisionEvidenceClaimRefs(decisionClaims, input.ClaimRefs, input.ClaimScope)
+		claimRefs, claimScope, err := normalizeDecisionEvidenceBinding(
+			decisionClaims,
+			input.ClaimRefs,
+			input.ClaimScope,
+		)
 		if err != nil {
 			return nil, err
 		}
 
 		input.ClaimRefs = claimRefs
-		if hasExplicitClaimRefs {
-			input.ClaimScope = decisionClaimScopeFromRefs(decisionClaims, input.ClaimRefs)
-		}
-		if len(input.ClaimScope) == 0 {
-			input.ClaimScope = decisionClaimScopeFromRefs(decisionClaims, input.ClaimRefs)
-		}
+		input.ClaimScope = claimScope
 	}
 	if artifactItem.Meta.Kind != KindDecisionRecord && len(input.ClaimRefs) > 0 {
 		return nil, fmt.Errorf("claim_refs require a decision artifact with structured claims")
@@ -1341,6 +1339,13 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		FEff:       0,
 		WeakestF:   0,
 	}
+	artifactItem, artifactErr := store.Get(ctx, artifactID)
+	decisionClaims := []DecisionClaim(nil)
+
+	if artifactErr == nil && artifactItem.Meta.Kind == KindDecisionRecord {
+		decisionClaims = artifactItem.UnmarshalDecisionFields().Claims
+	}
+
 	result.ExpectedScope, result.CoverageKnown = explicitAcceptanceScope(ctx, store, artifactID)
 	result.CoverageGaps = append(result.CoverageGaps, result.ExpectedScope...)
 
@@ -1406,7 +1411,7 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 
 	result.FEff = minFormality
 	result.WeakestF = minFormality
-	result.GEff = computeClaimCoverage(activeItems)
+	result.GEff = computeClaimCoverage(activeItems, decisionClaims)
 	result.REff = minREff
 	if result.CoverageKnown {
 		result.CoverageGaps = differenceScope(result.ExpectedScope, result.GEff)
@@ -1508,12 +1513,26 @@ func normalizeClaimScope(scope []string) []string {
 	return normalized
 }
 
-func computeClaimCoverage(items []EvidenceItem) []string {
+func computeClaimCoverage(items []EvidenceItem, claims []DecisionClaim) []string {
 	scope := make([]string, 0, len(items))
+
 	for _, item := range items {
-		scope = append(scope, item.ClaimScope...)
+		itemScope := evidenceCoverageScope(item, claims)
+		scope = append(scope, itemScope...)
 	}
+
 	return normalizeClaimScope(scope)
+}
+
+func evidenceCoverageScope(item EvidenceItem, claims []DecisionClaim) []string {
+	if len(item.ClaimRefs) > 0 {
+		resolvedScope := decisionClaimScopeFromRefs(claims, item.ClaimRefs)
+		if len(resolvedScope) > 0 {
+			return resolvedScope
+		}
+	}
+
+	return normalizeClaimScope(item.ClaimScope)
 }
 
 func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeCandidates []string) []string {

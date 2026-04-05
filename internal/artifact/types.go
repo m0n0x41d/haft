@@ -476,12 +476,11 @@ const (
 
 // DecisionClaim is the canonical stored runtime state for one decision claim.
 type DecisionClaim struct {
-	ID           string      `json:"id"`
-	Claim        string      `json:"claim"`
-	Observable   string      `json:"observable"`
-	Threshold    string      `json:"threshold"`
-	Status       ClaimStatus `json:"status,omitempty"`
-	EvidenceRefs []string    `json:"evidence_refs,omitempty"`
+	ID         string      `json:"id"`
+	Claim      string      `json:"claim"`
+	Observable string      `json:"observable"`
+	Threshold  string      `json:"threshold"`
+	Status     ClaimStatus `json:"status,omitempty"`
 }
 
 // DecisionPrediction is a compatibility projection of a stored decision claim.

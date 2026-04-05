@@ -102,18 +102,12 @@ func normalizeDecisionClaims(values []DecisionClaim) []DecisionClaim {
 	seenIDs := make(map[string]struct{}, len(values))
 
 	for _, value := range values {
-		evidenceRefs := compactStrings(value.EvidenceRefs)
-		if len(evidenceRefs) == 0 {
-			evidenceRefs = nil
-		}
-
 		claim := DecisionClaim{
-			ID:           strings.TrimSpace(value.ID),
-			Claim:        strings.TrimSpace(value.Claim),
-			Observable:   strings.TrimSpace(value.Observable),
-			Threshold:    strings.TrimSpace(value.Threshold),
-			Status:       normalizeClaimStatus(value.Status),
-			EvidenceRefs: evidenceRefs,
+			ID:         strings.TrimSpace(value.ID),
+			Claim:      strings.TrimSpace(value.Claim),
+			Observable: strings.TrimSpace(value.Observable),
+			Threshold:  strings.TrimSpace(value.Threshold),
+			Status:     normalizeClaimStatus(value.Status),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -233,6 +227,42 @@ func resolveDecisionEvidenceClaimRefs(claims []DecisionClaim, explicitRefs []str
 	}
 
 	return normalizeClaimRefs(resolvedRefs), nil
+}
+
+func normalizeDecisionEvidenceBinding(
+	claims []DecisionClaim,
+	explicitRefs []string,
+	scope []string,
+) ([]string, []string, error) {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	normalizedRefs := normalizeClaimRefs(explicitRefs)
+	normalizedScope := normalizeClaimScope(scope)
+
+	if len(normalizedClaims) == 0 {
+		if len(normalizedRefs) == 0 {
+			return nil, normalizedScope, nil
+		}
+
+		return nil, nil, fmt.Errorf("claim_refs require a decision with structured claims")
+	}
+
+	if len(normalizedRefs) == 0 {
+		resolvedRefs, err := resolveDecisionEvidenceClaimRefs(normalizedClaims, nil, normalizedScope)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return resolvedRefs, normalizedScope, nil
+	}
+
+	validatedRefs, err := resolveDecisionEvidenceClaimRefs(normalizedClaims, normalizedRefs, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	derivedScope := decisionClaimScopeFromRefs(normalizedClaims, validatedRefs)
+
+	return validatedRefs, derivedScope, nil
 }
 
 func decisionClaimScopeFromRefs(claims []DecisionClaim, refs []string) []string {

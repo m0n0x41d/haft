@@ -360,6 +360,9 @@ func TestAttachEvidence_Success(t *testing.T) {
 	if item.Type != "benchmark" {
 		t.Errorf("type = %q", item.Type)
 	}
+	if got := strings.Join(item.ClaimScope, ","); got != "Throughput stays above 100k events/sec" {
+		t.Errorf("returned claim_scope = %q, want canonical scope for explicit claim refs", got)
+	}
 
 	// Verify stored
 	items, _ := store.GetEvidenceItems(ctx, dec.Meta.ID)
@@ -440,14 +443,14 @@ func TestWLNKSummary_UsesCanonicalClaimScopeForExplicitClaimRefs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Throughput evidence only.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimRefs:   []string{"claim-002"},
-		ClaimScope:  []string{"latency", "throughput"},
-	})
+	err = store.AddEvidenceItem(ctx, &EvidenceItem{
+		ID:         "evid-throughput-only",
+		Type:       "benchmark",
+		Content:    "Throughput evidence only.",
+		Verdict:    "supports",
+		ClaimRefs:  []string{"claim-002"},
+		ClaimScope: []string{"latency", "throughput"},
+	}, dec.Meta.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

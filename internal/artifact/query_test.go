@@ -238,3 +238,125 @@ func TestResolveProblemAdoptionRefs_FindsLinkedDecisionAndComparedPortfolio(t *t
 		t.Fatalf("DecisionRef = %q, want %q", refs.DecisionRef, decision.Meta.ID)
 	}
 }
+
+func TestResolveProblemAdoptionRefs_KeepsDecisionOnSelectedPortfolioChain(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+		Context:    "payments",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comparedPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("REST", "chatty payloads", "Keep JSON request-response semantics"),
+			testVariant("gRPC", "tooling overhead", "Adopt binary RPC with generated clients"),
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: comparedPortfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "42ms"},
+				"V2": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"V2"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "V1",
+					DominatedBy: []string{"V2"},
+					Summary:     "Higher latency with no compensating advantage.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "V2", Summary: "Best latency in the compared set."},
+			},
+			SelectedRef:   "V2",
+			PolicyApplied: "Minimize latency within budget.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comparedDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  comparedPortfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "The compared portfolio remains the active decision path.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("WebSocket", "connection lifecycle complexity", "Keep duplex sessions alive"),
+			testVariant("SSE", "server-to-client only", "Use unidirectional event streams"),
+		},
+		NoSteppingStoneRationale: "Both transports are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  otherPortfolio.Meta.ID,
+		SelectedTitle: "WebSocket",
+		WhySelected:   "A newer alternative path should not hijack adoption refs for the compared portfolio.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.DB().ExecContext(ctx, `
+		UPDATE artifacts
+		SET created_at = ?, updated_at = ?
+		WHERE id = ?`,
+		"2026-01-02T00:00:00Z",
+		"2026-01-02T00:00:00Z",
+		comparedDecision.Meta.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.DB().ExecContext(ctx, `
+		UPDATE artifacts
+		SET created_at = ?, updated_at = ?
+		WHERE id = ?`,
+		"2026-01-03T00:00:00Z",
+		"2026-01-03T00:00:00Z",
+		otherDecision.Meta.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refs := ResolveProblemAdoptionRefs(ctx, store, problem.Meta.ID)
+	if refs.PortfolioRef != comparedPortfolio.Meta.ID {
+		t.Fatalf("PortfolioRef = %q, want %q", refs.PortfolioRef, comparedPortfolio.Meta.ID)
+	}
+	if refs.ComparedPortfolioRef != comparedPortfolio.Meta.ID {
+		t.Fatalf("ComparedPortfolioRef = %q, want %q", refs.ComparedPortfolioRef, comparedPortfolio.Meta.ID)
+	}
+	if refs.DecisionRef != comparedDecision.Meta.ID {
+		t.Fatalf("DecisionRef = %q, want %q (not newer %q)", refs.DecisionRef, comparedDecision.Meta.ID, otherDecision.Meta.ID)
+	}
+}

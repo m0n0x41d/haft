@@ -56,17 +56,7 @@ func ResolveProblemAdoptionRefs(ctx context.Context, store ArtifactStore, proble
 		portfolio = selectLatestArtifact(visiblePortfolios, func(*Artifact) bool { return true })
 	}
 
-	decisionCandidates := filterArtifactsByStatus(
-		filterArtifactsByKind(relatedArtifacts, KindDecisionRecord),
-		adoptionIncludesStatus,
-	)
-
-	for _, portfolioCandidate := range portfolioCandidates {
-		portfolioDecisions := relatedArtifactsByTarget(ctx, store, portfolioCandidate.Meta.ID)
-		portfolioDecisions = filterArtifactsByKind(portfolioDecisions, KindDecisionRecord)
-		portfolioDecisions = filterArtifactsByStatus(portfolioDecisions, adoptionIncludesStatus)
-		decisionCandidates = appendUniqueArtifacts(decisionCandidates, portfolioDecisions...)
-	}
+	decisionCandidates := decisionCandidatesForAdoption(ctx, store, targetRef, portfolio)
 
 	decision := selectLatestArtifact(decisionCandidates, func(*Artifact) bool { return true })
 
@@ -82,6 +72,19 @@ func ResolveProblemAdoptionRefs(ctx context.Context, store ArtifactStore, proble
 	}
 
 	return refs
+}
+
+func decisionCandidatesForAdoption(
+	ctx context.Context,
+	store ArtifactStore,
+	problemRef string,
+	portfolio *Artifact,
+) []*Artifact {
+	if portfolio != nil {
+		return decisionsLinkedToTarget(ctx, store, portfolio.Meta.ID)
+	}
+
+	return decisionsLinkedToTarget(ctx, store, problemRef)
 }
 
 // StatusData holds all data needed to render the status dashboard.
@@ -259,6 +262,14 @@ func relatedArtifactsByTarget(ctx context.Context, store ArtifactStore, targetRe
 
 	sortArtifactsNewestFirst(artifacts)
 	return artifacts
+}
+
+func decisionsLinkedToTarget(ctx context.Context, store ArtifactStore, targetRef string) []*Artifact {
+	relatedArtifacts := relatedArtifactsByTarget(ctx, store, targetRef)
+	decisionArtifacts := filterArtifactsByKind(relatedArtifacts, KindDecisionRecord)
+	decisionArtifacts = filterArtifactsByStatus(decisionArtifacts, adoptionIncludesStatus)
+
+	return decisionArtifacts
 }
 
 func filterArtifactsByKind(artifacts []*Artifact, kind Kind) []*Artifact {

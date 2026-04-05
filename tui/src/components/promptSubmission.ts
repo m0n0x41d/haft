@@ -86,6 +86,14 @@ export function shouldResumeQueuedReplayAfterPickerCancel(
   return command === "/help" || command === "/model" || command === "/resume"
 }
 
+export function shouldResumeQueuedReplayAfterCommandResolution(
+  text: string,
+): boolean {
+  const command = leadingSlashCommand(text)
+
+  return command === "/compact"
+}
+
 export function shiftPromptSubmissions(
   submissions: readonly PromptSubmission[],
 ): ShiftPromptSubmissionsResult {

@@ -7,6 +7,7 @@ import {
   leadingSlashCommand,
   queuedPromptReplayDisposition,
   restoreQueuedSubmission,
+  shouldResumeQueuedReplayAfterCommandResolution,
   shouldResumeQueuedReplayAfterPickerCancel,
   shiftPromptSubmissions,
   submissionTexts,
@@ -88,6 +89,14 @@ test("marks queued interactive pickers for replay-on-cancel continuation", () =>
   assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/resume"), true)
   assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/compact"), false)
   assert.equal(shouldResumeQueuedReplayAfterPickerCancel("real prompt"), false)
+})
+
+test("marks queued compact for replay-on-resolution continuation", () => {
+  assert.equal(shouldResumeQueuedReplayAfterCommandResolution("/compact"), true)
+  assert.equal(shouldResumeQueuedReplayAfterCommandResolution("/help"), false)
+  assert.equal(shouldResumeQueuedReplayAfterCommandResolution("/model"), false)
+  assert.equal(shouldResumeQueuedReplayAfterCommandResolution("/resume"), false)
+  assert.equal(shouldResumeQueuedReplayAfterCommandResolution("real prompt"), false)
 })
 
 test("replays queued help alone and leaves later prompts pending", () => {

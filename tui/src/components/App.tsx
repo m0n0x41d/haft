@@ -31,6 +31,7 @@ import {
   drainPromptSubmissions,
   leadingSlashCommand,
   restoreQueuedSubmission,
+  shouldResumeQueuedReplayAfterCommandResolution,
   shouldResumeQueuedReplayAfterPickerCancel,
   submissionTexts,
   type PromptSubmission,
@@ -356,6 +357,14 @@ export function App({ client, inputEvents }: AppProps) {
     fromQueuedReplay: boolean,
   ): "unhandled" | "continue" | "pause" => {
     const cmd = leadingSlashCommand(text)
+    const shouldResumeOnCancel =
+      fromQueuedReplay &&
+      shouldResumeQueuedReplayAfterPickerCancel(text)
+    const shouldResumeOnResolution =
+      fromQueuedReplay &&
+      shouldResumeQueuedReplayAfterCommandResolution(text)
+
+    resumeQueuedOnPickerCancelRef.current = shouldResumeOnCancel
 
     if (!cmd) {
       return "unhandled"
@@ -369,15 +378,17 @@ export function App({ client, inputEvents }: AppProps) {
         openSessionPicker()
         return "pause"
       case "/compact":
-        client.request("compact", {}).then((r: any) => {
+        Promise.resolve()
+          .then(() => client.request("compact", {}))
+          .then((r: any) => {
           dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
-          if (fromQueuedReplay) {
+          if (shouldResumeOnResolution) {
             resumeQueuedMessages()
           }
         }).catch((e: Error) => {
           dispatch({ type: "error", message: e.message })
 
-          if (fromQueuedReplay) {
+          if (shouldResumeOnResolution) {
             resumeQueuedMessages()
           }
         })
@@ -395,16 +406,11 @@ export function App({ client, inputEvents }: AppProps) {
     const commandResult = handleSlashCommand(submission.text, true)
 
     if (commandResult === "continue") {
-      resumeQueuedOnPickerCancelRef.current = false
       return false
     }
     if (commandResult === "pause") {
-      resumeQueuedOnPickerCancelRef.current =
-        shouldResumeQueuedReplayAfterPickerCancel(submission.text)
       return true
     }
-
-    resumeQueuedOnPickerCancelRef.current = false
     sendSubmission(submission)
     return true
   }, [handleSlashCommand, sendSubmission])

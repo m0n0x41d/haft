@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -56,8 +57,8 @@ func TestSearchSpecWithOptions_TreeModeReturnsLeafBeforeAncestors(t *testing.T) 
 	if results[0].Tier != SpecSearchTierDrillDown {
 		t.Fatalf("expected drilldown tier, got %#v", results[0])
 	}
-	if results[1].Reason != "tree drill-down ancestor of A.6.B" {
-		t.Fatalf("unexpected ancestor reason %#v", results[1])
+	if results[1].PatternID != "A.6" {
+		t.Fatalf("expected parent section in second slot, got %#v", results[1])
 	}
 }
 
@@ -101,18 +102,79 @@ func TestSearchSpecWithOptions_DrillDownTierFilterKeepsOnlyExperimentalHits(t *t
 	}
 }
 
-func TestSearchSpec_TreeDrillDownGoldenQueriesOutperformBaseline(t *testing.T) {
-	cases := loadTreeDrillDownGoldenCases(t)
+func TestSearchSpec_TreeModeGoldenQueriesBeatBaselineOnFullCorpus(t *testing.T) {
+	cases := loadSearchGoldenCases(t)
 	routes := loadGoldenRoutes(t)
-	patternIDs := collectRoutePatternIDs(routes)
-	addTreeDrillDownPatternIDs(patternIDs, cases)
-
-	chunks := loadGoldenSpecChunksForPatternIDs(t, patternIDs)
+	chunks := loadGoldenSpecChunks(t)
 	_, db, cleanup := buildIndexWithChunksAndRoutes(t, chunks, routes, false)
 	defer cleanup()
 
-	baselineHitCount := 0
-	treeHitCount := 0
+	policy := treeGoldenEvaluationPolicy{}
+	baseline := goldenRetrievalMetrics{Name: "deterministic", Total: len(cases)}
+	tree := goldenRetrievalMetrics{Name: "tree", Total: len(cases)}
+	baselineHierarchy := 0
+	treeHierarchy := 0
+
+	for _, test := range cases {
+		baselineResults, err := SearchSpecWithOptions(db, test.Query, SpecSearchOptions{
+			Limit: policy.limit(test),
+			Tier:  test.SearchTier,
+		})
+		if err != nil {
+			t.Fatalf("deterministic search for %q failed: %v", test.Query, err)
+		}
+
+		treeResults, err := SearchSpecWithOptions(db, test.Query, SpecSearchOptions{
+			Limit: policy.limit(test),
+			Tier:  test.SearchTier,
+			Mode:  SpecSearchModeTree,
+		})
+		if err != nil {
+			t.Fatalf("tree search for %q failed: %v", test.Query, err)
+		}
+
+		topBaseline := truncateGoldenResults(baselineResults, policy.limit(test))
+		topTree := truncateGoldenResults(treeResults, policy.limit(test))
+		baselineHits := topGoldenHits(topBaseline, test.ExpectedPatternIDs)
+		treeHits := topGoldenHits(topTree, test.ExpectedPatternIDs)
+
+		baseline.TotalHits += len(baselineHits)
+		tree.TotalHits += len(treeHits)
+		baselineHierarchy += countGoldenHierarchyLinks(topBaseline)
+		treeHierarchy += countGoldenHierarchyLinks(topTree)
+
+		if len(baselineHits) >= policy.minimumHits(test) {
+			baseline.Successful++
+		} else {
+			baseline.Failures = append(baseline.Failures, test.Name+" -> "+formatGoldenResults(topBaseline))
+		}
+		if len(treeHits) >= policy.minimumHits(test) {
+			tree.Successful++
+		} else {
+			tree.Failures = append(tree.Failures, test.Name+" -> "+formatGoldenResults(topTree))
+		}
+	}
+
+	t.Logf("deterministic golden coverage: %d/%d cases, %d total expected hits, %d hierarchy links", baseline.Successful, baseline.Total, baseline.TotalHits, baselineHierarchy)
+	t.Logf("tree golden coverage: %d/%d cases, %d total expected hits, %d hierarchy links", tree.Successful, tree.Total, tree.TotalHits, treeHierarchy)
+
+	if baseline.Successful != len(cases) {
+		t.Fatalf("deterministic comparison harness regressed: %s", baseline.failureSummary())
+	}
+	if tree.Successful != len(cases) {
+		t.Fatalf("tree drill-down prototype missed curated cases: %s", tree.failureSummary())
+	}
+	if treeHierarchy <= baselineHierarchy {
+		t.Fatalf("tree drill-down did not beat baseline on hierarchy retention: baseline=%d tree=%d", baselineHierarchy, treeHierarchy)
+	}
+}
+
+func TestSearchSpec_TreeDrillDownSupplementalPathQueries(t *testing.T) {
+	cases := loadTreeDrillDownGoldenCases(t)
+	routes := loadGoldenRoutes(t)
+	chunks := loadGoldenSpecChunks(t)
+	_, db, cleanup := buildIndexWithChunksAndRoutes(t, chunks, routes, false)
+	defer cleanup()
 
 	for _, test := range cases {
 		test := test
@@ -135,14 +197,18 @@ func TestSearchSpec_TreeDrillDownGoldenQueriesOutperformBaseline(t *testing.T) {
 			baselineHits := topGoldenHits(truncateGoldenResults(baselineResults, test.TopN), test.ExpectedPatternIDs)
 			treeHits := topGoldenHits(truncateGoldenResults(treeResults, test.TopN), test.ExpectedPatternIDs)
 
-			baselineHitCount += len(baselineHits)
-			treeHitCount += len(treeHits)
-
 			if len(treeHits) == 0 {
 				t.Fatalf(
 					"tree search lost all expected path hits for %v; got %s",
 					test.ExpectedPatternIDs,
 					formatGoldenResults(treeResults),
+				)
+			}
+			if len(baselineHits) == 0 {
+				t.Fatalf(
+					"baseline search unexpectedly lost all expected path hits for %v; got %s",
+					test.ExpectedPatternIDs,
+					formatGoldenResults(baselineResults),
 				)
 			}
 			if !hasGoldenHitWithTier(treeResults, SpecSearchTierDrillDown) {
@@ -157,10 +223,6 @@ func TestSearchSpec_TreeDrillDownGoldenQueriesOutperformBaseline(t *testing.T) {
 				)
 			}
 		})
-	}
-
-	if treeHitCount <= baselineHitCount {
-		t.Fatalf("tree drill-down did not outperform baseline: baseline=%d tree=%d", baselineHitCount, treeHitCount)
 	}
 }
 
@@ -178,10 +240,58 @@ func loadTreeDrillDownGoldenCases(t *testing.T) []treeDrillDownGoldenCase {
 	return cases
 }
 
-func addTreeDrillDownPatternIDs(patternIDs map[string]struct{}, cases []treeDrillDownGoldenCase) {
-	for _, test := range cases {
-		for _, patternID := range test.ExpectedPatternIDs {
-			patternIDs[patternID] = struct{}{}
+type treeGoldenEvaluationPolicy struct{}
+
+func (treeGoldenEvaluationPolicy) limit(test searchGoldenCase) int {
+	if test.ExpectedTier == SpecSearchTierPattern {
+		return 1
+	}
+	if test.TopN > 5 {
+		return test.TopN
+	}
+	return 5
+}
+
+func (treeGoldenEvaluationPolicy) minimumHits(test searchGoldenCase) int {
+	return goldenMinimumHits(test)
+}
+
+func countGoldenHierarchyLinks(results []SpecSearchResult) int {
+	patternIDs := make([]string, 0, len(results))
+	links := 0
+	for _, result := range results {
+		patternID := normalizePatternID(result.PatternID)
+		if patternID == "" {
+			continue
 		}
+		patternIDs = append(patternIDs, patternID)
+	}
+
+	for _, childPatternID := range patternIDs {
+		for _, ancestorPatternID := range patternIDs {
+			if isPatternAncestor(ancestorPatternID, childPatternID) {
+				links++
+				break
+			}
+		}
+	}
+	return links
+}
+
+func isPatternAncestor(ancestorPatternID string, childPatternID string) bool {
+	if ancestorPatternID == "" || childPatternID == "" || ancestorPatternID == childPatternID {
+		return false
+	}
+	if !strings.HasPrefix(childPatternID, ancestorPatternID) {
+		return false
+	}
+	if len(childPatternID) <= len(ancestorPatternID) {
+		return false
+	}
+	switch childPatternID[len(ancestorPatternID)] {
+	case '.', ':':
+		return true
+	default:
+		return false
 	}
 }

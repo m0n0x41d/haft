@@ -549,6 +549,7 @@ func buildFPFSearchFunc() tools.FPFSearchFunc {
 			Query: request.Query,
 			Limit: request.Limit,
 			Full:  request.Full,
+			Mode:  request.Mode,
 		})
 		if err != nil {
 			return "", err

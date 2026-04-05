@@ -290,6 +290,28 @@ func TestHaftQueryTool_FPFPassesOptionalSearchControls(t *testing.T) {
 	}
 }
 
+func TestHaftQueryTool_FPFPassesExperimentalMode(t *testing.T) {
+	store := setupHaftToolStore(t)
+	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
+		if request.Mode != fpf.SpecSearchModeTree {
+			t.Fatalf("unexpected mode %q", request.Mode)
+		}
+		return "### A.6.B — Boundary Norm Square\ntier: drilldown · tree drill-down leaf A.6.B\n", nil
+	})
+
+	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
+		"action": "fpf",
+		"query":  "boundary deontics",
+		"mode":   fpf.SpecSearchModeTree,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.DisplayText, "drilldown") {
+		t.Fatalf("unexpected result: %s", result.DisplayText)
+	}
+}
+
 func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 	tool := NewHaftQueryTool(fixture.store, nil)

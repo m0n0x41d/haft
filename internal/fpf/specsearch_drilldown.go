@@ -241,11 +241,23 @@ func buildDrillDownResults(branches []drillDownBranch, limit int) []SpecSearchRe
 
 	results := make([]SpecSearchResult, 0, limit)
 	seen := make(map[string]struct{}, limit)
+	maxDepth := 0
 	for _, branch := range branches {
-		for index, section := range branch.Path {
+		if len(branch.Path) > maxDepth {
+			maxDepth = len(branch.Path)
+		}
+	}
+
+	for depth := 0; depth < maxDepth; depth++ {
+		for _, branch := range branches {
 			if len(results) >= limit {
 				return results
 			}
+			if depth >= len(branch.Path) {
+				continue
+			}
+
+			section := branch.Path[depth]
 			if _, ok := seen[section.PatternID]; ok {
 				continue
 			}
@@ -258,7 +270,7 @@ func buildDrillDownResults(branches []drillDownBranch, limit int) []SpecSearchRe
 				Snippet:   firstNonEmpty(section.Summary, section.Heading),
 				Rank:      -750 + float64(len(results)),
 				Tier:      SpecSearchTierDrillDown,
-				Reason:    formatDrillDownReason(section, branch.LeafPatternID, index),
+				Reason:    formatDrillDownReason(section, branch.LeafPatternID, depth),
 			})
 		}
 	}

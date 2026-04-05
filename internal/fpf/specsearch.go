@@ -751,31 +751,15 @@ func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, er
 }
 
 func classifyRoute(db *sql.DB, query string) (*Route, error) {
-	rows, err := db.Query(`SELECT route_id, title, description, matchers_json, core_json, chain_json FROM routes`)
+	routes, err := loadIndexedRoutes(db)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 
 	queryLower := strings.ToLower(query)
 	bestScore := 0
 	var best Route
-	for rows.Next() {
-		var route Route
-		var matchersJSON, coreJSON, chainJSON string
-		if err := rows.Scan(&route.ID, &route.Title, &route.Description, &matchersJSON, &coreJSON, &chainJSON); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(matchersJSON), &route.Matchers); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(coreJSON), &route.Core); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(chainJSON), &route.Chain); err != nil {
-			return nil, err
-		}
-
+	for _, route := range routes {
 		score := 0
 		for _, matcher := range route.Matchers {
 			if strings.Contains(queryLower, strings.ToLower(matcher)) {
@@ -791,6 +775,37 @@ func classifyRoute(db *sql.DB, query string) (*Route, error) {
 		return nil, nil
 	}
 	return &best, nil
+}
+
+func loadIndexedRoutes(db *sql.DB) ([]Route, error) {
+	rows, err := db.Query(`SELECT route_id, title, description, matchers_json, core_json, chain_json FROM routes`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	routes := make([]Route, 0)
+	for rows.Next() {
+		var route Route
+		var matchersJSON string
+		var coreJSON string
+		var chainJSON string
+		if err := rows.Scan(&route.ID, &route.Title, &route.Description, &matchersJSON, &coreJSON, &chainJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(matchersJSON), &route.Matchers); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(coreJSON), &route.Core); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(chainJSON), &route.Chain); err != nil {
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+
+	return routes, rows.Err()
 }
 
 // GetSpecSection returns the complete body of a section by heading or pattern id.

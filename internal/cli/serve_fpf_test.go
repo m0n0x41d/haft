@@ -45,6 +45,32 @@ func TestHandleQuintQuery_FPFSupportsExplainFullAndLimit(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuery_FPFSupportsExperimentalTreeMode(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintQuery(context.Background(), store, t.TempDir(), map[string]any{
+		"action":  "fpf",
+		"query":   "boundary deontics",
+		"limit":   float64(3),
+		"mode":    fpf.SpecSearchModeTree,
+		"explain": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(tree mode) returned error: %v", err)
+	}
+	if !strings.Contains(result, "tier: drilldown · tree drill-down leaf A.6.B") {
+		t.Fatalf("expected drilldown explain metadata in output, got:\n%s", result)
+	}
+	if !strings.Contains(result, "### 2. A.6 - Signature Stack & Boundary Discipline") {
+		t.Fatalf("expected ancestor path output, got:\n%s", result)
+	}
+}
+
 func TestHandleQuintQuery_FPFQueryOnlyStaysBackwardCompatible(t *testing.T) {
 	dbPath := buildFPFSearchTestDB(t)
 

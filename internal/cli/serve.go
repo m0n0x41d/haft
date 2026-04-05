@@ -978,10 +978,12 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		}
 		full, _ := args["full"].(bool)
 		explain, _ := args["explain"].(bool)
+		mode, _ := args["mode"].(string)
 		retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
 			Query: query,
 			Limit: limit,
 			Full:  full,
+			Mode:  mode,
 		})
 		if err != nil {
 			return "", fmt.Errorf("fpf search: %w", err)

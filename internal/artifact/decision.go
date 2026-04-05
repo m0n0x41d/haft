@@ -1127,6 +1127,30 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		hasBaseline = false
 	}
 
+	scopeCandidates := measurementScopeCandidates(ctx, store, a)
+	criteriaMetScope := measuredCriteriaScope(input.CriteriaMet, nil, scopeCandidates)
+	criteriaNotMetScope := measuredCriteriaScope(nil, input.CriteriaNotMet, scopeCandidates)
+	claimScope := make([]string, 0, len(criteriaMetScope)+len(criteriaNotMetScope))
+	claimScope = append(claimScope, criteriaMetScope...)
+	claimScope = append(claimScope, criteriaNotMetScope...)
+	claimScope = normalizeClaimScope(claimScope)
+
+	decisionFields := a.UnmarshalDecisionFields()
+	decisionFields.Predictions = adjudicateDecisionPredictions(
+		decisionFields.Predictions,
+		true,
+		input.CriteriaMet,
+		criteriaMetScope,
+		input.CriteriaNotMet,
+		criteriaNotMetScope,
+	)
+
+	sd, err := json.Marshal(decisionFields)
+	if err != nil {
+		return nil, fmt.Errorf("marshal decision fields: %w", err)
+	}
+	a.StructuredData = string(sd)
+
 	// Append impact measurement section to DRR body
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Impact Measurement (%s)\n\n", time.Now().UTC().Format("2006-01-02")))
@@ -1171,7 +1195,6 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	}
 
 	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
-	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	if err := store.AddEvidenceItem(ctx, &EvidenceItem{
 		ID:              evidID,
 		Type:            "measurement",
@@ -1179,7 +1202,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		Verdict:         input.Verdict,
 		CongruenceLevel: measureCL,
 		FormalityLevel:  2,
-		ClaimScope:      measuredCriteriaScope(input.CriteriaMet, input.CriteriaNotMet, scopeCandidates),
+		ClaimScope:      claimScope,
 		ValidUntil:      a.Meta.ValidUntil,
 	}, input.DecisionRef); err != nil {
 		return nil, fmt.Errorf("record evidence: %w", err)

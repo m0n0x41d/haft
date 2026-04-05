@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,154 @@ func TestMeasure_MissingRequired(t *testing.T) {
 	}
 }
 
+func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Predictable operational envelope",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Both latency and throughput checks passed under the rollout load test.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 42ms)",
+			"Throughput stays above 100k events/sec (observed: 120k events/sec)",
+		},
+		Verdict: "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusSupported,
+		ClaimStatusSupported,
+	})
+}
+
+func TestMeasure_UpdatesPredictionStatusToMixedResults(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Predictable operational envelope",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+			{
+				Claim:      "Producer error rate stays below 0.1%",
+				Observable: "producer error rate",
+				Threshold:  "< 0.1%",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Latency stayed within threshold, but throughput regressed during the migration window.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 44ms)",
+		},
+		CriteriaNotMet: []string{
+			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+		},
+		Verdict: "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusSupported,
+		ClaimStatusRefuted,
+		ClaimStatusInconclusive,
+	})
+}
+
+func TestMeasure_UpdatesPredictionStatusToInconclusiveWhenNothingMatches(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Predictable operational envelope",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "The deployment checklist completed, but this run did not observe latency.",
+		CriteriaMet: []string{
+			"Deployment checklist completed",
+		},
+		Verdict: "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusInconclusive,
+	})
+}
+
 func TestAttachEvidence_Success(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -131,6 +280,21 @@ func TestAttachEvidence_Success(t *testing.T) {
 	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
 		t.Errorf("stored claim_scope = %q, want deduplicated scope", got)
+	}
+}
+
+func assertDecisionPredictionStatuses(t *testing.T, decision *Artifact, want []ClaimStatus) {
+	t.Helper()
+
+	fields := decision.UnmarshalDecisionFields()
+	got := make([]ClaimStatus, 0, len(fields.Predictions))
+
+	for _, prediction := range fields.Predictions {
+		got = append(got, prediction.Status)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("prediction statuses = %#v, want %#v", got, want)
 	}
 }
 

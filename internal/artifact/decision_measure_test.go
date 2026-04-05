@@ -255,7 +255,7 @@ func TestMeasure_PreservesUnverifiedPredictionStatusWhenNothingMatches(t *testin
 	})
 }
 
-func TestMeasure_PreservesPreviouslySupportedPredictionsWhenLaterMeasurementDoesNotTouchThem(t *testing.T) {
+func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEvidence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -311,9 +311,29 @@ func TestMeasure_PreservesPreviouslySupportedPredictionsWhenLaterMeasurementDoes
 	}
 
 	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
-		ClaimStatusSupported,
+		ClaimStatusUnverified,
 		ClaimStatusRefuted,
 	})
+
+	items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 measurement evidence items, got %d", len(items))
+	}
+	verdictByClaimRefs := make(map[string]string, len(items))
+
+	for _, item := range items {
+		verdictByClaimRefs[strings.Join(item.ClaimRefs, ",")] = item.Verdict
+	}
+
+	if got := verdictByClaimRefs["claim-002"]; got == "superseded" {
+		t.Fatalf("latest measurement for claim-002 should stay active, got verdict %q", got)
+	}
+	if got := verdictByClaimRefs["claim-001,claim-002"]; got != "superseded" {
+		t.Fatalf("prior overlapping measurement should be superseded, got verdict %q", got)
+	}
 }
 
 func TestAttachEvidence_Success(t *testing.T) {

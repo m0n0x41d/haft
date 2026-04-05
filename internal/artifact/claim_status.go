@@ -377,6 +377,7 @@ func adjudicateDecisionClaims(
 		_, measuredByRef := measuredRefSet[claim.ID]
 		measurementRecorded := measuredByRef || metMatches[index] || notMetMatches[index]
 		if !measurementRecorded {
+			claim.Status = ClaimStatusUnverified
 			updated = append(updated, claim)
 			continue
 		}

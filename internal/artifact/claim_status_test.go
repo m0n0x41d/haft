@@ -99,7 +99,7 @@ func TestClaimStatusFromPredictionMeasureMatch(t *testing.T) {
 	}
 }
 
-func TestAdjudicateDecisionClaims_PreservesUnmatchedStatus(t *testing.T) {
+func TestAdjudicateDecisionClaims_ResetsUnmatchedStatusToUnverified(t *testing.T) {
 	claims := []DecisionClaim{
 		{
 			ID:         "claim-001",
@@ -132,7 +132,7 @@ func TestAdjudicateDecisionClaims_PreservesUnmatchedStatus(t *testing.T) {
 			Claim:      "Latency stays under 50ms",
 			Observable: "publish latency p99",
 			Threshold:  "< 50ms",
-			Status:     ClaimStatusSupported,
+			Status:     ClaimStatusUnverified,
 		},
 		{
 			ID:         "claim-002",

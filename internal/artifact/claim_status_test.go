@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestNewDecisionPredictions_InitializesCanonicalRuntimeState(t *testing.T) {
+func TestNewDecisionClaims_InitializesCanonicalRuntimeState(t *testing.T) {
 	inputs := []PredictionInput{
 		{
 			Claim:      "  Latency stays under 50ms  ",
@@ -15,8 +15,9 @@ func TestNewDecisionPredictions_InitializesCanonicalRuntimeState(t *testing.T) {
 		{},
 	}
 
-	got := newDecisionPredictions(inputs)
-	want := []DecisionPrediction{{
+	got := newDecisionClaims(inputs)
+	want := []DecisionClaim{{
+		ID:         "claim-001",
 		Claim:      "Latency stays under 50ms",
 		Observable: "publish latency p99",
 		Threshold:  "< 50ms",
@@ -24,7 +25,19 @@ func TestNewDecisionPredictions_InitializesCanonicalRuntimeState(t *testing.T) {
 	}}
 
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("newDecisionPredictions() = %#v, want %#v", got, want)
+		t.Fatalf("newDecisionClaims() = %#v, want %#v", got, want)
+	}
+
+	compatibility := decisionPredictionsFromClaims(got)
+	wantCompatibility := []DecisionPrediction{{
+		Claim:      "Latency stays under 50ms",
+		Observable: "publish latency p99",
+		Threshold:  "< 50ms",
+		Status:     ClaimStatusUnverified,
+	}}
+
+	if !reflect.DeepEqual(compatibility, wantCompatibility) {
+		t.Fatalf("decisionPredictionsFromClaims() = %#v, want %#v", compatibility, wantCompatibility)
 	}
 }
 

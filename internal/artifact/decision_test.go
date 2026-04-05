@@ -434,9 +434,19 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 
 	fields := decision.UnmarshalDecisionFields()
+	wantClaims := newDecisionClaims(input.Predictions)
 	wantPredictions := newDecisionPredictions(input.Predictions)
+	if !reflect.DeepEqual(fields.Claims, wantClaims) {
+		t.Fatalf("claims in structured state = %#v, want %#v", fields.Claims, wantClaims)
+	}
 	if !reflect.DeepEqual(fields.Predictions, wantPredictions) {
 		t.Fatalf("predictions in structured state = %#v, want %#v", fields.Predictions, wantPredictions)
+	}
+	if !strings.Contains(decision.StructuredData, "\"claims\"") {
+		t.Fatalf("decision structured data should persist canonical claims:\n%s", decision.StructuredData)
+	}
+	if strings.Contains(decision.StructuredData, "\"predictions\"") {
+		t.Fatalf("decision structured data should not persist legacy predictions:\n%s", decision.StructuredData)
 	}
 
 	if !strings.Contains(decision.Body, "**Predictions:**") {
@@ -455,6 +465,9 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 
 	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(reloadedFields.Claims, wantClaims) {
+		t.Fatalf("reloaded claims = %#v, want %#v", reloadedFields.Claims, wantClaims)
+	}
 	if !reflect.DeepEqual(reloadedFields.Predictions, wantPredictions) {
 		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, wantPredictions)
 	}
@@ -473,6 +486,9 @@ func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) 
 	}
 
 	fields := decision.UnmarshalDecisionFields()
+	if len(fields.Claims) != 0 {
+		t.Fatalf("expected no structured claims, got %#v", fields.Claims)
+	}
 	if len(fields.Predictions) != 0 {
 		t.Fatalf("expected no structured predictions, got %#v", fields.Predictions)
 	}
@@ -512,6 +528,9 @@ func TestDecide_PredictionsRemainOptionalAndLegacyDecisionsReload(t *testing.T) 
 	}
 
 	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if len(reloadedFields.Claims) != 0 {
+		t.Fatalf("legacy decision should decode with no claims, got %#v", reloadedFields.Claims)
+	}
 	if len(reloadedFields.Predictions) != 0 {
 		t.Fatalf("legacy decision should decode with no predictions, got %#v", reloadedFields.Predictions)
 	}
@@ -542,6 +561,13 @@ func TestArtifact_UnmarshalDecisionFields_DefaultsLegacyPredictionStatus(t *test
 
 	fields := decision.UnmarshalDecisionFields()
 
+	wantClaims := []DecisionClaim{{
+		ID:         "claim-001",
+		Claim:      "Latency stays under 50ms",
+		Observable: "publish latency p99",
+		Threshold:  "< 50ms",
+		Status:     ClaimStatusUnverified,
+	}}
 	wantPredictions := []DecisionPrediction{{
 		Claim:      "Latency stays under 50ms",
 		Observable: "publish latency p99",
@@ -549,6 +575,9 @@ func TestArtifact_UnmarshalDecisionFields_DefaultsLegacyPredictionStatus(t *test
 		Status:     ClaimStatusUnverified,
 	}}
 
+	if !reflect.DeepEqual(fields.Claims, wantClaims) {
+		t.Fatalf("legacy claims = %#v, want %#v", fields.Claims, wantClaims)
+	}
 	if !reflect.DeepEqual(fields.Predictions, wantPredictions) {
 		t.Fatalf("legacy predictions = %#v, want %#v", fields.Predictions, wantPredictions)
 	}

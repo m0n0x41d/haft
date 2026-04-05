@@ -338,7 +338,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		CounterArgument:      input.CounterArgument,
 		WeakestLink:          input.WeakestLink,
 		WhyNotOthers:         input.WhyNotOthers,
-		Predictions:          newDecisionPredictions(input.Predictions),
+		Claims:               newDecisionClaims(input.Predictions),
 		PreConditions:        input.PreConditions,
 		RollbackTriggers:     rollbackTriggers,
 		RollbackSteps:        rollbackSteps,
@@ -350,6 +350,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		RefreshTriggers:      input.RefreshTriggers,
 		FirstModuleCoverage:  input.FirstModuleCoverage,
 	}
+	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
 	if len(input.Invariants) > 0 {
 		body.WriteString("\n**Invariants:**\n")
@@ -410,16 +411,16 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n")
 	}
 
-	if len(decisionFields.Predictions) > 0 {
+	if len(decisionFields.Claims) > 0 {
 		body.WriteString("**Predictions:**\n")
 		body.WriteString("| Claim | Observable | Threshold |\n")
 		body.WriteString("|-------|------------|-----------|\n")
-		for _, prediction := range decisionFields.Predictions {
+		for _, claim := range decisionFields.Claims {
 			body.WriteString(fmt.Sprintf(
 				"| %s | %s | %s |\n",
-				escapeMarkdownTableCell(prediction.Claim),
-				escapeMarkdownTableCell(prediction.Observable),
-				escapeMarkdownTableCell(prediction.Threshold),
+				escapeMarkdownTableCell(claim.Claim),
+				escapeMarkdownTableCell(claim.Observable),
+				escapeMarkdownTableCell(claim.Threshold),
 			))
 		}
 		body.WriteString("\n")
@@ -1136,14 +1137,15 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	claimScope = normalizeClaimScope(claimScope)
 
 	decisionFields := a.UnmarshalDecisionFields()
-	decisionFields.Predictions = adjudicateDecisionPredictions(
-		decisionFields.Predictions,
+	decisionFields.Claims = adjudicateDecisionClaims(
+		decisionFields.Claims,
 		true,
 		input.CriteriaMet,
 		criteriaMetScope,
 		input.CriteriaNotMet,
 		criteriaNotMetScope,
 	)
+	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
 	sd, err := json.Marshal(decisionFields)
 	if err != nil {

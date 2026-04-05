@@ -244,6 +244,7 @@ type DecisionFields struct {
 	CounterArgument      string               `json:"counterargument,omitempty"`
 	WeakestLink          string               `json:"weakest_link,omitempty"`
 	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
+	Claims               []DecisionClaim      `json:"claims,omitempty"`
 	Predictions          []DecisionPrediction `json:"predictions,omitempty"`
 	PreConditions        []string             `json:"pre_conditions,omitempty"`
 	RollbackTriggers     []string             `json:"rollback_triggers,omitempty"`
@@ -256,6 +257,39 @@ type DecisionFields struct {
 	RefreshTriggers      []string             `json:"refresh_triggers,omitempty"`
 	FirstModuleCoverage  bool                 `json:"first_module_coverage,omitempty"`
 	DriftManifests       []DriftScopeManifest `json:"drift_manifests,omitempty"`
+}
+
+type decisionFieldsJSON DecisionFields
+
+func (df DecisionFields) MarshalJSON() ([]byte, error) {
+	encoded := decisionFieldsJSON(df)
+	encoded.Claims = normalizeDecisionClaims(encoded.Claims)
+
+	if len(encoded.Claims) == 0 {
+		encoded.Claims = decisionClaimsFromPredictions(encoded.Predictions)
+	}
+
+	encoded.Predictions = nil
+
+	return json.Marshal(encoded)
+}
+
+func (df *DecisionFields) UnmarshalJSON(data []byte) error {
+	decoded := decisionFieldsJSON{}
+
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	decoded.Claims = normalizeDecisionClaims(decoded.Claims)
+	if len(decoded.Claims) == 0 {
+		decoded.Claims = decisionClaimsFromPredictions(decoded.Predictions)
+	}
+
+	decoded.Predictions = decisionPredictionsFromClaims(decoded.Claims)
+	*df = DecisionFields(decoded)
+
+	return nil
 }
 
 // DriftScopeManifest stores the baseline file set for one governed scope.
@@ -282,7 +316,11 @@ func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
 	}
 	var df DecisionFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &df)
-	df.Predictions = normalizeDecisionPredictions(df.Predictions)
+	df.Claims = normalizeDecisionClaims(df.Claims)
+	if len(df.Claims) == 0 {
+		df.Claims = decisionClaimsFromPredictions(df.Predictions)
+	}
+	df.Predictions = decisionPredictionsFromClaims(df.Claims)
 	return df
 }
 
@@ -436,7 +474,17 @@ const (
 	ClaimStatusInconclusive ClaimStatus = "inconclusive"
 )
 
-// DecisionPrediction is the canonical stored runtime state for one decision prediction.
+// DecisionClaim is the canonical stored runtime state for one decision claim.
+type DecisionClaim struct {
+	ID           string      `json:"id"`
+	Claim        string      `json:"claim"`
+	Observable   string      `json:"observable"`
+	Threshold    string      `json:"threshold"`
+	Status       ClaimStatus `json:"status,omitempty"`
+	EvidenceRefs []string    `json:"evidence_refs,omitempty"`
+}
+
+// DecisionPrediction is a compatibility projection of a stored decision claim.
 type DecisionPrediction struct {
 	Claim      string      `json:"claim"`
 	Observable string      `json:"observable"`

@@ -1,6 +1,9 @@
 package artifact
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 var validClaimStatuses = map[ClaimStatus]struct{}{
 	ClaimStatusUnverified:   {},
@@ -27,52 +30,129 @@ func normalizeClaimStatus(value ClaimStatus) ClaimStatus {
 	return ClaimStatusUnverified
 }
 
-func newDecisionPredictions(inputs []PredictionInput) []DecisionPrediction {
-	predictions := make([]DecisionPrediction, 0, len(inputs))
+func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
+	claims := make([]DecisionClaim, 0, len(inputs))
 
 	for _, input := range inputs {
-		prediction := DecisionPrediction{
+		claim := DecisionClaim{
 			Claim:      strings.TrimSpace(input.Claim),
 			Observable: strings.TrimSpace(input.Observable),
 			Threshold:  strings.TrimSpace(input.Threshold),
 			Status:     ClaimStatusUnverified,
 		}
-		if prediction.Claim == "" && prediction.Observable == "" && prediction.Threshold == "" {
+		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
 		}
 
-		predictions = append(predictions, prediction)
+		claims = append(claims, claim)
 	}
 
-	if len(predictions) == 0 {
-		return nil
-	}
-
-	return predictions
+	return normalizeDecisionClaims(claims)
 }
 
-func normalizeDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
-	predictions := make([]DecisionPrediction, 0, len(values))
+func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim {
+	claims := make([]DecisionClaim, 0, len(values))
 
 	for _, value := range values {
-		prediction := DecisionPrediction{
+		claim := DecisionClaim{
 			Claim:      strings.TrimSpace(value.Claim),
 			Observable: strings.TrimSpace(value.Observable),
 			Threshold:  strings.TrimSpace(value.Threshold),
 			Status:     normalizeClaimStatus(value.Status),
 		}
-		if prediction.Claim == "" && prediction.Observable == "" && prediction.Threshold == "" {
+		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
 		}
 
-		predictions = append(predictions, prediction)
+		claims = append(claims, claim)
 	}
 
-	if len(predictions) == 0 {
+	return normalizeDecisionClaims(claims)
+}
+
+func normalizeDecisionClaims(values []DecisionClaim) []DecisionClaim {
+	claims := make([]DecisionClaim, 0, len(values))
+	seenIDs := make(map[string]struct{}, len(values))
+
+	for _, value := range values {
+		evidenceRefs := compactStrings(value.EvidenceRefs)
+		if len(evidenceRefs) == 0 {
+			evidenceRefs = nil
+		}
+
+		claim := DecisionClaim{
+			ID:           strings.TrimSpace(value.ID),
+			Claim:        strings.TrimSpace(value.Claim),
+			Observable:   strings.TrimSpace(value.Observable),
+			Threshold:    strings.TrimSpace(value.Threshold),
+			Status:       normalizeClaimStatus(value.Status),
+			EvidenceRefs: evidenceRefs,
+		}
+		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
+			continue
+		}
+
+		claim.ID = uniqueDecisionClaimID(claim.ID, len(claims), seenIDs)
+		seenIDs[claim.ID] = struct{}{}
+		claims = append(claims, claim)
+	}
+
+	if len(claims) == 0 {
 		return nil
 	}
 
+	return claims
+}
+
+func uniqueDecisionClaimID(candidate string, position int, seenIDs map[string]struct{}) string {
+	candidate = strings.TrimSpace(candidate)
+
+	if candidate != "" {
+		if _, exists := seenIDs[candidate]; !exists {
+			return candidate
+		}
+	}
+
+	next := position
+	for {
+		generated := canonicalDecisionClaimID(next)
+		if _, exists := seenIDs[generated]; !exists {
+			return generated
+		}
+		next++
+	}
+}
+
+func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction {
+	claims := normalizeDecisionClaims(values)
+	if len(claims) == 0 {
+		return nil
+	}
+
+	predictions := make([]DecisionPrediction, 0, len(claims))
+
+	for _, claim := range claims {
+		predictions = append(predictions, DecisionPrediction{
+			Claim:      claim.Claim,
+			Observable: claim.Observable,
+			Threshold:  claim.Threshold,
+			Status:     claim.Status,
+		})
+	}
+
 	return predictions
+}
+
+func newDecisionPredictions(inputs []PredictionInput) []DecisionPrediction {
+	return decisionPredictionsFromClaims(newDecisionClaims(inputs))
+}
+
+func canonicalDecisionClaimID(index int) string {
+	return fmt.Sprintf("claim-%03d", index+1)
+}
+
+func normalizeDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
+	return decisionPredictionsFromClaims(decisionClaimsFromPredictions(values))
 }
 
 // ClaimStatusFromPredictionMeasureMatch maps one measurement-to-prediction relation
@@ -94,43 +174,43 @@ func ClaimStatusFromPredictionMeasureMatch(match PredictionMeasureMatch) ClaimSt
 	return ClaimStatusUnverified
 }
 
-func adjudicateDecisionPredictions(
-	predictions []DecisionPrediction,
+func adjudicateDecisionClaims(
+	claims []DecisionClaim,
 	measurementRecorded bool,
 	criteriaMet []string,
 	criteriaMetScope []string,
 	criteriaNotMet []string,
 	criteriaNotMetScope []string,
-) []DecisionPrediction {
-	normalized := normalizeDecisionPredictions(predictions)
+) []DecisionClaim {
+	normalized := normalizeDecisionClaims(claims)
 	if len(normalized) == 0 {
 		return nil
 	}
 
-	aliasIndex := buildPredictionAliasIndex(normalized)
+	aliasIndex := buildDecisionClaimAliasIndex(normalized)
 	metMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaMet, criteriaMetScope)
 	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaNotMet, criteriaNotMetScope)
-	updated := make([]DecisionPrediction, 0, len(normalized))
+	updated := make([]DecisionClaim, 0, len(normalized))
 
-	for index, prediction := range normalized {
+	for index, claim := range normalized {
 		match := PredictionMeasureMatch{
 			MeasurementRecorded: measurementRecorded,
 			CriteriaMet:         metMatches[index],
 			CriteriaNotMet:      notMetMatches[index],
 		}
-		prediction.Status = ClaimStatusFromPredictionMeasureMatch(match)
-		updated = append(updated, prediction)
+		claim.Status = ClaimStatusFromPredictionMeasureMatch(match)
+		updated = append(updated, claim)
 	}
 
 	return updated
 }
 
-func buildPredictionAliasIndex(predictions []DecisionPrediction) map[string]int {
+func buildDecisionClaimAliasIndex(claims []DecisionClaim) map[string]int {
 	counts := make(map[string]int)
 	aliases := make(map[string]int)
 
-	for index, prediction := range predictions {
-		for _, key := range predictionAliasKeys(prediction) {
+	for index, claim := range claims {
+		for _, key := range decisionClaimAliasKeys(claim) {
 			counts[key]++
 			if _, exists := aliases[key]; exists {
 				continue
@@ -184,8 +264,8 @@ func resolvePredictionAlias(value string, aliasIndex map[string]int) (int, bool)
 	return 0, false
 }
 
-func predictionAliasKeys(prediction DecisionPrediction) []string {
-	values := predictionAliasValues(prediction)
+func decisionClaimAliasKeys(claim DecisionClaim) []string {
+	values := decisionClaimAliasValues(claim)
 	keys := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 
@@ -204,10 +284,10 @@ func predictionAliasKeys(prediction DecisionPrediction) []string {
 	return keys
 }
 
-func predictionAliasValues(prediction DecisionPrediction) []string {
-	claim := strings.TrimSpace(prediction.Claim)
-	observable := strings.TrimSpace(prediction.Observable)
-	threshold := strings.TrimSpace(prediction.Threshold)
+func decisionClaimAliasValues(node DecisionClaim) []string {
+	claim := strings.TrimSpace(node.Claim)
+	observable := strings.TrimSpace(node.Observable)
+	threshold := strings.TrimSpace(node.Threshold)
 	values := make([]string, 0, 6)
 
 	if claim != "" {

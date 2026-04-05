@@ -12,11 +12,12 @@ import (
 type ProjectionView string
 
 const (
-	ProjectionViewEngineer       ProjectionView = "engineer"
-	ProjectionViewManager        ProjectionView = "manager"
-	ProjectionViewAudit          ProjectionView = "audit"
-	ProjectionViewCompare        ProjectionView = "compare"
-	ProjectionViewDelegatedAgent ProjectionView = "delegated-agent"
+	ProjectionViewEngineer        ProjectionView = "engineer"
+	ProjectionViewManager         ProjectionView = "manager"
+	ProjectionViewAudit           ProjectionView = "audit"
+	ProjectionViewCompare         ProjectionView = "compare"
+	ProjectionViewDelegatedAgent  ProjectionView = "delegated-agent"
+	ProjectionViewChangeRationale ProjectionView = "change-rationale"
 )
 
 // ParseProjectionView normalizes supported aliases into one canonical view name.
@@ -34,8 +35,10 @@ func ParseProjectionView(raw string) (ProjectionView, error) {
 		return ProjectionViewCompare, nil
 	case "delegated-agent", "delegated", "brief", "handoff", "delegated-agent/brief", "delegated agent", "delegated agent brief":
 		return ProjectionViewDelegatedAgent, nil
+	case "change-rationale", "change rationale", "rationale", "pr", "pr/change", "pr-rationale", "pr rationale", "pr/change-rationale", "pr change rationale":
+		return ProjectionViewChangeRationale, nil
 	default:
-		return "", fmt.Errorf("invalid projection view %q (valid: engineer, manager, audit, compare, delegated-agent)", raw)
+		return "", fmt.Errorf("invalid projection view %q (valid: engineer, manager, audit, compare, delegated-agent, change-rationale)", raw)
 	}
 }
 
@@ -51,8 +54,9 @@ type ProjectionGraph struct {
 
 // ProjectionEvidenceSummary is a compact, projection-friendly evidence rollup.
 type ProjectionEvidenceSummary struct {
-	MeasurementCount int
-	WLNK             WLNKSummary
+	MeasurementCount   int
+	MeasurementVerdict string
+	WLNK               WLNKSummary
 }
 
 // ProblemProjection is the graph node used for audience-specific rendering.
@@ -295,15 +299,20 @@ func buildProjectionEvidenceSummary(ctx context.Context, store ArtifactStore, ar
 	}
 
 	measurementCount := 0
+	measurementVerdict := ""
 	for _, item := range activeItems {
 		if item.Type == "measurement" {
 			measurementCount++
+			if measurementVerdict == "" {
+				measurementVerdict = strings.TrimSpace(item.Verdict)
+			}
 		}
 	}
 
 	return ProjectionEvidenceSummary{
-		MeasurementCount: measurementCount,
-		WLNK:             ComputeWLNKSummary(ctx, store, artifactID),
+		MeasurementCount:   measurementCount,
+		MeasurementVerdict: measurementVerdict,
+		WLNK:               ComputeWLNKSummary(ctx, store, artifactID),
 	}
 }
 

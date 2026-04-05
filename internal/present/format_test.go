@@ -314,11 +314,18 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				PortfolioRefs:   []string{"sol-001"},
 				AffectedFiles:   []string{"internal/transport/contracts.proto", "internal/transport/grpc.go"},
 				SelectedTitle:   "gRPC",
+				WhySelected:     "It meets the latency target with acceptable operating cost.",
 				SelectionPolicy: "Minimize latency within the accepted cost envelope.",
 				CounterArgument: "Tooling and local debugging remain weaker than the simpler HTTP baseline.",
 				WeakestLink:     "Operational confidence still depends on limited production-grade evidence.",
-				Invariants:      []string{"p99 latency remains below 50ms during cutover"},
-				Admissibility:   []string{"No silent message loss during protocol migration"},
+				WhyNotOthers: []artifact.RejectionReason{
+					{
+						Variant: "REST",
+						Reason:  "Higher latency with no compensating cost advantage.",
+					},
+				},
+				Invariants:    []string{"p99 latency remains below 50ms during cutover"},
+				Admissibility: []string{"No silent message loss during protocol migration"},
 				Predictions: []artifact.DecisionPrediction{
 					{
 						Claim:      "Latency stays under 50ms",
@@ -336,7 +343,8 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				RollbackTriggers: []string{"Error budget exceeds 2% during canary"},
 				Measured:         true,
 				Evidence: artifact.ProjectionEvidenceSummary{
-					MeasurementCount: 1,
+					MeasurementCount:   1,
+					MeasurementVerdict: "partial",
 					WLNK: artifact.WLNKSummary{
 						Summary:      "R_eff=0.60 · 2 evidence item(s) · 1 supporting · 1 weakening",
 						REff:         0.60,
@@ -404,6 +412,20 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				"Open claim risks:",
 				"weakest link: Operational confidence still depends on limited production-grade evidence.",
 				"inconclusive: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
+			},
+		},
+		{
+			view: artifact.ProjectionViewChangeRationale,
+			wants: []string{
+				"## PR/Change Rationale",
+				"Selected change: gRPC `dec-001`",
+				"Problem signal: Latency variance between protocols",
+				"Selected variant: gRPC",
+				"Why selected: It meets the latency target with acceptable operating cost.",
+				"Rejected alternatives:",
+				"- REST: Higher latency with no compensating cost advantage.",
+				"Rollback summary: Error budget exceeds 2% during canary",
+				"Latest measurement verdict: partial",
 			},
 		},
 	}

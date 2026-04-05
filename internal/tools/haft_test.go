@@ -400,6 +400,80 @@ func TestHaftQueryTool_ProjectionDelegatedBriefUsesCanonicalHandoffFields(t *tes
 	}
 }
 
+func TestHaftQueryTool_ProjectionChangeRationaleUsesCanonicalDecisionState(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	decisionResult, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "It meets the latency target with acceptable operating cost.",
+		"why_not_others": []map[string]any{{
+			"variant": "REST",
+			"reason":  "Higher steady-state latency with no decisive cost advantage.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"Error budget exceeds 2% during canary"},
+		},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if decisionResult.Meta == nil {
+		t.Fatal("expected decision artifact metadata in tool response")
+	}
+
+	decisionID := strings.TrimSpace(decisionResult.Meta.ArtifactRef)
+	if decisionID == "" {
+		t.Fatal("expected decision artifact id in tool response")
+	}
+
+	_, err = artifact.Measure(fixture.ctx, fixture.store, fixture.haftDir, artifact.MeasureInput{
+		DecisionRef: decisionID,
+		Findings:    "Latency passed, rollout is still partially blocked on throughput headroom.",
+		CriteriaMet: []string{
+			"publish latency p99 < 50ms (observed: 44ms)",
+		},
+		CriteriaNotMet: []string{
+			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+		},
+		Verdict: "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queryTool := NewHaftQueryTool(fixture.store, nil)
+	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action": "projection",
+		"view":   "rationale",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	required := []string{
+		"## PR/Change Rationale",
+		"Selected change: gRPC",
+		"Problem signal: Latency variance between protocols",
+		"Selected variant: gRPC",
+		"Why selected: It meets the latency target with acceptable operating cost.",
+		"Rejected alternatives:",
+		"- REST: Higher steady-state latency with no decisive cost advantage.",
+		"Rollback summary: Error budget exceeds 2% during canary",
+		"Latest measurement verdict: partial",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(result.DisplayText, want) {
+			t.Fatalf("projection response missing %q:\n%s", want, result.DisplayText)
+		}
+	}
+}
+
 func TestHaftQueryTool_ProjectionHonorsContextFilter(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()

@@ -470,21 +470,28 @@ func TestFetchProjectionGraph_UpdatesProjectedPredictionStatusesAfterMeasure(t *
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("projected prediction statuses = %#v, want %#v", got, want)
 	}
+	if got := graphAfterMeasure.Decisions[0].Evidence.MeasurementVerdict; got != "partial" {
+		t.Fatalf("projected measurement verdict = %q, want %q", got, "partial")
+	}
 }
 
 func TestParseProjectionView_SupportsAliases(t *testing.T) {
 	cases := map[string]ProjectionView{
-		"":                ProjectionViewEngineer,
-		"status":          ProjectionViewManager,
-		"evidence":        ProjectionViewAudit,
-		"pareto":          ProjectionViewCompare,
-		"brief":           ProjectionViewDelegatedAgent,
-		"delegated":       ProjectionViewDelegatedAgent,
-		"handoff":         ProjectionViewDelegatedAgent,
-		"delegated-agent": ProjectionViewDelegatedAgent,
-		"manager":         ProjectionViewManager,
-		"compare":         ProjectionViewCompare,
-		"manager/status":  ProjectionViewManager,
+		"":                 ProjectionViewEngineer,
+		"status":           ProjectionViewManager,
+		"evidence":         ProjectionViewAudit,
+		"pareto":           ProjectionViewCompare,
+		"brief":            ProjectionViewDelegatedAgent,
+		"delegated":        ProjectionViewDelegatedAgent,
+		"handoff":          ProjectionViewDelegatedAgent,
+		"delegated-agent":  ProjectionViewDelegatedAgent,
+		"manager":          ProjectionViewManager,
+		"compare":          ProjectionViewCompare,
+		"manager/status":   ProjectionViewManager,
+		"change-rationale": ProjectionViewChangeRationale,
+		"rationale":        ProjectionViewChangeRationale,
+		"pr":               ProjectionViewChangeRationale,
+		"pr/change":        ProjectionViewChangeRationale,
 	}
 
 	for input, want := range cases {

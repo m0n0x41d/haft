@@ -21,6 +21,8 @@ func ProjectionResponse(graph artifact.ProjectionGraph, view artifact.Projection
 		return compareProjectionResponse(graph)
 	case artifact.ProjectionViewDelegatedAgent:
 		return delegatedAgentProjectionResponse(graph)
+	case artifact.ProjectionViewChangeRationale:
+		return changeRationaleProjectionResponse(graph)
 	default:
 		return fmt.Sprintf("Unsupported projection view: %s\n", view)
 	}
@@ -280,6 +282,34 @@ func delegatedAgentProjectionResponse(graph artifact.ProjectionGraph) string {
 	return sb.String()
 }
 
+func changeRationaleProjectionResponse(graph artifact.ProjectionGraph) string {
+	if len(graph.Decisions) == 0 {
+		return "No active decisions available for the PR/change rationale projection.\n"
+	}
+
+	problemSignals := projectionProblemSignalsByID(graph.Problems)
+
+	var sb strings.Builder
+	sb.WriteString("## PR/Change Rationale\n\n")
+
+	for _, decision := range graph.Decisions {
+		sb.WriteString(fmt.Sprintf("### Selected change: %s `%s`\n\n", projectionDecisionLabel(decision), decision.Meta.ID))
+		writeProjectionDecisionSlice(&sb, "Problem signal", projectionDecisionProblemSignals(decision, problemSignals))
+		sb.WriteString(fmt.Sprintf("Selected variant: %s\n", projectionDecisionLabel(decision)))
+		if decision.WhySelected != "" {
+			sb.WriteString(fmt.Sprintf("Why selected: %s\n", decision.WhySelected))
+		}
+		writeProjectionDecisionRejections(&sb, "Rejected alternatives", decision.WhyNotOthers)
+		writeProjectionDecisionSlice(&sb, "Rollback summary", decision.RollbackTriggers)
+		if decision.Evidence.MeasurementVerdict != "" {
+			sb.WriteString(fmt.Sprintf("Latest measurement verdict: %s\n", decision.Evidence.MeasurementVerdict))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 func projectionGraphEmpty(graph artifact.ProjectionGraph) bool {
 	return len(graph.Problems) == 0 && len(graph.Portfolios) == 0 && len(graph.Decisions) == 0
 }
@@ -366,12 +396,75 @@ func projectionDecisionOpenClaimRisks(decision artifact.DecisionProjection) []st
 	return risks
 }
 
+func projectionProblemSignalsByID(problems []artifact.ProblemProjection) map[string]string {
+	signalsByID := make(map[string]string, len(problems))
+
+	for _, problem := range problems {
+		signal := strings.TrimSpace(problem.Signal)
+		if signal == "" {
+			continue
+		}
+
+		signalsByID[problem.Meta.ID] = signal
+	}
+
+	return signalsByID
+}
+
+func projectionDecisionProblemSignals(decision artifact.DecisionProjection, signalsByID map[string]string) []string {
+	signals := make([]string, 0, len(decision.ProblemRefs))
+	seen := make(map[string]struct{}, len(decision.ProblemRefs))
+
+	for _, problemRef := range decision.ProblemRefs {
+		signal := strings.TrimSpace(signalsByID[problemRef])
+		if signal == "" {
+			continue
+		}
+		if _, ok := seen[signal]; ok {
+			continue
+		}
+
+		seen[signal] = struct{}{}
+		signals = append(signals, signal)
+	}
+
+	return signals
+}
+
 func writeProjectionDecisionSlice(sb *strings.Builder, label string, values []string) {
 	if len(values) == 0 {
 		return
 	}
 
 	sb.WriteString(fmt.Sprintf("%s: %s\n", label, strings.Join(values, ", ")))
+}
+
+func writeProjectionDecisionRejections(sb *strings.Builder, label string, reasons []artifact.RejectionReason) {
+	if len(reasons) == 0 {
+		return
+	}
+
+	sb.WriteString(label)
+	sb.WriteString(":\n")
+
+	for _, reason := range reasons {
+		var parts []string
+
+		variant := strings.TrimSpace(reason.Variant)
+		if variant != "" {
+			parts = append(parts, variant)
+		}
+
+		detail := strings.TrimSpace(reason.Reason)
+		switch {
+		case len(parts) > 0 && detail != "":
+			sb.WriteString(fmt.Sprintf("- %s: %s\n", strings.Join(parts, " "), detail))
+		case detail != "":
+			sb.WriteString(fmt.Sprintf("- %s\n", detail))
+		case len(parts) > 0:
+			sb.WriteString(fmt.Sprintf("- %s\n", strings.Join(parts, " ")))
+		}
+	}
 }
 
 func writeProjectionDecisionPredictions(sb *strings.Builder, label string, predictions []artifact.DecisionPrediction) {

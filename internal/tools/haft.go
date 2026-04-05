@@ -1402,7 +1402,7 @@ Actions:
 - search: FTS5 keyword search across all artifacts.
 - status: Compact dashboard — shipped/pending decisions, stale items, coverage.
 - related: Find decisions affecting a specific file.
-- projection: Render engineer/manager/audit/compare/delegated-agent views from the same artifact graph.
+- projection: Render engineer/manager/audit/compare/delegated-agent/change-rationale views from the same artifact graph.
 - fpf: Search the FPF specification for formal definitions, aggregation rules, and patterns.`,
 		Parameters: map[string]any{
 			"type": "object",
@@ -1411,7 +1411,7 @@ Actions:
 				"query":   map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
 				"file":    map[string]any{"type": "string", "description": "File path (related)"},
 				"context": map[string]any{"type": "string", "description": "(status, projection) Optional context filter"},
-				"view":    map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare | delegated-agent; defaults to engineer"},
+				"view":    map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale; defaults to engineer"},
 				"limit":   map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
 				"full":    map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
 				"explain": map[string]any{

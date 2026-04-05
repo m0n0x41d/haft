@@ -106,6 +106,25 @@ func TestProblemResponse_ShowsRecall(t *testing.T) {
 	}
 }
 
+func TestProblemResponse_PreservesBodyVerbatim(t *testing.T) {
+	relatedHistory := "## Related History\n\n- [DecisionRecord] **Fix DecisionRecord parser** `dec-001`\n"
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "prob-001",
+			Kind:  artifact.KindProblemCard,
+			Title: "ProblemCard migration",
+			Mode:  artifact.ModeStandard,
+		},
+		Body: "# Test\n\n" + relatedHistory,
+	}
+
+	response := present.ProblemResponse("frame", a, "", "\n-- nav --\n")
+
+	if !strings.Contains(response, relatedHistory) {
+		t.Fatalf("expected related history slice to stay verbatim, got:\n%s", response)
+	}
+}
+
 func TestProblemResponse_NoRecallWhenAbsent(t *testing.T) {
 	a := &artifact.Artifact{
 		Meta: artifact.Meta{
@@ -180,6 +199,50 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 		if !strings.Contains(response, want) {
 			t.Fatalf("compare response missing %q:\n%s", want, response)
 		}
+	}
+}
+
+func TestSearchResponse_PreservesQueryTitleAndBodyVerbatim(t *testing.T) {
+	query := "DecisionRecord"
+	title := "Fix DecisionRecord parser"
+	body := "# Summary\n\nDecisionRecord must stay verbatim here."
+	results := []*artifact.Artifact{{
+		Meta: artifact.Meta{
+			ID:    "dec-001",
+			Kind:  artifact.KindDecisionRecord,
+			Title: title,
+		},
+		Body: body,
+	}}
+
+	response := present.SearchResponse(results, query)
+
+	if !strings.Contains(response, "## Search: "+query+" (1 results)") {
+		t.Fatalf("expected query to stay verbatim, got:\n%s", response)
+	}
+	if !strings.Contains(response, title) {
+		t.Fatalf("expected title to stay verbatim, got:\n%s", response)
+	}
+	if !strings.Contains(response, "DecisionRecord must stay verbatim here.") {
+		t.Fatalf("expected body preview to stay verbatim, got:\n%s", response)
+	}
+}
+
+func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {
+	body := "# Decision\n\nFix DecisionRecord parser without changing DecisionRecord wording."
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "dec-001",
+			Kind:  artifact.KindDecisionRecord,
+			Title: "Fix DecisionRecord parser",
+		},
+		Body: body,
+	}
+
+	response := present.DecisionResponse("decide", a, "", "", "\n-- nav --\n")
+
+	if !strings.Contains(response, body) {
+		t.Fatalf("expected decision body to stay verbatim, got:\n%s", response)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/present"
 
 	_ "modernc.org/sqlite"
 )
@@ -1426,6 +1427,9 @@ func TestHaftDecisionTool_MeasureWrongKindUsesPlainLanguage(t *testing.T) {
 	}
 	if !strings.Contains(result.DisplayText, "not a decision") {
 		t.Fatalf("expected plain-language mismatch message, got %q", result.DisplayText)
+	}
+	if issues := present.LintGeneratedText(result.DisplayText); len(issues) != 0 {
+		t.Fatalf("expected lint-clean generated message, got %+v\n%s", issues, result.DisplayText)
 	}
 }
 

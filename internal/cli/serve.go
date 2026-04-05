@@ -401,10 +401,8 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		if input.ProblemRef == "" {
 			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
 			if err != nil || prob == nil {
-				return present.ApplyFPFAnswerHygiene(
-					"No active ProblemCard found.\nUse /q-frame to create one first.\n" +
-						present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)),
-				), nil
+				return "No active problem found.\nUse /q-frame to create one first.\n" +
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 			input.ProblemRef = prob.Meta.ID
 		}
@@ -484,10 +482,8 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			if p != nil {
 				input.PortfolioRef = p.Meta.ID
 			} else {
-				return present.ApplyFPFAnswerHygiene(
-					"No active SolutionPortfolio found.\nUse /q-explore to create variants first.\n" +
-						present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)),
-				), nil
+				return "No active solution portfolio found.\nUse /q-explore to create variants first.\n" +
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -611,10 +607,8 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			if len(decisions) > 0 {
 				decisionRef = decisions[0].Meta.ID
 			} else {
-				return present.ApplyFPFAnswerHygiene(
-					"No DecisionRecord found.\nUse /q-decide to finalize a decision first.\n" +
-						present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)),
-				), nil
+				return "No decision found.\nUse /q-decide to finalize a decision first.\n" +
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -645,9 +639,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			if len(decisions) > 0 {
 				input.DecisionRef = decisions[0].Meta.ID
 			} else {
-				return present.ApplyFPFAnswerHygiene(
-					"No DecisionRecord found.\n" + present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)),
-				), nil
+				return "No decision found.\n" + present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
 
@@ -845,9 +837,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 
 	case artifact.RefreshReopen:
 		if artifactRef == "" {
-			return present.ApplyFPFAnswerHygiene(
-				"artifact_ref is required for reopen. Note: reopen only works on DecisionRecords.\n" + navStrip,
-			), nil
+			return "artifact_ref is required for reopen. Note: reopen only works on decisions.\n" + navStrip, nil
 		}
 		dec, newProb, err := artifact.ReopenDecision(ctx, store, haftDir, artifactRef, reason)
 		if err != nil {

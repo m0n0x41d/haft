@@ -30,17 +30,6 @@ var fpfAnswerHygieneRules = []fpfAnswerHygieneRule{
 	{term: "non_dominated_set", replacement: "Pareto front", reason: "internal compare field"},
 }
 
-// ApplyFPFAnswerHygiene rewrites known internal terms in user-facing text.
-func ApplyFPFAnswerHygiene(text string) string {
-	rewritten := text
-
-	for _, rule := range fpfAnswerHygieneRules {
-		rewritten = strings.ReplaceAll(rewritten, rule.term, rule.replacement)
-	}
-
-	return rewritten
-}
-
 // LintFPFAnswer reports internal terms that should not appear in user-facing
 // Haft output.
 func LintFPFAnswer(text string) []FPFAnswerHygieneIssue {

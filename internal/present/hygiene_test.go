@@ -8,26 +8,27 @@ import (
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
-func TestApplyFPFAnswerHygiene_RewritesInternalArtifactKinds(t *testing.T) {
-	input := "ProblemCard ready. Reopen only works on DecisionRecords. Related SolutionPortfolio found."
+func assertLintCleanGeneratedText(t *testing.T, fragments ...string) {
+	t.Helper()
 
-	output := present.ApplyFPFAnswerHygiene(input)
-
-	checks := []string{
-		"problem ready.",
-		"decisions.",
-		"solution portfolio found.",
+	issues := present.LintGeneratedText(fragments...)
+	if len(issues) == 0 {
+		return
 	}
 
-	for _, check := range checks {
-		if !strings.Contains(output, check) {
-			t.Fatalf("expected %q in %q", check, output)
-		}
+	t.Fatalf("expected generated text to be lint-clean, got %+v\n%s", issues, strings.Join(fragments, "\n"))
+}
+
+func TestUserFacingArtifactKindLabel_UsesPlainLanguage(t *testing.T) {
+	outputs := []string{
+		present.UserFacingArtifactKindLabel("ProblemCard"),
+		present.UserFacingArtifactKindLabel("DecisionRecord"),
+		present.UserFacingArtifactKindLabel("SolutionPortfolio"),
+		present.UserFacingArtifactKindHeading("ProblemCard", 2),
+		present.UserFacingArtifactKindHeading("DecisionRecord", 1),
 	}
 
-	if issues := present.LintFPFAnswer(output); len(issues) != 0 {
-		t.Fatalf("expected rewritten output to be lint-clean, got %+v", issues)
-	}
+	assertLintCleanGeneratedText(t, outputs...)
 }
 
 func TestLintFPFAnswer_FlagsInternalCompareFields(t *testing.T) {
@@ -47,12 +48,11 @@ func TestLintFPFAnswer_FlagsInternalCompareFields(t *testing.T) {
 func TestMissingProblemResponse_StaysLintClean(t *testing.T) {
 	output := present.MissingProblemResponse("\n-- nav --\n")
 
-	if strings.Contains(output, "ProblemCard") {
-		t.Fatalf("missing-problem response leaked raw kind: %s", output)
+	if !strings.Contains(output, "No active problem found.") {
+		t.Fatalf("expected plain-language missing-problem message, got %q", output)
 	}
-	if issues := present.LintFPFAnswer(output); len(issues) != 0 {
-		t.Fatalf("expected lint-clean missing-problem response, got %+v\n%s", issues, output)
-	}
+
+	assertLintCleanGeneratedText(t, output)
 }
 
 func TestSearchResponse_UsesPlainArtifactKindLabels(t *testing.T) {
@@ -69,9 +69,6 @@ func TestSearchResponse_UsesPlainArtifactKindLabels(t *testing.T) {
 
 	if !strings.Contains(output, "[decision]") {
 		t.Fatalf("expected plain artifact label, got:\n%s", output)
-	}
-	if issues := present.LintFPFAnswer(output); len(issues) != 0 {
-		t.Fatalf("expected lint-clean search response, got %+v\n%s", issues, output)
 	}
 }
 
@@ -92,7 +89,9 @@ func TestListResponse_UsesPlainHeadings(t *testing.T) {
 	if !strings.Contains(output, "## Decision (1)") {
 		t.Fatalf("expected plain heading, got:\n%s", output)
 	}
-	if issues := present.LintFPFAnswer(output); len(issues) != 0 {
-		t.Fatalf("expected lint-clean list response, got %+v\n%s", issues, output)
-	}
+
+	assertLintCleanGeneratedText(t,
+		present.UserFacingArtifactKindHeading("DecisionRecord", 1),
+		present.UserFacingArtifactKindHeading("DecisionRecord", 2),
+	)
 }

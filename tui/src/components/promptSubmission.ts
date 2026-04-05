@@ -83,7 +83,7 @@ export function shouldResumeQueuedReplayAfterPickerCancel(
 ): boolean {
   const command = leadingSlashCommand(text)
 
-  return command === "/help"
+  return command === "/help" || command === "/model" || command === "/resume"
 }
 
 export function shiftPromptSubmissions(

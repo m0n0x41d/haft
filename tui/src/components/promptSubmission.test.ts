@@ -82,9 +82,11 @@ test("classifies queued slash commands by replay behavior", () => {
   assert.equal(queuedPromptReplayDisposition("real prompt"), "submit")
 })
 
-test("marks only queued help for replay-on-cancel continuation", () => {
+test("marks queued interactive pickers for replay-on-cancel continuation", () => {
   assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/help"), true)
-  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/model"), false)
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/model"), true)
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/resume"), true)
+  assert.equal(shouldResumeQueuedReplayAfterPickerCancel("/compact"), false)
   assert.equal(shouldResumeQueuedReplayAfterPickerCancel("real prompt"), false)
 })
 

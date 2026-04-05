@@ -297,16 +297,34 @@ export function App({ client, inputEvents }: AppProps) {
       const resp = await client.request<ModelListResponse>("model.list", {})
       setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \u00B7 ${Math.round(m.contextWindow / 1000)}k` })))
       setPickerMode("models")
-    } catch (e: any) { dispatch({ type: "error", message: `model list: ${e.message}` }) }
-  }, [client])
+    } catch (e: any) {
+      const shouldResume = resumeQueuedOnPickerCancelRef.current
+
+      resumeQueuedOnPickerCancelRef.current = false
+      dispatch({ type: "error", message: `model list: ${e.message}` })
+
+      if (shouldResume) {
+        resumeQueuedMessages()
+      }
+    }
+  }, [client, resumeQueuedMessages])
 
   const openSessionPicker = useCallback(async () => {
     try {
       const resp = await client.request<SessionListResponse>("session.list", { limit: 20 })
       setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })))
       setPickerMode("sessions")
-    } catch (e: any) { dispatch({ type: "error", message: `session list: ${e.message}` }) }
-  }, [client])
+    } catch (e: any) {
+      const shouldResume = resumeQueuedOnPickerCancelRef.current
+
+      resumeQueuedOnPickerCancelRef.current = false
+      dispatch({ type: "error", message: `session list: ${e.message}` })
+
+      if (shouldResume) {
+        resumeQueuedMessages()
+      }
+    }
+  }, [client, resumeQueuedMessages])
 
   const sendSubmission = useCallback((submission: PromptSubmission) => {
     dispatch({ type: "submitted" })
@@ -333,7 +351,10 @@ export function App({ client, inputEvents }: AppProps) {
     })
   }, [client])
 
-  const handleSlashCommand = useCallback((text: string): "unhandled" | "continue" | "pause" => {
+  const handleSlashCommand = useCallback((
+    text: string,
+    fromQueuedReplay: boolean,
+  ): "unhandled" | "continue" | "pause" => {
     const cmd = leadingSlashCommand(text)
 
     if (!cmd) {
@@ -350,20 +371,28 @@ export function App({ client, inputEvents }: AppProps) {
       case "/compact":
         client.request("compact", {}).then((r: any) => {
           dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` })
-          resumeQueuedMessages()
-        }).catch((e: Error) => dispatch({ type: "error", message: e.message }))
+          if (fromQueuedReplay) {
+            resumeQueuedMessages()
+          }
+        }).catch((e: Error) => {
+          dispatch({ type: "error", message: e.message })
+
+          if (fromQueuedReplay) {
+            resumeQueuedMessages()
+          }
+        })
         return "pause"
       case "/help":
         setPickerMode("commands")
         setPickerItems(SLASH_COMMANDS)
-        return "continue"
+        return "pause"
       default:
         return "unhandled"
     }
   }, [client, openModelPicker, openSessionPicker, resumeQueuedMessages])
 
   const replaySubmission = useCallback((submission: PromptSubmission) => {
-    const commandResult = handleSlashCommand(submission.text)
+    const commandResult = handleSlashCommand(submission.text, true)
 
     if (commandResult === "continue") {
       resumeQueuedOnPickerCancelRef.current = false
@@ -395,7 +424,7 @@ export function App({ client, inputEvents }: AppProps) {
       return
     }
 
-    const commandResult = handleSlashCommand(text)
+    const commandResult = handleSlashCommand(text, false)
 
     if (commandResult !== "unhandled") {
       return
@@ -448,26 +477,42 @@ export function App({ client, inputEvents }: AppProps) {
 
   const handlePickerSelect = useCallback((item: PickerItem) => {
     const mode = pickerMode
+    const shouldResume = resumeQueuedOnPickerCancelRef.current
 
-    resumeQueuedOnPickerCancelRef.current =
-      mode === "commands" &&
-      queuedMessages.length > 0 &&
-      shouldResumeQueuedReplayAfterPickerCancel(item.id)
+    resumeQueuedOnPickerCancelRef.current = false
 
     setPickerMode(null)
     switch (mode) {
       case "models":
         client.request("model.switch", { model: item.id })
-          .then(() => resumeQueuedMessages())
-          .catch((e: any) => dispatch({ type: "error", message: e.message }))
+          .then(() => {
+            if (shouldResume) {
+              resumeQueuedMessages()
+            }
+          })
+          .catch((e: any) => {
+            dispatch({ type: "error", message: e.message })
+
+            if (shouldResume) {
+              resumeQueuedMessages()
+            }
+          })
         break
       case "sessions":
         client.request("session.resume", { sessionId: item.id })
           .then((r: any) => {
             dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages })
-            resumeQueuedMessages()
+            if (shouldResume) {
+              resumeQueuedMessages()
+            }
           })
-          .catch((e: any) => dispatch({ type: "error", message: e.message }))
+          .catch((e: any) => {
+            dispatch({ type: "error", message: e.message })
+
+            if (shouldResume) {
+              resumeQueuedMessages()
+            }
+          })
         break
       case "files": {
         const isImg = /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(item.id)
@@ -475,9 +520,15 @@ export function App({ client, inputEvents }: AppProps) {
         setAttachments((a) => [...a, { id, name: item.id.split("/").pop() || item.id, path: item.id, isImage: isImg }])
         break
       }
-      case "commands": handleSubmit(item.id); break
+      case "commands":
+        if (shouldResume) {
+          replaySubmission(createPromptSubmission(item.id, []))
+          break
+        }
+        handleSubmit(item.id)
+        break
     }
-  }, [pickerMode, queuedMessages.length, client, state.projectRoot, handleSubmit, resumeQueuedMessages])
+  }, [pickerMode, client, state.projectRoot, handleSubmit, replaySubmission, resumeQueuedMessages])
 
   // --- Keyboard scroll + global shortcuts ---
   // Our useInput uses useEventCallback internally — handler closures are

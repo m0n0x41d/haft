@@ -1557,12 +1557,7 @@ func computeClaimCoverage(items []EvidenceItem, claims []DecisionClaim) []string
 }
 
 func evidenceCoverageScope(item EvidenceItem, claims []DecisionClaim) []string {
-	scope := normalizeClaimScope(item.ClaimScope)
-	if len(scope) > 0 {
-		return scope
-	}
-
-	return decisionClaimScopeFromRefs(claims, item.ClaimRefs)
+	return mergeDecisionCoverageScope(claims, item.ClaimRefs, item.ClaimScope)
 }
 
 func measuredCriteriaScope(criteriaMet []string, criteriaNotMet []string, scopeCandidates []string) []string {

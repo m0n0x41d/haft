@@ -141,8 +141,8 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001,claim-002" {
 		t.Fatalf("measurement claim_refs = %q, want claim-001,claim-002", got)
 	}
-	if got := strings.Join(items[0].ClaimScope, ","); got != "Throughput stays above 100k events/sec,publish latency p99 < 50ms" {
-		t.Fatalf("measurement claim_scope = %q, want preserved measured scope", got)
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Latency stays under 50ms,Throughput stays above 100k events/sec" {
+		t.Fatalf("measurement claim_scope = %q, want canonical measured claim scope", got)
 	}
 
 	reloaded, err := store.Get(ctx, dec.Meta.ID)
@@ -156,7 +156,7 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	})
 }
 
-func TestMeasure_PreservesMeasuredClaimCoverageAndNonClaimCriteria(t *testing.T) {
+func TestMeasure_KeepsCanonicalClaimCoverageAndNonClaimCriteria(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -202,13 +202,13 @@ func TestMeasure_PreservesMeasuredClaimCoverageAndNonClaimCriteria(t *testing.T)
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001" {
 		t.Fatalf("measurement claim_refs = %q, want claim-001", got)
 	}
-	if got := strings.Join(items[0].ClaimScope, ","); got != "Rollback drill completed,publish latency p99 < 50ms" {
-		t.Fatalf("measurement claim_scope = %q, want preserved measured and non-claim scope", got)
+	if got := strings.Join(items[0].ClaimScope, ","); got != "Latency stays under 50ms,Rollback drill completed" {
+		t.Fatalf("measurement claim_scope = %q, want canonical claim scope plus non-claim scope", got)
 	}
 
 	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	if got := strings.Join(wlnk.GEff, ","); got != "Rollback drill completed,publish latency p99 < 50ms" {
-		t.Fatalf("GEff = %q, want preserved measured coverage", got)
+	if got := strings.Join(wlnk.GEff, ","); got != "Latency stays under 50ms,Rollback drill completed" {
+		t.Fatalf("GEff = %q, want canonical claim coverage plus non-claim scope", got)
 	}
 }
 
@@ -592,7 +592,7 @@ func TestAttachEvidence_ResolvesClaimRefsFromLegacyScope(t *testing.T) {
 	}
 }
 
-func TestWLNKSummary_PrefersStoredClaimScopeOverClaimTextForCoverage(t *testing.T) {
+func TestWLNKSummary_MergesStoredClaimScopeWithCanonicalClaimCoverage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -640,8 +640,8 @@ func TestWLNKSummary_PrefersStoredClaimScopeOverClaimTextForCoverage(t *testing.
 	}
 
 	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	if got := strings.Join(wlnk.GEff, ","); got != "P99 latency under 50ms" {
-		t.Fatalf("GEff = %q, want stored claim scope", got)
+	if got := strings.Join(wlnk.GEff, ","); got != "Latency stays under 50ms,P99 latency under 50ms" {
+		t.Fatalf("GEff = %q, want canonical claim coverage plus unresolved stored scope", got)
 	}
 	if len(wlnk.CoverageGaps) != 0 {
 		t.Fatalf("CoverageGaps = %#v, want none", wlnk.CoverageGaps)

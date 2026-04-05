@@ -332,11 +332,7 @@ func decisionMeasurementCoverageScope(
 	scope = append(scope, criteriaNotMetScope...)
 	scope = normalizeClaimScope(scope)
 
-	if len(scope) > 0 {
-		return scope
-	}
-
-	return decisionClaimScopeFromRefs(claims, claimRefs)
+	return mergeDecisionCoverageScope(claims, claimRefs, scope)
 }
 
 func mergeDecisionCoverageScope(

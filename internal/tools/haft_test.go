@@ -1532,6 +1532,50 @@ func TestHaftDecisionTool_DecideLegacyPayloadStillWorksWithoutExtendedFields(t *
 	}
 }
 
+func TestHaftDecisionTool_DecideRejectsMalformedPredictions(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	_, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
+		"predictions": []any{
+			map[string]any{
+				"claim":      "Latency improves after rollout",
+				"observable": 42,
+				"threshold":  "p99 < 20ms",
+			},
+		},
+	})))
+	if err == nil {
+		t.Fatal("expected malformed predictions to be rejected")
+	}
+
+	if !strings.Contains(err.Error(), "predictions must be an array of prediction objects") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHaftDecisionTool_DecideRejectsMalformedExtendedStringArray(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+
+	_, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
+		"pre_conditions": []any{"Benchmarks reproduced in CI", 42},
+	})))
+	if err == nil {
+		t.Fatal("expected malformed pre_conditions to be rejected")
+	}
+
+	if !strings.Contains(err.Error(), "pre_conditions must be an array of strings") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestHaftDecisionTool_DecideRejectsIncompleteAntiSelfDeceptionRecord(t *testing.T) {
 	store := setupHaftToolStore(t)
 	ctx := context.Background()

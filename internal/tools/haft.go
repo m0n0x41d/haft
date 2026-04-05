@@ -1097,9 +1097,64 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 }
 
 func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	problemRefs, err := jsonStrictStringArray(args, "problem_refs")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	invariants, err := jsonStrictStringArray(args, "invariants")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	preConditions, err := jsonStrictStringArray(args, "pre_conditions")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	postConditions, err := jsonStrictStringArray(args, "post_conditions")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	admissibility, err := jsonStrictStringArray(args, "admissibility")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	evidenceReqs, err := jsonStrictStringArray(args, "evidence_requirements")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	refreshTriggers, err := jsonStrictStringArray(args, "refresh_triggers")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	affectedFiles, err := jsonStrictStringArray(args, "affected_files")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	whyNotOthers, err := jsonStrictRejectionReasons(args, "why_not_others")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	rollback, err := jsonStrictRollbackSpec(args, "rollback")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	predictions, err := jsonStrictPredictionInputs(args, "predictions")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	input := artifact.DecideInput{
 		ProblemRef:      jsonStr(args, "problem_ref"),
-		ProblemRefs:     jsonStrArray(args, "problem_refs"),
+		ProblemRefs:     problemRefs,
 		PortfolioRef:    jsonStr(args, "portfolio_ref"),
 		SelectedTitle:   jsonStr(args, "selected_title"),
 		WhySelected:     jsonStr(args, "why_selected"),
@@ -1109,46 +1164,17 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		ValidUntil:      jsonStr(args, "valid_until"),
 		Context:         jsonStr(args, "context"),
 		Mode:            jsonStr(args, "mode"),
-		Invariants:      jsonStrArray(args, "invariants"),
-		PreConditions:   jsonStrArray(args, "pre_conditions"),
-		PostConditions:  jsonStrArray(args, "post_conditions"),
-		Admissibility:   jsonStrArray(args, "admissibility"),
-		EvidenceReqs:    jsonStrArray(args, "evidence_requirements"),
-		RefreshTriggers: jsonStrArray(args, "refresh_triggers"),
-		AffectedFiles:   jsonStrArray(args, "affected_files"),
+		Invariants:      invariants,
+		PreConditions:   preConditions,
+		PostConditions:  postConditions,
+		Admissibility:   admissibility,
+		EvidenceReqs:    evidenceReqs,
+		RefreshTriggers: refreshTriggers,
+		AffectedFiles:   affectedFiles,
 		SearchKeywords:  jsonStr(args, "search_keywords"),
-	}
-
-	if items, ok := args["why_not_others"].([]any); ok {
-		for _, item := range items {
-			value, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			input.WhyNotOthers = append(input.WhyNotOthers, artifact.RejectionReason{
-				Variant: jsonStr(value, "variant"),
-				Reason:  jsonStr(value, "reason"),
-			})
-		}
-	}
-
-	if rawRollback, ok := args["rollback"].(map[string]any); ok {
-		rollback := &artifact.RollbackSpec{
-			BlastRadius: jsonStr(rawRollback, "blast_radius"),
-		}
-		rollback.Triggers = jsonStrArray(rawRollback, "triggers")
-		rollback.Steps = jsonStrArray(rawRollback, "steps")
-		input.Rollback = rollback
-	}
-
-	// Parse predictions
-	if preds, ok := args["predictions"]; ok {
-		data, _ := json.Marshal(preds)
-		var parsed []artifact.PredictionInput
-		if json.Unmarshal(data, &parsed) == nil {
-			input.Predictions = parsed
-		}
+		WhyNotOthers:    whyNotOthers,
+		Rollback:        rollback,
+		Predictions:     predictions,
 	}
 
 	gaps := t.coverageGaps(ctx, input.AffectedFiles)
@@ -1689,6 +1715,105 @@ func jsonDecodeArg(args map[string]any, key string, target any) bool {
 	}
 
 	return true
+}
+
+func jsonStrictStringArray(args map[string]any, key string) ([]string, error) {
+	var values []string
+
+	present, err := jsonDecodeStrictArg(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of strings: %w", key, err)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return values, nil
+}
+
+func jsonStrictRejectionReasons(args map[string]any, key string) ([]artifact.RejectionReason, error) {
+	var values []artifact.RejectionReason
+
+	present, err := jsonDecodeStrictArg(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of rejection reasons: %w", key, err)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return values, nil
+}
+
+func jsonStrictRollbackSpec(args map[string]any, key string) (*artifact.RollbackSpec, error) {
+	var value artifact.RollbackSpec
+
+	present, err := jsonDecodeStrictArg(args, key, &value)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an object with rollback fields: %w", key, err)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return &value, nil
+}
+
+func jsonStrictPredictionInputs(args map[string]any, key string) ([]artifact.PredictionInput, error) {
+	var values []artifact.PredictionInput
+
+	present, err := jsonDecodeStrictArg(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of prediction objects: %w", key, err)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	for index, value := range values {
+		claim := strings.TrimSpace(value.Claim)
+		observable := strings.TrimSpace(value.Observable)
+		threshold := strings.TrimSpace(value.Threshold)
+
+		if claim != "" || observable != "" || threshold != "" {
+			continue
+		}
+
+		return nil, fmt.Errorf("%s[%d] must declare at least one non-empty field", key, index)
+	}
+
+	return values, nil
+}
+
+func jsonDecodeStrictArg(args map[string]any, key string, target any) (bool, error) {
+	value, ok := args[key]
+	if !ok {
+		return false, nil
+	}
+
+	data, err := jsonStrictArgBytes(value)
+	if err != nil {
+		return true, err
+	}
+
+	err = json.Unmarshal(data, target)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
+func jsonStrictArgBytes(value any) ([]byte, error) {
+	text, ok := value.(string)
+	if ok {
+		trimmed := strings.TrimSpace(text)
+		if trimmed != "" && (trimmed[0] == '[' || trimmed[0] == '{') {
+			return []byte(trimmed), nil
+		}
+	}
+
+	return json.Marshal(value)
 }
 
 func jsonParityPlan(args map[string]any, key string) (*artifact.ParityPlan, bool) {

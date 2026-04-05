@@ -26,6 +26,7 @@ export interface SessionInfo {
   id: string
   title: string
   model: string
+  mode?: "symbiotic" | "autonomous"
   interaction?: "symbiotic" | "autonomous"
   yolo?: boolean
 }

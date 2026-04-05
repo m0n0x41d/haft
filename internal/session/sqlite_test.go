@@ -300,3 +300,90 @@ func TestSQLiteStore_CreateCycleCanonicalizesActiveCycleState(t *testing.T) {
 		t.Fatalf("selection = (%q, %q), want cleared", stored.SelectedPortfolioRef, stored.SelectedVariantRef)
 	}
 }
+
+func TestSQLiteStore_CreateCanonicalizesSessionExecutionMode(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "session.db")
+	sqlDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	store, err := NewSQLiteStore(sqlDB)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	sess := &agent.Session{
+		ID:          "sess-invalid-mode",
+		Title:       "mode canonicalization",
+		Model:       "test-model",
+		Interaction: agent.ExecutionMode("invalid"),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := store.Create(ctx, sess); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if sess.ExecutionMode() != agent.ExecutionModeSymbiotic {
+		t.Fatalf("ExecutionMode = %q, want symbiotic", sess.ExecutionMode())
+	}
+
+	stored, err := store.Get(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.ExecutionMode() != agent.ExecutionModeSymbiotic {
+		t.Fatalf("stored ExecutionMode = %q, want symbiotic", stored.ExecutionMode())
+	}
+}
+
+func TestSQLiteStore_GetNormalizesPersistedLegacyInteraction(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "session.db")
+	sqlDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	store, err := NewSQLiteStore(sqlDB)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = sqlDB.Exec(`
+		INSERT INTO agent_sessions (
+			id, parent_id, title, model, current_phase, depth, interaction, yolo, active_cycle_id, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"sess-legacy-mode",
+		"",
+		"legacy mode",
+		"test-model",
+		"",
+		"standard",
+		"legacy",
+		0,
+		"",
+		now.Format(time.RFC3339),
+		now.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	stored, err := store.Get(context.Background(), "sess-legacy-mode")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.ExecutionMode() != agent.ExecutionModeSymbiotic {
+		t.Fatalf("ExecutionMode = %q, want symbiotic", stored.ExecutionMode())
+	}
+}

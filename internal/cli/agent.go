@@ -214,14 +214,14 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	// 10. Create session
 	sess := &agent.Session{
-		ID:          uuid.NewString(),
-		Title:       "",
-		Model:       modelToUse,
-		Depth:       agent.DepthStandard,
-		Interaction: agent.InteractionSymbiotic,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		ID:        uuid.NewString(),
+		Title:     "",
+		Model:     modelToUse,
+		Depth:     agent.DepthStandard,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
+	sess.SetExecutionMode(agent.ExecutionModeSymbiotic)
 	if err := store.Create(cmd.Context(), sess); err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
@@ -384,12 +384,9 @@ func runAgent(cmd *cobra.Command, args []string) error {
 			if err := msg.UnmarshalParams(&toggle); err != nil {
 				return
 			}
-			if toggle.Autonomous {
-				sess.Interaction = agent.InteractionAutonomous
-			} else {
-				sess.Interaction = agent.InteractionSymbiotic
+			if applyModeUpdate(sess, toggle) {
+				_ = store.Update(cmd.Context(), sess)
 			}
-			_ = store.Update(cmd.Context(), sess)
 
 		case protocol.MethodYoloToggle:
 			var toggle protocol.ModeUpdate
@@ -412,10 +409,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 						if s.ID == sess.ID {
 							continue
 						}
-						infos = append(infos, protocol.SessionInfo{
-							ID: s.ID, Title: s.Title, Model: s.Model,
-							Interaction: string(s.Interaction), Yolo: s.Yolo,
-						})
+						infos = append(infos, sessionInfo(&s))
 					}
 					_ = rpc.Respond(*msg.ID, protocol.SessionListResponse{Sessions: infos})
 				}()
@@ -441,10 +435,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 					}
 					sess = oldSess
 					_ = rpc.Respond(*msg.ID, protocol.SessionResumeResponse{
-						Session: protocol.SessionInfo{
-							ID: sess.ID, Title: sess.Title, Model: sess.Model,
-							Interaction: string(sess.Interaction), Yolo: sess.Yolo,
-						},
+						Session:  sessionInfo(sess),
 						Messages: msgsToMsgInfos(msgs),
 					})
 				}()
@@ -519,13 +510,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	// Send init event
 	_ = bus.SendInit(protocol.Init{
-		Session: protocol.SessionInfo{
-			ID:          sess.ID,
-			Title:       sess.Title,
-			Model:       sess.Model,
-			Interaction: string(sess.Interaction),
-			Yolo:        sess.Yolo,
-		},
+		Session:     sessionInfo(sess),
 		ProjectRoot: projectRoot,
 	})
 

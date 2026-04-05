@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 // ---------------------------------------------------------------------------
 // TUI → Backend notifications
 // ---------------------------------------------------------------------------
@@ -25,8 +27,37 @@ type Cancel struct{}
 
 // ModeUpdate updates session-level execution modes.
 type ModeUpdate struct {
-	Autonomous bool `json:"autonomous,omitempty"`
-	Yolo       bool `json:"yolo,omitempty"`
+	Mode string `json:"mode,omitempty"`
+	Yolo bool   `json:"yolo,omitempty"`
+}
+
+func (m *ModeUpdate) UnmarshalJSON(data []byte) error {
+	type modeUpdatePayload struct {
+		Mode       string `json:"mode,omitempty"`
+		Autonomous *bool  `json:"autonomous,omitempty"`
+		Yolo       bool   `json:"yolo,omitempty"`
+	}
+
+	var payload modeUpdatePayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	m.Mode = payload.Mode
+	m.Yolo = payload.Yolo
+
+	if payload.Mode != "" {
+		return nil
+	}
+	if payload.Autonomous == nil {
+		return nil
+	}
+	if *payload.Autonomous {
+		m.Mode = "autonomous"
+		return nil
+	}
+	m.Mode = "symbiotic"
+	return nil
 }
 
 // Resize notifies the backend of terminal size change.

@@ -42,11 +42,12 @@ func (s *SQLiteStore) Create(ctx context.Context, sess *agent.Session) error {
 	if sess.UpdatedAt.IsZero() {
 		sess.UpdatedAt = sess.CreatedAt
 	}
+	sess.SetExecutionMode(sess.ExecutionMode())
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO agent_sessions (id, parent_id, title, model, current_phase, depth, interaction, yolo, active_cycle_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sess.ID, sess.ParentID, sess.Title, sess.Model, string(sess.CurrentPhase),
-		string(sess.Depth), string(sess.Interaction), sess.Yolo, sess.ActiveCycleID,
+		string(sess.Depth), string(sess.ExecutionMode()), sess.Yolo, sess.ActiveCycleID,
 		sess.CreatedAt.Format(time.RFC3339),
 		sess.UpdatedAt.Format(time.RFC3339),
 	)
@@ -64,12 +65,13 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*agent.Session, error
 
 func (s *SQLiteStore) Update(ctx context.Context, sess *agent.Session) error {
 	sess.UpdatedAt = time.Now().UTC()
+	sess.SetExecutionMode(sess.ExecutionMode())
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE agent_sessions SET title = ?, model = ?, current_phase = ?,
 		        depth = ?, interaction = ?, yolo = ?, active_cycle_id = ?, updated_at = ?
 		 WHERE id = ?`,
 		sess.Title, sess.Model, string(sess.CurrentPhase),
-		string(sess.Depth), string(sess.Interaction), sess.Yolo, sess.ActiveCycleID,
+		string(sess.Depth), string(sess.ExecutionMode()), sess.Yolo, sess.ActiveCycleID,
 		sess.UpdatedAt.Format(time.RFC3339), sess.ID,
 	)
 	return err
@@ -304,7 +306,7 @@ func scanSession(row rowScanner) (*agent.Session, error) {
 	}
 	sess.CurrentPhase = agent.Phase(phase)
 	sess.Depth = agent.Depth(depth)
-	sess.Interaction = agent.Interaction(interaction)
+	sess.SetExecutionMode(agent.NormalizeExecutionMode(interaction))
 	sess.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	sess.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &sess, nil

@@ -19,7 +19,8 @@ type SessionInfo struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Model       string `json:"model"`
-	Interaction string `json:"interaction,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Interaction string `json:"interaction,omitempty"` // legacy alias for mode during transport migration
 	Yolo        bool   `json:"yolo,omitempty"`
 }
 

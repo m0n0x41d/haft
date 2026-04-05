@@ -207,7 +207,7 @@ type Session struct {
 	Model         string      `json:"model"`
 	CurrentPhase  Phase       `json:"current_phase,omitempty"` // lemniscate phase state
 	Depth         Depth       `json:"depth,omitempty"`         // which phases to include
-	Interaction   Interaction `json:"interaction,omitempty"`   // pause between phases?
+	Interaction   Interaction `json:"interaction,omitempty"`   // canonical execution mode; kept as interaction during migration
 	Yolo          bool        `json:"yolo,omitempty"`
 	ActiveCycleID string      `json:"active_cycle_id,omitempty"`
 	CreatedAt     time.Time   `json:"created_at"`
@@ -256,13 +256,56 @@ const (
 	DepthDeep     Depth = "deep"     // standard + parity enforcement, rich evidence reqs
 )
 
-// Interaction controls whether the agent pauses between phases.
-type Interaction string
+// ExecutionMode is the canonical session/runtime execution vocabulary.
+// Guardrails still refer to this as "interaction" during migration.
+type ExecutionMode string
 
 const (
-	InteractionSymbiotic  Interaction = "symbiotic"  // pause between phases for user input
-	InteractionAutonomous Interaction = "autonomous" // auto-chain phases, no pauses
+	ExecutionModeSymbiotic  ExecutionMode = "symbiotic"  // pause between phases for user input
+	ExecutionModeAutonomous ExecutionMode = "autonomous" // auto-chain phases, no pauses
 )
+
+// Interaction is the legacy name used by existing guardrail code.
+type Interaction = ExecutionMode
+
+const (
+	InteractionSymbiotic  = ExecutionModeSymbiotic
+	InteractionAutonomous = ExecutionModeAutonomous
+)
+
+func ParseExecutionMode(raw string) (ExecutionMode, bool) {
+	switch ExecutionMode(raw) {
+	case ExecutionModeSymbiotic:
+		return ExecutionModeSymbiotic, true
+	case ExecutionModeAutonomous:
+		return ExecutionModeAutonomous, true
+	default:
+		return ExecutionModeSymbiotic, false
+	}
+}
+
+func NormalizeExecutionMode(raw string) ExecutionMode {
+	mode, ok := ParseExecutionMode(raw)
+	if ok {
+		return mode
+	}
+	return ExecutionModeSymbiotic
+}
+
+func ExecutionModeFromAutonomous(enabled bool) ExecutionMode {
+	if enabled {
+		return ExecutionModeAutonomous
+	}
+	return ExecutionModeSymbiotic
+}
+
+func (s Session) ExecutionMode() ExecutionMode {
+	return NormalizeExecutionMode(string(s.Interaction))
+}
+
+func (s *Session) SetExecutionMode(mode ExecutionMode) {
+	s.Interaction = NormalizeExecutionMode(string(mode))
+}
 
 // ---------------------------------------------------------------------------
 // NavStatus — artifact completeness state for transition validation.

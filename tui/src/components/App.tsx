@@ -562,7 +562,7 @@ export function App({ client, inputEvents }: AppProps) {
     if (key.ctrl && input === "q") {
       const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic"
       dispatch({ type: "toggle.autonomy" })
-      client.send("autonomy.toggle", { autonomous: newMode === "autonomous" })
+      client.send("autonomy.toggle", { mode: newMode })
       dispatch({ type: "set.notification", text: newMode === "autonomous" ? "auto enabled" : "auto disabled" })
       return
     }

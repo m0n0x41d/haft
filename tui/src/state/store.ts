@@ -117,16 +117,18 @@ export type Action =
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case "init":
+    case "init": {
+      const sessionMode = action.session.mode ?? action.session.interaction
       return {
         ...state,
         session: action.session,
         projectRoot: action.projectRoot,
         messages: normalizeMessages(action.messages),
-        mode: action.session.interaction === "autonomous" ? "autonomous" : "symbiotic",
+        mode: sessionMode === "autonomous" ? "autonomous" : "symbiotic",
         yolo: action.session.yolo ?? false,
         phase: "input",
       }
+    }
 
     case "msg.update": {
       const { params } = action

@@ -34,7 +34,10 @@ import {
   type InputDisplayRow,
   type InputVisualRow,
 } from "./inputLayout.js"
-import type { PromptSubmission } from "./promptSubmission.js"
+import {
+  hasSubmittableText,
+  type PromptSubmission,
+} from "./promptSubmission.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
@@ -49,6 +52,7 @@ interface Props {
   width: number
   hasQueuedMessages?: boolean
   onRowsChange?: (rows: number) => void
+  onTextChange?: (text: string) => void
 }
 
 export interface InputAreaHandle {
@@ -57,7 +61,7 @@ export interface InputAreaHandle {
 }
 
 export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function InputArea(
-  { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange },
+  { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange, onTextChange },
   ref,
 ) {
   const [edit, setEdit] = useState<EditState>(empty)
@@ -83,6 +87,10 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
     onRowsChange?.(visualRows)
   }, [visualRows, onRowsChange])
 
+  useEffect(() => {
+    onTextChange?.(edit.text)
+  }, [edit.text, onTextChange])
+
   useInput((input, key) => {
     if (phase !== "input" && phase !== "streaming") return
 
@@ -99,9 +107,9 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         setEdit((s) => insertAt(s, "\n"))
         return
       }
-      if (edit.text.trim()) {
-        historyRef.current = push(historyRef.current, edit.text.trim())
-        onSubmit(edit.text.trim())
+      if (hasSubmittableText(edit.text)) {
+        historyRef.current = push(historyRef.current, edit.text)
+        onSubmit(edit.text)
         setEdit(empty)
       }
       return

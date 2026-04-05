@@ -38,20 +38,27 @@ test("keeps queued attachments across manual edit and resend", () => {
   const queued = [
     createPromptSubmission("queued prompt", [
       { id: 1, name: "image.png", path: "/tmp/image.png", isImage: true },
-    ]),
+    ], [{
+      id: 7,
+      text: "very large paste",
+      rowCount: 48,
+    }]),
   ]
   const shifted = shiftPromptSubmissions(queued)
   const restored = shifted.current
 
   assert.equal(shifted.remaining.length, 0)
   assert.equal(restored?.attachments[0]?.name, "image.png")
+  assert.equal(restored?.pastes[0]?.id, 7)
 
   const resent = createPromptSubmission(
     `${restored?.text}\nwith edit`,
     restored?.attachments ?? [],
+    restored?.pastes ?? [],
   )
 
   assert.equal(resent.attachments[0]?.name, "image.png")
+  assert.equal(resent.pastes[0]?.rowCount, 48)
   assert.equal(resent.text, "queued prompt\nwith edit")
 })
 
@@ -59,17 +66,33 @@ test("restoring a queued draft keeps keyboard ownership with the prompt", () => 
   const queued = [
     createPromptSubmission("queued prompt", [
       { id: 1, name: "image.png", path: "/tmp/image.png", isImage: true },
-    ]),
+    ], [{
+      id: 5,
+      text: "large paste body",
+      rowCount: 32,
+    }]),
   ]
   const restored = restoreQueuedSubmission(queued)
   const edited = createPromptSubmission(
     `${restored.draft?.text} updated`,
     restored.draft?.attachments ?? [],
+    restored.draft?.pastes ?? [],
   )
 
   assert.equal(restored.attachmentSelection, false)
   assert.equal(restored.draft?.attachments[0]?.name, "image.png")
+  assert.equal(restored.draft?.pastes[0]?.id, 5)
   assert.equal(edited.text, "queued prompt updated")
+})
+
+test("summarizes large queued prompt previews without mutating the submission", () => {
+  const largePrompt = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n")
+  const queued = [
+    createPromptSubmission(largePrompt, []),
+  ]
+
+  assert.deepEqual(submissionTexts(queued), ["[40 rows inserted]"])
+  assert.equal(queued[0]?.text, largePrompt)
 })
 
 test("classifies queued slash commands by replay behavior", () => {

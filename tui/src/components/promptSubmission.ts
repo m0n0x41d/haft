@@ -1,8 +1,13 @@
 import type { AttachmentItem } from "./attachmentLayout.js"
+import {
+  summarizeQueuedPromptText,
+  type CollapsedPaste,
+} from "./pastedText.js"
 
 export interface PromptSubmission {
   text: string
   attachments: AttachmentItem[]
+  pastes: CollapsedPaste[]
 }
 
 interface ShiftPromptSubmissionsResult {
@@ -39,17 +44,19 @@ export function hasSubmittableText(text: string): boolean {
 export function createPromptSubmission(
   text: string,
   attachments: readonly AttachmentItem[],
+  pastes: readonly CollapsedPaste[] = [],
 ): PromptSubmission {
   return {
     text,
     attachments: cloneAttachmentItems(attachments),
+    pastes: cloneCollapsedPastes(pastes),
   }
 }
 
 export function submissionTexts(
   submissions: readonly PromptSubmission[],
 ): string[] {
-  return submissions.map((submission) => submission.text)
+  return submissions.map((submission) => summarizeQueuedPromptText(submission.text))
 }
 
 export function leadingSlashCommand(text: string): string | null {
@@ -142,5 +149,14 @@ function clonePromptSubmission(
   return createPromptSubmission(
     submission.text,
     submission.attachments,
+    submission.pastes,
   )
+}
+
+function cloneCollapsedPastes(
+  pastes: readonly CollapsedPaste[],
+): CollapsedPaste[] {
+  return pastes.map((paste) => ({
+    ...paste,
+  }))
 }

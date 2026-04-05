@@ -5,6 +5,7 @@ import { buildTranscript } from "../state/transcript.js"
 import { buildInputDisplayLayout, measureInputDisplayRows } from "./inputLayout.js"
 import { computeBottomRows, computeChatHeight } from "./appLayout.js"
 import { buildUserPromptDisplayLines } from "./userPrompt.js"
+import { collapsePastedText } from "./pastedText.js"
 import { createInputRouter } from "../terminal/inputStream.js"
 import { empty, insertAt, moveDown, moveEnd, moveHome, moveUp, cursorPosition } from "../input/editBuffer.js"
 import { emptyHistory, currentText, navigateUp, push } from "../input/history.js"
@@ -32,15 +33,12 @@ function createFakeTTYInput(): FakeTTYInput {
   return ttyInput
 }
 
-test("keeps a large bracketed paste visible in the wrapped prompt", () => {
+test("collapses a large bracketed paste into a rows-inserted placeholder", () => {
   const ttyInput = createFakeTTYInput()
   const router = createInputRouter(ttyInput as never)
   const pastedChunks: string[] = []
   const pastedText = [
-    "alpha beta gamma delta",
-    "second line keeps going",
-    "third line stays visible",
-    "fourth line still wraps",
+    ...Array.from({ length: 28 }, (_, index) => `line ${index + 1}`),
   ].join("\n")
 
   router.events.on("paste", (text: string) => pastedChunks.push(text))
@@ -48,24 +46,7 @@ test("keeps a large bracketed paste visible in the wrapped prompt", () => {
   ttyInput.emit("data", `\x1b[200~${pastedText}\x1b[201~`)
 
   assert.deepEqual(pastedChunks, [pastedText])
-
-  const layout = buildInputDisplayLayout({
-    text: pastedText,
-    cursor: pastedText.length,
-    width: 16,
-    hasQueuedMessages: false,
-  })
-  const editorRows = layout.rows.filter((row) => row.kind === "editor")
-  const lastEditorRow = editorRows.at(-1)
-
-  assert.ok(editorRows.length > pastedText.split("\n").length)
-  assert.equal(lastEditorRow?.kind, "editor")
-
-  if (lastEditorRow?.kind !== "editor") {
-    throw new Error("expected final prompt row to stay visible")
-  }
-
-  assert.notEqual(lastEditorRow.row.cursorOffset, null)
+  assert.equal(collapsePastedText(pastedText, 1).displayText, "[28 rows inserted #1]")
 
   router.destroy()
 })
@@ -153,6 +134,15 @@ test("round-trips multiline history into transcript rendering without attachment
       "   third line",
       "   [image: clipboard.png]",
     ],
+  )
+})
+
+test("collapses large raw transcript prompts into a compact display line", () => {
+  const prompt = Array.from({ length: 32 }, (_, index) => `article line ${index + 1}`).join("\n")
+
+  assert.deepEqual(
+    buildUserPromptDisplayLines(prompt),
+    [" ❯ [32 rows inserted]"],
   )
 })
 

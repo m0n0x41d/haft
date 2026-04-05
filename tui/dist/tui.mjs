@@ -1381,7 +1381,7 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useRef(initialValue);
         }
-        function useEffect8(create2, deps) {
+        function useEffect10(create2, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useEffect(create2, deps);
         }
@@ -2164,7 +2164,7 @@ var require_react_development = __commonJS({
         exports.useContext = useContext8;
         exports.useDebugValue = useDebugValue;
         exports.useDeferredValue = useDeferredValue;
-        exports.useEffect = useEffect8;
+        exports.useEffect = useEffect10;
         exports.useId = useId;
         exports.useImperativeHandle = useImperativeHandle2;
         exports.useInsertionEffect = useInsertionEffect;
@@ -33455,7 +33455,7 @@ function initialState() {
     streamingMsgId: null,
     tokensUsed: 0,
     tokensLimit: 0,
-    mode: "symbiotic",
+    mode: "checkpointed",
     yolo: false,
     cycle: null,
     activeSubagents: 0,
@@ -33473,16 +33473,18 @@ function initialState() {
 }
 function reducer(state, action) {
   switch (action.type) {
-    case "init":
+    case "init": {
+      const sessionMode = normalizeSessionMode(action.session.mode ?? action.session.interaction);
       return {
         ...state,
         session: action.session,
         projectRoot: action.projectRoot,
         messages: normalizeMessages(action.messages),
-        mode: action.session.interaction === "autonomous" ? "autonomous" : "symbiotic",
+        mode: sessionMode,
         yolo: action.session.yolo ?? false,
         phase: "input"
       };
+    }
     case "msg.update": {
       const { params } = action;
       const idx = state.messages.findIndex((m) => m.id === params.id);
@@ -33491,6 +33493,7 @@ function reducer(state, action) {
         id: params.id,
         role: existing?.role ?? (params.id.startsWith("user-") ? "user" : "assistant"),
         text: params.text,
+        attachments: params.attachments ?? existing?.attachments,
         thinking: params.thinking,
         tools: mergeToolCollections(existing?.tools, normalizeToolCalls(params.tools))
       };
@@ -33670,7 +33673,7 @@ function reducer(state, action) {
     case "clear.notification":
       return { ...state, notification: null };
     case "toggle.autonomy":
-      return { ...state, mode: state.mode === "symbiotic" ? "autonomous" : "symbiotic" };
+      return { ...state, mode: state.mode === "checkpointed" ? "autonomous" : "checkpointed" };
     case "toggle.yolo":
       return { ...state, yolo: !state.yolo };
     case "toggle.think":
@@ -33683,6 +33686,9 @@ function reducer(state, action) {
       return state;
   }
 }
+function normalizeSessionMode(mode) {
+  return mode === "autonomous" ? "autonomous" : "checkpointed";
+}
 function normalizeMessages(messages) {
   return messages?.map(normalizeMessage) ?? [];
 }
@@ -33691,9 +33697,19 @@ function normalizeMessage(message) {
     id: message.id,
     role: message.role,
     text: message.text,
+    attachments: normalizeMessageAttachments(message.attachments),
     thinking: message.thinking,
     tools: normalizeToolCalls(message.tools)
   };
+}
+function normalizeMessageAttachments(attachments) {
+  if (!attachments?.length) {
+    return void 0;
+  }
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    isImage: attachment.isImage
+  }));
 }
 function normalizeToolCalls(tools) {
   if (!tools?.length) {
@@ -33970,10 +33986,12 @@ function buildTranscript(opts) {
   const entries = [];
   for (const msg of opts.messages) {
     if (msg.role === "user") {
-      const lines = msg.text.split("\n");
-      const text = lines[0] ?? "";
-      const attachments = lines.slice(1).filter((l) => l.startsWith("["));
-      entries.push({ type: "userPrompt", id: `${msg.id}-user`, text, attachments });
+      entries.push({
+        type: "userPrompt",
+        id: `${msg.id}-user`,
+        text: msg.text,
+        attachments: msg.attachments ?? []
+      });
       continue;
     }
     if (msg.thinking) {
@@ -34338,11 +34356,140 @@ var init_toolBatch = __esm({
   }
 });
 
+// src/components/pastedText.ts
+function countPromptRows(text) {
+  if (text.length === 0) {
+    return 1;
+  }
+  return text.split("\n").length;
+}
+function shouldCollapsePromptText(text) {
+  return text.length >= COLLAPSE_CHAR_THRESHOLD || countPromptRows(text) >= COLLAPSE_ROW_THRESHOLD;
+}
+function formatCollapsedRowsInserted(rowCount, id) {
+  if (id === void 0) {
+    return `[${rowCount} rows inserted]`;
+  }
+  return `[${rowCount} rows inserted #${id}]`;
+}
+function collapsePastedText(text, nextId) {
+  if (!shouldCollapsePromptText(text)) {
+    return {
+      displayText: text,
+      pastes: []
+    };
+  }
+  const rowCount = countPromptRows(text);
+  const paste = {
+    id: nextId,
+    text,
+    rowCount
+  };
+  return {
+    displayText: formatCollapsedRowsInserted(rowCount, nextId),
+    pastes: [paste]
+  };
+}
+function expandCollapsedPastes(text, pastes) {
+  const pastesById = new Map(
+    pastes.map((paste) => [paste.id, paste.text])
+  );
+  return text.replace(COLLAPSED_PASTE_PATTERN, (match, _rows, idText) => {
+    const id = Number.parseInt(idText, 10);
+    const pastedText = pastesById.get(id);
+    return pastedText ?? match;
+  });
+}
+function filterReferencedCollapsedPastes(text, pastes) {
+  const referencedIds = collectCollapsedPasteIds(text);
+  return pastes.filter((paste) => referencedIds.has(paste.id));
+}
+function summarizeQueuedPromptText(text) {
+  if (shouldCollapsePromptText(text)) {
+    return formatCollapsedRowsInserted(countPromptRows(text));
+  }
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= QUEUE_PREVIEW_CHAR_LIMIT) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, QUEUE_PREVIEW_CHAR_LIMIT - 3)}...`;
+}
+function collapsedPromptDisplayText(text) {
+  if (!shouldCollapsePromptText(text)) {
+    return null;
+  }
+  return formatCollapsedRowsInserted(countPromptRows(text));
+}
+function collectCollapsedPasteIds(text) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const match of text.matchAll(COLLAPSED_PASTE_PATTERN)) {
+    const id = Number.parseInt(match[2] ?? "", 10);
+    if (Number.isNaN(id)) {
+      continue;
+    }
+    ids.add(id);
+  }
+  return ids;
+}
+var COLLAPSE_ROW_THRESHOLD, COLLAPSE_CHAR_THRESHOLD, QUEUE_PREVIEW_CHAR_LIMIT, COLLAPSED_PASTE_PATTERN;
+var init_pastedText = __esm({
+  "src/components/pastedText.ts"() {
+    "use strict";
+    COLLAPSE_ROW_THRESHOLD = 24;
+    COLLAPSE_CHAR_THRESHOLD = 4e3;
+    QUEUE_PREVIEW_CHAR_LIMIT = 120;
+    COLLAPSED_PASTE_PATTERN = /\[(\d+) rows inserted #(\d+)\]/g;
+  }
+});
+
+// src/components/userPrompt.ts
+function buildUserPromptDisplayLines(text, attachments = []) {
+  const collapsedText = collapsedPromptDisplayText(text);
+  if (collapsedText) {
+    const attachmentDisplayLines2 = attachments.map((attachment) => `${USER_PROMPT_CONTINUATION}${formatUserPromptAttachmentLabel(attachment)}`);
+    return [`${USER_PROMPT_PREFIX}${collapsedText}`, ...attachmentDisplayLines2];
+  }
+  const sourceLines = text.split("\n");
+  const [firstLine = "", ...continuationLines] = sourceLines;
+  const firstDisplayLine = `${USER_PROMPT_PREFIX}${firstLine}`;
+  const restDisplayLines = continuationLines.map((line) => `${USER_PROMPT_CONTINUATION}${line}`);
+  const attachmentDisplayLines = attachments.map((attachment) => `${USER_PROMPT_CONTINUATION}${formatUserPromptAttachmentLabel(attachment)}`);
+  return [firstDisplayLine, ...restDisplayLines, ...attachmentDisplayLines];
+}
+function serializeUserPrompt(text, attachments = []) {
+  const attachmentLines = attachments.map(formatUserPromptAttachmentLabel);
+  const parts = [text, ...attachmentLines].filter((part) => part.length > 0);
+  return parts.join("\n");
+}
+function countWrappedUserPromptRows(text, width, attachments = []) {
+  const safeWidth = Math.max(1, width);
+  return buildUserPromptDisplayLines(text, attachments).map((line) => countWrappedLineRows(line, safeWidth)).reduce((sum, rows) => sum + rows, 0);
+}
+function formatUserPromptAttachmentLabel(attachment) {
+  const kind = attachment.isImage ? "image" : "attachment";
+  return `[${kind}: ${attachment.name}]`;
+}
+function countWrappedLineRows(line, width) {
+  if (line.length === 0) {
+    return 1;
+  }
+  return Math.ceil(line.length / width);
+}
+var USER_PROMPT_PREFIX, USER_PROMPT_CONTINUATION;
+var init_userPrompt = __esm({
+  "src/components/userPrompt.ts"() {
+    "use strict";
+    init_pastedText();
+    USER_PROMPT_PREFIX = " \u276F ";
+    USER_PROMPT_CONTINUATION = "   ";
+  }
+});
+
 // src/scroll/measure.ts
 function estimateEntryHeight(entry, width, options = {}) {
   switch (entry.type) {
     case "userPrompt":
-      return 1 + 1 + entry.attachments.length;
+      return 1 + countWrappedUserPromptRows(entry.text, width, entry.attachments);
     case "assistantText": {
       const contentWidth = Math.max(1, Math.min(width - 4, 120));
       return 1 + countWrappedLines2(entry.text, contentWidth);
@@ -34515,6 +34662,7 @@ var init_measure = __esm({
   "src/scroll/measure.ts"() {
     "use strict";
     init_toolBatch();
+    init_userPrompt();
     DEFAULT_OVERSCAN_ROWS = 8;
   }
 });
@@ -34814,7 +34962,7 @@ function termRowToEntryIndex(termRow, layout) {
 function entryText(entry) {
   switch (entry.type) {
     case "userPrompt":
-      return entry.text;
+      return serializeUserPrompt(entry.text, entry.attachments);
     case "assistantText":
       return entry.text;
     case "thinking":
@@ -34858,6 +35006,7 @@ var init_extract = __esm({
   "src/selection/extract.ts"() {
     "use strict";
     init_measure();
+    init_userPrompt();
   }
 });
 
@@ -80532,21 +80681,13 @@ var init_ThinkingIndicator = __esm({
 function ChatView({ entries, width, toolHistoryExpanded, measureRef }) {
   return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, width, children: entries.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", flexShrink: 0, width, ref: measureRef?.(entry.id), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EntryBlock, { entry, width, toolHistoryExpanded }) }, entry.id)) });
 }
-function UserPromptBlock({ text, attachments, width }) {
-  const content = ` \u276F ${text}`;
-  const pad = Math.max(0, width - content.length);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, flexShrink: 0, width, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { backgroundColor: "blackBright", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: " \u276F" }),
-      " ",
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: text }),
-      " ".repeat(pad)
-    ] }) }),
-    attachments.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { paddingX: 1, width, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
-      "\u21B3  ",
-      line
-    ] }) }, i))
-  ] });
+function UserPromptBlock({
+  text,
+  attachments,
+  width
+}) {
+  const lines = buildUserPromptDisplayLines(text, attachments);
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", marginTop: 1, flexShrink: 0, width, children: lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { backgroundColor: "blackBright", bold: true, wrap: "wrap", children: line }) }, index)) });
 }
 function AssistantTextBlock({ text, streaming, width }) {
   const contentWidth = Math.min(width - 4, 120);
@@ -80588,6 +80729,7 @@ var init_ChatView = __esm({
     await init_MarkdownView();
     await init_AssistantToolBatchView();
     await init_ThinkingIndicator();
+    init_userPrompt();
     import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
     BLACK_CIRCLE2 = process.platform === "darwin" ? "\u23FA" : "\u25CF";
     EntryBlock = import_react31.default.memo(function EntryBlock2({
@@ -80652,9 +80794,8 @@ function StatusBar(props) {
       formatTokens(tokensLimit)
     ] }, "tokens"));
   }
-  if (mode === "autonomous") {
-    parts.push(/* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyanBright", bold: true, children: "auto" }, "auto"));
-  }
+  const modeLabel = mode === "autonomous" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "cyanBright", bold: true, children: "autonomous" }, "mode") : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { dimColor: true, children: "checkpointed" }, "mode");
+  parts.push(modeLabel);
   if (yolo) {
     parts.push(/* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: "yellowBright", bold: true, children: "yolo" }, "yolo"));
   }
@@ -80701,11 +80842,188 @@ var init_StatusBar = __esm({
   }
 });
 
+// src/input/graphemes.ts
+function segmentGraphemes(text) {
+  return [...graphemeSegmenter.segment(text)].map(({ segment, index }) => ({
+    text: segment,
+    start: index,
+    end: index + segment.length,
+    width: measureGraphemeWidth(segment)
+  }));
+}
+function measureGraphemeWidth(grapheme, runtimeStringWidth = getRuntimeStringWidth()) {
+  const fallbackWidth = measureFallbackGraphemeWidth(grapheme);
+  const runtimeWidth = measureRuntimeGraphemeWidth(grapheme, runtimeStringWidth);
+  const maxWidth = Math.max(fallbackWidth, runtimeWidth);
+  return maxWidth > 1 ? 2 : 1;
+}
+function normalizeGraphemeBoundaryLeft(text, offset) {
+  const clampedOffset = clampOffset2(text, offset);
+  for (const grapheme of segmentGraphemes(text)) {
+    if (clampedOffset === grapheme.end) {
+      return grapheme.end;
+    }
+    if (clampedOffset < grapheme.end) {
+      return grapheme.start;
+    }
+  }
+  return clampedOffset;
+}
+function findPreviousGraphemeBoundary(text, offset) {
+  const clampedOffset = clampOffset2(text, offset);
+  let previousBoundary2 = 0;
+  for (const grapheme of segmentGraphemes(text)) {
+    if (clampedOffset <= grapheme.start) {
+      return previousBoundary2;
+    }
+    if (clampedOffset <= grapheme.end) {
+      return grapheme.start;
+    }
+    previousBoundary2 = grapheme.end;
+  }
+  return previousBoundary2;
+}
+function findNextGraphemeBoundary(text, offset) {
+  const clampedOffset = clampOffset2(text, offset);
+  for (const grapheme of segmentGraphemes(text)) {
+    if (clampedOffset < grapheme.end) {
+      return grapheme.end;
+    }
+  }
+  return clampedOffset;
+}
+function clampOffset2(text, offset) {
+  return Math.max(0, Math.min(offset, text.length));
+}
+function getRuntimeStringWidth() {
+  const runtime = globalThis;
+  return runtime.Bun?.stringWidth ?? null;
+}
+function measureRuntimeGraphemeWidth(grapheme, runtimeStringWidth) {
+  const width = runtimeStringWidth?.(grapheme);
+  if (typeof width !== "number" || !Number.isFinite(width)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(2, Math.ceil(width)));
+}
+function measureFallbackGraphemeWidth(grapheme) {
+  const isEmojiCluster = regionalIndicatorFlagRegex.test(grapheme) || keycapSequenceRegex.test(grapheme) || emojiPresentationRegex.test(grapheme) || grapheme.includes(emojiVariationSelector) && emojiRegex2.test(grapheme) || grapheme.includes(zeroWidthJoiner) && extendedPictographicRegex.test(grapheme) || emojiModifierRegex.test(grapheme) && extendedPictographicRegex.test(grapheme);
+  if (isEmojiCluster) {
+    return 2;
+  }
+  const codePoints = [...grapheme].map((char) => char.codePointAt(0) ?? 0).filter((codePoint) => isVisibleWidthCodePoint(codePoint));
+  const hasWideCodePoint = codePoints.some((codePoint) => isWideCodePoint(codePoint));
+  return hasWideCodePoint ? 2 : 1;
+}
+function isVisibleWidthCodePoint(codePoint) {
+  if (codePoint === 8205) {
+    return false;
+  }
+  if (codePoint >= 65024 && codePoint <= 65039) {
+    return false;
+  }
+  if (codePoint >= 917760 && codePoint <= 917999) {
+    return false;
+  }
+  if (codePoint >= 917536 && codePoint <= 917631) {
+    return false;
+  }
+  const char = String.fromCodePoint(codePoint);
+  return !markRegex.test(char);
+}
+function isWideCodePoint(codePoint) {
+  return codePoint >= 4352 && codePoint <= 4447 || codePoint >= 9001 && codePoint <= 9002 || codePoint >= 11904 && codePoint <= 42191 || codePoint >= 44032 && codePoint <= 55203 || codePoint >= 63744 && codePoint <= 64255 || codePoint >= 65040 && codePoint <= 65049 || codePoint >= 65072 && codePoint <= 65135 || codePoint >= 65280 && codePoint <= 65376 || codePoint >= 65504 && codePoint <= 65510 || codePoint >= 127744 && codePoint <= 129791;
+}
+var graphemeSegmenter, emojiPresentationRegex, emojiModifierRegex, emojiRegex2, extendedPictographicRegex, markRegex, regionalIndicatorFlagRegex, keycapSequenceRegex, emojiVariationSelector, zeroWidthJoiner;
+var init_graphemes = __esm({
+  "src/input/graphemes.ts"() {
+    "use strict";
+    graphemeSegmenter = new Intl.Segmenter(void 0, {
+      granularity: "grapheme"
+    });
+    emojiPresentationRegex = /\p{Emoji_Presentation}/u;
+    emojiModifierRegex = /\p{Emoji_Modifier}/u;
+    emojiRegex2 = /\p{Emoji}/u;
+    extendedPictographicRegex = /\p{Extended_Pictographic}/u;
+    markRegex = /\p{Mark}/u;
+    regionalIndicatorFlagRegex = /^(?:\p{Regional_Indicator}){2}$/u;
+    keycapSequenceRegex = /^[#*0-9]\uFE0F?\u20E3$/u;
+    emojiVariationSelector = "\uFE0F";
+    zeroWidthJoiner = "\u200D";
+  }
+});
+
 // src/input/editBuffer.ts
-var empty, fromText, insertAt, deleteBack, deleteForward, isWordChar, deleteWordBack, moveLeft, moveRight, moveHome, moveEnd, moveWordLeft, moveWordRight, cursorPosition;
+function currentBoundary(text, cursor) {
+  return normalizeGraphemeBoundaryLeft(text, cursor);
+}
+function previousBoundary(text, cursor) {
+  return findPreviousGraphemeBoundary(text, currentBoundary(text, cursor));
+}
+function nextBoundary(text, cursor) {
+  return findNextGraphemeBoundary(text, currentBoundary(text, cursor));
+}
+function currentLineRange(text, cursor) {
+  const start = text.lastIndexOf("\n", cursor - 1) + 1;
+  const nextBreak = text.indexOf("\n", cursor);
+  const end = nextBreak === -1 ? text.length : nextBreak;
+  return {
+    start,
+    end,
+    text: text.slice(start, end)
+  };
+}
+function previousLineRange(text, currentLineStart) {
+  if (currentLineStart === 0) {
+    return null;
+  }
+  const end = currentLineStart - 1;
+  const start = text.lastIndexOf("\n", end - 1) + 1;
+  return {
+    start,
+    end,
+    text: text.slice(start, end)
+  };
+}
+function nextLineRange(text, currentLineEnd) {
+  if (currentLineEnd >= text.length) {
+    return null;
+  }
+  const start = currentLineEnd + 1;
+  const nextBreak = text.indexOf("\n", start);
+  const end = nextBreak === -1 ? text.length : nextBreak;
+  return {
+    start,
+    end,
+    text: text.slice(start, end)
+  };
+}
+function displayColumnAtOffset(text, offset) {
+  const beforeOffset = text.slice(0, offset);
+  return segmentGraphemes(beforeOffset).reduce((width, grapheme) => width + grapheme.width, 0);
+}
+function offsetForDisplayColumn(text, targetColumn) {
+  const graphemes = segmentGraphemes(text);
+  let width = 0;
+  let offset = 0;
+  for (const grapheme of graphemes) {
+    const nextWidth = width + grapheme.width;
+    if (nextWidth > targetColumn) {
+      return grapheme.start;
+    }
+    width = nextWidth;
+    offset = grapheme.end;
+    if (width === targetColumn) {
+      return offset;
+    }
+  }
+  return text.length;
+}
+var empty, fromText, insertAt, deleteBack, deleteForward, isWordChar, deleteWordBack, moveLeft, moveRight, moveHome, moveEnd, moveUp, moveDown, moveWordLeft, moveWordRight;
 var init_editBuffer = __esm({
   "src/input/editBuffer.ts"() {
     "use strict";
+    init_graphemes();
     empty = { text: "", cursor: 0 };
     fromText = (text) => ({
       text,
@@ -80715,13 +81033,13 @@ var init_editBuffer = __esm({
       text: s.text.slice(0, s.cursor) + str + s.text.slice(s.cursor),
       cursor: s.cursor + str.length
     });
-    deleteBack = (s) => s.cursor === 0 ? s : {
-      text: s.text.slice(0, s.cursor - 1) + s.text.slice(s.cursor),
-      cursor: s.cursor - 1
+    deleteBack = (s) => currentBoundary(s.text, s.cursor) === 0 ? s : {
+      text: s.text.slice(0, previousBoundary(s.text, s.cursor)) + s.text.slice(currentBoundary(s.text, s.cursor)),
+      cursor: previousBoundary(s.text, s.cursor)
     };
-    deleteForward = (s) => s.cursor >= s.text.length ? s : {
-      text: s.text.slice(0, s.cursor) + s.text.slice(s.cursor + 1),
-      cursor: s.cursor
+    deleteForward = (s) => currentBoundary(s.text, s.cursor) >= s.text.length ? s : {
+      text: s.text.slice(0, currentBoundary(s.text, s.cursor)) + s.text.slice(nextBoundary(s.text, s.cursor)),
+      cursor: currentBoundary(s.text, s.cursor)
     };
     isWordChar = (ch) => ch !== " " && ch !== "\n" && ch !== "	";
     deleteWordBack = (s) => {
@@ -80731,8 +81049,8 @@ var init_editBuffer = __esm({
       while (i > 0 && isWordChar(s.text[i - 1])) i--;
       return { text: s.text.slice(0, i) + s.text.slice(s.cursor), cursor: i };
     };
-    moveLeft = (s) => s.cursor === 0 ? s : { ...s, cursor: s.cursor - 1 };
-    moveRight = (s) => s.cursor >= s.text.length ? s : { ...s, cursor: s.cursor + 1 };
+    moveLeft = (s) => currentBoundary(s.text, s.cursor) === 0 ? s : { ...s, cursor: previousBoundary(s.text, s.cursor) };
+    moveRight = (s) => currentBoundary(s.text, s.cursor) >= s.text.length ? s : { ...s, cursor: nextBoundary(s.text, s.cursor) };
     moveHome = (s) => {
       const lineStart = s.text.lastIndexOf("\n", s.cursor - 1) + 1;
       return { ...s, cursor: lineStart };
@@ -80740,6 +81058,28 @@ var init_editBuffer = __esm({
     moveEnd = (s) => {
       const lineEnd = s.text.indexOf("\n", s.cursor);
       return { ...s, cursor: lineEnd === -1 ? s.text.length : lineEnd };
+    };
+    moveUp = (s) => {
+      const cursor = currentBoundary(s.text, s.cursor);
+      const currentLine = currentLineRange(s.text, cursor);
+      const previousLine = previousLineRange(s.text, currentLine.start);
+      if (!previousLine) {
+        return s;
+      }
+      const targetColumn = displayColumnAtOffset(currentLine.text, cursor - currentLine.start);
+      const targetOffset = offsetForDisplayColumn(previousLine.text, targetColumn);
+      return { ...s, cursor: previousLine.start + targetOffset };
+    };
+    moveDown = (s) => {
+      const cursor = currentBoundary(s.text, s.cursor);
+      const currentLine = currentLineRange(s.text, cursor);
+      const nextLine = nextLineRange(s.text, currentLine.end);
+      if (!nextLine) {
+        return s;
+      }
+      const targetColumn = displayColumnAtOffset(currentLine.text, cursor - currentLine.start);
+      const targetOffset = offsetForDisplayColumn(nextLine.text, targetColumn);
+      return { ...s, cursor: nextLine.start + targetOffset };
     };
     moveWordLeft = (s) => {
       if (s.cursor === 0) return s;
@@ -80754,11 +81094,6 @@ var init_editBuffer = __esm({
       while (i < s.text.length && isWordChar(s.text[i])) i++;
       while (i < s.text.length && !isWordChar(s.text[i])) i++;
       return { ...s, cursor: i };
-    };
-    cursorPosition = (s) => {
-      const before = s.text.slice(0, s.cursor);
-      const lines = before.split("\n");
-      return { line: lines.length - 1, col: lines[lines.length - 1].length };
     };
   }
 });
@@ -80790,6 +81125,276 @@ var init_history = __esm({
     };
     currentText = (h) => h.position >= h.entries.length ? h.draft : h.entries[h.position] ?? h.draft;
     isNavigating = (h) => h.position < h.entries.length;
+  }
+});
+
+// src/components/inputLayout.ts
+function buildInputLayout(text, cursor, width) {
+  const contentWidth = getInputContentWidth(width);
+  const clampedCursor = clampCursor(text, cursor);
+  const cursorLocation = getCursorLocation(text, clampedCursor);
+  const logicalLines = text.length === 0 ? [""] : text.split("\n");
+  const rows = logicalLines.flatMap(
+    (line, lineIndex) => buildLogicalLineRows(
+      line,
+      lineIndex,
+      cursorLocation,
+      contentWidth
+    )
+  );
+  return {
+    contentWidth,
+    rows
+  };
+}
+function buildInputDisplayLayout(options) {
+  const { text, cursor, width, hasQueuedMessages } = options;
+  if (text.length === 0) {
+    return buildEmptyInputDisplayLayout(width, hasQueuedMessages);
+  }
+  const layout = buildInputLayout(text, cursor, width);
+  const rows = layout.rows.map((row) => ({ kind: "editor", row }));
+  return {
+    contentWidth: layout.contentWidth,
+    rows
+  };
+}
+function buildLogicalLineRows(line, lineIndex, cursorLocation, contentWidth) {
+  const segments = wrapLogicalLine(line, contentWidth);
+  const editorRows = segments.map((segment, segmentIndex) => ({
+    prefix: getRowPrefix(lineIndex, segmentIndex),
+    text: segment.text,
+    cursorOffset: getCursorOffset(
+      lineIndex,
+      segmentIndex,
+      segments,
+      segment,
+      cursorLocation
+    )
+  }));
+  const trailingCursorRows = needsTrailingCursorRow(
+    lineIndex,
+    line.length,
+    segments,
+    contentWidth,
+    cursorLocation
+  ) ? [{
+    prefix: INPUT_CONTINUATION_PREFIX,
+    text: "",
+    cursorOffset: 0
+  }] : [];
+  return [...editorRows, ...trailingCursorRows];
+}
+function buildEmptyInputDisplayLayout(width, hasQueuedMessages) {
+  const contentWidth = getInputContentWidth(width);
+  const hint = hasQueuedMessages ? QUEUED_MESSAGES_HINT : "";
+  const firstRowHintWidth = Math.max(0, contentWidth - EMPTY_INPUT_CURSOR.length);
+  const firstRowHint = firstRowHintWidth > 0 ? wrapLogicalLine(hint, firstRowHintWidth)[0]?.text ?? "" : "";
+  const remainingHint = hint.slice(firstRowHint.length);
+  const continuationRows = wrapLogicalLine(remainingHint, contentWidth).map((segment) => segment.text).filter((text) => text.length > 0).map((text) => ({
+    kind: "hint",
+    prefix: INPUT_CONTINUATION_PREFIX,
+    text
+  }));
+  const rows = [
+    {
+      kind: "placeholder",
+      prefix: INPUT_PROMPT_PREFIX,
+      hint: firstRowHint
+    },
+    ...continuationRows
+  ];
+  return {
+    contentWidth,
+    rows
+  };
+}
+function wrapLogicalLine(line, contentWidth) {
+  if (line.length === 0) {
+    return [{
+      text: "",
+      start: 0,
+      end: 0,
+      width: 0
+    }];
+  }
+  const graphemes = segmentGraphemes(line);
+  const segments = [];
+  let segmentStart = 0;
+  let segmentEnd = 0;
+  let segmentWidth = 0;
+  let segmentText = "";
+  for (const grapheme of graphemes) {
+    const nextWidth = segmentWidth + grapheme.width;
+    const shouldWrap = segmentText.length > 0 && nextWidth > contentWidth;
+    if (shouldWrap) {
+      segments.push({
+        text: segmentText,
+        start: segmentStart,
+        end: segmentEnd,
+        width: segmentWidth
+      });
+      segmentStart = grapheme.start;
+      segmentEnd = grapheme.end;
+      segmentWidth = grapheme.width;
+      segmentText = grapheme.text;
+      continue;
+    }
+    if (segmentText.length === 0) {
+      segmentStart = grapheme.start;
+    }
+    segmentEnd = grapheme.end;
+    segmentWidth = nextWidth;
+    segmentText += grapheme.text;
+  }
+  segments.push({
+    text: segmentText,
+    start: segmentStart,
+    end: segmentEnd,
+    width: segmentWidth
+  });
+  return segments;
+}
+function getCursorOffset(lineIndex, segmentIndex, segments, segment, cursorLocation) {
+  if (lineIndex !== cursorLocation.line) {
+    return null;
+  }
+  const isLastSegment = segmentIndex === segments.length - 1;
+  const lineOffset = cursorLocation.offset;
+  if (lineOffset < segment.start) {
+    return null;
+  }
+  if (lineOffset > segment.end) {
+    return null;
+  }
+  if (lineOffset === segment.end && !isLastSegment) {
+    return null;
+  }
+  const rowOffset = lineOffset - segment.start;
+  return normalizeGraphemeBoundaryLeft(segment.text, rowOffset);
+}
+function needsTrailingCursorRow(lineIndex, lineLength, segments, contentWidth, cursorLocation) {
+  if (lineIndex !== cursorLocation.line) {
+    return false;
+  }
+  if (lineLength === 0) {
+    return false;
+  }
+  if (cursorLocation.offset !== lineLength) {
+    return false;
+  }
+  const lastSegment = segments[segments.length - 1];
+  return (lastSegment?.width ?? 0) >= contentWidth;
+}
+function getRowPrefix(lineIndex, segmentIndex) {
+  if (lineIndex === 0 && segmentIndex === 0) {
+    return INPUT_PROMPT_PREFIX;
+  }
+  return INPUT_CONTINUATION_PREFIX;
+}
+function getCursorLocation(text, cursor) {
+  const beforeCursor = text.slice(0, cursor);
+  const logicalLines = beforeCursor.split("\n");
+  const currentLine = logicalLines[logicalLines.length - 1] ?? "";
+  return {
+    line: logicalLines.length - 1,
+    offset: currentLine.length
+  };
+}
+function clampCursor(text, cursor) {
+  return Math.max(0, Math.min(cursor, text.length));
+}
+function getInputContentWidth(width) {
+  const reservedColumns = INPUT_HORIZONTAL_PADDING + INPUT_PREFIX_COLUMNS;
+  return Math.max(1, width - reservedColumns);
+}
+var INPUT_PROMPT_PREFIX, INPUT_CONTINUATION_PREFIX, INPUT_HORIZONTAL_PADDING, INPUT_PREFIX_COLUMNS, EMPTY_INPUT_CURSOR, QUEUED_MESSAGES_HINT;
+var init_inputLayout = __esm({
+  "src/components/inputLayout.ts"() {
+    "use strict";
+    init_graphemes();
+    INPUT_PROMPT_PREFIX = "\u276F ";
+    INPUT_CONTINUATION_PREFIX = "  ";
+    INPUT_HORIZONTAL_PADDING = 2;
+    INPUT_PREFIX_COLUMNS = INPUT_PROMPT_PREFIX.length;
+    EMPTY_INPUT_CURSOR = " ";
+    QUEUED_MESSAGES_HINT = "  Press up to edit queued messages";
+  }
+});
+
+// src/components/promptSubmission.ts
+function hasSubmittableText(text) {
+  return text.trim().length > 0;
+}
+function createPromptSubmission(text, attachments, pastes = []) {
+  return {
+    text,
+    attachments: cloneAttachmentItems(attachments),
+    pastes: cloneCollapsedPastes(pastes)
+  };
+}
+function submissionTexts(submissions) {
+  return submissions.map((submission) => summarizeQueuedPromptText(submission.text));
+}
+function leadingSlashCommand(text) {
+  if (!text.startsWith("/")) {
+    return null;
+  }
+  const [command] = text.split(" ");
+  return command ?? null;
+}
+function shouldResumeQueuedReplayAfterPickerCancel(text) {
+  const command = leadingSlashCommand(text);
+  return command === "/help" || command === "/model" || command === "/resume";
+}
+function shouldResumeQueuedReplayAfterCommandResolution(text) {
+  const command = leadingSlashCommand(text);
+  return command === "/compact";
+}
+function shiftPromptSubmissions(submissions) {
+  const [current, ...remaining] = submissions;
+  return {
+    current: current ? clonePromptSubmission(current) : null,
+    remaining: [...remaining]
+  };
+}
+function restoreQueuedSubmission(submissions) {
+  const shifted = shiftPromptSubmissions(submissions);
+  return {
+    draft: shifted.current,
+    remaining: shifted.remaining,
+    attachmentSelection: false
+  };
+}
+function drainPromptSubmissions(submissions) {
+  const shifted = shiftPromptSubmissions(submissions);
+  const replay = shifted.current ? [shifted.current] : [];
+  return {
+    replay,
+    remaining: shifted.remaining
+  };
+}
+function cloneAttachmentItems(attachments) {
+  return attachments.map((attachment) => ({
+    ...attachment
+  }));
+}
+function clonePromptSubmission(submission) {
+  return createPromptSubmission(
+    submission.text,
+    submission.attachments,
+    submission.pastes
+  );
+}
+function cloneCollapsedPastes(pastes) {
+  return pastes.map((paste) => ({
+    ...paste
+  }));
+}
+var init_promptSubmission = __esm({
+  "src/components/promptSubmission.ts"() {
+    "use strict";
+    init_pastedText();
   }
 });
 
@@ -80925,6 +81530,41 @@ var init_clipboard2 = __esm({
 });
 
 // src/components/InputArea.tsx
+function renderInputRow(row) {
+  if (row.kind === "editor") {
+    return renderEditorRow(row.row);
+  }
+  if (row.kind === "placeholder") {
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: row.prefix }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { inverse: true, children: " " }),
+      row.hint.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: row.hint })
+    ] });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: row.prefix }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: row.text })
+  ] });
+}
+function renderEditorRow(row) {
+  const cursorOffset = row.cursorOffset;
+  if (cursorOffset === null) {
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: row.prefix }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: row.text })
+    ] });
+  }
+  const beforeCursor = row.text.slice(0, cursorOffset);
+  const afterCursorBoundary = row.text.slice(cursorOffset);
+  const cursorChar = segmentGraphemes(afterCursorBoundary)[0]?.text ?? " ";
+  const afterCursor = afterCursorBoundary.length > 0 ? afterCursorBoundary.slice(cursorChar.length) : "";
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: row.prefix }),
+    beforeCursor.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: beforeCursor }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { inverse: true, children: cursorChar }),
+    afterCursor.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: afterCursor })
+  ] });
+}
 async function checkClipboardImage(onPasteImage) {
   trace("checkClipboardImage: start");
   try {
@@ -80945,11 +81585,23 @@ var init_InputArea = __esm({
     init_useInput();
     init_editBuffer();
     init_history();
+    init_graphemes();
+    init_inputLayout();
+    init_promptSubmission();
     init_clipboard2();
     import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
-    InputArea = import_react32.default.memo((0, import_react32.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages }, ref) {
+    InputArea = import_react32.default.memo((0, import_react32.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange, onTextChange }, ref) {
       const [edit, setEdit] = (0, import_react32.useState)(empty);
       const historyRef = (0, import_react32.useRef)(emptyHistory);
+      const isVisible = phase === "input" || phase === "streaming";
+      const layout = isVisible ? buildInputDisplayLayout({
+        text: edit.text,
+        cursor: edit.cursor,
+        width,
+        hasQueuedMessages: hasQueuedMessages ?? false
+      }) : null;
+      const rows = layout?.rows ?? [];
+      const visualRows = rows.length;
       (0, import_react32.useImperativeHandle)(ref, () => ({
         insert(text) {
           setEdit((s) => insertAt(s, text));
@@ -80958,6 +81610,12 @@ var init_InputArea = __esm({
           return edit.text;
         }
       }), [edit.text]);
+      (0, import_react32.useEffect)(() => {
+        onRowsChange?.(visualRows);
+      }, [visualRows, onRowsChange]);
+      (0, import_react32.useEffect)(() => {
+        onTextChange?.(edit.text);
+      }, [edit.text, onTextChange]);
       useInput((input, key) => {
         if (phase !== "input" && phase !== "streaming") return;
         if (key.return) {
@@ -80972,9 +81630,9 @@ var init_InputArea = __esm({
             setEdit((s) => insertAt(s, "\n"));
             return;
           }
-          if (edit.text.trim()) {
-            historyRef.current = push(historyRef.current, edit.text.trim());
-            onSubmit(edit.text.trim());
+          if (hasSubmittableText(edit.text)) {
+            historyRef.current = push(historyRef.current, edit.text);
+            onSubmit(edit.text);
             setEdit(empty);
           }
           return;
@@ -81035,6 +81693,11 @@ var init_InputArea = __esm({
           return;
         }
         if (key.upArrow) {
+          const nextEdit = moveUp(edit);
+          if (nextEdit.cursor !== edit.cursor) {
+            setEdit(moveUp);
+            return;
+          }
           if (!edit.text) {
             if (hasAttachments && onEnterAttachmentSelection) {
               onEnterAttachmentSelection();
@@ -81042,8 +81705,8 @@ var init_InputArea = __esm({
             }
             if (hasQueuedMessages && onPopQueue) {
               const queued = onPopQueue();
-              if (queued && queued.length > 0) {
-                setEdit(fromText(queued.join("\n")));
+              if (queued) {
+                setEdit(fromText(queued.text));
               }
               return;
             }
@@ -81056,6 +81719,11 @@ var init_InputArea = __esm({
           return;
         }
         if (key.downArrow) {
+          const nextEdit = moveDown(edit);
+          if (nextEdit.cursor !== edit.cursor) {
+            setEdit(moveDown);
+            return;
+          }
           if (isNavigating(historyRef.current)) {
             const result = navigateDown(historyRef.current);
             if (result) {
@@ -81084,31 +81752,9 @@ var init_InputArea = __esm({
           }
           setEdit((s) => insertAt(s, input));
         }
-      }, { isActive: phase === "input" || phase === "streaming" });
-      if (phase !== "input" && phase !== "streaming") return null;
-      if (!edit.text) {
-        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { paddingX: 1, width, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
-            "\u276F",
-            " "
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { inverse: true, children: " " }),
-          hasQueuedMessages && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { dimColor: true, children: "  Press up to edit queued messages" })
-        ] });
-      }
-      const { line: cursorLine, col: cursorCol } = cursorPosition(edit);
-      const lines = edit.text.split("\n");
-      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: lines.map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { width, children: [
-        i === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { children: [
-          "\u276F",
-          " "
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: "  " }),
-        i === cursorLine ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: line.slice(0, cursorCol) }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { inverse: true, children: cursorCol < line.length ? line[cursorCol] : " " }),
-          cursorCol < line.length && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: line.slice(cursorCol + 1) })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { children: line })
-      ] }, i)) });
+      }, { isActive: isVisible });
+      if (!isVisible) return null;
+      return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: rows.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { width, children: renderInputRow(row) }, i)) });
     }));
   }
 });
@@ -81420,22 +82066,151 @@ var init_Picker = __esm({
   }
 });
 
+// src/components/attachmentLayout.ts
+function buildAttachmentRows(options) {
+  const { items, selectionMode, selectedIndex = 0, width } = options;
+  if (items.length === 0) {
+    return [];
+  }
+  const contentWidth = Math.max(1, width - HORIZONTAL_PADDING);
+  const itemRows = buildItemRows(items, selectionMode, selectedIndex, contentWidth);
+  const hintRows = wrapText2(getHintText(selectionMode), contentWidth).map((text) => ({ type: "hint", text }));
+  return [...itemRows, ...hintRows];
+}
+function estimateAttachmentRows(options) {
+  const rows = buildAttachmentRows(options);
+  return rows.length;
+}
+function moveAttachmentCursor(cursor, direction, itemCount) {
+  if (itemCount <= 0) {
+    return 0;
+  }
+  if (direction === "left") {
+    return Math.max(0, cursor - 1);
+  }
+  return Math.min(itemCount - 1, cursor + 1);
+}
+function clampAttachmentCursor(cursor, itemCount) {
+  if (itemCount <= 0) {
+    return 0;
+  }
+  return Math.min(Math.max(0, cursor), itemCount - 1);
+}
+function buildItemRows(items, selectionMode, selectedIndex, contentWidth) {
+  const rows = [];
+  let currentItems = [];
+  let currentWidth = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const rawLabel = formatAttachmentLabel(item);
+    const boundedLabel = truncateAttachmentLabel(rawLabel, contentWidth);
+    const displayItem = {
+      id: item.id,
+      label: boundedLabel,
+      selected: selectionMode && index === selectedIndex
+    };
+    const itemWidth = displayItem.label.length;
+    const gapWidth = currentItems.length === 0 ? 0 : 1;
+    if (currentItems.length > 0 && currentWidth + gapWidth + itemWidth > contentWidth) {
+      rows.push({ type: "items", items: currentItems });
+      currentItems = [];
+      currentWidth = 0;
+    }
+    currentItems = [...currentItems, displayItem];
+    currentWidth += (currentItems.length === 1 ? 0 : 1) + itemWidth;
+  }
+  if (currentItems.length > 0) {
+    rows.push({ type: "items", items: currentItems });
+  }
+  return rows;
+}
+function formatAttachmentLabel(item) {
+  if (item.isImage) {
+    return `[Image #${item.id}]`;
+  }
+  return `[${item.name}]`;
+}
+function getHintText(selectionMode) {
+  return selectionMode ? SELECTION_HINT : DEFAULT_HINT;
+}
+function truncateAttachmentLabel(label, width) {
+  if (label.length <= width) {
+    return label;
+  }
+  if (width <= 1) {
+    return ELLIPSIS;
+  }
+  if (label.startsWith("[") && label.endsWith("]")) {
+    return truncateBracketedLabel(label, width);
+  }
+  return truncatePlainLabel(label, width);
+}
+function truncateBracketedLabel(label, width) {
+  if (width <= 2) {
+    return ELLIPSIS;
+  }
+  const inner = label.slice(1, -1);
+  const visibleInnerWidth = Math.max(0, width - 3);
+  const visibleInner = inner.slice(0, visibleInnerWidth);
+  return `[${visibleInner}${ELLIPSIS}]`;
+}
+function truncatePlainLabel(label, width) {
+  const visibleWidth = Math.max(0, width - 1);
+  const visibleText = label.slice(0, visibleWidth);
+  return `${visibleText}${ELLIPSIS}`;
+}
+function wrapText2(text, width) {
+  if (!text) {
+    return [""];
+  }
+  return text.split("\n").flatMap((line) => wrapLine(line, width));
+}
+function wrapLine(line, width) {
+  if (!line) {
+    return [""];
+  }
+  const chunks = [];
+  for (let start = 0; start < line.length; start += width) {
+    chunks.push(line.slice(start, start + width));
+  }
+  return chunks;
+}
+var HORIZONTAL_PADDING, DEFAULT_HINT, SELECTION_HINT, ELLIPSIS;
+var init_attachmentLayout = __esm({
+  "src/components/attachmentLayout.ts"() {
+    "use strict";
+    HORIZONTAL_PADDING = 2;
+    DEFAULT_HINT = "(\u2191 to select)";
+    SELECTION_HINT = "\u2192 to next \xB7 Delete to remove \xB7 Esc to cancel";
+    ELLIPSIS = "\u2026";
+  }
+});
+
 // src/components/Attachments.tsx
-function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
+function Attachments({ items, onRemove, selectionMode, onExitSelection, width }) {
   const [cursor, setCursor] = (0, import_react36.useState)(0);
+  const rows = buildAttachmentRows({
+    items,
+    selectionMode,
+    selectedIndex: cursor,
+    width
+  });
+  (0, import_react36.useEffect)(() => {
+    setCursor((value) => clampAttachmentCursor(value, items.length));
+  }, [items.length]);
   useInput((_input, key) => {
     if (key.rightArrow) {
-      setCursor((c) => Math.min(c + 1, items.length - 1));
+      setCursor((value) => moveAttachmentCursor(value, "right", items.length));
       return;
     }
     if (key.leftArrow) {
-      setCursor((c) => Math.max(0, c - 1));
+      setCursor((value) => moveAttachmentCursor(value, "left", items.length));
       return;
     }
     if (key.delete || key.backspace) {
       if (items.length > 0) {
         onRemove(items[cursor].id);
-        setCursor((c) => Math.max(0, c - 1));
+        setCursor((value) => clampAttachmentCursor(value, items.length - 1));
       }
       return;
     }
@@ -81445,26 +82220,13 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection }) {
     }
   }, { isActive: selectionMode });
   if (items.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { paddingX: 1, children: [
-    items.map((item, i) => {
-      const isSelected = selectionMode && i === cursor;
-      const label = item.isImage ? `[Image #${item.id}]` : `[${item.name}]`;
-      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { marginRight: 1, children: isSelected ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { inverse: true, bold: true, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: label }) }, item.id);
-    }),
-    selectionMode && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { dimColor: true, children: [
-      "\u2192",
-      " to next",
-      " \xB7 ",
-      "Delete to remove",
-      " \xB7 ",
-      "Esc to cancel"
-    ] }),
-    !selectionMode && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { dimColor: true, children: [
-      "(",
-      "\u2191",
-      " to select)"
-    ] })
-  ] });
+  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexDirection: "column", width, children: rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { paddingX: 1, width, children: [
+    row.type === "items" && row.items.map((item, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_react36.default.Fragment, { children: [
+      itemIndex > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { children: " " }),
+      item.selected ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { inverse: true, bold: true, children: item.label }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: item.label })
+    ] }, item.id)),
+    row.type === "hint" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: row.text })
+  ] }, `${row.type}-${rowIndex}`)) });
 }
 var import_react36, import_jsx_runtime14;
 var init_Attachments = __esm({
@@ -81473,7 +82235,60 @@ var init_Attachments = __esm({
     import_react36 = __toESM(require_react(), 1);
     await init_build2();
     init_useInput();
+    init_attachmentLayout();
     import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+  }
+});
+
+// src/components/appLayout.ts
+function computeBottomRows(options) {
+  const {
+    width,
+    queuedMessages,
+    attachments,
+    attachmentSelection,
+    inputRows,
+    showInput
+  } = options;
+  const queuedRows = estimateQueuedMessageRows(queuedMessages, width);
+  const attachmentRows = estimateAttachmentRows({
+    items: attachments,
+    selectionMode: attachmentSelection,
+    width
+  });
+  const visibleInputRows = showInput ? Math.max(1, inputRows) : 0;
+  return TOP_SEPARATOR_ROWS + queuedRows + attachmentRows + visibleInputRows + BOTTOM_SEPARATOR_ROWS + STATUS_BAR_ROWS;
+}
+function computeChatHeight(totalRows, bottomRows) {
+  return Math.max(0, totalRows - bottomRows);
+}
+function estimateInputRows(text) {
+  if (!text) {
+    return 1;
+  }
+  return Math.max(1, text.split("\n").length);
+}
+function estimateQueuedMessageRows(queuedMessages, width) {
+  const contentWidth = Math.max(1, width - 2);
+  return queuedMessages.reduce((sum, message) => {
+    const decoratedMessage = ` \u276F ${message} `;
+    return sum + countWrappedLines3(decoratedMessage, contentWidth);
+  }, 0);
+}
+function countWrappedLines3(text, width) {
+  if (!text) {
+    return 1;
+  }
+  return text.split("\n").reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0);
+}
+var TOP_SEPARATOR_ROWS, BOTTOM_SEPARATOR_ROWS, STATUS_BAR_ROWS;
+var init_appLayout = __esm({
+  "src/components/appLayout.ts"() {
+    "use strict";
+    init_attachmentLayout();
+    TOP_SEPARATOR_ROWS = 1;
+    BOTTOM_SEPARATOR_ROWS = 1;
+    STATUS_BAR_ROWS = 1;
   }
 });
 
@@ -81491,12 +82306,20 @@ function App2({ client: client2, inputEvents }) {
   const inputRef = (0, import_react37.useRef)(null);
   const [queuedMessages, setQueuedMessages] = (0, import_react37.useState)([]);
   const [attachments, setAttachments] = (0, import_react37.useState)([]);
+  const [draftPastes, setDraftPastes] = (0, import_react37.useState)([]);
   const [attachmentSelection, setAttachmentSelection] = (0, import_react37.useState)(false);
+  const [inputRows, setInputRows] = (0, import_react37.useState)(() => estimateInputRows(""));
   const nextAttachmentId = (0, import_react37.useRef)(1);
+  const nextPasteId = (0, import_react37.useRef)(1);
   const phaseRef = (0, import_react37.useRef)(state.phase);
   phaseRef.current = state.phase;
-  const handleSubmitRef = (0, import_react37.useRef)(() => {
+  const queuedMessageTexts = (0, import_react37.useMemo)(
+    () => submissionTexts(queuedMessages),
+    [queuedMessages]
+  );
+  const replayQueueRef = (0, import_react37.useRef)(() => {
   });
+  const resumeQueuedOnPickerCancelRef = (0, import_react37.useRef)(false);
   const [, setRedrawTick] = (0, import_react37.useState)(0);
   const selRef = (0, import_react37.useRef)(INITIAL_SELECTION);
   const layoutRef = (0, import_react37.useRef)({
@@ -81519,7 +82342,14 @@ function App2({ client: client2, inputEvents }) {
   (0, import_react37.useEffect)(() => {
     const handler = (text) => {
       if (!text) return;
-      if (inputRef.current) inputRef.current.insert(text);
+      const collapsed = collapsePastedText(text, nextPasteId.current);
+      if (collapsed.pastes.length > 0) {
+        nextPasteId.current += collapsed.pastes.length;
+        setDraftPastes((current) => [...current, ...collapsed.pastes]);
+      }
+      if (inputRef.current) {
+        inputRef.current.insert(collapsed.displayText);
+      }
     };
     inputEvents.on("paste", handler);
     return () => {
@@ -81548,8 +82378,16 @@ function App2({ client: client2, inputEvents }) {
     error: state.error,
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
-  const bottomRows = BASE_BOTTOM_ROWS;
-  const chatHeight = Math.max(5, height - bottomRows);
+  const showInput = !pickerMode && (state.phase === "input" || state.phase === "streaming");
+  const bottomRows = (0, import_react37.useMemo)(() => computeBottomRows({
+    width,
+    queuedMessages: queuedMessageTexts,
+    attachments,
+    attachmentSelection,
+    inputRows,
+    showInput
+  }), [width, queuedMessageTexts, attachments, attachmentSelection, inputRows, showInput]);
+  const chatHeight = computeChatHeight(height, bottomRows);
   const { entryHeights, measureRef } = useMeasuredTranscript(
     transcript,
     width,
@@ -81588,6 +82426,16 @@ function App2({ client: client2, inputEvents }) {
       inputEvents.off("input", handler);
     };
   }, [inputEvents]);
+  const resumeQueuedMessages = (0, import_react37.useCallback)(() => {
+    setQueuedMessages((submissions) => {
+      const drained = drainPromptSubmissions(submissions);
+      if (drained.replay.length > 0) {
+        const replay = drained.replay;
+        setTimeout(() => replayQueueRef.current(replay), 100);
+      }
+      return drained.remaining;
+    });
+  }, []);
   (0, import_react37.useEffect)(() => {
     client2.setNotificationHandler((method, params) => {
       trace(`notification: ${method}`);
@@ -81656,14 +82504,7 @@ function App2({ client: client2, inputEvents }) {
             pendingUpdate.current = null;
           }
           dispatch({ type: "coord.done" });
-          setQueuedMessages((q) => {
-            if (q.length > 0) {
-              const next = q[0];
-              setTimeout(() => handleSubmitRef.current(next), 100);
-              return q.slice(1);
-            }
-            return q;
-          });
+          resumeQueuedMessages();
           break;
       }
     });
@@ -81677,7 +82518,7 @@ function App2({ client: client2, inputEvents }) {
         respondRef.current = respond;
       }
     });
-  }, [client2]);
+  }, [client2, resumeQueuedMessages]);
   (0, import_react37.useEffect)(() => {
     client2.send("resize", { width, height });
   }, [client2, width, height]);
@@ -81686,44 +82527,149 @@ function App2({ client: client2, inputEvents }) {
     const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 5e3);
     return () => clearTimeout(timer);
   }, [state.notification]);
-  const handleSubmit = (0, import_react37.useCallback)((text) => {
-    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
-    if (phaseRef.current === "streaming") {
-      setQueuedMessages((q) => [...q, text]);
-      return;
+  const openFilePicker = (0, import_react37.useCallback)(async () => {
+    try {
+      const resp = await client2.request("file.list", { limit: 200 });
+      setPickerItems(resp.files.map((f) => ({ id: f.path, label: f.path, desc: formatSize(f.size) })));
+      setPickerMode("files");
+    } catch (e) {
+      dispatch({ type: "error", message: `file list: ${e.message}` });
     }
-    if (text.startsWith("/")) {
-      const cmd = text.split(" ")[0];
-      switch (cmd) {
-        case "/model":
-          openModelPicker();
-          return;
-        case "/resume":
-          openSessionPicker();
-          return;
-        case "/compact":
-          client2.request("compact", {}).then((r) => {
-            dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` });
-          }).catch((e) => dispatch({ type: "error", message: e.message }));
-          return;
-        case "/help":
-          setPickerMode("commands");
-          setPickerItems(SLASH_COMMANDS);
-          return;
+  }, [client2]);
+  const openModelPicker = (0, import_react37.useCallback)(async () => {
+    try {
+      const resp = await client2.request("model.list", {});
+      setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \xB7 ${Math.round(m.contextWindow / 1e3)}k` })));
+      setPickerMode("models");
+    } catch (e) {
+      const shouldResume = resumeQueuedOnPickerCancelRef.current;
+      resumeQueuedOnPickerCancelRef.current = false;
+      dispatch({ type: "error", message: `model list: ${e.message}` });
+      if (shouldResume) {
+        resumeQueuedMessages();
       }
     }
-    dispatch({ type: "submitted" });
-    const displayParts = [text];
-    for (const a of attachments) {
-      displayParts.push(a.isImage ? `[Image #${a.id}]` : `[${a.name}]`);
+  }, [client2, resumeQueuedMessages]);
+  const openSessionPicker = (0, import_react37.useCallback)(async () => {
+    try {
+      const resp = await client2.request("session.list", { limit: 20 });
+      setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })));
+      setPickerMode("sessions");
+    } catch (e) {
+      const shouldResume = resumeQueuedOnPickerCancelRef.current;
+      resumeQueuedOnPickerCancelRef.current = false;
+      dispatch({ type: "error", message: `session list: ${e.message}` });
+      if (shouldResume) {
+        resumeQueuedMessages();
+      }
     }
-    dispatch({ type: "msg.update", params: { id: `user-${Date.now()}`, text: displayParts.join("\n"), streaming: false } });
-    const submitAttachments = attachments.map((a) => ({ name: a.name, path: a.path, isImage: a.isImage, mimeType: a.isImage ? "image/*" : void 0 }));
-    client2.send("submit", { text, attachments: submitAttachments.length > 0 ? submitAttachments : void 0 });
+  }, [client2, resumeQueuedMessages]);
+  const sendSubmission = (0, import_react37.useCallback)((submission) => {
+    const referencedPastes = filterReferencedCollapsedPastes(
+      submission.text,
+      submission.pastes
+    );
+    const expandedText = expandCollapsedPastes(
+      submission.text,
+      referencedPastes
+    );
+    dispatch({ type: "submitted" });
+    dispatch({
+      type: "msg.update",
+      params: {
+        id: `user-${Date.now()}`,
+        text: submission.text,
+        attachments: toMessageAttachments(submission.attachments),
+        streaming: false
+      }
+    });
+    const submitAttachments = submission.attachments.map((attachment) => ({
+      name: attachment.name,
+      path: attachment.path,
+      isImage: attachment.isImage,
+      mimeType: attachment.isImage ? "image/*" : void 0
+    }));
+    client2.send("submit", {
+      text: expandedText,
+      attachments: submitAttachments.length > 0 ? submitAttachments : void 0
+    });
+  }, [client2]);
+  const handleSlashCommand = (0, import_react37.useCallback)((text, fromQueuedReplay) => {
+    const cmd = leadingSlashCommand(text);
+    const shouldResumeOnCancel = fromQueuedReplay && shouldResumeQueuedReplayAfterPickerCancel(text);
+    const shouldResumeOnResolution = fromQueuedReplay && shouldResumeQueuedReplayAfterCommandResolution(text);
+    resumeQueuedOnPickerCancelRef.current = shouldResumeOnCancel;
+    if (!cmd) {
+      return "unhandled";
+    }
+    switch (cmd) {
+      case "/model":
+        openModelPicker();
+        return "pause";
+      case "/resume":
+        openSessionPicker();
+        return "pause";
+      case "/compact":
+        Promise.resolve().then(() => client2.request("compact", {})).then((r) => {
+          dispatch({ type: "set.notification", text: `Compacted ${r.before} \u2192 ${r.after} messages` });
+          if (shouldResumeOnResolution) {
+            resumeQueuedMessages();
+          }
+        }).catch((e) => {
+          dispatch({ type: "error", message: e.message });
+          if (shouldResumeOnResolution) {
+            resumeQueuedMessages();
+          }
+        });
+        return "pause";
+      case "/help":
+        setPickerMode("commands");
+        setPickerItems(SLASH_COMMANDS);
+        return "pause";
+      default:
+        return "unhandled";
+    }
+  }, [client2, openModelPicker, openSessionPicker, resumeQueuedMessages]);
+  const replaySubmission = (0, import_react37.useCallback)((submission) => {
+    const commandResult = handleSlashCommand(submission.text, true);
+    if (commandResult === "pause") {
+      return true;
+    }
+    sendSubmission(submission);
+    return true;
+  }, [handleSlashCommand, sendSubmission]);
+  const replayQueuedSubmissions = (0, import_react37.useCallback)((submissions) => {
+    submissions.some((submission) => replaySubmission(submission));
+  }, [replaySubmission]);
+  const handleSubmit = (0, import_react37.useCallback)((text) => {
+    trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
+    const submission = createPromptSubmission(text, attachments, draftPastes);
+    if (phaseRef.current === "streaming") {
+      setQueuedMessages((current) => [...current, submission]);
+      setAttachments([]);
+      setDraftPastes([]);
+      setAttachmentSelection(false);
+      return;
+    }
+    const commandResult = handleSlashCommand(text, false);
+    if (commandResult !== "unhandled") {
+      return;
+    }
+    sendSubmission(submission);
     setAttachments([]);
+    setDraftPastes([]);
     setAttachmentSelection(false);
-  }, [client2, attachments]);
-  handleSubmitRef.current = handleSubmit;
+  }, [attachments, draftPastes, handleSlashCommand, sendSubmission]);
+  const handleRemoveAttachment = (0, import_react37.useCallback)((id) => {
+    setAttachments((current) => {
+      const next = current.filter((item) => item.id !== id);
+      if (next.length === 0) {
+        setAttachmentSelection(false);
+      }
+      return next;
+    });
+  }, []);
+  replayQueueRef.current = replayQueuedSubmissions;
   const handlePermission = (0, import_react37.useCallback)((action) => {
     const yolo = action === "allow_session";
     respondRef.current?.({ action, yolo });
@@ -81740,42 +82686,44 @@ function App2({ client: client2, inputEvents }) {
     respondRef.current = null;
     dispatch({ type: "question.replied" });
   }, []);
-  const openFilePicker = (0, import_react37.useCallback)(async () => {
-    try {
-      const resp = await client2.request("file.list", { limit: 200 });
-      setPickerItems(resp.files.map((f) => ({ id: f.path, label: f.path, desc: formatSize(f.size) })));
-      setPickerMode("files");
-    } catch (e) {
-      dispatch({ type: "error", message: `file list: ${e.message}` });
+  const handlePickerCancel = (0, import_react37.useCallback)(() => {
+    const shouldResume = resumeQueuedOnPickerCancelRef.current;
+    resumeQueuedOnPickerCancelRef.current = false;
+    setPickerMode(null);
+    if (shouldResume) {
+      resumeQueuedMessages();
     }
-  }, [client2]);
-  const openModelPicker = (0, import_react37.useCallback)(async () => {
-    try {
-      const resp = await client2.request("model.list", {});
-      setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \xB7 ${Math.round(m.contextWindow / 1e3)}k` })));
-      setPickerMode("models");
-    } catch (e) {
-      dispatch({ type: "error", message: `model list: ${e.message}` });
-    }
-  }, [client2]);
-  const openSessionPicker = (0, import_react37.useCallback)(async () => {
-    try {
-      const resp = await client2.request("session.list", { limit: 20 });
-      setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })));
-      setPickerMode("sessions");
-    } catch (e) {
-      dispatch({ type: "error", message: `session list: ${e.message}` });
-    }
-  }, [client2]);
+  }, [resumeQueuedMessages]);
   const handlePickerSelect = (0, import_react37.useCallback)((item) => {
     const mode = pickerMode;
+    const shouldResume = resumeQueuedOnPickerCancelRef.current;
+    resumeQueuedOnPickerCancelRef.current = false;
     setPickerMode(null);
     switch (mode) {
       case "models":
-        client2.request("model.switch", { model: item.id }).catch((e) => dispatch({ type: "error", message: e.message }));
+        client2.request("model.switch", { model: item.id }).then(() => {
+          if (shouldResume) {
+            resumeQueuedMessages();
+          }
+        }).catch((e) => {
+          dispatch({ type: "error", message: e.message });
+          if (shouldResume) {
+            resumeQueuedMessages();
+          }
+        });
         break;
       case "sessions":
-        client2.request("session.resume", { sessionId: item.id }).then((r) => dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages })).catch((e) => dispatch({ type: "error", message: e.message }));
+        client2.request("session.resume", { sessionId: item.id }).then((r) => {
+          dispatch({ type: "init", session: r.session, projectRoot: state.projectRoot, messages: r.messages });
+          if (shouldResume) {
+            resumeQueuedMessages();
+          }
+        }).catch((e) => {
+          dispatch({ type: "error", message: e.message });
+          if (shouldResume) {
+            resumeQueuedMessages();
+          }
+        });
         break;
       case "files": {
         const isImg = /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(item.id);
@@ -81784,10 +82732,14 @@ function App2({ client: client2, inputEvents }) {
         break;
       }
       case "commands":
+        if (shouldResume) {
+          replaySubmission(createPromptSubmission(item.id, []));
+          break;
+        }
         handleSubmit(item.id);
         break;
     }
-  }, [pickerMode, client2, state.projectRoot, handleSubmit]);
+  }, [pickerMode, client2, state.projectRoot, handleSubmit, replaySubmission, resumeQueuedMessages]);
   useInput((input, key) => {
     if (pickerMode) return;
     if (key.ctrl && input === "c") {
@@ -81811,10 +82763,13 @@ function App2({ client: client2, inputEvents }) {
       return;
     }
     if (key.ctrl && input === "q") {
-      const newMode = state.mode === "symbiotic" ? "autonomous" : "symbiotic";
+      const newMode = state.mode === "checkpointed" ? "autonomous" : "checkpointed";
       dispatch({ type: "toggle.autonomy" });
-      client2.send("autonomy.toggle", { autonomous: newMode === "autonomous" });
-      dispatch({ type: "set.notification", text: newMode === "autonomous" ? "auto enabled" : "auto disabled" });
+      client2.send("autonomy.toggle", { mode: newMode });
+      dispatch({
+        type: "set.notification",
+        text: newMode === "autonomous" ? "autonomous mode enabled" : "checkpointed mode enabled"
+      });
       return;
     }
     if (key.ctrl && input === "y") {
@@ -81909,17 +82864,23 @@ function App2({ client: client2, inputEvents }) {
     ] }),
     showPermission && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
     showQuestion && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
-    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: () => setPickerMode(null), width }),
+    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: handlePickerCancel, width }),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: queuedMessages.map((msg, i) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
+    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: queuedMessageTexts.map((message, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
       " \u276F ",
-      msg,
+      message,
       " "
-    ] }) }, i)) }),
-    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Attachments, { items: attachments, onRemove: (id) => {
-      setAttachments((a) => a.filter((x) => x.id !== id));
-      if (attachments.length <= 1) setAttachmentSelection(false);
-    }, selectionMode: attachmentSelection, onExitSelection: () => setAttachmentSelection(false) }),
+    ] }) }, index)) }),
+    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+      Attachments,
+      {
+        items: attachments,
+        onRemove: handleRemoveAttachment,
+        selectionMode: attachmentSelection,
+        onExitSelection: () => setAttachmentSelection(false),
+        width
+      }
+    ),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
       InputArea,
       {
@@ -81932,10 +82893,19 @@ function App2({ client: client2, inputEvents }) {
           setPickerItems(SLASH_COMMANDS);
         },
         onPopQueue: () => {
-          if (queuedMessages.length === 0) return null;
-          const m = [...queuedMessages];
-          setQueuedMessages([]);
-          return m;
+          if (queuedMessages.length === 0) {
+            return null;
+          }
+          const restored = restoreQueuedSubmission(queuedMessages);
+          const draft = restored.draft;
+          if (!draft) {
+            return null;
+          }
+          setQueuedMessages(restored.remaining);
+          setAttachments(draft.attachments);
+          setDraftPastes(draft.pastes);
+          setAttachmentSelection(restored.attachmentSelection);
+          return draft;
         },
         onEnterAttachmentSelection: () => setAttachmentSelection(true),
         onPasteImage: (path) => {
@@ -81944,7 +82914,11 @@ function App2({ client: client2, inputEvents }) {
         },
         hasAttachments: attachments.length > 0,
         width,
-        hasQueuedMessages: queuedMessages.length > 0
+        hasQueuedMessages: queuedMessages.length > 0,
+        onRowsChange: setInputRows,
+        onTextChange: (text) => {
+          setDraftPastes((current) => filterReferencedCollapsedPastes(text, current));
+        }
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
@@ -81966,6 +82940,15 @@ function App2({ client: client2, inputEvents }) {
     )
   ] });
 }
+function toMessageAttachments(items) {
+  if (items.length === 0) {
+    return void 0;
+  }
+  return items.map((item) => ({
+    name: item.name,
+    isImage: item.isImage
+  }));
+}
 function pickerTitle(mode) {
   switch (mode) {
     case "models":
@@ -81985,7 +82968,7 @@ function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}K`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
 }
-var import_react37, import_jsx_runtime15, SLASH_COMMANDS, BASE_BOTTOM_ROWS;
+var import_react37, import_jsx_runtime15, SLASH_COMMANDS;
 var init_App2 = __esm({
   async "src/components/App.tsx"() {
     "use strict";
@@ -82007,6 +82990,9 @@ var init_App2 = __esm({
     await init_QuestionDialog();
     await init_Picker();
     await init_Attachments();
+    init_appLayout();
+    init_promptSubmission();
+    init_pastedText();
     import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
     SLASH_COMMANDS = [
       { id: "/compact", label: "/compact", desc: "Compress context window" },
@@ -82022,7 +83008,6 @@ var init_App2 = __esm({
       { id: "/note", label: "/note", desc: "Record a micro-decision" },
       { id: "/search", label: "/search", desc: "Search past decisions" }
     ];
-    BASE_BOTTOM_ROWS = 4;
   }
 });
 
@@ -82334,12 +83319,19 @@ function createInputRouter(ttyInput, onStdinResume) {
       const afterStart = str.slice(startIdx + PASTE_START.length);
       const endIdx = afterStart.indexOf(PASTE_END);
       if (endIdx >= 0) {
-        pasteBuffer = afterStart.slice(0, endIdx);
+        pasteBuffer = stripMouse(afterStart.slice(0, endIdx));
+        if (pasteBuffer.length > MAX_PASTE_BYTES) {
+          abortPaste();
+          return;
+        }
         flushPaste();
         const afterEnd = afterStart.slice(endIdx + PASTE_END.length);
         if (afterEnd) processChunk(afterEnd);
       } else {
-        pasteBuffer = afterStart;
+        pasteBuffer = stripMouse(afterStart);
+        if (pasteBuffer.length > MAX_PASTE_BYTES) {
+          abortPaste();
+        }
       }
       return;
     }

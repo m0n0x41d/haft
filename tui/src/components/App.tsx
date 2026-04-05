@@ -36,6 +36,12 @@ import {
   submissionTexts,
   type PromptSubmission,
 } from "./promptSubmission.js"
+import {
+  collapsePastedText,
+  expandCollapsedPastes,
+  filterReferencedCollapsedPastes,
+  type CollapsedPaste,
+} from "./pastedText.js"
 
 type PickerMode = null | "sessions" | "models" | "files" | "commands"
 
@@ -73,9 +79,11 @@ export function App({ client, inputEvents }: AppProps) {
   const inputRef = useRef<InputAreaHandle>(null)
   const [queuedMessages, setQueuedMessages] = useState<PromptSubmission[]>([])
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
+  const [draftPastes, setDraftPastes] = useState<CollapsedPaste[]>([])
   const [attachmentSelection, setAttachmentSelection] = useState(false)
   const [inputRows, setInputRows] = useState(() => estimateInputRows(""))
   const nextAttachmentId = useRef(1)
+  const nextPasteId = useRef(1)
   const phaseRef = useRef(state.phase)
   phaseRef.current = state.phase
   const queuedMessageTexts = useMemo(
@@ -116,7 +124,16 @@ export function App({ client, inputEvents }: AppProps) {
   useEffect(() => {
     const handler = (text: string) => {
       if (!text) return
-      if (inputRef.current) inputRef.current.insert(text)
+      const collapsed = collapsePastedText(text, nextPasteId.current)
+
+      if (collapsed.pastes.length > 0) {
+        nextPasteId.current += collapsed.pastes.length
+        setDraftPastes((current) => [...current, ...collapsed.pastes])
+      }
+
+      if (inputRef.current) {
+        inputRef.current.insert(collapsed.displayText)
+      }
     }
     inputEvents.on("paste", handler)
     return () => { inputEvents.off("paste", handler) }
@@ -328,6 +345,15 @@ export function App({ client, inputEvents }: AppProps) {
   }, [client, resumeQueuedMessages])
 
   const sendSubmission = useCallback((submission: PromptSubmission) => {
+    const referencedPastes = filterReferencedCollapsedPastes(
+      submission.text,
+      submission.pastes,
+    )
+    const expandedText = expandCollapsedPastes(
+      submission.text,
+      referencedPastes,
+    )
+
     dispatch({ type: "submitted" })
     dispatch({
       type: "msg.update",
@@ -347,7 +373,7 @@ export function App({ client, inputEvents }: AppProps) {
     }))
 
     client.send("submit", {
-      text: submission.text,
+      text: expandedText,
       attachments: submitAttachments.length > 0 ? submitAttachments : undefined,
     })
   }, [client])
@@ -418,11 +444,12 @@ export function App({ client, inputEvents }: AppProps) {
 
   const handleSubmit = useCallback((text: string) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
-    const submission = createPromptSubmission(text, attachments)
+    const submission = createPromptSubmission(text, attachments, draftPastes)
 
     if (phaseRef.current === "streaming") {
       setQueuedMessages((current) => [...current, submission])
       setAttachments([])
+      setDraftPastes([])
       setAttachmentSelection(false)
       return
     }
@@ -435,8 +462,9 @@ export function App({ client, inputEvents }: AppProps) {
 
     sendSubmission(submission)
     setAttachments([])
+    setDraftPastes([])
     setAttachmentSelection(false)
-  }, [attachments, handleSlashCommand, sendSubmission])
+  }, [attachments, draftPastes, handleSlashCommand, sendSubmission])
 
   const handleRemoveAttachment = useCallback((id: number) => {
     setAttachments((current) => {
@@ -679,6 +707,7 @@ export function App({ client, inputEvents }: AppProps) {
 
           setQueuedMessages(restored.remaining)
           setAttachments(draft.attachments)
+          setDraftPastes(draft.pastes)
           setAttachmentSelection(restored.attachmentSelection)
 
           return draft
@@ -689,6 +718,9 @@ export function App({ client, inputEvents }: AppProps) {
         width={width}
         hasQueuedMessages={queuedMessages.length > 0}
         onRowsChange={setInputRows}
+        onTextChange={(text) => {
+          setDraftPastes((current) => filterReferencedCollapsedPastes(text, current))
+        }}
       />
 
       {/* Bottom separator */}

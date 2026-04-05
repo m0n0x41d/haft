@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"os"
@@ -19,7 +20,7 @@ func TestRunFPFSearch_ExplainTierAndLimit(t *testing.T) {
 	restoreOpen := stubOpenFPFDB(t, dbPath)
 	defer restoreOpen()
 
-	restoreFlags := stubFPFSearchFlags(t, 1, false, true, fpf.SpecSearchTierRoute)
+	restoreFlags := stubFPFSearchFlags(t, 1, false, true, fpf.SpecSearchTierRoute, "")
 	defer restoreFlags()
 
 	output, err := captureStdout(t, func() error {
@@ -48,7 +49,7 @@ func TestRunFPFSearch_FullFlagLoadsFullSectionBody(t *testing.T) {
 	restoreOpen := stubOpenFPFDB(t, dbPath)
 	defer restoreOpen()
 
-	restoreFlags := stubFPFSearchFlags(t, 1, false, false, fpf.SpecSearchTierPattern)
+	restoreFlags := stubFPFSearchFlags(t, 1, false, false, fpf.SpecSearchTierPattern, "")
 	defer restoreFlags()
 
 	compactOutput, err := captureStdout(t, func() error {
@@ -79,7 +80,24 @@ func TestRunFPFSemanticSearch_ExplainAndFull(t *testing.T) {
 	restoreOpen := stubOpenFPFDB(t, dbPath)
 	defer restoreOpen()
 
-	restoreFlags := stubFPFSemanticSearchFlags(t, 1, true, true)
+	artifactPath := filepath.Join(t.TempDir(), "semantic-cli.json.gz")
+	embedder := newCLISemanticTestEmbedder()
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open returned error: %v", err)
+	}
+	if err := fpf.BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
+		_ = db.Close()
+		t.Fatalf("BuildSemanticArtifact returned error: %v", err)
+	}
+	_ = db.Close()
+
+	restoreFactory := stubFPFSemanticEmbedderFactory(t, func(model string, dimensions int) (fpf.SemanticEmbedder, error) {
+		return embedder, nil
+	})
+	defer restoreFactory()
+
+	restoreFlags := stubFPFSemanticSearchFlags(t, 1, true, true, artifactPath, "test-semantic-cli", 6)
 	defer restoreFlags()
 
 	output, err := captureStdout(t, func() error {
@@ -88,11 +106,64 @@ func TestRunFPFSemanticSearch_ExplainAndFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runFPFSemanticSearch returned error: %v", err)
 	}
-	if !strings.Contains(output, "tier: semantic · semantic seed Boundary discipline and routing") {
+	if !strings.Contains(output, "tier: semantic · semantic route seed Boundary discipline and routing") {
 		t.Fatalf("expected semantic explain metadata, got:\n%s", output)
 	}
 	if !strings.Contains(output, "TAIL-MARKER") {
 		t.Fatalf("expected semantic --full output to include the full section body, got:\n%s", output)
+	}
+}
+
+func TestRunFPFSemanticIndex_BuildsArtifact(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	artifactPath := filepath.Join(t.TempDir(), "semantic-build.json.gz")
+	embedder := newCLISemanticTestEmbedder()
+	restoreFactory := stubFPFSemanticEmbedderFactory(t, func(model string, dimensions int) (fpf.SemanticEmbedder, error) {
+		return embedder, nil
+	})
+	defer restoreFactory()
+
+	restoreFlags := stubFPFSemanticSearchFlags(t, 0, false, false, artifactPath, "test-semantic-cli", 6)
+	defer restoreFlags()
+
+	output, err := captureStdout(t, func() error {
+		return runFPFSemanticIndex(nil, nil)
+	})
+	if err != nil {
+		t.Fatalf("runFPFSemanticIndex returned error: %v", err)
+	}
+	if !strings.Contains(output, artifactPath) {
+		t.Fatalf("expected artifact path in output, got:\n%s", output)
+	}
+	if _, err := os.Stat(artifactPath); err != nil {
+		t.Fatalf("expected built artifact at %q: %v", artifactPath, err)
+	}
+}
+
+func TestRunFPFSearch_TreeModeIsExplicitAndReachable(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	restoreFlags := stubFPFSearchFlags(t, 3, false, true, "", fpf.SpecSearchModeTree)
+	defer restoreFlags()
+
+	output, err := captureStdout(t, func() error {
+		return runFPFSearch(nil, []string{"boundary", "deontics"})
+	})
+	if err != nil {
+		t.Fatalf("runFPFSearch(tree mode) returned error: %v", err)
+	}
+	if !strings.Contains(output, "tier: drilldown · tree drill-down leaf A.6.B") {
+		t.Fatalf("expected explicit drill-down output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "### 2. A.6 - Signature Stack & Boundary Discipline") {
+		t.Fatalf("expected ancestor path output, got:\n%s", output)
 	}
 }
 
@@ -153,8 +224,30 @@ func TestBuildFPFSearchFunc_UsesSharedRetriever(t *testing.T) {
 	}
 }
 
+func TestBuildFPFSearchFunc_PassesExperimentalModeThrough(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	search := buildFPFSearchFunc()
+	output, err := search(tools.FPFSearchRequest{
+		Query:   "boundary deontics",
+		Limit:   3,
+		Explain: true,
+		Mode:    fpf.SpecSearchModeTree,
+	})
+	if err != nil {
+		t.Fatalf("buildFPFSearchFunc tree search returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "tier: drilldown · tree drill-down leaf A.6.B") {
+		t.Fatalf("expected agent search to expose drilldown mode, got:\n%s", output)
+	}
+}
+
 func TestRunFPFSearch_InvalidTier(t *testing.T) {
-	restoreFlags := stubFPFSearchFlags(t, 10, false, false, "bogus")
+	restoreFlags := stubFPFSearchFlags(t, 10, false, false, "bogus", "")
 	defer restoreFlags()
 
 	_, err := captureStdout(t, func() error {
@@ -165,6 +258,21 @@ func TestRunFPFSearch_InvalidTier(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid --tier") {
 		t.Fatalf("unexpected invalid tier error: %v", err)
+	}
+}
+
+func TestRunFPFSearch_InvalidMode(t *testing.T) {
+	restoreFlags := stubFPFSearchFlags(t, 10, false, false, "", "bogus")
+	defer restoreFlags()
+
+	_, err := captureStdout(t, func() error {
+		return runFPFSearch(nil, []string{"boundary"})
+	})
+	if err == nil {
+		t.Fatal("expected invalid mode error")
+	}
+	if !strings.Contains(err.Error(), "invalid --mode") {
+		t.Fatalf("unexpected invalid mode error: %v", err)
 	}
 }
 
@@ -275,13 +383,14 @@ func buildFPFSearchTestDB(t *testing.T) string {
 			Queries:   []string{"How do I route boundary statements?"},
 		},
 		{
-			ID:        1,
-			Heading:   "A.6.B - Boundary Norm Square",
-			Level:     2,
-			Body:      "Norm square body",
-			PatternID: "A.6.B",
-			Keywords:  []string{"boundary", "deontics"},
-			Queries:   []string{"What is the Boundary Norm Square?"},
+			ID:              1,
+			Heading:         "A.6.B - Boundary Norm Square",
+			Level:           2,
+			Body:            "Norm square body",
+			PatternID:       "A.6.B",
+			ParentPatternID: "A.6",
+			Keywords:        []string{"boundary", "deontics"},
+			Queries:         []string{"What is the Boundary Norm Square?"},
 		},
 	}
 	routes := []fpf.Route{{
@@ -320,43 +429,119 @@ func stubOpenFPFDB(t *testing.T, dbPath string) func() {
 	}
 }
 
-func stubFPFSearchFlags(t *testing.T, limit int, full bool, explain bool, tier string) func() {
+func stubFPFSearchFlags(t *testing.T, limit int, full bool, explain bool, tier string, mode string) func() {
 	t.Helper()
 
 	originalLimit := fpfSearchLimit
 	originalFull := fpfSearchFull
 	originalExplain := fpfSearchExplain
 	originalTier := fpfSearchTier
+	originalMode := fpfSearchMode
 
 	fpfSearchLimit = limit
 	fpfSearchFull = full
 	fpfSearchExplain = explain
 	fpfSearchTier = tier
+	fpfSearchMode = mode
 
 	return func() {
 		fpfSearchLimit = originalLimit
 		fpfSearchFull = originalFull
 		fpfSearchExplain = originalExplain
 		fpfSearchTier = originalTier
+		fpfSearchMode = originalMode
 	}
 }
 
-func stubFPFSemanticSearchFlags(t *testing.T, limit int, full bool, explain bool) func() {
+func stubFPFSemanticSearchFlags(
+	t *testing.T,
+	limit int,
+	full bool,
+	explain bool,
+	artifactPath string,
+	model string,
+	dimensions int,
+) func() {
 	t.Helper()
 
 	originalLimit := fpfSemanticSearchLimit
 	originalFull := fpfSemanticSearchFull
 	originalExplain := fpfSemanticSearchExplain
+	originalArtifactPath := fpfSemanticArtifactPath
+	originalModel := fpfSemanticModel
+	originalDimensions := fpfSemanticDimensions
 
 	fpfSemanticSearchLimit = limit
 	fpfSemanticSearchFull = full
 	fpfSemanticSearchExplain = explain
+	fpfSemanticArtifactPath = artifactPath
+	fpfSemanticModel = model
+	fpfSemanticDimensions = dimensions
 
 	return func() {
 		fpfSemanticSearchLimit = originalLimit
 		fpfSemanticSearchFull = originalFull
 		fpfSemanticSearchExplain = originalExplain
+		fpfSemanticArtifactPath = originalArtifactPath
+		fpfSemanticModel = originalModel
+		fpfSemanticDimensions = originalDimensions
 	}
+}
+
+func stubFPFSemanticEmbedderFactory(
+	t *testing.T,
+	factory func(model string, dimensions int) (fpf.SemanticEmbedder, error),
+) func() {
+	t.Helper()
+
+	original := newFPFSemanticEmbedder
+	newFPFSemanticEmbedder = factory
+
+	return func() {
+		newFPFSemanticEmbedder = original
+	}
+}
+
+type cliSemanticTestEmbedder struct{}
+
+func newCLISemanticTestEmbedder() cliSemanticTestEmbedder {
+	return cliSemanticTestEmbedder{}
+}
+
+func (cliSemanticTestEmbedder) Descriptor() fpf.SemanticEmbedderDescriptor {
+	return fpf.SemanticEmbedderDescriptor{
+		Provider:   "test",
+		Model:      "test-semantic-cli",
+		Dimensions: 6,
+	}
+}
+
+func (cliSemanticTestEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]float32, error) {
+	_ = ctx
+
+	vectors := make([][]float32, 0, len(texts))
+	for _, text := range texts {
+		lower := strings.ToLower(text)
+		vectors = append(vectors, []float32{
+			axisScore(lower, "boundary", "contract", "routing"),
+			axisScore(lower, "norm", "square", "deontic"),
+			axisScore(lower, "decision", "record", "rationale"),
+			0,
+			0,
+			0,
+		})
+	}
+	return vectors, nil
+}
+
+func axisScore(text string, terms ...string) float32 {
+	score := float32(0)
+	for _, term := range terms {
+		if strings.Contains(text, term) {
+			score++
+		}
+	}
+	return score
 }
 
 func captureStdout(t *testing.T, fn func() error) (string, error) {

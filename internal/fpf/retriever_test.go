@@ -1,7 +1,9 @@
 package fpf
 
 import (
+	"context"
 	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -65,10 +67,18 @@ func TestRetrieveSpec_SemanticModeUsesExperimentalTier(t *testing.T) {
 	_, db, cleanup := buildRetrievalTestIndex(t)
 	defer cleanup()
 
+	artifactPath := filepath.Join(t.TempDir(), "semantic-retriever.json.gz")
+	embedder := newSemanticTestEmbedder()
+	if err := BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
+		t.Fatalf("BuildSemanticArtifact returned error: %v", err)
+	}
+
 	result, err := RetrieveSpec(db, SpecRetrievalRequest{
-		Query: "boundary contract unpacking",
-		Limit: 2,
-		Mode:  SpecRetrievalModeSemantic,
+		Query:                "boundary contract unpacking",
+		Limit:                2,
+		Mode:                 SpecRetrievalModeSemantic,
+		SemanticArtifactPath: artifactPath,
+		SemanticEmbedder:     embedder,
 	})
 	if err != nil {
 		t.Fatalf("RetrieveSpec returned error: %v", err)
@@ -80,8 +90,32 @@ func TestRetrieveSpec_SemanticModeUsesExperimentalTier(t *testing.T) {
 	if result.Results[0].Tier != SpecSearchTierSemantic {
 		t.Fatalf("expected semantic tier, got %q", result.Results[0].Tier)
 	}
-	if !strings.Contains(result.Results[0].Reason, "semantic seed") {
+	if !strings.Contains(result.Results[0].Reason, "semantic route seed") {
 		t.Fatalf("expected semantic reason, got %q", result.Results[0].Reason)
+	}
+}
+
+func TestRetrieveSpec_TreeModeUsesDrillDownTier(t *testing.T) {
+	_, db, cleanup := buildRetrievalTestIndex(t)
+	defer cleanup()
+
+	result, err := RetrieveSpec(db, SpecRetrievalRequest{
+		Query: "boundary deontics",
+		Limit: 3,
+		Mode:  SpecSearchModeTree,
+	})
+	if err != nil {
+		t.Fatalf("RetrieveSpec returned error: %v", err)
+	}
+
+	if len(result.Results) < 2 {
+		t.Fatalf("expected tree retrieval path, got %#v", result.Results)
+	}
+	if result.Results[0].Tier != SpecSearchTierDrillDown {
+		t.Fatalf("expected drilldown tier, got %q", result.Results[0].Tier)
+	}
+	if result.Results[0].PatternID != "A.6.B" {
+		t.Fatalf("expected leaf-first tree result, got %#v", result.Results[0])
 	}
 }
 
@@ -100,13 +134,14 @@ func buildRetrievalTestIndex(t *testing.T) (string, *sql.DB, func()) {
 			Queries:   []string{"How do I route boundary statements?"},
 		},
 		{
-			ID:        1,
-			Heading:   "A.6.B - Boundary Norm Square",
-			Level:     2,
-			Body:      "Norm square body",
-			PatternID: "A.6.B",
-			Keywords:  []string{"boundary", "deontics"},
-			Queries:   []string{"What is the Boundary Norm Square?"},
+			ID:              1,
+			Heading:         "A.6.B - Boundary Norm Square",
+			Level:           2,
+			Body:            "Norm square body",
+			PatternID:       "A.6.B",
+			ParentPatternID: "A.6",
+			Keywords:        []string{"boundary", "deontics"},
+			Queries:         []string{"What is the Boundary Norm Square?"},
 		},
 	}
 	routes := []Route{{

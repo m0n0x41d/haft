@@ -10,11 +10,15 @@ const SpecRetrievalModeSemantic = "semantic"
 // SpecRetrievalRequest captures deterministic spec retrieval controls for
 // higher-level agent, CLI, and MCP surfaces.
 type SpecRetrievalRequest struct {
-	Query string
-	Limit int
-	Tier  string
-	Full  bool
-	Mode  string
+	Query                   string
+	Limit                   int
+	Tier                    string
+	Full                    bool
+	Mode                    string
+	SemanticArtifactPath    string
+	SemanticMinScore        float64
+	SemanticEmbedder        SemanticEmbedder
+	SemanticEmbedderFactory func() (SemanticEmbedder, error)
 }
 
 // SpecRetrievalResult is the structured retrieval response returned to shell
@@ -59,7 +63,11 @@ func retrieveSpecSearchResults(db *sql.DB, query string, request SpecRetrievalRe
 	switch normalizeSpecRetrievalMode(request.Mode) {
 	case SpecRetrievalModeSemantic:
 		return SearchSpecSemantically(db, query, SemanticSearchOptions{
-			Limit: request.Limit,
+			Limit:           request.Limit,
+			MinScore:        request.SemanticMinScore,
+			ArtifactPath:    request.SemanticArtifactPath,
+			Embedder:        request.SemanticEmbedder,
+			EmbedderFactory: request.SemanticEmbedderFactory,
 		})
 	default:
 		return SearchSpecWithOptions(db, query, SpecSearchOptions{

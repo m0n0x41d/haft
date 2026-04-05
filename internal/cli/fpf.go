@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -27,6 +28,8 @@ Examples:
   haft fpf search "ADI cycle" --limit 5
   haft fpf search "characterization" --full
   haft fpf search "boundary routing" --tier route --explain
+  haft fpf search "compare options with normalization" --mode tree --explain
+  haft fpf semantic-index
   haft fpf semantic-search "boundary contract unpacking" --explain
   haft fpf section "A.6"
   haft fpf section "A.6 - Signature Stack & Boundary Discipline"
@@ -34,23 +37,36 @@ Examples:
 }
 
 var fpfSearchCmd = &cobra.Command{
-	Use:   "search <query> [--limit N] [--full] [--explain] [--tier TIER]",
+	Use:   "search <query> [--limit N] [--full] [--explain] [--tier TIER] [--mode MODE]",
 	Short: "Search FPF spec by keyword",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runFPFSearch,
 }
 
+var fpfSemanticIndexCmd = &cobra.Command{
+	Use:   "semantic-index",
+	Short: "Build the experimental FPF semantic embedding artifact",
+	Long: `Build the explicit embedding artifact used by "haft fpf semantic-search".
+
+This stays outside the supported deterministic retriever. The artifact is
+stored under ~/.cache/haft by default, so it remains optional and ignored by
+git. A direct OpenAI API key is required because the artifact is built against
+the platform embeddings API, not the ChatGPT/Codex responses backend.`,
+	RunE: runFPFSemanticIndex,
+}
+
 var fpfSemanticSearchCmd = &cobra.Command{
 	Use:   "semantic-search <query> [--limit N] [--full] [--explain]",
-	Short: "Run the experimental local vector-style FPF search prototype",
+	Short: "Run the experimental embedding-backed FPF search prototype",
 	Long: `Run the explicit semantic-search experiment for the embedded FPF spec.
 
 This command is intentionally opt-in. The standard "haft fpf search" path
-remains the authoritative deterministic retriever. "semantic-search" uses a
-hybrid experimental path: exact pattern-id preservation, semantic route seeds,
-and a local TF-IDF vector model over headings, aliases, queries, summaries,
-and snippets. The golden-query harness decides whether that experiment adds
-anything useful before broader rollout.`,
+remains the authoritative deterministic retriever. "semantic-search" uses an
+optional embedding artifact built by "haft fpf semantic-index": exact
+pattern-id preservation, deterministic route seeds when classification is
+clear, and embedding cosine ranking over the full indexed FPF corpus. The
+full-corpus noisy-query harness decides whether that experiment adds anything
+useful before broader rollout.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runFPFSemanticSearch,
 }
@@ -79,23 +95,36 @@ var (
 	fpfSearchFull            bool
 	fpfSearchExplain         bool
 	fpfSearchTier            string
+	fpfSearchMode            string
+	fpfSemanticArtifactPath  string
+	fpfSemanticDimensions    int
+	fpfSemanticModel         string
 	fpfSemanticSearchLimit   int
 	fpfSemanticSearchFull    bool
 	fpfSemanticSearchExplain bool
 )
 
 var openFPFDBFunc = openFPFDB
+var newFPFSemanticEmbedder = fpf.NewOpenAISemanticEmbedder
 
 func init() {
 	fpfSearchCmd.Flags().IntVar(&fpfSearchLimit, "limit", 10, "Maximum number of results")
 	fpfSearchCmd.Flags().BoolVar(&fpfSearchFull, "full", false, "Show full section content instead of snippets")
 	fpfSearchCmd.Flags().BoolVar(&fpfSearchExplain, "explain", false, "Show why each result matched")
-	fpfSearchCmd.Flags().StringVar(&fpfSearchTier, "tier", "", "Restrict results to one tier: pattern, route, related, or fts")
+	fpfSearchCmd.Flags().StringVar(&fpfSearchTier, "tier", "", "Restrict results to one tier: pattern, drilldown, route, related, or fts")
+	fpfSearchCmd.Flags().StringVar(&fpfSearchMode, "mode", "", "Experimental retrieval mode; currently supports tree")
+	fpfSemanticIndexCmd.Flags().StringVar(&fpfSemanticArtifactPath, "artifact", "", "Path for the semantic artifact (defaults to ~/.cache/haft/...)")
+	fpfSemanticIndexCmd.Flags().StringVar(&fpfSemanticModel, "model", fpf.DefaultSemanticEmbeddingModel, "Embedding model for the semantic artifact")
+	fpfSemanticIndexCmd.Flags().IntVar(&fpfSemanticDimensions, "dimensions", fpf.DefaultSemanticEmbeddingDimensions, "Embedding dimensions for the semantic artifact")
 	fpfSemanticSearchCmd.Flags().IntVar(&fpfSemanticSearchLimit, "limit", 10, "Maximum number of results")
 	fpfSemanticSearchCmd.Flags().BoolVar(&fpfSemanticSearchFull, "full", false, "Show full section content instead of snippets")
 	fpfSemanticSearchCmd.Flags().BoolVar(&fpfSemanticSearchExplain, "explain", false, "Show why each result matched")
+	fpfSemanticSearchCmd.Flags().StringVar(&fpfSemanticArtifactPath, "artifact", "", "Path to the semantic artifact (defaults to ~/.cache/haft/...)")
+	fpfSemanticSearchCmd.Flags().StringVar(&fpfSemanticModel, "model", fpf.DefaultSemanticEmbeddingModel, "Embedding model that matches the semantic artifact")
+	fpfSemanticSearchCmd.Flags().IntVar(&fpfSemanticDimensions, "dimensions", fpf.DefaultSemanticEmbeddingDimensions, "Embedding dimensions that match the semantic artifact")
 
 	fpfCmd.AddCommand(fpfSearchCmd)
+	fpfCmd.AddCommand(fpfSemanticIndexCmd)
 	fpfCmd.AddCommand(fpfSemanticSearchCmd)
 	fpfCmd.AddCommand(fpfSectionCmd)
 	fpfCmd.AddCommand(fpfInfoCmd)
@@ -145,11 +174,16 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid --tier: %w", err)
 	}
+	normalizedMode, err := fpf.NormalizeSpecSearchMode(fpfSearchMode)
+	if err != nil {
+		return fmt.Errorf("invalid --mode: %w", err)
+	}
 	retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
 		Query: query,
 		Limit: fpfSearchLimit,
 		Tier:  normalizedTier,
 		Full:  fpfSearchFull,
+		Mode:  normalizedMode,
 	})
 	if err != nil {
 		return fmt.Errorf("search error: %w", err)
@@ -164,6 +198,31 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runFPFSemanticIndex(cmd *cobra.Command, args []string) error {
+	db, cleanup, err := openFPFDBFunc()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	artifactPath, err := resolveFPFSemanticArtifactPath()
+	if err != nil {
+		return err
+	}
+
+	embedder, err := newFPFSemanticEmbedder(fpfSemanticModel, fpfSemanticDimensions)
+	if err != nil {
+		return fmt.Errorf("semantic index embedder: %w", err)
+	}
+
+	if err := fpf.BuildSemanticArtifact(context.Background(), db, embedder, artifactPath); err != nil {
+		return fmt.Errorf("build semantic artifact: %w", err)
+	}
+
+	fmt.Printf("built semantic artifact: %s\n", artifactPath)
+	return nil
+}
+
 func runFPFSemanticSearch(cmd *cobra.Command, args []string) error {
 	query := strings.Join(args, " ")
 	query = strings.TrimSpace(query)
@@ -171,11 +230,20 @@ func runFPFSemanticSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("empty query")
 	}
 
+	artifactPath, err := resolveFPFSemanticArtifactPath()
+	if err != nil {
+		return err
+	}
+
 	retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
-		Query: query,
-		Limit: fpfSemanticSearchLimit,
-		Full:  fpfSemanticSearchFull,
-		Mode:  fpf.SpecRetrievalModeSemantic,
+		Query:                query,
+		Limit:                fpfSemanticSearchLimit,
+		Full:                 fpfSemanticSearchFull,
+		Mode:                 fpf.SpecRetrievalModeSemantic,
+		SemanticArtifactPath: artifactPath,
+		SemanticEmbedderFactory: func() (fpf.SemanticEmbedder, error) {
+			return newFPFSemanticEmbedder(fpfSemanticModel, fpfSemanticDimensions)
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("semantic search error: %w", err)
@@ -188,6 +256,14 @@ func runFPFSemanticSearch(cmd *cobra.Command, args []string) error {
 
 	fmt.Print(formatCLIFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), fpfSemanticSearchExplain))
 	return nil
+}
+
+func resolveFPFSemanticArtifactPath() (string, error) {
+	if strings.TrimSpace(fpfSemanticArtifactPath) != "" {
+		return fpfSemanticArtifactPath, nil
+	}
+
+	return fpf.DefaultSemanticArtifactPath(fpfSemanticModel, fpfSemanticDimensions)
 }
 
 func runFPFSection(cmd *cobra.Command, args []string) error {

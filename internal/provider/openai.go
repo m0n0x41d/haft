@@ -542,6 +542,22 @@ type resolvedAuth struct {
 	accountID string
 }
 
+// ResolveOpenAIAPIKey returns a direct OpenAI API key suitable for platform
+// endpoints such as embeddings. Codex/ChatGPT OAuth tokens are intentionally
+// excluded because they are scoped to the responses backend, not the platform
+// embeddings API.
+func ResolveOpenAIAPIKey() (string, error) {
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		return key, nil
+	}
+
+	if auth := loadHaftAuthFile(); auth != nil && auth.APIKey != "" {
+		return auth.APIKey, nil
+	}
+
+	return "", fmt.Errorf("no OpenAI API key found: set OPENAI_API_KEY or run 'haft login' with an API key")
+}
+
 func resolveAuth() resolvedAuth {
 	// 1. Env var
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {

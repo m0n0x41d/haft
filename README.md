@@ -160,6 +160,7 @@ haft fpf search "A.6"
 haft fpf search "a6:"
 haft fpf search "boundary routing" --tier route --explain
 haft fpf search "decision record" --full
+haft fpf semantic-index
 haft fpf semantic-search "boundary contract unpacking" --explain
 haft fpf section "A.6"
 haft fpf section "A.6 - Signature Stack & Boundary Discipline"
@@ -170,7 +171,7 @@ Pattern ids are normalized, so common forms such as `A.6`, `a.6`, `A6`, and `A.6
 
 ### Experimental semantic prototype
 
-`haft fpf semantic-search` is an explicit experiment, not the default retriever. It preserves exact pattern-id lookup, can seed from route matches when the query clearly maps there, and otherwise uses a local TF-IDF vector model over spec-derived text fields. That keeps the supported deterministic route-aware path intact while still letting us compare a vector-style experiment against the golden-query harness. Keep using `haft fpf search` for the supported behavior; use `semantic-search` only when you want to inspect or evaluate the prototype.
+`haft fpf semantic-search` is an explicit experiment, not the default retriever. Build its optional artifact first with `haft fpf semantic-index`; by default that writes a gzip-compressed embedding file under `~/.cache/haft/`, which keeps generated vectors out of the repo and outside the normal build/runtime path. The prototype preserves exact pattern-id lookup, can still seed from a deterministic route when the query is obviously on a known path, and otherwise ranks the full indexed corpus with OpenAI embedding cosine similarity. The evaluation harness now runs on the full `FPF-Spec.md` corpus with curated noisy natural-language cases and a keep-rule against the deterministic baseline, so the experiment answers the Phase 11.2 question honestly. Keep using `haft fpf search` for supported behavior; use `semantic-index` plus `semantic-search` only when you want to inspect or measure the prototype. A direct `OPENAI_API_KEY` or `haft login` API key is required for the platform embeddings API.
 
 ---
 

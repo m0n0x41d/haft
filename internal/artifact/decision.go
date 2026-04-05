@@ -1147,22 +1147,43 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		input.CriteriaNotMet,
 		criteriaNotMetScope,
 	)
-	decisionFields.Claims = adjudicateDecisionClaims(
-		decisionFields.Claims,
-		claimRefs,
-		input.CriteriaMet,
-		criteriaMetScope,
-		input.CriteriaNotMet,
-		criteriaNotMetScope,
-	)
-	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
-
 	claimScope := decisionMeasurementCoverageScope(
 		decisionFields.Claims,
 		claimRefs,
 		criteriaMetScope,
 		criteriaNotMetScope,
 	)
+	evidenceItem := &EvidenceItem{
+		ID:         fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000),
+		Type:       "measurement",
+		Content:    fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
+		Verdict:    input.Verdict,
+		ClaimRefs:  claimRefs,
+		ClaimScope: claimScope,
+		ValidUntil: a.Meta.ValidUntil,
+	}
+	claimEvidence := measurementClaimEvidence(
+		decisionFields.Claims,
+		input.CriteriaMet,
+		criteriaMetScope,
+		input.CriteriaNotMet,
+		criteriaNotMetScope,
+	)
+	activeEvidence, err := decisionActiveClaimEvidenceAfterMeasurement(
+		ctx,
+		store,
+		a.Meta.ID,
+		claimEvidence,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load claim evidence: %w", err)
+	}
+
+	decisionFields.Claims = rebuildDecisionClaimsFromEvidence(
+		decisionFields.Claims,
+		activeEvidence,
+	)
+	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
 	sd, err := json.Marshal(decisionFields)
 	if err != nil {
@@ -1204,18 +1225,8 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		measureCL = 3 // baseline exists = independent file-level verification
 	}
 
-	evidID := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
-	evidenceItem := &EvidenceItem{
-		ID:              evidID,
-		Type:            "measurement",
-		Content:         fmt.Sprintf("Impact measurement: %s\n%s", input.Verdict, input.Findings),
-		Verdict:         input.Verdict,
-		CongruenceLevel: measureCL,
-		FormalityLevel:  2,
-		ClaimRefs:       claimRefs,
-		ClaimScope:      claimScope,
-		ValidUntil:      a.Meta.ValidUntil,
-	}
+	evidenceItem.CongruenceLevel = measureCL
+	evidenceItem.FormalityLevel = 2
 
 	if err := store.CommitMeasurement(ctx, a, evidenceItem); err != nil {
 		return nil, fmt.Errorf("record measurement: %w", err)
@@ -1227,6 +1238,35 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		return a, &WriteWarning{Warnings: measureWarnings}
 	}
 	return a, nil
+}
+
+func decisionActiveClaimEvidenceAfterMeasurement(
+	ctx context.Context,
+	store ArtifactStore,
+	decisionID string,
+	incoming []EvidenceItem,
+) ([]EvidenceItem, error) {
+	items, err := store.GetEvidenceItems(ctx, decisionID)
+	if err != nil {
+		return nil, err
+	}
+
+	active := make([]EvidenceItem, 0, len(items)+len(incoming))
+
+	for _, item := range items {
+		if item.Verdict == "superseded" {
+			continue
+		}
+		if item.Type == "measurement" {
+			continue
+		}
+
+		active = append(active, item)
+	}
+
+	active = append(active, incoming...)
+
+	return active, nil
 }
 
 // AttachEvidence adds an evidence item to any artifact.

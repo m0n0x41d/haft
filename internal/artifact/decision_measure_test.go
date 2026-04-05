@@ -392,6 +392,66 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 	}
 }
 
+func TestMeasure_KeepsActiveAttachedEvidenceOnUntouchedClaims(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "JetStream",
+		WhySelected:   "Claim status should follow all active claim-bound evidence, not only the latest measurement.",
+		Predictions: []PredictionInput{
+			{
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
+			},
+			{
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef: dec.Meta.ID,
+		Content:     "Benchmark confirms latency stayed under 50ms.",
+		Type:        "benchmark",
+		Verdict:     "supports",
+		ClaimRefs:   []string{"claim-001"},
+		ClaimScope:  []string{"Latency stays under 50ms"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "The follow-up run only rechecked throughput and it regressed.",
+		CriteriaNotMet: []string{
+			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+		},
+		Verdict: "partial",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
+		ClaimStatusSupported,
+		ClaimStatusRefuted,
+	})
+}
+
 func TestAttachEvidence_Success(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -456,7 +516,7 @@ func TestAttachEvidence_Success(t *testing.T) {
 	}
 }
 
-func TestAttachEvidence_PreservesExplicitClaimScopeAlongsideClaimRefs(t *testing.T) {
+func TestAttachEvidence_RejectsContradictoryExplicitClaimScope(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -478,7 +538,7 @@ func TestAttachEvidence_PreservesExplicitClaimScopeAlongsideClaimRefs(t *testing
 		},
 	}))
 
-	item, err := AttachEvidence(ctx, store, EvidenceInput{
+	_, err := AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef: dec.Meta.ID,
 		Content:     "Contradictory binding.",
 		Type:        "benchmark",
@@ -486,14 +546,11 @@ func TestAttachEvidence_PreservesExplicitClaimScopeAlongsideClaimRefs(t *testing
 		ClaimRefs:   []string{"claim-002"},
 		ClaimScope:  []string{"throughput", "latency", "throughput"},
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected contradictory claim_scope to be rejected")
 	}
-	if got := strings.Join(item.ClaimRefs, ","); got != "claim-002" {
-		t.Fatalf("claim_refs = %q, want claim-002", got)
-	}
-	if got := strings.Join(item.ClaimScope, ","); got != "latency,throughput" {
-		t.Fatalf("claim_scope = %q, want preserved explicit scope", got)
+	if !strings.Contains(err.Error(), "does not match explicit claim_refs") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

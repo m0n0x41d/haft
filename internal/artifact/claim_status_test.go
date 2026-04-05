@@ -99,7 +99,7 @@ func TestClaimStatusFromPredictionMeasureMatch(t *testing.T) {
 	}
 }
 
-func TestAdjudicateDecisionClaims_ResetsUnmatchedStatusToUnverified(t *testing.T) {
+func TestAdjudicateDecisionClaims_PreservesUnmatchedStatus(t *testing.T) {
 	claims := []DecisionClaim{
 		{
 			ID:         "claim-001",
@@ -132,7 +132,7 @@ func TestAdjudicateDecisionClaims_ResetsUnmatchedStatusToUnverified(t *testing.T
 			Claim:      "Latency stays under 50ms",
 			Observable: "publish latency p99",
 			Threshold:  "< 50ms",
-			Status:     ClaimStatusUnverified,
+			Status:     ClaimStatusSupported,
 		},
 		{
 			ID:         "claim-002",
@@ -145,5 +145,102 @@ func TestAdjudicateDecisionClaims_ResetsUnmatchedStatusToUnverified(t *testing.T
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("adjudicateDecisionClaims() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRebuildDecisionClaimsFromEvidence_UsesActiveClaimEvidence(t *testing.T) {
+	claims := []DecisionClaim{
+		{
+			ID:         "claim-001",
+			Claim:      "Latency stays under 50ms",
+			Observable: "publish latency p99",
+			Threshold:  "< 50ms",
+			Status:     ClaimStatusUnverified,
+		},
+		{
+			ID:         "claim-002",
+			Claim:      "Throughput stays above 100k events/sec",
+			Observable: "throughput",
+			Threshold:  "> 100k events/sec",
+			Status:     ClaimStatusUnverified,
+		},
+	}
+
+	activeEvidence := []EvidenceItem{
+		{
+			Type:      "benchmark",
+			Verdict:   "supports",
+			ClaimRefs: []string{"claim-001"},
+		},
+		{
+			Type:      "measurement",
+			Verdict:   "failed",
+			ClaimRefs: []string{"claim-002"},
+		},
+	}
+
+	got := rebuildDecisionClaimsFromEvidence(claims, activeEvidence)
+	want := []DecisionClaim{
+		{
+			ID:         "claim-001",
+			Claim:      "Latency stays under 50ms",
+			Observable: "publish latency p99",
+			Threshold:  "< 50ms",
+			Status:     ClaimStatusSupported,
+		},
+		{
+			ID:         "claim-002",
+			Claim:      "Throughput stays above 100k events/sec",
+			Observable: "throughput",
+			Threshold:  "> 100k events/sec",
+			Status:     ClaimStatusRefuted,
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rebuildDecisionClaimsFromEvidence() = %#v, want %#v", got, want)
+	}
+}
+
+func TestMeasurementClaimEvidence_SplitsMixedMeasurementByClaim(t *testing.T) {
+	claims := []DecisionClaim{
+		{
+			ID:         "claim-001",
+			Claim:      "Latency stays under 50ms",
+			Observable: "publish latency p99",
+			Threshold:  "< 50ms",
+		},
+		{
+			ID:         "claim-002",
+			Claim:      "Throughput stays above 100k events/sec",
+			Observable: "throughput",
+			Threshold:  "> 100k events/sec",
+		},
+	}
+
+	got := measurementClaimEvidence(
+		claims,
+		[]string{"publish latency p99 < 50ms (observed: 44ms)"},
+		[]string{"publish latency p99 < 50ms"},
+		[]string{"Throughput stays above 100k events/sec (observed: 87k events/sec)"},
+		[]string{"Throughput stays above 100k events/sec"},
+	)
+	want := []EvidenceItem{
+		{
+			Type:       "measurement",
+			Verdict:    "supports",
+			ClaimRefs:  []string{"claim-001"},
+			ClaimScope: []string{"Latency stays under 50ms"},
+		},
+		{
+			Type:       "measurement",
+			Verdict:    "refutes",
+			ClaimRefs:  []string{"claim-002"},
+			ClaimScope: []string{"Throughput stays above 100k events/sec"},
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("measurementClaimEvidence() = %#v, want %#v", got, want)
 	}
 }

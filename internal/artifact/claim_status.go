@@ -261,12 +261,42 @@ func normalizeDecisionEvidenceBinding(
 	}
 
 	if len(normalizedScope) > 0 {
+		scopeRefs, err := resolveDecisionEvidenceClaimRefs(normalizedClaims, nil, normalizedScope)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if len(scopeRefs) > 0 && !sameClaimRefSet(validatedRefs, scopeRefs) {
+			return nil, nil, fmt.Errorf(
+				"claim_scope resolves to %s, which does not match explicit claim_refs %s",
+				strings.Join(scopeRefs, ", "),
+				strings.Join(validatedRefs, ", "),
+			)
+		}
+
 		return validatedRefs, normalizedScope, nil
 	}
 
 	derivedScope := decisionClaimScopeFromRefs(normalizedClaims, validatedRefs)
 
 	return validatedRefs, derivedScope, nil
+}
+
+func sameClaimRefSet(left []string, right []string) bool {
+	left = normalizeClaimRefs(left)
+	right = normalizeClaimRefs(right)
+
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func decisionClaimScopeFromRefs(claims []DecisionClaim, refs []string) []string {
@@ -307,6 +337,62 @@ func decisionMeasurementCoverageScope(
 	}
 
 	return decisionClaimScopeFromRefs(claims, claimRefs)
+}
+
+func mergeDecisionCoverageScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	scope []string,
+) []string {
+	claimScope := decisionClaimScopeFromRefs(claims, claimRefs)
+	unresolvedScope := unresolvedDecisionCoverageScope(claims, claimRefs, scope)
+	mergedScope := make([]string, 0, len(claimScope)+len(unresolvedScope))
+	mergedScope = append(mergedScope, claimScope...)
+	mergedScope = append(mergedScope, unresolvedScope...)
+
+	return normalizeClaimScope(mergedScope)
+}
+
+func unresolvedDecisionCoverageScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	scope []string,
+) []string {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	normalizedRefs := normalizeClaimRefs(claimRefs)
+	normalizedScope := normalizeClaimScope(scope)
+
+	if len(normalizedScope) == 0 {
+		return nil
+	}
+	if len(normalizedClaims) == 0 {
+		return normalizedScope
+	}
+
+	measuredRefSet := make(map[string]struct{}, len(normalizedRefs))
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	unresolved := make([]string, 0, len(normalizedScope))
+
+	for _, ref := range normalizedRefs {
+		measuredRefSet[ref] = struct{}{}
+	}
+
+	for _, item := range normalizedScope {
+		index, ok := resolvePredictionAlias(item, aliasIndex)
+		if !ok {
+			unresolved = append(unresolved, item)
+			continue
+		}
+
+		claimID := normalizedClaims[index].ID
+		if _, measured := measuredRefSet[claimID]; measured {
+			continue
+		}
+
+		unresolved = append(unresolved, item)
+	}
+
+	return normalizeClaimScope(unresolved)
 }
 
 func decisionClaimScopeLabelIndex(claims []DecisionClaim) map[string]string {
@@ -366,8 +452,9 @@ func expandedDecisionClaimScopeLabel(claim DecisionClaim) string {
 
 func firstNonEmptyString(values []string) string {
 	for _, value := range values {
-		if value != "" {
-			return value
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
 		}
 	}
 
@@ -448,7 +535,6 @@ func adjudicateDecisionClaims(
 		_, measuredByRef := measuredRefSet[claim.ID]
 		measurementRecorded := measuredByRef || metMatches[index] || notMetMatches[index]
 		if !measurementRecorded {
-			claim.Status = ClaimStatusUnverified
 			updated = append(updated, claim)
 			continue
 		}
@@ -463,6 +549,160 @@ func adjudicateDecisionClaims(
 	}
 
 	return updated
+}
+
+func rebuildDecisionClaimsFromEvidence(
+	claims []DecisionClaim,
+	activeEvidence []EvidenceItem,
+) []DecisionClaim {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	if len(normalizedClaims) == 0 {
+		return nil
+	}
+
+	evidenceByClaim := groupActiveEvidenceByClaim(normalizedClaims, activeEvidence)
+	updated := make([]DecisionClaim, 0, len(normalizedClaims))
+
+	for _, claim := range normalizedClaims {
+		claim.Status = claimStatusFromEvidenceItems(evidenceByClaim[claim.ID])
+		updated = append(updated, claim)
+	}
+
+	return updated
+}
+
+func measurementClaimEvidence(
+	claims []DecisionClaim,
+	criteriaMet []string,
+	criteriaMetScope []string,
+	criteriaNotMet []string,
+	criteriaNotMetScope []string,
+) []EvidenceItem {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	if len(normalizedClaims) == 0 {
+		return nil
+	}
+
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	metMatches := matchPredictionCriteria(aliasIndex, len(normalizedClaims), criteriaMet, criteriaMetScope)
+	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalizedClaims), criteriaNotMet, criteriaNotMetScope)
+	items := make([]EvidenceItem, 0, len(normalizedClaims))
+
+	for index, claim := range normalizedClaims {
+		match := PredictionMeasureMatch{
+			MeasurementRecorded: metMatches[index] || notMetMatches[index],
+			CriteriaMet:         metMatches[index],
+			CriteriaNotMet:      notMetMatches[index],
+		}
+		if !match.MeasurementRecorded {
+			continue
+		}
+
+		verdict, ok := evidenceVerdictFromClaimStatus(ClaimStatusFromPredictionMeasureMatch(match))
+		if !ok {
+			continue
+		}
+
+		items = append(items, EvidenceItem{
+			Type:      "measurement",
+			Verdict:   verdict,
+			ClaimRefs: []string{claim.ID},
+			ClaimScope: decisionClaimScopeFromRefs(
+				normalizedClaims,
+				[]string{claim.ID},
+			),
+		})
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	return items
+}
+
+func groupActiveEvidenceByClaim(
+	claims []DecisionClaim,
+	items []EvidenceItem,
+) map[string][]EvidenceItem {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	evidenceByClaim := make(map[string][]EvidenceItem, len(normalizedClaims))
+
+	for _, item := range items {
+		if item.Verdict == "superseded" {
+			continue
+		}
+
+		claimRefs, err := resolveDecisionEvidenceClaimRefs(
+			normalizedClaims,
+			item.ClaimRefs,
+			item.ClaimScope,
+		)
+		if err != nil {
+			continue
+		}
+
+		for _, claimRef := range claimRefs {
+			evidenceByClaim[claimRef] = append(evidenceByClaim[claimRef], item)
+		}
+	}
+
+	return evidenceByClaim
+}
+
+func evidenceVerdictFromClaimStatus(status ClaimStatus) (string, bool) {
+	switch status {
+	case ClaimStatusSupported:
+		return "supports", true
+	case ClaimStatusWeakened:
+		return "weakens", true
+	case ClaimStatusRefuted:
+		return "refutes", true
+	default:
+		return "", false
+	}
+}
+
+func claimStatusFromEvidenceItems(items []EvidenceItem) ClaimStatus {
+	if len(items) == 0 {
+		return ClaimStatusUnverified
+	}
+
+	hasSupport := false
+	hasWeaken := false
+	hasRefute := false
+	hasUnknown := false
+
+	for _, item := range items {
+		switch strings.TrimSpace(item.Verdict) {
+		case "supports", "accepted":
+			hasSupport = true
+		case "weakens", "partial":
+			hasWeaken = true
+		case "refutes", "failed":
+			hasRefute = true
+		default:
+			hasUnknown = true
+		}
+	}
+
+	if hasSupport && hasRefute {
+		return ClaimStatusWeakened
+	}
+	if hasRefute {
+		return ClaimStatusRefuted
+	}
+	if hasWeaken {
+		return ClaimStatusWeakened
+	}
+	if hasSupport {
+		return ClaimStatusSupported
+	}
+	if hasUnknown {
+		return ClaimStatusInconclusive
+	}
+
+	return ClaimStatusUnverified
 }
 
 func buildDecisionClaimAliasIndex(claims []DecisionClaim) map[string]int {

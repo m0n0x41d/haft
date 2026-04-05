@@ -314,6 +314,47 @@ func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
 	}
 }
 
+func TestHaftQueryTool_ProjectionHonorsContextFilter(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	for _, item := range []struct {
+		title   string
+		context string
+	}{
+		{title: "Payments transport choice", context: "payments"},
+		{title: "Orders transport choice", context: "orders"},
+	} {
+		_, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+			Title:      item.title,
+			Signal:     "Latency variance between protocols",
+			Acceptance: "Choose the transport with the best latency trade-off",
+			Context:    item.context,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tool := NewHaftQueryTool(store, nil)
+	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":  "projection",
+		"view":    "engineer",
+		"context": "payments",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(result.DisplayText, "Payments transport choice") {
+		t.Fatalf("expected filtered projection to include payments context:\n%s", result.DisplayText)
+	}
+	if strings.Contains(result.DisplayText, "Orders transport choice") {
+		t.Fatalf("expected filtered projection to exclude other contexts:\n%s", result.DisplayText)
+	}
+}
+
 func TestHaftSolutionTool_ExploreAcceptsNoSteppingStoneRationale(t *testing.T) {
 	store := setupHaftToolStore(t)
 	tool := NewHaftSolutionTool(store, t.TempDir(), nil)

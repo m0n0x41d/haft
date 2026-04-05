@@ -125,6 +125,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 
 	problemIDs := make(map[string]struct{}, len(problems))
 	portfolioIDs := make(map[string]struct{}, len(portfolios))
+	portfolioProblemRefs := make(map[string][]string, len(portfolios))
 
 	for _, problem := range problems {
 		problemIDs[problem.Meta.ID] = struct{}{}
@@ -146,11 +147,14 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 	for _, portfolio := range portfolios {
 		portfolioIDs[portfolio.Meta.ID] = struct{}{}
 		fields := portfolio.UnmarshalPortfolioFields()
+		problemRefs := projectionLinkRefs(portfolio.Meta.Links, problemIDs)
+
+		portfolioProblemRefs[portfolio.Meta.ID] = cloneStringSlice(problemRefs)
 
 		graph.Portfolios = append(graph.Portfolios, PortfolioProjection{
 			Meta:                     portfolio.Meta,
 			NeedsRefresh:             projectionNeedsRefresh(portfolio.Meta, now),
-			ProblemRefs:              projectionLinkRefs(portfolio.Meta.Links, problemIDs),
+			ProblemRefs:              problemRefs,
 			Variants:                 cloneVariants(fields.Variants),
 			Comparison:               cloneProjectionComparisonResult(fields.Comparison),
 			NoSteppingStoneRationale: strings.TrimSpace(fields.NoSteppingStoneRationale),
@@ -160,12 +164,18 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 
 	for _, decision := range decisions {
 		fields := decision.UnmarshalDecisionFields()
+		portfolioRefs := projectionLinkRefs(decision.Meta.Links, portfolioIDs)
+		problemRefs := projectionDecisionProblemRefs(
+			projectionLinkRefs(decision.Meta.Links, problemIDs),
+			portfolioRefs,
+			portfolioProblemRefs,
+		)
 
 		graph.Decisions = append(graph.Decisions, DecisionProjection{
 			Meta:             decision.Meta,
 			NeedsRefresh:     projectionNeedsRefresh(decision.Meta, now),
-			ProblemRefs:      projectionLinkRefs(decision.Meta.Links, problemIDs),
-			PortfolioRefs:    projectionLinkRefs(decision.Meta.Links, portfolioIDs),
+			ProblemRefs:      problemRefs,
+			PortfolioRefs:    portfolioRefs,
 			SelectedTitle:    strings.TrimSpace(fields.SelectedTitle),
 			WhySelected:      strings.TrimSpace(fields.WhySelected),
 			SelectionPolicy:  strings.TrimSpace(fields.SelectionPolicy),
@@ -292,6 +302,25 @@ func projectionLinkRefs(links []Link, allowed map[string]struct{}) []string {
 
 	sort.Strings(refs)
 	return refs
+}
+
+func projectionDecisionProblemRefs(
+	directProblemRefs []string,
+	portfolioRefs []string,
+	portfolioProblemRefs map[string][]string,
+) []string {
+	resolvedRefs := cloneStringSlice(directProblemRefs)
+
+	for _, portfolioRef := range portfolioRefs {
+		problemRefs := portfolioProblemRefs[portfolioRef]
+
+		for _, problemRef := range problemRefs {
+			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+		}
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
 }
 
 func attachProjectionBacklinks(graph *ProjectionGraph) {

@@ -131,11 +131,8 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.PlainResult(fmt.Sprintf("Problem '%s' not found. Use haft_problem(select) to list active problems.", ref)), nil
 		}
 		if a.Meta.Kind != artifact.KindProblemCard {
-			return agent.PlainResult(
-				present.ApplyFPFAnswerHygiene(
-					fmt.Sprintf("'%s' is a %s, not a ProblemCard.", ref, a.Meta.Kind),
-				),
-			), nil
+			kindLabel := present.UserFacingArtifactKindLabel(string(a.Meta.Kind))
+			return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a problem.", ref, kindLabel)), nil
 		}
 
 		// Find related solution and decision artifacts
@@ -543,13 +540,9 @@ func validateCycleProblemBinding(ctx context.Context, store artifact.ArtifactSto
 		return fmt.Errorf("FPF guardrail: active cycle problem %q could not be loaded. Re-frame or adopt the correct problem before continuing.", cycle.ProblemRef)
 	}
 	if problem.Meta.Kind != artifact.KindProblemCard {
-		return fmt.Errorf("%s",
-			present.ApplyFPFAnswerHygiene(
-				fmt.Sprintf("FPF guardrail: active cycle problem %q is a %s, not a ProblemCard. Repair the cycle or adopt the correct problem before continuing.",
-					cycle.ProblemRef, problem.Meta.Kind,
-				),
-			),
-		)
+		kindLabel := present.UserFacingArtifactKindLabel(string(problem.Meta.Kind))
+		return fmt.Errorf("FPF guardrail: active cycle problem %q is a %s, not a problem. Repair the cycle or adopt the correct problem before continuing.",
+			cycle.ProblemRef, kindLabel)
 	}
 
 	return nil
@@ -565,13 +558,9 @@ func validateCyclePortfolioBinding(ctx context.Context, store artifact.ArtifactS
 		return fmt.Errorf("FPF guardrail: active portfolio %q could not be loaded. Re-explore within the current cycle or adopt the correct portfolio.", cycle.PortfolioRef)
 	}
 	if portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
-		return fmt.Errorf("%s",
-			present.ApplyFPFAnswerHygiene(
-				fmt.Sprintf("FPF guardrail: active portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
-					cycle.PortfolioRef, portfolio.Meta.Kind,
-				),
-			),
-		)
+		kindLabel := present.UserFacingArtifactKindLabel(string(portfolio.Meta.Kind))
+		return fmt.Errorf("FPF guardrail: active portfolio %q is a %s, not a solution portfolio. Repair the cycle before continuing.",
+			cycle.PortfolioRef, kindLabel)
 	}
 
 	return nil
@@ -611,13 +600,9 @@ func validateCycleComparedPortfolioBinding(ctx context.Context, store artifact.A
 		return fmt.Errorf("FPF guardrail: compared portfolio %q could not be loaded. Re-run compare or repair the cycle before deciding.", cycle.ComparedPortfolioRef)
 	}
 	if comparedPortfolio.Meta.Kind != artifact.KindSolutionPortfolio {
-		return fmt.Errorf("%s",
-			present.ApplyFPFAnswerHygiene(
-				fmt.Sprintf("FPF guardrail: compared portfolio %q is a %s, not a SolutionPortfolio. Repair the cycle before continuing.",
-					cycle.ComparedPortfolioRef, comparedPortfolio.Meta.Kind,
-				),
-			),
-		)
+		kindLabel := present.UserFacingArtifactKindLabel(string(comparedPortfolio.Meta.Kind))
+		return fmt.Errorf("FPF guardrail: compared portfolio %q is a %s, not a solution portfolio. Repair the cycle before continuing.",
+			cycle.ComparedPortfolioRef, kindLabel)
 	}
 	if !artifact.PortfolioHasComparison(comparedPortfolio) {
 		return fmt.Errorf("FPF guardrail: compared portfolio %q has no persisted comparison output. Run haft_solution(action=\"compare\") on the active portfolio before deciding.",
@@ -637,13 +622,9 @@ func validateCycleDecisionBinding(ctx context.Context, store artifact.ArtifactSt
 		return fmt.Errorf("FPF guardrail: active decision %q could not be loaded. Re-record the decision or repair the cycle before baselining/measuring.", cycle.DecisionRef)
 	}
 	if decision.Meta.Kind != artifact.KindDecisionRecord {
-		return fmt.Errorf("%s",
-			present.ApplyFPFAnswerHygiene(
-				fmt.Sprintf("FPF guardrail: active decision %q is a %s, not a DecisionRecord. Repair the cycle before baselining/measuring.",
-					cycle.DecisionRef, decision.Meta.Kind,
-				),
-			),
-		)
+		kindLabel := present.UserFacingArtifactKindLabel(string(decision.Meta.Kind))
+		return fmt.Errorf("FPF guardrail: active decision %q is a %s, not a decision. Repair the cycle before baselining/measuring.",
+			cycle.DecisionRef, kindLabel)
 	}
 	if cycle.ProblemRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.ProblemRef) {
 		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active problem %q. Repair the cycle before baselining/measuring.",
@@ -1287,12 +1268,9 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 		return agent.PlainResult(fmt.Sprintf("Decision '%s' not found. If you're in tactical mode, report findings as text instead.", decisionRef)), nil
 	}
 	if a.Meta.Kind != artifact.KindDecisionRecord {
-		return agent.PlainResult(
-			present.ApplyFPFAnswerHygiene(
-				fmt.Sprintf("'%s' is a %s, not a DecisionRecord. You likely passed a problem ID. "+
-					"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, a.Meta.Kind),
-			),
-		), nil
+		kindLabel := present.UserFacingArtifactKindLabel(string(a.Meta.Kind))
+		return agent.PlainResult(fmt.Sprintf("'%s' is a %s, not a decision. You likely passed a problem ID. "+
+			"In tactical mode, report your findings as text instead of calling this tool.", decisionRef, kindLabel)), nil
 	}
 
 	files, err := t.store.GetAffectedFiles(ctx, decisionRef)
@@ -1348,6 +1326,7 @@ type FPFSearchRequest struct {
 	Limit   int
 	Full    bool
 	Explain bool
+	Mode    string
 }
 
 // FPFSearchFunc is a callback that searches the FPF specification.
@@ -1380,15 +1359,20 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action": map[string]any{"type": "string", "enum": []string{"search", "status", "related", "projection", "fpf"}, "description": "search | status | related | projection | fpf"},
-				"query":  map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
-				"file":   map[string]any{"type": "string", "description": "File path (related)"},
-				"view":   map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare; defaults to engineer"},
-				"limit":  map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
-				"full":   map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
+				"action":  map[string]any{"type": "string", "enum": []string{"search", "status", "related", "projection", "fpf"}, "description": "search | status | related | projection | fpf"},
+				"query":   map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
+				"file":    map[string]any{"type": "string", "description": "File path (related)"},
+				"context": map[string]any{"type": "string", "description": "(status, projection) Optional context filter"},
+				"view":    map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare; defaults to engineer"},
+				"limit":   map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
+				"full":    map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
 				"explain": map[string]any{
 					"type":        "boolean",
 					"description": "(fpf) Show why each FPF result matched",
+				},
+				"mode": map[string]any{
+					"type":        "string",
+					"description": "(fpf) Experimental retrieval mode; currently supports tree",
 				},
 			},
 			"required": []any{"action"},
@@ -1403,6 +1387,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 	}
 
 	action, _ := args["action"].(string)
+	contextName := jsonStr(args, "context")
 
 	switch action {
 	case "search":
@@ -1424,7 +1409,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 		return agent.PlainResult(b.String()), nil
 
 	case "status":
-		data, err := artifact.FetchStatusData(ctx, t.store, "")
+		data, err := artifact.FetchStatusData(ctx, t.store, contextName)
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
@@ -1453,7 +1438,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		graph, err := artifact.FetchProjectionGraph(ctx, t.store, "")
+		graph, err := artifact.FetchProjectionGraph(ctx, t.store, contextName)
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
@@ -1472,6 +1457,7 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 			Limit:   jsonIntDefault(args, "limit", fpf.DefaultSpecSearchLimit),
 			Full:    jsonBool(args, "full"),
 			Explain: jsonBool(args, "explain"),
+			Mode:    jsonStr(args, "mode"),
 		}
 		result, err := t.fpfSearch(request)
 		if err != nil {

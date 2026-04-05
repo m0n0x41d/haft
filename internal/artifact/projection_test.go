@@ -142,6 +142,73 @@ func TestFetchProjectionGraph_BuildsSharedGraphFromArtifacts(t *testing.T) {
 	}
 }
 
+func TestFetchProjectionGraph_DerivesDecisionProblemRefsThroughPortfolio(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Transport choice",
+		Signal:     "Latency variance between protocols",
+		Acceptance: "Choose the transport with the best latency trade-off",
+		Context:    "payments",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			{
+				ID:            "V1",
+				Title:         "REST",
+				WeakestLink:   "chatty payloads",
+				NoveltyMarker: "Keep JSON request-response semantics",
+			},
+			{
+				ID:            "V2",
+				Title:         "gRPC",
+				WeakestLink:   "tooling overhead",
+				NoveltyMarker: "Move to binary RPC with generated clients",
+			},
+		},
+		NoSteppingStoneRationale: "Both variants are direct target architectures.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		PortfolioRef:  portfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "It meets the latency target with acceptable operating cost.",
+		Context:       "payments",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := FetchProjectionGraph(ctx, store, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(graph.Problems) != 1 || len(graph.Decisions) != 1 {
+		t.Fatalf("unexpected graph sizes: problems=%d decisions=%d", len(graph.Problems), len(graph.Decisions))
+	}
+
+	problemNode := graph.Problems[0]
+	if len(problemNode.DecisionRefs) != 1 || problemNode.DecisionRefs[0] != decision.Meta.ID {
+		t.Fatalf("expected portfolio-linked decision to back-propagate to problem, got %+v", problemNode.DecisionRefs)
+	}
+
+	decisionNode := graph.Decisions[0]
+	if len(decisionNode.ProblemRefs) != 1 || decisionNode.ProblemRefs[0] != problem.Meta.ID {
+		t.Fatalf("expected decision problem refs to be derived through the linked portfolio, got %+v", decisionNode.ProblemRefs)
+	}
+}
+
 func TestParseProjectionView_SupportsAliases(t *testing.T) {
 	cases := map[string]ProjectionView{
 		"":               ProjectionViewEngineer,

@@ -13,38 +13,32 @@ type fpfAnswerHygieneRule struct {
 	term        string
 	replacement string
 	reason      string
-	autoRewrite bool
 }
 
 var fpfAnswerHygieneRules = []fpfAnswerHygieneRule{
-	{term: "ProblemCards", replacement: "problems", reason: "internal artifact kind", autoRewrite: true},
-	{term: "ProblemCard", replacement: "problem", reason: "internal artifact kind", autoRewrite: true},
-	{term: "SolutionPortfolios", replacement: "solution portfolios", reason: "internal artifact kind", autoRewrite: true},
-	{term: "SolutionPortfolio", replacement: "solution portfolio", reason: "internal artifact kind", autoRewrite: true},
-	{term: "DecisionRecords", replacement: "decisions", reason: "internal artifact kind", autoRewrite: true},
-	{term: "DecisionRecord", replacement: "decision", reason: "internal artifact kind", autoRewrite: true},
-	{term: "EvidencePacks", replacement: "evidence packs", reason: "internal artifact kind", autoRewrite: true},
-	{term: "EvidencePack", replacement: "evidence pack", reason: "internal artifact kind", autoRewrite: true},
-	{term: "RefreshReports", replacement: "refresh reports", reason: "internal artifact kind", autoRewrite: true},
-	{term: "RefreshReport", replacement: "refresh report", reason: "internal artifact kind", autoRewrite: true},
+	{term: "ProblemCards", replacement: "problems", reason: "internal artifact kind"},
+	{term: "ProblemCard", replacement: "problem", reason: "internal artifact kind"},
+	{term: "SolutionPortfolios", replacement: "solution portfolios", reason: "internal artifact kind"},
+	{term: "SolutionPortfolio", replacement: "solution portfolio", reason: "internal artifact kind"},
+	{term: "DecisionRecords", replacement: "decisions", reason: "internal artifact kind"},
+	{term: "DecisionRecord", replacement: "decision", reason: "internal artifact kind"},
+	{term: "EvidencePacks", replacement: "evidence packs", reason: "internal artifact kind"},
+	{term: "EvidencePack", replacement: "evidence pack", reason: "internal artifact kind"},
+	{term: "RefreshReports", replacement: "refresh reports", reason: "internal artifact kind"},
+	{term: "RefreshReport", replacement: "refresh report", reason: "internal artifact kind"},
 	{term: "selected_ref", replacement: "recommended variant", reason: "internal compare field"},
 	{term: "non_dominated_set", replacement: "Pareto front", reason: "internal compare field"},
 }
 
-// ApplyFPFAnswerHygiene rewrites the small subset of internal labels that are
-// safe to translate automatically in user-facing Haft output.
+// ApplyFPFAnswerHygiene rewrites known internal terms in user-facing text.
 func ApplyFPFAnswerHygiene(text string) string {
-	result := text
+	rewritten := text
 
 	for _, rule := range fpfAnswerHygieneRules {
-		if !rule.autoRewrite {
-			continue
-		}
-
-		result = strings.ReplaceAll(result, rule.term, rule.replacement)
+		rewritten = strings.ReplaceAll(rewritten, rule.term, rule.replacement)
 	}
 
-	return result
+	return rewritten
 }
 
 // LintFPFAnswer reports internal terms that should not appear in user-facing
@@ -65,6 +59,11 @@ func LintFPFAnswer(text string) []FPFAnswerHygieneIssue {
 	}
 
 	return issues
+}
+
+// LintGeneratedText joins generated fragments and reports internal term leaks.
+func LintGeneratedText(fragments ...string) []FPFAnswerHygieneIssue {
+	return LintFPFAnswer(strings.Join(fragments, "\n"))
 }
 
 // UserFacingArtifactKindLabel renders internal artifact kinds as plain language.

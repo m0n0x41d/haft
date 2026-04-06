@@ -288,14 +288,18 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_solution",
-			Description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link), 'compare' runs parity check and identifies the Pareto front.",
+			Description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link and novelty marker), 'compare' runs parity check and identifies the Pareto front, 'similar' searches past solution portfolios.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"explore", "compare"},
-						"description": "explore=create variants portfolio, compare=run parity comparison",
+						"enum":        []interface{}{"explore", "compare", "similar"},
+						"description": "explore=create variants portfolio, compare=run parity comparison, similar=search past solutions",
+					},
+					"query": map[string]string{
+						"type":        "string",
+						"description": "(similar) Search query for past solution portfolios",
 					},
 					"problem_ref": map[string]string{
 						"type":        "string",
@@ -306,17 +310,27 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"items": map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"title":          map[string]string{"type": "string", "description": "Variant name"},
-								"description":    map[string]string{"type": "string", "description": "What this option does"},
-								"strengths":      map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
-								"weakest_link":   map[string]string{"type": "string", "description": "What bounds this option's quality (WLNK)"},
-								"risks":          map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
-								"stepping_stone": map[string]interface{}{"type": "boolean", "description": "Opens future possibilities even if not optimal now"},
-								"rollback_notes": map[string]string{"type": "string"},
+								"id":                   map[string]string{"type": "string", "description": "Explicit variant ID (auto-generated if omitted)"},
+								"title":                map[string]string{"type": "string", "description": "Variant name"},
+								"description":          map[string]string{"type": "string", "description": "What this option does"},
+								"weakest_link":         map[string]string{"type": "string", "description": "What bounds this option's quality (WLNK)"},
+								"novelty_marker":       map[string]string{"type": "string", "description": "How this variant differs from the others — state the genuine novelty"},
+								"strengths":            map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+								"risks":                map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+								"stepping_stone":       map[string]interface{}{"type": "boolean", "description": "Opens future possibilities even if not optimal now"},
+								"stepping_stone_basis": map[string]string{"type": "string", "description": "Why this is a stepping stone (required when stepping_stone=true)"},
+								"diversity_role":       map[string]string{"type": "string", "description": "Role in portfolio diversity"},
+								"assumption_notes":     map[string]string{"type": "string", "description": "Key assumptions this variant depends on"},
+								"rollback_notes":       map[string]string{"type": "string"},
+								"evidence_refs":        map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}, "description": "References to supporting evidence"},
 							},
-							"required": []string{"title", "weakest_link"},
+							"required": []string{"title", "weakest_link", "novelty_marker"},
 						},
 						"description": "(explore) Solution variants — at least 2, genuinely distinct",
+					},
+					"no_stepping_stone_rationale": map[string]string{
+						"type":        "string",
+						"description": "(explore) Required when no variant is a stepping stone — explain why",
 					},
 					"portfolio_ref": map[string]string{
 						"type":        "string",
@@ -335,6 +349,11 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
 						"description": "(compare) Advisory Pareto-front claim; runtime computes and stores the front from scores",
+					},
+					"incomparable": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}},
+						"description": "(compare) Pairs that are intentionally incomparable",
 					},
 					"dominated_variants": map[string]interface{}{
 						"type": "array",

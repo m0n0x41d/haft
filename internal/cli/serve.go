@@ -442,6 +442,9 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			input.Mode = v
 		}
 		input.Variants = parseVariants(args)
+		if v, ok := args["no_stepping_stone_rationale"].(string); ok {
+			input.NoSteppingStoneRationale = v
+		}
 		if input.ProblemRef == "" {
 			prob, _ := artifact.FindActiveProblem(ctx, store, contextName)
 			if prob != nil {
@@ -477,6 +480,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		}
 		_ = parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants)
 		_ = parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
+		_ = parseJSONArg(args, "incomparable", &input.Results.Incomparable)
 		if input.PortfolioRef == "" {
 			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
 			if p != nil {
@@ -494,8 +498,30 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.SolutionResponse("compare", a, filePath, navStrip), nil
 
+	case "similar":
+		query, _ := args["query"].(string)
+		if query == "" {
+			return "", fmt.Errorf("query required for similar search")
+		}
+		results, err := artifact.FetchSearchResults(ctx, store, query, 10)
+		if err != nil {
+			return "", err
+		}
+		var matches []string
+		for _, r := range results {
+			if r.Meta.Kind == artifact.KindSolutionPortfolio {
+				matches = append(matches, fmt.Sprintf("- [%s] %s (problem: %s)",
+					r.Meta.ID, r.Meta.Title, r.Meta.Context))
+			}
+		}
+		if len(matches) == 0 {
+			return "No similar past solutions found. This is a novel problem.", nil
+		}
+		return fmt.Sprintf("Past solution portfolios matching \"%s\":\n%s\n\nUse haft_query(search) for details on any portfolio.",
+			query, strings.Join(matches, "\n")), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'explore' or 'compare'", action)
+		return "", fmt.Errorf("unknown action %q — use 'explore', 'compare', or 'similar'", action)
 	}
 }
 
@@ -1278,8 +1304,20 @@ func parseVariants(args map[string]any) []artifact.Variant {
 		if s, ok := vm["rollback_notes"].(string); ok {
 			v.RollbackNotes = s
 		}
+		if s, ok := vm["novelty_marker"].(string); ok {
+			v.NoveltyMarker = s
+		}
 		if b, ok := vm["stepping_stone"].(bool); ok {
 			v.SteppingStone = b
+		}
+		if s, ok := vm["stepping_stone_basis"].(string); ok {
+			v.SteppingStoneBasis = s
+		}
+		if s, ok := vm["diversity_role"].(string); ok {
+			v.DiversityRole = s
+		}
+		if s, ok := vm["assumption_notes"].(string); ok {
+			v.AssumptionNotes = s
 		}
 		if items, ok := vm["strengths"].([]any); ok {
 			for _, item := range items {
@@ -1292,6 +1330,13 @@ func parseVariants(args map[string]any) []artifact.Variant {
 			for _, item := range items {
 				if s, ok := item.(string); ok {
 					v.Risks = append(v.Risks, s)
+				}
+			}
+		}
+		if items, ok := vm["evidence_refs"].([]any); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					v.EvidenceRefs = append(v.EvidenceRefs, s)
 				}
 			}
 		}

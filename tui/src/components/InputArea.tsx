@@ -20,6 +20,7 @@ import {
   moveWordRight,
 } from "../input/editBuffer.js"
 import {
+  currentEntry,
   type History,
   emptyHistory,
   push,
@@ -86,7 +87,7 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
 ) {
   const [edit, setEdit] = useState<EditState>(empty)
   const historyRef = useRef<History>(emptyHistory)
-  const historyPastesRef = useRef(new Map<string, CollapsedPaste[]>())
+  const historyPastesRef = useRef(new Map<number, CollapsedPaste[]>())
   const draftHistoryPastesRef = useRef<CollapsedPaste[]>([])
   const isVisible = phase === "input" || phase === "streaming"
   const layout = isVisible
@@ -131,19 +132,24 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
       }
       if (hasSubmittableText(edit.text)) {
         const historyEntry = onSubmit(edit.text)
-        const historyText = historyEntry?.text ?? edit.text
+        const pushResult = push(
+          historyRef.current,
+          historyEntry?.text ?? edit.text,
+        )
 
-        if (historyEntry) {
+        if (pushResult.evicted) {
+          historyPastesRef.current.delete(pushResult.evicted.id)
+        }
+
+        if (historyEntry && pushResult.stored) {
           historyPastesRef.current.set(
-            historyEntry.text,
+            pushResult.stored.id,
             cloneCollapsedPastes(historyEntry.pastes),
           )
-        } else {
-          historyPastesRef.current.delete(historyText)
         }
 
         draftHistoryPastesRef.current = []
-        historyRef.current = push(historyRef.current, historyText)
+        historyRef.current = pushResult.history
         setEdit(empty)
       }
       return
@@ -250,8 +256,11 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
           draftHistoryPastesRef.current = cloneCollapsedPastes(draftPastes ?? [])
         }
         historyRef.current = result
+        const nextEntry = currentEntry(result)
         const nextText = currentText(result)
-        const nextPastes = historyPastesRef.current.get(nextText) ?? []
+        const nextPastes = nextEntry
+          ? historyPastesRef.current.get(nextEntry.id) ?? []
+          : []
 
         onHistoryPastesRestore?.(cloneCollapsedPastes(nextPastes))
         setEdit(fromText(nextText))
@@ -272,9 +281,12 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         const result = navigateDown(historyRef.current)
         if (result) {
           historyRef.current = result
+          const nextEntry = currentEntry(result)
           const nextText = currentText(result)
           const nextPastes = isNavigating(result)
-            ? historyPastesRef.current.get(nextText) ?? []
+            ? nextEntry
+              ? historyPastesRef.current.get(nextEntry.id) ?? []
+              : []
             : draftHistoryPastesRef.current
 
           onHistoryPastesRestore?.(cloneCollapsedPastes(nextPastes))

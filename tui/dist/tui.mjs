@@ -34123,18 +34123,45 @@ function reduceScroll(state, cmd) {
         };
       }
       const delta = cmd.newTotalLines - state.totalLines;
+      const offset = clampOffset(
+        state.offset + delta,
+        cmd.newTotalLines,
+        state.viewportSize
+      );
       return {
         ...state,
+        readingStartTotalLines: nextReadingStartTotalLines({
+          nextMode: state.mode,
+          nextOffset: offset,
+          nextTotalLines: cmd.newTotalLines,
+          previousMode: state.mode,
+          previousTotalLines: state.totalLines,
+          previousReadingStartTotalLines: state.readingStartTotalLines
+        }),
         totalLines: cmd.newTotalLines,
-        offset: clampOffset(state.offset + delta, cmd.newTotalLines, state.viewportSize)
+        offset
       };
     }
-    case "resize":
+    case "resize": {
+      const offset = clampOffset(
+        state.offset,
+        state.totalLines,
+        cmd.viewportSize
+      );
       return {
         ...state,
+        readingStartTotalLines: nextReadingStartTotalLines({
+          nextMode: state.mode,
+          nextOffset: offset,
+          nextTotalLines: state.totalLines,
+          previousMode: state.mode,
+          previousTotalLines: state.totalLines,
+          previousReadingStartTotalLines: state.readingStartTotalLines
+        }),
         viewportSize: cmd.viewportSize,
-        offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize)
+        offset
       };
+    }
   }
 }
 function moveIntoReadingMode(state, nextOffset) {
@@ -34144,7 +34171,14 @@ function moveIntoReadingMode(state, nextOffset) {
     state.viewportSize
   );
   const mode = offset > 0 || state.mode === "reading" ? "reading" : "sticky";
-  const readingStartTotalLines = state.mode === "sticky" && mode === "reading" ? state.totalLines : mode === "sticky" ? null : state.readingStartTotalLines;
+  const readingStartTotalLines = nextReadingStartTotalLines({
+    nextMode: mode,
+    nextOffset: offset,
+    nextTotalLines: state.totalLines,
+    previousMode: state.mode,
+    previousTotalLines: state.totalLines,
+    previousReadingStartTotalLines: state.readingStartTotalLines
+  });
   return {
     ...state,
     mode,
@@ -34161,6 +34195,18 @@ function unreadLinesBelow(state) {
   }
   const baseline = state.readingStartTotalLines ?? state.totalLines;
   return Math.max(0, state.totalLines - baseline);
+}
+function nextReadingStartTotalLines(params) {
+  if (params.nextMode === "sticky") {
+    return null;
+  }
+  if (params.nextOffset === 0) {
+    return params.nextTotalLines;
+  }
+  if (params.previousMode === "sticky") {
+    return params.previousTotalLines;
+  }
+  return params.previousReadingStartTotalLines;
 }
 var init_state = __esm({
   "src/scroll/state.ts"() {
@@ -81162,17 +81208,51 @@ var init_editBuffer = __esm({
 });
 
 // src/input/history.ts
-var MAX_ENTRIES, emptyHistory, push, navigateUp, navigateDown, currentText, isNavigating;
+var MAX_ENTRIES, emptyHistory, push, navigateUp, navigateDown, currentText, currentEntry, isNavigating;
 var init_history = __esm({
   "src/input/history.ts"() {
     "use strict";
     MAX_ENTRIES = 100;
-    emptyHistory = { entries: [], position: 0, draft: "" };
+    emptyHistory = {
+      entries: [],
+      position: 0,
+      draft: "",
+      nextId: 1
+    };
     push = (h, entry) => {
-      if (!entry.trim()) return { ...h, position: h.entries.length, draft: "" };
+      if (!entry.trim()) {
+        return {
+          history: { ...h, position: h.entries.length, draft: "" },
+          stored: null,
+          evicted: null
+        };
+      }
       const last = h.entries[h.entries.length - 1];
-      const entries = entry === last ? h.entries : h.entries.length >= MAX_ENTRIES ? [...h.entries.slice(1), entry] : [...h.entries, entry];
-      return { entries, position: entries.length, draft: "" };
+      if (entry === last?.text) {
+        return {
+          history: { ...h, position: h.entries.length, draft: "" },
+          stored: last,
+          evicted: null
+        };
+      }
+      const stored = {
+        id: h.nextId,
+        text: entry
+      };
+      const hasOverflow = h.entries.length >= MAX_ENTRIES;
+      const evicted = hasOverflow ? h.entries[0] ?? null : null;
+      const retained = hasOverflow ? h.entries.slice(1) : h.entries;
+      const entries = [...retained, stored];
+      return {
+        history: {
+          entries,
+          position: entries.length,
+          draft: "",
+          nextId: h.nextId + 1
+        },
+        stored,
+        evicted
+      };
     };
     navigateUp = (h, currentText2) => {
       if (h.entries.length === 0) return null;
@@ -81186,7 +81266,8 @@ var init_history = __esm({
       if (h.position >= h.entries.length) return null;
       return { ...h, position: h.position + 1 };
     };
-    currentText = (h) => h.position >= h.entries.length ? h.draft : h.entries[h.position] ?? h.draft;
+    currentText = (h) => currentEntry(h)?.text ?? h.draft;
+    currentEntry = (h) => h.position >= h.entries.length ? null : h.entries[h.position] ?? null;
     isNavigating = (h) => h.position < h.entries.length;
   }
 });
@@ -81818,17 +81899,21 @@ var init_InputArea = __esm({
           }
           if (hasSubmittableText(edit.text)) {
             const historyEntry = onSubmit(edit.text);
-            const historyText = historyEntry?.text ?? edit.text;
-            if (historyEntry) {
+            const pushResult = push(
+              historyRef.current,
+              historyEntry?.text ?? edit.text
+            );
+            if (pushResult.evicted) {
+              historyPastesRef.current.delete(pushResult.evicted.id);
+            }
+            if (historyEntry && pushResult.stored) {
               historyPastesRef.current.set(
-                historyEntry.text,
+                pushResult.stored.id,
                 cloneCollapsedPastes2(historyEntry.pastes)
               );
-            } else {
-              historyPastesRef.current.delete(historyText);
             }
             draftHistoryPastesRef.current = [];
-            historyRef.current = push(historyRef.current, historyText);
+            historyRef.current = pushResult.history;
             setEdit(empty);
           }
           return;
@@ -81913,8 +81998,9 @@ var init_InputArea = __esm({
               draftHistoryPastesRef.current = cloneCollapsedPastes2(draftPastes ?? []);
             }
             historyRef.current = result;
+            const nextEntry = currentEntry(result);
             const nextText = currentText(result);
-            const nextPastes = historyPastesRef.current.get(nextText) ?? [];
+            const nextPastes = nextEntry ? historyPastesRef.current.get(nextEntry.id) ?? [] : [];
             onHistoryPastesRestore?.(cloneCollapsedPastes2(nextPastes));
             setEdit(fromText(nextText));
           }
@@ -81930,8 +82016,9 @@ var init_InputArea = __esm({
             const result = navigateDown(historyRef.current);
             if (result) {
               historyRef.current = result;
+              const nextEntry = currentEntry(result);
               const nextText = currentText(result);
-              const nextPastes = isNavigating(result) ? historyPastesRef.current.get(nextText) ?? [] : draftHistoryPastesRef.current;
+              const nextPastes = isNavigating(result) ? nextEntry ? historyPastesRef.current.get(nextEntry.id) ?? [] : [] : draftHistoryPastesRef.current;
               onHistoryPastesRestore?.(cloneCollapsedPastes2(nextPastes));
               setEdit(fromText(nextText));
             }

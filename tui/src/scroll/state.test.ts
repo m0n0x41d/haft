@@ -84,6 +84,7 @@ test("stays in reading mode even after scrolling back down to the old bottom", (
 
   assert.equal(state.mode, "reading")
   assert.equal(state.offset, 0)
+  assert.equal(state.readingStartTotalLines, 50)
   assert.equal(unreadLinesBelow(state), 0)
 })
 
@@ -98,4 +99,40 @@ test("does not mark unread content below just because the user scrolled up", () 
   assert.equal(reading.mode, "reading")
   assert.equal(reading.readingStartTotalLines, 60)
   assert.equal(unreadLinesBelow(reading), 0)
+})
+
+test("resets the unread baseline when reading mode reaches the current bottom", () => {
+  const reading = {
+    ...initialScroll(),
+    mode: "reading" as const,
+    readingStartTotalLines: 50,
+    offset: 4,
+    totalLines: 54,
+    viewportSize: 12,
+  }
+  const atBottom = reduceScroll(reading, { type: "pageDown" })
+  const grownAgain = reduceScroll(atBottom, { type: "contentChanged", newTotalLines: 57 })
+
+  assert.equal(atBottom.mode, "reading")
+  assert.equal(atBottom.offset, 0)
+  assert.equal(atBottom.readingStartTotalLines, 54)
+  assert.equal(unreadLinesBelow(atBottom), 0)
+  assert.equal(grownAgain.offset, 3)
+  assert.equal(unreadLinesBelow(grownAgain), 3)
+})
+
+test("resets the unread baseline when resize reveals the bottom", () => {
+  const reading = {
+    ...initialScroll(),
+    mode: "reading" as const,
+    readingStartTotalLines: 80,
+    offset: 5,
+    totalLines: 92,
+    viewportSize: 12,
+  }
+  const resized = reduceScroll(reading, { type: "resize", viewportSize: 100 })
+
+  assert.equal(resized.offset, 0)
+  assert.equal(resized.readingStartTotalLines, 92)
+  assert.equal(unreadLinesBelow(resized), 0)
 })

@@ -99,7 +99,7 @@ test("keeps typed multiline input and attachment rows in the visible bottom layo
 
 test("round-trips multiline history into transcript rendering without attachment guesses", () => {
   const prompt = "first line\n[not an attachment]\nthird line"
-  const history = push(emptyHistory, prompt)
+  const history = push(emptyHistory, prompt).history
   const recalled = navigateUp(history, "")
 
   assert.ok(recalled)

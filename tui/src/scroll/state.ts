@@ -78,19 +78,48 @@ export function reduceScroll(state: ScrollState, cmd: ScrollCommand): ScrollStat
 
       // Preserve viewing position: shift offset by the delta in total lines
       const delta = cmd.newTotalLines - state.totalLines
+      const offset = clampOffset(
+        state.offset + delta,
+        cmd.newTotalLines,
+        state.viewportSize,
+      )
+
       return {
         ...state,
+        readingStartTotalLines: nextReadingStartTotalLines({
+          nextMode: state.mode,
+          nextOffset: offset,
+          nextTotalLines: cmd.newTotalLines,
+          previousMode: state.mode,
+          previousTotalLines: state.totalLines,
+          previousReadingStartTotalLines: state.readingStartTotalLines,
+        }),
         totalLines: cmd.newTotalLines,
-        offset: clampOffset(state.offset + delta, cmd.newTotalLines, state.viewportSize),
+        offset,
       }
     }
 
-    case "resize":
+    case "resize": {
+      const offset = clampOffset(
+        state.offset,
+        state.totalLines,
+        cmd.viewportSize,
+      )
+
       return {
         ...state,
+        readingStartTotalLines: nextReadingStartTotalLines({
+          nextMode: state.mode,
+          nextOffset: offset,
+          nextTotalLines: state.totalLines,
+          previousMode: state.mode,
+          previousTotalLines: state.totalLines,
+          previousReadingStartTotalLines: state.readingStartTotalLines,
+        }),
         viewportSize: cmd.viewportSize,
-        offset: clampOffset(state.offset, state.totalLines, cmd.viewportSize),
+        offset,
       }
+    }
   }
 }
 
@@ -106,11 +135,14 @@ function moveIntoReadingMode(
   const mode = offset > 0 || state.mode === "reading"
     ? "reading"
     : "sticky"
-  const readingStartTotalLines = state.mode === "sticky" && mode === "reading"
-    ? state.totalLines
-    : mode === "sticky"
-      ? null
-      : state.readingStartTotalLines
+  const readingStartTotalLines = nextReadingStartTotalLines({
+    nextMode: mode,
+    nextOffset: offset,
+    nextTotalLines: state.totalLines,
+    previousMode: state.mode,
+    previousTotalLines: state.totalLines,
+    previousReadingStartTotalLines: state.readingStartTotalLines,
+  })
 
   return {
     ...state,
@@ -132,4 +164,31 @@ export function unreadLinesBelow(state: ScrollState): number {
   const baseline = state.readingStartTotalLines ?? state.totalLines
 
   return Math.max(0, state.totalLines - baseline)
+}
+
+interface ReadingStartTotalLinesParams {
+  nextMode: ScrollState["mode"]
+  nextOffset: number
+  nextTotalLines: number
+  previousMode: ScrollState["mode"]
+  previousTotalLines: number
+  previousReadingStartTotalLines: number | null
+}
+
+function nextReadingStartTotalLines(
+  params: ReadingStartTotalLinesParams,
+): number | null {
+  if (params.nextMode === "sticky") {
+    return null
+  }
+
+  if (params.nextOffset === 0) {
+    return params.nextTotalLines
+  }
+
+  if (params.previousMode === "sticky") {
+    return params.previousTotalLines
+  }
+
+  return params.previousReadingStartTotalLines
 }

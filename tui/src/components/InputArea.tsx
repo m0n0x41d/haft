@@ -36,12 +36,14 @@ import {
 } from "./inputLayout.js"
 import {
   hasSubmittableText,
+  type PromptHistoryEntry,
   type PromptSubmission,
 } from "./promptSubmission.js"
+import type { CollapsedPaste } from "./pastedText.js"
 
 interface Props {
   phase: "input" | "streaming" | "permission" | "question" | "picker"
-  onSubmit: (text: string) => string | void
+  onSubmit: (text: string) => PromptHistoryEntry | void
   onAtMention?: () => void
   onSlashCommand?: () => void
   onPopQueue?: () => PromptSubmission | null
@@ -53,6 +55,8 @@ interface Props {
   hasQueuedMessages?: boolean
   onRowsChange?: (rows: number) => void
   onTextChange?: (text: string) => void
+  draftPastes?: readonly CollapsedPaste[]
+  onHistoryPastesRestore?: (pastes: CollapsedPaste[]) => void
 }
 
 export interface InputAreaHandle {
@@ -61,11 +65,29 @@ export interface InputAreaHandle {
 }
 
 export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function InputArea(
-  { phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange, onTextChange },
+  {
+    phase,
+    onSubmit,
+    onAtMention,
+    onSlashCommand,
+    onPopQueue,
+    onEnterAttachmentSelection,
+    onPasteImage,
+    onTerminalScroll,
+    hasAttachments,
+    width,
+    hasQueuedMessages,
+    onRowsChange,
+    onTextChange,
+    draftPastes,
+    onHistoryPastesRestore,
+  },
   ref,
 ) {
   const [edit, setEdit] = useState<EditState>(empty)
   const historyRef = useRef<History>(emptyHistory)
+  const historyPastesRef = useRef(new Map<string, CollapsedPaste[]>())
+  const draftHistoryPastesRef = useRef<CollapsedPaste[]>([])
   const isVisible = phase === "input" || phase === "streaming"
   const layout = isVisible
     ? buildInputDisplayLayout({
@@ -108,8 +130,20 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         return
       }
       if (hasSubmittableText(edit.text)) {
-        const historyText = onSubmit(edit.text)
-        historyRef.current = push(historyRef.current, historyText ?? edit.text)
+        const historyEntry = onSubmit(edit.text)
+        const historyText = historyEntry?.text ?? edit.text
+
+        if (historyEntry) {
+          historyPastesRef.current.set(
+            historyEntry.text,
+            cloneCollapsedPastes(historyEntry.pastes),
+          )
+        } else {
+          historyPastesRef.current.delete(historyText)
+        }
+
+        draftHistoryPastesRef.current = []
+        historyRef.current = push(historyRef.current, historyText)
         setEdit(empty)
       }
       return
@@ -212,8 +246,15 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
       }
       const result = navigateUp(historyRef.current, edit.text)
       if (result) {
+        if (!isNavigating(historyRef.current)) {
+          draftHistoryPastesRef.current = cloneCollapsedPastes(draftPastes ?? [])
+        }
         historyRef.current = result
-        setEdit(fromText(currentText(result)))
+        const nextText = currentText(result)
+        const nextPastes = historyPastesRef.current.get(nextText) ?? []
+
+        onHistoryPastesRestore?.(cloneCollapsedPastes(nextPastes))
+        setEdit(fromText(nextText))
       }
       return
     }
@@ -231,7 +272,13 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
         const result = navigateDown(historyRef.current)
         if (result) {
           historyRef.current = result
-          setEdit(fromText(currentText(result)))
+          const nextText = currentText(result)
+          const nextPastes = isNavigating(result)
+            ? historyPastesRef.current.get(nextText) ?? []
+            : draftHistoryPastesRef.current
+
+          onHistoryPastesRestore?.(cloneCollapsedPastes(nextPastes))
+          setEdit(fromText(nextText))
         }
       }
       return
@@ -274,6 +321,14 @@ export const InputArea = React.memo(forwardRef<InputAreaHandle, Props>(function 
     </Box>
   )
 }))
+
+function cloneCollapsedPastes(
+  pastes: readonly CollapsedPaste[],
+): CollapsedPaste[] {
+  return pastes.map((paste) => ({
+    ...paste,
+  }))
+}
 
 function renderInputRow(row: InputDisplayRow): React.ReactNode {
   if (row.kind === "editor") {

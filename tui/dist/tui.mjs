@@ -34082,7 +34082,13 @@ var init_transcript = __esm({
 
 // src/scroll/state.ts
 function initialScroll() {
-  return { mode: "sticky", offset: 0, totalLines: 0, viewportSize: 20 };
+  return {
+    mode: "sticky",
+    readingStartTotalLines: null,
+    offset: 0,
+    totalLines: 0,
+    viewportSize: 20
+  };
 }
 function clampOffset(offset, totalLines, viewportSize) {
   return Math.max(0, Math.min(offset, Math.max(0, totalLines - viewportSize)));
@@ -34101,10 +34107,20 @@ function reduceScroll(state, cmd) {
     case "home":
       return moveIntoReadingMode(state, max);
     case "end":
-      return { ...state, mode: "sticky", offset: 0 };
+      return {
+        ...state,
+        mode: "sticky",
+        readingStartTotalLines: null,
+        offset: 0
+      };
     case "contentChanged": {
       if (state.mode === "sticky") {
-        return { ...state, totalLines: cmd.newTotalLines, offset: 0 };
+        return {
+          ...state,
+          readingStartTotalLines: null,
+          totalLines: cmd.newTotalLines,
+          offset: 0
+        };
       }
       const delta = cmd.newTotalLines - state.totalLines;
       return {
@@ -34128,14 +34144,23 @@ function moveIntoReadingMode(state, nextOffset) {
     state.viewportSize
   );
   const mode = offset > 0 || state.mode === "reading" ? "reading" : "sticky";
+  const readingStartTotalLines = state.mode === "sticky" && mode === "reading" ? state.totalLines : mode === "sticky" ? null : state.readingStartTotalLines;
   return {
     ...state,
     mode,
+    readingStartTotalLines,
     offset
   };
 }
 function isAtBottom(state) {
   return state.offset === 0;
+}
+function unreadLinesBelow(state) {
+  if (state.mode !== "reading") {
+    return 0;
+  }
+  const baseline = state.readingStartTotalLines ?? state.totalLines;
+  return Math.max(0, state.totalLines - baseline);
 }
 var init_state = __esm({
   "src/scroll/state.ts"() {
@@ -34652,7 +34677,7 @@ function useScroll(inputEvents, entryHeights, viewportSize) {
     () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
     [entryOffsets, state.offset, state.viewportSize]
   );
-  const unreadBelow = state.mode === "reading" ? Math.max(0, totalLines - visibleWindow.viewBottom) : 0;
+  const unreadBelow = unreadLinesBelow(state);
   const emitScroll = (0, import_react25.useCallback)((cmd) => {
     switch (cmd.type) {
       case "wheelUp":
@@ -81464,6 +81489,16 @@ function expandPromptSubmissionText(submission) {
     referencedPastes
   );
 }
+function createPromptHistoryEntry(submission) {
+  const referencedPastes = filterReferencedCollapsedPastes(
+    submission.text,
+    submission.pastes
+  );
+  return {
+    text: submission.text,
+    pastes: cloneCollapsedPastes(referencedPastes)
+  };
+}
 function leadingSlashCommand(text) {
   if (!text.startsWith("/")) {
     return null;
@@ -81658,6 +81693,11 @@ var init_clipboard2 = __esm({
 });
 
 // src/components/InputArea.tsx
+function cloneCollapsedPastes2(pastes) {
+  return pastes.map((paste) => ({
+    ...paste
+  }));
+}
 function renderInputRow(row) {
   if (row.kind === "editor") {
     return renderEditorRow(row.row);
@@ -81718,9 +81758,27 @@ var init_InputArea = __esm({
     init_promptSubmission();
     init_clipboard2();
     import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
-    InputArea = import_react32.default.memo((0, import_react32.forwardRef)(function InputArea2({ phase, onSubmit, onAtMention, onSlashCommand, onPopQueue, onEnterAttachmentSelection, onPasteImage, onTerminalScroll, hasAttachments, width, hasQueuedMessages, onRowsChange, onTextChange }, ref) {
+    InputArea = import_react32.default.memo((0, import_react32.forwardRef)(function InputArea2({
+      phase,
+      onSubmit,
+      onAtMention,
+      onSlashCommand,
+      onPopQueue,
+      onEnterAttachmentSelection,
+      onPasteImage,
+      onTerminalScroll,
+      hasAttachments,
+      width,
+      hasQueuedMessages,
+      onRowsChange,
+      onTextChange,
+      draftPastes,
+      onHistoryPastesRestore
+    }, ref) {
       const [edit, setEdit] = (0, import_react32.useState)(empty);
       const historyRef = (0, import_react32.useRef)(emptyHistory);
+      const historyPastesRef = (0, import_react32.useRef)(/* @__PURE__ */ new Map());
+      const draftHistoryPastesRef = (0, import_react32.useRef)([]);
       const isVisible = phase === "input" || phase === "streaming";
       const layout = isVisible ? buildInputDisplayLayout({
         text: edit.text,
@@ -81759,8 +81817,18 @@ var init_InputArea = __esm({
             return;
           }
           if (hasSubmittableText(edit.text)) {
-            const historyText = onSubmit(edit.text);
-            historyRef.current = push(historyRef.current, historyText ?? edit.text);
+            const historyEntry = onSubmit(edit.text);
+            const historyText = historyEntry?.text ?? edit.text;
+            if (historyEntry) {
+              historyPastesRef.current.set(
+                historyEntry.text,
+                cloneCollapsedPastes2(historyEntry.pastes)
+              );
+            } else {
+              historyPastesRef.current.delete(historyText);
+            }
+            draftHistoryPastesRef.current = [];
+            historyRef.current = push(historyRef.current, historyText);
             setEdit(empty);
           }
           return;
@@ -81841,8 +81909,14 @@ var init_InputArea = __esm({
           }
           const result = navigateUp(historyRef.current, edit.text);
           if (result) {
+            if (!isNavigating(historyRef.current)) {
+              draftHistoryPastesRef.current = cloneCollapsedPastes2(draftPastes ?? []);
+            }
             historyRef.current = result;
-            setEdit(fromText(currentText(result)));
+            const nextText = currentText(result);
+            const nextPastes = historyPastesRef.current.get(nextText) ?? [];
+            onHistoryPastesRestore?.(cloneCollapsedPastes2(nextPastes));
+            setEdit(fromText(nextText));
           }
           return;
         }
@@ -81856,7 +81930,10 @@ var init_InputArea = __esm({
             const result = navigateDown(historyRef.current);
             if (result) {
               historyRef.current = result;
-              setEdit(fromText(currentText(result)));
+              const nextText = currentText(result);
+              const nextPastes = isNavigating(result) ? historyPastesRef.current.get(nextText) ?? [] : draftHistoryPastesRef.current;
+              onHistoryPastesRestore?.(cloneCollapsedPastes2(nextPastes));
+              setEdit(fromText(nextText));
             }
           }
           return;
@@ -82420,6 +82497,19 @@ var init_appLayout = __esm({
   }
 });
 
+// src/components/streamLifecycle.ts
+function isStreamOwnedPhase(phase) {
+  return phase === "streaming" || phase === "permission" || phase === "question";
+}
+function shouldFinalizeStreaming(phase, hasPendingUpdate) {
+  return isStreamOwnedPhase(phase) || hasPendingUpdate;
+}
+var init_streamLifecycle = __esm({
+  "src/components/streamLifecycle.ts"() {
+    "use strict";
+  }
+});
+
 // src/components/streamUpdateBuffer.ts
 function createStreamUpdateBuffer(options) {
   const delayMs = options.delayMs ?? DEFAULT_DELAY_MS;
@@ -82638,7 +82728,10 @@ function App2({ client: client2, inputEvents }) {
   }, []);
   const finishStreaming = (0, import_react37.useCallback)((reason, options) => {
     const flushedPending = flushBufferedStream(reason, { streaming: false });
-    const shouldFinalize = phaseRef.current === "streaming" || flushedPending;
+    const shouldFinalize = shouldFinalizeStreaming(
+      phaseRef.current,
+      flushedPending
+    );
     if (!shouldFinalize) {
       return;
     }
@@ -82856,23 +82949,23 @@ function App2({ client: client2, inputEvents }) {
   const handleSubmit = (0, import_react37.useCallback)((text) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
     const submission = createPromptSubmission(text, attachments, draftPastes);
-    const historyText = expandPromptSubmissionText(submission);
+    const historyEntry = createPromptHistoryEntry(submission);
     if (phaseRef.current === "streaming") {
       setQueuedMessages((current) => [...current, submission]);
       setAttachments([]);
       setDraftPastes([]);
       setAttachmentSelection(false);
-      return historyText;
+      return historyEntry;
     }
     const commandResult = handleSlashCommand(text, false);
     if (commandResult !== "unhandled") {
-      return historyText;
+      return historyEntry;
     }
     sendSubmission(submission);
     setAttachments([]);
     setDraftPastes([]);
     setAttachmentSelection(false);
-    return historyText;
+    return historyEntry;
   }, [attachments, draftPastes, handleSlashCommand, sendSubmission]);
   const handleRemoveAttachment = (0, import_react37.useCallback)((id) => {
     setAttachments((current) => {
@@ -83137,7 +83230,9 @@ function App2({ client: client2, inputEvents }) {
         width,
         hasQueuedMessages: queuedMessages.length > 0,
         onRowsChange: setInputRows,
-        onTextChange: handleInputTextChange
+        onTextChange: handleInputTextChange,
+        draftPastes,
+        onHistoryPastesRestore: setDraftPastes
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
@@ -83219,6 +83314,7 @@ var init_App2 = __esm({
     await init_Picker();
     await init_Attachments();
     init_appLayout();
+    init_streamLifecycle();
     init_streamUpdateBuffer();
     init_promptSubmission();
     init_pastedText();

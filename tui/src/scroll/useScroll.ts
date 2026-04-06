@@ -5,7 +5,14 @@ import { useReducer, useEffect, useCallback, useMemo, useRef } from "react"
 import type { EventEmitter } from "node:events"
 import type { InputEvent } from "../terminal/input.js"
 import { trace } from "../debug.js"
-import { initialScroll, reduceScroll, isAtBottom, type ScrollState, type ScrollCommand } from "./state.js"
+import {
+  initialScroll,
+  reduceScroll,
+  isAtBottom,
+  unreadLinesBelow,
+  type ScrollState,
+  type ScrollCommand,
+} from "./state.js"
 import { computeOffsets, computeVisibleWindow, type VisibleWindow } from "./measure.js"
 
 export interface UseScrollResult {
@@ -41,9 +48,7 @@ export function useScroll(
     () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
     [entryOffsets, state.offset, state.viewportSize],
   )
-  const unreadBelow = state.mode === "reading"
-    ? Math.max(0, totalLines - visibleWindow.viewBottom)
-    : 0
+  const unreadBelow = unreadLinesBelow(state)
 
   const emitScroll = useCallback((cmd: ScrollCommand) => {
     switch (cmd.type) {

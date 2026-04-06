@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
+  createPromptHistoryEntry,
   createPromptSubmission,
   drainPromptSubmissions,
   expandPromptSubmissionText,
@@ -111,6 +112,33 @@ test("expands hidden pasted bodies into the final submitted text", () => {
     expandPromptSubmissionText(submission),
     "prefix expanded article body suffix",
   )
+})
+
+test("keeps collapsed display text and referenced pastes in prompt history", () => {
+  const submission = createPromptSubmission(
+    "prefix [40 rows inserted #7] suffix",
+    [],
+    [
+      {
+        id: 7,
+        text: "expanded article body",
+        rowCount: 40,
+      },
+      {
+        id: 9,
+        text: "unused body",
+        rowCount: 22,
+      },
+    ],
+  )
+  const historyEntry = createPromptHistoryEntry(submission)
+
+  assert.equal(historyEntry.text, "prefix [40 rows inserted #7] suffix")
+  assert.deepEqual(historyEntry.pastes, [{
+    id: 7,
+    text: "expanded article body",
+    rowCount: 40,
+  }])
 })
 
 test("classifies queued slash commands by replay behavior", () => {

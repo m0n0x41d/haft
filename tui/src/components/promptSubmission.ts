@@ -12,6 +12,11 @@ export interface PromptSubmission {
   pastes: CollapsedPaste[]
 }
 
+export interface PromptHistoryEntry {
+  text: string
+  pastes: CollapsedPaste[]
+}
+
 interface ShiftPromptSubmissionsResult {
   current: PromptSubmission | null
   remaining: PromptSubmission[]
@@ -73,6 +78,20 @@ export function expandPromptSubmissionText(
     submission.text,
     referencedPastes,
   )
+}
+
+export function createPromptHistoryEntry(
+  submission: PromptSubmission,
+): PromptHistoryEntry {
+  const referencedPastes = filterReferencedCollapsedPastes(
+    submission.text,
+    submission.pastes,
+  )
+
+  return {
+    text: submission.text,
+    pastes: cloneCollapsedPastes(referencedPastes),
+  }
 }
 
 export function leadingSlashCommand(text: string): string | null {

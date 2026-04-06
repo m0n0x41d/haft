@@ -26,8 +26,10 @@ import { Picker, type PickerItem } from "./Picker.js"
 import { Attachments } from "./Attachments.js"
 import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
+import { shouldFinalizeStreaming } from "./streamLifecycle.js"
 import { createStreamUpdateBuffer } from "./streamUpdateBuffer.js"
 import {
+  createPromptHistoryEntry,
   createPromptSubmission,
   drainPromptSubmissions,
   expandPromptSubmissionText,
@@ -251,7 +253,10 @@ export function App({ client, inputEvents }: AppProps) {
     options: { resumeQueue: boolean },
   ) => {
     const flushedPending = flushBufferedStream(reason, { streaming: false })
-    const shouldFinalize = phaseRef.current === "streaming" || flushedPending
+    const shouldFinalize = shouldFinalizeStreaming(
+      phaseRef.current,
+      flushedPending,
+    )
 
     if (!shouldFinalize) {
       return
@@ -488,27 +493,27 @@ export function App({ client, inputEvents }: AppProps) {
   const handleSubmit = useCallback((text: string) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`)
     const submission = createPromptSubmission(text, attachments, draftPastes)
-    const historyText = expandPromptSubmissionText(submission)
+    const historyEntry = createPromptHistoryEntry(submission)
 
     if (phaseRef.current === "streaming") {
       setQueuedMessages((current) => [...current, submission])
       setAttachments([])
       setDraftPastes([])
       setAttachmentSelection(false)
-      return historyText
+      return historyEntry
     }
 
     const commandResult = handleSlashCommand(text, false)
 
     if (commandResult !== "unhandled") {
-      return historyText
+      return historyEntry
     }
 
     sendSubmission(submission)
     setAttachments([])
     setDraftPastes([])
     setAttachmentSelection(false)
-    return historyText
+    return historyEntry
   }, [attachments, draftPastes, handleSlashCommand, sendSubmission])
 
   const handleRemoveAttachment = useCallback((id: number) => {
@@ -781,6 +786,8 @@ export function App({ client, inputEvents }: AppProps) {
         hasQueuedMessages={queuedMessages.length > 0}
         onRowsChange={setInputRows}
         onTextChange={handleInputTextChange}
+        draftPastes={draftPastes}
+        onHistoryPastesRestore={setDraftPastes}
       />
 
       {/* Bottom separator */}

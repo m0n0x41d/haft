@@ -5,6 +5,8 @@
 export interface ScrollState {
   // Live-tail following vs explicit reading mode.
   mode: "sticky" | "reading"
+  // Total rendered lines when the user left sticky mode.
+  readingStartTotalLines: number | null
   // Lines scrolled back from bottom. 0 = at bottom (sticky).
   offset: number
   // Total rendered lines across all transcript entries
@@ -24,7 +26,13 @@ export type ScrollCommand =
   | { type: "resize"; viewportSize: number }
 
 export function initialScroll(): ScrollState {
-  return { mode: "sticky", offset: 0, totalLines: 0, viewportSize: 20 }
+  return {
+    mode: "sticky",
+    readingStartTotalLines: null,
+    offset: 0,
+    totalLines: 0,
+    viewportSize: 20,
+  }
 }
 
 function clampOffset(offset: number, totalLines: number, viewportSize: number): number {
@@ -51,11 +59,21 @@ export function reduceScroll(state: ScrollState, cmd: ScrollCommand): ScrollStat
       return moveIntoReadingMode(state, max)
 
     case "end":
-      return { ...state, mode: "sticky", offset: 0 }
+      return {
+        ...state,
+        mode: "sticky",
+        readingStartTotalLines: null,
+        offset: 0,
+      }
 
     case "contentChanged": {
       if (state.mode === "sticky") {
-        return { ...state, totalLines: cmd.newTotalLines, offset: 0 }
+        return {
+          ...state,
+          readingStartTotalLines: null,
+          totalLines: cmd.newTotalLines,
+          offset: 0,
+        }
       }
 
       // Preserve viewing position: shift offset by the delta in total lines
@@ -88,14 +106,30 @@ function moveIntoReadingMode(
   const mode = offset > 0 || state.mode === "reading"
     ? "reading"
     : "sticky"
+  const readingStartTotalLines = state.mode === "sticky" && mode === "reading"
+    ? state.totalLines
+    : mode === "sticky"
+      ? null
+      : state.readingStartTotalLines
 
   return {
     ...state,
     mode,
+    readingStartTotalLines,
     offset,
   }
 }
 
 export function isAtBottom(state: ScrollState): boolean {
   return state.offset === 0
+}
+
+export function unreadLinesBelow(state: ScrollState): number {
+  if (state.mode !== "reading") {
+    return 0
+  }
+
+  const baseline = state.readingStartTotalLines ?? state.totalLines
+
+  return Math.max(0, state.totalLines - baseline)
 }

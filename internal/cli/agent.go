@@ -383,11 +383,28 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 		case protocol.MethodBoard:
 			if msg.ID != nil {
+				var params struct {
+					View string `json:"view"`
+				}
+				_ = msg.UnmarshalParams(&params)
 				boardData, err := ui.LoadBoardData(artStore, database.GetRawDB(), projCfg.Name, projectRoot)
 				if err != nil {
 					_ = rpc.RespondError(*msg.ID, -1, err.Error())
 				} else {
-					_ = rpc.Respond(*msg.ID, map[string]string{"text": present.BoardOverview(boardData)})
+					var text string
+					switch params.View {
+					case "decisions":
+						text = present.BoardDecisionsW(boardData, 0)
+					case "problems":
+						text = present.BoardProblemsW(boardData, 0)
+					case "coverage":
+						text = present.BoardCoverageW(boardData, 0)
+					case "evidence":
+						text = present.BoardEvidenceW(boardData, 0)
+					default:
+						text = present.BoardOverviewW(boardData, 0)
+					}
+					_ = rpc.Respond(*msg.ID, map[string]string{"text": text})
 				}
 			}
 

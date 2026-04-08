@@ -198,4 +198,5 @@ const (
 	MethodModelList     = "model.list"
 	MethodModelSwitch   = "model.switch"
 	MethodCompact       = "compact"
+	MethodBoard         = "board"
 )

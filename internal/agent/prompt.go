@@ -206,6 +206,7 @@ These are corrections, not commands. The user uses them when you went too fast o
 /decide — record the decision now
 /measure — verify what was implemented
 /status — show cycle state and active problems
+/board — show rich health dashboard with trust, decisions, problems, coverage, evidence. Use haft_query(action="board") or haft_query(action="board", view="decisions|problems|coverage|evidence|full")
 /compact — compress context window
 /search — search past decisions and artifacts
 /problems — list active problems

@@ -25,7 +25,9 @@ import (
 	"github.com/m0n0x41d/haft/internal/provider"
 	"github.com/m0n0x41d/haft/internal/session"
 	"github.com/m0n0x41d/haft/internal/tasks"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/tools"
+	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
 
 	"golang.org/x/sys/unix"
@@ -376,6 +378,16 @@ func runAgent(cmd *cobra.Command, args []string) error {
 					_ = rpc.RespondError(*msg.ID, -1, err.Error())
 				} else {
 					_ = rpc.Respond(*msg.ID, protocol.CompactResponse{Before: before, After: after})
+				}
+			}
+
+		case protocol.MethodBoard:
+			if msg.ID != nil {
+				boardData, err := ui.LoadBoardData(artStore, database.GetRawDB(), projCfg.Name, projectRoot)
+				if err != nil {
+					_ = rpc.RespondError(*msg.ID, -1, err.Error())
+				} else {
+					_ = rpc.Respond(*msg.ID, map[string]string{"text": present.BoardOverview(boardData)})
 				}
 			}
 

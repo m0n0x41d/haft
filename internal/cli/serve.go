@@ -17,6 +17,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
 
 	"github.com/spf13/cobra"
@@ -946,6 +947,27 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 			}
 		}
 		return result + navStrip, nil
+
+	case "board":
+		boardView, _ := args["view"].(string)
+		boardData, err := ui.LoadBoardData(store, store.DB(), haftDir, "")
+		if err != nil {
+			return "", fmt.Errorf("load board data: %w", err)
+		}
+		switch boardView {
+		case "decisions":
+			return present.BoardDecisions(boardData), nil
+		case "problems":
+			return present.BoardProblems(boardData), nil
+		case "coverage":
+			return present.BoardCoverage(boardData), nil
+		case "evidence":
+			return present.BoardEvidence(boardData), nil
+		case "full":
+			return present.BoardFull(boardData), nil
+		default:
+			return present.BoardOverview(boardData), nil
+		}
 
 	case "related":
 		file, _ := args["file"].(string)

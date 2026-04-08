@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/ui"
 )
@@ -17,16 +18,18 @@ var checkMode bool
 
 var boardCmd = &cobra.Command{
 	Use:   "board",
-	Short: "Decision health dashboard",
-	Long: `Shows decision health, coverage, drift, and problems.
+	Short: "Interactive health dashboard",
+	Long: `Full-screen interactive project health dashboard.
 
-Use --check for CI/hooks: exits with code 1 if critical issues exist.
-Interactive dashboard is being migrated to tview.`,
+Shows trust status, decisions, problems, coverage, and evidence health.
+Switch views with 1-5, refresh with r, quit with q.
+
+Use --check for CI/hooks: prints compact summary and exits with code 1 if critical.`,
 	RunE: runBoard,
 }
 
 func init() {
-	boardCmd.Flags().BoolVar(&checkMode, "check", false, "Health check mode: print summary and exit with code 1 if critical issues")
+	boardCmd.Flags().BoolVar(&checkMode, "check", false, "CI mode: compact summary, exit 1 if critical")
 	rootCmd.AddCommand(boardCmd)
 }
 
@@ -58,41 +61,53 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 	defer sqlDB.Close()
 
 	store := artifact.NewStore(sqlDB)
-	projectName := projCfg.Name
 
-	data, err := ui.LoadBoardData(store, sqlDB, projectName, projectRoot)
+	loadData := func() (*ui.BoardData, error) {
+		return ui.LoadBoardData(store, sqlDB, projCfg.Name, projectRoot)
+	}
+
+	data, err := loadData()
 	if err != nil {
 		return fmt.Errorf("load board data: %w", err)
 	}
 
+	// --check mode: print and exit
 	if checkMode {
-		return runCheck(data)
-	}
-
-	// Interactive dashboard not yet available — use --check mode.
-	return runCheck(data)
-}
-
-func runCheck(data *ui.BoardData) error {
-	fmt.Printf("Haft Health: %s\n", data.ProjectName)
-	fmt.Printf("  Decisions: %d shipped, %d pending\n", data.ShippedCount, data.PendingCount)
-	fmt.Printf("  Problems:  %d backlog, %d addressed\n", len(data.BacklogProblems), data.AddressedCount)
-	fmt.Printf("  Stale:     %d items\n", len(data.StaleItems))
-
-	if data.CoverageReport != nil {
-		cr := data.CoverageReport
-		pct := 0
-		if cr.TotalModules > 0 {
-			pct = (cr.CoveredCount + cr.PartialCount) * 100 / cr.TotalModules
+		fmt.Print(present.BoardCheck(data))
+		if data.CriticalCount > 0 {
+			os.Exit(1)
 		}
-		fmt.Printf("  Coverage:  %d%% (%d/%d modules)\n", pct, cr.CoveredCount+cr.PartialCount, cr.TotalModules)
+		return nil
 	}
 
-	if data.CriticalCount > 0 {
-		fmt.Printf("\n  CRITICAL: %d issue(s) require attention\n", data.CriticalCount)
-		os.Exit(1)
+	// Interactive mode: full-screen TUI
+	var currentData *ui.BoardData = data
+
+	renderView := func(viewIndex int, width int) string {
+		switch viewIndex {
+		case 0:
+			return present.BoardOverviewW(currentData, width)
+		case 1:
+			return present.BoardDecisionsW(currentData, width)
+		case 2:
+			return present.BoardProblemsW(currentData, width)
+		case 3:
+			return present.BoardCoverageW(currentData, width)
+		case 4:
+			return present.BoardEvidenceW(currentData, width)
+		default:
+			return present.BoardOverviewW(currentData, width)
+		}
 	}
 
-	fmt.Println("\n  OK: no critical issues")
-	return nil
+	refresh := func() error {
+		newData, err := loadData()
+		if err != nil {
+			return err
+		}
+		currentData = newData
+		return nil
+	}
+
+	return ui.RunInteractive(renderView, refresh)
 }

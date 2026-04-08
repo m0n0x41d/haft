@@ -44,9 +44,28 @@ export function useScroll(
   const previousWindowRef = useRef<VisibleWindow | null>(null)
   const previousModeRef = useRef(state.mode)
 
+  // Compute an inline-corrected offset for the current totalLines.
+  // state.offset lags by one frame because it's updated via useEffect →
+  // dispatch → next render. Without this correction, visibleWindow uses
+  // stale offset with new totalLines, causing the viewport to shift for
+  // one frame and then snap back — the jitter the user sees.
+  const effectiveOffset = useMemo(() => {
+    if (state.mode === "sticky") {
+      return 0
+    }
+
+    if (totalLines === state.totalLines) {
+      return state.offset
+    }
+
+    const delta = totalLines - state.totalLines
+    const raw = state.offset + delta
+    return Math.max(0, Math.min(raw, Math.max(0, totalLines - state.viewportSize)))
+  }, [state.mode, state.offset, state.totalLines, state.viewportSize, totalLines])
+
   const visibleWindow = useMemo(
-    () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
-    [entryOffsets, state.offset, state.viewportSize],
+    () => computeVisibleWindow(entryOffsets, effectiveOffset, state.viewportSize),
+    [entryOffsets, effectiveOffset, state.viewportSize],
   )
   const unreadBelow = unreadLinesBelow(state)
 
@@ -73,6 +92,8 @@ export function useScroll(
     dispatch(cmd)
   }, [state.mode, state.offset])
 
+  // Keep the reducer in sync — this still fires, but visibleWindow no
+  // longer depends on the lagging state.offset for content-growth cases.
   useEffect(() => {
     dispatch({ type: "contentChanged", newTotalLines: totalLines })
   }, [totalLines])

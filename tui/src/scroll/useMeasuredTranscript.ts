@@ -89,6 +89,29 @@ export function useMeasuredTranscript(
   }, [entries, toolHistoryExpanded])
 
   useLayoutEffect(() => {
+    // Build a set of entries that are actively growing (streaming text,
+    // thinking, running tools). When ANY entry is active, freeze cached
+    // measurements for all finalized entries. Yoga can report different
+    // heights for the same content when the mounted sibling set changes
+    // (user scrolls → different viewport window → different Yoga layout).
+    // Re-measuring finalized entries during streaming causes totalLines
+    // to jitter, which makes the scroll offset oscillate in reading mode.
+    const activeEntryIds = new Set<string>()
+
+    for (const entry of entries) {
+      if (entry.type === "assistantText" && entry.streaming) {
+        activeEntryIds.add(entry.id)
+      } else if (entry.type === "thinking" || entry.type === "indicator") {
+        activeEntryIds.add(entry.id)
+      } else if (
+        entry.type === "assistantToolBatch"
+        && entry.tools.some((t) => t.running || t.subagent?.running)
+      ) {
+        activeEntryIds.add(entry.id)
+      }
+    }
+
+    const isStreaming = activeEntryIds.size > 0
     let cacheChanged = false
 
     for (const [entryId, entryNode] of entryNodesRef.current) {
@@ -102,6 +125,15 @@ export function useMeasuredTranscript(
       const previousHeight = measuredHeightsRef.current.get(entryId)
 
       if (previousHeight === nextHeight) {
+        continue
+      }
+
+      // During streaming: only update active entries and first-time
+      // measurements. Finalized entries with existing measurements are
+      // frozen to prevent Yoga layout variance from causing jitter.
+      // Legitimate re-measurements (tool history toggle) are handled
+      // by explicit cache invalidation above.
+      if (isStreaming && !activeEntryIds.has(entryId) && previousHeight !== undefined) {
         continue
       }
 

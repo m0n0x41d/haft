@@ -38,6 +38,7 @@ export type QueuedPromptReplayDisposition =
   | "submit"
 
 const PAUSING_LOCAL_SLASH_COMMANDS = new Set([
+  "/board",
   "/compact",
   "/help",
   "/model",

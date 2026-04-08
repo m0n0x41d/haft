@@ -1369,7 +1369,7 @@ var require_react_development = __commonJS({
           }
           return dispatcher.useContext(Context);
         }
-        function useState10(initialState2) {
+        function useState11(initialState2) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useState(initialState2);
         }
@@ -1381,7 +1381,7 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useRef(initialValue);
         }
-        function useEffect10(create2, deps) {
+        function useEffect11(create2, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useEffect(create2, deps);
         }
@@ -1393,7 +1393,7 @@ var require_react_development = __commonJS({
           var dispatcher = resolveDispatcher();
           return dispatcher.useLayoutEffect(create2, deps);
         }
-        function useCallback5(callback, deps) {
+        function useCallback6(callback, deps) {
           var dispatcher = resolveDispatcher();
           return dispatcher.useCallback(callback, deps);
         }
@@ -2160,11 +2160,11 @@ var require_react_development = __commonJS({
         exports.memo = memo;
         exports.startTransition = startTransition;
         exports.unstable_act = act;
-        exports.useCallback = useCallback5;
+        exports.useCallback = useCallback6;
         exports.useContext = useContext8;
         exports.useDebugValue = useDebugValue;
         exports.useDeferredValue = useDeferredValue;
-        exports.useEffect = useEffect10;
+        exports.useEffect = useEffect11;
         exports.useId = useId;
         exports.useImperativeHandle = useImperativeHandle2;
         exports.useInsertionEffect = useInsertionEffect;
@@ -2172,7 +2172,7 @@ var require_react_development = __commonJS({
         exports.useMemo = useMemo8;
         exports.useReducer = useReducer3;
         exports.useRef = useRef7;
-        exports.useState = useState10;
+        exports.useState = useState11;
         exports.useSyncExternalStore = useSyncExternalStore;
         exports.useTransition = useTransition;
         exports.version = ReactVersion;
@@ -9882,9 +9882,9 @@ var require_react_reconciler_development = __commonJS({
       module.exports = function $$$reconciler($$$hostConfig) {
         var exports2 = {};
         "use strict";
-        var React22 = require_react();
+        var React23 = require_react();
         var Scheduler = require_scheduler();
-        var ReactSharedInternals = React22.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        var ReactSharedInternals = React23.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
         var suppressWarning = false;
         function setSuppressWarning(newSuppressWarning) {
           {
@@ -35356,7 +35356,7 @@ var require_react_jsx_runtime_development = __commonJS({
     if (process.env.NODE_ENV !== "production") {
       (function() {
         "use strict";
-        var React22 = require_react();
+        var React23 = require_react();
         var REACT_ELEMENT_TYPE = Symbol.for("react.element");
         var REACT_PORTAL_TYPE = Symbol.for("react.portal");
         var REACT_FRAGMENT_TYPE = Symbol.for("react.fragment");
@@ -35382,7 +35382,7 @@ var require_react_jsx_runtime_development = __commonJS({
           }
           return null;
         }
-        var ReactSharedInternals = React22.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        var ReactSharedInternals = React23.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
         function error(format) {
           {
             {
@@ -36232,11 +36232,11 @@ var require_react_jsx_runtime_development = __commonJS({
             return jsxWithValidation(type, props, key, false);
           }
         }
-        var jsx17 = jsxWithValidationDynamic;
-        var jsxs14 = jsxWithValidationStatic;
+        var jsx18 = jsxWithValidationDynamic;
+        var jsxs15 = jsxWithValidationStatic;
         exports.Fragment = REACT_FRAGMENT_TYPE;
-        exports.jsx = jsx17;
-        exports.jsxs = jsxs14;
+        exports.jsx = jsx18;
+        exports.jsxs = jsxs15;
       })();
     }
   }
@@ -82383,6 +82383,103 @@ var init_Picker = __esm({
   }
 });
 
+// src/components/BoardOverlay.tsx
+function BoardOverlay({ client: client2, onClose, width, height }) {
+  const [currentView, setCurrentView] = (0, import_react36.useState)(0);
+  const [boardText, setBoardText] = (0, import_react36.useState)(null);
+  const [error, setError] = (0, import_react36.useState)(null);
+  const [loading, setLoading] = (0, import_react36.useState)(true);
+  const loadView = (0, import_react36.useCallback)((viewIndex) => {
+    setLoading(true);
+    setError(null);
+    client2.request("board", { view: VIEW_KEYS[viewIndex] }).then((r) => {
+      setBoardText(r.text || "No data.");
+      setLoading(false);
+    }).catch((e) => {
+      setError(e.message);
+      setLoading(false);
+    });
+  }, [client2]);
+  (0, import_react36.useEffect)(() => {
+    loadView(currentView);
+  }, [currentView, loadView]);
+  useInput((input, key) => {
+    if (key.escape || input === "q" || input === "Q") {
+      onClose();
+      return;
+    }
+    if (input === "r" || input === "R") {
+      loadView(currentView);
+      return;
+    }
+    if (input >= "1" && input <= "5") {
+      setCurrentView(Number(input) - 1);
+      return;
+    }
+    if (key.leftArrow) {
+      setCurrentView((v) => Math.max(0, v - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCurrentView((v) => Math.min(4, v + 1));
+      return;
+    }
+  });
+  const contentLines = (boardText || "").split("\n");
+  const headerRows = 3;
+  const maxContentRows = height - headerRows - 2;
+  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      width,
+      height,
+      borderStyle: "round",
+      borderColor: "cyan",
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexShrink: 0, children: VIEW_NAMES.map((name, i) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { children: [
+          " ",
+          i === currentView ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { bold: true, color: "cyan", children: [
+            "[",
+            i + 1,
+            " ",
+            name,
+            "]"
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { dimColor: true, children: [
+            " ",
+            i + 1,
+            " ",
+            name,
+            " "
+          ] })
+        ] }, name)) }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: "\u2500".repeat(Math.max(0, width - 2)) }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { flexDirection: "column", flexGrow: 1, paddingX: 1, overflowY: "hidden", children: [
+          loading && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { color: "yellow", children: "Loading..." }),
+          error && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Text, { color: "red", children: [
+            "Error: ",
+            error
+          ] }),
+          !loading && !error && contentLines.slice(0, maxContentRows).map((line, i) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { children: line }, i))
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: " 1-5 switch \xB7 \u2190\u2192 navigate \xB7 r refresh \xB7 q/Esc close" })
+      ]
+    }
+  );
+}
+var import_react36, import_jsx_runtime14, VIEW_NAMES, VIEW_KEYS;
+var init_BoardOverlay = __esm({
+  async "src/components/BoardOverlay.tsx"() {
+    "use strict";
+    import_react36 = __toESM(require_react(), 1);
+    await init_build2();
+    init_useInput();
+    import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+    VIEW_NAMES = ["Overview", "Decisions", "Problems", "Coverage", "Evidence"];
+    VIEW_KEYS = ["overview", "decisions", "problems", "coverage", "evidence"];
+  }
+});
+
 // src/components/attachmentLayout.ts
 function buildAttachmentRows(options) {
   const { items, selectionMode, selectedIndex = 0, width } = options;
@@ -82505,14 +82602,14 @@ var init_attachmentLayout = __esm({
 
 // src/components/Attachments.tsx
 function Attachments({ items, onRemove, selectionMode, onExitSelection, width }) {
-  const [cursor, setCursor] = (0, import_react36.useState)(0);
+  const [cursor, setCursor] = (0, import_react37.useState)(0);
   const rows = buildAttachmentRows({
     items,
     selectionMode,
     selectedIndex: cursor,
     width
   });
-  (0, import_react36.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     setCursor((value) => clampAttachmentCursor(value, items.length));
   }, [items.length]);
   useInput((_input, key) => {
@@ -82537,23 +82634,23 @@ function Attachments({ items, onRemove, selectionMode, onExitSelection, width })
     }
   }, { isActive: selectionMode });
   if (items.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Box_default, { flexDirection: "column", width, children: rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(Box_default, { paddingX: 1, width, children: [
-    row.type === "items" && row.items.map((item, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_react36.default.Fragment, { children: [
-      itemIndex > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { children: " " }),
-      item.selected ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { inverse: true, bold: true, children: item.label }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: item.label })
+  return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", width, children: rows.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { paddingX: 1, width, children: [
+    row.type === "items" && row.items.map((item, itemIndex) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_react37.default.Fragment, { children: [
+      itemIndex > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { children: " " }),
+      item.selected ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { inverse: true, bold: true, children: item.label }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: item.label })
     ] }, item.id)),
-    row.type === "hint" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Text, { dimColor: true, children: row.text })
+    row.type === "hint" && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: row.text })
   ] }, `${row.type}-${rowIndex}`)) });
 }
-var import_react36, import_jsx_runtime14;
+var import_react37, import_jsx_runtime15;
 var init_Attachments = __esm({
   async "src/components/Attachments.tsx"() {
     "use strict";
-    import_react36 = __toESM(require_react(), 1);
+    import_react37 = __toESM(require_react(), 1);
     await init_build2();
     init_useInput();
     init_attachmentLayout();
-    import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -82689,35 +82786,36 @@ var init_streamUpdateBuffer = __esm({
 
 // src/components/App.tsx
 function App2({ client: client2, inputEvents }) {
-  const [state, dispatch] = (0, import_react37.useReducer)(reducer, initialState());
+  const [state, dispatch] = (0, import_react38.useReducer)(reducer, initialState());
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const width = stdout?.columns ?? 80;
   const height = stdout?.rows ?? 24;
-  const [pickerMode, setPickerMode] = (0, import_react37.useState)(null);
-  const [pickerItems, setPickerItems] = (0, import_react37.useState)([]);
-  const [toolHistoryExpanded, setToolHistoryExpanded] = (0, import_react37.useState)(false);
-  const respondRef = (0, import_react37.useRef)(null);
-  const inputRef = (0, import_react37.useRef)(null);
-  const [queuedMessages, setQueuedMessages] = (0, import_react37.useState)([]);
-  const [attachments, setAttachments] = (0, import_react37.useState)([]);
-  const [draftPastes, setDraftPastes] = (0, import_react37.useState)([]);
-  const [attachmentSelection, setAttachmentSelection] = (0, import_react37.useState)(false);
-  const [inputRows, setInputRows] = (0, import_react37.useState)(() => estimateInputRows(""));
-  const nextAttachmentId = (0, import_react37.useRef)(1);
-  const nextPasteId = (0, import_react37.useRef)(1);
-  const phaseRef = (0, import_react37.useRef)(state.phase);
+  const [pickerMode, setPickerMode] = (0, import_react38.useState)(null);
+  const [pickerItems, setPickerItems] = (0, import_react38.useState)([]);
+  const [showBoard, setShowBoard] = (0, import_react38.useState)(false);
+  const [toolHistoryExpanded, setToolHistoryExpanded] = (0, import_react38.useState)(false);
+  const respondRef = (0, import_react38.useRef)(null);
+  const inputRef = (0, import_react38.useRef)(null);
+  const [queuedMessages, setQueuedMessages] = (0, import_react38.useState)([]);
+  const [attachments, setAttachments] = (0, import_react38.useState)([]);
+  const [draftPastes, setDraftPastes] = (0, import_react38.useState)([]);
+  const [attachmentSelection, setAttachmentSelection] = (0, import_react38.useState)(false);
+  const [inputRows, setInputRows] = (0, import_react38.useState)(() => estimateInputRows(""));
+  const nextAttachmentId = (0, import_react38.useRef)(1);
+  const nextPasteId = (0, import_react38.useRef)(1);
+  const phaseRef = (0, import_react38.useRef)(state.phase);
   phaseRef.current = state.phase;
-  const queuedMessageTexts = (0, import_react37.useMemo)(
+  const queuedMessageTexts = (0, import_react38.useMemo)(
     () => submissionTexts(queuedMessages),
     [queuedMessages]
   );
-  const replayQueueRef = (0, import_react37.useRef)(() => {
+  const replayQueueRef = (0, import_react38.useRef)(() => {
   });
-  const resumeQueuedOnPickerCancelRef = (0, import_react37.useRef)(false);
-  const [, setRedrawTick] = (0, import_react37.useState)(0);
-  const selRef = (0, import_react37.useRef)(INITIAL_SELECTION);
-  const layoutRef = (0, import_react37.useRef)({
+  const resumeQueuedOnPickerCancelRef = (0, import_react38.useRef)(false);
+  const [, setRedrawTick] = (0, import_react38.useState)(0);
+  const selRef = (0, import_react38.useRef)(INITIAL_SELECTION);
+  const layoutRef = (0, import_react38.useRef)({
     chatHeight: 0,
     atBottom: true,
     visibleWindow: {
@@ -82734,7 +82832,7 @@ function App2({ client: client2, inputEvents }) {
     entryOffsets: [0],
     transcript: []
   });
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     const handler = (text) => {
       if (!text) return;
       const collapsed = collapsePastedText(text, nextPasteId.current);
@@ -82751,7 +82849,7 @@ function App2({ client: client2, inputEvents }) {
       inputEvents.off("paste", handler);
     };
   }, [inputEvents]);
-  const dispatchStreamUpdate = (0, import_react37.useCallback)((params, reason) => {
+  const dispatchStreamUpdate = (0, import_react38.useCallback)((params, reason) => {
     trace("stream_update_flushed", {
       reason,
       streaming: params.streaming,
@@ -82761,10 +82859,10 @@ function App2({ client: client2, inputEvents }) {
     });
     dispatch({ type: "msg.update", params });
   }, []);
-  const streamUpdateBufferRef = (0, import_react37.useRef)(createStreamUpdateBuffer({
+  const streamUpdateBufferRef = (0, import_react38.useRef)(createStreamUpdateBuffer({
     onFlush: dispatchStreamUpdate
   }));
-  const transcript = (0, import_react37.useMemo)(() => buildTranscript({
+  const transcript = (0, import_react38.useMemo)(() => buildTranscript({
     messages: state.messages,
     streaming: state.phase === "streaming",
     streamingMsgId: state.streamingMsgId,
@@ -82773,7 +82871,7 @@ function App2({ client: client2, inputEvents }) {
     model: state.session.model
   }), [state.messages, state.phase, state.streamingMsgId, state.thinkExpanded, state.error, state.session.model]);
   const showInput = !pickerMode && (state.phase === "input" || state.phase === "streaming");
-  const bottomRows = (0, import_react37.useMemo)(() => computeBottomRows({
+  const bottomRows = (0, import_react38.useMemo)(() => computeBottomRows({
     width,
     queuedMessages: queuedMessageTexts,
     attachments,
@@ -82792,11 +82890,11 @@ function App2({ client: client2, inputEvents }) {
     entryHeights,
     chatHeight
   );
-  const visibleEntries = (0, import_react37.useMemo)(() => {
+  const visibleEntries = (0, import_react38.useMemo)(() => {
     return transcript.slice(vw.start, vw.end);
   }, [transcript, vw.start, vw.end]);
   layoutRef.current = { chatHeight, atBottom, visibleWindow: vw, entryHeights, entryOffsets, transcript };
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     const handler = (ev) => {
       if (ev.type === "mouseClick" && ev.button === 0) {
         selRef.current = reduceSelection(selRef.current, { type: "mouseDown", col: ev.col, row: ev.row });
@@ -82820,7 +82918,7 @@ function App2({ client: client2, inputEvents }) {
       inputEvents.off("input", handler);
     };
   }, [inputEvents]);
-  const resumeQueuedMessages = (0, import_react37.useCallback)(() => {
+  const resumeQueuedMessages = (0, import_react38.useCallback)(() => {
     setQueuedMessages((submissions) => {
       const drained = drainPromptSubmissions(submissions);
       if (drained.replay.length > 0) {
@@ -82833,13 +82931,13 @@ function App2({ client: client2, inputEvents }) {
       return drained.remaining;
     });
   }, []);
-  const flushBufferedStream = (0, import_react37.useCallback)((reason, overrides) => {
+  const flushBufferedStream = (0, import_react38.useCallback)((reason, overrides) => {
     return streamUpdateBufferRef.current.flush(reason, overrides);
   }, []);
-  const replaceBufferedStream = (0, import_react37.useCallback)((params, reason) => {
+  const replaceBufferedStream = (0, import_react38.useCallback)((params, reason) => {
     streamUpdateBufferRef.current.replace(params, reason);
   }, []);
-  const finishStreaming = (0, import_react37.useCallback)((reason, options) => {
+  const finishStreaming = (0, import_react38.useCallback)((reason, options) => {
     const flushedPending = flushBufferedStream(reason, { streaming: false });
     const shouldFinalize = shouldFinalizeStreaming(
       phaseRef.current,
@@ -82858,12 +82956,12 @@ function App2({ client: client2, inputEvents }) {
       resumeQueuedMessages();
     }
   }, [flushBufferedStream, resumeQueuedMessages]);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     return () => {
       streamUpdateBufferRef.current.clear();
     };
   }, []);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     client2.setNotificationHandler((method, params) => {
       trace(`notification: ${method}`);
       const p = params;
@@ -82939,15 +83037,15 @@ function App2({ client: client2, inputEvents }) {
       }
     });
   }, [client2, finishStreaming, replaceBufferedStream]);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     client2.send("resize", { width, height });
   }, [client2, width, height]);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     if (!state.notification) return;
     const timer = setTimeout(() => dispatch({ type: "clear.notification" }), 5e3);
     return () => clearTimeout(timer);
   }, [state.notification]);
-  const openFilePicker = (0, import_react37.useCallback)(async () => {
+  const openFilePicker = (0, import_react38.useCallback)(async () => {
     try {
       const resp = await client2.request("file.list", { limit: 200 });
       setPickerItems(resp.files.map((f) => ({ id: f.path, label: f.path, desc: formatSize(f.size) })));
@@ -82956,7 +83054,7 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "error", message: `file list: ${e.message}` });
     }
   }, [client2]);
-  const openModelPicker = (0, import_react37.useCallback)(async () => {
+  const openModelPicker = (0, import_react38.useCallback)(async () => {
     try {
       const resp = await client2.request("model.list", {});
       setPickerItems(resp.models.map((m) => ({ id: m.id, label: m.name || m.id, desc: `${m.provider} \xB7 ${Math.round(m.contextWindow / 1e3)}k` })));
@@ -82970,7 +83068,7 @@ function App2({ client: client2, inputEvents }) {
       }
     }
   }, [client2, resumeQueuedMessages]);
-  const openSessionPicker = (0, import_react37.useCallback)(async () => {
+  const openSessionPicker = (0, import_react38.useCallback)(async () => {
     try {
       const resp = await client2.request("session.list", { limit: 20 });
       setPickerItems(resp.sessions.map((s) => ({ id: s.id, label: s.title || s.id.slice(0, 8) + "\u2026", desc: s.model })));
@@ -82984,7 +83082,7 @@ function App2({ client: client2, inputEvents }) {
       }
     }
   }, [client2, resumeQueuedMessages]);
-  const sendSubmission = (0, import_react37.useCallback)((submission) => {
+  const sendSubmission = (0, import_react38.useCallback)((submission) => {
     const expandedText = expandPromptSubmissionText(submission);
     dispatch({ type: "submitted" });
     dispatch({
@@ -83008,7 +83106,7 @@ function App2({ client: client2, inputEvents }) {
       attachments: submitAttachments.length > 0 ? submitAttachments : void 0
     });
   }, [client2]);
-  const handleSlashCommand = (0, import_react37.useCallback)((text, fromQueuedReplay) => {
+  const handleSlashCommand = (0, import_react38.useCallback)((text, fromQueuedReplay) => {
     const cmd = leadingSlashCommand(text);
     const shouldResumeOnCancel = fromQueuedReplay && shouldResumeQueuedReplayAfterPickerCancel(text);
     const shouldResumeOnResolution = fromQueuedReplay && shouldResumeQueuedReplayAfterCommandResolution(text);
@@ -83036,6 +83134,9 @@ function App2({ client: client2, inputEvents }) {
           }
         });
         return "pause";
+      case "/board":
+        setShowBoard(true);
+        return "pause";
       case "/help":
         setPickerMode("commands");
         setPickerItems(SLASH_COMMANDS);
@@ -83044,7 +83145,7 @@ function App2({ client: client2, inputEvents }) {
         return "unhandled";
     }
   }, [client2, openModelPicker, openSessionPicker, resumeQueuedMessages]);
-  const replaySubmission = (0, import_react37.useCallback)((submission) => {
+  const replaySubmission = (0, import_react38.useCallback)((submission) => {
     const commandResult = handleSlashCommand(submission.text, true);
     if (commandResult === "pause") {
       return true;
@@ -83052,14 +83153,14 @@ function App2({ client: client2, inputEvents }) {
     sendSubmission(submission);
     return true;
   }, [handleSlashCommand, sendSubmission]);
-  const replayQueuedSubmissions = (0, import_react37.useCallback)((submissions) => {
+  const replayQueuedSubmissions = (0, import_react38.useCallback)((submissions) => {
     submissions.some((submission) => replaySubmission(submission));
     trace("queue_replay_finish", {
       requested: submissions.length,
       processed: submissions.length > 0 ? 1 : 0
     });
   }, [replaySubmission]);
-  const handleSubmit = (0, import_react37.useCallback)((text) => {
+  const handleSubmit = (0, import_react38.useCallback)((text) => {
     trace(`handleSubmit phase=${phaseRef.current} text=${text.slice(0, 40)}`);
     const submission = createPromptSubmission(text, attachments, draftPastes);
     const historyEntry = createPromptHistoryEntry(submission);
@@ -83080,7 +83181,7 @@ function App2({ client: client2, inputEvents }) {
     setAttachmentSelection(false);
     return historyEntry;
   }, [attachments, draftPastes, handleSlashCommand, sendSubmission]);
-  const handleRemoveAttachment = (0, import_react37.useCallback)((id) => {
+  const handleRemoveAttachment = (0, import_react38.useCallback)((id) => {
     setAttachments((current) => {
       const next = current.filter((item) => item.id !== id);
       if (next.length === 0) {
@@ -83089,7 +83190,7 @@ function App2({ client: client2, inputEvents }) {
       return next;
     });
   }, []);
-  const handleInputTextChange = (0, import_react37.useCallback)((text) => {
+  const handleInputTextChange = (0, import_react38.useCallback)((text) => {
     setDraftPastes((current) => {
       const next = filterReferencedCollapsedPastes(text, current);
       if (sameCollapsedPastes(current, next)) {
@@ -83099,7 +83200,7 @@ function App2({ client: client2, inputEvents }) {
     });
   }, []);
   replayQueueRef.current = replayQueuedSubmissions;
-  const handlePermission = (0, import_react37.useCallback)((action) => {
+  const handlePermission = (0, import_react38.useCallback)((action) => {
     const yolo = action === "allow_session";
     respondRef.current?.({ action, yolo });
     respondRef.current = null;
@@ -83110,12 +83211,12 @@ function App2({ client: client2, inputEvents }) {
       dispatch({ type: "set.notification", text: "yolo enabled" });
     }
   }, [client2, state.yolo]);
-  const handleQuestion = (0, import_react37.useCallback)((answer) => {
+  const handleQuestion = (0, import_react38.useCallback)((answer) => {
     respondRef.current?.({ answer });
     respondRef.current = null;
     dispatch({ type: "question.replied" });
   }, []);
-  const handlePickerCancel = (0, import_react37.useCallback)(() => {
+  const handlePickerCancel = (0, import_react38.useCallback)(() => {
     const shouldResume = resumeQueuedOnPickerCancelRef.current;
     resumeQueuedOnPickerCancelRef.current = false;
     setPickerMode(null);
@@ -83123,7 +83224,7 @@ function App2({ client: client2, inputEvents }) {
       resumeQueuedMessages();
     }
   }, [resumeQueuedMessages]);
-  const handlePickerSelect = (0, import_react37.useCallback)((item) => {
+  const handlePickerSelect = (0, import_react38.useCallback)((item) => {
     const mode = pickerMode;
     const shouldResume = resumeQueuedOnPickerCancelRef.current;
     resumeQueuedOnPickerCancelRef.current = false;
@@ -83268,10 +83369,10 @@ function App2({ client: client2, inputEvents }) {
   });
   const showPermission = state.phase === "permission" && state.permissionRequest;
   const showQuestion = state.phase === "question" && state.questionRequest;
-  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", width, children: [
-      atBottom && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexGrow: 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Box_default, { flexDirection: "column", width, height, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Box_default, { flexDirection: "column", height: chatHeight, overflowY: "hidden", width, children: [
+      atBottom && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Box_default, { flexGrow: 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
         TranscriptViewport,
         {
           entries: visibleEntries,
@@ -83282,23 +83383,24 @@ function App2({ client: client2, inputEvents }) {
         }
       )
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: scrollState.offset > 0 || unreadBelow > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Text, { dimColor: true, children: scrollState.offset > 0 || unreadBelow > 0 ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
       "  ",
-      scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2191 ${scrollState.offset} lines above` }),
-      scrollState.offset > 0 && unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: " \u2219 " }),
-      unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2193 ${unreadBelow} new below` }),
+      scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_jsx_runtime16.Fragment, { children: `\u2191 ${scrollState.offset} lines above` }),
+      scrollState.offset > 0 && unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_jsx_runtime16.Fragment, { children: " \u2219 " }),
+      unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_jsx_runtime16.Fragment, { children: `\u2193 ${unreadBelow} new below` }),
       " (Ctrl+End live)"
     ] }) : " " }),
-    showPermission && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
-    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
-    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: handlePickerCancel, width }),
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: queuedMessageTexts.map((message, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
+    showPermission && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
+    showQuestion && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
+    pickerMode && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: handlePickerCancel, width }),
+    showBoard && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(BoardOverlay, { client: client2, onClose: () => setShowBoard(false), width, height: chatHeight }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    queuedMessages.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Box_default, { flexDirection: "column", paddingX: 1, width, children: queuedMessageTexts.map((message, index) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Box_default, { width, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(Text, { backgroundColor: "blackBright", dimColor: true, children: [
       " \u276F ",
       message,
       " "
     ] }) }, index)) }),
-    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+    attachments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
       Attachments,
       {
         items: attachments,
@@ -83308,7 +83410,7 @@ function App2({ client: client2, inputEvents }) {
         width
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
       InputArea,
       {
         ref: inputRef,
@@ -83348,8 +83450,8 @@ function App2({ client: client2, inputEvents }) {
         onHistoryPastesRestore: setDraftPastes
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
-    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Text, { dimColor: true, children: "\u2500".repeat(width) }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
       StatusBar,
       {
         model: state.session.model,
@@ -83404,11 +83506,11 @@ function sameCollapsedPastes(left, right) {
     return other !== void 0 && paste.id === other.id && paste.rowCount === other.rowCount && paste.text === other.text;
   });
 }
-var import_react37, import_jsx_runtime15, SLASH_COMMANDS;
+var import_react38, import_jsx_runtime16, SLASH_COMMANDS;
 var init_App2 = __esm({
   async "src/components/App.tsx"() {
     "use strict";
-    import_react37 = __toESM(require_react(), 1);
+    import_react38 = __toESM(require_react(), 1);
     await init_build2();
     init_useInput();
     init_debug();
@@ -83425,22 +83527,24 @@ var init_App2 = __esm({
     await init_PermissionDialog();
     await init_QuestionDialog();
     await init_Picker();
+    await init_BoardOverlay();
     await init_Attachments();
     init_appLayout();
     init_streamLifecycle();
     init_streamUpdateBuffer();
     init_promptSubmission();
     init_pastedText();
-    import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime16 = __toESM(require_jsx_runtime(), 1);
     SLASH_COMMANDS = [
       { id: "/compact", label: "/compact", desc: "Compress context window" },
       { id: "/model", label: "/model", desc: "Switch model" },
       { id: "/resume", label: "/resume", desc: "Resume previous session" },
       { id: "/help", label: "/help", desc: "Show commands" },
+      { id: "/board", label: "/board", desc: "Health dashboard (trust, decisions, coverage, evidence)" },
       { id: "/frame", label: "/frame", desc: "Frame an engineering problem" },
       { id: "/explore", label: "/explore", desc: "Explore solution variants" },
       { id: "/decide", label: "/decide", desc: "Finalize a decision" },
-      { id: "/status", label: "/status", desc: "Decision dashboard" },
+      { id: "/status", label: "/status", desc: "Compact status summary" },
       { id: "/problems", label: "/problems", desc: "List active problems" },
       { id: "/refresh", label: "/refresh", desc: "Check for stale decisions" },
       { id: "/note", label: "/note", desc: "Record a micro-decision" },
@@ -83610,11 +83714,31 @@ function cleanupTerminal(out) {
   disableMouseTracking(out);
   showCursor(out);
 }
-var ESC3;
+function createSyncOutput(raw) {
+  const proxy = new Proxy(raw, {
+    get(target, prop, receiver) {
+      if (prop === "write") {
+        return function write(chunk, encodingOrCallback, callback) {
+          if (typeof chunk === "string" && chunk.includes("\x1B[")) {
+            const wrapped = BSU + chunk + ESU;
+            return typeof encodingOrCallback === "function" ? target.write(wrapped, encodingOrCallback) : target.write(wrapped, encodingOrCallback, callback);
+          }
+          return typeof encodingOrCallback === "function" ? target.write(chunk, encodingOrCallback) : target.write(chunk, encodingOrCallback, callback);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+  return proxy;
+}
+var ESC3, BSU, ESU;
 var init_adapter = __esm({
   "src/terminal/adapter.ts"() {
     "use strict";
     ESC3 = "\x1B[";
+    BSU = "\x1B[?2026h";
+    ESU = "\x1B[?2026l";
   }
 });
 
@@ -83863,11 +83987,11 @@ function handleFatalRender(error, info) {
   console.error("haft TUI crashed:", detail || error.message);
   setTimeout(() => process.exit(1), 0);
 }
-var import_react38, import_jsx_runtime16, FatalErrorBoundary, terminal, router, client;
+var import_react39, import_jsx_runtime17, FatalErrorBoundary, terminal, syncOutput, router, client;
 var init_index = __esm({
   async "src/index.tsx"() {
     "use strict";
-    import_react38 = __toESM(require_react(), 1);
+    import_react39 = __toESM(require_react(), 1);
     await init_build2();
     init_debug();
     init_InputContext();
@@ -83876,9 +84000,9 @@ var init_index = __esm({
     init_adapter();
     init_inputStream();
     init_highlight();
-    import_jsx_runtime16 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime17 = __toESM(require_jsx_runtime(), 1);
     trace("tui.start");
-    FatalErrorBoundary = class extends import_react38.default.Component {
+    FatalErrorBoundary = class extends import_react39.default.Component {
       state = { hasError: false };
       componentDidCatch(error, info) {
         this.setState({ hasError: true });
@@ -83892,6 +84016,7 @@ var init_index = __esm({
       }
     };
     terminal = openTerminal();
+    syncOutput = createSyncOutput(terminal.output);
     trace("tui.terminal_opened");
     router = createInputRouter(terminal.input, () => {
       reassertTerminalModes(terminal.output);
@@ -83932,11 +84057,11 @@ var init_index = __esm({
     trace("tui.pre_render");
     client = new JsonRpcClient();
     render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(FatalErrorBoundary, { onFatal: handleFatalRender, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(InputProvider, { value: router.events, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(App2, { client, inputEvents: router.events }) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FatalErrorBoundary, { onFatal: handleFatalRender, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InputProvider, { value: router.events, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(App2, { client, inputEvents: router.events }) }) }),
       {
         stdin: router.inkStdin,
-        stdout: terminal.output,
-        stderr: terminal.output,
+        stdout: syncOutput,
+        stderr: syncOutput,
         exitOnCtrlC: false
       }
     );

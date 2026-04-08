@@ -81,3 +81,51 @@ export function cleanupTerminal(out: NodeJS.WriteStream): void {
   disableMouseTracking(out)
   showCursor(out)
 }
+
+// --- DEC 2026: Synchronized Output ---
+// Wraps each write in BSU/ESU so the terminal atomically displays the
+// entire frame, eliminating the blank-screen flash between Ink's
+// clearTerminal and the subsequent repaint.
+//
+// Supported by: iTerm2, Kitty, WezTerm, Ghostty, Alacritty, Windows
+// Terminal, VTE 0.68+. Terminals that don't support it silently ignore
+// the sequences — no harm done.
+
+const BSU = "\x1b[?2026h"   // Begin Synchronized Update
+const ESU = "\x1b[?2026l"   // End Synchronized Update
+
+export function createSyncOutput(raw: NodeJS.WriteStream): NodeJS.WriteStream {
+  // Proxy that intercepts write() and wraps content in BSU/ESU.
+  // All other properties/methods delegate to the underlying stream so
+  // Ink can read .columns, .rows, listen for 'resize', etc.
+  const proxy = new Proxy(raw, {
+    get(target, prop, receiver) {
+      if (prop === "write") {
+        return function write(
+          chunk: string | Uint8Array,
+          encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+          callback?: (error?: Error | null) => void,
+        ): boolean {
+          // Only wrap string writes that look like Ink render output
+          // (contain escape sequences). Plain text or non-string writes
+          // pass through unchanged.
+          if (typeof chunk === "string" && chunk.includes("\x1b[")) {
+            const wrapped = BSU + chunk + ESU
+            return typeof encodingOrCallback === "function"
+              ? target.write(wrapped, encodingOrCallback)
+              : target.write(wrapped, encodingOrCallback, callback)
+          }
+
+          return typeof encodingOrCallback === "function"
+            ? target.write(chunk, encodingOrCallback)
+            : target.write(chunk, encodingOrCallback, callback)
+        }
+      }
+
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+
+  return proxy as unknown as NodeJS.WriteStream
+}

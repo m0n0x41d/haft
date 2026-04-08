@@ -17,6 +17,7 @@ import { App } from "./components/App.js"
 import { JsonRpcClient } from "./protocol/client.js"
 import {
   openTerminal,
+  createSyncOutput,
   enableMouseTracking,
   enableBracketedPaste,
   reassertTerminalModes,
@@ -53,8 +54,9 @@ class FatalErrorBoundary extends React.Component<FatalBoundaryProps, FatalBounda
   }
 }
 
-// L0: open terminal
+// L0: open terminal + wrap output in DEC 2026 synchronized updates
 const terminal = openTerminal()
+const syncOutput = createSyncOutput(terminal.output)
 trace("tui.terminal_opened")
 
 // L1: create input router
@@ -119,8 +121,8 @@ render(
   </FatalErrorBoundary>,
   {
     stdin: router.inkStdin as any,
-    stdout: terminal.output,
-    stderr: terminal.output,
+    stdout: syncOutput,
+    stderr: syncOutput,
     exitOnCtrlC: false,
   },
 )

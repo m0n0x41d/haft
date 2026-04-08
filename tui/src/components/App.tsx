@@ -23,6 +23,7 @@ import { InputArea, type InputAreaHandle } from "./InputArea.js"
 import { PermissionDialog } from "./PermissionDialog.js"
 import { QuestionDialog } from "./QuestionDialog.js"
 import { Picker, type PickerItem } from "./Picker.js"
+import { BoardOverlay } from "./BoardOverlay.js"
 import { Attachments } from "./Attachments.js"
 import type { AttachmentItem } from "./attachmentLayout.js"
 import { computeBottomRows, computeChatHeight, estimateInputRows } from "./appLayout.js"
@@ -53,10 +54,11 @@ const SLASH_COMMANDS: PickerItem[] = [
   { id: "/model", label: "/model", desc: "Switch model" },
   { id: "/resume", label: "/resume", desc: "Resume previous session" },
   { id: "/help", label: "/help", desc: "Show commands" },
+  { id: "/board", label: "/board", desc: "Health dashboard (trust, decisions, coverage, evidence)" },
   { id: "/frame", label: "/frame", desc: "Frame an engineering problem" },
   { id: "/explore", label: "/explore", desc: "Explore solution variants" },
   { id: "/decide", label: "/decide", desc: "Finalize a decision" },
-  { id: "/status", label: "/status", desc: "Decision dashboard" },
+  { id: "/status", label: "/status", desc: "Compact status summary" },
   { id: "/problems", label: "/problems", desc: "List active problems" },
   { id: "/refresh", label: "/refresh", desc: "Check for stale decisions" },
   { id: "/note", label: "/note", desc: "Record a micro-decision" },
@@ -77,6 +79,7 @@ export function App({ client, inputEvents }: AppProps) {
 
   const [pickerMode, setPickerMode] = useState<PickerMode>(null)
   const [pickerItems, setPickerItems] = useState<PickerItem[]>([])
+  const [showBoard, setShowBoard] = useState(false)
   const [toolHistoryExpanded, setToolHistoryExpanded] = useState(false)
   const respondRef = useRef<((result: unknown) => void) | null>(null)
   const inputRef = useRef<InputAreaHandle>(null)
@@ -463,6 +466,9 @@ export function App({ client, inputEvents }: AppProps) {
           }
         })
         return "pause"
+      case "/board":
+        setShowBoard(true)
+        return "pause"
       case "/help":
         setPickerMode("commands")
         setPickerItems(SLASH_COMMANDS)
@@ -732,6 +738,7 @@ export function App({ client, inputEvents }: AppProps) {
       {showPermission && <PermissionDialog request={state.permissionRequest!} onRespond={handlePermission} width={width} />}
       {showQuestion && <QuestionDialog question={state.questionRequest!.question} options={state.questionRequest!.options} onRespond={handleQuestion} width={width} />}
       {pickerMode && <Picker title={pickerTitle(pickerMode)} items={pickerItems} onSelect={handlePickerSelect} onCancel={handlePickerCancel} width={width} />}
+      {showBoard && <BoardOverlay client={client} onClose={() => setShowBoard(false)} width={width} height={chatHeight} />}
 
       {/* Separator */}
       <Text dimColor>{"\u2500".repeat(width)}</Text>

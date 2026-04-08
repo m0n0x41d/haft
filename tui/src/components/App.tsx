@@ -714,16 +714,19 @@ export function App({ client, inputEvents }: AppProps) {
         />
       </Box>
 
-      {/* Scroll indicator */}
-      {(scrollState.offset > 0 || unreadBelow > 0) && (
-        <Text dimColor>
-          {"  "}
-          {scrollState.offset > 0 && <>{`\u2191 ${scrollState.offset} lines above`}</>}
-          {scrollState.offset > 0 && unreadBelow > 0 && <>{" \u2219 "}</>}
-          {unreadBelow > 0 && <>{`\u2193 ${unreadBelow} new below`}</>}
-          {" (Ctrl+End live)"}
-        </Text>
-      )}
+      {/* Scroll indicator — always 1 row to prevent layout shift / input blink */}
+      <Text dimColor>
+        {scrollState.offset > 0 || unreadBelow > 0
+          ? <>
+              {"  "}
+              {scrollState.offset > 0 && <>{`\u2191 ${scrollState.offset} lines above`}</>}
+              {scrollState.offset > 0 && unreadBelow > 0 && <>{" \u2219 "}</>}
+              {unreadBelow > 0 && <>{`\u2193 ${unreadBelow} new below`}</>}
+              {" (Ctrl+End live)"}
+            </>
+          : " "
+        }
+      </Text>
 
       {/* Overlays */}
       {showPermission && <PermissionDialog request={state.permissionRequest!} onRespond={handlePermission} width={width} />}

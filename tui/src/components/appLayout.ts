@@ -3,6 +3,7 @@ import {
   type AttachmentItem,
 } from "./attachmentLayout.js"
 
+const SCROLL_INDICATOR_ROWS = 1
 const TOP_SEPARATOR_ROWS = 1
 const BOTTOM_SEPARATOR_ROWS = 1
 const STATUS_BAR_ROWS = 1
@@ -36,7 +37,8 @@ export function computeBottomRows(options: BottomLayoutOptions): number {
     ? Math.max(1, inputRows)
     : 0
 
-  return TOP_SEPARATOR_ROWS
+  return SCROLL_INDICATOR_ROWS
+    + TOP_SEPARATOR_ROWS
     + queuedRows
     + attachmentRows
     + visibleInputRows

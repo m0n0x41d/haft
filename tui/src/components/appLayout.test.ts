@@ -9,7 +9,7 @@ import {
 import { estimateAttachmentRows } from "./attachmentLayout.js"
 import { measureInputDisplayRows } from "./inputLayout.js"
 
-test("keeps the legacy four-row footprint for an empty prompt", () => {
+test("keeps the five-row footprint for an empty prompt (includes scroll indicator)", () => {
   const bottomRows = computeBottomRows({
     width: 80,
     queuedMessages: [],
@@ -19,7 +19,7 @@ test("keeps the legacy four-row footprint for an empty prompt", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 4)
+  assert.equal(bottomRows, 5)
 })
 
 test("adds queued rows, one attachment strip row, and multiline input rows", () => {
@@ -35,7 +35,7 @@ test("adds queued rows, one attachment strip row, and multiline input rows", () 
     showInput: true,
   })
 
-  assert.equal(bottomRows, 10)
+  assert.equal(bottomRows, 11)
 })
 
 test("wraps queued message rows to the available terminal width", () => {
@@ -54,7 +54,7 @@ test("drops input rows when the prompt is hidden", () => {
     showInput: false,
   })
 
-  assert.equal(bottomRows, 3)
+  assert.equal(bottomRows, 4)
 })
 
 test("collapses the transcript before keeping a stale minimum height", () => {
@@ -73,7 +73,7 @@ test("reserves rows for a pasted image plus multiline prompt text", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 8)
+  assert.equal(bottomRows, 9)
 })
 
 test("reserves wrapped attachment rows before the prompt for multiple images", () => {
@@ -107,7 +107,7 @@ test("includes wrapped long attachment names in the bottom budget", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 7)
+  assert.equal(bottomRows, 8)
 })
 
 test("keeps a narrow image chip within the bottom budget", () => {
@@ -122,7 +122,7 @@ test("keeps a narrow image chip within the bottom budget", () => {
     showInput: true,
   })
 
-  assert.equal(bottomRows, 8)
+  assert.equal(bottomRows, 9)
 })
 
 test("includes wrapped empty-input queue hints in the bottom budget", () => {
@@ -142,5 +142,5 @@ test("includes wrapped empty-input queue hints in the bottom budget", () => {
   })
 
   assert.equal(inputRows, 5)
-  assert.equal(bottomRows, 9)
+  assert.equal(bottomRows, 10)
 })

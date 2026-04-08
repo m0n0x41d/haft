@@ -34719,9 +34719,20 @@ function useScroll(inputEvents, entryHeights, viewportSize) {
   const previousTotalLinesRef = (0, import_react25.useRef)(totalLines);
   const previousWindowRef = (0, import_react25.useRef)(null);
   const previousModeRef = (0, import_react25.useRef)(state.mode);
+  const effectiveOffset = (0, import_react25.useMemo)(() => {
+    if (state.mode === "sticky") {
+      return 0;
+    }
+    if (totalLines === state.totalLines) {
+      return state.offset;
+    }
+    const delta = totalLines - state.totalLines;
+    const raw = state.offset + delta;
+    return Math.max(0, Math.min(raw, Math.max(0, totalLines - state.viewportSize)));
+  }, [state.mode, state.offset, state.totalLines, state.viewportSize, totalLines]);
   const visibleWindow = (0, import_react25.useMemo)(
-    () => computeVisibleWindow(entryOffsets, state.offset, state.viewportSize),
-    [entryOffsets, state.offset, state.viewportSize]
+    () => computeVisibleWindow(entryOffsets, effectiveOffset, state.viewportSize),
+    [entryOffsets, effectiveOffset, state.viewportSize]
   );
   const unreadBelow = unreadLinesBelow(state);
   const emitScroll = (0, import_react25.useCallback)((cmd) => {
@@ -34885,6 +34896,17 @@ function useMeasuredTranscript(entries, width, toolHistoryExpanded) {
     }
   }, [entries, toolHistoryExpanded]);
   (0, import_react26.useLayoutEffect)(() => {
+    const activeEntryIds = /* @__PURE__ */ new Set();
+    for (const entry of entries) {
+      if (entry.type === "assistantText" && entry.streaming) {
+        activeEntryIds.add(entry.id);
+      } else if (entry.type === "thinking" || entry.type === "indicator") {
+        activeEntryIds.add(entry.id);
+      } else if (entry.type === "assistantToolBatch" && entry.tools.some((t) => t.running || t.subagent?.running)) {
+        activeEntryIds.add(entry.id);
+      }
+    }
+    const isStreaming = activeEntryIds.size > 0;
     let cacheChanged = false;
     for (const [entryId, entryNode] of entryNodesRef.current) {
       const nextMeasurement = measure_element_default(entryNode);
@@ -34894,6 +34916,9 @@ function useMeasuredTranscript(entries, width, toolHistoryExpanded) {
       const nextHeight = Math.max(0, Math.ceil(nextMeasurement.height));
       const previousHeight = measuredHeightsRef.current.get(entryId);
       if (previousHeight === nextHeight) {
+        continue;
+      }
+      if (isStreaming && !activeEntryIds.has(entryId) && previousHeight !== void 0) {
         continue;
       }
       measuredHeightsRef.current.set(entryId, nextHeight);
@@ -82549,7 +82574,7 @@ function computeBottomRows(options) {
     width
   });
   const visibleInputRows = showInput ? Math.max(1, inputRows) : 0;
-  return TOP_SEPARATOR_ROWS + queuedRows + attachmentRows + visibleInputRows + BOTTOM_SEPARATOR_ROWS + STATUS_BAR_ROWS;
+  return SCROLL_INDICATOR_ROWS + TOP_SEPARATOR_ROWS + queuedRows + attachmentRows + visibleInputRows + BOTTOM_SEPARATOR_ROWS + STATUS_BAR_ROWS;
 }
 function computeChatHeight(totalRows, bottomRows) {
   return Math.max(0, totalRows - bottomRows);
@@ -82573,11 +82598,12 @@ function countWrappedLines3(text, width) {
   }
   return text.split("\n").reduce((sum, line) => sum + (line.length === 0 ? 1 : Math.ceil(line.length / width)), 0);
 }
-var TOP_SEPARATOR_ROWS, BOTTOM_SEPARATOR_ROWS, STATUS_BAR_ROWS;
+var SCROLL_INDICATOR_ROWS, TOP_SEPARATOR_ROWS, BOTTOM_SEPARATOR_ROWS, STATUS_BAR_ROWS;
 var init_appLayout = __esm({
   "src/components/appLayout.ts"() {
     "use strict";
     init_attachmentLayout();
+    SCROLL_INDICATOR_ROWS = 1;
     TOP_SEPARATOR_ROWS = 1;
     BOTTOM_SEPARATOR_ROWS = 1;
     STATUS_BAR_ROWS = 1;
@@ -83256,13 +83282,13 @@ function App2({ client: client2, inputEvents }) {
         }
       )
     ] }),
-    (scrollState.offset > 0 || unreadBelow > 0) && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Text, { dimColor: true, children: scrollState.offset > 0 || unreadBelow > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
       "  ",
       scrollState.offset > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2191 ${scrollState.offset} lines above` }),
       scrollState.offset > 0 && unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: " \u2219 " }),
       unreadBelow > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(import_jsx_runtime15.Fragment, { children: `\u2193 ${unreadBelow} new below` }),
       " (Ctrl+End live)"
-    ] }),
+    ] }) : " " }),
     showPermission && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(PermissionDialog, { request: state.permissionRequest, onRespond: handlePermission, width }),
     showQuestion && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(QuestionDialog, { question: state.questionRequest.question, options: state.questionRequest.options, onRespond: handleQuestion, width }),
     pickerMode && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Picker, { title: pickerTitle(pickerMode), items: pickerItems, onSelect: handlePickerSelect, onCancel: handlePickerCancel, width }),

@@ -20,14 +20,16 @@ import { Decisions } from "./pages/Decisions";
 import { Portfolios } from "./pages/Portfolios";
 import { Settings } from "./pages/Settings";
 import { Tasks } from "./pages/Tasks";
+import { Flows } from "./pages/Flows";
 import { NotificationViewport, type DesktopNotification } from "./components/Notifications";
 import { SearchOverlay } from "./components/SearchOverlay";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
 import { listProjects, switchProject, listTasks, type ProjectInfo, type TaskState } from "./lib/api";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 
-type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "tasks" | "settings";
+type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "flows" | "tasks" | "settings";
 
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Overview", icon: LayoutDashboard },
@@ -48,12 +50,18 @@ export default function App() {
   const [showNewTask, setShowNewTask] = useState(false);
   const [toasts, setToasts] = useState<AppErrorDetail[]>([]);
   const [notifications, setNotifications] = useState<DesktopNotification[]>([]);
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setSearchOpen((v) => !v);
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === "`") {
+        e.preventDefault();
+        setTerminalOpen((current) => !current);
       }
     };
     window.addEventListener("keydown", handler);
@@ -134,6 +142,15 @@ export default function App() {
     }
   };
 
+  const handleOpenTask = async (task: TaskState) => {
+    if (task.project_path && task.project_path !== activeProject?.path) {
+      await handleSwitchProject(task.project_path);
+    }
+
+    setPage("tasks");
+    setSelectedId(task.id);
+  };
+
   const toggleProject = (path: string) => {
     setExpandedProjects((prev) => {
       const next = new Set(prev);
@@ -165,7 +182,12 @@ export default function App() {
           onClick={() => { setPage("tasks"); setShowNewTask(true); }}
           accent
         />
-        <RailBtn icon={Zap} tip="Flows" onClick={() => {}} />
+        <RailBtn
+          icon={Zap}
+          tip="Flows"
+          onClick={() => setPage("flows")}
+          active={page === "flows"}
+        />
         <RailBtn icon={Search} tip="Search (Cmd+K)" onClick={() => setSearchOpen(true)} />
         <RailBtn icon={MoreHorizontal} tip="More" onClick={() => {}} />
 
@@ -272,41 +294,58 @@ export default function App() {
       )}
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto bg-surface-0">
-        <div className="wails-drag h-10 sticky top-0 z-10 bg-surface-0/80 backdrop-blur-sm border-b border-border flex items-center px-6 justify-between">
-          <h2 className="text-sm font-medium text-text-secondary">
-            {activeProject?.name && <span className="text-text-muted">{activeProject.name} / </span>}
-            {page === "tasks" ? "Tasks" : page === "settings" ? "Settings" : REASONING_NAV.find((n) => n.id === page)?.label}
-          </h2>
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="wails-no-drag text-xs text-text-muted hover:text-text-secondary px-2 py-1 rounded bg-surface-1 border border-border transition-colors"
-          >
-            Search... <span className="ml-1 text-text-muted/50">Cmd+K</span>
-          </button>
-        </div>
+      <div className="flex flex-1 flex-col overflow-hidden bg-surface-0">
+        <main className="flex-1 overflow-y-auto bg-surface-0">
+          <div className="wails-drag sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-surface-0/80 px-6 backdrop-blur-sm">
+            <h2 className="text-sm font-medium text-text-secondary">
+              {activeProject?.name && <span className="text-text-muted">{activeProject.name} / </span>}
+              {pageTitle(page)}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTerminalOpen((current) => !current)}
+                className="wails-no-drag rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
+              >
+                Terminal <span className="ml-1 text-text-muted/50">Cmd+`</span>
+              </button>
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="wails-no-drag rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
+              >
+                Search... <span className="ml-1 text-text-muted/50">Cmd+K</span>
+              </button>
+            </div>
+          </div>
 
-        <div className="p-6" key={refreshKey}>
-          {page === "dashboard" && <Dashboard onNavigate={navigate} />}
-          {page === "problems" && <Problems selectedId={selectedId} onNavigate={navigate} />}
-          {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
-          {page === "decisions" && <Decisions selectedId={selectedId} onNavigate={navigate} />}
-          {page === "tasks" && (
-            <Tasks
-              selectedTaskId={selectedId}
-              showNewTask={showNewTask}
-              onNewTaskClose={() => setShowNewTask(false)}
-            />
-          )}
-          {page === "settings" && (
-            <Settings
-              onProjectRegistryChange={() => {
-                setRefreshKey((key) => key + 1);
-              }}
-            />
-          )}
-        </div>
-      </main>
+          <div className="p-6" key={refreshKey}>
+            {page === "dashboard" && <Dashboard onNavigate={navigate} />}
+            {page === "problems" && <Problems selectedId={selectedId} onNavigate={navigate} />}
+            {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
+            {page === "decisions" && <Decisions selectedId={selectedId} onNavigate={navigate} />}
+            {page === "flows" && <Flows onOpenTask={handleOpenTask} />}
+            {page === "tasks" && (
+              <Tasks
+                selectedTaskId={selectedId}
+                showNewTask={showNewTask}
+                onNewTaskClose={() => setShowNewTask(false)}
+              />
+            )}
+            {page === "settings" && (
+              <Settings
+                onProjectRegistryChange={() => {
+                  setRefreshKey((key) => key + 1);
+                }}
+              />
+            )}
+          </div>
+        </main>
+
+        <TerminalPanel
+          open={terminalOpen}
+          projectPath={activeProject?.path ?? ""}
+          onClose={() => setTerminalOpen(false)}
+        />
+      </div>
 
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={(p, id) => navigate(p as Page, id)} />
       <NotificationViewport
@@ -323,6 +362,22 @@ export default function App() {
       />
     </div>
   );
+}
+
+function pageTitle(page: Page): string {
+  if (page === "tasks") {
+    return "Tasks";
+  }
+
+  if (page === "flows") {
+    return "Automation";
+  }
+
+  if (page === "settings") {
+    return "Settings";
+  }
+
+  return REASONING_NAV.find((item) => item.id === page)?.label ?? "Workspace";
 }
 
 function RailBtn({ icon: Icon, tip, onClick, active, accent }: {

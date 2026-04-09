@@ -355,4 +355,32 @@ var kernelMigrations = []Migration{
 			"CREATE INDEX IF NOT EXISTS idx_desktop_problem_candidates_source ON desktop_problem_candidates(source_artifact_ref, status)",
 		},
 	},
+	{
+		Version:     24,
+		Description: "Desktop automation flows",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS desktop_flows (
+				id TEXT PRIMARY KEY,
+				project_name TEXT NOT NULL,
+				project_path TEXT NOT NULL,
+				title TEXT NOT NULL,
+				description TEXT NOT NULL DEFAULT '',
+				template_id TEXT NOT NULL DEFAULT '',
+				agent TEXT NOT NULL,
+				prompt TEXT NOT NULL,
+				schedule TEXT NOT NULL,
+				branch TEXT NOT NULL DEFAULT '',
+				use_worktree INTEGER NOT NULL DEFAULT 0,
+				enabled INTEGER NOT NULL DEFAULT 1,
+				last_task_id TEXT NOT NULL DEFAULT '',
+				last_run_at TEXT,
+				next_run_at TEXT,
+				last_error TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			"CREATE INDEX IF NOT EXISTS idx_desktop_flows_project_enabled ON desktop_flows(project_path, enabled)",
+			"CREATE INDEX IF NOT EXISTS idx_desktop_flows_next_run ON desktop_flows(next_run_at)",
+		},
+	},
 }

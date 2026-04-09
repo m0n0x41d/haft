@@ -749,7 +749,62 @@ func (a *App) ArchiveTask(id string) error {
 	return nil
 }
 
+func (a *App) HandoffTask(id string, targetAgent string) (*TaskState, error) {
+	if a.tasks == nil || a.tasks.store == nil {
+		return nil, fmt.Errorf("no task store")
+	}
+
+	source, err := a.loadTaskState(strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+
+	nextAgent := normalizeAgentKind(targetAgent, string(AgentClaude))
+	if nextAgent == source.Agent {
+		return nil, fmt.Errorf("handoff target must be different from the source agent")
+	}
+
+	useWorktree := source.Worktree && source.Status != "running"
+	branch := ""
+	if useWorktree {
+		branch = source.Branch
+	}
+
+	prompt := buildHandoffPrompt(*source, nextAgent)
+
+	return a.spawnTaskWithTitle(
+		nextAgent,
+		prompt,
+		useWorktree,
+		branch,
+		fmt.Sprintf("Handoff: %s", source.Title),
+	)
+}
+
 // --- Helpers ---
+
+func (a *App) loadTaskState(id string) (*TaskState, error) {
+	if a.tasks == nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	a.tasks.mu.Lock()
+	rt, ok := a.tasks.tasks[id]
+	a.tasks.mu.Unlock()
+
+	if ok {
+		state := rt.state
+		state.Output = rt.output.String()
+		return &state, nil
+	}
+
+	state, err := a.tasks.store.GetTask(a.ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load task %s: %w", id, err)
+	}
+
+	return state, nil
+}
 
 func getVersion(path string, flag string) string {
 	out, err := exec.Command(path, flag).Output()
@@ -961,6 +1016,62 @@ func appendTaskNote(output string, note string) string {
 	}
 
 	return output + "\n[haft] " + note
+}
+
+func buildHandoffPrompt(source TaskState, targetAgent string) string {
+	var prompt strings.Builder
+
+	prompt.WriteString(fmt.Sprintf("## Task Handoff: %s\n\n", source.Title))
+	prompt.WriteString(fmt.Sprintf("Previous agent: %s\n", source.Agent))
+	prompt.WriteString(fmt.Sprintf("Target agent: %s\n", targetAgent))
+	prompt.WriteString(fmt.Sprintf("Previous status: %s\n", source.Status))
+	if source.Project != "" {
+		prompt.WriteString(fmt.Sprintf("Project: %s\n", source.Project))
+	}
+	if source.Branch != "" {
+		prompt.WriteString(fmt.Sprintf("Branch: %s\n", source.Branch))
+	}
+	if source.WorktreePath != "" {
+		prompt.WriteString(fmt.Sprintf("Workspace: %s\n", source.WorktreePath))
+	}
+	prompt.WriteString("\n")
+
+	prompt.WriteString("## Original Brief\n")
+	prompt.WriteString(strings.TrimSpace(source.Prompt))
+	prompt.WriteString("\n\n")
+
+	prompt.WriteString("## Recent Output Tail\n")
+	prompt.WriteString("```text\n")
+	prompt.WriteString(lastTaskOutputLines(source.Output, 120))
+	prompt.WriteString("\n```\n\n")
+
+	prompt.WriteString("## Instructions\n")
+	prompt.WriteString("1. Read the original brief and recent output before touching the code.\n")
+	prompt.WriteString("2. Reconstruct the current repo state from the workspace instead of trusting the previous agent blindly.\n")
+	prompt.WriteString("3. Continue the work, call out anything already done, and make the remaining risks explicit.\n")
+	if source.Status == "running" {
+		prompt.WriteString("4. The previous task was still marked running when this handoff was created. Avoid assuming its workspace state is final.\n")
+	} else {
+		prompt.WriteString("4. Treat the previous output as context, not proof. Verify what landed before you continue.\n")
+	}
+
+	return prompt.String()
+}
+
+func lastTaskOutputLines(output string, maxLines int) string {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return "(no task output recorded yet)"
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	if maxLines <= 0 || len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+
+	start := len(lines) - maxLines
+	tail := lines[start:]
+	return strings.Join(tail, "\n")
 }
 
 func truncate(s string, n int) string {

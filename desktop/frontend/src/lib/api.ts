@@ -424,6 +424,62 @@ export interface TaskState {
   output: string;
 }
 
+export interface DesktopFlow {
+  id: string;
+  project_name: string;
+  project_path: string;
+  title: string;
+  description: string;
+  template_id: string;
+  agent: string;
+  prompt: string;
+  schedule: string;
+  branch: string;
+  use_worktree: boolean;
+  enabled: boolean;
+  last_task_id: string;
+  last_run_at: string;
+  next_run_at: string;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowInput {
+  id: string;
+  title: string;
+  description: string;
+  template_id: string;
+  agent: string;
+  prompt: string;
+  schedule: string;
+  branch: string;
+  use_worktree: boolean;
+  enabled: boolean;
+}
+
+export interface FlowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  agent: string;
+  schedule: string;
+  prompt: string;
+  branch: string;
+  use_worktree: boolean;
+}
+
+export interface TerminalSession {
+  id: string;
+  title: string;
+  project_path: string;
+  cwd: string;
+  shell: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
 type WailsBindings = {
   GetDashboard: () => Promise<DashboardData>;
   GetCoverage?: () => Promise<CoverageData>;
@@ -456,6 +512,20 @@ type WailsBindings = {
   CancelTask?: (id: string) => Promise<void>;
   ArchiveTask?: (id: string) => Promise<void>;
   GetTaskOutput?: (id: string) => Promise<string>;
+  ListAllTasks?: () => Promise<TaskState[]>;
+  HandoffTask?: (id: string, agent: string) => Promise<TaskState>;
+  ListFlows?: () => Promise<DesktopFlow[]>;
+  ListFlowTemplates?: () => Promise<FlowTemplate[]>;
+  CreateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
+  UpdateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
+  ToggleFlow?: (id: string, enabled: boolean) => Promise<DesktopFlow>;
+  DeleteFlow?: (id: string) => Promise<void>;
+  RunFlowNow?: (id: string) => Promise<TaskState>;
+  ListTerminalSessions?: () => Promise<TerminalSession[]>;
+  CreateTerminalSession?: (cwd: string) => Promise<TerminalSession>;
+  WriteTerminalInput?: (id: string, data: string) => Promise<void>;
+  ResizeTerminalSession?: (id: string, cols: number, rows: number) => Promise<void>;
+  CloseTerminalSession?: (id: string) => Promise<void>;
   ImplementDecision?: (
     decisionID: string,
     agent: string,
@@ -763,7 +833,69 @@ let mockGovernanceOverview: GovernanceOverview = {
   ],
 };
 
-function nextMockID(prefix: "prob" | "sol" | "dec"): string {
+let mockTasks: TaskState[] = [
+  {
+    id: "task-mock-1",
+    title: "Implement desktop automation loop",
+    agent: "claude",
+    project: "haft",
+    project_path: "/Users/demo/projects/haft",
+    status: "running",
+    prompt: "Implement the operator tooling slice and keep the project-local runtime intact.",
+    branch: "feat/operator-tooling",
+    worktree: true,
+    worktree_path: "/Users/demo/projects/haft/.haft/worktrees/feat/operator-tooling",
+    reused_worktree: false,
+    started_at: nowString(),
+    completed_at: "",
+    error_message: "",
+    output: "Inspecting the current desktop runtime...\nAdding flow scheduler bindings...",
+  },
+  {
+    id: "task-mock-2",
+    title: "Verify stale decisions",
+    agent: "codex",
+    project: "repo-b",
+    project_path: "/Users/demo/projects/repo-b",
+    status: "completed",
+    prompt: "Verify stale decisions and summarize evidence gaps.",
+    branch: "",
+    worktree: false,
+    worktree_path: "",
+    reused_worktree: false,
+    started_at: nowString(),
+    completed_at: nowString(),
+    error_message: "",
+    output: "Decision coverage report complete.",
+  },
+];
+
+let mockFlows: DesktopFlow[] = [
+  {
+    id: "flow-mock-1",
+    project_name: "haft",
+    project_path: "/Users/demo/projects/haft",
+    title: "Decision Refresh",
+    description: "Verify due decisions every Monday morning.",
+    template_id: "decision-refresh",
+    agent: "claude",
+    prompt: "Review active decisions with expired or near-expired validity windows.",
+    schedule: "0 9 * * 1",
+    branch: "flows/decision-refresh",
+    use_worktree: true,
+    enabled: true,
+    last_task_id: "task-mock-2",
+    last_run_at: nowString(),
+    next_run_at: nowString(),
+    last_error: "",
+    created_at: nowString(),
+    updated_at: nowString(),
+  },
+];
+
+let mockTerminalSessions: TerminalSession[] = [];
+
+function nextMockID(prefix: "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -1271,7 +1403,13 @@ export async function initProject(path: string): Promise<ProjectInfo> {
 export async function listTasks(): Promise<TaskState[]> {
   const tasks = await callBinding<TaskState[]>("ListTasks");
   if (tasks) return tasks;
-  return [];
+  return mockTasks;
+}
+
+export async function listAllTasks(): Promise<TaskState[]> {
+  const tasks = await callBinding<TaskState[]>("ListAllTasks");
+  if (tasks) return tasks;
+  return mockTasks;
 }
 
 export async function detectAgents(): Promise<InstalledAgent[]> {
@@ -1283,8 +1421,8 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
   const task = await callBinding<TaskState>("SpawnTask", agent, prompt, worktree, branch);
   if (task) return task;
 
-  return {
-    id: `mock-${Date.now()}`,
+  const createdTask: TaskState = {
+    id: nextMockID("task"),
     title: prompt.slice(0, 60),
     agent,
     project: "haft",
@@ -1300,19 +1438,174 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
     error_message: "",
     output: "",
   };
+
+  mockTasks = [createdTask, ...mockTasks];
+  return createdTask;
 }
 
 export async function cancelTask(id: string): Promise<void> {
   await callBinding<void>("CancelTask", id);
+  mockTasks = mockTasks.map((task) =>
+    task.id === id
+      ? { ...task, status: "cancelled", completed_at: nowString() }
+      : task,
+  );
 }
 
 export async function archiveTask(id: string): Promise<void> {
   await callBinding<void>("ArchiveTask", id);
+  mockTasks = mockTasks.filter((task) => task.id !== id);
 }
 
 export async function getTaskOutput(id: string): Promise<string> {
   const output = await callBinding<string>("GetTaskOutput", id);
-  return output ?? "";
+  if (output) return output;
+  return mockTasks.find((task) => task.id === id)?.output ?? "";
+}
+
+export async function handoffTask(id: string, agent: string): Promise<TaskState> {
+  const task = await callBinding<TaskState>("HandoffTask", id, agent);
+  if (task) return task;
+
+  const source = mockTasks.find((item) => item.id === id);
+  if (!source) {
+    throw new Error(`Task ${id} not found`);
+  }
+
+  return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
+}
+
+export async function listFlows(): Promise<DesktopFlow[]> {
+  const flows = await callBinding<DesktopFlow[]>("ListFlows");
+  if (flows) return flows;
+  return mockFlows;
+}
+
+export async function listFlowTemplates(): Promise<FlowTemplate[]> {
+  const templates = await callBinding<FlowTemplate[]>("ListFlowTemplates");
+  if (templates) return templates;
+
+  return [
+    {
+      id: "decision-refresh",
+      name: "Decision Refresh",
+      description: "Verify stale decisions every Monday morning.",
+      agent: "claude",
+      schedule: "0 9 * * 1",
+      prompt: "Review active decisions with expired or near-expired validity windows.",
+      branch: "flows/decision-refresh",
+      use_worktree: true,
+    },
+    {
+      id: "drift-scan",
+      name: "Drift Detection",
+      description: "Scan for drift across governed files on workdays.",
+      agent: "codex",
+      schedule: "0 10 * * 1-5",
+      prompt: "Scan the current project for drift against decision baselines and recently affected files.",
+      branch: "flows/drift-scan",
+      use_worktree: true,
+    },
+    {
+      id: "coverage-report",
+      name: "Coverage Report",
+      description: "Generate a weekly governance coverage summary.",
+      agent: "haft",
+      schedule: "0 15 * * 1",
+      prompt: "Summarize module governance coverage for the current project.",
+      branch: "flows/coverage-report",
+      use_worktree: false,
+    },
+  ];
+}
+
+export async function createFlow(input: FlowInput): Promise<DesktopFlow> {
+  const flow = await callBinding<DesktopFlow>("CreateFlow", input);
+  if (flow) return flow;
+
+  const createdFlow: DesktopFlow = {
+    ...input,
+    id: nextMockID("flow"),
+    project_name: "haft",
+    project_path: "/Users/demo/projects/haft",
+    last_task_id: "",
+    last_run_at: "",
+    next_run_at: nowString(),
+    last_error: "",
+    created_at: nowString(),
+    updated_at: nowString(),
+  };
+
+  mockFlows = [createdFlow, ...mockFlows];
+  return createdFlow;
+}
+
+export async function updateFlow(input: FlowInput): Promise<DesktopFlow> {
+  const flow = await callBinding<DesktopFlow>("UpdateFlow", input);
+  if (flow) return flow;
+
+  const current = mockFlows.find((item) => item.id === input.id);
+  if (!current) {
+    throw new Error(`Flow ${input.id} not found`);
+  }
+
+  const nextFlow: DesktopFlow = {
+    ...current,
+    ...input,
+    updated_at: nowString(),
+  };
+
+  mockFlows = mockFlows.map((item) => (item.id === input.id ? nextFlow : item));
+  return nextFlow;
+}
+
+export async function toggleFlow(id: string, enabled: boolean): Promise<DesktopFlow> {
+  const flow = await callBinding<DesktopFlow>("ToggleFlow", id, enabled);
+  if (flow) return flow;
+
+  const current = mockFlows.find((item) => item.id === id);
+  if (!current) {
+    throw new Error(`Flow ${id} not found`);
+  }
+
+  const nextFlow: DesktopFlow = {
+    ...current,
+    enabled,
+    next_run_at: enabled ? nowString() : "",
+    updated_at: nowString(),
+  };
+
+  mockFlows = mockFlows.map((item) => (item.id === id ? nextFlow : item));
+  return nextFlow;
+}
+
+export async function deleteFlow(id: string): Promise<void> {
+  await callBinding<void>("DeleteFlow", id);
+  mockFlows = mockFlows.filter((flow) => flow.id !== id);
+}
+
+export async function runFlowNow(id: string): Promise<TaskState> {
+  const task = await callBinding<TaskState>("RunFlowNow", id);
+  if (task) return task;
+
+  const flow = mockFlows.find((item) => item.id === id);
+  if (!flow) {
+    throw new Error(`Flow ${id} not found`);
+  }
+
+  const createdTask = await spawnTask(flow.agent, flow.prompt, flow.use_worktree, flow.branch);
+  mockFlows = mockFlows.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          last_task_id: createdTask.id,
+          last_run_at: nowString(),
+          updated_at: nowString(),
+        }
+      : item,
+  );
+
+  return createdTask;
 }
 
 export async function implementDecision(
@@ -1340,6 +1633,45 @@ export async function verifyDecision(decisionID: string, agent: string): Promise
 
 export async function openPathInIDE(path: string): Promise<void> {
   await callBinding<void>("OpenPathInIDE", path);
+}
+
+export async function listTerminalSessions(): Promise<TerminalSession[]> {
+  const sessions = await callBinding<TerminalSession[]>("ListTerminalSessions");
+  if (sessions) return sessions;
+  return mockTerminalSessions;
+}
+
+export async function createTerminalSession(cwd: string): Promise<TerminalSession> {
+  const session = await callBinding<TerminalSession>("CreateTerminalSession", cwd);
+  if (session) return session;
+
+  const createdSession: TerminalSession = {
+    id: nextMockID("term"),
+    title: cwd.split("/").filter(Boolean).pop() || "terminal",
+    project_path: "/Users/demo/projects/haft",
+    cwd,
+    shell: "/bin/zsh",
+    status: "running",
+    created_at: nowString(),
+    updated_at: nowString(),
+  };
+
+  mockTerminalSessions = [...mockTerminalSessions, createdSession];
+  return createdSession;
+}
+
+export async function writeTerminalInput(id: string, data: string): Promise<void> {
+  await callBinding<void>("WriteTerminalInput", id, data);
+  void data;
+}
+
+export async function resizeTerminalSession(id: string, cols: number, rows: number): Promise<void> {
+  await callBinding<void>("ResizeTerminalSession", id, cols, rows);
+}
+
+export async function closeTerminalSession(id: string): Promise<void> {
+  await callBinding<void>("CloseTerminalSession", id);
+  mockTerminalSessions = mockTerminalSessions.filter((session) => session.id !== id);
 }
 
 export async function getConfig(): Promise<DesktopConfig> {

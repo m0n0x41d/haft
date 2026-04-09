@@ -7,6 +7,7 @@ import {
   detectAgents,
   getConfig,
   getTaskOutput,
+  handoffTask,
   listTasks,
   openPathInIDE,
   spawnTask,
@@ -41,6 +42,8 @@ export function Tasks({
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [internalShow, setInternalShow] = useState(false);
   const [selectedTask, setSelectedTask] = useState<string | null>(externalSelectedTask ?? null);
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoffAgent, setHandoffAgent] = useState("codex");
   const outputRef = useRef<HTMLPreElement | null>(null);
 
   const showNewTask = externalShow || internalShow;
@@ -219,6 +222,23 @@ export function Tasks({
     }
   };
 
+  const handleHandoff = async () => {
+    if (!detail) {
+      return;
+    }
+
+    try {
+      const task = await handoffTask(detail.id, handoffAgent);
+
+      setTasks((current) => mergeTaskList(current, task));
+      setSelectedTask(task.id);
+      setShowHandoff(false);
+      await refresh();
+    } catch (error) {
+      reportError(error, "handoff task");
+    }
+  };
+
   const handleCopy = async (value: string, label: string) => {
     if (!value) {
       return;
@@ -260,6 +280,17 @@ export function Tasks({
           config={config}
           onSpawn={handleSpawn}
           onClose={() => setShowNewTask(false)}
+        />
+      )}
+
+      {showHandoff && detail && (
+        <HandoffModal
+          agents={agents}
+          sourceTask={detail}
+          targetAgent={handoffAgent}
+          onChangeTarget={setHandoffAgent}
+          onClose={() => setShowHandoff(false)}
+          onConfirm={() => void handleHandoff()}
         />
       )}
 
@@ -356,6 +387,17 @@ export function Tasks({
                     className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
                   >
                     Copy brief
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const fallback = agents.find((agent) => agent.kind !== detail.agent)?.kind ?? "codex";
+                      setHandoffAgent(fallback);
+                      setShowHandoff(true);
+                    }}
+                    className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                  >
+                    Hand off
                   </button>
 
                   <button
@@ -686,6 +728,102 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+function HandoffModal({
+  agents,
+  sourceTask,
+  targetAgent,
+  onChangeTarget,
+  onClose,
+  onConfirm,
+}: {
+  agents: InstalledAgent[];
+  sourceTask: TaskState;
+  targetAgent: string;
+  onChangeTarget: (agent: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const availableAgents = agents.filter((agent) => agent.kind !== sourceTask.agent);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-[520px] rounded-2xl border border-border bg-surface-1">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div>
+            <h3 className="text-lg font-semibold">Hand Off Task</h3>
+            <p className="mt-1 text-xs text-text-muted">
+              Preserve the original brief and bounded output tail, then continue with a different agent.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-text-muted transition-colors hover:text-text-primary"
+          >
+            x
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-xl border border-border bg-surface-2/40 px-4 py-3">
+            <p className="text-[11px] uppercase tracking-wider text-text-muted">Source task</p>
+            <p className="mt-2 text-sm text-text-primary">{sourceTask.title}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+              <span>{sourceTask.agent}</span>
+              <span>{sourceTask.status}</span>
+              {sourceTask.branch && <span className="font-mono">{sourceTask.branch}</span>}
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm text-text-secondary">Target agent</label>
+            <select
+              value={targetAgent}
+              onChange={(event) => onChangeTarget(event.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
+            >
+              {availableAgents.map((agent) => (
+                <option key={agent.kind} value={agent.kind}>
+                  {agent.name} ({agent.version || agent.kind})
+                </option>
+              ))}
+
+              {availableAgents.length === 0 && (
+                <>
+                  <option value="codex">Codex</option>
+                  <option value="haft">Haft Agent</option>
+                </>
+              )}
+            </select>
+          </div>
+
+          {sourceTask.status === "running" && (
+            <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning">
+              The source task is still marked running. The handoff will preserve context, but you should
+              reconcile workspace state before treating the previous output as final.
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={onConfirm}
+            className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover"
+          >
+            Create handoff
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

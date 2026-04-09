@@ -6,16 +6,24 @@ export function AddProject(arg1) {
   return window['go']['main']['App']['AddProject'](arg1);
 }
 
-export function CancelTask(arg1) {
-  return window['go']['main']['App']['CancelTask'](arg1);
+export function AdoptProblemCandidate(arg1) {
+  return window['go']['main']['App']['AdoptProblemCandidate'](arg1);
 }
 
 export function ArchiveTask(arg1) {
   return window['go']['main']['App']['ArchiveTask'](arg1);
 }
 
+export function CancelTask(arg1) {
+  return window['go']['main']['App']['CancelTask'](arg1);
+}
+
 export function CharacterizeProblem(arg1) {
   return window['go']['main']['App']['CharacterizeProblem'](arg1);
+}
+
+export function CloseTerminalSession(arg1) {
+  return window['go']['main']['App']['CloseTerminalSession'](arg1);
 }
 
 export function ComparePortfolio(arg1) {
@@ -26,6 +34,10 @@ export function CreateDecision(arg1) {
   return window['go']['main']['App']['CreateDecision'](arg1);
 }
 
+export function CreateFlow(arg1) {
+  return window['go']['main']['App']['CreateFlow'](arg1);
+}
+
 export function CreatePortfolio(arg1) {
   return window['go']['main']['App']['CreatePortfolio'](arg1);
 }
@@ -34,20 +46,40 @@ export function CreateProblem(arg1) {
   return window['go']['main']['App']['CreateProblem'](arg1);
 }
 
+export function CreateTerminalSession(arg1) {
+  return window['go']['main']['App']['CreateTerminalSession'](arg1);
+}
+
+export function DeleteFlow(arg1) {
+  return window['go']['main']['App']['DeleteFlow'](arg1);
+}
+
 export function DetectAgents() {
   return window['go']['main']['App']['DetectAgents']();
 }
 
-export function GetDashboard() {
-  return window['go']['main']['App']['GetDashboard']();
+export function DismissProblemCandidate(arg1) {
+  return window['go']['main']['App']['DismissProblemCandidate'](arg1);
 }
 
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetCoverage() {
+  return window['go']['main']['App']['GetCoverage']();
+}
+
+export function GetDashboard() {
+  return window['go']['main']['App']['GetDashboard']();
+}
+
 export function GetDecision(arg1) {
   return window['go']['main']['App']['GetDecision'](arg1);
+}
+
+export function GetGovernanceOverview() {
+  return window['go']['main']['App']['GetGovernanceOverview']();
 }
 
 export function GetPortfolio(arg1) {
@@ -62,6 +94,10 @@ export function GetTaskOutput(arg1) {
   return window['go']['main']['App']['GetTaskOutput'](arg1);
 }
 
+export function HandoffTask(arg1, arg2) {
+  return window['go']['main']['App']['HandoffTask'](arg1, arg2);
+}
+
 export function ImplementDecision(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ImplementDecision'](arg1, arg2, arg3, arg4);
 }
@@ -70,12 +106,28 @@ export function InitProject(arg1) {
   return window['go']['main']['App']['InitProject'](arg1);
 }
 
+export function ListAllTasks() {
+  return window['go']['main']['App']['ListAllTasks']();
+}
+
 export function ListDecisions() {
   return window['go']['main']['App']['ListDecisions']();
 }
 
+export function ListFlowTemplates() {
+  return window['go']['main']['App']['ListFlowTemplates']();
+}
+
+export function ListFlows() {
+  return window['go']['main']['App']['ListFlows']();
+}
+
 export function ListPortfolios() {
   return window['go']['main']['App']['ListPortfolios']();
+}
+
+export function ListProblemCandidates() {
+  return window['go']['main']['App']['ListProblemCandidates']();
 }
 
 export function ListProblems() {
@@ -90,12 +142,28 @@ export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
 
+export function ListTerminalSessions() {
+  return window['go']['main']['App']['ListTerminalSessions']();
+}
+
 export function OpenDirectoryPicker() {
   return window['go']['main']['App']['OpenDirectoryPicker']();
 }
 
 export function OpenPathInIDE(arg1) {
   return window['go']['main']['App']['OpenPathInIDE'](arg1);
+}
+
+export function RefreshGovernance() {
+  return window['go']['main']['App']['RefreshGovernance']();
+}
+
+export function ResizeTerminalSession(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ResizeTerminalSession'](arg1, arg2, arg3);
+}
+
+export function RunFlowNow(arg1) {
+  return window['go']['main']['App']['RunFlowNow'](arg1);
 }
 
 export function SaveConfig(arg1) {
@@ -118,6 +186,18 @@ export function SwitchProject(arg1) {
   return window['go']['main']['App']['SwitchProject'](arg1);
 }
 
+export function ToggleFlow(arg1, arg2) {
+  return window['go']['main']['App']['ToggleFlow'](arg1, arg2);
+}
+
+export function UpdateFlow(arg1) {
+  return window['go']['main']['App']['UpdateFlow'](arg1);
+}
+
 export function VerifyDecision(arg1, arg2) {
   return window['go']['main']['App']['VerifyDecision'](arg1, arg2);
+}
+
+export function WriteTerminalInput(arg1, arg2) {
+  return window['go']['main']['App']['WriteTerminalInput'](arg1, arg2);
 }

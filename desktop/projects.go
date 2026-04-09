@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -121,6 +122,34 @@ func (a *App) ListProjects() ([]ProjectInfo, error) {
 	return infos, nil
 }
 
+func (a *App) ListAllTasks() ([]TaskState, error) {
+	reg, err := loadRegistry()
+	if err != nil {
+		return nil, err
+	}
+
+	if a.projectRoot != "" {
+		_, _ = a.addProjectToRegistry(reg, a.projectRoot)
+	}
+
+	allTasks := make([]TaskState, 0)
+	for _, rp := range reg.Projects {
+		tasks, err := a.listTasksForProject(context.Background(), rp.Path)
+		if err != nil {
+			a.emitAppError("list all tasks", err)
+			continue
+		}
+
+		allTasks = append(allTasks, tasks...)
+	}
+
+	sort.Slice(allTasks, func(i int, j int) bool {
+		return allTasks[i].StartedAt > allTasks[j].StartedAt
+	})
+
+	return allTasks, nil
+}
+
 // AddProject registers a new project by path.
 func (a *App) AddProject(path string) (*ProjectInfo, error) {
 	path = strings.TrimSpace(path)
@@ -211,6 +240,23 @@ func (a *App) SwitchProject(path string) error {
 	if a.tasks != nil && a.tasks.hasRunningTasks() {
 		return fmt.Errorf("cannot switch projects while desktop tasks are still running")
 	}
+
+	if a.governance != nil {
+		a.governance.shutdown()
+		a.governance = nil
+	}
+
+	if a.flows != nil {
+		a.flows.shutdown()
+		a.flows = nil
+	}
+
+	if a.terminals != nil {
+		a.terminals.shutdown()
+		a.terminals = nil
+	}
+
+	a.tasks = nil
 
 	// Close current DB
 	if a.dbConn != nil {
@@ -344,4 +390,34 @@ func (a *App) addProjectToRegistry(reg *ProjectRegistry, path string) (*Register
 	}
 
 	return &rp, nil
+}
+
+func (a *App) listTasksForProject(ctx context.Context, projectPath string) ([]TaskState, error) {
+	if projectPath == "" {
+		return []TaskState{}, nil
+	}
+
+	if a != nil && a.projectRoot == projectPath && a.tasks != nil {
+		return a.tasks.list(ctx, projectPath)
+	}
+
+	haftDir := filepath.Join(projectPath, ".haft")
+	cfg, err := project.Load(haftDir)
+	if err != nil {
+		return nil, err
+	}
+
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		return nil, err
+	}
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer database.Close()
+
+	store := newDesktopTaskStore(database.GetRawDB())
+	return store.ListTasks(ctx, projectPath)
 }

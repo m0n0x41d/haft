@@ -25,7 +25,9 @@ type App struct {
 	projectName string
 	projectRoot string
 	tasks       *taskRunner
+	flows       *flowController
 	governance  *governanceController
+	terminals   *terminalManager
 }
 
 func NewApp() *App {
@@ -75,10 +77,16 @@ func (a *App) startup(ctx context.Context) {
 	a.dbConn = database
 	a.store = artifact.NewStore(database.GetRawDB())
 	a.tasks = newTaskRunner(a, newDesktopTaskStore(database.GetRawDB()))
+	a.flows = newFlowController(a, newDesktopFlowStore(database.GetRawDB()))
 	a.governance = newGovernanceController(a, a.store, database.GetRawDB(), a.projectRoot)
+	a.terminals = newTerminalManager(a)
 
 	if err := a.tasks.restore(a.ctx, a.projectRoot); err != nil {
 		fmt.Fprintf(os.Stderr, "haft desktop: failed to restore desktop tasks: %v\n", err)
+	}
+
+	if err := a.flows.reload(a.ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "haft desktop: failed to start flow scheduler: %v\n", err)
 	}
 
 	if a.canUseNotifications() {
@@ -95,6 +103,14 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(_ context.Context) {
 	if a.governance != nil {
 		a.governance.shutdown()
+	}
+
+	if a.flows != nil {
+		a.flows.shutdown()
+	}
+
+	if a.terminals != nil {
+		a.terminals.shutdown()
 	}
 
 	if a.canUseNotifications() {

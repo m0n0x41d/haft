@@ -300,4 +300,32 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE evidence_items ADD COLUMN claim_refs TEXT DEFAULT '[]'",
 		},
 	},
+	{
+		Version:     22,
+		Description: "Desktop runtime task persistence",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS desktop_tasks (
+				id TEXT PRIMARY KEY,
+				project_name TEXT NOT NULL,
+				project_path TEXT NOT NULL,
+				title TEXT NOT NULL,
+				agent TEXT NOT NULL,
+				status TEXT NOT NULL,
+				prompt TEXT NOT NULL,
+				branch TEXT NOT NULL DEFAULT '',
+				worktree INTEGER NOT NULL DEFAULT 0,
+				worktree_path TEXT NOT NULL DEFAULT '',
+				reused_worktree INTEGER NOT NULL DEFAULT 0,
+				error_message TEXT NOT NULL DEFAULT '',
+				output_tail TEXT NOT NULL DEFAULT '',
+				started_at TEXT NOT NULL,
+				completed_at TEXT,
+				updated_at TEXT NOT NULL,
+				archived_at TEXT
+			)`,
+			"CREATE INDEX IF NOT EXISTS idx_desktop_tasks_project_status ON desktop_tasks(project_path, status)",
+			"CREATE INDEX IF NOT EXISTS idx_desktop_tasks_started_at ON desktop_tasks(started_at DESC)",
+			"CREATE INDEX IF NOT EXISTS idx_desktop_tasks_worktree_path ON desktop_tasks(worktree_path)",
+		},
+	},
 }

@@ -96,7 +96,11 @@ func (s *Server) ReadLoop() error {
 
 		var msg Message
 		if err := json.Unmarshal(line, &msg); err != nil {
-			logger.Warn().Str("component", "jsonrpc").Str("dir", "in").Err(err).Msg("rpc.parse_error")
+			raw := string(line)
+			if len(raw) > 200 {
+				raw = raw[:200] + "..."
+			}
+			logger.Warn().Str("component", "jsonrpc").Str("dir", "in").Err(err).Str("raw", raw).Msg("rpc.parse_error")
 			continue
 		}
 

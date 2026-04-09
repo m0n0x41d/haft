@@ -105,6 +105,8 @@ var deprecatedCommands = []string{
 	"q-apply", "q-char", "q-compare", "q-decide", "q-explore",
 	"q-frame", "q-note", "q-onboard", "q-problems", "q-refresh",
 	"q-search", "q-status",
+	// v6 h-refresh replaced by h-verify
+	"h-refresh",
 }
 
 func cleanupOldCommands(destDir string, ext string) {

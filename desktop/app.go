@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/m0n0x41d/haft/db"
@@ -24,6 +25,7 @@ type App struct {
 	projectName string
 	projectRoot string
 	tasks       *taskRunner
+	governance  *governanceController
 }
 
 func NewApp() *App {
@@ -73,13 +75,32 @@ func (a *App) startup(ctx context.Context) {
 	a.dbConn = database
 	a.store = artifact.NewStore(database.GetRawDB())
 	a.tasks = newTaskRunner(a, newDesktopTaskStore(database.GetRawDB()))
+	a.governance = newGovernanceController(a, a.store, database.GetRawDB(), a.projectRoot)
 
 	if err := a.tasks.restore(a.ctx, a.projectRoot); err != nil {
 		fmt.Fprintf(os.Stderr, "haft desktop: failed to restore desktop tasks: %v\n", err)
 	}
+
+	if a.canUseNotifications() {
+		if err := runtime.InitializeNotifications(a.ctx); err != nil {
+			a.emitAppError("notifications", err)
+		}
+	}
+
+	if a.governance != nil && (a.canEmitEvents() || a.canUseNotifications()) {
+		a.governance.start(a.ctx)
+	}
 }
 
 func (a *App) shutdown(_ context.Context) {
+	if a.governance != nil {
+		a.governance.shutdown()
+	}
+
+	if a.canUseNotifications() {
+		runtime.CleanupNotifications(a.ctx)
+	}
+
 	if a.tasks != nil {
 		a.tasks.shutdown()
 	}
@@ -153,12 +174,13 @@ func (a *App) GetDecision(id string) (*DecisionDetailView, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
-	art, err := a.store.Get(a.ctx, id)
+
+	_, view, err := a.loadDecisionDetail(id)
 	if err != nil {
 		return nil, err
 	}
-	v := toDecisionDetail(art)
-	return &v, nil
+
+	return &view, nil
 }
 
 func (a *App) GetPortfolio(id string) (*PortfolioDetailView, error) {
@@ -248,83 +270,25 @@ func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree
 		return nil, fmt.Errorf("no database connection")
 	}
 
-	dec, err := a.store.Get(a.ctx, decisionID)
+	dec, detail, err := a.loadDecisionDetail(decisionID)
 	if err != nil {
 		return nil, fmt.Errorf("decision not found: %w", err)
 	}
 
-	df := dec.UnmarshalDecisionFields()
-
-	// Build implementation brief from decision record
-	var brief strings.Builder
-	brief.WriteString(fmt.Sprintf("## Implement Decision: %s\n\n", dec.Meta.Title))
-	brief.WriteString(fmt.Sprintf("Selected: %s\n\n", df.SelectedTitle))
-
-	// Load linked problem for context
-	for _, pRef := range df.ProblemRefs {
-		prob, err := a.store.Get(a.ctx, pRef)
-		if err != nil {
-			continue
-		}
-		pf := prob.UnmarshalProblemFields()
-		brief.WriteString("## Problem\n")
-		brief.WriteString(fmt.Sprintf("Signal: %s\n", pf.Signal))
-		if len(pf.Constraints) > 0 {
-			brief.WriteString("Constraints:\n")
-			for _, c := range pf.Constraints {
-				brief.WriteString(fmt.Sprintf("- %s\n", c))
-			}
-		}
-		brief.WriteString("\n")
-	}
-
-	brief.WriteString("## Why Selected\n")
-	brief.WriteString(df.WhySelected + "\n\n")
-
-	if len(df.Invariants) > 0 {
-		brief.WriteString("## Invariants (MUST hold at all times)\n")
-		for _, inv := range df.Invariants {
-			brief.WriteString(fmt.Sprintf("- %s\n", inv))
-		}
-		brief.WriteString("\n")
-	}
-
-	if len(df.Admissibility) > 0 {
-		brief.WriteString("## Not Acceptable\n")
-		for _, adm := range df.Admissibility {
-			brief.WriteString(fmt.Sprintf("- %s\n", adm))
-		}
-		brief.WriteString("\n")
-	}
-
-	if len(df.PostConds) > 0 {
-		brief.WriteString("## Post-conditions (verify after implementation)\n")
-		for _, pc := range df.PostConds {
-			brief.WriteString(fmt.Sprintf("- [ ] %s\n", pc))
-		}
-		brief.WriteString("\n")
-	}
-
-	if len(df.Claims) > 0 {
-		brief.WriteString("## Claims to verify\n")
-		for _, c := range df.Claims {
-			brief.WriteString(fmt.Sprintf("- %s (threshold: %s)\n", c.Claim, c.Threshold))
-		}
-		brief.WriteString("\n")
-	}
-
-	brief.WriteString("## Instructions\n")
-	brief.WriteString("Implement the selected approach. Follow all invariants strictly.\n")
-	brief.WriteString("After implementation, verify each post-condition.\n")
-	brief.WriteString("You have access to haft MCP tools for recording progress.\n")
-
-	prompt := brief.String()
+	problems := a.loadDecisionProblems(detail.ProblemRefs)
+	prompt := buildImplementationPrompt(dec, detail, problems)
 
 	if branchName == "" {
 		branchName = fmt.Sprintf("implement-%s", decisionID)
 	}
 
-	return a.SpawnTask(agentKind, prompt, useWorktree, branchName)
+	return a.spawnTaskWithTitle(
+		agentKind,
+		prompt,
+		useWorktree,
+		branchName,
+		decisionTaskTitle("Implement", detail),
+	)
 }
 
 // VerifyDecision spawns an agent to verify a decision's claims.
@@ -333,31 +297,20 @@ func (a *App) VerifyDecision(decisionID string, agentKind string) (*TaskState, e
 		return nil, fmt.Errorf("no database connection")
 	}
 
-	dec, err := a.store.Get(a.ctx, decisionID)
+	dec, detail, err := a.loadDecisionDetail(decisionID)
 	if err != nil {
 		return nil, fmt.Errorf("decision not found: %w", err)
 	}
 
-	df := dec.UnmarshalDecisionFields()
+	prompt := buildVerificationPrompt(dec, detail)
 
-	var prompt strings.Builder
-	prompt.WriteString(fmt.Sprintf("## Verify Decision: %s\n\n", dec.Meta.Title))
-	prompt.WriteString("Check each claim below. For each:\n")
-	prompt.WriteString("1. Gather evidence (run commands, read files, check metrics)\n")
-	prompt.WriteString("2. Assess: supported / weakened / refuted\n")
-	prompt.WriteString("3. Call haft_decision(action=\"measure\") with your findings\n\n")
-
-	prompt.WriteString("## Claims\n")
-	for _, c := range df.Claims {
-		prompt.WriteString(fmt.Sprintf("- **%s**: %s\n", c.ID, c.Claim))
-		prompt.WriteString(fmt.Sprintf("  Observable: %s\n", c.Observable))
-		prompt.WriteString(fmt.Sprintf("  Threshold: %s\n", c.Threshold))
-		prompt.WriteString(fmt.Sprintf("  Current status: %s\n\n", c.Status))
-	}
-
-	prompt.WriteString("Do NOT skip claims. Do NOT fabricate evidence.\n")
-
-	return a.SpawnTask(agentKind, prompt.String(), false, "")
+	return a.spawnTaskWithTitle(
+		agentKind,
+		prompt,
+		false,
+		"",
+		decisionTaskTitle("Verify", detail),
+	)
 }
 
 func (a *App) SearchArtifacts(query string) ([]ArtifactView, error) {
@@ -369,6 +322,210 @@ func (a *App) SearchArtifacts(query string) ([]ArtifactView, error) {
 		return nil, err
 	}
 	return mapArtifacts(arts, toArtifactView, 0), nil
+}
+
+func (a *App) GetCoverage() (*CoverageView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	coverage, err := buildCoverageView(a.ctx, a.store.DB(), a.projectRoot, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &coverage, nil
+}
+
+func (a *App) GetGovernanceOverview() (*GovernanceOverviewView, error) {
+	if a.governance == nil {
+		return nil, fmt.Errorf("governance controller is not initialized")
+	}
+
+	overview, err := a.governance.snapshotOrScan(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &overview, nil
+}
+
+func (a *App) RefreshGovernance() (*GovernanceOverviewView, error) {
+	if a.governance == nil {
+		return nil, fmt.Errorf("governance controller is not initialized")
+	}
+
+	overview, err := a.governance.scan(a.ctx, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return &overview, nil
+}
+
+func (a *App) ListProblemCandidates() ([]ProblemCandidateView, error) {
+	overview, err := a.GetGovernanceOverview()
+	if err != nil {
+		return nil, err
+	}
+
+	return overview.ProblemCandidates, nil
+}
+
+func (a *App) DismissProblemCandidate(id string) error {
+	if a.governance == nil || a.governance.state == nil {
+		return fmt.Errorf("governance controller is not initialized")
+	}
+
+	if _, err := a.governance.state.GetCandidate(a.ctx, strings.TrimSpace(id)); err != nil {
+		return fmt.Errorf("load problem candidate %s: %w", id, err)
+	}
+
+	if err := a.governance.state.SetCandidateStatus(a.ctx, id, candidateStatusDismissed, ""); err != nil {
+		return fmt.Errorf("dismiss problem candidate %s: %w", id, err)
+	}
+
+	if _, err := a.governance.scan(a.ctx, false); err != nil {
+		return fmt.Errorf("refresh governance after dismissal: %w", err)
+	}
+
+	return nil
+}
+
+func (a *App) AdoptProblemCandidate(id string) (*ProblemDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	if a.governance == nil || a.governance.state == nil {
+		return nil, fmt.Errorf("governance controller is not initialized")
+	}
+
+	candidate, err := a.governance.state.GetCandidate(a.ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, fmt.Errorf("load problem candidate %s: %w", id, err)
+	}
+
+	if candidate.Status == candidateStatusDismissed {
+		return nil, fmt.Errorf("problem candidate %s has already been dismissed", id)
+	}
+
+	if candidate.Status == candidateStatusAdopted && candidate.ProblemRef != "" {
+		problem, err := a.store.Get(a.ctx, candidate.ProblemRef)
+		if err != nil {
+			return nil, fmt.Errorf("load adopted problem %s: %w", candidate.ProblemRef, err)
+		}
+		view := toProblemDetail(a.ctx, problem, a.store)
+		return &view, nil
+	}
+
+	created, _, err := artifact.FrameProblem(a.ctx, a.store, a.haftDir(), artifact.ProblemFrameInput{
+		Title:         candidate.Title,
+		Signal:        candidate.Signal,
+		Acceptance:    candidate.Acceptance,
+		Context:       candidate.Context,
+		Mode:          "tactical",
+		BlastRadius:   "Governance follow-up from the desktop decision loop",
+		Reversibility: "high",
+		Constraints: []string{
+			"Validate the surfaced governance finding with fresh evidence before making irreversible changes.",
+		},
+		OptimizationTargets: []string{
+			"Close the surfaced governance gap quickly",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("frame problem for candidate %s: %w", id, err)
+	}
+
+	if candidate.SourceArtifactRef != "" {
+		if _, err := a.store.Get(a.ctx, candidate.SourceArtifactRef); err == nil {
+			_ = a.store.AddLink(a.ctx, created.Meta.ID, candidate.SourceArtifactRef, "based_on")
+		}
+	}
+
+	if err := a.governance.state.SetCandidateStatus(a.ctx, id, candidateStatusAdopted, created.Meta.ID); err != nil {
+		return nil, fmt.Errorf("mark problem candidate %s adopted: %w", id, err)
+	}
+
+	if _, err := a.governance.scan(a.ctx, false); err != nil {
+		return nil, fmt.Errorf("refresh governance after adoption: %w", err)
+	}
+
+	view := toProblemDetail(a.ctx, created, a.store)
+	return &view, nil
+}
+
+func (a *App) loadDecisionDetail(id string) (*artifact.Artifact, DecisionDetailView, error) {
+	art, err := a.store.Get(a.ctx, id)
+	if err != nil {
+		return nil, DecisionDetailView{}, err
+	}
+
+	affectedFiles, coverageModules, coverageWarnings := a.loadDecisionGovernance(art.Meta.ID)
+	view := toDecisionDetail(art, affectedFiles, coverageModules, coverageWarnings)
+
+	return art, view, nil
+}
+
+func (a *App) loadDecisionGovernance(id string) ([]string, []CoverageModuleView, []string) {
+	warnings := make([]string, 0)
+
+	if a.store == nil {
+		return nil, nil, []string{"Decision governance context is unavailable because no database is connected."}
+	}
+
+	affectedFileRows, err := a.store.GetAffectedFiles(a.ctx, id)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("Load affected files: %v", err))
+	}
+
+	affectedFiles := make([]string, 0, len(affectedFileRows))
+	for _, file := range affectedFileRows {
+		affectedFiles = append(affectedFiles, file.Path)
+	}
+	sort.Strings(affectedFiles)
+
+	if len(affectedFiles) == 0 {
+		warnings = append(warnings, "No affected files are recorded for this decision yet.")
+		return affectedFiles, nil, warnings
+	}
+
+	coverage, err := buildCoverageView(a.ctx, a.store.DB(), a.projectRoot, affectedFiles)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("Coverage context is unavailable: %v", err))
+		return affectedFiles, nil, warnings
+	}
+
+	impacted := make([]CoverageModuleView, 0)
+	for _, module := range coverage.Modules {
+		if !module.Impacted {
+			continue
+		}
+		impacted = append(impacted, module)
+	}
+
+	if len(impacted) == 0 {
+		warnings = append(warnings, "Affected files do not map to any scanned module yet.")
+	}
+
+	return affectedFiles, impacted, warnings
+}
+
+func (a *App) loadDecisionProblems(problemRefs []string) []*artifact.Artifact {
+	if a.store == nil || len(problemRefs) == 0 {
+		return nil
+	}
+
+	problems := make([]*artifact.Artifact, 0, len(problemRefs))
+	for _, problemRef := range problemRefs {
+		problem, err := a.store.Get(a.ctx, problemRef)
+		if err != nil {
+			continue
+		}
+		problems = append(problems, problem)
+	}
+
+	return problems
 }
 
 // --- Helpers ---
@@ -405,11 +562,11 @@ func mapArtifacts[T any](arts []*artifact.Artifact, fn func(*artifact.Artifact) 
 var _ *sql.DB // suppress unused import if needed
 
 func (a *App) emitAppError(scope string, err error) {
-	if err == nil || a.ctx == nil {
+	if err == nil {
 		return
 	}
 
-	runtime.EventsEmit(a.ctx, "app.error", map[string]string{
+	a.emitEvent("app.error", map[string]string{
 		"scope":   scope,
 		"message": err.Error(),
 	})

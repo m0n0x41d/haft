@@ -359,6 +359,19 @@ func (c *Coordinator) reactLoop(
 			Strs("tools", toolNames).
 			Msg("agent.llm_response")
 
+		// If the final response has empty text but the streaming accumulator
+		// captured content, recover it. Some models (e.g. gpt-5.4) occasionally
+		// send deltas during streaming but produce an empty final response object.
+		if assistantMsg.Text() == "" && liveAssistant != nil && liveAssistant.Text() != "" {
+			streamedText := liveAssistant.Text()
+			// Strip thinking prefix if present
+			if !strings.HasPrefix(streamedText, "[thinking]") {
+				assistantMsg.Parts = append([]agent.Part{agent.TextPart{Text: streamedText}}, assistantMsg.Parts...)
+				_ = c.Messages.UpdateMessage(ctx, assistantMsg)
+				c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
+			}
+		}
+
 		// Detect empty response — LLM returned nothing useful
 		hasText := assistantMsg.Text() != ""
 		hasThinking := liveAssistant != nil && strings.Contains(liveAssistant.Text(), "[thinking]")

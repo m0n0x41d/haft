@@ -52,6 +52,7 @@ const (
 	StaleCategoryEvidenceExpired       StaleCategory = "evidence_expired"
 	StaleCategoryREffDegraded          StaleCategory = "reff_degraded"
 	StaleCategoryDecisionStale         StaleCategory = "decision_stale"
+	StaleCategoryPendingVerification   StaleCategory = "pending_verification"
 	StaleCategoryEpistemicDebtExceeded StaleCategory = "epistemic_debt_exceeded"
 	StaleCategoryScanFailed            StaleCategory = "scan_failed"
 )
@@ -113,9 +114,16 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 		addItem(buildExpiredStaleItem(a, now))
 	}
 
-	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
+	decisionCandidates, err := store.ListByKind(ctx, KindDecisionRecord, 0)
 	if err != nil {
 		addItem(buildScanFailureItem("active decision scan", err))
+	}
+	decisions := make([]*Artifact, 0, len(decisionCandidates))
+	for _, decision := range decisionCandidates {
+		if decision.Meta.Status != StatusActive && decision.Meta.Status != StatusRefreshDue {
+			continue
+		}
+		decisions = append(decisions, decision)
 	}
 	for _, d := range decisions {
 		evidenceItems, evidenceErr := store.GetEvidenceItems(ctx, d.Meta.ID)
@@ -143,6 +151,37 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 				Category: StaleCategoryREffDegraded,
 				Reason:   reason,
 				REff:     roundTenths(wlnk.REff),
+			})
+		}
+	}
+
+	// Check for claims with verify_after dates that have passed but remain unverified.
+	// ListActiveByKind returns lightweight rows without StructuredData, so fetch full artifact per decision.
+	for _, d := range decisions {
+		full, fetchErr := store.Get(ctx, d.Meta.ID)
+		if fetchErr != nil || full == nil {
+			continue
+		}
+		fields := full.UnmarshalDecisionFields()
+		for _, claim := range fields.Claims {
+			if claim.VerifyAfter == "" || claim.Status != ClaimStatusUnverified {
+				continue
+			}
+			verifyTime, ok := reff.ParseValidUntil(claim.VerifyAfter)
+			if !ok {
+				continue
+			}
+			if now.Before(verifyTime) {
+				continue
+			}
+			reason := fmt.Sprintf("claim %s ready for verification (verify_after: %s). Observable: %s. Threshold: %s",
+				claim.ID, claim.VerifyAfter, claim.Observable, claim.Threshold)
+			addItem(StaleItem{
+				ID:       d.Meta.ID,
+				Title:    d.Meta.Title,
+				Kind:     string(d.Meta.Kind),
+				Category: StaleCategoryPendingVerification,
+				Reason:   reason,
 			})
 		}
 	}
@@ -463,12 +502,14 @@ func staleCategoryPriority(category StaleCategory) int {
 		return 1
 	case StaleCategoryEvidenceExpired:
 		return 2
-	case StaleCategoryREffDegraded:
+	case StaleCategoryPendingVerification:
 		return 3
-	case StaleCategoryDecisionStale:
+	case StaleCategoryREffDegraded:
 		return 4
-	default:
+	case StaleCategoryDecisionStale:
 		return 5
+	default:
+		return 6
 	}
 }
 

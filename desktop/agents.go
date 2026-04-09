@@ -377,6 +377,7 @@ func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
 	}
 
 	r.emitTaskStatus(state)
+	r.app.notifyTaskState(state)
 }
 
 func (rt *runningTask) stopFlusher() {
@@ -495,6 +496,16 @@ func (a *App) DetectAgents() ([]InstalledAgent, error) {
 
 // SpawnTask creates and starts a new agent task.
 func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branchName string) (*TaskState, error) {
+	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "")
+}
+
+func (a *App) spawnTaskWithTitle(
+	agentKind string,
+	prompt string,
+	useWorktree bool,
+	branchName string,
+	title string,
+) (*TaskState, error) {
 	if a.projectRoot == "" {
 		return nil, fmt.Errorf("no active project")
 	}
@@ -529,7 +540,7 @@ func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branc
 
 	state := TaskState{
 		ID:          a.tasks.nextTaskID(),
-		Title:       truncate(prompt, 60),
+		Title:       firstNonEmpty(strings.TrimSpace(title), truncate(prompt, 60)),
 		Agent:       agentKind,
 		Project:     a.projectName,
 		ProjectPath: a.projectRoot,

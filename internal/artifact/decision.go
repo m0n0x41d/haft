@@ -50,9 +50,10 @@ type DecideInput struct {
 
 // PredictionInput is a testable claim that measure should verify.
 type PredictionInput struct {
-	Claim      string `json:"claim"`
-	Observable string `json:"observable"`
-	Threshold  string `json:"threshold"`
+	Claim       string `json:"claim"`
+	Observable  string `json:"observable"`
+	Threshold   string `json:"threshold"`
+	VerifyAfter string `json:"verify_after,omitempty"` // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
 }
 
 // RejectionReason explains why a variant was not selected.
@@ -163,9 +164,10 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 
 	for _, value := range values {
 		prediction := PredictionInput{
-			Claim:      strings.TrimSpace(value.Claim),
-			Observable: strings.TrimSpace(value.Observable),
-			Threshold:  strings.TrimSpace(value.Threshold),
+			Claim:       strings.TrimSpace(value.Claim),
+			Observable:  strings.TrimSpace(value.Observable),
+			Threshold:   strings.TrimSpace(value.Threshold),
+			VerifyAfter: strings.TrimSpace(value.VerifyAfter),
 		}
 
 		normalized = append(normalized, prediction)

@@ -62,10 +62,11 @@ func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
 
 	for _, input := range inputs {
 		claim := DecisionClaim{
-			Claim:      strings.TrimSpace(input.Claim),
-			Observable: strings.TrimSpace(input.Observable),
-			Threshold:  strings.TrimSpace(input.Threshold),
-			Status:     ClaimStatusUnverified,
+			Claim:       strings.TrimSpace(input.Claim),
+			Observable:  strings.TrimSpace(input.Observable),
+			Threshold:   strings.TrimSpace(input.Threshold),
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: strings.TrimSpace(input.VerifyAfter),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -82,10 +83,11 @@ func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim 
 
 	for _, value := range values {
 		claim := DecisionClaim{
-			Claim:      strings.TrimSpace(value.Claim),
-			Observable: strings.TrimSpace(value.Observable),
-			Threshold:  strings.TrimSpace(value.Threshold),
-			Status:     normalizeClaimStatus(value.Status),
+			Claim:       strings.TrimSpace(value.Claim),
+			Observable:  strings.TrimSpace(value.Observable),
+			Threshold:   strings.TrimSpace(value.Threshold),
+			Status:      normalizeClaimStatus(value.Status),
+			VerifyAfter: strings.TrimSpace(value.VerifyAfter),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -103,11 +105,12 @@ func normalizeDecisionClaims(values []DecisionClaim) []DecisionClaim {
 
 	for _, value := range values {
 		claim := DecisionClaim{
-			ID:         strings.TrimSpace(value.ID),
-			Claim:      strings.TrimSpace(value.Claim),
-			Observable: strings.TrimSpace(value.Observable),
-			Threshold:  strings.TrimSpace(value.Threshold),
-			Status:     normalizeClaimStatus(value.Status),
+			ID:          strings.TrimSpace(value.ID),
+			Claim:       strings.TrimSpace(value.Claim),
+			Observable:  strings.TrimSpace(value.Observable),
+			Threshold:   strings.TrimSpace(value.Threshold),
+			Status:      normalizeClaimStatus(value.Status),
+			VerifyAfter: strings.TrimSpace(value.VerifyAfter),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -154,10 +157,11 @@ func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction 
 
 	for _, claim := range claims {
 		predictions = append(predictions, DecisionPrediction{
-			Claim:      claim.Claim,
-			Observable: claim.Observable,
-			Threshold:  claim.Threshold,
-			Status:     claim.Status,
+			Claim:       claim.Claim,
+			Observable:  claim.Observable,
+			Threshold:   claim.Threshold,
+			Status:      claim.Status,
+			VerifyAfter: claim.VerifyAfter,
 		})
 	}
 

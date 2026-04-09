@@ -20,6 +20,7 @@ import { Decisions } from "./pages/Decisions";
 import { Portfolios } from "./pages/Portfolios";
 import { Settings } from "./pages/Settings";
 import { Tasks } from "./pages/Tasks";
+import { NotificationViewport, type DesktopNotification } from "./components/Notifications";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { ToastViewport } from "./components/Toast";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
@@ -46,6 +47,7 @@ export default function App() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showNewTask, setShowNewTask] = useState(false);
   const [toasts, setToasts] = useState<AppErrorDetail[]>([]);
+  const [notifications, setNotifications] = useState<DesktopNotification[]>([]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -99,9 +101,20 @@ export default function App() {
       stopBackendErrors = undefined;
     }
 
+    let stopNotifications: (() => void) | undefined;
+
+    try {
+      stopNotifications = EventsOn("notification.push", (payload: DesktopNotification) => {
+        setNotifications((current) => [...current, payload].slice(-4));
+      });
+    } catch {
+      stopNotifications = undefined;
+    }
+
     return () => {
       stopListening();
       stopBackendErrors?.();
+      stopNotifications?.();
     };
   }, []);
 
@@ -296,6 +309,12 @@ export default function App() {
       </main>
 
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={(p, id) => navigate(p as Page, id)} />
+      <NotificationViewport
+        notifications={notifications}
+        onDismiss={(id) => {
+          setNotifications((current) => current.filter((notification) => notification.id !== id));
+        }}
+      />
       <ToastViewport
         toasts={toasts}
         onDismiss={(id) => {

@@ -328,4 +328,31 @@ var kernelMigrations = []Migration{
 			"CREATE INDEX IF NOT EXISTS idx_desktop_tasks_worktree_path ON desktop_tasks(worktree_path)",
 		},
 	},
+	{
+		Version:     23,
+		Description: "Desktop governance scan state and problem candidates",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS desktop_governance_state (
+				state_key TEXT PRIMARY KEY,
+				state_value TEXT NOT NULL DEFAULT '',
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS desktop_problem_candidates (
+				id TEXT PRIMARY KEY,
+				title TEXT NOT NULL,
+				signal TEXT NOT NULL,
+				acceptance TEXT NOT NULL,
+				context TEXT NOT NULL DEFAULT 'desktop-governance',
+				category TEXT NOT NULL,
+				source_artifact_ref TEXT NOT NULL DEFAULT '',
+				source_title TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'active',
+				problem_ref TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			"CREATE INDEX IF NOT EXISTS idx_desktop_problem_candidates_status ON desktop_problem_candidates(status, updated_at DESC)",
+			"CREATE INDEX IF NOT EXISTS idx_desktop_problem_candidates_source ON desktop_problem_candidates(source_artifact_ref, status)",
+		},
+	},
 }

@@ -190,6 +190,26 @@ func TestDecide_FullDRR(t *testing.T) {
 	}
 }
 
+func TestNormalizePredictionInputs_PreservesVerifyAfter(t *testing.T) {
+	input := []PredictionInput{
+		{
+			Claim:       "Claim",
+			Observable:  "observable",
+			Threshold:   "threshold",
+			VerifyAfter: " 2026-05-01 ",
+		},
+	}
+
+	got := normalizePredictionInputs(input)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 prediction, got %d", len(got))
+	}
+	if got[0].VerifyAfter != "2026-05-01" {
+		t.Fatalf("VerifyAfter = %q, want %q", got[0].VerifyAfter, "2026-05-01")
+	}
+}
+
 func TestDecide_Tactical(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -278,7 +278,11 @@ func (a *App) CreateDecision(input DecisionCreateInput) (*DecisionDetailView, er
 		return nil, err
 	}
 
-	view := toDecisionDetail(created)
+	_, view, err := a.loadDecisionDetail(created.Meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &view, nil
 }
 

@@ -244,3 +244,96 @@ func TestMeasurementClaimEvidence_SplitsMixedMeasurementByClaim(t *testing.T) {
 		t.Fatalf("measurementClaimEvidence() = %#v, want %#v", got, want)
 	}
 }
+
+func TestNewDecisionClaims_PreservesVerifyAfter(t *testing.T) {
+	inputs := []PredictionInput{
+		{
+			Claim:       "Error rate drops 30%",
+			Observable:  "grafana dashboard X",
+			Threshold:   "< 2%",
+			VerifyAfter: "2026-04-16",
+		},
+		{
+			Claim:      "No latency regression",
+			Observable: "wrk benchmark",
+			Threshold:  "p99 < 50ms",
+		},
+	}
+
+	got := newDecisionClaims(inputs)
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 claims, got %d", len(got))
+	}
+	if got[0].VerifyAfter != "2026-04-16" {
+		t.Fatalf("claim-001 VerifyAfter = %q, want %q", got[0].VerifyAfter, "2026-04-16")
+	}
+	if got[1].VerifyAfter != "" {
+		t.Fatalf("claim-002 VerifyAfter = %q, want empty", got[1].VerifyAfter)
+	}
+}
+
+func TestNormalizeDecisionClaims_PreservesVerifyAfter(t *testing.T) {
+	input := []DecisionClaim{
+		{
+			ID:          "claim-001",
+			Claim:       "Error rate drops",
+			Observable:  "dashboard",
+			Threshold:   "< 2%",
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: " 2026-05-01 ",
+		},
+	}
+
+	got := normalizeDecisionClaims(input)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 claim, got %d", len(got))
+	}
+	if got[0].VerifyAfter != "2026-05-01" {
+		t.Fatalf("VerifyAfter = %q, want %q (trimmed)", got[0].VerifyAfter, "2026-05-01")
+	}
+}
+
+func TestDecisionPredictionsFromClaims_PreservesVerifyAfter(t *testing.T) {
+	claims := []DecisionClaim{
+		{
+			ID:          "claim-001",
+			Claim:       "Error rate drops",
+			Observable:  "dashboard",
+			Threshold:   "< 2%",
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: "2026-05-01",
+		},
+	}
+
+	got := decisionPredictionsFromClaims(claims)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 prediction, got %d", len(got))
+	}
+	if got[0].VerifyAfter != "2026-05-01" {
+		t.Fatalf("VerifyAfter = %q, want %q", got[0].VerifyAfter, "2026-05-01")
+	}
+}
+
+func TestDecisionClaimsFromPredictions_PreservesVerifyAfter(t *testing.T) {
+	predictions := []DecisionPrediction{
+		{
+			Claim:       "Error rate drops",
+			Observable:  "dashboard",
+			Threshold:   "< 2%",
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: "2026-05-01",
+		},
+	}
+
+	got := decisionClaimsFromPredictions(predictions)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 claim, got %d", len(got))
+	}
+	if got[0].VerifyAfter != "2026-05-01" {
+		t.Fatalf("VerifyAfter = %q, want %q", got[0].VerifyAfter, "2026-05-01")
+	}
+}

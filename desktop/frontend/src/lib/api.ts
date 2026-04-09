@@ -69,6 +69,7 @@ export interface DecisionDetail {
   title: string;
   status: string;
   mode: string;
+  problem_refs: string[];
   selected_title: string;
   why_selected: string;
   selection_policy: string;
@@ -82,12 +83,71 @@ export interface DecisionDetail {
   evidence_requirements: string[];
   refresh_triggers: string[];
   claims: ClaimView[];
+  first_module_coverage: boolean;
+  affected_files: string[];
+  coverage_modules: CoverageModule[];
+  coverage_warnings: string[];
   rollback_triggers: string[];
   rollback_steps: string[];
   rollback_blast_radius: string;
   valid_until: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CoverageData {
+  total_modules: number;
+  covered_count: number;
+  partial_count: number;
+  blind_count: number;
+  governed_percent: number;
+  last_scanned: string;
+  modules: CoverageModule[];
+}
+
+export interface CoverageModule {
+  id: string;
+  path: string;
+  name: string;
+  lang: string;
+  status: string;
+  decision_count: number;
+  decision_ids: string[];
+  impacted: boolean;
+  files: string[];
+}
+
+export interface GovernanceFinding {
+  id: string;
+  artifact_ref: string;
+  title: string;
+  kind: string;
+  category: string;
+  reason: string;
+  valid_until: string;
+  days_stale: number;
+  r_eff: number;
+  drift_count: number;
+}
+
+export interface ProblemCandidate {
+  id: string;
+  status: string;
+  title: string;
+  signal: string;
+  acceptance: string;
+  context: string;
+  category: string;
+  source_artifact_ref: string;
+  source_title: string;
+  problem_ref: string;
+}
+
+export interface GovernanceOverview {
+  last_scan_at: string;
+  coverage: CoverageData;
+  findings: GovernanceFinding[];
+  problem_candidates: ProblemCandidate[];
 }
 
 export interface ClaimView {
@@ -366,6 +426,12 @@ export interface TaskState {
 
 type WailsBindings = {
   GetDashboard: () => Promise<DashboardData>;
+  GetCoverage?: () => Promise<CoverageData>;
+  GetGovernanceOverview?: () => Promise<GovernanceOverview>;
+  RefreshGovernance?: () => Promise<GovernanceOverview>;
+  ListProblemCandidates?: () => Promise<ProblemCandidate[]>;
+  DismissProblemCandidate?: (id: string) => Promise<void>;
+  AdoptProblemCandidate?: (id: string) => Promise<ProblemDetail>;
   ListProblems: () => Promise<ProblemSummary[]>;
   ListDecisions: () => Promise<DecisionSummary[]>;
   GetProblem: (id: string) => Promise<ProblemDetail>;
@@ -492,6 +558,7 @@ const INITIAL_DECISION_DETAIL: DecisionDetail = {
   title: "Reasoning Workspace — Wails native, interactive",
   status: "active",
   mode: "standard",
+  problem_refs: ["prob-20260409-001"],
   selected_title: "Reasoning Workspace — Wails native",
   why_selected: "Desktop-native from day 1. Single binary distribution, real product identity.",
   selection_policy: "Minimize regret under solo-dev constraints.",
@@ -558,6 +625,38 @@ const INITIAL_DECISION_DETAIL: DecisionDetail = {
       verify_after: "",
     },
   ],
+  first_module_coverage: false,
+  affected_files: [
+    "desktop/app.go",
+    "desktop/frontend/src/pages/Dashboard.tsx",
+  ],
+  coverage_modules: [
+    {
+      id: "mod-desktop",
+      path: "desktop",
+      name: "desktop",
+      lang: "go",
+      status: "covered",
+      decision_count: 2,
+      decision_ids: ["dec-20260409-001", "dec-20260410-001"],
+      impacted: true,
+      files: ["desktop/app.go"],
+    },
+    {
+      id: "mod-desktop-frontend-src-pages",
+      path: "desktop/frontend/src/pages",
+      name: "pages",
+      lang: "jsts",
+      status: "partial",
+      decision_count: 1,
+      decision_ids: ["dec-20260409-001"],
+      impacted: true,
+      files: ["desktop/frontend/src/pages/Dashboard.tsx"],
+    },
+  ],
+  coverage_warnings: [
+    "The frontend page module is only partially governed because evidence is still thin.",
+  ],
   rollback_triggers: [
     "Wails WebView blocks critical feature after 1 week",
     "Binary size exceeds 100MB",
@@ -623,6 +722,47 @@ const mockDecisionDetails = new Map<string, DecisionDetail>([
   [INITIAL_DECISION_DETAIL.id, INITIAL_DECISION_DETAIL],
 ]);
 
+let mockGovernanceOverview: GovernanceOverview = {
+  last_scan_at: nowString(),
+  coverage: {
+    total_modules: 6,
+    covered_count: 3,
+    partial_count: 1,
+    blind_count: 2,
+    governed_percent: 66,
+    last_scanned: nowString(),
+    modules: INITIAL_DECISION_DETAIL.coverage_modules,
+  },
+  findings: [
+    {
+      id: "finding-mock-1",
+      artifact_ref: INITIAL_DECISION_DETAIL.id,
+      title: INITIAL_DECISION_DETAIL.selected_title,
+      kind: "DecisionRecord",
+      category: "pending_verification",
+      reason: "claim claim-2 is ready for verification. Observable: Built binary size on macOS arm64.",
+      valid_until: INITIAL_DECISION_DETAIL.valid_until,
+      days_stale: 0,
+      r_eff: 0,
+      drift_count: 0,
+    },
+  ],
+  problem_candidates: [
+    {
+      id: "cand-mock-1",
+      status: "active",
+      title: "Verify due claims for Reasoning Workspace — Wails native",
+      signal: "claim claim-2 is ready for verification. Observable: Built binary size on macOS arm64.",
+      acceptance: "Due claims have evidence attached and the decision measurement reflects the latest verdict.",
+      context: "desktop-governance",
+      category: "pending_verification",
+      source_artifact_ref: INITIAL_DECISION_DETAIL.id,
+      source_title: INITIAL_DECISION_DETAIL.selected_title,
+      problem_ref: "",
+    },
+  ],
+};
+
 function nextMockID(prefix: "prob" | "sol" | "dec"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -651,10 +791,15 @@ export async function getDashboard(): Promise<DashboardData> {
     decision_count: mockDecisions.length,
     portfolio_count: mockPortfolios.length,
     note_count: 5,
-    stale_count: 0,
+    stale_count: mockGovernanceOverview.findings.length,
     recent_problems: mockProblems,
     recent_decisions: mockDecisions,
-    stale_items: [],
+    stale_items: mockGovernanceOverview.findings.map((finding) => ({
+      id: finding.artifact_ref,
+      kind: finding.kind,
+      title: finding.title,
+      status: finding.category,
+    })),
   };
 }
 
@@ -692,6 +837,107 @@ export async function getPortfolio(id: string): Promise<PortfolioDetail> {
   const b = await loadBindings();
   if (b) return b.GetPortfolio(id);
   return mockPortfolioDetails.get(id) ?? INITIAL_PORTFOLIO_DETAIL;
+}
+
+export async function getCoverage(): Promise<CoverageData> {
+  const coverage = await callBinding<CoverageData>("GetCoverage");
+  if (coverage) return coverage;
+  return mockGovernanceOverview.coverage;
+}
+
+export async function getGovernanceOverview(): Promise<GovernanceOverview> {
+  const overview = await callBinding<GovernanceOverview>("GetGovernanceOverview");
+  if (overview) return overview;
+  return mockGovernanceOverview;
+}
+
+export async function refreshGovernance(): Promise<GovernanceOverview> {
+  const overview = await callBinding<GovernanceOverview>("RefreshGovernance");
+  if (overview) return overview;
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    last_scan_at: nowString(),
+    coverage: {
+      ...mockGovernanceOverview.coverage,
+      last_scanned: nowString(),
+    },
+  };
+  return mockGovernanceOverview;
+}
+
+export async function listProblemCandidates(): Promise<ProblemCandidate[]> {
+  const candidates = await callBinding<ProblemCandidate[]>("ListProblemCandidates");
+  if (candidates) return candidates;
+  return mockGovernanceOverview.problem_candidates;
+}
+
+export async function dismissProblemCandidate(id: string): Promise<void> {
+  await callBinding<void>("DismissProblemCandidate", id);
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    problem_candidates: mockGovernanceOverview.problem_candidates.filter((candidate) => candidate.id !== id),
+  };
+}
+
+export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> {
+  const adopted = await callBinding<ProblemDetail>("AdoptProblemCandidate", id);
+  if (adopted) return adopted;
+
+  const candidate = mockGovernanceOverview.problem_candidates.find((item) => item.id === id);
+  if (!candidate) {
+    throw new Error(`Problem candidate ${id} not found`);
+  }
+
+  const detail: ProblemDetail = {
+    id: nextMockID("prob"),
+    title: candidate.title,
+    status: "active",
+    mode: "tactical",
+    signal: candidate.signal,
+    constraints: [],
+    optimization_targets: ["Close the surfaced governance gap quickly"],
+    observation_indicators: [],
+    acceptance: candidate.acceptance,
+    blast_radius: "Governance follow-up from the desktop decision loop",
+    reversibility: "high",
+    characterizations: [],
+    latest_characterization: null,
+    linked_portfolios: [],
+    linked_decisions: candidate.source_artifact_ref
+      ? [
+          {
+            id: candidate.source_artifact_ref,
+            kind: "DecisionRecord",
+            title: candidate.source_title,
+            status: "active",
+          },
+        ]
+      : [],
+    body: "",
+    created_at: nowString(),
+    updated_at: nowString(),
+  };
+
+  mockProblemDetails.set(detail.id, detail);
+  mockProblems = [
+    {
+      id: detail.id,
+      title: detail.title,
+      status: detail.status,
+      mode: detail.mode,
+      signal: detail.signal,
+      reversibility: detail.reversibility,
+      constraints: detail.constraints,
+      created_at: todayString(),
+    },
+    ...mockProblems,
+  ];
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    problem_candidates: mockGovernanceOverview.problem_candidates.filter((candidateItem) => candidateItem.id !== id),
+  };
+
+  return detail;
 }
 
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {
@@ -895,6 +1141,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
     title: selectedTitle,
     status: "active",
     mode: input.mode.trim() || (portfolio?.comparison ? "standard" : "tactical"),
+    problem_refs: compactList([input.problem_ref.trim(), ...(portfolio?.problem_ref ? [portfolio.problem_ref] : [])]),
     selected_title: selectedTitle,
     why_selected: input.why_selected.trim(),
     selection_policy: input.selection_policy.trim(),
@@ -915,6 +1162,10 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
       status: "unverified",
       verify_after: prediction.verify_after.trim(),
     })),
+    first_module_coverage: input.first_module_coverage,
+    affected_files: compactList(input.affected_files),
+    coverage_modules: [],
+    coverage_warnings: [],
     rollback_triggers: compactList(input.rollback?.triggers ?? []),
     rollback_steps: compactList(input.rollback?.steps ?? []),
     rollback_blast_radius: input.rollback?.blast_radius.trim() ?? "",

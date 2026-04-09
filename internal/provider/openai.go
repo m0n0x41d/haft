@@ -83,11 +83,15 @@ func (p *OpenAIProvider) Stream(
 
 	var finalResp *responses.Response
 	var streamErr error
+	var accumulatedText strings.Builder
+	var eventTypes []string
 	for stream.Next() {
 		event := stream.Current()
+		eventTypes = append(eventTypes, event.Type)
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
+				accumulatedText.WriteString(event.Delta)
 				handler(StreamDelta{Text: event.Delta})
 			}
 		case "response.reasoning_summary_text.delta":
@@ -95,8 +99,8 @@ func (p *OpenAIProvider) Stream(
 				handler(StreamDelta{Thinking: event.Delta})
 			}
 		case "response.content_part.delta":
-			// Some models/backends emit content deltas under this type
 			if event.Delta != "" {
+				accumulatedText.WriteString(event.Delta)
 				handler(StreamDelta{Text: event.Delta})
 			}
 		case "response.completed":
@@ -105,6 +109,18 @@ func (p *OpenAIProvider) Stream(
 		case "error":
 			streamErr = fmt.Errorf("openai stream event error: %s", event.Message)
 		}
+	}
+	// Log event types for debugging empty responses
+	if accumulatedText.Len() == 0 {
+		uniqueTypes := make(map[string]int)
+		for _, t := range eventTypes {
+			uniqueTypes[t]++
+		}
+		typeList := make([]string, 0, len(uniqueTypes))
+		for t, c := range uniqueTypes {
+			typeList = append(typeList, fmt.Sprintf("%s:%d", t, c))
+		}
+		fmt.Fprintf(os.Stderr, "haft: stream produced no text. Event types: %v\n", typeList)
 	}
 	if err := stream.Err(); err != nil {
 		return nil, formatOpenAIError(err, requestDebug)
@@ -116,7 +132,36 @@ func (p *OpenAIProvider) Stream(
 		return nil, fmt.Errorf("openai responses stream ended without final response")
 	}
 
-	return responseToMessage(*finalResp), nil
+	msg := responseToMessage(*finalResp)
+
+	// Some models return empty OutputText in the final response.completed
+	// event even though text deltas were streamed. Recover the streamed text.
+	if msg.Text() == "" && accumulatedText.Len() > 0 {
+		msg.Parts = append([]agent.Part{agent.TextPart{Text: accumulatedText.String()}}, msg.Parts...)
+	}
+
+	// Debug: log response output details when text is empty
+	if msg.Text() == "" && len(msg.ToolCalls()) == 0 {
+		outputTypes := make([]string, 0, len(finalResp.Output))
+		for _, item := range finalResp.Output {
+			detail := item.Type
+			if item.Type == "message" {
+				detail += fmt.Sprintf("(role=%s,content_len=%d)", item.Role, len(item.Content))
+			}
+			outputTypes = append(outputTypes, detail)
+		}
+		fmt.Fprintf(os.Stderr, "haft: empty response. Output items: %v, OutputText: %q, Status: %s\n",
+			outputTypes, truncStr(finalResp.OutputText(), 200), finalResp.Status)
+	}
+
+	return msg, nil
+}
+
+func truncStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // ---------------------------------------------------------------------------

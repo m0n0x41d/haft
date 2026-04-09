@@ -10,6 +10,14 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 
 ### Added
 
+- **5-mode engineering reasoning model** — skill instructions and standalone agent prompt restructured around Understand / Explore / Choose / Execute / Verify (+ Note fast path). Replaces the artifact-centric 6-step "how to reason" with activity-centric modes users can learn in 30 seconds.
+- **Probe-or-commit behavioral gate** — Choose mode now includes a readiness checklist before comparison: dimension coverage, variant diversity, and whether a specific next investigation could change the ranking. Returns commit / probe / widen / reroute.
+- **Language precision triggers** — Understand and Choose modes catch ambiguous terms (service, process, quality, component) and subjective comparison dimensions (maintainable, simple, scalable) before they corrupt downstream reasoning.
+- **`verify_after` field on claims** — `DecisionClaim` and `PredictionInput` now accept `verify_after` (RFC3339 or YYYY-MM-DD). Claims with past verify_after dates that remain unverified are surfaced by `haft_refresh(scan)` as `pending_verification` stale items with observable and threshold details. MCP schema updated.
+- **Constraint-aware Pareto computation** — `computeParetoFront()` now eliminates variants that are strictly worst on all comparable peers for any constraint dimension before dominance computation. Constraint violations are reported as warnings. Variants with missing constraint data are preserved conservatively.
+- **`/h-verify` replaces `/h-refresh`** — unified Verify mode entry point that runs discovery (scan + drift + pending verify_after), presents triage to the user, and suggests actions (measure, waive, deprecate, reopen) per item. `/h-refresh` is deprecated and auto-cleaned on install.
+- **Standalone agent refresh tool parity** — `HaftRefreshTool` now exposes all 6 actions (scan, drift, waive, reopen, supersede, deprecate) matching the MCP server schema. Previously only scan/drift were available to the standalone agent.
+- **Explicit reroute map** — legitimate upstream transitions documented: Choose → Understand (comparison reveals bad framing), Explore → Understand (wrong problem type), Execute → Choose, Verify → any earlier mode.
 - **Standalone Haft runtime** — local-first `haft agent` / TUI flow with persisted sessions, checkpointed vs autonomous execution, permission and question dialogs, model/session pickers, compaction, spawned subagents, and a typed JSON-RPC protocol between UI and runtime.
 - **Claim-aware decision kernel** — decisions now persist canonical structured claims, predictions, claim-bound evidence, live measurement status, and deterministic Pareto/coverage state instead of relying on markdown-only reconstruction.
 - **Deterministic projections** — projection views now render the same artifact graph for different audiences, including engineer, manager, audit, compare, delegated-agent brief, and change-rationale handoff surfaces.
@@ -19,7 +27,7 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 
 ### Changed
 
-- **Product identity is now Haft-first** — binary, docs, commands, skills, and MCP tool names use `haft`, `haft_*`, and `/h-*`; historical `quint-code` repository paths remain only where compatibility still requires them.
+- **Product identity is now Haft-first** — binary, docs, commands, skills, and MCP tool names use `haft`, `haft_*`, and `/h-*`; historical `quint-code` repository paths remain only where compatibility still requires them. Skill and prompt now use 5-mode vocabulary (Understand/Explore/Choose/Execute/Verify) instead of artifact-centric step numbering.
 - **Core architecture was refactored into explicit layers** — artifact build/store logic, presentation formatting, protocol transport, agent runtime, and TUI shell now live as clearer functional boundaries with purer `Build*`/formatting paths and thinner orchestration shells.
 - **Agent execution moved beyond slash-command steering** — the repo now supports both MCP/plugin workflows and a standalone agent/TUI loop, with persisted execution mode aliases and compatibility bridges for older symbiotic/collaborative terminology.
 - **Provider/model support expanded** — the registry and CLI now support multi-provider model discovery/switching with GPT-5.4-class defaults/fallbacks instead of the older 5.3-era baseline.

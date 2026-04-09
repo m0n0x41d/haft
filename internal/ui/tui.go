@@ -67,11 +67,19 @@ func RunInteractive(renderView ViewRenderer, refresh func() error) error {
 			}
 		}
 		frame.WriteString("\n")
-		frame.WriteString("\x1b[2m" + strings.Repeat("─", min(w, 80)) + "\x1b[0m\n")
+		frame.WriteString("\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m\n")
 
-		frame.WriteString(content)
+		// Trim content to fit between tab bar (2 rows) and footer (1 row)
+		maxContentLines := h - 3
+		if maxContentLines > 0 {
+			lines := strings.Split(content, "\n")
+			if len(lines) > maxContentLines {
+				lines = lines[:maxContentLines]
+			}
+			frame.WriteString(strings.Join(lines, "\n"))
+		}
 
-		footer := " \x1b[2m1-5 switch view · r refresh · q quit\x1b[0m"
+		footer := " \x1b[2m1-5 switch · \u2190\u2192 navigate · r refresh · q/Esc close\x1b[0m"
 		frame.WriteString(fmt.Sprintf("\x1b[%d;1H%s", h, footer))
 
 		os.Stderr.WriteString(frame.String())

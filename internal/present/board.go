@@ -219,18 +219,18 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 		return sb.String()
 	}
 
-	// Column widths: St(2) + R_eff(6) + Drift(7) + Context(ctxW) + Title(fill) + Valid(12)
-	// Fixed columns take: 2 + 1 + 6 + 2 + 7 + 2 + ctxW + 2 + 12 = 34 + ctxW
-	validW := 12
+	// Layout: " St R_eff  Drift  Context          Title...              Valid      "
+	// Widths:  1+2+1+6+2+7+2+ctxW+2+titleW+1+validW = 24+ctxW+titleW+validW
+	validW := 11
 	ctxW := 16
-	fixedW := 34 + ctxW + validW
+	fixedW := 24 + ctxW + validW
 	titleW := width - fixedW
 	if titleW < 20 { titleW = 20 }
 
-	sb.WriteString(fmt.Sprintf(" %s %s  %s  %s  %s %*s\n",
-		c(dim, "St"), c(dim, pad("R_eff", 6)), c(dim, pad("Drift", 7)),
+	sb.WriteString(fmt.Sprintf(" %s %s  %s  %s  %s %s\n",
+		c(dim, pad("St", 2)), c(dim, pad("R_eff", 6)), c(dim, pad("Drift", 7)),
 		c(dim, pad("Context", ctxW)), c(dim, pad("Title", titleW)),
-		validW, c(dim, "Valid")))
+		c(dim, fmt.Sprintf("%*s", validW, "Valid"))))
 	sb.WriteString(sep(width))
 
 	for _, dec := range d.Decisions {
@@ -238,8 +238,8 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 		rEff := d.DecisionREff[dec.Meta.ID]
 		drift := d.DecisionDrift[dec.Meta.ID]
 
-		stIcon := c(yellow, "⏳")
-		if shipped { stIcon = c(green, "✓ ") }
+		stIcon := c(yellow, "..") // pending
+		if shipped { stIcon = c(green, "OK") }
 
 		rEffP := "  —  "
 		rEffCol := dim

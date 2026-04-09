@@ -251,6 +251,27 @@ export function App({ client, inputEvents }: AppProps) {
   ) => {
     streamUpdateBufferRef.current.replace(params, reason)
   }, [])
+  // Streaming watchdog: reset if coord.done never arrives
+  const streamingWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearStreamingWatchdog = useCallback(() => {
+    if (streamingWatchdogRef.current) {
+      clearTimeout(streamingWatchdogRef.current)
+      streamingWatchdogRef.current = null
+    }
+  }, [])
+
+  const startStreamingWatchdog = useCallback(() => {
+    clearStreamingWatchdog()
+    streamingWatchdogRef.current = setTimeout(() => {
+      streamingWatchdogRef.current = null
+      if (phaseRef.current === "streaming") {
+        dispatch({ type: "error", message: "Stream timed out — backend did not respond. Try again." })
+        dispatch({ type: "coord.done" })
+      }
+    }, 5 * 60 * 1000)
+  }, [clearStreamingWatchdog])
+
   const finishStreaming = useCallback((
     reason: string,
     options: { resumeQueue: boolean },
@@ -270,12 +291,13 @@ export function App({ client, inputEvents }: AppProps) {
       flushedPending,
       resumeQueue: options.resumeQueue,
     })
+    clearStreamingWatchdog()
     dispatch({ type: "coord.done" })
 
     if (options.resumeQueue) {
       resumeQueuedMessages()
     }
-  }, [flushBufferedStream, resumeQueuedMessages])
+  }, [clearStreamingWatchdog, flushBufferedStream, resumeQueuedMessages])
 
   useEffect(() => {
     return () => {
@@ -401,6 +423,7 @@ export function App({ client, inputEvents }: AppProps) {
     const expandedText = expandPromptSubmissionText(submission)
 
     dispatch({ type: "submitted" })
+    startStreamingWatchdog()
     dispatch({
       type: "msg.update",
       params: {
@@ -423,7 +446,7 @@ export function App({ client, inputEvents }: AppProps) {
       displayText: submission.text,
       attachments: submitAttachments.length > 0 ? submitAttachments : undefined,
     })
-  }, [client])
+  }, [client, startStreamingWatchdog])
 
   const handleSlashCommand = useCallback((
     text: string,

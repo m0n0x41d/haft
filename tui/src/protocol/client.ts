@@ -132,10 +132,14 @@ export class JsonRpcClient {
   }
 
   private writeAsync(line: string): Promise<void> {
+    const buf = Buffer.from(line, "utf-8")
+    trace(`rpc.write len=${buf.length}`)
+
+    // Use process.stdout.write() with drain handling for large messages.
+    // Raw fs.write() can block the event loop when the pipe buffer is full,
+    // causing a deadlock (TUI can't read Go's responses while write blocks).
     return new Promise<void>((resolve, reject) => {
-      const buf = Buffer.from(line, "utf-8")
-      trace(`rpc.write len=${buf.length}`)
-      this.write(1, buf, 0, buf.length, null, (err) => {
+      const ok = process.stdout.write(buf, (err) => {
         if (err) {
           trace(`rpc.write.err ${err.message}`)
           reject(err)
@@ -143,6 +147,12 @@ export class JsonRpcClient {
           resolve()
         }
       })
+
+      if (!ok) {
+        // Pipe buffer full — wait for drain before resolving.
+        // This yields the event loop so incoming messages can still be processed.
+        trace(`rpc.write.backpressure len=${buf.length}`)
+      }
     })
   }
 }

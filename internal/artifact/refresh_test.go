@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -749,4 +750,130 @@ func (s failingArtifactStore) GetEvidenceItems(ctx context.Context, artifactRef 
 		return nil, s.getEvidenceItems
 	}
 	return s.ArtifactStore.GetEvidenceItems(ctx, artifactRef)
+}
+
+func TestScanStale_SurfacesPendingVerifyAfterClaims(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	pastDate := time.Now().Add(-48 * time.Hour).UTC().Format("2006-01-02")
+	futureDate := time.Now().Add(7 * 24 * time.Hour).UTC().Format("2006-01-02")
+
+	// Create a decision directly with structured_data containing claims with verify_after.
+	claims := []DecisionClaim{
+		{
+			ID:          "claim-001",
+			Claim:       "p99 drops to < 10ms",
+			Observable:  "wrk benchmark",
+			Threshold:   "p99 < 10ms",
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: pastDate,
+		},
+		{
+			ID:          "claim-002",
+			Claim:       "error rate stable",
+			Observable:  "grafana dashboard",
+			Threshold:   "< 2%",
+			Status:      ClaimStatusUnverified,
+			VerifyAfter: futureDate,
+		},
+		{
+			ID:         "claim-003",
+			Claim:      "no regression on throughput",
+			Observable: "load test",
+			Threshold:  "> 1000 rps",
+			Status:     ClaimStatusUnverified,
+		},
+	}
+
+	structuredJSON, err := json.Marshal(DecisionFields{Claims: claims})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	validFuture := time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:         "dec-test-va",
+			Kind:       KindDecisionRecord,
+			Title:      "Test verify_after",
+			ValidUntil: validFuture,
+		},
+		Body:           "test decision",
+		StructuredData: string(structuredJSON),
+	})
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var pendingItems []StaleItem
+	for _, item := range items {
+		if item.ID == "dec-test-va" && item.Category == StaleCategoryPendingVerification {
+			pendingItems = append(pendingItems, item)
+		}
+	}
+
+	if len(pendingItems) != 1 {
+		t.Fatalf("expected 1 pending verification item (past date only), got %d. All items: %+v", len(pendingItems), items)
+	}
+
+	if !strings.Contains(pendingItems[0].Reason, "claim-001") {
+		t.Errorf("expected pending item to reference claim-001, got reason: %s", pendingItems[0].Reason)
+	}
+	if !strings.Contains(pendingItems[0].Reason, "wrk benchmark") {
+		t.Errorf("expected pending item to include observable, got reason: %s", pendingItems[0].Reason)
+	}
+}
+
+func TestScanStale_SurfacesPendingVerifyAfterClaimsForRefreshDueDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	verifyAfter := time.Now().Add(-72 * time.Hour).UTC().Format(time.RFC3339)
+	structuredJSON, err := json.Marshal(DecisionFields{
+		Claims: []DecisionClaim{
+			{
+				ID:          "claim-001",
+				Claim:       "desktop verification remains possible",
+				Observable:  "verification task output",
+				Threshold:   "measurement recorded",
+				Status:      ClaimStatusUnverified,
+				VerifyAfter: verifyAfter,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:         "dec-refresh-due",
+			Kind:       KindDecisionRecord,
+			Status:     StatusRefreshDue,
+			Title:      "Refresh due verification candidate",
+			ValidUntil: time.Now().Add(-72 * time.Hour).UTC().Format(time.RFC3339),
+		},
+		Body:           "test decision",
+		StructuredData: string(structuredJSON),
+	})
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range items {
+		if item.ID == "dec-refresh-due" && item.Category == StaleCategoryPendingVerification {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("expected refresh_due decision to surface pending verification finding, got %+v", items)
+	}
 }

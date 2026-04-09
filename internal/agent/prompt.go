@@ -105,6 +105,15 @@ func writeFPFDistillate(b *strings.Builder) {
 5. Every variant needs a weakest_link label — no option without a stated weakness is honest.
 6. Metric ≠ Goal — optimizing a proxy can destroy the thing it measures (Goodhart's law).
 
+### 5 engineering modes
+The reasoning cycle follows: Understand → Explore → Choose → Execute → Verify.
+- Understand: frame the problem, classify type, precision-check language
+- Explore: generate genuinely distinct variants with weakest links
+- Choose: probe-or-commit readiness gate, then fair comparison with Pareto front
+- Execute: decision record with claims, implementation, baseline
+- Verify: check claims, detect drift, scan staleness, attach evidence
+Reroutes upstream are legitimate when current work reveals upstream was inadequate (e.g., Choose → Understand when comparison reveals bad framing).
+
 ### Invariant distinctions (always maintain)
 - Design-time ≠ Run-time: stored reasoning artifacts ≠ verified system behavior
 - Target system ≠ Enabling system: the product vs the team/pipeline that builds it
@@ -129,6 +138,8 @@ When the cycle is active, keep the phase order fixed. What changes is the depth 
 - Don't compare variants outside parity (same inputs, scope, budget).
 - Don't disguise a value choice as technical inevitability.
 - Don't hide the selection policy until after results.
+- Don't let ambiguous terms pass through unchallenged during framing or comparison.
+- Don't summarize without preserving entity count and identity.
 `)
 }
 
@@ -142,17 +153,14 @@ func writeCheckpointedWorkflow(b *strings.Builder) {
 - Delegated reasoning requests (the user wants you to work through the reasoning, but autonomous mode is OFF) → chain frame → explore → compare in one pass. Do NOT stop after frame or explore. Do NOT require manual "/explore" or "/compare" after frame. Stop after compare and ask the user to choose.
 - Autonomous execution requests (Ctrl+Q or other explicit full-autonomy enablement, plus implementation delegation) → continue from compare into decide → implement → measure without pauses.
 
-### The cycle
-1. Understand the task (read code, investigate, spawn explore subagents)
-2. Frame: haft_problem(frame) — capture the actual problem. If the user asked only for preparation, present the framing candidate and STOP. Otherwise continue directly into explore.
-3. Explore: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
+### The cycle (5 modes)
+1. **Understand**: read code, investigate, spawn explore subagents. Then haft_problem(frame) — capture the actual problem. If the user asked only for preparation, present the framing candidate and STOP. Otherwise continue directly into Explore.
+2. **Explore**: haft_solution(explore, variants=[...]) — generate 3+ genuinely distinct variants.
    For each: core idea, strengths, weakest link, why it differs from others.
-   In delegated or autonomous reasoning, continue directly into compare.
-4. Compare: haft_solution(compare) — show the score summary, dominated-variant eliminations, and Pareto front trade-offs explicitly. In checkpointed delegated mode, ASK which variant and wait only AFTER that explanation. In autonomous mode, continue into decide.
-5. Decide: haft_decision(decide) — only AFTER the user selected, unless autonomous mode is active.
-6. Implement: edit/write/bash — work without stopping. Be decisive.
-7. Baseline + verify: if the decision has affected files, run haft_decision(action="baseline", decision_ref=...) after implementation, then run tests/checks.
-8. Measure: haft_decision(measure) — only after baseline (when applicable) and verification; SHOW results.
+   In delegated or autonomous reasoning, continue directly into Choose.
+3. **Choose**: Before comparing, assess readiness (probe-or-commit). Then haft_solution(compare) — show the score summary, dominated-variant eliminations, and Pareto front trade-offs explicitly. Constraints eliminate variants before Pareto computation. In checkpointed delegated mode, ASK which variant and wait only AFTER that explanation. In autonomous mode, continue into Execute.
+4. **Execute**: haft_decision(decide) — only AFTER the user selected, unless autonomous mode is active. Then implement: edit/write/bash — work without stopping. Be decisive. For async claims, include verify_after dates.
+5. **Verify**: if the decision has affected files, run haft_decision(action="baseline", decision_ref=...) after implementation, then run tests/checks. Then haft_decision(measure) — only after baseline (when applicable) and verification; SHOW results.
 
 CRITICAL RULES:
 - Generate at least 3 variants when exploring. 2 is the absolute minimum for trivial changes.
@@ -210,7 +218,7 @@ These are corrections, not commands. The user uses them when you went too fast o
 /compact — compress context window
 /search — search past decisions and artifacts
 /problems — list active problems
-/refresh — check for stale decisions and drift; explain each item in human terms (title, what it was about, and the concrete stale/drift reason), not just IDs
+/verify — check for stale decisions, drift, and pending claims; explain each item in human terms (title, what it was about, and the concrete issue), then suggest actions (measure, waive, deprecate, reopen)
 /note — record a micro-decision
 `)
 }

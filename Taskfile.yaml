@@ -84,6 +84,25 @@ tasks:
     cmds:
       - go run ./cmd/haft doctor
 
+  desktop:
+    desc: Run Haft desktop app (wails dev with hot reload)
+    dir: desktop
+    cmds:
+      - wails dev
+
+  desktop:build:
+    desc: Build Haft desktop app (production .app bundle)
+    dir: desktop
+    cmds:
+      - wails build
+      - echo "Built desktop/build/bin/haft.app"
+
+  desktop:open:
+    desc: Build and open Haft desktop app
+    deps: [desktop:build]
+    cmds:
+      - open desktop/build/bin/haft.app
+
   clean:
     desc: Remove local build artifacts
     cmds:

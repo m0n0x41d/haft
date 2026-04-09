@@ -82937,6 +82937,23 @@ function App2({ client: client2, inputEvents }) {
   const replaceBufferedStream = (0, import_react38.useCallback)((params, reason) => {
     streamUpdateBufferRef.current.replace(params, reason);
   }, []);
+  const streamingWatchdogRef = (0, import_react38.useRef)(null);
+  const clearStreamingWatchdog = (0, import_react38.useCallback)(() => {
+    if (streamingWatchdogRef.current) {
+      clearTimeout(streamingWatchdogRef.current);
+      streamingWatchdogRef.current = null;
+    }
+  }, []);
+  const startStreamingWatchdog = (0, import_react38.useCallback)(() => {
+    clearStreamingWatchdog();
+    streamingWatchdogRef.current = setTimeout(() => {
+      streamingWatchdogRef.current = null;
+      if (phaseRef.current === "streaming") {
+        dispatch({ type: "error", message: "Stream timed out \u2014 backend did not respond. Try again." });
+        dispatch({ type: "coord.done" });
+      }
+    }, 5 * 60 * 1e3);
+  }, [clearStreamingWatchdog]);
   const finishStreaming = (0, import_react38.useCallback)((reason, options) => {
     const flushedPending = flushBufferedStream(reason, { streaming: false });
     const shouldFinalize = shouldFinalizeStreaming(
@@ -82951,11 +82968,12 @@ function App2({ client: client2, inputEvents }) {
       flushedPending,
       resumeQueue: options.resumeQueue
     });
+    clearStreamingWatchdog();
     dispatch({ type: "coord.done" });
     if (options.resumeQueue) {
       resumeQueuedMessages();
     }
-  }, [flushBufferedStream, resumeQueuedMessages]);
+  }, [clearStreamingWatchdog, flushBufferedStream, resumeQueuedMessages]);
   (0, import_react38.useEffect)(() => {
     return () => {
       streamUpdateBufferRef.current.clear();
@@ -83085,6 +83103,7 @@ function App2({ client: client2, inputEvents }) {
   const sendSubmission = (0, import_react38.useCallback)((submission) => {
     const expandedText = expandPromptSubmissionText(submission);
     dispatch({ type: "submitted" });
+    startStreamingWatchdog();
     dispatch({
       type: "msg.update",
       params: {
@@ -83105,7 +83124,7 @@ function App2({ client: client2, inputEvents }) {
       displayText: submission.text,
       attachments: submitAttachments.length > 0 ? submitAttachments : void 0
     });
-  }, [client2]);
+  }, [client2, startStreamingWatchdog]);
   const handleSlashCommand = (0, import_react38.useCallback)((text, fromQueuedReplay) => {
     const cmd = leadingSlashCommand(text);
     const shouldResumeOnCancel = fromQueuedReplay && shouldResumeQueuedReplayAfterPickerCancel(text);
@@ -83648,10 +83667,10 @@ var init_client = __esm({
         });
       }
       writeAsync(line) {
+        const buf = Buffer.from(line, "utf-8");
+        trace(`rpc.write len=${buf.length}`);
         return new Promise((resolve2, reject) => {
-          const buf = Buffer.from(line, "utf-8");
-          trace(`rpc.write len=${buf.length}`);
-          this.write(1, buf, 0, buf.length, null, (err) => {
+          const ok = process.stdout.write(buf, (err) => {
             if (err) {
               trace(`rpc.write.err ${err.message}`);
               reject(err);
@@ -83659,6 +83678,9 @@ var init_client = __esm({
               resolve2();
             }
           });
+          if (!ok) {
+            trace(`rpc.write.backpressure len=${buf.length}`);
+          }
         });
       }
     };

@@ -476,19 +476,21 @@ const (
 
 // DecisionClaim is the canonical stored runtime state for one decision claim.
 type DecisionClaim struct {
-	ID         string      `json:"id"`
-	Claim      string      `json:"claim"`
-	Observable string      `json:"observable"`
-	Threshold  string      `json:"threshold"`
-	Status     ClaimStatus `json:"status,omitempty"`
+	ID          string      `json:"id"`
+	Claim       string      `json:"claim"`
+	Observable  string      `json:"observable"`
+	Threshold   string      `json:"threshold"`
+	Status      ClaimStatus `json:"status,omitempty"`
+	VerifyAfter string      `json:"verify_after,omitempty"` // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
 }
 
 // DecisionPrediction is a compatibility projection of a stored decision claim.
 type DecisionPrediction struct {
-	Claim      string      `json:"claim"`
-	Observable string      `json:"observable"`
-	Threshold  string      `json:"threshold"`
-	Status     ClaimStatus `json:"status,omitempty"`
+	Claim       string      `json:"claim"`
+	Observable  string      `json:"observable"`
+	Threshold   string      `json:"threshold"`
+	Status      ClaimStatus `json:"status,omitempty"`
+	VerifyAfter string      `json:"verify_after,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.

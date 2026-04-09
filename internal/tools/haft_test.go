@@ -742,7 +742,7 @@ func TestHaftSolutionTool_CompareAcceptsStructuredParityPlanInDeepMode(t *testin
 		"problem_ref": frameResult.Meta.ArtifactRef,
 		"dimensions": []map[string]any{
 			{"name": "latency", "role": "target", "valid_until": "2027-01-01"},
-			{"name": "cost", "role": "constraint"},
+			{"name": "cost", "role": "target"},
 		},
 		"parity_plan": map[string]any{
 			"baseline_set":        []string{"REST", "gRPC"},

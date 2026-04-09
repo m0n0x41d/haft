@@ -1,18 +1,24 @@
 import { useEffect, useState } from "react";
 
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { DecisionForm } from "../components/DecisionForm";
 import {
+  adoptProblemCandidate,
   createDecision,
+  dismissProblemCandidate,
   getConfig,
   getDecision,
+  getGovernanceOverview,
   getPortfolio,
   implementDecision,
   listDecisions,
   listPortfolios,
+  refreshGovernance,
   verifyDecision,
   type DecisionDetail,
   type DecisionSummary,
   type DesktopConfig,
+  type GovernanceOverview,
   type PortfolioDetail,
   type PortfolioSummary,
 } from "../lib/api";
@@ -35,6 +41,7 @@ export function Decisions({
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [activeId, setActiveId] = useState<string | null>(selectedId);
   const [config, setConfig] = useState<DesktopConfig | null>(null);
+  const [governance, setGovernance] = useState<GovernanceOverview | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [draftPortfolioID, setDraftPortfolioID] = useState("");
   const [draftPortfolio, setDraftPortfolio] = useState<PortfolioDetail | null>(null);
@@ -49,12 +56,44 @@ export function Decisions({
     }
   };
 
+  const refreshGovernanceOverview = async () => {
+    try {
+      const nextOverview = await getGovernanceOverview();
+      setGovernance(nextOverview);
+    } catch (error) {
+      reportError(error, "governance");
+    }
+  };
+
   useEffect(() => {
     void refreshDecisions();
     listPortfolios()
       .then((items) => setPortfolios(items.filter((portfolio) => portfolio.has_comparison)))
       .catch((error) => reportError(error, "portfolios"));
     getConfig().then(setConfig).catch((error) => reportError(error, "decision config"));
+    void refreshGovernanceOverview();
+  }, []);
+
+  useEffect(() => {
+    let stopStale: (() => void) | undefined;
+    let stopDrift: (() => void) | undefined;
+
+    try {
+      stopStale = EventsOn("scan.stale", () => {
+        void refreshGovernanceOverview();
+      });
+      stopDrift = EventsOn("scan.drift", () => {
+        void refreshGovernanceOverview();
+      });
+    } catch {
+      stopStale = undefined;
+      stopDrift = undefined;
+    }
+
+    return () => {
+      stopStale?.();
+      stopDrift?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -201,7 +240,13 @@ export function Decisions({
         )}
 
         {detail ? (
-          <DecisionDetailPanel detail={detail} config={config} onNavigate={onNavigate} />
+          <DecisionDetailPanel
+            detail={detail}
+            config={config}
+            governance={governance}
+            onNavigate={onNavigate}
+            onGovernanceChange={refreshGovernanceOverview}
+          />
         ) : activeId ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading...</p>
         ) : (
@@ -217,14 +262,26 @@ export function Decisions({
 function DecisionDetailPanel({
   detail,
   config,
+  governance,
   onNavigate,
+  onGovernanceChange,
 }: {
   detail: DecisionDetail;
   config: DesktopConfig | null;
+  governance: GovernanceOverview | null;
   onNavigate: NavigateFn;
+  onGovernanceChange: () => Promise<void>;
 }) {
   const [implementing, setImplementing] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [refreshingScan, setRefreshingScan] = useState(false);
+
+  const relevantFindings = (governance?.findings ?? []).filter(
+    (finding) => finding.artifact_ref === detail.id,
+  );
+  const relevantCandidates = (governance?.problem_candidates ?? []).filter(
+    (candidate) => candidate.source_artifact_ref === detail.id,
+  );
 
   const handleImplement = async () => {
     setImplementing(true);
@@ -258,6 +315,37 @@ function DecisionDetailPanel({
     }
   };
 
+  const handleRefreshGovernance = async () => {
+    setRefreshingScan(true);
+    try {
+      await refreshGovernance();
+      await onGovernanceChange();
+    } catch (error) {
+      reportError(error, "refresh governance");
+    } finally {
+      setRefreshingScan(false);
+    }
+  };
+
+  const handleAdoptCandidate = async (candidateID: string) => {
+    try {
+      const problem = await adoptProblemCandidate(candidateID);
+      await onGovernanceChange();
+      onNavigate("problems", problem.id);
+    } catch (error) {
+      reportError(error, "adopt problem candidate");
+    }
+  };
+
+  const handleDismissCandidate = async (candidateID: string) => {
+    try {
+      await dismissProblemCandidate(candidateID);
+      await onGovernanceChange();
+    } catch (error) {
+      reportError(error, "dismiss problem candidate");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -276,6 +364,13 @@ function DecisionDetailPanel({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={handleRefreshGovernance}
+            disabled={refreshingScan}
+            className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+          >
+            {refreshingScan ? "Scanning..." : "Refresh Scan"}
+          </button>
           <button
             onClick={handleVerify}
             disabled={verifying}
@@ -315,6 +410,7 @@ function DecisionDetailPanel({
                   <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Claim</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Observable</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Threshold</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Verify After</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Status</th>
                 </tr>
               </thead>
@@ -324,11 +420,115 @@ function DecisionDetailPanel({
                     <td className="px-4 py-2">{claim.claim}</td>
                     <td className="px-4 py-2 text-text-secondary">{claim.observable}</td>
                     <td className="px-4 py-2 font-mono text-xs">{claim.threshold}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-text-muted">{claim.verify_after || "now"}</td>
                     <td className="px-4 py-2"><ClaimStatusBadge status={claim.status} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {detail.affected_files.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Affected Files</h4>
+          <div className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+            <div className="space-y-1">
+              {detail.affected_files.map((filePath) => (
+                <p key={filePath} className="font-mono text-xs text-text-secondary">{filePath}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detail.coverage_modules.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Impacted Modules</h4>
+          <div className="space-y-2">
+            {detail.coverage_modules.map((module) => (
+              <div key={`${module.id}-${module.path}`} className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">{module.path || "(root)"}</p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {module.lang} · {module.decision_count} decision(s)
+                    </p>
+                  </div>
+
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${coverageStatusClassName(module.status)}`}>
+                    {module.status}
+                  </span>
+                </div>
+
+                {module.files.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {module.files.map((filePath) => (
+                      <p key={filePath} className="font-mono text-[11px] text-text-muted">{filePath}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {detail.coverage_warnings.length > 0 && (
+        <ListField label="Coverage Warnings" items={detail.coverage_warnings} variant="warning" />
+      )}
+
+      {detail.first_module_coverage && (
+        <Field
+          label="Governance Signal"
+          value="This decision established the first explicit governance coverage for at least one affected module."
+          variant="warning"
+        />
+      )}
+
+      {relevantFindings.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Live Findings</h4>
+          <div className="space-y-2">
+            {relevantFindings.map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-warning/20 bg-warning/5 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-medium text-text-primary">{finding.category.replaceAll("_", " ")}</span>
+                  <span className="text-[11px] text-text-muted">{finding.valid_until || "active"}</span>
+                </div>
+                <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relevantCandidates.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Follow-up Candidates</h4>
+          <div className="space-y-3">
+            {relevantCandidates.map((candidate) => (
+              <div key={candidate.id} className="rounded-lg border border-warning/20 bg-surface-1 px-4 py-4">
+                <p className="text-sm font-medium text-text-primary">{candidate.title}</p>
+                <p className="mt-2 text-sm text-text-secondary">{candidate.signal}</p>
+                <p className="mt-2 text-xs text-text-muted">Acceptance: {candidate.acceptance}</p>
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    onClick={() => void handleDismissCandidate(candidate.id)}
+                    className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    onClick={() => void handleAdoptCandidate(candidate.id)}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover"
+                  >
+                    Adopt problem
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -422,9 +622,14 @@ function ListField({
 }: {
   label: string;
   items: string[];
-  variant?: "danger";
+  variant?: "warning" | "danger";
 }) {
-  const borderColor = variant === "danger" ? "border-danger/20" : "border-border";
+  const borderColor =
+    variant === "warning"
+      ? "border-warning/20"
+      : variant === "danger"
+        ? "border-danger/20"
+        : "border-border";
 
   return (
     <div>
@@ -457,6 +662,16 @@ function ClaimStatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function coverageStatusClassName(status: string): string {
+  if (status === "covered") {
+    return "border-success/20 bg-success/10 text-success";
+  }
+  if (status === "partial") {
+    return "border-warning/20 bg-warning/10 text-warning";
+  }
+  return "border-danger/20 bg-danger/10 text-danger";
 }
 
 const inputClassName =

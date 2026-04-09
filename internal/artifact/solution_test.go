@@ -814,6 +814,105 @@ func TestComputeParetoFront_ExcludeSkipsMissingUnitBearingDimension(t *testing.T
 	}
 }
 
+func TestComputeParetoFront_EliminatesConstraintViolations(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "cost", "max_memory"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "cost": "$200", "max_memory": "500MB"},
+			"V2": {"latency": "15ms", "cost": "$100", "max_memory": "2000MB"},
+			"V3": {"latency": "8ms", "cost": "$150", "max_memory": "250MB"},
+		},
+	}
+
+	// max_memory is a constraint with lower_better polarity.
+	// V2 has 2000MB which is worse than V1 (500MB) and V3 (250MB) — should be eliminated.
+	// V1 (500MB) is worse than V3 (250MB) but better than V2 (2000MB) — NOT eliminated.
+	front, warnings := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "cost", Role: "target", Polarity: "lower_better"},
+		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	// V2 (2000MB) is worst on constraint — should be eliminated.
+	hasEliminationWarning := false
+	for _, w := range warnings {
+		if strings.Contains(w, "V2") && strings.Contains(w, "eliminated") {
+			hasEliminationWarning = true
+		}
+	}
+	if !hasEliminationWarning {
+		t.Fatalf("expected constraint elimination warning for V2, warnings = %+v", warnings)
+	}
+
+	// V2 should not be on the front
+	for _, v := range front {
+		if v == "V2" {
+			t.Fatalf("V2 should be eliminated by constraint violation but is on Pareto front: %+v", front)
+		}
+	}
+
+	// After V2 eliminated, V1 and V3 compete on targets.
+	// V3 (8ms, $150) dominates V1 (10ms, $200) on both target dimensions → front = [V3].
+	if len(front) != 1 || front[0] != "V3" {
+		t.Fatalf("expected front [V3] (dominates V1 on both targets after V2 eliminated), got %+v", front)
+	}
+}
+
+func TestComputeParetoFront_ConstraintAllPass(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "max_memory"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "max_memory": "256MB"},
+			"V2": {"latency": "8ms", "max_memory": "256MB"},
+		},
+	}
+
+	// Both variants have the same constraint score — neither eliminated
+	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	// No elimination warnings
+	for _, w := range warnings {
+		if strings.Contains(w, "eliminated") {
+			t.Fatalf("unexpected elimination warning: %s", w)
+		}
+	}
+
+	// V2 dominates on latency, both equal on constraint
+	if len(front) != 1 || front[0] != "V2" {
+		t.Fatalf("expected front [V2], got %+v", front)
+	}
+}
+
+func TestComputeParetoFront_ConstraintMissingDataPreserved(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "max_memory"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "max_memory": "256MB"},
+			"V2": {"latency": "8ms"}, // missing max_memory
+		},
+	}
+
+	// V2 has missing constraint data — should NOT be eliminated (conservative)
+	front, _ := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	// V2 should survive (missing data = no elimination)
+	found := false
+	for _, v := range front {
+		if v == "V2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("V2 should survive constraint check with missing data, got front %+v", front)
+	}
+}
+
 func TestCompareDimensionValues_ZeroFillInheritsNumericUnit(t *testing.T) {
 	comparison, status := compareDimensionValues("", "18ms", "lower_better", MissingDataPolicyZero)
 	if status != dimensionComparisonComparable {
@@ -1598,7 +1697,7 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 		ProblemRef: prob.Meta.ID,
 		Dimensions: []ComparisonDimension{
 			{Name: "latency", Role: "target"},
-			{Name: "cost", Role: "constraint"},
+			{Name: "cost", Role: "target"},
 		},
 		ParityPlan: &ParityPlan{
 			BaselineSet:       []string{"REST", "gRPC"},

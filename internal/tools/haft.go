@@ -943,9 +943,10 @@ Actions:
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"claim":      map[string]any{"type": "string", "description": "What should be true after implementation"},
-							"observable": map[string]any{"type": "string", "description": "How to verify (test name, command, file check)"},
-							"threshold":  map[string]any{"type": "string", "description": "What counts as passing"},
+							"claim":        map[string]any{"type": "string", "description": "What should be true after implementation"},
+							"observable":   map[string]any{"type": "string", "description": "How to verify (test name, command, file check)"},
+							"threshold":    map[string]any{"type": "string", "description": "What counts as passing"},
+							"verify_after": map[string]any{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims that need time before evidence is available"},
 						},
 						"required": []string{"claim", "observable", "threshold"},
 					},
@@ -1552,15 +1553,25 @@ func (t *HaftRefreshTool) Name() string { return "haft_refresh" }
 func (t *HaftRefreshTool) Schema() agent.ToolSchema {
 	return agent.ToolSchema{
 		Name: "haft_refresh",
-		Description: `Manage artifact lifecycle — detect stale decisions, check drift.
+		Description: `Manage artifact lifecycle — detect stale items, check drift, and act on findings.
 
 Actions:
-- scan: Find stale artifacts (expired valid_until, evidence decay).
-- drift: Check if files under decisions have changed since baseline.`,
+- scan: Find all stale artifacts (expired valid_until, evidence decay, pending verify_after claims).
+- drift: Check if files under decisions have changed since baseline.
+- waive: Extend validity of an artifact with justification (artifact_ref, reason required).
+- reopen: Start new problem cycle from a decision (artifact_ref, reason required).
+- supersede: Replace one artifact with another (artifact_ref, new_artifact_ref, reason required).
+- deprecate: Archive artifact as no longer relevant (artifact_ref, reason required).`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action": map[string]any{"type": "string", "enum": []string{"scan", "drift"}, "description": "scan | drift"},
+				"action":           map[string]any{"type": "string", "enum": []string{"scan", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
+				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to act on (waive/reopen/supersede/deprecate)"},
+				"reason":           map[string]any{"type": "string", "description": "Why this action is being taken"},
+				"new_valid_until":  map[string]any{"type": "string", "description": "(waive) New expiry date RFC3339 or YYYY-MM-DD. Default: +90 days"},
+				"evidence":         map[string]any{"type": "string", "description": "(waive) Evidence supporting the extension"},
+				"new_artifact_ref": map[string]any{"type": "string", "description": "(supersede) ID of the replacement artifact"},
+				"context":          map[string]any{"type": "string", "description": "Optional context filter for scan"},
 			},
 			"required": []any{"action"},
 		},
@@ -1595,6 +1606,61 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.PlainResult("No drift detected."), nil
 		}
 		return agent.PlainResult(present.DriftResponse(reports, "")), nil
+
+	case "waive":
+		ref, _ := args["artifact_ref"].(string)
+		if ref == "" {
+			return agent.ToolResult{}, fmt.Errorf("artifact_ref is required for waive")
+		}
+		reason, _ := args["reason"].(string)
+		validUntil, _ := args["new_valid_until"].(string)
+		evidence, _ := args["evidence"].(string)
+		a, err := artifact.WaiveArtifact(ctx, t.store, t.haftDir, ref, reason, validUntil, evidence)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "waive", reason, "extended")
+		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshWaive, a, nil, "")), nil
+
+	case "reopen":
+		ref, _ := args["artifact_ref"].(string)
+		if ref == "" {
+			return agent.ToolResult{}, fmt.Errorf("artifact_ref is required for reopen")
+		}
+		reason, _ := args["reason"].(string)
+		_, newProblem, err := artifact.ReopenDecision(ctx, t.store, t.haftDir, ref, reason)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "reopen", reason, "reopened as "+newProblem.Meta.ID)
+		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshReopen, nil, newProblem, "")), nil
+
+	case "supersede":
+		ref, _ := args["artifact_ref"].(string)
+		newRef, _ := args["new_artifact_ref"].(string)
+		if ref == "" || newRef == "" {
+			return agent.ToolResult{}, fmt.Errorf("artifact_ref and new_artifact_ref are required for supersede")
+		}
+		reason, _ := args["reason"].(string)
+		a, err := artifact.SupersedeArtifact(ctx, t.store, t.haftDir, ref, newRef, reason)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "supersede", reason, "superseded by "+newRef)
+		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshSupersede, a, nil, "")), nil
+
+	case "deprecate":
+		ref, _ := args["artifact_ref"].(string)
+		if ref == "" {
+			return agent.ToolResult{}, fmt.Errorf("artifact_ref is required for deprecate")
+		}
+		reason, _ := args["reason"].(string)
+		a, err := artifact.DeprecateArtifact(ctx, t.store, t.haftDir, ref, reason)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "deprecate", reason, "deprecated")
+		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshDeprecate, a, nil, "")), nil
 
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)

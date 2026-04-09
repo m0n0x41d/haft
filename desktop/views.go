@@ -92,30 +92,35 @@ type DecisionView struct {
 
 // DecisionDetailView is the full decision record.
 type DecisionDetailView struct {
-	ID                   string          `json:"id"`
-	Title                string          `json:"title"`
-	Status               string          `json:"status"`
-	Mode                 string          `json:"mode"`
-	SelectedTitle        string          `json:"selected_title"`
-	WhySelected          string          `json:"why_selected"`
-	SelectionPolicy      string          `json:"selection_policy"`
-	CounterArgument      string          `json:"counterargument"`
-	WeakestLink          string          `json:"weakest_link"`
-	WhyNotOthers         []RejectionView `json:"why_not_others"`
-	Invariants           []string        `json:"invariants"`
-	PreConditions        []string        `json:"pre_conditions"`
-	PostConditions       []string        `json:"post_conditions"`
-	Admissibility        []string        `json:"admissibility"`
-	EvidenceRequirements []string        `json:"evidence_requirements"`
-	RefreshTriggers      []string        `json:"refresh_triggers"`
-	Claims               []ClaimView     `json:"claims"`
-	RollbackTriggers     []string        `json:"rollback_triggers"`
-	RollbackSteps        []string        `json:"rollback_steps"`
-	RollbackBlastRadius  string          `json:"rollback_blast_radius"`
-	ValidUntil           string          `json:"valid_until"`
-	Body                 string          `json:"body"`
-	CreatedAt            string          `json:"created_at"`
-	UpdatedAt            string          `json:"updated_at"`
+	ID                   string               `json:"id"`
+	Title                string               `json:"title"`
+	Status               string               `json:"status"`
+	Mode                 string               `json:"mode"`
+	ProblemRefs          []string             `json:"problem_refs"`
+	SelectedTitle        string               `json:"selected_title"`
+	WhySelected          string               `json:"why_selected"`
+	SelectionPolicy      string               `json:"selection_policy"`
+	CounterArgument      string               `json:"counterargument"`
+	WeakestLink          string               `json:"weakest_link"`
+	WhyNotOthers         []RejectionView      `json:"why_not_others"`
+	Invariants           []string             `json:"invariants"`
+	PreConditions        []string             `json:"pre_conditions"`
+	PostConditions       []string             `json:"post_conditions"`
+	Admissibility        []string             `json:"admissibility"`
+	EvidenceRequirements []string             `json:"evidence_requirements"`
+	RefreshTriggers      []string             `json:"refresh_triggers"`
+	Claims               []ClaimView          `json:"claims"`
+	FirstModuleCoverage  bool                 `json:"first_module_coverage"`
+	AffectedFiles        []string             `json:"affected_files"`
+	CoverageModules      []CoverageModuleView `json:"coverage_modules"`
+	CoverageWarnings     []string             `json:"coverage_warnings"`
+	RollbackTriggers     []string             `json:"rollback_triggers"`
+	RollbackSteps        []string             `json:"rollback_steps"`
+	RollbackBlastRadius  string               `json:"rollback_blast_radius"`
+	ValidUntil           string               `json:"valid_until"`
+	Body                 string               `json:"body"`
+	CreatedAt            string               `json:"created_at"`
+	UpdatedAt            string               `json:"updated_at"`
 }
 
 type RejectionView struct {
@@ -307,7 +312,12 @@ func toPortfolioSummary(a *artifact.Artifact) PortfolioSummaryView {
 	}
 }
 
-func toDecisionDetail(a *artifact.Artifact) DecisionDetailView {
+func toDecisionDetail(
+	a *artifact.Artifact,
+	affectedFiles []string,
+	coverageModules []CoverageModuleView,
+	coverageWarnings []string,
+) DecisionDetailView {
 	df := a.UnmarshalDecisionFields()
 
 	rejections := make([]RejectionView, 0, len(df.WhyNotOthers))
@@ -332,6 +342,7 @@ func toDecisionDetail(a *artifact.Artifact) DecisionDetailView {
 		Title:                a.Meta.Title,
 		Status:               string(a.Meta.Status),
 		Mode:                 string(a.Meta.Mode),
+		ProblemRefs:          append([]string(nil), df.ProblemRefs...),
 		SelectedTitle:        df.SelectedTitle,
 		WhySelected:          df.WhySelected,
 		SelectionPolicy:      df.SelectionPolicy,
@@ -345,6 +356,10 @@ func toDecisionDetail(a *artifact.Artifact) DecisionDetailView {
 		EvidenceRequirements: df.EvidenceRequirements,
 		RefreshTriggers:      df.RefreshTriggers,
 		Claims:               claims,
+		FirstModuleCoverage:  df.FirstModuleCoverage,
+		AffectedFiles:        append([]string(nil), affectedFiles...),
+		CoverageModules:      append([]CoverageModuleView(nil), coverageModules...),
+		CoverageWarnings:     append([]string(nil), coverageWarnings...),
 		RollbackTriggers:     df.RollbackTriggers,
 		RollbackSteps:        df.RollbackSteps,
 		RollbackBlastRadius:  df.RollbackBlastRadius,

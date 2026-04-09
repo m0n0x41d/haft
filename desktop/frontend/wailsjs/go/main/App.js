@@ -10,12 +10,40 @@ export function CancelTask(arg1) {
   return window['go']['main']['App']['CancelTask'](arg1);
 }
 
+export function ArchiveTask(arg1) {
+  return window['go']['main']['App']['ArchiveTask'](arg1);
+}
+
+export function CharacterizeProblem(arg1) {
+  return window['go']['main']['App']['CharacterizeProblem'](arg1);
+}
+
+export function ComparePortfolio(arg1) {
+  return window['go']['main']['App']['ComparePortfolio'](arg1);
+}
+
+export function CreateDecision(arg1) {
+  return window['go']['main']['App']['CreateDecision'](arg1);
+}
+
+export function CreatePortfolio(arg1) {
+  return window['go']['main']['App']['CreatePortfolio'](arg1);
+}
+
+export function CreateProblem(arg1) {
+  return window['go']['main']['App']['CreateProblem'](arg1);
+}
+
 export function DetectAgents() {
   return window['go']['main']['App']['DetectAgents']();
 }
 
 export function GetDashboard() {
   return window['go']['main']['App']['GetDashboard']();
+}
+
+export function GetConfig() {
+  return window['go']['main']['App']['GetConfig']();
 }
 
 export function GetDecision(arg1) {
@@ -30,8 +58,16 @@ export function GetProblem(arg1) {
   return window['go']['main']['App']['GetProblem'](arg1);
 }
 
+export function GetTaskOutput(arg1) {
+  return window['go']['main']['App']['GetTaskOutput'](arg1);
+}
+
 export function ImplementDecision(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ImplementDecision'](arg1, arg2, arg3, arg4);
+}
+
+export function InitProject(arg1) {
+  return window['go']['main']['App']['InitProject'](arg1);
 }
 
 export function ListDecisions() {
@@ -52,6 +88,18 @@ export function ListProjects() {
 
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
+}
+
+export function OpenDirectoryPicker() {
+  return window['go']['main']['App']['OpenDirectoryPicker']();
+}
+
+export function OpenPathInIDE(arg1) {
+  return window['go']['main']['App']['OpenPathInIDE'](arg1);
+}
+
+export function SaveConfig(arg1) {
+  return window['go']['main']['App']['SaveConfig'](arg1);
 }
 
 export function ScanForProjects() {

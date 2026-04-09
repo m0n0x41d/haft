@@ -4,11 +4,25 @@ import {main} from '../models';
 
 export function AddProject(arg1:string):Promise<main.ProjectInfo>;
 
+export function ArchiveTask(arg1:string):Promise<void>;
+
 export function CancelTask(arg1:string):Promise<void>;
+
+export function CharacterizeProblem(arg1:any):Promise<main.ProblemDetailView>;
+
+export function ComparePortfolio(arg1:any):Promise<main.PortfolioDetailView>;
+
+export function CreateDecision(arg1:any):Promise<main.DecisionDetailView>;
+
+export function CreatePortfolio(arg1:any):Promise<main.PortfolioDetailView>;
+
+export function CreateProblem(arg1:any):Promise<main.ProblemDetailView>;
 
 export function DetectAgents():Promise<Array<main.InstalledAgent>>;
 
 export function GetDashboard():Promise<main.DashboardView>;
+
+export function GetConfig():Promise<any>;
 
 export function GetDecision(arg1:string):Promise<main.DecisionDetailView>;
 
@@ -16,17 +30,27 @@ export function GetPortfolio(arg1:string):Promise<main.PortfolioDetailView>;
 
 export function GetProblem(arg1:string):Promise<main.ProblemDetailView>;
 
+export function GetTaskOutput(arg1:string):Promise<string>;
+
 export function ImplementDecision(arg1:string,arg2:string,arg3:boolean,arg4:string):Promise<main.TaskState>;
+
+export function InitProject(arg1:string):Promise<main.ProjectInfo>;
 
 export function ListDecisions():Promise<Array<main.DecisionView>>;
 
-export function ListPortfolios():Promise<Array<main.ArtifactView>>;
+export function ListPortfolios():Promise<Array<any>>;
 
 export function ListProblems():Promise<Array<main.ProblemView>>;
 
 export function ListProjects():Promise<Array<main.ProjectInfo>>;
 
 export function ListTasks():Promise<Array<main.TaskState>>;
+
+export function OpenDirectoryPicker():Promise<string>;
+
+export function OpenPathInIDE(arg1:string):Promise<void>;
+
+export function SaveConfig(arg1:any):Promise<any>;
 
 export function ScanForProjects():Promise<Array<main.ProjectInfo>>;
 

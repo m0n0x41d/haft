@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
+
+import { DecisionForm } from "../components/DecisionForm";
 import {
+  createDecision,
   getConfig,
   getDecision,
+  getPortfolio,
   implementDecision,
   listDecisions,
+  listPortfolios,
   verifyDecision,
   type DecisionDetail,
   type DecisionSummary,
   type DesktopConfig,
+  type PortfolioDetail,
+  type PortfolioSummary,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 
@@ -24,64 +31,183 @@ export function Decisions({
   onNavigate: NavigateFn;
 }) {
   const [decisions, setDecisions] = useState<DecisionSummary[]>([]);
+  const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [activeId, setActiveId] = useState<string | null>(selectedId);
   const [config, setConfig] = useState<DesktopConfig | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [draftPortfolioID, setDraftPortfolioID] = useState("");
+  const [draftPortfolio, setDraftPortfolio] = useState<PortfolioDetail | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const refreshDecisions = async () => {
+    try {
+      const nextDecisions = await listDecisions();
+      setDecisions(nextDecisions);
+    } catch (error) {
+      reportError(error, "decisions");
+    }
+  };
 
   useEffect(() => {
-    listDecisions().then(setDecisions).catch((error) => {
-      reportError(error, "decisions");
-    });
-    getConfig().then(setConfig).catch((error) => {
-      reportError(error, "decision config");
-    });
+    void refreshDecisions();
+    listPortfolios()
+      .then((items) => setPortfolios(items.filter((portfolio) => portfolio.has_comparison)))
+      .catch((error) => reportError(error, "portfolios"));
+    getConfig().then(setConfig).catch((error) => reportError(error, "decision config"));
   }, []);
+
+  useEffect(() => {
+    setActiveId(selectedId);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!activeId) {
       setDetail(null);
       return;
     }
-    getDecision(activeId).then(setDetail).catch((error) => {
-      reportError(error, "decision detail");
-    });
+
+    getDecision(activeId)
+      .then(setDetail)
+      .catch((error) => {
+        reportError(error, "decision detail");
+      });
   }, [activeId]);
 
   useEffect(() => {
-    setActiveId(selectedId);
-  }, [selectedId]);
+    if (!draftPortfolioID) {
+      setDraftPortfolio(null);
+      return;
+    }
+
+    getPortfolio(draftPortfolioID)
+      .then(setDraftPortfolio)
+      .catch((error) => {
+        reportError(error, "decision portfolio");
+      });
+  }, [draftPortfolioID]);
+
+  useEffect(() => {
+    if (showCreate && !draftPortfolioID && portfolios.length > 0) {
+      setDraftPortfolioID(portfolios[0].id);
+    }
+  }, [draftPortfolioID, portfolios, showCreate]);
+
+  const handleCreate = async (value: Parameters<typeof createDecision>[0]) => {
+    setSubmitting(true);
+
+    try {
+      const created = await createDecision(value);
+      setDetail(created);
+      setActiveId(created.id);
+      setShowCreate(false);
+      await refreshDecisions();
+    } catch (error) {
+      reportError(error, "create decision");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex gap-6 h-[calc(100vh-7rem)]">
-      <div className="w-80 shrink-0 overflow-y-auto space-y-1">
-        {decisions.map((d) => (
-          <button
-            key={d.id}
-            onClick={() => setActiveId(d.id)}
-            className={`w-full text-left px-4 py-3 rounded-lg transition-colors border ${
-              activeId === d.id
-                ? "bg-surface-2 border-accent/30"
-                : "bg-surface-1 border-transparent hover:bg-surface-2 hover:border-border"
-            }`}
-          >
-            <span className="text-sm font-medium block truncate">{d.selected_title}</span>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-text-muted font-mono">{d.id}</span>
-              {d.valid_until && <span className="text-xs text-text-muted">until {d.valid_until}</span>}
-            </div>
-            {d.weakest_link && <p className="text-xs text-warning/70 mt-1 line-clamp-1">WLNK: {d.weakest_link}</p>}
-          </button>
-        ))}
-        {decisions.length === 0 && <p className="text-sm text-text-muted text-center py-8">No decisions</p>}
+      <div className="w-80 shrink-0 overflow-y-auto space-y-3">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="w-full rounded-xl border border-dashed border-accent/40 bg-accent/5 px-4 py-3 text-left text-sm text-text-primary transition-colors hover:border-accent/60 hover:bg-accent/10"
+        >
+          <span className="font-medium">+ Record decision</span>
+          <p className="mt-1 text-xs text-text-muted">Turn a compared portfolio into a decision record.</p>
+        </button>
+
+        <div className="space-y-1">
+          {decisions.map((decision) => (
+            <button
+              key={decision.id}
+              onClick={() => {
+                setActiveId(decision.id);
+                setShowCreate(false);
+              }}
+              className={`w-full rounded-lg border px-4 py-3 text-left transition-colors ${
+                activeId === decision.id
+                  ? "border-accent/30 bg-surface-2"
+                  : "border-transparent bg-surface-1 hover:border-border hover:bg-surface-2"
+              }`}
+            >
+              <span className="block truncate text-sm font-medium">{decision.selected_title}</span>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="font-mono text-xs text-text-muted">{decision.id}</span>
+                {decision.valid_until && (
+                  <span className="text-xs text-text-muted">until {decision.valid_until}</span>
+                )}
+              </div>
+              {decision.weakest_link && (
+                <p className="mt-1 line-clamp-1 text-xs text-warning/70">WLNK: {decision.weakest_link}</p>
+              )}
+            </button>
+          ))}
+
+          {decisions.length === 0 && (
+            <p className="py-8 text-center text-sm text-text-muted">No decisions</p>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto space-y-6 pb-8">
+        {showCreate && (
+          <div className="space-y-5 rounded-2xl border border-border bg-surface-1 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-text-muted">Decide</p>
+                <h3 className="mt-1 text-lg font-semibold text-text-primary">Select from a compared portfolio</h3>
+              </div>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs uppercase tracking-[0.2em] text-text-muted">Compared Portfolio</span>
+              <select
+                value={draftPortfolioID}
+                onChange={(event) => setDraftPortfolioID(event.target.value)}
+                className={inputClassName}
+              >
+                {portfolios.length === 0 && <option value="">No compared portfolios available</option>}
+                {portfolios.map((portfolio) => (
+                  <option key={portfolio.id} value={portfolio.id}>
+                    {portfolio.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {draftPortfolio ? (
+              <DecisionForm
+                portfolio={draftPortfolio}
+                onSubmit={handleCreate}
+                onCancel={() => setShowCreate(false)}
+                submitting={submitting}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-surface-2/60 p-5 text-sm text-text-secondary">
+                Compare a portfolio first. Decisions require portfolio-backed selection data.
+              </div>
+            )}
+          </div>
+        )}
+
         {detail ? (
           <DecisionDetailPanel detail={detail} config={config} onNavigate={onNavigate} />
         ) : activeId ? (
-          <p className="text-sm text-text-muted py-8 text-center">Loading...</p>
+          <p className="py-8 text-center text-sm text-text-muted">Loading...</p>
         ) : (
-          <p className="text-sm text-text-muted py-8 text-center">Select a decision to view details</p>
+          <div className="rounded-2xl border border-border bg-surface-1 p-6 text-sm text-text-muted">
+            Select a decision to inspect it, or record a new one from a compared portfolio.
+          </div>
         )}
       </div>
     </div>
@@ -134,11 +260,13 @@ function DecisionDetailPanel({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">{detail.selected_title}</h2>
-          <p className="text-xs text-text-muted font-mono mt-1">{detail.id}</p>
-          {detail.valid_until && <p className="text-xs text-text-secondary mt-1">Valid until {detail.valid_until}</p>}
+          <p className="mt-1 font-mono text-xs text-text-muted">{detail.id}</p>
+          {detail.valid_until && (
+            <p className="mt-1 text-xs text-text-secondary">Valid until {detail.valid_until}</p>
+          )}
           <p className="mt-2 text-xs text-text-muted">
             Implement uses <span className="font-mono text-text-secondary">{config?.default_agent ?? "claude"}</span>
             {config?.default_worktree === false ? " in the active project folder." : " in a fresh worktree by default."}
@@ -147,18 +275,18 @@ function DecisionDetailPanel({
             Verify uses <span className="font-mono text-text-secondary">{config?.verify_agent ?? config?.default_agent ?? "claude"}</span>.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={handleVerify}
             disabled={verifying}
-            className="text-xs px-3 py-1.5 rounded-lg bg-surface-2 text-text-secondary hover:bg-surface-3 border border-border transition-colors disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
           >
             {verifying ? "Verifying..." : "Verify Claims"}
           </button>
           <button
             onClick={handleImplement}
             disabled={implementing}
-            className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+            className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             {implementing ? "Spawning..." : "Implement"}
           </button>
@@ -170,29 +298,33 @@ function DecisionDetailPanel({
       {detail.weakest_link && <Field label="Weakest Link" value={detail.weakest_link} variant="warning" />}
       {detail.counterargument && <Field label="Counterargument" value={detail.counterargument} />}
 
-      {detail.invariants?.length > 0 && <ListField label="Invariants (must hold)" items={detail.invariants} />}
-      {detail.admissibility?.length > 0 && <ListField label="Not Acceptable" items={detail.admissibility} variant="danger" />}
+      {detail.invariants.length > 0 && (
+        <ListField label="Invariants (must hold)" items={detail.invariants} />
+      )}
+      {detail.admissibility.length > 0 && (
+        <ListField label="Not Acceptable" items={detail.admissibility} variant="danger" />
+      )}
 
-      {detail.claims?.length > 0 && (
+      {detail.claims.length > 0 && (
         <div>
-          <h4 className="text-xs text-text-muted uppercase tracking-wider mb-2">Claims & Predictions</h4>
-          <div className="border border-border rounded-lg overflow-hidden">
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Claims & Predictions</h4>
+          <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface-2">
-                  <th className="text-left px-4 py-2 text-xs text-text-muted font-medium">Claim</th>
-                  <th className="text-left px-4 py-2 text-xs text-text-muted font-medium">Observable</th>
-                  <th className="text-left px-4 py-2 text-xs text-text-muted font-medium">Threshold</th>
-                  <th className="text-left px-4 py-2 text-xs text-text-muted font-medium">Status</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Claim</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Observable</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Threshold</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-text-muted">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {detail.claims.map((c) => (
-                  <tr key={c.id} className="border-t border-border">
-                    <td className="px-4 py-2">{c.claim}</td>
-                    <td className="px-4 py-2 text-text-secondary">{c.observable}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{c.threshold}</td>
-                    <td className="px-4 py-2"><ClaimStatusBadge status={c.status} /></td>
+                {detail.claims.map((claim) => (
+                  <tr key={claim.id} className="border-t border-border">
+                    <td className="px-4 py-2">{claim.claim}</td>
+                    <td className="px-4 py-2 text-text-secondary">{claim.observable}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{claim.threshold}</td>
+                    <td className="px-4 py-2"><ClaimStatusBadge status={claim.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -201,69 +333,110 @@ function DecisionDetailPanel({
         </div>
       )}
 
-      {detail.why_not_others?.length > 0 && (
+      {detail.why_not_others.length > 0 && (
         <div>
-          <h4 className="text-xs text-text-muted uppercase tracking-wider mb-2">Rejected Alternatives</h4>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Rejected Alternatives</h4>
           <div className="space-y-2">
-            {detail.why_not_others.map((r, i) => (
-              <div key={i} className="bg-surface-1 rounded-lg px-4 py-3 border border-border">
-                <span className="text-sm font-medium text-text-secondary">{r.variant}</span>
-                <p className="text-xs text-text-muted mt-1">{r.reason}</p>
+            {detail.why_not_others.map((rejection, index) => (
+              <div key={`${rejection.variant}-${index}`} className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+                <span className="text-sm font-medium text-text-secondary">{rejection.variant}</span>
+                <p className="mt-1 text-xs text-text-muted">{rejection.reason}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {detail.pre_conditions?.length > 0 && <ListField label="Pre-conditions" items={detail.pre_conditions} />}
-      {detail.post_conditions?.length > 0 && <ListField label="Post-conditions" items={detail.post_conditions} />}
-      {detail.evidence_requirements?.length > 0 && <ListField label="Evidence Requirements" items={detail.evidence_requirements} />}
+      {detail.pre_conditions.length > 0 && <ListField label="Pre-conditions" items={detail.pre_conditions} />}
+      {detail.post_conditions.length > 0 && <ListField label="Post-conditions" items={detail.post_conditions} />}
+      {detail.evidence_requirements.length > 0 && (
+        <ListField label="Evidence Requirements" items={detail.evidence_requirements} />
+      )}
 
-      {detail.rollback_triggers?.length > 0 && (
-        <div className="bg-danger/5 rounded-lg p-4 border border-danger/20">
-          <h4 className="text-xs text-danger uppercase tracking-wider mb-2">Rollback Plan</h4>
+      {detail.rollback_triggers.length > 0 && (
+        <div className="rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-danger">Rollback Plan</h4>
           <div className="space-y-2">
             <div>
               <span className="text-xs text-text-muted">Triggers:</span>
               <ul className="mt-1 space-y-1">
-                {detail.rollback_triggers.map((t, i) => <li key={i} className="text-sm text-text-secondary">{t}</li>)}
+                {detail.rollback_triggers.map((trigger) => (
+                  <li key={trigger} className="text-sm text-text-secondary">{trigger}</li>
+                ))}
               </ul>
             </div>
-            {detail.rollback_steps?.length > 0 && (
+
+            {detail.rollback_steps.length > 0 && (
               <div>
                 <span className="text-xs text-text-muted">Steps:</span>
-                <ol className="mt-1 space-y-1 list-decimal list-inside">
-                  {detail.rollback_steps.map((s, i) => <li key={i} className="text-sm text-text-secondary">{s}</li>)}
+                <ol className="mt-1 list-inside list-decimal space-y-1">
+                  {detail.rollback_steps.map((step) => (
+                    <li key={step} className="text-sm text-text-secondary">{step}</li>
+                  ))}
                 </ol>
               </div>
             )}
-            {detail.rollback_blast_radius && <p className="text-xs text-text-muted mt-2">Blast radius: {detail.rollback_blast_radius}</p>}
+
+            {detail.rollback_blast_radius && (
+              <p className="mt-2 text-xs text-text-muted">Blast radius: {detail.rollback_blast_radius}</p>
+            )}
           </div>
         </div>
       )}
 
-      {detail.refresh_triggers?.length > 0 && <ListField label="Refresh Triggers" items={detail.refresh_triggers} />}
+      {detail.refresh_triggers.length > 0 && <ListField label="Refresh Triggers" items={detail.refresh_triggers} />}
     </div>
   );
 }
 
-function Field({ label, value, variant }: { label: string; value: string; variant?: "warning" | "danger" }) {
-  const borderColor = variant === "warning" ? "border-warning/20" : variant === "danger" ? "border-danger/20" : "border-border";
+function Field({
+  label,
+  value,
+  variant,
+}: {
+  label: string;
+  value: string;
+  variant?: "warning" | "danger";
+}) {
+  const borderColor =
+    variant === "warning"
+      ? "border-warning/20"
+      : variant === "danger"
+        ? "border-danger/20"
+        : "border-border";
+
   return (
     <div>
-      <h4 className="text-xs text-text-muted uppercase tracking-wider mb-1">{label}</h4>
-      <p className={`text-sm text-text-primary bg-surface-1 rounded-lg px-4 py-3 border ${borderColor}`}>{value}</p>
+      <h4 className="mb-1 text-xs uppercase tracking-wider text-text-muted">{label}</h4>
+      <p className={`rounded-lg border bg-surface-1 px-4 py-3 text-sm text-text-primary ${borderColor}`}>
+        {value}
+      </p>
     </div>
   );
 }
 
-function ListField({ label, items, variant }: { label: string; items: string[]; variant?: "danger" }) {
+function ListField({
+  label,
+  items,
+  variant,
+}: {
+  label: string;
+  items: string[];
+  variant?: "danger";
+}) {
+  const borderColor = variant === "danger" ? "border-danger/20" : "border-border";
+
   return (
     <div>
-      <h4 className="text-xs text-text-muted uppercase tracking-wider mb-1">{label}</h4>
-      <ul className="space-y-1">
-        {items.map((item, i) => (
-          <li key={i} className={`text-sm bg-surface-1 rounded-lg px-4 py-2 border ${variant === "danger" ? "border-danger/20 text-danger/80" : "border-border text-text-primary"}`}>{item}</li>
+      <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">{label}</h4>
+      <ul className="space-y-2">
+        {items.map((item) => (
+          <li
+            key={`${label}-${item}`}
+            className={`rounded-lg border bg-surface-1 px-4 py-2 text-sm text-text-primary ${borderColor}`}
+          >
+            {item}
+          </li>
         ))}
       </ul>
     </div>
@@ -271,11 +444,20 @@ function ListField({ label, items, variant }: { label: string; items: string[]; 
 }
 
 function ClaimStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    unverified: "bg-surface-2 text-text-muted",
-    supported: "bg-success/10 text-success",
-    weakened: "bg-warning/10 text-warning",
-    refuted: "bg-danger/10 text-danger",
+  const colors: Record<string, string> = {
+    unverified: "border-border bg-surface-2 text-text-muted",
+    supported: "border-success/20 bg-success/10 text-success",
+    weakened: "border-warning/20 bg-warning/10 text-warning",
+    refuted: "border-danger/20 bg-danger/10 text-danger",
+    inconclusive: "border-border bg-surface-2 text-text-muted",
   };
-  return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] ?? styles.unverified}`}>{status || "unverified"}</span>;
+
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-xs ${colors[status] ?? colors.unverified}`}>
+      {status}
+    </span>
+  );
 }
+
+const inputClassName =
+  "w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent/60";

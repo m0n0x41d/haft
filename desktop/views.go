@@ -48,22 +48,34 @@ type ProblemView struct {
 
 // ProblemDetailView is the full problem card.
 type ProblemDetailView struct {
-	ID                    string              `json:"id"`
-	Title                 string              `json:"title"`
-	Status                string              `json:"status"`
-	Mode                  string              `json:"mode"`
-	Signal                string              `json:"signal"`
-	Constraints           []string            `json:"constraints"`
-	OptimizationTargets   []string            `json:"optimization_targets"`
-	ObservationIndicators []string            `json:"observation_indicators"`
-	Acceptance            string              `json:"acceptance"`
-	BlastRadius           string              `json:"blast_radius"`
-	Reversibility         string              `json:"reversibility"`
-	LinkedPortfolios      []ArtifactView      `json:"linked_portfolios"`
-	LinkedDecisions       []ArtifactView      `json:"linked_decisions"`
-	Body                  string              `json:"body"`
-	CreatedAt             string              `json:"created_at"`
-	UpdatedAt             string              `json:"updated_at"`
+	ID                     string                 `json:"id"`
+	Title                  string                 `json:"title"`
+	Status                 string                 `json:"status"`
+	Mode                   string                 `json:"mode"`
+	Signal                 string                 `json:"signal"`
+	Constraints            []string               `json:"constraints"`
+	OptimizationTargets    []string               `json:"optimization_targets"`
+	ObservationIndicators  []string               `json:"observation_indicators"`
+	Acceptance             string                 `json:"acceptance"`
+	BlastRadius            string                 `json:"blast_radius"`
+	Reversibility          string                 `json:"reversibility"`
+	Characterizations      []CharacterizationView `json:"characterizations"`
+	LatestCharacterization *CharacterizationView  `json:"latest_characterization,omitempty"`
+	LinkedPortfolios       []ArtifactView         `json:"linked_portfolios"`
+	LinkedDecisions        []ArtifactView         `json:"linked_decisions"`
+	Body                   string                 `json:"body"`
+	CreatedAt              string                 `json:"created_at"`
+	UpdatedAt              string                 `json:"updated_at"`
+}
+
+type PortfolioSummaryView struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Status        string `json:"status"`
+	Mode          string `json:"mode"`
+	ProblemRef    string `json:"problem_ref"`
+	HasComparison bool   `json:"has_comparison"`
+	CreatedAt     string `json:"created_at"`
 }
 
 // DecisionView is a summary for decision lists.
@@ -80,30 +92,30 @@ type DecisionView struct {
 
 // DecisionDetailView is the full decision record.
 type DecisionDetailView struct {
-	ID                   string             `json:"id"`
-	Title                string             `json:"title"`
-	Status               string             `json:"status"`
-	Mode                 string             `json:"mode"`
-	SelectedTitle        string             `json:"selected_title"`
-	WhySelected          string             `json:"why_selected"`
-	SelectionPolicy      string             `json:"selection_policy"`
-	CounterArgument      string             `json:"counterargument"`
-	WeakestLink          string             `json:"weakest_link"`
-	WhyNotOthers         []RejectionView    `json:"why_not_others"`
-	Invariants           []string           `json:"invariants"`
-	PreConditions        []string           `json:"pre_conditions"`
-	PostConditions       []string           `json:"post_conditions"`
-	Admissibility        []string           `json:"admissibility"`
-	EvidenceRequirements []string           `json:"evidence_requirements"`
-	RefreshTriggers      []string           `json:"refresh_triggers"`
-	Claims               []ClaimView        `json:"claims"`
-	RollbackTriggers     []string           `json:"rollback_triggers"`
-	RollbackSteps        []string           `json:"rollback_steps"`
-	RollbackBlastRadius  string             `json:"rollback_blast_radius"`
-	ValidUntil           string             `json:"valid_until"`
-	Body                 string             `json:"body"`
-	CreatedAt            string             `json:"created_at"`
-	UpdatedAt            string             `json:"updated_at"`
+	ID                   string          `json:"id"`
+	Title                string          `json:"title"`
+	Status               string          `json:"status"`
+	Mode                 string          `json:"mode"`
+	SelectedTitle        string          `json:"selected_title"`
+	WhySelected          string          `json:"why_selected"`
+	SelectionPolicy      string          `json:"selection_policy"`
+	CounterArgument      string          `json:"counterargument"`
+	WeakestLink          string          `json:"weakest_link"`
+	WhyNotOthers         []RejectionView `json:"why_not_others"`
+	Invariants           []string        `json:"invariants"`
+	PreConditions        []string        `json:"pre_conditions"`
+	PostConditions       []string        `json:"post_conditions"`
+	Admissibility        []string        `json:"admissibility"`
+	EvidenceRequirements []string        `json:"evidence_requirements"`
+	RefreshTriggers      []string        `json:"refresh_triggers"`
+	Claims               []ClaimView     `json:"claims"`
+	RollbackTriggers     []string        `json:"rollback_triggers"`
+	RollbackSteps        []string        `json:"rollback_steps"`
+	RollbackBlastRadius  string          `json:"rollback_blast_radius"`
+	ValidUntil           string          `json:"valid_until"`
+	Body                 string          `json:"body"`
+	CreatedAt            string          `json:"created_at"`
+	UpdatedAt            string          `json:"updated_at"`
 }
 
 type RejectionView struct {
@@ -145,14 +157,14 @@ type VariantView struct {
 }
 
 type ComparisonView struct {
-	Dimensions      []string                       `json:"dimensions"`
-	Scores          map[string]map[string]string    `json:"scores"`
-	NonDominatedSet []string                        `json:"non_dominated_set"`
-	DominatedNotes  []DominatedNote                 `json:"dominated_notes"`
-	ParetoTradeoffs []TradeoffNote                  `json:"pareto_tradeoffs"`
-	PolicyApplied   string                          `json:"policy_applied"`
-	SelectedRef     string                          `json:"selected_ref"`
-	Recommendation  string                          `json:"recommendation"`
+	Dimensions      []string                     `json:"dimensions"`
+	Scores          map[string]map[string]string `json:"scores"`
+	NonDominatedSet []string                     `json:"non_dominated_set"`
+	DominatedNotes  []DominatedNote              `json:"dominated_notes"`
+	ParetoTradeoffs []TradeoffNote               `json:"pareto_tradeoffs"`
+	PolicyApplied   string                       `json:"policy_applied"`
+	SelectedRef     string                       `json:"selected_ref"`
+	Recommendation  string                       `json:"recommendation"`
 }
 
 type DominatedNote struct {
@@ -164,6 +176,36 @@ type DominatedNote struct {
 type TradeoffNote struct {
 	Variant string `json:"variant"`
 	Summary string `json:"summary"`
+}
+
+type CharacterizationView struct {
+	Version    int             `json:"version"`
+	Dimensions []DimensionView `json:"dimensions"`
+	ParityPlan *ParityPlanView `json:"parity_plan,omitempty"`
+}
+
+type DimensionView struct {
+	Name         string `json:"name"`
+	ScaleType    string `json:"scale_type"`
+	Unit         string `json:"unit"`
+	Polarity     string `json:"polarity"`
+	Role         string `json:"role"`
+	HowToMeasure string `json:"how_to_measure"`
+	ValidUntil   string `json:"valid_until"`
+}
+
+type ParityPlanView struct {
+	BaselineSet       []string       `json:"baseline_set"`
+	Window            string         `json:"window"`
+	Budget            string         `json:"budget"`
+	Normalization     []NormRuleView `json:"normalization"`
+	MissingDataPolicy string         `json:"missing_data_policy"`
+	PinnedConditions  []string       `json:"pinned_conditions"`
+}
+
+type NormRuleView struct {
+	Dimension string `json:"dimension"`
+	Method    string `json:"method"`
 }
 
 // --- Projection functions: domain types → view models ---
@@ -230,22 +272,38 @@ func toProblemDetail(ctx context.Context, a *artifact.Artifact, store *artifact.
 	}
 
 	return ProblemDetailView{
-		ID:                    a.Meta.ID,
-		Title:                 a.Meta.Title,
-		Status:                string(a.Meta.Status),
-		Mode:                  string(a.Meta.Mode),
-		Signal:                pf.Signal,
-		Constraints:           pf.Constraints,
-		OptimizationTargets:   pf.OptimizationTargets,
-		ObservationIndicators: pf.ObservationIndicators,
-		Acceptance:            pf.Acceptance,
-		BlastRadius:           pf.BlastRadius,
-		Reversibility:         pf.Reversibility,
-		LinkedPortfolios:      linkedPortfolios,
-		LinkedDecisions:       linkedDecisions,
-		Body:                  a.Body,
-		CreatedAt:             a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:             a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:                     a.Meta.ID,
+		Title:                  a.Meta.Title,
+		Status:                 string(a.Meta.Status),
+		Mode:                   string(a.Meta.Mode),
+		Signal:                 pf.Signal,
+		Constraints:            pf.Constraints,
+		OptimizationTargets:    pf.OptimizationTargets,
+		ObservationIndicators:  pf.ObservationIndicators,
+		Acceptance:             pf.Acceptance,
+		BlastRadius:            pf.BlastRadius,
+		Reversibility:          pf.Reversibility,
+		Characterizations:      toCharacterizationViews(pf.Characterizations),
+		LatestCharacterization: latestCharacterizationView(pf.Characterizations),
+		LinkedPortfolios:       linkedPortfolios,
+		LinkedDecisions:        linkedDecisions,
+		Body:                   a.Body,
+		CreatedAt:              a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:              a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func toPortfolioSummary(a *artifact.Artifact) PortfolioSummaryView {
+	fields := a.UnmarshalPortfolioFields()
+
+	return PortfolioSummaryView{
+		ID:            a.Meta.ID,
+		Title:         a.Meta.Title,
+		Status:        string(a.Meta.Status),
+		Mode:          string(a.Meta.Mode),
+		ProblemRef:    fields.ProblemRef,
+		HasComparison: fields.Comparison != nil,
+		CreatedAt:     a.Meta.CreatedAt.Format("2006-01-02"),
 	}
 }
 
@@ -292,8 +350,8 @@ func toDecisionDetail(a *artifact.Artifact) DecisionDetailView {
 		RollbackBlastRadius:  df.RollbackBlastRadius,
 		ValidUntil:           a.Meta.ValidUntil,
 		Body:                 a.Body,
-		CreatedAt:             a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:             a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:            a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:            a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
 
@@ -350,4 +408,74 @@ func toPortfolioDetail(a *artifact.Artifact) PortfolioDetailView {
 		CreatedAt:  a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:  a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
+}
+
+func toCharacterizationViews(values []artifact.CharacterizationSnapshot) []CharacterizationView {
+	views := make([]CharacterizationView, 0, len(values))
+
+	for _, value := range values {
+		views = append(views, CharacterizationView{
+			Version:    value.Version,
+			Dimensions: toDimensionViews(value.Dimensions),
+			ParityPlan: toParityPlanView(value.ParityPlan),
+		})
+	}
+
+	return views
+}
+
+func latestCharacterizationView(values []artifact.CharacterizationSnapshot) *CharacterizationView {
+	if len(values) == 0 {
+		return nil
+	}
+
+	latest := values[len(values)-1]
+	view := CharacterizationView{
+		Version:    latest.Version,
+		Dimensions: toDimensionViews(latest.Dimensions),
+		ParityPlan: toParityPlanView(latest.ParityPlan),
+	}
+
+	return &view
+}
+
+func toDimensionViews(values []artifact.ComparisonDimension) []DimensionView {
+	dimensions := make([]DimensionView, 0, len(values))
+
+	for _, value := range values {
+		dimensions = append(dimensions, DimensionView{
+			Name:         value.Name,
+			ScaleType:    value.ScaleType,
+			Unit:         value.Unit,
+			Polarity:     value.Polarity,
+			Role:         value.Role,
+			HowToMeasure: value.HowToMeasure,
+			ValidUntil:   value.ValidUntil,
+		})
+	}
+
+	return dimensions
+}
+
+func toParityPlanView(value *artifact.ParityPlan) *ParityPlanView {
+	if value == nil {
+		return nil
+	}
+
+	view := &ParityPlanView{
+		BaselineSet:       append([]string(nil), value.BaselineSet...),
+		Window:            value.Window,
+		Budget:            value.Budget,
+		MissingDataPolicy: value.MissingDataPolicy,
+		PinnedConditions:  append([]string(nil), value.PinnedConditions...),
+	}
+
+	for _, rule := range value.Normalization {
+		view.Normalization = append(view.Normalization, NormRuleView{
+			Dimension: rule.Dimension,
+			Method:    rule.Method,
+		})
+	}
+
+	return view
 }

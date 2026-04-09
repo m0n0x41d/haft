@@ -173,7 +173,7 @@ func (a *App) GetPortfolio(id string) (*PortfolioDetailView, error) {
 	return &v, nil
 }
 
-func (a *App) ListPortfolios() ([]ArtifactView, error) {
+func (a *App) ListPortfolios() ([]PortfolioSummaryView, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
@@ -181,7 +181,7 @@ func (a *App) ListPortfolios() ([]ArtifactView, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mapArtifacts(arts, toArtifactView, 0), nil
+	return mapArtifacts(arts, toPortfolioSummary, 0), nil
 }
 
 func (a *App) OpenDirectoryPicker() (string, error) {

@@ -3,9 +3,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   addProject,
   getConfig,
+  initProject,
   listProjects,
+  openDirectoryPicker,
   saveConfig,
   scanForProjects,
+  switchProject,
   type AgentPreset,
   type DesktopConfig,
   type ProjectInfo,
@@ -14,7 +17,11 @@ import { reportError } from "../lib/errors";
 
 type SettingsTab = "general" | "projects" | "agents" | "mcp";
 
-export function Settings() {
+export function Settings({
+  onProjectRegistryChange,
+}: {
+  onProjectRegistryChange?: () => void;
+} = {}) {
   const [tab, setTab] = useState<SettingsTab>("general");
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,7 +108,9 @@ export function Settings() {
         {tab === "general" && config && (
           <GeneralSettings config={config} onChange={updateConfig} />
         )}
-        {tab === "projects" && <ProjectSettings />}
+        {tab === "projects" && (
+          <ProjectSettings onProjectRegistryChange={onProjectRegistryChange} />
+        )}
         {tab === "agents" && config && (
           <AgentSettings config={config} onChange={updateConfig} />
         )}
@@ -197,10 +206,24 @@ function GeneralSettings({
   );
 }
 
-function ProjectSettings() {
+function ProjectSettings({
+  onProjectRegistryChange,
+}: {
+  onProjectRegistryChange?: () => void;
+}) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [discovered, setDiscovered] = useState<ProjectInfo[]>([]);
+  const [selectedPath, setSelectedPath] = useState("");
+
+  const refreshProjects = async () => {
+    try {
+      const nextProjects = await listProjects();
+      setProjects(nextProjects);
+    } catch (error) {
+      reportError(error, "projects");
+    }
+  };
 
   useEffect(() => {
     listProjects()
@@ -229,10 +252,57 @@ function ProjectSettings() {
     try {
       const added = await addProject(path);
 
-      setProjects((current) => [...current, added]);
+      setProjects((current) => {
+        const nextProjects = [...current.filter((project) => project.path !== added.path), added];
+        return nextProjects.sort((left, right) => Number(right.is_active) - Number(left.is_active));
+      });
       setDiscovered((current) => current.filter((project) => project.path !== path));
+      onProjectRegistryChange?.();
     } catch (error) {
       reportError(error, "add project");
+    }
+  };
+
+  const handlePick = async () => {
+    try {
+      const path = await openDirectoryPicker();
+      if (!path) {
+        return;
+      }
+
+      setSelectedPath(path);
+    } catch (error) {
+      reportError(error, "directory picker");
+    }
+  };
+
+  const handleInit = async () => {
+    const path = selectedPath.trim();
+    if (!path) {
+      return;
+    }
+
+    try {
+      const created = await initProject(path);
+
+      setProjects((current) => {
+        const nextProjects = [...current.filter((project) => project.path !== created.path), created];
+        return nextProjects.sort((left, right) => Number(right.is_active) - Number(left.is_active));
+      });
+      setSelectedPath(created.path);
+      onProjectRegistryChange?.();
+    } catch (error) {
+      reportError(error, "init project");
+    }
+  };
+
+  const handleSwitch = async (path: string) => {
+    try {
+      await switchProject(path);
+      await refreshProjects();
+      onProjectRegistryChange?.();
+    } catch (error) {
+      reportError(error, "switch project");
     }
   };
 
@@ -249,6 +319,51 @@ function ProjectSettings() {
         </button>
       </div>
 
+      <SettingsCard
+        title="Project onboarding"
+        description="Pick a folder once, then register an existing Haft project or initialize a new one."
+      >
+        <div className="space-y-3">
+          <Field label="Selected directory">
+            <div className="flex gap-2">
+              <input
+                value={selectedPath}
+                onChange={(event) => setSelectedPath(event.target.value)}
+                placeholder="/Users/you/Repos/project"
+                className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-primary"
+              />
+              <button
+                onClick={handlePick}
+                className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-3"
+              >
+                Pick folder
+              </button>
+            </div>
+          </Field>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleAdd(selectedPath.trim())}
+              disabled={!selectedPath.trim()}
+              className="rounded-lg bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              Add existing project
+            </button>
+            <button
+              onClick={handleInit}
+              disabled={!selectedPath.trim()}
+              className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+            >
+              Init project here
+            </button>
+          </div>
+
+          <p className="text-xs text-text-muted">
+            `Add` requires an existing `.haft/` directory. `Init` creates `.haft/project.yaml` and the project database, then registers the project.
+          </p>
+        </div>
+      </SettingsCard>
+
       <div className="space-y-2">
         {projects.map((project) => (
           <div
@@ -261,6 +376,18 @@ function ProjectSettings() {
             </div>
 
             <div className="flex items-center gap-3 text-xs text-text-muted">
+              {project.is_active ? (
+                <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-1 text-accent">
+                  Active
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleSwitch(project.path)}
+                  className="rounded border border-border bg-surface-2 px-2 py-1 text-text-secondary transition-colors hover:bg-surface-3"
+                >
+                  Switch
+                </button>
+              )}
               <span>{project.problem_count} problems</span>
               <span>{project.decision_count} decisions</span>
               {project.stale_count > 0 && (

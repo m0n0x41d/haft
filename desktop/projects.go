@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -84,11 +85,8 @@ func (a *App) ListProjects() ([]ProjectInfo, error) {
 		return nil, err
 	}
 
-	// Auto-discover current project if registry is empty
-	if len(reg.Projects) == 0 {
-		if a.projectRoot != "" {
-			_, _ = a.addProjectToRegistry(reg, a.projectRoot)
-		}
+	if a.projectRoot != "" {
+		_, _ = a.addProjectToRegistry(reg, a.projectRoot)
 	}
 
 	infos := make([]ProjectInfo, 0, len(reg.Projects))
@@ -125,6 +123,11 @@ func (a *App) ListProjects() ([]ProjectInfo, error) {
 
 // AddProject registers a new project by path.
 func (a *App) AddProject(path string) (*ProjectInfo, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
 	// Validate path has .haft/
 	haftDir := filepath.Join(path, ".haft")
 	if _, err := os.Stat(haftDir); os.IsNotExist(err) {
@@ -149,8 +152,57 @@ func (a *App) AddProject(path string) (*ProjectInfo, error) {
 	}, nil
 }
 
+func (a *App) InitProject(path string) (*ProjectInfo, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("open project path %s: %w", absPath, err)
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path is not a directory: %s", absPath)
+	}
+
+	haftDir := filepath.Join(absPath, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create %s: %w", haftDir, err)
+	}
+
+	cfg, err := project.Create(haftDir, absPath)
+	if err != nil {
+		return nil, fmt.Errorf("create project config: %w", err)
+	}
+
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve project database: %w", err)
+	}
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("initialize project database: %w", err)
+	}
+	_ = database.Close()
+
+	return a.AddProject(absPath)
+}
+
 // SwitchProject changes the active project — closes current DB, opens new one.
 func (a *App) SwitchProject(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+
 	haftDir := filepath.Join(path, ".haft")
 	if _, err := os.Stat(haftDir); os.IsNotExist(err) {
 		return fmt.Errorf("no .haft/ directory in %s", path)

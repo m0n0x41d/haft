@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
-import { listDecisions, getDecision, type DecisionSummary, type DecisionDetail } from "../lib/api";
+import {
+  getConfig,
+  getDecision,
+  implementDecision,
+  listDecisions,
+  verifyDecision,
+  type DecisionDetail,
+  type DecisionSummary,
+  type DesktopConfig,
+} from "../lib/api";
+import { reportError } from "../lib/errors";
 
-type NavigateFn = (page: "dashboard" | "problems" | "decisions", id?: string) => void;
+type NavigateFn = (
+  page: "dashboard" | "problems" | "portfolios" | "decisions" | "tasks" | "settings",
+  id?: string,
+) => void;
 
 export function Decisions({
   selectedId,
-  onNavigate: _onNavigate,
+  onNavigate,
 }: {
   selectedId: string | null;
   onNavigate: NavigateFn;
@@ -13,9 +26,15 @@ export function Decisions({
   const [decisions, setDecisions] = useState<DecisionSummary[]>([]);
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [activeId, setActiveId] = useState<string | null>(selectedId);
+  const [config, setConfig] = useState<DesktopConfig | null>(null);
 
   useEffect(() => {
-    listDecisions().then(setDecisions).catch(console.error);
+    listDecisions().then(setDecisions).catch((error) => {
+      reportError(error, "decisions");
+    });
+    getConfig().then(setConfig).catch((error) => {
+      reportError(error, "decision config");
+    });
   }, []);
 
   useEffect(() => {
@@ -23,8 +42,14 @@ export function Decisions({
       setDetail(null);
       return;
     }
-    getDecision(activeId).then(setDetail).catch(console.error);
+    getDecision(activeId).then(setDetail).catch((error) => {
+      reportError(error, "decision detail");
+    });
   }, [activeId]);
+
+  useEffect(() => {
+    setActiveId(selectedId);
+  }, [selectedId]);
 
   return (
     <div className="flex gap-6 h-[calc(100vh-7rem)]">
@@ -52,7 +77,7 @@ export function Decisions({
 
       <div className="flex-1 overflow-y-auto">
         {detail ? (
-          <DecisionDetailPanel detail={detail} />
+          <DecisionDetailPanel detail={detail} config={config} onNavigate={onNavigate} />
         ) : activeId ? (
           <p className="text-sm text-text-muted py-8 text-center">Loading...</p>
         ) : (
@@ -63,20 +88,30 @@ export function Decisions({
   );
 }
 
-function DecisionDetailPanel({ detail }: { detail: DecisionDetail }) {
+function DecisionDetailPanel({
+  detail,
+  config,
+  onNavigate,
+}: {
+  detail: DecisionDetail;
+  config: DesktopConfig | null;
+  onNavigate: NavigateFn;
+}) {
   const [implementing, setImplementing] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
   const handleImplement = async () => {
     setImplementing(true);
     try {
-      const bindingPath = "../../wailsjs/go/main/App";
-      const mod = await import(/* @vite-ignore */ bindingPath);
-      if (mod.ImplementDecision) {
-        await mod.ImplementDecision(detail.id, "claude", true, "");
-      }
-    } catch (e) {
-      console.error("Implement failed:", e);
+      const task = await implementDecision(
+        detail.id,
+        config?.default_agent ?? "claude",
+        config?.default_worktree ?? true,
+        "",
+      );
+      onNavigate("tasks", task.id);
+    } catch (error) {
+      reportError(error, "implement decision");
     } finally {
       setImplementing(false);
     }
@@ -85,13 +120,13 @@ function DecisionDetailPanel({ detail }: { detail: DecisionDetail }) {
   const handleVerify = async () => {
     setVerifying(true);
     try {
-      const bindingPath = "../../wailsjs/go/main/App";
-      const mod = await import(/* @vite-ignore */ bindingPath);
-      if (mod.VerifyDecision) {
-        await mod.VerifyDecision(detail.id, "claude");
-      }
-    } catch (e) {
-      console.error("Verify failed:", e);
+      const task = await verifyDecision(
+        detail.id,
+        config?.verify_agent ?? config?.default_agent ?? "claude",
+      );
+      onNavigate("tasks", task.id);
+    } catch (error) {
+      reportError(error, "verify decision");
     } finally {
       setVerifying(false);
     }
@@ -104,6 +139,13 @@ function DecisionDetailPanel({ detail }: { detail: DecisionDetail }) {
           <h2 className="text-xl font-semibold">{detail.selected_title}</h2>
           <p className="text-xs text-text-muted font-mono mt-1">{detail.id}</p>
           {detail.valid_until && <p className="text-xs text-text-secondary mt-1">Valid until {detail.valid_until}</p>}
+          <p className="mt-2 text-xs text-text-muted">
+            Implement uses <span className="font-mono text-text-secondary">{config?.default_agent ?? "claude"}</span>
+            {config?.default_worktree === false ? " in the active project folder." : " in a fresh worktree by default."}
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            Verify uses <span className="font-mono text-text-secondary">{config?.verify_agent ?? config?.default_agent ?? "claude"}</span>.
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button

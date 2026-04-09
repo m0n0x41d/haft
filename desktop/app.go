@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -32,14 +33,25 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	root, err := findProjectRoot()
+	root := strings.TrimSpace(a.projectRoot)
+	if root == "" {
+		detectedRoot, err := findProjectRoot()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "haft desktop: no .haft/ directory found: %v\n", err)
+			return
+		}
+
+		root = detectedRoot
+	}
+
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "haft desktop: no .haft/ directory found: %v\n", err)
+		fmt.Fprintf(os.Stderr, "haft desktop: failed to resolve project root: %v\n", err)
 		return
 	}
-	a.projectRoot = root
+	a.projectRoot = absRoot
 
-	haftDir := filepath.Join(root, ".haft")
+	haftDir := filepath.Join(a.projectRoot, ".haft")
 	projCfg, err := project.Load(haftDir)
 	if err != nil || projCfg == nil {
 		fmt.Fprintf(os.Stderr, "haft desktop: failed to load project config: %v\n", err)
@@ -172,6 +184,63 @@ func (a *App) ListPortfolios() ([]ArtifactView, error) {
 	return mapArtifacts(arts, toArtifactView, 0), nil
 }
 
+func (a *App) OpenDirectoryPicker() (string, error) {
+	defaultDirectory := a.projectRoot
+	if defaultDirectory == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			defaultDirectory = home
+		}
+	}
+
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:                "Choose project directory",
+		DefaultDirectory:     defaultDirectory,
+		CanCreateDirectories: true,
+	})
+}
+
+func (a *App) OpenPathInIDE(path string) error {
+	targetPath := strings.TrimSpace(path)
+	if targetPath == "" {
+		return fmt.Errorf("path is required")
+	}
+
+	absPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("open path %s: %w", absPath, err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", absPath)
+	}
+
+	cfg := defaultDesktopConfig()
+	loadedConfig, err := loadDesktopConfig()
+	if err == nil && loadedConfig != nil {
+		cfg = *loadedConfig
+	}
+
+	command := buildIDECommand(cfg.DefaultIDE, absPath)
+	commandPath, err := exec.LookPath(command[0])
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH", command[0])
+	}
+
+	openCommand := exec.Command(commandPath, command[1:]...)
+
+	if err := openCommand.Start(); err != nil {
+		return fmt.Errorf("start %s: %w", command[0], err)
+	}
+
+	return nil
+}
+
 // ImplementDecision spawns an agent with the full decision context as prompt.
 // This is the Decision-Anchored Implementation flow — the AIEE differentiator.
 func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree bool, branchName string) (*TaskState, error) {
@@ -188,8 +257,7 @@ func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree
 
 	// Build implementation brief from decision record
 	var brief strings.Builder
-	brief.WriteString("## Implementation Brief\n\n")
-	brief.WriteString(fmt.Sprintf("Decision: %s\n", dec.Meta.Title))
+	brief.WriteString(fmt.Sprintf("## Implement Decision: %s\n\n", dec.Meta.Title))
 	brief.WriteString(fmt.Sprintf("Selected: %s\n\n", df.SelectedTitle))
 
 	// Load linked problem for context

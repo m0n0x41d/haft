@@ -201,12 +201,22 @@ type WailsBindings = {
   AddProject: (path: string) => Promise<ProjectInfo>;
   SwitchProject: (path: string) => Promise<void>;
   ScanForProjects: () => Promise<ProjectInfo[]>;
+  OpenDirectoryPicker?: () => Promise<string>;
+  InitProject?: (path: string) => Promise<ProjectInfo>;
   DetectAgents?: () => Promise<InstalledAgent[]>;
   ListTasks?: () => Promise<TaskState[]>;
   SpawnTask?: (agent: string, prompt: string, worktree: boolean, branch: string) => Promise<TaskState>;
   CancelTask?: (id: string) => Promise<void>;
   ArchiveTask?: (id: string) => Promise<void>;
   GetTaskOutput?: (id: string) => Promise<string>;
+  ImplementDecision?: (
+    decisionID: string,
+    agent: string,
+    worktree: boolean,
+    branch: string,
+  ) => Promise<TaskState>;
+  VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
+  OpenPathInIDE?: (path: string) => Promise<void>;
   GetConfig?: () => Promise<DesktopConfig>;
   SaveConfig?: (config: DesktopConfig) => Promise<DesktopConfig>;
 };
@@ -495,6 +505,25 @@ export async function scanForProjects(): Promise<ProjectInfo[]> {
   return [];
 }
 
+export async function openDirectoryPicker(): Promise<string> {
+  const path = await callBinding<string>("OpenDirectoryPicker");
+  return path ?? "";
+}
+
+export async function initProject(path: string): Promise<ProjectInfo> {
+  const project = await callBinding<ProjectInfo>("InitProject", path);
+  if (project) return project;
+  return {
+    path,
+    name: path.split("/").pop() || path,
+    id: "",
+    is_active: false,
+    problem_count: 0,
+    decision_count: 0,
+    stale_count: 0,
+  };
+}
+
 // --- Task management ---
 
 export async function listTasks(): Promise<TaskState[]> {
@@ -542,6 +571,33 @@ export async function archiveTask(id: string): Promise<void> {
 export async function getTaskOutput(id: string): Promise<string> {
   const output = await callBinding<string>("GetTaskOutput", id);
   return output ?? "";
+}
+
+export async function implementDecision(
+  decisionID: string,
+  agent: string,
+  worktree: boolean,
+  branch: string,
+): Promise<TaskState> {
+  const task = await callBinding<TaskState>(
+    "ImplementDecision",
+    decisionID,
+    agent,
+    worktree,
+    branch,
+  );
+  if (task) return task;
+  return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
+}
+
+export async function verifyDecision(decisionID: string, agent: string): Promise<TaskState> {
+  const task = await callBinding<TaskState>("VerifyDecision", decisionID, agent);
+  if (task) return task;
+  return spawnTask(agent, `Verify ${decisionID}`, false, "");
+}
+
+export async function openPathInIDE(path: string): Promise<void> {
+  await callBinding<void>("OpenPathInIDE", path);
 }
 
 export async function getConfig(): Promise<DesktopConfig> {

@@ -182,6 +182,17 @@ func normalizeIDE(value string, fallback string) string {
 	}
 }
 
+func buildIDECommand(ide string, targetPath string) []string {
+	switch normalizeIDE(ide, defaultDesktopConfig().DefaultIDE) {
+	case "zed":
+		return []string{"zed", targetPath}
+	case "idea":
+		return []string{"idea", targetPath}
+	default:
+		return []string{"code", targetPath}
+	}
+}
+
 func (a *App) GetConfig() (*DesktopConfig, error) {
 	return loadDesktopConfig()
 }

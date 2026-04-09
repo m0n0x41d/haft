@@ -84,3 +84,37 @@ func TestSaveDesktopConfigRoundTrip(t *testing.T) {
 		t.Fatalf("expected config file to exist: %v", err)
 	}
 }
+
+func TestBuildIDECommandUsesNormalizedIDE(t *testing.T) {
+	testCases := []struct {
+		name     string
+		ide      string
+		expected []string
+	}{
+		{name: "default to vscode", ide: "", expected: []string{"code", "/tmp/project"}},
+		{name: "normalize zed", ide: "ZeD", expected: []string{"zed", "/tmp/project"}},
+		{name: "normalize idea", ide: "idea", expected: []string{"idea", "/tmp/project"}},
+		{name: "fallback on unknown", ide: "custom", expected: []string{"code", "/tmp/project"}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			command := buildIDECommand(tc.ide, "/tmp/project")
+
+			if len(command) != len(tc.expected) {
+				t.Fatalf("expected %d command parts, got %d", len(tc.expected), len(command))
+			}
+
+			for index := range tc.expected {
+				if command[index] != tc.expected[index] {
+					t.Fatalf(
+						"expected command[%d]=%q, got %q",
+						index,
+						tc.expected[index],
+						command[index],
+					)
+				}
+			}
+		})
+	}
+}

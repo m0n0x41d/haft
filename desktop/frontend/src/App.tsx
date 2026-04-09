@@ -131,7 +131,8 @@ export default function App() {
   };
 
   const activeProject = projects.find((p) => p.is_active);
-  const projectTasks = (projName: string) => tasks.filter((t) => t.project === projName);
+  const projectTasks = (projectPath: string) =>
+    tasks.filter((task) => task.project_path === projectPath);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -175,7 +176,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-1">
             {projects.map((proj) => {
               const isExpanded = expandedProjects.has(proj.path);
-              const pTasks = projectTasks(proj.name);
+              const pTasks = projectTasks(proj.path);
               return (
                 <div key={proj.path} className="mb-1">
                   <div className="flex items-center group">
@@ -277,8 +278,20 @@ export default function App() {
           {page === "problems" && <Problems selectedId={selectedId} onNavigate={navigate} />}
           {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
           {page === "decisions" && <Decisions selectedId={selectedId} onNavigate={navigate} />}
-          {page === "tasks" && <Tasks showNewTask={showNewTask} onNewTaskClose={() => setShowNewTask(false)} />}
-          {page === "settings" && <Settings />}
+          {page === "tasks" && (
+            <Tasks
+              selectedTaskId={selectedId}
+              showNewTask={showNewTask}
+              onNewTaskClose={() => setShowNewTask(false)}
+            />
+          )}
+          {page === "settings" && (
+            <Settings
+              onProjectRegistryChange={() => {
+                setRefreshKey((key) => key + 1);
+              }}
+            />
+          )}
         </div>
       </main>
 

@@ -74,7 +74,17 @@ func saveRegistry(reg *ProjectRegistry) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return atomicWriteFile(path, data, 0o644)
+}
+
+// atomicWriteFile writes data to a temp file then renames — prevents
+// corruption if two concurrent calls race or the process crashes mid-write.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // --- App binding methods for project management ---

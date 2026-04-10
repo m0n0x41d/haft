@@ -113,7 +113,7 @@ func saveDesktopConfig(cfg DesktopConfig) error {
 		return err
 	}
 
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return atomicWriteFile(path, append(data, '\n'), 0o644)
 }
 
 func detectDesktopConfigVersion(data []byte) (int, error) {

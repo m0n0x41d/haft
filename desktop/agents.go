@@ -134,28 +134,39 @@ func (r *taskRunner) shutdown() {
 	}
 
 	r.mu.Lock()
-	running := make([]*runningTask, 0, len(r.tasks))
 
+	// Copy state snapshots under lock to avoid races with finalizeTask.
+	type shutdownItem struct {
+		rt     *runningTask
+		state  TaskState
+		wasRun bool
+	}
+	items := make([]shutdownItem, 0, len(r.tasks))
 	for _, rt := range r.tasks {
-		running = append(running, rt)
+		items = append(items, shutdownItem{
+			rt:     rt,
+			state:  rt.state, // copy
+			wasRun: rt.state.Status == "running",
+		})
 	}
 
 	r.mu.Unlock()
 
-	for _, rt := range running {
-		if rt == nil || rt.state.Status != "running" {
+	for _, item := range items {
+		if !item.wasRun {
 			continue
 		}
 
-		rt.cancel()
-		rt.stopFlusher()
+		item.rt.cancel()
+		item.rt.stopFlusher()
 
-		rt.state.Status = "interrupted"
-		rt.state.ErrorMessage = "Desktop app shut down before the task completed."
-		rt.state.CompletedAt = nowRFC3339()
-		rt.state.Output = rt.output.String()
+		state := item.state
+		state.Status = "interrupted"
+		state.ErrorMessage = "Desktop app shut down before the task completed."
+		state.CompletedAt = nowRFC3339()
+		state.Output = item.rt.output.String()
 
-		if err := r.persistState(rt.state); err != nil {
+		if err := r.persistState(state); err != nil {
 			r.app.emitAppError("shutdown tasks", err)
 		}
 	}
@@ -594,7 +605,12 @@ func (a *App) spawnTaskWithTitle(
 		return nil, fmt.Errorf("unsupported agent: %s", agentKind)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Use task timeout from config to prevent zombie agent processes.
+	timeout := time.Duration(cfg.TaskTimeoutMinutes) * time.Minute
+	if timeout <= 0 {
+		timeout = 300 * time.Minute // fallback: 5 hours
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = workDir
 	cmd.Env = append(
@@ -708,10 +724,12 @@ func (a *App) CancelTask(id string) error {
 
 	a.tasks.mu.Lock()
 	rt, ok := a.tasks.tasks[id]
+	var stateCopy TaskState
 	if ok {
 		rt.state.Status = "cancelled"
 		rt.state.ErrorMessage = ""
 		rt.state.Output = rt.output.String()
+		stateCopy = rt.state // copy under lock
 	}
 	a.tasks.mu.Unlock()
 
@@ -719,12 +737,12 @@ func (a *App) CancelTask(id string) error {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if err := a.tasks.persistState(rt.state); err != nil {
+	if err := a.tasks.persistState(stateCopy); err != nil {
 		return fmt.Errorf("persist cancelled task: %w", err)
 	}
 
 	rt.cancel()
-	a.tasks.emitTaskStatus(rt.state)
+	a.tasks.emitTaskStatus(stateCopy)
 
 	return nil
 }
@@ -1032,7 +1050,7 @@ func wireHaftMCPClaude(projectRoot string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	return os.WriteFile(configPath, append(output, '\n'), 0o644)
+	return atomicWriteFile(configPath, append(output, '\n'), 0o644)
 }
 
 func appendTaskNote(output string, note string) string {

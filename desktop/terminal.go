@@ -232,7 +232,12 @@ func (m *terminalManager) readLoop(session *runningTerminal) {
 func (m *terminalManager) waitLoop(session *runningTerminal) {
 	waitErr := session.cmd.Wait()
 
-	if waitErr != nil && m.app != nil && session.state.Status != "closed" {
+	// Read status under lock — closeSession may be modifying it concurrently.
+	m.mu.Lock()
+	status := session.state.Status
+	m.mu.Unlock()
+
+	if waitErr != nil && m.app != nil && status != "closed" {
 		m.app.emitAppError("terminal session", waitErr)
 	}
 

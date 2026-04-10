@@ -595,10 +595,15 @@ func (c *flowController) runNow(ctx context.Context, id string) (*TaskState, err
 	return task, nil
 }
 
+var flowInitMu sync.Mutex
+
 func (a *App) ensureFlowController() {
 	if a == nil || a.dbConn == nil {
 		return
 	}
+
+	flowInitMu.Lock()
+	defer flowInitMu.Unlock()
 
 	if a.flows != nil {
 		return

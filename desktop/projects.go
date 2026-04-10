@@ -112,10 +112,9 @@ func (a *App) ListProjects() ([]ProjectInfo, error) {
 		infos = append(infos, info)
 	}
 
+	// Stable alphabetical sort — do NOT put active project first,
+	// that causes visual jumping when switching projects.
 	sort.Slice(infos, func(i, j int) bool {
-		if infos[i].IsActive != infos[j].IsActive {
-			return infos[i].IsActive // active project first
-		}
 		return strings.ToLower(infos[i].Name) < strings.ToLower(infos[j].Name)
 	})
 

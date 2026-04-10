@@ -422,6 +422,7 @@ export interface TaskState {
   completed_at: string;
   error_message: string;
   output: string;
+  auto_run: boolean;
 }
 
 export interface DesktopFlow {
@@ -845,7 +846,7 @@ let mockTasks: TaskState[] = [
     branch: "feat/operator-tooling",
     worktree: true,
     worktree_path: "/Users/demo/projects/haft/.haft/worktrees/feat/operator-tooling",
-    reused_worktree: false,
+    reused_worktree: false, auto_run: false,
     started_at: nowString(),
     completed_at: "",
     error_message: "",
@@ -862,7 +863,7 @@ let mockTasks: TaskState[] = [
     branch: "",
     worktree: false,
     worktree_path: "",
-    reused_worktree: false,
+    reused_worktree: false, auto_run: false,
     started_at: nowString(),
     completed_at: nowString(),
     error_message: "",
@@ -1451,7 +1452,7 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
     branch,
     worktree,
     worktree_path: worktree ? `/Users/demo/projects/haft/.haft/worktrees/${branch}` : "",
-    reused_worktree: false,
+    reused_worktree: false, auto_run: false,
     started_at: new Date().toISOString(),
     completed_at: "",
     error_message: "",
@@ -1474,6 +1475,10 @@ export async function cancelTask(id: string): Promise<void> {
 export async function archiveTask(id: string): Promise<void> {
   await callBinding<void>("ArchiveTask", id);
   mockTasks = mockTasks.filter((task) => task.id !== id);
+}
+
+export async function setTaskAutoRun(id: string, autoRun: boolean): Promise<void> {
+  await callBinding<void>("SetTaskAutoRun", id, autoRun);
 }
 
 export async function getTaskOutput(id: string): Promise<string> {

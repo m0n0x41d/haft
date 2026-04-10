@@ -103,6 +103,10 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
   return (
     <div className="space-y-8 pb-8">
+      <div className="mb-2">
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">VERIFY</p>
+        <p className="text-xs text-text-muted mt-0.5">Decision governance, evidence health, and follow-up work</p>
+      </div>
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{data.project_name}</h1>
@@ -365,7 +369,7 @@ function CandidateCard({
           </button>
           <button
             onClick={onAdopt}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
           >
             Adopt problem
           </button>

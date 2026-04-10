@@ -1,23 +1,47 @@
 @import "tailwindcss";
 
-@theme {
-  --color-surface-0: #0a0a0b;
-  --color-surface-1: #111113;
-  --color-surface-2: #1a1a1e;
-  --color-surface-3: #232328;
-  --color-border: #2e2e35;
-  --color-border-bright: #3e3e48;
-  --color-text-primary: #e4e4e7;
-  --color-text-secondary: #a1a1aa;
-  --color-text-muted: #71717a;
-  --color-accent: #6366f1;
-  --color-accent-hover: #818cf8;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
-  --color-success: #22c55e;
+/* ==========================================================================
+   Haft Design System — derived from DESIGN.md
+   Dark-mode-native. Depth via border hierarchy, not shadows.
+   Green accent (#3ecf8e) as identity marker, not decoration.
+   ========================================================================== */
 
-  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+@theme {
+  /* Surface scale (near-black, never pure black) */
+  --color-surface-0: #0f0f0f;
+  --color-surface-1: #171717;
+  --color-surface-2: #1e1e1e;
+  --color-surface-3: #262626;
+
+  /* Border hierarchy — depth without shadows */
+  --color-border: #2e2e2e;
+  --color-border-subtle: #242424;
+  --color-border-bright: #363636;
+  --color-border-prominent: #393939;
+
+  /* Text scale */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #b4b4b4;
+  --color-text-muted: #898989;
+  --color-text-faint: #4d4d4d;
+
+  /* Brand accent — green, used sparingly */
+  --color-accent: #3ecf8e;
+  --color-accent-hover: #00c573;
+  --color-accent-border: rgba(62, 207, 142, 0.3);
+  --color-accent-wash: rgba(62, 207, 142, 0.08);
+
+  /* Semantic states */
+  --color-danger: #e5484d;
+  --color-warning: #f5a623;
+  --color-success: #3ecf8e;
+
+  /* Translucent overlays */
+  --color-glass: rgba(41, 41, 41, 0.84);
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-mono: "Source Code Pro", "JetBrains Mono", "Office Code Pro", Menlo, ui-monospace, monospace;
 }
 
 * {
@@ -29,31 +53,45 @@ body {
   background: var(--color-surface-0);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Wails window drag regions */
 .wails-drag {
   --wails-draggable: drag;
 }
-
 .wails-drag * {
   --wails-draggable: drag;
 }
-
 .wails-no-drag {
   --wails-draggable: no-drag;
 }
 
+/* Scrollbar — minimal, matches border palette */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-bright);
+}
+
+/* Code labels — the "developer console" voice */
+.code-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.33;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }

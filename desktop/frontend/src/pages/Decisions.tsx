@@ -149,7 +149,12 @@ export function Decisions({
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-7rem)]">
+    <div>
+      <div className="mb-4">
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">EXECUTE</p>
+        <p className="text-xs text-text-muted mt-0.5">Implement with contract, verify with evidence</p>
+      </div>
+      <div className="flex gap-6 h-[calc(100vh-7rem)]">
       <div className="w-80 shrink-0 overflow-y-auto space-y-3">
         <button
           onClick={() => setShowCreate(true)}
@@ -255,6 +260,7 @@ export function Decisions({
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -381,7 +387,7 @@ function DecisionDetailPanel({
           <button
             onClick={handleImplement}
             disabled={implementing}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             {implementing ? "Spawning..." : "Implement"}
           </button>
@@ -522,7 +528,7 @@ function DecisionDetailPanel({
                   </button>
                   <button
                     onClick={() => void handleAdoptCandidate(candidate.id)}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover"
+                    className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
                   >
                     Adopt problem
                   </button>

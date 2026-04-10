@@ -309,6 +309,30 @@ export function Tasks({
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto-run toggle */}
+              {detail.status === "running" && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const { setTaskAutoRun } = await import("../lib/api");
+                      await setTaskAutoRun(detail.id, !detail.auto_run);
+                      setTasks((prev) =>
+                        prev.map((t) =>
+                          t.id === detail.id ? { ...t, auto_run: !t.auto_run } : t
+                        )
+                      );
+                    } catch { /* ignore */ }
+                  }}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    detail.auto_run
+                      ? "border-accent/30 bg-accent/10 text-accent"
+                      : "border-border bg-surface-2 text-text-muted"
+                  }`}
+                  title={detail.auto_run ? "Auto-run: agent proceeds without pausing" : "Checkpointed: agent pauses at breakpoints"}
+                >
+                  {detail.auto_run ? "Auto-run" : "Checkpointed"}
+                </button>
+              )}
               {detail.status === "running" && (
                 <button
                   onClick={() => handleCancel(detail.id)}
@@ -614,7 +638,7 @@ function NewTaskModal({
           <button
             onClick={handleSubmit}
             disabled={!prompt.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             Create & Run
           </button>
@@ -745,7 +769,7 @@ function HandoffModal({
 
           <button
             onClick={onConfirm}
-            className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 transition-colors hover:bg-accent-hover"
           >
             Create handoff
           </button>

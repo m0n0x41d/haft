@@ -106,7 +106,12 @@ export function Problems({
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-7rem)]">
+    <div>
+      <div className="mb-4">
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">UNDERSTAND</p>
+        <p className="text-xs text-text-muted mt-0.5">Frame the problem as a signal, not a solution</p>
+      </div>
+      <div className="flex gap-6 h-[calc(100vh-7rem)]">
       <div className="w-80 shrink-0 overflow-y-auto space-y-3">
         <button
           onClick={() => {
@@ -190,6 +195,7 @@ export function Problems({
         )}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -227,7 +233,7 @@ function ProblemDetailPanel({
           )}
           <button
             onClick={onCharacterize}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
           >
             {latestCharacterization ? "Revise characterization" : "Characterize"}
           </button>
@@ -326,12 +332,12 @@ function CharacterizationCard({
         <div className="rounded-xl border border-border bg-surface-2/60 p-4 text-sm text-text-secondary">
           <p className="text-xs uppercase tracking-[0.2em] text-text-muted">Parity Plan</p>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
-            <span>Baseline: {characterization.parity_plan.baseline_set.join(", ") || "Not set"}</span>
+            <span>Baseline: {characterization.parity_plan.baseline_set?.join(", ") || "Not set"}</span>
             <span>Window: {characterization.parity_plan.window || "Not set"}</span>
             <span>Budget: {characterization.parity_plan.budget || "Not set"}</span>
             <span>Missing data: {characterization.parity_plan.missing_data_policy || "Not set"}</span>
           </div>
-          {characterization.parity_plan.pinned_conditions.length > 0 && (
+          {characterization.parity_plan.pinned_conditions?.length > 0 && (
             <p className="mt-3">
               Pinned conditions: {characterization.parity_plan.pinned_conditions.join(", ")}
             </p>

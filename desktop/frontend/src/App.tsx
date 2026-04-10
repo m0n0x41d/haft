@@ -24,7 +24,7 @@ import { Decisions } from "./pages/Decisions";
 import { Portfolios } from "./pages/Portfolios";
 import { Settings } from "./pages/Settings";
 import { Tasks } from "./pages/Tasks";
-import { Flows } from "./pages/Flows";
+import { Flows as Jobs } from "./pages/Jobs";
 import { NotificationViewport, type DesktopNotification } from "./components/Notifications";
 import { SearchOverlay } from "./components/SearchOverlay";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -33,7 +33,7 @@ import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors"
 import { listProjects, switchProject, listTasks, type ProjectInfo, type TaskState } from "./lib/api";
 import { EventsOn, WindowToggleMaximise } from "../wailsjs/runtime/runtime";
 
-type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "flows" | "tasks" | "settings";
+type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "jobs" | "tasks" | "settings";
 
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Overview", icon: LayoutDashboard },
@@ -174,7 +174,7 @@ export default function App() {
     <div className="flex h-screen overflow-hidden">
       {/* Icon rail */}
       <div className="w-12 shrink-0 bg-surface-1 border-r border-border flex flex-col items-center py-2">
-        <div className="wails-drag h-8 w-full" />
+        <div className="wails-drag h-12 w-full" />
 
         <RailBtn
           icon={sidebarExpanded ? PanelLeftClose : PanelLeftOpen}
@@ -213,9 +213,9 @@ export default function App() {
         </div>
         <RailBtn
           icon={Zap}
-          tip="Flows"
-          onClick={() => setPage("flows")}
-          active={page === "flows"}
+          tip="Jobs"
+          onClick={() => setPage("jobs")}
+          active={page === "jobs"}
         />
         <RailBtn icon={Search} tip="Search (Cmd+K)" onClick={() => setSearchOpen(true)} />
         <RailBtn icon={MoreHorizontal} tip="More" onClick={() => {}} />
@@ -363,7 +363,7 @@ export default function App() {
             {page === "problems" && <Problems selectedId={selectedId} onNavigate={navigate} />}
             {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
             {page === "decisions" && <Decisions selectedId={selectedId} onNavigate={navigate} />}
-            {page === "flows" && <Flows onOpenTask={handleOpenTask} />}
+            {page === "jobs" && <Jobs onOpenTask={handleOpenTask} />}
             {page === "tasks" && (
               <Tasks
                 selectedTaskId={selectedId}
@@ -420,8 +420,8 @@ function pageTitle(page: Page): string {
     return "Tasks";
   }
 
-  if (page === "flows") {
-    return "Automation";
+  if (page === "jobs") {
+    return "Jobs";
   }
 
   if (page === "settings") {
@@ -503,7 +503,7 @@ function NewProjectModal({
             <div className="flex gap-2">
               <button
                 onClick={() => handleAdd(selectedPath)}
-                className="rounded-lg bg-accent px-3 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
+                className="rounded-full bg-accent px-3 py-2 text-sm text-surface-0 hover:bg-accent-hover transition-colors"
               >
                 Add existing project
               </button>

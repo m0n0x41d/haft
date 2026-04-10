@@ -214,7 +214,12 @@ export function Portfolios({
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-7rem)]">
+    <div>
+      <div className="mb-4">
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">EXPLORE</p>
+        <p className="text-xs text-text-muted mt-0.5">Generate genuinely distinct options</p>
+      </div>
+      <div className="flex gap-6 h-[calc(100vh-7rem)]">
       <div className="w-80 shrink-0 overflow-y-auto space-y-3">
         <button
           onClick={() => {
@@ -367,7 +372,7 @@ export function Portfolios({
               <button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+                className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 transition-colors hover:bg-accent-hover disabled:opacity-50"
               >
                 {submitting ? "Saving..." : "Create portfolio"}
               </button>
@@ -397,6 +402,7 @@ export function Portfolios({
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -450,7 +456,7 @@ function PortfolioDetailView({
 
         <button
           onClick={() => setShowCompare(!showCompare)}
-          className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition-colors hover:bg-accent-hover"
+          className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
         >
           {detail.comparison ? "Revise compare" : "Compare variants"}
         </button>
@@ -567,6 +573,10 @@ function ComparisonEditor({
 
   return (
     <div className="space-y-5 rounded-2xl border border-border bg-surface-1 p-5">
+      <div className="mb-2">
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">CHOOSE</p>
+        <p className="text-xs text-text-muted mt-0.5">Which is better -- and should we even decide now?</p>
+      </div>
       <div>
         <p className="text-xs uppercase tracking-[0.22em] text-text-muted">Compare</p>
         <h3 className="mt-1 text-lg font-semibold text-text-primary">Score variants and let the backend compute the Pareto front</h3>
@@ -699,7 +709,7 @@ function ComparisonEditor({
         <button
           onClick={onSubmit}
           disabled={submitting}
-          className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           {submitting ? "Saving..." : detail.comparison ? "Recompute compare" : "Compute Pareto front"}
         </button>

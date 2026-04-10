@@ -74,8 +74,14 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Fprintf(os.Stderr, "haft desktop: failed to open DB: %v\n", err)
 		return
 	}
+	// Enable WAL mode + busy timeout to prevent SQLITE_BUSY when
+	// governance scanner and UI queries run concurrently.
+	rawDB := database.GetRawDB()
+	_, _ = rawDB.Exec("PRAGMA journal_mode=WAL")
+	_, _ = rawDB.Exec("PRAGMA busy_timeout=5000")
+
 	a.dbConn = database
-	a.store = artifact.NewStore(database.GetRawDB())
+	a.store = artifact.NewStore(rawDB)
 	a.tasks = newTaskRunner(a, newDesktopTaskStore(database.GetRawDB()))
 	a.flows = newFlowController(a, newDesktopFlowStore(database.GetRawDB()))
 	a.governance = newGovernanceController(a, a.store, database.GetRawDB(), a.projectRoot)

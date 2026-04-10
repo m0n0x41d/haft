@@ -27,3 +27,4 @@ build/
 desktop/desktop
 .zenflow/
 .zenflow/**
+DESIGN.md

@@ -259,7 +259,7 @@ export function DecisionForm({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           {submitting ? "Saving..." : "Create Decision"}
         </button>

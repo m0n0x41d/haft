@@ -25,7 +25,7 @@ func main() {
 		DisableResize:    false,
 		Frameless:        false,
 		StartHidden:      false,
-		BackgroundColour: &options.RGBA{R: 15, G: 15, B: 15, A: 255},
+		BackgroundColour: &options.RGBA{R: 0x0f, G: 0x0f, B: 0x0f, A: 255}, // #0f0f0f — surface-0
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

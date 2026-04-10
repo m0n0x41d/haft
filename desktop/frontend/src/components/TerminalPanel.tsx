@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
@@ -244,15 +243,9 @@ function TerminalViewport({
       },
     });
     const fitAddon = new FitAddon();
-    const webglAddon = new WebglAddon();
 
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
-    try {
-      terminal.loadAddon(webglAddon);
-    } catch {
-      void webglAddon;
-    }
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;

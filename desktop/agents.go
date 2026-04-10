@@ -826,8 +826,7 @@ func buildAgentArgs(kind AgentKind, prompt string) []string {
 	case AgentCodex:
 		return []string{
 			"codex", "exec",
-			"-a", "never",
-			"--sandbox", "workspace-write",
+			"--full-auto",
 			prompt,
 		}
 	case AgentHaft:

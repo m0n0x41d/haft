@@ -979,8 +979,27 @@ export async function getCoverage(): Promise<CoverageData> {
 
 export async function getGovernanceOverview(): Promise<GovernanceOverview> {
   const overview = await callBinding<GovernanceOverview>("GetGovernanceOverview");
-  if (overview) return overview;
+  if (overview) return normalizeOverview(overview);
   return mockGovernanceOverview;
+}
+
+function normalizeOverview(o: GovernanceOverview): GovernanceOverview {
+  return {
+    ...o,
+    findings: o.findings ?? [],
+    problem_candidates: o.problem_candidates ?? [],
+    coverage: {
+      ...o.coverage,
+      modules: (o.coverage?.modules ?? []).map(m => ({
+        ...m,
+        files: m.files ?? [],
+      })),
+      governed_percent: o.coverage?.governed_percent ?? 0,
+      covered_count: o.coverage?.covered_count ?? 0,
+      partial_count: o.coverage?.partial_count ?? 0,
+      blind_count: o.coverage?.blind_count ?? 0,
+    },
+  };
 }
 
 export async function refreshGovernance(): Promise<GovernanceOverview> {

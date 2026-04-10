@@ -23,19 +23,28 @@ interface TaskOutputEvent {
   output: string;
 }
 
-interface PromptSection {
-  title: string;
-  body: string;
+// PromptSection reserved for future collapsible brief in chat
+// interface PromptSection { title: string; body: string; }
+
+interface ProjectInfo {
+  path: string;
+  name: string;
+  id: string;
+  is_active: boolean;
 }
 
 export function Tasks({
   selectedTaskId: externalSelectedTask,
   showNewTask: externalShow,
   onNewTaskClose,
+  projects,
+  activeProjectPath,
 }: {
   selectedTaskId?: string | null;
   showNewTask?: boolean;
   onNewTaskClose?: () => void;
+  projects?: ProjectInfo[];
+  activeProjectPath?: string;
 } = {}) {
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const [agents, setAgents] = useState<InstalledAgent[]>([]);
@@ -44,7 +53,7 @@ export function Tasks({
   const [selectedTask, setSelectedTask] = useState<string | null>(externalSelectedTask ?? null);
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffAgent, setHandoffAgent] = useState("codex");
-  const outputRef = useRef<HTMLPreElement | null>(null);
+  const outputRef = useRef<HTMLDivElement | null>(null);
 
   const showNewTask = externalShow || internalShow;
 
@@ -164,7 +173,6 @@ export function Tasks({
   }, [selectedTask]);
 
   const detail = tasks.find((task) => task.id === selectedTask) ?? null;
-  const promptSections = detail ? parsePromptSections(detail.prompt) : [];
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
 
   useEffect(() => {
@@ -175,7 +183,10 @@ export function Tasks({
     outputRef.current.scrollTop = outputRef.current.scrollHeight;
   }, [detail]);
 
+  const spawningRef = useRef(false);
   const handleSpawn = async (agent: string, prompt: string, worktree: boolean, branch: string) => {
+    if (spawningRef.current) return;
+    spawningRef.current = true;
     try {
       const task = await spawnTask(agent, prompt, worktree, branch);
 
@@ -185,6 +196,8 @@ export function Tasks({
       void refresh();
     } catch (error) {
       reportError(error, "spawn task");
+    } finally {
+      spawningRef.current = false;
     }
   };
 
@@ -239,45 +252,18 @@ export function Tasks({
     }
   };
 
-  const handleCopy = async (value: string, label: string) => {
-    if (!value) {
-      return;
-    }
-
-    if (!navigator.clipboard?.writeText) {
-      reportError(`Clipboard is not available for ${label}.`, "clipboard");
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch (error) {
-      reportError(error, `copy ${label}`);
-    }
-  };
+  // handleCopy removed — not used in chat view
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-          <p className="mt-1 text-sm text-text-muted">
-            Run agents with durable task state, worktree-aware actions, and a visible reasoning brief.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowNewTask(true)}
-          className="rounded-lg bg-accent px-4 py-2 text-sm text-white transition-colors hover:bg-accent-hover"
-        >
-          + New Task
-        </button>
-      </div>
+      {/* No header — tasks are selected from sidebar, new task from "+" menu */}
 
       {showNewTask && (
         <NewTaskModal
           agents={agents}
           config={config}
+          projects={projects ?? []}
+          activeProjectPath={activeProjectPath}
           onSpawn={handleSpawn}
           onClose={() => setShowNewTask(false)}
         />
@@ -294,206 +280,142 @@ export function Tasks({
         />
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
-        <div className="space-y-2">
-          {tasks.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-border bg-surface-1/60 px-6 py-12 text-center">
-              <p className="text-sm text-text-muted">No tasks yet</p>
-              <p className="mt-1 text-xs text-text-muted">
-                Start a task to see live output, workspace actions, and the injected brief.
-              </p>
-            </div>
-          )}
-
-          {tasks.map((task) => (
-            <button
-              key={task.id}
-              onClick={() => setSelectedTask(task.id)}
-              className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-                selectedTask === task.id
-                  ? "border-accent/30 bg-surface-2"
-                  : "border-transparent bg-surface-1 hover:bg-surface-2"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{task.title}</span>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                    <span>{task.agent}</span>
-                    {task.branch && <span className="font-mono">{task.branch}</span>}
-                  </div>
-                </div>
-                <StatusDot status={task.status} />
-              </div>
-
-              <p className="mt-2 line-clamp-2 text-xs text-text-muted">
-                {firstNonEmptyLine(task.output) || task.prompt}
-              </p>
-
-              {task.error_message && (
-                <p className="mt-2 line-clamp-2 text-xs text-danger/80">{task.error_message}</p>
-              )}
-            </button>
-          ))}
+      {/* Chat layout: no task selected = empty state, task selected = chat */}
+      {!detail ? (
+        <div className="flex h-[calc(100vh-12rem)] items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm text-text-muted">
+              {tasks.length === 0 ? "No tasks yet" : "Select a task from the sidebar"}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Click "+ New Task" or use the sidebar to start
+            </p>
+          </div>
         </div>
+      ) : (
+        <div className="flex h-[calc(100vh-12rem)] flex-col">
+          {/* Compact header bar */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <StatusBadge status={detail.status} />
+              <span className="text-xs text-text-muted">{detail.agent}</span>
+              {detail.branch && (
+                <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
+              )}
+              {detail.status === "running" && (
+                <span className="text-xs text-text-muted animate-pulse">
+                  {detail.started_at ? elapsedSince(detail.started_at) : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {detail.status === "running" && (
+                <button
+                  onClick={() => handleCancel(detail.id)}
+                  className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
+                >
+                  Cancel
+                </button>
+              )}
+              {workspacePath && (
+                <button
+                  onClick={handleOpenWorkspace}
+                  className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                >
+                  Open in IDE
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const fallback = agents.find((a) => a.kind !== detail.agent)?.kind ?? "codex";
+                  setHandoffAgent(fallback);
+                  setShowHandoff(true);
+                }}
+                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+              >
+                Hand off
+              </button>
+              {detail.status !== "running" && (
+                <button
+                  onClick={() => handleArchive(detail.id)}
+                  className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                >
+                  Archive
+                </button>
+              )}
+            </div>
+          </div>
 
-        {detail && (
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-border bg-surface-1 px-5 py-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                    <StatusBadge status={detail.status} />
-                    <span>{detail.agent}</span>
-                    <span>{detail.project}</span>
-                    {detail.branch && <span className="font-mono">{detail.branch}</span>}
-                  </div>
-                  <h3 className="text-xl font-semibold text-text-primary">{detail.title}</h3>
-                  <p className="max-w-3xl text-sm text-text-muted">
-                    {describeTask(detail)}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {detail.status === "running" && (
-                    <button
-                      onClick={() => handleCancel(detail.id)}
-                      className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger transition-colors hover:bg-danger/20"
-                    >
-                      Cancel
-                    </button>
-                  )}
-
-                  {detail.status !== "running" && (
-                    <button
-                      onClick={() => handleArchive(detail.id)}
-                      className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                    >
-                      Archive
-                    </button>
-                  )}
-
-                  {workspacePath && (
-                    <button
-                      onClick={handleOpenWorkspace}
-                      className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                    >
-                      Open workspace
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => void handleCopy(detail.prompt, "task brief")}
-                    className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                  >
-                    Copy brief
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const fallback = agents.find((agent) => agent.kind !== detail.agent)?.kind ?? "codex";
-                      setHandoffAgent(fallback);
-                      setShowHandoff(true);
-                    }}
-                    className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                  >
-                    Hand off
-                  </button>
-
-                  <button
-                    onClick={() => void handleCopy(detail.output, "task output")}
-                    className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                  >
-                    Copy output
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <TaskFact label="Started" value={detail.started_at} />
-                <TaskFact label="Completed" value={detail.completed_at || "Still running"} />
-                <TaskFact
-                  label="Workspace"
-                  value={
-                    detail.worktree
-                      ? detail.reused_worktree
-                        ? "Reused worktree"
-                        : "Fresh worktree"
-                      : "Project folder"
-                  }
-                />
-                <TaskFact label="Path" value={workspacePath || "Not available"} mono />
+          {/* Chat messages area */}
+          <div
+            ref={outputRef}
+            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+          >
+            {/* User message: the prompt */}
+            <div className="flex justify-end">
+              <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-accent/15 border border-accent/20 px-4 py-3">
+                <p className="whitespace-pre-wrap text-sm text-text-primary">{detail.prompt}</p>
               </div>
             </div>
 
+            {/* Error message if any */}
             {detail.error_message && (
-              <div className="rounded-2xl border border-danger/20 bg-danger/5 px-5 py-4">
-                <h4 className="mb-1 text-xs uppercase tracking-wider text-danger">Task error</h4>
-                <p className="text-sm text-danger/90">{detail.error_message}</p>
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-danger/20 bg-danger/5 px-4 py-3">
+                  <p className="text-xs uppercase tracking-wider text-danger mb-1">Error</p>
+                  <p className="text-sm text-danger/90">{detail.error_message}</p>
+                </div>
               </div>
             )}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-              <div className="rounded-2xl border border-border bg-surface-1 px-5 py-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-medium text-text-primary">Injected task brief</h4>
-                    <p className="mt-1 text-xs text-text-muted">
-                      The exact reasoning context and operator instructions passed to the agent.
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-border bg-surface-2 px-2 py-1 text-[11px] text-text-muted">
-                    {promptSections.length} section{promptSections.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  {promptSections.map((section) => (
-                    <div
-                      key={`${detail.id}-${section.title}`}
-                      className="rounded-xl border border-border bg-surface-2/50 px-4 py-3"
-                    >
-                      <h5 className="text-xs uppercase tracking-wider text-text-muted">
-                        {section.title}
-                      </h5>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-text-secondary">
-                        {section.body}
-                      </p>
+            {/* Agent response: streaming output */}
+            {detail.output ? (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
+                  {detail.status === "running" && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                      <span className="text-[11px] text-accent">Generating...</span>
                     </div>
-                  ))}
+                  )}
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-text-secondary leading-relaxed">
+                    {detail.output}
+                  </pre>
                 </div>
               </div>
-
-              <div className="rounded-2xl border border-border bg-surface-1 px-5 py-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-medium text-text-primary">Streaming output</h4>
-                    <p className="mt-1 text-xs text-text-muted">
-                      Bounded live tail with persisted recovery on reload.
-                    </p>
+            ) : detail.status === "running" ? (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                    <span className="text-xs text-text-muted">Agent is working...</span>
                   </div>
-                  <span
-                    className={`rounded-full border px-2 py-1 text-[11px] ${
-                      detail.status === "running"
-                        ? "border-accent/20 bg-accent/10 text-accent"
-                        : "border-border bg-surface-2 text-text-muted"
-                    }`}
-                  >
-                    {detail.status === "running" ? "Live" : "Snapshot"}
-                  </span>
                 </div>
+              </div>
+            ) : null}
+          </div>
 
-                <pre
-                  ref={outputRef}
-                  className="max-h-[38rem] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-surface-0 px-4 py-3 font-mono text-xs text-text-secondary"
-                >
-                  {detail.output || "Waiting for task output..."}
-                </pre>
+          {/* Input area at bottom */}
+          <div className="shrink-0 border-t border-border bg-surface-1/50 px-4 py-3">
+            <div className="flex items-end gap-3">
+              <div className="flex-1 rounded-xl border border-border bg-surface-0 px-4 py-2.5">
+                <p className="text-xs text-text-muted">
+                  {detail.status === "running"
+                    ? "Agent is working on this task..."
+                    : detail.status === "completed"
+                      ? "Task completed. Create a new task to continue."
+                      : "Task ended."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs text-text-muted px-2 py-1 rounded-lg border border-border bg-surface-2">
+                  {detail.agent}
+                </span>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -501,11 +423,15 @@ export function Tasks({
 function NewTaskModal({
   agents,
   config,
+  projects,
+  activeProjectPath,
   onSpawn,
   onClose,
 }: {
   agents: InstalledAgent[];
   config: DesktopConfig | null;
+  projects: ProjectInfo[];
+  activeProjectPath?: string;
   onSpawn: (agent: string, prompt: string, worktree: boolean, branch: string) => void;
   onClose: () => void;
 }) {
@@ -514,6 +440,7 @@ function NewTaskModal({
   const [prompt, setPrompt] = useState("");
   const [useWorktree, setUseWorktree] = useState(config?.default_worktree ?? true);
   const [branch, setBranch] = useState("");
+  const [selectedProject, setSelectedProject] = useState(activeProjectPath || "");
 
   useEffect(() => {
     if (!config) {
@@ -577,6 +504,24 @@ function NewTaskModal({
                 {presets.map((preset) => (
                   <option key={`${preset.name}-${preset.role}`} value={preset.name}>
                     {preset.name} {preset.model ? `(${preset.model})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Project selector */}
+          {projects.length > 1 && (
+            <div className="space-y-1">
+              <label className="text-sm text-text-secondary">Project</label>
+              <select
+                value={selectedProject}
+                onChange={(event) => setSelectedProject(event.target.value)}
+                className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
+              >
+                {projects.map((p) => (
+                  <option key={p.path} value={p.path}>
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -679,36 +624,19 @@ function NewTaskModal({
   );
 }
 
-function TaskFact({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-surface-2/40 px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wider text-text-muted">{label}</p>
-      <p className={`mt-2 text-sm text-text-primary ${mono ? "font-mono break-all" : ""}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    running: "bg-blue-400 animate-pulse",
-    completed: "bg-success",
-    failed: "bg-danger",
-    cancelled: "bg-text-muted",
-    interrupted: "bg-warning",
-    pending: "bg-warning",
-  };
-
-  return <span className={`mt-1 h-2 w-2 rounded-full ${colors[status] ?? "bg-text-muted"}`} />;
+function elapsedSince(isoDate: string): string {
+  try {
+    const start = new Date(isoDate).getTime();
+    const now = Date.now();
+    const seconds = Math.floor((now - start) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+  } catch {
+    return "";
+  }
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -843,44 +771,5 @@ function mergeTaskList(current: TaskState[], next: TaskState): TaskState[] {
   return merged;
 }
 
-function firstNonEmptyLine(value: string): string {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) || "";
-}
-
-function describeTask(task: TaskState): string {
-  if (task.worktree && task.worktree_path) {
-    return `Running against ${task.reused_worktree ? "a reused" : "a dedicated"} worktree at ${task.worktree_path}.`;
-  }
-
-  if (task.project_path) {
-    return `Running directly in the active project at ${task.project_path}.`;
-  }
-
-  return "Task workspace has not been assigned yet.";
-}
-
-function parsePromptSections(prompt: string): PromptSection[] {
-  const normalizedPrompt = prompt.trim();
-  if (!normalizedPrompt) {
-    return [{ title: "Prompt", body: "No prompt captured." }];
-  }
-
-  if (!normalizedPrompt.startsWith("## ")) {
-    return [{ title: "Prompt", body: normalizedPrompt }];
-  }
-
-  return normalizedPrompt
-    .split(/\n(?=## )/)
-    .map((chunk) => chunk.trim())
-    .filter((chunk) => chunk.length > 0)
-    .map((chunk) => {
-      const lines = chunk.split("\n");
-      const title = lines[0].replace(/^##\s+/, "").trim() || "Prompt";
-      const body = lines.slice(1).join("\n").trim() || "No additional details.";
-
-      return { title, body };
-    });
-}
+// parsePromptSections kept for future use if we add collapsible brief sections to chat
+// function parsePromptSections(prompt: string): PromptSection[] { ... }

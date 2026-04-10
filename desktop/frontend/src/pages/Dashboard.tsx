@@ -314,7 +314,7 @@ function CoverageModuleCard({ module }: { module: CoverageModule }) {
         </div>
       </div>
 
-      {module.files.length > 0 && (
+      {module.files && module.files.length > 0 && (
         <div className="mt-3 space-y-1">
           {module.files.map((filePath) => (
             <p key={filePath} className="font-mono text-[11px] text-text-muted">

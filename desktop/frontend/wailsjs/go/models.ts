@@ -1,15 +1,15 @@
 export namespace main {
-
+	
 	export class AgentPreset {
 	    name: string;
 	    agent_kind: string;
 	    model: string;
 	    role: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new AgentPreset(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -26,11 +26,11 @@ export namespace main {
 	    mode: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ArtifactView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -45,11 +45,11 @@ export namespace main {
 	export class NormRuleView {
 	    dimension: string;
 	    method: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new NormRuleView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.dimension = source["dimension"];
@@ -63,11 +63,11 @@ export namespace main {
 	    normalization: NormRuleView[];
 	    missing_data_policy: string;
 	    pinned_conditions: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ParityPlanView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.baseline_set = source["baseline_set"];
@@ -77,7 +77,7 @@ export namespace main {
 	        this.missing_data_policy = source["missing_data_policy"];
 	        this.pinned_conditions = source["pinned_conditions"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -104,11 +104,11 @@ export namespace main {
 	    role: string;
 	    how_to_measure: string;
 	    valid_until: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DimensionView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -124,18 +124,18 @@ export namespace main {
 	    version: number;
 	    dimensions: DimensionView[];
 	    parity_plan?: ParityPlanView;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CharacterizationView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.version = source["version"];
 	        this.dimensions = this.convertValues(source["dimensions"], DimensionView);
 	        this.parity_plan = this.convertValues(source["parity_plan"], ParityPlanView);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -161,11 +161,11 @@ export namespace main {
 	    threshold: string;
 	    status: string;
 	    verify_after: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ClaimView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -184,11 +184,11 @@ export namespace main {
 	    role: string;
 	    how_to_measure: string;
 	    valid_until: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ComparisonDimensionInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -203,11 +203,11 @@ export namespace main {
 	export class TradeoffNote {
 	    variant: string;
 	    summary: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TradeoffNote(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -218,11 +218,11 @@ export namespace main {
 	    variant: string;
 	    dominated_by: string[];
 	    summary: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DominatedNote(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -239,11 +239,11 @@ export namespace main {
 	    policy_applied: string;
 	    selected_ref: string;
 	    recommendation: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ComparisonView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.dimensions = source["dimensions"];
@@ -255,7 +255,7 @@ export namespace main {
 	        this.selected_ref = source["selected_ref"];
 	        this.recommendation = source["recommendation"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -284,11 +284,11 @@ export namespace main {
 	    decision_ids: string[];
 	    impacted: boolean;
 	    files: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CoverageModuleView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -310,11 +310,11 @@ export namespace main {
 	    governed_percent: number;
 	    last_scanned: string;
 	    modules: CoverageModuleView[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CoverageView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.total_modules = source["total_modules"];
@@ -325,7 +325,7 @@ export namespace main {
 	        this.last_scanned = source["last_scanned"];
 	        this.modules = this.convertValues(source["modules"], CoverageModuleView);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -353,11 +353,11 @@ export namespace main {
 	    weakest_link: string;
 	    valid_until: string;
 	    created_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -379,11 +379,11 @@ export namespace main {
 	    reversibility: string;
 	    constraints: string[];
 	    created_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProblemView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -406,11 +406,11 @@ export namespace main {
 	    recent_problems: ProblemView[];
 	    recent_decisions: DecisionView[];
 	    stale_items: ArtifactView[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DashboardView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.project_name = source["project_name"];
@@ -423,7 +423,7 @@ export namespace main {
 	        this.recent_decisions = this.convertValues(source["recent_decisions"], DecisionView);
 	        this.stale_items = this.convertValues(source["stale_items"], ArtifactView);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -447,11 +447,11 @@ export namespace main {
 	    observable: string;
 	    threshold: string;
 	    verify_after: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionPredictionInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.claim = source["claim"];
@@ -464,11 +464,11 @@ export namespace main {
 	    triggers: string[];
 	    steps: string[];
 	    blast_radius: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionRollbackInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.triggers = source["triggers"];
@@ -479,11 +479,11 @@ export namespace main {
 	export class DecisionRejectionInput {
 	    variant: string;
 	    reason: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionRejectionInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -515,11 +515,11 @@ export namespace main {
 	    predictions: DecisionPredictionInput[];
 	    search_keywords: string;
 	    first_module_coverage: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionCreateInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.problem_ref = source["problem_ref"];
@@ -547,7 +547,7 @@ export namespace main {
 	        this.search_keywords = source["search_keywords"];
 	        this.first_module_coverage = source["first_module_coverage"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -569,11 +569,11 @@ export namespace main {
 	export class RejectionView {
 	    variant: string;
 	    reason: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RejectionView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -610,11 +610,11 @@ export namespace main {
 	    body: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DecisionDetailView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -647,7 +647,7 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	        this.updated_at = source["updated_at"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -666,10 +666,10 @@ export namespace main {
 		    return a;
 		}
 	}
-
-
-
-
+	
+	
+	
+	
 	export class DesktopConfig {
 	    default_agent: string;
 	    review_agent: string;
@@ -681,11 +681,11 @@ export namespace main {
 	    default_ide: string;
 	    default_worktree: boolean;
 	    auto_wire_mcp: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DesktopConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.default_agent = source["default_agent"];
@@ -699,7 +699,7 @@ export namespace main {
 	        this.default_worktree = source["default_worktree"];
 	        this.auto_wire_mcp = source["auto_wire_mcp"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -737,11 +737,11 @@ export namespace main {
 	    last_error: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DesktopFlow(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -764,17 +764,17 @@ export namespace main {
 	        this.updated_at = source["updated_at"];
 	    }
 	}
-
-
+	
+	
 	export class DominatedNoteInput {
 	    variant: string;
 	    dominated_by: string[];
 	    summary: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DominatedNoteInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -793,11 +793,11 @@ export namespace main {
 	    branch: string;
 	    use_worktree: boolean;
 	    enabled: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new FlowInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -821,11 +821,11 @@ export namespace main {
 	    prompt: string;
 	    branch: string;
 	    use_worktree: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new FlowTemplate(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -849,11 +849,11 @@ export namespace main {
 	    days_stale: number;
 	    r_eff: number;
 	    drift_count: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new GovernanceFindingView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -879,11 +879,11 @@ export namespace main {
 	    source_artifact_ref: string;
 	    source_title: string;
 	    problem_ref: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProblemCandidateView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -903,11 +903,11 @@ export namespace main {
 	    coverage: CoverageView;
 	    findings: GovernanceFindingView[];
 	    problem_candidates: ProblemCandidateView[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new GovernanceOverviewView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.last_scan_at = source["last_scan_at"];
@@ -915,7 +915,7 @@ export namespace main {
 	        this.findings = this.convertValues(source["findings"], GovernanceFindingView);
 	        this.problem_candidates = this.convertValues(source["problem_candidates"], ProblemCandidateView);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -939,11 +939,11 @@ export namespace main {
 	    name: string;
 	    path: string;
 	    version: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new InstalledAgent(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
@@ -955,18 +955,18 @@ export namespace main {
 	export class NormRuleInput {
 	    dimension: string;
 	    method: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new NormRuleInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.dimension = source["dimension"];
 	        this.method = source["method"];
 	    }
 	}
-
+	
 	export class ParityPlanInput {
 	    baseline_set: string[];
 	    window: string;
@@ -974,11 +974,11 @@ export namespace main {
 	    normalization: NormRuleInput[];
 	    missing_data_policy: string;
 	    pinned_conditions: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ParityPlanInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.baseline_set = source["baseline_set"];
@@ -988,7 +988,7 @@ export namespace main {
 	        this.missing_data_policy = source["missing_data_policy"];
 	        this.pinned_conditions = source["pinned_conditions"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1007,15 +1007,15 @@ export namespace main {
 		    return a;
 		}
 	}
-
+	
 	export class TradeoffNoteInput {
 	    variant: string;
 	    summary: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TradeoffNoteInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant = source["variant"];
@@ -1034,11 +1034,11 @@ export namespace main {
 	    selected_ref: string;
 	    recommendation: string;
 	    parity_plan?: ParityPlanInput;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PortfolioCompareInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.portfolio_ref = source["portfolio_ref"];
@@ -1053,7 +1053,7 @@ export namespace main {
 	        this.recommendation = source["recommendation"];
 	        this.parity_plan = this.convertValues(source["parity_plan"], ParityPlanInput);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1086,11 +1086,11 @@ export namespace main {
 	    assumption_notes: string;
 	    rollback_notes: string;
 	    evidence_refs: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PortfolioVariantInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1114,11 +1114,11 @@ export namespace main {
 	    mode: string;
 	    no_stepping_stone_rationale: string;
 	    variants: PortfolioVariantInput[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PortfolioCreateInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.problem_ref = source["problem_ref"];
@@ -1127,7 +1127,7 @@ export namespace main {
 	        this.no_stepping_stone_rationale = source["no_stepping_stone_rationale"];
 	        this.variants = this.convertValues(source["variants"], PortfolioVariantInput);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1155,11 +1155,11 @@ export namespace main {
 	    stepping_stone: boolean;
 	    strengths: string[];
 	    risks: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new VariantView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1182,11 +1182,11 @@ export namespace main {
 	    body: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PortfolioDetailView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1199,7 +1199,7 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	        this.updated_at = source["updated_at"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1226,11 +1226,11 @@ export namespace main {
 	    problem_ref: string;
 	    has_comparison: boolean;
 	    created_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PortfolioSummaryView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1242,18 +1242,18 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	    }
 	}
-
-
+	
+	
 	export class ProblemCharacterizationInput {
 	    problem_ref: string;
 	    dimensions: ComparisonDimensionInput[];
 	    parity_rules: string;
 	    parity_plan?: ParityPlanInput;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProblemCharacterizationInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.problem_ref = source["problem_ref"];
@@ -1261,7 +1261,7 @@ export namespace main {
 	        this.parity_rules = source["parity_rules"];
 	        this.parity_plan = this.convertValues(source["parity_plan"], ParityPlanInput);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1291,11 +1291,11 @@ export namespace main {
 	    constraints: string[];
 	    optimization_targets: string[];
 	    observation_indicators: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProblemCreateInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
@@ -1329,11 +1329,11 @@ export namespace main {
 	    body: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProblemDetailView(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1355,7 +1355,7 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	        this.updated_at = source["updated_at"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1374,7 +1374,7 @@ export namespace main {
 		    return a;
 		}
 	}
-
+	
 	export class ProjectInfo {
 	    path: string;
 	    name: string;
@@ -1383,11 +1383,11 @@ export namespace main {
 	    problem_count: number;
 	    decision_count: number;
 	    stale_count: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ProjectInfo(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -1399,7 +1399,7 @@ export namespace main {
 	        this.stale_count = source["stale_count"];
 	    }
 	}
-
+	
 	export class TaskState {
 	    id: string;
 	    title: string;
@@ -1416,11 +1416,11 @@ export namespace main {
 	    completed_at: string;
 	    error_message: string;
 	    output: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TaskState(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1449,11 +1449,11 @@ export namespace main {
 	    status: string;
 	    created_at: string;
 	    updated_at: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TerminalSession(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1466,8 +1466,8 @@ export namespace main {
 	        this.updated_at = source["updated_at"];
 	    }
 	}
-
-
+	
+	
 
 }
 

@@ -13,6 +13,10 @@ import {
   AlertTriangle,
   Scale,
   CheckCircle2,
+  Archive,
+  Trash2,
+  ListTodo,
+  FolderPlus,
 } from "lucide-react";
 import { Dashboard } from "./pages/Dashboard";
 import { Problems } from "./pages/Problems";
@@ -27,7 +31,7 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
 import { listProjects, switchProject, listTasks, type ProjectInfo, type TaskState } from "./lib/api";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { EventsOn, WindowToggleMaximise } from "../wailsjs/runtime/runtime";
 
 type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "flows" | "tasks" | "settings";
 
@@ -48,6 +52,8 @@ export default function App() {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showNewTask, setShowNewTask] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
   const [toasts, setToasts] = useState<AppErrorDetail[]>([]);
   const [notifications, setNotifications] = useState<DesktopNotification[]>([]);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -176,12 +182,35 @@ export default function App() {
           onClick={() => setSidebarExpanded(!sidebarExpanded)}
           active={sidebarExpanded}
         />
-        <RailBtn
-          icon={Plus}
-          tip="New task"
-          onClick={() => { setPage("tasks"); setShowNewTask(true); }}
-          accent
-        />
+        <div className="relative">
+          <RailBtn
+            icon={Plus}
+            tip="New task or project"
+            onClick={() => setShowPlusMenu(!showPlusMenu)}
+            accent
+          />
+          {showPlusMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
+              <div className="absolute left-12 top-0 z-50 w-40 rounded-lg border border-border bg-surface-1 py-1 shadow-xl">
+                <button
+                  onClick={() => { setShowPlusMenu(false); setPage("tasks"); setShowNewTask(true); }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  <ListTodo size={14} />
+                  New task
+                </button>
+                <button
+                  onClick={() => { setShowPlusMenu(false); setShowNewProject(true); }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  <FolderPlus size={14} />
+                  New project
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <RailBtn
           icon={Zap}
           tip="Flows"
@@ -205,7 +234,10 @@ export default function App() {
       {/* Sidebar */}
       {sidebarExpanded && (
         <div className="w-56 shrink-0 bg-surface-1 border-r border-border flex flex-col overflow-hidden">
-          <div className="wails-drag h-10" />
+          <div
+            className="wails-drag h-10"
+            onDoubleClick={() => { try { WindowToggleMaximise(); } catch { /* ignore */ } }}
+          />
 
           {/* Project tree */}
           <div className="flex-1 overflow-y-auto px-1">
@@ -253,14 +285,20 @@ export default function App() {
                         <p className="text-xs text-text-muted/50 px-2 py-1">No tasks</p>
                       )}
                       {pTasks.map((t) => (
-                        <button
+                        <SidebarTask
                           key={t.id}
-                          onClick={() => { setPage("tasks"); setSelectedId(t.id); }}
-                          className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-text-secondary hover:bg-surface-2 transition-colors"
-                        >
-                          <StatusDot status={t.status} />
-                          <span className="truncate">{t.title}</span>
-                        </button>
+                          task={t}
+                          selected={selectedId === t.id && page === "tasks"}
+                          onSelect={() => { setPage("tasks"); setSelectedId(t.id); }}
+                          onArchive={async () => {
+                            try {
+                              const { archiveTask: doArchive } = await import("./lib/api");
+                              await doArchive(t.id);
+                              setTasks((prev) => prev.filter((x) => x.id !== t.id));
+                              if (selectedId === t.id) setSelectedId(null);
+                            } catch (e) { console.error(e); }
+                          }}
+                        />
                       ))}
                     </div>
                   )}
@@ -296,7 +334,10 @@ export default function App() {
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden bg-surface-0">
         <main className="flex-1 overflow-y-auto bg-surface-0">
-          <div className="wails-drag sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-surface-0/80 px-6 backdrop-blur-sm">
+          <div
+            className="wails-drag sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-surface-0/80 px-6 backdrop-blur-sm"
+            onDoubleClick={() => { try { WindowToggleMaximise(); } catch { /* ignore */ } }}
+          >
             <h2 className="text-sm font-medium text-text-secondary">
               {activeProject?.name && <span className="text-text-muted">{activeProject.name} / </span>}
               {pageTitle(page)}
@@ -328,6 +369,8 @@ export default function App() {
                 selectedTaskId={selectedId}
                 showNewTask={showNewTask}
                 onNewTaskClose={() => setShowNewTask(false)}
+                projects={projects}
+                activeProjectPath={activeProject?.path}
               />
             )}
             {page === "settings" && (
@@ -346,6 +389,14 @@ export default function App() {
           onClose={() => setTerminalOpen(false)}
         />
       </div>
+
+      {/* New Project modal */}
+      {showNewProject && (
+        <NewProjectModal
+          onClose={() => setShowNewProject(false)}
+          onProjectAdded={() => { setRefreshKey((k) => k + 1); setShowNewProject(false); }}
+        />
+      )}
 
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={(p, id) => navigate(p as Page, id)} />
       <NotificationViewport
@@ -380,6 +431,122 @@ function pageTitle(page: Page): string {
   return REASONING_NAV.find((item) => item.id === page)?.label ?? "Workspace";
 }
 
+function NewProjectModal({
+  onClose,
+  onProjectAdded,
+}: {
+  onClose: () => void;
+  onProjectAdded: () => void;
+}) {
+  const [discovered, setDiscovered] = useState<ProjectInfo[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [selectedPath, setSelectedPath] = useState("");
+
+  useEffect(() => {
+    setScanning(true);
+    import("./lib/api").then(({ scanForProjects, listProjects }) =>
+      Promise.all([scanForProjects(), listProjects()]).then(([found, existing]) => {
+        const existingPaths = new Set(existing.map((p: ProjectInfo) => p.path));
+        setDiscovered(found.filter((f: ProjectInfo) => !existingPaths.has(f.path)));
+        setScanning(false);
+      })
+    ).catch(() => setScanning(false));
+  }, []);
+
+  const handlePick = async () => {
+    try {
+      const { openDirectoryPicker } = await import("./lib/api");
+      const path = await openDirectoryPicker();
+      if (path) setSelectedPath(path);
+    } catch { /* ignore */ }
+  };
+
+  const handleAdd = async (path: string) => {
+    try {
+      const { addProject } = await import("./lib/api");
+      await addProject(path);
+      onProjectAdded();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleInit = async (path: string) => {
+    try {
+      const { initProject } = await import("./lib/api");
+      await initProject(path);
+      onProjectAdded();
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-[480px] rounded-2xl border border-border bg-surface-1 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold">New project</h3>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary">x</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Manual path */}
+          <div className="flex gap-2">
+            <input
+              value={selectedPath}
+              onChange={(e) => setSelectedPath(e.target.value)}
+              placeholder="/path/to/project"
+              className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-primary"
+            />
+            <button onClick={handlePick} className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-3 transition-colors">
+              Browse
+            </button>
+          </div>
+
+          {selectedPath && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleAdd(selectedPath)}
+                className="rounded-lg bg-accent px-3 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
+              >
+                Add existing project
+              </button>
+              <button
+                onClick={() => handleInit(selectedPath)}
+                className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-3 transition-colors"
+              >
+                Init new project
+              </button>
+            </div>
+          )}
+
+          {/* Discovered projects */}
+          {scanning ? (
+            <p className="text-xs text-text-muted text-center py-4">Scanning for projects...</p>
+          ) : discovered.length > 0 ? (
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wider mb-2">Suggested</p>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {discovered.map((p) => (
+                  <button
+                    key={p.path}
+                    onClick={() => handleAdd(p.path)}
+                    className="w-full flex items-center gap-3 rounded-lg border border-border bg-surface-2/50 px-4 py-3 text-left hover:bg-surface-2 transition-colors"
+                  >
+                    <FolderPlus size={16} className="text-text-muted shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-xs text-text-muted font-mono truncate">{p.path}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted text-center py-4">No additional .haft/ projects found</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RailBtn({ icon: Icon, tip, onClick, active, accent }: {
   icon: typeof Plus;
   tip: string;
@@ -401,6 +568,71 @@ function RailBtn({ icon: Icon, tip, onClick, active, accent }: {
     >
       <Icon size={18} />
     </button>
+  );
+}
+
+function SidebarTask({
+  task,
+  selected,
+  onSelect,
+  onArchive,
+}: {
+  task: TaskState;
+  selected: boolean;
+  onSelect: () => void;
+  onArchive: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <div className="relative group">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onContextMenu={(e) => { e.preventDefault(); setMenuOpen(!menuOpen); }}
+        onKeyDown={(e) => { if (e.key === "Enter") onSelect(); }}
+        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
+          selected
+            ? "bg-surface-2 text-text-primary"
+            : "text-text-secondary hover:bg-surface-2"
+        }`}
+      >
+        <StatusDot status={task.status} />
+        <span className="truncate flex-1 text-left">{task.title}</span>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMenuOpen(!menuOpen); } }}
+          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary p-0.5 transition-opacity shrink-0 cursor-pointer"
+        >
+          <MoreHorizontal size={12} />
+        </span>
+      </div>
+
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-border bg-surface-1 py-1 shadow-xl">
+            <button
+              onClick={() => { setMenuOpen(false); onArchive(); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
+            >
+              <Archive size={12} />
+              Archive
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); onArchive(); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 transition-colors"
+            >
+              <Trash2 size={12} />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,6 +32,10 @@ func TestLoadDesktopConfigAppliesDefaults(t *testing.T) {
 
 	if cfg.NotifyEnabled {
 		t.Fatalf("expected notify_enabled=false")
+	}
+
+	if cfg.ConfigVersion != currentDesktopConfigVersion {
+		t.Fatalf("expected config version %d, got %d", currentDesktopConfigVersion, cfg.ConfigVersion)
 	}
 
 	if cfg.TaskTimeoutMinutes != 300 {
@@ -80,8 +85,76 @@ func TestSaveDesktopConfigRoundTrip(t *testing.T) {
 		t.Fatalf("expected 2 presets, got %d", len(loaded.AgentPresets))
 	}
 
-	if _, err := os.Stat(filepath.Join(home, ".haft", "desktop-config.json")); err != nil {
+	configPath := filepath.Join(home, ".haft", "desktop-config.json")
+
+	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("expected config file to exist: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var payload map[string]any
+
+	err = json.Unmarshal(data, &payload)
+	if err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	versionValue, ok := payload["config_version"].(float64)
+	if !ok {
+		t.Fatalf("expected config_version to be written")
+	}
+
+	if int(versionValue) != currentDesktopConfigVersion {
+		t.Fatalf("expected written config version %d, got %d", currentDesktopConfigVersion, int(versionValue))
+	}
+}
+
+func TestLoadDesktopConfigMigratesLegacyConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path, err := desktopConfigPath()
+	if err != nil {
+		t.Fatalf("desktopConfigPath: %v", err)
+	}
+
+	data := []byte(`{
+  "default_agent": "codex",
+  "notify_enabled": false,
+  "future_field": "ignored"
+}`)
+	err = os.WriteFile(path, data, 0o644)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := loadDesktopConfig()
+	if err != nil {
+		t.Fatalf("loadDesktopConfig: %v", err)
+	}
+
+	if cfg.ConfigVersion != currentDesktopConfigVersion {
+		t.Fatalf("expected migrated config version %d, got %d", currentDesktopConfigVersion, cfg.ConfigVersion)
+	}
+
+	if cfg.DefaultAgent != string(AgentCodex) {
+		t.Fatalf("expected default agent codex, got %q", cfg.DefaultAgent)
+	}
+
+	if cfg.TaskTimeoutMinutes != defaultDesktopConfig().TaskTimeoutMinutes {
+		t.Fatalf(
+			"expected timeout %d, got %d",
+			defaultDesktopConfig().TaskTimeoutMinutes,
+			cfg.TaskTimeoutMinutes,
+		)
+	}
+
+	if cfg.AutoWireMCP != defaultDesktopConfig().AutoWireMCP {
+		t.Fatalf("expected auto_wire_mcp default %t, got %t", defaultDesktopConfig().AutoWireMCP, cfg.AutoWireMCP)
 	}
 }
 

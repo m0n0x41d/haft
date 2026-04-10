@@ -15,7 +15,10 @@ type AgentPreset struct {
 	Role      string `json:"role"`
 }
 
+const currentDesktopConfigVersion = 1
+
 type DesktopConfig struct {
+	ConfigVersion      int           `json:"config_version"`
 	DefaultAgent       string        `json:"default_agent"`
 	ReviewAgent        string        `json:"review_agent"`
 	VerifyAgent        string        `json:"verify_agent"`
@@ -30,6 +33,7 @@ type DesktopConfig struct {
 
 func defaultDesktopConfig() DesktopConfig {
 	return DesktopConfig{
+		ConfigVersion:      currentDesktopConfigVersion,
 		DefaultAgent:       string(AgentClaude),
 		ReviewAgent:        string(AgentCodex),
 		VerifyAgent:        string(AgentClaude),
@@ -81,10 +85,16 @@ func loadDesktopConfig() (*DesktopConfig, error) {
 		return nil, err
 	}
 
+	storedVersion, err := detectDesktopConfigVersion(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
+	cfg = migrateDesktopConfig(cfg, storedVersion)
 	cfg = normalizeDesktopConfig(cfg)
 	return &cfg, nil
 }
@@ -105,8 +115,38 @@ func saveDesktopConfig(cfg DesktopConfig) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+func detectDesktopConfigVersion(data []byte) (int, error) {
+	var payload struct {
+		ConfigVersion *int `json:"config_version"`
+	}
+
+	err := json.Unmarshal(data, &payload)
+	if err != nil {
+		return 0, err
+	}
+
+	if payload.ConfigVersion == nil {
+		return 0, nil
+	}
+
+	return *payload.ConfigVersion, nil
+}
+
+func migrateDesktopConfig(cfg DesktopConfig, storedVersion int) DesktopConfig {
+	if storedVersion >= currentDesktopConfigVersion {
+		return cfg
+	}
+
+	cfg.ConfigVersion = currentDesktopConfigVersion
+	return cfg
+}
+
 func normalizeDesktopConfig(cfg DesktopConfig) DesktopConfig {
 	defaults := defaultDesktopConfig()
+
+	if cfg.ConfigVersion <= 0 {
+		cfg.ConfigVersion = defaults.ConfigVersion
+	}
 
 	cfg.DefaultAgent = normalizeAgentKind(cfg.DefaultAgent, defaults.DefaultAgent)
 	cfg.ReviewAgent = normalizeAgentKind(cfg.ReviewAgent, defaults.ReviewAgent)

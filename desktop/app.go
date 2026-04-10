@@ -353,6 +353,15 @@ func (a *App) SearchArtifacts(query string) ([]ArtifactView, error) {
 	return mapArtifacts(arts, toArtifactView, 0), nil
 }
 
+// AssessComparisonReadiness evaluates whether a portfolio is ready for fair comparison.
+// This is the probe-or-commit gate: commit (ready), probe (need data), widen (need variants), reroute (wrong framing).
+func (a *App) AssessComparisonReadiness(portfolioID string) (*graph.ReadinessReport, error) {
+	if a.dbConn == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	return graph.AssessReadiness(a.ctx, a.dbConn.GetRawDB(), portfolioID)
+}
+
 func (a *App) GetCoverage() (*CoverageView, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("no database connection")

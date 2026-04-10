@@ -12,6 +12,7 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -298,6 +299,12 @@ func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree
 	}
 
 	problems := a.loadDecisionProblems(detail.ProblemRefs)
+
+	// Enrich with invariants from ALL decisions governing the affected files,
+	// not just this decision's own invariants. This is the knowledge graph value:
+	// agents see the full architectural context, not just one decision's view.
+	detail = a.enrichWithGraphInvariants(detail)
+
 	prompt := buildImplementationPrompt(dec, detail, problems)
 
 	if branchName == "" {
@@ -548,6 +555,52 @@ func (a *App) loadDecisionProblems(problemRefs []string) []*artifact.Artifact {
 	}
 
 	return problems
+}
+
+// enrichWithGraphInvariants queries the knowledge graph for invariants
+// from OTHER decisions that govern the same affected files. Deduplicates
+// against the decision's own invariants and appends with source attribution.
+func (a *App) enrichWithGraphInvariants(detail DecisionDetailView) DecisionDetailView {
+	if a.dbConn == nil || len(detail.AffectedFiles) == 0 {
+		return detail
+	}
+
+	gs := graph.NewStore(a.dbConn.GetRawDB())
+
+	// Collect existing invariant texts for dedup
+	existing := make(map[string]bool, len(detail.Invariants))
+	for _, inv := range detail.Invariants {
+		existing[inv] = true
+	}
+
+	var extra []string
+	for _, filePath := range detail.AffectedFiles {
+		invariants, err := gs.FindInvariantsForFile(a.ctx, filePath)
+		if err != nil {
+			continue
+		}
+		for _, inv := range invariants {
+			// Skip invariants from this decision (already included)
+			if inv.DecisionID == detail.ID {
+				continue
+			}
+			tagged := fmt.Sprintf("[%s] %s", inv.DecisionID, inv.Text)
+			if !existing[tagged] && !existing[inv.Text] {
+				existing[tagged] = true
+				extra = append(extra, tagged)
+			}
+		}
+	}
+
+	if len(extra) > 0 {
+		// Append graph-sourced invariants after the decision's own
+		enriched := make([]string, 0, len(detail.Invariants)+len(extra))
+		enriched = append(enriched, detail.Invariants...)
+		enriched = append(enriched, extra...)
+		detail.Invariants = enriched
+	}
+
+	return detail
 }
 
 // --- Helpers ---

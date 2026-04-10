@@ -671,6 +671,7 @@ export namespace main {
 	
 	
 	export class DesktopConfig {
+	    config_version: number;
 	    default_agent: string;
 	    review_agent: string;
 	    verify_agent: string;
@@ -681,6 +682,7 @@ export namespace main {
 	    default_ide: string;
 	    default_worktree: boolean;
 	    auto_wire_mcp: boolean;
+	    default_auto_run: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new DesktopConfig(source);
@@ -688,6 +690,7 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.config_version = source["config_version"];
 	        this.default_agent = source["default_agent"];
 	        this.review_agent = source["review_agent"];
 	        this.verify_agent = source["verify_agent"];
@@ -698,6 +701,7 @@ export namespace main {
 	        this.default_ide = source["default_ide"];
 	        this.default_worktree = source["default_worktree"];
 	        this.auto_wire_mcp = source["auto_wire_mcp"];
+	        this.default_auto_run = source["default_auto_run"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1416,6 +1420,7 @@ export namespace main {
 	    completed_at: string;
 	    error_message: string;
 	    output: string;
+	    auto_run: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TaskState(source);
@@ -1438,6 +1443,7 @@ export namespace main {
 	        this.completed_at = source["completed_at"];
 	        this.error_message = source["error_message"];
 	        this.output = source["output"];
+	        this.auto_run = source["auto_run"];
 	    }
 	}
 	export class TerminalSession {

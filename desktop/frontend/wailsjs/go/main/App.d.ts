@@ -90,6 +90,8 @@ export function ScanForProjects():Promise<Array<main.ProjectInfo>>;
 
 export function SearchArtifacts(arg1:string):Promise<Array<main.ArtifactView>>;
 
+export function SetTaskAutoRun(arg1:string,arg2:boolean):Promise<void>;
+
 export function SpawnTask(arg1:string,arg2:string,arg3:boolean,arg4:string):Promise<main.TaskState>;
 
 export function SwitchProject(arg1:string):Promise<void>;

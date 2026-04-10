@@ -275,6 +275,25 @@ func (s *desktopTaskStore) CountTaskRefs(ctx context.Context, worktreePath strin
 	return count, nil
 }
 
+func (s *desktopTaskStore) SetAutoRun(ctx context.Context, id string, autoRun bool) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("desktop task store is not initialized")
+	}
+
+	val := 0
+	if autoRun {
+		val = 1
+	}
+
+	_, err := s.db.ExecContext(
+		ctx,
+		`UPDATE desktop_tasks SET auto_run = ? WHERE id = ?`,
+		val,
+		id,
+	)
+	return err
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

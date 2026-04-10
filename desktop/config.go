@@ -29,6 +29,7 @@ type DesktopConfig struct {
 	DefaultIDE         string        `json:"default_ide"`
 	DefaultWorktree    bool          `json:"default_worktree"`
 	AutoWireMCP        bool          `json:"auto_wire_mcp"`
+	DefaultAutoRun     bool          `json:"default_auto_run"` // true = agent runs without pausing, false = stop-and-ask
 }
 
 func defaultDesktopConfig() DesktopConfig {

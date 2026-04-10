@@ -54,6 +54,7 @@ type TaskState struct {
 	CompletedAt    string `json:"completed_at"`
 	ErrorMessage   string `json:"error_message"`
 	Output         string `json:"output"` // bounded output tail
+	AutoRun        bool   `json:"auto_run"`       // true = agent runs without pausing
 }
 
 type TaskOutputEvent struct {
@@ -327,6 +328,26 @@ func (r *taskRunner) emitTaskStatus(state TaskState) {
 	}
 
 	runtime.EventsEmit(r.app.ctx, "task.status", state)
+}
+
+func (r *taskRunner) setAutoRun(id string, autoRun bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	rt, ok := r.tasks[id]
+	if !ok {
+		// Task might be persisted but not in memory — update store directly
+		if r.store != nil {
+			return r.store.SetAutoRun(context.Background(), id, autoRun)
+		}
+		return fmt.Errorf("task not found: %s", id)
+	}
+
+	rt.state.AutoRun = autoRun
+	if r.store != nil {
+		_ = r.store.SetAutoRun(context.Background(), id, autoRun)
+	}
+	return nil
 }
 
 func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
@@ -706,6 +727,16 @@ func (a *App) CancelTask(id string) error {
 	a.tasks.emitTaskStatus(rt.state)
 
 	return nil
+}
+
+// SetTaskAutoRun toggles auto-run mode for a task.
+// Auto-run: agent proceeds without user intervention.
+// Checkpointed: agent pauses at natural breakpoints, user clicks "Continue".
+func (a *App) SetTaskAutoRun(id string, autoRun bool) error {
+	if a.tasks == nil {
+		return fmt.Errorf("no task runner")
+	}
+	return a.tasks.setAutoRun(id, autoRun)
 }
 
 // ArchiveTask hides a completed task and cleans up its worktree when safe.

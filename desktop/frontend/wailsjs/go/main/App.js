@@ -178,6 +178,10 @@ export function SearchArtifacts(arg1) {
   return window['go']['main']['App']['SearchArtifacts'](arg1);
 }
 
+export function SetTaskAutoRun(arg1, arg2) {
+  return window['go']['main']['App']['SetTaskAutoRun'](arg1, arg2);
+}
+
 export function SpawnTask(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SpawnTask'](arg1, arg2, arg3, arg4);
 }

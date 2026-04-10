@@ -383,4 +383,11 @@ var kernelMigrations = []Migration{
 			"CREATE INDEX IF NOT EXISTS idx_desktop_flows_next_run ON desktop_flows(next_run_at)",
 		},
 	},
+	{
+		Version:     25,
+		Description: "Add auto_run column to desktop tasks",
+		Statements: []string{
+			"ALTER TABLE desktop_tasks ADD COLUMN auto_run INTEGER NOT NULL DEFAULT 0",
+		},
+	},
 }

@@ -102,6 +102,7 @@ type desktopGovernanceStore struct {
 
 type governanceController struct {
 	mu          sync.RWMutex
+	scanMu      sync.Mutex
 	app         *App
 	store       *artifact.Store
 	db          *sql.DB
@@ -110,9 +111,12 @@ type governanceController struct {
 	interval    time.Duration
 	stop        chan struct{}
 	done        chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
 	known       map[string]struct{}
 	snapshot    GovernanceOverviewView
 	started     bool
+	stopOnce    sync.Once
 }
 
 func newDesktopGovernanceStore(db *sql.DB) *desktopGovernanceStore {
@@ -144,6 +148,7 @@ func (g *governanceController) start(ctx context.Context) {
 		return
 	}
 	g.started = true
+	g.ctx, g.cancel = context.WithCancel(ctx)
 	g.mu.Unlock()
 
 	go func() {
@@ -152,14 +157,14 @@ func (g *governanceController) start(ctx context.Context) {
 		defer close(g.done)
 		defer ticker.Stop()
 
-		if _, err := g.scan(ctx, false); err != nil {
+		if _, err := g.scan(g.ctx, false); err != nil && g.ctx.Err() == nil {
 			g.app.emitAppError("governance scan", err)
 		}
 
 		for {
 			select {
 			case <-ticker.C:
-				if _, err := g.scan(ctx, true); err != nil {
+				if _, err := g.scan(g.ctx, true); err != nil && g.ctx.Err() == nil {
 					g.app.emitAppError("governance scan", err)
 				}
 			case <-g.stop:
@@ -182,23 +187,59 @@ func (g *governanceController) shutdown() {
 		return
 	}
 
-	close(g.stop)
+	g.stopOnce.Do(func() {
+		// Cancel context first — aborts any in-flight DB operations from
+		// both the background goroutine and concurrent frontend scan calls.
+		if g.cancel != nil {
+			g.cancel()
+		}
+		close(g.stop)
+	})
 	<-g.done
 }
 
-func (g *governanceController) snapshotOrScan(ctx context.Context) (GovernanceOverviewView, error) {
+func (g *governanceController) snapshotOrScan(_ context.Context) (GovernanceOverviewView, error) {
 	g.mu.RLock()
 	snapshot := g.snapshot
+	scanCtx := g.ctx
 	g.mu.RUnlock()
 
 	if snapshot.LastScanAt != "" || len(snapshot.Findings) > 0 || len(snapshot.ProblemCandidates) > 0 {
 		return snapshot, nil
 	}
 
-	return g.scan(ctx, false)
+	// Use the controller's context if available; fall back to a background
+	// context for synchronous scans when the background goroutine isn't started
+	// (e.g., tests, or environments without Wails events).
+	if scanCtx != nil && scanCtx.Err() != nil {
+		return GovernanceOverviewView{}, fmt.Errorf("governance controller is shutting down")
+	}
+	if scanCtx == nil {
+		scanCtx = context.Background()
+	}
+
+	return g.scan(scanCtx, false)
 }
 
-func (g *governanceController) scan(ctx context.Context, notify bool) (GovernanceOverviewView, error) {
+func (g *governanceController) scan(callerCtx context.Context, notify bool) (GovernanceOverviewView, error) {
+	// Serialize scans — prevents SQLITE_BUSY when the background goroutine
+	// and a frontend GetDashboard() call race into buildGovernanceOverview.
+	g.scanMu.Lock()
+	defer g.scanMu.Unlock()
+
+	// Prefer the controller's own context (cancelled on shutdown) when available.
+	// Fall back to the caller's context for synchronous scans (tests, no Wails runtime).
+	ctx := g.ctx
+	if ctx != nil && ctx.Err() != nil {
+		return GovernanceOverviewView{}, fmt.Errorf("governance controller is shutting down")
+	}
+	if ctx == nil {
+		ctx = callerCtx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	overview, err := buildGovernanceOverview(ctx, g.store, g.db, g.state, g.projectRoot)
 	if err != nil {
 		return GovernanceOverviewView{}, err

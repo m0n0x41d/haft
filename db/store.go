@@ -177,6 +177,11 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, err
 	}
 
+	// WAL mode + busy timeout: prevent SQLITE_BUSY when multiple goroutines
+	// (governance scanner, dashboard, task store) access the same DB concurrently.
+	_, _ = conn.Exec("PRAGMA journal_mode=WAL")
+	_, _ = conn.Exec("PRAGMA busy_timeout=5000")
+
 	if _, err := conn.Exec(schema); err != nil {
 		return nil, fmt.Errorf("failed to init schema: %v", err)
 	}

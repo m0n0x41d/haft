@@ -117,7 +117,8 @@ func (s *desktopTaskStore) ListTasks(ctx context.Context, projectPath string) ([
 			error_message,
 			output_tail,
 			started_at,
-			COALESCE(completed_at, '')
+			COALESCE(completed_at, ''),
+			COALESCE(auto_run, 0)
 		FROM desktop_tasks
 		WHERE archived_at IS NULL
 			AND project_path = ?
@@ -169,7 +170,8 @@ func (s *desktopTaskStore) GetTask(ctx context.Context, id string) (*TaskState, 
 			error_message,
 			output_tail,
 			started_at,
-			COALESCE(completed_at, '')
+			COALESCE(completed_at, ''),
+			COALESCE(auto_run, 0)
 		FROM desktop_tasks
 		WHERE id = ?
 			AND archived_at IS NULL`,
@@ -302,6 +304,7 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 	var state TaskState
 	var worktree int
 	var reusedWorktree int
+	var autoRun int
 
 	err := scanner.Scan(
 		&state.ID,
@@ -319,6 +322,7 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 		&state.Output,
 		&state.StartedAt,
 		&state.CompletedAt,
+		&autoRun,
 	)
 	if err != nil {
 		return TaskState{}, err
@@ -326,6 +330,7 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 
 	state.Worktree = worktree == 1
 	state.ReusedWorktree = reusedWorktree == 1
+	state.AutoRun = autoRun == 1
 
 	return state, nil
 }

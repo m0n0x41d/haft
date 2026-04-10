@@ -225,6 +225,7 @@ func (a *App) InitProject(path string) (*ProjectInfo, error) {
 }
 
 // SwitchProject changes the active project — closes current DB, opens new one.
+// Validates the new project's DB is accessible BEFORE tearing down the old one.
 func (a *App) SwitchProject(path string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -236,10 +237,27 @@ func (a *App) SwitchProject(path string) error {
 		return fmt.Errorf("no .haft/ directory in %s", path)
 	}
 
+	// Pre-validate: check that the new project's config and DB are accessible
+	// BEFORE tearing down the current project. This prevents zombie state.
+	newCfg, err := project.Load(haftDir)
+	if err != nil || newCfg == nil {
+		return fmt.Errorf("cannot load project config from %s: %w", haftDir, err)
+	}
+	newDBPath, err := newCfg.DBPath()
+	if err != nil {
+		return fmt.Errorf("cannot resolve DB path for %s: %w", path, err)
+	}
+	testDB, err := db.NewStore(newDBPath)
+	if err != nil {
+		return fmt.Errorf("cannot open DB for %s: %w", path, err)
+	}
+	testDB.Close() // validated — close the test connection
+
 	if a.tasks != nil && a.tasks.hasRunningTasks() {
 		return fmt.Errorf("cannot switch projects while desktop tasks are still running")
 	}
 
+	// Now safe to tear down — we know the new project is accessible.
 	if a.governance != nil {
 		a.governance.shutdown()
 		a.governance = nil
@@ -257,16 +275,20 @@ func (a *App) SwitchProject(path string) error {
 
 	a.tasks = nil
 
-	// Close current DB
 	if a.dbConn != nil {
 		a.dbConn.Close()
 		a.dbConn = nil
 		a.store = nil
 	}
 
-	// Re-init with new project
+	// Re-init with validated project
 	a.projectRoot = path
 	a.startup(a.ctx)
+
+	// Verify startup succeeded
+	if a.store == nil {
+		return fmt.Errorf("failed to initialize project %s — store is nil after startup", path)
+	}
 
 	return nil
 }

@@ -361,7 +361,7 @@ func (a *App) GetCoverage() (*CoverageView, error) {
 
 func (a *App) GetGovernanceOverview() (*GovernanceOverviewView, error) {
 	if a.governance == nil {
-		return nil, fmt.Errorf("governance controller is not initialized")
+		return &GovernanceOverviewView{}, nil // not yet initialized (e.g. during project switch)
 	}
 
 	overview, err := a.governance.snapshotOrScan(a.ctx)
@@ -374,7 +374,7 @@ func (a *App) GetGovernanceOverview() (*GovernanceOverviewView, error) {
 
 func (a *App) RefreshGovernance() (*GovernanceOverviewView, error) {
 	if a.governance == nil {
-		return nil, fmt.Errorf("governance controller is not initialized")
+		return &GovernanceOverviewView{}, nil
 	}
 
 	overview, err := a.governance.scan(a.ctx, true)

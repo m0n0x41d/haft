@@ -232,7 +232,9 @@ func (g *governanceController) scan(callerCtx context.Context, notify bool) (Gov
 	// Fall back to the caller's context for synchronous scans (tests, no Wails runtime).
 	ctx := g.ctx
 	if ctx != nil && ctx.Err() != nil {
-		return GovernanceOverviewView{}, fmt.Errorf("governance controller is shutting down")
+		// Shutting down — return empty data, not an error.
+		// Errors during shutdown are not actionable and just produce toast noise.
+		return GovernanceOverviewView{}, nil
 	}
 	if ctx == nil {
 		ctx = callerCtx
@@ -290,9 +292,18 @@ func buildGovernanceOverview(
 	state *desktopGovernanceStore,
 	projectRoot string,
 ) (GovernanceOverviewView, error) {
+	// Check context before expensive operations — if shutting down, return empty.
+	if ctx.Err() != nil {
+		return GovernanceOverviewView{}, nil
+	}
+
 	coverage, coverageErr := buildCoverageView(ctx, db, projectRoot, nil)
 	findings, err := artifact.ScanStale(ctx, store, projectRoot)
 	if err != nil {
+		// "database is closed" during project switch is expected, not an error.
+		if strings.Contains(err.Error(), "database is closed") || ctx.Err() != nil {
+			return GovernanceOverviewView{}, nil
+		}
 		return GovernanceOverviewView{}, fmt.Errorf("scan stale artifacts: %w", err)
 	}
 
@@ -304,11 +315,17 @@ func buildGovernanceOverview(
 	candidateDrafts := buildProblemCandidates(findings)
 
 	if err := state.UpsertCandidates(ctx, candidateDrafts); err != nil {
+		if strings.Contains(err.Error(), "database is closed") || ctx.Err() != nil {
+			return GovernanceOverviewView{}, nil
+		}
 		return GovernanceOverviewView{}, fmt.Errorf("sync problem candidates: %w", err)
 	}
 
 	candidates, err := state.ListActiveCandidates(ctx, candidateDrafts)
 	if err != nil {
+		if strings.Contains(err.Error(), "database is closed") || ctx.Err() != nil {
+			return GovernanceOverviewView{}, nil
+		}
 		return GovernanceOverviewView{}, fmt.Errorf("list problem candidates: %w", err)
 	}
 

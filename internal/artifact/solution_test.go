@@ -734,16 +734,16 @@ func TestComputeParetoFront_SimpleDominance(t *testing.T) {
 		},
 	}
 
-	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "cost", Role: "target", Polarity: "lower_better"},
 	}, MissingDataPolicyExplicitAbstain)
 
-	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings, got %+v", warnings)
+	if len(pr.warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", pr.warnings)
 	}
-	if len(front) != 1 || front[0] != "V2" {
-		t.Fatalf("expected front [V2], got %+v", front)
+	if len(pr.front) != 1 || pr.front[0] != "V2" {
+		t.Fatalf("expected front [V2], got %+v", pr.front)
 	}
 }
 
@@ -757,16 +757,16 @@ func TestComputeParetoFront_KeepsTiesAndMissingScoresOnFront(t *testing.T) {
 		},
 	}
 
-	front, warnings := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "cost", Role: "target", Polarity: "lower_better"},
 	}, MissingDataPolicyExplicitAbstain)
 
-	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings, got %+v", warnings)
+	if len(pr.warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", pr.warnings)
 	}
-	if !sameTrimmedSet(front, []string{"V1", "V2", "V3"}) {
-		t.Fatalf("expected missing-score abstain to keep all variants on the front, got %+v", front)
+	if !sameTrimmedSet(pr.front, []string{"V1", "V2", "V3"}) {
+		t.Fatalf("expected missing-score abstain to keep all variants on the front, got %+v", pr.front)
 	}
 }
 
@@ -779,16 +779,16 @@ func TestComputeParetoFront_ExcludesObservationDimensions(t *testing.T) {
 		},
 	}
 
-	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
 		{Name: "throughput", Role: "target", Polarity: "higher_better"},
 		{Name: "page count", Role: "observation", Polarity: "lower_better"},
 	}, MissingDataPolicyExplicitAbstain)
 
-	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings, got %+v", warnings)
+	if len(pr.warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", pr.warnings)
 	}
-	if len(front) != 1 || front[0] != "V1" {
-		t.Fatalf("expected observation dimension to be ignored and V1 to dominate, got %+v", front)
+	if len(pr.front) != 1 || pr.front[0] != "V1" {
+		t.Fatalf("expected observation dimension to be ignored and V1 to dominate, got %+v", pr.front)
 	}
 }
 
@@ -801,16 +801,16 @@ func TestComputeParetoFront_ExcludeSkipsMissingUnitBearingDimension(t *testing.T
 		},
 	}
 
-	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "cost", Role: "target", Polarity: "lower_better"},
 	}, MissingDataPolicyExclude)
 
-	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings, got %+v", warnings)
+	if len(pr.warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", pr.warnings)
 	}
-	if len(front) != 1 || front[0] != "V1" {
-		t.Fatalf("expected exclude policy to keep latency dominance and front [V1], got %+v", front)
+	if len(pr.front) != 1 || pr.front[0] != "V1" {
+		t.Fatalf("expected exclude policy to keep latency dominance and front [V1], got %+v", pr.front)
 	}
 }
 
@@ -827,7 +827,7 @@ func TestComputeParetoFront_EliminatesConstraintViolations(t *testing.T) {
 	// max_memory is a constraint with lower_better polarity.
 	// V2 has 2000MB which is worse than V1 (500MB) and V3 (250MB) — should be eliminated.
 	// V1 (500MB) is worse than V3 (250MB) but better than V2 (2000MB) — NOT eliminated.
-	front, warnings := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "cost", Role: "target", Polarity: "lower_better"},
 		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
@@ -835,26 +835,26 @@ func TestComputeParetoFront_EliminatesConstraintViolations(t *testing.T) {
 
 	// V2 (2000MB) is worst on constraint — should be eliminated.
 	hasEliminationWarning := false
-	for _, w := range warnings {
+	for _, w := range pr.warnings {
 		if strings.Contains(w, "V2") && strings.Contains(w, "eliminated") {
 			hasEliminationWarning = true
 		}
 	}
 	if !hasEliminationWarning {
-		t.Fatalf("expected constraint elimination warning for V2, warnings = %+v", warnings)
+		t.Fatalf("expected constraint elimination warning for V2, warnings = %+v", pr.warnings)
 	}
 
 	// V2 should not be on the front
-	for _, v := range front {
+	for _, v := range pr.front {
 		if v == "V2" {
-			t.Fatalf("V2 should be eliminated by constraint violation but is on Pareto front: %+v", front)
+			t.Fatalf("V2 should be eliminated by constraint violation but is on Pareto front: %+v", pr.front)
 		}
 	}
 
 	// After V2 eliminated, V1 and V3 compete on targets.
 	// V3 (8ms, $150) dominates V1 (10ms, $200) on both target dimensions → front = [V3].
-	if len(front) != 1 || front[0] != "V3" {
-		t.Fatalf("expected front [V3] (dominates V1 on both targets after V2 eliminated), got %+v", front)
+	if len(pr.front) != 1 || pr.front[0] != "V3" {
+		t.Fatalf("expected front [V3] (dominates V1 on both targets after V2 eliminated), got %+v", pr.front)
 	}
 }
 
@@ -868,21 +868,21 @@ func TestComputeParetoFront_ConstraintAllPass(t *testing.T) {
 	}
 
 	// Both variants have the same constraint score — neither eliminated
-	front, warnings := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
 	}, MissingDataPolicyExplicitAbstain)
 
 	// No elimination warnings
-	for _, w := range warnings {
+	for _, w := range pr.warnings {
 		if strings.Contains(w, "eliminated") {
 			t.Fatalf("unexpected elimination warning: %s", w)
 		}
 	}
 
 	// V2 dominates on latency, both equal on constraint
-	if len(front) != 1 || front[0] != "V2" {
-		t.Fatalf("expected front [V2], got %+v", front)
+	if len(pr.front) != 1 || pr.front[0] != "V2" {
+		t.Fatalf("expected front [V2], got %+v", pr.front)
 	}
 }
 
@@ -896,20 +896,52 @@ func TestComputeParetoFront_ConstraintMissingDataPreserved(t *testing.T) {
 	}
 
 	// V2 has missing constraint data — should NOT be eliminated (conservative)
-	front, _ := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
 		{Name: "latency", Role: "target", Polarity: "lower_better"},
 		{Name: "max_memory", Role: "constraint", Polarity: "lower_better"},
 	}, MissingDataPolicyExplicitAbstain)
 
 	// V2 should survive (missing data = no elimination)
 	found := false
-	for _, v := range front {
+	for _, v := range pr.front {
 		if v == "V2" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("V2 should survive constraint check with missing data, got front %+v", front)
+		t.Fatalf("V2 should survive constraint check with missing data, got front %+v", pr.front)
+	}
+}
+
+func TestComputeParetoFront_ExplicitLabelViolation(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "compliance"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "compliance": "pass"},
+			"V2": {"latency": "8ms", "compliance": "FAIL"},
+			"V3": {"latency": "12ms", "compliance": "no"},
+		},
+	}
+
+	pr := computeParetoFront(results, []string{"V1", "V2", "V3"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "compliance", Role: "constraint", Polarity: "higher_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	// V2 and V3 have explicit failure labels on a constraint — should be eliminated.
+	if pr.constraintEliminated == nil {
+		t.Fatalf("expected constraint eliminations, got nil")
+	}
+	if _, ok := pr.constraintEliminated["V2"]; !ok {
+		t.Fatalf("expected V2 eliminated for 'FAIL', eliminated = %+v", pr.constraintEliminated)
+	}
+	if _, ok := pr.constraintEliminated["V3"]; !ok {
+		t.Fatalf("expected V3 eliminated for 'no', eliminated = %+v", pr.constraintEliminated)
+	}
+
+	// Only V1 should be on the front.
+	if len(pr.front) != 1 || pr.front[0] != "V1" {
+		t.Fatalf("expected front [V1], got %+v", pr.front)
 	}
 }
 

@@ -59,10 +59,11 @@ type CompareValidationContext struct {
 
 // CompareValidationResult carries the pure outputs of compare-time validation.
 type CompareValidationResult struct {
-	Warnings            []string
-	EffectiveParity     *ParityPlan
-	ComparedVariants    []string
-	ComputedParetoFront []string
+	Warnings             []string
+	EffectiveParity      *ParityPlan
+	ComparedVariants     []string
+	ComputedParetoFront  []string
+	ConstraintEliminated map[string]string // variantID -> reason (nil when none)
 }
 
 // ValidateExploreInput checks variant constraints. Pure.
@@ -394,6 +395,24 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
 	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
 
+	// Merge constraint-eliminated variants into the dominated_variants list so the UI
+	// can display them with a clear reason even though they never entered dominance comparison.
+	if len(validation.ConstraintEliminated) > 0 {
+		existingDominated := make(map[string]bool, len(validatedResults.DominatedVariants))
+		for _, note := range validatedResults.DominatedVariants {
+			existingDominated[note.Variant] = true
+		}
+		for variantID, reason := range validation.ConstraintEliminated {
+			if existingDominated[variantID] {
+				continue
+			}
+			validatedResults.DominatedVariants = append(validatedResults.DominatedVariants, DominatedVariantExplanation{
+				Variant: variantID,
+				Summary: reason,
+			})
+		}
+	}
+
 	// Pure: build comparison section + apply to body
 	a.Body = BuildComparisonBody(a.Body, validatedResults, validation.ComparedVariants, validation.Warnings)
 
@@ -625,14 +644,16 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		return result, fmt.Errorf("target dimension '%s' missing scores for variants: %s", dimension, strings.Join(missingVariants, ", "))
 	}
 
-	computedFront, computeWarnings := computeParetoFront(
+	paretoResult := computeParetoFront(
 		input.Results,
 		comparedVariants,
 		ctx.CharacterizedDimensions,
 		missingDataPolicy,
 	)
+	computedFront := paretoResult.front
 	result.ComputedParetoFront = computedFront
-	warnings = append(warnings, computeWarnings...)
+	result.ConstraintEliminated = paretoResult.constraintEliminated
+	warnings = append(warnings, paretoResult.warnings...)
 	if len(input.Results.NonDominatedSet) > 0 && !sameTrimmedSet(input.Results.NonDominatedSet, computedFront) {
 		warnings = append(warnings,
 			fmt.Sprintf("provided non_dominated_set disagrees with the computed Pareto front; storing computed front: %s",
@@ -644,8 +665,21 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 				input.Results.SelectedRef))
 	}
 	warnings = append(warnings, parityChecklistWarnings(ctx.CharacterizedDimensions)...)
+
+	// Constraint-eliminated variants don't require user-provided explanations —
+	// they were removed by the system, not by manual dominance reasoning.
+	explanationVariants := comparedVariants
+	if len(paretoResult.constraintEliminated) > 0 {
+		explanationVariants = make([]string, 0, len(comparedVariants))
+		for _, v := range comparedVariants {
+			if _, eliminated := paretoResult.constraintEliminated[v]; !eliminated {
+				explanationVariants = append(explanationVariants, v)
+			}
+		}
+	}
+
 	if err := validateComparisonExplanationCoverage(
-		comparedVariants,
+		explanationVariants,
 		computedFront,
 		input.Results.DominatedVariants,
 		input.Results.ParetoTradeoffs,
@@ -1768,21 +1802,32 @@ func extractCharacterizedDimensionsWithRoles(body string) []charDim {
 	return dims
 }
 
+// paretoFrontResult holds the Pareto front, warnings, and any constraint-eliminated variants.
+type paretoFrontResult struct {
+	front                []string
+	warnings             []string
+	constraintEliminated map[string]string // variantID -> reason (nil when none eliminated)
+}
+
 func computeParetoFront(
 	results ComparisonResult,
 	comparedVariants []string,
 	characterized []charDim,
 	missingDataPolicy string,
-) ([]string, []string) {
+) paretoFrontResult {
 	specs, warnings := effectiveDominanceDimensions(results.Dimensions, characterized)
 	if len(specs) == 0 {
 		warnings = append(warnings, "computed Pareto front is conservative because no dominance-relevant dimensions could be derived")
-		return append([]string(nil), comparedVariants...), warnings
+		return paretoFrontResult{
+			front:    append([]string(nil), comparedVariants...),
+			warnings: warnings,
+		}
 	}
 
 	// Eliminate variants that violate constraint dimensions before dominance computation.
 	// Constraints are hard limits — a variant that fails one is not just "worse", it's inadmissible.
-	surviving := eliminateConstraintViolations(comparedVariants, results.Scores, specs, &warnings)
+	elimination := eliminateConstraintViolations(comparedVariants, results.Scores, specs, &warnings)
+	surviving := elimination.surviving
 	if len(surviving) == 0 {
 		warnings = append(warnings, "all variants eliminated by constraint violations; returning original set as Pareto front")
 		surviving = append([]string(nil), comparedVariants...)
@@ -1821,21 +1866,45 @@ func computeParetoFront(
 		nonDominated = append(nonDominated, variantID)
 	}
 
-	return nonDominated, warnings
+	return paretoFrontResult{
+		front:                nonDominated,
+		warnings:             warnings,
+		constraintEliminated: elimination.eliminated,
+	}
+}
+
+// constraintEliminationResult pairs a surviving set with the eliminated variants and their reasons.
+type constraintEliminationResult struct {
+	surviving  []string
+	eliminated map[string]string // variantID -> reason
+}
+
+// isExplicitConstraintViolation returns true when the score text is an explicit failure label
+// (case-insensitive): "FAIL", "violated", "no", "false".
+func isExplicitConstraintViolation(score string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(score))
+	switch normalized {
+	case "fail", "violated", "no", "false":
+		return true
+	}
+	return false
 }
 
 // eliminateConstraintViolations removes variants that fail any constraint dimension.
-// A constraint dimension has role="constraint" and polarity indicating which direction is better.
-// A variant violates a constraint if it's strictly worse than ALL other variants on that dimension
-// (i.e., it has the unique worst score). This prevents eliminating variants that merely aren't
-// the best — only the clearly worst on a constraint get removed.
+// Two elimination passes run in order:
+//  1. Explicit-label pass: if a variant's score is "FAIL", "violated", "no", or "false"
+//     (case-insensitive), the variant is eliminated immediately — this is an absolute signal,
+//     not a relative comparison.
+//  2. Relative-worst pass (original logic): a variant that is strictly worse than ALL other
+//     remaining variants on a constraint dimension gets eliminated.
+//
 // Missing data is treated conservatively: the variant is NOT eliminated.
 func eliminateConstraintViolations(
 	variants []string,
 	scores map[string]map[string]string,
 	specs []charDim,
 	warnings *[]string,
-) []string {
+) constraintEliminationResult {
 	constraintSpecs := make([]charDim, 0)
 	for _, spec := range specs {
 		if spec.Role == "constraint" {
@@ -1843,12 +1912,38 @@ func eliminateConstraintViolations(
 		}
 	}
 	if len(constraintSpecs) == 0 {
-		return append([]string(nil), variants...)
+		return constraintEliminationResult{
+			surviving:  append([]string(nil), variants...),
+			eliminated: nil,
+		}
 	}
 
 	eliminated := make(map[string]string) // variantID → reason
+
+	// Pass 1: explicit-label violations — absolute, not relative.
 	for _, constraint := range constraintSpecs {
 		for _, candidate := range variants {
+			if _, alreadyOut := eliminated[candidate]; alreadyOut {
+				continue
+			}
+			candidateScore := scoreForDimension(scores[candidate], constraint.Name)
+			if isExplicitConstraintViolation(candidateScore) {
+				eliminated[candidate] = fmt.Sprintf("Constraint violation: %s (score: %s)",
+					constraint.Name, strings.TrimSpace(candidateScore))
+			}
+		}
+	}
+
+	// Pass 2: relative-worst — only among variants still surviving after pass 1.
+	pass1Surviving := make([]string, 0, len(variants)-len(eliminated))
+	for _, v := range variants {
+		if _, out := eliminated[v]; !out {
+			pass1Surviving = append(pass1Surviving, v)
+		}
+	}
+
+	for _, constraint := range constraintSpecs {
+		for _, candidate := range pass1Surviving {
 			if _, alreadyOut := eliminated[candidate]; alreadyOut {
 				continue
 			}
@@ -1857,13 +1952,16 @@ func eliminateConstraintViolations(
 				continue // missing data — don't eliminate (conservative)
 			}
 
-			// Check if candidate is strictly worse than ALL other variants on this constraint.
+			// Check if candidate is strictly worse than ALL other surviving variants on this constraint.
 			worseCount := 0
 			comparableCount := 0
 			var bestOther string
 			var bestOtherScore string
-			for _, other := range variants {
+			for _, other := range pass1Surviving {
 				if other == candidate {
+					continue
+				}
+				if _, out := eliminated[other]; out {
 					continue
 				}
 				otherScore := scoreForDimension(scores[other], constraint.Name)
@@ -1891,7 +1989,10 @@ func eliminateConstraintViolations(
 	}
 
 	if len(eliminated) == 0 {
-		return append([]string(nil), variants...)
+		return constraintEliminationResult{
+			surviving:  append([]string(nil), variants...),
+			eliminated: nil,
+		}
 	}
 
 	surviving := make([]string, 0, len(variants)-len(eliminated))
@@ -1902,7 +2003,10 @@ func eliminateConstraintViolations(
 		}
 		surviving = append(surviving, v)
 	}
-	return surviving
+	return constraintEliminationResult{
+		surviving:  surviving,
+		eliminated: eliminated,
+	}
 }
 
 func effectiveDominanceDimensions(compareDimensions []string, characterized []charDim) ([]charDim, []string) {

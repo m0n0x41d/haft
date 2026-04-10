@@ -13,6 +13,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -295,6 +296,10 @@ func buildGovernanceOverview(
 		return GovernanceOverviewView{}, fmt.Errorf("scan stale artifacts: %w", err)
 	}
 
+	// Check invariants for decisions with drift findings
+	invariantFindings := checkDriftInvariants(ctx, store, db, findings)
+	findings = append(findings, invariantFindings...)
+
 	findingViews := toFindingViews(findings)
 	candidateDrafts := buildProblemCandidates(findings)
 
@@ -452,6 +457,51 @@ func impactedFilesByModule(ctx context.Context, db *sql.DB, files []string) map[
 	return grouped
 }
 
+// checkDriftInvariants runs invariant verification for decisions that have drift findings.
+// Returns additional StaleItems for invariant violations.
+func checkDriftInvariants(
+	ctx context.Context,
+	store *artifact.Store,
+	db *sql.DB,
+	existing []artifact.StaleItem,
+) []artifact.StaleItem {
+	if db == nil || store == nil {
+		return nil
+	}
+
+	gs := graph.NewStore(db)
+
+	// Collect decision IDs that have drift
+	driftDecisions := make(map[string]bool)
+	for _, item := range existing {
+		if item.Kind == "DecisionRecord" && len(item.DriftItems) > 0 {
+			driftDecisions[item.ID] = true
+		}
+	}
+
+	var violations []artifact.StaleItem
+	for decID := range driftDecisions {
+		results, err := graph.VerifyInvariants(ctx, gs, db, decID)
+		if err != nil {
+			continue
+		}
+		for _, r := range results {
+			if r.Status != graph.InvariantViolated {
+				continue
+			}
+			violations = append(violations, artifact.StaleItem{
+				ID:       decID,
+				Title:    "Invariant violation: " + r.Invariant.Text,
+				Kind:     "DecisionRecord",
+				Category: "invariant_violated",
+				Reason:   r.Reason,
+			})
+		}
+	}
+
+	return violations
+}
+
 func toFindingViews(items []artifact.StaleItem) []GovernanceFindingView {
 	views := make([]GovernanceFindingView, 0, len(items))
 
@@ -554,6 +604,18 @@ func problemCandidateForItem(item artifact.StaleItem) (ProblemCandidateView, boo
 			Title:             "Reduce project epistemic debt",
 			Signal:            item.Reason,
 			Acceptance:        "The project debt budget is back under the configured threshold or the budget is explicitly revised with evidence.",
+			Context:           contextName,
+			Category:          string(item.Category),
+			SourceArtifactRef: item.ID,
+			SourceTitle:       item.Title,
+		}, true
+	case "invariant_violated":
+		return ProblemCandidateView{
+			ID:                candidateID(item),
+			Status:            candidateStatusActive,
+			Title:             item.Title,
+			Signal:            item.Reason,
+			Acceptance:        "The violated invariant is either restored, the offending code is reverted, or the invariant is explicitly revised.",
 			Context:           contextName,
 			Category:          string(item.Category),
 			SourceArtifactRef: item.ID,

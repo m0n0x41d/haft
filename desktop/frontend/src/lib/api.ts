@@ -972,6 +972,37 @@ export async function getPortfolio(id: string): Promise<PortfolioDetail> {
   return mockPortfolioDetails.get(id) ?? INITIAL_PORTFOLIO_DETAIL;
 }
 
+// Probe-or-commit gate
+export interface ReadinessReport {
+  portfolio_id: string;
+  variant_count: number;
+  dimension_count: number;
+  score_coverage: number;
+  constraint_count: number;
+  missing_scores: string[];
+  has_parity: boolean;
+  recommendation: string; // commit, probe, widen, reroute
+  recommendation_why: string;
+  warnings: string[];
+}
+
+export async function assessComparisonReadiness(portfolioID: string): Promise<ReadinessReport> {
+  const report = await callBinding<ReadinessReport>("AssessComparisonReadiness", portfolioID);
+  if (report) return { ...report, missing_scores: report.missing_scores ?? [], warnings: report.warnings ?? [] };
+  return {
+    portfolio_id: portfolioID,
+    variant_count: 0,
+    dimension_count: 0,
+    score_coverage: 0,
+    constraint_count: 0,
+    missing_scores: [],
+    has_parity: false,
+    recommendation: "reroute",
+    recommendation_why: "Cannot assess readiness without backend connection.",
+    warnings: [],
+  };
+}
+
 export async function getCoverage(): Promise<CoverageData> {
   const coverage = await callBinding<CoverageData>("GetCoverage");
   if (coverage) return coverage;

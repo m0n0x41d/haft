@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { VariantForm } from "../components/VariantForm";
 import {
+  assessComparisonReadiness,
   comparePortfolio,
   createPortfolio,
   getConfig,
@@ -17,6 +18,7 @@ import {
   type PortfolioSummary,
   type ProblemDetail,
   type ProblemSummary,
+  type ReadinessReport,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 
@@ -432,11 +434,25 @@ function PortfolioDetailView({
   onCompare: () => Promise<void>;
   onNavigate: NavigateFn;
 }) {
+  const [readiness, setReadiness] = useState<ReadinessReport | null>(null);
   const nonDominated = new Set(detail.comparison?.non_dominated_set ?? []);
   const displayedTradeoffs =
     detail.comparison?.pareto_tradeoffs.filter((note) => nonDominated.has(note.variant)) ?? [];
   const displayedDominated =
     detail.comparison?.dominated_notes.filter((note) => !nonDominated.has(note.variant)) ?? [];
+
+  const handleCompareClick = async () => {
+    if (!showCompare) {
+      // Assess readiness before opening comparison editor
+      try {
+        const report = await assessComparisonReadiness(detail.id);
+        setReadiness(report);
+      } catch {
+        setReadiness(null);
+      }
+    }
+    setShowCompare(!showCompare);
+  };
 
   return (
     <div className="space-y-6">
@@ -455,7 +471,7 @@ function PortfolioDetailView({
         </div>
 
         <button
-          onClick={() => setShowCompare(!showCompare)}
+          onClick={handleCompareClick}
           className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
         >
           {detail.comparison ? "Revise compare" : "Compare variants"}
@@ -506,6 +522,11 @@ function PortfolioDetailView({
           );
         })}
       </div>
+
+      {/* Probe-or-commit gate — readiness assessment */}
+      {showCompare && readiness && (
+        <ReadinessCard report={readiness} />
+      )}
 
       {showCompare && (
         <ComparisonEditor
@@ -914,6 +935,50 @@ function splitCommaList(value: string): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function ReadinessCard({ report }: { report: ReadinessReport }) {
+  const colorMap: Record<string, string> = {
+    commit: "border-success/20 bg-success/5",
+    probe: "border-warning/20 bg-warning/5",
+    widen: "border-accent/20 bg-accent/5",
+    reroute: "border-danger/20 bg-danger/5",
+  };
+
+  const labelMap: Record<string, string> = {
+    commit: "Ready to compare",
+    probe: "Gather more data first",
+    widen: "Need more variants",
+    reroute: "Problem framing issue",
+  };
+
+  return (
+    <div className={`rounded-2xl border p-4 ${colorMap[report.recommendation] ?? "border-border bg-surface-1"}`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">
+            Probe-or-Commit Gate
+          </p>
+          <p className="mt-1 text-sm font-medium text-text-primary">
+            {labelMap[report.recommendation] ?? report.recommendation}
+          </p>
+        </div>
+        <div className="text-right text-xs text-text-muted">
+          <p>{report.variant_count} variants / {report.dimension_count} dimensions</p>
+          <p>{Math.round(report.score_coverage * 100)}% scores filled</p>
+          {report.constraint_count > 0 && <p>{report.constraint_count} constraints</p>}
+        </div>
+      </div>
+      <p className="mt-2 text-sm text-text-secondary">{report.recommendation_why}</p>
+      {report.warnings.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {report.warnings.map((w, i) => (
+            <li key={i} className="text-xs text-warning">{w}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 const inputClassName =

@@ -568,7 +568,8 @@ func (c *flowController) runNow(ctx context.Context, id string) (*TaskState, err
 
 	now := time.Now()
 	flow.UpdatedAt = nowRFC3339()
-	flow.LastTaskID = ""
+	// Don't clear LastTaskID here — only update it after successful spawn (line below).
+	// Clearing before checking err loses the reference to the previous successful task.
 	flow.LastError = ""
 
 	if flow.Enabled {

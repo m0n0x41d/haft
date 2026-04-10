@@ -1514,7 +1514,7 @@ export async function setTaskAutoRun(id: string, autoRun: boolean): Promise<void
 
 export async function getTaskOutput(id: string): Promise<string> {
   const output = await callBinding<string>("GetTaskOutput", id);
-  if (output) return output;
+  if (output != null) return output; // null check, not falsy — empty string "" is valid
   return mockTasks.find((task) => task.id === id)?.output ?? "";
 }
 

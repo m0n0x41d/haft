@@ -8,6 +8,82 @@ import (
 
 // View models — clean DTOs for the React frontend.
 // All fields have json tags (required for Wails TS binding generation).
+//
+// IMPORTANT: Go nil slices serialize as JSON null, not [].
+// Use safeStrings/safeSlice helpers to ensure all slice fields
+// are empty slices, never nil. Frontend code calls .map()/.length
+// on these and will crash on null.
+
+// safeStrings returns an empty slice if the input is nil.
+func safeStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func safeArtifactViews(s []ArtifactView) []ArtifactView {
+	if s == nil {
+		return []ArtifactView{}
+	}
+	return s
+}
+
+func safeRejections(s []RejectionView) []RejectionView {
+	if s == nil {
+		return []RejectionView{}
+	}
+	return s
+}
+
+func safeClaims(s []ClaimView) []ClaimView {
+	if s == nil {
+		return []ClaimView{}
+	}
+	return s
+}
+
+func safeCoverageModules(s []CoverageModuleView) []CoverageModuleView {
+	if s == nil {
+		return []CoverageModuleView{}
+	}
+	return s
+}
+
+func safeVariants(s []VariantView) []VariantView {
+	if s == nil {
+		return []VariantView{}
+	}
+	return s
+}
+
+func safeDominatedNotes(s []DominatedNote) []DominatedNote {
+	if s == nil {
+		return []DominatedNote{}
+	}
+	return s
+}
+
+func safeTradeoffNotes(s []TradeoffNote) []TradeoffNote {
+	if s == nil {
+		return []TradeoffNote{}
+	}
+	return s
+}
+
+func safeCharacterizations(s []CharacterizationView) []CharacterizationView {
+	if s == nil {
+		return []CharacterizationView{}
+	}
+	return s
+}
+
+func safeDimensions(s []DimensionView) []DimensionView {
+	if s == nil {
+		return []DimensionView{}
+	}
+	return s
+}
 // No domain logic here — just data projection.
 
 // DashboardView is the landing page data.
@@ -282,16 +358,16 @@ func toProblemDetail(ctx context.Context, a *artifact.Artifact, store *artifact.
 		Status:                 string(a.Meta.Status),
 		Mode:                   string(a.Meta.Mode),
 		Signal:                 pf.Signal,
-		Constraints:            pf.Constraints,
-		OptimizationTargets:    pf.OptimizationTargets,
-		ObservationIndicators:  pf.ObservationIndicators,
+		Constraints:            safeStrings(pf.Constraints),
+		OptimizationTargets:    safeStrings(pf.OptimizationTargets),
+		ObservationIndicators:  safeStrings(pf.ObservationIndicators),
 		Acceptance:             pf.Acceptance,
 		BlastRadius:            pf.BlastRadius,
 		Reversibility:          pf.Reversibility,
-		Characterizations:      toCharacterizationViews(pf.Characterizations),
+		Characterizations:      safeCharacterizations(toCharacterizationViews(pf.Characterizations)),
 		LatestCharacterization: latestCharacterizationView(pf.Characterizations),
-		LinkedPortfolios:       linkedPortfolios,
-		LinkedDecisions:        linkedDecisions,
+		LinkedPortfolios:       safeArtifactViews(linkedPortfolios),
+		LinkedDecisions:        safeArtifactViews(linkedDecisions),
 		Body:                   a.Body,
 		CreatedAt:              a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:              a.Meta.UpdatedAt.Format("2006-01-02T15:04:05Z"),
@@ -342,26 +418,26 @@ func toDecisionDetail(
 		Title:                a.Meta.Title,
 		Status:               string(a.Meta.Status),
 		Mode:                 string(a.Meta.Mode),
-		ProblemRefs:          append([]string(nil), df.ProblemRefs...),
+		ProblemRefs:          safeStrings(df.ProblemRefs),
 		SelectedTitle:        df.SelectedTitle,
 		WhySelected:          df.WhySelected,
 		SelectionPolicy:      df.SelectionPolicy,
 		CounterArgument:      df.CounterArgument,
 		WeakestLink:          df.WeakestLink,
-		WhyNotOthers:         rejections,
-		Invariants:           df.Invariants,
-		PreConditions:        df.PreConditions,
-		PostConditions:       df.PostConds,
-		Admissibility:        df.Admissibility,
-		EvidenceRequirements: df.EvidenceRequirements,
-		RefreshTriggers:      df.RefreshTriggers,
-		Claims:               claims,
+		WhyNotOthers:         safeRejections(rejections),
+		Invariants:           safeStrings(df.Invariants),
+		PreConditions:        safeStrings(df.PreConditions),
+		PostConditions:       safeStrings(df.PostConds),
+		Admissibility:        safeStrings(df.Admissibility),
+		EvidenceRequirements: safeStrings(df.EvidenceRequirements),
+		RefreshTriggers:      safeStrings(df.RefreshTriggers),
+		Claims:               safeClaims(claims),
 		FirstModuleCoverage:  df.FirstModuleCoverage,
-		AffectedFiles:        append([]string(nil), affectedFiles...),
-		CoverageModules:      append([]CoverageModuleView(nil), coverageModules...),
-		CoverageWarnings:     append([]string(nil), coverageWarnings...),
-		RollbackTriggers:     df.RollbackTriggers,
-		RollbackSteps:        df.RollbackSteps,
+		AffectedFiles:        safeStrings(affectedFiles),
+		CoverageModules:      safeCoverageModules(coverageModules),
+		CoverageWarnings:     safeStrings(coverageWarnings),
+		RollbackTriggers:     safeStrings(df.RollbackTriggers),
+		RollbackSteps:        safeStrings(df.RollbackSteps),
 		RollbackBlastRadius:  df.RollbackBlastRadius,
 		ValidUntil:           a.Meta.ValidUntil,
 		Body:                 a.Body,
@@ -382,8 +458,8 @@ func toPortfolioDetail(a *artifact.Artifact) PortfolioDetailView {
 			WeakestLink:   v.WeakestLink,
 			NoveltyMarker: v.NoveltyMarker,
 			SteppingStone: v.SteppingStone,
-			Strengths:     v.Strengths,
-			Risks:         v.Risks,
+			Strengths:     safeStrings(v.Strengths),
+			Risks:         safeStrings(v.Risks),
 		})
 	}
 
@@ -401,11 +477,11 @@ func toPortfolioDetail(a *artifact.Artifact) PortfolioDetailView {
 			tradeoffs = append(tradeoffs, TradeoffNote{Variant: t.Variant, Summary: t.Summary})
 		}
 		comparison = &ComparisonView{
-			Dimensions:      c.Dimensions,
+			Dimensions:      safeStrings(c.Dimensions),
 			Scores:          c.Scores,
-			NonDominatedSet: c.NonDominatedSet,
-			DominatedNotes:  dominated,
-			ParetoTradeoffs: tradeoffs,
+			NonDominatedSet: safeStrings(c.NonDominatedSet),
+			DominatedNotes:  safeDominatedNotes(dominated),
+			ParetoTradeoffs: safeTradeoffNotes(tradeoffs),
 			PolicyApplied:   c.PolicyApplied,
 			SelectedRef:     c.SelectedRef,
 			Recommendation:  c.RecommendationRationale,
@@ -417,7 +493,7 @@ func toPortfolioDetail(a *artifact.Artifact) PortfolioDetailView {
 		Title:      a.Meta.Title,
 		Status:     string(a.Meta.Status),
 		ProblemRef: pf.ProblemRef,
-		Variants:   variants,
+		Variants:   safeVariants(variants),
 		Comparison: comparison,
 		Body:       a.Body,
 		CreatedAt:  a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -431,7 +507,7 @@ func toCharacterizationViews(values []artifact.CharacterizationSnapshot) []Chara
 	for _, value := range values {
 		views = append(views, CharacterizationView{
 			Version:    value.Version,
-			Dimensions: toDimensionViews(value.Dimensions),
+			Dimensions: safeDimensions(toDimensionViews(value.Dimensions)),
 			ParityPlan: toParityPlanView(value.ParityPlan),
 		})
 	}
@@ -478,11 +554,11 @@ func toParityPlanView(value *artifact.ParityPlan) *ParityPlanView {
 	}
 
 	view := &ParityPlanView{
-		BaselineSet:       append([]string(nil), value.BaselineSet...),
+		BaselineSet:       safeStrings(value.BaselineSet),
 		Window:            value.Window,
 		Budget:            value.Budget,
 		MissingDataPolicy: value.MissingDataPolicy,
-		PinnedConditions:  append([]string(nil), value.PinnedConditions...),
+		PinnedConditions:  safeStrings(value.PinnedConditions),
 	}
 
 	for _, rule := range value.Normalization {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { VariantForm } from "../components/VariantForm";
 import {
@@ -100,12 +100,21 @@ export function Portfolios({
       });
   }, [detail?.problem_ref]);
 
+  const formInitRef = useRef<string | null>(null);
   useEffect(() => {
     if (!detail) {
       setCompareValue(emptyComparisonInput());
       setVariantReasoning([]);
+      formInitRef.current = null;
       return;
     }
+
+    // Only initialize form state once per portfolio. Subsequent detail
+    // refreshes (e.g., background polling) must NOT wipe in-progress edits.
+    if (formInitRef.current === detail.id) {
+      return;
+    }
+    formInitRef.current = detail.id;
 
     const variants = detail.variants.map((variant) => ({
       variant: variant.id,

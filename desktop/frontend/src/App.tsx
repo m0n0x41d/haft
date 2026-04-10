@@ -14,7 +14,6 @@ import {
   Scale,
   CheckCircle2,
   Archive,
-  Trash2,
   ListTodo,
   FolderPlus,
 } from "lucide-react";
@@ -96,7 +95,9 @@ export default function App() {
         });
 
     load();
-    const interval = setInterval(load, 3000);
+    // Sidebar task list: 10s poll is enough for status dots.
+    // Tasks.tsx has its own 2s poll + event-driven updates for the active task.
+    const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
   }, [refreshKey]);
 
@@ -369,8 +370,6 @@ export default function App() {
                 selectedTaskId={selectedId}
                 showNewTask={showNewTask}
                 onNewTaskClose={() => setShowNewTask(false)}
-                projects={projects}
-                activeProjectPath={activeProject?.path}
               />
             )}
             {page === "settings" && (
@@ -622,13 +621,7 @@ function SidebarTask({
               <Archive size={12} />
               Archive
             </button>
-            <button
-              onClick={() => { setMenuOpen(false); onArchive(); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 transition-colors"
-            >
-              <Trash2 size={12} />
-              Delete
-            </button>
+            {/* Delete removed — archive is the only safe operation */}
           </div>
         </>
       )}

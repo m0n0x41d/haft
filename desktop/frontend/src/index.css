@@ -31,10 +31,10 @@
   --color-accent-border: rgba(62, 207, 142, 0.3);
   --color-accent-wash: rgba(62, 207, 142, 0.08);
 
-  /* Semantic states */
+  /* Semantic states — success MUST differ from accent for visual distinction */
   --color-danger: #e5484d;
   --color-warning: #f5a623;
-  --color-success: #3ecf8e;
+  --color-success: #22c55e;
 
   /* Translucent overlays */
   --color-glass: rgba(41, 41, 41, 0.84);

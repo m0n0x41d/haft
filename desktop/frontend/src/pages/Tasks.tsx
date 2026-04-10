@@ -26,25 +26,14 @@ interface TaskOutputEvent {
 // PromptSection reserved for future collapsible brief in chat
 // interface PromptSection { title: string; body: string; }
 
-interface ProjectInfo {
-  path: string;
-  name: string;
-  id: string;
-  is_active: boolean;
-}
-
 export function Tasks({
   selectedTaskId: externalSelectedTask,
   showNewTask: externalShow,
   onNewTaskClose,
-  projects,
-  activeProjectPath,
 }: {
   selectedTaskId?: string | null;
   showNewTask?: boolean;
   onNewTaskClose?: () => void;
-  projects?: ProjectInfo[];
-  activeProjectPath?: string;
 } = {}) {
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const [agents, setAgents] = useState<InstalledAgent[]>([]);
@@ -262,8 +251,6 @@ export function Tasks({
         <NewTaskModal
           agents={agents}
           config={config}
-          projects={projects ?? []}
-          activeProjectPath={activeProjectPath}
           onSpawn={handleSpawn}
           onClose={() => setShowNewTask(false)}
         />
@@ -302,10 +289,8 @@ export function Tasks({
               {detail.branch && (
                 <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
               )}
-              {detail.status === "running" && (
-                <span className="text-xs text-text-muted animate-pulse">
-                  {detail.started_at ? elapsedSince(detail.started_at) : ""}
-                </span>
+              {detail.status === "running" && detail.started_at && (
+                <ElapsedTimer startedAt={detail.started_at} />
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -447,15 +432,11 @@ export function Tasks({
 function NewTaskModal({
   agents,
   config,
-  projects,
-  activeProjectPath,
   onSpawn,
   onClose,
 }: {
   agents: InstalledAgent[];
   config: DesktopConfig | null;
-  projects: ProjectInfo[];
-  activeProjectPath?: string;
   onSpawn: (agent: string, prompt: string, worktree: boolean, branch: string) => void;
   onClose: () => void;
 }) {
@@ -464,7 +445,6 @@ function NewTaskModal({
   const [prompt, setPrompt] = useState("");
   const [useWorktree, setUseWorktree] = useState(config?.default_worktree ?? true);
   const [branch, setBranch] = useState("");
-  const [selectedProject, setSelectedProject] = useState(activeProjectPath || "");
 
   useEffect(() => {
     if (!config) {
@@ -534,23 +514,7 @@ function NewTaskModal({
             </div>
           )}
 
-          {/* Project selector */}
-          {projects.length > 1 && (
-            <div className="space-y-1">
-              <label className="text-sm text-text-secondary">Project</label>
-              <select
-                value={selectedProject}
-                onChange={(event) => setSelectedProject(event.target.value)}
-                className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
-              >
-                {projects.map((p) => (
-                  <option key={p.path} value={p.path}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Project: tasks run in the active project. Switch projects from the sidebar. */}
 
           <div className="rounded-xl border border-border bg-surface-2/40 px-4 py-3">
             <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -645,6 +609,21 @@ function NewTaskModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function ElapsedTimer({ startedAt }: { startedAt: string }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <span className="text-xs text-text-muted animate-pulse">
+      {elapsedSince(startedAt)}
+    </span>
   );
 }
 

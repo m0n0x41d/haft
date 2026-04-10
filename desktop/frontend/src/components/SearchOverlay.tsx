@@ -31,13 +31,23 @@ export function SearchOverlay({
       setResults([]);
       return;
     }
+    let cancelled = false;
     const timer = setTimeout(() => {
-      searchArtifacts(query).then((r) => {
-        setResults(r);
-        setSelectedIdx(0);
-      });
+      searchArtifacts(query)
+        .then((r) => {
+          if (!cancelled) {
+            setResults(r);
+            setSelectedIdx(0);
+          }
+        })
+        .catch(() => {
+          // Swallow search errors silently (P1-7 fix: no unhandled rejection)
+        });
     }, 200);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

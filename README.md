@@ -4,7 +4,22 @@
 
 Frame problems. Compare options fairly. Record decisions as contracts. Know when to revisit.
 
-Supports: Claude Code, Cursor, Gemini CLI, Codex CLI, Codex App, Air
+---
+
+## What is Haft?
+
+Haft is a local-first engineering governor for software projects. It helps engineers frame problems before solving them, compare options honestly, record decisions as contracts with invariants, track evidence with decay, and know when to revisit.
+
+**Think → Run → Govern.**
+
+### Two primary surfaces
+
+- **Desktop app** — visual cockpit for reasoning state, agent orchestration, and governance dashboard
+- **MCP plugin** — reasoning tools for AI coding agents (Claude Code, Cursor, Gemini CLI, Codex, Air)
+
+Both share the same kernel. Desktop is where humans think. MCP is where agents think.
+
+> **Note:** The TUI (`haft agent`) and Desktop app are in **pre-alpha** and under active development. They are not recommended for production use. The MCP plugin mode (`haft serve`) is the stable, proven interface.
 
 ---
 
@@ -55,46 +70,22 @@ The binary is the same — only the MCP config and command/prompt installation l
 
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.
 
-**Note:** Cursor also picks up Claude Code commands from `~/.claude/commands/`, so slash commands can work even without `--cursor`. MCP config (`.cursor/mcp.json`) is still required for tool calls.
-
 Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
-
-**First time?** Ask the agent to explain how it works:
-
-```
-/h-reason explain how to work with Haft effectively — what commands exist, when to use each one, and what's the recommended workflow
-```
-
-The agent has full knowledge of the project tools and will walk you through them in the context of your repo.
 
 ---
 
-## Two supported interaction modes
+## How It Works
 
-### 1. MCP plugin / tool mode
-
-Haft exposes six MCP tools:
+### Six MCP tools
 
 | Tool | What it does |
 |------|-------------|
 | `haft_note` | Micro-decisions with validation + auto-expiry |
 | `haft_problem` | Frame problems, define comparison dimensions with roles |
 | `haft_solution` | Explore variants with diversity check, compare with parity |
-| `haft_decision` | FPF E.9 decision contract, impact measurement, evidence/baseline lifecycle |
+| `haft_decision` | Decision contract with invariants, claims, evidence, baseline lifecycle |
 | `haft_refresh` | Lifecycle management for all artifacts |
 | `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec search |
-
-Use this mode when your client can call MCP tools directly.
-
-### 2. Command-driven mode
-
-Haft also installs slash commands / prompts such as `/h-reason`, `/h-frame`, `/h-explore`, `/h-decide`, `/h-status`, and `/h-refresh`.
-
-Use this mode when the agent should be steered by explicit commands in chat. This remains supported alongside MCP tool mode; the two are complementary, not mutually exclusive.
-
----
-
-## How It Works
 
 ### One command: `/h-reason`
 
@@ -109,29 +100,38 @@ Describe your problem. The agent frames it, generates alternatives, compares the
                          options
 ```
 
-### Micro-decisions on the fly
-
-The agent captures decisions automatically when it notices them in conversation. No rationale — no record. Conflicts with active decisions are flagged. Auto-expires in 90 days.
-
 ### Evidence workflow
 
-Use `haft_decision(action="evidence", artifact_ref="...", evidence_content="...", evidence_type="benchmark|test|research|audit", evidence_verdict="supports|weakens|refutes", valid_until="2026-12-31T00:00:00Z")` to attach explicit evidence to a problem, portfolio, or decision. This feeds WLNK/R_eff directly, and `valid_until` lets that evidence age into refresh signals instead of staying fresh forever.
+Attach evidence to decisions with `haft_decision(action="evidence", ...)`. Evidence has formality levels (F0-F3), congruence levels (CL0-CL3), and expiry dates. Trust scores (R_eff) degrade as evidence ages. Stale evidence triggers refresh.
 
-Use `haft_decision(action="measure", ...)` for post-implementation outcome. That call records measurement evidence automatically. If the decision has `affected_files`, run `haft_decision(action="baseline", decision_ref="...")` before `measure`; otherwise the measurement remains CL1 self-evidence.
-
-### When decisions go stale
-
-`/h-status` shows what's expired and what needs attention. `/h-refresh` manages the lifecycle of all artifact types — waive, reopen, supersede, or deprecate.
+Use `haft_decision(action="measure", ...)` for post-implementation verification. Pair with `haft_decision(action="baseline", ...)` to snapshot affected files before measuring.
 
 ---
 
 ## What Makes It Different
 
-- **Decisions are live** — they have computed trust scores (R_eff) that degrade as evidence ages. An expired benchmark drops the whole score.
-- **Comparison is honest** — parity enforced, dimensions cross-checked, asymmetric scoring warned. Anti-Goodhart: tag dimensions as "observation" to prevent optimizing the wrong metric.
-- **Memory across sessions** — when you frame a problem, the tool surfaces related past decisions. When you explore, it checks for similar variants.
-- **The loop closes** — failed measurements suggest reopening. Evidence decay triggers review. Periodic refresh prompts ensure nothing goes stale silently.
-- **Decisions are contracts** — FPF E.9 format: Problem Frame, Decision (invariants + DO/DON'T), Rationale, Consequences. A new engineer reads it 6 months later and gets everything.
+- **Decisions are live** — computed trust scores (R_eff) degrade as evidence ages
+- **Comparison is honest** — parity enforced, constraint-aware Pareto elimination, anti-Goodhart observation indicators
+- **Invariants linked to code** — knowledge graph maps decisions to modules via dependency graph
+- **Memory across sessions** — related past decisions surface during framing, similar variants during exploration
+- **The loop closes** — failed measurements reopen decisions, evidence decay triggers review, drift detection flags violations
+- **Decisions are contracts** — invariants, claims with thresholds, rollback plan, valid-until date
+
+---
+
+## Desktop App (pre-alpha)
+
+> **Warning:** The desktop app is in pre-alpha. Use at your own risk.
+
+Built with Wails v2 (Go + React). Run with:
+
+```bash
+task desktop        # dev mode with hot reload
+task desktop:build  # production .app bundle
+task desktop:open   # build and open
+```
+
+Features: dashboard with governance findings, problem board, decision detail with evidence decomposition, portfolio comparison with Pareto front, task spawning, agent chat view, terminal panel, multi-project management, search (Cmd+K).
 
 ---
 
@@ -141,49 +141,15 @@ Use `haft_decision(action="measure", ...)` for post-implementation outcome. That
 
 `/h-reason` gives your AI agent an FPF-native operating system for engineering decisions: problem framing before solutions, characterization before comparison, parity enforcement, evidence with congruence penalties, weakest-link assurance, and the lemniscate cycle that closes itself when evidence ages or measurements fail.
 
-`haft fpf search` gives you access to the indexed FPF specification. The retrieval path is local and tiered: exact pattern id lookup first, then route-aware concept matches, then bounded related-section expansion, then keyword fallback. In MCP-capable clients, the same retrieval core is available through `haft_query(action="fpf", query="...")`.
-
-### Refresh the FPF index
-
-```bash
-task fpf-index
-```
-
-This rebuilds `internal/cli/fpf.db` from `data/FPF/FPF-Spec.md` and the route artifacts used during indexing. That SQLite database is a build artifact embedded into the `haft` binary, so after regenerating it, run `task build`, `task install`, or `task dev` before expecting a rebuilt binary to serve the new index. Use `haft fpf info` to inspect the embedded index provenance when debugging stale results.
-
-### Query the indexed spec
-
-Use exact pattern ids when you know the section, and route-style natural-language queries when you know the concept:
-
-```bash
-haft fpf search "A.6"
-haft fpf search "a6:"
-haft fpf search "boundary routing" --tier route --explain
-haft fpf search "decision record" --full
-haft fpf semantic-index
-haft fpf semantic-search "boundary contract unpacking" --explain
-haft fpf section "A.6"
-haft fpf section "A.6 - Signature Stack & Boundary Discipline"
-haft fpf info
-```
-
-Pattern ids are normalized, so common forms such as `A.6`, `a.6`, `A6`, and `A.6:` resolve to the same canonical section. `haft fpf section` supports exact lookup by heading or pattern id, while `haft fpf search` is the better entry point for route-aware discovery and explainable tiered search.
-
-### Experimental semantic prototype
-
-`haft fpf semantic-search` is an explicit experiment, not the default retriever. Build its optional artifact first with `haft fpf semantic-index`; by default that writes a gzip-compressed embedding file under `~/.cache/haft/`, which keeps generated vectors out of the repo and outside the normal build/runtime path. The prototype preserves exact pattern-id lookup, can still seed from a deterministic route when the query is obviously on a known path, and otherwise ranks the full indexed corpus with OpenAI embedding cosine similarity. The automated harness now runs on the same production-filtered `FPF-Spec.md` corpus the shipped indexer uses, with curated noisy natural-language cases and a keep-rule against the deterministic baseline, but those unit tests use a deterministic stub embedder to validate wiring and corpus parity rather than to certify live OpenAI quality. Keep using `haft fpf search` for supported behavior; use `semantic-index` plus `semantic-search` only when you want to inspect or measure the prototype. A direct `OPENAI_API_KEY` or `haft login` API key is required for the platform embeddings API.
+`haft fpf search` gives access to the indexed FPF specification with tiered retrieval: exact pattern id → route-aware concept matching → keyword fallback.
 
 ---
-
-## Learn More
-
-See the [documentation](https://quint.codes/learn) for detailed guides on decision modes, the DRR format, computed features, and lifecycle management.
 
 ## Requirements
 
 - Go 1.25+ (for building from source)
-- Any MCP-capable AI tool for direct tool mode
-- Or a supported client that can use installed commands / prompts
+- Any MCP-capable AI tool for plugin mode
+- Wails v2 for desktop app (optional)
 
 ## License
 

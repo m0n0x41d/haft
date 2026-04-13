@@ -599,7 +599,7 @@ const INITIAL_PROBLEM_DETAIL: ProblemDetail = {
   ],
   optimization_targets: [
     "Time-to-first-visual-experience",
-    "Differentiation from Zenflow/Cursor/Codex",
+    "Differentiation from existing agent orchestrators",
     "Reuse of existing Go backend",
   ],
   observation_indicators: [

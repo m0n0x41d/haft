@@ -10,6 +10,14 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 
 ### Added
 
+- **Desktop app (pre-alpha)** — Wails v2 desktop application with dashboard, problem board, decision detail with evidence F/G/R decomposition, portfolio comparison with Pareto front visualization, task spawning (Claude Code / Codex), agent chat view, terminal panel (Cmd+\`), multi-project management, and search (Cmd+K). Dark theme following the design system. Pre-alpha: not recommended for production use.
+- **Knowledge graph** — `internal/graph` package providing unified query interface over existing artifact, module, and dependency tables. Queries: FindDecisionsForFile, FindInvariantsForFile, FindModuleForFile, TransitiveDependents, ComputeImpactSet. All cycle-safe with depth limiting. 17 tests.
+- **Invariant injection into agent prompts** — when implementing a decision, agents receive invariants from ALL decisions governing the affected files, not just the current decision's own invariants. Invariants tagged with source decision ID.
+- **Invariant verification** — automated checking of "no dependency from X to Y" and "no circular dependencies" patterns against the live module dependency graph. Returns holds/violated/unknown per invariant.
+- **Governance invariant alerts** — governance scanner now runs invariant verification on decisions with drift findings, creating problem candidates for violations.
+- **Probe-or-commit readiness gate** — AssessComparisonReadiness evaluates portfolio comparison quality: variant count, dimension coverage, score fill rate, constraint presence, parity plan. Returns commit/probe/widen/reroute with specific recommendations. Shown in desktop Portfolios page.
+- **Evidence F/G/R decomposition** — decision detail page shows per-evidence formality level (F0-F3), congruence level (CL0-CL3), verdict badges, freshness indicators, and coverage gaps (claims without evidence).
+- **Auto-run toggle for agent tasks** — per-task toggle between checkpointed (agent pauses) and auto-run (agent proceeds without intervention) modes. Persisted across app restart.
 - **5-mode engineering reasoning model** — skill instructions and standalone agent prompt restructured around Understand / Explore / Choose / Execute / Verify (+ Note fast path). Replaces the artifact-centric 6-step "how to reason" with activity-centric modes users can learn in 30 seconds.
 - **Probe-or-commit behavioral gate** — Choose mode now includes a readiness checklist before comparison: dimension coverage, variant diversity, and whether a specific next investigation could change the ranking. Returns commit / probe / widen / reroute.
 - **Language precision triggers** — Understand and Choose modes catch ambiguous terms (service, process, quality, component) and subjective comparison dimensions (maintainable, simple, scalable) before they corrupt downstream reasoning.

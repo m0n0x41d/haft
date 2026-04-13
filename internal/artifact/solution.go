@@ -634,12 +634,11 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		}
 	}
 
+	warnings = append(warnings, subjectiveComparisonDimensionWarnings(input.Results.Dimensions, charByName)...)
+
 	missingDataPolicy := comparisonMissingDataPolicy(result.EffectiveParity)
 	for _, dimension := range input.Results.Dimensions {
-		role := "target"
-		if characterized, ok := charByName[normalizeArtifactKey(dimension)]; ok && characterized.Role != "" {
-			role = characterized.Role
-		}
+		role := comparisonDimensionRole(dimension, charByName)
 		if role == "observation" {
 			continue
 		}
@@ -905,6 +904,22 @@ type parsedScore struct {
 }
 
 var numericScorePattern = regexp.MustCompile(`^\s*([^\d+\-]*)([+\-]?\d[\d,]*(?:\.\d+)?)([kKmMbB]?)(.*)$`)
+
+var subjectiveDimensionTextReplacer = strings.NewReplacer("-", " ", "_", " ", "/", " ")
+
+var subjectiveComparisonDimensionTriggers = []string{
+	"maintainable",
+	"simple",
+	"scalable",
+	"robust",
+	"reliable",
+	"clean",
+	"user friendly",
+	"quality",
+	"fast",
+	"good",
+	"easy",
+}
 
 type portfolioVariantIdentity struct {
 	Key     string
@@ -1342,6 +1357,56 @@ func parityChecklistWarnings(dims []charDim) []string {
 		}
 	}
 	return warnings
+}
+
+func subjectiveComparisonDimensionWarnings(compareDimensions []string, characterized map[string]charDim) []string {
+	var warnings []string
+	for _, dimension := range compareDimensions {
+		if comparisonDimensionRole(dimension, characterized) == "observation" {
+			continue
+		}
+		if !isSubjectiveComparisonDimension(dimension) {
+			continue
+		}
+
+		warnings = append(warnings,
+			fmt.Sprintf("dimension '%s' is subjective — decompose into measurables or tag as observation-only", dimension))
+	}
+	return warnings
+}
+
+func comparisonDimensionRole(dimension string, characterized map[string]charDim) string {
+	characterizedDimension, ok := characterized[normalizeArtifactKey(dimension)]
+	if !ok {
+		return "target"
+	}
+	if characterizedDimension.Role == "" {
+		return "target"
+	}
+	return characterizedDimension.Role
+}
+
+func isSubjectiveComparisonDimension(dimension string) bool {
+	normalizedDimension := normalizeSubjectiveDimensionText(dimension)
+	if normalizedDimension == "" {
+		return false
+	}
+
+	paddedDimension := " " + normalizedDimension + " "
+	for _, trigger := range subjectiveComparisonDimensionTriggers {
+		paddedTrigger := " " + trigger + " "
+		if strings.Contains(paddedDimension, paddedTrigger) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSubjectiveDimensionText(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = subjectiveDimensionTextReplacer.Replace(normalized)
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
 }
 
 func parseComparisonExpiry(raw string) (time.Time, bool) {

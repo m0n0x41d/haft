@@ -1220,6 +1220,160 @@ func TestCompare_NoWarningsWhenFullCoverage(t *testing.T) {
 	}
 }
 
+func TestIsSubjectiveComparisonDimension(t *testing.T) {
+	cases := []struct {
+		dimension string
+		want      bool
+	}{
+		{dimension: "maintainable", want: true},
+		{dimension: "simple", want: true},
+		{dimension: "scalable", want: true},
+		{dimension: "robust", want: true},
+		{dimension: "reliable", want: true},
+		{dimension: "clean", want: true},
+		{dimension: "user-friendly", want: true},
+		{dimension: "quality", want: true},
+		{dimension: "fast", want: true},
+		{dimension: "good", want: true},
+		{dimension: "easy", want: true},
+		{dimension: "fast rollout", want: true},
+		{dimension: "user friendly onboarding", want: true},
+		{dimension: "latency", want: false},
+		{dimension: "throughput", want: false},
+		{dimension: "goodput", want: false},
+	}
+
+	for _, tc := range cases {
+		got := isSubjectiveComparisonDimension(tc.dimension)
+		if got != tc.want {
+			t.Fatalf("isSubjectiveComparisonDimension(%q) = %v, want %v", tc.dimension, got, tc.want)
+		}
+	}
+}
+
+func TestCompare_WarnsOnSubjectiveTargetDimension(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Queue design", Signal: "Delivery pressure", Context: "ops",
+	})
+	CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "maintainable", Role: "target", Polarity: "higher_better"},
+		},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"Redis", "NATS"},
+			Window:            "same replay window",
+			Budget:            "$100/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+			PinnedConditions:  []string{"Same team and workload"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Redis", "head-of-line blocking", "Keep the existing operational surface"),
+			testVariant("NATS", "ecosystem maturity", "Adopt a dedicated broker with a different scaling path"),
+		},
+		NoSteppingStoneRationale: "Both queue options are direct production candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"maintainable"},
+			Scores: map[string]map[string]string{
+				"Redis": {"maintainable": "high"},
+				"NATS":  {"maintainable": "medium"},
+			},
+			NonDominatedSet: []string{"Redis"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Redis"},
+					Summary:     "Lower maintainability score in the current comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Redis", Summary: "Best maintainability score in this fixture."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "dimension 'maintainable' is subjective — decompose into measurables or tag as observation-only") {
+		t.Fatalf("expected subjective-dimension warning, body: %s", a.Body)
+	}
+}
+
+func TestCompare_SkipsSubjectiveWarningForObservationDimension(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Queue design", Signal: "Delivery pressure", Context: "ops",
+	})
+	CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency", Role: "target"},
+			{Name: "quality", Role: "observation"},
+		},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"Redis", "NATS"},
+			Window:            "same replay window",
+			Budget:            "$100/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+			PinnedConditions:  []string{"Same team and workload"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Redis", "head-of-line blocking", "Keep the existing operational surface"),
+			testVariant("NATS", "ecosystem maturity", "Adopt a dedicated broker with a different scaling path"),
+		},
+		NoSteppingStoneRationale: "Both queue options are direct production candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency", "quality"},
+			Scores: map[string]map[string]string{
+				"Redis": {"latency": "10ms", "quality": "high"},
+				"NATS":  {"latency": "15ms", "quality": "medium"},
+			},
+			NonDominatedSet: []string{"Redis"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Redis"},
+					Summary:     "Higher latency under the same conditions.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Redis", Summary: "Best latency while quality stays observation-only."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(a.Body, "dimension 'quality' is subjective") {
+		t.Fatalf("did not expect subjective warning for observation dimension, body: %s", a.Body)
+	}
+}
+
 func TestCompare_WarnsWithoutParityPlanInStandardMode(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

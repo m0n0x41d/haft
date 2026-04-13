@@ -22,7 +22,7 @@ func loadGoldenRoutes(t *testing.T) []Route {
 func loadGoldenSpecChunks(t *testing.T) []SpecChunk {
 	t.Helper()
 
-	path := filepath.Join(testRepoRoot(t), ".context", "FPF-Spec.md")
+	path := filepath.Join(testRepoRoot(t), "data", "FPF", "FPF-Spec.md")
 	corpus, err := LoadSpecIndexCorpus(path)
 	if err != nil {
 		t.Fatalf("LoadSpecIndexCorpus(%q) failed: %v", path, err)

@@ -125,7 +125,12 @@ func (t *GrepTool) executeWithRipgrep(args grepArgs, searchPath string) (agent.T
 }
 
 func (t *GrepTool) executeWithFallback(args grepArgs, searchPath string) (agent.ToolResult, error) {
-	re, err := regexp.Compile(args.Pattern)
+	pattern := args.Pattern
+	if args.CaseInsens {
+		pattern = "(?i)" + pattern
+	}
+
+	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return agent.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}

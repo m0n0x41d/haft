@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -183,15 +184,14 @@ func TestMeasure_UpdatesPredictionStatusToSupported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 evidence item, got %d", len(items))
-	}
-	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-001,claim-002" {
-		t.Fatalf("measurement claim_refs = %q, want claim-001,claim-002", got)
-	}
-	if got := strings.Join(items[0].ClaimScope, ","); got != "Throughput stays above 100k events/sec,publish latency p99 < 50ms" {
-		t.Fatalf("measurement claim_scope = %q, want preserved measured claim scope", got)
-	}
+	assertMeasurementItemVerdicts(t, items, map[string]string{
+		"claim-001": "supports",
+		"claim-002": "supports",
+	})
+	assertMeasurementItemScopes(t, items, map[string]string{
+		"claim-001": "publish latency p99 < 50ms",
+		"claim-002": "Throughput stays above 100k events/sec",
+	})
 
 	reloaded, err := store.Get(ctx, dec.Meta.ID)
 	if err != nil {
@@ -375,14 +375,14 @@ func TestMeasure_PreservesUnverifiedPredictionStatusWhenNothingMatches(t *testin
 	})
 }
 
-func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEvidence(t *testing.T) {
+func TestMeasure_KeepsUntouchedPredictionsWhenLaterMeasurementSupersedesOnlyMatchingClaimEvidence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
 	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "JetStream",
-		WhySelected:   "Prediction state should only move when the measurement touches that claim.",
+		WhySelected:   "Supersession must be claim-scoped.",
 		Predictions: []PredictionInput{
 			{
 				Claim:      "Latency stays under 50ms",
@@ -390,9 +390,9 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 				Threshold:  "< 50ms",
 			},
 			{
-				Claim:      "Throughput stays above 100k events/sec",
-				Observable: "throughput",
-				Threshold:  "> 100k events/sec",
+				Claim:      "Latency stays under 50ms",
+				Observable: "consumer latency p99",
+				Threshold:  "< 50ms",
 			},
 		},
 	}))
@@ -402,10 +402,10 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 
 	_, err = Measure(ctx, store, haftDir, MeasureInput{
 		DecisionRef: dec.Meta.ID,
-		Findings:    "Both rollout checks passed.",
+		Findings:    "Both latency checks passed.",
 		CriteriaMet: []string{
 			"publish latency p99 < 50ms (observed: 42ms)",
-			"Throughput stays above 100k events/sec (observed: 120k events/sec)",
+			"consumer latency p99 < 50ms (observed: 38ms)",
 		},
 		Verdict: "accepted",
 	})
@@ -415,9 +415,9 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 
 	_, err = Measure(ctx, store, haftDir, MeasureInput{
 		DecisionRef: dec.Meta.ID,
-		Findings:    "The follow-up run only rechecked throughput and it regressed.",
+		Findings:    "The follow-up run only rechecked consumer latency and it regressed.",
 		CriteriaNotMet: []string{
-			"Throughput stays above 100k events/sec (observed: 87k events/sec)",
+			"consumer latency p99 < 50ms (observed: 61ms)",
 		},
 		Verdict: "partial",
 	})
@@ -431,7 +431,7 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 	}
 
 	assertDecisionPredictionStatuses(t, reloaded, []ClaimStatus{
-		ClaimStatusUnverified,
+		ClaimStatusSupported,
 		ClaimStatusRefuted,
 	})
 
@@ -439,20 +439,16 @@ func TestMeasure_ResetsUntouchedPredictionsWhenLaterMeasurementSupersedesPriorEv
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 {
-		t.Fatalf("expected 2 measurement evidence items, got %d", len(items))
-	}
-	verdictByClaimRefs := make(map[string]string, len(items))
-
-	for _, item := range items {
-		verdictByClaimRefs[strings.Join(item.ClaimRefs, ",")] = item.Verdict
+	if len(items) != 3 {
+		t.Fatalf("expected 3 measurement evidence items, got %d", len(items))
 	}
 
-	if got := verdictByClaimRefs["claim-002"]; got == "superseded" {
-		t.Fatalf("latest measurement for claim-002 should stay active, got verdict %q", got)
+	verdictsByClaimRef := measurementVerdictsByClaimRef(items)
+	if got := verdictsByClaimRef["claim-001"]; !reflect.DeepEqual(got, []string{"supports"}) {
+		t.Fatalf("claim-001 verdict history = %#v, want [supports]", got)
 	}
-	if got := verdictByClaimRefs["claim-001,claim-002"]; got != "superseded" {
-		t.Fatalf("prior overlapping measurement should be superseded, got verdict %q", got)
+	if got := verdictsByClaimRef["claim-002"]; !reflect.DeepEqual(got, []string{"refutes", "superseded"}) {
+		t.Fatalf("claim-002 verdict history = %#v, want [refutes superseded]", got)
 	}
 }
 
@@ -1015,6 +1011,67 @@ func assertDecisionPredictionStatuses(t *testing.T, decision *Artifact, want []C
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("prediction statuses = %#v, want %#v", got, want)
 	}
+}
+
+func assertMeasurementItemVerdicts(t *testing.T, items []EvidenceItem, want map[string]string) {
+	t.Helper()
+
+	if len(items) != len(want) {
+		t.Fatalf("expected %d measurement evidence items, got %d", len(want), len(items))
+	}
+
+	for _, item := range items {
+		if len(item.ClaimRefs) != 1 {
+			t.Fatalf("measurement claim_refs = %#v, want exactly one claim_ref per item", item.ClaimRefs)
+		}
+
+		claimRef := item.ClaimRefs[0]
+		wantVerdict, ok := want[claimRef]
+		if !ok {
+			t.Fatalf("unexpected measurement claim_ref %q", claimRef)
+		}
+		if item.Verdict != wantVerdict {
+			t.Fatalf("measurement verdict for %s = %q, want %q", claimRef, item.Verdict, wantVerdict)
+		}
+	}
+}
+
+func assertMeasurementItemScopes(t *testing.T, items []EvidenceItem, want map[string]string) {
+	t.Helper()
+
+	for _, item := range items {
+		if len(item.ClaimRefs) != 1 {
+			t.Fatalf("measurement claim_refs = %#v, want exactly one claim_ref per item", item.ClaimRefs)
+		}
+
+		claimRef := item.ClaimRefs[0]
+		wantScope, ok := want[claimRef]
+		if !ok {
+			t.Fatalf("unexpected measurement claim_ref %q", claimRef)
+		}
+		if got := strings.Join(item.ClaimScope, ","); got != wantScope {
+			t.Fatalf("measurement claim_scope for %s = %q, want %q", claimRef, got, wantScope)
+		}
+	}
+}
+
+func measurementVerdictsByClaimRef(items []EvidenceItem) map[string][]string {
+	result := make(map[string][]string, len(items))
+
+	for _, item := range items {
+		if len(item.ClaimRefs) != 1 {
+			continue
+		}
+
+		claimRef := item.ClaimRefs[0]
+		result[claimRef] = append(result[claimRef], item.Verdict)
+	}
+
+	for claimRef := range result {
+		sort.Strings(result[claimRef])
+	}
+
+	return result
 }
 
 func TestAttachEvidence_MissingArtifact(t *testing.T) {

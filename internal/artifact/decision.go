@@ -1323,11 +1323,17 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		input.CriteriaNotMet,
 		criteriaNotMetScope,
 	)
+	measurementItems := decisionMeasurementEvidenceItems(
+		decisionFields.Claims,
+		*evidenceItem,
+		claimEvidence,
+	)
 	activeEvidence, err := decisionActiveClaimEvidenceAfterMeasurement(
 		ctx,
 		store,
 		a.Meta.ID,
-		claimEvidence,
+		decisionFields.Claims,
+		measurementItems,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load claim evidence: %w", err)
@@ -1381,8 +1387,12 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 
 	evidenceItem.CongruenceLevel = measureCL
 	evidenceItem.FormalityLevel = 2
+	for index := range measurementItems {
+		measurementItems[index].CongruenceLevel = measureCL
+		measurementItems[index].FormalityLevel = 2
+	}
 
-	if err := store.CommitMeasurement(ctx, a, evidenceItem); err != nil {
+	if err := store.CommitMeasurement(ctx, a, measurementItems); err != nil {
 		return nil, fmt.Errorf("record measurement: %w", err)
 	}
 
@@ -1398,6 +1408,7 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	ctx context.Context,
 	store ArtifactStore,
 	decisionID string,
+	decisionClaims []DecisionClaim,
 	incoming []EvidenceItem,
 ) ([]EvidenceItem, error) {
 	items, err := store.GetEvidenceItems(ctx, decisionID)
@@ -1406,12 +1417,33 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	}
 
 	active := make([]EvidenceItem, 0, len(items)+len(incoming))
+	incomingKeys := make([][]string, 0, len(incoming))
+
+	for _, item := range incoming {
+		incomingKeys = append(incomingKeys, measurementBindingKeys(decisionClaims, item))
+	}
 
 	for _, item := range items {
 		if item.Verdict == "superseded" {
 			continue
 		}
-		if item.Type == "measurement" {
+		if item.Type != "measurement" {
+			active = append(active, item)
+			continue
+		}
+
+		existingKeys := measurementBindingKeys(decisionClaims, item)
+		overlapsIncoming := false
+
+		for _, keys := range incomingKeys {
+			if !measurementKeysOverlap(existingKeys, keys) {
+				continue
+			}
+
+			overlapsIncoming = true
+			break
+		}
+		if overlapsIncoming {
 			continue
 		}
 
@@ -1421,6 +1453,81 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	active = append(active, incoming...)
 
 	return active, nil
+}
+
+func decisionMeasurementEvidenceItems(
+	claims []DecisionClaim,
+	base EvidenceItem,
+	claimEvidence []EvidenceItem,
+) []EvidenceItem {
+	if len(claimEvidence) == 0 {
+		return []EvidenceItem{base}
+	}
+
+	normalizedClaims := normalizeDecisionClaims(claims)
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	scopeByPrediction := make(map[int][]string, len(normalizedClaims))
+	sharedScope := make([]string, 0, len(base.ClaimScope))
+	claimIndex := make(map[string]int, len(normalizedClaims))
+	items := make([]EvidenceItem, 0, len(claimEvidence))
+
+	for index, claim := range normalizedClaims {
+		claimIndex[claim.ID] = index
+	}
+
+	for _, scope := range normalizeClaimScope(base.ClaimScope) {
+		predictionIndex, ok := resolvePredictionAlias(scope, aliasIndex)
+		if ok {
+			scopeByPrediction[predictionIndex] = append(scopeByPrediction[predictionIndex], scope)
+			continue
+		}
+
+		sharedScope = append(sharedScope, scope)
+	}
+
+	for index, claimItem := range claimEvidence {
+		item := base
+		item.ID = fmt.Sprintf("%s-claim-%03d", base.ID, index+1)
+		item.Verdict = claimItem.Verdict
+		item.ClaimRefs = normalizeClaimRefs(claimItem.ClaimRefs)
+		item.ClaimScope = decisionMeasurementClaimScope(
+			normalizedClaims,
+			item.ClaimRefs,
+			claimIndex,
+			scopeByPrediction,
+			sharedScope,
+		)
+		items = append(items, item)
+	}
+
+	return items
+}
+
+func decisionMeasurementClaimScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	claimIndex map[string]int,
+	scopeByPrediction map[int][]string,
+	sharedScope []string,
+) []string {
+	scope := make([]string, 0, len(sharedScope)+len(claimRefs))
+	scope = append(scope, sharedScope...)
+
+	for _, ref := range normalizeClaimRefs(claimRefs) {
+		index, ok := claimIndex[ref]
+		if !ok {
+			continue
+		}
+
+		scope = append(scope, scopeByPrediction[index]...)
+	}
+
+	scope = normalizeClaimScope(scope)
+	if len(scope) > 0 {
+		return scope
+	}
+
+	return decisionClaimScopeFromRefs(claims, claimRefs)
 }
 
 // AttachEvidence adds an evidence item to any artifact.

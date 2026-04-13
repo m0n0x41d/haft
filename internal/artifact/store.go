@@ -23,6 +23,10 @@ type sqlExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+type sqlQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // Compile-time check: Store must implement ArtifactStore.
 var _ ArtifactStore = (*Store)(nil)
 
@@ -634,6 +638,10 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 
 // GetEvidenceItems returns evidence items for an artifact.
 func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error) {
+	return s.getEvidenceItemsWithQueryer(ctx, s.db, artifactRef)
+}
+
+func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQueryer, artifactRef string) ([]EvidenceItem, error) {
 	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
 	if err != nil {
 		return nil, err
@@ -665,7 +673,7 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 		strings.Join(columns, ", ") +
 		" FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC"
 
-	rows, err := s.db.QueryContext(ctx, query, artifactRef)
+	rows, err := queryer.QueryContext(ctx, query, artifactRef)
 	if err != nil {
 		return nil, err
 	}
@@ -750,8 +758,115 @@ func (s *Store) supersedeEvidenceByTypeWithExec(ctx context.Context, execer sqlE
 	return err
 }
 
-// CommitMeasurement atomically updates a decision and replaces its active measurement evidence.
-func (s *Store) CommitMeasurement(ctx context.Context, decision *Artifact, item *EvidenceItem) error {
+func (s *Store) supersedeEvidenceByIDWithExec(ctx context.Context, execer sqlExecer, ids []string) error {
+	for _, id := range ids {
+		_, err := execer.ExecContext(ctx,
+			`UPDATE evidence_items SET verdict = 'superseded' WHERE id = ? AND verdict != 'superseded'`,
+			id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func measurementBindingKeys(claims []DecisionClaim, item EvidenceItem) []string {
+	normalizedClaims := normalizeDecisionClaims(claims)
+	if len(normalizedClaims) == 0 {
+		return nil
+	}
+
+	resolvedRefs, err := resolveDecisionEvidenceClaimRefs(
+		normalizedClaims,
+		item.ClaimRefs,
+		item.ClaimScope,
+	)
+	if err != nil || len(resolvedRefs) == 0 {
+		return nil
+	}
+
+	claimIndex := make(map[string]DecisionClaim, len(normalizedClaims))
+	keys := make([]string, 0, len(resolvedRefs))
+
+	for _, claim := range normalizedClaims {
+		claimIndex[claim.ID] = claim
+	}
+
+	for _, ref := range normalizeClaimRefs(resolvedRefs) {
+		claim, ok := claimIndex[ref]
+		if !ok {
+			continue
+		}
+
+		key := strings.TrimSpace(ref) + "\x00" + strings.TrimSpace(claim.Observable)
+		keys = append(keys, key)
+	}
+
+	return keys
+}
+
+func measurementKeysOverlap(left []string, right []string) bool {
+	if len(left) == 0 || len(right) == 0 {
+		return len(left) == 0 && len(right) == 0
+	}
+
+	index := make(map[string]struct{}, len(left))
+
+	for _, value := range left {
+		index[value] = struct{}{}
+	}
+
+	for _, value := range right {
+		if _, ok := index[value]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Store) measurementEvidenceIDsToSupersede(
+	ctx context.Context,
+	queryer sqlQueryer,
+	decision *Artifact,
+	items []EvidenceItem,
+) ([]string, error) {
+	existingItems, err := s.getEvidenceItemsWithQueryer(ctx, queryer, decision.Meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	decisionClaims := decision.UnmarshalDecisionFields().Claims
+	incomingKeys := make([][]string, 0, len(items))
+	ids := make([]string, 0)
+
+	for _, item := range items {
+		incomingKeys = append(incomingKeys, measurementBindingKeys(decisionClaims, item))
+	}
+
+	for _, existing := range existingItems {
+		if existing.Type != "measurement" || existing.Verdict == "superseded" {
+			continue
+		}
+
+		existingKeys := measurementBindingKeys(decisionClaims, existing)
+
+		for _, keys := range incomingKeys {
+			if !measurementKeysOverlap(existingKeys, keys) {
+				continue
+			}
+
+			ids = append(ids, existing.ID)
+			break
+		}
+	}
+
+	return ids, nil
+}
+
+// CommitMeasurement atomically updates a decision and supersedes only overlapping active measurement evidence.
+func (s *Store) CommitMeasurement(ctx context.Context, decision *Artifact, items []EvidenceItem) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -761,11 +876,20 @@ func (s *Store) CommitMeasurement(ctx context.Context, decision *Artifact, item 
 	if err := s.updateArtifactWithExec(ctx, tx, decision); err != nil {
 		return err
 	}
-	if err := s.supersedeEvidenceByTypeWithExec(ctx, tx, decision.Meta.ID, item.Type); err != nil {
+
+	supersededIDs, err := s.measurementEvidenceIDsToSupersede(ctx, tx, decision, items)
+	if err != nil {
 		return err
 	}
-	if err := s.addEvidenceItemWithExec(ctx, tx, item, decision.Meta.ID); err != nil {
+	if err := s.supersedeEvidenceByIDWithExec(ctx, tx, supersededIDs); err != nil {
 		return err
+	}
+
+	for _, item := range items {
+		item := item
+		if err := s.addEvidenceItemWithExec(ctx, tx, &item, decision.Meta.ID); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

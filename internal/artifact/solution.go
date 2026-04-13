@@ -458,6 +458,33 @@ func ValidateParityPlan(plan ParityPlan) error {
 	return nil
 }
 
+func parityPlanWarning(mode Mode, source parityPlanSource) string {
+	if mode != ModeStandard && mode != ModeDeep {
+		return ""
+	}
+
+	modeLabel := string(mode)
+
+	if source == parityPlanSourceNone {
+		return fmt.Sprintf(
+			"%s mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy",
+			modeLabel,
+		)
+	}
+
+	if source == parityPlanSourceExplicit {
+		return fmt.Sprintf(
+			"%s mode comparison received an unstructured parity_plan — fill baseline_set, window, budget, and missing_data_policy",
+			modeLabel,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s mode comparison is using legacy parity notes only — add a structured parity_plan with baseline_set, window, budget, and missing_data_policy",
+		modeLabel,
+	)
+}
+
 // ValidateCompareInput applies FPF compare-time validation without side effects.
 func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (CompareValidationResult, error) {
 	result := CompareValidationResult{}
@@ -474,11 +501,6 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	effectiveParity := cloneParityPlan(ctx.ParityPlan)
 	comparedVariants := dedupeTrimmedStrings(ctx.PortfolioVariants)
 	switch {
-	case ctx.ParitySource == parityPlanSourceExplicit:
-		if err := ValidateParityPlan(*effectiveParity); err != nil {
-			return result, err
-		}
-		result.EffectiveParity = effectiveParity
 	case effectiveParity != nil && effectiveParity.IsStructured():
 		if err := ValidateParityPlan(*effectiveParity); err != nil {
 			return result, err
@@ -486,20 +508,14 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		result.EffectiveParity = effectiveParity
 	case effectiveParity != nil:
 		result.EffectiveParity = effectiveParity
-		if ctx.Mode == ModeDeep {
-			return result, fmt.Errorf("deep mode comparison requires a structured parity plan with baseline_set, window, budget, and missing_data_policy")
-		}
-		if ctx.Mode == ModeStandard {
-			warnings = append(warnings,
-				"standard mode comparison is using legacy parity notes only — add a structured parity plan with baseline_set, window, budget, and missing_data_policy")
+		warning := parityPlanWarning(ctx.Mode, ctx.ParitySource)
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
 	default:
-		if ctx.Mode == ModeDeep {
-			return result, fmt.Errorf("deep mode comparison requires a parity plan")
-		}
-		if ctx.Mode == ModeStandard {
-			warnings = append(warnings,
-				"standard mode comparison proceeds without a parity plan — declare baseline_set, window, budget, and missing_data_policy")
+		warning := parityPlanWarning(ctx.Mode, ctx.ParitySource)
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
 	}
 

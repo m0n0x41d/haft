@@ -1259,7 +1259,7 @@ func TestCompare_WarnsWithoutParityPlanInStandardMode(t *testing.T) {
 	if !strings.Contains(a.Body, "Comparison Warnings") {
 		t.Fatal("expected warning section without parity plan in standard mode")
 	}
-	if !strings.Contains(a.Body, "without a parity plan") {
+	if !strings.Contains(a.Body, "without a parity_plan") {
 		t.Fatalf("expected missing parity plan warning, body: %s", a.Body)
 	}
 }
@@ -1676,7 +1676,7 @@ func TestExplore_WarnsOnDuplicateNoveltyMarkers(t *testing.T) {
 	}
 }
 
-func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
+func TestCompare_DeepModeWarnsWithoutParityPlan(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1698,7 +1698,7 @@ func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
 		NoSteppingStoneRationale: "Both transports are direct architecture candidates.",
 	})
 
-	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
 		PortfolioRef: portfolio.Meta.ID,
 		Results: ComparisonResult{
 			Dimensions: []string{"latency"},
@@ -1707,13 +1707,79 @@ func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency result among the compared variants."},
+			},
 		},
 	})
-	if err == nil {
-		t.Fatal("expected deep-mode parity error")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "requires a parity plan") {
-		t.Fatalf("expected parity-plan error, got %v", err)
+	if !strings.Contains(a.Body, "Comparison Warnings") {
+		t.Fatalf("expected warning section in deep mode, body: %s", a.Body)
+	}
+	if !strings.Contains(a.Body, "deep mode comparison proceeds without a parity_plan") {
+		t.Fatalf("expected deep-mode missing parity warning, body: %s", a.Body)
+	}
+}
+
+func TestCompare_DeepModeWarnsOnUnstructuredParityPlan(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Transport choice", Signal: "Latency variance", Context: "api", Mode: "deep",
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("REST", "chatty serialization", "Keep the existing HTTP semantics"),
+			testVariant("gRPC", "tooling overhead", "Adopt binary RPC for lower-latency transport"),
+		},
+		NoSteppingStoneRationale: "Both transports are direct architecture candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency result among the compared variants."},
+			},
+			ParityPlan: &ParityPlan{
+				Window: "same 15m replay window",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Body, "Comparison Warnings") {
+		t.Fatalf("expected warning section for unstructured parity plan, body: %s", a.Body)
+	}
+	if !strings.Contains(a.Body, "received an unstructured parity_plan") {
+		t.Fatalf("expected unstructured parity warning, body: %s", a.Body)
 	}
 }
 

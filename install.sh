@@ -92,6 +92,7 @@ find_archive_binary() {
 find_archive_tui_bundle() {
     local archive_root="$1"
     local candidates=(
+        "$archive_root/tui.mjs"
         "$archive_root/tui/bundle.mjs"
         "$archive_root/tui/tui.mjs"
         "$archive_root/bundle.mjs"

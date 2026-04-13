@@ -394,6 +394,11 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		if v, ok := args["parity_rules"].(string); ok {
 			input.ParityRules = v
 		}
+		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
+		if err != nil {
+			return "", err
+		}
+		input.ParityPlan = parityPlan
 		// Log all args keys and types for debugging
 		for k, v := range args {
 			logger.Debug().Str("key", k).Str("type", fmt.Sprintf("%T", v)).Msg("characterize arg")
@@ -503,6 +508,11 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		_ = parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants)
 		_ = parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
 		_ = parseJSONArg(args, "incomparable", &input.Results.Incomparable)
+		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
+		if err != nil {
+			return "", err
+		}
+		input.Results.ParityPlan = parityPlan
 		if input.PortfolioRef == "" {
 			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
 			if p != nil {
@@ -518,7 +528,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.SolutionResponse("compare", a, filePath, navStrip), nil
+		return compareToolResponse(a, filePath, navStrip), nil
 
 	case "similar":
 		query, _ := args["query"].(string)
@@ -1151,6 +1161,20 @@ func parseStrictRollbackSpecFromArgs(args map[string]any, key string) (*artifact
 	return &value, nil
 }
 
+func parseStrictParityPlanFromArgs(args map[string]any, key string) (*artifact.ParityPlan, error) {
+	var value artifact.ParityPlan
+
+	present, err := decodeStrictArgFromArgs(args, key, &value)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an object with parity plan fields", key)
+	}
+	if !present {
+		return nil, nil
+	}
+
+	return &value, nil
+}
+
 func parsePredictionInputsFromArgs(args map[string]any, key string) ([]artifact.PredictionInput, error) {
 	var predictions []artifact.PredictionInput
 
@@ -1313,6 +1337,26 @@ func parseJSONArg(args map[string]any, key string, target any) bool {
 	}
 
 	return true
+}
+
+func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string) string {
+	response := present.SolutionResponse("compare", a, filePath, "")
+	warnings := artifact.ExtractComparisonWarnings(a.Body)
+	if len(warnings) == 0 {
+		return response + navStrip
+	}
+
+	var builder strings.Builder
+	builder.WriteString(response)
+	builder.WriteString("Comparison warnings:\n")
+	for _, warning := range warnings {
+		builder.WriteString("- ")
+		builder.WriteString(warning)
+		builder.WriteString("\n")
+	}
+	builder.WriteString(navStrip)
+
+	return builder.String()
 }
 
 // parseVariants handles MCP client serialization of the variants array.

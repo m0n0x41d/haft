@@ -1783,6 +1783,35 @@ func TestCompare_DeepModeWarnsOnUnstructuredParityPlan(t *testing.T) {
 	}
 }
 
+func TestExtractComparisonWarnings(t *testing.T) {
+	body := strings.Join([]string{
+		"# Solution Portfolio",
+		"",
+		"## Comparison",
+		"",
+		"## Comparison Warnings",
+		"",
+		"- ⚠ standard mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy",
+		"- ⚠ Parity checklist (per characterized dimension):",
+		"",
+		"## Next Section",
+		"",
+		"ignored",
+	}, "\n")
+
+	warnings := ExtractComparisonWarnings(body)
+
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d: %+v", len(warnings), warnings)
+	}
+	if warnings[0] != "standard mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy" {
+		t.Fatalf("unexpected first warning: %q", warnings[0])
+	}
+	if warnings[1] != "Parity checklist (per characterized dimension):" {
+		t.Fatalf("unexpected second warning: %q", warnings[1])
+	}
+}
+
 func TestCompare_PersistsStructuredComparison(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

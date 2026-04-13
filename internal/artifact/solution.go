@@ -827,6 +827,35 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	return body
 }
 
+// ExtractComparisonWarnings returns the rendered warning lines from a comparison body.
+func ExtractComparisonWarnings(body string) []string {
+	section := extractMarkdownSection(body, "## Comparison Warnings")
+	if section == "" {
+		return nil
+	}
+
+	lines := strings.Split(section, "\n")
+	warnings := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "## Comparison Warnings" {
+			continue
+		}
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "⚠"))
+		if trimmed == "" {
+			continue
+		}
+		warnings = append(warnings, trimmed)
+	}
+
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	return warnings
+}
+
 // charDim holds a parsed dimension with its indicator role and freshness.
 type charDim struct {
 	Name       string
@@ -1396,23 +1425,30 @@ func extractLegacyParityRules(body string) string {
 }
 
 func latestCharacterizationSection(body string) string {
-	lastIdx := -1
 	for i := 100; i >= 1; i-- {
 		marker := fmt.Sprintf("## Characterization v%d", i)
-		if idx := strings.Index(body, marker); idx != -1 {
-			lastIdx = idx
-			break
+		section := extractMarkdownSection(body, marker)
+		if section != "" {
+			return section
 		}
 	}
-	if lastIdx == -1 {
+
+	return ""
+}
+
+func extractMarkdownSection(body string, heading string) string {
+	start := strings.Index(body, heading)
+	if start == -1 {
 		return ""
 	}
 
-	section := body[lastIdx:]
-	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
-		section = section[:endIdx+1]
+	section := body[start:]
+	nextHeading := strings.Index(section[len(heading):], "\n## ")
+	if nextHeading == -1 {
+		return section
 	}
-	return section
+
+	return section[:len(heading)+nextHeading]
 }
 
 func mergeLegacyParityRules(parityPlan *ParityPlan, parityRules string) *ParityPlan {

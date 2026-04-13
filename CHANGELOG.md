@@ -6,11 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog entries keep historical `quint-code`, `quint_*`, and `/q-*` names where they describe behavior, commands, or releases from that era.
+## [6.0.0] — 2026-04-13
+
+### Breaking Changes
+
+- **Product renamed from quint-code to Haft** — binary, MCP tools (`quint_*` → `haft_*`), slash commands (`/q-*` → `/h-*`), skill names, and docs all use `haft` naming. Existing MCP configs, skill references, and slash commands from v5.x will not work without updating.
+- **Decision data model replaced** — claim-aware decision kernel with structured claims, predictions, and claim-bound evidence replaces markdown-only reconstruction. Existing decision artifacts require migration.
+- **Reasoning model changed** — 5-mode activity model (Understand / Explore / Choose / Execute / Verify) replaces the artifact-centric 6-step protocol. Skill instructions, prompts, and agent behavior follow the new model.
+- **`/h-verify` replaces `/h-refresh`** — `/h-refresh` is deprecated and auto-cleaned on install. Use `/h-verify` for discovery (scan + drift + pending verify_after) and triage.
+
+Note: older changelog entries keep historical `quint-code`, `quint_*`, and `/q-*` names where they describe behavior, commands, or releases from that era.
 
 ### Added
 
 - **Desktop app (pre-alpha)** — Wails v2 desktop application with dashboard, problem board, decision detail with evidence F/G/R decomposition, portfolio comparison with Pareto front visualization, task spawning (Claude Code / Codex), agent chat view, terminal panel (Cmd+\`), multi-project management, and search (Cmd+K). Dark theme following the design system. Pre-alpha: not recommended for production use.
+- **Standalone Haft runtime** — local-first `haft agent` / TUI flow with persisted sessions, checkpointed vs autonomous execution, permission and question dialogs, model/session pickers, compaction, spawned subagents, and a typed JSON-RPC protocol between UI and runtime.
 - **Knowledge graph** — `internal/graph` package providing unified query interface over existing artifact, module, and dependency tables. Queries: FindDecisionsForFile, FindInvariantsForFile, FindModuleForFile, TransitiveDependents, ComputeImpactSet. All cycle-safe with depth limiting. 17 tests.
 - **Invariant injection into agent prompts** — when implementing a decision, agents receive invariants from ALL decisions governing the affected files, not just the current decision's own invariants. Invariants tagged with source decision ID.
 - **Invariant verification** — automated checking of "no dependency from X to Y" and "no circular dependencies" patterns against the live module dependency graph. Returns holds/violated/unknown per invariant.
@@ -19,15 +29,12 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 - **Evidence F/G/R decomposition** — decision detail page shows per-evidence formality level (F0-F3), congruence level (CL0-CL3), verdict badges, freshness indicators, and coverage gaps (claims without evidence).
 - **Auto-run toggle for agent tasks** — per-task toggle between checkpointed (agent pauses) and auto-run (agent proceeds without intervention) modes. Persisted across app restart.
 - **`haft sync` for team workflow** — syncs `.haft/` markdown files into local SQLite database after `git pull`. Enables team collaboration where `.haft/*.md` in git is the shared source of truth and each engineer has their own local database.
-- **5-mode engineering reasoning model** — skill instructions and standalone agent prompt restructured around Understand / Explore / Choose / Execute / Verify (+ Note fast path). Replaces the artifact-centric 6-step "how to reason" with activity-centric modes users can learn in 30 seconds.
 - **Probe-or-commit behavioral gate** — Choose mode now includes a readiness checklist before comparison: dimension coverage, variant diversity, and whether a specific next investigation could change the ranking. Returns commit / probe / widen / reroute.
 - **Language precision triggers** — Understand and Choose modes catch ambiguous terms (service, process, quality, component) and subjective comparison dimensions (maintainable, simple, scalable) before they corrupt downstream reasoning.
 - **`verify_after` field on claims** — `DecisionClaim` and `PredictionInput` now accept `verify_after` (RFC3339 or YYYY-MM-DD). Claims with past verify_after dates that remain unverified are surfaced by `haft_refresh(scan)` as `pending_verification` stale items with observable and threshold details. MCP schema updated.
 - **Constraint-aware Pareto computation** — `computeParetoFront()` now eliminates variants that are strictly worst on all comparable peers for any constraint dimension before dominance computation. Constraint violations are reported as warnings. Variants with missing constraint data are preserved conservatively.
-- **`/h-verify` replaces `/h-refresh`** — unified Verify mode entry point that runs discovery (scan + drift + pending verify_after), presents triage to the user, and suggests actions (measure, waive, deprecate, reopen) per item. `/h-refresh` is deprecated and auto-cleaned on install.
 - **Standalone agent refresh tool parity** — `HaftRefreshTool` now exposes all 6 actions (scan, drift, waive, reopen, supersede, deprecate) matching the MCP server schema. Previously only scan/drift were available to the standalone agent.
 - **Explicit reroute map** — legitimate upstream transitions documented: Choose → Understand (comparison reveals bad framing), Explore → Understand (wrong problem type), Execute → Choose, Verify → any earlier mode.
-- **Standalone Haft runtime** — local-first `haft agent` / TUI flow with persisted sessions, checkpointed vs autonomous execution, permission and question dialogs, model/session pickers, compaction, spawned subagents, and a typed JSON-RPC protocol between UI and runtime.
 - **Claim-aware decision kernel** — decisions now persist canonical structured claims, predictions, claim-bound evidence, live measurement status, and deterministic Pareto/coverage state instead of relying on markdown-only reconstruction.
 - **Deterministic projections** — projection views now render the same artifact graph for different audiences, including engineer, manager, audit, compare, delegated-agent brief, and change-rationale handoff surfaces.
 - **Route-aware FPF retrieval** — indexed section summaries, route expansion, explain/full controls, golden-query evaluation, tree drill-down, and experimental semantic retrieval over the embedded FPF corpus.
@@ -36,11 +43,11 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 
 ### Changed
 
-- **Product identity is now Haft-first** — binary, docs, commands, skills, and MCP tool names use `haft`, `haft_*`, and `/h-*`; historical `quint-code` repository paths remain only where compatibility still requires them. Skill and prompt now use 5-mode vocabulary (Understand/Explore/Choose/Execute/Verify) instead of artifact-centric step numbering.
-- **Core architecture was refactored into explicit layers** — artifact build/store logic, presentation formatting, protocol transport, agent runtime, and TUI shell now live as clearer functional boundaries with purer `Build*`/formatting paths and thinner orchestration shells.
+- **Core architecture refactored into explicit layers** — artifact build/store logic, presentation formatting, protocol transport, agent runtime, and TUI shell now live as clearer functional boundaries with purer `Build*`/formatting paths and thinner orchestration shells.
 - **Agent execution moved beyond slash-command steering** — the repo now supports both MCP/plugin workflows and a standalone agent/TUI loop, with persisted execution mode aliases and compatibility bridges for older symbiotic/collaborative terminology.
 - **Provider/model support expanded** — the registry and CLI now support multi-provider model discovery/switching with GPT-5.4-class defaults/fallbacks instead of the older 5.3-era baseline.
 - **FPF search quality improved materially** — deterministic route lookup, better weighting/sanitization, explicit section summaries, and MCP-accessible spec search replaced the older narrower retrieval path.
+- **`haft init --codex` TOML generation fixed** — idempotent section replacement instead of append, prevents duplicate key errors on repeated init.
 
 ### Fixed
 
@@ -48,7 +55,7 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 - **Slash-command guidance no longer points users at stale `/q-*` actions** — note validation, nav strips, MCP presentation text, and h-reason docs now consistently steer users through the `h-*` surface, with `/h-view` as the advanced projection entry point.
 - **Large pasted prompts no longer explode the TUI** — oversized pasted text is collapsed to `[N rows inserted]` placeholders in the input/queue/transcript UI, while the raw content is preserved and expanded only at submit time.
 - **Queued follow-up messages preserve real prompt state** — multiline text, attachments, and hidden collapsed-paste payloads now survive queueing, replay, and draft restore paths without truncation or accidental `trim()` damage.
-- **Decision/evidence integrity issues were tightened across the branch** — malformed compare/measure payloads now fail loudly, Pareto fronts are computed deterministically, and claim/evidence bindings keep canonical scope instead of silently degrading.
+- **Decision/evidence integrity issues tightened** — malformed compare/measure payloads now fail loudly, Pareto fronts are computed deterministically, and claim/evidence bindings keep canonical scope instead of silently degrading.
 - **Governance shutdown no longer panics on double-close** — `sync.Once` prevents channel double-close during fast project switching.
 - **SwitchProject validates new project before teardown** — pre-checks DB accessibility, preventing zombie state if the target project is broken.
 - **Task auto_run field restored from database** — was persisted but silently lost on restart.

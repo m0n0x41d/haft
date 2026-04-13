@@ -504,8 +504,7 @@ func configureMCPCodex(projectRoot, binaryPath string) error {
 		existing = string(data)
 	}
 
-	tomlSection := fmt.Sprintf(`
-[mcp_servers.haft]
+	tomlSection := fmt.Sprintf(`[mcp_servers.haft]
 command = "%s"
 args = ["serve"]
 startup_timeout_sec = 10
@@ -515,24 +514,42 @@ tool_timeout_sec = 60
 HAFT_PROJECT_ROOT = "%s"
 `, binaryPath, projectRoot)
 
-	// Remove old quint-code section if present
-	if start := strings.Index(existing, "[mcp_servers.quint-code]"); start != -1 {
-		end := len(existing)
-		if nextSection := strings.Index(existing[start+1:], "\n["); nextSection != -1 {
-			end = start + 1 + nextSection
-		}
-		existing = existing[:start] + existing[end:]
+	// Strip all existing haft and quint-code MCP sections
+	existing = removeTomlSections(existing, "mcp_servers.quint-code")
+	existing = removeTomlSections(existing, "mcp_servers.haft")
+
+	trimmed := strings.TrimRight(existing, " \t\n")
+	if trimmed == "" {
+		return os.WriteFile(configPath, []byte(tomlSection), 0644)
 	}
 
-	if start := strings.Index(existing, "[mcp_servers.haft]"); start != -1 {
-		end := len(existing)
-		if nextSection := strings.Index(existing[start+1:], "\n["); nextSection != -1 {
-			end = start + 1 + nextSection
+	return os.WriteFile(configPath, []byte(trimmed+"\n\n"+tomlSection), 0644)
+}
+
+// removeTomlSections removes all TOML sections whose header starts with the
+// given prefix (e.g. "mcp_servers.haft" matches both [mcp_servers.haft] and
+// [mcp_servers.haft.env]). Each section spans from its header to the next
+// section header or EOF.
+func removeTomlSections(content, prefix string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	skipping := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+			// Extract section name between first [ and first ]
+			name := trimmed[1:strings.Index(trimmed, "]")]
+			if name == prefix || strings.HasPrefix(name, prefix+".") {
+				skipping = true
+				continue
+			}
+			skipping = false
 		}
-		existing = existing[:start] + existing[end:]
+		if !skipping {
+			result = append(result, line)
+		}
 	}
 
-	updated := strings.TrimRight(existing, "\n") + tomlSection
-
-	return os.WriteFile(configPath, []byte(updated), 0644)
+	return strings.Join(result, "\n")
 }

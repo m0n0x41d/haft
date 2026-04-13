@@ -50,7 +50,13 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 		a.Meta.Status = StatusActive
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for artifact %s: %w", a.Meta.ID, err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO artifacts (id, kind, version, status, context, mode, title, content, valid_until, created_at, updated_at, search_keywords, structured_data)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.Meta.ID, string(a.Meta.Kind), a.Meta.Version, string(a.Meta.Status),
@@ -69,12 +75,15 @@ func (s *Store) Create(ctx context.Context, a *Artifact) error {
 	}
 
 	for _, link := range a.Meta.Links {
-		if err := s.AddLink(ctx, a.Meta.ID, link.Ref, link.Type); err != nil {
+		_, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO artifact_links (source_id, target_id, link_type, created_at)
+			VALUES (?, ?, ?, ?)`, a.Meta.ID, link.Ref, link.Type, time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
 			return fmt.Errorf("insert link %s→%s: %w", a.Meta.ID, link.Ref, err)
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // Get retrieves an artifact by ID.

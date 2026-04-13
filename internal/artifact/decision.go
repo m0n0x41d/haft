@@ -512,6 +512,154 @@ func MergeProblemRefs(single string, multiple []string) []string {
 	return refs
 }
 
+func decisionBlocksReplacement(status Status) bool {
+	return status == StatusActive || status == StatusRefreshDue
+}
+
+func resolvePortfolioProblemRefs(portfolio *Artifact) []string {
+	if portfolio == nil {
+		return nil
+	}
+
+	resolvedRefs := []string{}
+	fields := portfolio.UnmarshalPortfolioFields()
+
+	if fields.ProblemRef != "" {
+		resolvedRefs = appendUniqueString(resolvedRefs, fields.ProblemRef)
+	}
+
+	for _, link := range portfolio.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+		if !strings.HasPrefix(link.Ref, KindProblemCard.IDPrefix()+"-") {
+			continue
+		}
+
+		resolvedRefs = appendUniqueString(resolvedRefs, link.Ref)
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func resolveDecisionProblemRefs(ctx context.Context, store ArtifactStore, decision *Artifact) []string {
+	if decision == nil {
+		return nil
+	}
+
+	resolvedRefs := cloneStringSlice(decision.UnmarshalDecisionFields().ProblemRefs)
+
+	for _, link := range decision.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		if strings.HasPrefix(link.Ref, KindProblemCard.IDPrefix()+"-") {
+			resolvedRefs = appendUniqueString(resolvedRefs, link.Ref)
+			continue
+		}
+
+		linkedArtifact, err := store.Get(ctx, link.Ref)
+		if err != nil {
+			continue
+		}
+		if linkedArtifact.Meta.Kind != KindSolutionPortfolio {
+			continue
+		}
+
+		for _, problemRef := range resolvePortfolioProblemRefs(linkedArtifact) {
+			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+		}
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func resolveIncomingDecisionProblemRefs(
+	ctx context.Context,
+	store ArtifactStore,
+	problemRefs []string,
+	portfolioRef string,
+) []string {
+	resolvedRefs := cloneStringSlice(problemRefs)
+
+	if portfolioRef == "" {
+		sort.Strings(resolvedRefs)
+		return resolvedRefs
+	}
+
+	portfolio, err := store.Get(ctx, portfolioRef)
+	if err != nil || portfolio.Meta.Kind != KindSolutionPortfolio {
+		sort.Strings(resolvedRefs)
+		return resolvedRefs
+	}
+
+	for _, problemRef := range resolvePortfolioProblemRefs(portfolio) {
+		resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func validateNoActiveDecisionConflict(
+	ctx context.Context,
+	store ArtifactStore,
+	problemRefs []string,
+	portfolioRef string,
+) error {
+	resolvedIncomingRefs := resolveIncomingDecisionProblemRefs(ctx, store, problemRefs, portfolioRef)
+
+	if len(resolvedIncomingRefs) == 0 {
+		return nil
+	}
+
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 0)
+	if err != nil {
+		return fmt.Errorf("list decision records: %w", err)
+	}
+
+	for _, decision := range decisions {
+		if !decisionBlocksReplacement(decision.Meta.Status) {
+			continue
+		}
+
+		fullDecision, err := store.Get(ctx, decision.Meta.ID)
+		if err != nil {
+			continue
+		}
+
+		for _, existingProblemRef := range resolveDecisionProblemRefs(ctx, store, fullDecision) {
+			if !slicesContains(resolvedIncomingRefs, existingProblemRef) {
+				continue
+			}
+
+			return fmt.Errorf(
+				"problem_ref %s already has live DecisionRecord %s (%s) — supersede the previous decision or close the problem first",
+				existingProblemRef,
+				fullDecision.Meta.ID,
+				fullDecision.Meta.Title,
+			)
+		}
+	}
+
+	return nil
+}
+
+func slicesContains(values []string, target string) bool {
+	for _, value := range values {
+		if value != target {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // BuildLinks constructs artifact links from problem refs and portfolio ref. Pure.
 func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 	var links []Link
@@ -528,6 +676,11 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
 	input = normalizeDecisionInput(input)
 
+	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
+	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
+		return nil, "", err
+	}
+
 	seq, err := store.NextSequence(ctx, KindDecisionRecord)
 	if err != nil {
 		return nil, "", fmt.Errorf("generate ID: %w", err)
@@ -537,7 +690,6 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 	now := time.Now().UTC()
 
 	// Pure: merge refs
-	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
 	links := BuildLinks(problemRefs, input.PortfolioRef)
 
 	// Effects: compute mode from chain

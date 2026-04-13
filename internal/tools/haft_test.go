@@ -1382,9 +1382,40 @@ func TestHaftDecisionTool_MeasureRejectsForeignDecisionRef(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	foreignProblem, _, err := artifact.FrameProblem(fixture.ctx, fixture.store, fixture.haftDir, artifact.ProblemFrameInput{
+		Title:      "Streaming fallback transport",
+		Signal:     "Current transport cannot survive mobile reconnect churn.",
+		Acceptance: "Select a transport that keeps reconnect latency predictable.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foreignPortfolio, _, err := artifact.ExploreSolutions(fixture.ctx, fixture.store, fixture.haftDir, artifact.ExploreInput{
+		ProblemRef: foreignProblem.Meta.ID,
+		Variants: []artifact.Variant{
+			{
+				ID:            "Y1",
+				Title:         "WebSocket",
+				WeakestLink:   "connection lifecycle complexity",
+				NoveltyMarker: "Keep long-lived duplex sessions",
+			},
+			{
+				ID:            "Y2",
+				Title:         "SSE",
+				WeakestLink:   "server-to-client only",
+				NoveltyMarker: "Use unidirectional event streams",
+			},
+		},
+		NoSteppingStoneRationale: "Both variants are valid responses to the separate reconnect problem.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	foreignDecision, _, err := artifact.Decide(fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
-		ProblemRef:      fixture.problem.Meta.ID,
-		PortfolioRef:    fixture.otherPortfolio.Meta.ID,
+		ProblemRef:      foreignProblem.Meta.ID,
+		PortfolioRef:    foreignPortfolio.Meta.ID,
 		SelectedTitle:   "WebSocket",
 		WhySelected:     "The foreign portfolio keeps duplex connections available.",
 		SelectionPolicy: "Prioritize persistent duplex transport.",

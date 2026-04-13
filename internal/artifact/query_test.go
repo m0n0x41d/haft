@@ -303,7 +303,7 @@ func TestResolveProblemAdoptionRefs_KeepsDecisionOnSelectedPortfolioChain(t *tes
 		t.Fatal(err)
 	}
 
-	otherPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
 		ProblemRef: problem.Meta.ID,
 		Variants: []Variant{
 			testVariant("WebSocket", "connection lifecycle complexity", "Keep duplex sessions alive"),
@@ -311,16 +311,6 @@ func TestResolveProblemAdoptionRefs_KeepsDecisionOnSelectedPortfolioChain(t *tes
 		},
 		NoSteppingStoneRationale: "Both transports are direct target architectures.",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	otherDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
-		ProblemRef:    problem.Meta.ID,
-		PortfolioRef:  otherPortfolio.Meta.ID,
-		SelectedTitle: "WebSocket",
-		WhySelected:   "A newer alternative path should not hijack adoption refs for the compared portfolio.",
-	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,18 +327,6 @@ func TestResolveProblemAdoptionRefs_KeepsDecisionOnSelectedPortfolioChain(t *tes
 		t.Fatal(err)
 	}
 
-	_, err = store.DB().ExecContext(ctx, `
-		UPDATE artifacts
-		SET created_at = ?, updated_at = ?
-		WHERE id = ?`,
-		"2026-01-03T00:00:00Z",
-		"2026-01-03T00:00:00Z",
-		otherDecision.Meta.ID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	refs := ResolveProblemAdoptionRefs(ctx, store, problem.Meta.ID)
 	if refs.PortfolioRef != comparedPortfolio.Meta.ID {
 		t.Fatalf("PortfolioRef = %q, want %q", refs.PortfolioRef, comparedPortfolio.Meta.ID)
@@ -357,6 +335,6 @@ func TestResolveProblemAdoptionRefs_KeepsDecisionOnSelectedPortfolioChain(t *tes
 		t.Fatalf("ComparedPortfolioRef = %q, want %q", refs.ComparedPortfolioRef, comparedPortfolio.Meta.ID)
 	}
 	if refs.DecisionRef != comparedDecision.Meta.ID {
-		t.Fatalf("DecisionRef = %q, want %q (not newer %q)", refs.DecisionRef, comparedDecision.Meta.ID, otherDecision.Meta.ID)
+		t.Fatalf("DecisionRef = %q, want %q", refs.DecisionRef, comparedDecision.Meta.ID)
 	}
 }

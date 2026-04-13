@@ -464,7 +464,7 @@ func TestHaftQueryTool_ProjectionChangeRationaleUsesCanonicalDecisionState(t *te
 		"Rejected alternatives:",
 		"- REST: Higher steady-state latency with no decisive cost advantage.",
 		"Rollback summary: Error budget exceeds 2% during canary",
-		"Latest measurement verdict: partial",
+		"Latest measurement verdict: weakens",
 	}
 
 	for _, want := range required {

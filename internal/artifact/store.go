@@ -556,6 +556,7 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 
 func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
 	formality := normalizeFormalityLevel(item.FormalityLevel)
+	storedVerdict := canonicalStoredEvidenceVerdict(item.Type, item.Verdict)
 	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
 	if err != nil {
 		return err
@@ -594,7 +595,7 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		"formality_level",
 	}
 	args := []any{
-		item.ID, artifactRef, item.Type, item.Content, item.Verdict,
+		item.ID, artifactRef, item.Type, item.Content, storedVerdict,
 		item.CarrierRef, item.CongruenceLevel, formality,
 	}
 	if hasClaimScope {
@@ -621,6 +622,7 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 	)
 
 	_, err = execer.ExecContext(ctx, query, args...)
+	item.Verdict = storedVerdict
 	return err
 }
 
@@ -686,7 +688,7 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
-		e.Verdict = verdict.String
+		e.Verdict = canonicalStoredEvidenceVerdict(e.Type, verdict.String)
 		e.CarrierRef = carrierRef.String
 		e.FormalityLevel = normalizeFormalityLevel(e.FormalityLevel)
 		if claimScope.String != "" {
@@ -701,6 +703,24 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 		items = append(items, e)
 	}
 	return items, rows.Err()
+}
+
+func canonicalStoredEvidenceVerdict(evidenceType string, verdict string) string {
+	normalizedVerdict := strings.TrimSpace(verdict)
+	if !strings.EqualFold(strings.TrimSpace(evidenceType), "measurement") {
+		return normalizedVerdict
+	}
+
+	switch normalizedVerdict {
+	case "accepted":
+		return "supports"
+	case "partial":
+		return "weakens"
+	case "failed":
+		return "refutes"
+	default:
+		return normalizedVerdict
+	}
 }
 
 // SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.

@@ -470,8 +470,8 @@ func TestFetchProjectionGraph_UpdatesProjectedPredictionStatusesAfterMeasure(t *
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("projected prediction statuses = %#v, want %#v", got, want)
 	}
-	if got := graphAfterMeasure.Decisions[0].Evidence.MeasurementVerdict; got != "partial" {
-		t.Fatalf("projected measurement verdict = %q, want %q", got, "partial")
+	if got := graphAfterMeasure.Decisions[0].Evidence.MeasurementVerdict; got != "weakens" {
+		t.Fatalf("projected measurement verdict = %q, want %q", got, "weakens")
 	}
 }
 

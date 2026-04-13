@@ -202,7 +202,7 @@ func TestHandleQuintQuery_ProjectionRendersChangeRationaleAlias(t *testing.T) {
 		"Rejected alternatives:",
 		"- REST: Higher steady-state latency with no decisive cost advantage.",
 		"Rollback summary: Latency regresses in production.",
-		"Latest measurement verdict: partial",
+		"Latest measurement verdict: weakens",
 		"── Haft",
 	}
 

@@ -61,8 +61,8 @@ func TestMeasure_Success(t *testing.T) {
 	if len(items) == 0 {
 		t.Error("expected evidence item from measurement")
 	}
-	if items[0].Verdict != "partial" {
-		t.Errorf("evidence verdict = %q, want partial", items[0].Verdict)
+	if items[0].Verdict != "weakens" {
+		t.Errorf("evidence verdict = %q, want weakens", items[0].Verdict)
 	}
 	if items[0].FormalityLevel != 2 {
 		t.Errorf("evidence formality = %d, want 2", items[0].FormalityLevel)
@@ -90,6 +90,54 @@ func TestMeasure_MissingRequired(t *testing.T) {
 	_, err = Measure(ctx, store, t.TempDir(), MeasureInput{DecisionRef: "x", Findings: "y"})
 	if err == nil {
 		t.Error("expected error for missing verdict")
+	}
+}
+
+func TestMeasure_NormalizesVerdictAliasesBeforeStorage(t *testing.T) {
+	cases := []struct {
+		name    string
+		verdict string
+		want    string
+	}{
+		{name: "accepted", verdict: "accepted", want: "supports"},
+		{name: "partial", verdict: "partial", want: "weakens"},
+		{name: "failed", verdict: "failed", want: "refutes"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := setupTestDB(t)
+			ctx := context.Background()
+			haftDir := t.TempDir()
+
+			dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+				SelectedTitle: "JetStream",
+				WhySelected:   "Verify measurement verdict normalization",
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = Measure(ctx, store, haftDir, MeasureInput{
+				DecisionRef: dec.Meta.ID,
+				Findings:    "Measured outcome recorded.",
+				Verdict:     tc.verdict,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("expected 1 evidence item, got %d", len(items))
+			}
+			if got := items[0].Verdict; got != tc.want {
+				t.Fatalf("stored verdict = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -942,8 +990,8 @@ func TestMeasure_RollsBackDecisionAndEvidenceWhenMeasurementInsertFails(t *testi
 	if len(items) != 1 {
 		t.Fatalf("expected original evidence to remain after rollback, got %d item(s)", len(items))
 	}
-	if items[0].Verdict != "accepted" {
-		t.Fatalf("existing evidence verdict = %q, want accepted after rollback", items[0].Verdict)
+	if items[0].Verdict != "supports" {
+		t.Fatalf("existing evidence verdict = %q, want supports after rollback", items[0].Verdict)
 	}
 }
 

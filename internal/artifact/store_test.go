@@ -512,6 +512,65 @@ func TestAddEvidenceItem_LegacySchemaWithoutClaimRefs(t *testing.T) {
 	}
 }
 
+func TestAddEvidenceItem_NormalizesMeasurementVerdictAliases(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	err := store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-measure-aliases", Kind: KindDecisionRecord, Title: "Decision"},
+		Body: "d",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		id      string
+		verdict string
+		want    string
+	}{
+		{id: "evid-accepted", verdict: "accepted", want: "supports"},
+		{id: "evid-partial", verdict: "partial", want: "weakens"},
+		{id: "evid-failed", verdict: "failed", want: "refutes"},
+	}
+
+	for _, tc := range cases {
+		item := &EvidenceItem{
+			ID:              tc.id,
+			Type:            "measurement",
+			Content:         tc.verdict,
+			Verdict:         tc.verdict,
+			CongruenceLevel: 3,
+			FormalityLevel:  2,
+		}
+		if err := store.AddEvidenceItem(ctx, item, "dec-measure-aliases"); err != nil {
+			t.Fatalf("add evidence item %s: %v", tc.id, err)
+		}
+		if got := item.Verdict; got != tc.want {
+			t.Fatalf("item verdict after insert = %q, want %q", got, tc.want)
+		}
+	}
+
+	items, err := store.GetEvidenceItems(ctx, "dec-measure-aliases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != len(cases) {
+		t.Fatalf("expected %d items, got %d", len(cases), len(items))
+	}
+
+	verdictByID := make(map[string]string, len(items))
+	for _, item := range items {
+		verdictByID[item.ID] = item.Verdict
+	}
+
+	for _, tc := range cases {
+		if got := verdictByID[tc.id]; got != tc.want {
+			t.Fatalf("stored verdict for %s = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+
 func TestNextSequence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

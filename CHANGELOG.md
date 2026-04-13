@@ -40,6 +40,8 @@ Note: older changelog entries keep historical `quint-code`, `quint_*`, and `/q-*
 - **Route-aware FPF retrieval** — indexed section summaries, route expansion, explain/full controls, golden-query evaluation, tree drill-down, and experimental semantic retrieval over the embedded FPF corpus.
 - **Broader codebase awareness** — C/C++ module and include detection, symbol hashing, richer module/dependency scanning, and module-governance reporting in status/coverage flows.
 - **Expanded client integrations** — `haft init` now installs MCP/command surfaces for Claude Code, Cursor, Gemini CLI, Codex CLI/App, and Air while keeping the same local binary/runtime.
+- **`haft_problem(action="close")`** — marks a ProblemCard as `addressed`. Previously required manual frontmatter editing. Exposed in MCP schema for both plugin and standalone modes. ([#43](https://github.com/m0n0x41d/quint-code/issues/43))
+- **Auto-baseline after `decide`** — when `affected_files` are provided, file hashes are snapshotted immediately after the decision is recorded. No more manual `haft_decision(action="baseline")` calls. ([#43](https://github.com/m0n0x41d/quint-code/issues/43))
 
 ### Changed
 

@@ -203,14 +203,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 			Tool{
 				Name:        "haft_problem",
-				Description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems. Frame the problem BEFORE exploring solutions.",
+				Description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, 'close' marks a problem as addressed. Frame the problem BEFORE exploring solutions.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"action": map[string]interface{}{
 							"type":        "string",
-							"enum":        []interface{}{"frame", "characterize", "select"},
-							"description": "frame=create ProblemCard, characterize=add comparison dimensions, select=list/filter active problems",
+							"enum":        []interface{}{"frame", "characterize", "select", "close"},
+							"description": "frame=create ProblemCard, characterize=add comparison dimensions, select=list/filter active problems, close=mark problem as addressed",
 						},
 						"title": map[string]string{
 							"type":        "string",

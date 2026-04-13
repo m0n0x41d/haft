@@ -134,13 +134,14 @@ type Status string
 
 const (
 	StatusActive     Status = "active"
+	StatusAddressed  Status = "addressed"
 	StatusSuperseded Status = "superseded"
 	StatusDeprecated Status = "deprecated"
 	StatusRefreshDue Status = "refresh_due"
 )
 
 var validStatuses = map[Status]bool{
-	StatusActive: true, StatusSuperseded: true, StatusDeprecated: true, StatusRefreshDue: true,
+	StatusActive: true, StatusAddressed: true, StatusSuperseded: true, StatusDeprecated: true, StatusRefreshDue: true,
 }
 
 // IsValid returns true if the status is recognized.

@@ -49,7 +49,7 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "adopt", "select", "characterize"}, "description": "frame | adopt | select | characterize"},
+				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "adopt", "select", "characterize", "close"}, "description": "frame | adopt | select | characterize | close"},
 				"ref":                    map[string]any{"type": "string", "description": "Existing problem ID to adopt (adopt)"},
 				"title":                  map[string]any{"type": "string", "description": "Problem title (frame)"},
 				"signal":                 map[string]any{"type": "string", "description": "What's anomalous or broken (frame)"},

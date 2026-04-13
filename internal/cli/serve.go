@@ -424,8 +424,29 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		items := artifact.EnrichProblemsForList(ctx, store, problems)
 		return present.ProblemsListResponse(items, navStrip), nil
 
+	case "close":
+		problemRef, _ := args["problem_ref"].(string)
+		if problemRef == "" {
+			return "", fmt.Errorf("problem_ref is required for close action")
+		}
+		a, err := store.Get(ctx, problemRef)
+		if err != nil {
+			return "", fmt.Errorf("problem %s not found: %w", problemRef, err)
+		}
+		if a.Meta.Kind != artifact.KindProblemCard {
+			return "", fmt.Errorf("%s is %s, not a ProblemCard", problemRef, a.Meta.Kind)
+		}
+		a.Meta.Status = artifact.StatusAddressed
+		if err := store.Update(ctx, a); err != nil {
+			return "", fmt.Errorf("update problem status: %w", err)
+		}
+		if _, err := artifact.WriteFile(haftDir, a); err != nil {
+			logger.Warn().Err(err).Str("problem_ref", problemRef).Msg("problem.close.file_write_failed")
+		}
+		return fmt.Sprintf("Problem %s marked as addressed.\n", problemRef), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', or 'select'", action)
+		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', 'select', or 'close'", action)
 	}
 }
 
@@ -614,8 +635,23 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if err != nil {
 			return "", err
 		}
+
+		// Auto-baseline when affected_files are present
+		var baselineNote string
+		if len(input.AffectedFiles) > 0 {
+			projectRoot := filepath.Dir(haftDir)
+			baselined, blErr := artifact.Baseline(ctx, store, projectRoot, artifact.BaselineInput{
+				DecisionRef: a.Meta.ID,
+			})
+			if blErr != nil {
+				baselineNote = fmt.Sprintf("\n\n⚠ Auto-baseline failed: %v\nRun manually: haft_decision(action=\"baseline\", decision_ref=\"%s\")", blErr, a.Meta.ID)
+			} else {
+				baselineNote = fmt.Sprintf("\n\nBaseline established for %d file(s).", len(baselined))
+			}
+		}
+
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("decide", a, filePath, "", navStrip), nil
+		return present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote, nil
 
 	case "apply":
 		decisionRef, _ := args["decision_ref"].(string)

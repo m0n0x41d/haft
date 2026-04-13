@@ -75,7 +75,7 @@ When reasoning through problems, apply these principles:
 
 ### 4. Plan the Solution (Collaborative)
 
-- **For significant changes: use `/q-reason` or `/q-frame`**
+- **For significant changes: use `/h-reason` or `/h-frame`**
 - Break fix into manageable, incremental steps
 - Each step should be specific, simple, and verifiable
 - Actually execute each step (don't just say "I will do X" - DO X)
@@ -132,7 +132,7 @@ REVERSIBILITY: [Can we undo in 2 weeks? 2 months? Never?]
 RECOMMENDATION: [Which + why, or "need your input on X"]
 ```
 
-## FPF Mode (Structured Reasoning with Quint Code)
+## FPF Mode (Structured Reasoning with Haft)
 
 **When to use:**
 
@@ -147,27 +147,27 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - Easily reversible decisions
 - Time-critical situations where overhead isn't justified
 
-**Activation:** Run `/q-reason` and describe the problem. The agent auto-selects depth.
+**Activation:** Run `/h-reason` and describe the problem. The agent auto-selects depth.
 
-**Commands:**
+**Five modes:**
 
-| Command | What it does |
-|---------|-------------|
-| `/q-note` | Capture micro-decisions with rationale validation |
-| `/q-frame` | Frame the problem — signal, constraints, acceptance |
-| `/q-char` | Define comparison dimensions with roles (constraint/target/observation) |
-| `/q-explore` | Generate genuinely distinct variants with weakest link |
-| `/q-compare` | Fair comparison with parity enforcement |
-| `/q-decide` | FPF E.9 decision contract — invariants, DO/DON'T, rollback |
-| `/q-refresh` | Manage artifact lifecycle — waive, reopen, supersede, deprecate |
-| `/q-status` | Dashboard — Shipped/Pending decisions, problems, module coverage |
-| `/q-search` | Full-text search across all artifacts |
-| `/q-problems` | List problems with Goldilocks readiness + complexity signals |
+| Mode | Command | What it does |
+|------|---------|-------------|
+| Understand | `/h-frame` | Frame the problem — signal, constraints, acceptance |
+| Explore | `/h-char` | Define comparison dimensions (constraint/target/observation) |
+| Explore | `/h-explore` | Generate genuinely distinct variants with weakest link |
+| Choose | `/h-compare` | Fair comparison with parity enforcement |
+| Execute | `/h-decide` | Decision contract — invariants, DO/DON'T, rollback |
+| Verify | `/h-verify` | Check stale artifacts, code drift, pending claims |
+| — | `/h-note` | Micro-decision with rationale validation |
+| — | `/h-status` | Dashboard — decisions, problems, module coverage |
+| — | `/h-search` | Full-text search across all artifacts |
+| — | `/h-problems` | List problems with readiness + complexity signals |
 
 **Recommended protocol (for best results):**
 
 ```
-/q-frame → /q-char → /q-explore → /q-compare → /q-decide
+/h-frame → /h-char → /h-explore → /h-compare → /h-decide
   what's      what       genuinely     fair         engineering
   broken?     matters?   different     comparison   contract
                          options
@@ -179,8 +179,8 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 - **Evidence Decay**: Expired evidence scores 0.1. R_eff < 0.5 → stale. R_eff < 0.3 → AT RISK.
 - **Indicator Roles**: constraint (hard limit), target (optimize), observation (Anti-Goodhart).
 - **Parity**: Same inputs, same scope, same budget for all options — or the comparison is junk.
-- **Codebase Awareness**: Module coverage shows which parts of the architecture have decisions. `/q-status` includes module coverage section.
-- **Cross-Project Recall**: Decisions from other projects surface during `/q-frame` with CL2/CL1 penalties.
+- **Codebase Awareness**: Module coverage shows which parts of the architecture have decisions. `/h-status` includes module coverage section.
+- **Cross-Project Recall**: Decisions from other projects surface during `/h-frame` with CL2/CL1 penalties.
 
 **State Location:** `.haft/` directory (markdown projections, git-tracked). Database in `~/.haft/`.
 
@@ -188,7 +188,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 ## Critical Reminders
 
-1. **Decision Framework vs FPF**: Quick decisions → inline framework. Complex/persistent → `/q-reason`
+1. **Decision Framework vs FPF**: Quick decisions → inline framework. Complex/persistent → `/h-reason`
 3. **Actually Do Work**: When you say "I will do X", DO X
 4. **No Commits Without Permission**: Only commit when explicitly asked
 5. **Test Contracts**: Test behavior through public interfaces, not implementation
@@ -215,7 +215,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 **Evidence Decay** — Evidence has `valid_until`. Expired evidence scores 0.1 (weak, not absent). Graduated epistemic debt sorted by severity.
 
-**DRR (Decision Record)** — FPF E.9 four-component structure: Problem Frame, Decision/Contract, Rationale, Consequences. Created via `/q-decide`.
+**DRR (Decision Record)** — FPF E.9 four-component structure: Problem Frame, Decision/Contract, Rationale, Consequences. Created via `/h-decide`.
 
 **Indicator Roles** — Each comparison dimension tagged as:
 - `constraint` — hard limit, must satisfy
@@ -226,7 +226,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 ### Artifact Lifecycle
 ```
-/q-frame → /q-char → /q-explore → /q-compare → /q-decide
+/h-frame → /h-char → /h-explore → /h-compare → /h-decide
   problem    dims       variants     fair check    DRR contract
 
 Problems: Backlog → In Progress → Addressed

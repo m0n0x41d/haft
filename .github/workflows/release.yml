@@ -46,6 +46,14 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: go.sum
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            desktop/frontend/package-lock.json
+            tui/package-lock.json
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'

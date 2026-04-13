@@ -5,6 +5,7 @@ project_name: haft
 before:
   hooks:
     - sh -c "cd desktop/frontend && npm ci && npm run build"
+    - sh -c "cd tui && npm ci && npm run build"
 
 builds:
   - id: haft
@@ -38,13 +39,20 @@ builds:
 
 archives:
   - id: haft-cli
-    builds:
+    ids:
       - haft
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}-cli-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README*
+      - LICENSE*
+      - CHANGELOG*
+      - src: tui/dist/tui.mjs
+        dst: tui
+        strip_parent: true
   - id: haft-desktop
-    builds:
+    ids:
       - haft-desktop
     formats:
       - zip

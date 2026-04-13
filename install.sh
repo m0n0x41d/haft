@@ -21,6 +21,7 @@ WHITE='\033[37m'
 REPO="m0n0x41d/quint-code"
 BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
+TUI_INSTALL_DIR="$HOME/.haft/tui"
 
 print_logo() {
     local ORANGE='\033[38;5;208m'
@@ -70,6 +71,44 @@ find_bin_dir() {
     echo "$HOME/.local/bin"
 }
 
+find_archive_binary() {
+    local archive_root="$1"
+    local candidates=(
+        "$archive_root/$BIN_NAME"
+        "$archive_root/bin/$BIN_NAME"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_archive_tui_bundle() {
+    local archive_root="$1"
+    local candidates=(
+        "$archive_root/tui/bundle.mjs"
+        "$archive_root/tui/tui.mjs"
+        "$archive_root/bundle.mjs"
+        "$archive_root/tui/dist/tui.mjs"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 main() {
     print_logo
     printf "${CYAN}${BOLD}   Installing Haft...${RESET}\n\n"
@@ -86,6 +125,7 @@ main() {
     download_url=$(curl -s "$api_url" | grep "browser_download_url.*${os_arch}.tar.gz" | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
 
     if [[ -n "$download_url" ]]; then
+        local archive_binary archive_tui
         (
             cd "$tmp_dir"
             curl -sL "$download_url" -o release.tar.gz
@@ -93,16 +133,20 @@ main() {
         ) &
         spinner $! "Downloading release ($os_arch)"
 
-        # goreleaser puts binary at archive root, not in bin/
-        if [[ -f "$tmp_dir/$BIN_NAME" ]]; then
-            cp "$tmp_dir/$BIN_NAME" "$bin_dir/$BIN_NAME"
-        elif [[ -f "$tmp_dir/bin/$BIN_NAME" ]]; then
-            cp "$tmp_dir/bin/$BIN_NAME" "$bin_dir/$BIN_NAME"
-        else
+        archive_binary=$(find_archive_binary "$tmp_dir") || {
             printf "${RED}   ✗ Binary not found in archive${RESET}\n"
             exit 1
-        fi
+        }
+        archive_tui=$(find_archive_tui_bundle "$tmp_dir") || {
+            printf "${RED}   ✗ TUI bundle not found in archive${RESET}\n"
+            exit 1
+        }
+
+        cp "$archive_binary" "$bin_dir/$BIN_NAME"
         chmod +x "$bin_dir/$BIN_NAME"
+
+        mkdir -p "$TUI_INSTALL_DIR"
+        cp "$archive_tui" "$TUI_INSTALL_DIR/bundle.mjs"
 
         # macOS: re-sign binary locally to bypass Gatekeeper
         # Downloaded binaries with foreign ad-hoc signatures get killed
@@ -126,6 +170,7 @@ main() {
     fi
 
     printf "   ${GREEN}✓${RESET} Installed to ${WHITE}$bin_dir/$BIN_NAME${RESET}\n"
+    printf "   ${GREEN}✓${RESET} Installed TUI to ${WHITE}$TUI_INSTALL_DIR/bundle.mjs${RESET}\n"
 
     # Check PATH
     if [[ ":$PATH:" != *":$bin_dir:"* ]]; then

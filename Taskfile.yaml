@@ -43,8 +43,7 @@ tasks:
       - git -C data/FPF checkout origin/main
 
   fpf-index:
-    desc: Pull FPF submodule and rebuild embedded SQLite index
-    deps: [fpf-pull]
+    desc: Rebuild embedded SQLite index from current FPF checkout
     cmds:
       - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}} "$(git -C data/FPF rev-parse HEAD 2>/dev/null || true)"
     sources:
@@ -54,6 +53,12 @@ tasks:
       - internal/fpf/**/*.go
     generates:
       - '{{.FPF_DB}}'
+
+  fpf-refresh:
+    desc: Pull FPF submodule to latest upstream and rebuild embedded SQLite index
+    deps: [fpf-pull]
+    cmds:
+      - task fpf-index
 
   build:
     desc: Build Go binary + TUI bundle

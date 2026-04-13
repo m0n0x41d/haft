@@ -35,7 +35,16 @@ jobs:
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
       - name: Run race tests
-        run: go test -v -race $(go list ./... | grep -v /desktop)
+        run: |
+          packages=$(go list ./... | grep -v /desktop)
+
+          while IFS= read -r pkg; do
+            echo "::group::go test -race $pkg"
+            go test -v -race "$pkg"
+            echo "::endgroup::"
+          done <<EOF
+          $packages
+          EOF
 
       - name: Collect coverage
         run: |

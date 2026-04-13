@@ -29,7 +29,16 @@ jobs:
           printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
 
       - name: Run tests
-        run: go test -race $(go list ./... | grep -v /desktop)
+        run: |
+          packages=$(go list ./... | grep -v /desktop)
+
+          while IFS= read -r pkg; do
+            echo "::group::go test -race $pkg"
+            go test -v -race "$pkg"
+            echo "::endgroup::"
+          done <<EOF
+          $packages
+          EOF
 
   release:
     name: Release

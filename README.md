@@ -28,7 +28,7 @@ Both share the same kernel. Desktop is where humans think. MCP is where agents t
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bash
 ```
 
 The install URL still points at the historical `quint-code` repository path. The installed binary is `haft`.

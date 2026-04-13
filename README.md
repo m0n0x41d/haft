@@ -1,5 +1,7 @@
 <img src="assets/banner.svg" alt="Haft" width="600">
 
+*formerly [quint-code](https://github.com/m0n0x41d/quint-code)*
+
 **Engineering decisions that know when they're stale.**
 
 Frame problems. Compare options fairly. Record decisions as contracts. Know when to revisit.

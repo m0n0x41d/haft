@@ -107,6 +107,7 @@ type DecisionProjection struct {
 	RollbackTriggers     []string
 	RefreshTriggers      []string
 	Evidence             ProjectionEvidenceSummary
+	Health               DecisionHealth
 	Measured             bool
 }
 
@@ -193,6 +194,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 		if err != nil {
 			return ProjectionGraph{}, err
 		}
+		health := DeriveDecisionHealth(ctx, store, decision.Meta.ID)
 
 		graph.Decisions = append(graph.Decisions, DecisionProjection{
 			Meta:                 decision.Meta,
@@ -214,6 +216,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 			RollbackTriggers:     cloneStringSlice(fields.RollbackTriggers),
 			RefreshTriggers:      cloneStringSlice(fields.RefreshTriggers),
 			Evidence:             buildProjectionEvidenceSummary(ctx, store, decision.Meta.ID),
+			Health:               health,
 			Measured:             hasMeasurement(ctx, store, decision.Meta.ID),
 		})
 	}

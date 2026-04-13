@@ -145,17 +145,29 @@ func (a *App) GetDashboard() (*DashboardView, error) {
 	stale, _ := a.store.FindStaleArtifacts(a.ctx)
 	notes, _ := a.store.ListActiveByKind(a.ctx, artifact.KindNote, 50)
 	portfolios, _ := a.store.ListActiveByKind(a.ctx, artifact.KindSolutionPortfolio, 100)
+	statusData, err := artifact.FetchStatusData(a.ctx, a.store, "")
+	if err != nil {
+		return nil, err
+	}
+
+	healthyDecisions := mapArtifacts(statusData.HealthyDecisions, toDecisionView, 8)
+	pendingDecisions := mapArtifacts(statusData.PendingDecisions, toDecisionView, 8)
+	unassessedDecisions := mapArtifacts(statusData.UnassessedDecisions, toDecisionView, 8)
+	recentDecisions := mapArtifacts(decisions, toDecisionView, 8)
 
 	return &DashboardView{
-		ProjectName:     a.projectName,
-		ProblemCount:    len(problems),
-		DecisionCount:   len(decisions),
-		PortfolioCount:  len(portfolios),
-		NoteCount:       len(notes),
-		StaleCount:      len(stale),
-		RecentProblems:  mapArtifacts(problems, toProblemView, 8),
-		RecentDecisions: mapArtifacts(decisions, toDecisionView, 8),
-		StaleItems:      mapArtifacts(stale, toArtifactView, 10),
+		ProjectName:         a.projectName,
+		ProblemCount:        len(problems),
+		DecisionCount:       len(decisions),
+		PortfolioCount:      len(portfolios),
+		NoteCount:           len(notes),
+		StaleCount:          len(stale),
+		RecentProblems:      mapArtifacts(problems, toProblemView, 8),
+		RecentDecisions:     safeDecisionViews(recentDecisions),
+		HealthyDecisions:    safeDecisionViews(healthyDecisions),
+		PendingDecisions:    safeDecisionViews(pendingDecisions),
+		UnassessedDecisions: safeDecisionViews(unassessedDecisions),
+		StaleItems:          mapArtifacts(stale, toArtifactView, 10),
 	}, nil
 }
 

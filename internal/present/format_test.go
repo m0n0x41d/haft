@@ -433,7 +433,7 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			wants: []string{
 				"## Manager/Status View",
 				"Problems: 0 backlog, 0 in progress, 1 addressed",
-				"Decisions: 0 pending follow-through, 1 measured/shipped, 0 refresh due",
+				"Decisions: 0 unassessed, 0 pending follow-through, 1 measured/shipped, 0 refresh due",
 			},
 		},
 		{
@@ -540,6 +540,54 @@ func TestProjectionResponse_ChangesWhenPredictionStatusChanges(t *testing.T) {
 	}
 	if auditBefore == auditAfter {
 		t.Fatalf("expected audit projection output to change after status update")
+	}
+}
+
+func TestProjectionResponse_ManagerStatusSeparatesUnassessedDecisions(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Decisions: []artifact.DecisionProjection{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-unassessed",
+					Title: "Unassessed decision",
+				},
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityUnassessed,
+				},
+			},
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-pending",
+					Title: "Pending decision",
+				},
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityPending,
+				},
+			},
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-shipped",
+					Title: "Shipped decision",
+				},
+				NeedsRefresh: true,
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityShipped,
+				},
+			},
+		},
+	}
+
+	output := present.ProjectionResponse(graph, artifact.ProjectionViewManager)
+
+	for _, want := range []string{
+		"Decisions: 1 unassessed, 1 pending follow-through, 1 measured/shipped, 1 refresh due",
+		"- **Unassessed decision** `dec-unassessed` — unassessed",
+		"- **Pending decision** `dec-pending` — waiting for measurement",
+		"- **Shipped decision** `dec-shipped` — measured, refresh due",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("manager projection missing %q:\n%s", want, output)
+		}
 	}
 }
 

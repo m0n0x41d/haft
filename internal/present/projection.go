@@ -117,7 +117,7 @@ func managerProjectionResponse(graph artifact.ProjectionGraph) string {
 	}
 
 	backlog, inProgress, addressed := projectionProblemStages(graph.Problems)
-	pending, shipped, refreshDue := projectionDecisionStages(graph.Decisions)
+	unassessed, pending, shipped, refreshDue := projectionDecisionStages(graph.Decisions)
 	compared := 0
 	for _, portfolio := range graph.Portfolios {
 		if portfolio.Comparison != nil {
@@ -128,7 +128,15 @@ func managerProjectionResponse(graph artifact.ProjectionGraph) string {
 	var sb strings.Builder
 	sb.WriteString("## Manager/Status View\n\n")
 	sb.WriteString(fmt.Sprintf("Problems: %d backlog, %d in progress, %d addressed\n", backlog, inProgress, addressed))
-	sb.WriteString(fmt.Sprintf("Decisions: %d pending follow-through, %d measured/shipped, %d refresh due\n", pending, shipped, refreshDue))
+	sb.WriteString(
+		fmt.Sprintf(
+			"Decisions: %d unassessed, %d pending follow-through, %d measured/shipped, %d refresh due\n",
+			unassessed,
+			pending,
+			shipped,
+			refreshDue,
+		),
+	)
 	sb.WriteString(fmt.Sprintf("Compared portfolios: %d\n\n", compared))
 
 	if len(graph.Problems) > 0 {
@@ -150,12 +158,7 @@ func managerProjectionResponse(graph artifact.ProjectionGraph) string {
 	if len(graph.Decisions) > 0 {
 		sb.WriteString("### Decision Watchlist\n\n")
 		for _, decision := range graph.Decisions {
-			statusParts := []string{}
-			if decision.Measured {
-				statusParts = append(statusParts, "measured")
-			} else {
-				statusParts = append(statusParts, "waiting for measurement")
-			}
+			statusParts := []string{projectionDecisionWatchStatus(decision)}
 			if decision.NeedsRefresh {
 				statusParts = append(statusParts, "refresh due")
 			}
@@ -329,19 +332,52 @@ func projectionProblemStages(problems []artifact.ProblemProjection) (backlog int
 	return backlog, inProgress, addressed
 }
 
-func projectionDecisionStages(decisions []artifact.DecisionProjection) (pending int, shipped int, refreshDue int) {
+func projectionDecisionStages(decisions []artifact.DecisionProjection) (unassessed int, pending int, shipped int, refreshDue int) {
 	for _, decision := range decisions {
-		if decision.Measured {
+		health := projectionDecisionHealth(decision)
+
+		switch health.Maturity {
+		case artifact.DecisionMaturityUnassessed:
+			unassessed++
+		case artifact.DecisionMaturityPending:
+			pending++
+		case artifact.DecisionMaturityShipped:
 			shipped++
-		} else {
+		default:
 			pending++
 		}
+
 		if decision.NeedsRefresh {
 			refreshDue++
 		}
 	}
 
-	return pending, shipped, refreshDue
+	return unassessed, pending, shipped, refreshDue
+}
+
+func projectionDecisionHealth(decision artifact.DecisionProjection) artifact.DecisionHealth {
+	if decision.Health.Maturity != "" {
+		return decision.Health
+	}
+
+	if decision.Measured {
+		return artifact.DecisionHealth{Maturity: artifact.DecisionMaturityShipped}
+	}
+
+	return artifact.DecisionHealth{Maturity: artifact.DecisionMaturityPending}
+}
+
+func projectionDecisionWatchStatus(decision artifact.DecisionProjection) string {
+	health := projectionDecisionHealth(decision)
+
+	switch health.Maturity {
+	case artifact.DecisionMaturityUnassessed:
+		return "unassessed"
+	case artifact.DecisionMaturityShipped:
+		return "measured"
+	default:
+		return "waiting for measurement"
+	}
 }
 
 func projectionVariantTitles(variants []artifact.Variant) []string {

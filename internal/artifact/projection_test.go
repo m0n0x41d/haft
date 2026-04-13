@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestFetchProjectionGraph_BuildsSharedGraphFromArtifacts(t *testing.T) {
@@ -141,6 +142,82 @@ func TestFetchProjectionGraph_BuildsSharedGraphFromArtifacts(t *testing.T) {
 	}
 	if len(decisionNode.PortfolioRefs) != 1 || decisionNode.PortfolioRefs[0] != portfolio.Meta.ID {
 		t.Fatalf("unexpected decision portfolio refs: %+v", decisionNode.PortfolioRefs)
+	}
+}
+
+func TestFetchProjectionGraph_DerivesDecisionHealthBuckets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustCreateDecision := func(id string, title string) {
+		t.Helper()
+
+		err := store.Create(ctx, &Artifact{
+			Meta: Meta{
+				ID:        id,
+				Kind:      KindDecisionRecord,
+				Title:     title,
+				Status:    StatusActive,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			Body: title,
+		})
+		if err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+
+	mustAddEvidence := func(decisionID string, item EvidenceItem) {
+		t.Helper()
+
+		err := store.AddEvidenceItem(ctx, &item, decisionID)
+		if err != nil {
+			t.Fatalf("add evidence to %s: %v", decisionID, err)
+		}
+	}
+
+	mustCreateDecision("dec-unassessed", "Unassessed decision")
+
+	mustCreateDecision("dec-pending", "Pending decision")
+	mustAddEvidence("dec-pending", EvidenceItem{
+		ID:              "evid-pending",
+		Type:            "research",
+		Content:         "Design review completed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+
+	mustCreateDecision("dec-shipped", "Shipped decision")
+	mustAddEvidence("dec-shipped", EvidenceItem{
+		ID:              "evid-shipped",
+		Type:            "measurement",
+		Content:         "Latency target met in rollout",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+
+	graph, err := FetchProjectionGraph(ctx, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]DecisionMaturity{}
+	for _, decision := range graph.Decisions {
+		got[decision.Meta.ID] = decision.Health.Maturity
+	}
+
+	want := map[string]DecisionMaturity{
+		"dec-unassessed": DecisionMaturityUnassessed,
+		"dec-pending":    DecisionMaturityPending,
+		"dec-shipped":    DecisionMaturityShipped,
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("projection decision health = %#v, want %#v", got, want)
 	}
 }
 

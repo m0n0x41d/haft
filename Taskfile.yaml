@@ -1,9 +1,13 @@
 version: '3'
 
 vars:
-  BIN_NAME: quint-code
+  BIN_NAME: haft
   BIN_DIR: ~/.local/bin
-  SRC_DIR: src/mcp
+  TUI_DIR: tui
+  TUI_BUNDLE: tui/dist/tui.mjs
+  TUI_INSTALL_DIR: ~/.haft/tui
+  FPF_SPEC: data/FPF/FPF-Spec.md
+  FPF_DB: internal/cli/fpf.db
 
 tasks:
   default:
@@ -13,40 +17,108 @@ tasks:
 
   test:
     desc: Run all tests
-    dir: '{{.SRC_DIR}}'
     cmds:
-      - go test -v ./...
+      - go test $(go list ./... | grep -v /desktop)
 
   lint:
-    desc: Run linter (go vet)
-    dir: '{{.SRC_DIR}}'
+    desc: Run linter (go vet + typecheck)
     cmds:
       - go vet ./...
+      - cd {{.TUI_DIR}} && bun run typecheck
+
+  tui:
+    desc: Build TUI bundle
+    cmds:
+      - cd {{.TUI_DIR}} && bun run build
+    sources:
+      - tui/src/**/*.ts
+      - tui/src/**/*.tsx
+    generates:
+      - '{{.TUI_BUNDLE}}'
+
+  fpf-pull:
+    desc: Pull FPF submodule to latest upstream
+    cmds:
+      - git -C data/FPF fetch origin
+      - git -C data/FPF checkout origin/main
+
+  fpf-index:
+    desc: Rebuild embedded SQLite index from current FPF checkout
+    cmds:
+      - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}} "$(git -C data/FPF rev-parse HEAD 2>/dev/null || true)"
+    sources:
+      - '{{.FPF_SPEC}}'
+      - internal/fpf/fpf-routes.json
+      - cmd/indexer/**/*.go
+      - internal/fpf/**/*.go
+    generates:
+      - '{{.FPF_DB}}'
+
+  fpf-refresh:
+    desc: Pull FPF submodule to latest upstream and rebuild embedded SQLite index
+    deps: [fpf-pull]
+    cmds:
+      - task fpf-index
 
   build:
-    desc: Build binary
-    dir: '{{.SRC_DIR}}'
+    desc: Build Go binary + TUI bundle
+    deps: [tui, fpf-index]
     cmds:
-      - go build -o {{.BIN_NAME}} -trimpath .
+      - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
       - '{{.BIN_NAME}}'
 
   install:
-    desc: Build and install to ~/.local/bin
-    dir: '{{.SRC_DIR}}'
+    desc: Build and install haft (binary + TUI) locally
+    deps: [tui, fpf-index]
     cmds:
-      - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath .
-      - echo "Installed to {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
+      - mkdir -p {{.TUI_INSTALL_DIR}}
+      - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs
+      - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - echo "Installed {{.TUI_INSTALL_DIR}}/bundle.mjs"
+
+  dev:
+    desc: Build Go binary only (TUI runs from source via bun)
+    deps: [fpf-index]
+    cmds:
+      - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
+
+  doctor:
+    desc: Run haft doctor health check
+    cmds:
+      - go run ./cmd/haft doctor
+
+  desktop:
+    desc: Run Haft desktop app (wails dev with hot reload)
+    dir: desktop
+    cmds:
+      - wails dev
+
+  desktop:build:
+    desc: Build Haft desktop app (production .app bundle)
+    dir: desktop
+    cmds:
+      - wails build
+      - echo "Built desktop/build/bin/haft.app"
+
+  desktop:open:
+    desc: Build and open Haft desktop app
+    deps: [desktop:build]
+    cmds:
+      - open desktop/build/bin/haft.app
 
   clean:
-    desc: Remove local build binary
-    dir: '{{.SRC_DIR}}'
+    desc: Remove local build artifacts
     cmds:
       - rm -f {{.BIN_NAME}}
+      - rm -rf tui/dist
 
   cleanup:
-    desc: Remove all built binaries (local + installed)
+    desc: Remove all built binaries and installed files
     cmds:
-      - rm -f {{.SRC_DIR}}/{{.BIN_NAME}}
+      - rm -f {{.BIN_NAME}}
+      - rm -rf tui/dist
       - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
-      - echo "Removed {{.SRC_DIR}}/{{.BIN_NAME}} and {{.BIN_DIR}}/{{.BIN_NAME}}"
+      - rm -rf {{.TUI_INSTALL_DIR}}
+      - echo "Cleaned up"

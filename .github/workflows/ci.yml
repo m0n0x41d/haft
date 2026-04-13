@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [main, dev]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,33 +15,70 @@ jobs:
     name: Test & Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
-          cache-dependency-path: src/mcp/go.sum
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
 
       - name: Check go mod tidy
-        working-directory: src/mcp
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
-      - name: Run tests
-        working-directory: src/mcp
-        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Run race tests
+        run: |
+          packages=$(go list ./... | grep -v /desktop)
+
+          while IFS= read -r pkg; do
+            echo "::group::go test -race $pkg"
+            go test -v -race "$pkg"
+            echo "::endgroup::"
+          done <<EOF
+          $packages
+          EOF
+
+      - name: Collect coverage
+        run: |
+          packages=$(go list ./... | grep -v /desktop)
+          profile=coverage.out
+          tmp_profile=$(mktemp)
+          found_test_package=false
+
+          echo 'mode: set' > "$profile"
+
+          while IFS= read -r pkg; do
+            dir=$(go list -f '{{.Dir}}' "$pkg")
+            if ! find "$dir" -maxdepth 1 -name '*_test.go' | grep -q .; then
+              continue
+            fi
+
+            go test -v -coverprofile="$tmp_profile" "$pkg"
+            tail -n +2 "$tmp_profile" >> "$profile"
+            found_test_package=true
+          done <<EOF
+          $packages
+          EOF
+
+          if [ "$found_test_package" = false ]; then
+            echo "no test packages found for coverage collection" >&2
+            exit 1
+          fi
 
       - name: Build binary
-        working-directory: src/mcp
-        run: go build -o quint-code -trimpath .
+        run: go build -o haft -trimpath ./cmd/haft/
 
       - name: Smoke test — binary starts and responds to MCP initialize
-        working-directory: src/mcp
         run: |
-          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./quint-code serve 2>/dev/null || true)
+          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./haft serve 2>/dev/null || true)
           if echo "$RESPONSE" | grep -q '"protocolVersion"'; then
             echo "Smoke test passed: MCP server responds correctly"
           else
@@ -51,9 +88,9 @@ jobs:
           fi
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: src/mcp/coverage.out
+          file: coverage.out
           fail_ci_if_error: false
         continue-on-error: true
 
@@ -61,17 +98,21 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
-          cache-dependency-path: src/mcp/go.sum
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
 
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
-          working-directory: src/mcp
+          version: v2.11.4
           args: --timeout=5m

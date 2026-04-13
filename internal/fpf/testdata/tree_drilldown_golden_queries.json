@@ -1,0 +1,20 @@
+[
+  {
+    "name": "comparison path retains normalization parent",
+    "query": "How do I compare options with Pareto selection, dimensions, and normalization?",
+    "top_n": 4,
+    "expected_pattern_ids": ["A.19.CPM", "A.19.CN"]
+  },
+  {
+    "name": "generator path retains abductive parent",
+    "query": "How should I explore a creative generator portfolio while preserving diversity?",
+    "top_n": 4,
+    "expected_pattern_ids": ["B.5.2.1", "B.5.2"]
+  },
+  {
+    "name": "rewrite path retains same entity parent",
+    "query": "Need a same entity rewrite and explanation-preserving summary.",
+    "top_n": 4,
+    "expected_pattern_ids": ["A.6.3.CR", "A.6.3"]
+  }
+]

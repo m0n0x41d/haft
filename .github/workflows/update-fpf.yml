@@ -13,14 +13,14 @@ jobs:
   update-fpf:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - name: Get current submodule commit
         id: current
@@ -51,10 +51,9 @@ jobs:
 
       - name: Rebuild FTS5 index
         if: steps.check.outputs.changed == 'true'
-        working-directory: src/mcp
         run: |
           NEW_SHA=${{ steps.check.outputs.new_sha }}
-          go run ./cmd/indexer/ ../../data/FPF/FPF-Spec.md ./cmd/fpf.db "$NEW_SHA"
+          go run ./cmd/indexer/ data/FPF/FPF-Spec.md internal/cli/fpf.db "$NEW_SHA"
 
       - name: Create pull request
         if: steps.check.outputs.changed == 'true'
@@ -69,7 +68,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
-          git add data/FPF src/mcp/cmd/fpf.db
+          git add data/FPF internal/cli/fpf.db
           git commit -m "chore: update FPF spec index to ${SHORT}
 
           FPF upstream: ${OLD_SHORT} → ${SHORT}
@@ -83,7 +82,7 @@ jobs:
 
           Submodule \`data/FPF\` updated to [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA).
 
-          FTS5 index rebuilt: \`src/mcp/cmd/fpf.db\`
+          FTS5 index rebuilt: \`internal/cli/fpf.db\`
 
           **Previous:** [\`${OLD_SHORT}\`](https://github.com/ailev/FPF/commit/$OLD_SHA)
           **New:** [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA)" \

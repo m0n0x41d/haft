@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Haft Design System — derived from DESIGN.md
+   Dark-mode-native. Depth via border hierarchy, not shadows.
+   Green accent (#3ecf8e) as identity marker, not decoration.
+   ========================================================================== */
+
+@theme {
+  /* Surface scale (near-black, never pure black) */
+  --color-surface-0: #0f0f0f;
+  --color-surface-1: #171717;
+  --color-surface-2: #1e1e1e;
+  --color-surface-3: #262626;
+
+  /* Border hierarchy — depth without shadows */
+  --color-border: #2e2e2e;
+  --color-border-subtle: #242424;
+  --color-border-bright: #363636;
+  --color-border-prominent: #393939;
+
+  /* Text scale */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #b4b4b4;
+  --color-text-muted: #898989;
+  --color-text-faint: #4d4d4d;
+
+  /* Brand accent — green, used sparingly */
+  --color-accent: #3ecf8e;
+  --color-accent-hover: #00c573;
+  --color-accent-border: rgba(62, 207, 142, 0.3);
+  --color-accent-wash: rgba(62, 207, 142, 0.08);
+
+  /* Semantic states — success MUST differ from accent for visual distinction */
+  --color-danger: #e5484d;
+  --color-warning: #f5a623;
+  --color-success: #22c55e;
+
+  /* Translucent overlays */
+  --color-glass: rgba(41, 41, 41, 0.84);
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-mono: "Source Code Pro", "JetBrains Mono", "Office Code Pro", Menlo, ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface-0);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Wails window drag regions */
+.wails-drag {
+  --wails-draggable: drag;
+}
+.wails-drag * {
+  --wails-draggable: drag;
+}
+.wails-no-drag {
+  --wails-draggable: no-drag;
+}
+
+/* Scrollbar — minimal, matches border palette */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-bright);
+}
+
+/* Code labels — the "developer console" voice */
+.code-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.33;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}

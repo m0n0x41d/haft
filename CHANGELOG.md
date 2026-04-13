@@ -4,6 +4,118 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [6.0.0] — 2026-04-13
+
+### Breaking Changes
+
+- **Product renamed from quint-code to Haft** — binary, MCP tools (`quint_*` → `haft_*`), slash commands (`/q-*` → `/h-*`), skill names, and docs all use `haft` naming. Existing MCP configs, skill references, and slash commands from v5.x will not work without updating.
+- **Decision data model replaced** — claim-aware decision kernel with structured claims, predictions, and claim-bound evidence replaces markdown-only reconstruction. Existing decision artifacts require migration.
+- **Reasoning model changed** — 5-mode activity model (Understand / Explore / Choose / Execute / Verify) replaces the artifact-centric 6-step protocol. Skill instructions, prompts, and agent behavior follow the new model.
+- **`/h-verify` replaces `/h-refresh`** — `/h-refresh` is deprecated and auto-cleaned on install. Use `/h-verify` for discovery (scan + drift + pending verify_after) and triage.
+
+Note: older changelog entries keep historical `quint-code`, `quint_*`, and `/q-*` names where they describe behavior, commands, or releases from that era.
+
+### Added
+
+- **Desktop app (pre-alpha)** — Wails v2 desktop application with dashboard, problem board, decision detail with evidence F/G/R decomposition, portfolio comparison with Pareto front visualization, task spawning (Claude Code / Codex), agent chat view, terminal panel (Cmd+\`), multi-project management, and search (Cmd+K). Dark theme following the design system. Pre-alpha: not recommended for production use.
+- **Standalone Haft runtime** — local-first `haft agent` / TUI flow with persisted sessions, checkpointed vs autonomous execution, permission and question dialogs, model/session pickers, compaction, spawned subagents, and a typed JSON-RPC protocol between UI and runtime.
+- **Knowledge graph** — `internal/graph` package providing unified query interface over existing artifact, module, and dependency tables. Queries: FindDecisionsForFile, FindInvariantsForFile, FindModuleForFile, TransitiveDependents, ComputeImpactSet. All cycle-safe with depth limiting. 17 tests.
+- **Invariant injection into agent prompts** — when implementing a decision, agents receive invariants from ALL decisions governing the affected files, not just the current decision's own invariants. Invariants tagged with source decision ID.
+- **Invariant verification** — automated checking of "no dependency from X to Y" and "no circular dependencies" patterns against the live module dependency graph. Returns holds/violated/unknown per invariant.
+- **Governance invariant alerts** — governance scanner now runs invariant verification on decisions with drift findings, creating problem candidates for violations.
+- **Probe-or-commit readiness gate** — AssessComparisonReadiness evaluates portfolio comparison quality: variant count, dimension coverage, score fill rate, constraint presence, parity plan. Returns commit/probe/widen/reroute with specific recommendations. Shown in desktop Portfolios page.
+- **Evidence F/G/R decomposition** — decision detail page shows per-evidence formality level (F0-F3), congruence level (CL0-CL3), verdict badges, freshness indicators, and coverage gaps (claims without evidence).
+- **Auto-run toggle for agent tasks** — per-task toggle between checkpointed (agent pauses) and auto-run (agent proceeds without intervention) modes. Persisted across app restart.
+- **`haft sync` for team workflow** — syncs `.haft/` markdown files into local SQLite database after `git pull`. Enables team collaboration where `.haft/*.md` in git is the shared source of truth and each engineer has their own local database.
+- **Probe-or-commit behavioral gate** — Choose mode now includes a readiness checklist before comparison: dimension coverage, variant diversity, and whether a specific next investigation could change the ranking. Returns commit / probe / widen / reroute.
+- **Language precision triggers** — Understand and Choose modes catch ambiguous terms (service, process, quality, component) and subjective comparison dimensions (maintainable, simple, scalable) before they corrupt downstream reasoning.
+- **`verify_after` field on claims** — `DecisionClaim` and `PredictionInput` now accept `verify_after` (RFC3339 or YYYY-MM-DD). Claims with past verify_after dates that remain unverified are surfaced by `haft_refresh(scan)` as `pending_verification` stale items with observable and threshold details. MCP schema updated.
+- **Constraint-aware Pareto computation** — `computeParetoFront()` now eliminates variants that are strictly worst on all comparable peers for any constraint dimension before dominance computation. Constraint violations are reported as warnings. Variants with missing constraint data are preserved conservatively.
+- **Standalone agent refresh tool parity** — `HaftRefreshTool` now exposes all 6 actions (scan, drift, waive, reopen, supersede, deprecate) matching the MCP server schema. Previously only scan/drift were available to the standalone agent.
+- **Explicit reroute map** — legitimate upstream transitions documented: Choose → Understand (comparison reveals bad framing), Explore → Understand (wrong problem type), Execute → Choose, Verify → any earlier mode.
+- **Claim-aware decision kernel** — decisions now persist canonical structured claims, predictions, claim-bound evidence, live measurement status, and deterministic Pareto/coverage state instead of relying on markdown-only reconstruction.
+- **Deterministic projections** — projection views now render the same artifact graph for different audiences, including engineer, manager, audit, compare, delegated-agent brief, and change-rationale handoff surfaces.
+- **Route-aware FPF retrieval** — indexed section summaries, route expansion, explain/full controls, golden-query evaluation, tree drill-down, and experimental semantic retrieval over the embedded FPF corpus.
+- **Broader codebase awareness** — C/C++ module and include detection, symbol hashing, richer module/dependency scanning, and module-governance reporting in status/coverage flows.
+- **Expanded client integrations** — `haft init` now installs MCP/command surfaces for Claude Code, Cursor, Gemini CLI, Codex CLI/App, and Air while keeping the same local binary/runtime.
+- **`haft_problem(action="close")`** — marks a ProblemCard as `addressed`. Previously required manual frontmatter editing. Exposed in MCP schema for both plugin and standalone modes. ([#43](https://github.com/m0n0x41d/quint-code/issues/43))
+- **Auto-baseline after `decide`** — when `affected_files` are provided, file hashes are snapshotted immediately after the decision is recorded. No more manual `haft_decision(action="baseline")` calls. ([#43](https://github.com/m0n0x41d/quint-code/issues/43))
+
+### Changed
+
+- **Core architecture refactored into explicit layers** — artifact build/store logic, presentation formatting, protocol transport, agent runtime, and TUI shell now live as clearer functional boundaries with purer `Build*`/formatting paths and thinner orchestration shells.
+- **Agent execution moved beyond slash-command steering** — the repo now supports both MCP/plugin workflows and a standalone agent/TUI loop, with persisted execution mode aliases and compatibility bridges for older symbiotic/collaborative terminology.
+- **Provider/model support expanded** — the registry and CLI now support multi-provider model discovery/switching with GPT-5.4-class defaults/fallbacks instead of the older 5.3-era baseline.
+- **FPF search quality improved materially** — deterministic route lookup, better weighting/sanitization, explicit section summaries, and MCP-accessible spec search replaced the older narrower retrieval path.
+- **`haft init --codex` TOML generation fixed** — idempotent section replacement instead of append, prevents duplicate key errors on repeated init.
+
+### Fixed
+
+- **`haft serve` / plugin mode now matches the core claim model** — served MCP schema and handlers understand predictions, strict decision/measurement arrays, claim refs/scope, and projection views instead of lagging behind the direct runtime.
+- **Slash-command guidance no longer points users at stale `/q-*` actions** — note validation, nav strips, MCP presentation text, and h-reason docs now consistently steer users through the `h-*` surface, with `/h-view` as the advanced projection entry point.
+- **Large pasted prompts no longer explode the TUI** — oversized pasted text is collapsed to `[N rows inserted]` placeholders in the input/queue/transcript UI, while the raw content is preserved and expanded only at submit time.
+- **Queued follow-up messages preserve real prompt state** — multiline text, attachments, and hidden collapsed-paste payloads now survive queueing, replay, and draft restore paths without truncation or accidental `trim()` damage.
+- **Decision/evidence integrity issues tightened** — malformed compare/measure payloads now fail loudly, Pareto fronts are computed deterministically, and claim/evidence bindings keep canonical scope instead of silently degrading.
+- **Governance shutdown no longer panics on double-close** — `sync.Once` prevents channel double-close during fast project switching.
+- **SwitchProject validates new project before teardown** — pre-checks DB accessibility, preventing zombie state if the target project is broken.
+- **Task auto_run field restored from database** — was persisted but silently lost on restart.
+- **WAL mode + busy_timeout on all SQLite connections** — prevents SQLITE_BUSY during concurrent governance scanner and UI queries.
+- **Null safety across all Go→JSON view projections** — nil slices now serialize as `[]` not `null`, preventing frontend TypeError crashes on 30+ array fields.
+- **Task runner race conditions fixed** — state copied under mutex before use outside lock in shutdown, cancel, and finalize paths.
+- **Atomic file writes for config and registry** — temp file + rename prevents corruption from concurrent access.
+- **Task timeout enforcement** — agent processes killed after configurable timeout (default 300 min), preventing zombie processes.
+- **Artifact Create uses single transaction** — artifact insert and link inserts wrapped in one transaction, preventing partial state on link failure.
+- **tableHasColumn PRAGMA cached** — eliminated 2 PRAGMA queries per evidence operation.
+- **Large agent output truncated** — outputs over 500 lines show last 200 with "Show full output" button, preventing WebView freezing.
+- **Search race condition fixed** — stale results from earlier queries no longer briefly flash.
+
+## [5.3.1] — 2026-03-25
+
+### Fixed
+
+- **NavStrip no longer triggers agent auto-execution** — "Next:" label replaced with "Available:" + explicit guard line ("do not auto-execute"). Slash commands (`/q-explore`, `/q-decide`) replace tool call syntax (`quint_solution(action="explore", ...)`), so agents read them as user actions, not callable functions.
+- **NavStrip is mode-aware** — available actions now reflect the current depth mode. Tactical shows `/q-explore | /q-decide` (short cycle). Standard without characterization shows `/q-char | /q-explore` — making `/q-char` visible as the gateway to the full cycle. Standard with characterization shows only `/q-explore`. EXPLORING in tactical shows `/q-decide | /q-compare (upgrade)` instead of always suggesting compare.
+- **`quint_solution(action="compare")` rejected valid dimensions** — compare handler used raw type assertions instead of `parseStringArrayFromArgs` helper. When MCP clients serialized `dimensions` or `non_dominated_set` as JSON strings (common without schema loaded), the assertion silently failed, producing a misleading "at least one comparison dimension is required" error. Same fix applied to `scores` (new `parseNestedStringMapFromArgs` helper) and measure handler arrays (`criteria_met`, `criteria_not_met`, `measurements`).
+- **"No baseline" scan confused with "not implemented"** — `CheckDrift` now checks git history for affected files when no baseline exists. Distinguishes "files changed since decision (likely implemented, needs baseline+measure)" from "files unchanged (not yet implemented)". Prevents agents from misreporting implemented decisions as not started.
+
+### Added
+
+- **NavStrip interpretation in q-reason skill** — new section documenting that "Available:" is a menu for the user, not instructions for the agent. Clarifies that tactical mode has fewer steps but the same human consent gates, and only Path 3 (explicit delegation) overrides the guard.
+- **Proactive check for "no baseline" in q-reason skill** — instructs agents to not assume "no baseline" means "not implemented" and to check git history before reporting status.
+
+## [5.3.0] — 2026-03-24
+
+### Added
+
+- **Interactive terminal dashboard (`quint-code board`)** — Bubbletea v2 TUI with four tabs: Overview (health, activity, depth distribution, coverage, contexts, evidence), Problems (backlog with drill-in), Decisions (list with R_eff/drift, drill-in with glamour markdown), Modules (coverage tree). Live refresh every 3s. Connected tab borders, alternating row colors, adaptive dark/light theme, dynamic help bar. Exit code 1 with `--check` flag for CI/hooks.
+- **Decision mode computed from artifact chain** — `inferModeFromChain` derives mode from linked problems (characterization) and portfolios (comparison). Agent-declared mode can only escalate, not downgrade. Fixes misclassification where full-cycle decisions were recorded as tactical.
+- **FTS5 search keyword enrichment** — `search_keywords` column on artifacts, indexed by FTS5. Agent generates synonyms and related terms at write time. Accepted on `quint_note` and `quint_decision`. Migration 15 rebuilds FTS5 index.
+- **C/C++ header-only module detection** — `-I` include directories from `compile_commands.json` are registered as modules (FileCount=0), so dependency edges to `include/` directories are no longer dropped by `ScanDependencies`.
+
+### Fixed
+
+- **`/q-refresh scan` now rescans modules** — module structure updates alongside drift and stale checks, keeping dependency graph fresh without requiring a separate `coverage` action.
+- **C/C++ symlink-safe include resolution** — `resolveInclude` canonicalizes both `projectRoot` and `-I` paths with `EvalSymlinks` before computing relative paths. Fixes silent edge loss on macOS symlinked checkouts.
+- **Notes excluded from drift detection** — notes are observations, not implementations. ScanStale no longer flags notes with affected_files as "no baseline."
+- **Module scanner excludes `.claude` and `.context` directories** — Claude Code worktrees and reference repos no longer inflate module count.
+- **q-reason skill context-aware entry** — skill no longer always falls through into full FPF cycle. Three paths: think-and-respond (no artifacts), prepare-and-wait (human drives), full autonomous cycle (agent drives). Default is prepare-and-wait.
+
+## [5.2.0] — 2026-03-23
+
+### Added
+
+- **C/C++ module detection** — `compile_commands.json` as primary source (searches project root, `build/`, `cmake-build-*/`). Falls back to directory-based heuristic with `Makefile`/`CMakeLists.txt`/`meson.build` markers. Graceful fallback if `compile_commands.json` paths don't resolve.
+- **C/C++ import parsing** — extracts `#include "..."` edges (skips `<...>` system includes). Resolves include paths using `-I` flags from `compile_commands.json`. Falls back to relative and project-root resolution.
+- **C/C++ extensions** — `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` registered in language registry.
+
+### Fixed
+
+- **`quint_solution(action="explore")` rejected valid variants** — MCP clients that serialize the `variants` array as a JSON string (instead of a parsed array) caused silent parsing failure, resulting in a misleading "genuinely distinct options" error with 0 variants. Same fix applied to all array fields across note/problem/decision handlers. ([#33](https://github.com/m0n0x41d/quint-code/issues/33))
+- **Status always rescans modules** — `quint_query(action="status")` now runs a fresh module scan instead of showing stale cached data. Previously required `action="coverage"` to trigger rescan.
+- **Symlink-safe path resolution** — C/C++ module detection uses `filepath.EvalSymlinks` on project root and source paths for reliable matching on macOS and symlinked project directories.
+
 ## [5.1.0] — 2026-03-20
 
 ### Added — Computed Features

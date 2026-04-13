@@ -1,31 +1,62 @@
 version: 2
 
-project_name: quint-code
+project_name: haft
+
+before:
+  hooks:
+    - sh -c "cd desktop/frontend && npm ci && npm run build"
+    - sh -c "cd tui && npm ci && npm run build"
 
 builds:
-  - id: quint-code
-    dir: src/mcp
-    main: .
-    binary: quint-code
+  - id: haft
+    dir: .
+    main: ./cmd/haft/
+    binary: haft
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/m0n0x41d/quint-code/cmd.Version={{ .Version }}
-      - -X github.com/m0n0x41d/quint-code/cmd.Commit={{ .ShortCommit }}
-      - -X github.com/m0n0x41d/quint-code/cmd.BuildDate={{ .Date }}
+      - -X github.com/m0n0x41d/haft/internal/cli.Version={{ .Version }}
+      - -X github.com/m0n0x41d/haft/internal/cli.Commit={{ .ShortCommit }}
+      - -X github.com/m0n0x41d/haft/internal/cli.BuildDate={{ .Date }}
     goos:
       - linux
       - darwin
     goarch:
       - amd64
       - arm64
+  - id: haft-desktop
+    dir: .
+    main: ./desktop
+    binary: haft-desktop
+    flags:
+      - -trimpath
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
 
 archives:
-  - id: default
+  - id: haft-cli
+    ids:
+      - haft
     formats:
       - tar.gz
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    name_template: "{{ .ProjectName }}-cli-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README*
+      - LICENSE*
+      - CHANGELOG*
+      - src: tui/dist/tui.mjs
+        dst: tui
+        strip_parent: true
+  - id: haft-desktop
+    ids:
+      - haft-desktop
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}-desktop-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: 'checksums.txt'
@@ -35,18 +66,18 @@ changelog:
 
 release:
   header: |
-    ## Quint Code {{ .Tag }}
+    ## Haft {{ .Tag }}
 
-    **Complete product redesign.** v5 is a new product — not backward-compatible with v4.
-
-    New: FPF E.9 decision records, computed R_eff with evidence decay, problem lifecycle (Backlog → In Progress → Addressed), diversity check, archive recall, parity enforcement, indicator roles, Goldilocks signals, lemniscate feedback loop, universal artifact refresh, and 4243 indexed FPF spec sections.
-
-    6 MCP tools. Works with Claude Code, Cursor, Gemini CLI, Codex CLI.
+    Engineering agent with FPF reasoning discipline. Interactive CLI + MCP server.
 
     ### Install
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+    go install github.com/m0n0x41d/haft/cmd/haft@latest
     ```
 
-    See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/src/mcp/CHANGELOG.md) for full details.
+    ### Desktop Artifact
+
+    Release archives now include a `haft-desktop` build for macOS alongside the CLI bundles.
+
+    See [CHANGELOG](https://github.com/m0n0x41d/quint-code/blob/main/CHANGELOG.md) for full details.

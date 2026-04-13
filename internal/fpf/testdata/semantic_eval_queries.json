@@ -1,0 +1,30 @@
+[
+  {
+    "name": "boundary contract bundle in noisy language",
+    "query": "How do I separate interface guarantees, obligations, admission gates, and proof traces instead of bundling them together?",
+    "top_n": 5,
+    "expected_pattern_ids": ["A.6.B", "A.6.C"],
+    "require_semantic_gain": true
+  },
+  {
+    "name": "partial hunch becomes routed cue",
+    "query": "How do I turn a vague signal into an explicit handoff instead of leaving it half-formed?",
+    "top_n": 5,
+    "expected_pattern_ids": ["A.16", "B.4.1", "C.2.2a"],
+    "require_semantic_gain": true
+  },
+  {
+    "name": "compare without crushing trade-offs into one score",
+    "query": "How do I choose among options without flattening the trade space into one number?",
+    "top_n": 5,
+    "expected_pattern_ids": ["A.17:4", "A.19.CPM", "G.0"],
+    "require_semantic_gain": true
+  },
+  {
+    "name": "keep idea search novel and diverse",
+    "query": "How do I keep idea hunting wide instead of collapsing into the first decent answer?",
+    "top_n": 5,
+    "expected_pattern_ids": ["B.5.2.1", "C.18", "C.19"],
+    "require_semantic_gain": true
+  }
+]

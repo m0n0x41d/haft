@@ -1,11 +1,11 @@
 #!/bin/bash
-# Quint Code Installer
+# Haft Installer
 #
-# Installs the quint-code binary globally.
-# After installation, run `quint-code init` in each project.
+# Installs the haft binary globally.
+# After installation, run `haft init` in each project.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+#   curl -fsSL https://quint.codes/install.sh | bash
 
 set -e
 
@@ -19,22 +19,23 @@ CYAN='\033[36m'
 WHITE='\033[37m'
 
 REPO="m0n0x41d/quint-code"
-BIN_NAME="quint-code"
+BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
+TUI_INSTALL_DIR="$HOME/.haft/tui"
 
 print_logo() {
     local ORANGE='\033[38;5;208m'
     local DARK_ORANGE='\033[38;5;202m'
     local LIGHT_YELLOW='\033[38;5;228m'
     echo ""
-    printf "${RED}${BOLD}    ██████╗ ██╗   ██╗██╗███╗   ██╗████████╗    ██████╗ ██████╗ ██████╗ ███████╗${RESET}\n"
-    printf "${DARK_ORANGE}${BOLD}   ██╔═══██╗██║   ██║██║████╗  ██║╚══██╔══╝   ██╔════╝██╔═══██╗██╔══██╗██╔════╝${RESET}\n"
-    printf "${ORANGE}${BOLD}   ██║   ██║██║   ██║██║██╔██╗ ██║   ██║      ██║     ██║   ██║██║  ██║█████╗  ${RESET}\n"
-    printf "${YELLOW}${BOLD}   ██║▄▄ ██║██║   ██║██║██║╚██╗██║   ██║      ██║     ██║   ██║██║  ██║██╔══╝  ${RESET}\n"
-    printf "${LIGHT_YELLOW}${BOLD}   ╚██████╔╝╚██████╔╝██║██║ ╚████║   ██║      ╚██████╗╚██████╔╝██████╔╝███████╗${RESET}\n"
-    printf "${WHITE}${BOLD}    ╚══▀▀═╝  ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚═════╝ ╚══════╝ ╚══════╝${RESET}\n"
+    printf "${RED}${BOLD}   ██╗  ██╗ █████╗ ███████╗████████╗${RESET}\n"
+    printf "${DARK_ORANGE}${BOLD}   ██║  ██║██╔══██╗██╔════╝╚══██╔══╝${RESET}\n"
+    printf "${ORANGE}${BOLD}   ███████║███████║█████╗     ██║   ${RESET}\n"
+    printf "${YELLOW}${BOLD}   ██╔══██║██╔══██║██╔══╝     ██║   ${RESET}\n"
+    printf "${LIGHT_YELLOW}${BOLD}   ██║  ██║██║  ██║██║        ██║   ${RESET}\n"
+    printf "${WHITE}${BOLD}   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝        ╚═╝   ${RESET}\n"
     echo ""
-    printf "${DIM}       First Principles Framework for AI-assisted engineering${RESET}\n"
+    printf "${DIM}       Decision engineering for AI coding tools${RESET}\n"
     echo ""
 }
 
@@ -70,9 +71,102 @@ find_bin_dir() {
     echo "$HOME/.local/bin"
 }
 
+find_archive_binary() {
+    local archive_root="$1"
+    local candidates=(
+        "$archive_root/$BIN_NAME"
+        "$archive_root/bin/$BIN_NAME"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_archive_tui_bundle() {
+    local archive_root="$1"
+    local candidates=(
+        "$archive_root/tui/bundle.mjs"
+        "$archive_root/tui/tui.mjs"
+        "$archive_root/bundle.mjs"
+        "$archive_root/tui/dist/tui.mjs"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+require_source_build_toolchain() {
+    if ! command -v go >/dev/null 2>&1; then
+        printf "${RED}   ✗ Go is not installed${RESET}\n"
+        exit 1
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        printf "${RED}   ✗ npm is required to build the TUI from source${RESET}\n"
+        exit 1
+    fi
+}
+
+install_from_release_archive() {
+    local archive_root="$1"
+    local bin_dir="$2"
+    local archive_binary
+    local archive_tui
+
+    archive_binary=$(find_archive_binary "$archive_root") || {
+        printf "${RED}   ✗ Binary not found in archive${RESET}\n"
+        exit 1
+    }
+    archive_tui=$(find_archive_tui_bundle "$archive_root") || {
+        printf "${RED}   ✗ TUI bundle not found in archive${RESET}\n"
+        exit 1
+    }
+
+    cp "$archive_binary" "$bin_dir/$BIN_NAME"
+    chmod +x "$bin_dir/$BIN_NAME"
+
+    mkdir -p "$TUI_INSTALL_DIR"
+    cp "$archive_tui" "$TUI_INSTALL_DIR/bundle.mjs"
+}
+
+install_from_source_checkout() {
+    local repo_dir="$1"
+    local bin_dir="$2"
+
+    (
+        cd "$repo_dir"
+        go build -o "$bin_dir/$BIN_NAME" -trimpath ./cmd/haft/
+    ) &
+    spinner $! "Building binary"
+
+    (
+        cd "$repo_dir/tui"
+        npm ci
+        npm run build
+    ) &
+    spinner $! "Building TUI bundle"
+
+    mkdir -p "$TUI_INSTALL_DIR"
+    cp "$repo_dir/tui/dist/tui.mjs" "$TUI_INSTALL_DIR/bundle.mjs"
+}
+
 main() {
     print_logo
-    printf "${CYAN}${BOLD}   Installing Quint Code...${RESET}\n\n"
+    printf "${CYAN}${BOLD}   Installing Haft...${RESET}\n\n"
 
     local tmp_dir bin_dir os_arch
     tmp_dir=$(mktemp -d)
@@ -92,17 +186,7 @@ main() {
             tar -xzf release.tar.gz
         ) &
         spinner $! "Downloading release ($os_arch)"
-
-        # goreleaser puts binary at archive root, not in bin/
-        if [[ -f "$tmp_dir/$BIN_NAME" ]]; then
-            cp "$tmp_dir/$BIN_NAME" "$bin_dir/$BIN_NAME"
-        elif [[ -f "$tmp_dir/bin/$BIN_NAME" ]]; then
-            cp "$tmp_dir/bin/$BIN_NAME" "$bin_dir/$BIN_NAME"
-        else
-            printf "${RED}   ✗ Binary not found in archive${RESET}\n"
-            exit 1
-        fi
-        chmod +x "$bin_dir/$BIN_NAME"
+        install_from_release_archive "$tmp_dir" "$bin_dir"
 
         # macOS: re-sign binary locally to bypass Gatekeeper
         # Downloaded binaries with foreign ad-hoc signatures get killed
@@ -112,20 +196,16 @@ main() {
         fi
     else
         printf "${YELLOW}   ⚠ No release found, building from source...${RESET}\n"
-
-        if ! command -v go >/dev/null 2>&1; then
-            printf "${RED}   ✗ Go is not installed${RESET}\n"
-            exit 1
-        fi
+        require_source_build_toolchain
 
         git clone --depth 1 "https://github.com/$REPO.git" "$tmp_dir/repo" 2>/dev/null &
         spinner $! "Cloning repository"
 
-        (cd "$tmp_dir/repo/src/mcp" && go build -o "$bin_dir/$BIN_NAME" -trimpath .) &
-        spinner $! "Building binary"
+        install_from_source_checkout "$tmp_dir/repo" "$bin_dir"
     fi
 
     printf "   ${GREEN}✓${RESET} Installed to ${WHITE}$bin_dir/$BIN_NAME${RESET}\n"
+    printf "   ${GREEN}✓${RESET} Installed TUI to ${WHITE}$TUI_INSTALL_DIR/bundle.mjs${RESET}\n"
 
     # Check PATH
     if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
@@ -141,7 +221,7 @@ main() {
     printf "${GREEN}    ╚════════════════════════════════════════════════════════════╝${RESET}\n"
     echo ""
     printf "   ${WHITE}${BOLD}Next step:${RESET}\n"
-    printf "   In your project directory, run: ${WHITE}quint-code init${RESET}\n"
+    printf "   In your project directory, run: ${WHITE}haft init${RESET}\n"
     echo ""
 }
 

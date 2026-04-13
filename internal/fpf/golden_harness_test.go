@@ -23,6 +23,9 @@ func loadGoldenSpecChunks(t *testing.T) []SpecChunk {
 	t.Helper()
 
 	path := filepath.Join(testRepoRoot(t), "data", "FPF", "FPF-Spec.md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("FPF submodule not initialized — run 'git submodule update --init' (%s)", path)
+	}
 	corpus, err := LoadSpecIndexCorpus(path)
 	if err != nil {
 		t.Fatalf("LoadSpecIndexCorpus(%q) failed: %v", path, err)

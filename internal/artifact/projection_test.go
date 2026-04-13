@@ -86,11 +86,12 @@ func TestFetchProjectionGraph_BuildsSharedGraphFromArtifacts(t *testing.T) {
 	}
 
 	_, err = AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: decision.Meta.ID,
-		Content:     "Replay benchmark kept p95 latency below 25ms in the candidate environment.",
-		Type:        "measurement",
-		Verdict:     "supports",
-		ClaimScope:  []string{"latency"},
+		ArtifactRef:     decision.Meta.ID,
+		Content:         "Replay benchmark kept p95 latency below 25ms in the candidate environment.",
+		Type:            "measurement",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimScope:      []string{"latency"},
 	})
 	if err != nil {
 		t.Fatal(err)

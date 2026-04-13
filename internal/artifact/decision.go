@@ -1467,6 +1467,11 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	if input.FormalityLevel < 0 {
 		input.FormalityLevel = defaultEvidenceFormalityLevel(input.Type)
 	}
+	storedVerdict := canonicalStoredEvidenceVerdict(input.Type, input.Verdict)
+	err = validateEvidenceCongruenceAtIngest(storedVerdict, input.CongruenceLevel)
+	if err != nil {
+		return nil, err
+	}
 
 	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
 
@@ -1474,7 +1479,7 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		ID:              id,
 		Type:            input.Type,
 		Content:         input.Content,
-		Verdict:         input.Verdict,
+		Verdict:         storedVerdict,
 		CarrierRef:      input.CarrierRef,
 		CongruenceLevel: input.CongruenceLevel,
 		FormalityLevel:  normalizeFormalityLevel(input.FormalityLevel),

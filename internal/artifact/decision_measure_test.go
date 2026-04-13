@@ -482,12 +482,13 @@ func TestMeasure_KeepsActiveAttachedEvidenceOnUntouchedClaims(t *testing.T) {
 	}
 
 	_, err = AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Benchmark confirms latency stayed under 50ms.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimRefs:   []string{"claim-001"},
-		ClaimScope:  []string{"Latency stays under 50ms"},
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Benchmark confirms latency stayed under 50ms.",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-001"},
+		ClaimScope:      []string{"Latency stays under 50ms"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -641,11 +642,12 @@ func TestAttachEvidence_AcceptsEquivalentClaimRefsAndScopeInDifferentOrders(t *t
 	}))
 
 	item, err := AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Equivalent binding in a different order.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimRefs:   []string{"claim-002", "claim-001"},
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Equivalent binding in a different order.",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-002", "claim-001"},
 		ClaimScope: []string{
 			"Latency stays under 50ms",
 			"Throughput stays above 100k events/sec",
@@ -698,11 +700,12 @@ func TestAttachEvidence_AcceptsMixedCoverageLabelsWithResolvableClaimScope(t *te
 	}
 
 	item, err := AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Latency acceptance and throughput benchmark both passed.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimRefs:   []string{"claim-001", "claim-002"},
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Latency acceptance and throughput benchmark both passed.",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-001", "claim-002"},
 		ClaimScope: []string{
 			"P99 latency under 50ms",
 			"throughput",
@@ -740,11 +743,12 @@ func TestAttachEvidence_ResolvesClaimRefsFromLegacyScope(t *testing.T) {
 	}
 
 	item, err := AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Load test: p99 latency stayed at 42ms.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimScope:  []string{"latency"},
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Load test: p99 latency stayed at 42ms.",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimScope:      []string{"latency"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -793,12 +797,13 @@ func TestWLNKSummary_PrefersStoredClaimScopeOverClaimText(t *testing.T) {
 	}
 
 	err = store.AddEvidenceItem(ctx, &EvidenceItem{
-		ID:         "evid-throughput-only",
-		Type:       "benchmark",
-		Content:    "Latency evidence only.",
-		Verdict:    "supports",
-		ClaimRefs:  []string{"claim-001"},
-		ClaimScope: []string{"P99 latency under 50ms"},
+		ID:              "evid-throughput-only",
+		Type:            "benchmark",
+		Content:         "Latency evidence only.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-001"},
+		ClaimScope:      []string{"P99 latency under 50ms"},
 	}, dec.Meta.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -847,11 +852,12 @@ func TestWLNKSummary_ClaimRefCoverageSatisfiesAliasedAcceptanceCriterion(t *test
 	}
 
 	_, err = AttachEvidence(ctx, store, EvidenceInput{
-		ArtifactRef: dec.Meta.ID,
-		Content:     "Benchmark confirms the latency envelope held.",
-		Type:        "benchmark",
-		Verdict:     "supports",
-		ClaimRefs:   []string{"claim-001"},
+		ArtifactRef:     dec.Meta.ID,
+		Content:         "Benchmark confirms the latency envelope held.",
+		Type:            "benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-001"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -895,11 +901,12 @@ func TestWLNKSummary_KeepsDistinctCoverageForClaimsWithSharedText(t *testing.T) 
 	}
 
 	err = store.AddEvidenceItem(ctx, &EvidenceItem{
-		ID:        "evid-duplicate-claim-text",
-		Type:      "benchmark",
-		Content:   "Both latency measurements passed.",
-		Verdict:   "supports",
-		ClaimRefs: []string{"claim-001", "claim-002"},
+		ID:              "evid-duplicate-claim-text",
+		Type:            "benchmark",
+		Content:         "Both latency measurements passed.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ClaimRefs:       []string{"claim-001", "claim-002"},
 	}, dec.Meta.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1379,7 +1386,7 @@ func TestREff_CL1Penalty(t *testing.T) {
 	assertREff(t, wlnk.REff, 0.6)
 }
 
-func TestREff_CL0Penalty(t *testing.T) {
+func TestAttachEvidence_RejectsCL0SupportingEvidence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1389,19 +1396,28 @@ func TestREff_CL0Penalty(t *testing.T) {
 		WhySelected:   "Because",
 	}))
 
-	// CL0: supports(1.0) - 0.9 = 0.1
-	// This also verifies CL=0 is NOT silently upgraded to CL=3 (known issue S4)
-	AttachEvidence(ctx, store, EvidenceInput{
+	_, err := AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
 		Content:         "Opposed context evidence",
 		Verdict:         "supports",
 		CongruenceLevel: 0,
-		FormalityLevel:  0, // also 0 — should NOT be defaulted
+		FormalityLevel:  0,
 		ValidUntil:      "2027-01-01T00:00:00Z",
 	})
+	if err == nil {
+		t.Fatal("expected CL0 supporting evidence to be rejected")
+	}
+	if err.Error() != cl0EvidenceSupportsError {
+		t.Fatalf("error = %q, want %q", err.Error(), cl0EvidenceSupportsError)
+	}
 
-	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	assertREff(t, wlnk.REff, 0.1)
+	items, err := store.GetEvidenceItems(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no stored evidence items, got %d", len(items))
+	}
 }
 
 func TestREff_ExpiredEvidence(t *testing.T) {

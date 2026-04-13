@@ -571,6 +571,43 @@ func TestAddEvidenceItem_NormalizesMeasurementVerdictAliases(t *testing.T) {
 	}
 }
 
+func TestAddEvidenceItem_RejectsCL0SupportingEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	err := store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-cl0-supports", Kind: KindDecisionRecord, Title: "Decision"},
+		Body: "d",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item := &EvidenceItem{
+		ID:              "evid-cl0-supports",
+		Type:            "benchmark",
+		Content:         "Opposed-context benchmark",
+		Verdict:         "supports",
+		CongruenceLevel: 0,
+		FormalityLevel:  2,
+	}
+	err = store.AddEvidenceItem(ctx, item, "dec-cl0-supports")
+	if err == nil {
+		t.Fatal("expected CL0 supporting evidence to be rejected")
+	}
+	if err.Error() != cl0EvidenceSupportsError {
+		t.Fatalf("error = %q, want %q", err.Error(), cl0EvidenceSupportsError)
+	}
+
+	items, err := store.GetEvidenceItems(ctx, "dec-cl0-supports")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no stored evidence items, got %d", len(items))
+	}
+}
+
 func TestNextSequence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

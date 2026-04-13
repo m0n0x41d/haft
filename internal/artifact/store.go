@@ -549,6 +549,8 @@ func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]Af
 
 // --- Evidence Items ---
 
+const cl0EvidenceSupportsError = "CL0 evidence cannot support — re-evaluate or change verdict"
+
 // AddEvidenceItem adds an evidence item linked to an artifact.
 func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifactRef string) error {
 	return s.addEvidenceItemWithExec(ctx, s.db, item, artifactRef)
@@ -557,6 +559,10 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
 	formality := normalizeFormalityLevel(item.FormalityLevel)
 	storedVerdict := canonicalStoredEvidenceVerdict(item.Type, item.Verdict)
+	err := validateEvidenceCongruenceAtIngest(storedVerdict, item.CongruenceLevel)
+	if err != nil {
+		return err
+	}
 	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
 	if err != nil {
 		return err
@@ -721,6 +727,14 @@ func canonicalStoredEvidenceVerdict(evidenceType string, verdict string) string 
 	default:
 		return normalizedVerdict
 	}
+}
+
+func validateEvidenceCongruenceAtIngest(storedVerdict string, congruenceLevel int) error {
+	if congruenceLevel == 0 && strings.EqualFold(strings.TrimSpace(storedVerdict), "supports") {
+		return fmt.Errorf(cl0EvidenceSupportsError)
+	}
+
+	return nil
 }
 
 // SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.

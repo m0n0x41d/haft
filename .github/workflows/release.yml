@@ -58,10 +58,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: |
-            desktop/frontend/package-lock.json
-            tui/package-lock.json
 
       - uses: goreleaser/goreleaser-action@v6
         with:

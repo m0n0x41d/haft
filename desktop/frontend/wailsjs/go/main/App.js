@@ -14,6 +14,10 @@ export function ArchiveTask(arg1) {
   return window['go']['main']['App']['ArchiveTask'](arg1);
 }
 
+export function AssessComparisonReadiness(arg1) {
+  return window['go']['main']['App']['AssessComparisonReadiness'](arg1);
+}
+
 export function CancelTask(arg1) {
   return window['go']['main']['App']['CancelTask'](arg1);
 }

@@ -1,3 +1,38 @@
+export namespace graph {
+	
+	export class ReadinessReport {
+	    portfolio_id: string;
+	    variant_count: number;
+	    dimension_count: number;
+	    score_coverage: number;
+	    constraint_count: number;
+	    missing_scores: string[];
+	    has_parity: boolean;
+	    recommendation: string;
+	    recommendation_why: string;
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ReadinessReport(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.portfolio_id = source["portfolio_id"];
+	        this.variant_count = source["variant_count"];
+	        this.dimension_count = source["dimension_count"];
+	        this.score_coverage = source["score_coverage"];
+	        this.constraint_count = source["constraint_count"];
+	        this.missing_scores = source["missing_scores"];
+	        this.has_parity = source["has_parity"];
+	        this.recommendation = source["recommendation"];
+	        this.recommendation_why = source["recommendation_why"];
+	        this.warnings = source["warnings"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AgentPreset {
@@ -566,6 +601,70 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class EvidenceItemView {
+	    id: string;
+	    type: string;
+	    content: string;
+	    verdict: string;
+	    formality_level: number;
+	    congruence_level: number;
+	    claim_refs: string[];
+	    valid_until: string;
+	    is_expired: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceItemView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.content = source["content"];
+	        this.verdict = source["verdict"];
+	        this.formality_level = source["formality_level"];
+	        this.congruence_level = source["congruence_level"];
+	        this.claim_refs = source["claim_refs"];
+	        this.valid_until = source["valid_until"];
+	        this.is_expired = source["is_expired"];
+	    }
+	}
+	export class EvidenceSummaryView {
+	    items: EvidenceItemView[];
+	    total_claims: number;
+	    covered_claims: number;
+	    coverage_gaps: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceSummaryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], EvidenceItemView);
+	        this.total_claims = source["total_claims"];
+	        this.covered_claims = source["covered_claims"];
+	        this.coverage_gaps = source["coverage_gaps"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class RejectionView {
 	    variant: string;
 	    reason: string;
@@ -606,6 +705,7 @@ export namespace main {
 	    rollback_triggers: string[];
 	    rollback_steps: string[];
 	    rollback_blast_radius: string;
+	    evidence: EvidenceSummaryView;
 	    valid_until: string;
 	    body: string;
 	    created_at: string;
@@ -642,6 +742,7 @@ export namespace main {
 	        this.rollback_triggers = source["rollback_triggers"];
 	        this.rollback_steps = source["rollback_steps"];
 	        this.rollback_blast_radius = source["rollback_blast_radius"];
+	        this.evidence = this.convertValues(source["evidence"], EvidenceSummaryView);
 	        this.valid_until = source["valid_until"];
 	        this.body = source["body"];
 	        this.created_at = source["created_at"];
@@ -786,6 +887,8 @@ export namespace main {
 	        this.summary = source["summary"];
 	    }
 	}
+	
+	
 	export class FlowInput {
 	    id: string;
 	    title: string;

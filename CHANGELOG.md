@@ -18,6 +18,7 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 - **Probe-or-commit readiness gate** — AssessComparisonReadiness evaluates portfolio comparison quality: variant count, dimension coverage, score fill rate, constraint presence, parity plan. Returns commit/probe/widen/reroute with specific recommendations. Shown in desktop Portfolios page.
 - **Evidence F/G/R decomposition** — decision detail page shows per-evidence formality level (F0-F3), congruence level (CL0-CL3), verdict badges, freshness indicators, and coverage gaps (claims without evidence).
 - **Auto-run toggle for agent tasks** — per-task toggle between checkpointed (agent pauses) and auto-run (agent proceeds without intervention) modes. Persisted across app restart.
+- **`haft sync` for team workflow** — syncs `.haft/` markdown files into local SQLite database after `git pull`. Enables team collaboration where `.haft/*.md` in git is the shared source of truth and each engineer has their own local database.
 - **5-mode engineering reasoning model** — skill instructions and standalone agent prompt restructured around Understand / Explore / Choose / Execute / Verify (+ Note fast path). Replaces the artifact-centric 6-step "how to reason" with activity-centric modes users can learn in 30 seconds.
 - **Probe-or-commit behavioral gate** — Choose mode now includes a readiness checklist before comparison: dimension coverage, variant diversity, and whether a specific next investigation could change the ranking. Returns commit / probe / widen / reroute.
 - **Language precision triggers** — Understand and Choose modes catch ambiguous terms (service, process, quality, component) and subjective comparison dimensions (maintainable, simple, scalable) before they corrupt downstream reasoning.
@@ -48,6 +49,18 @@ Note: current product naming is `haft`, `haft_*`, and `/h-*`. Older changelog en
 - **Large pasted prompts no longer explode the TUI** — oversized pasted text is collapsed to `[N rows inserted]` placeholders in the input/queue/transcript UI, while the raw content is preserved and expanded only at submit time.
 - **Queued follow-up messages preserve real prompt state** — multiline text, attachments, and hidden collapsed-paste payloads now survive queueing, replay, and draft restore paths without truncation or accidental `trim()` damage.
 - **Decision/evidence integrity issues were tightened across the branch** — malformed compare/measure payloads now fail loudly, Pareto fronts are computed deterministically, and claim/evidence bindings keep canonical scope instead of silently degrading.
+- **Governance shutdown no longer panics on double-close** — `sync.Once` prevents channel double-close during fast project switching.
+- **SwitchProject validates new project before teardown** — pre-checks DB accessibility, preventing zombie state if the target project is broken.
+- **Task auto_run field restored from database** — was persisted but silently lost on restart.
+- **WAL mode + busy_timeout on all SQLite connections** — prevents SQLITE_BUSY during concurrent governance scanner and UI queries.
+- **Null safety across all Go→JSON view projections** — nil slices now serialize as `[]` not `null`, preventing frontend TypeError crashes on 30+ array fields.
+- **Task runner race conditions fixed** — state copied under mutex before use outside lock in shutdown, cancel, and finalize paths.
+- **Atomic file writes for config and registry** — temp file + rename prevents corruption from concurrent access.
+- **Task timeout enforcement** — agent processes killed after configurable timeout (default 300 min), preventing zombie processes.
+- **Artifact Create uses single transaction** — artifact insert and link inserts wrapped in one transaction, preventing partial state on link failure.
+- **tableHasColumn PRAGMA cached** — eliminated 2 PRAGMA queries per evidence operation.
+- **Large agent output truncated** — outputs over 500 lines show last 200 with "Show full output" button, preventing WebView freezing.
+- **Search race condition fixed** — stale results from earlier queries no longer briefly flash.
 
 ## [5.3.1] — 2026-03-25
 

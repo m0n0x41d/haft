@@ -561,15 +561,21 @@ func StatusResponse(data artifact.StatusData) string {
 		}
 	}
 
+	if len(data.HealthyDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Shipped / Healthy (%d)\n\n", len(data.HealthyDecisions)))
+		formatDecisionList(data.HealthyDecisions, 5)
+		sb.WriteString("\n")
+	}
+
 	if len(data.PendingDecisions) > 0 {
-		sb.WriteString(fmt.Sprintf("### Pending Implementation (%d)\n\n", len(data.PendingDecisions)))
+		sb.WriteString(fmt.Sprintf("### Pending (%d)\n\n", len(data.PendingDecisions)))
 		formatDecisionList(data.PendingDecisions, 5)
 		sb.WriteString("\n")
 	}
 
-	if len(data.ShippedDecisions) > 0 {
-		sb.WriteString(fmt.Sprintf("### Shipped (%d)\n\n", len(data.ShippedDecisions)))
-		formatDecisionList(data.ShippedDecisions, 5)
+	if len(data.UnassessedDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Unassessed (%d)\n\n", len(data.UnassessedDecisions)))
+		formatDecisionList(data.UnassessedDecisions, 5)
 		sb.WriteString("\n")
 	}
 
@@ -581,7 +587,12 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more (use /h-refresh to see all)\n", len(data.StaleItems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", s.Title, s.ID, s.Reason))
+			line := fmt.Sprintf("- **%s** `%s`", s.Title, s.ID)
+			if health, ok := data.DecisionHealth[s.ID]; ok {
+				line += fmt.Sprintf(" — %s", health.Label())
+			}
+			line += fmt.Sprintf(" — %s", s.Reason)
+			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -633,8 +644,9 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
-	hasAny := len(data.PendingDecisions) > 0 ||
-		len(data.ShippedDecisions) > 0 ||
+	hasAny := len(data.HealthyDecisions) > 0 ||
+		len(data.PendingDecisions) > 0 ||
+		len(data.UnassessedDecisions) > 0 ||
 		len(data.StaleItems) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||

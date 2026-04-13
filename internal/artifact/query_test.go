@@ -80,9 +80,11 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hasPendingOrShipped := len(data.PendingDecisions) > 0 || len(data.ShippedDecisions) > 0
-	if !hasPendingOrShipped {
-		t.Error("missing pending or shipped decisions")
+	hasDecisionHealth := len(data.PendingDecisions) > 0 ||
+		len(data.HealthyDecisions) > 0 ||
+		len(data.UnassessedDecisions) > 0
+	if !hasDecisionHealth {
+		t.Error("missing decision health buckets")
 	}
 	if len(data.BacklogProblems) == 0 {
 		t.Error("missing backlog problems")
@@ -101,7 +103,8 @@ func TestFetchStatusData_Empty(t *testing.T) {
 		t.Fatal(err)
 	}
 	hasAny := len(data.PendingDecisions) > 0 ||
-		len(data.ShippedDecisions) > 0 ||
+		len(data.HealthyDecisions) > 0 ||
+		len(data.UnassessedDecisions) > 0 ||
 		len(data.StaleItems) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
@@ -110,6 +113,122 @@ func TestFetchStatusData_Empty(t *testing.T) {
 	if hasAny {
 		t.Error("expected empty status data for empty DB")
 	}
+}
+
+func TestFetchStatusData_DerivesDecisionHealthBuckets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustCreateDecision := func(id string, title string) {
+		t.Helper()
+
+		err := store.Create(ctx, &Artifact{
+			Meta: Meta{
+				ID:        id,
+				Kind:      KindDecisionRecord,
+				Title:     title,
+				Status:    StatusActive,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			Body: title,
+		})
+		if err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+
+	mustAddEvidence := func(decisionID string, item EvidenceItem) {
+		t.Helper()
+
+		err := store.AddEvidenceItem(ctx, &item, decisionID)
+		if err != nil {
+			t.Fatalf("add evidence to %s: %v", decisionID, err)
+		}
+	}
+
+	mustCreateDecision("dec-healthy", "Healthy decision")
+	mustAddEvidence("dec-healthy", EvidenceItem{
+		ID:              "evid-healthy",
+		Type:            "measurement",
+		Content:         "latency meets target",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+
+	mustCreateDecision("dec-pending", "Pending decision")
+	mustAddEvidence("dec-pending", EvidenceItem{
+		ID:              "evid-pending",
+		Type:            "research",
+		Content:         "design review completed",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+
+	mustCreateDecision("dec-unassessed", "Unassessed decision")
+
+	mustCreateDecision("dec-stale", "Stale decision")
+	mustAddEvidence("dec-stale", EvidenceItem{
+		ID:              "evid-stale-measure",
+		Type:            "measurement",
+		Content:         "rollout met initial threshold",
+		Verdict:         "accepted",
+		CongruenceLevel: 3,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+	mustAddEvidence("dec-stale", EvidenceItem{
+		ID:              "evid-stale-research",
+		Type:            "research",
+		Content:         "follow-up field evidence weakens the result",
+		Verdict:         "weakens",
+		CongruenceLevel: 2,
+		ValidUntil:      now.Add(24 * time.Hour).Format(time.RFC3339),
+	})
+
+	data, err := FetchStatusData(ctx, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.HealthyDecisions) != 1 || data.HealthyDecisions[0].Meta.ID != "dec-healthy" {
+		t.Fatalf("healthy decisions = %#v, want dec-healthy only", decisionIDs(data.HealthyDecisions))
+	}
+
+	if len(data.PendingDecisions) != 1 || data.PendingDecisions[0].Meta.ID != "dec-pending" {
+		t.Fatalf("pending decisions = %#v, want dec-pending only", decisionIDs(data.PendingDecisions))
+	}
+
+	if len(data.UnassessedDecisions) != 1 || data.UnassessedDecisions[0].Meta.ID != "dec-unassessed" {
+		t.Fatalf("unassessed decisions = %#v, want dec-unassessed only", decisionIDs(data.UnassessedDecisions))
+	}
+
+	staleHealth := data.DecisionHealth["dec-stale"]
+	if got := staleHealth.Label(); got != "Shipped / Stale" {
+		t.Fatalf("stale decision label = %q, want %q", got, "Shipped / Stale")
+	}
+
+	foundStale := false
+	for _, item := range data.StaleItems {
+		if item.ID == "dec-stale" {
+			foundStale = true
+		}
+	}
+	if !foundStale {
+		t.Fatal("expected stale decision in refresh queue")
+	}
+}
+
+func decisionIDs(items []*Artifact) []string {
+	ids := make([]string, 0, len(items))
+
+	for _, item := range items {
+		ids = append(ids, item.Meta.ID)
+	}
+
+	return ids
 }
 
 func TestFetchRelatedArtifacts_FindsByFile(t *testing.T) {

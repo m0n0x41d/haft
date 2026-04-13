@@ -228,6 +228,61 @@ func TestSearchResponse_PreservesQueryTitleAndBodyVerbatim(t *testing.T) {
 	}
 }
 
+func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-healthy",
+					Title: "Healthy decision",
+				},
+			},
+		},
+		PendingDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-pending",
+					Title: "Pending decision",
+				},
+			},
+		},
+		UnassessedDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-unassessed",
+					Title: "Unassessed decision",
+				},
+			},
+		},
+		DecisionHealth: map[string]artifact.DecisionHealth{
+			"dec-stale": {
+				Maturity:  artifact.DecisionMaturityShipped,
+				Freshness: artifact.DecisionFreshnessStale,
+			},
+		},
+		StaleItems: []artifact.StaleItem{
+			{
+				ID:     "dec-stale",
+				Title:  "Stale decision",
+				Reason: "evidence degraded (R_eff: 0.40)",
+			},
+		},
+	}
+
+	output := present.StatusResponse(data)
+
+	for _, want := range []string{
+		"### Shipped / Healthy (1)",
+		"### Pending (1)",
+		"### Unassessed (1)",
+		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {
 	body := "# Decision\n\nFix DecisionRecord parser without changing DecisionRecord wording."
 	a := &artifact.Artifact{

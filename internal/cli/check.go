@@ -319,9 +319,28 @@ func summarizeCheckDrift(report artifact.DriftReport) string {
 }
 
 func writeCheckJSON(w io.Writer, report checkReport) error {
+	report = normalizeCheckReport(report)
+
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
+}
+
+func normalizeCheckReport(report checkReport) checkReport {
+	if report.Stale == nil {
+		report.Stale = []checkStaleFinding{}
+	}
+	if report.Drifted == nil {
+		report.Drifted = []checkDriftFinding{}
+	}
+	if report.Unassessed == nil {
+		report.Unassessed = []checkDecisionFinding{}
+	}
+	if report.CoverageGaps == nil {
+		report.CoverageGaps = []checkCoverageGapFinding{}
+	}
+
+	return report
 }
 
 func writeCheckSummary(w io.Writer, report checkReport) error {

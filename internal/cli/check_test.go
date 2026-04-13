@@ -160,6 +160,52 @@ func TestRunCheck_JSONExitsOneWhenFindingsExist(t *testing.T) {
 	}
 }
 
+func TestWriteCheckJSON_ZeroValueUsesStableSchema(t *testing.T) {
+	var output bytes.Buffer
+
+	err := writeCheckJSON(&output, checkReport{})
+	if err != nil {
+		t.Fatalf("writeCheckJSON returned error: %v", err)
+	}
+
+	var payload map[string]json.RawMessage
+	err = json.Unmarshal(output.Bytes(), &payload)
+	if err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+
+	wantArrays := map[string]string{
+		"stale":         "[]",
+		"drifted":       "[]",
+		"unassessed":    "[]",
+		"coverage_gaps": "[]",
+	}
+
+	for field, want := range wantArrays {
+		got, ok := payload[field]
+		if !ok {
+			t.Fatalf("missing top-level field %q", field)
+		}
+		if string(got) != want {
+			t.Fatalf("%s = %s, want %s", field, string(got), want)
+		}
+	}
+
+	gotSummary, ok := payload["summary"]
+	if !ok {
+		t.Fatalf("missing top-level field %q", "summary")
+	}
+
+	var summary checkSummary
+	err = json.Unmarshal(gotSummary, &summary)
+	if err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.TotalFindings != 0 {
+		t.Fatalf("summary.total_findings = %d, want 0", summary.TotalFindings)
+	}
+}
+
 func newCheckTestProject(t *testing.T) checkTestProject {
 	t.Helper()
 

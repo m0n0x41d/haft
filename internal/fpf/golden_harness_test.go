@@ -10,7 +10,7 @@ import (
 func loadGoldenRoutes(t *testing.T) []Route {
 	t.Helper()
 
-	path := filepath.Join(testRepoRoot(t), ".context", "fpf-routes.json")
+	path := filepath.Join(testRepoRoot(t), "internal", "fpf", "fpf-routes.json")
 	routes, err := LoadRoutes(path)
 	if err != nil {
 		t.Fatalf("LoadRoutes(%q) failed: %v", path, err)

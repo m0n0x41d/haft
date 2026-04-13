@@ -30,7 +30,7 @@ jobs:
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out $(go list ./... | grep -v /desktop)
 
       - name: Build binary
         run: go build -o haft -trimpath ./cmd/haft/

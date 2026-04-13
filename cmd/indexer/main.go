@@ -12,7 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const routeArtifactPath = ".context/fpf-routes.json"
+const routeArtifactPath = "internal/fpf/fpf-routes.json"
 
 func main() {
 	if err := run(); err != nil {

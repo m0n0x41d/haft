@@ -30,7 +30,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
 
-	"golang.org/x/sys/unix"
 )
 
 var agentModel string
@@ -170,12 +169,8 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// echoes SGR mouse sequences as garbage on screen.
 	// Only touch ECHO flag — leave OPOST, ISIG, ICANON etc. intact.
 	stdinFd := int(os.Stdin.Fd())
-	if oldTermios, err := unix.IoctlGetTermios(stdinFd, unix.TIOCGETA); err == nil {
-		modified := *oldTermios
-		modified.Lflag &^= unix.ECHO | unix.ECHOE | unix.ECHOK | unix.ECHONL
-		if err := unix.IoctlSetTermios(stdinFd, unix.TIOCSETA, &modified); err == nil {
-			defer unix.IoctlSetTermios(stdinFd, unix.TIOCSETA, oldTermios)
-		}
+	if restoreEcho, err := disableEcho(stdinFd); err == nil {
+		defer restoreEcho()
 	}
 
 	defer func() {

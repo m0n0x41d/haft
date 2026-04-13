@@ -1,11 +1,11 @@
 #!/bin/bash
-# Quint Code Installer
+# Haft Installer
 #
-# Installs the quint-code binary globally.
-# After installation, run `quint-code init` in each project.
+# Installs the haft binary globally.
+# After installation, run `haft init` in each project.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/m0n0x41d/quint-code/main/install.sh | bash
+#   curl -fsSL https://quint.codes/install.sh | bash
 
 set -e
 
@@ -19,7 +19,7 @@ CYAN='\033[36m'
 WHITE='\033[37m'
 
 REPO="m0n0x41d/quint-code"
-BIN_NAME="quint-code"
+BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
 
 print_logo() {
@@ -27,14 +27,14 @@ print_logo() {
     local DARK_ORANGE='\033[38;5;202m'
     local LIGHT_YELLOW='\033[38;5;228m'
     echo ""
-    printf "${RED}${BOLD}    ██████╗ ██╗   ██╗██╗███╗   ██╗████████╗    ██████╗ ██████╗ ██████╗ ███████╗${RESET}\n"
-    printf "${DARK_ORANGE}${BOLD}   ██╔═══██╗██║   ██║██║████╗  ██║╚══██╔══╝   ██╔════╝██╔═══██╗██╔══██╗██╔════╝${RESET}\n"
-    printf "${ORANGE}${BOLD}   ██║   ██║██║   ██║██║██╔██╗ ██║   ██║      ██║     ██║   ██║██║  ██║█████╗  ${RESET}\n"
-    printf "${YELLOW}${BOLD}   ██║▄▄ ██║██║   ██║██║██║╚██╗██║   ██║      ██║     ██║   ██║██║  ██║██╔══╝  ${RESET}\n"
-    printf "${LIGHT_YELLOW}${BOLD}   ╚██████╔╝╚██████╔╝██║██║ ╚████║   ██║      ╚██████╗╚██████╔╝██████╔╝███████╗${RESET}\n"
-    printf "${WHITE}${BOLD}    ╚══▀▀═╝  ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚═════╝ ╚══════╝ ╚══════╝${RESET}\n"
+    printf "${RED}${BOLD}   ██╗  ██╗ █████╗ ███████╗████████╗${RESET}\n"
+    printf "${DARK_ORANGE}${BOLD}   ██║  ██║██╔══██╗██╔════╝╚══██╔══╝${RESET}\n"
+    printf "${ORANGE}${BOLD}   ███████║███████║█████╗     ██║   ${RESET}\n"
+    printf "${YELLOW}${BOLD}   ██╔══██║██╔══██║██╔══╝     ██║   ${RESET}\n"
+    printf "${LIGHT_YELLOW}${BOLD}   ██║  ██║██║  ██║██║        ██║   ${RESET}\n"
+    printf "${WHITE}${BOLD}   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝        ╚═╝   ${RESET}\n"
     echo ""
-    printf "${DIM}       First Principles Framework for AI-assisted engineering${RESET}\n"
+    printf "${DIM}       Decision engineering for AI coding tools${RESET}\n"
     echo ""
 }
 
@@ -72,7 +72,7 @@ find_bin_dir() {
 
 main() {
     print_logo
-    printf "${CYAN}${BOLD}   Installing Quint Code...${RESET}\n\n"
+    printf "${CYAN}${BOLD}   Installing Haft...${RESET}\n\n"
 
     local tmp_dir bin_dir os_arch
     tmp_dir=$(mktemp -d)
@@ -121,7 +121,7 @@ main() {
         git clone --depth 1 "https://github.com/$REPO.git" "$tmp_dir/repo" 2>/dev/null &
         spinner $! "Cloning repository"
 
-        (cd "$tmp_dir/repo/src/mcp" && go build -o "$bin_dir/$BIN_NAME" -trimpath .) &
+        (cd "$tmp_dir/repo" && go build -o "$bin_dir/$BIN_NAME" -trimpath ./cmd/haft/) &
         spinner $! "Building binary"
     fi
 
@@ -141,7 +141,7 @@ main() {
     printf "${GREEN}    ╚════════════════════════════════════════════════════════════╝${RESET}\n"
     echo ""
     printf "   ${WHITE}${BOLD}Next step:${RESET}\n"
-    printf "   In your project directory, run: ${WHITE}quint-code init${RESET}\n"
+    printf "   In your project directory, run: ${WHITE}haft init${RESET}\n"
     echo ""
 }
 

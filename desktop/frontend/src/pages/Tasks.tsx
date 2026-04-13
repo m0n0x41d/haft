@@ -379,19 +379,7 @@ export function Tasks({
 
             {/* Agent response: streaming output */}
             {detail.output ? (
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
-                  {detail.status === "running" && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                      <span className="text-[11px] text-accent">Generating...</span>
-                    </div>
-                  )}
-                  <pre className="whitespace-pre-wrap font-mono text-xs text-text-secondary leading-relaxed">
-                    {detail.output}
-                  </pre>
-                </div>
-              </div>
+              <AgentOutputBubble output={detail.output} running={detail.status === "running"} />
             ) : detail.status === "running" ? (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
@@ -607,6 +595,43 @@ function NewTaskModal({
             Create & Run
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const OUTPUT_MAX_LINES = 500;
+const OUTPUT_VISIBLE_LINES = 200;
+
+function AgentOutputBubble({ output, running }: { output: string; running: boolean }) {
+  const [showFull, setShowFull] = useState(false);
+
+  const lines = output.split("\n");
+  const truncated = !showFull && lines.length > OUTPUT_MAX_LINES;
+  const visible = truncated
+    ? lines.slice(-OUTPUT_VISIBLE_LINES).join("\n")
+    : output;
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
+        {running && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+            <span className="text-[11px] text-accent">Generating...</span>
+          </div>
+        )}
+        {truncated && (
+          <button
+            onClick={() => setShowFull(true)}
+            className="mb-2 text-xs text-accent hover:text-accent-hover transition-colors"
+          >
+            Showing last {OUTPUT_VISIBLE_LINES} of {lines.length} lines. Show full output.
+          </button>
+        )}
+        <pre className="whitespace-pre-wrap font-mono text-xs text-text-secondary leading-relaxed">
+          {visible}
+        </pre>
       </div>
     </div>
   );

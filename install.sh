@@ -18,7 +18,7 @@ YELLOW='\033[33m'
 CYAN='\033[36m'
 WHITE='\033[37m'
 
-REPO="m0n0x41d/quint-code"
+REPO="m0n0x41d/haft"
 BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
 TUI_INSTALL_DIR="$HOME/.haft/tui"

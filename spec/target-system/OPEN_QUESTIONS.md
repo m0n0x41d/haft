@@ -2,13 +2,13 @@
 
 > Non-blocking for v6 release. Classified by v7 impact after GPT-5.4 spec review.
 
-## Blocking Before v7
+## Decided (formerly blocking v7)
 
-| # | Question | Context | Status |
-|---|----------|---------|--------|
-| Q1 | What workflow DSL for repo-level execution policies? | v7 deliverable: `.haft/workflow.md`. Can't ship execution loop without choosing representation. | Candidates: `.haft/workflow.md` (simple) vs structured YAML vs FPF-native flow card |
-| Q2 | Is `haft agent` strategic, transitional, or deprecated? | Desktop app subsumes most standalone agent use. TUI adds maintenance burden. Affects architecture, docs, testing. | Candidates: Keep both / Desktop-only / Agent for CI-only |
-| Q10 | Which FPF patterns get L2 enforcement before v7? | Live gaps: parity enforcement (G2) and subjective dimension operationalization (G4). Cannot expand execution loop while these are L1-only. | Candidates: A.6.P/Q/A triggers in Go / JSON Schema structured outputs / Both |
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| Q1 | Workflow DSL shape | **`.haft/workflow.md` as hybrid markdown + structured YAML block.** Human-readable prose + parseable defaults + path policies. Not a workflow engine. | Pure markdown = too hard to validate. Pure YAML = config fatigue. FPF flow card = too heavy for solo dev. Hybrid gives reviewable prose + parseable structure + low implementation burden. Ships in v6.1. |
+| Q2 | Fate of `haft agent` | **Transitional. Retained for CI/headless/power-user. Not co-equal strategic surface.** Desktop = primary interactive. MCP = primary embedded. Agent = secondary headless utility. No feature-parity promise with desktop. | Desktop subsumes interactive use. But CI stakeholder needs headless mode. SSH/remote use cases real. Removing entirely loses too much utility. |
+| Q10 | L2 enforcement scope | **Both JSON Schema + Go validators, but narrow: parity minimums + subjective dimension operationalization only.** No broad A.6 universalization before v7. | Schema alone can't catch semantic hollowness. Go validators without schema = brittle text heuristics. Narrow scope = feasible for solo dev. Ships in v6.1. |
 
 ## Resolved (No Longer Open)
 

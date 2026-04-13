@@ -27,18 +27,31 @@ Each artifact has exactly one stored status:
 | `deprecated` | Archived as no longer relevant | All kinds |
 | `refresh_due` | Flagged by scan, needs attention | All kinds |
 
-### Derived phase (computed at query time, never stored)
+### Derived health (computed at query time, never stored)
 
-DecisionRecords have a **derived phase** computed from stored status + evidence state:
+DecisionRecords have **two independent derived dimensions** computed from stored status + evidence state:
 
-| Phase | Derivation rule |
-|-------|----------------|
-| **Pending** | status=active AND no measurement exists |
+**Maturity** (exclusive — exactly one):
+
+| Maturity | Derivation rule |
+|----------|----------------|
+| **Unassessed** | status=active AND no evidence exists on any claim |
+| **Pending** | status=active AND evidence exists but no measurement with verdict=accepted |
 | **Shipped** | status=active AND at least one measurement with verdict=accepted |
-| **Stale** | status=active AND R_eff < 0.5 (evidence degraded) |
-| **AT RISK** | status=active AND R_eff < 0.3 |
 
-Phase is a **view concern** — shown in `/h-status`, desktop dashboard, and projections. It is never written to the database. Stored status and derived phase are independent axes that must not be conflated.
+**Freshness** (exclusive — exactly one, evaluated only when maturity is Shipped):
+
+| Freshness | Derivation rule |
+|-----------|----------------|
+| **Healthy** | R_eff >= 0.5 |
+| **Stale** | R_eff < 0.5 AND R_eff >= 0.3 |
+| **AT RISK** | R_eff < 0.3 |
+
+Precedence: maturity is evaluated first, freshness only applies to Shipped decisions. A Pending decision has no freshness rating (it hasn't been verified yet).
+
+Display string: `Shipped / Healthy`, `Shipped / Stale`, `Pending`, `Unassessed`.
+
+Both dimensions are **view concerns** — shown in `/h-status`, desktop dashboard, and projections. They are never written to the database. Stored status and derived health are independent axes that must not be conflated.
 
 ## Artifact Relationships (DAG)
 

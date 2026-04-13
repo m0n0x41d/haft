@@ -90,6 +90,19 @@ DecisionRecords contain **claims** — falsifiable statements about what the dec
 
 **Pending verification:** When `verify_after` passes and the claim is still unverified, `/h-verify scan` surfaces it with the observable and threshold.
 
+## Verdict Vocabulary (canonical + aliases)
+
+Two verdict vocabularies exist. One is canonical, the other is a measurement-result alias:
+
+| Canonical evidence verdict | Measurement result alias | Meaning |
+|---------------------------|-------------------------|---------|
+| `supports` | `accepted` | Evidence confirms the claim |
+| `weakens` | `partial` | Evidence partially confirms or raises doubts |
+| `refutes` | `failed` | Evidence contradicts the claim |
+| `superseded` | — | Replaced by newer evidence (excluded from R_eff) |
+
+**Rule:** measurement results (`accepted`/`partial`/`failed`) are aliases stored on measurement records. When computing R_eff, they map to canonical verdicts. Code and spec must use canonical verdicts in evidence computation. Measurement-result aliases appear only in the `measure` action interface.
+
 ## Evidence Types
 
 | Type | What it is | Typical CL |

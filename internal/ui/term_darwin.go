@@ -14,6 +14,7 @@ type termState struct {
 
 func makeRaw(fd int) (*termState, error) {
 	var oldState termState
+	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
 	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
 		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&oldState.termios)),
 		0, 0, 0); err != 0 {
@@ -26,6 +27,7 @@ func makeRaw(fd int) (*termState, error) {
 	newState.Cc[syscall.VMIN] = 1
 	newState.Cc[syscall.VTIME] = 0
 
+	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
 	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
 		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&newState)),
 		0, 0, 0); err != 0 {
@@ -36,6 +38,7 @@ func makeRaw(fd int) (*termState, error) {
 }
 
 func restore(fd int, state *termState) {
+	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
 	syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
 		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&state.termios)),
 		0, 0, 0)
@@ -47,7 +50,8 @@ func termSize() (int, int) {
 		Xpixel, Ypixel uint16
 	}
 	var ws winsize
-	syscall.Syscall(syscall.SYS_IOCTL, uintptr(os.Stderr.Fd()),
+	//nolint:gosec // ioctl requires passing the winsize pointer to the kernel
+	syscall.Syscall(syscall.SYS_IOCTL, os.Stderr.Fd(),
 		uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
 	w, h := int(ws.Col), int(ws.Row)
 	if w == 0 {

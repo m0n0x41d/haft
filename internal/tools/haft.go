@@ -467,6 +467,7 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	}, nil
 }
 
+//nolint:unused // exercised by package tests as a compatibility seam
 func resolveComparedPortfolioRef(ctx context.Context, store artifact.ArtifactStore, portfolioRef string) string {
 	return artifact.ResolveComparedPortfolioRef(ctx, store, portfolioRef)
 }
@@ -523,11 +524,11 @@ func validateCycleProblemBinding(ctx context.Context, store artifact.ArtifactSto
 
 	problem, err := store.Get(ctx, cycle.ProblemRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: active cycle problem %q could not be loaded. Re-frame or adopt the correct problem before continuing.", cycle.ProblemRef)
+		return fmt.Errorf("fpf guardrail: active cycle problem %q could not be loaded; re-frame or adopt the correct problem before continuing", cycle.ProblemRef)
 	}
 	if problem.Meta.Kind != artifact.KindProblemCard {
 		kindLabel := present.UserFacingArtifactKindLabel(string(problem.Meta.Kind))
-		return fmt.Errorf("FPF guardrail: active cycle problem %q is a %s, not a problem. Repair the cycle or adopt the correct problem before continuing.",
+		return fmt.Errorf("fpf guardrail: active cycle problem %q is a %s, not a problem; repair the cycle or adopt the correct problem before continuing",
 			cycle.ProblemRef, kindLabel)
 	}
 
@@ -541,11 +542,11 @@ func validateCyclePortfolioBinding(ctx context.Context, store artifact.ArtifactS
 
 	portfolio, err := store.Get(ctx, cycle.PortfolioRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: active portfolio %q could not be loaded. Re-explore within the current cycle or adopt the correct portfolio.", cycle.PortfolioRef)
+		return fmt.Errorf("fpf guardrail: active portfolio %q could not be loaded; re-explore within the current cycle or adopt the correct portfolio", cycle.PortfolioRef)
 	}
 	if portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
 		kindLabel := present.UserFacingArtifactKindLabel(string(portfolio.Meta.Kind))
-		return fmt.Errorf("FPF guardrail: active portfolio %q is a %s, not a solution portfolio. Repair the cycle before continuing.",
+		return fmt.Errorf("fpf guardrail: active portfolio %q is a %s, not a solution portfolio; repair the cycle before continuing",
 			cycle.PortfolioRef, kindLabel)
 	}
 
@@ -565,7 +566,7 @@ func validateCyclePortfolioMatchesProblem(ctx context.Context, store artifact.Ar
 		return nil
 	}
 
-	return fmt.Errorf("FPF guardrail: active portfolio %q is not based on the active problem %q. Re-explore inside this cycle or adopt the matching problem/portfolio pair.",
+	return fmt.Errorf("fpf guardrail: active portfolio %q is not based on the active problem %q; re-explore inside this cycle or adopt the matching problem/portfolio pair",
 		cycle.PortfolioRef, cycle.ProblemRef)
 }
 
@@ -574,24 +575,24 @@ func validateCycleComparedPortfolioBinding(ctx context.Context, store artifact.A
 		return nil
 	}
 	if strings.TrimSpace(cycle.PortfolioRef) == "" {
-		return fmt.Errorf("FPF guardrail: cycle has compared portfolio %q without an active portfolio. Repair or re-explore before deciding.", cycle.ComparedPortfolioRef)
+		return fmt.Errorf("fpf guardrail: cycle has compared portfolio %q without an active portfolio; repair or re-explore before deciding", cycle.ComparedPortfolioRef)
 	}
 	if cycle.ComparedPortfolioRef != cycle.PortfolioRef {
-		return fmt.Errorf("FPF guardrail: active compared portfolio %q does not match active portfolio %q. Re-run compare on the active portfolio before deciding.",
+		return fmt.Errorf("fpf guardrail: active compared portfolio %q does not match active portfolio %q; re-run compare on the active portfolio before deciding",
 			cycle.ComparedPortfolioRef, cycle.PortfolioRef)
 	}
 
 	comparedPortfolio, err := store.Get(ctx, cycle.ComparedPortfolioRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: compared portfolio %q could not be loaded. Re-run compare or repair the cycle before deciding.", cycle.ComparedPortfolioRef)
+		return fmt.Errorf("fpf guardrail: compared portfolio %q could not be loaded; re-run compare or repair the cycle before deciding", cycle.ComparedPortfolioRef)
 	}
 	if comparedPortfolio.Meta.Kind != artifact.KindSolutionPortfolio {
 		kindLabel := present.UserFacingArtifactKindLabel(string(comparedPortfolio.Meta.Kind))
-		return fmt.Errorf("FPF guardrail: compared portfolio %q is a %s, not a solution portfolio. Repair the cycle before continuing.",
+		return fmt.Errorf("fpf guardrail: compared portfolio %q is a %s, not a solution portfolio; repair the cycle before continuing",
 			cycle.ComparedPortfolioRef, kindLabel)
 	}
 	if !artifact.PortfolioHasComparison(comparedPortfolio) {
-		return fmt.Errorf("FPF guardrail: compared portfolio %q has no persisted comparison output. Run haft_solution(action=\"compare\") on the active portfolio before deciding.",
+		return fmt.Errorf("fpf guardrail: compared portfolio %q has no persisted comparison output; run haft_solution(action=\"compare\") on the active portfolio before deciding",
 			cycle.ComparedPortfolioRef)
 	}
 
@@ -605,19 +606,19 @@ func validateCycleDecisionBinding(ctx context.Context, store artifact.ArtifactSt
 
 	decision, err := store.Get(ctx, cycle.DecisionRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: active decision %q could not be loaded. Re-record the decision or repair the cycle before baselining/measuring.", cycle.DecisionRef)
+		return fmt.Errorf("fpf guardrail: active decision %q could not be loaded; re-record the decision or repair the cycle before baselining/measuring", cycle.DecisionRef)
 	}
 	if decision.Meta.Kind != artifact.KindDecisionRecord {
 		kindLabel := present.UserFacingArtifactKindLabel(string(decision.Meta.Kind))
-		return fmt.Errorf("FPF guardrail: active decision %q is a %s, not a decision. Repair the cycle before baselining/measuring.",
+		return fmt.Errorf("fpf guardrail: active decision %q is a %s, not a decision; repair the cycle before baselining/measuring",
 			cycle.DecisionRef, kindLabel)
 	}
 	if cycle.ProblemRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.ProblemRef) {
-		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active problem %q. Repair the cycle before baselining/measuring.",
+		return fmt.Errorf("fpf guardrail: active decision %q is not based on the active problem %q; repair the cycle before baselining/measuring",
 			cycle.DecisionRef, cycle.ProblemRef)
 	}
 	if cycle.PortfolioRef != "" && !hasBasedOnLink(decision.Meta.Links, cycle.PortfolioRef) {
-		return fmt.Errorf("FPF guardrail: active decision %q is not based on the active portfolio %q. Repair the cycle before baselining/measuring.",
+		return fmt.Errorf("fpf guardrail: active decision %q is not based on the active portfolio %q; repair the cycle before baselining/measuring",
 			cycle.DecisionRef, cycle.PortfolioRef)
 	}
 
@@ -747,16 +748,16 @@ func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore
 
 	portfolio, err := store.Get(ctx, cycle.ComparedPortfolioRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: unable to load compared portfolio %q for selection verification: %w", cycle.ComparedPortfolioRef, err)
+		return fmt.Errorf("fpf guardrail: unable to load compared portfolio %q for selection verification: %w", cycle.ComparedPortfolioRef, err)
 	}
 
 	variant, ok, err := selectedVariant(portfolio, cycle.SelectedVariantRef)
 	if err != nil {
-		return fmt.Errorf("FPF guardrail: unable to validate the human-selected variant in compared portfolio %q: %w",
+		return fmt.Errorf("fpf guardrail: unable to validate the human-selected variant in compared portfolio %q: %w",
 			cycle.ComparedPortfolioRef, err)
 	}
 	if !ok {
-		return fmt.Errorf("FPF guardrail: stored user selection %q is not present in compared portfolio %q. Re-run compare and restate the human choice.",
+		return fmt.Errorf("fpf guardrail: stored user selection %q is not present in compared portfolio %q; re-run compare and restate the human choice",
 			cycle.SelectedVariantRef, cycle.ComparedPortfolioRef)
 	}
 
@@ -764,7 +765,7 @@ func validateDecisionSelection(ctx context.Context, store artifact.ArtifactStore
 		return nil
 	}
 
-	return fmt.Errorf("FPF guardrail: decide selected_title %q does not match the human-selected variant %q (%s). Record the variant the human chose or ask them to restate their choice.",
+	return fmt.Errorf("fpf guardrail: decide selected_title %q does not match the human-selected variant %q (%s); record the variant the human chose or ask them to restate their choice",
 		selectedTitle, variant.Key, variant.Label)
 }
 

@@ -203,7 +203,7 @@ func (m *Manager) runBash(ctx context.Context, task *Task) {
 	if err != nil {
 		if taskCtx.Err() != nil {
 			task.State = StateKilled
-			task.Error = "cancelled"
+			task.Error = "canceled"
 		} else {
 			task.State = StateFailed
 			task.Error = err.Error()

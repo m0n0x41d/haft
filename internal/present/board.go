@@ -24,26 +24,40 @@ const (
 	white  = "\033[37m"
 )
 
-func c(color, text string) string    { return color + text + reset }
-func bc(color, text string) string   { return bold + color + text + reset }
+func c(color, text string) string  { return color + text + reset }
+func bc(color, text string) string { return bold + color + text + reset }
 func reffC(r float64) string {
-	if r >= 0.7 { return green }
-	if r >= 0.3 { return yellow }
+	if r >= 0.7 {
+		return green
+	}
+	if r >= 0.3 {
+		return yellow
+	}
 	return red
 }
 func bar(filled, total, width int) string {
-	if total == 0 { return strings.Repeat("░", width) }
+	if total == 0 {
+		return strings.Repeat("░", width)
+	}
 	w := filled * width / total
-	if w > width { w = width }
+	if w > width {
+		w = width
+	}
 	return c(green, strings.Repeat("█", w)) + c(dim, strings.Repeat("░", width-w))
 }
 func pad(s string, w int) string {
-	if len(s) >= w { return s[:w] }
+	if len(s) >= w {
+		return s[:w]
+	}
 	return s + strings.Repeat(" ", w-len(s))
 }
 func trunc(s string, w int) string {
-	if len(s) <= w { return s }
-	if w <= 3 { return s[:w] }
+	if len(s) <= w {
+		return s
+	}
+	if w <= 3 {
+		return s[:w]
+	}
 	return s[:w-3] + "..."
 }
 func sep(w int) string { return c(dim, strings.Repeat("─", w)) + "\n" }
@@ -55,7 +69,9 @@ func sep(w int) string { return c(dim, strings.Repeat("─", w)) + "\n" }
 func BoardOverview(d *ui.BoardData) string { return BoardOverviewW(d, 0) }
 
 func BoardOverviewW(d *ui.BoardData, width int) string {
-	if width <= 0 { width = 100 }
+	if width <= 0 {
+		width = 100
+	}
 	var sb strings.Builder
 
 	// Header
@@ -114,9 +130,13 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 		sb.WriteString(bc(white, " EXPIRING SOON") + "\n")
 		for _, item := range d.ExpiringSoon {
 			icon := c(yellow, "⚠")
-			if item.ExpiresIn <= 7 { icon = c(red, "⚠") }
+			if item.ExpiresIn <= 7 {
+				icon = c(red, "⚠")
+			}
 			titleW := width - 40
-			if titleW < 20 { titleW = 20 }
+			if titleW < 20 {
+				titleW = 20
+			}
 			sb.WriteString(fmt.Sprintf(" %s  %-24s %-*s  %s\n",
 				icon, item.ID, titleW, trunc(item.Title, titleW),
 				c(dim, fmt.Sprintf("in %dd", item.ExpiresIn))))
@@ -128,12 +148,18 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 	if len(d.StaleItems) > 0 {
 		sb.WriteString(bc(white, fmt.Sprintf(" STALE ITEMS (%d)", len(d.StaleItems))) + "\n")
 		shown := d.StaleItems
-		if len(shown) > 5 { shown = shown[:5] }
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
 		for _, item := range shown {
 			icon := c(yellow, "⚠")
-			if item.DaysStale > 30 { icon = c(red, "⚠") }
+			if item.DaysStale > 30 {
+				icon = c(red, "⚠")
+			}
 			reasonW := width - 46
-			if reasonW < 10 { reasonW = 10 }
+			if reasonW < 10 {
+				reasonW = 10
+			}
 			sb.WriteString(fmt.Sprintf(" %s  %-24s  %s  %s\n",
 				icon, item.ID,
 				c(dim, fmt.Sprintf("%3dd", item.DaysStale)),
@@ -155,10 +181,16 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 			leftLines = append(leftLines, bc(white, "BY CONTEXT"))
 			groups := sortedContextGroups(d.ContextGroups)
 			maxC := 0
-			for _, g := range groups { if g.count > maxC { maxC = g.count } }
+			for _, g := range groups {
+				if g.count > maxC {
+					maxC = g.count
+				}
+			}
 			for _, g := range groups {
 				barW := g.count * 12 / max(maxC, 1)
-				if barW < 1 { barW = 1 }
+				if barW < 1 {
+					barW = 1
+				}
 				leftLines = append(leftLines, fmt.Sprintf("  %-16s %s %d", trunc(g.name, 16), c(cyan, strings.Repeat("█", barW)), g.count))
 			}
 		}
@@ -168,7 +200,9 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 		if len(d.RecentActivity) > 0 {
 			rightLines = append(rightLines, bc(white, "ACTIVITY (7d)"))
 			kindCounts := map[string]int{}
-			for _, a := range d.RecentActivity { kindCounts[a.Kind]++ }
+			for _, a := range d.RecentActivity {
+				kindCounts[a.Kind]++
+			}
 			for _, kind := range []string{"DecisionRecord", "ProblemCard", "SolutionPortfolio", "Note"} {
 				if cnt, ok := kindCounts[kind]; ok {
 					label := strings.TrimSuffix(strings.TrimSuffix(kind, "Record"), "Card")
@@ -179,12 +213,18 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 
 		// Merge columns
 		maxLines := len(leftLines)
-		if len(rightLines) > maxLines { maxLines = len(rightLines) }
+		if len(rightLines) > maxLines {
+			maxLines = len(rightLines)
+		}
 		for i := 0; i < maxLines; i++ {
 			left := ""
-			if i < len(leftLines) { left = leftLines[i] }
+			if i < len(leftLines) {
+				left = leftLines[i]
+			}
 			right := ""
-			if i < len(rightLines) { right = rightLines[i] }
+			if i < len(rightLines) {
+				right = rightLines[i]
+			}
 			sb.WriteString(fmt.Sprintf(" %-*s  %s\n", half-2, left, right))
 		}
 		sb.WriteString("\n")
@@ -207,7 +247,9 @@ func BoardOverviewW(d *ui.BoardData, width int) string {
 func BoardDecisions(d *ui.BoardData) string { return BoardDecisionsW(d, 0) }
 
 func BoardDecisionsW(d *ui.BoardData, width int) string {
-	if width <= 0 { width = 100 }
+	if width <= 0 {
+		width = 100
+	}
 	var sb strings.Builder
 
 	sb.WriteString(bc(cyan, "DECISIONS"))
@@ -225,7 +267,9 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 	ctxW := 16
 	fixedW := 24 + ctxW + validW
 	titleW := width - fixedW
-	if titleW < 20 { titleW = 20 }
+	if titleW < 20 {
+		titleW = 20
+	}
 
 	sb.WriteString(fmt.Sprintf(" %s %s  %s  %s  %s %s\n",
 		c(dim, pad("St", 2)), c(dim, pad("R_eff", 6)), c(dim, pad("Drift", 7)),
@@ -239,7 +283,9 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 		drift := d.DecisionDrift[dec.Meta.ID]
 
 		stIcon := c(yellow, "..") // pending
-		if shipped { stIcon = c(green, "OK") }
+		if shipped {
+			stIcon = c(green, "OK")
+		}
 
 		rEffP := "  —  "
 		rEffCol := dim
@@ -251,12 +297,18 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 		driftP := "no bl"
 		driftCol := dim
 		switch drift {
-		case "clean": driftP = "clean"; driftCol = green
-		case "drift": driftP = "DRIFT"; driftCol = red
+		case "clean":
+			driftP = "clean"
+			driftCol = green
+		case "drift":
+			driftP = "DRIFT"
+			driftCol = red
 		}
 
 		ctx := dec.Meta.Context
-		if ctx == "" { ctx = "—" }
+		if ctx == "" {
+			ctx = "—"
+		}
 
 		validPlain := "—"
 		if dec.Meta.ValidUntil != "" {
@@ -282,7 +334,9 @@ func BoardDecisionsW(d *ui.BoardData, width int) string {
 func BoardProblems(d *ui.BoardData) string { return BoardProblemsW(d, 0) }
 
 func BoardProblemsW(d *ui.BoardData, width int) string {
-	if width <= 0 { width = 100 }
+	if width <= 0 {
+		width = 100
+	}
 	var sb strings.Builder
 
 	total := len(d.BacklogProblems) + len(d.InProgressProblems) + d.AddressedCount
@@ -304,7 +358,9 @@ func BoardProblemsW(d *ui.BoardData, width int) string {
 	modeW := 8
 	fixedW := 9 + 2 + 22 + 2 + 2 + modeW
 	titleW := width - fixedW
-	if titleW < 20 { titleW = 20 }
+	if titleW < 20 {
+		titleW = 20
+	}
 
 	sb.WriteString(fmt.Sprintf(" %s  %s  %s  %s\n",
 		c(dim, pad("Status", 9)), c(dim, pad("ID", 22)),
@@ -341,7 +397,9 @@ func BoardProblemsW(d *ui.BoardData, width int) string {
 func BoardCoverage(d *ui.BoardData) string { return BoardCoverageW(d, 0) }
 
 func BoardCoverageW(d *ui.BoardData, width int) string {
-	if width <= 0 { width = 100 }
+	if width <= 0 {
+		width = 100
+	}
 	var sb strings.Builder
 
 	sb.WriteString(bc(cyan, "MODULE COVERAGE"))
@@ -355,7 +413,9 @@ func BoardCoverageW(d *ui.BoardData, width int) string {
 	governed := cr.CoveredCount + cr.PartialCount
 	pct := governed * 100 / cr.TotalModules
 	barW := width - 30
-	if barW < 20 { barW = 20 }
+	if barW < 20 {
+		barW = 20
+	}
 
 	sb.WriteString(fmt.Sprintf("  %d%% (%d/%d)  %s covered  %s partial  %s blind\n",
 		pct, governed, cr.TotalModules,
@@ -366,7 +426,9 @@ func BoardCoverageW(d *ui.BoardData, width int) string {
 	sb.WriteString(sep(width))
 
 	pathW := width - 30
-	if pathW < 20 { pathW = 20 }
+	if pathW < 20 {
+		pathW = 20
+	}
 
 	sb.WriteString(fmt.Sprintf(" %s  %s  %s  %s\n",
 		c(dim, "  "),
@@ -403,7 +465,9 @@ func BoardCoverageW(d *ui.BoardData, width int) string {
 func BoardEvidence(d *ui.BoardData) string { return BoardEvidenceW(d, 0) }
 
 func BoardEvidenceW(d *ui.BoardData, width int) string {
-	if width <= 0 { width = 100 }
+	if width <= 0 {
+		width = 100
+	}
 	var sb strings.Builder
 
 	sb.WriteString(bc(cyan, "EVIDENCE & REFRESH") + "\n" + sep(width) + "\n")
@@ -434,10 +498,18 @@ func BoardEvidenceW(d *ui.BoardData, width int) string {
 	}
 
 	maxLines := len(leftLines)
-	if len(rightLines) > maxLines { maxLines = len(rightLines) }
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
+	}
 	for i := 0; i < maxLines; i++ {
-		l := ""; if i < len(leftLines) { l = leftLines[i] }
-		ri := ""; if i < len(rightLines) { ri = rightLines[i] }
+		l := ""
+		if i < len(leftLines) {
+			l = leftLines[i]
+		}
+		ri := ""
+		if i < len(rightLines) {
+			ri = rightLines[i]
+		}
 		sb.WriteString(fmt.Sprintf(" %-*s  %s\n", half-2, l, ri))
 	}
 	sb.WriteString("\n")
@@ -448,11 +520,15 @@ func BoardEvidenceW(d *ui.BoardData, width int) string {
 		sb.WriteString(sep(width))
 
 		reasonW := width - 40
-		if reasonW < 20 { reasonW = 20 }
+		if reasonW < 20 {
+			reasonW = 20
+		}
 
 		for _, item := range d.StaleItems {
 			icon := c(yellow, "⚠")
-			if item.DaysStale > 30 { icon = c(red, "⚠") }
+			if item.DaysStale > 30 {
+				icon = c(red, "⚠")
+			}
 			sb.WriteString(fmt.Sprintf(" %s  %-24s  %s  %s\n",
 				icon, item.ID,
 				c(dim, fmt.Sprintf("%3dd", item.DaysStale)),
@@ -510,32 +586,47 @@ func trustCounts(d *ui.BoardData) (green, amber, red, bare int) {
 	for _, dec := range d.Decisions {
 		r := d.DecisionREff[dec.Meta.ID]
 		switch {
-		case r == 0: bare++
-		case r >= 0.7: green++
-		case r >= 0.3: amber++
-		default: red++
+		case r == 0:
+			bare++
+		case r >= 0.7:
+			green++
+		case r >= 0.3:
+			amber++
+		default:
+			red++
 		}
 	}
 	return
 }
 
 func depthBar(count, total, width int) string {
-	if total == 0 { return strings.Repeat("░", width) }
+	if total == 0 {
+		return strings.Repeat("░", width)
+	}
 	w := count * width / total
-	if w < 1 && count > 0 { w = 1 }
+	if w < 1 && count > 0 {
+		w = 1
+	}
 	return c(cyan, strings.Repeat("█", w)) + strings.Repeat(" ", width-w)
 }
 
 func expiredLabel(n int) string {
-	if n == 0 { return c(green, "0 expired") }
+	if n == 0 {
+		return c(green, "0 expired")
+	}
 	return c(red, fmt.Sprintf("%d expired ⚠", n))
 }
 
-type contextGroup struct { name string; count int }
+type contextGroup struct {
+	name  string
+	count int
+}
 
 func sortedContextGroups(groups map[string]int) []contextGroup {
 	result := make([]contextGroup, 0, len(groups))
-	for name, count := range groups { result = append(result, contextGroup{name, count}) }
+	for name, count := range groups {
+		result = append(result, contextGroup{name, count})
+	}
 	sort.Slice(result, func(i, j int) bool { return result[i].count > result[j].count })
 	return result
 }

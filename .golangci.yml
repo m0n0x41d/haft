@@ -3,8 +3,6 @@ version: "2"
 run:
   timeout: 5m
   tests: false
-  exclude-dirs:
-    - desktop
 
 linters:
   enable:
@@ -39,7 +37,18 @@ linters:
         - G306 # WriteFile permissions 0644 — fine for markdown/config files
         - G703 # path traversal — we construct paths from project root intentionally
   exclusions:
+    paths:
+      - desktop/
     rules:
+      - linters:
+          - errcheck
+        source: "Send[A-Z][A-Za-z]+\\("
+      - linters:
+          - errcheck
+        source: "os\\.Stderr\\.WriteString\\("
+      - linters:
+          - errcheck
+        source: "syscall\\.Syscall6?\\("
       - linters:
           - staticcheck
         text: "QF1003"

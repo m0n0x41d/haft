@@ -20,16 +20,15 @@ import (
 	"github.com/m0n0x41d/haft/internal/hooks"
 	"github.com/m0n0x41d/haft/internal/jsonrpc"
 	"github.com/m0n0x41d/haft/internal/lsp"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/protocol"
 	"github.com/m0n0x41d/haft/internal/provider"
 	"github.com/m0n0x41d/haft/internal/session"
 	"github.com/m0n0x41d/haft/internal/tasks"
-	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/tools"
 	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
-
 )
 
 var agentModel string
@@ -188,7 +187,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		for n, s := range states {
 			servers[n] = s.String()
 		}
-		bus.SendLSPUpdate(protocol.LSPUpdate{
+		_ = bus.SendLSPUpdate(protocol.LSPUpdate{
 			Servers:  servers,
 			Errors:   counts.Error,
 			Warnings: counts.Warning,

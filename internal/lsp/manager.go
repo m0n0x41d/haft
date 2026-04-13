@@ -21,7 +21,7 @@ type Manager struct {
 	configs     []ServerConfig
 	clients     map[string]*Client // key: server name
 	clientsMu   sync.RWMutex
-	unavailable map[string]bool    // servers that failed to start — don't retry
+	unavailable map[string]bool // servers that failed to start — don't retry
 	callback    func(name string, state ServerState, counts DiagnosticCounts)
 }
 
@@ -350,9 +350,9 @@ func DefaultConfigs() []ServerConfig {
 		},
 		// C#
 		{
-			Name:    "omnisharp",
-			Command: "OmniSharp",
-			Args:    []string{"--languageserver"},
+			Name:        "omnisharp",
+			Command:     "OmniSharp",
+			Args:        []string{"--languageserver"},
 			FileTypes:   []string{".cs"},
 			RootMarkers: []string{"*.sln", "*.csproj"},
 		},

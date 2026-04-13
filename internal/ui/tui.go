@@ -22,9 +22,9 @@ var ViewNames = [5]string{"Overview", "Decisions", "Problems", "Coverage", "Evid
 // refresh() reloads data (called on 'r' and auto-timer).
 func RunInteractive(renderView ViewRenderer, refresh func() error) error {
 	// Enter alt-screen + hide cursor
-	os.Stderr.WriteString("\x1b[?1049h\x1b[?25l")
+	_, _ = os.Stderr.WriteString("\x1b[?1049h\x1b[?25l")
 	defer func() {
-		os.Stderr.WriteString("\x1b[?25h\x1b[?1049l")
+		_, _ = os.Stderr.WriteString("\x1b[?25h\x1b[?1049l")
 	}()
 
 	// Open /dev/tty for direct keyboard input (works even when stdin is piped)
@@ -81,7 +81,7 @@ func RunInteractive(renderView ViewRenderer, refresh func() error) error {
 		footer := " \x1b[2m1-5 switch · \u2190\u2192 navigate · r refresh · q/Esc close\x1b[0m"
 		frame.WriteString(fmt.Sprintf("\x1b[%d;1H%s", h, footer))
 
-		os.Stderr.WriteString(frame.String())
+		_, _ = os.Stderr.WriteString(frame.String())
 	}
 
 	render()

@@ -12,11 +12,11 @@ type ReadinessReport struct {
 	PortfolioID       string   `json:"portfolio_id"`
 	VariantCount      int      `json:"variant_count"`
 	DimensionCount    int      `json:"dimension_count"`
-	ScoreCoverage     float64  `json:"score_coverage"`     // 0-1: fraction of cells filled
-	ConstraintCount   int      `json:"constraint_count"`   // dimensions with role=constraint
-	MissingScores     []string `json:"missing_scores"`     // "Variant X / Dimension Y"
+	ScoreCoverage     float64  `json:"score_coverage"`   // 0-1: fraction of cells filled
+	ConstraintCount   int      `json:"constraint_count"` // dimensions with role=constraint
+	MissingScores     []string `json:"missing_scores"`   // "Variant X / Dimension Y"
 	HasParity         bool     `json:"has_parity"`
-	Recommendation    string   `json:"recommendation"`     // commit, probe, widen, reroute
+	Recommendation    string   `json:"recommendation"` // commit, probe, widen, reroute
 	RecommendationWhy string   `json:"recommendation_why"`
 	Warnings          []string `json:"warnings"`
 }
@@ -47,7 +47,7 @@ func AssessReadiness(ctx context.Context, db *sql.DB, portfolioID string) (*Read
 			Title string `json:"title"`
 		} `json:"variants"`
 		Comparison *struct {
-			Dimensions []string                    `json:"dimensions"`
+			Dimensions []string                     `json:"dimensions"`
 			Scores     map[string]map[string]string `json:"scores"`
 		} `json:"comparison"`
 	}

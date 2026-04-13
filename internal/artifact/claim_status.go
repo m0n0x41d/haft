@@ -168,6 +168,7 @@ func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction 
 	return predictions
 }
 
+//nolint:unused // exercised by package tests
 func newDecisionPredictions(inputs []PredictionInput) []DecisionPrediction {
 	return decisionPredictionsFromClaims(newDecisionClaims(inputs))
 }
@@ -176,6 +177,7 @@ func canonicalDecisionClaimID(index int) string {
 	return fmt.Sprintf("claim-%03d", index+1)
 }
 
+//nolint:unused // exercised by package tests
 func normalizeDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
 	return decisionPredictionsFromClaims(decisionClaimsFromPredictions(values))
 }
@@ -532,6 +534,7 @@ func ClaimStatusFromPredictionMeasureMatch(match PredictionMeasureMatch) ClaimSt
 	return ClaimStatusUnverified
 }
 
+//nolint:unused // exercised by package tests
 func adjudicateDecisionClaims(
 	claims []DecisionClaim,
 	measuredClaimRefs []string,

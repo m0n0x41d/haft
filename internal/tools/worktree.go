@@ -16,7 +16,7 @@ import (
 // WorktreeState tracks the active worktree for the session.
 // Thread-safe — tools may be called from subagent goroutines.
 type WorktreeState struct {
-	mu          sync.Mutex
+	mu           sync.Mutex
 	worktreePath string
 	branchName   string
 	originalDir  string
@@ -125,7 +125,7 @@ func (t *ExitWorktreeTool) Name() string { return "exit_worktree" }
 
 func (t *ExitWorktreeTool) Schema() agent.ToolSchema {
 	return agent.ToolSchema{
-		Name: "exit_worktree",
+		Name:        "exit_worktree",
 		Description: `Exit the current git worktree and return to the main working directory. The worktree branch is preserved (not deleted). The worktree directory is removed.`,
 		Parameters: map[string]any{
 			"type":       "object",

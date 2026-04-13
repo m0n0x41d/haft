@@ -2,6 +2,7 @@ package cli
 
 import "github.com/m0n0x41d/haft/internal/present"
 
+//nolint:unused // exercised by package tests
 func formatCLIFPFSearch(results []present.FPFSearchResult) string {
 	return formatCLIFPFSearchWithExplain(results, false)
 }
@@ -12,6 +13,7 @@ func formatCLIFPFSearchWithExplain(results []present.FPFSearchResult, explain bo
 	return present.FormatFPFSearch(results, options)
 }
 
+//nolint:unused // exercised by package tests
 func formatMCPFPFSearch(results []present.FPFSearchResult) string {
 	return formatMCPFPFSearchWithExplain(results, false)
 }
@@ -22,6 +24,7 @@ func formatMCPFPFSearchWithExplain(results []present.FPFSearchResult, explain bo
 	return present.FormatFPFSearch(results, options)
 }
 
+//nolint:unused // exercised by package tests
 func formatAgentFPFSearch(query string, results []present.FPFSearchResult) string {
 	return formatAgentFPFSearchWithExplain(query, results, false)
 }

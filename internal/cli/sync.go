@@ -41,17 +41,17 @@ func init() {
 
 // frontmatter represents the YAML frontmatter of a .haft/*.md file.
 type frontmatter struct {
-	ID        string    `yaml:"id"`
-	Kind      string    `yaml:"kind"`
-	Version   int       `yaml:"version"`
-	Status    string    `yaml:"status"`
-	Title     string    `yaml:"title"`
-	Mode      string    `yaml:"mode"`
-	Context   string    `yaml:"context"`
-	ValidUntil string  `yaml:"valid_until"`
-	CreatedAt time.Time `yaml:"created_at"`
-	UpdatedAt time.Time `yaml:"updated_at"`
-	Links     []struct {
+	ID         string    `yaml:"id"`
+	Kind       string    `yaml:"kind"`
+	Version    int       `yaml:"version"`
+	Status     string    `yaml:"status"`
+	Title      string    `yaml:"title"`
+	Mode       string    `yaml:"mode"`
+	Context    string    `yaml:"context"`
+	ValidUntil string    `yaml:"valid_until"`
+	CreatedAt  time.Time `yaml:"created_at"`
+	UpdatedAt  time.Time `yaml:"updated_at"`
+	Links      []struct {
 		Ref  string `yaml:"ref"`
 		Type string `yaml:"type"`
 	} `yaml:"links"`
@@ -238,8 +238,8 @@ func parseFrontmatter(content string) (frontmatter, string, error) {
 func fixUnquotedYAMLValues(yamlBlock string) string {
 	lines := strings.Split(yamlBlock, "\n")
 	quotableFields := map[string]bool{
-		"title":      true,
-		"context":    true,
+		"title":       true,
+		"context":     true,
 		"valid_until": false, // timestamps with colons are fine in YAML
 	}
 

@@ -88,9 +88,9 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error().Str("component", "agent").Interface("panic", r).Msg("agent.panic")
-			c.Bus.SendError(fmt.Sprintf("coordinator panic: %v", r))
+			_ = c.Bus.SendError(fmt.Sprintf("coordinator panic: %v", r))
 		}
-		c.Bus.SendCoordDone()
+		_ = c.Bus.SendCoordDone()
 	}()
 
 	logger.AgentSession("user_turn", sess.ID, sess.Model)
@@ -119,7 +119,7 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 			c.sendCycleUpdate(cycle)
 		} else {
 			// No active cycle — clear any stale display from previous session
-			c.Bus.SendCycleUpdate(protocol.CycleUpdate{})
+			_ = c.Bus.SendCycleUpdate(protocol.CycleUpdate{})
 		}
 	}
 
@@ -132,17 +132,17 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := c.Messages.Save(ctx, userMsg); err != nil {
-		c.Bus.SendError(fmt.Sprintf("save user message: %s", err))
+		_ = c.Bus.SendError(fmt.Sprintf("save user message: %s", err))
 		return
 	}
 	if err := c.captureDecisionSelection(ctx, sess.ID, userMsg.Text()); err != nil {
-		c.Bus.SendError(fmt.Sprintf("persist decision selection: %s", err))
+		_ = c.Bus.SendError(fmt.Sprintf("persist decision selection: %s", err))
 		return
 	}
 
 	history, err := c.Messages.ListBySession(ctx, sess.ID)
 	if err != nil {
-		c.Bus.SendError(fmt.Sprintf("load history: %s", err))
+		_ = c.Bus.SendError(fmt.Sprintf("load history: %s", err))
 		return
 	}
 	history = sanitizeHistory(history)
@@ -243,7 +243,7 @@ func (c *Coordinator) reactLoop(
 		switch loopLevel {
 		case agent.LoopHard:
 			logger.Warn().Str("component", "agent").Msg("agent.loop_hard_stop")
-			c.Bus.SendError("loop detected: agent is repeating the same tool calls")
+			_ = c.Bus.SendError("loop detected: agent is repeating the same tool calls")
 			return
 		case agent.LoopWarning:
 			// Yellow: inject warning, don't stop. Agent should summarize and ask user.
@@ -274,7 +274,7 @@ func (c *Coordinator) reactLoop(
 		// Token budget
 		if tokenBudget.Exhausted() {
 			logger.Warn().Str("component", "agent").Int("used", tokenBudget.Used).Msg("agent.tokens_exhausted")
-			c.Bus.SendError(fmt.Sprintf("context window exhausted (%d/%d tokens)", tokenBudget.Used, tokenBudget.Limit))
+			_ = c.Bus.SendError(fmt.Sprintf("context window exhausted (%d/%d tokens)", tokenBudget.Used, tokenBudget.Limit))
 			return
 		}
 
@@ -311,7 +311,7 @@ func (c *Coordinator) reactLoop(
 			}
 			if updated {
 				_ = c.Messages.UpdateMessage(ctx, liveAssistant)
-				c.Bus.SendMsgUpdate(msgToUpdate(liveAssistant, true))
+				_ = c.Bus.SendMsgUpdate(msgToUpdate(liveAssistant, true))
 			}
 		})
 		llmCancel()
@@ -324,7 +324,7 @@ func (c *Coordinator) reactLoop(
 						fmt.Sprintf("Tool call interrupted: %s", err.Error()), true, &fullHistory)
 				}
 			}
-			c.Bus.SendError(err.Error())
+			_ = c.Bus.SendError(err.Error())
 			return
 		}
 
@@ -340,11 +340,11 @@ func (c *Coordinator) reactLoop(
 			}
 		}
 		_ = c.Messages.UpdateMessage(ctx, assistantMsg)
-		c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
+		_ = c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
 
 		toolCalls := assistantMsg.ToolCalls()
 		tokenBudget = tokenBudget.Add(assistantMsg.Tokens)
-		c.Bus.SendTokenUpdate(protocol.TokenUpdate{Used: tokenBudget.Used, Limit: tokenBudget.Limit})
+		_ = c.Bus.SendTokenUpdate(protocol.TokenUpdate{Used: tokenBudget.Used, Limit: tokenBudget.Limit})
 
 		// Log LLM response details
 		toolNames := make([]string, len(toolCalls))
@@ -368,7 +368,7 @@ func (c *Coordinator) reactLoop(
 			if !strings.HasPrefix(streamedText, "[thinking]") {
 				assistantMsg.Parts = append([]agent.Part{agent.TextPart{Text: streamedText}}, assistantMsg.Parts...)
 				_ = c.Messages.UpdateMessage(ctx, assistantMsg)
-				c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
+				_ = c.Bus.SendMsgUpdate(msgToUpdate(assistantMsg, false))
 			}
 		}
 
@@ -377,9 +377,9 @@ func (c *Coordinator) reactLoop(
 		hasThinking := liveAssistant != nil && strings.Contains(liveAssistant.Text(), "[thinking]")
 		if !hasText && len(toolCalls) == 0 && !hasThinking {
 			if tokenBudget.NeedsSummarization() {
-				c.Bus.SendError(fmt.Sprintf("context window nearly full (%d/%d tokens). Use /compact to free space", tokenBudget.Used, tokenBudget.Limit))
+				_ = c.Bus.SendError(fmt.Sprintf("context window nearly full (%d/%d tokens). Use /compact to free space", tokenBudget.Used, tokenBudget.Limit))
 			} else {
-				c.Bus.SendError("model returned empty response — try rephrasing or use /compact")
+				_ = c.Bus.SendError("model returned empty response — try rephrasing or use /compact")
 			}
 			return
 		}
@@ -405,7 +405,7 @@ func (c *Coordinator) reactLoop(
 			logger.Warn().Str("component", "agent").
 				Int("budget", maxToolCalls).
 				Msg("agent.tool_budget_exhausted")
-			c.Bus.SendError(fmt.Sprintf(
+			_ = c.Bus.SendError(fmt.Sprintf(
 				"tool call budget exhausted (%d calls)", maxToolCalls))
 			return
 		}
@@ -477,9 +477,9 @@ func (c *Coordinator) executeToolCalls(
 		var blocked []toolCallResult
 		for _, tc := range toolCalls {
 			if tools.PlanModeGuard(c, tc.ToolName) {
-				c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
+				_ = c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 				msg := tools.PlanModeBlockMessage(tc.ToolName)
-				c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: msg, IsError: true})
+				_ = c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: msg, IsError: true})
 				blocked = append(blocked, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: msg, isError: true})
 			} else {
 				allowed = append(allowed, tc)
@@ -527,12 +527,12 @@ func (c *Coordinator) executeToolCallsParallel(
 	// Send start events: non-agent tools first, then spawn_agent
 	for _, tc := range toolCalls {
 		if tc.ToolName != "spawn_agent" {
-			c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
+			_ = c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 		}
 	}
 	for _, tc := range toolCalls {
 		if tc.ToolName == "spawn_agent" {
-			c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
+			_ = c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 		}
 	}
 
@@ -556,7 +556,7 @@ func (c *Coordinator) executeToolCallsParallel(
 
 			output = truncateToolOutput(output)
 			results[idx] = toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: toolResult.Meta}
-			c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
+			_ = c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
 		}(i, tc)
 	}
 	wg.Wait()
@@ -581,7 +581,7 @@ func (c *Coordinator) executeToolCallsSequential(
 			break
 		}
 
-		c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
+		_ = c.Bus.SendToolStart(protocol.ToolStart{CallID: tc.ToolCallID, Name: tc.ToolName, Args: tc.Arguments})
 
 		var output string
 		var isError bool
@@ -640,7 +640,7 @@ func (c *Coordinator) executeToolCallsSequential(
 		}
 
 		output = truncateToolOutput(output)
-		c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
+		_ = c.Bus.SendToolDone(protocol.ToolDone{CallID: tc.ToolCallID, Name: tc.ToolName, Output: output, IsError: isError})
 		c.saveToolResult(ctx, sess, tc.ToolCallID, tc.ToolName, output, isError, fullHistory)
 		results = append(results, toolCallResult{toolName: tc.ToolName, args: tc.Arguments, output: output, isError: isError, meta: meta})
 	}
@@ -914,7 +914,7 @@ func (c *Coordinator) sendCycleUpdate(cycle *agent.Cycle) {
 		}
 	}
 
-	c.Bus.SendCycleUpdate(protocol.CycleUpdate{
+	_ = c.Bus.SendCycleUpdate(protocol.CycleUpdate{
 		CycleID:      cycle.ID,
 		ProblemRef:   cycle.ProblemRef,
 		ProblemTitle: problemTitle,
@@ -1437,7 +1437,7 @@ func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {
 
 	sess.Title = title
 	_ = c.Sessions.Update(context.Background(), sess)
-	c.Bus.SendSessionTitle(protocol.SessionTitle{Title: title})
+	_ = c.Bus.SendSessionTitle(protocol.SessionTitle{Title: title})
 }
 
 // sanitizeHistory ensures every tool call has a matching tool result.

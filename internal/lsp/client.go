@@ -30,7 +30,7 @@ type Client struct {
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
 
-	state  ServerState
+	state   ServerState
 	stateMu sync.RWMutex
 
 	nextID atomic.Int64
@@ -243,7 +243,7 @@ func (c *Client) NotifyChange(ctx context.Context, path string) error {
 	c.openFilesMu.Unlock()
 
 	c.notify("textDocument/didChange", didChangeParams{
-		TextDocument: versionedTextDocID{URI: uri, Version: ver},
+		TextDocument:   versionedTextDocID{URI: uri, Version: ver},
 		ContentChanges: []contentChange{{Text: string(content)}},
 	})
 	return nil

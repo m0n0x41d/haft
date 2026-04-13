@@ -652,10 +652,10 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 	}
 	columns = append(columns, "valid_until")
 
-	query := fmt.Sprintf(
-		"SELECT %s FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC",
-		strings.Join(columns, ", "),
-	)
+	//nolint:gosec // column names come from the internal allowlist assembled above
+	query := "SELECT " +
+		strings.Join(columns, ", ") +
+		" FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC"
 
 	rows, err := s.db.QueryContext(ctx, query, artifactRef)
 	if err != nil {

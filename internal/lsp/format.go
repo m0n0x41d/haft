@@ -180,7 +180,7 @@ func CountDiagnostics(diags []Diagnostic) DiagnosticCounts {
 func ConvertRawDiag(uri string, raw rawDiag) Diagnostic {
 	d := Diagnostic{
 		File:     URIToFile(uri),
-		Line:     raw.Range.Start.Line + 1,     // 0-based → 1-based
+		Line:     raw.Range.Start.Line + 1,      // 0-based → 1-based
 		Col:      raw.Range.Start.Character + 1, // 0-based → 1-based
 		Severity: DiagnosticSeverity(raw.Severity),
 		Source:   raw.Source,

@@ -316,6 +316,7 @@ func loadSemanticDocuments(db *sql.DB) ([]semanticDocument, error) {
 	return documents, rows.Err()
 }
 
+//nolint:unused // exercised by package tests
 func loadSemanticRoutes(db *sql.DB) ([]Route, error) {
 	rows, err := db.Query(`SELECT route_id, title, description, matchers_json, core_json, chain_json FROM routes ORDER BY route_id`)
 	if err != nil {

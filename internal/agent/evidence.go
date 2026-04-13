@@ -33,7 +33,7 @@ const (
 
 	// Observations — shown in status, NOT in R_eff
 	ObservationTestPass   EvidenceType = "obs_test_pass"   // bash(test) passed
-	ObservationLintPass   EvidenceType = "obs_lint_pass"   // bash(lint/vet) clean
+	ObservationLintPass   EvidenceType = "obs_lint_pass"   //nolint:gosec // evidence label, not a credential
 	ObservationFileReview EvidenceType = "obs_file_review" // read affected file
 	ObservationExternal   EvidenceType = "obs_external"    // fetch used for reference
 	ObservationNoVerify   EvidenceType = "obs_no_verify"   // no tests, no lint

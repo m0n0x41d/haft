@@ -6,12 +6,12 @@ import "encoding/json"
 
 // Message is the wire format. Exactly one of Method/Result/Error is set.
 type Message struct {
-	JSONRPC string           `json:"jsonrpc"`
-	Method  string           `json:"method,omitempty"`
-	Params  json.RawMessage  `json:"params,omitempty"`
-	Result  json.RawMessage  `json:"result,omitempty"`
-	Error   *ErrorObj        `json:"error,omitempty"`
-	ID      *int             `json:"id,omitempty"`
+	JSONRPC string          `json:"jsonrpc"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *ErrorObj       `json:"error,omitempty"`
+	ID      *int            `json:"id,omitempty"`
 }
 
 // ErrorObj is the JSON-RPC error object.

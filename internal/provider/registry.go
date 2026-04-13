@@ -4,10 +4,11 @@
 // (context window, max output tokens, reasoning support, image support, cost).
 //
 // Architecture:
-//   L0: ModelInfo, ProviderInfo — pure data types
-//   L1: Registry, Lookup, Merge — pure functions on data
-//   L2: FetchRemote, ReadCache, WriteCache — thin I/O boundary
-//   L3: LoadRegistry — orchestration with fallback chain
+//
+//	L0: ModelInfo, ProviderInfo — pure data types
+//	L1: Registry, Lookup, Merge — pure functions on data
+//	L2: FetchRemote, ReadCache, WriteCache — thin I/O boundary
+//	L3: LoadRegistry — orchestration with fallback chain
 //
 // Fallback chain: remote (catwalk.charm.sh) → disk cache → embedded defaults.
 // Remote fetch is best-effort with ETag caching. Never blocks startup on network.
@@ -46,10 +47,10 @@ type ModelInfo struct {
 
 // ProviderInfo describes an LLM provider and its available models.
 type ProviderInfo struct {
-	ID     string      `json:"id"`
-	Name   string      `json:"name"`
-	APIType string     `json:"type,omitempty"` // "openai", "anthropic", "google"
-	Models []ModelInfo `json:"models"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	APIType string      `json:"type,omitempty"` // "openai", "anthropic", "google"
+	Models  []ModelInfo `json:"models"`
 }
 
 // ---------------------------------------------------------------------------
@@ -231,14 +232,14 @@ type catwalkProvider struct {
 }
 
 type catwalkModel struct {
-	ID                string  `json:"id"`
-	Name              string  `json:"name"`
-	ContextWindow     int     `json:"context_window"`
-	DefaultMaxTokens  int     `json:"default_max_tokens"`
-	CanReason         bool    `json:"can_reason"`
-	SupportsImages    bool    `json:"supports_images"`
-	CostPer1MIn       float64 `json:"cost_per_1m_in"`
-	CostPer1MOut      float64 `json:"cost_per_1m_out"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	ContextWindow    int     `json:"context_window"`
+	DefaultMaxTokens int     `json:"default_max_tokens"`
+	CanReason        bool    `json:"can_reason"`
+	SupportsImages   bool    `json:"supports_images"`
+	CostPer1MIn      float64 `json:"cost_per_1m_in"`
+	CostPer1MOut     float64 `json:"cost_per_1m_out"`
 }
 
 func convertCatwalkResponse(raw []catwalkProvider) []ProviderInfo {
@@ -310,10 +311,10 @@ var (
 )
 
 // LoadRegistry builds the model registry using the catwalk fallback chain:
-//   1. Fetch remote (catwalk.charm.sh) with ETag — best-effort, 10s timeout
-//   2. On 304 Not Modified or fetch error → use disk cache
-//   3. Merge remote/cached with embedded defaults (embedded fills gaps)
-//   4. Cache result for next startup
+//  1. Fetch remote (catwalk.charm.sh) with ETag — best-effort, 10s timeout
+//  2. On 304 Not Modified or fetch error → use disk cache
+//  3. Merge remote/cached with embedded defaults (embedded fills gaps)
+//  4. Cache result for next startup
 //
 // Thread-safe, loads exactly once per process.
 func LoadRegistry(cacheDir string) *Registry {

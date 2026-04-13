@@ -1667,9 +1667,7 @@ func cloneVariants(variants []Variant) []Variant {
 
 func cloneDimensions(dimensions []ComparisonDimension) []ComparisonDimension {
 	cloned := make([]ComparisonDimension, 0, len(dimensions))
-	for _, dimension := range dimensions {
-		cloned = append(cloned, dimension)
-	}
+	cloned = append(cloned, dimensions...)
 	return cloned
 }
 

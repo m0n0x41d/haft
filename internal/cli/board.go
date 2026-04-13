@@ -58,7 +58,6 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open DB: %w", err)
 	}
-	defer sqlDB.Close()
 
 	store := artifact.NewStore(sqlDB)
 
@@ -74,14 +73,18 @@ func runBoard(cmd *cobra.Command, _ []string) error {
 	// --check mode: print and exit
 	if checkMode {
 		fmt.Print(present.BoardCheck(data))
+		if closeErr := sqlDB.Close(); closeErr != nil {
+			return fmt.Errorf("close DB: %w", closeErr)
+		}
 		if data.CriticalCount > 0 {
 			os.Exit(1)
 		}
 		return nil
 	}
+	defer sqlDB.Close()
 
 	// Interactive mode: full-screen TUI
-	var currentData *ui.BoardData = data
+	currentData := data
 
 	renderView := func(viewIndex int, width int) string {
 		switch viewIndex {

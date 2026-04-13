@@ -28,3 +28,4 @@ desktop/desktop
 .zenflow/
 .zenflow/**
 DESIGN.md
+.playwright-mcp/

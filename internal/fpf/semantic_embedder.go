@@ -13,7 +13,7 @@ import (
 
 const (
 	DefaultSemanticEmbeddingProvider   = "openai"
-	DefaultSemanticEmbeddingModel      = string(openai.EmbeddingModelTextEmbedding3Small)
+	DefaultSemanticEmbeddingModel      = "text-embedding-3-small"
 	DefaultSemanticEmbeddingDimensions = 256
 	defaultSemanticEmbeddingBatchSize  = 64
 )
@@ -129,7 +129,7 @@ func (client openAIEmbeddingClientAdapter) CreateEmbeddings(
 		Input: openai.EmbeddingNewParamsInputUnion{
 			OfArrayOfStrings: texts,
 		},
-		Model:          openai.EmbeddingModel(model),
+		Model:          model,
 		Dimensions:     openai.Int(int64(dimensions)),
 		EncodingFormat: openai.EmbeddingNewParamsEncodingFormatFloat,
 	})

@@ -18,10 +18,10 @@ import (
 type SkillDef struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
-	Trigger     string   `yaml:"trigger,omitempty"`     // when to auto-invoke (regex on user input)
-	Mode        string   `yaml:"mode,omitempty"`        // "inline" (inject prompt) or "agent" (fork subagent)
-	Model       string   `yaml:"model,omitempty"`       // model override
-	Tools       []string `yaml:"tools,omitempty"`       // tool allowlist (for agent mode)
+	Trigger     string   `yaml:"trigger,omitempty"`      // when to auto-invoke (regex on user input)
+	Mode        string   `yaml:"mode,omitempty"`         // "inline" (inject prompt) or "agent" (fork subagent)
+	Model       string   `yaml:"model,omitempty"`        // model override
+	Tools       []string `yaml:"tools,omitempty"`        // tool allowlist (for agent mode)
 	UserVisible bool     `yaml:"user_visible,omitempty"` // show in /help
 
 	Prompt   string `yaml:"-"` // markdown body (after frontmatter)

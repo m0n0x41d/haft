@@ -26,7 +26,7 @@ type Overseer struct {
 	Interval        time.Duration // check interval (default 5 minutes)
 }
 
-// Run starts the overseer loop. Blocks until ctx is cancelled.
+// Run starts the overseer loop. Blocks until ctx is canceled.
 func (o *Overseer) Run(ctx context.Context) {
 	if o.Interval <= 0 {
 		o.Interval = 5 * time.Minute

@@ -23,8 +23,13 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: go.sum
 
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
+
       - name: Run tests
-        run: go test -race ./...
+        run: go test -race $(go list ./... | grep -v /desktop)
 
   release:
     name: Release

@@ -167,7 +167,7 @@ func (c *Coordinator) SpawnSubagent(
 		Msg("agent.subagent_spawned")
 
 	// Notify TUI
-	c.Bus.SendSubagentStart(protocol.SubagentStart{
+	_ = c.Bus.SendSubagentStart(protocol.SubagentStart{
 		SubagentID:   subagentID,
 		ParentCallID: parentCallID,
 		Name:         def.Name,
@@ -207,7 +207,7 @@ func (c *Coordinator) runSubagent(
 			resultCh <- SubagentResult{ID: subagentID, Error: fmt.Errorf("subagent panic: %v", r)}
 		}
 		c.Subagents.MarkDone(subagentID)
-		c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
+		_ = c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
 	}()
 
 	// Build message history: system + user task
@@ -254,7 +254,7 @@ func (c *Coordinator) runForkSubagent(
 			resultCh <- SubagentResult{ID: subagentID, Error: fmt.Errorf("fork subagent panic: %v", r)}
 		}
 		c.Subagents.MarkDone(subagentID)
-		c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
+		_ = c.Bus.SendSubagentDone(protocol.SubagentDone{SubagentID: subagentID})
 	}()
 
 	// Build history: parent messages + system role injection + task
@@ -338,7 +338,7 @@ func (c *Coordinator) subagentLoop(
 			}
 
 			// Send tagged ToolStartMsg (TUI renders nested under spawn)
-			c.Bus.SendToolStart(protocol.ToolStart{
+			_ = c.Bus.SendToolStart(protocol.ToolStart{
 				CallID:     tc.ToolCallID,
 				Name:       tc.ToolName,
 				Args:       tc.Arguments,
@@ -354,7 +354,7 @@ func (c *Coordinator) subagentLoop(
 				output = output[:maxBytes] + "\n... (truncated)"
 			}
 
-			c.Bus.SendToolDone(protocol.ToolDone{
+			_ = c.Bus.SendToolDone(protocol.ToolDone{
 				CallID:     tc.ToolCallID,
 				Name:       tc.ToolName,
 				Output:     output,
@@ -438,7 +438,7 @@ func (c *Coordinator) WaitSubagents(ctx context.Context, ids []string, timeoutMs
 				summary = result.Error.Error()
 				isError = true
 			}
-			c.Bus.SendSubagentDone(protocol.SubagentDone{
+			_ = c.Bus.SendSubagentDone(protocol.SubagentDone{
 				SubagentID: id,
 				Summary:    summary,
 				IsError:    isError,

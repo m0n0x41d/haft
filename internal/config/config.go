@@ -6,9 +6,10 @@
 // One model is the default; --model flag overrides at runtime.
 //
 // Architecture:
-//   L0: Config, ProviderAuth — pure data types
-//   L1: IsConfigured, GetAuth, ProviderForModel — pure functions
-//   L2: Load, Save — file I/O boundary
+//
+//	L0: Config, ProviderAuth — pure data types
+//	L1: IsConfigured, GetAuth, ProviderForModel — pure functions
+//	L2: Load, Save — file I/O boundary
 package config
 
 import (
@@ -99,15 +100,15 @@ func (c *Config) ConfiguredProviders() []string {
 // Returns empty string if unknown.
 func ProviderForModel(modelID string) string {
 	prefixes := map[string]string{
-		"gpt-":          "openai",
-		"o1":            "openai",
-		"o3":            "openai",
-		"o4":            "openai",
-		"claude-":       "anthropic",
-		"gemini-":       "google",
-		"deepseek-":     "deepseek",
-		"llama-":        "groq",
-		"mistral":       "mistral",
+		"gpt-":      "openai",
+		"o1":        "openai",
+		"o3":        "openai",
+		"o4":        "openai",
+		"claude-":   "anthropic",
+		"gemini-":   "google",
+		"deepseek-": "deepseek",
+		"llama-":    "groq",
+		"mistral":   "mistral",
 	}
 	for prefix, provider := range prefixes {
 		if len(modelID) >= len(prefix) && modelID[:len(prefix)] == prefix {

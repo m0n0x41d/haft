@@ -38,8 +38,8 @@ type Edge struct {
 
 // Invariant is a constraint extracted from a decision record.
 type Invariant struct {
-	Text       string `json:"text"`
-	DecisionID string `json:"decision_id"`
+	Text          string `json:"text"`
+	DecisionID    string `json:"decision_id"`
 	DecisionTitle string `json:"decision_title"`
 }
 

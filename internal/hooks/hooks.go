@@ -23,9 +23,9 @@ type Trigger string
 
 const (
 	TriggerPreTool     Trigger = "pre_tool"     // before tool execution
-	TriggerPostTool    Trigger = "post_tool"     // after tool execution
-	TriggerPreSubmit   Trigger = "pre_submit"    // before user message is sent to LLM
-	TriggerPostSession Trigger = "post_session"  // when session ends
+	TriggerPostTool    Trigger = "post_tool"    // after tool execution
+	TriggerPreSubmit   Trigger = "pre_submit"   // before user message is sent to LLM
+	TriggerPostSession Trigger = "post_session" // when session ends
 )
 
 // HookDef is a single hook definition from config.

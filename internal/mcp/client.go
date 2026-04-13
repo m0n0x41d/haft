@@ -320,7 +320,7 @@ func (s *serverConn) callTool(ctx context.Context, name string, args map[string]
 			texts = append(texts, c.Text)
 		}
 	}
-	return fmt.Sprintf("%s", joinStrings(texts)), nil
+	return joinStrings(texts), nil
 }
 
 func (s *serverConn) listResources(ctx context.Context) ([]Resource, error) {

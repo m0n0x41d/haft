@@ -1,10 +1,11 @@
 // Package lsp provides a minimal LSP client for language server integration.
 //
 // Architecture (func-arch):
-//   L0: types.go   — protocol types, diagnostics, server state (pure data)
-//   L1: format.go  — diagnostic formatting, language detection (pure functions)
-//   L2: client.go  — JSON-RPC 2.0 over stdio (I/O boundary)
-//   L3: manager.go — server lifecycle, lazy startup (orchestration)
+//
+//	L0: types.go   — protocol types, diagnostics, server state (pure data)
+//	L1: format.go  — diagnostic formatting, language detection (pure functions)
+//	L2: client.go  — JSON-RPC 2.0 over stdio (I/O boundary)
+//	L3: manager.go — server lifecycle, lazy startup (orchestration)
 package lsp
 
 // ---------------------------------------------------------------------------
@@ -101,12 +102,12 @@ type Location struct {
 
 // jsonrpcMessage is the wire format for JSON-RPC 2.0.
 type jsonrpcMessage struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      *int        `json:"id,omitempty"`
-	Method  string      `json:"method,omitempty"`
-	Params  any         `json:"params,omitempty"`
-	Result  any         `json:"result,omitempty"`
-	Error   *rpcError   `json:"error,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      *int      `json:"id,omitempty"`
+	Method  string    `json:"method,omitempty"`
+	Params  any       `json:"params,omitempty"`
+	Result  any       `json:"result,omitempty"`
+	Error   *rpcError `json:"error,omitempty"`
 }
 
 type rpcError struct {
@@ -116,14 +117,14 @@ type rpcError struct {
 
 // initializeParams mirrors LSP InitializeParams.
 type initializeParams struct {
-	ProcessID  int          `json:"processId"`
-	RootURI    string       `json:"rootUri"`
+	ProcessID    int        `json:"processId"`
+	RootURI      string     `json:"rootUri"`
 	Capabilities clientCaps `json:"capabilities"`
 	InitOptions  any        `json:"initializationOptions,omitempty"`
 }
 
 type clientCaps struct {
-	TextDocument textDocCaps  `json:"textDocument"`
+	TextDocument textDocCaps   `json:"textDocument"`
 	Workspace    workspaceCaps `json:"workspace,omitempty"`
 }
 
@@ -182,9 +183,9 @@ type textDocID struct {
 
 // referencesParams mirrors textDocument/references params.
 type referencesParams struct {
-	TextDocument textDocID       `json:"textDocument"`
-	Position     position        `json:"position"`
-	Context      referencesCtx   `json:"context"`
+	TextDocument textDocID     `json:"textDocument"`
+	Position     position      `json:"position"`
+	Context      referencesCtx `json:"context"`
 }
 
 type position struct {
@@ -198,17 +199,17 @@ type referencesCtx struct {
 
 // publishDiagnosticsParams is the server→client notification payload.
 type publishDiagnosticsParams struct {
-	URI         string       `json:"uri"`
-	Diagnostics []rawDiag    `json:"diagnostics"`
+	URI         string    `json:"uri"`
+	Diagnostics []rawDiag `json:"diagnostics"`
 }
 
 type rawDiag struct {
 	Range    rawRange `json:"range"`
 	Severity int      `json:"severity"`
-	Code     any      `json:"code,omitempty"`     // string or int
+	Code     any      `json:"code,omitempty"` // string or int
 	Source   string   `json:"source,omitempty"`
 	Message  string   `json:"message"`
-	Tags     []int    `json:"tags,omitempty"`      // 1=unnecessary, 2=deprecated
+	Tags     []int    `json:"tags,omitempty"` // 1=unnecessary, 2=deprecated
 }
 
 type rawRange struct {

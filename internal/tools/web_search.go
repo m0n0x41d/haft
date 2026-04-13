@@ -100,7 +100,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 500))
-		return agent.ToolResult{}, fmt.Errorf("Brave API returned %d: %s", resp.StatusCode, string(body))
+		return agent.ToolResult{}, fmt.Errorf("brave API returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 100_000))

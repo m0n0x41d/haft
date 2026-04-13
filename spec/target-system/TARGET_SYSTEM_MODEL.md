@@ -1,6 +1,8 @@
 # Target System Model — Reading Order
 
 > This is the index. Read documents in order.
+>
+> **Start here if you're an agent:** read [AGENT_CONTRACT.md](../AGENT_CONTRACT.md) first — it tells you what you may edit and what rules apply.
 
 ## Layer 1: Context (10 min)
 

@@ -13,7 +13,7 @@
 | 3 | SolutionPortfolio with variants that have >50% word overlap | Disguised copies are not genuine alternatives. | Diversity check warns at >50%. Not hard-blocked (user may override). |
 | 4 | Comparison without parity declaration | Comparison without same-conditions statement is invalid. | Skill instructions require parity. L2 enforcement planned. |
 | 5 | DecisionRecord with status `active` and no `selected_title` | A decision must have chosen something. | `Decide()` requires selected_title. |
-| 6 | EvidencePack with verdict `supports` and CL0 | Evidence from opposed context cannot support. CL0 penalty (0.9) makes this effectively worthless anyway. | R_eff computation handles this. Schema allows it but effective score is ~0.1. |
+| 6 | EvidencePack with verdict `supports` and CL0 | Evidence from opposed context cannot support — inadmissible, not merely weak. | **Enforced:** reject at ingest or downgrade verdict to `weakens` before storage. CL0+supports must not enter R_eff computation. |
 | 7 | Two active DecisionRecords for the same ProblemCard | One problem → one active decision. Previous must be superseded. | Not currently enforced. **Gap: should be.** |
 | 8 | Note with >70% title word overlap with active DecisionRecord | Note duplicates an existing decision. | `haft_note` rejects at >70% overlap. Warns at 50-70%. |
 | 9 | Artifact with status `addressed` that is not a ProblemCard | Only problems can be "addressed." Other artifacts use superseded/deprecated. | `close` action only on ProblemCard kind. |

@@ -48,38 +48,61 @@ Everything below is built, tested, and being merged to main.
 - Language precision triggers in skill instructions
 - Audience projections: engineer, manager, audit, compare, delegated-agent, change-rationale
 
-## v6.x — Harden (next 30 days)
+## v6.1 — Harden the Contract (days 0-30)
 
-Focus: stability, Core module boundary, test coverage.
+Focus: trust and momentum for existing MCP/CLI users. No new surfaces.
 
+- [ ] Fix remaining P2-P4 bugs from code review
 - [ ] Core packages have zero desktop/ dependencies (clean boundary)
 - [ ] Integration tests for knowledge graph on real project data
 - [ ] Evidence decomposition tests (F/G/R computation)
-- [ ] Document Core API surface (stable vs internal)
-- [ ] Fix remaining P2-P4 bugs from code review
 - [ ] `haft check` CLI command for CI (verify decisions fresh, evidence current)
+- [ ] `.haft/workflow.md` — simple hybrid markdown+structured, injected into agent prompts
 - [ ] Problem type field on ProblemCard (optimization/diagnosis/search/synthesis)
+- [ ] **Decision integrity enforcement (G1/G2/G4):**
+  - [ ] G1: reject duplicate active decisions per problem
+  - [ ] G2: require structured parity plan in standard/deep compare
+  - [ ] G4: warn on subjective comparison dimensions (maintainable, simple, scalable)
+- [ ] Rename/install/docs polish for migration friction
 
-## v7 — Execution Loop (next 60 days)
+## v6.2 — Execution Primitives (days 31-60)
 
-Focus: complete Think→Run→Govern cycle in desktop.
+Focus: desktop starts proving the loop, not just visualizing.
 
-- [ ] Post-execution invariant verification (automatic after task completes)
-- [ ] Auto-baseline after successful verification
-- [ ] "Create PR" from completed task (PR body from linked DecisionRecord)
-- [ ] `.haft/workflow.md` — repo-level instructions injected into every agent prompt
-- [ ] Decision-anchored task: click "Implement" → agent in worktree → verify → PR
-- [ ] Issue intake from Linear/GitHub → ProblemCard conversion
+- [ ] Decision-anchored "Implement" from desktop (spawn agent in worktree with invariants + rationale)
+- [ ] Worktree/branch creation
+- [ ] Automatic post-run invariant verification
+- [ ] Baseline refresh only on successful verification
+- [ ] Persisted verification/governance result linked to decision
 
-## v8 — Governor Loops (next 90 days)
+## v7.0 — Desktop Loop MVP (days 61-90)
 
-Focus: background governance that runs without human attention.
+Focus: one golden path, not a broad feature wave.
 
-- [ ] Stale refresh loop: spawn verification agent for expired decisions
-- [ ] Drift loop: check baselines, verify invariants, auto-update non-breaking
-- [ ] Dependency loop: scan outdated deps, create problem candidates
-- [ ] Research-before-code lane (for tasks with high external knowledge dependency)
-- [ ] Process quality metrics: OwnerIntegrity, CeremonyRatio
+Ship exactly one vertical slice:
+- [ ] **Decision → Implement → Verify → Baseline → PR draft/export**
+- [ ] If verification fails → reopen/create ProblemCard (not straight to PR)
+- [ ] PR output is local-first: draft body + branch compare, not deep provider integration
+
+**NOT in v7:** GitHub/Linear intake, research-before-code, process metrics, autonomous agents.
+
+## v8 — Governor Signals (post day 90)
+
+Focus: detect-only first. Autonomous actuation later.
+
+Phase A (detect-only):
+- [ ] Stale decision detection loop
+- [ ] Drift detection loop
+- [ ] Dependency findings loop
+- [ ] Dashboard alerts and notifications
+
+Phase B (actuation — only after Phase A trust earned):
+- [ ] Spawn verification agent for expired decisions
+- [ ] Auto-update non-breaking drift
+- [ ] Research-before-code lane
+- [ ] Process quality metrics
+
+**Key principle:** do not automate execution until decision quality is enforced, not merely encouraged.
 
 ## Later / Maybe
 

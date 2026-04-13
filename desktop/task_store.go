@@ -68,7 +68,7 @@ func (s *desktopTaskStore) UpsertTask(ctx context.Context, state TaskState) erro
 		state.WorktreePath,
 		boolToInt(state.ReusedWorktree),
 		state.ErrorMessage,
-		state.Output,
+		normalizeTaskOutput(state.Output),
 		state.StartedAt,
 		nullString(state.CompletedAt),
 		nowRFC3339(),
@@ -87,7 +87,7 @@ func (s *desktopTaskStore) UpdateOutput(ctx context.Context, id string, output s
 		`UPDATE desktop_tasks
 		SET output_tail = ?, updated_at = ?
 		WHERE id = ?`,
-		output,
+		normalizeTaskOutput(output),
 		nowRFC3339(),
 		id,
 	)
@@ -205,7 +205,7 @@ func (s *desktopTaskStore) GetTaskOutput(ctx context.Context, id string) (string
 		return "", err
 	}
 
-	return output, nil
+	return normalizeTaskOutput(output), nil
 }
 
 func (s *desktopTaskStore) MarkRunningTasksInterrupted(ctx context.Context, projectPath string) error {
@@ -331,6 +331,7 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 	state.Worktree = worktree == 1
 	state.ReusedWorktree = reusedWorktree == 1
 	state.AutoRun = autoRun == 1
+	state.Output = normalizeTaskOutput(state.Output)
 
 	return state, nil
 }

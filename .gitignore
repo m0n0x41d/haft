@@ -18,6 +18,7 @@ dist/
 build/
 .cache/
 *.log
+coverage.out
 
 .claude/
 .codex/

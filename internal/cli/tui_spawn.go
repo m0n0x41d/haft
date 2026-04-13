@@ -50,14 +50,21 @@ func spawnTUI(projectRoot string) (*exec.Cmd, io.WriteCloser, io.ReadCloser, err
 
 // findTUIEntry locates the TUI entry point.
 // Search order:
-// 1. tui/src/index.tsx in project root (dev mode)
-// 2. ~/.haft/tui/bundle.mjs (embedded extraction)
-// 3. tui/dist/tui.mjs in project root (built)
+// 1. ~/.haft/tui/bundle.mjs (installed bundle)
+// 2. tui/src/index.tsx in the Haft repo (dev mode)
+// 3. tui/dist/tui.mjs in the Haft repo (built)
 func findTUIEntry(projectRoot string) (string, error) {
-	candidates := []string{
-		filepath.Join(projectRoot, "tui", "src", "index.tsx"),
+	expectedPaths := []string{
 		filepath.Join(homeDir(), ".haft", "tui", "bundle.mjs"),
+		filepath.Join(projectRoot, "tui", "src", "index.tsx"),
 		filepath.Join(projectRoot, "tui", "dist", "tui.mjs"),
+	}
+	candidates := []string{
+		expectedPaths[0],
+	}
+
+	if isHaftRepo(projectRoot) {
+		candidates = expectedPaths
 	}
 
 	for _, path := range candidates {
@@ -67,7 +74,17 @@ func findTUIEntry(projectRoot string) (string, error) {
 	}
 
 	return "", fmt.Errorf("TUI not found. Expected at:\n  %s\n  %s\n  %s",
-		candidates[0], candidates[1], candidates[2])
+		expectedPaths[0], expectedPaths[1], expectedPaths[2])
+}
+
+func isHaftRepo(projectRoot string) bool {
+	goModPath := filepath.Join(projectRoot, "go.mod")
+	content, err := os.ReadFile(goModPath)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(content), "module github.com/m0n0x41d/haft")
 }
 
 // findJSRuntime finds bun or node in PATH.

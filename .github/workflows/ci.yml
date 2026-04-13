@@ -38,7 +38,31 @@ jobs:
         run: go test -v -race $(go list ./... | grep -v /desktop)
 
       - name: Collect coverage
-        run: go test -v -coverprofile=coverage.out $(go list ./... | grep -v /desktop)
+        run: |
+          packages=$(go list ./... | grep -v /desktop)
+          profile=coverage.out
+          tmp_profile=$(mktemp)
+          found_test_package=false
+
+          echo 'mode: set' > "$profile"
+
+          while IFS= read -r pkg; do
+            dir=$(go list -f '{{.Dir}}' "$pkg")
+            if ! find "$dir" -maxdepth 1 -name '*_test.go' | grep -q .; then
+              continue
+            fi
+
+            go test -v -coverprofile="$tmp_profile" "$pkg"
+            tail -n +2 "$tmp_profile" >> "$profile"
+            found_test_package=true
+          done <<EOF
+          $packages
+          EOF
+
+          if [ "$found_test_package" = false ]; then
+            echo "no test packages found for coverage collection" >&2
+            exit 1
+          fi
 
       - name: Build binary
         run: go build -o haft -trimpath ./cmd/haft/

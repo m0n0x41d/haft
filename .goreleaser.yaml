@@ -4,8 +4,8 @@ project_name: haft
 
 before:
   hooks:
-    - sh -c "cd desktop/frontend && npm ci && npm run build"
-    - sh -c "cd tui && npm ci && npm run build"
+    - sh -c "cd desktop/frontend && npm install --no-audit --no-fund && npm run build"
+    - sh -c "cd tui && npm install --no-audit --no-fund && npm run build"
 
 builds:
   - id: haft

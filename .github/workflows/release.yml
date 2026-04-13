@@ -52,7 +52,7 @@ jobs:
           - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { runner: macos-latest,     goos: darwin, goarch: arm64 }
-          - { runner: macos-13,         goos: darwin, goarch: amd64 }
+          - { runner: macos-latest,      goos: darwin, goarch: amd64 }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,6 +82,10 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
         run: |
           go build -trimpath \
             -ldflags "-s -w \

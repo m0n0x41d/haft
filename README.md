@@ -14,7 +14,7 @@ Haft is the engineering governor that sits between your intentions and your agen
 
 **Think → Run → Govern.**
 
-Not a coding agent. Not a documentation tool. Not a project manager. The handle between the tool and the hand — the part that turns raw capability into directed engineering work.
+Not a coding agent. Not a documentation tool. The handle between the tool and the hand — the part that turns raw capability into directed engineering work.
 
 ### Two primary surfaces
 
@@ -75,30 +75,6 @@ The binary is the same — only the MCP config and command/prompt installation l
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.
 
 Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
-
-## CI
-
-Use `haft check` anywhere you want a pass/fail signal for governance debt:
-
-```yaml
-# .github/workflows/haft-check.yml
-steps:
-  - uses: actions/checkout@v4
-
-  - name: Install haft
-    run: |
-      curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bash
-      echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-  - name: Check governance debt
-    run: haft check
-```
-
-`haft check` scans stale artifacts, drifted decisions, unassessed decisions, and coverage gaps.
-Exit `0` means the project is clean. Governance findings exit `1`. Command or setup errors also
-fail the job with a non-zero exit code, which keeps CI badges red for both unhealthy and broken states.
-
-Need machine-readable output? Run `haft check --json`.
 
 ---
 
@@ -178,35 +154,30 @@ Features: dashboard with governance findings, problem board, decision detail wit
 ### v6.1 — Harden the Contract (shipped)
 
 Decision quality enforcement before automating execution:
-- `haft check` for CI governance verification
-- `/h-verify` surfaces full governance state (problems, invariants, drift — not just decisions)
+- `haft check` for local governance verification (exit 0 = clean, exit 1 = findings)
+- `/h-verify` surfaces full governance state (problems, invariants, drift)
 - `.haft/workflow.md` — repo-level agent policy, injected into every prompt
 - Problem typing (optimization / diagnosis / search / synthesis)
 - G1/G2/G4 enforcement: one decision per problem, parity warnings, subjective dimension detection
-- CL0+supports rejection, claim-scoped R_eff and evidence supersession
+- Claim-scoped R_eff, evidence supersession, CL0 rejection
 - Deep `/h-onboard` with module-by-module analysis for legacy projects
 
 ### v6.2 — Dashboard + Execution Primitives (next)
 
-The desktop becomes an operator surface, not just a viewer:
-- **Unified Dashboard** — active decisions, governance findings, automations in one view
+The desktop becomes an operator surface:
+- **Unified Dashboard** — decisions, governance findings, automations in one view
 - **Implement** — click a decision, agent spawns in worktree with full reasoning context
-- **Adopt** — governance finding (stale/drifted) → agent thread for interactive resolution
+- **Adopt** — governance finding → agent thread for interactive resolution
 - **Automation triggers** — CI fail, dependency update, scheduled → auto-create ProblemCards
-- **DDR→Task Pipeline** — Implement generates subtasks from decision, runs sequentially with auto-advance
-- **Deep onboard** — `/h-onboard --deep` generates task plan from coverage gaps
+- **DDR→Task Pipeline** — Implement generates subtasks from decision, auto-advance mode
 
 ### v7 — Desktop Loop MVP
 
-One proved cycle: **Decision → Implement → Verify → Baseline → PR draft**. If verification fails → reopen as ProblemCard, not straight to PR. Local-first PR output.
+One proved cycle: **Decision → Implement → Verify → Baseline → PR draft**. Verification failure → reopen as ProblemCard.
 
 ### v8 — Governor Signals
 
-Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation only after trust is earned through detect-only phase.
-
-### Not on the roadmap
-
-Cloud/SaaS. Mobile app. Slack bot. Browser extension. General personal assistant. Competing with Claude Code on code editing. The product is the engineering governor, not another surface.
+Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation after trust is earned.
 
 ---
 

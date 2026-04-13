@@ -352,6 +352,196 @@ func TestDecide_RejectsSelectedVariantAsRejectedAlternative(t *testing.T) {
 	}
 }
 
+func TestDecide_RejectsDuplicateLiveDecisionForProblem(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Event pipeline redesign",
+		Signal: "Current broker drops messages during failover.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("NATS", "cluster tuning", "Lean broker with smaller operational surface."),
+			testVariant("Kafka", "ops overhead", "Mature streaming platform with heavier operations."),
+		},
+		NoSteppingStoneRationale: "Both variants are direct production paths.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  firstPortfolio.Meta.ID,
+		SelectedTitle: "NATS",
+		WhySelected:   "Smaller operational surface wins at the current scale.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("RabbitMQ quorum", "migration risk", "Reuse existing AMQP tooling with a more resilient queue mode."),
+			testVariant("Kafka", "ops overhead", "Mature streaming platform with heavier operations."),
+		},
+		NoSteppingStoneRationale: "Both variants still target the same production decision.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  secondPortfolio.Meta.ID,
+		SelectedTitle: "RabbitMQ quorum",
+		WhySelected:   "It would reduce migration effort.",
+	}))
+	if err == nil {
+		t.Fatal("expected duplicate live decision error")
+	}
+	if !strings.Contains(err.Error(), problem.Meta.ID) {
+		t.Fatalf("expected problem_ref in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), firstDecision.Meta.ID) {
+		t.Fatalf("expected existing decision ref in error, got %v", err)
+	}
+}
+
+func TestDecide_RejectsPortfolioOnlyDecisionWhenProblemAlreadyHasLiveDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Auth token rotation",
+		Signal: "Refresh tokens stay valid after key rotation.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Rotate signing key in place", "cache invalidation", "Smaller code change, but clients may cache the old verifier."),
+			testVariant("Dual-key grace period", "operational complexity", "Accept both keys during the migration window."),
+		},
+		NoSteppingStoneRationale: "Both variants are immediate production candidates.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  firstPortfolio.Meta.ID,
+		SelectedTitle: "Dual-key grace period",
+		WhySelected:   "It avoids breaking active sessions during rotation.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Opaque sessions", "storage growth", "Move token validity to server-side session lookup."),
+			testVariant("Dual-key grace period", "operational complexity", "Keep the current token model with safer rotation."),
+		},
+		NoSteppingStoneRationale: "Both variants remain valid responses to the same problem.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		PortfolioRef:  secondPortfolio.Meta.ID,
+		SelectedTitle: "Opaque sessions",
+		WhySelected:   "It centralizes revocation control.",
+	}))
+	if err == nil {
+		t.Fatal("expected duplicate live decision error for portfolio-only lineage")
+	}
+	if !strings.Contains(err.Error(), problem.Meta.ID) {
+		t.Fatalf("expected derived problem_ref in error, got %v", err)
+	}
+}
+
+func TestDecide_AllowsReplacementAfterSupersede(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Background job queue",
+		Signal: "Queue latency is rising faster than expected.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Single Redis queue", "head-of-line blocking", "Keep the architecture simple and local."),
+			testVariant("Sharded Redis queues", "routing complexity", "Split heavy and light jobs into separate lanes."),
+		},
+		NoSteppingStoneRationale: "Both variants are direct implementation paths.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  firstPortfolio.Meta.ID,
+		SelectedTitle: "Single Redis queue",
+		WhySelected:   "It is enough until job volume proves otherwise.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = SupersedeArtifact(ctx, store, haftDir, firstDecision.Meta.ID, "", "A broader queue redesign replaced the first choice.")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondPortfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Sharded Redis queues", "routing complexity", "Split heavy and light jobs into separate lanes."),
+			testVariant("Postgres-backed queue", "db load", "Reuse existing operational tooling for jobs."),
+		},
+		NoSteppingStoneRationale: "Both variants remain immediate candidates after the supersession.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replacementDecision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		PortfolioRef:  secondPortfolio.Meta.ID,
+		SelectedTitle: "Sharded Redis queues",
+		WhySelected:   "Volume now justifies splitting hot and cold workloads.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacementDecision.Meta.ID == "" {
+		t.Fatal("expected replacement decision to be created")
+	}
+}
+
 func TestApply_ReturnsBody(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

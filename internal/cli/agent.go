@@ -167,8 +167,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	// TUI enables mouse tracking — without disabling echo, the terminal driver
 	// echoes SGR mouse sequences as garbage on screen.
 	// Only touch ECHO flag — leave OPOST, ISIG, ICANON etc. intact.
-	stdinFd := int(os.Stdin.Fd())
-	if restoreEcho, err := disableEcho(stdinFd); err == nil {
+	if restoreEcho, err := disableEcho(os.Stdin.Fd()); err == nil {
 		defer restoreEcho()
 	}
 

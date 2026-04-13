@@ -596,8 +596,8 @@ func ResolveOpenAIAPIKey() (string, error) {
 		return key, nil
 	}
 
-	if auth := loadHaftAuthFile(); auth != nil && auth.APIKey != "" {
-		return auth.APIKey, nil
+	if auth := loadHaftAuthFile(); auth != nil && auth.Key != "" {
+		return auth.Key, nil
 	}
 
 	return "", fmt.Errorf("no OpenAI API key found: set OPENAI_API_KEY or run 'haft login' with an API key")
@@ -630,8 +630,8 @@ func resolveAuth() resolvedAuth {
 				accountID: auth.AccountID,
 			}
 		}
-		if auth.APIKey != "" {
-			return resolvedAuth{key: auth.APIKey, authType: "api_key"}
+		if auth.Key != "" {
+			return resolvedAuth{key: auth.Key, authType: "api_key"}
 		}
 	}
 
@@ -644,7 +644,7 @@ func resolveAuth() resolvedAuth {
 }
 
 type haftAuthFile struct {
-	APIKey       string `json:"api_key,omitempty"`
+	Key          string `json:"api_key,omitempty"`
 	CodexAccess  string `json:"codex_access_token,omitempty"`
 	CodexRefresh string `json:"codex_refresh_token,omitempty"`
 	CodexExpires int64  `json:"codex_expires_at,omitempty"`

@@ -12,10 +12,10 @@ type termState struct {
 	termios syscall.Termios
 }
 
-func makeRaw(fd int) (*termState, error) {
+func makeRaw(fd uintptr) (*termState, error) {
 	var oldState termState
 	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
-	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
+	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, fd,
 		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&oldState.termios)),
 		0, 0, 0); err != 0 {
 		return nil, err
@@ -28,7 +28,7 @@ func makeRaw(fd int) (*termState, error) {
 	newState.Cc[syscall.VTIME] = 0
 
 	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
-	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
+	if _, _, err := syscall.Syscall6(syscall.SYS_IOCTL, fd,
 		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&newState)),
 		0, 0, 0); err != 0 {
 		return nil, err
@@ -37,9 +37,9 @@ func makeRaw(fd int) (*termState, error) {
 	return &oldState, nil
 }
 
-func restore(fd int, state *termState) {
+func restore(fd uintptr, state *termState) {
 	//nolint:gosec // ioctl requires passing the termios pointer to the kernel
-	syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd),
+	syscall.Syscall6(syscall.SYS_IOCTL, fd,
 		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&state.termios)),
 		0, 0, 0)
 }

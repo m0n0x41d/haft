@@ -271,12 +271,12 @@ func showAuthStatus() error {
 			}
 			fmt.Printf("  Codex OAuth       %s%s\n", maskToken(auth.CodexAccess), expired)
 		}
-		if auth.APIKey != "" {
-			fmt.Printf("  API key           %s (stored)\n", maskToken(auth.APIKey))
+		if auth.Key != "" {
+			fmt.Printf("  API key           %s (stored)\n", maskToken(auth.Key))
 		}
 	}
 
-	if auth == nil || (auth.CodexAccess == "" && auth.APIKey == "") {
+	if auth == nil || (auth.CodexAccess == "" && auth.Key == "") {
 		fmt.Println("  Haft auth        not configured — run 'haft login'")
 	}
 
@@ -295,7 +295,7 @@ func maskToken(s string) string {
 // ---------------------------------------------------------------------------
 
 type haftAuth struct {
-	APIKey       string `json:"api_key,omitempty"`
+	Key          string `json:"api_key,omitempty"`
 	CodexAccess  string `json:"codex_access_token,omitempty"`
 	CodexRefresh string `json:"codex_refresh_token,omitempty"`
 	CodexExpires int64  `json:"codex_expires_at,omitempty"`
@@ -349,6 +349,6 @@ func storeAPIKeyAuth(key string) error {
 	if auth == nil {
 		auth = &haftAuth{}
 	}
-	auth.APIKey = key
+	auth.Key = key
 	return saveHaftAuth(auth)
 }

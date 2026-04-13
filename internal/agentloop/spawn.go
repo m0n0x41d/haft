@@ -174,14 +174,26 @@ func (c *Coordinator) SpawnSubagent(
 		Task:         task,
 	})
 
+	launch := func(run func()) {
+		go func() {
+			defer childCancel()
+			run()
+		}()
+	}
+
 	// Launch goroutine
 	if def.Fork {
 		// Fork mode: inherit parent conversation history (prompt cache sharing)
 		parentHistory, _ := c.Messages.ListBySession(ctx, parentSess.ID)
-		go c.runForkSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, parentHistory, resultCh)
-	} else {
-		go c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, resultCh)
+		launch(func() {
+			c.runForkSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, parentHistory, resultCh)
+		})
+		return handle, nil
 	}
+
+	launch(func() {
+		c.runSubagent(childCtx, childSess, subagentID, systemPrompt, task, childTools, maxSteps, def.ReadOnly, resultCh)
+	})
 
 	return handle, nil
 }

@@ -180,7 +180,8 @@ func (c *Coordinator) Run(ctx context.Context, sess *agent.Session, userParts []
 
 	// Async title generation
 	if isFirstTurn && firstUserText != "" {
-		go c.generateTitle(sess, firstUserText)
+		titleCtx := context.WithoutCancel(ctx)
+		go c.generateTitle(titleCtx, sess, firstUserText)
 	}
 }
 
@@ -1412,12 +1413,12 @@ func decisionSelectionAliasesForIdentity(identity artifact.PortfolioVariantIdent
 	return append(aliases, prefixed...)
 }
 
-func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+func (c *Coordinator) generateTitle(ctx context.Context, sess *agent.Session, userText string) {
+	titleCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	prompt := agent.BuildTitlePrompt(userText)
-	titleMsg, err := c.Provider.Stream(ctx,
+	titleMsg, err := c.Provider.Stream(titleCtx,
 		[]agent.Message{{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: prompt}}}},
 		nil,
 		func(delta provider.StreamDelta) {},
@@ -1436,7 +1437,7 @@ func (c *Coordinator) generateTitle(sess *agent.Session, userText string) {
 	}
 
 	sess.Title = title
-	_ = c.Sessions.Update(context.Background(), sess)
+	_ = c.Sessions.Update(titleCtx, sess)
 	_ = c.Bus.SendSessionTitle(protocol.SessionTitle{Title: title})
 }
 

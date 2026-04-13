@@ -37,11 +37,11 @@ func RunInteractive(renderView ViewRenderer, refresh func() error) error {
 	}
 
 	// Set tty to raw mode
-	oldState, err := makeRaw(int(ttyFile.Fd()))
+	oldState, err := makeRaw(ttyFile.Fd())
 	if err != nil {
 		return fmt.Errorf("raw mode: %w", err)
 	}
-	defer restore(int(ttyFile.Fd()), oldState)
+	defer restore(ttyFile.Fd(), oldState)
 
 	// Handle signals
 	sigCh := make(chan os.Signal, 1)

@@ -436,6 +436,27 @@ function DecisionDetailPanel({
         </div>
       )}
 
+      {/* Evidence F/G/R Decomposition */}
+      {detail.evidence && detail.evidence.items?.length > 0 && (
+        <EvidenceSection evidence={detail.evidence} />
+      )}
+
+      {/* Coverage gaps */}
+      {detail.evidence && detail.evidence.coverage_gaps?.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">
+            Evidence Gaps ({detail.evidence.coverage_gaps.length}/{detail.evidence.total_claims} claims uncovered)
+          </h4>
+          <div className="space-y-1">
+            {detail.evidence.coverage_gaps.map((gap: string, i: number) => (
+              <div key={i} className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-2 text-sm text-danger/80">
+                {gap}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {detail.affected_files.length > 0 && (
         <div>
           <h4 className="mb-2 text-xs uppercase tracking-wider text-text-muted">Affected Files</h4>
@@ -678,6 +699,91 @@ function coverageStatusClassName(status: string): string {
     return "border-warning/20 bg-warning/10 text-warning";
   }
   return "border-danger/20 bg-danger/10 text-danger";
+}
+
+interface EvidenceItem {
+  id: string;
+  type: string;
+  content: string;
+  verdict: string;
+  formality_level: number;
+  congruence_level: number;
+  claim_refs: string[];
+  valid_until: string;
+  is_expired: boolean;
+}
+
+interface EvidenceSummary {
+  items: EvidenceItem[];
+  total_claims: number;
+  covered_claims: number;
+  coverage_gaps: string[];
+}
+
+function EvidenceSection({ evidence }: { evidence: EvidenceSummary }) {
+  const formalityLabels: Record<number, { label: string; color: string }> = {
+    0: { label: "F0 informal", color: "text-text-muted" },
+    1: { label: "F1 test", color: "text-blue-400" },
+    2: { label: "F2 formal", color: "text-success" },
+    3: { label: "F3 proof", color: "text-yellow-400" },
+  };
+
+  const verdictColors: Record<string, string> = {
+    supports: "border-success/20 bg-success/10 text-success",
+    weakens: "border-warning/20 bg-warning/10 text-warning",
+    refutes: "border-danger/20 bg-danger/10 text-danger",
+  };
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <h4 className="text-xs uppercase tracking-wider text-text-muted">Evidence</h4>
+        <div className="flex items-center gap-3 text-xs text-text-muted">
+          <span>Coverage: {evidence.covered_claims}/{evidence.total_claims} claims</span>
+          <span>{evidence.items.length} item{evidence.items.length !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {evidence.items.map((item) => {
+          const f = formalityLabels[item.formality_level] ?? formalityLabels[0];
+          const verdictCls = verdictColors[item.verdict] ?? "border-border bg-surface-2 text-text-muted";
+          const freshnessColor = item.is_expired
+            ? "text-danger"
+            : item.valid_until
+              ? "text-success"
+              : "text-text-muted";
+
+          return (
+            <div key={item.id} className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className={`font-mono text-xs ${f.color}`}>{f.label}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${verdictCls}`}>
+                    {item.verdict || "pending"}
+                  </span>
+                  <span className="text-xs text-text-muted">{item.type}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-text-muted">CL{item.congruence_level}</span>
+                  {item.valid_until && (
+                    <span className={freshnessColor}>
+                      {item.is_expired ? "expired" : `until ${item.valid_until}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-text-secondary">{item.content}</p>
+              {item.claim_refs?.length > 0 && (
+                <p className="mt-1 text-xs text-text-muted">
+                  Covers: {item.claim_refs.join(", ")}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 const inputClassName =

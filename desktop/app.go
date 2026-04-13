@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -500,7 +500,8 @@ func (a *App) loadDecisionDetail(id string) (*artifact.Artifact, DecisionDetailV
 	}
 
 	affectedFiles, coverageModules, coverageWarnings := a.loadDecisionGovernance(art.Meta.ID)
-	view := toDecisionDetail(art, affectedFiles, coverageModules, coverageWarnings)
+	evidence := a.loadDecisionEvidence(art)
+	view := toDecisionDetail(art, affectedFiles, coverageModules, coverageWarnings, evidence)
 
 	return art, view, nil
 }
@@ -547,6 +548,69 @@ func (a *App) loadDecisionGovernance(id string) ([]string, []CoverageModuleView,
 	}
 
 	return affectedFiles, impacted, warnings
+}
+
+func (a *App) loadDecisionEvidence(art *artifact.Artifact) EvidenceSummaryView {
+	summary := EvidenceSummaryView{
+		Items:        []EvidenceItemView{},
+		CoverageGaps: []string{},
+	}
+
+	if a.store == nil || art == nil {
+		return summary
+	}
+
+	df := art.UnmarshalDecisionFields()
+	summary.TotalClaims = len(df.Claims)
+
+	items, err := a.store.GetEvidenceItems(a.ctx, art.Meta.ID)
+	if err != nil {
+		return summary
+	}
+
+	now := time.Now().UTC()
+	coveredClaims := make(map[string]bool)
+
+	for _, item := range items {
+		isExpired := false
+		if item.ValidUntil != "" {
+			if t, err := time.Parse(time.RFC3339, item.ValidUntil); err == nil {
+				isExpired = now.After(t)
+			} else if t, err := time.Parse("2006-01-02", item.ValidUntil); err == nil {
+				isExpired = now.After(t)
+			}
+		}
+
+		for _, ref := range item.ClaimRefs {
+			coveredClaims[ref] = true
+		}
+		for _, scope := range item.ClaimScope {
+			coveredClaims[scope] = true
+		}
+
+		summary.Items = append(summary.Items, EvidenceItemView{
+			ID:              item.ID,
+			Type:            item.Type,
+			Content:         item.Content,
+			Verdict:         item.Verdict,
+			FormalityLevel:  item.FormalityLevel,
+			CongruenceLevel: item.CongruenceLevel,
+			ClaimRefs:       safeStrings(item.ClaimRefs),
+			ValidUntil:      item.ValidUntil,
+			IsExpired:       isExpired,
+		})
+	}
+
+	summary.CoveredClaims = len(coveredClaims)
+
+	// Find coverage gaps: claims that have no evidence
+	for _, claim := range df.Claims {
+		if !coveredClaims[claim.ID] {
+			summary.CoverageGaps = append(summary.CoverageGaps, claim.ID+": "+claim.Claim)
+		}
+	}
+
+	return summary
 }
 
 func (a *App) loadDecisionProblems(problemRefs []string) []*artifact.Artifact {
@@ -641,9 +705,6 @@ func mapArtifacts[T any](arts []*artifact.Artifact, fn func(*artifact.Artifact) 
 	}
 	return result
 }
-
-// staleQuery is a read-only WAL-compatible query helper
-var _ *sql.DB // suppress unused import if needed
 
 func (a *App) emitAppError(scope string, err error) {
 	if err == nil {

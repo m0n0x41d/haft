@@ -90,6 +90,22 @@ export interface DecisionDetail {
   rollback_triggers: string[];
   rollback_steps: string[];
   rollback_blast_radius: string;
+  evidence: {
+    items: {
+      id: string;
+      type: string;
+      content: string;
+      verdict: string;
+      formality_level: number;
+      congruence_level: number;
+      claim_refs: string[];
+      valid_until: string;
+      is_expired: boolean;
+    }[];
+    total_claims: number;
+    covered_claims: number;
+    coverage_gaps: string[];
+  };
   valid_until: string;
   created_at: string;
   updated_at: string;
@@ -738,6 +754,7 @@ const INITIAL_DECISION_DETAIL: DecisionDetail = {
     "Remove Wails binding layer",
   ],
   rollback_blast_radius: "Only Wails binding (~200 LOC) is throwaway. 1-2 days to extract.",
+  evidence: { items: [], total_claims: 2, covered_claims: 0, coverage_gaps: ["claim-1: Wails scaffolding <2 weeks", "claim-2: Binary size <30MB"] },
   valid_until: "2026-07-09",
   created_at: "2026-04-09T00:00:00Z",
   updated_at: "2026-04-09T00:00:00Z",
@@ -1352,6 +1369,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
     rollback_triggers: compactList(input.rollback?.triggers ?? []),
     rollback_steps: compactList(input.rollback?.steps ?? []),
     rollback_blast_radius: input.rollback?.blast_radius.trim() ?? "",
+    evidence: { items: [], total_claims: 0, covered_claims: 0, coverage_gaps: [] },
     valid_until: input.valid_until.trim(),
     created_at: nowString(),
     updated_at: nowString(),

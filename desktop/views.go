@@ -78,6 +78,16 @@ func safeCharacterizations(s []CharacterizationView) []CharacterizationView {
 	return s
 }
 
+func evidenceOrEmpty(ev []EvidenceSummaryView) EvidenceSummaryView {
+	if len(ev) > 0 {
+		return ev[0]
+	}
+	return EvidenceSummaryView{
+		Items:        []EvidenceItemView{},
+		CoverageGaps: []string{},
+	}
+}
+
 func safeDimensions(s []DimensionView) []DimensionView {
 	if s == nil {
 		return []DimensionView{}
@@ -193,6 +203,7 @@ type DecisionDetailView struct {
 	RollbackTriggers     []string             `json:"rollback_triggers"`
 	RollbackSteps        []string             `json:"rollback_steps"`
 	RollbackBlastRadius  string               `json:"rollback_blast_radius"`
+	Evidence             EvidenceSummaryView  `json:"evidence"`
 	ValidUntil           string               `json:"valid_until"`
 	Body                 string               `json:"body"`
 	CreatedAt            string               `json:"created_at"`
@@ -211,6 +222,27 @@ type ClaimView struct {
 	Threshold   string `json:"threshold"`
 	Status      string `json:"status"`
 	VerifyAfter string `json:"verify_after"`
+}
+
+// EvidenceItemView is a single piece of evidence with F/G/R decomposition.
+type EvidenceItemView struct {
+	ID              string   `json:"id"`
+	Type            string   `json:"type"`    // measurement, test, research, benchmark, audit
+	Content         string   `json:"content"`
+	Verdict         string   `json:"verdict"` // supports, weakens, refutes
+	FormalityLevel  int      `json:"formality_level"`  // F0=informal, F1=test, F2=formal, F3=proof
+	CongruenceLevel int      `json:"congruence_level"` // CL0-CL3
+	ClaimRefs       []string `json:"claim_refs"`       // which claims this covers
+	ValidUntil      string   `json:"valid_until"`
+	IsExpired       bool     `json:"is_expired"`
+}
+
+// EvidenceSummaryView aggregates evidence health for a decision.
+type EvidenceSummaryView struct {
+	Items         []EvidenceItemView `json:"items"`
+	TotalClaims   int                `json:"total_claims"`
+	CoveredClaims int                `json:"covered_claims"`
+	CoverageGaps  []string           `json:"coverage_gaps"` // claim IDs with no evidence
 }
 
 // PortfolioDetailView is the full solution portfolio with variants and comparison.
@@ -393,6 +425,7 @@ func toDecisionDetail(
 	affectedFiles []string,
 	coverageModules []CoverageModuleView,
 	coverageWarnings []string,
+	evidence ...EvidenceSummaryView,
 ) DecisionDetailView {
 	df := a.UnmarshalDecisionFields()
 
@@ -439,6 +472,7 @@ func toDecisionDetail(
 		RollbackTriggers:     safeStrings(df.RollbackTriggers),
 		RollbackSteps:        safeStrings(df.RollbackSteps),
 		RollbackBlastRadius:  df.RollbackBlastRadius,
+		Evidence:             evidenceOrEmpty(evidence),
 		ValidUntil:           a.Meta.ValidUntil,
 		Body:                 a.Body,
 		CreatedAt:            a.Meta.CreatedAt.Format("2006-01-02T15:04:05Z"),

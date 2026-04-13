@@ -15,7 +15,8 @@ import (
 // Store handles artifact persistence in SQLite.
 // Implements ArtifactStore interface.
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	colCache map[string]bool // cached tableHasColumn results: "table.column" → exists
 }
 
 type sqlExecer interface {
@@ -27,7 +28,7 @@ var _ ArtifactStore = (*Store)(nil)
 
 // NewStore creates a new artifact store using an existing DB connection.
 func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+	return &Store{db: db, colCache: make(map[string]bool)}
 }
 
 // DB returns the underlying database connection.
@@ -781,6 +782,11 @@ func (s *Store) EpistemicDebtBudget(ctx context.Context) (float64, error) {
 // --- helpers ---
 
 func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
+	cacheKey := tableName + "." + columnName
+	if result, ok := s.colCache[cacheKey]; ok {
+		return result, nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
 		return false, fmt.Errorf("inspect table %s: %w", tableName, err)
@@ -802,10 +808,12 @@ func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string
 			return false, fmt.Errorf("scan table info %s: %w", tableName, err)
 		}
 		if name == columnName {
+			s.colCache[cacheKey] = true
 			return true, nil
 		}
 	}
 
+	s.colCache[cacheKey] = false
 	return false, nil
 }
 

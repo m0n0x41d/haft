@@ -4,11 +4,9 @@ description: "Discover existing project knowledge and build a legacy map"
 
 # Project Onboarding
 
-Quint was just initialized on this project. Help the user discover and capture existing engineering knowledge.
+Haft was just initialized on this project. Discover and capture existing engineering knowledge.
 
-## Discovery protocol
-
-Scan the project systematically. For each finding, use the appropriate Quint tool to record it.
+## Phase 1: Surface scan (always run)
 
 ### 1. Project overview
 - Read `README.md` — extract purpose, tech stack, key components, architecture
@@ -49,27 +47,60 @@ Check `git log --oneline -20` for:
 - Architecture changes
 - Patterns in commit messages that suggest undocumented decisions
 
-### 7. Module coverage analysis
-Run `haft_query(action="coverage")` to get the module map and decision coverage:
-- Identify **blind modules** — parts of the codebase with no engineering decisions
-- Prioritize blind modules by criticality: modules with many dependents and no decisions are the highest-risk blind spots
-- For the most critical blind modules: suggest framing problems for key invariants
-- Report the coverage percentage and highlight the top 3-5 blind spots
+## Phase 2: Module coverage deep scan (always run)
 
-### 8. Unresolved problems
+### 7. Module coverage analysis
+Run `haft_query(action="coverage")` to get the full module map:
+- List ALL modules with their governance status (governed / partial / blind)
+- Count total modules, governed percentage, blind count
+- **Prioritize blind modules** by: number of dependents (from dependency graph), lines of code, recent git activity
+
+### 8. Deep scan of blind modules
+
+**This is the critical step.** For each blind module, starting with highest priority:
+
+- **Read the module's code** — main files, exported interfaces, key types
+- **Determine the module's responsibility** — what does it do, what invariants does it maintain
+- **Identify dependencies** — what does it import, what depends on it
+- **Look for implicit decisions** — coding patterns, error handling conventions, data flow assumptions
+- **Record findings** as `haft_note` with:
+  - Module name and responsibility
+  - Key invariants (what must hold)
+  - Implicit decisions worth making explicit
+  - Risk assessment (what breaks if this module changes without governance)
+
+**If you have subagent/parallel execution capability:** spawn one subagent per blind module for parallel analysis. Each subagent gets:
+- Module path and file list
+- Project context (README, tech stack from Phase 1)
+- Instruction: "Read all code in this module. Report: responsibility, invariants, implicit decisions, dependencies, risks. Record as haft_note."
+
+Merge subagent results and continue.
+
+### 9. Unresolved problems
 If you find architectural tensions, TODO comments about design issues, or open questions:
 - Use `haft_problem(action="frame")` to capture them as ProblemCards
-- These become the starting point for the user's next reasoning cycle
-- Cross-reference with blind modules from step 7 — blind modules with design tensions are highest priority
+- Cross-reference with blind modules — blind modules with design tensions are highest priority
 
 ## Output
-After scanning, report:
-- How many notes were created
-- How many problems were discovered
-- What key decisions are now searchable in Quint
-- What gaps exist (decisions mentioned but not documented, missing ADRs)
-- **Module coverage**: X modules detected, Y% governed, Z blind spots identified
 
-Suggest next steps: `/h-status` to see the knowledge map and module coverage, `/h-frame` for the most pressing unresolved problem or highest-risk blind module.
+After scanning, report:
+
+### Coverage summary
+```
+Modules: X total, Y governed (Z%), W blind
+Blind modules scanned: N (with deep analysis)
+```
+
+### Findings
+- Notes created: N (X from docs, Y from module analysis)
+- Problems discovered: M
+- Key decisions now searchable
+- Gaps: decisions mentioned but not documented, missing ADRs
+- **Top 3 highest-risk blind spots** with reasoning
+
+### Next steps
+- `/h-status` — see the knowledge map and module coverage
+- `/h-frame` — frame the most pressing unresolved problem
+- For very large projects: suggest running onboard again focused on specific subsystems
 
 $ARGUMENTS

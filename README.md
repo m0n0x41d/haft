@@ -74,6 +74,30 @@ The binary is the same — only the MCP config and command/prompt installation l
 
 Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 
+## CI
+
+Use `haft check` anywhere you want a pass/fail signal for governance debt:
+
+```yaml
+# .github/workflows/haft-check.yml
+steps:
+  - uses: actions/checkout@v4
+
+  - name: Install haft
+    run: |
+      curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bash
+      echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+  - name: Check governance debt
+    run: haft check
+```
+
+`haft check` scans stale artifacts, drifted decisions, unassessed decisions, and coverage gaps.
+Exit `0` means the project is clean. Governance findings exit `1`. Command or setup errors also
+fail the job with a non-zero exit code, which keeps CI badges red for both unhealthy and broken states.
+
+Need machine-readable output? Run `haft check --json`.
+
 ---
 
 ## How It Works

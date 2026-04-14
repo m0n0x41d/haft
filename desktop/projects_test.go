@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/project"
@@ -109,5 +112,53 @@ func TestStartupUsesExplicitProjectRootInsteadOfCurrentWorkingDirectory(t *testi
 
 	if app.projectRoot != expectedRoot {
 		t.Fatalf("expected project root %q, got %q", expectedRoot, app.projectRoot)
+	}
+}
+
+func TestAtomicWriteFile_ConcurrentWritersLeaveValidJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "desktop-projects.json")
+	payloads := make([][]byte, 0, 12)
+
+	for index := range 12 {
+		payloads = append(payloads, []byte(
+			strings.ReplaceAll(
+				`{"projects":[{"path":"/tmp/project-INDEX","name":"project","id":"proj-INDEX"}]}`,
+				"INDEX",
+				string(rune('0'+index)),
+			),
+		))
+	}
+
+	var wg sync.WaitGroup
+	for _, payload := range payloads {
+		wg.Add(1)
+		go func(payload []byte) {
+			defer wg.Done()
+			if err := atomicWriteFile(path, payload, 0o644); err != nil {
+				t.Errorf("atomicWriteFile: %v", err)
+			}
+		}(payload)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var registry ProjectRegistry
+	if err := json.Unmarshal(data, &registry); err != nil {
+		t.Fatalf("written file must stay valid JSON, got %q: %v", string(data), err)
+	}
+
+	matchesKnownPayload := false
+	for _, payload := range payloads {
+		if string(data) == string(payload) {
+			matchesKnownPayload = true
+			break
+		}
+	}
+	if !matchesKnownPayload {
+		t.Fatalf("final file should match one complete payload, got %q", string(data))
 	}
 }

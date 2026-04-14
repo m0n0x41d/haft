@@ -87,6 +87,12 @@ jobs:
             exit 1
           fi
 
+      - name: Sync tracked governance artifacts
+        run: ./haft sync
+
+      - name: Check governance debt
+        run: ./haft check
+
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:

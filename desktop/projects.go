@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
@@ -77,14 +80,64 @@ func saveRegistry(reg *ProjectRegistry) error {
 	return atomicWriteFile(path, data, 0o644)
 }
 
-// atomicWriteFile writes data to a temp file then renames — prevents
-// corruption if two concurrent calls race or the process crashes mid-write.
+var atomicWriteMu sync.Mutex
+
+// atomicWriteFile serializes concurrent writers, writes to a unique temp file,
+// then renames atomically. This avoids torn JSON writes under concurrent saves.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	atomicWriteMu.Lock()
+	defer atomicWriteMu.Unlock()
+
+	release, err := acquireAtomicWriteLock(path + ".lock")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	defer release()
+
+	dir := filepath.Dir(path)
+	prefix := filepath.Base(path) + "."
+	tmpFile, err := os.CreateTemp(dir, prefix+"*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if err := tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, path)
+}
+
+func acquireAtomicWriteLock(lockPath string) (func(), error) {
+	deadline := time.Now().Add(2 * time.Second)
+
+	for {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		switch {
+		case err == nil:
+			_ = file.Close()
+			return func() {
+				_ = os.Remove(lockPath)
+			}, nil
+		case errors.Is(err, os.ErrExist):
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("acquire write lock %s: timeout", lockPath)
+			}
+			time.Sleep(10 * time.Millisecond)
+		default:
+			return nil, err
+		}
+	}
 }
 
 // --- App binding methods for project management ---

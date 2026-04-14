@@ -65,15 +65,36 @@ Focus: trust and momentum for existing MCP/CLI users. No new surfaces.
   - [ ] G4: warn on subjective comparison dimensions (maintainable, simple, scalable)
 - [ ] Rename/install/docs polish for migration friction
 
-## v6.2 — Execution Primitives (days 31-60)
+## v6.2 — Execution Primitives + Dashboard (days 31-60)
 
 Focus: desktop starts proving the loop, not just visualizing.
 
-- [ ] Decision-anchored "Implement" from desktop (spawn agent in worktree with invariants + rationale)
-- [ ] Worktree/branch creation
+### Dashboard (single operator surface)
+- [ ] Unified dashboard page replacing separate Problems/Decisions pages
+- [ ] Active decisions section with **Implement** button → spawn agent in worktree with invariants + rationale
+- [ ] Governance findings section with **Adopt** / **Waive** / **Reopen** buttons on stale/drifted items
+- [ ] Adopt button → creates agent task/thread with decision context + drift report for interactive resolution
+- [ ] Automation section: **New Automation** → configure triggers (CI fail, dependency update, scheduled, manual) → auto-creates ProblemCard
+
+### Execution loop
+- [ ] Worktree/branch creation from Implement action
 - [ ] Automatic post-run invariant verification
 - [ ] Baseline refresh only on successful verification
 - [ ] Persisted verification/governance result linked to decision
+
+### DDR→Task Pipeline (Implement generates subtasks)
+- [ ] Implement on DecisionRecord generates subtask plan from invariants/claims/affected_files
+- [ ] Subtasks run sequentially via desktop governor (agent per task, worktree per task)
+- [ ] Auto-advance mode: next task starts when previous completes successfully
+- [ ] Manual mode (default): pause between tasks for review
+- [ ] Each subtask gets full decision context + previous subtask results
+
+### Deep onboard for legacy projects
+- [ ] `/h-onboard --deep` generates task plan from coverage gaps (blind modules)
+- [ ] Per-module deep analysis session: read code, identify responsibilities, record decisions/notes/baselines
+- [ ] Runs as automation trigger or via task pipeline
+
+**Terminology:** "problem" is reserved for ProblemCard artifacts only. The dashboard page is "Dashboard", not "Problem Board".
 
 ## v7.0 — Desktop Loop MVP (days 61-90)
 

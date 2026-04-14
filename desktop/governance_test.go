@@ -241,6 +241,82 @@ func TestAdoptCreatesDriftTaskWithDecisionContext(t *testing.T) {
 	}
 }
 
+func TestAdoptCreatesStaleTaskWithEvidenceHistory(t *testing.T) {
+	categories := []artifact.StaleCategory{
+		artifact.StaleCategoryREffDegraded,
+		artifact.StaleCategoryEvidenceExpired,
+	}
+
+	for _, category := range categories {
+		t.Run(string(category), func(t *testing.T) {
+			app := newGovernanceTestApp(t)
+			defer app.shutdown(context.Background())
+
+			installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'adopt stale task\\n'\n")
+			installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+
+			decisionID := seedGovernanceDecision(t, app)
+			addGovernanceEvidenceHistory(t, app, decisionID)
+
+			if _, err := app.governance.scan(context.Background(), false); err != nil {
+				t.Fatalf("governance scan: %v", err)
+			}
+
+			detail, err := app.GetDecision(decisionID)
+			if err != nil {
+				t.Fatalf("GetDecision: %v", err)
+			}
+
+			overview, err := app.GetGovernanceOverview()
+			if err != nil {
+				t.Fatalf("GetGovernanceOverview: %v", err)
+			}
+
+			findingID := findGovernanceFindingID(t, overview.Findings, decisionID, category)
+			task, err := app.Adopt(findingID)
+			if err != nil {
+				t.Fatalf("Adopt: %v", err)
+			}
+
+			if task.AutoRun {
+				t.Fatal("expected stale adopt task to start checkpointed")
+			}
+
+			expectedSnippets := []string{
+				"## Adopt Stale Finding: Desktop governance execution loop",
+				"Finding category: " + string(category),
+				"Decision ID: " + decisionID,
+				"## Decision Record Body",
+				detail.Body,
+				"## R_eff Computation",
+				"- Decision R_eff: 0.10",
+				"weakest-link rule: min(active evidence scores), never average",
+				"## Evidence Timeline",
+				"ev-expired [measurement] verdict=supports",
+				"score=0.10",
+				"ev-recent [benchmark] verdict=weakens",
+				"score=0.40",
+				"## Expired Items",
+				"DecisionRecord valid_until expired",
+				"ev-expired [measurement] verdict=supports",
+				"## Instructions",
+				"Do not execute measure, waive, deprecate, reopen, or any other lifecycle action without explicit user confirmation.",
+			}
+
+			for _, snippet := range expectedSnippets {
+				if !strings.Contains(task.Prompt, snippet) {
+					t.Fatalf("adopt stale prompt missing %q:\n%s", snippet, task.Prompt)
+				}
+			}
+
+			final := waitForTaskState(t, app, task.ID)
+			if final.Status != "completed" {
+				t.Fatalf("task status = %q, want completed", final.Status)
+			}
+		})
+	}
+}
+
 func newGovernanceTestApp(t *testing.T) *App {
 	t.Helper()
 
@@ -285,6 +361,61 @@ func newGovernanceTestApp(t *testing.T) *App {
 	}
 
 	return app
+}
+
+func addGovernanceEvidenceHistory(t *testing.T, app *App, decisionID string) {
+	t.Helper()
+
+	recentEvidence := artifact.EvidenceItem{
+		ID:              "ev-recent",
+		Type:            "benchmark",
+		Content:         "Recent desktop operator benchmark weakened confidence in the current refresh loop.",
+		Verdict:         "weakens",
+		CongruenceLevel: 2,
+		FormalityLevel:  2,
+		ValidUntil:      time.Now().Add(72 * time.Hour).UTC().Format(time.RFC3339),
+	}
+	expiredEvidence := artifact.EvidenceItem{
+		ID:              "ev-expired",
+		Type:            "measurement",
+		Content:         "Initial desktop verification supported the flow before the evidence went stale.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+		ValidUntil:      time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
+	}
+
+	err := app.store.AddEvidenceItem(context.Background(), &recentEvidence, decisionID)
+	if err != nil {
+		t.Fatalf("AddEvidenceItem recent: %v", err)
+	}
+
+	err = app.store.AddEvidenceItem(context.Background(), &expiredEvidence, decisionID)
+	if err != nil {
+		t.Fatalf("AddEvidenceItem expired: %v", err)
+	}
+}
+
+func findGovernanceFindingID(
+	t *testing.T,
+	findings []GovernanceFindingView,
+	decisionID string,
+	category artifact.StaleCategory,
+) string {
+	t.Helper()
+
+	for _, finding := range findings {
+		if finding.ArtifactRef != decisionID {
+			continue
+		}
+		if finding.Category != string(category) {
+			continue
+		}
+		return finding.ID
+	}
+
+	t.Fatalf("expected finding %s for %s, findings=%+v", category, decisionID, findings)
+	return ""
 }
 
 func seedGovernanceDecision(t *testing.T, app *App) string {

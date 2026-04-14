@@ -17,6 +17,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
 	"github.com/m0n0x41d/haft/internal/graph"
+	"github.com/m0n0x41d/haft/internal/reff"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -110,6 +111,30 @@ type governanceDriftAdoptionContext struct {
 	FileDiffs      []governanceFileDiff
 	DirectModules  []CoverageModuleView
 	ImpactedModule []artifact.ModuleImpact
+}
+
+type governanceStaleAdoptionContext struct {
+	Finding          GovernanceFindingView
+	Decision         *artifact.Artifact
+	Detail           DecisionDetailView
+	Assurance        artifact.WLNKSummary
+	EvidenceTimeline []governanceEvidenceTimelineItem
+	ExpiredItems     []string
+}
+
+type governanceEvidenceTimelineItem struct {
+	ID              string
+	Type            string
+	Verdict         string
+	Content         string
+	CarrierRef      string
+	CongruenceLevel int
+	FormalityLevel  int
+	Claims          []string
+	ValidUntil      string
+	IsExpired       bool
+	CountsForREff   bool
+	Score           float64
 }
 
 type governanceFileDiff struct {
@@ -804,31 +829,360 @@ func (a *App) loadDriftAdoptionContext(findingRef string) (*governanceDriftAdopt
 	}, nil
 }
 
-func (a *App) resolveDriftFinding(findingRef string) (GovernanceFindingView, artifact.StaleItem, error) {
+func (a *App) resolveGovernanceFinding(findingRef string) (GovernanceFindingView, artifact.StaleItem, error) {
 	items, err := artifact.ScanStale(a.ctx, a.store, a.projectRoot)
 	if err != nil {
 		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("scan governance findings: %w", err)
 	}
 
 	for _, item := range items {
-		if item.Category != artifact.StaleCategoryDecisionStale {
-			continue
-		}
-		if item.Kind != string(artifact.KindDecisionRecord) {
-			continue
-		}
 		if findingID(item) != findingRef {
 			continue
-		}
-		if len(item.DriftItems) == 0 {
-			return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s is not a drift finding", findingRef)
 		}
 
 		view := toFindingViews([]artifact.StaleItem{item})[0]
 		return view, item, nil
 	}
 
-	return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("drift finding %s not found", findingRef)
+	return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s not found", findingRef)
+}
+
+func (a *App) resolveDriftFinding(findingRef string) (GovernanceFindingView, artifact.StaleItem, error) {
+	view, item, err := a.resolveGovernanceFinding(findingRef)
+	if err != nil {
+		return GovernanceFindingView{}, artifact.StaleItem{}, err
+	}
+
+	if item.Category != artifact.StaleCategoryDecisionStale {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s is not a drift finding", findingRef)
+	}
+	if item.Kind != string(artifact.KindDecisionRecord) {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s does not point to a DecisionRecord", findingRef)
+	}
+	if len(item.DriftItems) == 0 {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s is not a drift finding", findingRef)
+	}
+
+	return view, item, nil
+}
+
+func (a *App) resolveStaleFinding(findingRef string) (GovernanceFindingView, artifact.StaleItem, error) {
+	view, item, err := a.resolveGovernanceFinding(findingRef)
+	if err != nil {
+		return GovernanceFindingView{}, artifact.StaleItem{}, err
+	}
+
+	if item.Kind != string(artifact.KindDecisionRecord) {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s does not point to a DecisionRecord", findingRef)
+	}
+	if !isStaleAdoptionCategory(item.Category) {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s is not a stale decision finding", findingRef)
+	}
+
+	return view, item, nil
+}
+
+func isStaleAdoptionCategory(category artifact.StaleCategory) bool {
+	switch category {
+	case artifact.StaleCategoryEvidenceExpired, artifact.StaleCategoryREffDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) loadStaleAdoptionContext(findingRef string) (*governanceStaleAdoptionContext, error) {
+	if a == nil || a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	trimmed := strings.TrimSpace(findingRef)
+	if trimmed == "" {
+		return nil, fmt.Errorf("finding ref is required")
+	}
+
+	finding, item, err := a.resolveStaleFinding(trimmed)
+	if err != nil {
+		return nil, err
+	}
+
+	decision, detail, err := a.loadDecisionDetail(item.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", item.ID, err)
+	}
+
+	assurance := artifact.ComputeWLNKSummary(a.ctx, a.store, item.ID)
+	timeline, expiredItems, err := a.loadStaleEvidenceTimeline(item.ID, detail.ValidUntil)
+	if err != nil {
+		return nil, fmt.Errorf("load evidence timeline for %s: %w", item.ID, err)
+	}
+
+	return &governanceStaleAdoptionContext{
+		Finding:          finding,
+		Decision:         decision,
+		Detail:           detail,
+		Assurance:        assurance,
+		EvidenceTimeline: timeline,
+		ExpiredItems:     expiredItems,
+	}, nil
+}
+
+func (a *App) loadStaleEvidenceTimeline(
+	decisionID string,
+	decisionValidUntil string,
+) ([]governanceEvidenceTimelineItem, []string, error) {
+	items, err := a.store.GetEvidenceItems(a.ctx, decisionID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	now := time.Now().UTC()
+	timeline := make([]governanceEvidenceTimelineItem, 0, len(items))
+	expiredItems := governanceDecisionExpiredItems(decisionValidUntil, now)
+
+	for _, item := range items {
+		timelineItem := governanceEvidenceTimelineItem{
+			ID:              item.ID,
+			Type:            item.Type,
+			Verdict:         item.Verdict,
+			Content:         strings.TrimSpace(item.Content),
+			CarrierRef:      strings.TrimSpace(item.CarrierRef),
+			CongruenceLevel: item.CongruenceLevel,
+			FormalityLevel:  item.FormalityLevel,
+			Claims:          governanceEvidenceClaims(item),
+			ValidUntil:      item.ValidUntil,
+			IsExpired:       governanceEvidenceExpired(item.ValidUntil, now),
+			CountsForREff:   item.Verdict != "superseded",
+		}
+		if timelineItem.CountsForREff {
+			timelineItem.Score = reff.ScoreEvidence(
+				item.Verdict,
+				item.CongruenceLevel,
+				item.ValidUntil,
+				now,
+			)
+		}
+
+		timeline = append(timeline, timelineItem)
+
+		if timelineItem.IsExpired {
+			expiredItems = append(expiredItems, governanceExpiredEvidenceLabel(timelineItem))
+		}
+	}
+
+	return timeline, expiredItems, nil
+}
+
+func governanceDecisionExpiredItems(validUntil string, now time.Time) []string {
+	expiry, ok := reff.ParseValidUntil(validUntil)
+	if !ok || !expiry.Before(now) {
+		return []string{}
+	}
+
+	daysExpired := int(now.Sub(expiry).Hours() / 24)
+	label := fmt.Sprintf(
+		"DecisionRecord valid_until expired %d day(s) ago (%s).",
+		daysExpired,
+		validUntil,
+	)
+
+	return []string{label}
+}
+
+func governanceEvidenceClaims(item artifact.EvidenceItem) []string {
+	seen := make(map[string]struct{})
+	claims := make([]string, 0, len(item.ClaimRefs)+len(item.ClaimScope))
+
+	for _, claim := range item.ClaimRefs {
+		trimmed := strings.TrimSpace(claim)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		claims = append(claims, trimmed)
+	}
+
+	for _, claim := range item.ClaimScope {
+		trimmed := strings.TrimSpace(claim)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		claims = append(claims, trimmed)
+	}
+
+	return claims
+}
+
+func governanceEvidenceExpired(validUntil string, now time.Time) bool {
+	expiry, ok := reff.ParseValidUntil(validUntil)
+	if !ok {
+		return false
+	}
+
+	return expiry.Before(now)
+}
+
+func governanceExpiredEvidenceLabel(item governanceEvidenceTimelineItem) string {
+	status := "counts in R_eff"
+	if !item.CountsForREff {
+		status = "excluded from R_eff"
+	}
+
+	return fmt.Sprintf(
+		"%s [%s] verdict=%s valid_until=%s %s",
+		item.ID,
+		item.Type,
+		item.Verdict,
+		firstNonEmpty(item.ValidUntil, "n/a"),
+		status,
+	)
+}
+
+func buildAdoptStalePrompt(context governanceStaleAdoptionContext) string {
+	var prompt strings.Builder
+
+	writeSectionTitle(
+		&prompt,
+		"Adopt Stale Finding",
+		firstNonEmpty(context.Detail.SelectedTitle, context.Detail.Title, context.Decision.Meta.Title),
+	)
+	writeMetaLine(&prompt, "Finding ID", context.Finding.ID)
+	writeMetaLine(&prompt, "Finding category", context.Finding.Category)
+	writeMetaLine(&prompt, "Decision ID", context.Detail.ID)
+	writeMetaLine(&prompt, "Selected", firstNonEmpty(context.Detail.SelectedTitle, context.Detail.Title))
+	writeMetaLine(&prompt, "Reason", context.Finding.Reason)
+	writeMetaLine(&prompt, "Decision valid until", context.Detail.ValidUntil)
+	if context.Finding.DaysStale > 0 {
+		writeMetaLine(&prompt, "Days stale", fmt.Sprintf("%d", context.Finding.DaysStale))
+	}
+	writeBlankLine(&prompt)
+
+	writeParagraphSection(&prompt, "Decision Record Body", strings.TrimSpace(context.Detail.Body))
+	writeParagraphSection(&prompt, "Why Selected", context.Detail.WhySelected)
+	writeParagraphSection(&prompt, "Counterargument", context.Detail.CounterArgument)
+	writeParagraphSection(&prompt, "Weakest Link", context.Detail.WeakestLink)
+	writeStringListSection(&prompt, "Decision Invariants", context.Detail.Invariants, "- ")
+	writeStringListSection(&prompt, "Admissibility", context.Detail.Admissibility, "- ")
+	writeStringListSection(&prompt, "Affected Files", context.Detail.AffectedFiles, "- ")
+	writeClaimsSection(&prompt, context.Detail.Claims)
+	writeEvidenceAssuranceSection(&prompt, context.Assurance)
+	writeEvidenceTimelineSection(&prompt, context.EvidenceTimeline)
+	writeAlwaysStringListSection(
+		&prompt,
+		"Expired Items",
+		context.ExpiredItems,
+		"- ",
+		"No expired decision or evidence items detected.",
+	)
+	writeStringListSection(&prompt, "Evidence Coverage Gaps", context.Detail.Evidence.CoverageGaps, "- ")
+	writeCoverageSection(&prompt, context.Detail.CoverageModules)
+	writeStringListSection(&prompt, "Coverage Warnings", context.Detail.CoverageWarnings, "- ")
+	writeInstructionSection(
+		&prompt,
+		[]string{
+			"Treat the DecisionRecord body and evidence timeline as audit history. Explain the stale condition before proposing a resolution.",
+			"Use the weakest-link rule honestly: Decision R_eff is the minimum active evidence score, never an average.",
+			"Present the available resolution options explicitly: Measure, Waive, Deprecate, or Reopen.",
+			"Do not execute measure, waive, deprecate, reopen, or any other lifecycle action without explicit user confirmation.",
+			"Preserve the original DecisionRecord body and evidence history for audit.",
+		},
+	)
+
+	return prompt.String()
+}
+
+func writeEvidenceAssuranceSection(builder *strings.Builder, assurance artifact.WLNKSummary) {
+	builder.WriteString("## R_eff Computation\n")
+	builder.WriteString(fmt.Sprintf("- Decision R_eff: %.2f\n", assurance.REff))
+	builder.WriteString("- Decision score uses the weakest-link rule: min(active evidence scores), never average.\n")
+	builder.WriteString(fmt.Sprintf("- Active evidence counted: %d\n", assurance.EvidenceCount))
+	builder.WriteString(fmt.Sprintf("- Supporting: %d\n", assurance.Supporting))
+	builder.WriteString(fmt.Sprintf("- Weakening: %d\n", assurance.Weakening))
+	builder.WriteString(fmt.Sprintf("- Refuting: %d\n", assurance.Refuting))
+	if assurance.HasEvidence {
+		builder.WriteString(fmt.Sprintf("- Weakest congruence level: CL%d\n", assurance.WeakestCL))
+	}
+	builder.WriteString(fmt.Sprintf("- Summary: %s\n", assurance.Summary))
+	writeBlankLine(builder)
+}
+
+func writeEvidenceTimelineSection(
+	builder *strings.Builder,
+	timeline []governanceEvidenceTimelineItem,
+) {
+	builder.WriteString("## Evidence Timeline\n")
+	if len(timeline) == 0 {
+		builder.WriteString("- No evidence items attached.\n\n")
+		return
+	}
+
+	builder.WriteString("- Ordered latest-first from the stored evidence history.\n")
+	for _, item := range timeline {
+		status := "active"
+		if item.IsExpired {
+			status = "expired"
+		}
+		scoreText := "excluded_from_r_eff"
+		if item.CountsForREff {
+			scoreText = fmt.Sprintf("score=%.2f", item.Score)
+		}
+
+		line := fmt.Sprintf(
+			"- %s [%s] verdict=%s CL%d F%d %s %s",
+			item.ID,
+			firstNonEmpty(item.Type, "unknown"),
+			firstNonEmpty(item.Verdict, "unknown"),
+			item.CongruenceLevel,
+			item.FormalityLevel,
+			status,
+			scoreText,
+		)
+		if strings.TrimSpace(item.ValidUntil) != "" {
+			line += " valid_until=" + item.ValidUntil
+		}
+		builder.WriteString(line + "\n")
+
+		if len(item.Claims) > 0 {
+			builder.WriteString(fmt.Sprintf("  Claims: %s\n", strings.Join(item.Claims, ", ")))
+		}
+		if strings.TrimSpace(item.CarrierRef) != "" {
+			builder.WriteString(fmt.Sprintf("  Carrier: %s\n", item.CarrierRef))
+		}
+		if strings.TrimSpace(item.Content) != "" {
+			builder.WriteString(fmt.Sprintf("  Content: %s\n", item.Content))
+		}
+	}
+	writeBlankLine(builder)
+}
+
+func writeAlwaysStringListSection(
+	builder *strings.Builder,
+	title string,
+	values []string,
+	prefix string,
+	emptyValue string,
+) {
+	builder.WriteString(fmt.Sprintf("## %s\n", title))
+	if len(values) == 0 {
+		builder.WriteString(prefix)
+		builder.WriteString(emptyValue)
+		builder.WriteString("\n\n")
+		return
+	}
+
+	for _, value := range values {
+		builder.WriteString(prefix)
+		builder.WriteString(value)
+		builder.WriteString("\n")
+	}
+	writeBlankLine(builder)
 }
 
 func (a *App) loadDecisionDriftReport(decisionID string) (artifact.DriftReport, error) {

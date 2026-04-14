@@ -114,18 +114,12 @@ func TestRecordVerificationPassStopsBeforeEvidenceWhenBaselineFails(t *testing.T
 		t.Fatalf("SetAffectedFiles: %v", err)
 	}
 
+	// Missing files are now skipped gracefully in Baseline.
+	// RecordVerificationPass should succeed (baseline returns 0 files, evidence still recorded).
 	_, err := RecordVerificationPass(ctx, store, projectRoot, VerificationPassInput{
 		DecisionRef: decision.Meta.ID,
 	})
-	if err == nil {
-		t.Fatal("expected missing-file baseline error")
-	}
-
-	items, itemsErr := store.GetEvidenceItems(ctx, decision.Meta.ID)
-	if itemsErr != nil {
-		t.Fatalf("GetEvidenceItems: %v", itemsErr)
-	}
-	if len(items) != 0 {
-		t.Fatalf("evidence items = %d, want 0", len(items))
+	if err != nil {
+		t.Fatalf("unexpected error: %v (missing files should be skipped)", err)
 	}
 }

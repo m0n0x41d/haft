@@ -3,22 +3,22 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   archiveTask,
-  baselineDecision,
   cancelTask,
-  deprecateDecision,
   detectAgents,
   getConfig,
   getTaskOutput,
   handoffTask,
   listTasks,
-  measureDecision,
   openPathInIDE,
-  reopenDecision,
+  resolveAdoptBaseline,
+  resolveAdoptDeprecate,
+  resolveAdoptMeasure,
+  resolveAdoptReopen,
+  resolveAdoptWaive,
   spawnTask,
   type DesktopConfig,
   type InstalledAgent,
   type TaskState,
-  waiveDecision,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 
@@ -29,6 +29,11 @@ interface TaskOutputEvent {
 }
 
 type AdoptResolutionMode = "drift" | "stale";
+type AdoptResolutionContext = {
+  findingID: string;
+  decisionID: string;
+  mode: AdoptResolutionMode;
+};
 
 // PromptSection reserved for future collapsible brief in chat
 // interface PromptSection { title: string; body: string; }
@@ -291,7 +296,7 @@ export function Tasks({
     }
   };
 
-  const handleRebaseline = async (decisionID: string) => {
+  const handleRebaseline = async (resolution: AdoptResolutionContext) => {
     if (typeof window !== "undefined") {
       const confirmed = window.confirm(
         "Re-baseline will replace the stored SHA-256 snapshot for this DecisionRecord using the current project state.\n\nContinue?",
@@ -305,14 +310,14 @@ export function Tasks({
     await runResolutionAction(
       "baseline",
       async () => {
-        await baselineDecision(decisionID);
-        setResolutionMessage(`Re-baselined ${decisionID}.`);
+        await resolveAdoptBaseline(resolution.findingID, resolution.decisionID);
+        setResolutionMessage(`Re-baselined ${resolution.decisionID}.`);
       },
       "baseline decision",
     );
   };
 
-  const handleWaive = async (decisionID: string, task: TaskState) => {
+  const handleWaive = async (resolution: AdoptResolutionContext, task: TaskState) => {
     const reason = promptForAdoptReason("waive", task);
     if (reason === "") {
       return;
@@ -321,14 +326,14 @@ export function Tasks({
     await runResolutionAction(
       "waive",
       async () => {
-        await waiveDecision(decisionID, reason);
-        setResolutionMessage(`Waived ${decisionID}.`);
+        await resolveAdoptWaive(resolution.findingID, resolution.decisionID, reason);
+        setResolutionMessage(`Waived ${resolution.decisionID}.`);
       },
       "waive decision",
     );
   };
 
-  const handleReopen = async (decisionID: string, task: TaskState) => {
+  const handleReopen = async (resolution: AdoptResolutionContext, task: TaskState) => {
     const reason = promptForAdoptReason("reopen", task);
     if (reason === "") {
       return;
@@ -347,14 +352,18 @@ export function Tasks({
     await runResolutionAction(
       "reopen",
       async () => {
-        const problem = await reopenDecision(decisionID, reason);
-        setResolutionMessage(`Reopened ${decisionID} as ${problem.id}.`);
+        const problem = await resolveAdoptReopen(
+          resolution.findingID,
+          resolution.decisionID,
+          reason,
+        );
+        setResolutionMessage(`Reopened ${resolution.decisionID} as ${problem.id}.`);
       },
       "reopen decision",
     );
   };
 
-  const handleDeprecate = async (decisionID: string, task: TaskState) => {
+  const handleDeprecate = async (resolution: AdoptResolutionContext, task: TaskState) => {
     const reason = promptForAdoptReason("deprecate", task);
     if (reason === "") {
       return;
@@ -373,14 +382,14 @@ export function Tasks({
     await runResolutionAction(
       "deprecate",
       async () => {
-        await deprecateDecision(decisionID, reason);
-        setResolutionMessage(`Deprecated ${decisionID}.`);
+        await resolveAdoptDeprecate(resolution.findingID, resolution.decisionID, reason);
+        setResolutionMessage(`Deprecated ${resolution.decisionID}.`);
       },
       "deprecate decision",
     );
   };
 
-  const handleMeasure = async (decisionID: string, task: TaskState) => {
+  const handleMeasure = async (resolution: AdoptResolutionContext, task: TaskState) => {
     const findings = promptForMeasureFindings(task);
     if (findings === "") {
       return;
@@ -394,8 +403,13 @@ export function Tasks({
     await runResolutionAction(
       "measure",
       async () => {
-        await measureDecision(decisionID, findings, verdict);
-        setResolutionMessage(`Measured ${decisionID} with verdict ${verdict}.`);
+        await resolveAdoptMeasure(
+          resolution.findingID,
+          resolution.decisionID,
+          findings,
+          verdict,
+        );
+        setResolutionMessage(`Measured ${resolution.decisionID} with verdict ${verdict}.`);
       },
       "measure decision",
     );
@@ -574,7 +588,7 @@ export function Tasks({
                   <div className="flex flex-wrap gap-2">
                     {adoptResolution.mode === "drift" && (
                       <button
-                        onClick={() => void handleRebaseline(adoptResolution.decisionID)}
+                        onClick={() => void handleRebaseline(adoptResolution)}
                         disabled={resolutionAction !== ""}
                         className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
                       >
@@ -583,7 +597,7 @@ export function Tasks({
                     )}
                     {adoptResolution.mode === "stale" && (
                       <button
-                        onClick={() => void handleMeasure(adoptResolution.decisionID, detail)}
+                        onClick={() => void handleMeasure(adoptResolution, detail)}
                         disabled={resolutionAction !== ""}
                         className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
                       >
@@ -591,7 +605,7 @@ export function Tasks({
                       </button>
                     )}
                     <button
-                      onClick={() => void handleWaive(adoptResolution.decisionID, detail)}
+                      onClick={() => void handleWaive(adoptResolution, detail)}
                       disabled={resolutionAction !== ""}
                       className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
                     >
@@ -599,7 +613,7 @@ export function Tasks({
                     </button>
                     {adoptResolution.mode === "stale" && (
                       <button
-                        onClick={() => void handleDeprecate(adoptResolution.decisionID, detail)}
+                        onClick={() => void handleDeprecate(adoptResolution, detail)}
                         disabled={resolutionAction !== ""}
                         className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
                       >
@@ -607,7 +621,7 @@ export function Tasks({
                       </button>
                     )}
                     <button
-                      onClick={() => void handleReopen(adoptResolution.decisionID, detail)}
+                      onClick={() => void handleReopen(adoptResolution, detail)}
                       disabled={resolutionAction !== ""}
                       className="rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
                     >
@@ -1025,12 +1039,13 @@ function mergeTaskList(current: TaskState[], next: TaskState): TaskState[] {
 
 function getAdoptResolutionContext(
   task: TaskState | null,
-): { decisionID: string; mode: AdoptResolutionMode } | null {
+): AdoptResolutionContext | null {
   if (!task) {
     return null;
   }
 
   const prompt = task.prompt ?? "";
+  const findingID = taskPromptMetaValue(prompt, "Finding ID");
   const decisionID = taskPromptMetaValue(prompt, "Decision ID");
   const mode = prompt.includes("## Adopt Drift Finding")
     ? "drift"
@@ -1038,11 +1053,11 @@ function getAdoptResolutionContext(
       ? "stale"
       : null;
 
-  if (!decisionID || !mode) {
+  if (!findingID || !decisionID || !mode) {
     return null;
   }
 
-  return { decisionID, mode };
+  return { findingID, decisionID, mode };
 }
 
 function taskPromptMetaValue(prompt: string, label: string): string {

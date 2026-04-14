@@ -86,7 +86,13 @@ func (a *App) startup(ctx context.Context) {
 	a.store = artifact.NewStore(rawDB)
 	a.tasks = newTaskRunner(a, newDesktopTaskStore(database.GetRawDB()))
 	a.flows = newFlowController(a, newDesktopFlowStore(database.GetRawDB()))
-	a.governance = newGovernanceController(a, a.store, database.GetRawDB(), a.projectRoot)
+	a.governance = newGovernanceController(
+		a,
+		a.store,
+		database.GetRawDB(),
+		a.projectRoot,
+		resolveGovernanceScanInterval(),
+	)
 	a.terminals = newTerminalManager(a)
 
 	if err := a.tasks.restore(a.ctx, a.projectRoot); err != nil {

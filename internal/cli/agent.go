@@ -203,6 +203,12 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		Cwd:         cwd,
 		Lemniscate:  true,
 	}) + agent.LoadProjectContext(projectRoot)
+	workflow, workflowErr := project.LoadWorkflow(projectRoot)
+	if workflowErr != nil {
+		logger.Warn().Err(workflowErr).Msg("agent.workflow.load_failed")
+	} else if workflow != nil {
+		systemPrompt = workflow.PromptPrefix() + "\n\n" + systemPrompt
+	}
 
 	// 9. Agent definition
 	agentDef := agent.HaftAgent()

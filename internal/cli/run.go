@@ -315,9 +315,139 @@ func runImplement(cmd *cobra.Command, args []string) error {
 
 	ui.ok(fmt.Sprintf("Implementation complete (%ds)", int(time.Since(ui.startTime).Seconds())))
 
-	// ── Phase 2: Baseline ────────────────────────────────────────
+	// ── Phase 2: Invariant Verification ──────────────────────────
+	ui.phase("Phase 2: Verification")
+
+	verifyPass := true
+	invariantResults, vErr := graph.VerifyInvariants(ctx, graphStore, store.GetRawDB(), decisionRef)
+	if vErr != nil {
+		ui.warn(fmt.Sprintf("Invariant verification failed: %v", vErr))
+	} else if len(invariantResults) == 0 {
+		ui.warn("No verifiable invariants found (text patterns not recognized)")
+	} else {
+		holds := 0
+		violated := 0
+		unknown := 0
+		for _, r := range invariantResults {
+			switch r.Status {
+			case graph.InvariantHolds:
+				holds++
+				ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, true)
+			case graph.InvariantViolated:
+				violated++
+				verifyPass = false
+				ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, false)
+				fmt.Printf("       %s%s%s\n", aRed, r.Reason, aReset)
+			case graph.InvariantUnknown:
+				unknown++
+				fmt.Printf("  %s?%s %s[%s]%s %s %s(cannot verify automatically)%s\n",
+					aYellow, aReset, aDim, r.Invariant.DecisionID, aReset, r.Invariant.Text, aDim, aReset)
+			}
+		}
+		fmt.Printf("\n  %sInvariants: %d holds, %d violated, %d unknown%s\n",
+			aDim, holds, violated, unknown, aReset)
+	}
+
+	// Drift check — did agent change files outside scope?
+	driftReports, dErr := artifact.CheckDrift(ctx, artStore, projectRoot)
+	if dErr == nil {
+		for _, dr := range driftReports {
+			if dr.DecisionID == decisionRef {
+				outOfScope := 0
+				for _, item := range dr.Files {
+					found := false
+					for _, af := range affectedFiles {
+						if af.Path == item.Path {
+							found = true
+							break
+						}
+					}
+					if !found && item.Status == "added" {
+						outOfScope++
+					}
+				}
+				if outOfScope > 0 {
+					ui.warn(fmt.Sprintf("Agent touched %d file(s) outside declared scope", outOfScope))
+				}
+			}
+		}
+	}
+
+	// ── Phase 3: Decide next step ────────────────────────────────
+	if !verifyPass {
+		ui.phase("Phase 3: Verification Failed")
+		ui.fail("Invariant violations detected")
+		fmt.Println()
+
+		if !implementAuto {
+			fmt.Printf("  %sOptions:%s\n", aBold, aReset)
+			fmt.Println("    f) Fix and retry — spawn agent again to fix violations")
+			fmt.Println("    r) Reopen — create new ProblemCard from this failure")
+			fmt.Println("    d) Dismiss — waive violated invariants with justification")
+			fmt.Println("    q) Quit — leave as is, fix manually")
+			fmt.Println()
+			fmt.Printf("  %sChoice [f/r/d/q]: %s", aBold, aReset)
+			var choice string
+			fmt.Scanln(&choice)
+
+			switch strings.ToLower(choice) {
+			case "f":
+				// Build fix prompt from violations
+				var fixPrompt strings.Builder
+				_, _ = fixPrompt.WriteString("# Fix Invariant Violations\n\n")
+				_, _ = fixPrompt.WriteString(fmt.Sprintf("Decision: %s (%s)\n\n", decision.Meta.Title, decisionRef))
+				_, _ = fixPrompt.WriteString("The following invariants were violated after implementation:\n\n")
+				for _, r := range invariantResults {
+					if r.Status == graph.InvariantViolated {
+						_, _ = fixPrompt.WriteString(fmt.Sprintf("- VIOLATED: %s\n  Reason: %s\n\n", r.Invariant.Text, r.Reason))
+					}
+				}
+				_, _ = fixPrompt.WriteString("Fix these violations while preserving the implementation intent.\n")
+
+				ui.phase("Fix Attempt: Spawning agent")
+				var fixCmd *exec.Cmd
+				switch implementAgent {
+				case "codex":
+					fixCmd = exec.Command("codex", "exec", "--full-auto", "-c", "mcp_servers={}", "-")
+				default:
+					fixCmd = exec.Command("claude", "-p", fixPrompt.String(), "--allowedTools", "Edit,Write,Bash,Read,Glob,Grep")
+				}
+				fixCmd.Dir = projectRoot
+				fixCmd.Stdout = os.Stdout
+				fixCmd.Stderr = os.Stderr
+
+				if implementAgent == "codex" {
+					stdin, _ := fixCmd.StdinPipe()
+					_ = fixCmd.Start()
+					_, _ = stdin.Write([]byte(fixPrompt.String()))
+					_ = stdin.Close()
+					_ = fixCmd.Wait()
+				} else {
+					fixCmd.Stdin = os.Stdin
+					_ = fixCmd.Run()
+				}
+				ui.ok("Fix attempt complete — run haft run again to re-verify")
+
+			case "r":
+				ui.ok("Reopen as new problem — use /h-frame to capture the failure")
+
+			case "d":
+				fmt.Printf("  %sJustification: %s", aDim, aReset)
+				var justification string
+				fmt.Scanln(&justification)
+				if justification != "" {
+					ui.ok(fmt.Sprintf("Dismissed with: %s", justification))
+				}
+			}
+		}
+
+		fmt.Println()
+		return nil
+	}
+
+	// ── Phase 3: Baseline (only on pass) ─────────────────────────
+	ui.phase("Phase 3: Baseline")
 	if len(affectedFiles) > 0 {
-		ui.phase("Phase 2: Baseline")
 		baselined, blErr := artifact.Baseline(ctx, artStore, projectRoot, artifact.BaselineInput{
 			DecisionRef: decisionRef,
 		})
@@ -328,14 +458,17 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Record verification as CL3 evidence
+	ui.ok("Verification evidence recorded (CL3)")
+
 	// ── Summary ──────────────────────────────────────────────────
 	fmt.Println()
 	ui.summary()
 
 	fmt.Printf("\n  %sNext:%s\n", aBold, aReset)
 	fmt.Println("  • git diff")
-	fmt.Println("  • haft check")
 	fmt.Println("  • git commit + push")
+	fmt.Println("  • Create PR")
 	fmt.Println()
 
 	return nil

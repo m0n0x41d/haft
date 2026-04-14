@@ -11,9 +11,9 @@ import {
   type DecisionSummary,
   type GovernanceOverview,
   type ProblemCandidate,
-  type ProblemSummary,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
+import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
 
 type NavigateFn = (page: "dashboard" | "problems" | "decisions", id?: string) => void;
 
@@ -101,17 +101,21 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     );
   }
 
+  const recentActivity = buildRecentActivity(data.recent_problems, data.recent_decisions);
+
   return (
     <div className="space-y-8 pb-8">
       <div className="mb-2">
-        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">VERIFY</p>
-        <p className="text-xs text-text-muted mt-0.5">Decision governance, evidence health, and follow-up work</p>
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">DASHBOARD</p>
+        <p className="mt-0.5 text-xs text-text-muted">
+          Unified operator view for active decisions, governance findings, and recent activity.
+        </p>
       </div>
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{data.project_name}</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Decision execution, verification pressure, and follow-up governance work in one view.
+            Decision execution, governance pressure, and artifact activity in one surface.
           </p>
         </div>
 
@@ -134,6 +138,32 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="space-y-6">
+          <Section title="Active Decisions">
+            {data.healthy_decisions.length === 0 &&
+            data.pending_decisions.length === 0 &&
+            data.unassessed_decisions.length === 0 ? (
+              <EmptyState text="No active decisions." />
+            ) : (
+              <div className="space-y-4">
+                <DecisionBucket
+                  title="Shipped / Healthy"
+                  decisions={data.healthy_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
+                <DecisionBucket
+                  title="Pending"
+                  decisions={data.pending_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
+                <DecisionBucket
+                  title="Unassessed"
+                  decisions={data.unassessed_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
+              </div>
+            )}
+          </Section>
+
           <Section title="Governance Findings">
             {overview.findings.length === 0 ? (
               <EmptyState text="No stale or drift findings." />
@@ -194,56 +224,24 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
         </div>
 
         <div className="space-y-6">
-          <Section title="Module Coverage">
-            <CoverageSummary overview={overview} />
-          </Section>
-
-          <Section title="Decision Health">
-            {data.healthy_decisions.length === 0 &&
-            data.pending_decisions.length === 0 &&
-            data.unassessed_decisions.length === 0 ? (
-              <EmptyState text="No active decisions" />
-            ) : (
-              <div className="space-y-4">
-                <DecisionBucket
-                  title="Shipped / Healthy"
-                  decisions={data.healthy_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-                <DecisionBucket
-                  title="Pending"
-                  decisions={data.pending_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-                <DecisionBucket
-                  title="Unassessed"
-                  decisions={data.unassessed_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-              </div>
-            )}
-          </Section>
-
-          <Section title="Recent Problems">
-            {data.recent_problems.length === 0 ? (
-              <EmptyState text="No active problems" />
+          <Section title="Recent Activity">
+            {recentActivity.length === 0 ? (
+              <EmptyState text="No recent problem or decision activity." />
             ) : (
               <div className="space-y-2">
-                {data.recent_problems.map((problem: ProblemSummary) => (
-                  <button
-                    key={problem.id}
-                    onClick={() => onNavigate("problems", problem.id)}
-                    className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium text-text-primary">{problem.title}</span>
-                      <span className="font-mono text-[11px] text-text-muted">{problem.id}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-text-secondary">{problem.signal}</p>
-                  </button>
+                {recentActivity.map((item) => (
+                  <RecentActivityCard
+                    key={`${item.kind}-${item.id}`}
+                    item={item}
+                    onOpen={() => onNavigate(item.page, item.id)}
+                  />
                 ))}
               </div>
             )}
+          </Section>
+
+          <Section title="Module Coverage">
+            <CoverageSummary overview={overview} />
           </Section>
         </div>
       </div>
@@ -328,6 +326,44 @@ function CoverageSummary({ overview }: { overview: GovernanceOverview }) {
         )}
       </div>
     </div>
+  );
+}
+
+function RecentActivityCard({
+  item,
+  onOpen,
+}: {
+  item: DashboardActivityItem;
+  onOpen: () => void;
+}) {
+  const badgeClassName =
+    item.kind === "DecisionRecord"
+      ? "border-success/20 bg-success/10 text-success"
+      : "border-warning/20 bg-warning/10 text-warning";
+  const badgeLabel = item.kind === "DecisionRecord" ? "Decision" : "Problem";
+
+  return (
+    <button
+      onClick={onOpen}
+      className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${badgeClassName}`}>
+              {badgeLabel}
+            </span>
+            <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm text-text-secondary">{item.summary}</p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="font-mono text-[11px] text-text-muted">{item.id}</p>
+          <p className="mt-1 text-[11px] text-text-muted">{item.created_at}</p>
+        </div>
+      </div>
+    </button>
   );
 }
 

@@ -4,22 +4,31 @@ import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   adoptProblemCandidate,
   dismissProblemCandidate,
+  getConfig,
   getDashboard,
   getGovernanceOverview,
+  implementDecision,
   type CoverageModule,
   type DashboardData,
+  type DesktopConfig,
   type DecisionSummary,
   type GovernanceOverview,
   type ProblemCandidate,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
+import { getDecisionImplementActionState } from "./dashboardDecisionActions";
 
-type NavigateFn = (page: "dashboard" | "problems" | "decisions", id?: string) => void;
+type NavigateFn = (
+  page: "dashboard" | "problems" | "decisions" | "tasks",
+  id?: string,
+) => void;
 
 export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
+  const [config, setConfig] = useState<DesktopConfig | null>(null);
+  const [implementingDecisionIDs, setImplementingDecisionIDs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
@@ -42,6 +51,14 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
   useEffect(() => {
     void refresh();
+  }, []);
+
+  useEffect(() => {
+    getConfig()
+      .then(setConfig)
+      .catch((error) => {
+        reportError(error, "dashboard config");
+      });
   }, []);
 
   useEffect(() => {
@@ -82,6 +99,33 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
       await refresh();
     } catch (error) {
       reportError(error, "dismiss problem candidate");
+    }
+  };
+
+  const handleImplementDecision = async (decisionID: string) => {
+    setImplementingDecisionIDs((currentDecisionIDs) => {
+      if (currentDecisionIDs.includes(decisionID)) {
+        return currentDecisionIDs;
+      }
+
+      return [...currentDecisionIDs, decisionID];
+    });
+
+    try {
+      const task = await implementDecision(
+        decisionID,
+        config?.default_agent ?? "claude",
+        config?.default_worktree ?? true,
+        "",
+      );
+
+      onNavigate("tasks", task.id);
+    } catch (error) {
+      reportError(error, "implement decision");
+    } finally {
+      setImplementingDecisionIDs((currentDecisionIDs) =>
+        currentDecisionIDs.filter((currentDecisionID) => currentDecisionID !== decisionID),
+      );
     }
   };
 
@@ -149,16 +193,22 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
                   title="Shipped / Healthy"
                   decisions={data.healthy_decisions}
                   onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
                 />
                 <DecisionBucket
                   title="Pending"
                   decisions={data.pending_decisions}
                   onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
                 />
                 <DecisionBucket
                   title="Unassessed"
                   decisions={data.unassessed_decisions}
                   onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
                 />
               </div>
             )}
@@ -253,10 +303,14 @@ function DecisionBucket({
   title,
   decisions,
   onOpenDecision,
+  onImplementDecision,
+  implementingDecisionIDs,
 }: {
   title: string;
   decisions: DecisionSummary[];
   onOpenDecision: (decisionID: string) => void;
+  onImplementDecision: (decisionID: string) => Promise<void>;
+  implementingDecisionIDs: string[];
 }) {
   if (decisions.length === 0) {
     return null;
@@ -272,10 +326,38 @@ function DecisionBucket({
       </div>
 
       {decisions.map((decision) => (
-        <button
+        <DecisionCard
           key={decision.id}
+          decision={decision}
+          isImplementing={implementingDecisionIDs.includes(decision.id)}
+          onOpenDecision={onOpenDecision}
+          onImplementDecision={onImplementDecision}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DecisionCard({
+  decision,
+  isImplementing,
+  onOpenDecision,
+  onImplementDecision,
+}: {
+  decision: DecisionSummary;
+  isImplementing: boolean;
+  onOpenDecision: (decisionID: string) => void;
+  onImplementDecision: (decisionID: string) => Promise<void>;
+}) {
+  const implementAction = getDecisionImplementActionState(decision.status);
+  const isImplementDisabled = implementAction.disabled || isImplementing;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
+      <div className="flex items-start justify-between gap-3">
+        <button
           onClick={() => onOpenDecision(decision.id)}
-          className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+          className="min-w-0 flex-1 text-left"
         >
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
@@ -286,7 +368,16 @@ function DecisionBucket({
             {decision.valid_until && <span>Valid until {decision.valid_until}</span>}
           </div>
         </button>
-      ))}
+
+        <button
+          onClick={() => void onImplementDecision(decision.id)}
+          disabled={isImplementDisabled}
+          title={implementAction.reason}
+          className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+        >
+          {isImplementing ? "Spawning..." : "Implement"}
+        </button>
+      </div>
     </div>
   );
 }

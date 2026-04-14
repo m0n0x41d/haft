@@ -104,11 +104,36 @@ Describe your problem. The agent frames it, generates alternatives, compares the
                          options
 ```
 
+### From decision to code: `haft run`
+
+Once you have a decision, implement it:
+
+```bash
+haft run dec-20260414-001
+```
+
+Haft reads the decision's invariants, claims, affected files, and governing invariants from the knowledge graph — then spawns an agent (Codex or Claude) with full reasoning context. After execution, takes a baseline snapshot automatically.
+
+```
+/h-reason "redesign the caching layer"
+  ↓ frame → explore → compare → decide
+  ↓
+haft run dec-20260414-001 --agent codex
+  ↓ reads decision → builds prompt → spawns agent
+  ↓ agent implements with invariants as guardrails
+  ↓ baseline snapshot on completion
+  ↓
+haft check
+  ↓ verify governance health
+```
+
+The same loop powers the desktop "Implement" button. CLI and desktop are two surfaces over one kernel.
+
 ### Evidence workflow
 
 Attach evidence to decisions with `haft_decision(action="evidence", ...)`. Evidence has formality levels (F0-F3), congruence levels (CL0-CL3), and expiry dates. Trust scores (R_eff) degrade as evidence ages. Stale evidence triggers refresh.
 
-Use `haft_decision(action="measure", ...)` for post-implementation verification. Pair with `haft_decision(action="baseline", ...)` to snapshot affected files before measuring.
+Use `haft_decision(action="measure", ...)` for post-implementation verification.
 
 ---
 

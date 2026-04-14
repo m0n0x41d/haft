@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
 func TestTaskOutputBufferKeepsNewestLongSingleLine(t *testing.T) {
@@ -546,6 +548,216 @@ func TestImplementDecisionRecordsVerificationPassOnSuccess(t *testing.T) {
 	}
 }
 
+func TestBuildPullRequestBodyIncludesRationaleInvariantAndVerification(t *testing.T) {
+	task := TaskState{
+		ID:     "task-42",
+		Title:  "Implement: Create PR action",
+		Branch: "feat/create-pr-action",
+	}
+
+	detail := DecisionDetailView{
+		ID:              "dec-42",
+		Title:           "Create PR action",
+		SelectedTitle:   "Create PR action",
+		WhySelected:     "It closes the execution loop without widening the artifact model.",
+		SelectionPolicy: "Prefer the smallest reversible operator action.",
+		Invariants: []string{
+			"Generate PR body from decision rationale and verification evidence.",
+		},
+	}
+
+	verification := &artifact.EvidenceItem{
+		ID:              "ev-42",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		Content: strings.Join([]string{
+			"Desktop post-execution verification pass recorded.",
+			"Decision: dec-42",
+			"Baselined files (1): desktop/agents.go",
+			"Task: task-42",
+			"Worktree: /tmp/worktree",
+		}, "\n"),
+	}
+
+	body := buildPullRequestBody(
+		task,
+		detail,
+		"Use the stored decision rationale rather than rebuilding PR text from task output.",
+		verification,
+	)
+
+	expectedSnippets := []string{
+		"## Summary: Create PR action",
+		"## Decision Rationale",
+		"Use the stored decision rationale rather than rebuilding PR text from task output.",
+		"It closes the execution loop without widening the artifact model.",
+		"Selection policy: Prefer the smallest reversible operator action.",
+		"## Invariants",
+		"Generate PR body from decision rationale and verification evidence.",
+		"## Verification Result",
+		"Post-execution verification passed.",
+		"Evidence: ev-42",
+		"Baselined files (1): desktop/agents.go",
+	}
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("PR body missing %q:\n%s", snippet, body)
+		}
+	}
+
+	if strings.Contains(body, "Worktree: /tmp/worktree") {
+		t.Fatalf("PR body should not expose worktree paths:\n%s", body)
+	}
+}
+
+func TestCreatePullRequestCreatesDraftForReadyTask(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'verification task complete\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("LookPath git: %v", err)
+	}
+
+	pushLog := filepath.Join(t.TempDir(), "git-push.log")
+	ghLog := filepath.Join(t.TempDir(), "gh.log")
+
+	installStubAgentBinary(
+		t,
+		"git",
+		fmt.Sprintf(
+			"#!/bin/sh\nif [ \"$1\" = \"push\" ]; then\n  printf '%%s\\n' \"$*\" >> %q\n  exit 0\nfi\nexec %q \"$@\"\n",
+			pushLog,
+			realGit,
+		),
+	)
+	installStubAgentBinary(
+		t,
+		"gh",
+		fmt.Sprintf(
+			"#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nprintf 'https://example.com/pr/123\\n'\n",
+			ghLog,
+		),
+	)
+
+	decision, task := createReadyForPRTask(t, app)
+
+	result, err := app.CreatePullRequest(task.ID)
+	if err != nil {
+		t.Fatalf("CreatePullRequest: %v", err)
+	}
+
+	if !result.Pushed {
+		t.Fatal("expected branch push to succeed")
+	}
+	if !result.DraftCreated {
+		t.Fatalf("expected draft PR creation, warnings=%v", result.Warnings)
+	}
+	if result.CopiedToClipboard {
+		t.Fatal("did not expect clipboard fallback when draft creation succeeds")
+	}
+	if result.URL != "https://example.com/pr/123" {
+		t.Fatalf("result URL = %q, want %q", result.URL, "https://example.com/pr/123")
+	}
+	if !strings.Contains(result.Body, decision.WhySelected) {
+		t.Fatalf("PR body missing decision rationale:\n%s", result.Body)
+	}
+	if !strings.Contains(result.Body, decision.Invariants[0]) {
+		t.Fatalf("PR body missing invariant:\n%s", result.Body)
+	}
+	if !strings.Contains(result.Body, "Post-execution verification passed.") {
+		t.Fatalf("PR body missing verification result:\n%s", result.Body)
+	}
+
+	pushArgs, err := os.ReadFile(pushLog)
+	if err != nil {
+		t.Fatalf("ReadFile push log: %v", err)
+	}
+	if !strings.Contains(string(pushArgs), "push --set-upstream origin HEAD:"+task.Branch) {
+		t.Fatalf("unexpected push args: %q", string(pushArgs))
+	}
+
+	ghArgs, err := os.ReadFile(ghLog)
+	if err != nil {
+		t.Fatalf("ReadFile gh log: %v", err)
+	}
+	if !strings.Contains(string(ghArgs), "pr create --draft") {
+		t.Fatalf("unexpected gh args: %q", string(ghArgs))
+	}
+	if !strings.Contains(string(ghArgs), "--head "+task.Branch) {
+		t.Fatalf("expected gh args to include head branch, got %q", string(ghArgs))
+	}
+}
+
+func TestCreatePullRequestCopiesBodyToClipboardWhenDraftCreationFails(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'verification task complete\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("LookPath git: %v", err)
+	}
+
+	installStubAgentBinary(
+		t,
+		"git",
+		fmt.Sprintf(
+			"#!/bin/sh\nif [ \"$1\" = \"push\" ]; then\n  exit 0\nfi\nexec %q \"$@\"\n",
+			realGit,
+		),
+	)
+	installStubAgentBinary(
+		t,
+		"gh",
+		"#!/bin/sh\nprintf 'draft creation unavailable\\n' >&2\nexit 1\n",
+	)
+
+	decision, task := createReadyForPRTask(t, app)
+
+	originalClipboardWriter := desktopClipboardWriter
+	copiedBody := ""
+	desktopClipboardWriter = func(_ context.Context, text string) error {
+		copiedBody = text
+		return nil
+	}
+	defer func() {
+		desktopClipboardWriter = originalClipboardWriter
+	}()
+
+	result, err := app.CreatePullRequest(task.ID)
+	if err != nil {
+		t.Fatalf("CreatePullRequest: %v", err)
+	}
+
+	if !result.Pushed {
+		t.Fatal("expected branch push to succeed before fallback")
+	}
+	if result.DraftCreated {
+		t.Fatal("did not expect draft PR creation when gh fails")
+	}
+	if !result.CopiedToClipboard {
+		t.Fatalf("expected clipboard fallback, warnings=%v", result.Warnings)
+	}
+	if copiedBody != result.Body {
+		t.Fatalf("clipboard body mismatch:\nclipboard=%q\nresult=%q", copiedBody, result.Body)
+	}
+	if !strings.Contains(result.Body, decision.WhySelected) {
+		t.Fatalf("clipboard body missing rationale:\n%s", result.Body)
+	}
+	if !containsWarning(result.Warnings, "Draft PR creation failed") {
+		t.Fatalf("expected draft creation warning, got %v", result.Warnings)
+	}
+}
+
 func installStubAgentBinary(t *testing.T, name string, body string) {
 	t.Helper()
 
@@ -643,4 +855,69 @@ func containsArg(args []string, want string) bool {
 	}
 
 	return false
+}
+
+func containsWarning(warnings []string, want string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, want) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func createReadyForPRTask(t *testing.T, app *App) (*DecisionDetailView, TaskState) {
+	t.Helper()
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Create PR action problem",
+		Signal:      "Ready-for-PR tasks stop before branch publication and draft creation.",
+		Acceptance:  "The desktop flow can generate a PR body and publish the verified branch.",
+		BlastRadius: "Desktop create PR action only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      problem.ID,
+		SelectedTitle:   "Create PR action",
+		WhySelected:     "The operator needs the PR handoff to reuse decision rationale and verification evidence.",
+		SelectionPolicy: "Prefer the smallest reversible step that closes the verified execution loop.",
+		CounterArgument: "Manual PR creation is simpler and avoids GitHub CLI dependencies.",
+		WeakestLink:     "Publishing can fail when git or gh auth is unavailable.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Manual PR body drafting",
+				Reason:  "It duplicates reasoning that already exists on the decision and verification evidence.",
+			},
+		},
+		Invariants: []string{
+			"Generate PR body from decision rationale + invariants + verification result.",
+		},
+		AffectedFiles: []string{"README.md"},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"Desktop-driven PR creation proves unreliable across supported environments.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.ImplementDecision(decision.ID, "claude", false, "")
+	if err != nil {
+		t.Fatalf("ImplementDecision: %v", err)
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "Ready for PR" {
+		t.Fatalf("task status = %q, want Ready for PR", final.Status)
+	}
+
+	return decision, final
 }

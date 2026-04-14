@@ -73,6 +73,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	server := fpf.NewServer()
 
+	workflow, workflowErr := project.LoadWorkflow(cwd)
+	if workflowErr != nil {
+		logger.Warn().Err(workflowErr).Msg("failed to load workflow policy")
+	} else if workflow != nil {
+		server.SetInstructions(workflow.PromptPrefix())
+	}
+
 	// Load project identity
 	projCfg, err := project.Load(haftDir)
 	if err != nil {
@@ -359,6 +366,9 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		input := artifact.ProblemFrameInput{Context: contextName}
 		if v, ok := args["title"].(string); ok {
 			input.Title = v
+		}
+		if v, ok := args["problem_type"].(string); ok {
+			input.ProblemType = v
 		}
 		if v, ok := args["signal"].(string); ok {
 			input.Signal = v
@@ -856,6 +866,8 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 			return "", err
 		}
 		result := present.ScanResponse(items, "")
+		governanceAttention := scanGovernanceAttention(ctx, store)
+		result += present.GovernanceAttentionResponse(governanceAttention)
 
 		// Level C: enrich drift reports with dependency impact
 		driftReports, _ := artifact.CheckDrift(ctx, store, projectRoot)

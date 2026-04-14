@@ -8,16 +8,20 @@ import {
   getDashboard,
   getGovernanceOverview,
   implementDecision,
+  reopenDecision,
+  waiveDecision,
   type CoverageModule,
   type DashboardData,
   type DesktopConfig,
   type DecisionSummary,
+  type GovernanceFinding,
   type GovernanceOverview,
   type ProblemCandidate,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
 import { getDecisionImplementActionState } from "./dashboardDecisionActions";
+import { getGovernanceFindingActionState } from "./dashboardGovernanceActions";
 
 type NavigateFn = (
   page: "dashboard" | "problems" | "decisions" | "tasks",
@@ -29,6 +33,7 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [implementingDecisionIDs, setImplementingDecisionIDs] = useState<string[]>([]);
+  const [findingActionKeys, setFindingActionKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
@@ -129,6 +134,81 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     }
   };
 
+  const startFindingAction = (actionKey: string) => {
+    setFindingActionKeys((currentActionKeys) => {
+      if (currentActionKeys.includes(actionKey)) {
+        return currentActionKeys;
+      }
+
+      return [...currentActionKeys, actionKey];
+    });
+  };
+
+  const finishFindingAction = (actionKey: string) => {
+    setFindingActionKeys((currentActionKeys) =>
+      currentActionKeys.filter((currentActionKey) => currentActionKey !== actionKey),
+    );
+  };
+
+  const handleAdoptFinding = async (findingID: string, candidateID: string) => {
+    const actionKey = buildFindingActionKey(findingID, "adopt");
+    startFindingAction(actionKey);
+
+    try {
+      const problem = await adoptProblemCandidate(candidateID);
+      await refresh();
+      onNavigate("problems", problem.id);
+    } catch (error) {
+      reportError(error, "adopt governance finding");
+    } finally {
+      finishFindingAction(actionKey);
+    }
+  };
+
+  const handleWaiveFinding = async (finding: GovernanceFinding) => {
+    const decisionID = finding.artifact_ref;
+    const reason = promptForGovernanceDecisionReason("waive", finding);
+
+    if (!decisionID || reason === "") {
+      return;
+    }
+
+    const actionKey = buildFindingActionKey(finding.id, "waive");
+    startFindingAction(actionKey);
+
+    try {
+      await waiveDecision(decisionID, reason);
+      await refresh();
+      onNavigate("decisions", decisionID);
+    } catch (error) {
+      reportError(error, "waive governance finding");
+    } finally {
+      finishFindingAction(actionKey);
+    }
+  };
+
+  const handleReopenFinding = async (finding: GovernanceFinding) => {
+    const decisionID = finding.artifact_ref;
+    const reason = promptForGovernanceDecisionReason("reopen", finding);
+
+    if (!decisionID || reason === "") {
+      return;
+    }
+
+    const actionKey = buildFindingActionKey(finding.id, "reopen");
+    startFindingAction(actionKey);
+
+    try {
+      const problem = await reopenDecision(decisionID, reason);
+      await refresh();
+      onNavigate("problems", problem.id);
+    } catch (error) {
+      reportError(error, "reopen governance finding");
+    } finally {
+      finishFindingAction(actionKey);
+    }
+  };
+
   if (loading && (!data || !overview)) {
     return (
       <div className="p-8 text-center">
@@ -218,33 +298,24 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
             {overview.findings.length === 0 ? (
               <EmptyState text="No stale or drift findings." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {overview.findings.map((finding) => (
-                  <button
+                  <GovernanceFindingCard
                     key={finding.id}
-                    onClick={() => {
+                    finding={finding}
+                    candidates={overview.problem_candidates}
+                    isAdopting={findingActionKeys.includes(buildFindingActionKey(finding.id, "adopt"))}
+                    isWaiving={findingActionKeys.includes(buildFindingActionKey(finding.id, "waive"))}
+                    isReopening={findingActionKeys.includes(buildFindingActionKey(finding.id, "reopen"))}
+                    onOpenDecision={() => {
                       if (finding.kind === "DecisionRecord" && finding.artifact_ref) {
                         onNavigate("decisions", finding.artifact_ref);
                       }
                     }}
-                    className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{finding.title}</p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
-                          {finding.category.replaceAll("_", " ")}
-                        </p>
-                      </div>
-
-                      <div className="text-right text-[11px] text-text-muted">
-                        {finding.drift_count > 0 && <p>{finding.drift_count} drift file(s)</p>}
-                        {finding.days_stale > 0 && <p>{finding.days_stale} day(s) stale</p>}
-                      </div>
-                    </div>
-
-                    <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
-                  </button>
+                    onAdopt={(candidateID) => void handleAdoptFinding(finding.id, candidateID)}
+                    onWaive={() => void handleWaiveFinding(finding)}
+                    onReopen={() => void handleReopenFinding(finding)}
+                  />
                 ))}
               </div>
             )}
@@ -338,6 +409,84 @@ function DecisionBucket({
   );
 }
 
+function GovernanceFindingCard({
+  finding,
+  candidates,
+  isAdopting,
+  isWaiving,
+  isReopening,
+  onOpenDecision,
+  onAdopt,
+  onWaive,
+  onReopen,
+}: {
+  finding: GovernanceFinding;
+  candidates: ProblemCandidate[];
+  isAdopting: boolean;
+  isWaiving: boolean;
+  isReopening: boolean;
+  onOpenDecision: () => void;
+  onAdopt: (candidateID: string) => void;
+  onWaive: () => void;
+  onReopen: () => void;
+}) {
+  const actionState = getGovernanceFindingActionState(finding, candidates);
+  const canOpenDecision = finding.kind === "DecisionRecord" && finding.artifact_ref !== "";
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {canOpenDecision ? (
+            <button onClick={onOpenDecision} className="min-w-0 text-left">
+              <p className="truncate text-sm font-medium text-text-primary">{finding.title}</p>
+            </button>
+          ) : (
+            <p className="text-sm font-medium text-text-primary">{finding.title}</p>
+          )}
+          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
+            {finding.category.replaceAll("_", " ")}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right text-[11px] text-text-muted">
+          {finding.drift_count > 0 && <p>{finding.drift_count} drift file(s)</p>}
+          {finding.days_stale > 0 && <p>{finding.days_stale} day(s) stale</p>}
+        </div>
+      </div>
+
+      <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
+
+      {actionState.showActions && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => onAdopt(actionState.adoptCandidateID)}
+            disabled={actionState.adoptDisabled || isAdopting}
+            title={actionState.adoptReason}
+            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+          >
+            {isAdopting ? "Adopting..." : "Adopt"}
+          </button>
+          <button
+            onClick={onWaive}
+            disabled={isWaiving}
+            className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-border-bright hover:bg-surface-3 disabled:cursor-not-allowed disabled:text-text-muted"
+          >
+            {isWaiving ? "Waiving..." : "Waive"}
+          </button>
+          <button
+            onClick={onReopen}
+            disabled={isReopening}
+            className="rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning transition-colors hover:border-warning/50 hover:bg-warning/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+          >
+            {isReopening ? "Reopening..." : "Reopen"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DecisionCard({
   decision,
   isImplementing,
@@ -418,6 +567,30 @@ function CoverageSummary({ overview }: { overview: GovernanceOverview }) {
       </div>
     </div>
   );
+}
+
+function buildFindingActionKey(
+  findingID: string,
+  action: "adopt" | "waive" | "reopen",
+): string {
+  return `${findingID}:${action}`;
+}
+
+function promptForGovernanceDecisionReason(
+  action: "waive" | "reopen",
+  finding: GovernanceFinding,
+): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const promptMessage =
+    action === "waive"
+      ? `Waive will extend this DecisionRecord by 90 days.\n\nEnter justification for ${finding.title}:`
+      : `Reopen will mark this DecisionRecord as refresh due and create a new ProblemCard.\n\nEnter reason for ${finding.title}:`;
+  const response = window.prompt(promptMessage, finding.reason);
+
+  return response ? response.trim() : "";
 }
 
 function RecentActivityCard({

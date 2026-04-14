@@ -505,6 +505,85 @@ func (a *App) AdoptProblemCandidate(id string) (*ProblemDetailView, error) {
 	return &view, nil
 }
 
+func (a *App) WaiveDecision(id string, reason string) (*DecisionDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	decisionID := strings.TrimSpace(id)
+	waiveReason := strings.TrimSpace(reason)
+
+	if decisionID == "" {
+		return nil, fmt.Errorf("decision id is required")
+	}
+	if waiveReason == "" {
+		return nil, fmt.Errorf("waive reason is required")
+	}
+
+	decision, err := a.store.Get(a.ctx, decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionID, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionID, decision.Meta.Kind)
+	}
+
+	if _, err := artifact.WaiveArtifact(a.ctx, a.store, a.haftDir(), decisionID, waiveReason, "", ""); err != nil {
+		return nil, fmt.Errorf("waive decision %s: %w", decisionID, err)
+	}
+
+	if a.governance != nil {
+		if _, err := a.governance.scan(a.ctx, false); err != nil {
+			return nil, fmt.Errorf("refresh governance after waive: %w", err)
+		}
+	}
+
+	_, view, err := a.loadDecisionDetail(decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s after waive: %w", decisionID, err)
+	}
+
+	return &view, nil
+}
+
+func (a *App) ReopenDecision(id string, reason string) (*ProblemDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	decisionID := strings.TrimSpace(id)
+	reopenReason := strings.TrimSpace(reason)
+
+	if decisionID == "" {
+		return nil, fmt.Errorf("decision id is required")
+	}
+	if reopenReason == "" {
+		return nil, fmt.Errorf("reopen reason is required")
+	}
+
+	decision, err := a.store.Get(a.ctx, decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionID, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionID, decision.Meta.Kind)
+	}
+
+	_, problem, err := artifact.ReopenDecision(a.ctx, a.store, a.haftDir(), decisionID, reopenReason)
+	if err != nil {
+		return nil, fmt.Errorf("reopen decision %s: %w", decisionID, err)
+	}
+
+	if a.governance != nil {
+		if _, err := a.governance.scan(a.ctx, false); err != nil {
+			return nil, fmt.Errorf("refresh governance after reopen: %w", err)
+		}
+	}
+
+	view := toProblemDetail(a.ctx, problem, a.store)
+	return &view, nil
+}
+
 func (a *App) loadDecisionDetail(id string) (*artifact.Artifact, DecisionDetailView, error) {
 	art, err := a.store.Get(a.ctx, id)
 	if err != nil {

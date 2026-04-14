@@ -789,6 +789,25 @@ func (a *App) Implement(decisionRef string) (*TaskState, error) {
 	return a.implementDecisionTask(decisionRef, "", "")
 }
 
+// Adopt creates a checkpointed investigation task for a drift finding.
+func (a *App) Adopt(findingRef string) (*TaskState, error) {
+	context, err := a.loadDriftAdoptionContext(findingRef)
+	if err != nil {
+		return nil, err
+	}
+
+	prompt := buildAdoptDriftPrompt(*context)
+
+	return a.spawnTaskWithTitle(
+		"",
+		prompt,
+		false,
+		"",
+		decisionTaskTitle("Adopt", context.Detail),
+		taskRunPlan{ForceCheckpointed: true},
+	)
+}
+
 func (a *App) implementDecisionTask(
 	decisionID string,
 	agentKind string,

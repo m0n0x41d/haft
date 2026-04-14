@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
 func TestDecisionDetailIncludesGovernanceScope(t *testing.T) {
@@ -146,6 +148,96 @@ func TestGovernanceDecisionRefreshActions(t *testing.T) {
 
 	if decision.Status != "refresh_due" {
 		t.Fatalf("decision status after reopen = %q, want refresh_due", decision.Status)
+	}
+}
+
+func TestAdoptCreatesDriftTaskWithDecisionContext(t *testing.T) {
+	app := newGovernanceTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'adopt drift task\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	decisionID := seedGovernanceDecision(t, app)
+	detail, err := app.GetDecision(decisionID)
+	if err != nil {
+		t.Fatalf("GetDecision: %v", err)
+	}
+
+	_, err = artifact.Baseline(context.Background(), app.store, app.projectRoot, artifact.BaselineInput{
+		DecisionRef: decisionID,
+	})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+
+	err = os.WriteFile(
+		filepath.Join(app.projectRoot, "internal", "auth", "auth.go"),
+		[]byte("package auth\n\nfunc Enabled() bool { return false }\n"),
+		0o644,
+	)
+	if err != nil {
+		t.Fatalf("WriteFile auth.go: %v", err)
+	}
+
+	overview, err := app.GetGovernanceOverview()
+	if err != nil {
+		t.Fatalf("GetGovernanceOverview: %v", err)
+	}
+
+	var findingID string
+	for _, finding := range overview.Findings {
+		if finding.ArtifactRef != decisionID {
+			continue
+		}
+		if finding.Category != string(artifact.StaleCategoryDecisionStale) {
+			continue
+		}
+		findingID = finding.ID
+	}
+
+	if findingID == "" {
+		t.Fatalf("expected drift finding for %s, findings=%+v", decisionID, overview.Findings)
+	}
+
+	task, err := app.Adopt(findingID)
+	if err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+
+	if task.AutoRun {
+		t.Fatal("expected adopt task to start checkpointed")
+	}
+
+	expectedSnippets := []string{
+		"## Adopt Drift Finding: Desktop governance execution loop",
+		"Finding category: decision_stale",
+		"Decision ID: " + decisionID,
+		"## Decision Record Body",
+		detail.Body,
+		"## Decision Invariants",
+		"Desktop uses shared artifact logic as the single source of truth.",
+		"## Drift Report",
+		"- internal/auth/auth.go status=modified",
+		"## Diffs",
+		"internal/auth/auth.go (modified)",
+		"func Enabled() bool { return false }",
+		"## Impacted Modules",
+		"- internal/auth [go] status=",
+		"## Instructions",
+		"Do not execute re-baseline, reopen, waive, or any other lifecycle action without explicit user confirmation.",
+	}
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(task.Prompt, snippet) {
+			t.Fatalf("adopt prompt missing %q:\n%s", snippet, task.Prompt)
+		}
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "completed" {
+		t.Fatalf("task status = %q, want completed", final.Status)
 	}
 }
 

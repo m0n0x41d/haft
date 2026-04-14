@@ -55,6 +55,7 @@ var (
 	implementAuto    bool
 	implementContext []string
 	implementPrompt  string
+	implementSteps   bool
 )
 
 func init() {
@@ -62,6 +63,7 @@ func init() {
 	implementCmd.Flags().BoolVar(&implementAuto, "auto", false, "No confirmation prompts")
 	implementCmd.Flags().StringArrayVarP(&implementContext, "context", "c", nil, "Extra context files to include in prompt (repeatable)")
 	implementCmd.Flags().StringVarP(&implementPrompt, "prompt", "p", "", "Extra instructions appended to the agent prompt")
+	implementCmd.Flags().BoolVar(&implementSteps, "steps", false, "Decompose into steps with per-step verification (lemniscate mode)")
 	rootCmd.AddCommand(implementCmd)
 }
 
@@ -268,7 +270,70 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// ── Phase 1: Implementation ──────────────────────────────────
+	// ── Step mode: decompose and run with per-step verification ──
+	if implementSteps {
+		steps := decomposeDecision(decision, affectedFiles, graphStore, projectRoot, implementContext, implementPrompt)
+
+		ui.meta("Mode", fmt.Sprintf("lemniscate (%d steps)", len(steps)))
+		fmt.Println()
+
+		allPassed := true
+		for _, step := range steps {
+			passed := executeStep(step, implementAgent, projectRoot, graphStore, decisionRef, ui, 1)
+			if !passed {
+				allPassed = false
+				if !implementAuto {
+					fmt.Printf("\n  %sStep %d failed. Continue remaining steps? [Y/n] %s", aBold, step.index, aReset)
+					var answer string
+					fmt.Scanln(&answer)
+					if answer == "n" || answer == "N" {
+						break
+					}
+				}
+			}
+		}
+
+		// Final full verification
+		ui.phase("Final Verification")
+		invariantResults, vErr := graph.VerifyInvariants(ctx, graphStore, store.GetRawDB(), decisionRef)
+		if vErr != nil {
+			ui.warn(fmt.Sprintf("Final verification failed: %v", vErr))
+		} else {
+			for _, r := range invariantResults {
+				switch r.Status {
+				case graph.InvariantHolds:
+					ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, true)
+				case graph.InvariantViolated:
+					allPassed = false
+					ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, false)
+				default:
+					fmt.Printf("  %s?%s %s%s%s\n", aYellow, aReset, aDim, r.Invariant.Text, aReset)
+				}
+			}
+		}
+
+		if allPassed && len(affectedFiles) > 0 {
+			ui.phase("Baseline")
+			baselined, blErr := artifact.Baseline(ctx, artStore, projectRoot, artifact.BaselineInput{
+				DecisionRef: decisionRef,
+			})
+			if blErr != nil {
+				ui.warn(fmt.Sprintf("Baseline failed: %v", blErr))
+			} else {
+				ui.ok(fmt.Sprintf("Baseline: %d file(s) snapshotted", len(baselined)))
+			}
+			ui.ok("All steps passed — verification evidence recorded")
+		} else if !allPassed {
+			ui.fail("Some steps failed — no baseline taken")
+		}
+
+		fmt.Println()
+		ui.summary()
+		fmt.Println()
+		return nil
+	}
+
+	// ── Single-shot mode (default) ───────────────────────────────
 	ui.phase("Phase 1: Implementation")
 
 	var agentCmd *exec.Cmd

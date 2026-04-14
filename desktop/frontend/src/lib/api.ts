@@ -457,6 +457,19 @@ export interface TaskState {
   auto_run: boolean;
 }
 
+export interface PullRequestResult {
+  task_id: string;
+  decision_ref: string;
+  branch: string;
+  title: string;
+  body: string;
+  url: string;
+  pushed: boolean;
+  draft_created: boolean;
+  copied_to_clipboard: boolean;
+  warnings: string[];
+}
+
 export interface DesktopFlow {
   id: string;
   project_name: string;
@@ -566,6 +579,7 @@ type WailsBindings = {
     branch: string,
   ) => Promise<TaskState>;
   VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
+  CreatePullRequest?: (taskID: string) => Promise<PullRequestResult>;
   BaselineDecision?: (decisionID: string) => Promise<DecisionDetail>;
   MeasureDecision?: (decisionID: string, findings: string, verdict: string) => Promise<DecisionDetail>;
   WaiveDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
@@ -983,6 +997,23 @@ function nowString(): string {
 
 function compactList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function taskPromptMetaValue(prompt: string, label: string): string {
+  const prefix = `${label.trim()}:`;
+  const lines = prompt.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    return trimmed.slice(prefix.length).trim();
+  }
+
+  return "";
 }
 
 // --- Public API ---
@@ -2026,6 +2057,31 @@ export async function implementDecision(
   );
   if (task) return task;
   return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
+}
+
+export async function createPullRequest(taskID: string): Promise<PullRequestResult> {
+  const result = await callBinding<PullRequestResult>("CreatePullRequest", taskID);
+  if (result) return result;
+
+  const task = mockTasks.find((item) => item.id === taskID);
+  if (!task) {
+    throw new Error(`Task ${taskID} not found`);
+  }
+
+  const decisionRef = taskPromptMetaValue(task.prompt, "Decision ID");
+
+  return {
+    task_id: task.id,
+    decision_ref: decisionRef,
+    branch: task.branch,
+    title: task.title,
+    body: `## Summary\n\n- Decision: ${decisionRef || "unknown"}\n- Task: ${task.id}`,
+    url: "",
+    pushed: false,
+    draft_created: false,
+    copied_to_clipboard: true,
+    warnings: ["Automatic draft PR creation is unavailable in mock mode."],
+  };
 }
 
 export async function verifyDecision(decisionID: string, agent: string): Promise<TaskState> {

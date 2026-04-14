@@ -53,13 +53,17 @@ Examples:
 }
 
 var (
-	implementAgent string
-	implementAuto  bool
+	implementAgent   string
+	implementAuto    bool
+	implementContext []string
+	implementPrompt  string
 )
 
 func init() {
 	implementCmd.Flags().StringVar(&implementAgent, "agent", "codex", "Agent backend: codex, claude")
 	implementCmd.Flags().BoolVar(&implementAuto, "auto", false, "No confirmation prompts")
+	implementCmd.Flags().StringArrayVarP(&implementContext, "context", "c", nil, "Extra context files to include in prompt (repeatable)")
+	implementCmd.Flags().StringVarP(&implementPrompt, "prompt", "p", "", "Extra instructions appended to the agent prompt")
 	rootCmd.AddCommand(implementCmd)
 }
 
@@ -353,7 +357,7 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	prompt := buildRunPrompt(decision, affectedFiles, allInvariants, projectRoot)
+	prompt := buildRunPrompt(decision, affectedFiles, allInvariants, projectRoot, implementContext, implementPrompt)
 
 	// ── Header ───────────────────────────────────────────────────
 	ui.header(fmt.Sprintf("Implement: %s", decision.Meta.Title))
@@ -456,6 +460,8 @@ func buildRunPrompt(
 	files []artifact.AffectedFile,
 	invariants []string,
 	projectRoot string,
+	contextFiles []string,
+	extraPrompt string,
 ) string {
 	var b strings.Builder
 
@@ -486,6 +492,29 @@ func buildRunPrompt(
 	if data, err := os.ReadFile(workflowPath); err == nil {
 		_, _ = b.WriteString("## Workflow Policy\n\n")
 		_, _ = b.Write(data)
+		_, _ = b.WriteString("\n\n")
+	}
+
+	// Extra context files
+	for _, cf := range contextFiles {
+		absPath := cf
+		if !filepath.IsAbs(cf) {
+			absPath = filepath.Join(projectRoot, cf)
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			_, _ = b.WriteString(fmt.Sprintf("## Context: %s\n\n(file not found: %v)\n\n", cf, err))
+			continue
+		}
+		_, _ = b.WriteString(fmt.Sprintf("## Context: %s\n\n", cf))
+		_, _ = b.Write(data)
+		_, _ = b.WriteString("\n\n")
+	}
+
+	// Extra prompt
+	if extraPrompt != "" {
+		_, _ = b.WriteString("## Additional Instructions\n\n")
+		_, _ = b.WriteString(extraPrompt)
 		_, _ = b.WriteString("\n\n")
 	}
 

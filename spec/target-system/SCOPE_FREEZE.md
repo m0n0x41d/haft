@@ -65,36 +65,37 @@ Focus: trust and momentum for existing MCP/CLI users. No new surfaces.
   - [ ] G4: warn on subjective comparison dimensions (maintainable, simple, scalable)
 - [ ] Rename/install/docs polish for migration friction
 
-## v6.2 — Execution Primitives + Dashboard (days 31-60)
+## v6.2 — Dashboard + Implement + Adopt (days 31-60)
 
-Focus: desktop starts proving the loop, not just visualizing.
+Focus: one proved execution loop. BDD scenarios in `spec/target-system/EXECUTION_CONTRACT.md`.
 
-### Dashboard (single operator surface)
-- [ ] Unified dashboard page replacing separate Problems/Decisions pages
-- [ ] Active decisions section with **Implement** button → spawn agent in worktree with invariants + rationale
-- [ ] Governance findings section with **Adopt** / **Waive** / **Reopen** buttons on stale/drifted items
-- [ ] Adopt button → creates agent task/thread with decision context + drift report for interactive resolution
-- [ ] Automation section: **New Automation** → configure triggers (CI fail, dependency update, scheduled, manual) → auto-creates ProblemCard
+### Dashboard
+- [ ] Unified dashboard replacing separate Problems/Decisions pages
+- [ ] Active decisions with **Implement** button
+- [ ] Governance findings with **Adopt** / **Waive** / **Reopen** inline
+- [ ] Implement guards: G1 blocks, G2/G4 warn, invariant-less warns
 
-### Execution loop
-- [ ] Worktree/branch creation from Implement action
-- [ ] Automatic post-run invariant verification
-- [ ] Baseline refresh only on successful verification
-- [ ] Persisted verification/governance result linked to decision
+### Implement
+- [ ] Worktree/branch creation
+- [ ] Agent session with invariants + rationale + workflow.md + knowledge graph invariants
+- [ ] Checkpointed mode (default)
+- [ ] Post-run invariant verification
+- [ ] Baseline on pass, verification evidence CL3
+- [ ] Failure → "Needs attention" (fix/reopen/dismiss)
+- [ ] "Create PR" on pass
 
-### DecisionRecord→Task Pipeline (Implement generates subtasks)
-- [ ] Implement on DecisionRecord generates subtask plan from invariants/claims/affected_files
-- [ ] Subtasks run sequentially via desktop governor (agent per task, worktree per task)
-- [ ] Auto-advance mode: next task starts when previous completes successfully
-- [ ] Manual mode (default): pause between tasks for review
-- [ ] Each subtask gets full decision context + previous subtask results
+### Adopt
+- [ ] Agent thread with decision context + drift/stale report
+- [ ] Resolution: re-baseline / reopen / waive / deprecate / measure
+- [ ] Agent never auto-resolves
+- [ ] RefreshReport recorded
 
-### Deep onboard for legacy projects
-- [ ] `/h-onboard --deep` generates task plan from coverage gaps (blind modules)
-- [ ] Per-module deep analysis session: read code, identify responsibilities, record decisions/notes/baselines
-- [ ] Runs as automation trigger or via task pipeline
+### Deferred to v7 (per 5.4 review)
+- Automation triggers (problem factory — don't mix with execution)
+- DecisionRecord→Task Pipeline with auto-advance (scaling factory)
+- Deep onboard as automation input
 
-**Terminology:** "problem" is reserved for ProblemCard artifacts only. The dashboard page is "Dashboard", not "Problem Board".
+**Terminology:** "problem" = ProblemCard only. Dashboard page = "Dashboard", not "Problem Board".
 
 ## v7.0 — Desktop Loop MVP (days 61-90)
 

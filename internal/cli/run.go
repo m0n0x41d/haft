@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -193,113 +191,6 @@ func uniqueStrings(ss []string) []string {
 	return out
 }
 
-// parseCodexJSONL parses a single JSONL line from codex --json output.
-func (u *runUI) parseCodexJSONL(line string) {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return
-	}
-
-	var event map[string]any
-	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		// Not JSON — skip codex banners
-		return
-	}
-
-	etype, _ := event["type"].(string)
-
-	switch etype {
-	case "message":
-		role, _ := event["role"].(string)
-		if role == "assistant" {
-			text := extractText(event)
-			u.agentMsg(text)
-		}
-
-	case "function_call":
-		name, _ := event["name"].(string)
-		args, _ := event["arguments"].(string)
-		switch {
-		case name == "shell" || name == "bash" || name == "command":
-			u.toolShell(extractCmd(args))
-		case name == "write_file" || name == "write" || name == "create_file":
-			u.toolEdit(extractPath(args))
-		case name == "edit_file" || name == "apply_diff" || name == "patch":
-			u.toolEdit(extractPath(args))
-		case name == "read_file" || name == "read":
-			u.toolRead(extractPath(args))
-		case strings.Contains(name, "search") || strings.Contains(name, "grep") || strings.Contains(name, "glob"):
-			u.toolGeneric(name)
-		default:
-			u.toolGeneric(name)
-		}
-
-	case "function_call_output":
-		output, _ := event["output"].(string)
-		if output != "" {
-			first := strings.Split(output, "\n")[0]
-			if len(first) > 100 {
-				first = first[:100] + "..."
-			}
-			fmt.Printf("     %s↳ %s%s\n", aDim, first, aReset)
-		}
-
-	case "reasoning":
-		summary, _ := event["summary"].(string)
-		if summary == "" {
-			summary, _ = event["text"].(string)
-		}
-		u.thinking(summary)
-	}
-}
-
-func extractText(event map[string]any) string {
-	content := event["content"]
-	switch v := content.(type) {
-	case string:
-		return v
-	case []any:
-		var parts []string
-		for _, p := range v {
-			if m, ok := p.(map[string]any); ok {
-				if t, ok := m["text"].(string); ok {
-					parts = append(parts, t)
-				}
-			}
-		}
-		return strings.Join(parts, " ")
-	}
-	return ""
-}
-
-func extractCmd(args string) string {
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
-		if cmd, ok := parsed["command"].(string); ok {
-			return cmd
-		}
-		if cmd, ok := parsed["cmd"].(string); ok {
-			return cmd
-		}
-	}
-	if len(args) > 80 {
-		return args[:80]
-	}
-	return args
-}
-
-func extractPath(args string) string {
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
-		for _, key := range []string{"path", "file_path", "filename"} {
-			if p, ok := parsed[key].(string); ok {
-				return p
-			}
-		}
-	}
-	return "?"
-}
-
 func runImplement(cmd *cobra.Command, args []string) error {
 	decisionRef := args[0]
 	ctx := context.Background()
@@ -381,13 +272,10 @@ func runImplement(cmd *cobra.Command, args []string) error {
 	ui.phase("Phase 1: Implementation")
 
 	var agentCmd *exec.Cmd
-	useJSON := implementAgent == "codex"
 
 	switch implementAgent {
 	case "codex":
-		// Pass prompt via stdin with "-" arg to avoid shell arg length limits
-		// and "Reading additional input from stdin..." message
-		agentArgs := []string{"exec", "--full-auto", "-c", "mcp_servers={}", "--json", "-"}
+		agentArgs := []string{"exec", "--full-auto", "-c", "mcp_servers={}", "-"}
 		agentCmd = exec.Command("codex", agentArgs...)
 	case "claude":
 		agentCmd = exec.Command("claude", "-p", prompt, "--allowedTools", "Edit,Write,Bash,Read,Glob,Grep")
@@ -396,41 +284,28 @@ func runImplement(cmd *cobra.Command, args []string) error {
 	}
 
 	agentCmd.Dir = projectRoot
+	agentCmd.Stdout = os.Stdout
 	agentCmd.Stderr = os.Stderr
 
-	if useJSON {
-		// Feed prompt via stdin
+	if implementAgent == "codex" {
+		// Feed prompt via stdin pipe
 		stdinPipe, piErr := agentCmd.StdinPipe()
 		if piErr != nil {
 			return fmt.Errorf("pipe stdin: %w", piErr)
-		}
-
-		stdout, pErr := agentCmd.StdoutPipe()
-		if pErr != nil {
-			return fmt.Errorf("pipe stdout: %w", pErr)
 		}
 
 		if sErr := agentCmd.Start(); sErr != nil {
 			return fmt.Errorf("start agent: %w", sErr)
 		}
 
-		// Write prompt and close stdin so codex doesn't wait
 		_, _ = stdinPipe.Write([]byte(prompt))
 		_ = stdinPipe.Close()
-
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-		for scanner.Scan() {
-			ui.parseCodexJSONL(scanner.Text())
-		}
 
 		if wErr := agentCmd.Wait(); wErr != nil {
 			ui.fail(fmt.Sprintf("Agent exited with error: %v", wErr))
 			return nil
 		}
 	} else {
-		// Claude — raw output
-		agentCmd.Stdout = os.Stdout
 		agentCmd.Stdin = os.Stdin
 		if rErr := agentCmd.Run(); rErr != nil {
 			ui.fail(fmt.Sprintf("Agent exited with error: %v", rErr))

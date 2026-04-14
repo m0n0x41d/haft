@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -880,6 +881,131 @@ func (a *App) WaiveDecision(id string, reason string) (*DecisionDetailView, erro
 	_, view, err := a.loadDecisionDetail(decisionID)
 	if err != nil {
 		return nil, fmt.Errorf("load decision %s after waive: %w", decisionID, err)
+	}
+
+	return &view, nil
+}
+
+func (a *App) BaselineDecision(id string) (*DecisionDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	decisionID := strings.TrimSpace(id)
+	if decisionID == "" {
+		return nil, fmt.Errorf("decision id is required")
+	}
+
+	decision, err := a.store.Get(a.ctx, decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionID, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionID, decision.Meta.Kind)
+	}
+
+	if _, err := artifact.Baseline(a.ctx, a.store, a.projectRoot, artifact.BaselineInput{
+		DecisionRef: decisionID,
+	}); err != nil {
+		return nil, fmt.Errorf("baseline decision %s: %w", decisionID, err)
+	}
+
+	if a.governance != nil {
+		if _, err := a.governance.scan(a.ctx, false); err != nil {
+			return nil, fmt.Errorf("refresh governance after baseline: %w", err)
+		}
+	}
+
+	_, view, err := a.loadDecisionDetail(decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s after baseline: %w", decisionID, err)
+	}
+
+	return &view, nil
+}
+
+func (a *App) MeasureDecision(id string, findings string, verdict string) (*DecisionDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	decisionID := strings.TrimSpace(id)
+	measureFindings := strings.TrimSpace(findings)
+	measureVerdict := strings.ToLower(strings.TrimSpace(verdict))
+
+	if decisionID == "" {
+		return nil, fmt.Errorf("decision id is required")
+	}
+
+	decision, err := a.store.Get(a.ctx, decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionID, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionID, decision.Meta.Kind)
+	}
+
+	_, err = artifact.Measure(a.ctx, a.store, a.haftDir(), artifact.MeasureInput{
+		DecisionRef: decisionID,
+		Findings:    measureFindings,
+		Verdict:     measureVerdict,
+	})
+
+	var writeWarning *artifact.WriteWarning
+	if err != nil && !errors.As(err, &writeWarning) {
+		return nil, fmt.Errorf("measure decision %s: %w", decisionID, err)
+	}
+
+	if a.governance != nil {
+		if _, err := a.governance.scan(a.ctx, false); err != nil {
+			return nil, fmt.Errorf("refresh governance after measure: %w", err)
+		}
+	}
+
+	_, view, err := a.loadDecisionDetail(decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s after measure: %w", decisionID, err)
+	}
+
+	return &view, nil
+}
+
+func (a *App) DeprecateDecision(id string, reason string) (*DecisionDetailView, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	decisionID := strings.TrimSpace(id)
+	deprecateReason := strings.TrimSpace(reason)
+
+	if decisionID == "" {
+		return nil, fmt.Errorf("decision id is required")
+	}
+	if deprecateReason == "" {
+		return nil, fmt.Errorf("deprecate reason is required")
+	}
+
+	decision, err := a.store.Get(a.ctx, decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionID, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionID, decision.Meta.Kind)
+	}
+
+	if _, err := artifact.DeprecateArtifact(a.ctx, a.store, a.haftDir(), decisionID, deprecateReason); err != nil {
+		return nil, fmt.Errorf("deprecate decision %s: %w", decisionID, err)
+	}
+
+	if a.governance != nil {
+		if _, err := a.governance.scan(a.ctx, false); err != nil {
+			return nil, fmt.Errorf("refresh governance after deprecate: %w", err)
+		}
+	}
+
+	_, view, err := a.loadDecisionDetail(decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s after deprecate: %w", decisionID, err)
 	}
 
 	return &view, nil

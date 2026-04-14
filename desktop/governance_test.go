@@ -151,6 +151,64 @@ func TestGovernanceDecisionRefreshActions(t *testing.T) {
 	}
 }
 
+func TestGovernanceDecisionBaselineMeasureAndDeprecateActions(t *testing.T) {
+	app := newGovernanceTestApp(t)
+	defer app.shutdown(context.Background())
+
+	decisionID := seedGovernanceDecision(t, app)
+
+	baselined, err := app.BaselineDecision(decisionID)
+	if err != nil {
+		t.Fatalf("BaselineDecision: %v", err)
+	}
+
+	if len(baselined.AffectedFiles) != 1 || baselined.AffectedFiles[0] != "internal/auth/auth.go" {
+		t.Fatalf("baselined affected files = %#v, want internal/auth/auth.go", baselined.AffectedFiles)
+	}
+
+	affectedFiles, err := app.store.GetAffectedFiles(context.Background(), decisionID)
+	if err != nil {
+		t.Fatalf("GetAffectedFiles after baseline: %v", err)
+	}
+	if len(affectedFiles) != 1 || strings.TrimSpace(affectedFiles[0].Hash) == "" {
+		t.Fatalf("affected files after baseline = %#v, want one hashed file", affectedFiles)
+	}
+
+	measured, err := app.MeasureDecision(
+		decisionID,
+		"Measured the desktop verification loop after re-baselining the governed file.",
+		"accepted",
+	)
+	if err != nil {
+		t.Fatalf("MeasureDecision: %v", err)
+	}
+
+	foundMeasurement := false
+	for _, item := range measured.Evidence.Items {
+		if item.Type == "measurement" && item.Verdict == "supports" {
+			foundMeasurement = true
+		}
+	}
+	if !foundMeasurement {
+		t.Fatalf("measurement evidence not found after MeasureDecision: %#v", measured.Evidence.Items)
+	}
+
+	deprecated, err := app.DeprecateDecision(
+		decisionID,
+		"The desktop governance slice is no longer relevant for this seeded decision.",
+	)
+	if err != nil {
+		t.Fatalf("DeprecateDecision: %v", err)
+	}
+
+	if deprecated.Status != "deprecated" {
+		t.Fatalf("deprecated decision status = %q, want deprecated", deprecated.Status)
+	}
+	if !strings.Contains(deprecated.Body, "## Deprecated") {
+		t.Fatalf("deprecated decision body missing section:\n%s", deprecated.Body)
+	}
+}
+
 func TestAdoptCreatesDriftTaskWithDecisionContext(t *testing.T) {
 	app := newGovernanceTestApp(t)
 	defer app.shutdown(context.Background())

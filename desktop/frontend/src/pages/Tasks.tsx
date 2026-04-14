@@ -3,17 +3,22 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   archiveTask,
+  baselineDecision,
   cancelTask,
+  deprecateDecision,
   detectAgents,
   getConfig,
   getTaskOutput,
   handoffTask,
   listTasks,
+  measureDecision,
   openPathInIDE,
+  reopenDecision,
   spawnTask,
   type DesktopConfig,
   type InstalledAgent,
   type TaskState,
+  waiveDecision,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
 
@@ -22,6 +27,8 @@ interface TaskOutputEvent {
   chunk: string;
   output: string;
 }
+
+type AdoptResolutionMode = "drift" | "stale";
 
 // PromptSection reserved for future collapsible brief in chat
 // interface PromptSection { title: string; body: string; }
@@ -48,6 +55,8 @@ export function Tasks({
   const [selectedTask, setSelectedTask] = useState<string | null>(externalSelectedTask ?? null);
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffAgent, setHandoffAgent] = useState("codex");
+  const [resolutionAction, setResolutionAction] = useState("");
+  const [resolutionMessage, setResolutionMessage] = useState("");
   const outputRef = useRef<HTMLDivElement | null>(null);
   const tasks = controlledTasks ?? internalTasks;
   const setTasks = onTasksChange ?? setInternalTasks;
@@ -180,6 +189,12 @@ export function Tasks({
 
   const detail = tasks.find((task) => task.id === selectedTask) ?? null;
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
+  const adoptResolution = getAdoptResolutionContext(detail);
+
+  useEffect(() => {
+    setResolutionAction("");
+    setResolutionMessage("");
+  }, [detail?.id]);
 
   useEffect(() => {
     if (!detail || !outputRef.current) {
@@ -256,6 +271,134 @@ export function Tasks({
     } catch (error) {
       reportError(error, "handoff task");
     }
+  };
+
+  const runResolutionAction = async (
+    actionKey: string,
+    run: () => Promise<void>,
+    errorScope: string,
+  ) => {
+    setResolutionAction(actionKey);
+    setResolutionMessage("");
+
+    try {
+      await run();
+      await refresh();
+    } catch (error) {
+      reportError(error, errorScope);
+    } finally {
+      setResolutionAction("");
+    }
+  };
+
+  const handleRebaseline = async (decisionID: string) => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Re-baseline will replace the stored SHA-256 snapshot for this DecisionRecord using the current project state.\n\nContinue?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    await runResolutionAction(
+      "baseline",
+      async () => {
+        await baselineDecision(decisionID);
+        setResolutionMessage(`Re-baselined ${decisionID}.`);
+      },
+      "baseline decision",
+    );
+  };
+
+  const handleWaive = async (decisionID: string, task: TaskState) => {
+    const reason = promptForAdoptReason("waive", task);
+    if (reason === "") {
+      return;
+    }
+
+    await runResolutionAction(
+      "waive",
+      async () => {
+        await waiveDecision(decisionID, reason);
+        setResolutionMessage(`Waived ${decisionID}.`);
+      },
+      "waive decision",
+    );
+  };
+
+  const handleReopen = async (decisionID: string, task: TaskState) => {
+    const reason = promptForAdoptReason("reopen", task);
+    if (reason === "") {
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Reopen will mark this DecisionRecord as refresh due and create a new ProblemCard.\n\nContinue?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    await runResolutionAction(
+      "reopen",
+      async () => {
+        const problem = await reopenDecision(decisionID, reason);
+        setResolutionMessage(`Reopened ${decisionID} as ${problem.id}.`);
+      },
+      "reopen decision",
+    );
+  };
+
+  const handleDeprecate = async (decisionID: string, task: TaskState) => {
+    const reason = promptForAdoptReason("deprecate", task);
+    if (reason === "") {
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Deprecate will archive this DecisionRecord as no longer relevant.\n\nContinue?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    await runResolutionAction(
+      "deprecate",
+      async () => {
+        await deprecateDecision(decisionID, reason);
+        setResolutionMessage(`Deprecated ${decisionID}.`);
+      },
+      "deprecate decision",
+    );
+  };
+
+  const handleMeasure = async (decisionID: string, task: TaskState) => {
+    const findings = promptForMeasureFindings(task);
+    if (findings === "") {
+      return;
+    }
+
+    const verdict = promptForMeasureVerdict();
+    if (verdict === "") {
+      return;
+    }
+
+    await runResolutionAction(
+      "measure",
+      async () => {
+        await measureDecision(decisionID, findings, verdict);
+        setResolutionMessage(`Measured ${decisionID} with verdict ${verdict}.`);
+      },
+      "measure decision",
+    );
   };
 
   // handleCopy removed — not used in chat view
@@ -411,6 +554,70 @@ export function Tasks({
 
           {/* Input area at bottom */}
           <div className="shrink-0 border-t border-border bg-surface-1/50 px-4 py-3">
+            {adoptResolution && detail.status !== "running" && (
+              <div className="mb-3 rounded-xl border border-border bg-surface-0 px-4 py-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-text-muted">
+                      Adopt Resolution
+                    </p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {adoptResolution.mode === "drift"
+                        ? `Resolve drift for ${adoptResolution.decisionID} with re-baseline, reopen, or waive.`
+                        : `Resolve staleness for ${adoptResolution.decisionID} with measure, waive, deprecate, or reopen.`}
+                    </p>
+                    {resolutionMessage && (
+                      <p className="mt-2 text-xs text-success">{resolutionMessage}</p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {adoptResolution.mode === "drift" && (
+                      <button
+                        onClick={() => void handleRebaseline(adoptResolution.decisionID)}
+                        disabled={resolutionAction !== ""}
+                        className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                      >
+                        {resolutionAction === "baseline" ? "Re-baselining..." : "Re-baseline"}
+                      </button>
+                    )}
+                    {adoptResolution.mode === "stale" && (
+                      <button
+                        onClick={() => void handleMeasure(adoptResolution.decisionID, detail)}
+                        disabled={resolutionAction !== ""}
+                        className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                      >
+                        {resolutionAction === "measure" ? "Measuring..." : "Measure"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void handleWaive(adoptResolution.decisionID, detail)}
+                      disabled={resolutionAction !== ""}
+                      className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                    >
+                      {resolutionAction === "waive" ? "Waiving..." : "Waive"}
+                    </button>
+                    {adoptResolution.mode === "stale" && (
+                      <button
+                        onClick={() => void handleDeprecate(adoptResolution.decisionID, detail)}
+                        disabled={resolutionAction !== ""}
+                        className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
+                      >
+                        {resolutionAction === "deprecate" ? "Deprecating..." : "Deprecate"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void handleReopen(adoptResolution.decisionID, detail)}
+                      disabled={resolutionAction !== ""}
+                      className="rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
+                    >
+                      {resolutionAction === "reopen" ? "Reopening..." : "Reopen"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-end gap-3">
               <div className="flex-1 rounded-xl border border-border bg-surface-0 px-4 py-2.5">
                 <p className="text-xs text-text-muted">
@@ -814,6 +1021,103 @@ function mergeTaskList(current: TaskState[], next: TaskState): TaskState[] {
   };
 
   return merged;
+}
+
+function getAdoptResolutionContext(
+  task: TaskState | null,
+): { decisionID: string; mode: AdoptResolutionMode } | null {
+  if (!task) {
+    return null;
+  }
+
+  const prompt = task.prompt ?? "";
+  const decisionID = taskPromptMetaValue(prompt, "Decision ID");
+  const mode = prompt.includes("## Adopt Drift Finding")
+    ? "drift"
+    : prompt.includes("## Adopt Stale Finding")
+      ? "stale"
+      : null;
+
+  if (!decisionID || !mode) {
+    return null;
+  }
+
+  return { decisionID, mode };
+}
+
+function taskPromptMetaValue(prompt: string, label: string): string {
+  const prefix = `${label.trim()}:`;
+  const lines = prompt.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    return trimmed.slice(prefix.length).trim();
+  }
+
+  return "";
+}
+
+function promptForAdoptReason(
+  action: "waive" | "reopen" | "deprecate",
+  task: TaskState,
+): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const defaultReason = taskPromptMetaValue(task.prompt, "Reason");
+  const promptMessage =
+    action === "waive"
+      ? "Waive will extend this DecisionRecord by 90 days.\n\nEnter justification:"
+      : action === "reopen"
+        ? "Reopen will create a new ProblemCard linked to this DecisionRecord.\n\nEnter reason:"
+        : "Deprecate will archive this DecisionRecord as no longer relevant.\n\nEnter reason:";
+  const response = window.prompt(promptMessage, defaultReason);
+
+  return response ? response.trim() : "";
+}
+
+function promptForMeasureFindings(task: TaskState): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const defaultFindings = taskPromptMetaValue(task.prompt, "Reason");
+  const response = window.prompt(
+    "Measure will record new verification evidence on this DecisionRecord.\n\nDescribe what was verified and what actually happened:",
+    defaultFindings,
+  );
+
+  return response ? response.trim() : "";
+}
+
+function promptForMeasureVerdict(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const response = window.prompt(
+    "Enter measurement verdict: accepted, partial, or failed.",
+    "accepted",
+  );
+  const verdict = response ? response.trim().toLowerCase() : "";
+  const validVerdicts = new Set(["accepted", "partial", "failed"]);
+
+  if (verdict === "") {
+    return "";
+  }
+
+  if (validVerdicts.has(verdict)) {
+    return verdict;
+  }
+
+  window.alert("Verdict must be one of: accepted, partial, failed.");
+  return "";
 }
 
 // parsePromptSections kept for future use if we add collapsible brief sections to chat

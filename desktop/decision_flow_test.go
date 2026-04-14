@@ -21,9 +21,12 @@ func TestBuildImplementationPrompt_IncludesGovernanceContext(t *testing.T) {
 		SelectedTitle:   "Desktop governance loop",
 		SelectionPolicy: "Prefer backend-authoritative governance.",
 		WhySelected:     "It keeps coverage and stale rules in one place.",
-		Invariants:      []string{"Use shared artifact logic."},
-		Admissibility:   []string{"Do not fork rules into the frontend."},
-		AffectedFiles:   []string{"desktop/app.go"},
+		Invariants: []string{
+			"Use shared artifact logic.",
+			"[dec-456] Keep dashboard and desktop execution semantics aligned.",
+		},
+		Admissibility: []string{"Do not fork rules into the frontend."},
+		AffectedFiles: []string{"desktop/app.go"},
 		CoverageModules: []CoverageModuleView{
 			{
 				Path:          "desktop",
@@ -49,11 +52,34 @@ func TestBuildImplementationPrompt_IncludesGovernanceContext(t *testing.T) {
 		StructuredData: `{"signal":"The operator cannot see governance scope.","acceptance":"The operator sees coverage and stale findings.","constraints":["Reuse shared Go logic."]}`,
 	}
 
-	prompt := buildImplementationPrompt(decision, detail, []*artifact.Artifact{problem})
+	prompt := buildImplementationPrompt(
+		decision,
+		detail,
+		[]*artifact.Artifact{problem},
+		implementationPromptContext{
+			PortfolioRationale: "Prefer the operator path that reuses the existing governance backend.",
+			WorkflowMarkdown: strings.Join([]string{
+				"# Workflow",
+				"",
+				"## Defaults",
+				"",
+				"```yaml",
+				"mode: standard",
+				"require_verify: true",
+				"```",
+			}, "\n"),
+		},
+	)
 
 	expectedSnippets := []string{
 		"## Implement Decision: Desktop governance loop",
+		"## Solution Portfolio Rationale",
+		"Prefer the operator path that reuses the existing governance backend.",
 		"## Problem Context",
+		"## Governing Invariants (knowledge graph)",
+		"[dec-456] Keep dashboard and desktop execution semantics aligned.",
+		"## Workflow Policy (.haft/workflow.md)",
+		"## Defaults",
 		"desktop/app.go",
 		"status=covered",
 		"Verify after: 2026-04-16",

@@ -156,6 +156,197 @@ func TestImplementDecisionCreatesFeatureWorktree(t *testing.T) {
 	}
 }
 
+func TestImplementDecisionPromptIncludesPortfolioWorkflowAndGraphContext(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'stub claude agent\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	workflowMarkdown := strings.Join([]string{
+		"# Workflow",
+		"",
+		"## Intent",
+		"",
+		"Keep implementation prompts policy-complete for governed files.",
+		"",
+		"## Defaults",
+		"",
+		"```yaml",
+		"mode: standard",
+		"require_decision: true",
+		"require_verify: true",
+		"allow_autonomy: false",
+		"```",
+	}, "\n")
+
+	if err := os.WriteFile(filepath.Join(app.projectRoot, ".haft", "workflow.md"), []byte(workflowMarkdown), 0o644); err != nil {
+		t.Fatalf("WriteFile workflow.md: %v", err)
+	}
+
+	governingProblem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Workflow governance problem",
+		Signal:      "A governing invariant should reach implementation prompts for shared files.",
+		Acceptance:  "Implement sees cross-decision invariants.",
+		BlastRadius: "Desktop implementation prompt only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem governing: %v", err)
+	}
+
+	governingDecision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      governingProblem.ID,
+		SelectedTitle:   "Protect workflow policy propagation",
+		WhySelected:     "Shared files should inherit governing invariants.",
+		SelectionPolicy: "Prefer the narrowest governing rule that still protects shared implementation context.",
+		CounterArgument: "Keeping this invariant local to one decision avoids prompt growth for unrelated work.",
+		WeakestLink:     "A shared-file invariant can overreach when the affected file list is too broad.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Keep the invariant private to one decision",
+				Reason:  "That leaves later implementation prompts blind to a governing constraint on the same file.",
+			},
+		},
+		Invariants: []string{
+			"Keep workflow policy embedded verbatim.",
+		},
+		AffectedFiles: []string{"README.md"},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"Shared-file invariants prove too noisy for routine implementation prompts.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision governing: %v", err)
+	}
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Prompt context gap",
+		Signal:      "Implement prompts miss portfolio and workflow guidance.",
+		Acceptance:  "Implement prompts include decision, portfolio, workflow, and governing invariant context.",
+		BlastRadius: "Desktop implementation prompt only",
+		Mode:        "standard",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	portfolio, err := app.CreatePortfolio(PortfolioCreateInput{
+		ProblemRef: problem.ID,
+		Variants: []PortfolioVariantInput{
+			{
+				ID:                 "var-1",
+				Title:              "Policy-complete prompt",
+				Description:        "Inject decision, workflow, and knowledge-graph context into the implement prompt.",
+				WeakestLink:        "Prompt bloat can bury the core task if the sections are not ordered tightly.",
+				NoveltyMarker:      "Keeps the implementation context decision-anchored and policy-complete.",
+				SteppingStone:      true,
+				SteppingStoneBasis: "Adds the missing context without changing task execution or verification semantics.",
+			},
+			{
+				ID:            "var-2",
+				Title:         "Decision-only prompt",
+				Description:   "Send only the current decision body and let the operator fill the gaps manually.",
+				WeakestLink:   "The agent can violate neighboring invariants and workflow policy.",
+				NoveltyMarker: "Minimizes prompt size at the cost of missing governance context.",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePortfolio: %v", err)
+	}
+
+	_, err = app.ComparePortfolio(PortfolioCompareInput{
+		PortfolioRef: portfolio.ID,
+		Dimensions:   []string{"operator confidence"},
+		Scores: map[string]map[string]string{
+			"var-1": {"operator confidence": "High"},
+			"var-2": {"operator confidence": "Low"},
+		},
+		PolicyApplied: "Prefer the option that makes governance context explicit before editing.",
+		SelectedRef:   "var-1",
+		DominatedNotes: []DominatedNoteInput{
+			{
+				Variant:     "var-2",
+				DominatedBy: []string{"var-1"},
+				Summary:     "A decision-only prompt leaves the agent blind to workflow policy and neighboring decisions.",
+			},
+		},
+		ParetoTradeoffs: []TradeoffNoteInput{
+			{
+				Variant: "var-1",
+				Summary: "Carries more context, which slightly increases prompt size, but keeps governance visible before edits start.",
+			},
+			{
+				Variant: "var-2",
+				Summary: "Keeps the prompt short, but hides workflow and cross-decision constraints from the agent.",
+			},
+		},
+		Recommendation: "Prefer the prompt that includes workflow policy and governing invariants before implementation starts.",
+	})
+	if err != nil {
+		t.Fatalf("ComparePortfolio: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		PortfolioRef:    portfolio.ID,
+		SelectedRef:     "var-1",
+		WhySelected:     "The implementation prompt should stay complete even if the portfolio rationale is unavailable.",
+		SelectionPolicy: "Prefer the smallest reversible prompt expansion.",
+		CounterArgument: "Loading workflow and graph context can make the implementation prompt heavier than necessary.",
+		WeakestLink:     "Prompt structure can decay if the extra context is appended without clear sections.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Decision-only prompt",
+				Reason:  "It omits workflow policy and governing invariants that still apply to the same files.",
+			},
+		},
+		Invariants: []string{
+			"Keep implementation prompt assembly pure.",
+		},
+		AffectedFiles: []string{"README.md"},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"The extra context materially slows agents without improving implementation quality.",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.ImplementDecision(decision.ID, "claude", false, "")
+	if err != nil {
+		t.Fatalf("ImplementDecision: %v", err)
+	}
+
+	expectedSnippets := []string{
+		"## Solution Portfolio Rationale",
+		"Prefer the prompt that includes workflow policy and governing invariants before implementation starts.",
+		"## Workflow Policy (.haft/workflow.md)",
+		"Keep implementation prompts policy-complete for governed files.",
+		"## Governing Invariants (knowledge graph)",
+		fmt.Sprintf("[%s] Keep workflow policy embedded verbatim.", governingDecision.ID),
+		"## Affected Files",
+		"- README.md",
+	}
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(task.Prompt, snippet) {
+			t.Fatalf("implementation prompt missing %q:\n%s", snippet, task.Prompt)
+		}
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "completed" {
+		t.Fatalf("task status = %q, want completed", final.Status)
+	}
+}
+
 func installStubAgentBinary(t *testing.T, name string, body string) {
 	t.Helper()
 

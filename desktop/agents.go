@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -615,7 +616,7 @@ func (a *App) implementDecisionTask(
 	// the full decision context before editing.
 	detail = a.enrichWithGraphInvariants(detail)
 
-	prompt := buildImplementationPrompt(dec, detail, problems)
+	prompt := buildImplementationPrompt(dec, detail, problems, a.loadImplementationPromptContext(dec))
 	branchName = decisionFeatureBranchName(
 		branchName,
 		detail.SelectedTitle,
@@ -631,6 +632,39 @@ func (a *App) implementDecisionTask(
 		branchName,
 		decisionTaskTitle("Implement", detail),
 	)
+}
+
+func (a *App) loadImplementationPromptContext(decision *artifact.Artifact) implementationPromptContext {
+	context := implementationPromptContext{
+		WorkflowMarkdown: a.loadWorkflowMarkdown(),
+	}
+
+	portfolio := a.loadDecisionPortfolio(decision)
+	if portfolio == nil {
+		return context
+	}
+
+	fields := portfolio.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		return context
+	}
+
+	context.PortfolioRationale = strings.TrimSpace(fields.Comparison.RecommendationRationale)
+	return context
+}
+
+func (a *App) loadWorkflowMarkdown() string {
+	if strings.TrimSpace(a.projectRoot) == "" {
+		return ""
+	}
+
+	path := filepath.Join(a.projectRoot, ".haft", "workflow.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(data))
 }
 
 func (a *App) spawnTaskWithTitle(

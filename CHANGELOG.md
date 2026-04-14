@@ -6,9 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.2.0] — 2026-04-14
+
 ### Added
 
-- **Desktop implement smoke test** — explicit happy-path test now proves the end-to-end decision loop: `Implement` starts the agent, post-execution verification records CL3 evidence and a baseline, and `Create PR` generates the draft PR body from the verified task.
+- **`haft run` — full implementation pipeline from CLI** — reads DecisionRecord, plans tasks via agent, executes each with build verification, runs final invariant review, baselines on success. One command: `haft run dec-001`. Two modes: interactive (pauses between tasks) and `--auto` (full pipeline). `-c` for extra context files, `-p` for extra instructions.
+- **Unified Dashboard** — replaces separate Problems/Decisions pages. Single operator surface showing active decisions with Implement button, governance findings with Adopt/Waive/Reopen buttons, and recent activity.
+- **Implement flow in desktop** — click Implement on a DecisionRecord → worktree created → agent spawns with invariants + rationale + workflow.md + knowledge graph invariants → post-execution verification → baseline on pass → CL3 evidence recorded → "Create PR" generates body from decision rationale.
+- **Implement guards** — G1 blocks (multiple active decisions), G2/G4 warn (missing parity plan, subjective dimensions), no-invariants warns. Guards checked before agent spawns.
+- **Adopt flow for governance findings** — Adopt on drift finding creates agent thread with decision context + drift report + diffs. Adopt on stale finding includes evidence history + R_eff. Agent never auto-resolves — presents options, user chooses. Resolution (re-baseline / reopen / waive / deprecate) recorded as RefreshReport.
+- **Task execution status ladder** — dashboard Tasks page shows progression: Planned → Running → Verifying → Ready for PR / Needs attention. Real-time updates.
+- **Irreversible action confirmation dialogs** — Implement, Create PR, Reopen, Supersede, Deprecate all require explicit confirmation with affected artifacts shown.
+- **Auto-refresh governance findings** — dashboard governance scanner runs on timer, findings update without manual refresh.
+- **Agent-planned task decomposition** — `haft run` spawns a planning agent to decompose DecisionRecord into ordered tasks. Plan persisted as `.haft/plans/{ref}.md` — human-editable before execution.
+- **Per-task build verification** — after each task in the pipeline, `go build` is checked. Failure spawns fix agent automatically.
+- **Final review with recursive fix** — after all tasks: invariants checked, build verified, tests run. On failure, fix agent spawned and review re-runs.
+- **Desktop implement smoke test** — E2E happy-path test: Implement → verify → baseline → Create PR.
+
+### Changed
+
+- **Baseline skips directories** — `affected_files` containing directory paths (e.g. `src/infra/auth/`) are skipped gracefully instead of failing the entire baseline operation.
+- **Single `haft run` pipeline** — removed `--steps` and `--plan` as separate modes. One pipeline: Plan → Execute → Review → Baseline. `--auto` controls whether to pause.
+
+### Fixed
+
+- **Baseline directory crash** — `hashFile()` now detects directories and returns skip error instead of attempting to read directory as file.
+- **Test alignment** — baseline and verification tests updated to match graceful skip behavior.
 
 ## [6.1.0] — 2026-04-14
 

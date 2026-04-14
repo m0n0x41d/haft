@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -341,14 +340,6 @@ func runBuildCheck(projectRoot string, ui *runUI) bool {
 	}
 	ui.ok("go build passed")
 	return true
-}
-
-func newShellCmd(command, dir string) *exec.Cmd {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd
 }
 
 // finalReview runs full invariant verification + drift check + test suite.

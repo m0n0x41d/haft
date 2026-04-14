@@ -70,6 +70,20 @@ type TaskOutputEvent struct {
 	Output string `json:"output"`
 }
 
+// PullRequestResult captures the outcome of the Create PR action.
+type PullRequestResult struct {
+	TaskID            string   `json:"task_id"`
+	DecisionRef       string   `json:"decision_ref"`
+	Branch            string   `json:"branch"`
+	Title             string   `json:"title"`
+	Body              string   `json:"body"`
+	URL               string   `json:"url"`
+	Pushed            bool     `json:"pushed"`
+	DraftCreated      bool     `json:"draft_created"`
+	CopiedToClipboard bool     `json:"copied_to_clipboard"`
+	Warnings          []string `json:"warnings"`
+}
+
 // taskRunner manages running agent subprocesses.
 type taskRunner struct {
 	mu    sync.Mutex
@@ -121,6 +135,18 @@ type taskRunPlan struct {
 
 type taskVerificationPlan struct {
 	DecisionRef string
+}
+
+var desktopClipboardWriter = func(ctx context.Context, text string) error {
+	if ctx == nil {
+		return fmt.Errorf("clipboard is unavailable")
+	}
+
+	if err := runtime.ClipboardSetText(ctx, text); err != nil {
+		return fmt.Errorf("clipboard copy failed: %w", err)
+	}
+
+	return nil
 }
 
 func newTaskRunner(app *App, store *desktopTaskStore) *taskRunner {
@@ -1165,6 +1191,90 @@ func (a *App) HandoffTask(id string, targetAgent string) (*TaskState, error) {
 	)
 }
 
+// CreatePullRequest pushes a verified implementation branch and opens a draft PR
+// when possible. If automatic PR creation is unavailable, the PR body is copied
+// to the clipboard for manual creation.
+func (a *App) CreatePullRequest(taskID string) (*PullRequestResult, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	task, err := a.loadTaskState(strings.TrimSpace(taskID))
+	if err != nil {
+		return nil, err
+	}
+
+	if task.Status != "Ready for PR" {
+		return nil, fmt.Errorf("task %s is %s, not Ready for PR", task.ID, task.Status)
+	}
+
+	if strings.TrimSpace(task.Branch) == "" {
+		return nil, fmt.Errorf("task %s has no branch to publish", task.ID)
+	}
+
+	repoPath := firstNonEmpty(
+		strings.TrimSpace(task.WorktreePath),
+		strings.TrimSpace(task.ProjectPath),
+		strings.TrimSpace(a.projectRoot),
+	)
+	if repoPath == "" {
+		return nil, fmt.Errorf("task %s has no repository path", task.ID)
+	}
+
+	decisionRef := decisionRefFromTaskPrompt(task.Prompt)
+	if decisionRef == "" {
+		return nil, fmt.Errorf("task %s does not include a decision reference", task.ID)
+	}
+
+	decision, detail, err := a.loadDecisionDetail(decisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionRef, err)
+	}
+
+	verification, err := a.loadTaskVerificationEvidence(decisionRef, task.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	promptContext := a.loadImplementationPromptContext(decision)
+	result := &PullRequestResult{
+		TaskID:      task.ID,
+		DecisionRef: decisionRef,
+		Branch:      task.Branch,
+		Title:       buildPullRequestTitle(*task, detail),
+		Body:        buildPullRequestBody(*task, detail, promptContext.PortfolioRationale, verification),
+		Warnings:    []string{},
+	}
+
+	pushErr := pushTaskBranch(repoPath, task.Branch)
+	if pushErr == nil {
+		result.Pushed = true
+	} else {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Branch push failed: %v", pushErr))
+	}
+
+	if result.Pushed {
+		url, draftErr := createDraftPullRequest(repoPath, result.Title, result.Body, task.Branch)
+		if draftErr == nil {
+			result.DraftCreated = true
+			result.URL = url
+		} else {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Draft PR creation failed: %v", draftErr))
+		}
+	}
+
+	if !result.DraftCreated {
+		clipboardErr := desktopClipboardWriter(a.ctx, result.Body)
+		if clipboardErr == nil {
+			result.CopiedToClipboard = true
+		} else {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Clipboard copy failed: %v", clipboardErr))
+		}
+	}
+
+	return result, nil
+}
+
 // --- Helpers ---
 
 func (a *App) loadTaskState(id string) (*TaskState, error) {
@@ -1188,6 +1298,35 @@ func (a *App) loadTaskState(id string) (*TaskState, error) {
 	}
 
 	return state, nil
+}
+
+func (a *App) loadTaskVerificationEvidence(decisionRef string, taskID string) (*artifact.EvidenceItem, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	items, err := a.store.GetEvidenceItems(a.ctx, decisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("load evidence for %s: %w", decisionRef, err)
+	}
+
+	carrierRef := taskVerificationCarrierRef(taskID)
+	for _, item := range items {
+		if item.CarrierRef != carrierRef {
+			continue
+		}
+		if item.Type != "audit" {
+			continue
+		}
+		if item.Verdict == "superseded" {
+			continue
+		}
+
+		copy := item
+		return &copy, nil
+	}
+
+	return nil, fmt.Errorf("verification evidence for task %s is missing", taskID)
 }
 
 func getVersion(path string, flag string) string {
@@ -1562,6 +1701,233 @@ func lastTaskOutputLines(output string, maxLines int) string {
 	start := len(lines) - maxLines
 	tail := lines[start:]
 	return strings.Join(tail, "\n")
+}
+
+func decisionRefFromTaskPrompt(prompt string) string {
+	return taskPromptMetaValue(prompt, "Decision ID")
+}
+
+func taskPromptMetaValue(prompt string, label string) string {
+	prefix := strings.TrimSpace(label) + ":"
+	lines := strings.Split(prompt, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, prefix) {
+			continue
+		}
+
+		return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	}
+
+	return ""
+}
+
+func buildPullRequestTitle(task TaskState, detail DecisionDetailView) string {
+	return firstNonEmpty(
+		strings.TrimSpace(detail.SelectedTitle),
+		strings.TrimSpace(detail.Title),
+		strings.TrimSpace(task.Title),
+		strings.TrimSpace(task.Branch),
+	)
+}
+
+func buildPullRequestBody(
+	task TaskState,
+	detail DecisionDetailView,
+	portfolioRationale string,
+	verification *artifact.EvidenceItem,
+) string {
+	var body strings.Builder
+
+	writeSectionTitle(&body, "Summary", buildPullRequestTitle(task, detail))
+	writeMetaLine(&body, "Decision ID", detail.ID)
+	writeMetaLine(&body, "Branch", task.Branch)
+	writeBlankLine(&body)
+
+	writeParagraphSection(
+		&body,
+		"Decision Rationale",
+		buildPullRequestRationale(detail, portfolioRationale),
+	)
+	writeStringListSection(
+		&body,
+		"Invariants",
+		compactNonEmptyStrings(detail.Invariants),
+		"- ",
+	)
+	writeStringListSection(
+		&body,
+		"Verification Result",
+		buildPullRequestVerificationLines(verification),
+		"- ",
+	)
+
+	return strings.TrimSpace(body.String())
+}
+
+func buildPullRequestRationale(detail DecisionDetailView, portfolioRationale string) string {
+	parts := compactNonEmptyStrings([]string{
+		strings.TrimSpace(portfolioRationale),
+		strings.TrimSpace(detail.WhySelected),
+	})
+
+	if strings.TrimSpace(detail.SelectionPolicy) != "" {
+		parts = append(parts, "Selection policy: "+strings.TrimSpace(detail.SelectionPolicy))
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
+func buildPullRequestVerificationLines(verification *artifact.EvidenceItem) []string {
+	if verification == nil {
+		return []string{"Verification evidence is unavailable."}
+	}
+
+	lines := []string{
+		"Post-execution verification passed.",
+		fmt.Sprintf("Evidence: %s", verification.ID),
+		fmt.Sprintf("Verdict: %s (CL%d)", verification.Verdict, verification.CongruenceLevel),
+	}
+
+	contentLines := strings.Split(strings.TrimSpace(verification.Content), "\n")
+	for _, line := range contentLines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "Desktop post-execution verification pass recorded." {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Decision:") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Task:") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Worktree:") {
+			continue
+		}
+
+		lines = append(lines, trimmed)
+	}
+
+	return compactNonEmptyStrings(lines)
+}
+
+func compactNonEmptyStrings(values []string) []string {
+	compacted := make([]string, 0, len(values))
+
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+
+		compacted = append(compacted, trimmed)
+	}
+
+	return compacted
+}
+
+func pushTaskBranch(repoPath string, branch string) error {
+	branchRef := "HEAD:" + strings.TrimSpace(branch)
+	attempts := [][]string{
+		{"push", "--set-upstream", "origin", branchRef},
+		{"push", "origin", branchRef},
+	}
+
+	var lastErr error
+	for _, args := range attempts {
+		output, err := runCommand(repoPath, "git", args...)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = commandFailure("git", args, output, err)
+	}
+
+	return lastErr
+}
+
+func createDraftPullRequest(repoPath string, title string, body string, branch string) (string, error) {
+	file, err := os.CreateTemp("", "haft-pr-body-*.md")
+	if err != nil {
+		return "", fmt.Errorf("create PR body file: %w", err)
+	}
+	defer os.Remove(file.Name())
+
+	if _, err := file.WriteString(body); err != nil {
+		file.Close()
+		return "", fmt.Errorf("write PR body file: %w", err)
+	}
+
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close PR body file: %w", err)
+	}
+
+	output, err := runCommand(
+		repoPath,
+		"gh",
+		"pr",
+		"create",
+		"--draft",
+		"--title",
+		title,
+		"--body-file",
+		file.Name(),
+		"--head",
+		strings.TrimSpace(branch),
+	)
+	if err != nil {
+		args := []string{
+			"pr",
+			"create",
+			"--draft",
+			"--title",
+			title,
+			"--body-file",
+			file.Name(),
+			"--head",
+			strings.TrimSpace(branch),
+		}
+		return "", commandFailure("gh", args, output, err)
+	}
+
+	return lastNonEmptyLine(output), nil
+}
+
+func runCommand(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func lastNonEmptyLine(value string) string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := strings.TrimSpace(lines[index])
+		if line != "" {
+			return line
+		}
+	}
+
+	return ""
+}
+
+func commandFailure(name string, args []string, output string, err error) error {
+	parts := compactNonEmptyStrings([]string{
+		strings.TrimSpace(output),
+		err.Error(),
+	})
+	message := strings.Join(parts, "; ")
+	if message == "" {
+		message = "command failed"
+	}
+
+	return fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), message)
 }
 
 func truncate(s string, n int) string {

@@ -37,6 +37,13 @@ export interface DecisionSummary {
   weakest_link: string;
   valid_until: string;
   created_at: string;
+  implement_guard: DecisionImplementGuard;
+}
+
+export interface DecisionImplementGuard {
+  blocked_reason: string;
+  confirmation_messages: string[];
+  warning_messages: string[];
 }
 
 export interface ArtifactSummary {
@@ -113,6 +120,12 @@ export interface DecisionDetail {
   created_at: string;
   updated_at: string;
 }
+
+const EMPTY_DECISION_IMPLEMENT_GUARD: DecisionImplementGuard = {
+  blocked_reason: "",
+  confirmation_messages: [],
+  warning_messages: [],
+};
 
 export interface CoverageData {
   total_modules: number;
@@ -825,6 +838,7 @@ let mockDecisions: DecisionSummary[] = [
     weakest_link: INITIAL_DECISION_DETAIL.weakest_link,
     valid_until: INITIAL_DECISION_DETAIL.valid_until,
     created_at: "2026-04-09",
+    implement_guard: EMPTY_DECISION_IMPLEMENT_GUARD,
   },
 ];
 
@@ -1519,6 +1533,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
       weakest_link: detail.weakest_link,
       valid_until: detail.valid_until,
       created_at: todayString(),
+      implement_guard: EMPTY_DECISION_IMPLEMENT_GUARD,
     },
     ...mockDecisions,
   ];

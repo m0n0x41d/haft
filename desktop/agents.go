@@ -34,6 +34,7 @@ const (
 	taskOutputMaxChars      = 64000
 	taskOutputFlushInterval = 350 * time.Millisecond
 	taskApprovalPulse       = 500 * time.Millisecond
+	adoptConfirmationGuard  = "Present options. Do not execute resolution without user confirmation."
 )
 
 // InstalledAgent describes a detected agent binary.
@@ -817,6 +818,8 @@ func (a *App) Adopt(findingRef string) (*TaskState, error) {
 		prompt = buildAdoptStalePrompt(*context)
 	}
 
+	prompt = ensureAdoptConfirmationGuard(prompt)
+
 	return a.spawnTaskWithTitle(
 		"",
 		prompt,
@@ -825,6 +828,20 @@ func (a *App) Adopt(findingRef string) (*TaskState, error) {
 		decisionTaskTitle("Adopt", detail),
 		taskRunPlan{ForceCheckpointed: true},
 	)
+}
+
+func ensureAdoptConfirmationGuard(prompt string) string {
+	trimmed := strings.TrimSpace(prompt)
+
+	if strings.Contains(trimmed, adoptConfirmationGuard) {
+		return trimmed + "\n"
+	}
+
+	if trimmed == "" {
+		return adoptConfirmationGuard + "\n"
+	}
+
+	return trimmed + "\n\n" + adoptConfirmationGuard + "\n"
 }
 
 func (a *App) implementDecisionTask(

@@ -284,6 +284,7 @@ func TestAdoptCreatesDriftTaskWithDecisionContext(t *testing.T) {
 		"## Impacted Modules",
 		"- internal/auth [go] status=",
 		"## Instructions",
+		"Present options. Do not execute resolution without user confirmation.",
 		"Do not execute re-baseline, reopen, waive, or any other lifecycle action without explicit user confirmation.",
 	}
 
@@ -358,6 +359,7 @@ func TestAdoptCreatesStaleTaskWithEvidenceHistory(t *testing.T) {
 				"DecisionRecord valid_until expired",
 				"ev-expired [measurement] verdict=supports",
 				"## Instructions",
+				"Present options. Do not execute resolution without user confirmation.",
 				"Do not execute measure, waive, deprecate, reopen, or any other lifecycle action without explicit user confirmation.",
 			}
 

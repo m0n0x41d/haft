@@ -821,15 +821,20 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
 	}
 
-	// Compute SHA-256 for each file
+	// Compute SHA-256 for each file (skip directories)
+	var hashableFiles []AffectedFile
 	for i := range files {
 		absPath := filepath.Join(projectRoot, files[i].Path)
 		hash, err := hashFile(absPath)
 		if err != nil {
-			return nil, fmt.Errorf("hash %s: %w", files[i].Path, err)
+			// Skip directories and missing files gracefully
+			logger.Debug().Str("path", files[i].Path).Err(err).Msg("baseline.skip_file")
+			continue
 		}
 		files[i].Hash = hash
+		hashableFiles = append(hashableFiles, files[i])
 	}
+	files = hashableFiles
 
 	// Store updated file hashes
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
@@ -1163,8 +1168,16 @@ func copyDriftInvariants(invariants []string) []string {
 	return append([]string(nil), invariants...)
 }
 
-// hashFile computes SHA-256 of a file's contents.
+// hashFile computes SHA-256 of a file's contents. Skips directories.
 func hashFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("skip directory: %s", path)
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err

@@ -553,6 +553,8 @@ type WailsBindings = {
     branch: string,
   ) => Promise<TaskState>;
   VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
+  WaiveDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
+  ReopenDecision?: (decisionID: string, reason: string) => Promise<ProblemDetail>;
   OpenPathInIDE?: (path: string) => Promise<void>;
   GetConfig?: () => Promise<DesktopConfig>;
   SaveConfig?: (config: DesktopConfig) => Promise<DesktopConfig>;
@@ -578,11 +580,36 @@ async function callBinding<T>(name: string, ...args: unknown[]): Promise<T | nul
   const b = await loadBindings();
   const fn = b ? (b as unknown as Record<string, (...params: unknown[]) => Promise<T>>)[name] : null;
 
-  if (typeof fn !== "function") {
+  if (typeof fn === "function") {
+    return fn(...args);
+  }
+
+  const runtimeBindings = getRuntimeBindings();
+  const runtimeFn = runtimeBindings[name];
+
+  if (typeof runtimeFn !== "function") {
     return null;
   }
 
-  return fn(...args);
+  return runtimeFn(...args) as Promise<T>;
+}
+
+function getRuntimeBindings(): Record<string, (...params: unknown[]) => Promise<unknown>> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const runtimeBindings = (
+    window as typeof window & {
+      go?: {
+        main?: {
+          App?: Record<string, (...params: unknown[]) => Promise<unknown>>;
+        };
+      };
+    }
+  ).go?.main?.App;
+
+  return runtimeBindings ?? {};
 }
 
 // --- Mock data for standalone development ---
@@ -1144,6 +1171,106 @@ export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> 
   };
 
   return detail;
+}
+
+export async function waiveDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("WaiveDecision", decisionID, reason);
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const validUntil = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const nextDecision = {
+    ...currentDecision,
+    status: "active",
+    valid_until: validUntil,
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "active",
+          valid_until: validUntil,
+        }
+      : decisionSummary,
+  );
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID || finding.category !== "evidence_expired",
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function reopenDecision(decisionID: string, reason: string): Promise<ProblemDetail> {
+  const problem = await callBinding<ProblemDetail>("ReopenDecision", decisionID, reason);
+  if (problem) return problem;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    status: "refresh_due",
+    updated_at: nowString(),
+  };
+  const problemID = nextMockID("prob");
+  const nextProblem = {
+    id: problemID,
+    title: `Revisit: ${currentDecision.selected_title}`,
+    status: "active",
+    mode: "tactical",
+    signal: `Decision ${decisionID} needs re-evaluation: ${reason}`,
+    constraints: [],
+    optimization_targets: [],
+    observation_indicators: [],
+    acceptance: "",
+    blast_radius: "Governance follow-up from the desktop decision loop",
+    reversibility: "high",
+    characterizations: [],
+    latest_characterization: null,
+    linked_portfolios: [],
+    linked_decisions: [
+      {
+        id: decisionID,
+        kind: "DecisionRecord",
+        title: currentDecision.selected_title,
+        status: "refresh_due",
+      },
+    ],
+    body: "",
+    created_at: nowString(),
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "refresh_due",
+        }
+      : decisionSummary,
+  );
+  mockProblemDetails.set(problemID, nextProblem);
+  mockProblems = [
+    {
+      id: nextProblem.id,
+      title: nextProblem.title,
+      status: nextProblem.status,
+      mode: nextProblem.mode,
+      signal: nextProblem.signal,
+      reversibility: nextProblem.reversibility,
+      constraints: nextProblem.constraints,
+      created_at: todayString(),
+    },
+    ...mockProblems,
+  ];
+
+  return nextProblem;
 }
 
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {

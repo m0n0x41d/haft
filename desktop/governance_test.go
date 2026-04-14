@@ -106,6 +106,49 @@ func TestGovernanceOverviewAndProblemCandidateLifecycle(t *testing.T) {
 	}
 }
 
+func TestGovernanceDecisionRefreshActions(t *testing.T) {
+	app := newGovernanceTestApp(t)
+	defer app.shutdown(context.Background())
+
+	decisionID := seedGovernanceDecision(t, app)
+
+	waived, err := app.WaiveDecision(decisionID, "Need time to refresh the evidence without reopening yet.")
+	if err != nil {
+		t.Fatalf("WaiveDecision: %v", err)
+	}
+
+	if waived.Status != "active" {
+		t.Fatalf("waived decision status = %q, want active", waived.Status)
+	}
+
+	validUntil, err := time.Parse(time.RFC3339, waived.ValidUntil)
+	if err != nil {
+		t.Fatalf("parse waived valid_until %q: %v", waived.ValidUntil, err)
+	}
+
+	if !validUntil.After(time.Now().UTC()) {
+		t.Fatalf("waived valid_until = %s, want future timestamp", waived.ValidUntil)
+	}
+
+	reopened, err := app.ReopenDecision(decisionID, "The stale decision needs a new problem cycle.")
+	if err != nil {
+		t.Fatalf("ReopenDecision: %v", err)
+	}
+
+	if !strings.Contains(reopened.Title, "Revisit:") {
+		t.Fatalf("reopened problem title = %q, want revisit wording", reopened.Title)
+	}
+
+	decision, err := app.GetDecision(decisionID)
+	if err != nil {
+		t.Fatalf("GetDecision after reopen: %v", err)
+	}
+
+	if decision.Status != "refresh_due" {
+		t.Fatalf("decision status after reopen = %q, want refresh_due", decision.Status)
+	}
+}
+
 func newGovernanceTestApp(t *testing.T) *App {
 	t.Helper()
 

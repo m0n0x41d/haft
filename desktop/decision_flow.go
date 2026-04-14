@@ -7,12 +7,19 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
+type implementationPromptContext struct {
+	PortfolioRationale string
+	WorkflowMarkdown   string
+}
+
 func buildImplementationPrompt(
 	decision *artifact.Artifact,
 	detail DecisionDetailView,
 	problems []*artifact.Artifact,
+	context implementationPromptContext,
 ) string {
 	var brief strings.Builder
+	decisionInvariants, governingInvariants := splitImplementationInvariants(detail.Invariants)
 
 	writeSectionTitle(&brief, "Implement Decision", firstNonEmpty(detail.SelectedTitle, decision.Meta.Title))
 	writeMetaLine(&brief, "Decision ID", detail.ID)
@@ -21,15 +28,18 @@ func buildImplementationPrompt(
 	writeBlankLine(&brief)
 
 	writeProblemContexts(&brief, problems)
+	writeParagraphSection(&brief, "Solution Portfolio Rationale", context.PortfolioRationale)
 	writeParagraphSection(&brief, "Why Selected", detail.WhySelected)
 	writeParagraphSection(&brief, "Counterargument", detail.CounterArgument)
-	writeStringListSection(&brief, "Invariants (must hold)", detail.Invariants, "- ")
+	writeStringListSection(&brief, "Invariants (must hold)", decisionInvariants, "- ")
+	writeStringListSection(&brief, "Governing Invariants (knowledge graph)", governingInvariants, "- ")
 	writeStringListSection(&brief, "Not Acceptable", detail.Admissibility, "- ")
 	writeStringListSection(&brief, "Affected Files", detail.AffectedFiles, "- ")
 	writeCoverageSection(&brief, detail.CoverageModules)
 	writeStringListSection(&brief, "Coverage Warnings", detail.CoverageWarnings, "- ")
 	writeStringListSection(&brief, "Post-conditions", detail.PostConditions, "- [ ] ")
 	writeClaimsSection(&brief, detail.Claims)
+	writeLiteralSection(&brief, "Workflow Policy (.haft/workflow.md)", context.WorkflowMarkdown)
 	writeInstructionSection(
 		&brief,
 		[]string{
@@ -159,6 +169,16 @@ func writeParagraphSection(builder *strings.Builder, title string, value string)
 	builder.WriteString("\n\n")
 }
 
+func writeLiteralSection(builder *strings.Builder, title string, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+
+	builder.WriteString(fmt.Sprintf("## %s\n", title))
+	builder.WriteString(strings.TrimSpace(value))
+	builder.WriteString("\n\n")
+}
+
 func writeInstructionSection(builder *strings.Builder, instructions []string) {
 	if len(instructions) == 0 {
 		return
@@ -185,4 +205,31 @@ func writeMetaLine(builder *strings.Builder, label string, value string) {
 
 func writeBlankLine(builder *strings.Builder) {
 	builder.WriteString("\n")
+}
+
+func splitImplementationInvariants(values []string) ([]string, []string) {
+	decisionInvariants := make([]string, 0, len(values))
+	governingInvariants := make([]string, 0, len(values))
+
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if isKnowledgeGraphInvariant(trimmed) {
+			governingInvariants = append(governingInvariants, trimmed)
+			continue
+		}
+		decisionInvariants = append(decisionInvariants, trimmed)
+	}
+
+	return decisionInvariants, governingInvariants
+}
+
+func isKnowledgeGraphInvariant(value string) bool {
+	if !strings.HasPrefix(value, "[dec-") {
+		return false
+	}
+
+	return strings.Contains(value, "] ")
 }

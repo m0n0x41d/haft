@@ -150,10 +150,10 @@ func (a *App) GetDashboard() (*DashboardView, error) {
 		return nil, err
 	}
 
-	healthyDecisions := mapArtifacts(statusData.HealthyDecisions, toDecisionView, 8)
-	pendingDecisions := mapArtifacts(statusData.PendingDecisions, toDecisionView, 8)
-	unassessedDecisions := mapArtifacts(statusData.UnassessedDecisions, toDecisionView, 8)
-	recentDecisions := mapArtifacts(decisions, toDecisionView, 8)
+	healthyDecisions := a.toDecisionViews(statusData.HealthyDecisions, 8)
+	pendingDecisions := a.toDecisionViews(statusData.PendingDecisions, 8)
+	unassessedDecisions := a.toDecisionViews(statusData.UnassessedDecisions, 8)
+	recentDecisions := a.toDecisionViews(decisions, 8)
 
 	return &DashboardView{
 		ProjectName:         a.projectName,
@@ -190,7 +190,7 @@ func (a *App) ListDecisions() ([]DecisionView, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mapArtifacts(arts, toDecisionView, 0), nil
+	return a.toDecisionViews(arts, 0), nil
 }
 
 func (a *App) GetProblem(id string) (*ProblemDetailView, error) {
@@ -310,6 +310,11 @@ func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree
 		return nil, fmt.Errorf("decision not found: %w", err)
 	}
 
+	guard := a.buildDecisionImplementGuard(dec)
+	if guard.BlockedReason != "" {
+		return nil, fmt.Errorf("%s", guard.BlockedReason)
+	}
+
 	problems := a.loadDecisionProblems(detail.ProblemRefs)
 
 	// Enrich with invariants from ALL decisions governing the affected files,
@@ -330,6 +335,371 @@ func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree
 		branchName,
 		decisionTaskTitle("Implement", detail),
 	)
+}
+
+var decisionImplementSubjectiveTextReplacer = strings.NewReplacer("-", " ", "_", " ", "/", " ")
+
+var decisionImplementSubjectiveTriggers = []string{
+	"maintainable",
+	"simple",
+	"scalable",
+	"robust",
+	"reliable",
+	"clean",
+	"user friendly",
+	"quality",
+	"fast",
+	"good",
+	"easy",
+}
+
+func (a *App) toDecisionViews(arts []*artifact.Artifact, limit int) []DecisionView {
+	if limit <= 0 || limit > len(arts) {
+		limit = len(arts)
+	}
+
+	views := make([]DecisionView, 0, limit)
+
+	for i := range limit {
+		decision := arts[i]
+		if decision == nil {
+			continue
+		}
+
+		fullDecision := decision
+		loadedDecision, err := a.store.Get(a.ctx, decision.Meta.ID)
+		if err == nil {
+			fullDecision = loadedDecision
+		}
+
+		view := toDecisionView(fullDecision)
+		view.ImplementGuard = a.buildDecisionImplementGuard(fullDecision)
+		views = append(views, view)
+	}
+
+	return views
+}
+
+func (a *App) buildDecisionImplementGuard(decision *artifact.Artifact) DecisionImplementGuardView {
+	guard := DecisionImplementGuardView{
+		ConfirmationMessages: []string{},
+		WarningMessages:      []string{},
+	}
+
+	if a.store == nil || decision == nil || decision.Meta.Kind != artifact.KindDecisionRecord {
+		return guard
+	}
+
+	if a.decisionHasActiveConflict(decision) {
+		guard.BlockedReason = "Multiple active decisions for this problem — supersede one first"
+		return guard
+	}
+
+	if len(decision.UnmarshalDecisionFields().Invariants) == 0 {
+		guard.WarningMessages = append(
+			guard.WarningMessages,
+			"No invariants defined — post-execution verification will be skipped",
+		)
+	}
+
+	if a.decisionNeedsParityWarning(decision) {
+		guard.ConfirmationMessages = append(
+			guard.ConfirmationMessages,
+			"No parity plan recorded — comparison may not be fair — proceed?",
+		)
+	}
+
+	if a.decisionNeedsSubjectiveWarning(decision) {
+		guard.ConfirmationMessages = append(
+			guard.ConfirmationMessages,
+			"Comparison basis includes unresolved subjective dimensions — proceed?",
+		)
+	}
+
+	guard.ConfirmationMessages = safeImplementMessages(guard.ConfirmationMessages)
+	guard.WarningMessages = safeImplementMessages(guard.WarningMessages)
+
+	return guard
+}
+
+func (a *App) decisionHasActiveConflict(decision *artifact.Artifact) bool {
+	problemRefs := a.loadDecisionProblemRefs(decision)
+	if len(problemRefs) == 0 {
+		return false
+	}
+
+	decisions, err := a.store.ListByKind(a.ctx, artifact.KindDecisionRecord, 0)
+	if err != nil {
+		return false
+	}
+
+	for _, candidate := range decisions {
+		if candidate == nil {
+			continue
+		}
+		if candidate.Meta.ID == decision.Meta.ID || candidate.Meta.Status != artifact.StatusActive {
+			continue
+		}
+
+		fullCandidate, err := a.store.Get(a.ctx, candidate.Meta.ID)
+		if err != nil {
+			continue
+		}
+
+		if decisionSharesProblemRef(problemRefs, a.loadDecisionProblemRefs(fullCandidate)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *App) decisionNeedsParityWarning(decision *artifact.Artifact) bool {
+	switch decision.Meta.Mode {
+	case artifact.ModeStandard, artifact.ModeDeep:
+	default:
+		return false
+	}
+
+	portfolio := a.loadDecisionPortfolio(decision)
+	if portfolio != nil {
+		comparison := portfolio.UnmarshalPortfolioFields().Comparison
+		if comparison != nil && comparison.ParityPlan != nil && comparison.ParityPlan.IsStructured() {
+			return false
+		}
+	}
+
+	for _, problemRef := range a.loadDecisionProblemRefs(decision) {
+		problem, err := a.store.Get(a.ctx, problemRef)
+		if err != nil || problem.Meta.Kind != artifact.KindProblemCard {
+			continue
+		}
+
+		snapshot := latestProblemCharacterization(problem)
+		if snapshot == nil || snapshot.ParityPlan == nil {
+			continue
+		}
+
+		if snapshot.ParityPlan.IsStructured() {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (a *App) decisionNeedsSubjectiveWarning(decision *artifact.Artifact) bool {
+	portfolio := a.loadDecisionPortfolio(decision)
+	if portfolio == nil {
+		return false
+	}
+
+	comparison := portfolio.UnmarshalPortfolioFields().Comparison
+	if comparison == nil || len(comparison.Dimensions) == 0 {
+		return false
+	}
+
+	dimensionRoles := a.loadDecisionDimensionRoles(decision)
+
+	for _, dimension := range comparison.Dimensions {
+		if dimensionRoles[normalizeDecisionImplementDimension(dimension)] == "observation" {
+			continue
+		}
+
+		if isDecisionImplementSubjectiveDimension(dimension) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *App) loadDecisionPortfolio(decision *artifact.Artifact) *artifact.Artifact {
+	if a.store == nil || decision == nil {
+		return nil
+	}
+
+	for _, link := range decision.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		linkedArtifact, err := a.store.Get(a.ctx, link.Ref)
+		if err != nil || linkedArtifact.Meta.Kind != artifact.KindSolutionPortfolio {
+			continue
+		}
+
+		return linkedArtifact
+	}
+
+	return nil
+}
+
+func (a *App) loadDecisionProblemRefs(decision *artifact.Artifact) []string {
+	if a.store == nil || decision == nil {
+		return []string{}
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	problemRefs := append([]string(nil), fields.ProblemRefs...)
+
+	for _, link := range decision.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		if strings.HasPrefix(link.Ref, artifact.KindProblemCard.IDPrefix()+"-") {
+			problemRefs = appendDecisionProblemRef(problemRefs, link.Ref)
+			continue
+		}
+
+		linkedArtifact, err := a.store.Get(a.ctx, link.Ref)
+		if err != nil || linkedArtifact.Meta.Kind != artifact.KindSolutionPortfolio {
+			continue
+		}
+
+		problemRefs = appendDecisionProblemRefs(problemRefs, loadPortfolioProblemRefs(linkedArtifact))
+	}
+
+	sort.Strings(problemRefs)
+
+	return problemRefs
+}
+
+func (a *App) loadDecisionDimensionRoles(decision *artifact.Artifact) map[string]string {
+	dimensionRoles := make(map[string]string)
+
+	for _, problemRef := range a.loadDecisionProblemRefs(decision) {
+		problem, err := a.store.Get(a.ctx, problemRef)
+		if err != nil || problem.Meta.Kind != artifact.KindProblemCard {
+			continue
+		}
+
+		snapshot := latestProblemCharacterization(problem)
+		if snapshot == nil {
+			continue
+		}
+
+		for _, dimension := range snapshot.Dimensions {
+			name := normalizeDecisionImplementDimension(dimension.Name)
+			if name == "" {
+				continue
+			}
+
+			role := strings.TrimSpace(strings.ToLower(dimension.Role))
+			if role == "" {
+				role = "target"
+			}
+
+			dimensionRoles[name] = role
+		}
+	}
+
+	return dimensionRoles
+}
+
+func latestProblemCharacterization(problem *artifact.Artifact) *artifact.CharacterizationSnapshot {
+	if problem == nil {
+		return nil
+	}
+
+	fields := problem.UnmarshalProblemFields()
+	if len(fields.Characterizations) == 0 {
+		return nil
+	}
+
+	snapshot := fields.Characterizations[len(fields.Characterizations)-1]
+	return &snapshot
+}
+
+func loadPortfolioProblemRefs(portfolio *artifact.Artifact) []string {
+	if portfolio == nil {
+		return []string{}
+	}
+
+	fields := portfolio.UnmarshalPortfolioFields()
+	problemRefs := []string{}
+
+	if strings.TrimSpace(fields.ProblemRef) != "" {
+		problemRefs = appendDecisionProblemRef(problemRefs, fields.ProblemRef)
+	}
+
+	for _, link := range portfolio.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		if !strings.HasPrefix(link.Ref, artifact.KindProblemCard.IDPrefix()+"-") {
+			continue
+		}
+
+		problemRefs = appendDecisionProblemRef(problemRefs, link.Ref)
+	}
+
+	sort.Strings(problemRefs)
+
+	return problemRefs
+}
+
+func appendDecisionProblemRefs(current []string, next []string) []string {
+	result := append([]string(nil), current...)
+
+	for _, value := range next {
+		result = appendDecisionProblemRef(result, value)
+	}
+
+	return result
+}
+
+func appendDecisionProblemRef(current []string, next string) []string {
+	trimmed := strings.TrimSpace(next)
+	if trimmed == "" {
+		return current
+	}
+
+	for _, existing := range current {
+		if existing == trimmed {
+			return current
+		}
+	}
+
+	return append(current, trimmed)
+}
+
+func decisionSharesProblemRef(left []string, right []string) bool {
+	for _, leftValue := range left {
+		for _, rightValue := range right {
+			if leftValue == rightValue {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func normalizeDecisionImplementDimension(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = decisionImplementSubjectiveTextReplacer.Replace(normalized)
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
+}
+
+func isDecisionImplementSubjectiveDimension(dimension string) bool {
+	normalizedDimension := normalizeDecisionImplementDimension(dimension)
+	if normalizedDimension == "" {
+		return false
+	}
+
+	paddedDimension := " " + normalizedDimension + " "
+
+	for _, trigger := range decisionImplementSubjectiveTriggers {
+		if strings.Contains(paddedDimension, " "+trigger+" ") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // VerifyDecision spawns an agent to verify a decision's claims.

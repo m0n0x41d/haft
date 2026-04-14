@@ -107,7 +107,26 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     }
   };
 
-  const handleImplementDecision = async (decisionID: string) => {
+  const handleImplementDecision = async (decision: DecisionSummary) => {
+    const actionState = getDecisionImplementActionState(
+      decision.status,
+      decision.implement_guard,
+    );
+
+    if (actionState.disabled) {
+      return;
+    }
+
+    if (!acknowledgeImplementWarnings(actionState.warningMessages)) {
+      return;
+    }
+
+    if (!confirmImplementWarnings(actionState.confirmationMessages)) {
+      return;
+    }
+
+    const decisionID = decision.id;
+
     setImplementingDecisionIDs((currentDecisionIDs) => {
       if (currentDecisionIDs.includes(decisionID)) {
         return currentDecisionIDs;
@@ -380,7 +399,7 @@ function DecisionBucket({
   title: string;
   decisions: DecisionSummary[];
   onOpenDecision: (decisionID: string) => void;
-  onImplementDecision: (decisionID: string) => Promise<void>;
+  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
   implementingDecisionIDs: string[];
 }) {
   if (decisions.length === 0) {
@@ -496,9 +515,12 @@ function DecisionCard({
   decision: DecisionSummary;
   isImplementing: boolean;
   onOpenDecision: (decisionID: string) => void;
-  onImplementDecision: (decisionID: string) => Promise<void>;
+  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
 }) {
-  const implementAction = getDecisionImplementActionState(decision.status);
+  const implementAction = getDecisionImplementActionState(
+    decision.status,
+    decision.implement_guard,
+  );
   const isImplementDisabled = implementAction.disabled || isImplementing;
 
   return (
@@ -519,7 +541,7 @@ function DecisionCard({
         </button>
 
         <button
-          onClick={() => void onImplementDecision(decision.id)}
+          onClick={() => void onImplementDecision(decision)}
           disabled={isImplementDisabled}
           title={implementAction.reason}
           className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
@@ -591,6 +613,23 @@ function promptForGovernanceDecisionReason(
   const response = window.prompt(promptMessage, finding.reason);
 
   return response ? response.trim() : "";
+}
+
+function acknowledgeImplementWarnings(messages: string[]): boolean {
+  if (messages.length === 0 || typeof window === "undefined") {
+    return true;
+  }
+
+  window.alert(messages.join("\n\n"));
+  return true;
+}
+
+function confirmImplementWarnings(messages: string[]): boolean {
+  if (messages.length === 0 || typeof window === "undefined") {
+    return true;
+  }
+
+  return window.confirm(messages.join("\n\n"));
 }
 
 function RecentActivityCard({

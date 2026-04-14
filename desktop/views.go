@@ -36,6 +36,13 @@ func safeDecisionViews(s []DecisionView) []DecisionView {
 	return s
 }
 
+func safeImplementMessages(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 func safeRejections(s []RejectionView) []RejectionView {
 	if s == nil {
 		return []RejectionView{}
@@ -177,14 +184,21 @@ type PortfolioSummaryView struct {
 
 // DecisionView is a summary for decision lists.
 type DecisionView struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Status        string `json:"status"`
-	Mode          string `json:"mode"`
-	SelectedTitle string `json:"selected_title"`
-	WeakestLink   string `json:"weakest_link"`
-	ValidUntil    string `json:"valid_until"`
-	CreatedAt     string `json:"created_at"`
+	ID             string                     `json:"id"`
+	Title          string                     `json:"title"`
+	Status         string                     `json:"status"`
+	Mode           string                     `json:"mode"`
+	SelectedTitle  string                     `json:"selected_title"`
+	WeakestLink    string                     `json:"weakest_link"`
+	ValidUntil     string                     `json:"valid_until"`
+	CreatedAt      string                     `json:"created_at"`
+	ImplementGuard DecisionImplementGuardView `json:"implement_guard"`
+}
+
+type DecisionImplementGuardView struct {
+	BlockedReason        string   `json:"blocked_reason"`
+	ConfirmationMessages []string `json:"confirmation_messages"`
+	WarningMessages      []string `json:"warning_messages"`
 }
 
 // DecisionDetailView is the full decision record.
@@ -371,6 +385,10 @@ func toDecisionView(a *artifact.Artifact) DecisionView {
 		WeakestLink:   df.WeakestLink,
 		ValidUntil:    a.Meta.ValidUntil,
 		CreatedAt:     a.Meta.CreatedAt.Format("2006-01-02"),
+		ImplementGuard: DecisionImplementGuardView{
+			ConfirmationMessages: []string{},
+			WarningMessages:      []string{},
+		},
 	}
 }
 

@@ -8,6 +8,8 @@ test("active DecisionRecords keep Implement enabled", () => {
 
   assert.equal(action.disabled, false);
   assert.equal(action.reason, "");
+  assert.deepEqual(action.confirmationMessages, []);
+  assert.deepEqual(action.warningMessages, []);
 });
 
 test("superseded and deprecated DecisionRecords disable Implement", () => {
@@ -29,4 +31,33 @@ test("non-active statuses stay blocked until they become active", () => {
     refreshDue.reason,
     "Implement is available only for active DecisionRecords.",
   );
+});
+
+test("G1 blocks Implement even for active decisions", () => {
+  const action = getDecisionImplementActionState("active", {
+    blocked_reason: "Multiple active decisions for this problem — supersede one first",
+    confirmation_messages: [],
+    warning_messages: [],
+  });
+
+  assert.equal(action.disabled, true);
+  assert.match(action.reason, /multiple active decisions/i);
+});
+
+test("warning and confirmation messages stay available for the click flow", () => {
+  const action = getDecisionImplementActionState("active", {
+    blocked_reason: "",
+    confirmation_messages: [
+      "No parity plan recorded — comparison may not be fair — proceed?",
+      "Comparison basis includes unresolved subjective dimensions — proceed?",
+    ],
+    warning_messages: [
+      "No invariants defined — post-execution verification will be skipped",
+    ],
+  });
+
+  assert.equal(action.disabled, false);
+  assert.equal(action.reason, "");
+  assert.equal(action.confirmationMessages.length, 2);
+  assert.equal(action.warningMessages.length, 1);
 });

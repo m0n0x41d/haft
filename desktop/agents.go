@@ -789,21 +789,40 @@ func (a *App) Implement(decisionRef string) (*TaskState, error) {
 	return a.implementDecisionTask(decisionRef, "", "")
 }
 
-// Adopt creates a checkpointed investigation task for a drift finding.
+// Adopt creates a checkpointed investigation task for a governance finding.
 func (a *App) Adopt(findingRef string) (*TaskState, error) {
-	context, err := a.loadDriftAdoptionContext(findingRef)
+	finding, item, err := a.resolveGovernanceFinding(strings.TrimSpace(findingRef))
 	if err != nil {
 		return nil, err
 	}
 
-	prompt := buildAdoptDriftPrompt(*context)
+	var detail DecisionDetailView
+	var prompt string
+
+	if item.Category == artifact.StaleCategoryDecisionStale && len(item.DriftItems) > 0 {
+		context, driftErr := a.loadDriftAdoptionContext(finding.ID)
+		if driftErr != nil {
+			return nil, driftErr
+		}
+
+		detail = context.Detail
+		prompt = buildAdoptDriftPrompt(*context)
+	} else {
+		context, staleErr := a.loadStaleAdoptionContext(finding.ID)
+		if staleErr != nil {
+			return nil, staleErr
+		}
+
+		detail = context.Detail
+		prompt = buildAdoptStalePrompt(*context)
+	}
 
 	return a.spawnTaskWithTitle(
 		"",
 		prompt,
 		false,
 		"",
-		decisionTaskTitle("Adopt", context.Detail),
+		decisionTaskTitle("Adopt", detail),
 		taskRunPlan{ForceCheckpointed: true},
 	)
 }

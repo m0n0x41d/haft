@@ -566,7 +566,10 @@ type WailsBindings = {
     branch: string,
   ) => Promise<TaskState>;
   VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
+  BaselineDecision?: (decisionID: string) => Promise<DecisionDetail>;
+  MeasureDecision?: (decisionID: string, findings: string, verdict: string) => Promise<DecisionDetail>;
   WaiveDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
+  DeprecateDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
   ReopenDecision?: (decisionID: string, reason: string) => Promise<ProblemDetail>;
   OpenPathInIDE?: (path: string) => Promise<void>;
   GetConfig?: () => Promise<DesktopConfig>;
@@ -1216,6 +1219,112 @@ export async function waiveDecision(decisionID: string, reason: string): Promise
       (finding) =>
         finding.artifact_ref !== decisionID || finding.category !== "evidence_expired",
     ),
+  };
+
+  return nextDecision;
+}
+
+export async function baselineDecision(decisionID: string): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("BaselineDecision", decisionID);
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID || finding.category !== "decision_stale",
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function measureDecision(
+  decisionID: string,
+  findings: string,
+  verdict: string,
+): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("MeasureDecision", decisionID, findings, verdict);
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const canonicalVerdict =
+    verdict.trim().toLowerCase() === "accepted"
+      ? "supports"
+      : verdict.trim().toLowerCase() === "partial"
+        ? "weakens"
+        : "refutes";
+  const nextDecision = {
+    ...currentDecision,
+    evidence: {
+      ...currentDecision.evidence,
+      items: [
+        {
+          id: `ev-${Date.now()}`,
+          type: "measurement",
+          content: findings.trim(),
+          verdict: canonicalVerdict,
+          formality_level: 2,
+          congruence_level: 3,
+          claim_refs: [],
+          valid_until: currentDecision.valid_until,
+          is_expired: false,
+        },
+        ...currentDecision.evidence.items,
+      ],
+      covered_claims: Math.max(currentDecision.evidence.covered_claims, 1),
+      coverage_gaps: [],
+    },
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID ||
+        (finding.category !== "evidence_expired" && finding.category !== "reff_degraded"),
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function deprecateDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("DeprecateDecision", decisionID, reason);
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    coverage_warnings: [
+      ...currentDecision.coverage_warnings,
+      `Deprecated: ${reason.trim()}`,
+    ],
+    status: "deprecated",
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "deprecated",
+        }
+      : decisionSummary,
+  );
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter((finding) => finding.artifact_ref !== decisionID),
   };
 
   return nextDecision;

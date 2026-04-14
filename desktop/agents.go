@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -29,6 +33,7 @@ const (
 	taskOutputMaxLines      = 500
 	taskOutputMaxChars      = 64000
 	taskOutputFlushInterval = 350 * time.Millisecond
+	taskApprovalPulse       = 500 * time.Millisecond
 )
 
 // InstalledAgent describes a detected agent binary.
@@ -79,9 +84,16 @@ type runningTask struct {
 	cmd       *exec.Cmd
 	cancel    context.CancelFunc
 	output    *taskOutputBuffer
+	pty       *os.File
 	flushStop chan struct{}
 	flushDone chan struct{}
 	flushOnce sync.Once
+	readDone  chan struct{}
+	inputStop chan struct{}
+	inputDone chan struct{}
+	inputOnce sync.Once
+	ptyOnce   sync.Once
+	autoRun   atomic.Bool
 }
 
 type taskOutputWriter struct {
@@ -160,6 +172,9 @@ func (r *taskRunner) shutdown() {
 		}
 
 		item.rt.cancel()
+		item.rt.stopInputLoop()
+		item.rt.closePTY()
+		item.rt.waitForOutputReader()
 		item.rt.stopFlusher()
 
 		state := item.state
@@ -345,10 +360,11 @@ func (r *taskRunner) emitTaskStatus(state TaskState) {
 
 func (r *taskRunner) setAutoRun(id string, autoRun bool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	rt, ok := r.tasks[id]
 	if !ok {
+		r.mu.Unlock()
+
 		// Task might be persisted but not in memory — update store directly
 		if r.store != nil {
 			return r.store.SetAutoRun(context.Background(), id, autoRun)
@@ -357,13 +373,25 @@ func (r *taskRunner) setAutoRun(id string, autoRun bool) error {
 	}
 
 	rt.state.AutoRun = autoRun
+	rt.autoRun.Store(autoRun)
+	state := rt.state
+
+	r.mu.Unlock()
+
 	if r.store != nil {
-		_ = r.store.SetAutoRun(context.Background(), id, autoRun)
+		if err := r.store.SetAutoRun(context.Background(), id, autoRun); err != nil {
+			return err
+		}
 	}
+
+	r.emitTaskStatus(state)
 	return nil
 }
 
 func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
+	rt.stopInputLoop()
+	rt.closePTY()
+	rt.waitForOutputReader()
 	rt.stopFlusher()
 
 	r.mu.Lock()
@@ -419,6 +447,51 @@ func (rt *runningTask) stopFlusher() {
 		close(rt.flushStop)
 		<-rt.flushDone
 	})
+}
+
+func (rt *runningTask) startInputLoop() {
+	ticker := time.NewTicker(taskApprovalPulse)
+
+	go func() {
+		defer close(rt.inputDone)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if !rt.autoRun.Load() || rt.pty == nil {
+					continue
+				}
+
+				if _, err := io.WriteString(rt.pty, "y\n"); err != nil {
+					return
+				}
+			case <-rt.inputStop:
+				return
+			}
+		}
+	}()
+}
+
+func (rt *runningTask) stopInputLoop() {
+	rt.inputOnce.Do(func() {
+		close(rt.inputStop)
+		<-rt.inputDone
+	})
+}
+
+func (rt *runningTask) closePTY() {
+	rt.ptyOnce.Do(func() {
+		if rt.pty != nil {
+			_ = rt.pty.Close()
+		}
+	})
+}
+
+func (rt *runningTask) waitForOutputReader() {
+	if rt.readDone != nil {
+		<-rt.readDone
+	}
 }
 
 func newTaskOutputBuffer(maxLines int, seed string) *taskOutputBuffer {
@@ -542,6 +615,49 @@ func trimTaskOutputRunes(output string, maxRunes int) string {
 	return string(runes[start:])
 }
 
+func (r *taskRunner) startPTYReader(rt *runningTask) {
+	go func() {
+		defer close(rt.readDone)
+
+		if rt.pty == nil {
+			return
+		}
+
+		buffer := make([]byte, 4096)
+
+		for {
+			count, err := rt.pty.Read(buffer)
+			if count > 0 {
+				chunk := string(buffer[:count])
+				output := rt.output.Append(chunk)
+				r.emitTaskOutput(rt.state.ID, chunk, output)
+			}
+
+			if err == nil {
+				continue
+			}
+
+			if !isTaskTerminalClosed(err) {
+				r.app.emitAppError("task output", err)
+			}
+
+			return
+		}
+	}()
+}
+
+func isTaskTerminalClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
+		return true
+	}
+
+	return strings.Contains(err.Error(), "input/output error")
+}
+
 // --- App binding methods ---
 
 // DetectAgents finds installed coding agents.
@@ -583,7 +699,7 @@ func (a *App) DetectAgents() ([]InstalledAgent, error) {
 
 // SpawnTask creates and starts a new agent task.
 func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branchName string) (*TaskState, error) {
-	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "")
+	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "", false)
 }
 
 // Implement creates a decision-anchored task in a dedicated worktree.
@@ -631,6 +747,7 @@ func (a *App) implementDecisionTask(
 		true,
 		branchName,
 		decisionTaskTitle("Implement", detail),
+		true,
 	)
 }
 
@@ -673,6 +790,7 @@ func (a *App) spawnTaskWithTitle(
 	useWorktree bool,
 	branchName string,
 	title string,
+	checkpointedOverride ...bool,
 ) (*TaskState, error) {
 	if a.projectRoot == "" {
 		return nil, fmt.Errorf("no active project")
@@ -703,6 +821,16 @@ func (a *App) spawnTaskWithTitle(
 		warnings = append(warnings, fmt.Sprintf("warning: desktop config could not be loaded: %v", err))
 	}
 
+	forceCheckpointed := false
+	if len(checkpointedOverride) > 0 {
+		forceCheckpointed = checkpointedOverride[0]
+	}
+
+	autoRun := cfg.DefaultAutoRun
+	if forceCheckpointed {
+		autoRun = false
+	}
+
 	workDir := a.projectRoot
 	worktree := worktreeHandle{}
 
@@ -717,6 +845,7 @@ func (a *App) spawnTaskWithTitle(
 		Branch:      branchName,
 		Worktree:    useWorktree,
 		StartedAt:   nowRFC3339(),
+		AutoRun:     autoRun,
 	}
 
 	if useWorktree {
@@ -736,7 +865,11 @@ func (a *App) spawnTaskWithTitle(
 		}
 	}
 
-	args := buildAgentArgs(AgentKind(agentKind), prompt)
+	if !state.AutoRun {
+		warnings = append(warnings, "checkpointed mode active: the task waits on agent approval prompts until Auto-run is enabled.")
+	}
+
+	args := buildAgentArgs(AgentKind(agentKind), prompt, workDir)
 	if len(args) == 0 {
 		if state.WorktreePath != "" && !state.ReusedWorktree {
 			_, _ = cleanupWorktree(a.projectRoot, state, true)
@@ -755,6 +888,7 @@ func (a *App) spawnTaskWithTitle(
 	cmd.Dir = workDir
 	cmd.Env = append(
 		os.Environ(),
+		"TERM=xterm-256color",
 		"HAFT_PROJECT_ROOT="+a.projectRoot,
 		"HAFT_TASK_ID="+state.ID,
 		"HAFT_TASK_BRANCH="+state.Branch,
@@ -773,17 +907,11 @@ func (a *App) spawnTaskWithTitle(
 		output:    newTaskOutputBuffer(taskOutputMaxLines, initialOutput),
 		flushStop: make(chan struct{}),
 		flushDone: make(chan struct{}),
+		readDone:  make(chan struct{}),
+		inputStop: make(chan struct{}),
+		inputDone: make(chan struct{}),
 	}
-
-	writer := &taskOutputWriter{
-		buffer: rt.output,
-		onUpdate: func(chunk string, output string) {
-			a.tasks.emitTaskOutput(state.ID, chunk, output)
-		},
-	}
-
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	rt.autoRun.Store(state.AutoRun)
 
 	rt.state.Output = rt.output.String()
 
@@ -797,7 +925,11 @@ func (a *App) spawnTaskWithTitle(
 		return nil, fmt.Errorf("persist task: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
+	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Rows: 32,
+		Cols: 120,
+	})
+	if err != nil {
 		cancel()
 
 		rt.state.Status = "failed"
@@ -813,8 +945,11 @@ func (a *App) spawnTaskWithTitle(
 
 		return nil, fmt.Errorf("start %s: %w", agentKind, err)
 	}
+	rt.pty = ptyFile
 
 	a.tasks.register(rt)
+	a.tasks.startPTYReader(rt)
+	rt.startInputLoop()
 	a.tasks.startOutputFlusher(rt)
 	a.tasks.emitTaskStatus(rt.state)
 
@@ -967,6 +1102,7 @@ func (a *App) HandoffTask(id string, targetAgent string) (*TaskState, error) {
 		useWorktree,
 		branch,
 		fmt.Sprintf("Handoff: %s", source.Title),
+		false,
 	)
 }
 
@@ -1004,25 +1140,38 @@ func getVersion(path string, flag string) string {
 	return strings.TrimSpace(strings.Split(string(out), "\n")[0])
 }
 
-func buildAgentArgs(kind AgentKind, prompt string) []string {
+func buildAgentArgs(kind AgentKind, prompt string, workDir string) []string {
 	switch kind {
 	case AgentClaude:
-		return []string{
-			"claude", "-p", prompt,
-			"--verbose",
-			"--output-format", "text",
-		}
+		return buildClaudeArgs(prompt)
 	case AgentCodex:
-		return []string{
-			"codex", "exec",
-			"--full-auto",
-			prompt,
-		}
+		return buildCodexArgs(prompt, workDir)
 	case AgentHaft:
-		return []string{"haft", "agent", prompt}
+		return buildHaftArgs(prompt)
 	default:
 		return nil
 	}
+}
+
+func buildClaudeArgs(prompt string) []string {
+	args := []string{"claude", "-p", prompt}
+	args = append(args, "--verbose")
+	args = append(args, "--output-format", "text")
+	args = append(args, "--permission-mode", "default")
+	return args
+}
+
+func buildCodexArgs(prompt string, workDir string) []string {
+	args := []string{"codex", "exec"}
+	args = append(args, "--cd", workDir)
+	args = append(args, "--sandbox", "workspace-write")
+	args = append(args, "--ask-for-approval", "untrusted")
+	args = append(args, prompt)
+	return args
+}
+
+func buildHaftArgs(prompt string) []string {
+	return []string{"haft", "agent", prompt}
 }
 
 func decisionFeatureBranchName(branchName string, labels ...string) string {

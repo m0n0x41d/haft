@@ -385,7 +385,9 @@ func runImplement(cmd *cobra.Command, args []string) error {
 
 	switch implementAgent {
 	case "codex":
-		agentArgs := []string{"exec", "--full-auto", "-c", "mcp_servers={}", "--json", prompt}
+		// Pass prompt via stdin with "-" arg to avoid shell arg length limits
+		// and "Reading additional input from stdin..." message
+		agentArgs := []string{"exec", "--full-auto", "-c", "mcp_servers={}", "--json", "-"}
 		agentCmd = exec.Command("codex", agentArgs...)
 	case "claude":
 		agentCmd = exec.Command("claude", "-p", prompt, "--allowedTools", "Edit,Write,Bash,Read,Glob,Grep")
@@ -397,7 +399,12 @@ func runImplement(cmd *cobra.Command, args []string) error {
 	agentCmd.Stderr = os.Stderr
 
 	if useJSON {
-		// Parse JSONL for pretty output
+		// Feed prompt via stdin
+		stdinPipe, piErr := agentCmd.StdinPipe()
+		if piErr != nil {
+			return fmt.Errorf("pipe stdin: %w", piErr)
+		}
+
 		stdout, pErr := agentCmd.StdoutPipe()
 		if pErr != nil {
 			return fmt.Errorf("pipe stdout: %w", pErr)
@@ -407,8 +414,12 @@ func runImplement(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("start agent: %w", sErr)
 		}
 
+		// Write prompt and close stdin so codex doesn't wait
+		_, _ = stdinPipe.Write([]byte(prompt))
+		_ = stdinPipe.Close()
+
 		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for large outputs
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 		for scanner.Scan() {
 			ui.parseCodexJSONL(scanner.Text())
 		}

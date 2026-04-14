@@ -187,15 +187,15 @@ func (s *Store) FindModuleForFile(ctx context.Context, filePath string) (*Node, 
 func (s *Store) TransitiveDependents(ctx context.Context, moduleID string) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		WITH RECURSIVE deps(mid, depth, path) AS (
-			SELECT target_module, 1, source_module || '/' || target_module
+			SELECT source_module, 1, '|' || target_module || '|' || source_module || '|'
 			FROM module_dependencies
-			WHERE source_module = ?
+			WHERE target_module = ?
 			UNION
-			SELECT md.target_module, d.depth + 1, d.path || '/' || md.target_module
+			SELECT md.source_module, d.depth + 1, d.path || md.source_module || '|'
 			FROM deps d
-			JOIN module_dependencies md ON md.source_module = d.mid
+			JOIN module_dependencies md ON md.target_module = d.mid
 			WHERE d.depth < 10
-			  AND d.path NOT LIKE '%' || md.target_module || '%'
+			  AND d.path NOT LIKE '%|' || md.source_module || '|%'
 		)
 		SELECT DISTINCT m.module_id, m.path, m.name, d.depth
 		FROM deps d

@@ -1220,6 +1220,160 @@ func TestCompare_NoWarningsWhenFullCoverage(t *testing.T) {
 	}
 }
 
+func TestIsSubjectiveComparisonDimension(t *testing.T) {
+	cases := []struct {
+		dimension string
+		want      bool
+	}{
+		{dimension: "maintainable", want: true},
+		{dimension: "simple", want: true},
+		{dimension: "scalable", want: true},
+		{dimension: "robust", want: true},
+		{dimension: "reliable", want: true},
+		{dimension: "clean", want: true},
+		{dimension: "user-friendly", want: true},
+		{dimension: "quality", want: true},
+		{dimension: "fast", want: true},
+		{dimension: "good", want: true},
+		{dimension: "easy", want: true},
+		{dimension: "fast rollout", want: true},
+		{dimension: "user friendly onboarding", want: true},
+		{dimension: "latency", want: false},
+		{dimension: "throughput", want: false},
+		{dimension: "goodput", want: false},
+	}
+
+	for _, tc := range cases {
+		got := isSubjectiveComparisonDimension(tc.dimension)
+		if got != tc.want {
+			t.Fatalf("isSubjectiveComparisonDimension(%q) = %v, want %v", tc.dimension, got, tc.want)
+		}
+	}
+}
+
+func TestCompare_WarnsOnSubjectiveTargetDimension(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Queue design", Signal: "Delivery pressure", Context: "ops",
+	})
+	CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "maintainable", Role: "target", Polarity: "higher_better"},
+		},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"Redis", "NATS"},
+			Window:            "same replay window",
+			Budget:            "$100/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+			PinnedConditions:  []string{"Same team and workload"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Redis", "head-of-line blocking", "Keep the existing operational surface"),
+			testVariant("NATS", "ecosystem maturity", "Adopt a dedicated broker with a different scaling path"),
+		},
+		NoSteppingStoneRationale: "Both queue options are direct production candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"maintainable"},
+			Scores: map[string]map[string]string{
+				"Redis": {"maintainable": "high"},
+				"NATS":  {"maintainable": "medium"},
+			},
+			NonDominatedSet: []string{"Redis"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Redis"},
+					Summary:     "Lower maintainability score in the current comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Redis", Summary: "Best maintainability score in this fixture."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "dimension 'maintainable' is subjective — decompose into measurables or tag as observation-only") {
+		t.Fatalf("expected subjective-dimension warning, body: %s", a.Body)
+	}
+}
+
+func TestCompare_SkipsSubjectiveWarningForObservationDimension(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Queue design", Signal: "Delivery pressure", Context: "ops",
+	})
+	CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency", Role: "target"},
+			{Name: "quality", Role: "observation"},
+		},
+		ParityPlan: &ParityPlan{
+			BaselineSet:       []string{"Redis", "NATS"},
+			Window:            "same replay window",
+			Budget:            "$100/month",
+			MissingDataPolicy: MissingDataPolicyExplicitAbstain,
+			PinnedConditions:  []string{"Same team and workload"},
+		},
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Redis", "head-of-line blocking", "Keep the existing operational surface"),
+			testVariant("NATS", "ecosystem maturity", "Adopt a dedicated broker with a different scaling path"),
+		},
+		NoSteppingStoneRationale: "Both queue options are direct production candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency", "quality"},
+			Scores: map[string]map[string]string{
+				"Redis": {"latency": "10ms", "quality": "high"},
+				"NATS":  {"latency": "15ms", "quality": "medium"},
+			},
+			NonDominatedSet: []string{"Redis"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "NATS",
+					DominatedBy: []string{"Redis"},
+					Summary:     "Higher latency under the same conditions.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "Redis", Summary: "Best latency while quality stays observation-only."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(a.Body, "dimension 'quality' is subjective") {
+		t.Fatalf("did not expect subjective warning for observation dimension, body: %s", a.Body)
+	}
+}
+
 func TestCompare_WarnsWithoutParityPlanInStandardMode(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -1259,7 +1413,7 @@ func TestCompare_WarnsWithoutParityPlanInStandardMode(t *testing.T) {
 	if !strings.Contains(a.Body, "Comparison Warnings") {
 		t.Fatal("expected warning section without parity plan in standard mode")
 	}
-	if !strings.Contains(a.Body, "without a parity plan") {
+	if !strings.Contains(a.Body, "without a parity_plan") {
 		t.Fatalf("expected missing parity plan warning, body: %s", a.Body)
 	}
 }
@@ -1676,7 +1830,7 @@ func TestExplore_WarnsOnDuplicateNoveltyMarkers(t *testing.T) {
 	}
 }
 
-func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
+func TestCompare_DeepModeWarnsWithoutParityPlan(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1698,7 +1852,7 @@ func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
 		NoSteppingStoneRationale: "Both transports are direct architecture candidates.",
 	})
 
-	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
 		PortfolioRef: portfolio.Meta.ID,
 		Results: ComparisonResult{
 			Dimensions: []string{"latency"},
@@ -1707,13 +1861,108 @@ func TestCompare_DeepModeRequiresParityPlan(t *testing.T) {
 				"gRPC": {"latency": "18ms"},
 			},
 			NonDominatedSet: []string{"gRPC"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency result among the compared variants."},
+			},
 		},
 	})
-	if err == nil {
-		t.Fatal("expected deep-mode parity error")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "requires a parity plan") {
-		t.Fatalf("expected parity-plan error, got %v", err)
+	if !strings.Contains(a.Body, "Comparison Warnings") {
+		t.Fatalf("expected warning section in deep mode, body: %s", a.Body)
+	}
+	if !strings.Contains(a.Body, "deep mode comparison proceeds without a parity_plan") {
+		t.Fatalf("expected deep-mode missing parity warning, body: %s", a.Body)
+	}
+}
+
+func TestCompare_DeepModeWarnsOnUnstructuredParityPlan(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Transport choice", Signal: "Latency variance", Context: "api", Mode: "deep",
+	})
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("REST", "chatty serialization", "Keep the existing HTTP semantics"),
+			testVariant("gRPC", "tooling overhead", "Adopt binary RPC for lower-latency transport"),
+		},
+		NoSteppingStoneRationale: "Both transports are direct architecture candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"REST": {"latency": "42ms"},
+				"gRPC": {"latency": "18ms"},
+			},
+			NonDominatedSet: []string{"gRPC"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "REST",
+					DominatedBy: []string{"gRPC"},
+					Summary:     "Higher latency with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "gRPC", Summary: "Lowest latency result among the compared variants."},
+			},
+			ParityPlan: &ParityPlan{
+				Window: "same 15m replay window",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Body, "Comparison Warnings") {
+		t.Fatalf("expected warning section for unstructured parity plan, body: %s", a.Body)
+	}
+	if !strings.Contains(a.Body, "received an unstructured parity_plan") {
+		t.Fatalf("expected unstructured parity warning, body: %s", a.Body)
+	}
+}
+
+func TestExtractComparisonWarnings(t *testing.T) {
+	body := strings.Join([]string{
+		"# Solution Portfolio",
+		"",
+		"## Comparison",
+		"",
+		"## Comparison Warnings",
+		"",
+		"- ⚠ standard mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy",
+		"- ⚠ Parity checklist (per characterized dimension):",
+		"",
+		"## Next Section",
+		"",
+		"ignored",
+	}, "\n")
+
+	warnings := ExtractComparisonWarnings(body)
+
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d: %+v", len(warnings), warnings)
+	}
+	if warnings[0] != "standard mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy" {
+		t.Fatalf("unexpected first warning: %q", warnings[0])
+	}
+	if warnings[1] != "Parity checklist (per characterized dimension):" {
+		t.Fatalf("unexpected second warning: %q", warnings[1])
 	}
 }
 

@@ -89,15 +89,17 @@ func decisionCandidatesForAdoption(
 
 // StatusData holds all data needed to render the status dashboard.
 type StatusData struct {
-	ShippedDecisions   []*Artifact
-	PendingDecisions   []*Artifact
-	StaleItems         []StaleItem
-	InProgressProblems []*Artifact
-	InProgressBy       map[string]string // problem ID -> portfolio ID
-	BacklogProblems    []*Artifact
-	AddressedProblems  []*Artifact
-	AddressedBy        map[string]string // problem ID -> decision ID
-	RecentNotes        []*Artifact
+	HealthyDecisions    []*Artifact
+	PendingDecisions    []*Artifact
+	UnassessedDecisions []*Artifact
+	DecisionHealth      map[string]DecisionHealth // decision ID -> derived maturity/freshness
+	StaleItems          []StaleItem
+	InProgressProblems  []*Artifact
+	InProgressBy        map[string]string // problem ID -> portfolio ID
+	BacklogProblems     []*Artifact
+	AddressedProblems   []*Artifact
+	AddressedBy         map[string]string // problem ID -> decision ID
+	RecentNotes         []*Artifact
 }
 
 // FetchStatusData gathers all dashboard data without formatting.
@@ -105,6 +107,7 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	var data StatusData
 	data.InProgressBy = make(map[string]string)
 	data.AddressedBy = make(map[string]string)
+	data.DecisionHealth = make(map[string]DecisionHealth)
 
 	// Active decisions
 	var decisions []*Artifact
@@ -120,10 +123,21 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	}
 	activeDecisions := filterActive(decisions)
 	for _, d := range activeDecisions {
-		if hasMeasurement(ctx, store, d.Meta.ID) {
-			data.ShippedDecisions = append(data.ShippedDecisions, d)
-		} else {
+		health := DeriveDecisionHealth(ctx, store, d.Meta.ID)
+		data.DecisionHealth[d.Meta.ID] = health
+
+		if health.Maturity == DecisionMaturityUnassessed {
+			data.UnassessedDecisions = append(data.UnassessedDecisions, d)
+			continue
+		}
+
+		if health.Maturity == DecisionMaturityPending {
 			data.PendingDecisions = append(data.PendingDecisions, d)
+			continue
+		}
+
+		if health.Freshness == DecisionFreshnessHealthy {
+			data.HealthyDecisions = append(data.HealthyDecisions, d)
 		}
 	}
 
@@ -349,20 +363,6 @@ func selectLatestArtifact(artifacts []*Artifact, include func(*Artifact) bool) *
 
 func adoptionIncludesStatus(status Status) bool {
 	return status == StatusActive || status == StatusRefreshDue
-}
-
-// hasMeasurement checks if a decision has any measurement evidence (type=measurement, verdict not superseded).
-func hasMeasurement(ctx context.Context, store ArtifactStore, decisionID string) bool {
-	items, err := store.GetEvidenceItems(ctx, decisionID)
-	if err != nil {
-		return false
-	}
-	for _, e := range items {
-		if e.Type == "measurement" && e.Verdict != "superseded" {
-			return true
-		}
-	}
-	return false
 }
 
 func filterActive(artifacts []*Artifact) []*Artifact {

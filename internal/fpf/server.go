@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/m0n0x41d/haft/logger"
 )
@@ -49,7 +50,8 @@ type ContentItem struct {
 type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
 
 type Server struct {
-	v5Handler V5ToolHandler
+	v5Handler     V5ToolHandler
+	instructions string
 }
 
 func NewServer() *Server {
@@ -59,6 +61,10 @@ func NewServer() *Server {
 // SetV5Handler registers the handler for v5 tools (haft_note, haft_problem, etc).
 func (s *Server) SetV5Handler(h V5ToolHandler) {
 	s.v5Handler = h
+}
+
+func (s *Server) SetInstructions(instructions string) {
+	s.instructions = strings.TrimSpace(instructions)
 }
 
 func (s *Server) Start() {
@@ -148,7 +154,7 @@ func (s *Server) sendError(id interface{}, code int, message string) {
 }
 
 func (s *Server) handleInitialize(req JSONRPCRequest) {
-	s.sendResult(req.ID, map[string]interface{}{
+	result := map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities": map[string]interface{}{
 			"tools": map[string]interface{}{},
@@ -157,7 +163,13 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 			"name":    "haft",
 			"version": "5.0.0",
 		},
-	})
+	}
+
+	if s.instructions != "" {
+		result["instructions"] = s.instructions
+	}
+
+	s.sendResult(req.ID, result)
 }
 
 func (s *Server) handleToolsList(req JSONRPCRequest) {
@@ -215,6 +227,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"title": map[string]string{
 							"type":        "string",
 							"description": "(frame) Problem title",
+						},
+						"problem_type": map[string]string{
+							"type":        "string",
+							"description": "(frame) Problem type: optimization, diagnosis, search, or synthesis",
 						},
 						"signal": map[string]string{
 							"type":        "string",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -57,6 +57,14 @@ export default function App() {
   const [notifications, setNotifications] = useState<DesktopNotification[]>([]);
   const [terminalOpen, setTerminalOpen] = useState(false);
 
+  const refreshTasks = useCallback(() => {
+    return listTasks()
+      .then(setTasks)
+      .catch((error) => {
+        reportError(error, "tasks");
+      });
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -87,19 +95,15 @@ export default function App() {
   }, [refreshKey]);
 
   useEffect(() => {
-    const load = () =>
-      listTasks()
-        .then(setTasks)
-        .catch((error) => {
-          reportError(error, "tasks");
-        });
+    void refreshTasks();
 
-    load();
-    // Sidebar task list: 10s poll is enough for status dots.
-    // Tasks.tsx has its own 2s poll + event-driven updates for the active task.
-    const interval = setInterval(load, 10000);
+    // Single shared polling loop for both sidebar badges and Tasks page.
+    const interval = setInterval(() => {
+      void refreshTasks();
+    }, 2000);
+
     return () => clearInterval(interval);
-  }, [refreshKey]);
+  }, [refreshKey, refreshTasks]);
 
   useEffect(() => {
     const stopListening = listenForErrors((detail) => {
@@ -370,6 +374,9 @@ export default function App() {
                 selectedTaskId={selectedId}
                 showNewTask={showNewTask}
                 onNewTaskClose={() => setShowNewTask(false)}
+                tasks={tasks}
+                onTasksChange={setTasks}
+                onTasksRefresh={refreshTasks}
               />
             )}
             {page === "settings" && (

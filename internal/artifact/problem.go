@@ -11,6 +11,7 @@ import (
 // ProblemFrameInput is the input for framing a problem.
 type ProblemFrameInput struct {
 	Title                 string   `json:"title"`
+	ProblemType           string   `json:"problem_type,omitempty"`
 	Signal                string   `json:"signal"`
 	Constraints           []string `json:"constraints,omitempty"`
 	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
@@ -50,12 +51,15 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	if input.Signal == "" {
 		return nil, fmt.Errorf("signal is required — what's anomalous or broken?")
 	}
+	problemType, err := ParseProblemType(input.ProblemType)
+	if err != nil {
+		return nil, err
+	}
 
 	var mode Mode
 	if input.Mode == "" {
 		mode = ModeStandard
 	} else {
-		var err error
 		mode, err = ParseMode(input.Mode)
 		if err != nil {
 			return nil, fmt.Errorf("%w (valid: note, tactical, standard, deep)", err)
@@ -65,6 +69,10 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("# %s\n\n", input.Title))
 	body.WriteString(fmt.Sprintf("## Signal\n\n%s\n", input.Signal))
+
+	if problemType != "" {
+		body.WriteString(fmt.Sprintf("\n## Problem Type\n\n%s\n", problemType))
+	}
 
 	if len(input.Constraints) > 0 {
 		body.WriteString("\n## Constraints\n\n")
@@ -120,6 +128,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 
 	// Populate structured data — canonical fields alongside markdown body
 	sd, _ := json.Marshal(ProblemFields{
+		ProblemType:           problemType,
 		Signal:                input.Signal,
 		Constraints:           input.Constraints,
 		OptimizationTargets:   input.OptimizationTargets,

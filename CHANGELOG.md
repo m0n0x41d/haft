@@ -4,7 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [6.1.0] — 2026-04-14
+
+### Added
+
+- **`haft check` CLI command** — CI-friendly governance verification. Runs stale scan, drift scan, unassessed decisions, coverage gaps. Exit 0 = clean, exit 1 = findings. `--json` flag for structured output.
+- **Full governance state in `/h-verify`** — scan now surfaces pending problems (backlog/in-progress count), addressed problems without linked decisions, and invariant violations from knowledge graph. Single entry point for "what needs attention."
+- **`.haft/workflow.md` support** — hybrid markdown+YAML project policy file. Parsed at serve/agent startup. Intent + Defaults injected into agent prompts. `haft init` creates commented example.
+- **Problem typing on ProblemCard** — `problem_type` field: optimization, diagnosis, search, synthesis. Accepted on frame, stored in DB, shown in `/h-status` and `/h-problems`.
+- **Derived decision health model** — replaces single "phase" with two independent axes: Maturity (Unassessed / Pending / Shipped) and Freshness (Healthy / Stale / AT RISK). Freshness evaluated only for Shipped decisions. Never stored — computed at query time.
+- **Claim-scoped evidence supersession** — new measurement supersedes only previous measurements for the same `(claim_ref, observable)`, not all measurements on the decision. Prevents unrelated evidence from being retired.
+- **Claim-scoped R_eff** — `R_eff(decision) = min(R_eff(claim_i))` where each claim's R_eff is computed from its own evidence. More precise than decision-level aggregation.
+- **F_eff / G_eff decomposition** — Formality (F0–F3) and Groundedness (CL-derived) exposed as view concerns alongside R_eff for evidence diagnosis.
+- **Deep onboard for legacy projects** — `/h-onboard` now runs module coverage analysis and deep scans blind modules: reads code, identifies responsibilities, invariants, implicit decisions, risks. Supports parallel subagent execution when available.
+
+### Changed
+
+- **"No evidence = Unassessed"** — decisions without evidence are shown separately from healthy decisions, not treated as fresh. UI surfaces coverage gaps.
+- **Verdict vocabulary normalized** — measurement result aliases (`accepted`/`partial`/`failed`) mapped to canonical evidence verdicts (`supports`/`weakens`/`refutes`) at storage boundary.
+- **CL0 + supports = inadmissible** — evidence from opposed context with verdict `supports` is rejected at ingest, not merely penalized.
+- **G1 enforced: one active decision per problem** — `Decide()` rejects if another active DecisionRecord exists for the same problem_ref.
+- **G2: parity plan warnings** — `haft_solution(action="compare")` in standard/deep mode warns if parity plan is empty or unstructured.
+- **G4: subjective dimension warnings** — compare warns on dimensions like "maintainable", "simple", "scalable" — asks to decompose into measurables or tag as observation-only.
+- **Core boundary enforced** — integration tests verify Core packages (`internal/artifact`, `graph`, `fpf`, `reff`, `codebase`) have zero `desktop/` imports.
+
+### Fixed
+
+- **Desktop: oversized task output tails bounded** — prevents UI freeze on large agent outputs.
+- **Knowledge graph integration tests** — FindDecisionsForFile, FindInvariantsForFile, ComputeImpactSet tested on seeded DB with real project data.
 
 ## [6.0.0] — 2026-04-13
 

@@ -107,6 +107,7 @@ type DecisionProjection struct {
 	RollbackTriggers     []string
 	RefreshTriggers      []string
 	Evidence             ProjectionEvidenceSummary
+	Health               DecisionHealth
 	Measured             bool
 }
 
@@ -193,6 +194,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 		if err != nil {
 			return ProjectionGraph{}, err
 		}
+		health := DeriveDecisionHealth(ctx, store, decision.Meta.ID)
 
 		graph.Decisions = append(graph.Decisions, DecisionProjection{
 			Meta:                 decision.Meta,
@@ -214,6 +216,7 @@ func FetchProjectionGraph(ctx context.Context, store ArtifactStore, contextName 
 			RollbackTriggers:     cloneStringSlice(fields.RollbackTriggers),
 			RefreshTriggers:      cloneStringSlice(fields.RefreshTriggers),
 			Evidence:             buildProjectionEvidenceSummary(ctx, store, decision.Meta.ID),
+			Health:               health,
 			Measured:             hasMeasurement(ctx, store, decision.Meta.ID),
 		})
 	}
@@ -299,21 +302,66 @@ func buildProjectionEvidenceSummary(ctx context.Context, store ArtifactStore, ar
 	}
 
 	measurementCount := 0
-	measurementVerdict := ""
+	measurementVerdict := aggregateMeasurementVerdict(activeItems)
+	measurementRuns := make(map[string]struct{})
+
 	for _, item := range activeItems {
-		if item.Type == "measurement" {
-			measurementCount++
-			if measurementVerdict == "" {
-				measurementVerdict = strings.TrimSpace(item.Verdict)
-			}
+		if item.Type != "measurement" {
+			continue
 		}
+
+		measurementRuns[measurementRunID(item)] = struct{}{}
 	}
+
+	measurementCount = len(measurementRuns)
 
 	return ProjectionEvidenceSummary{
 		MeasurementCount:   measurementCount,
 		MeasurementVerdict: measurementVerdict,
 		WLNK:               ComputeWLNKSummary(ctx, store, artifactID),
 	}
+}
+
+func aggregateMeasurementVerdict(items []EvidenceItem) string {
+	measurementItems := make([]EvidenceItem, 0, len(items))
+
+	for _, item := range items {
+		if item.Type != "measurement" {
+			continue
+		}
+
+		measurementItems = append(measurementItems, item)
+	}
+
+	status := claimStatusFromEvidenceItems(measurementItems)
+	verdict, ok := evidenceVerdictFromClaimStatus(status)
+	if ok {
+		return verdict
+	}
+
+	for _, item := range measurementItems {
+		verdict := strings.TrimSpace(item.Verdict)
+		if verdict != "" {
+			return verdict
+		}
+	}
+
+	return ""
+}
+
+func measurementRunID(item EvidenceItem) string {
+	const claimSuffix = "-claim-"
+
+	if item.Type != "measurement" {
+		return ""
+	}
+
+	index := strings.LastIndex(item.ID, claimSuffix)
+	if index == -1 {
+		return item.ID
+	}
+
+	return item.ID[:index]
 }
 
 func projectionAffectedFilePaths(ctx context.Context, store ArtifactStore, artifactID string) ([]string, error) {

@@ -379,6 +379,14 @@ func createDirectoryStructure(haftDir string) error {
 			return err
 		}
 	}
+
+	workflowPath := project.WorkflowPath(haftDir)
+	if _, err := os.Stat(workflowPath); os.IsNotExist(err) {
+		if err := os.WriteFile(workflowPath, []byte(project.ExampleWorkflowMarkdown()), 0o644); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

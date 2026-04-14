@@ -198,27 +198,28 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
             <CoverageSummary overview={overview} />
           </Section>
 
-          <Section title="Recent Decisions">
-            {data.recent_decisions.length === 0 ? (
+          <Section title="Decision Health">
+            {data.healthy_decisions.length === 0 &&
+            data.pending_decisions.length === 0 &&
+            data.unassessed_decisions.length === 0 ? (
               <EmptyState text="No active decisions" />
             ) : (
-              <div className="space-y-2">
-                {data.recent_decisions.map((decision: DecisionSummary) => (
-                  <button
-                    key={decision.id}
-                    onClick={() => onNavigate("decisions", decision.id)}
-                    className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
-                      <span className="font-mono text-[11px] text-text-muted">{decision.id}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
-                      <span>WLNK: {decision.weakest_link}</span>
-                      {decision.valid_until && <span>Valid until {decision.valid_until}</span>}
-                    </div>
-                  </button>
-                ))}
+              <div className="space-y-4">
+                <DecisionBucket
+                  title="Shipped / Healthy"
+                  decisions={data.healthy_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
+                <DecisionBucket
+                  title="Pending"
+                  decisions={data.pending_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
+                <DecisionBucket
+                  title="Unassessed"
+                  decisions={data.unassessed_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                />
               </div>
             )}
           </Section>
@@ -246,6 +247,48 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
           </Section>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DecisionBucket({
+  title,
+  decisions,
+  onOpenDecision,
+}: {
+  title: string;
+  decisions: DecisionSummary[];
+  onOpenDecision: (decisionID: string) => void;
+}) {
+  if (decisions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">{title}</p>
+        <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text-secondary">
+          {decisions.length}
+        </span>
+      </div>
+
+      {decisions.map((decision) => (
+        <button
+          key={decision.id}
+          onClick={() => onOpenDecision(decision.id)}
+          className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
+            <span className="font-mono text-[11px] text-text-muted">{decision.id}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
+            <span>WLNK: {decision.weakest_link}</span>
+            {decision.valid_until && <span>Valid until {decision.valid_until}</span>}
+          </div>
+        </button>
+      ))}
     </div>
   );
 }

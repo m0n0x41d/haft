@@ -112,8 +112,8 @@ func TestComputeClosedCycleAssurance_SyncsArtifactEvidenceAndTraversesDependenci
 		t.Fatalf("query synced evidence: %v", err)
 	}
 
-	if storedVerdict != "accepted" {
-		t.Fatalf("stored verdict = %q, want accepted", storedVerdict)
+	if storedVerdict != "supports" {
+		t.Fatalf("stored verdict = %q, want supports", storedVerdict)
 	}
 	if storedFormality != 2 {
 		t.Fatalf("stored formality = %d, want 2", storedFormality)

@@ -458,6 +458,33 @@ func ValidateParityPlan(plan ParityPlan) error {
 	return nil
 }
 
+func parityPlanWarning(mode Mode, source parityPlanSource) string {
+	if mode != ModeStandard && mode != ModeDeep {
+		return ""
+	}
+
+	modeLabel := string(mode)
+
+	if source == parityPlanSourceNone {
+		return fmt.Sprintf(
+			"%s mode comparison proceeds without a parity_plan — declare baseline_set, window, budget, and missing_data_policy",
+			modeLabel,
+		)
+	}
+
+	if source == parityPlanSourceExplicit {
+		return fmt.Sprintf(
+			"%s mode comparison received an unstructured parity_plan — fill baseline_set, window, budget, and missing_data_policy",
+			modeLabel,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s mode comparison is using legacy parity notes only — add a structured parity_plan with baseline_set, window, budget, and missing_data_policy",
+		modeLabel,
+	)
+}
+
 // ValidateCompareInput applies FPF compare-time validation without side effects.
 func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (CompareValidationResult, error) {
 	result := CompareValidationResult{}
@@ -474,11 +501,6 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	effectiveParity := cloneParityPlan(ctx.ParityPlan)
 	comparedVariants := dedupeTrimmedStrings(ctx.PortfolioVariants)
 	switch {
-	case ctx.ParitySource == parityPlanSourceExplicit:
-		if err := ValidateParityPlan(*effectiveParity); err != nil {
-			return result, err
-		}
-		result.EffectiveParity = effectiveParity
 	case effectiveParity != nil && effectiveParity.IsStructured():
 		if err := ValidateParityPlan(*effectiveParity); err != nil {
 			return result, err
@@ -486,20 +508,14 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		result.EffectiveParity = effectiveParity
 	case effectiveParity != nil:
 		result.EffectiveParity = effectiveParity
-		if ctx.Mode == ModeDeep {
-			return result, fmt.Errorf("deep mode comparison requires a structured parity plan with baseline_set, window, budget, and missing_data_policy")
-		}
-		if ctx.Mode == ModeStandard {
-			warnings = append(warnings,
-				"standard mode comparison is using legacy parity notes only — add a structured parity plan with baseline_set, window, budget, and missing_data_policy")
+		warning := parityPlanWarning(ctx.Mode, ctx.ParitySource)
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
 	default:
-		if ctx.Mode == ModeDeep {
-			return result, fmt.Errorf("deep mode comparison requires a parity plan")
-		}
-		if ctx.Mode == ModeStandard {
-			warnings = append(warnings,
-				"standard mode comparison proceeds without a parity plan — declare baseline_set, window, budget, and missing_data_policy")
+		warning := parityPlanWarning(ctx.Mode, ctx.ParitySource)
+		if warning != "" {
+			warnings = append(warnings, warning)
 		}
 	}
 
@@ -618,12 +634,11 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		}
 	}
 
+	warnings = append(warnings, subjectiveComparisonDimensionWarnings(input.Results.Dimensions, charByName)...)
+
 	missingDataPolicy := comparisonMissingDataPolicy(result.EffectiveParity)
 	for _, dimension := range input.Results.Dimensions {
-		role := "target"
-		if characterized, ok := charByName[normalizeArtifactKey(dimension)]; ok && characterized.Role != "" {
-			role = characterized.Role
-		}
+		role := comparisonDimensionRole(dimension, charByName)
 		if role == "observation" {
 			continue
 		}
@@ -811,6 +826,35 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 	return body
 }
 
+// ExtractComparisonWarnings returns the rendered warning lines from a comparison body.
+func ExtractComparisonWarnings(body string) []string {
+	section := extractMarkdownSection(body, "## Comparison Warnings")
+	if section == "" {
+		return nil
+	}
+
+	lines := strings.Split(section, "\n")
+	warnings := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "## Comparison Warnings" {
+			continue
+		}
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "⚠"))
+		if trimmed == "" {
+			continue
+		}
+		warnings = append(warnings, trimmed)
+	}
+
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	return warnings
+}
+
 // charDim holds a parsed dimension with its indicator role and freshness.
 type charDim struct {
 	Name       string
@@ -860,6 +904,22 @@ type parsedScore struct {
 }
 
 var numericScorePattern = regexp.MustCompile(`^\s*([^\d+\-]*)([+\-]?\d[\d,]*(?:\.\d+)?)([kKmMbB]?)(.*)$`)
+
+var subjectiveDimensionTextReplacer = strings.NewReplacer("-", " ", "_", " ", "/", " ")
+
+var subjectiveComparisonDimensionTriggers = []string{
+	"maintainable",
+	"simple",
+	"scalable",
+	"robust",
+	"reliable",
+	"clean",
+	"user friendly",
+	"quality",
+	"fast",
+	"good",
+	"easy",
+}
 
 type portfolioVariantIdentity struct {
 	Key     string
@@ -1299,6 +1359,56 @@ func parityChecklistWarnings(dims []charDim) []string {
 	return warnings
 }
 
+func subjectiveComparisonDimensionWarnings(compareDimensions []string, characterized map[string]charDim) []string {
+	var warnings []string
+	for _, dimension := range compareDimensions {
+		if comparisonDimensionRole(dimension, characterized) == "observation" {
+			continue
+		}
+		if !isSubjectiveComparisonDimension(dimension) {
+			continue
+		}
+
+		warnings = append(warnings,
+			fmt.Sprintf("dimension '%s' is subjective — decompose into measurables or tag as observation-only", dimension))
+	}
+	return warnings
+}
+
+func comparisonDimensionRole(dimension string, characterized map[string]charDim) string {
+	characterizedDimension, ok := characterized[normalizeArtifactKey(dimension)]
+	if !ok {
+		return "target"
+	}
+	if characterizedDimension.Role == "" {
+		return "target"
+	}
+	return characterizedDimension.Role
+}
+
+func isSubjectiveComparisonDimension(dimension string) bool {
+	normalizedDimension := normalizeSubjectiveDimensionText(dimension)
+	if normalizedDimension == "" {
+		return false
+	}
+
+	paddedDimension := " " + normalizedDimension + " "
+	for _, trigger := range subjectiveComparisonDimensionTriggers {
+		paddedTrigger := " " + trigger + " "
+		if strings.Contains(paddedDimension, paddedTrigger) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSubjectiveDimensionText(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = subjectiveDimensionTextReplacer.Replace(normalized)
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
+}
+
 func parseComparisonExpiry(raw string) (time.Time, bool) {
 	return reff.ParseValidUntil(raw)
 }
@@ -1380,23 +1490,30 @@ func extractLegacyParityRules(body string) string {
 }
 
 func latestCharacterizationSection(body string) string {
-	lastIdx := -1
 	for i := 100; i >= 1; i-- {
 		marker := fmt.Sprintf("## Characterization v%d", i)
-		if idx := strings.Index(body, marker); idx != -1 {
-			lastIdx = idx
-			break
+		section := extractMarkdownSection(body, marker)
+		if section != "" {
+			return section
 		}
 	}
-	if lastIdx == -1 {
+
+	return ""
+}
+
+func extractMarkdownSection(body string, heading string) string {
+	start := strings.Index(body, heading)
+	if start == -1 {
 		return ""
 	}
 
-	section := body[lastIdx:]
-	if endIdx := strings.Index(section[1:], "\n## "); endIdx != -1 {
-		section = section[:endIdx+1]
+	section := body[start:]
+	nextHeading := strings.Index(section[len(heading):], "\n## ")
+	if nextHeading == -1 {
+		return section
 	}
-	return section
+
+	return section[:len(heading)+nextHeading]
 }
 
 func mergeLegacyParityRules(parityPlan *ParityPlan, parityRules string) *ParityPlan {

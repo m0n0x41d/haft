@@ -26,6 +26,7 @@ const (
 
 const (
 	taskOutputMaxLines      = 500
+	taskOutputMaxChars      = 64000
 	taskOutputFlushInterval = 350 * time.Millisecond
 )
 
@@ -53,8 +54,8 @@ type TaskState struct {
 	StartedAt      string `json:"started_at"`
 	CompletedAt    string `json:"completed_at"`
 	ErrorMessage   string `json:"error_message"`
-	Output         string `json:"output"` // bounded output tail
-	AutoRun        bool   `json:"auto_run"`       // true = agent runs without pausing
+	Output         string `json:"output"`   // bounded output tail
+	AutoRun        bool   `json:"auto_run"` // true = agent runs without pausing
 }
 
 type TaskOutputEvent struct {
@@ -464,14 +465,30 @@ func (b *taskOutputBuffer) Append(chunk string) string {
 		b.lines = append([]string(nil), b.lines[len(b.lines)-b.maxLines:]...)
 	}
 
-	return b.snapshotLocked()
+	snapshot := b.snapshotLocked()
+	normalized := normalizeTaskOutput(snapshot)
+
+	if normalized != snapshot {
+		b.lines = nil
+		b.partial = normalized
+	}
+
+	return normalized
 }
 
 func (b *taskOutputBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.snapshotLocked()
+	snapshot := b.snapshotLocked()
+	normalized := normalizeTaskOutput(snapshot)
+
+	if normalized != snapshot {
+		b.lines = nil
+		b.partial = normalized
+	}
+
+	return normalized
 }
 
 func (b *taskOutputBuffer) snapshotLocked() string {
@@ -485,6 +502,43 @@ func (b *taskOutputBuffer) snapshotLocked() string {
 
 	parts := append(append([]string(nil), b.lines...), b.partial)
 	return strings.Join(parts, "\n")
+}
+
+func normalizeTaskOutput(output string) string {
+	bounded := trimTaskOutputLines(output, taskOutputMaxLines)
+	bounded = trimTaskOutputRunes(bounded, taskOutputMaxChars)
+	return bounded
+}
+
+func trimTaskOutputLines(output string, maxLines int) string {
+	if output == "" || maxLines <= 0 {
+		return output
+	}
+
+	lines := strings.Split(output, "\n")
+
+	if len(lines) <= maxLines {
+		return output
+	}
+
+	start := len(lines) - maxLines
+	tail := lines[start:]
+	return strings.Join(tail, "\n")
+}
+
+func trimTaskOutputRunes(output string, maxRunes int) string {
+	if output == "" || maxRunes <= 0 {
+		return output
+	}
+
+	runes := []rune(output)
+
+	if len(runes) <= maxRunes {
+		return output
+	}
+
+	start := len(runes) - maxRunes
+	return string(runes[start:])
 }
 
 // --- App binding methods ---

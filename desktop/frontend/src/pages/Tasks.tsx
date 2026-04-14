@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
@@ -30,12 +30,18 @@ export function Tasks({
   selectedTaskId: externalSelectedTask,
   showNewTask: externalShow,
   onNewTaskClose,
+  tasks: controlledTasks,
+  onTasksChange,
+  onTasksRefresh,
 }: {
   selectedTaskId?: string | null;
   showNewTask?: boolean;
   onNewTaskClose?: () => void;
+  tasks?: TaskState[];
+  onTasksChange?: Dispatch<SetStateAction<TaskState[]>>;
+  onTasksRefresh?: () => Promise<void> | void;
 } = {}) {
-  const [tasks, setTasks] = useState<TaskState[]>([]);
+  const [internalTasks, setInternalTasks] = useState<TaskState[]>([]);
   const [agents, setAgents] = useState<InstalledAgent[]>([]);
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [internalShow, setInternalShow] = useState(false);
@@ -43,6 +49,8 @@ export function Tasks({
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffAgent, setHandoffAgent] = useState("codex");
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const tasks = controlledTasks ?? internalTasks;
+  const setTasks = onTasksChange ?? setInternalTasks;
 
   const showNewTask = externalShow || internalShow;
 
@@ -55,13 +63,18 @@ export function Tasks({
   };
 
   const refresh = useCallback(async () => {
+    if (onTasksRefresh) {
+      await onTasksRefresh();
+      return;
+    }
+
     try {
       const nextTasks = await listTasks();
       setTasks(nextTasks);
     } catch (error) {
       reportError(error, "tasks");
     }
-  }, []);
+  }, [onTasksRefresh, setTasks]);
 
   useEffect(() => {
     if (externalShow) {
@@ -90,16 +103,20 @@ export function Tasks({
         reportError(error, "task config");
       });
 
-    void refresh();
-
-    const interval = window.setInterval(() => {
+    if (!onTasksRefresh) {
       void refresh();
-    }, 2000);
 
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [refresh]);
+      const interval = window.setInterval(() => {
+        void refresh();
+      }, 2000);
+
+      return () => {
+        window.clearInterval(interval);
+      };
+    }
+
+    return undefined;
+  }, [onTasksRefresh, refresh]);
 
   useEffect(() => {
     const stopOutput = EventsOn("task.output", (payload: TaskOutputEvent) => {

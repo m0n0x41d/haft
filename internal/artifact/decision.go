@@ -512,6 +512,154 @@ func MergeProblemRefs(single string, multiple []string) []string {
 	return refs
 }
 
+func decisionBlocksReplacement(status Status) bool {
+	return status == StatusActive || status == StatusRefreshDue
+}
+
+func resolvePortfolioProblemRefs(portfolio *Artifact) []string {
+	if portfolio == nil {
+		return nil
+	}
+
+	resolvedRefs := []string{}
+	fields := portfolio.UnmarshalPortfolioFields()
+
+	if fields.ProblemRef != "" {
+		resolvedRefs = appendUniqueString(resolvedRefs, fields.ProblemRef)
+	}
+
+	for _, link := range portfolio.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+		if !strings.HasPrefix(link.Ref, KindProblemCard.IDPrefix()+"-") {
+			continue
+		}
+
+		resolvedRefs = appendUniqueString(resolvedRefs, link.Ref)
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func resolveDecisionProblemRefs(ctx context.Context, store ArtifactStore, decision *Artifact) []string {
+	if decision == nil {
+		return nil
+	}
+
+	resolvedRefs := cloneStringSlice(decision.UnmarshalDecisionFields().ProblemRefs)
+
+	for _, link := range decision.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+
+		if strings.HasPrefix(link.Ref, KindProblemCard.IDPrefix()+"-") {
+			resolvedRefs = appendUniqueString(resolvedRefs, link.Ref)
+			continue
+		}
+
+		linkedArtifact, err := store.Get(ctx, link.Ref)
+		if err != nil {
+			continue
+		}
+		if linkedArtifact.Meta.Kind != KindSolutionPortfolio {
+			continue
+		}
+
+		for _, problemRef := range resolvePortfolioProblemRefs(linkedArtifact) {
+			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+		}
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func resolveIncomingDecisionProblemRefs(
+	ctx context.Context,
+	store ArtifactStore,
+	problemRefs []string,
+	portfolioRef string,
+) []string {
+	resolvedRefs := cloneStringSlice(problemRefs)
+
+	if portfolioRef == "" {
+		sort.Strings(resolvedRefs)
+		return resolvedRefs
+	}
+
+	portfolio, err := store.Get(ctx, portfolioRef)
+	if err != nil || portfolio.Meta.Kind != KindSolutionPortfolio {
+		sort.Strings(resolvedRefs)
+		return resolvedRefs
+	}
+
+	for _, problemRef := range resolvePortfolioProblemRefs(portfolio) {
+		resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
+	}
+
+	sort.Strings(resolvedRefs)
+	return resolvedRefs
+}
+
+func validateNoActiveDecisionConflict(
+	ctx context.Context,
+	store ArtifactStore,
+	problemRefs []string,
+	portfolioRef string,
+) error {
+	resolvedIncomingRefs := resolveIncomingDecisionProblemRefs(ctx, store, problemRefs, portfolioRef)
+
+	if len(resolvedIncomingRefs) == 0 {
+		return nil
+	}
+
+	decisions, err := store.ListByKind(ctx, KindDecisionRecord, 0)
+	if err != nil {
+		return fmt.Errorf("list decision records: %w", err)
+	}
+
+	for _, decision := range decisions {
+		if !decisionBlocksReplacement(decision.Meta.Status) {
+			continue
+		}
+
+		fullDecision, err := store.Get(ctx, decision.Meta.ID)
+		if err != nil {
+			continue
+		}
+
+		for _, existingProblemRef := range resolveDecisionProblemRefs(ctx, store, fullDecision) {
+			if !slicesContains(resolvedIncomingRefs, existingProblemRef) {
+				continue
+			}
+
+			return fmt.Errorf(
+				"problem_ref %s already has live DecisionRecord %s (%s) — supersede the previous decision or close the problem first",
+				existingProblemRef,
+				fullDecision.Meta.ID,
+				fullDecision.Meta.Title,
+			)
+		}
+	}
+
+	return nil
+}
+
+func slicesContains(values []string, target string) bool {
+	for _, value := range values {
+		if value != target {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // BuildLinks constructs artifact links from problem refs and portfolio ref. Pure.
 func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 	var links []Link
@@ -528,6 +676,11 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
 	input = normalizeDecisionInput(input)
 
+	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
+	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
+		return nil, "", err
+	}
+
 	seq, err := store.NextSequence(ctx, KindDecisionRecord)
 	if err != nil {
 		return nil, "", fmt.Errorf("generate ID: %w", err)
@@ -537,7 +690,6 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 	now := time.Now().UTC()
 
 	// Pure: merge refs
-	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
 	links := BuildLinks(problemRefs, input.PortfolioRef)
 
 	// Effects: compute mode from chain
@@ -1171,11 +1323,17 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		input.CriteriaNotMet,
 		criteriaNotMetScope,
 	)
+	measurementItems := decisionMeasurementEvidenceItems(
+		decisionFields.Claims,
+		*evidenceItem,
+		claimEvidence,
+	)
 	activeEvidence, err := decisionActiveClaimEvidenceAfterMeasurement(
 		ctx,
 		store,
 		a.Meta.ID,
-		claimEvidence,
+		decisionFields.Claims,
+		measurementItems,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load claim evidence: %w", err)
@@ -1229,8 +1387,12 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 
 	evidenceItem.CongruenceLevel = measureCL
 	evidenceItem.FormalityLevel = 2
+	for index := range measurementItems {
+		measurementItems[index].CongruenceLevel = measureCL
+		measurementItems[index].FormalityLevel = 2
+	}
 
-	if err := store.CommitMeasurement(ctx, a, evidenceItem); err != nil {
+	if err := store.CommitMeasurement(ctx, a, measurementItems); err != nil {
 		return nil, fmt.Errorf("record measurement: %w", err)
 	}
 
@@ -1246,6 +1408,7 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	ctx context.Context,
 	store ArtifactStore,
 	decisionID string,
+	decisionClaims []DecisionClaim,
 	incoming []EvidenceItem,
 ) ([]EvidenceItem, error) {
 	items, err := store.GetEvidenceItems(ctx, decisionID)
@@ -1254,12 +1417,33 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	}
 
 	active := make([]EvidenceItem, 0, len(items)+len(incoming))
+	incomingKeys := make([][]string, 0, len(incoming))
+
+	for _, item := range incoming {
+		incomingKeys = append(incomingKeys, measurementBindingKeys(decisionClaims, item))
+	}
 
 	for _, item := range items {
 		if item.Verdict == "superseded" {
 			continue
 		}
-		if item.Type == "measurement" {
+		if item.Type != "measurement" {
+			active = append(active, item)
+			continue
+		}
+
+		existingKeys := measurementBindingKeys(decisionClaims, item)
+		overlapsIncoming := false
+
+		for _, keys := range incomingKeys {
+			if !measurementKeysOverlap(existingKeys, keys) {
+				continue
+			}
+
+			overlapsIncoming = true
+			break
+		}
+		if overlapsIncoming {
 			continue
 		}
 
@@ -1269,6 +1453,81 @@ func decisionActiveClaimEvidenceAfterMeasurement(
 	active = append(active, incoming...)
 
 	return active, nil
+}
+
+func decisionMeasurementEvidenceItems(
+	claims []DecisionClaim,
+	base EvidenceItem,
+	claimEvidence []EvidenceItem,
+) []EvidenceItem {
+	if len(claimEvidence) == 0 {
+		return []EvidenceItem{base}
+	}
+
+	normalizedClaims := normalizeDecisionClaims(claims)
+	aliasIndex := buildDecisionClaimAliasIndex(normalizedClaims)
+	scopeByPrediction := make(map[int][]string, len(normalizedClaims))
+	sharedScope := make([]string, 0, len(base.ClaimScope))
+	claimIndex := make(map[string]int, len(normalizedClaims))
+	items := make([]EvidenceItem, 0, len(claimEvidence))
+
+	for index, claim := range normalizedClaims {
+		claimIndex[claim.ID] = index
+	}
+
+	for _, scope := range normalizeClaimScope(base.ClaimScope) {
+		predictionIndex, ok := resolvePredictionAlias(scope, aliasIndex)
+		if ok {
+			scopeByPrediction[predictionIndex] = append(scopeByPrediction[predictionIndex], scope)
+			continue
+		}
+
+		sharedScope = append(sharedScope, scope)
+	}
+
+	for index, claimItem := range claimEvidence {
+		item := base
+		item.ID = fmt.Sprintf("%s-claim-%03d", base.ID, index+1)
+		item.Verdict = claimItem.Verdict
+		item.ClaimRefs = normalizeClaimRefs(claimItem.ClaimRefs)
+		item.ClaimScope = decisionMeasurementClaimScope(
+			normalizedClaims,
+			item.ClaimRefs,
+			claimIndex,
+			scopeByPrediction,
+			sharedScope,
+		)
+		items = append(items, item)
+	}
+
+	return items
+}
+
+func decisionMeasurementClaimScope(
+	claims []DecisionClaim,
+	claimRefs []string,
+	claimIndex map[string]int,
+	scopeByPrediction map[int][]string,
+	sharedScope []string,
+) []string {
+	scope := make([]string, 0, len(sharedScope)+len(claimRefs))
+	scope = append(scope, sharedScope...)
+
+	for _, ref := range normalizeClaimRefs(claimRefs) {
+		index, ok := claimIndex[ref]
+		if !ok {
+			continue
+		}
+
+		scope = append(scope, scopeByPrediction[index]...)
+	}
+
+	scope = normalizeClaimScope(scope)
+	if len(scope) > 0 {
+		return scope
+	}
+
+	return decisionClaimScopeFromRefs(claims, claimRefs)
 }
 
 // AttachEvidence adds an evidence item to any artifact.
@@ -1315,6 +1574,11 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	if input.FormalityLevel < 0 {
 		input.FormalityLevel = defaultEvidenceFormalityLevel(input.Type)
 	}
+	storedVerdict := canonicalStoredEvidenceVerdict(input.Type, input.Verdict)
+	err = validateEvidenceCongruenceAtIngest(storedVerdict, input.CongruenceLevel)
+	if err != nil {
+		return nil, err
+	}
 
 	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
 
@@ -1322,7 +1586,7 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		ID:              id,
 		Type:            input.Type,
 		Content:         input.Content,
-		Verdict:         input.Verdict,
+		Verdict:         storedVerdict,
 		CarrierRef:      input.CarrierRef,
 		CongruenceLevel: input.CongruenceLevel,
 		FormalityLevel:  normalizeFormalityLevel(input.FormalityLevel),

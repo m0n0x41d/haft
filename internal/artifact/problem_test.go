@@ -12,9 +12,10 @@ func TestFrameProblem_Success(t *testing.T) {
 	haftDir := t.TempDir()
 
 	input := ProblemFrameInput{
-		Title:   "Webhook delivery unreliable",
-		Signal:  "Payment webhook retries hitting 15% failure rate",
-		Context: "payments",
+		Title:       "Webhook delivery unreliable",
+		ProblemType: string(ProblemTypeDiagnosis),
+		Signal:      "Payment webhook retries hitting 15% failure rate",
+		Context:     "payments",
 		Constraints: []string{
 			"Must maintain <500ms p99 latency",
 			"Cannot break existing merchant integrations",
@@ -43,6 +44,9 @@ func TestFrameProblem_Success(t *testing.T) {
 	if a.Meta.Mode != ModeStandard {
 		t.Errorf("mode = %q, want standard", a.Meta.Mode)
 	}
+	if got := a.UnmarshalProblemFields().ProblemType; got != ProblemTypeDiagnosis {
+		t.Errorf("problem_type = %q, want %q", got, ProblemTypeDiagnosis)
+	}
 	if filePath == "" {
 		t.Error("file path should not be empty")
 	}
@@ -53,6 +57,9 @@ func TestFrameProblem_Success(t *testing.T) {
 	}
 	if !strings.Contains(a.Body, "## Constraints") {
 		t.Error("missing Constraints section")
+	}
+	if !strings.Contains(a.Body, "## Problem Type") {
+		t.Error("missing Problem Type section")
 	}
 	if !strings.Contains(a.Body, "## Optimization Targets") {
 		t.Error("missing Optimization Targets section")
@@ -98,6 +105,20 @@ func TestFrameProblem_MissingSignal(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error for missing signal")
+	}
+}
+
+func TestFrameProblem_InvalidProblemType(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:       "Some problem",
+		ProblemType: "mystery",
+		Signal:      "something is broken",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid problem_type")
 	}
 }
 

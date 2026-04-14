@@ -29,6 +29,13 @@ func safeArtifactViews(s []ArtifactView) []ArtifactView {
 	return s
 }
 
+func safeDecisionViews(s []DecisionView) []DecisionView {
+	if s == nil {
+		return []DecisionView{}
+	}
+	return s
+}
+
 func safeRejections(s []RejectionView) []RejectionView {
 	if s == nil {
 		return []RejectionView{}
@@ -94,19 +101,23 @@ func safeDimensions(s []DimensionView) []DimensionView {
 	}
 	return s
 }
+
 // No domain logic here — just data projection.
 
 // DashboardView is the landing page data.
 type DashboardView struct {
-	ProjectName     string         `json:"project_name"`
-	ProblemCount    int            `json:"problem_count"`
-	DecisionCount   int            `json:"decision_count"`
-	PortfolioCount  int            `json:"portfolio_count"`
-	NoteCount       int            `json:"note_count"`
-	StaleCount      int            `json:"stale_count"`
-	RecentProblems  []ProblemView  `json:"recent_problems"`
-	RecentDecisions []DecisionView `json:"recent_decisions"`
-	StaleItems      []ArtifactView `json:"stale_items"`
+	ProjectName         string         `json:"project_name"`
+	ProblemCount        int            `json:"problem_count"`
+	DecisionCount       int            `json:"decision_count"`
+	PortfolioCount      int            `json:"portfolio_count"`
+	NoteCount           int            `json:"note_count"`
+	StaleCount          int            `json:"stale_count"`
+	RecentProblems      []ProblemView  `json:"recent_problems"`
+	RecentDecisions     []DecisionView `json:"recent_decisions"`
+	HealthyDecisions    []DecisionView `json:"healthy_decisions"`
+	PendingDecisions    []DecisionView `json:"pending_decisions"`
+	UnassessedDecisions []DecisionView `json:"unassessed_decisions"`
+	StaleItems          []ArtifactView `json:"stale_items"`
 }
 
 // ArtifactView is the minimal representation for lists and search results.
@@ -227,9 +238,9 @@ type ClaimView struct {
 // EvidenceItemView is a single piece of evidence with F/G/R decomposition.
 type EvidenceItemView struct {
 	ID              string   `json:"id"`
-	Type            string   `json:"type"`    // measurement, test, research, benchmark, audit
+	Type            string   `json:"type"` // measurement, test, research, benchmark, audit
 	Content         string   `json:"content"`
-	Verdict         string   `json:"verdict"` // supports, weakens, refutes
+	Verdict         string   `json:"verdict"`          // supports, weakens, refutes
 	FormalityLevel  int      `json:"formality_level"`  // F0=informal, F1=test, F2=formal, F3=proof
 	CongruenceLevel int      `json:"congruence_level"` // CL0-CL3
 	ClaimRefs       []string `json:"claim_refs"`       // which claims this covers

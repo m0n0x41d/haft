@@ -18,6 +18,11 @@ import {
   type GovernanceOverview,
   type ProblemCandidate,
 } from "../lib/api";
+import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
+import {
+  buildIrreversibleActionDialogModel,
+  type IrreversibleActionDialogModel,
+} from "../components/irreversibleActionDialogModel";
 import { reportError } from "../lib/errors";
 import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
 import { getDecisionImplementActionState } from "./dashboardDecisionActions";
@@ -28,12 +33,22 @@ type NavigateFn = (
   id?: string,
 ) => void;
 
+type DashboardPendingConfirmation = {
+  model: IrreversibleActionDialogModel;
+  reason: string;
+  isSubmitting: boolean;
+  run: (reason: string) => Promise<void>;
+  errorScope: string;
+};
+
 export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [implementingDecisionIDs, setImplementingDecisionIDs] = useState<string[]>([]);
   const [findingActionKeys, setFindingActionKeys] = useState<string[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] =
+    useState<DashboardPendingConfirmation | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
@@ -117,40 +132,52 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
       return;
     }
 
-    if (!acknowledgeImplementWarnings(actionState.warningMessages)) {
-      return;
-    }
-
-    if (!confirmImplementWarnings(actionState.confirmationMessages)) {
-      return;
-    }
-
     const decisionID = decision.id;
+    const warnings = compactNonEmptyStrings([
+      ...actionState.warningMessages,
+      ...actionState.confirmationMessages,
+    ]);
 
-    setImplementingDecisionIDs((currentDecisionIDs) => {
-      if (currentDecisionIDs.includes(decisionID)) {
-        return currentDecisionIDs;
-      }
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "implement",
+        agent: config?.default_agent ?? "claude",
+        usesWorktree: config?.default_worktree ?? true,
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: decision.id,
+          title: decision.selected_title || decision.title,
+        },
+        warnings,
+      }),
+      reason: "",
+      isSubmitting: false,
+      run: async () => {
+        setImplementingDecisionIDs((currentDecisionIDs) => {
+          if (currentDecisionIDs.includes(decisionID)) {
+            return currentDecisionIDs;
+          }
 
-      return [...currentDecisionIDs, decisionID];
+          return [...currentDecisionIDs, decisionID];
+        });
+
+        try {
+          const task = await implementDecision(
+            decisionID,
+            config?.default_agent ?? "claude",
+            config?.default_worktree ?? true,
+            "",
+          );
+
+          onNavigate("tasks", task.id);
+        } finally {
+          setImplementingDecisionIDs((currentDecisionIDs) =>
+            currentDecisionIDs.filter((currentDecisionID) => currentDecisionID !== decisionID),
+          );
+        }
+      },
+      errorScope: "implement decision",
     });
-
-    try {
-      const task = await implementDecision(
-        decisionID,
-        config?.default_agent ?? "claude",
-        config?.default_worktree ?? true,
-        "",
-      );
-
-      onNavigate("tasks", task.id);
-    } catch (error) {
-      reportError(error, "implement decision");
-    } finally {
-      setImplementingDecisionIDs((currentDecisionIDs) =>
-        currentDecisionIDs.filter((currentDecisionID) => currentDecisionID !== decisionID),
-      );
-    }
   };
 
   const startFindingAction = (actionKey: string) => {
@@ -208,23 +235,84 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
   const handleReopenFinding = async (finding: GovernanceFinding) => {
     const decisionID = finding.artifact_ref;
-    const reason = promptForGovernanceDecisionReason("reopen", finding);
 
-    if (!decisionID || reason === "") {
+    if (!decisionID) {
       return;
     }
 
-    const actionKey = buildFindingActionKey(finding.id, "reopen");
-    startFindingAction(actionKey);
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "reopen",
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: decisionID,
+          title: finding.title,
+        },
+      }),
+      reason: finding.reason,
+      isSubmitting: false,
+      run: async (reason) => {
+        const actionKey = buildFindingActionKey(finding.id, "reopen");
+        startFindingAction(actionKey);
+
+        try {
+          const problem = await reopenDecision(decisionID, reason);
+          await refresh();
+          onNavigate("problems", problem.id);
+        } finally {
+          finishFindingAction(actionKey);
+        }
+      },
+      errorScope: "reopen governance finding",
+    });
+  };
+
+  const handleCancelConfirmation = () => {
+    setPendingConfirmation((currentPendingConfirmation) => {
+      if (currentPendingConfirmation?.isSubmitting) {
+        return currentPendingConfirmation;
+      }
+
+      return null;
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    const currentPendingConfirmation = pendingConfirmation;
+
+    if (!currentPendingConfirmation) {
+      return;
+    }
+
+    if (
+      currentPendingConfirmation.model.requiresReason &&
+      currentPendingConfirmation.reason.trim() === ""
+    ) {
+      return;
+    }
+
+    setPendingConfirmation((previousPendingConfirmation) =>
+      previousPendingConfirmation
+        ? {
+            ...previousPendingConfirmation,
+            isSubmitting: true,
+          }
+        : previousPendingConfirmation,
+    );
 
     try {
-      const problem = await reopenDecision(decisionID, reason);
-      await refresh();
-      onNavigate("problems", problem.id);
+      await currentPendingConfirmation.run(currentPendingConfirmation.reason.trim());
+      setPendingConfirmation(null);
     } catch (error) {
-      reportError(error, "reopen governance finding");
-    } finally {
-      finishFindingAction(actionKey);
+      reportError(error, currentPendingConfirmation.errorScope);
+      setPendingConfirmation((previousPendingConfirmation) =>
+        previousPendingConfirmation
+          ? {
+              ...previousPendingConfirmation,
+              isSubmitting: false,
+            }
+          : previousPendingConfirmation,
+      );
     }
   };
 
@@ -247,7 +335,8 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const recentActivity = buildRecentActivity(data.recent_problems, data.recent_decisions);
 
   return (
-    <div className="space-y-8 pb-8">
+    <>
+      <div className="space-y-8 pb-8">
       <div className="mb-2">
         <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">DASHBOARD</p>
         <p className="mt-0.5 text-xs text-text-muted">
@@ -385,7 +474,28 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
           </Section>
         </div>
       </div>
-    </div>
+      </div>
+
+      {pendingConfirmation && (
+        <IrreversibleActionDialog
+          model={pendingConfirmation.model}
+          reason={pendingConfirmation.reason}
+          isSubmitting={pendingConfirmation.isSubmitting}
+          onReasonChange={(value) =>
+            setPendingConfirmation((currentPendingConfirmation) =>
+              currentPendingConfirmation
+                ? {
+                    ...currentPendingConfirmation,
+                    reason: value,
+                  }
+                : currentPendingConfirmation,
+            )
+          }
+          onCancel={handleCancelConfirmation}
+          onConfirm={() => void handleConfirmAction()}
+        />
+      )}
+    </>
   );
 }
 
@@ -615,21 +725,8 @@ function promptForGovernanceDecisionReason(
   return response ? response.trim() : "";
 }
 
-function acknowledgeImplementWarnings(messages: string[]): boolean {
-  if (messages.length === 0 || typeof window === "undefined") {
-    return true;
-  }
-
-  window.alert(messages.join("\n\n"));
-  return true;
-}
-
-function confirmImplementWarnings(messages: string[]): boolean {
-  if (messages.length === 0 || typeof window === "undefined") {
-    return true;
-  }
-
-  return window.confirm(messages.join("\n\n"));
+function compactNonEmptyStrings(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
 }
 
 function RecentActivityCard({

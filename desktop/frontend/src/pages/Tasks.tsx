@@ -4,6 +4,7 @@ import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   archiveTask,
   cancelTask,
+  createPullRequest,
   detectAgents,
   getConfig,
   getTaskOutput,
@@ -18,8 +19,14 @@ import {
   spawnTask,
   type DesktopConfig,
   type InstalledAgent,
+  type PullRequestResult,
   type TaskState,
 } from "../lib/api";
+import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
+import {
+  buildIrreversibleActionDialogModel,
+  type IrreversibleActionDialogModel,
+} from "../components/irreversibleActionDialogModel";
 import { reportError } from "../lib/errors";
 
 interface TaskOutputEvent {
@@ -33,6 +40,14 @@ type AdoptResolutionContext = {
   findingID: string;
   decisionID: string;
   mode: AdoptResolutionMode;
+};
+
+type TaskPendingConfirmation = {
+  model: IrreversibleActionDialogModel;
+  reason: string;
+  isSubmitting: boolean;
+  run: (reason: string) => Promise<void>;
+  errorScope: string;
 };
 
 // PromptSection reserved for future collapsible brief in chat
@@ -61,7 +76,9 @@ export function Tasks({
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffAgent, setHandoffAgent] = useState("codex");
   const [resolutionAction, setResolutionAction] = useState("");
-  const [resolutionMessage, setResolutionMessage] = useState("");
+  const [taskActionMessage, setTaskActionMessage] = useState("");
+  const [pendingConfirmation, setPendingConfirmation] =
+    useState<TaskPendingConfirmation | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
   const tasks = controlledTasks ?? internalTasks;
   const setTasks = onTasksChange ?? setInternalTasks;
@@ -198,7 +215,8 @@ export function Tasks({
 
   useEffect(() => {
     setResolutionAction("");
-    setResolutionMessage("");
+    setTaskActionMessage("");
+    setPendingConfirmation(null);
   }, [detail?.id]);
 
   useEffect(() => {
@@ -284,7 +302,7 @@ export function Tasks({
     errorScope: string,
   ) => {
     setResolutionAction(actionKey);
-    setResolutionMessage("");
+    setTaskActionMessage("");
 
     try {
       await run();
@@ -311,14 +329,14 @@ export function Tasks({
       "baseline",
       async () => {
         await resolveAdoptBaseline(resolution.findingID, resolution.decisionID);
-        setResolutionMessage(`Re-baselined ${resolution.decisionID}.`);
+        setTaskActionMessage(`Re-baselined ${resolution.decisionID}.`);
       },
       "baseline decision",
     );
   };
 
   const handleWaive = async (resolution: AdoptResolutionContext, task: TaskState) => {
-    const reason = promptForAdoptReason("waive", task);
+    const reason = promptForAdoptReason(task);
     if (reason === "") {
       return;
     }
@@ -327,66 +345,70 @@ export function Tasks({
       "waive",
       async () => {
         await resolveAdoptWaive(resolution.findingID, resolution.decisionID, reason);
-        setResolutionMessage(`Waived ${resolution.decisionID}.`);
+        setTaskActionMessage(`Waived ${resolution.decisionID}.`);
       },
       "waive decision",
     );
   };
 
   const handleReopen = async (resolution: AdoptResolutionContext, task: TaskState) => {
-    const reason = promptForAdoptReason("reopen", task);
-    if (reason === "") {
-      return;
-    }
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "reopen",
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: resolution.decisionID,
+          title: task.title,
+        },
+      }),
+      reason: taskPromptMetaValue(task.prompt, "Reason"),
+      isSubmitting: false,
+      run: async (reason) => {
+        setResolutionAction("reopen");
+        setTaskActionMessage("");
 
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Reopen will mark this DecisionRecord as refresh due and create a new ProblemCard.\n\nContinue?",
-      );
-
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    await runResolutionAction(
-      "reopen",
-      async () => {
-        const problem = await resolveAdoptReopen(
-          resolution.findingID,
-          resolution.decisionID,
-          reason,
-        );
-        setResolutionMessage(`Reopened ${resolution.decisionID} as ${problem.id}.`);
+        try {
+          const problem = await resolveAdoptReopen(
+            resolution.findingID,
+            resolution.decisionID,
+            reason,
+          );
+          setTaskActionMessage(`Reopened ${resolution.decisionID} as ${problem.id}.`);
+          await refresh();
+        } finally {
+          setResolutionAction("");
+        }
       },
-      "reopen decision",
-    );
+      errorScope: "reopen decision",
+    });
   };
 
   const handleDeprecate = async (resolution: AdoptResolutionContext, task: TaskState) => {
-    const reason = promptForAdoptReason("deprecate", task);
-    if (reason === "") {
-      return;
-    }
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "deprecate",
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: resolution.decisionID,
+          title: task.title,
+        },
+      }),
+      reason: taskPromptMetaValue(task.prompt, "Reason"),
+      isSubmitting: false,
+      run: async (reason) => {
+        setResolutionAction("deprecate");
+        setTaskActionMessage("");
 
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Deprecate will archive this DecisionRecord as no longer relevant.\n\nContinue?",
-      );
-
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    await runResolutionAction(
-      "deprecate",
-      async () => {
-        await resolveAdoptDeprecate(resolution.findingID, resolution.decisionID, reason);
-        setResolutionMessage(`Deprecated ${resolution.decisionID}.`);
+        try {
+          await resolveAdoptDeprecate(resolution.findingID, resolution.decisionID, reason);
+          setTaskActionMessage(`Deprecated ${resolution.decisionID}.`);
+          await refresh();
+        } finally {
+          setResolutionAction("");
+        }
       },
-      "deprecate decision",
-    );
+      errorScope: "deprecate decision",
+    });
   };
 
   const handleMeasure = async (resolution: AdoptResolutionContext, task: TaskState) => {
@@ -409,125 +431,214 @@ export function Tasks({
           findings,
           verdict,
         );
-        setResolutionMessage(`Measured ${resolution.decisionID} with verdict ${verdict}.`);
+        setTaskActionMessage(`Measured ${resolution.decisionID} with verdict ${verdict}.`);
       },
       "measure decision",
     );
   };
 
+  const handleCreatePullRequest = async (task: TaskState) => {
+    const decisionID = taskPromptMetaValue(task.prompt, "Decision ID");
+
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "create_pr",
+        branch: task.branch,
+        currentArtifact: {
+          kind: decisionID ? "DecisionRecord" : "Task",
+          ref: decisionID || task.id,
+          title: task.title,
+        },
+      }),
+      reason: "",
+      isSubmitting: false,
+      run: async () => {
+        setResolutionAction("create_pr");
+        setTaskActionMessage("");
+
+        try {
+          const result = await createPullRequest(task.id);
+          setTaskActionMessage(buildPullRequestMessage(result));
+        } finally {
+          setResolutionAction("");
+        }
+      },
+      errorScope: "create pull request",
+    });
+  };
+
+  const handleCancelConfirmation = () => {
+    setPendingConfirmation((currentPendingConfirmation) => {
+      if (currentPendingConfirmation?.isSubmitting) {
+        return currentPendingConfirmation;
+      }
+
+      return null;
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    const currentPendingConfirmation = pendingConfirmation;
+
+    if (!currentPendingConfirmation) {
+      return;
+    }
+
+    if (
+      currentPendingConfirmation.model.requiresReason &&
+      currentPendingConfirmation.reason.trim() === ""
+    ) {
+      return;
+    }
+
+    setPendingConfirmation((previousPendingConfirmation) =>
+      previousPendingConfirmation
+        ? {
+            ...previousPendingConfirmation,
+            isSubmitting: true,
+          }
+        : previousPendingConfirmation,
+    );
+
+    try {
+      await currentPendingConfirmation.run(currentPendingConfirmation.reason.trim());
+      setPendingConfirmation(null);
+    } catch (error) {
+      reportError(error, currentPendingConfirmation.errorScope);
+      setPendingConfirmation((previousPendingConfirmation) =>
+        previousPendingConfirmation
+          ? {
+              ...previousPendingConfirmation,
+              isSubmitting: false,
+            }
+          : previousPendingConfirmation,
+      );
+    }
+  };
+
   // handleCopy removed — not used in chat view
 
   return (
-    <div className="space-y-6">
-      {/* No header — tasks are selected from sidebar, new task from "+" menu */}
+    <>
+      <div className="space-y-6">
+        {/* No header — tasks are selected from sidebar, new task from "+" menu */}
 
-      {showNewTask && (
-        <NewTaskModal
-          agents={agents}
-          config={config}
-          onSpawn={handleSpawn}
-          onClose={() => setShowNewTask(false)}
-        />
-      )}
+        {showNewTask && (
+          <NewTaskModal
+            agents={agents}
+            config={config}
+            onSpawn={handleSpawn}
+            onClose={() => setShowNewTask(false)}
+          />
+        )}
 
-      {showHandoff && detail && (
-        <HandoffModal
-          agents={agents}
-          sourceTask={detail}
-          targetAgent={handoffAgent}
-          onChangeTarget={setHandoffAgent}
-          onClose={() => setShowHandoff(false)}
-          onConfirm={() => void handleHandoff()}
-        />
-      )}
+        {showHandoff && detail && (
+          <HandoffModal
+            agents={agents}
+            sourceTask={detail}
+            targetAgent={handoffAgent}
+            onChangeTarget={setHandoffAgent}
+            onClose={() => setShowHandoff(false)}
+            onConfirm={() => void handleHandoff()}
+          />
+        )}
 
-      {/* Chat layout: no task selected = empty state, task selected = chat */}
-      {!detail ? (
-        <div className="flex h-[calc(100vh-12rem)] items-center justify-center">
-          <div className="text-center">
-            <p className="text-sm text-text-muted">
-              {tasks.length === 0 ? "No tasks yet" : "Select a task from the sidebar"}
-            </p>
-            <p className="mt-1 text-xs text-text-muted">
-              Click "+ New Task" or use the sidebar to start
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex h-[calc(100vh-12rem)] flex-col">
-          {/* Compact header bar */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
-              <StatusBadge status={detail.status} />
-              <span className="text-xs text-text-muted">{detail.agent}</span>
-              {detail.branch && (
-                <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
-              )}
-              {detail.status === "running" && detail.started_at && (
-                <ElapsedTimer startedAt={detail.started_at} />
-              )}
+        {/* Chat layout: no task selected = empty state, task selected = chat */}
+        {!detail ? (
+          <div className="flex h-[calc(100vh-12rem)] items-center justify-center">
+            <div className="text-center">
+              <p className="text-sm text-text-muted">
+                {tasks.length === 0 ? "No tasks yet" : "Select a task from the sidebar"}
+              </p>
+              <p className="mt-1 text-xs text-text-muted">
+                Click "+ New Task" or use the sidebar to start
+              </p>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {/* Auto-run toggle */}
-              {detail.status === "running" && (
+          </div>
+        ) : (
+          <div className="flex h-[calc(100vh-12rem)] flex-col">
+            {/* Compact header bar */}
+            <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <StatusBadge status={detail.status} />
+                <span className="text-xs text-text-muted">{detail.agent}</span>
+                {detail.branch && (
+                  <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
+                )}
+                {detail.status === "running" && detail.started_at && (
+                  <ElapsedTimer startedAt={detail.started_at} />
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Auto-run toggle */}
+                {detail.status === "running" && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { setTaskAutoRun } = await import("../lib/api");
+                        await setTaskAutoRun(detail.id, !detail.auto_run);
+                        setTasks((prev) =>
+                          prev.map((t) =>
+                            t.id === detail.id ? { ...t, auto_run: !t.auto_run } : t
+                          )
+                        );
+                      } catch { /* ignore */ }
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      detail.auto_run
+                        ? "border-accent/30 bg-accent/10 text-accent"
+                        : "border-border bg-surface-2 text-text-muted"
+                    }`}
+                    title={detail.auto_run ? "Auto-run: agent proceeds without pausing" : "Checkpointed: agent pauses at breakpoints"}
+                  >
+                    {detail.auto_run ? "Auto-run" : "Checkpointed"}
+                  </button>
+                )}
+                {detail.status === "running" && (
+                  <button
+                    onClick={() => handleCancel(detail.id)}
+                    className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
+                  >
+                    Cancel
+                  </button>
+                )}
+                {detail.status === "Ready for PR" && (
+                  <button
+                    onClick={() => void handleCreatePullRequest(detail)}
+                    disabled={resolutionAction !== ""}
+                    className="rounded-lg bg-accent px-2.5 py-1 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {resolutionAction === "create_pr" ? "Publishing..." : "Create PR"}
+                  </button>
+                )}
+                {workspacePath && (
+                  <button
+                    onClick={handleOpenWorkspace}
+                    className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                  >
+                    Open in IDE
+                  </button>
+                )}
                 <button
-                  onClick={async () => {
-                    try {
-                      const { setTaskAutoRun } = await import("../lib/api");
-                      await setTaskAutoRun(detail.id, !detail.auto_run);
-                      setTasks((prev) =>
-                        prev.map((t) =>
-                          t.id === detail.id ? { ...t, auto_run: !t.auto_run } : t
-                        )
-                      );
-                    } catch { /* ignore */ }
+                  onClick={() => {
+                    const fallback = agents.find((a) => a.kind !== detail.agent)?.kind ?? "codex";
+                    setHandoffAgent(fallback);
+                    setShowHandoff(true);
                   }}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                    detail.auto_run
-                      ? "border-accent/30 bg-accent/10 text-accent"
-                      : "border-border bg-surface-2 text-text-muted"
-                  }`}
-                  title={detail.auto_run ? "Auto-run: agent proceeds without pausing" : "Checkpointed: agent pauses at breakpoints"}
-                >
-                  {detail.auto_run ? "Auto-run" : "Checkpointed"}
-                </button>
-              )}
-              {detail.status === "running" && (
-                <button
-                  onClick={() => handleCancel(detail.id)}
-                  className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
-                >
-                  Cancel
-                </button>
-              )}
-              {workspacePath && (
-                <button
-                  onClick={handleOpenWorkspace}
                   className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
                 >
-                  Open in IDE
+                  Hand off
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  const fallback = agents.find((a) => a.kind !== detail.agent)?.kind ?? "codex";
-                  setHandoffAgent(fallback);
-                  setShowHandoff(true);
-                }}
-                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-              >
-                Hand off
-              </button>
-              {detail.status !== "running" && (
-                <button
-                  onClick={() => handleArchive(detail.id)}
-                  className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-                >
-                  Archive
-                </button>
-              )}
+                {detail.status !== "running" && (
+                  <button
+                    onClick={() => handleArchive(detail.id)}
+                    className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+                  >
+                    Archive
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
 
           {/* Chat messages area */}
           <div
@@ -580,9 +691,6 @@ export function Tasks({
                         ? `Resolve drift for ${adoptResolution.decisionID} with re-baseline, reopen, or waive.`
                         : `Resolve staleness for ${adoptResolution.decisionID} with measure, waive, deprecate, or reopen.`}
                     </p>
-                    {resolutionMessage && (
-                      <p className="mt-2 text-xs text-success">{resolutionMessage}</p>
-                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -641,6 +749,11 @@ export function Tasks({
                       ? "Task completed. Create a new task to continue."
                       : "Task ended."}
                 </p>
+                {taskActionMessage && (
+                  <p className="mt-2 whitespace-pre-wrap text-xs text-success">
+                    {taskActionMessage}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-xs text-text-muted px-2 py-1 rounded-lg border border-border bg-surface-2">
@@ -650,8 +763,29 @@ export function Tasks({
             </div>
           </div>
         </div>
+        )}
+      </div>
+
+      {pendingConfirmation && (
+        <IrreversibleActionDialog
+          model={pendingConfirmation.model}
+          reason={pendingConfirmation.reason}
+          isSubmitting={pendingConfirmation.isSubmitting}
+          onReasonChange={(value) =>
+            setPendingConfirmation((currentPendingConfirmation) =>
+              currentPendingConfirmation
+                ? {
+                    ...currentPendingConfirmation,
+                    reason: value,
+                  }
+                : currentPendingConfirmation,
+            )
+          }
+          onCancel={handleCancelConfirmation}
+          onConfirm={() => void handleConfirmAction()}
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -912,6 +1046,8 @@ function StatusBadge({ status }: { status: string }) {
     failed: "border-danger/20 bg-danger/10 text-danger",
     cancelled: "border-border bg-surface-2 text-text-muted",
     interrupted: "border-warning/20 bg-warning/10 text-warning",
+    "Ready for PR": "border-accent/30 bg-accent/10 text-accent",
+    "Needs attention": "border-warning/20 bg-warning/10 text-warning",
   };
 
   return (
@@ -1077,24 +1213,26 @@ function taskPromptMetaValue(prompt: string, label: string): string {
   return "";
 }
 
-function promptForAdoptReason(
-  action: "waive" | "reopen" | "deprecate",
-  task: TaskState,
-): string {
+function promptForAdoptReason(task: TaskState): string {
   if (typeof window === "undefined") {
     return "";
   }
 
   const defaultReason = taskPromptMetaValue(task.prompt, "Reason");
-  const promptMessage =
-    action === "waive"
-      ? "Waive will extend this DecisionRecord by 90 days.\n\nEnter justification:"
-      : action === "reopen"
-        ? "Reopen will create a new ProblemCard linked to this DecisionRecord.\n\nEnter reason:"
-        : "Deprecate will archive this DecisionRecord as no longer relevant.\n\nEnter reason:";
+  const promptMessage = "Waive will extend this DecisionRecord by 90 days.\n\nEnter justification:";
   const response = window.prompt(promptMessage, defaultReason);
 
   return response ? response.trim() : "";
+}
+
+function buildPullRequestMessage(result: PullRequestResult): string {
+  const lines = compactNonEmptyStrings([
+    result.draft_created && result.url ? `Draft PR created: ${result.url}` : "",
+    result.copied_to_clipboard ? "PR body copied to the clipboard for manual creation." : "",
+    result.warnings.join("\n"),
+  ]);
+
+  return lines.join("\n");
 }
 
 function promptForMeasureFindings(task: TaskState): string {
@@ -1133,6 +1271,10 @@ function promptForMeasureVerdict(): string {
 
   window.alert("Verdict must be one of: accepted, partial, failed.");
   return "";
+}
+
+function compactNonEmptyStrings(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
 }
 
 // parsePromptSections kept for future use if we add collapsible brief sections to chat

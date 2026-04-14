@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Desktop implement smoke test** — explicit happy-path test now proves the end-to-end decision loop: `Implement` starts the agent, post-execution verification records CL3 evidence and a baseline, and `Create PR` generates the draft PR body from the verified task.
+
 ## [6.1.0] — 2026-04-14
 
 ### Added

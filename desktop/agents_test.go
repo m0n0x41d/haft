@@ -548,6 +548,166 @@ func TestImplementDecisionRecordsVerificationPassOnSuccess(t *testing.T) {
 	}
 }
 
+func TestImplementHappyPathSmoke(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'happy-path implementation complete\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("LookPath git: %v", err)
+	}
+
+	pushLog := filepath.Join(t.TempDir(), "git-push.log")
+	ghLog := filepath.Join(t.TempDir(), "gh.log")
+
+	installStubAgentBinary(
+		t,
+		"git",
+		fmt.Sprintf(
+			"#!/bin/sh\nif [ \"$1\" = \"push\" ]; then\n  printf '%%s\\n' \"$*\" >> %q\n  exit 0\nfi\nexec %q \"$@\"\n",
+			pushLog,
+			realGit,
+		),
+	)
+	installStubAgentBinary(
+		t,
+		"gh",
+		fmt.Sprintf(
+			"#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nprintf 'https://example.com/pr/456\\n'\n",
+			ghLog,
+		),
+	)
+
+	initTestGitRepository(t, app.projectRoot)
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Implement happy path smoke test",
+		Signal:      "The desktop execution loop needs one explicit end-to-end smoke test.",
+		Acceptance:  "Create a decision, implement it, verify it, baseline it, and generate a PR body from the resulting task.",
+		BlastRadius: "Desktop implement flow only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      problem.ID,
+		SelectedTitle:   "Exercise the desktop implement happy path",
+		WhySelected:     "One explicit smoke test should prove the decision-to-PR loop holds end to end.",
+		SelectionPolicy: "Prefer the narrowest automated proof that matches the dashboard contract.",
+		CounterArgument: "The existing narrower tests already cover the same code paths individually.",
+		WeakestLink:     "The smoke test depends on stable git and gh CLI stubs for branch publication.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Manual dashboard walkthrough only",
+				Reason:  "It leaves the release gate dependent on operator memory instead of a repeatable test.",
+			},
+		},
+		Invariants: []string{
+			"Generate PR body from decision rationale, invariants, and verification evidence.",
+		},
+		AffectedFiles: []string{"README.md"},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"The smoke test becomes brittle enough to slow routine desktop changes.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.Implement(decision.ID)
+	if err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "Ready for PR" {
+		t.Fatalf("task status = %q, want Ready for PR", final.Status)
+	}
+	if !strings.Contains(final.Output, "happy-path implementation complete") {
+		t.Fatalf("task output missing agent marker: %q", final.Output)
+	}
+	if !strings.Contains(final.Output, "Post-execution verification passed") {
+		t.Fatalf("task output missing verification note: %q", final.Output)
+	}
+
+	files, err := app.store.GetAffectedFiles(context.Background(), decision.ID)
+	if err != nil {
+		t.Fatalf("GetAffectedFiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("affected files = %d, want 1", len(files))
+	}
+	if files[0].Hash == "" {
+		t.Fatal("expected baseline hash to be recorded for README.md")
+	}
+
+	items, err := app.store.GetEvidenceItems(context.Background(), decision.ID)
+	if err != nil {
+		t.Fatalf("GetEvidenceItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("evidence items = %d, want 1", len(items))
+	}
+	if items[0].Verdict != "supports" {
+		t.Fatalf("evidence verdict = %q, want supports", items[0].Verdict)
+	}
+	if items[0].CongruenceLevel != 3 {
+		t.Fatalf("evidence congruence = %d, want 3", items[0].CongruenceLevel)
+	}
+
+	result, err := app.CreatePullRequest(final.ID)
+	if err != nil {
+		t.Fatalf("CreatePullRequest: %v", err)
+	}
+
+	if !result.Pushed {
+		t.Fatal("expected branch push to succeed")
+	}
+	if !result.DraftCreated {
+		t.Fatalf("expected draft PR creation, warnings=%v", result.Warnings)
+	}
+	if result.URL != "https://example.com/pr/456" {
+		t.Fatalf("result URL = %q, want %q", result.URL, "https://example.com/pr/456")
+	}
+
+	expectedBodySnippets := []string{
+		"## Summary: Exercise the desktop implement happy path",
+		decision.WhySelected,
+		decision.Invariants[0],
+		"Post-execution verification passed.",
+	}
+
+	for _, snippet := range expectedBodySnippets {
+		if !strings.Contains(result.Body, snippet) {
+			t.Fatalf("PR body missing %q:\n%s", snippet, result.Body)
+		}
+	}
+
+	pushArgs, err := os.ReadFile(pushLog)
+	if err != nil {
+		t.Fatalf("ReadFile push log: %v", err)
+	}
+	if !strings.Contains(string(pushArgs), "push --set-upstream origin HEAD:"+final.Branch) {
+		t.Fatalf("unexpected push args: %q", string(pushArgs))
+	}
+
+	ghArgs, err := os.ReadFile(ghLog)
+	if err != nil {
+		t.Fatalf("ReadFile gh log: %v", err)
+	}
+	if !strings.Contains(string(ghArgs), "pr create --draft") {
+		t.Fatalf("unexpected gh args: %q", string(ghArgs))
+	}
+}
+
 func TestBuildPullRequestBodyIncludesRationaleInvariantAndVerification(t *testing.T) {
 	task := TaskState{
 		ID:     "task-42",

@@ -6,6 +6,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -23,6 +26,8 @@ const (
 	candidateStatusActive     = "active"
 	candidateStatusDismissed  = "dismissed"
 	candidateStatusAdopted    = "adopted"
+	adoptDiffMaxLines         = 200
+	adoptDiffMaxChars         = 12000
 )
 
 type CoverageView struct {
@@ -95,6 +100,22 @@ type DesktopNotification struct {
 	Body   string `json:"body"`
 	Tone   string `json:"tone"`
 	Source string `json:"source"`
+}
+
+type governanceDriftAdoptionContext struct {
+	Finding        GovernanceFindingView
+	Decision       *artifact.Artifact
+	Detail         DecisionDetailView
+	Report         artifact.DriftReport
+	FileDiffs      []governanceFileDiff
+	DirectModules  []CoverageModuleView
+	ImpactedModule []artifact.ModuleImpact
+}
+
+type governanceFileDiff struct {
+	Path   string
+	Status artifact.DriftStatus
+	Diff   string
 }
 
 type desktopGovernanceStore struct {
@@ -728,6 +749,364 @@ func shortHash(value string) string {
 		return encoded
 	}
 	return encoded[:12]
+}
+
+func (a *App) loadDriftAdoptionContext(findingRef string) (*governanceDriftAdoptionContext, error) {
+	if a == nil || a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	trimmed := strings.TrimSpace(findingRef)
+	if trimmed == "" {
+		return nil, fmt.Errorf("finding ref is required")
+	}
+
+	finding, item, err := a.resolveDriftFinding(trimmed)
+	if err != nil {
+		return nil, err
+	}
+
+	decision, detail, err := a.loadDecisionDetail(item.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", item.ID, err)
+	}
+
+	report, err := a.loadDecisionDriftReport(item.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	driftedFiles := driftedFilePaths(report.Files)
+	directModules, err := a.loadDriftAffectedModules(driftedFiles)
+	if err != nil {
+		detail.CoverageWarnings = append(
+			detail.CoverageWarnings,
+			fmt.Sprintf("Affected module lookup unavailable: %v", err),
+		)
+	}
+
+	impactedModules, err := a.loadDriftImpactedModules(driftedFiles)
+	if err != nil {
+		detail.CoverageWarnings = append(
+			detail.CoverageWarnings,
+			fmt.Sprintf("Dependency impact lookup unavailable: %v", err),
+		)
+	}
+
+	return &governanceDriftAdoptionContext{
+		Finding:        finding,
+		Decision:       decision,
+		Detail:         detail,
+		Report:         report,
+		FileDiffs:      loadGovernanceFileDiffs(a.projectRoot, report.Files),
+		DirectModules:  directModules,
+		ImpactedModule: impactedModules,
+	}, nil
+}
+
+func (a *App) resolveDriftFinding(findingRef string) (GovernanceFindingView, artifact.StaleItem, error) {
+	items, err := artifact.ScanStale(a.ctx, a.store, a.projectRoot)
+	if err != nil {
+		return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("scan governance findings: %w", err)
+	}
+
+	for _, item := range items {
+		if item.Category != artifact.StaleCategoryDecisionStale {
+			continue
+		}
+		if item.Kind != string(artifact.KindDecisionRecord) {
+			continue
+		}
+		if findingID(item) != findingRef {
+			continue
+		}
+		if len(item.DriftItems) == 0 {
+			return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("finding %s is not a drift finding", findingRef)
+		}
+
+		view := toFindingViews([]artifact.StaleItem{item})[0]
+		return view, item, nil
+	}
+
+	return GovernanceFindingView{}, artifact.StaleItem{}, fmt.Errorf("drift finding %s not found", findingRef)
+}
+
+func (a *App) loadDecisionDriftReport(decisionID string) (artifact.DriftReport, error) {
+	reports, err := artifact.CheckDrift(a.ctx, a.store, a.projectRoot)
+	if err != nil {
+		return artifact.DriftReport{}, fmt.Errorf("load drift report for %s: %w", decisionID, err)
+	}
+
+	for _, report := range reports {
+		if report.DecisionID != decisionID {
+			continue
+		}
+		return report, nil
+	}
+
+	return artifact.DriftReport{}, fmt.Errorf("drift report for %s not found", decisionID)
+}
+
+func (a *App) loadDriftAffectedModules(driftedFiles []string) ([]CoverageModuleView, error) {
+	if len(driftedFiles) == 0 || a == nil || a.store == nil {
+		return []CoverageModuleView{}, nil
+	}
+
+	coverage, err := buildCoverageView(a.ctx, a.store.DB(), a.projectRoot, driftedFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	modules := make([]CoverageModuleView, 0, len(coverage.Modules))
+	for _, module := range coverage.Modules {
+		if !module.Impacted {
+			continue
+		}
+		modules = append(modules, module)
+	}
+
+	return modules, nil
+}
+
+func (a *App) loadDriftImpactedModules(driftedFiles []string) ([]artifact.ModuleImpact, error) {
+	if len(driftedFiles) == 0 || a == nil || a.store == nil {
+		return []artifact.ModuleImpact{}, nil
+	}
+
+	impacts, err := codebase.EnrichDriftWithImpact(a.ctx, a.store.DB(), driftedFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	modules := make([]artifact.ModuleImpact, 0, len(impacts))
+	for _, impact := range impacts {
+		modules = append(modules, artifact.ModuleImpact{
+			ModuleID:    impact.ModuleID,
+			ModulePath:  impact.ModulePath,
+			DecisionIDs: append([]string(nil), impact.DecisionIDs...),
+			IsBlind:     impact.IsBlind,
+		})
+	}
+
+	sort.Slice(modules, func(i int, j int) bool {
+		return modules[i].ModulePath < modules[j].ModulePath
+	})
+
+	return modules, nil
+}
+
+func buildAdoptDriftPrompt(context governanceDriftAdoptionContext) string {
+	var prompt strings.Builder
+
+	writeSectionTitle(
+		&prompt,
+		"Adopt Drift Finding",
+		firstNonEmpty(context.Detail.SelectedTitle, context.Detail.Title, context.Decision.Meta.Title),
+	)
+	writeMetaLine(&prompt, "Finding ID", context.Finding.ID)
+	writeMetaLine(&prompt, "Finding category", context.Finding.Category)
+	writeMetaLine(&prompt, "Decision ID", context.Detail.ID)
+	writeMetaLine(&prompt, "Selected", firstNonEmpty(context.Detail.SelectedTitle, context.Detail.Title))
+	writeMetaLine(&prompt, "Reason", context.Finding.Reason)
+	writeBlankLine(&prompt)
+
+	writeParagraphSection(&prompt, "Decision Record Body", strings.TrimSpace(context.Detail.Body))
+	writeParagraphSection(&prompt, "Why Selected", context.Detail.WhySelected)
+	writeParagraphSection(&prompt, "Counterargument", context.Detail.CounterArgument)
+	writeParagraphSection(&prompt, "Weakest Link", context.Detail.WeakestLink)
+	writeStringListSection(&prompt, "Decision Invariants", context.Detail.Invariants, "- ")
+	writeStringListSection(&prompt, "Admissibility", context.Detail.Admissibility, "- ")
+	writeStringListSection(&prompt, "Affected Files", context.Detail.AffectedFiles, "- ")
+	writeDriftReportSection(&prompt, context.Report)
+	writeGovernanceDiffSection(&prompt, context.FileDiffs)
+	writeCoverageSection(&prompt, context.DirectModules)
+	writeImpactedModuleSection(&prompt, context.ImpactedModule)
+	writeStringListSection(&prompt, "Coverage Warnings", context.Detail.CoverageWarnings, "- ")
+	writeInstructionSection(
+		&prompt,
+		[]string{
+			"Treat the drift report and diffs as runtime evidence. Read them before proposing a resolution.",
+			"Preserve every DecisionRecord invariant and admissibility boundary while investigating.",
+			"Present the available resolution options explicitly: Re-baseline, Reopen, or Waive.",
+			"Do not execute re-baseline, reopen, waive, or any other lifecycle action without explicit user confirmation.",
+			"Preserve the original DecisionRecord body and evidence history for audit.",
+		},
+	)
+
+	return prompt.String()
+}
+
+func writeDriftReportSection(builder *strings.Builder, report artifact.DriftReport) {
+	if len(report.Files) == 0 {
+		return
+	}
+
+	builder.WriteString("## Drift Report\n")
+	for _, item := range report.Files {
+		line := fmt.Sprintf("- %s status=%s", item.Path, item.Status)
+		if item.LinesChanged != "" {
+			line += " " + item.LinesChanged
+		}
+		builder.WriteString(line + "\n")
+		for _, invariant := range item.Invariants {
+			builder.WriteString(fmt.Sprintf("  Invariant: %s\n", invariant))
+		}
+	}
+	writeBlankLine(builder)
+}
+
+func writeGovernanceDiffSection(builder *strings.Builder, diffs []governanceFileDiff) {
+	if len(diffs) == 0 {
+		return
+	}
+
+	builder.WriteString("## Diffs\n")
+	for _, fileDiff := range diffs {
+		builder.WriteString(fmt.Sprintf("### %s (%s)\n", fileDiff.Path, fileDiff.Status))
+		builder.WriteString("```diff\n")
+		builder.WriteString(strings.TrimSpace(firstNonEmpty(fileDiff.Diff, "No diff content available.")))
+		builder.WriteString("\n```\n\n")
+	}
+}
+
+func writeImpactedModuleSection(builder *strings.Builder, modules []artifact.ModuleImpact) {
+	if len(modules) == 0 {
+		return
+	}
+
+	builder.WriteString("## Dependency Impact Modules\n")
+	for _, module := range modules {
+		status := "governed"
+		if module.IsBlind {
+			status = "blind"
+		}
+
+		builder.WriteString(
+			fmt.Sprintf(
+				"- %s status=%s decisions=%d\n",
+				firstNonEmpty(module.ModulePath, module.ModuleID),
+				status,
+				len(module.DecisionIDs),
+			),
+		)
+		if len(module.DecisionIDs) > 0 {
+			builder.WriteString(fmt.Sprintf("  Decision refs: %s\n", strings.Join(module.DecisionIDs, ", ")))
+		}
+	}
+	writeBlankLine(builder)
+}
+
+func driftedFilePaths(items []artifact.DriftItem) []string {
+	paths := make([]string, 0, len(items))
+	seen := make(map[string]bool, len(items))
+
+	for _, item := range items {
+		path := strings.TrimSpace(item.Path)
+		if path == "" || seen[path] {
+			continue
+		}
+
+		seen[path] = true
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+	return paths
+}
+
+func loadGovernanceFileDiffs(projectRoot string, items []artifact.DriftItem) []governanceFileDiff {
+	diffs := make([]governanceFileDiff, 0, len(items))
+	for _, item := range items {
+		diffs = append(diffs, governanceFileDiff{
+			Path:   item.Path,
+			Status: item.Status,
+			Diff:   loadGovernanceFileDiff(projectRoot, item),
+		})
+	}
+
+	return diffs
+}
+
+func loadGovernanceFileDiff(projectRoot string, item artifact.DriftItem) string {
+	if strings.TrimSpace(projectRoot) == "" || strings.TrimSpace(item.Path) == "" {
+		return ""
+	}
+
+	// Prefer a real git diff when the repository can render one.
+	diff := gitCommandOutput(projectRoot, "diff", "--no-color", "--", item.Path)
+	if strings.TrimSpace(diff) != "" {
+		return truncateGovernanceDiff(diff)
+	}
+
+	absPath := filepath.Join(projectRoot, filepath.FromSlash(item.Path))
+
+	switch item.Status {
+	case artifact.DriftAdded:
+		diff = gitCommandOutput(projectRoot, "diff", "--no-color", "--no-index", "--", "/dev/null", absPath)
+		if strings.TrimSpace(diff) != "" {
+			return truncateGovernanceDiff(diff)
+		}
+
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			return "New file detected, but the current content could not be read."
+		}
+
+		return truncateGovernanceDiff("new file content\n" + string(content))
+	case artifact.DriftMissing:
+		return "Current file is missing from the worktree."
+	case artifact.DriftNoBaseline:
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			return "No baseline recorded for this file."
+		}
+
+		return truncateGovernanceDiff("current unbaselined file content\n" + string(content))
+	case artifact.DriftModified:
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			return "Modified file detected, but the current content could not be read."
+		}
+
+		return truncateGovernanceDiff("current file content\n" + string(content))
+	default:
+		return ""
+	}
+}
+
+func gitCommandOutput(projectRoot string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = projectRoot
+
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err != nil && trimmed == "" {
+		return ""
+	}
+
+	return trimmed
+}
+
+func truncateGovernanceDiff(diff string) string {
+	trimmed := strings.TrimSpace(diff)
+	if trimmed == "" {
+		return ""
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) > adoptDiffMaxLines {
+		lines = append(
+			lines[:adoptDiffMaxLines],
+			fmt.Sprintf("... diff truncated after %d lines", adoptDiffMaxLines),
+		)
+		trimmed = strings.Join(lines, "\n")
+	}
+
+	if len(trimmed) > adoptDiffMaxChars {
+		trimmed = truncate(trimmed, adoptDiffMaxChars)
+	}
+
+	return trimmed
 }
 
 func (s *desktopGovernanceStore) UpsertCandidates(ctx context.Context, candidates []ProblemCandidateView) error {

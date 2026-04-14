@@ -10,16 +10,12 @@ import {
   ChevronRight,
   ChevronDown,
   LayoutDashboard,
-  AlertTriangle,
-  Scale,
-  CheckCircle2,
   Archive,
   ListTodo,
   FolderPlus,
+  Scale,
 } from "lucide-react";
 import { Dashboard } from "./pages/Dashboard";
-import { Problems } from "./pages/Problems";
-import { Decisions } from "./pages/Decisions";
 import { Portfolios } from "./pages/Portfolios";
 import { Settings } from "./pages/Settings";
 import { Tasks } from "./pages/Tasks";
@@ -30,15 +26,12 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
 import { listProjects, switchProject, listTasks, type ProjectInfo, type TaskState } from "./lib/api";
+import { getPageTitle, resolveNavigation, type Page } from "./navigation";
 import { EventsOn, WindowToggleMaximise } from "../wailsjs/runtime/runtime";
 
-type Page = "dashboard" | "problems" | "portfolios" | "decisions" | "jobs" | "tasks" | "settings";
-
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Overview", icon: LayoutDashboard },
-  { id: "problems", label: "Problems", icon: AlertTriangle },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "portfolios", label: "Comparison", icon: Scale },
-  { id: "decisions", label: "Decisions", icon: CheckCircle2 },
 ];
 
 export default function App() {
@@ -138,8 +131,10 @@ export default function App() {
   }, []);
 
   const navigate = (p: Page, id?: string) => {
-    setPage(p);
-    setSelectedId(id ?? null);
+    const nextNavigation = resolveNavigation(p, id);
+
+    setPage(nextNavigation.page);
+    setSelectedId(nextNavigation.selectedId);
   };
 
   const handleSwitchProject = async (path: string) => {
@@ -345,7 +340,7 @@ export default function App() {
           >
             <h2 className="text-sm font-medium text-text-secondary">
               {activeProject?.name && <span className="text-text-muted">{activeProject.name} / </span>}
-              {pageTitle(page)}
+              {getPageTitle(page)}
             </h2>
             <div className="flex items-center gap-2">
               <button
@@ -365,9 +360,7 @@ export default function App() {
 
           <div className="p-6" key={refreshKey}>
             {page === "dashboard" && <Dashboard onNavigate={navigate} />}
-            {page === "problems" && <Problems selectedId={selectedId} onNavigate={navigate} />}
             {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
-            {page === "decisions" && <Decisions selectedId={selectedId} onNavigate={navigate} />}
             {page === "jobs" && <Jobs onOpenTask={handleOpenTask} />}
             {page === "tasks" && (
               <Tasks
@@ -419,22 +412,6 @@ export default function App() {
       />
     </div>
   );
-}
-
-function pageTitle(page: Page): string {
-  if (page === "tasks") {
-    return "Tasks";
-  }
-
-  if (page === "jobs") {
-    return "Jobs";
-  }
-
-  if (page === "settings") {
-    return "Settings";
-  }
-
-  return REASONING_NAV.find((item) => item.id === page)?.label ?? "Workspace";
 }
 
 function NewProjectModal({

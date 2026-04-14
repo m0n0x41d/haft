@@ -11,6 +11,62 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
+func TestResolveGovernanceScanIntervalDefaultsToFiveMinutes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(governanceScanIntervalEnvVar, "")
+
+	interval := resolveGovernanceScanInterval()
+
+	if interval != defaultGovernanceScanInterval {
+		t.Fatalf("resolveGovernanceScanInterval = %s, want %s", interval, defaultGovernanceScanInterval)
+	}
+}
+
+func TestResolveGovernanceScanIntervalUsesConfigMinutes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(governanceScanIntervalEnvVar, "")
+
+	configPath, err := desktopConfigPath()
+	if err != nil {
+		t.Fatalf("desktopConfigPath: %v", err)
+	}
+
+	err = os.WriteFile(configPath, []byte(`{"governance_scan_interval_minutes":1}`), 0o644)
+	if err != nil {
+		t.Fatalf("WriteFile desktop config: %v", err)
+	}
+
+	interval := resolveGovernanceScanInterval()
+
+	if interval != time.Minute {
+		t.Fatalf("resolveGovernanceScanInterval = %s, want %s", interval, time.Minute)
+	}
+}
+
+func TestResolveGovernanceScanIntervalPrefersEnvOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(governanceScanIntervalEnvVar, "45s")
+
+	configPath, err := desktopConfigPath()
+	if err != nil {
+		t.Fatalf("desktopConfigPath: %v", err)
+	}
+
+	err = os.WriteFile(configPath, []byte(`{"governance_scan_interval_minutes":1}`), 0o644)
+	if err != nil {
+		t.Fatalf("WriteFile desktop config: %v", err)
+	}
+
+	interval := resolveGovernanceScanInterval()
+
+	if interval != 45*time.Second {
+		t.Fatalf("resolveGovernanceScanInterval = %s, want %s", interval, 45*time.Second)
+	}
+}
+
 func TestDecisionDetailIncludesGovernanceScope(t *testing.T) {
 	app := newGovernanceTestApp(t)
 	defer app.shutdown(context.Background())
@@ -207,6 +263,56 @@ func TestGovernanceDecisionBaselineMeasureAndDeprecateActions(t *testing.T) {
 	if !strings.Contains(deprecated.Body, "## Deprecated") {
 		t.Fatalf("deprecated decision body missing section:\n%s", deprecated.Body)
 	}
+}
+
+func TestGovernanceTimerRefreshesSnapshotWithoutManualRefresh(t *testing.T) {
+	app := newGovernanceTestApp(t)
+	defer app.shutdown(context.Background())
+
+	decisionID := seedGovernanceDecision(t, app)
+
+	_, err := app.BaselineDecision(decisionID)
+	if err != nil {
+		t.Fatalf("BaselineDecision: %v", err)
+	}
+
+	overview, err := app.GetGovernanceOverview()
+	if err != nil {
+		t.Fatalf("GetGovernanceOverview before drift: %v", err)
+	}
+
+	if hasGovernanceDriftFinding(overview.Findings, decisionID) {
+		t.Fatalf("unexpected drift finding before file change: %+v", overview.Findings)
+	}
+
+	app.governance.interval = 20 * time.Millisecond
+	app.governance.start(context.Background())
+
+	err = os.WriteFile(
+		filepath.Join(app.projectRoot, "internal", "auth", "auth.go"),
+		[]byte("package auth\n\nfunc Enabled() bool { return false }\n"),
+		0o644,
+	)
+	if err != nil {
+		t.Fatalf("WriteFile auth.go: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+
+	for time.Now().Before(deadline) {
+		overview, err = app.GetGovernanceOverview()
+		if err != nil {
+			t.Fatalf("GetGovernanceOverview during timer refresh: %v", err)
+		}
+
+		if hasGovernanceDriftFinding(overview.Findings, decisionID) {
+			return
+		}
+
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatalf("expected timer refresh to surface drift for %s, findings=%+v", decisionID, overview.Findings)
 }
 
 func TestAdoptCreatesDriftTaskWithDecisionContext(t *testing.T) {
@@ -661,6 +767,21 @@ func seedDriftAdoptFinding(t *testing.T, app *App) (string, string) {
 	)
 
 	return decisionID, findingID
+}
+
+func hasGovernanceDriftFinding(findings []GovernanceFindingView, decisionID string) bool {
+	for _, finding := range findings {
+		if finding.ArtifactRef != decisionID {
+			continue
+		}
+		if finding.DriftCount == 0 {
+			continue
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func seedStaleAdoptFinding(

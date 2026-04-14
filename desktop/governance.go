@@ -5,11 +5,13 @@ import (
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,13 +24,16 @@ import (
 )
 
 const (
-	governanceScanInterval    = 2 * time.Minute
-	governanceStateLastScanAt = "last_scan_at"
-	candidateStatusActive     = "active"
-	candidateStatusDismissed  = "dismissed"
-	candidateStatusAdopted    = "adopted"
-	adoptDiffMaxLines         = 200
-	adoptDiffMaxChars         = 12000
+	defaultGovernanceScanInterval    = 5 * time.Minute
+	governanceScanIntervalEnvVar     = "HAFT_GOVERNANCE_SCAN_INTERVAL"
+	governanceScanIntervalKey        = "governance_scan_interval"
+	governanceScanIntervalMinutesKey = "governance_scan_interval_minutes"
+	governanceStateLastScanAt        = "last_scan_at"
+	candidateStatusActive            = "active"
+	candidateStatusDismissed         = "dismissed"
+	candidateStatusAdopted           = "adopted"
+	adoptDiffMaxLines                = 200
+	adoptDiffMaxChars                = 12000
 )
 
 type CoverageView struct {
@@ -176,18 +181,147 @@ func newDesktopGovernanceStore(db *sql.DB) *desktopGovernanceStore {
 	return &desktopGovernanceStore{db: db}
 }
 
-func newGovernanceController(app *App, store *artifact.Store, db *sql.DB, projectRoot string) *governanceController {
+func newGovernanceController(
+	app *App,
+	store *artifact.Store,
+	db *sql.DB,
+	projectRoot string,
+	interval time.Duration,
+) *governanceController {
 	return &governanceController{
 		app:         app,
 		store:       store,
 		db:          db,
 		projectRoot: projectRoot,
 		state:       newDesktopGovernanceStore(db),
-		interval:    governanceScanInterval,
+		interval:    normalizeGovernanceScanInterval(interval),
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
 		known:       make(map[string]struct{}),
 	}
+}
+
+func resolveGovernanceScanInterval() time.Duration {
+	envInterval := loadGovernanceScanIntervalFromEnv()
+	configInterval := loadGovernanceScanIntervalFromConfig()
+	defaultInterval := defaultGovernanceScanInterval
+
+	if envInterval > 0 {
+		return envInterval
+	}
+
+	if configInterval > 0 {
+		return configInterval
+	}
+
+	return defaultInterval
+}
+
+func normalizeGovernanceScanInterval(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return defaultGovernanceScanInterval
+	}
+
+	return interval
+}
+
+func loadGovernanceScanIntervalFromEnv() time.Duration {
+	rawValue := strings.TrimSpace(os.Getenv(governanceScanIntervalEnvVar))
+	interval, err := time.ParseDuration(rawValue)
+
+	if err != nil || interval <= 0 {
+		return 0
+	}
+
+	return interval
+}
+
+func loadGovernanceScanIntervalFromConfig() time.Duration {
+	configPath, err := desktopConfigPath()
+
+	if err != nil {
+		return 0
+	}
+
+	data, err := os.ReadFile(configPath)
+
+	if err != nil {
+		return 0
+	}
+
+	var payload map[string]any
+
+	err = json.Unmarshal(data, &payload)
+	if err != nil {
+		return 0
+	}
+
+	durationValue := payload[governanceScanIntervalKey]
+	durationInterval := parseGovernanceScanIntervalValue(durationValue)
+
+	if durationInterval > 0 {
+		return durationInterval
+	}
+
+	minutesValue := payload[governanceScanIntervalMinutesKey]
+	minutesInterval := parseGovernanceScanIntervalMinutes(minutesValue)
+
+	if minutesInterval > 0 {
+		return minutesInterval
+	}
+
+	return 0
+}
+
+func parseGovernanceScanIntervalValue(value any) time.Duration {
+	rawValue, ok := value.(string)
+
+	if !ok {
+		return 0
+	}
+
+	trimmedValue := strings.TrimSpace(rawValue)
+	interval, err := time.ParseDuration(trimmedValue)
+
+	if err != nil || interval <= 0 {
+		return 0
+	}
+
+	return interval
+}
+
+func parseGovernanceScanIntervalMinutes(value any) time.Duration {
+	floatValue := parseGovernanceScanIntervalFloat(value)
+	minutes := time.Duration(floatValue * float64(time.Minute))
+
+	if minutes <= 0 {
+		return 0
+	}
+
+	return minutes
+}
+
+func parseGovernanceScanIntervalFloat(value any) float64 {
+	floatValue, ok := value.(float64)
+
+	if ok {
+		return floatValue
+	}
+
+	stringValue, ok := value.(string)
+
+	if !ok {
+		return 0
+	}
+
+	trimmedValue := strings.TrimSpace(stringValue)
+	parsedValue, err := strconv.ParseFloat(trimmedValue, 64)
+
+	if err != nil {
+		return 0
+	}
+
+	return parsedValue
 }
 
 func (g *governanceController) start(ctx context.Context) {

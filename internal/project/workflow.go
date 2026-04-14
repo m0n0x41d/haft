@@ -164,8 +164,8 @@ func splitWorkflowSections(content string) map[string]string {
 		if current == "" {
 			continue
 		}
-		sections[current].WriteString(line)
-		sections[current].WriteString("\n")
+		_, _ = sections[current].WriteString(line)
+		_, _ = sections[current].WriteString("\n")
 	}
 
 	result := make(map[string]string, len(sections))

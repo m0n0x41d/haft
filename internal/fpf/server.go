@@ -50,7 +50,7 @@ type ContentItem struct {
 type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
 
 type Server struct {
-	v5Handler     V5ToolHandler
+	v5Handler    V5ToolHandler
 	instructions string
 }
 

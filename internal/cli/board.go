@@ -28,27 +28,9 @@ Use --check for CI/hooks: prints compact summary and exits with code 1 if critic
 	RunE: runBoard,
 }
 
-var checkCmd = &cobra.Command{
-	Use:   "check",
-	Short: "CI governance check — exit 1 if findings",
-	Long: `Scan for governance debt: stale artifacts, drifted decisions, unassessed decisions, coverage gaps.
-
-Exit 0 = clean. Exit 1 = findings. Use --json for machine-readable output.
-
-This is equivalent to "haft board --check".`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		checkMode = true
-		return runBoard(cmd, args)
-	},
-}
-
-var checkJSON bool
-
 func init() {
 	boardCmd.Flags().BoolVar(&checkMode, "check", false, "CI mode: compact summary, exit 1 if critical")
-	checkCmd.Flags().BoolVar(&checkJSON, "json", false, "Output findings as JSON")
 	rootCmd.AddCommand(boardCmd)
-	rootCmd.AddCommand(checkCmd)
 }
 
 func runBoard(cmd *cobra.Command, _ []string) error {

@@ -668,7 +668,6 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	}
 	columns = append(columns, "valid_until")
 
-	//nolint:gosec // column names come from the internal allowlist assembled above
 	query := "SELECT " +
 		strings.Join(columns, ", ") +
 		" FROM evidence_items WHERE artifact_ref = ? ORDER BY created_at DESC"
@@ -739,7 +738,7 @@ func canonicalStoredEvidenceVerdict(evidenceType string, verdict string) string 
 
 func validateEvidenceCongruenceAtIngest(storedVerdict string, congruenceLevel int) error {
 	if congruenceLevel == 0 && strings.EqualFold(strings.TrimSpace(storedVerdict), "supports") {
-		return fmt.Errorf(cl0EvidenceSupportsError)
+		return fmt.Errorf("%s", cl0EvidenceSupportsError)
 	}
 
 	return nil

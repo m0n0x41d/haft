@@ -367,8 +367,8 @@ func TestImplementDecisionPromptIncludesPortfolioWorkflowAndGraphContext(t *test
 	}
 
 	final := waitForTaskState(t, app, task.ID)
-	if final.Status != "completed" {
-		t.Fatalf("task status = %q, want completed", final.Status)
+	if final.Status != "Ready for PR" {
+		t.Fatalf("task status = %q, want Ready for PR", final.Status)
 	}
 }
 
@@ -451,6 +451,98 @@ func TestImplementDecisionWaitsForReviewUntilAutoRunEnabled(t *testing.T) {
 
 	if !strings.Contains(final.Output, "approved=y") {
 		t.Fatalf("expected approval marker in final output, got %q", final.Output)
+	}
+}
+
+func TestImplementDecisionRecordsVerificationPassOnSuccess(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'verification task complete\\n'\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Verification pass problem",
+		Signal:      "Successful implement tasks should capture a baseline and evidence before PR handoff.",
+		Acceptance:  "A completed verification pass marks the task ready for PR and records CL3 evidence.",
+		BlastRadius: "Desktop implement flow only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      problem.ID,
+		SelectedTitle:   "Record verification pass",
+		WhySelected:     "The desktop flow needs a concrete close-the-loop step after implementation.",
+		SelectionPolicy: "Prefer a minimal reversible post-run hook.",
+		CounterArgument: "Leaving the task as completed is simpler and avoids another persistence step.",
+		WeakestLink:     "A false-positive verification pass would create misleading evidence.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Manual baseline after task completion",
+				Reason:  "It leaves the happy path incomplete and makes the PR handoff easy to forget.",
+			},
+		},
+		Invariants: []string{
+			"Verification evidence is recorded only after a successful implement task.",
+		},
+		AffectedFiles: []string{"README.md"},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"Desktop verification evidence proves noisy or misleading in regular implement flows.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.ImplementDecision(decision.ID, "claude", false, "")
+	if err != nil {
+		t.Fatalf("ImplementDecision: %v", err)
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "Ready for PR" {
+		t.Fatalf("task status = %q, want Ready for PR", final.Status)
+	}
+	if !strings.Contains(final.Output, "Post-execution verification passed") {
+		t.Fatalf("final output missing verification note: %q", final.Output)
+	}
+
+	files, err := app.store.GetAffectedFiles(context.Background(), decision.ID)
+	if err != nil {
+		t.Fatalf("GetAffectedFiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("affected files = %d, want 1", len(files))
+	}
+	if files[0].Hash == "" {
+		t.Fatal("expected README.md baseline hash to be recorded")
+	}
+
+	items, err := app.store.GetEvidenceItems(context.Background(), decision.ID)
+	if err != nil {
+		t.Fatalf("GetEvidenceItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("evidence items = %d, want 1", len(items))
+	}
+	if items[0].Type != "audit" {
+		t.Fatalf("evidence type = %q, want audit", items[0].Type)
+	}
+	if items[0].Verdict != "supports" {
+		t.Fatalf("evidence verdict = %q, want supports", items[0].Verdict)
+	}
+	if items[0].CongruenceLevel != 3 {
+		t.Fatalf("evidence congruence = %d, want 3", items[0].CongruenceLevel)
+	}
+	if items[0].CarrierRef != "desktop-task:"+task.ID {
+		t.Fatalf("evidence carrier_ref = %q, want %q", items[0].CarrierRef, "desktop-task:"+task.ID)
 	}
 }
 

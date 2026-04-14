@@ -83,6 +83,7 @@ type runningTask struct {
 	state     TaskState
 	cmd       *exec.Cmd
 	cancel    context.CancelFunc
+	plan      taskRunPlan
 	output    *taskOutputBuffer
 	pty       *os.File
 	flushStop chan struct{}
@@ -111,6 +112,15 @@ type taskOutputBuffer struct {
 type worktreeHandle struct {
 	Path   string
 	Reused bool
+}
+
+type taskRunPlan struct {
+	ForceCheckpointed bool
+	Verification      *taskVerificationPlan
+}
+
+type taskVerificationPlan struct {
+	DecisionRef string
 }
 
 func newTaskRunner(app *App, store *desktopTaskStore) *taskRunner {
@@ -434,12 +444,58 @@ func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
 		}
 	}
 
+	if state.Status == "completed" && current.plan.Verification != nil {
+		state = r.recordVerificationPass(state, current.plan.Verification)
+	}
+
 	if err := r.persistState(state); err != nil {
 		r.app.emitAppError("finalize task", err)
 	}
 
 	r.emitTaskStatus(state)
 	r.app.notifyTaskState(state)
+}
+
+func (r *taskRunner) recordVerificationPass(state TaskState, plan *taskVerificationPlan) TaskState {
+	if r == nil || r.app == nil || r.app.store == nil || plan == nil {
+		return state
+	}
+
+	projectRoot := strings.TrimSpace(state.WorktreePath)
+	if projectRoot == "" {
+		projectRoot = strings.TrimSpace(state.ProjectPath)
+	}
+
+	result, err := artifact.RecordVerificationPass(
+		context.Background(),
+		r.app.store,
+		projectRoot,
+		artifact.VerificationPassInput{
+			DecisionRef: plan.DecisionRef,
+			CarrierRef:  taskVerificationCarrierRef(state.ID),
+			Summary:     taskVerificationSummary(state),
+		},
+	)
+	if err != nil {
+		state.Output = appendTaskNote(
+			state.Output,
+			fmt.Sprintf("Post-execution verification incomplete: %v", err),
+		)
+		return state
+	}
+
+	state.Status = "Ready for PR"
+	state.Output = appendTaskNote(
+		state.Output,
+		fmt.Sprintf(
+			"Post-execution verification passed: baselined %d file(s); evidence %s linked to %s.",
+			len(result.Baseline),
+			result.Evidence.ID,
+			plan.DecisionRef,
+		),
+	)
+
+	return state
 }
 
 func (rt *runningTask) stopFlusher() {
@@ -699,7 +755,7 @@ func (a *App) DetectAgents() ([]InstalledAgent, error) {
 
 // SpawnTask creates and starts a new agent task.
 func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branchName string) (*TaskState, error) {
-	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "", false)
+	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "")
 }
 
 // Implement creates a decision-anchored task in a dedicated worktree.
@@ -747,7 +803,10 @@ func (a *App) implementDecisionTask(
 		true,
 		branchName,
 		decisionTaskTitle("Implement", detail),
-		true,
+		taskRunPlan{
+			ForceCheckpointed: true,
+			Verification:      buildImplementVerificationPlan(dec, detail),
+		},
 	)
 }
 
@@ -790,7 +849,7 @@ func (a *App) spawnTaskWithTitle(
 	useWorktree bool,
 	branchName string,
 	title string,
-	checkpointedOverride ...bool,
+	plans ...taskRunPlan,
 ) (*TaskState, error) {
 	if a.projectRoot == "" {
 		return nil, fmt.Errorf("no active project")
@@ -802,6 +861,11 @@ func (a *App) spawnTaskWithTitle(
 
 	if a.tasks == nil {
 		a.tasks = newTaskRunner(a, newDesktopTaskStore(a.dbConn.GetRawDB()))
+	}
+
+	plan := taskRunPlan{}
+	if len(plans) > 0 {
+		plan = plans[0]
 	}
 
 	agentKind = normalizeAgentKind(agentKind, string(AgentClaude))
@@ -821,13 +885,8 @@ func (a *App) spawnTaskWithTitle(
 		warnings = append(warnings, fmt.Sprintf("warning: desktop config could not be loaded: %v", err))
 	}
 
-	forceCheckpointed := false
-	if len(checkpointedOverride) > 0 {
-		forceCheckpointed = checkpointedOverride[0]
-	}
-
 	autoRun := cfg.DefaultAutoRun
-	if forceCheckpointed {
+	if plan.ForceCheckpointed {
 		autoRun = false
 	}
 
@@ -904,6 +963,7 @@ func (a *App) spawnTaskWithTitle(
 		state:     state,
 		cmd:       cmd,
 		cancel:    cancel,
+		plan:      plan,
 		output:    newTaskOutputBuffer(taskOutputMaxLines, initialOutput),
 		flushStop: make(chan struct{}),
 		flushDone: make(chan struct{}),
@@ -1102,7 +1162,6 @@ func (a *App) HandoffTask(id string, targetAgent string) (*TaskState, error) {
 		useWorktree,
 		branch,
 		fmt.Sprintf("Handoff: %s", source.Title),
-		false,
 	)
 }
 
@@ -1294,6 +1353,25 @@ func cleanupWorktree(projectRoot string, state TaskState, force bool) (string, e
 	return fmt.Sprintf("Removed worktree %s.", state.WorktreePath), nil
 }
 
+func buildImplementVerificationPlan(
+	decision *artifact.Artifact,
+	detail DecisionDetailView,
+) *taskVerificationPlan {
+	if decision == nil {
+		return nil
+	}
+
+	decisionFields := decision.UnmarshalDecisionFields()
+	if len(decisionFields.Invariants) == 0 {
+		return nil
+	}
+	if len(detail.AffectedFiles) == 0 {
+		return nil
+	}
+
+	return &taskVerificationPlan{DecisionRef: decision.Meta.ID}
+}
+
 func isGitWorktree(path string) bool {
 	cmd := exec.Command("git", "-C", path, "rev-parse", "--is-inside-work-tree")
 	output, err := cmd.Output()
@@ -1395,6 +1473,39 @@ func appendTaskNote(output string, note string) string {
 	}
 
 	return output + "\n[haft] " + note
+}
+
+func taskVerificationCarrierRef(taskID string) string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return ""
+	}
+
+	return "desktop-task:" + taskID
+}
+
+func taskVerificationSummary(state TaskState) string {
+	lines := []string{
+		fmt.Sprintf("Task: %s", strings.TrimSpace(state.ID)),
+		fmt.Sprintf("Branch: %s", strings.TrimSpace(state.Branch)),
+		fmt.Sprintf("Worktree: %s", strings.TrimSpace(state.WorktreePath)),
+	}
+	filtered := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) != 2 {
+			filtered = append(filtered, line)
+			continue
+		}
+		if strings.TrimSpace(parts[1]) == "" {
+			continue
+		}
+
+		filtered = append(filtered, line)
+	}
+
+	return strings.Join(filtered, "\n")
 }
 
 func buildHandoffPrompt(source TaskState, targetAgent string) string {

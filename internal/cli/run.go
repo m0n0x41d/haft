@@ -56,6 +56,7 @@ var (
 	implementContext []string
 	implementPrompt  string
 	implementSteps   bool
+	implementPlan    bool
 )
 
 func init() {
@@ -63,7 +64,8 @@ func init() {
 	implementCmd.Flags().BoolVar(&implementAuto, "auto", false, "No confirmation prompts")
 	implementCmd.Flags().StringArrayVarP(&implementContext, "context", "c", nil, "Extra context files to include in prompt (repeatable)")
 	implementCmd.Flags().StringVarP(&implementPrompt, "prompt", "p", "", "Extra instructions appended to the agent prompt")
-	implementCmd.Flags().BoolVar(&implementSteps, "steps", false, "Decompose into steps with per-step verification (lemniscate mode)")
+	implementCmd.Flags().BoolVar(&implementSteps, "steps", false, "Decompose by directory with per-step verification")
+	implementCmd.Flags().BoolVar(&implementPlan, "plan", false, "Agent-generated task plan with per-task verification (full lemniscate)")
 	rootCmd.AddCommand(implementCmd)
 }
 
@@ -268,6 +270,77 @@ func runImplement(cmd *cobra.Command, args []string) error {
 			fmt.Println("  Cancelled.")
 			return nil
 		}
+	}
+
+	// ── Plan mode: agent-generated task plan with full lemniscate ──
+	if implementPlan {
+		// Phase 1: Generate or load plan
+		planPath := planFilePath(haftDir, decisionRef)
+		var plan *executionPlan
+
+		if _, statErr := os.Stat(planPath); statErr == nil {
+			// Plan exists — load it
+			ui.ok(fmt.Sprintf("Loading existing plan: %s", planPath))
+			var pErr error
+			plan, pErr = parsePlanFile(planPath, decisionRef, decision.Meta.Title)
+			if pErr != nil {
+				return fmt.Errorf("parse existing plan: %w", pErr)
+			}
+			fmt.Printf("  %s%d tasks in plan%s\n\n", aDim, len(plan.tasks), aReset)
+		} else {
+			// Generate plan
+			var gErr error
+			plan, gErr = generatePlan(decision, affectedFiles, allInvariants, projectRoot, implementAgent, ui)
+			if gErr != nil {
+				return fmt.Errorf("generate plan: %w", gErr)
+			}
+		}
+
+		if !implementAuto {
+			fmt.Printf("  %sExecute plan? [Y/n/e(dit plan first)] %s", aBold, aReset)
+			var answer string
+			fmt.Scanln(&answer)
+			if answer == "n" || answer == "N" {
+				fmt.Printf("  Plan saved at: %s\n  Edit and re-run with --plan\n", plan.planFile)
+				return nil
+			}
+			if answer == "e" || answer == "E" {
+				fmt.Printf("  Edit the plan at: %s\n  Then re-run: haft run %s --plan\n", plan.planFile, decisionRef)
+				return nil
+			}
+		}
+
+		// Phase 2: Execute tasks
+		allPassed := executePlan(ctx, plan, decision, artStore, graphStore, projectRoot, implementAgent, implementAuto, ui)
+
+		// Phase 3: Final review
+		if allPassed {
+			reviewOk := finalReview(ctx, decisionRef, graphStore, artStore, projectRoot, implementAgent, ui)
+			if reviewOk {
+				// Baseline
+				ui.phase("Baseline")
+				if len(affectedFiles) > 0 {
+					baselined, blErr := artifact.Baseline(ctx, artStore, projectRoot, artifact.BaselineInput{
+						DecisionRef: decisionRef,
+					})
+					if blErr != nil {
+						ui.warn(fmt.Sprintf("Baseline failed: %v", blErr))
+					} else {
+						ui.ok(fmt.Sprintf("Baseline: %d file(s) snapshotted", len(baselined)))
+					}
+				}
+				ui.ok("Implementation complete — ready for human review and commit")
+			} else {
+				ui.fail("Final review failed — fix issues before committing")
+			}
+		} else {
+			ui.fail("Some tasks failed — run haft run --plan again after fixing")
+		}
+
+		fmt.Println()
+		ui.summary()
+		fmt.Println()
+		return nil
 	}
 
 	// ── Step mode: decompose and run with per-step verification ──

@@ -122,6 +122,12 @@ type governanceStaleAdoptionContext struct {
 	ExpiredItems     []string
 }
 
+type governanceAdoptResolution struct {
+	Finding    GovernanceFindingView
+	DecisionID string
+	Mode       string
+}
+
 type governanceEvidenceTimelineItem struct {
 	ID              string
 	Type            string
@@ -888,6 +894,266 @@ func isStaleAdoptionCategory(category artifact.StaleCategory) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (a *App) resolveAdoptResolution(findingRef string) (governanceAdoptResolution, error) {
+	view, item, err := a.resolveGovernanceFinding(strings.TrimSpace(findingRef))
+	if err != nil {
+		return governanceAdoptResolution{}, err
+	}
+	if item.Kind != string(artifact.KindDecisionRecord) {
+		return governanceAdoptResolution{}, fmt.Errorf("finding %s does not point to a DecisionRecord", findingRef)
+	}
+
+	mode := ""
+
+	if item.Category == artifact.StaleCategoryDecisionStale && len(item.DriftItems) > 0 {
+		mode = "drift"
+	}
+	if isStaleAdoptionCategory(item.Category) {
+		mode = "stale"
+	}
+	if mode == "" {
+		return governanceAdoptResolution{}, fmt.Errorf("finding %s is not adoptable", findingRef)
+	}
+
+	return governanceAdoptResolution{
+		Finding:    view,
+		DecisionID: item.ID,
+		Mode:       mode,
+	}, nil
+}
+
+func (a *App) ResolveAdoptBaseline(findingRef string) (*DecisionDetailView, error) {
+	resolution, err := a.resolveAdoptResolution(findingRef)
+	if err != nil {
+		return nil, err
+	}
+	if resolution.Mode != "drift" {
+		return nil, fmt.Errorf("finding %s does not support re-baseline", findingRef)
+	}
+
+	view, err := a.BaselineDecision(resolution.DecisionID)
+	if err != nil {
+		return nil, err
+	}
+
+	outcome := "Stored a new SHA-256 baseline for the current affected files."
+	err = a.createAdoptRefreshReport(
+		resolution.Finding.ID,
+		resolution.DecisionID,
+		"re-baseline",
+		resolution.Finding.Reason,
+		outcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+func (a *App) ResolveAdoptMeasure(
+	findingRef string,
+	findings string,
+	verdict string,
+) (*DecisionDetailView, error) {
+	resolution, err := a.resolveAdoptResolution(findingRef)
+	if err != nil {
+		return nil, err
+	}
+	if resolution.Mode != "stale" {
+		return nil, fmt.Errorf("finding %s does not support measure", findingRef)
+	}
+
+	view, err := a.MeasureDecision(resolution.DecisionID, findings, verdict)
+	if err != nil {
+		return nil, err
+	}
+
+	outcome := fmt.Sprintf(
+		"Recorded measurement evidence with verdict %s.",
+		canonicalMeasureVerdict(verdict),
+	)
+	err = a.createAdoptRefreshReport(
+		resolution.Finding.ID,
+		resolution.DecisionID,
+		"measure",
+		resolution.Finding.Reason,
+		outcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+func (a *App) ResolveAdoptWaive(
+	findingRef string,
+	reason string,
+) (*DecisionDetailView, error) {
+	resolution, err := a.resolveAdoptResolution(findingRef)
+	if err != nil {
+		return nil, err
+	}
+
+	view, err := a.WaiveDecision(resolution.DecisionID, reason)
+	if err != nil {
+		return nil, err
+	}
+
+	outcome := fmt.Sprintf("Extended valid_until to %s.", view.ValidUntil)
+	err = a.createAdoptRefreshReport(
+		resolution.Finding.ID,
+		resolution.DecisionID,
+		"waive",
+		reason,
+		outcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+func (a *App) ResolveAdoptDeprecate(
+	findingRef string,
+	reason string,
+) (*DecisionDetailView, error) {
+	resolution, err := a.resolveAdoptResolution(findingRef)
+	if err != nil {
+		return nil, err
+	}
+	if resolution.Mode != "stale" {
+		return nil, fmt.Errorf("finding %s does not support deprecate", findingRef)
+	}
+
+	view, err := a.DeprecateDecision(resolution.DecisionID, reason)
+	if err != nil {
+		return nil, err
+	}
+
+	outcome := "Marked the DecisionRecord as deprecated."
+	err = a.createAdoptRefreshReport(
+		resolution.Finding.ID,
+		resolution.DecisionID,
+		"deprecate",
+		reason,
+		outcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+func (a *App) ResolveAdoptReopen(
+	findingRef string,
+	reason string,
+) (*ProblemDetailView, error) {
+	resolution, err := a.resolveAdoptResolution(findingRef)
+	if err != nil {
+		return nil, err
+	}
+
+	view, err := a.ReopenDecision(resolution.DecisionID, reason)
+	if err != nil {
+		return nil, err
+	}
+
+	outcome := fmt.Sprintf("Created follow-up ProblemCard %s.", view.ID)
+	err = a.createAdoptRefreshReport(
+		resolution.Finding.ID,
+		resolution.DecisionID,
+		"reopen",
+		reason,
+		outcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+func (a *App) createAdoptRefreshReport(
+	findingRef string,
+	decisionRef string,
+	action string,
+	reason string,
+	outcome string,
+) error {
+	if a == nil || a.store == nil {
+		return fmt.Errorf("no database connection")
+	}
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	seq, err := a.store.NextSequence(ctx, artifact.KindRefreshReport)
+	if err != nil {
+		return fmt.Errorf("next refresh report sequence: %w", err)
+	}
+
+	reportID := artifact.GenerateID(artifact.KindRefreshReport, seq)
+	report := artifact.BuildRefreshReportArtifact(
+		reportID,
+		time.Now().UTC(),
+		decisionRef,
+		action,
+		reason,
+		outcome,
+	)
+	report.Meta.Links = append(report.Meta.Links, artifact.Link{Ref: findingRef, Type: "resolves"})
+	report.Body = buildAdoptRefreshReportBody(findingRef, decisionRef, action, reason, outcome)
+
+	err = a.store.Create(ctx, report)
+	if err != nil {
+		return fmt.Errorf("create refresh report %s: %w", report.Meta.ID, err)
+	}
+
+	_, _ = artifact.WriteFile(a.haftDir(), report)
+
+	return nil
+}
+
+func buildAdoptRefreshReportBody(
+	findingRef string,
+	decisionRef string,
+	action string,
+	reason string,
+	outcome string,
+) string {
+	var body strings.Builder
+
+	body.WriteString("# Refresh Report\n\n")
+	body.WriteString(fmt.Sprintf("## Finding\n\n%s\n\n", findingRef))
+	body.WriteString(fmt.Sprintf("## Decision\n\n%s\n\n", decisionRef))
+	body.WriteString(fmt.Sprintf("## Action\n\n%s\n\n", action))
+	body.WriteString(fmt.Sprintf("## Reason\n\n%s\n\n", reason))
+	body.WriteString(fmt.Sprintf("## Outcome\n\n%s\n", outcome))
+
+	return body.String()
+}
+
+func canonicalMeasureVerdict(verdict string) string {
+	normalized := strings.ToLower(strings.TrimSpace(verdict))
+
+	switch normalized {
+	case "accepted", "supports":
+		return "supports"
+	case "partial", "weakens":
+		return "weakens"
+	case "failed", "refutes":
+		return "refutes"
+	default:
+		return normalized
 	}
 }
 

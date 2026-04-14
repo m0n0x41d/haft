@@ -571,6 +571,15 @@ type WailsBindings = {
   WaiveDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
   DeprecateDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
   ReopenDecision?: (decisionID: string, reason: string) => Promise<ProblemDetail>;
+  ResolveAdoptBaseline?: (findingID: string) => Promise<DecisionDetail>;
+  ResolveAdoptMeasure?: (
+    findingID: string,
+    findings: string,
+    verdict: string,
+  ) => Promise<DecisionDetail>;
+  ResolveAdoptWaive?: (findingID: string, reason: string) => Promise<DecisionDetail>;
+  ResolveAdoptDeprecate?: (findingID: string, reason: string) => Promise<DecisionDetail>;
+  ResolveAdoptReopen?: (findingID: string, reason: string) => Promise<ProblemDetail>;
   OpenPathInIDE?: (path: string) => Promise<void>;
   GetConfig?: () => Promise<DesktopConfig>;
   SaveConfig?: (config: DesktopConfig) => Promise<DesktopConfig>;
@@ -1246,6 +1255,16 @@ export async function baselineDecision(decisionID: string): Promise<DecisionDeta
   return nextDecision;
 }
 
+export async function resolveAdoptBaseline(
+  findingID: string,
+  decisionID: string,
+): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("ResolveAdoptBaseline", findingID);
+  if (decision) return decision;
+
+  return baselineDecision(decisionID);
+}
+
 export async function measureDecision(
   decisionID: string,
   findings: string,
@@ -1298,6 +1317,23 @@ export async function measureDecision(
   return nextDecision;
 }
 
+export async function resolveAdoptMeasure(
+  findingID: string,
+  decisionID: string,
+  findings: string,
+  verdict: string,
+): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>(
+    "ResolveAdoptMeasure",
+    findingID,
+    findings,
+    verdict,
+  );
+  if (decision) return decision;
+
+  return measureDecision(decisionID, findings, verdict);
+}
+
 export async function deprecateDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
   const decision = await callBinding<DecisionDetail>("DeprecateDecision", decisionID, reason);
   if (decision) return decision;
@@ -1328,6 +1364,21 @@ export async function deprecateDecision(decisionID: string, reason: string): Pro
   };
 
   return nextDecision;
+}
+
+export async function resolveAdoptDeprecate(
+  findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>(
+    "ResolveAdoptDeprecate",
+    findingID,
+    reason,
+  );
+  if (decision) return decision;
+
+  return deprecateDecision(decisionID, reason);
 }
 
 export async function reopenDecision(decisionID: string, reason: string): Promise<ProblemDetail> {
@@ -1394,6 +1445,28 @@ export async function reopenDecision(decisionID: string, reason: string): Promis
   ];
 
   return nextProblem;
+}
+
+export async function resolveAdoptReopen(
+  findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<ProblemDetail> {
+  const problem = await callBinding<ProblemDetail>("ResolveAdoptReopen", findingID, reason);
+  if (problem) return problem;
+
+  return reopenDecision(decisionID, reason);
+}
+
+export async function resolveAdoptWaive(
+  findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<DecisionDetail> {
+  const decision = await callBinding<DecisionDetail>("ResolveAdoptWaive", findingID, reason);
+  if (decision) return decision;
+
+  return waiveDecision(decisionID, reason);
 }
 
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {

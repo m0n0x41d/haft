@@ -377,6 +377,155 @@ func TestAdoptCreatesStaleTaskWithEvidenceHistory(t *testing.T) {
 	}
 }
 
+func TestAdoptDriftResolutionsCreateRefreshReport(t *testing.T) {
+	testCases := []struct {
+		name    string
+		action  string
+		resolve func(t *testing.T, app *App, findingID string)
+	}{
+		{
+			name:   "rebaseline",
+			action: "re-baseline",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptBaseline(findingID)
+				if err != nil {
+					t.Fatalf("ResolveAdoptBaseline: %v", err)
+				}
+			},
+		},
+		{
+			name:   "waive",
+			action: "waive",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptWaive(
+					findingID,
+					"Need a documented waiver while the drift is investigated further.",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptWaive: %v", err)
+				}
+			},
+		},
+		{
+			name:   "reopen",
+			action: "reopen",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptReopen(
+					findingID,
+					"The drift changes the intent enough to require a new problem cycle.",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptReopen: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			app := newGovernanceTestApp(t)
+			defer app.shutdown(context.Background())
+
+			decisionID, findingID := seedDriftAdoptFinding(t, app)
+
+			testCase.resolve(t, app, findingID)
+			assertAdoptRefreshReport(t, app, decisionID, findingID, testCase.action)
+		})
+	}
+}
+
+func TestAdoptStaleResolutionsCreateRefreshReport(t *testing.T) {
+	testCases := []struct {
+		name    string
+		action  string
+		resolve func(t *testing.T, app *App, findingID string)
+	}{
+		{
+			name:   "measure",
+			action: "measure",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptMeasure(
+					findingID,
+					"Re-measured the stale decision after reviewing the evidence trail.",
+					"accepted",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptMeasure: %v", err)
+				}
+			},
+		},
+		{
+			name:   "waive",
+			action: "waive",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptWaive(
+					findingID,
+					"Need more time before rotating this decision into a new cycle.",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptWaive: %v", err)
+				}
+			},
+		},
+		{
+			name:   "deprecate",
+			action: "deprecate",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptDeprecate(
+					findingID,
+					"The stale desktop slice is intentionally retired.",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptDeprecate: %v", err)
+				}
+			},
+		},
+		{
+			name:   "reopen",
+			action: "reopen",
+			resolve: func(t *testing.T, app *App, findingID string) {
+				t.Helper()
+
+				_, err := app.ResolveAdoptReopen(
+					findingID,
+					"The stale decision needs a fresh problem framing.",
+				)
+				if err != nil {
+					t.Fatalf("ResolveAdoptReopen: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			app := newGovernanceTestApp(t)
+			defer app.shutdown(context.Background())
+
+			decisionID, findingID := seedStaleAdoptFinding(
+				t,
+				app,
+				artifact.StaleCategoryEvidenceExpired,
+			)
+
+			testCase.resolve(t, app, findingID)
+			assertAdoptRefreshReport(t, app, decisionID, findingID, testCase.action)
+		})
+	}
+}
+
 func newGovernanceTestApp(t *testing.T) *App {
 	t.Helper()
 
@@ -476,6 +625,124 @@ func findGovernanceFindingID(
 
 	t.Fatalf("expected finding %s for %s, findings=%+v", category, decisionID, findings)
 	return ""
+}
+
+func seedDriftAdoptFinding(t *testing.T, app *App) (string, string) {
+	t.Helper()
+
+	decisionID := seedGovernanceDecision(t, app)
+
+	_, err := artifact.Baseline(context.Background(), app.store, app.projectRoot, artifact.BaselineInput{
+		DecisionRef: decisionID,
+	})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+
+	err = os.WriteFile(
+		filepath.Join(app.projectRoot, "internal", "auth", "auth.go"),
+		[]byte("package auth\n\nfunc Enabled() bool { return false }\n"),
+		0o644,
+	)
+	if err != nil {
+		t.Fatalf("WriteFile auth.go: %v", err)
+	}
+
+	overview, err := app.GetGovernanceOverview()
+	if err != nil {
+		t.Fatalf("GetGovernanceOverview: %v", err)
+	}
+
+	findingID := findGovernanceFindingID(
+		t,
+		overview.Findings,
+		decisionID,
+		artifact.StaleCategoryDecisionStale,
+	)
+
+	return decisionID, findingID
+}
+
+func seedStaleAdoptFinding(
+	t *testing.T,
+	app *App,
+	category artifact.StaleCategory,
+) (string, string) {
+	t.Helper()
+
+	decisionID := seedGovernanceDecision(t, app)
+	addGovernanceEvidenceHistory(t, app, decisionID)
+
+	if _, err := app.governance.scan(context.Background(), false); err != nil {
+		t.Fatalf("governance scan: %v", err)
+	}
+
+	overview, err := app.GetGovernanceOverview()
+	if err != nil {
+		t.Fatalf("GetGovernanceOverview: %v", err)
+	}
+
+	findingID := findGovernanceFindingID(t, overview.Findings, decisionID, category)
+
+	return decisionID, findingID
+}
+
+func assertAdoptRefreshReport(
+	t *testing.T,
+	app *App,
+	decisionID string,
+	findingID string,
+	action string,
+) {
+	t.Helper()
+
+	reports, err := app.store.ListByKind(context.Background(), artifact.KindRefreshReport, 20)
+	if err != nil {
+		t.Fatalf("ListByKind refresh reports: %v", err)
+	}
+
+	for _, summary := range reports {
+		report, getErr := app.store.Get(context.Background(), summary.Meta.ID)
+		if getErr != nil {
+			t.Fatalf("Get refresh report %s: %v", summary.Meta.ID, getErr)
+		}
+		if !hasArtifactLink(report.Meta.Links, decisionID, "refreshes") {
+			continue
+		}
+		if !hasArtifactLink(report.Meta.Links, findingID, "resolves") {
+			continue
+		}
+
+		if !strings.Contains(report.Body, "## Finding\n\n"+findingID) {
+			t.Fatalf("refresh report missing finding %s:\n%s", findingID, report.Body)
+		}
+		if !strings.Contains(report.Body, "## Action\n\n"+action) {
+			t.Fatalf("refresh report missing action %q:\n%s", action, report.Body)
+		}
+
+		return
+	}
+
+	t.Fatalf(
+		"expected RefreshReport linked to decision %s and finding %s",
+		decisionID,
+		findingID,
+	)
+}
+
+func hasArtifactLink(links []artifact.Link, ref string, linkType string) bool {
+	for _, link := range links {
+		if link.Ref != ref {
+			continue
+		}
+		if link.Type != linkType {
+			continue
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func seedGovernanceDecision(t *testing.T, app *App) string {

@@ -301,40 +301,9 @@ func (a *App) OpenPathInIDE(path string) error {
 // ImplementDecision spawns an agent with the full decision context as prompt.
 // This is the Decision-Anchored Implementation flow — the AIEE differentiator.
 func (a *App) ImplementDecision(decisionID string, agentKind string, useWorktree bool, branchName string) (*TaskState, error) {
-	if a.store == nil {
-		return nil, fmt.Errorf("no database connection")
-	}
+	_ = useWorktree
 
-	dec, detail, err := a.loadDecisionDetail(decisionID)
-	if err != nil {
-		return nil, fmt.Errorf("decision not found: %w", err)
-	}
-
-	guard := a.buildDecisionImplementGuard(dec)
-	if guard.BlockedReason != "" {
-		return nil, fmt.Errorf("%s", guard.BlockedReason)
-	}
-
-	problems := a.loadDecisionProblems(detail.ProblemRefs)
-
-	// Enrich with invariants from ALL decisions governing the affected files,
-	// not just this decision's own invariants. This is the knowledge graph value:
-	// agents see the full architectural context, not just one decision's view.
-	detail = a.enrichWithGraphInvariants(detail)
-
-	prompt := buildImplementationPrompt(dec, detail, problems)
-
-	if branchName == "" {
-		branchName = fmt.Sprintf("implement-%s", decisionID)
-	}
-
-	return a.spawnTaskWithTitle(
-		agentKind,
-		prompt,
-		useWorktree,
-		branchName,
-		decisionTaskTitle("Implement", detail),
-	)
+	return a.implementDecisionTask(decisionID, agentKind, branchName)
 }
 
 var decisionImplementSubjectiveTextReplacer = strings.NewReplacer("-", " ", "_", " ", "/", " ")

@@ -319,7 +319,7 @@ func (r *taskRunner) persistState(state TaskState) error {
 }
 
 func (r *taskRunner) emitTaskOutput(id string, chunk string, output string) {
-	if r == nil || r.app == nil || r.app.ctx == nil {
+	if r == nil || r.app == nil || !r.app.canEmitEvents() {
 		return
 	}
 
@@ -335,7 +335,7 @@ func (r *taskRunner) emitTaskOutput(id string, chunk string, output string) {
 }
 
 func (r *taskRunner) emitTaskStatus(state TaskState) {
-	if r == nil || r.app == nil || r.app.ctx == nil {
+	if r == nil || r.app == nil || !r.app.canEmitEvents() {
 		return
 	}
 
@@ -585,6 +585,54 @@ func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branc
 	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "")
 }
 
+// Implement creates a decision-anchored task in a dedicated worktree.
+func (a *App) Implement(decisionRef string) (*TaskState, error) {
+	return a.implementDecisionTask(decisionRef, "", "")
+}
+
+func (a *App) implementDecisionTask(
+	decisionID string,
+	agentKind string,
+	branchName string,
+) (*TaskState, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	dec, detail, err := a.loadDecisionDetail(decisionID)
+	if err != nil {
+		return nil, fmt.Errorf("decision not found: %w", err)
+	}
+
+	guard := a.buildDecisionImplementGuard(dec)
+	if guard.BlockedReason != "" {
+		return nil, fmt.Errorf("%s", guard.BlockedReason)
+	}
+
+	problems := a.loadDecisionProblems(detail.ProblemRefs)
+
+	// Enrich with invariants from all governing decisions so the task sees
+	// the full decision context before editing.
+	detail = a.enrichWithGraphInvariants(detail)
+
+	prompt := buildImplementationPrompt(dec, detail, problems)
+	branchName = decisionFeatureBranchName(
+		branchName,
+		detail.SelectedTitle,
+		detail.Title,
+		dec.Meta.Title,
+		decisionID,
+	)
+
+	return a.spawnTaskWithTitle(
+		agentKind,
+		prompt,
+		true,
+		branchName,
+		decisionTaskTitle("Implement", detail),
+	)
+}
+
 func (a *App) spawnTaskWithTitle(
 	agentKind string,
 	prompt string,
@@ -656,6 +704,10 @@ func (a *App) spawnTaskWithTitle(
 
 	args := buildAgentArgs(AgentKind(agentKind), prompt)
 	if len(args) == 0 {
+		if state.WorktreePath != "" && !state.ReusedWorktree {
+			_, _ = cleanupWorktree(a.projectRoot, state, true)
+		}
+
 		return nil, fmt.Errorf("unsupported agent: %s", agentKind)
 	}
 
@@ -937,6 +989,48 @@ func buildAgentArgs(kind AgentKind, prompt string) []string {
 	default:
 		return nil
 	}
+}
+
+func decisionFeatureBranchName(branchName string, labels ...string) string {
+	branchName = strings.TrimSpace(branchName)
+	if branchName != "" {
+		return branchName
+	}
+
+	for _, label := range labels {
+		slug := branchSlug(label)
+		if slug != "" {
+			return "feat/" + slug
+		}
+	}
+
+	return "feat/decision"
+}
+
+func branchSlug(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+
+	var slug strings.Builder
+	lastDash := false
+
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			slug.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			slug.WriteRune(r)
+			lastDash = false
+		case !lastDash && slug.Len() > 0:
+			slug.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	return strings.Trim(slug.String(), "-")
 }
 
 func createWorktree(projectRoot string, branch string) (worktreeHandle, error) {

@@ -74,6 +74,31 @@ func TestDecisionFeatureBranchNameDefaultsToFeatureSlug(t *testing.T) {
 	}
 }
 
+func TestBuildAgentArgsCodexUsesWorktreeApprovalGate(t *testing.T) {
+	worktree := "/tmp/haft/worktree"
+	args := buildAgentArgs(AgentCodex, "inspect the task", worktree)
+
+	if len(args) == 0 {
+		t.Fatal("expected codex args")
+	}
+
+	if strings.Join(args, " ") == "" {
+		t.Fatal("expected non-empty codex args")
+	}
+
+	if !containsArgs(args, "--cd", worktree) {
+		t.Fatalf("expected codex args to include worktree path, got %v", args)
+	}
+
+	if !containsArgs(args, "--ask-for-approval", "untrusted") {
+		t.Fatalf("expected codex args to include checkpointed approval gate, got %v", args)
+	}
+
+	if containsArg(args, "--full-auto") {
+		t.Fatalf("expected codex checkpointed args to avoid --full-auto, got %v", args)
+	}
+}
+
 func TestImplementDecisionCreatesFeatureWorktree(t *testing.T) {
 	app := newAuthoringTestApp(t)
 	defer app.shutdown(context.Background())
@@ -347,6 +372,88 @@ func TestImplementDecisionPromptIncludesPortfolioWorkflowAndGraphContext(t *test
 	}
 }
 
+func TestImplementDecisionWaitsForReviewUntilAutoRunEnabled(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(t, "claude", "#!/bin/sh\nprintf 'cwd=%s\\n' \"$PWD\"\nprintf 'waiting-for-review\\n'\nread answer\nprintf 'approved=%s\\n' \"$answer\"\n")
+	installStubAgentBinary(t, "haft", "#!/bin/sh\nexit 0\n")
+	initTestGitRepository(t, app.projectRoot)
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Checkpointed review problem",
+		Signal:      "Implement should wait for operator review between tool steps.",
+		Acceptance:  "The desktop task pauses for review and resumes in the worktree when auto-run is enabled.",
+		BlastRadius: "Desktop implementation flow only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      problem.ID,
+		SelectedTitle:   "Review gated worktree",
+		WhySelected:     "The operator needs a review checkpoint inside the implementation task.",
+		SelectionPolicy: "Prefer the smallest launcher change that keeps the task reviewable.",
+		CounterArgument: "A fully automatic launcher is simpler to wire.",
+		WeakestLink:     "The agent backend must honor stdin-driven review prompts.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Full auto",
+				Reason:  "It skips the review checkpoint required by the execution contract.",
+			},
+		},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"Checkpointed desktop tasks become unreliable across supported agent backends.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.ImplementDecision(decision.ID, "claude", false, "")
+	if err != nil {
+		t.Fatalf("ImplementDecision: %v", err)
+	}
+
+	if task.AutoRun {
+		t.Fatal("expected implement task to start checkpointed")
+	}
+
+	expectedWorktree := filepath.Join(app.projectRoot, ".haft", "worktrees", "feat/review-gated-worktree")
+	liveOutput := waitForTaskOutputContains(t, app, task.ID, "waiting-for-review")
+
+	if !strings.Contains(liveOutput, expectedWorktree) {
+		t.Fatalf("expected live task output to stream the worktree cwd %q, got %q", expectedWorktree, liveOutput)
+	}
+
+	liveState, err := app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("task status = %q, want running while awaiting review", liveState.Status)
+	}
+
+	if err := app.SetTaskAutoRun(task.ID, true); err != nil {
+		t.Fatalf("SetTaskAutoRun: %v", err)
+	}
+
+	final := waitForTaskState(t, app, task.ID)
+	if final.Status != "completed" {
+		t.Fatalf("task status = %q, want completed", final.Status)
+	}
+
+	if !strings.Contains(final.Output, "approved=y") {
+		t.Fatalf("expected approval marker in final output, got %q", final.Output)
+	}
+}
+
 func installStubAgentBinary(t *testing.T, name string, body string) {
 	t.Helper()
 
@@ -405,4 +512,43 @@ func waitForTaskState(t *testing.T, app *App, taskID string) TaskState {
 
 	t.Fatalf("task %s did not finish before timeout", taskID)
 	return TaskState{}
+}
+
+func waitForTaskOutputContains(t *testing.T, app *App, taskID string, want string) string {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		output, err := app.GetTaskOutput(taskID)
+		if err == nil && strings.Contains(output, want) {
+			return output
+		}
+
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	output, _ := app.GetTaskOutput(taskID)
+	t.Fatalf("task %s output did not contain %q before timeout: %q", taskID, want, output)
+	return ""
+}
+
+func containsArgs(args []string, key string, value string) bool {
+	for index := 0; index < len(args)-1; index++ {
+		if args[index] == key && args[index+1] == value {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+
+	return false
 }

@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +19,19 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
+// ANSI escape sequences for terminal formatting.
+const (
+	aBold    = "\033[1m"
+	aDim     = "\033[2m"
+	aReset   = "\033[0m"
+	aRed     = "\033[31m"
+	aGreen   = "\033[32m"
+	aYellow  = "\033[33m"
+	aBlue    = "\033[34m"
+	aMagenta = "\033[35m"
+	aCyan    = "\033[36m"
+)
+
 var implementCmd = &cobra.Command{
 	Use:   "run <decision-ref>",
 	Short: "Implement a decision — spawn agent with full context",
@@ -23,13 +39,14 @@ var implementCmd = &cobra.Command{
 
 Reads the decision's invariants, claims, affected files, and governing
 invariants from the knowledge graph, then spawns an agent to implement.
-After execution, takes a baseline snapshot.
+After execution, verifies invariants and takes a baseline snapshot.
 
 This is the CLI equivalent of clicking "Implement" in the desktop app.
 
 Examples:
   haft run dec-20260414-001
   haft run dec-20260414-001 --agent codex
+  haft run dec-20260414-001 --agent claude
   haft run dec-20260414-001 --auto`,
 	Args: cobra.ExactArgs(1),
 	RunE: runImplement,
@@ -44,6 +61,239 @@ func init() {
 	implementCmd.Flags().StringVar(&implementAgent, "agent", "codex", "Agent backend: codex, claude")
 	implementCmd.Flags().BoolVar(&implementAuto, "auto", false, "No confirmation prompts")
 	rootCmd.AddCommand(implementCmd)
+}
+
+// runUI handles all terminal output for the run command.
+type runUI struct {
+	startTime time.Time
+	filesRead []string
+	filesEdit []string
+	cmdsRun   []string
+	toolCalls int
+}
+
+func (u *runUI) bar() {
+	fmt.Println(aCyan + strings.Repeat("━", 52) + aReset)
+}
+
+func (u *runUI) header(title string) {
+	u.bar()
+	fmt.Printf("  %s%s%s\n", aBold, title, aReset)
+	u.bar()
+}
+
+func (u *runUI) meta(label, value string) {
+	fmt.Printf("  %s%-14s%s %s\n", aDim, label, aReset, value)
+}
+
+func (u *runUI) phase(name string) {
+	fmt.Printf("\n  %s⟳ %s%s\n", aCyan, name, aReset)
+	fmt.Printf("  %s──────────────────────────%s\n", aDim, aReset)
+}
+
+func (u *runUI) ok(msg string) {
+	fmt.Printf("  %s✓%s %s\n", aGreen, aReset, msg)
+}
+
+func (u *runUI) fail(msg string) {
+	fmt.Printf("  %s✗%s %s\n", aRed, aReset, msg)
+}
+
+func (u *runUI) warn(msg string) {
+	fmt.Printf("  %s⚠%s %s\n", aYellow, aReset, msg)
+}
+
+func (u *runUI) toolRead(path string) {
+	u.filesRead = append(u.filesRead, path)
+	u.toolCalls++
+	fmt.Printf("  %s📄%s %sread %s%s\n", aDim, aReset, aDim, path, aReset)
+}
+
+func (u *runUI) toolEdit(path string) {
+	u.filesEdit = append(u.filesEdit, path)
+	u.toolCalls++
+	fmt.Printf("  %s📝%s edit %s%s%s\n", aYellow, aReset, aYellow, path, aReset)
+}
+
+func (u *runUI) toolShell(cmd string) {
+	u.cmdsRun = append(u.cmdsRun, cmd)
+	u.toolCalls++
+	if len(cmd) > 80 {
+		cmd = cmd[:80] + "..."
+	}
+	fmt.Printf("  %s$%s  %s%s%s\n", aMagenta, aReset, aDim, cmd, aReset)
+}
+
+func (u *runUI) toolGeneric(name string) {
+	u.toolCalls++
+	fmt.Printf("  %s🔧%s %s\n", aBlue, aReset, name)
+}
+
+func (u *runUI) agentMsg(text string) {
+	if text == "" {
+		return
+	}
+	// Wrap long lines, indent
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if len(line) > 100 {
+			line = line[:100] + "..."
+		}
+		fmt.Printf("  %s▎%s %s\n", aGreen, aReset, line)
+	}
+}
+
+func (u *runUI) thinking(summary string) {
+	if summary == "" {
+		return
+	}
+	if len(summary) > 120 {
+		summary = summary[:120] + "..."
+	}
+	fmt.Printf("  %s💭 %s%s\n", aDim, summary, aReset)
+}
+
+func (u *runUI) invariantResult(source, text string, pass bool) {
+	icon := aGreen + "✓" + aReset
+	if !pass {
+		icon = aRed + "✗" + aReset
+	}
+	fmt.Printf("  %s %s[%s]%s %s\n", icon, aDim, source, aReset, text)
+}
+
+func (u *runUI) summary() {
+	u.bar()
+	unique := uniqueStrings(u.filesEdit)
+	if len(unique) > 0 {
+		fmt.Printf("  %sFiles modified (%d):%s\n", aYellow, len(unique), aReset)
+		for _, f := range unique {
+			fmt.Printf("    %s•%s %s\n", aDim, aReset, f)
+		}
+	}
+	if len(u.cmdsRun) > 0 {
+		fmt.Printf("  %sCommands: %d%s\n", aMagenta, len(u.cmdsRun), aReset)
+	}
+	elapsed := time.Since(u.startTime)
+	fmt.Printf("  %sDuration: %ds | Tool calls: %d%s\n", aDim, int(elapsed.Seconds()), u.toolCalls, aReset)
+}
+
+func uniqueStrings(ss []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range ss {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// parseCodexJSONL parses a single JSONL line from codex --json output.
+func (u *runUI) parseCodexJSONL(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+
+	var event map[string]any
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		// Not JSON — skip codex banners
+		return
+	}
+
+	etype, _ := event["type"].(string)
+
+	switch etype {
+	case "message":
+		role, _ := event["role"].(string)
+		if role == "assistant" {
+			text := extractText(event)
+			u.agentMsg(text)
+		}
+
+	case "function_call":
+		name, _ := event["name"].(string)
+		args, _ := event["arguments"].(string)
+		switch {
+		case name == "shell" || name == "bash" || name == "command":
+			u.toolShell(extractCmd(args))
+		case name == "write_file" || name == "write" || name == "create_file":
+			u.toolEdit(extractPath(args))
+		case name == "edit_file" || name == "apply_diff" || name == "patch":
+			u.toolEdit(extractPath(args))
+		case name == "read_file" || name == "read":
+			u.toolRead(extractPath(args))
+		case strings.Contains(name, "search") || strings.Contains(name, "grep") || strings.Contains(name, "glob"):
+			u.toolGeneric(name)
+		default:
+			u.toolGeneric(name)
+		}
+
+	case "function_call_output":
+		output, _ := event["output"].(string)
+		if output != "" {
+			first := strings.Split(output, "\n")[0]
+			if len(first) > 100 {
+				first = first[:100] + "..."
+			}
+			fmt.Printf("     %s↳ %s%s\n", aDim, first, aReset)
+		}
+
+	case "reasoning":
+		summary, _ := event["summary"].(string)
+		if summary == "" {
+			summary, _ = event["text"].(string)
+		}
+		u.thinking(summary)
+	}
+}
+
+func extractText(event map[string]any) string {
+	content := event["content"]
+	switch v := content.(type) {
+	case string:
+		return v
+	case []any:
+		var parts []string
+		for _, p := range v {
+			if m, ok := p.(map[string]any); ok {
+				if t, ok := m["text"].(string); ok {
+					parts = append(parts, t)
+				}
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
+}
+
+func extractCmd(args string) string {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
+		if cmd, ok := parsed["command"].(string); ok {
+			return cmd
+		}
+		if cmd, ok := parsed["cmd"].(string); ok {
+			return cmd
+		}
+	}
+	if len(args) > 80 {
+		return args[:80]
+	}
+	return args
+}
+
+func extractPath(args string) string {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
+		for _, key := range []string{"path", "file_path", "filename"} {
+			if p, ok := parsed[key].(string); ok {
+				return p
+			}
+		}
+	}
+	return "?"
 }
 
 func runImplement(cmd *cobra.Command, args []string) error {
@@ -73,8 +323,9 @@ func runImplement(cmd *cobra.Command, args []string) error {
 	defer store.Close()
 
 	artStore := artifact.NewStore(store.GetRawDB())
+	ui := &runUI{startTime: time.Now()}
 
-	// Load decision
+	// ── Load decision ────────────────────────────────────────────
 	decision, err := artStore.Get(ctx, decisionRef)
 	if err != nil {
 		return fmt.Errorf("decision %s not found: %w", decisionRef, err)
@@ -86,36 +337,34 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is %s — can only implement active decisions", decisionRef, decision.Meta.Status)
 	}
 
-	// Load affected files
 	affectedFiles, err := artStore.GetAffectedFiles(ctx, decisionRef)
 	if err != nil {
 		return fmt.Errorf("get affected files: %w", err)
 	}
 
-	// Load governing invariants from knowledge graph
 	var allInvariants []string
 	graphStore := graph.NewStore(store.GetRawDB())
 	for _, f := range affectedFiles {
-		invs, err := graphStore.FindInvariantsForFile(ctx, f.Path)
-		if err == nil {
+		invs, gErr := graphStore.FindInvariantsForFile(ctx, f.Path)
+		if gErr == nil {
 			for _, inv := range invs {
 				allInvariants = append(allInvariants, fmt.Sprintf("[%s] %s", inv.DecisionID, inv.Text))
 			}
 		}
 	}
 
-	// Build prompt
 	prompt := buildRunPrompt(decision, affectedFiles, allInvariants, projectRoot)
 
-	// Print summary
-	fmt.Printf("\n\033[1m\033[36m Implement: %s\033[0m\n", decision.Meta.Title)
-	fmt.Printf("  \033[2mDecision:\033[0m %s\n", decisionRef)
-	fmt.Printf("  \033[2mFiles:\033[0m %d affected\n", len(affectedFiles))
-	fmt.Printf("  \033[2mInvariants:\033[0m %d governing\n", len(allInvariants))
-	fmt.Printf("  \033[2mAgent:\033[0m %s\n\n", implementAgent)
+	// ── Header ───────────────────────────────────────────────────
+	ui.header(fmt.Sprintf("Implement: %s", decision.Meta.Title))
+	ui.meta("Decision", decisionRef)
+	ui.meta("Files", fmt.Sprintf("%d affected", len(affectedFiles)))
+	ui.meta("Invariants", fmt.Sprintf("%d governing", len(allInvariants)))
+	ui.meta("Agent", implementAgent)
+	fmt.Println()
 
 	if !implementAuto {
-		fmt.Printf("  \033[1mProceed? [Y/n] \033[0m")
+		fmt.Printf("  %sProceed? [Y/n] %s", aBold, aReset)
 		var answer string
 		fmt.Scanln(&answer)
 		if answer == "n" || answer == "N" {
@@ -124,13 +373,16 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("  \033[36m⟳ Spawning agent...\033[0m\n\n")
+	// ── Phase 1: Implementation ──────────────────────────────────
+	ui.phase("Phase 1: Implementation")
 
-	// Execute via agent
 	var agentCmd *exec.Cmd
+	useJSON := implementAgent == "codex"
+
 	switch implementAgent {
 	case "codex":
-		agentCmd = exec.Command("codex", "exec", "--full-auto", "-c", "mcp_servers={}", prompt)
+		agentArgs := []string{"exec", "--full-auto", "-c", "mcp_servers={}", "--json", prompt}
+		agentCmd = exec.Command("codex", agentArgs...)
 	case "claude":
 		agentCmd = exec.Command("claude", "-p", prompt, "--allowedTools", "Edit,Write,Bash,Read,Glob,Grep")
 	default:
@@ -138,34 +390,63 @@ func runImplement(cmd *cobra.Command, args []string) error {
 	}
 
 	agentCmd.Dir = projectRoot
-	agentCmd.Stdout = os.Stdout
 	agentCmd.Stderr = os.Stderr
-	agentCmd.Stdin = os.Stdin
 
-	if err := agentCmd.Run(); err != nil {
-		fmt.Printf("\n  \033[31m✗ Agent exited with error: %v\033[0m\n", err)
-		return nil
-	}
+	if useJSON {
+		// Parse JSONL for pretty output
+		stdout, pErr := agentCmd.StdoutPipe()
+		if pErr != nil {
+			return fmt.Errorf("pipe stdout: %w", pErr)
+		}
 
-	fmt.Printf("\n  \033[32m✓ Agent completed\033[0m\n")
+		if sErr := agentCmd.Start(); sErr != nil {
+			return fmt.Errorf("start agent: %w", sErr)
+		}
 
-	// Post-execution: baseline
-	if len(affectedFiles) > 0 {
-		fmt.Printf("  \033[2m⟳ Taking baseline...\033[0m\n")
-		_, blErr := artifact.Baseline(ctx, artStore, projectRoot, artifact.BaselineInput{
-			DecisionRef: decisionRef,
-		})
-		if blErr != nil {
-			fmt.Printf("  \033[33m⚠ Baseline failed: %v\033[0m\n", blErr)
-		} else {
-			fmt.Printf("  \033[32m✓ Baseline updated\033[0m\n")
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for large outputs
+		for scanner.Scan() {
+			ui.parseCodexJSONL(scanner.Text())
+		}
+
+		if wErr := agentCmd.Wait(); wErr != nil {
+			ui.fail(fmt.Sprintf("Agent exited with error: %v", wErr))
+			return nil
+		}
+	} else {
+		// Claude — raw output
+		agentCmd.Stdout = os.Stdout
+		agentCmd.Stdin = os.Stdin
+		if rErr := agentCmd.Run(); rErr != nil {
+			ui.fail(fmt.Sprintf("Agent exited with error: %v", rErr))
+			return nil
 		}
 	}
 
-	fmt.Printf("\n  \033[1mNext:\033[0m\n")
-	fmt.Printf("  • git diff\n")
-	fmt.Printf("  • haft check\n")
-	fmt.Printf("  • git commit + push\n\n")
+	ui.ok(fmt.Sprintf("Implementation complete (%ds)", int(time.Since(ui.startTime).Seconds())))
+
+	// ── Phase 2: Baseline ────────────────────────────────────────
+	if len(affectedFiles) > 0 {
+		ui.phase("Phase 2: Baseline")
+		baselined, blErr := artifact.Baseline(ctx, artStore, projectRoot, artifact.BaselineInput{
+			DecisionRef: decisionRef,
+		})
+		if blErr != nil {
+			ui.warn(fmt.Sprintf("Baseline failed: %v", blErr))
+		} else {
+			ui.ok(fmt.Sprintf("Baseline: %d file(s) snapshotted", len(baselined)))
+		}
+	}
+
+	// ── Summary ──────────────────────────────────────────────────
+	fmt.Println()
+	ui.summary()
+
+	fmt.Printf("\n  %sNext:%s\n", aBold, aReset)
+	fmt.Println("  • git diff")
+	fmt.Println("  • haft check")
+	fmt.Println("  • git commit + push")
+	fmt.Println()
 
 	return nil
 }

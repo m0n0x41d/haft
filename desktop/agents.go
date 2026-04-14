@@ -662,9 +662,54 @@ func (b *taskOutputBuffer) snapshotLocked() string {
 }
 
 func normalizeTaskOutput(output string) string {
-	bounded := trimTaskOutputLines(output, taskOutputMaxLines)
+	stripped := stripANSI(output)
+	bounded := trimTaskOutputLines(stripped, taskOutputMaxLines)
 	bounded = trimTaskOutputRunes(bounded, taskOutputMaxChars)
 	return bounded
+}
+
+// stripANSI removes ANSI escape sequences from terminal output.
+func stripANSI(s string) string {
+	// Match: ESC[ ... final byte (0x40-0x7E) — covers CSI sequences
+	// Also: ESC] ... ST — covers OSC sequences
+	// Also: ESC followed by single char — covers simple escapes
+	result := make([]byte, 0, len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b { // ESC
+			i++
+			if i >= len(s) {
+				break
+			}
+			if s[i] == '[' { // CSI sequence
+				i++
+				for i < len(s) && s[i] < 0x40 {
+					i++
+				}
+				if i < len(s) {
+					i++ // skip final byte
+				}
+			} else if s[i] == ']' { // OSC sequence
+				i++
+				for i < len(s) && s[i] != 0x07 && !(i+1 < len(s) && s[i] == 0x1b && s[i+1] == '\\') {
+					i++
+				}
+				if i < len(s) {
+					if s[i] == 0x07 {
+						i++
+					} else if i+1 < len(s) {
+						i += 2
+					}
+				}
+			} else {
+				i++ // simple escape — skip one char
+			}
+		} else {
+			result = append(result, s[i])
+			i++
+		}
+	}
+	return string(result)
 }
 
 func trimTaskOutputLines(output string, maxLines int) string {
@@ -1417,8 +1462,8 @@ func buildClaudeArgs(prompt string) []string {
 func buildCodexArgs(prompt string, workDir string) []string {
 	args := []string{"codex", "exec"}
 	args = append(args, "--cd", workDir)
-	args = append(args, "--sandbox", "workspace-write")
-	args = append(args, "--ask-for-approval", "untrusted")
+	args = append(args, "--full-auto")
+	args = append(args, "-c", "mcp_servers={}")
 	args = append(args, prompt)
 	return args
 }

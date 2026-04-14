@@ -82,7 +82,7 @@ Focus: desktop starts proving the loop, not just visualizing.
 - [ ] Baseline refresh only on successful verification
 - [ ] Persisted verification/governance result linked to decision
 
-### DDR→Task Pipeline (Implement generates subtasks)
+### DecisionRecord→Task Pipeline (Implement generates subtasks)
 - [ ] Implement on DecisionRecord generates subtask plan from invariants/claims/affected_files
 - [ ] Subtasks run sequentially via desktop governor (agent per task, worktree per task)
 - [ ] Auto-advance mode: next task starts when previous completes successfully

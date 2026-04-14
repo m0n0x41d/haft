@@ -88,7 +88,7 @@
 | **ParityPlan** | Statement of what must be equal across all variants for fair comparison. Currently stored as rules text. | Not a formal report (v6). A structured parity report with evidence trace is planned (v7+). |
 | **Advisory recommendation** | The `selected_ref` + `recommendation_rationale` persisted by the compare action. Advisory only — does NOT cross the human choice boundary. | Not "the decision." The decision happens at `/h-decide` after human confirmation. |
 | **Coverage gap** | A claim on a DecisionRecord that has no evidence attached. Surfaced in UI and `/h-verify`. | Not "missing test." Any claim without evidence, regardless of claim type. |
-| **Derived phase** | Computed view-state of a DecisionRecord: Pending, Shipped, Stale, AT RISK. Never stored. | Not "status." Status is stored (`active`, `superseded`, etc.). Phase is derived from status + evidence. |
+| **Derived health** | Computed view-state of a DecisionRecord: Maturity (Unassessed / Pending / Shipped) + Freshness (Healthy / Stale / AT RISK). Never stored. | Not "status." Status is stored (`active`, `superseded`, etc.). Phase is derived from status + evidence. |
 | **F_eff (Formality)** | How structured is the evidence? F0 (anecdote) → F3 (formal proof). View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. |
 | **G_eff (Groundedness)** | How close is the evidence to the thing it verifies? Derived from CL. View concern. | Not a separate trust score. Decomposes R_eff inputs. |
 

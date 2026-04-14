@@ -158,7 +158,7 @@ Decision quality enforcement before automating execution:
 - `/h-verify` surfaces full governance state (problems, invariants, drift)
 - `.haft/workflow.md` — repo-level agent policy, injected into every prompt
 - Problem typing (optimization / diagnosis / search / synthesis)
-- G1/G2/G4 enforcement: one decision per problem, parity warnings, subjective dimension detection
+- G1 enforced (one decision per problem), G2/G4 warnings (parity plan, subjective dimensions)
 - Claim-scoped R_eff, evidence supersession, CL0 rejection
 - Deep `/h-onboard` with module-by-module analysis for legacy projects
 
@@ -169,7 +169,7 @@ The desktop becomes an operator surface:
 - **Implement** — click a decision, agent spawns in worktree with full reasoning context
 - **Adopt** — governance finding → agent thread for interactive resolution
 - **Automation triggers** — CI fail, dependency update, scheduled → auto-create ProblemCards
-- **DDR→Task Pipeline** — Implement generates subtasks from decision, auto-advance mode
+- **DecisionRecord→Task Pipeline** — Implement generates subtasks from decision, auto-advance mode
 
 ### v7 — Desktop Loop MVP
 

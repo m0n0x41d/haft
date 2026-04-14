@@ -92,6 +92,15 @@
 | **F_eff (Formality)** | How structured is the evidence? F0 (anecdote) → F3 (formal proof). View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. |
 | **G_eff (Groundedness)** | How close is the evidence to the thing it verifies? Derived from CL. View concern. | Not a separate trust score. Decomposes R_eff inputs. |
 
+## Desktop Surfaces
+
+| Term | Definition | NOT this |
+|------|-----------|----------|
+| **Dashboard** | The single unified operator page in the desktop app. Shows active decisions, governance findings, automations, and recent activity. | Not "Problem Board." Problems appear as cards within the dashboard. |
+| **Implement** | Dashboard action on a DecisionRecord: spawns agent in worktree with invariants + rationale + workflow.md. | Not "run task." Implement is decision-anchored — the agent gets full reasoning context. |
+| **Adopt** | Dashboard action on a governance finding (stale/drifted): creates agent task/thread with decision context + drift report for interactive resolution. | Not auto-fix. Human resolves with agent assistance, then re-baselines, reopens, or waives. |
+| **Automation** | A configured trigger that auto-creates ProblemCards: CI fail, dependency update, scheduled, manual. The "problem factory." | Not a workflow engine. Creates problems, doesn't execute solutions. |
+
 ## Terms That Cause Confusion
 
 | Confusing term | Clarification |

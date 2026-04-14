@@ -158,6 +158,39 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 	return sb.String()
 }
 
+func GovernanceAttentionResponse(attention artifact.GovernanceAttention) string {
+	if attention.BacklogCount == 0 &&
+		attention.InProgressCount == 0 &&
+		len(attention.AddressedWithoutDecision) == 0 &&
+		len(attention.InvariantViolations) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Governance State\n\n")
+	sb.WriteString(fmt.Sprintf("Problems: %d backlog, %d in progress\n", attention.BacklogCount, attention.InProgressCount))
+
+	if len(attention.AddressedWithoutDecision) > 0 {
+		sb.WriteString(fmt.Sprintf("\nAddressed without linked decision (%d)\n", len(attention.AddressedWithoutDecision)))
+		for _, gap := range attention.AddressedWithoutDecision {
+			sb.WriteString(fmt.Sprintf("- **%s** `%s`\n", gap.Title, gap.ProblemID))
+		}
+	}
+
+	if len(attention.InvariantViolations) > 0 {
+		sb.WriteString(fmt.Sprintf("\nInvariant violations (%d)\n", len(attention.InvariantViolations)))
+		for _, violation := range attention.InvariantViolations {
+			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", violation.DecisionTitle, violation.DecisionID, violation.Invariant))
+			if strings.TrimSpace(violation.Reason) != "" {
+				sb.WriteString(fmt.Sprintf("  Reason: %s\n", strings.TrimSpace(violation.Reason)))
+			}
+		}
+	}
+
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 // RefreshActionResponse formats the result of a refresh action.
 func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact, newProb *artifact.Artifact, navStrip string) string {
 	var sb strings.Builder
@@ -481,6 +514,9 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", a.Meta.Title))
 		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
 		sb.WriteString(fmt.Sprintf("Mode: %s\n", a.Meta.Mode))
+		if problemType := artifact.ProblemTypeLabel(a); problemType != "" {
+			sb.WriteString(fmt.Sprintf("Type: %s\n", problemType))
+		}
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
@@ -561,15 +597,21 @@ func StatusResponse(data artifact.StatusData) string {
 		}
 	}
 
+	if len(data.HealthyDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Shipped / Healthy (%d)\n\n", len(data.HealthyDecisions)))
+		formatDecisionList(data.HealthyDecisions, 5)
+		sb.WriteString("\n")
+	}
+
 	if len(data.PendingDecisions) > 0 {
-		sb.WriteString(fmt.Sprintf("### Pending Implementation (%d)\n\n", len(data.PendingDecisions)))
+		sb.WriteString(fmt.Sprintf("### Pending (%d)\n\n", len(data.PendingDecisions)))
 		formatDecisionList(data.PendingDecisions, 5)
 		sb.WriteString("\n")
 	}
 
-	if len(data.ShippedDecisions) > 0 {
-		sb.WriteString(fmt.Sprintf("### Shipped (%d)\n\n", len(data.ShippedDecisions)))
-		formatDecisionList(data.ShippedDecisions, 5)
+	if len(data.UnassessedDecisions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Unassessed (%d)\n\n", len(data.UnassessedDecisions)))
+		formatDecisionList(data.UnassessedDecisions, 5)
 		sb.WriteString("\n")
 	}
 
@@ -581,7 +623,12 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more (use /h-refresh to see all)\n", len(data.StaleItems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", s.Title, s.ID, s.Reason))
+			line := fmt.Sprintf("- **%s** `%s`", s.Title, s.ID)
+			if health, ok := data.DecisionHealth[s.ID]; ok {
+				line += fmt.Sprintf(" — %s", health.Label())
+			}
+			line += fmt.Sprintf(" — %s", s.Reason)
+			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -594,7 +641,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.InProgressProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` → %s\n", p.Meta.Title, p.Meta.ID, data.InProgressBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.InProgressBy[p.Meta.ID]))
 		}
 		sb.WriteString("\n")
 	}
@@ -607,7 +654,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.BacklogProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s`\n", p.Meta.Title, p.Meta.ID))
+			sb.WriteString(fmt.Sprintf("- %s\n", formatProblemListEntry(p)))
 		}
 		sb.WriteString("\n")
 	}
@@ -620,7 +667,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.AddressedProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` → %s\n", p.Meta.Title, p.Meta.ID, data.AddressedBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.AddressedBy[p.Meta.ID]))
 		}
 		sb.WriteString("\n")
 	}
@@ -633,8 +680,9 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
-	hasAny := len(data.PendingDecisions) > 0 ||
-		len(data.ShippedDecisions) > 0 ||
+	hasAny := len(data.HealthyDecisions) > 0 ||
+		len(data.PendingDecisions) > 0 ||
+		len(data.UnassessedDecisions) > 0 ||
 		len(data.StaleItems) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
@@ -721,7 +769,7 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 
 	for i, item := range items {
 		p := item.Problem
-		sb.WriteString(fmt.Sprintf("### %d. %s [%s]\n", i+1, p.Meta.Title, p.Meta.ID))
+		sb.WriteString(fmt.Sprintf("### %d. %s [%s]\n", i+1, formatProblemTitleWithType(p), p.Meta.ID))
 		if p.Meta.Context != "" {
 			sb.WriteString(fmt.Sprintf("Context: %s | ", p.Meta.Context))
 		}
@@ -768,4 +816,21 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 
 	sb.WriteString(navStrip)
 	return sb.String()
+}
+
+func formatProblemListEntry(problem *artifact.Artifact) string {
+	return fmt.Sprintf("**%s** `%s`", formatProblemTitleWithType(problem), problem.Meta.ID)
+}
+
+func formatProblemTitleWithType(problem *artifact.Artifact) string {
+	if problem == nil {
+		return ""
+	}
+
+	problemType := artifact.ProblemTypeLabel(problem)
+	if problemType == "" {
+		return problem.Meta.Title
+	}
+
+	return fmt.Sprintf("%s (%s)", problem.Meta.Title, problemType)
 }

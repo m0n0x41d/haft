@@ -11,6 +11,9 @@ export interface DashboardData {
   stale_count: number;
   recent_problems: ProblemSummary[];
   recent_decisions: DecisionSummary[];
+  healthy_decisions: DecisionSummary[];
+  pending_decisions: DecisionSummary[];
+  unassessed_decisions: DecisionSummary[];
   stale_items: ArtifactSummary[];
 }
 
@@ -944,6 +947,9 @@ export async function getDashboard(): Promise<DashboardData> {
     stale_count: mockGovernanceOverview.findings.length,
     recent_problems: mockProblems,
     recent_decisions: mockDecisions,
+    healthy_decisions: mockDecisions,
+    pending_decisions: [],
+    unassessed_decisions: [],
     stale_items: mockGovernanceOverview.findings.map((finding) => ({
       id: finding.artifact_ref,
       kind: finding.kind,

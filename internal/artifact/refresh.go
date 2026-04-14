@@ -90,6 +90,25 @@ type decisionDebtAccumulator struct {
 	MostOverdueDays int
 }
 
+type GovernanceAttention struct {
+	BacklogCount             int
+	InProgressCount          int
+	AddressedWithoutDecision []AddressedProblemGap
+	InvariantViolations      []InvariantViolationFinding
+}
+
+type AddressedProblemGap struct {
+	ProblemID string
+	Title     string
+}
+
+type InvariantViolationFinding struct {
+	DecisionID    string
+	DecisionTitle string
+	Invariant     string
+	Reason        string
+}
+
 // ScanStale finds all stale decisions and returns actionable info.
 // If projectRoot is non-empty, also checks for file drift on baselined decisions.
 func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) ([]StaleItem, error) {

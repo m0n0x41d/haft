@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/m0n0x41d/haft/db"
 )
@@ -91,5 +93,91 @@ func TestDesktopTaskStoreRoundTrip(t *testing.T) {
 
 	if len(remaining) != 0 {
 		t.Fatalf("expected archived task to be hidden, got %d task(s)", len(remaining))
+	}
+}
+
+func TestDesktopTaskStoreNormalizesLegacyOutputOnRead(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "haft.db")
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer database.Close()
+
+	store := newDesktopTaskStore(database.GetRawDB())
+	ctx := context.Background()
+	rawOutput := strings.Repeat("legacy-output-", 7000) + "ENDMARKER"
+
+	_, err = database.GetRawDB().ExecContext(
+		ctx,
+		`INSERT INTO desktop_tasks (
+			id,
+			project_name,
+			project_path,
+			title,
+			agent,
+			status,
+			prompt,
+			branch,
+			worktree,
+			worktree_path,
+			reused_worktree,
+			error_message,
+			output_tail,
+			started_at,
+			completed_at,
+			updated_at,
+			archived_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`,
+		"legacy-task",
+		"haft",
+		"/tmp/haft",
+		"Legacy output",
+		"codex",
+		"completed",
+		"Inspect legacy output handling",
+		"",
+		0,
+		"",
+		0,
+		"",
+		rawOutput,
+		nowRFC3339(),
+		nowRFC3339(),
+	)
+	if err != nil {
+		t.Fatalf("insert legacy task: %v", err)
+	}
+
+	tasks, err := store.ListTasks(ctx, "/tmp/haft")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+
+	if utf8.RuneCountInString(tasks[0].Output) > taskOutputMaxChars {
+		t.Fatalf("expected listed task output <= %d runes, got %d", taskOutputMaxChars, utf8.RuneCountInString(tasks[0].Output))
+	}
+
+	if !strings.HasSuffix(tasks[0].Output, "ENDMARKER") {
+		t.Fatalf("expected listed task output to preserve newest tail")
+	}
+
+	output, err := store.GetTaskOutput(ctx, "legacy-task")
+	if err != nil {
+		t.Fatalf("GetTaskOutput: %v", err)
+	}
+
+	if utf8.RuneCountInString(output) > taskOutputMaxChars {
+		t.Fatalf("expected fetched task output <= %d runes, got %d", taskOutputMaxChars, utf8.RuneCountInString(output))
+	}
+
+	if !strings.HasSuffix(output, "ENDMARKER") {
+		t.Fatalf("expected fetched task output to preserve newest tail")
 	}
 }

@@ -40,8 +40,8 @@ func TestComputeImpactSet_Transitive(t *testing.T) {
 	seedModule(t, db, "mod-core", "internal/core", "core")
 	seedModule(t, db, "mod-api", "internal/api", "api")
 
-	// core → api (api depends on core)
-	seedDep(t, db, "mod-core", "mod-api")
+	// api imports core
+	seedDep(t, db, "mod-api", "mod-core")
 
 	// Decision governs API module
 	seedDecision(t, db, "dec-api", "API design",
@@ -72,7 +72,7 @@ func TestComputeImpactForFile(t *testing.T) {
 
 	seedModule(t, db, "mod-core", "internal/core", "core")
 	seedModule(t, db, "mod-api", "internal/api", "api")
-	seedDep(t, db, "mod-core", "mod-api")
+	seedDep(t, db, "mod-api", "mod-core")
 
 	seedDecision(t, db, "dec-core", "Core invariants",
 		[]string{"Pure functions only"}, []string{"internal/core/calc.go"})

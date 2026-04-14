@@ -14,7 +14,7 @@
 | 4 | Comparison without parity declaration | Comparison without same-conditions statement is invalid. | Skill instructions require parity. L2 enforcement planned. |
 | 5 | DecisionRecord with status `active` and no `selected_title` | A decision must have chosen something. | `Decide()` requires selected_title. |
 | 6 | EvidencePack with verdict `supports` and CL0 | Evidence from opposed context cannot support — inadmissible, not merely weak. | **Enforced:** reject at ingest or downgrade verdict to `weakens` before storage. CL0+supports must not enter R_eff computation. |
-| 7 | Two active DecisionRecords for the same ProblemCard | One problem → one active decision. Previous must be superseded. | Not currently enforced. **Gap: should be.** |
+| 7 | Two active DecisionRecords for the same ProblemCard | One problem → one active decision. Previous must be superseded. | **Enforced:** `Decide()` rejects a new live DecisionRecord when another live decision already governs the same problem. |
 | 8 | Note with >70% title word overlap with active DecisionRecord | Note duplicates an existing decision. | `haft_note` rejects at >70% overlap. Warns at 50-70%. |
 | 9 | Artifact with status `addressed` that is not a ProblemCard | Only problems can be "addressed." Other artifacts use superseded/deprecated. | `close` action only on ProblemCard kind. |
 
@@ -64,7 +64,6 @@
 
 | # | Gap | Impact | Priority |
 |---|-----|--------|----------|
-| G1 | #7: Multiple active decisions per problem | Poisons invariant injection, file-to-decision lookup, governance scans, and "what governs this file?" | **High** — must enforce before v7 execution loop |
 | G2 | #4: Parity declaration enforcement | Unfair comparisons pass without warning | **High** — planned for v6.x |
 | G3 | #10: Measurement fabrication detection | Trust inflation | Low — fundamentally LLM discipline issue |
 | G4 | #19: Subjective dimension enforcement | Entire Choose mode can look rigorous while being semantically hollow. Core value proposition corrupted. | **High** — L2 enforcement needed before v7 |

@@ -2,17 +2,19 @@
 
 *formerly [quint-code](https://github.com/m0n0x41d/quint-code)*
 
-**Engineering decisions that know when they're stale.**
+**True harness engineering for AI-assisted software delivery.**
 
-Frame problems. Compare options fairly. Record decisions as contracts. Know when to revisit.
+Your agents write code fast. Nobody checks if the decisions behind that code are any good — or still valid a month later. Haft does.
 
 ---
 
 ## What is Haft?
 
-Haft is a local-first engineering governor for software projects. It helps engineers frame problems before solving them, compare options honestly, record decisions as contracts with invariants, track evidence with decay, and know when to revisit.
+Haft is the engineering governor that sits between your intentions and your agents' execution. It enforces the discipline that separates "we shipped fast" from "we shipped right": frame the problem before solving it, compare options under parity, record decisions as falsifiable contracts, and know the moment assumptions go stale.
 
 **Think → Run → Govern.**
+
+Not a coding agent. Not a documentation tool. The handle between the tool and the hand — the part that turns raw capability into directed engineering work.
 
 ### Two primary surfaces
 
@@ -144,6 +146,38 @@ Features: dashboard with governance findings, problem board, decision detail wit
 `/h-reason` gives your AI agent an FPF-native operating system for engineering decisions: problem framing before solutions, characterization before comparison, parity enforcement, evidence with congruence penalties, weakest-link assurance, and the lemniscate cycle that closes itself when evidence ages or measurements fail.
 
 `haft fpf search` gives access to the indexed FPF specification with tiered retrieval: exact pattern id → route-aware concept matching → keyword fallback.
+
+---
+
+## Roadmap
+
+### v6.1 — Harden the Contract (shipped)
+
+Decision quality enforcement before automating execution:
+- `haft check` for local governance verification (exit 0 = clean, exit 1 = findings)
+- `/h-verify` surfaces full governance state (problems, invariants, drift)
+- `.haft/workflow.md` — repo-level agent policy, injected into every prompt
+- Problem typing (optimization / diagnosis / search / synthesis)
+- G1/G2/G4 enforcement: one decision per problem, parity warnings, subjective dimension detection
+- Claim-scoped R_eff, evidence supersession, CL0 rejection
+- Deep `/h-onboard` with module-by-module analysis for legacy projects
+
+### v6.2 — Dashboard + Execution Primitives (next)
+
+The desktop becomes an operator surface:
+- **Unified Dashboard** — decisions, governance findings, automations in one view
+- **Implement** — click a decision, agent spawns in worktree with full reasoning context
+- **Adopt** — governance finding → agent thread for interactive resolution
+- **Automation triggers** — CI fail, dependency update, scheduled → auto-create ProblemCards
+- **DDR→Task Pipeline** — Implement generates subtasks from decision, auto-advance mode
+
+### v7 — Desktop Loop MVP
+
+One proved cycle: **Decision → Implement → Verify → Baseline → PR draft**. Verification failure → reopen as ProblemCard.
+
+### v8 — Governor Signals
+
+Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation after trust is earned.
 
 ---
 

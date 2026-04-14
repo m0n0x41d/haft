@@ -221,10 +221,10 @@ func TestTransitiveDependents(t *testing.T) {
 	seedModule(t, db, "mod-api", "internal/api", "api")
 	seedModule(t, db, "mod-web", "internal/web", "web")
 
-	// core → cache → api → web
-	seedDep(t, db, "mod-core", "mod-cache")
-	seedDep(t, db, "mod-cache", "mod-api")
-	seedDep(t, db, "mod-api", "mod-web")
+	// web imports api, api imports cache, cache imports core
+	seedDep(t, db, "mod-cache", "mod-core")
+	seedDep(t, db, "mod-api", "mod-cache")
+	seedDep(t, db, "mod-web", "mod-api")
 
 	deps, err := store.TransitiveDependents(ctx, "mod-core")
 	if err != nil {
@@ -255,7 +255,7 @@ func TestTransitiveDependents_CycleSafe(t *testing.T) {
 	seedModule(t, db, "mod-b", "pkg/b", "b")
 	seedModule(t, db, "mod-c", "pkg/c", "c")
 
-	// Circular: a → b → c → a
+	// Circular imports: a -> b -> c -> a
 	seedDep(t, db, "mod-a", "mod-b")
 	seedDep(t, db, "mod-b", "mod-c")
 	seedDep(t, db, "mod-c", "mod-a")
@@ -265,7 +265,7 @@ func TestTransitiveDependents_CycleSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should terminate and return b + c (not infinite loop)
+	// Dependents of a are c directly and b transitively.
 	if len(deps) != 2 {
 		t.Fatalf("expected 2 deps in cycle, got %d", len(deps))
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/present"
@@ -143,6 +144,33 @@ func TestProblemResponse_NoRecallWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestProblemResponse_ShowsProblemType(t *testing.T) {
+	fields, err := json.Marshal(artifact.ProblemFields{
+		ProblemType: artifact.ProblemTypeDiagnosis,
+		Signal:      "signal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "prob-001",
+			Kind:  artifact.KindProblemCard,
+			Title: "Investigate webhook failures",
+			Mode:  artifact.ModeStandard,
+		},
+		Body:           "# Test\n\n## Signal\n\nSomething\n",
+		StructuredData: string(fields),
+	}
+
+	response := present.ProblemResponse("frame", a, "", "\n-- nav --\n")
+
+	if !strings.Contains(response, "Type: diagnosis") {
+		t.Fatalf("expected problem type in frame response, got:\n%s", response)
+	}
+}
+
 func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 	fields, err := json.Marshal(artifact.PortfolioFields{
 		Variants: []artifact.Variant{
@@ -226,6 +254,164 @@ func TestSearchResponse_PreservesQueryTitleAndBodyVerbatim(t *testing.T) {
 	if !strings.Contains(response, "DecisionRecord must stay verbatim here.") {
 		t.Fatalf("expected body preview to stay verbatim, got:\n%s", response)
 	}
+}
+
+func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-healthy",
+					Title: "Healthy decision",
+				},
+			},
+		},
+		PendingDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-pending",
+					Title: "Pending decision",
+				},
+			},
+		},
+		UnassessedDecisions: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-unassessed",
+					Title: "Unassessed decision",
+				},
+			},
+		},
+		DecisionHealth: map[string]artifact.DecisionHealth{
+			"dec-stale": {
+				Maturity:  artifact.DecisionMaturityShipped,
+				Freshness: artifact.DecisionFreshnessStale,
+			},
+		},
+		StaleItems: []artifact.StaleItem{
+			{
+				ID:     "dec-stale",
+				Title:  "Stale decision",
+				Reason: "evidence degraded (R_eff: 0.40)",
+			},
+		},
+	}
+
+	output := present.StatusResponse(data)
+
+	for _, want := range []string{
+		"### Shipped / Healthy (1)",
+		"### Pending (1)",
+		"### Unassessed (1)",
+		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestStatusResponse_ShowsProblemTypeInListings(t *testing.T) {
+	backlogFields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeSearch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inProgressFields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeDiagnosis})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := artifact.StatusData{
+		BacklogProblems: []*artifact.Artifact{
+			{
+				Meta:           artifact.Meta{ID: "prob-backlog", Title: "Backlog problem"},
+				StructuredData: string(backlogFields),
+			},
+		},
+		InProgressProblems: []*artifact.Artifact{
+			{
+				Meta:           artifact.Meta{ID: "prob-progress", Title: "In progress problem"},
+				StructuredData: string(inProgressFields),
+			},
+		},
+		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+	}
+
+	output := present.StatusResponse(data)
+
+	for _, want := range []string{
+		"**In progress problem (diagnosis)** `prob-progress` → sol-001",
+		"**Backlog problem (search)** `prob-backlog`",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestProblemsListResponse_ShowsProblemTypeInHeading(t *testing.T) {
+	fields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeSynthesis})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := present.ProblemsListResponse([]artifact.ProblemListItem{
+		{
+			Problem: &artifact.Artifact{
+				Meta: artifact.Meta{
+					ID:        "prob-001",
+					Title:     "Design the deployment path",
+					CreatedAt: mustParseTime(t, "2026-04-14T00:00:00Z"),
+				},
+				StructuredData: string(fields),
+			},
+		},
+	}, "")
+
+	if !strings.Contains(output, "### 1. Design the deployment path (synthesis) [prob-001]") {
+		t.Fatalf("expected problem type in heading, got:\n%s", output)
+	}
+}
+
+func TestGovernanceAttentionResponse_ShowsOrphansAndInvariantViolations(t *testing.T) {
+	output := present.GovernanceAttentionResponse(artifact.GovernanceAttention{
+		BacklogCount:    2,
+		InProgressCount: 1,
+		AddressedWithoutDecision: []artifact.AddressedProblemGap{
+			{ProblemID: "prob-001", Title: "Orphan problem"},
+		},
+		InvariantViolations: []artifact.InvariantViolationFinding{
+			{
+				DecisionID:    "dec-001",
+				DecisionTitle: "Boundary decision",
+				Invariant:     "no dependency from api to database",
+				Reason:        "Forbidden dependency detected: internal/api → internal/database",
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"Problems: 2 backlog, 1 in progress",
+		"Addressed without linked decision (1)",
+		"**Orphan problem** `prob-001`",
+		"Invariant violations (1)",
+		"**Boundary decision** `dec-001` — no dependency from api to database",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("governance attention missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func mustParseTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("parse time %q: %v", value, err)
+	}
+
+	return parsed
 }
 
 func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {
@@ -378,7 +564,7 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			wants: []string{
 				"## Manager/Status View",
 				"Problems: 0 backlog, 0 in progress, 1 addressed",
-				"Decisions: 0 pending follow-through, 1 measured/shipped, 0 refresh due",
+				"Decisions: 0 unassessed, 0 pending follow-through, 1 measured/shipped, 0 refresh due",
 			},
 		},
 		{
@@ -485,6 +671,54 @@ func TestProjectionResponse_ChangesWhenPredictionStatusChanges(t *testing.T) {
 	}
 	if auditBefore == auditAfter {
 		t.Fatalf("expected audit projection output to change after status update")
+	}
+}
+
+func TestProjectionResponse_ManagerStatusSeparatesUnassessedDecisions(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Decisions: []artifact.DecisionProjection{
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-unassessed",
+					Title: "Unassessed decision",
+				},
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityUnassessed,
+				},
+			},
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-pending",
+					Title: "Pending decision",
+				},
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityPending,
+				},
+			},
+			{
+				Meta: artifact.Meta{
+					ID:    "dec-shipped",
+					Title: "Shipped decision",
+				},
+				NeedsRefresh: true,
+				Health: artifact.DecisionHealth{
+					Maturity: artifact.DecisionMaturityShipped,
+				},
+			},
+		},
+	}
+
+	output := present.ProjectionResponse(graph, artifact.ProjectionViewManager)
+
+	for _, want := range []string{
+		"Decisions: 1 unassessed, 1 pending follow-through, 1 measured/shipped, 1 refresh due",
+		"- **Unassessed decision** `dec-unassessed` — unassessed",
+		"- **Pending decision** `dec-pending` — waiting for measurement",
+		"- **Shipped decision** `dec-shipped` — measured, refresh due",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("manager projection missing %q:\n%s", want, output)
+		}
 	}
 }
 

@@ -51,6 +51,41 @@ func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.
 	}
 }
 
+func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	result, err := handleQuintProblem(ctx, store, haftDir, map[string]any{
+		"action":       "frame",
+		"title":        "Search for a transport",
+		"problem_type": "search",
+		"signal":       "Existing options do not satisfy the deployment constraints",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Type: search") {
+		t.Fatalf("expected frame response to show problem type, got %s", result)
+	}
+
+	problems, err := artifact.SelectProblems(ctx, store, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("expected 1 problem, got %d", len(problems))
+	}
+
+	reloaded, err := store.Get(ctx, problems[0].Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.UnmarshalProblemFields().ProblemType; got != artifact.ProblemTypeSearch {
+		t.Fatalf("problem_type = %q", got)
+	}
+}
+
 func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

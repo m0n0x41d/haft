@@ -224,8 +224,30 @@ type Artifact struct {
 	StructuredData string `yaml:"-" json:"structured_data"` // JSON: canonical structured fields (eliminates markdown re-parsing)
 }
 
+type ProblemType string
+
+const (
+	ProblemTypeOptimization ProblemType = "optimization"
+	ProblemTypeDiagnosis    ProblemType = "diagnosis"
+	ProblemTypeSearch       ProblemType = "search"
+	ProblemTypeSynthesis    ProblemType = "synthesis"
+)
+
+func ParseProblemType(value string) (ProblemType, error) {
+	normalized := ProblemType(strings.TrimSpace(value))
+	switch normalized {
+	case "":
+		return "", nil
+	case ProblemTypeOptimization, ProblemTypeDiagnosis, ProblemTypeSearch, ProblemTypeSynthesis:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("problem_type must be optimization, diagnosis, search, or synthesis")
+	}
+}
+
 // ProblemFields holds structured data for a ProblemCard. Stored as JSON in StructuredData.
 type ProblemFields struct {
+	ProblemType           ProblemType                `json:"problem_type,omitempty"`
 	Signal                string                     `json:"signal"`
 	Constraints           []string                   `json:"constraints,omitempty"`
 	OptimizationTargets   []string                   `json:"optimization_targets,omitempty"`
@@ -308,6 +330,19 @@ func (a *Artifact) UnmarshalProblemFields() ProblemFields {
 	var pf ProblemFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
 	return pf
+}
+
+func ProblemTypeLabel(a *Artifact) string {
+	if a == nil {
+		return ""
+	}
+
+	fields := a.UnmarshalProblemFields()
+	if fields.ProblemType == "" {
+		return ""
+	}
+
+	return string(fields.ProblemType)
 }
 
 // UnmarshalDecisionFields extracts structured fields from an artifact's StructuredData.

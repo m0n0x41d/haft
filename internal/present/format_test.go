@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/present"
@@ -140,6 +141,33 @@ func TestProblemResponse_NoRecallWhenAbsent(t *testing.T) {
 
 	if strings.Contains(response, "Related History") {
 		t.Error("frame response should NOT show Related History when not in body")
+	}
+}
+
+func TestProblemResponse_ShowsProblemType(t *testing.T) {
+	fields, err := json.Marshal(artifact.ProblemFields{
+		ProblemType: artifact.ProblemTypeDiagnosis,
+		Signal:      "signal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "prob-001",
+			Kind:  artifact.KindProblemCard,
+			Title: "Investigate webhook failures",
+			Mode:  artifact.ModeStandard,
+		},
+		Body:           "# Test\n\n## Signal\n\nSomething\n",
+		StructuredData: string(fields),
+	}
+
+	response := present.ProblemResponse("frame", a, "", "\n-- nav --\n")
+
+	if !strings.Contains(response, "Type: diagnosis") {
+		t.Fatalf("expected problem type in frame response, got:\n%s", response)
 	}
 }
 
@@ -281,6 +309,109 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
 		}
 	}
+}
+
+func TestStatusResponse_ShowsProblemTypeInListings(t *testing.T) {
+	backlogFields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeSearch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inProgressFields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeDiagnosis})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := artifact.StatusData{
+		BacklogProblems: []*artifact.Artifact{
+			{
+				Meta:           artifact.Meta{ID: "prob-backlog", Title: "Backlog problem"},
+				StructuredData: string(backlogFields),
+			},
+		},
+		InProgressProblems: []*artifact.Artifact{
+			{
+				Meta:           artifact.Meta{ID: "prob-progress", Title: "In progress problem"},
+				StructuredData: string(inProgressFields),
+			},
+		},
+		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+	}
+
+	output := present.StatusResponse(data)
+
+	for _, want := range []string{
+		"**In progress problem (diagnosis)** `prob-progress` → sol-001",
+		"**Backlog problem (search)** `prob-backlog`",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestProblemsListResponse_ShowsProblemTypeInHeading(t *testing.T) {
+	fields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeSynthesis})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := present.ProblemsListResponse([]artifact.ProblemListItem{
+		{
+			Problem: &artifact.Artifact{
+				Meta: artifact.Meta{
+					ID:        "prob-001",
+					Title:     "Design the deployment path",
+					CreatedAt: mustParseTime(t, "2026-04-14T00:00:00Z"),
+				},
+				StructuredData: string(fields),
+			},
+		},
+	}, "")
+
+	if !strings.Contains(output, "### 1. Design the deployment path (synthesis) [prob-001]") {
+		t.Fatalf("expected problem type in heading, got:\n%s", output)
+	}
+}
+
+func TestGovernanceAttentionResponse_ShowsOrphansAndInvariantViolations(t *testing.T) {
+	output := present.GovernanceAttentionResponse(artifact.GovernanceAttention{
+		BacklogCount:    2,
+		InProgressCount: 1,
+		AddressedWithoutDecision: []artifact.AddressedProblemGap{
+			{ProblemID: "prob-001", Title: "Orphan problem"},
+		},
+		InvariantViolations: []artifact.InvariantViolationFinding{
+			{
+				DecisionID:    "dec-001",
+				DecisionTitle: "Boundary decision",
+				Invariant:     "no dependency from api to database",
+				Reason:        "Forbidden dependency detected: internal/api → internal/database",
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"Problems: 2 backlog, 1 in progress",
+		"Addressed without linked decision (1)",
+		"**Orphan problem** `prob-001`",
+		"Invariant violations (1)",
+		"**Boundary decision** `dec-001` — no dependency from api to database",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("governance attention missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func mustParseTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("parse time %q: %v", value, err)
+	}
+
+	return parsed
 }
 
 func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {

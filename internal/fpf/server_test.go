@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -146,6 +147,20 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_ProblemSchemaIncludesProblemType(t *testing.T) {
+	problemSchema := mustListToolProperties(t, "haft_problem")
+
+	problemType, ok := problemSchema["problem_type"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("problem_type schema missing or wrong type: %#v", problemSchema["problem_type"])
+	}
+
+	description, _ := problemType["description"].(string)
+	if !strings.Contains(description, "optimization") {
+		t.Fatalf("unexpected problem_type description: %q", description)
+	}
+}
+
 func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) {
 	decisionSchema := mustListToolProperties(t, "haft_decision")
 
@@ -215,6 +230,53 @@ func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
 	description, _ := mode["description"].(string)
 	if description != "(fpf) Experimental retrieval mode; currently supports tree" {
 		t.Fatalf("unexpected mode description: %q", description)
+	}
+}
+
+func TestHandleInitialize_IncludesWorkflowInstructionsWhenConfigured(t *testing.T) {
+	server := NewServer()
+	server.SetInstructions("## Project Workflow\nDefaults:\n- mode: standard")
+
+	request := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "initialize",
+		ID:      "req-init",
+	}
+
+	stdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Stdout = stdout
+	}()
+
+	os.Stdout = writer
+	server.handleInitialize(request)
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	responseBytes, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := map[string]interface{}{}
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		t.Fatalf("unmarshal initialize response: %v\n%s", err, string(responseBytes))
+	}
+
+	result, ok := response["result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("result missing or wrong type: %#v", response["result"])
+	}
+
+	instructions, _ := result["instructions"].(string)
+	if !strings.Contains(instructions, "Project Workflow") {
+		t.Fatalf("expected workflow instructions, got %#v", result["instructions"])
 	}
 }
 

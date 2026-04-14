@@ -52,6 +52,7 @@ Actions:
 				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "adopt", "select", "characterize", "close"}, "description": "frame | adopt | select | characterize | close"},
 				"ref":                    map[string]any{"type": "string", "description": "Existing problem ID to adopt (adopt)"},
 				"title":                  map[string]any{"type": "string", "description": "Problem title (frame)"},
+				"problem_type":           map[string]any{"type": "string", "description": "optimization | diagnosis | search | synthesis (frame)"},
 				"signal":                 map[string]any{"type": "string", "description": "What's anomalous or broken (frame)"},
 				"constraints":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Hard limits (frame)"},
 				"optimization_targets":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "What to improve, 1-3 max (frame)"},
@@ -97,6 +98,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 	case "frame":
 		input := artifact.ProblemFrameInput{
 			Title:                 jsonStr(args, "title"),
+			ProblemType:           jsonStr(args, "problem_type"),
 			Signal:                jsonStr(args, "signal"),
 			Acceptance:            jsonStr(args, "acceptance"),
 			BlastRadius:           jsonStr(args, "blast_radius"),
@@ -172,7 +174,11 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		var b strings.Builder
 		items := artifact.EnrichProblemsForList(ctx, t.store, problems)
 		for _, item := range items {
-			fmt.Fprintf(&b, "- [%s] %s (%s) %s\n", item.Problem.Meta.ID, item.Problem.Meta.Title, item.Problem.Meta.Status, item.Signals)
+			title := item.Problem.Meta.Title
+			if problemType := artifact.ProblemTypeLabel(item.Problem); problemType != "" {
+				title += " (" + problemType + ")"
+			}
+			fmt.Fprintf(&b, "- [%s] %s (%s) %s\n", item.Problem.Meta.ID, title, item.Problem.Meta.Status, item.Signals)
 		}
 		return agent.PlainResult(b.String()), nil
 

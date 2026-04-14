@@ -28,6 +28,11 @@ import {
   type IrreversibleActionDialogModel,
 } from "../components/irreversibleActionDialogModel";
 import { reportError } from "../lib/errors";
+import {
+  getTaskExecutionLadder,
+  type TaskExecutionLadder,
+  type ExecutionLadderStep,
+} from "./taskExecutionLadder";
 
 interface TaskOutputEvent {
   id: string;
@@ -212,6 +217,11 @@ export function Tasks({
   const detail = tasks.find((task) => task.id === selectedTask) ?? null;
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
   const adoptResolution = getAdoptResolutionContext(detail);
+  const executionLadder = detail ? getTaskExecutionLadder(detail) : null;
+  const displayStatus = executionLadder?.currentLabel ?? detail?.status ?? "";
+  const statusMessage = detail
+    ? taskStatusMessage(detail, executionLadder)
+    : "";
 
   useEffect(() => {
     setResolutionAction("");
@@ -560,7 +570,7 @@ export function Tasks({
             {/* Compact header bar */}
             <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
-                <StatusBadge status={detail.status} />
+                <StatusBadge status={displayStatus} />
                 <span className="text-xs text-text-muted">{detail.agent}</span>
                 {detail.branch && (
                   <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
@@ -639,6 +649,8 @@ export function Tasks({
                 )}
               </div>
             </div>
+
+          {executionLadder && <ExecutionStatusLadder ladder={executionLadder} />}
 
           {/* Chat messages area */}
           <div
@@ -742,13 +754,7 @@ export function Tasks({
 
             <div className="flex items-end gap-3">
               <div className="flex-1 rounded-xl border border-border bg-surface-0 px-4 py-2.5">
-                <p className="text-xs text-text-muted">
-                  {detail.status === "running"
-                    ? "Agent is working on this task..."
-                    : detail.status === "completed"
-                      ? "Task completed. Create a new task to continue."
-                      : "Task ended."}
-                </p>
+                <p className="text-xs text-text-muted">{statusMessage}</p>
                 {taskActionMessage && (
                   <p className="mt-2 whitespace-pre-wrap text-xs text-success">
                     {taskActionMessage}
@@ -1041,7 +1047,10 @@ function elapsedSince(isoDate: string): string {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
+    Planned: "border-border bg-surface-2 text-text-muted",
     running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    Running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    Verifying: "border-warning/20 bg-warning/10 text-warning",
     completed: "border-success/20 bg-success/10 text-success",
     failed: "border-danger/20 bg-danger/10 text-danger",
     cancelled: "border-border bg-surface-2 text-text-muted",
@@ -1059,6 +1068,69 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function ExecutionStatusLadder({ ladder }: { ladder: TaskExecutionLadder }) {
+  return (
+    <div className="border-b border-border bg-surface-0/60 px-4 py-3 shrink-0">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {ladder.steps.map((step, index) => (
+            <div key={step.label} className="flex items-center gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-wide ${executionStepClassName(step)}`}
+              >
+                {step.label}
+              </span>
+              {index < ladder.steps.length - 1 && (
+                <span className="h-px w-4 bg-border/80" aria-hidden="true" />
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-text-muted">{ladder.summary}</p>
+        {ladder.rawStatus !== ladder.currentLabel && (
+          <p className="text-[11px] text-text-muted">
+            Raw task status: {ladder.rawStatus}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function executionStepClassName(step: ExecutionLadderStep): string {
+  if (step.state === "upcoming") {
+    return "border-border bg-surface-2 text-text-muted";
+  }
+
+  if (step.label === "Ready for PR") {
+    return step.state === "current"
+      ? "border-accent/30 bg-accent/10 text-accent"
+      : "border-accent/20 bg-accent/5 text-accent";
+  }
+
+  if (step.label === "Needs attention") {
+    return step.state === "current"
+      ? "border-warning/20 bg-warning/10 text-warning"
+      : "border-warning/20 bg-warning/5 text-warning";
+  }
+
+  if (step.label === "Running") {
+    return step.state === "current"
+      ? "border-blue-500/20 bg-blue-500/10 text-blue-400"
+      : "border-blue-500/20 bg-blue-500/5 text-blue-300";
+  }
+
+  if (step.label === "Verifying") {
+    return step.state === "current"
+      ? "border-warning/20 bg-warning/10 text-warning"
+      : "border-warning/20 bg-warning/5 text-warning";
+  }
+
+  return step.state === "current"
+    ? "border-accent/20 bg-accent/10 text-accent"
+    : "border-accent/20 bg-accent/5 text-accent";
 }
 
 function HandoffModal({
@@ -1275,6 +1347,25 @@ function promptForMeasureVerdict(): string {
 
 function compactNonEmptyStrings(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function taskStatusMessage(
+  task: TaskState,
+  ladder: TaskExecutionLadder | null,
+): string {
+  if (ladder) {
+    return ladder.summary;
+  }
+
+  if (task.status === "running") {
+    return "Agent is working on this task...";
+  }
+
+  if (task.status === "completed") {
+    return "Task completed. Create a new task to continue.";
+  }
+
+  return "Task ended.";
 }
 
 // parsePromptSections kept for future use if we add collapsible brief sections to chat

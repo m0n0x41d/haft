@@ -34,6 +34,7 @@ const (
 	taskOutputMaxChars      = 64000
 	taskOutputFlushInterval = 350 * time.Millisecond
 	taskApprovalPulse       = 500 * time.Millisecond
+	taskTurnSettleTimeout   = 2 * time.Second
 	adoptConfirmationGuard  = "Present options. Do not execute resolution without user confirmation."
 )
 
@@ -45,24 +46,40 @@ type InstalledAgent struct {
 	Version string `json:"version"`
 }
 
+// ChatBlock is the canonical persisted transcript unit for desktop chat tasks.
+type ChatBlock struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Role     string `json:"role,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Name     string `json:"name,omitempty"`
+	CallID   string `json:"call_id,omitempty"`
+	ParentID string `json:"parent_id,omitempty"`
+	Input    string `json:"input,omitempty"`
+	Output   string `json:"output,omitempty"`
+	IsError  bool   `json:"is_error,omitempty"`
+}
+
 // TaskState tracks a running or persisted agent task.
 type TaskState struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	Agent          string `json:"agent"`
-	Project        string `json:"project"`
-	ProjectPath    string `json:"project_path"`
-	Status         string `json:"status"` // pending, running, completed, failed, cancelled, interrupted
-	Prompt         string `json:"prompt"`
-	Branch         string `json:"branch"`
-	Worktree       bool   `json:"worktree"`
-	WorktreePath   string `json:"worktree_path"`
-	ReusedWorktree bool   `json:"reused_worktree"`
-	StartedAt      string `json:"started_at"`
-	CompletedAt    string `json:"completed_at"`
-	ErrorMessage   string `json:"error_message"`
-	Output         string `json:"output"`   // bounded output tail
-	AutoRun        bool   `json:"auto_run"` // true = agent runs without pausing
+	ID             string      `json:"id"`
+	Title          string      `json:"title"`
+	Agent          string      `json:"agent"`
+	Project        string      `json:"project"`
+	ProjectPath    string      `json:"project_path"`
+	Status         string      `json:"status"` // pending, running, completed, failed, cancelled, interrupted
+	Prompt         string      `json:"prompt"`
+	Branch         string      `json:"branch"`
+	Worktree       bool        `json:"worktree"`
+	WorktreePath   string      `json:"worktree_path"`
+	ReusedWorktree bool        `json:"reused_worktree"`
+	StartedAt      string      `json:"started_at"`
+	CompletedAt    string      `json:"completed_at"`
+	ErrorMessage   string      `json:"error_message"`
+	Output         string      `json:"output"`      // bounded legacy output tail
+	ChatBlocks     []ChatBlock `json:"chat_blocks"` // canonical structured transcript
+	RawOutput      string      `json:"raw_output"`  // bounded raw fallback for transcript rendering
+	AutoRun        bool        `json:"auto_run"`    // true = agent runs without pausing
 }
 
 type TaskOutputEvent struct {
@@ -95,21 +112,27 @@ type taskRunner struct {
 }
 
 type runningTask struct {
-	state     TaskState
+	state      TaskState
+	plan       taskRunPlan
+	workDir    string
+	sessionID  string
+	output     *taskOutputBuffer
+	transcript *taskTranscript
+	turn       *taskTurn
+	flushStop  chan struct{}
+	flushDone  chan struct{}
+	flushOnce  sync.Once
+	autoRun    atomic.Bool
+}
+
+type taskTurn struct {
 	cmd       *exec.Cmd
 	cancel    context.CancelFunc
-	plan      taskRunPlan
-	output    *taskOutputBuffer
 	pty       *os.File
-	flushStop chan struct{}
-	flushDone chan struct{}
-	flushOnce sync.Once
 	readDone  chan struct{}
 	inputStop chan struct{}
 	inputDone chan struct{}
-	inputOnce sync.Once
-	ptyOnce   sync.Once
-	autoRun   atomic.Bool
+	waitDone  chan struct{}
 }
 
 type taskOutputWriter struct {
@@ -124,6 +147,84 @@ type taskOutputBuffer struct {
 	maxLines int
 }
 
+type taskTranscript struct {
+	agent         AgentKind
+	sessionID     string
+	partialLine   string
+	blocks        []ChatBlock
+	toolBlockIDs  map[string]string
+	blockSequence int
+}
+
+type parsedTaskLine struct {
+	handled   bool
+	sessionID string
+	blocks    []ChatBlock
+}
+
+type claudeStreamEnvelope struct {
+	Type            string              `json:"type"`
+	Subtype         string              `json:"subtype"`
+	SessionID       string              `json:"session_id"`
+	Message         claudeStreamMessage `json:"message"`
+	ParentToolUseID string              `json:"parent_tool_use_id"`
+	Result          json.RawMessage     `json:"result"`
+	IsError         bool                `json:"is_error"`
+	Error           *claudeStreamError  `json:"error"`
+}
+
+type claudeStreamMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+type claudeStreamContentBlock struct {
+	Type      string          `json:"type"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	Name      string          `json:"name"`
+	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
+	Data      string          `json:"data"`
+	Input     json.RawMessage `json:"input"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
+}
+
+type claudeStreamError struct {
+	Message string `json:"message"`
+}
+
+type codexStreamEnvelope struct {
+	Type       string          `json:"type"`
+	ThreadID   string          `json:"thread_id"`
+	Text       string          `json:"text"`
+	Delta      string          `json:"delta"`
+	Message    string          `json:"message"`
+	OutputText string          `json:"output_text"`
+	Error      string          `json:"error"`
+	Item       codexStreamItem `json:"item"`
+}
+
+type codexStreamItem struct {
+	ID               string          `json:"id"`
+	Type             string          `json:"type"`
+	Name             string          `json:"name"`
+	Server           string          `json:"server"`
+	Tool             string          `json:"tool"`
+	Status           string          `json:"status"`
+	Text             string          `json:"text"`
+	Command          string          `json:"command"`
+	Query            string          `json:"query"`
+	Description      string          `json:"description"`
+	AggregatedOutput string          `json:"aggregated_output"`
+	ExitCode         *int            `json:"exit_code"`
+	Input            json.RawMessage `json:"input"`
+	Arguments        json.RawMessage `json:"arguments"`
+	Output           json.RawMessage `json:"output"`
+	Result           json.RawMessage `json:"result"`
+}
+
 type worktreeHandle struct {
 	Path   string
 	Reused bool
@@ -131,11 +232,34 @@ type worktreeHandle struct {
 
 type taskRunPlan struct {
 	ForceCheckpointed bool
+	Conversational    bool
 	Verification      *taskVerificationPlan
 }
 
 type taskVerificationPlan struct {
 	DecisionRef string
+}
+
+func defaultTaskRunPlan(agentKind AgentKind) taskRunPlan {
+	return taskRunPlan{
+		Conversational: supportsTaskResume(agentKind),
+	}
+}
+
+func mergeTaskRunPlan(base taskRunPlan, override taskRunPlan) taskRunPlan {
+	if override.ForceCheckpointed {
+		base.ForceCheckpointed = true
+	}
+
+	if override.Conversational {
+		base.Conversational = true
+	}
+
+	if override.Verification != nil {
+		base.Verification = override.Verification
+	}
+
+	return base
 }
 
 var desktopClipboardWriter = func(ctx context.Context, text string) error {
@@ -185,45 +309,72 @@ func (r *taskRunner) shutdown() {
 	}
 
 	r.mu.Lock()
-
-	// Copy state snapshots under lock to avoid races with finalizeTask.
-	type shutdownItem struct {
-		rt     *runningTask
-		state  TaskState
-		wasRun bool
-	}
-	items := make([]shutdownItem, 0, len(r.tasks))
+	items := make([]*runningTask, 0, len(r.tasks))
 	for _, rt := range r.tasks {
-		items = append(items, shutdownItem{
-			rt:     rt,
-			state:  rt.state, // copy
-			wasRun: rt.state.Status == "running",
-		})
+		if rt.state.Status != "running" {
+			continue
+		}
+
+		items = append(items, rt)
 	}
 
 	r.mu.Unlock()
 
-	for _, item := range items {
-		if !item.wasRun {
+	for _, rt := range items {
+		r.mu.Lock()
+		current, ok := r.tasks[rt.state.ID]
+		if !ok {
+			r.mu.Unlock()
 			continue
 		}
 
-		item.rt.cancel()
-		item.rt.stopInputLoop()
-		item.rt.closePTY()
-		item.rt.waitForOutputReader()
-		item.rt.stopFlusher()
-
-		state := item.state
-		state.Status = "interrupted"
-		state.ErrorMessage = "Desktop app shut down before the task completed."
-		state.CompletedAt = nowRFC3339()
-		state.Output = item.rt.output.String()
-
-		if err := r.persistState(state); err != nil {
-			r.app.emitAppError("shutdown tasks", err)
+		current.state.Status = "interrupted"
+		if strings.TrimSpace(current.state.ErrorMessage) == "" {
+			current.state.ErrorMessage = "Desktop app shut down before the task completed."
 		}
+		turn := current.turn
+		r.mu.Unlock()
+
+		if turn != nil && turn.cancel != nil {
+			turn.cancel()
+			<-turn.waitDone
+			continue
+		}
+
+		r.finalizeTask(current, nil)
 	}
+}
+
+func (r *taskRunner) finishTaskTurn(rt *runningTask, turn *taskTurn, waitErr error) {
+	rt.stopInputLoop(turn)
+	rt.closePTY(turn)
+	rt.waitForOutputReader(turn)
+
+	r.mu.Lock()
+
+	current, ok := r.tasks[rt.state.ID]
+	if !ok || current.turn != turn {
+		r.mu.Unlock()
+		return
+	}
+
+	current.turn = nil
+	current.state.Output = current.output.String()
+	current.state.RawOutput = current.state.Output
+	current.state.ChatBlocks = current.transcript.Blocks()
+
+	if current.sessionID == "" {
+		current.sessionID = current.transcript.SessionID()
+	}
+
+	_ = normalizeTaskState(current.state)
+
+	// Process exited — always finalize. keepAlive only applies when process
+	// is still running (e.g. checkpointed mode where process pauses but doesn't exit).
+	// When waitErr == nil, the process exited cleanly — task is done.
+	r.mu.Unlock()
+
+	r.finalizeTask(current, waitErr)
 }
 
 func (r *taskRunner) nextTaskID() string {
@@ -264,6 +415,9 @@ func (r *taskRunner) list(ctx context.Context, projectPath string) ([]TaskState,
 	for id, rt := range r.tasks {
 		state := rt.state
 		state.Output = rt.output.String()
+		state.RawOutput = state.Output
+		state.ChatBlocks = rt.transcript.Blocks()
+		state = normalizeTaskState(state)
 		live[id] = state
 	}
 
@@ -308,6 +462,39 @@ func (r *taskRunner) currentOutput(id string) (string, bool) {
 	return rt.output.String(), true
 }
 
+func (r *taskRunner) snapshotTaskState(id string) (TaskState, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	rt, ok := r.tasks[id]
+	if !ok {
+		return TaskState{}, false
+	}
+
+	state := rt.state
+	state.Output = rt.output.String()
+	state.RawOutput = state.Output
+	state.ChatBlocks = rt.transcript.Blocks()
+
+	return normalizeTaskState(state), true
+}
+
+func taskStateFlushSignature(state TaskState) string {
+	chatBlocksJSON, err := marshalTaskChatBlocks(state.ChatBlocks)
+	if err != nil {
+		chatBlocksJSON = fmt.Sprintf("chat-blocks:%d", len(state.ChatBlocks))
+	}
+
+	return strings.Join([]string{
+		state.Output,
+		state.RawOutput,
+		chatBlocksJSON,
+		state.Status,
+		state.ErrorMessage,
+		state.CompletedAt,
+	}, "\x00")
+}
+
 func (r *taskRunner) stopFlusher(id string) {
 	r.mu.Lock()
 	rt, ok := r.tasks[id]
@@ -330,21 +517,30 @@ func (r *taskRunner) startOutputFlusher(rt *runningTask) {
 		for {
 			select {
 			case <-ticker.C:
-				snapshot := rt.output.String()
-				if snapshot == lastFlushed {
+				state, ok := r.snapshotTaskState(rt.state.ID)
+				if !ok {
+					return
+				}
+
+				signature := taskStateFlushSignature(state)
+				if signature == lastFlushed {
 					continue
 				}
 
-				lastFlushed = snapshot
+				lastFlushed = signature
 
-				if err := r.flushOutput(rt.state.ID, snapshot); err != nil {
+				if err := r.persistState(state); err != nil {
 					r.app.emitAppError("task output persistence", err)
 				}
 			case <-rt.flushStop:
-				snapshot := rt.output.String()
+				state, ok := r.snapshotTaskState(rt.state.ID)
+				if !ok {
+					return
+				}
 
-				if snapshot != lastFlushed {
-					if err := r.flushOutput(rt.state.ID, snapshot); err != nil {
+				signature := taskStateFlushSignature(state)
+				if signature != lastFlushed {
+					if err := r.persistState(state); err != nil {
 						r.app.emitAppError("task output persistence", err)
 					}
 				}
@@ -368,7 +564,7 @@ func (r *taskRunner) persistState(state TaskState) error {
 		return nil
 	}
 
-	return r.store.UpsertTask(context.Background(), state)
+	return r.store.UpsertTask(context.Background(), normalizeTaskState(state))
 }
 
 func (r *taskRunner) emitTaskOutput(id string, chunk string, output string) {
@@ -392,7 +588,7 @@ func (r *taskRunner) emitTaskStatus(state TaskState) {
 		return
 	}
 
-	runtime.EventsEmit(r.app.ctx, "task.status", state)
+	runtime.EventsEmit(r.app.ctx, "task.status", normalizeTaskState(state))
 }
 
 func (r *taskRunner) setAutoRun(id string, autoRun bool) error {
@@ -425,10 +621,194 @@ func (r *taskRunner) setAutoRun(id string, autoRun bool) error {
 	return nil
 }
 
+func (r *taskRunner) startTaskTurn(rt *runningTask, prompt string, recordUserInput bool) error {
+	if r == nil || rt == nil {
+		return fmt.Errorf("task runner is not initialized")
+	}
+
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return fmt.Errorf("task input is empty")
+	}
+
+	if recordUserInput {
+		display := rt.transcript.AppendLocalBlock(ChatBlock{
+			Type: "text",
+			Role: "user",
+			Text: prompt,
+		})
+		output := rt.output.Append(display)
+
+		r.mu.Lock()
+		current, ok := r.tasks[rt.state.ID]
+		if ok {
+			current.state.Output = output
+			current.state.RawOutput = output
+			current.state.ChatBlocks = current.transcript.Blocks()
+		}
+		r.mu.Unlock()
+
+		if display != "" {
+			r.emitTaskOutput(rt.state.ID, display, output)
+		}
+
+		if state, ok := r.snapshotTaskState(rt.state.ID); ok {
+			if err := r.persistState(state); err != nil {
+				r.app.emitAppError("task input persistence", err)
+			}
+
+			r.emitTaskStatus(state)
+		}
+	}
+
+	args := buildAgentTurnArgs(AgentKind(rt.state.Agent), prompt, rt.workDir, rt.sessionID)
+	if len(args) == 0 {
+		return fmt.Errorf("unsupported agent: %s", rt.state.Agent)
+	}
+
+	cfg := defaultDesktopConfig()
+	if loadedConfig, err := loadDesktopConfig(); err == nil && loadedConfig != nil {
+		cfg = *loadedConfig
+	}
+
+	timeout := time.Duration(cfg.TaskTimeoutMinutes) * time.Minute
+	if timeout <= 0 {
+		timeout = 300 * time.Minute
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = rt.workDir
+	cmd.Env = append(
+		os.Environ(),
+		"TERM=xterm-256color",
+		"HAFT_PROJECT_ROOT="+rt.state.ProjectPath,
+		"HAFT_TASK_ID="+rt.state.ID,
+		"HAFT_TASK_BRANCH="+rt.state.Branch,
+		"HAFT_TASK_WORKTREE="+rt.state.WorktreePath,
+	)
+
+	turn := &taskTurn{
+		cmd:       cmd,
+		cancel:    cancel,
+		readDone:  make(chan struct{}),
+		inputStop: make(chan struct{}),
+		inputDone: make(chan struct{}),
+		waitDone:  make(chan struct{}),
+	}
+
+	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Rows: 32,
+		Cols: 120,
+	})
+	if err != nil {
+		cancel()
+		return fmt.Errorf("start %s: %w", rt.state.Agent, err)
+	}
+
+	turn.pty = ptyFile
+
+	r.mu.Lock()
+	current, ok := r.tasks[rt.state.ID]
+	if !ok {
+		r.mu.Unlock()
+		_ = ptyFile.Close()
+		cancel()
+		return fmt.Errorf("task not found: %s", rt.state.ID)
+	}
+
+	if current.turn != nil {
+		r.mu.Unlock()
+		_ = ptyFile.Close()
+		cancel()
+		return fmt.Errorf("task %s is still processing the previous turn", rt.state.ID)
+	}
+
+	current.turn = turn
+	current.state.Output = current.output.String()
+	current.state.RawOutput = current.state.Output
+	current.state.ChatBlocks = current.transcript.Blocks()
+	r.mu.Unlock()
+
+	r.startPTYReader(rt, turn)
+	rt.startInputLoop(turn)
+
+	go func() {
+		waitErr := turn.cmd.Wait()
+		r.finishTaskTurn(rt, turn, waitErr)
+		close(turn.waitDone)
+	}()
+
+	return nil
+}
+
+func (r *taskRunner) writeTaskInput(id string, data string) error {
+	if r == nil {
+		return fmt.Errorf("task runner is not initialized")
+	}
+
+	id = strings.TrimSpace(id)
+	data = strings.TrimSpace(data)
+
+	if id == "" {
+		return fmt.Errorf("task id is required")
+	}
+
+	if data == "" {
+		return fmt.Errorf("task input is empty")
+	}
+
+	for {
+		r.mu.Lock()
+		rt, ok := r.tasks[id]
+		if !ok {
+			r.mu.Unlock()
+			return fmt.Errorf("task not found: %s", id)
+		}
+
+		if rt.state.Status != "running" {
+			status := rt.state.Status
+			r.mu.Unlock()
+			return fmt.Errorf("task %s is %s, not running", id, status)
+		}
+
+		if !rt.plan.Conversational {
+			r.mu.Unlock()
+			return fmt.Errorf("task %s does not accept follow-up input", id)
+		}
+
+		if !supportsTaskResume(AgentKind(rt.state.Agent)) {
+			r.mu.Unlock()
+			return fmt.Errorf("task %s agent does not support follow-up input", id)
+		}
+
+		if rt.sessionID == "" {
+			rt.sessionID = rt.transcript.SessionID()
+		}
+
+		if strings.TrimSpace(rt.sessionID) == "" {
+			r.mu.Unlock()
+			return fmt.Errorf("task %s is not ready for follow-up input yet", id)
+		}
+
+		if rt.turn == nil {
+			r.mu.Unlock()
+			return r.startTaskTurn(rt, data, true)
+		}
+
+		waitDone := rt.turn.waitDone
+		r.mu.Unlock()
+
+		select {
+		case <-waitDone:
+			continue
+		case <-time.After(taskTurnSettleTimeout):
+			return fmt.Errorf("task %s is still processing the previous turn", id)
+		}
+	}
+}
+
 func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
-	rt.stopInputLoop()
-	rt.closePTY()
-	rt.waitForOutputReader()
 	rt.stopFlusher()
 
 	r.mu.Lock()
@@ -441,11 +821,13 @@ func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
 
 	state := current.state
 	state.Output = current.output.String()
+	state.RawOutput = state.Output
+	state.ChatBlocks = current.transcript.Blocks()
 	state.CompletedAt = nowRFC3339()
 
 	switch {
-	case state.Status == "cancelled":
-		// Preserve explicit cancellation from CancelTask.
+	case state.Status == "cancelled", state.Status == "interrupted":
+		// Preserve explicit shutdown/cancellation state.
 	case waitErr != nil:
 		state.Status = "failed"
 		state.ErrorMessage = waitErr.Error()
@@ -474,6 +856,8 @@ func (r *taskRunner) finalizeTask(rt *runningTask, waitErr error) {
 	if state.Status == "completed" && current.plan.Verification != nil {
 		state = r.recordVerificationPass(state, current.plan.Verification)
 	}
+
+	state = normalizeTaskState(state)
 
 	if err := r.persistState(state); err != nil {
 		r.app.emitAppError("finalize task", err)
@@ -532,49 +916,251 @@ func (rt *runningTask) stopFlusher() {
 	})
 }
 
-func (rt *runningTask) startInputLoop() {
+func (rt *runningTask) startInputLoop(turn *taskTurn) {
+	if turn == nil || turn.pty == nil {
+		return
+	}
+
 	ticker := time.NewTicker(taskApprovalPulse)
 
 	go func() {
-		defer close(rt.inputDone)
+		defer close(turn.inputDone)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				if !rt.autoRun.Load() || rt.pty == nil {
+				if !rt.autoRun.Load() || turn.pty == nil {
 					continue
 				}
 
-				if _, err := io.WriteString(rt.pty, "y\n"); err != nil {
+				if _, err := io.WriteString(turn.pty, "y\n"); err != nil {
 					return
 				}
-			case <-rt.inputStop:
+			case <-turn.inputStop:
 				return
 			}
 		}
 	}()
 }
 
-func (rt *runningTask) stopInputLoop() {
-	rt.inputOnce.Do(func() {
-		close(rt.inputStop)
-		<-rt.inputDone
-	})
-}
-
-func (rt *runningTask) closePTY() {
-	rt.ptyOnce.Do(func() {
-		if rt.pty != nil {
-			_ = rt.pty.Close()
-		}
-	})
-}
-
-func (rt *runningTask) waitForOutputReader() {
-	if rt.readDone != nil {
-		<-rt.readDone
+func (rt *runningTask) stopInputLoop(turn *taskTurn) {
+	if turn == nil || turn.inputStop == nil {
+		return
 	}
+
+	close(turn.inputStop)
+	<-turn.inputDone
+}
+
+func (rt *runningTask) closePTY(turn *taskTurn) {
+	if turn == nil || turn.pty == nil {
+		return
+	}
+
+	_ = turn.pty.Close()
+}
+
+func (rt *runningTask) waitForOutputReader(turn *taskTurn) {
+	if turn != nil && turn.readDone != nil {
+		<-turn.readDone
+	}
+}
+
+func newTaskTranscript(agent AgentKind) *taskTranscript {
+	return &taskTranscript{
+		agent:        agent,
+		blocks:       []ChatBlock{},
+		toolBlockIDs: make(map[string]string),
+	}
+}
+
+func (t *taskTranscript) AppendChunk(chunk string) string {
+	if t == nil {
+		return ""
+	}
+
+	sanitized := stripANSI(chunk)
+	if sanitized == "" {
+		return ""
+	}
+
+	text := t.partialLine + sanitized
+	lines := strings.Split(text, "\n")
+
+	if strings.HasSuffix(text, "\n") {
+		t.partialLine = ""
+	} else if len(lines) > 0 {
+		t.partialLine = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+	}
+
+	var display strings.Builder
+
+	for _, line := range lines {
+		display.WriteString(t.appendLine(strings.TrimSuffix(line, "\r")))
+	}
+
+	return display.String()
+}
+
+func (t *taskTranscript) FlushPendingLine() string {
+	if t == nil || t.partialLine == "" {
+		return ""
+	}
+
+	line := strings.TrimSuffix(t.partialLine, "\r")
+	t.partialLine = ""
+	return t.appendLine(line)
+}
+
+func (t *taskTranscript) SessionID() string {
+	if t == nil {
+		return ""
+	}
+
+	return t.sessionID
+}
+
+func (t *taskTranscript) Blocks() []ChatBlock {
+	if t == nil || len(t.blocks) == 0 {
+		return []ChatBlock{}
+	}
+
+	return append([]ChatBlock(nil), t.blocks...)
+}
+
+func (t *taskTranscript) AppendLocalBlock(block ChatBlock) string {
+	if t == nil {
+		return ""
+	}
+
+	return t.appendBlock(block)
+}
+
+func (t *taskTranscript) appendLine(line string) string {
+	parsed := parseTaskStreamLine(t.agent, line)
+	if !parsed.handled {
+		return t.appendRawLine(line)
+	}
+
+	if parsed.sessionID != "" {
+		t.sessionID = stripANSI(parsed.sessionID)
+	}
+
+	var display strings.Builder
+
+	for _, block := range parsed.blocks {
+		display.WriteString(t.appendBlock(block))
+	}
+
+	return display.String()
+}
+
+func (t *taskTranscript) appendRawLine(line string) string {
+	if line == "" {
+		return "\n"
+	}
+
+	block := ChatBlock{
+		Type: "text",
+		Text: line,
+	}
+
+	return t.appendBlock(block)
+}
+
+func (t *taskTranscript) appendBlock(block ChatBlock) string {
+	block = normalizeChatBlock(block)
+
+	if block.Type == "" {
+		return ""
+	}
+
+	if block.ID == "" {
+		t.blockSequence++
+		block.ID = fmt.Sprintf("block-%d", t.blockSequence)
+	}
+
+	if block.Type == "tool_use" && block.CallID != "" {
+		t.toolBlockIDs[block.CallID] = block.ID
+	}
+
+	if block.Type == "tool_result" && block.ParentID == "" && block.CallID != "" {
+		block.ParentID = t.toolBlockIDs[block.CallID]
+	}
+
+	t.blocks = append(t.blocks, block)
+
+	return displayTextForBlock(block)
+}
+
+func normalizeChatBlock(block ChatBlock) ChatBlock {
+	block.ID = stripANSI(block.ID)
+	block.Type = stripANSI(block.Type)
+	block.Role = stripANSI(block.Role)
+	block.Text = stripANSI(block.Text)
+	block.Name = stripANSI(block.Name)
+	block.CallID = stripANSI(block.CallID)
+	block.ParentID = stripANSI(block.ParentID)
+	block.Input = stripANSI(block.Input)
+	block.Output = stripANSI(block.Output)
+
+	return block
+}
+
+func displayTextForBlock(block ChatBlock) string {
+	switch block.Type {
+	case "text", "thinking":
+		text := block.Text
+		if block.Type == "text" && block.Role == "user" {
+			text = "[user] " + text
+		}
+
+		return ensureTrailingNewline(text)
+	case "tool_use":
+		label := firstNonEmpty(block.Name, "tool_use")
+		input := strings.TrimSpace(block.Input)
+		if input == "" {
+			return ensureTrailingNewline("[tool] " + label)
+		}
+
+		return ensureTrailingNewline(fmt.Sprintf("[tool] %s\n%s", label, input))
+	case "tool_result":
+		if strings.TrimSpace(block.Output) == "" {
+			return ""
+		}
+
+		return ensureTrailingNewline(block.Output)
+	default:
+		return ""
+	}
+}
+
+func displayTextForBlocks(blocks []ChatBlock) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+
+	var display strings.Builder
+
+	for _, block := range blocks {
+		display.WriteString(displayTextForBlock(normalizeChatBlock(block)))
+	}
+
+	return normalizeTaskOutput(display.String())
+}
+
+func ensureTrailingNewline(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	if strings.HasSuffix(text, "\n") {
+		return text
+	}
+
+	return text + "\n"
 }
 
 func newTaskOutputBuffer(maxLines int, seed string) *taskOutputBuffer {
@@ -712,6 +1298,562 @@ func stripANSI(s string) string {
 	return string(result)
 }
 
+func parseTaskStreamLine(agent AgentKind, line string) parsedTaskLine {
+	line = stripANSI(strings.TrimSuffix(line, "\r"))
+
+	if line == "" {
+		return parsedTaskLine{handled: false}
+	}
+
+	switch agent {
+	case AgentClaude:
+		if parsed := parseClaudeStreamLine(line); parsed.handled {
+			return parsed
+		}
+	case AgentCodex:
+		if parsed := parseCodexStreamLine(line); parsed.handled {
+			return parsed
+		}
+	}
+
+	return parsedTaskLine{handled: false}
+}
+
+func parseClaudeStreamLine(line string) parsedTaskLine {
+	var envelope claudeStreamEnvelope
+	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+		return parsedTaskLine{}
+	}
+
+	switch envelope.Type {
+	case "system", "rate_limit_event":
+		return parsedTaskLine{handled: true, sessionID: envelope.SessionID}
+	case "result":
+		resultText := formatJSONText(envelope.Result)
+		if strings.TrimSpace(resultText) == "" {
+			return parsedTaskLine{handled: true, sessionID: envelope.SessionID}
+		}
+
+		role := "assistant"
+		if envelope.IsError {
+			role = "system"
+		}
+
+		return parsedTaskLine{
+			handled:   true,
+			sessionID: envelope.SessionID,
+			blocks: []ChatBlock{{
+				Type:    "text",
+				Role:    role,
+				Text:    resultText,
+				IsError: envelope.IsError,
+			}},
+		}
+	case "error":
+		errorText := ""
+		if envelope.Error != nil {
+			errorText = envelope.Error.Message
+		}
+		errorText = firstNonEmpty(errorText, line)
+		return parsedTaskLine{
+			handled: true,
+			blocks: []ChatBlock{{
+				Type: "text",
+				Role: "system",
+				Text: errorText,
+			}},
+		}
+	case "assistant", "user", "message":
+		role := firstNonEmpty(envelope.Message.Role, defaultClaudeMessageRole(envelope.Type))
+		contentBlocks := parseClaudeMessageContent(envelope.Message.Content)
+		blocks := make([]ChatBlock, 0, len(contentBlocks))
+
+		for _, content := range contentBlocks {
+			switch content.Type {
+			case "text":
+				blocks = append(blocks, ChatBlock{
+					Type: "text",
+					Role: role,
+					Text: firstNonEmpty(content.Text, formatJSONText(content.Content)),
+				})
+			case "thinking", "redacted_thinking":
+				thinking := firstNonEmpty(
+					content.Thinking,
+					content.Text,
+					formatJSONText(content.Content),
+				)
+
+				if thinking == "" && content.Type == "redacted_thinking" {
+					thinking = "[redacted thinking]"
+				}
+
+				blocks = append(blocks, ChatBlock{
+					Type: "thinking",
+					Role: role,
+					Text: thinking,
+				})
+			case "tool_use":
+				blocks = append(blocks, ChatBlock{
+					Type:   "tool_use",
+					Role:   role,
+					Name:   content.Name,
+					CallID: firstNonEmpty(content.ID, content.ToolUseID),
+					Input:  formatJSONInput(content.Input),
+				})
+			case "tool_result":
+				blocks = append(blocks, ChatBlock{
+					Type:    "tool_result",
+					Role:    role,
+					CallID:  firstNonEmpty(content.ToolUseID, content.ID, envelope.ParentToolUseID),
+					Output:  formatJSONText(content.Content),
+					IsError: content.IsError,
+				})
+			default:
+				blocks = append(blocks, ChatBlock{
+					Type: "text",
+					Role: role,
+					Text: rawJSONText(content),
+				})
+			}
+		}
+
+		return parsedTaskLine{
+			handled:   true,
+			sessionID: envelope.SessionID,
+			blocks:    blocks,
+		}
+	default:
+		return parsedTaskLine{}
+	}
+}
+
+func defaultClaudeMessageRole(envelopeType string) string {
+	if strings.TrimSpace(envelopeType) == "user" {
+		return "user"
+	}
+
+	return "assistant"
+}
+
+func parseClaudeMessageContent(raw json.RawMessage) []claudeStreamContentBlock {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return []claudeStreamContentBlock{}
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return []claudeStreamContentBlock{{
+			Type: "text",
+			Text: text,
+		}}
+	}
+
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err == nil {
+		blocks := make([]claudeStreamContentBlock, 0, len(items))
+
+		for _, item := range items {
+			blocks = append(blocks, parseClaudeContentBlock(item))
+		}
+
+		return blocks
+	}
+
+	return []claudeStreamContentBlock{parseClaudeContentBlock(raw)}
+}
+
+func parseClaudeContentBlock(raw json.RawMessage) claudeStreamContentBlock {
+	var block claudeStreamContentBlock
+	if err := json.Unmarshal(raw, &block); err == nil {
+		return normalizeClaudeContentBlock(block)
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return claudeStreamContentBlock{
+			Type: "text",
+			Text: text,
+		}
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return claudeStreamContentBlock{
+			Type: "text",
+			Text: rawJSONText(value),
+		}
+	}
+
+	return claudeStreamContentBlock{
+		Type: "text",
+		Text: stripANSI(strings.TrimSpace(string(raw))),
+	}
+}
+
+func normalizeClaudeContentBlock(block claudeStreamContentBlock) claudeStreamContentBlock {
+	if strings.TrimSpace(block.Type) != "" {
+		return block
+	}
+
+	switch {
+	case strings.TrimSpace(block.Thinking) != "":
+		block.Type = "thinking"
+	case strings.TrimSpace(block.Text) != "":
+		block.Type = "text"
+	case strings.TrimSpace(block.Name) != "" || hasJSONValue(block.Input):
+		block.Type = "tool_use"
+	case strings.TrimSpace(block.ToolUseID) != "" || hasJSONValue(block.Content):
+		block.Type = "tool_result"
+	}
+
+	return block
+}
+
+func parseCodexStreamLine(line string) parsedTaskLine {
+	var envelope codexStreamEnvelope
+	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+		return parsedTaskLine{}
+	}
+
+	switch envelope.Type {
+	case "thread.started", "turn.started", "turn.completed":
+		return parsedTaskLine{
+			handled:   true,
+			sessionID: envelope.ThreadID,
+		}
+	case "turn.failed", "error":
+		message := firstNonEmpty(envelope.Error, envelope.Message, envelope.Text, envelope.OutputText, line)
+		return parsedTaskLine{
+			handled: true,
+			blocks: []ChatBlock{{
+				Type: "text",
+				Role: "system",
+				Text: message,
+			}},
+		}
+	case "item.started":
+		if block, ok := codexToolUseBlock(envelope.Item); ok {
+			return parsedTaskLine{handled: true, blocks: []ChatBlock{block}}
+		}
+
+		return parsedTaskLine{handled: true}
+	case "item.completed":
+		if block, ok := codexNarrativeItemBlock(envelope.Item); ok {
+			return parsedTaskLine{handled: true, blocks: []ChatBlock{block}}
+		}
+
+		if block, ok := codexToolResultBlock(envelope.Item); ok {
+			return parsedTaskLine{handled: true, blocks: []ChatBlock{block}}
+		}
+
+		return parsedTaskLine{handled: true}
+	case "agent_message", "assistant_message", "assistant_message_delta", "assistant_response", "assistant", "agent_message_delta", "message", "message_delta":
+		text := firstNonEmpty(envelope.Text, envelope.Delta, envelope.OutputText, envelope.Message)
+		if strings.TrimSpace(text) == "" {
+			return parsedTaskLine{handled: true}
+		}
+
+		return parsedTaskLine{
+			handled: true,
+			blocks: []ChatBlock{{
+				Type: "text",
+				Role: "assistant",
+				Text: text,
+			}},
+		}
+	case "reasoning", "reasoning_delta", "reasoning_summary", "reasoning_summary_delta":
+		text := firstNonEmpty(envelope.Text, envelope.Delta, envelope.OutputText, envelope.Message)
+		if strings.TrimSpace(text) == "" {
+			return parsedTaskLine{handled: true}
+		}
+
+		return parsedTaskLine{
+			handled: true,
+			blocks: []ChatBlock{{
+				Type: "thinking",
+				Role: "assistant",
+				Text: text,
+			}},
+		}
+	default:
+		return parsedTaskLine{}
+	}
+}
+
+func codexNarrativeItemBlock(item codexStreamItem) (ChatBlock, bool) {
+	text := firstNonEmpty(item.Text, formatJSONText(item.Output), formatJSONText(item.Result))
+	if strings.TrimSpace(text) == "" {
+		return ChatBlock{}, false
+	}
+
+	switch strings.TrimSpace(item.Type) {
+	case "agent_message", "assistant_message", "assistant_response", "assistant", "message":
+		return ChatBlock{
+			Type: "text",
+			Role: "assistant",
+			Text: text,
+		}, true
+	case "reasoning", "reasoning_summary":
+		return ChatBlock{
+			Type: "thinking",
+			Role: "assistant",
+			Text: text,
+		}, true
+	case "error":
+		return ChatBlock{
+			Type:    "text",
+			Role:    "system",
+			Text:    text,
+			IsError: true,
+		}, true
+	default:
+		return ChatBlock{}, false
+	}
+}
+
+func codexToolUseBlock(item codexStreamItem) (ChatBlock, bool) {
+	if !isCodexToolItem(item) {
+		return ChatBlock{}, false
+	}
+
+	return ChatBlock{
+		Type:   "tool_use",
+		Role:   "assistant",
+		Name:   codexToolName(item),
+		CallID: item.ID,
+		Input:  codexToolInput(item),
+	}, true
+}
+
+func codexToolResultBlock(item codexStreamItem) (ChatBlock, bool) {
+	if !isCodexToolItem(item) {
+		return ChatBlock{}, false
+	}
+
+	return ChatBlock{
+		Type:    "tool_result",
+		Role:    "assistant",
+		Name:    codexToolName(item),
+		CallID:  item.ID,
+		Output:  codexToolOutput(item),
+		IsError: codexToolFailed(item),
+	}, true
+}
+
+func isCodexToolItem(item codexStreamItem) bool {
+	itemType := strings.TrimSpace(item.Type)
+	if itemType == "" || isCodexNarrativeItemType(itemType) {
+		return false
+	}
+
+	switch itemType {
+	case "command_execution", "mcp_tool_call", "file_change", "web_search", "web_search_call", "todo_list", "file_search", "tool_call":
+		return true
+	}
+
+	return strings.TrimSpace(item.Command) != "" ||
+		strings.TrimSpace(item.Query) != "" ||
+		strings.TrimSpace(item.Description) != "" ||
+		strings.TrimSpace(item.Server) != "" ||
+		strings.TrimSpace(item.Tool) != "" ||
+		strings.TrimSpace(item.AggregatedOutput) != "" ||
+		hasJSONValue(item.Arguments) ||
+		hasJSONValue(item.Input) ||
+		hasJSONValue(item.Output) ||
+		hasJSONValue(item.Result) ||
+		item.ExitCode != nil
+}
+
+func isCodexNarrativeItemType(itemType string) bool {
+	switch strings.TrimSpace(itemType) {
+	case "", "agent_message", "assistant_message", "assistant_response", "assistant", "message", "reasoning", "reasoning_summary", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func codexToolName(item codexStreamItem) string {
+	if item.Type == "mcp_tool_call" {
+		server := strings.TrimSpace(item.Server)
+		name := strings.TrimSpace(firstNonEmpty(item.Name, item.Tool, item.Type))
+		if server == "" {
+			return name
+		}
+
+		return server + ":" + name
+	}
+
+	return firstNonEmpty(item.Name, item.Tool, item.Type)
+}
+
+func hasJSONValue(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
+}
+
+func codexToolInput(item codexStreamItem) string {
+	switch {
+	case strings.TrimSpace(item.Command) != "":
+		return item.Command
+	case strings.TrimSpace(item.Query) != "":
+		return item.Query
+	case strings.TrimSpace(item.Description) != "":
+		return item.Description
+	}
+
+	input := formatJSONInput(item.Arguments)
+	if input != "" {
+		return input
+	}
+
+	return formatJSONInput(item.Input)
+}
+
+func codexToolOutput(item codexStreamItem) string {
+	switch {
+	case strings.TrimSpace(item.AggregatedOutput) != "":
+		return item.AggregatedOutput
+	case strings.TrimSpace(item.Text) != "":
+		return item.Text
+	}
+
+	output := formatJSONText(item.Output)
+	if output != "" {
+		return output
+	}
+
+	return formatJSONText(item.Result)
+}
+
+func codexToolFailed(item codexStreamItem) bool {
+	status := strings.TrimSpace(strings.ToLower(item.Status))
+	if status == "failed" || status == "error" {
+		return true
+	}
+
+	return item.ExitCode != nil && *item.ExitCode != 0
+}
+
+func formatJSONInput(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return stripANSI(trimmed)
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return stripANSI(typed)
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return stripANSI(trimmed)
+		}
+
+		return stripANSI(string(data))
+	}
+}
+
+func formatJSONText(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return stripANSI(trimmed)
+	}
+
+	return formatJSONValue(value)
+}
+
+func formatJSONValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return stripANSI(typed)
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			part := strings.TrimSpace(formatJSONValue(item))
+			if part == "" {
+				continue
+			}
+
+			parts = append(parts, part)
+		}
+
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		content := formatStructuredTextMap(typed)
+		if content != "" {
+			return content
+		}
+
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return ""
+		}
+
+		return stripANSI(string(data))
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return fmt.Sprintf("%v", typed)
+	default:
+		return fmt.Sprintf("%v", typed)
+	}
+}
+
+func formatStructuredTextMap(value map[string]any) string {
+	text := stripANSI(firstString(
+		value["text"],
+		value["thinking"],
+		value["summary"],
+		value["content"],
+	))
+	if text != "" {
+		return text
+	}
+
+	if content, ok := value["content"]; ok {
+		return formatJSONValue(content)
+	}
+
+	return ""
+}
+
+func firstString(values ...any) string {
+	for _, value := range values {
+		text, ok := value.(string)
+		if ok && strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+
+	return ""
+}
+
+func rawJSONText(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+
+	return stripANSI(string(data))
+}
+
 func trimTaskOutputLines(output string, maxLines int) string {
 	if output == "" || maxLines <= 0 {
 		return output
@@ -743,26 +1885,65 @@ func trimTaskOutputRunes(output string, maxRunes int) string {
 	return string(runes[start:])
 }
 
-func (r *taskRunner) startPTYReader(rt *runningTask) {
+func (r *taskRunner) startPTYReader(rt *runningTask, turn *taskTurn) {
 	go func() {
-		defer close(rt.readDone)
+		defer close(turn.readDone)
 
-		if rt.pty == nil {
+		if turn == nil || turn.pty == nil {
 			return
 		}
 
 		buffer := make([]byte, 4096)
 
 		for {
-			count, err := rt.pty.Read(buffer)
+			count, err := turn.pty.Read(buffer)
 			if count > 0 {
 				chunk := string(buffer[:count])
-				output := rt.output.Append(chunk)
-				r.emitTaskOutput(rt.state.ID, chunk, output)
+				displayChunk := rt.transcript.AppendChunk(chunk)
+				output := ""
+				if displayChunk != "" {
+					output = rt.output.Append(displayChunk)
+				}
+
+				r.mu.Lock()
+				current, ok := r.tasks[rt.state.ID]
+				if ok && current.turn == turn {
+					if displayChunk == "" {
+						output = current.output.String()
+					}
+
+					if current.sessionID == "" {
+						current.sessionID = current.transcript.SessionID()
+					}
+
+					current.state.Output = output
+					current.state.RawOutput = output
+					current.state.ChatBlocks = current.transcript.Blocks()
+				}
+				r.mu.Unlock()
+
+				if displayChunk != "" {
+					r.emitTaskOutput(rt.state.ID, displayChunk, output)
+				}
 			}
 
 			if err == nil {
 				continue
+			}
+
+			if trailing := rt.transcript.FlushPendingLine(); trailing != "" {
+				output := rt.output.Append(trailing)
+
+				r.mu.Lock()
+				current, ok := r.tasks[rt.state.ID]
+				if ok && current.turn == turn {
+					current.state.Output = output
+					current.state.RawOutput = output
+					current.state.ChatBlocks = current.transcript.Blocks()
+				}
+				r.mu.Unlock()
+
+				r.emitTaskOutput(rt.state.ID, trailing, output)
 			}
 
 			if !isTaskTerminalClosed(err) {
@@ -784,6 +1965,29 @@ func isTaskTerminalClosed(err error) bool {
 	}
 
 	return strings.Contains(err.Error(), "input/output error")
+}
+
+func normalizeTaskState(state TaskState) TaskState {
+	if state.ChatBlocks == nil {
+		state.ChatBlocks = []ChatBlock{}
+	}
+
+	for index := range state.ChatBlocks {
+		state.ChatBlocks[index] = normalizeChatBlock(state.ChatBlocks[index])
+	}
+
+	state.Output = normalizeTaskOutput(state.Output)
+	state.RawOutput = normalizeTaskOutput(state.RawOutput)
+
+	if state.Output == "" && state.RawOutput != "" {
+		state.Output = state.RawOutput
+	}
+
+	if state.RawOutput == "" {
+		state.RawOutput = state.Output
+	}
+
+	return state
 }
 
 // --- App binding methods ---
@@ -827,7 +2031,14 @@ func (a *App) DetectAgents() ([]InstalledAgent, error) {
 
 // SpawnTask creates and starts a new agent task.
 func (a *App) SpawnTask(agentKind string, prompt string, useWorktree bool, branchName string) (*TaskState, error) {
-	return a.spawnTaskWithTitle(agentKind, prompt, useWorktree, branchName, "")
+	return a.spawnTaskWithTitle(
+		agentKind,
+		prompt,
+		useWorktree,
+		branchName,
+		"",
+		taskRunPlan{Conversational: true},
+	)
 }
 
 // Implement creates a decision-anchored task in a dedicated worktree.
@@ -871,7 +2082,10 @@ func (a *App) Adopt(findingRef string) (*TaskState, error) {
 		false,
 		"",
 		decisionTaskTitle("Adopt", detail),
-		taskRunPlan{ForceCheckpointed: true},
+		taskRunPlan{
+			ForceCheckpointed: true,
+			Conversational:    true,
+		},
 	)
 }
 
@@ -931,6 +2145,7 @@ func (a *App) implementDecisionTask(
 		decisionTaskTitle("Implement", detail),
 		taskRunPlan{
 			ForceCheckpointed: true,
+			Conversational:    true,
 			Verification:      buildImplementVerificationPlan(dec, detail),
 		},
 	)
@@ -989,9 +2204,9 @@ func (a *App) spawnTaskWithTitle(
 		a.tasks = newTaskRunner(a, newDesktopTaskStore(a.dbConn.GetRawDB()))
 	}
 
-	plan := taskRunPlan{}
+	plan := defaultTaskRunPlan(AgentKind(agentKind))
 	if len(plans) > 0 {
-		plan = plans[0]
+		plan = mergeTaskRunPlan(plan, plans[0])
 	}
 
 	agentKind = normalizeAgentKind(agentKind, string(AgentClaude))
@@ -1030,6 +2245,7 @@ func (a *App) spawnTaskWithTitle(
 		Branch:      branchName,
 		Worktree:    useWorktree,
 		StartedAt:   nowRFC3339(),
+		ChatBlocks:  []ChatBlock{},
 		AutoRun:     autoRun,
 	}
 
@@ -1064,46 +2280,26 @@ func (a *App) spawnTaskWithTitle(
 	}
 
 	// Use task timeout from config to prevent zombie agent processes.
-	timeout := time.Duration(cfg.TaskTimeoutMinutes) * time.Minute
-	if timeout <= 0 {
-		timeout = 300 * time.Minute // fallback: 5 hours
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Dir = workDir
-	cmd.Env = append(
-		os.Environ(),
-		"TERM=xterm-256color",
-		"HAFT_PROJECT_ROOT="+a.projectRoot,
-		"HAFT_TASK_ID="+state.ID,
-		"HAFT_TASK_BRANCH="+state.Branch,
-		"HAFT_TASK_WORKTREE="+state.WorktreePath,
-	)
-
 	initialOutput := ""
 	if len(warnings) > 0 {
 		initialOutput = strings.Join(warnings, "\n") + "\n"
 	}
 
 	rt := &runningTask{
-		state:     state,
-		cmd:       cmd,
-		cancel:    cancel,
-		plan:      plan,
-		output:    newTaskOutputBuffer(taskOutputMaxLines, initialOutput),
-		flushStop: make(chan struct{}),
-		flushDone: make(chan struct{}),
-		readDone:  make(chan struct{}),
-		inputStop: make(chan struct{}),
-		inputDone: make(chan struct{}),
+		state:      state,
+		plan:       plan,
+		workDir:    workDir,
+		output:     newTaskOutputBuffer(taskOutputMaxLines, initialOutput),
+		transcript: newTaskTranscript(AgentKind(agentKind)),
+		flushStop:  make(chan struct{}),
+		flushDone:  make(chan struct{}),
 	}
 	rt.autoRun.Store(state.AutoRun)
 
 	rt.state.Output = rt.output.String()
+	rt.state = normalizeTaskState(rt.state)
 
 	if err := a.tasks.persistState(rt.state); err != nil {
-		cancel()
-
 		if state.WorktreePath != "" && !state.ReusedWorktree {
 			_, _ = cleanupWorktree(a.projectRoot, state, true)
 		}
@@ -1111,17 +2307,20 @@ func (a *App) spawnTaskWithTitle(
 		return nil, fmt.Errorf("persist task: %w", err)
 	}
 
-	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: 32,
-		Cols: 120,
-	})
-	if err != nil {
-		cancel()
+	a.tasks.register(rt)
+	a.tasks.startOutputFlusher(rt)
+
+	if err := a.tasks.startTaskTurn(rt, prompt, true); err != nil {
+		a.tasks.mu.Lock()
+		delete(a.tasks.tasks, rt.state.ID)
+		a.tasks.mu.Unlock()
+		rt.stopFlusher()
 
 		rt.state.Status = "failed"
 		rt.state.ErrorMessage = err.Error()
 		rt.state.CompletedAt = nowRFC3339()
 		rt.state.Output = appendTaskNote(rt.state.Output, err.Error())
+		rt.state = normalizeTaskState(rt.state)
 
 		_ = a.tasks.persistState(rt.state)
 
@@ -1129,20 +2328,10 @@ func (a *App) spawnTaskWithTitle(
 			_, _ = cleanupWorktree(a.projectRoot, state, true)
 		}
 
-		return nil, fmt.Errorf("start %s: %w", agentKind, err)
+		return nil, err
 	}
-	rt.pty = ptyFile
 
-	a.tasks.register(rt)
-	a.tasks.startPTYReader(rt)
-	rt.startInputLoop()
-	a.tasks.startOutputFlusher(rt)
 	a.tasks.emitTaskStatus(rt.state)
-
-	go func() {
-		waitErr := cmd.Wait()
-		a.tasks.finalizeTask(rt, waitErr)
-	}()
 
 	result := rt.state
 	return &result, nil
@@ -1177,6 +2366,15 @@ func (a *App) GetTaskOutput(id string) (string, error) {
 	return output, nil
 }
 
+// WriteTaskInput sends a follow-up message to a running conversational task.
+func (a *App) WriteTaskInput(id string, data string) error {
+	if a.tasks == nil {
+		return fmt.Errorf("no task runner")
+	}
+
+	return a.tasks.writeTaskInput(id, data)
+}
+
 // CancelTask stops a running task.
 func (a *App) CancelTask(id string) error {
 	if a.tasks == nil {
@@ -1185,12 +2383,13 @@ func (a *App) CancelTask(id string) error {
 
 	a.tasks.mu.Lock()
 	rt, ok := a.tasks.tasks[id]
-	var stateCopy TaskState
 	if ok {
 		rt.state.Status = "cancelled"
 		rt.state.ErrorMessage = ""
-		rt.state.Output = rt.output.String()
-		stateCopy = rt.state // copy under lock
+	}
+	turn := (*taskTurn)(nil)
+	if ok {
+		turn = rt.turn
 	}
 	a.tasks.mu.Unlock()
 
@@ -1198,13 +2397,20 @@ func (a *App) CancelTask(id string) error {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if err := a.tasks.persistState(stateCopy); err != nil {
-		return fmt.Errorf("persist cancelled task: %w", err)
+	if turn != nil && turn.cancel != nil {
+		if stateCopy, ok := a.tasks.snapshotTaskState(id); ok {
+			if err := a.tasks.persistState(stateCopy); err != nil {
+				return fmt.Errorf("persist cancelled task: %w", err)
+			}
+
+			a.tasks.emitTaskStatus(stateCopy)
+		}
+
+		turn.cancel()
+		return nil
 	}
 
-	rt.cancel()
-	a.tasks.emitTaskStatus(stateCopy)
-
+	a.tasks.finalizeTask(rt, nil)
 	return nil
 }
 
@@ -1389,6 +2595,9 @@ func (a *App) loadTaskState(id string) (*TaskState, error) {
 	if ok {
 		state := rt.state
 		state.Output = rt.output.String()
+		state.RawOutput = state.Output
+		state.ChatBlocks = rt.transcript.Blocks()
+		state = normalizeTaskState(state)
 		return &state, nil
 	}
 
@@ -1439,10 +2648,22 @@ func getVersion(path string, flag string) string {
 }
 
 func buildAgentArgs(kind AgentKind, prompt string, workDir string) []string {
+	return buildAgentTurnArgs(kind, prompt, workDir, "")
+}
+
+func buildAgentTurnArgs(kind AgentKind, prompt string, workDir string, sessionID string) []string {
 	switch kind {
 	case AgentClaude:
+		if strings.TrimSpace(sessionID) != "" {
+			return buildClaudeResumeArgs(prompt, sessionID)
+		}
+
 		return buildClaudeArgs(prompt)
 	case AgentCodex:
+		if strings.TrimSpace(sessionID) != "" {
+			return buildCodexResumeArgs(prompt, sessionID)
+		}
+
 		return buildCodexArgs(prompt, workDir)
 	case AgentHaft:
 		return buildHaftArgs(prompt)
@@ -1452,24 +2673,52 @@ func buildAgentArgs(kind AgentKind, prompt string, workDir string) []string {
 }
 
 func buildClaudeArgs(prompt string) []string {
-	args := []string{"claude", "-p", prompt}
+	args := []string{"claude", "-p"}
 	args = append(args, "--verbose")
-	args = append(args, "--output-format", "text")
+	args = append(args, "--output-format", "stream-json")
 	args = append(args, "--permission-mode", "default")
+	args = append(args, prompt)
+	return args
+}
+
+func buildClaudeResumeArgs(prompt string, sessionID string) []string {
+	args := []string{"claude", "-p", "--resume", sessionID}
+	args = append(args, "--verbose")
+	args = append(args, "--output-format", "stream-json")
+	args = append(args, "--permission-mode", "default")
+	args = append(args, prompt)
 	return args
 }
 
 func buildCodexArgs(prompt string, workDir string) []string {
 	args := []string{"codex", "exec"}
 	args = append(args, "--cd", workDir)
-	args = append(args, "--full-auto")
+	args = append(args, "--ask-for-approval", "untrusted")
+	args = append(args, "--json")
 	args = append(args, "-c", "mcp_servers={}")
+	args = append(args, prompt)
+	return args
+}
+
+func buildCodexResumeArgs(prompt string, sessionID string) []string {
+	args := []string{"codex", "exec", "resume"}
+	args = append(args, "--json")
+	args = append(args, sessionID)
 	args = append(args, prompt)
 	return args
 }
 
 func buildHaftArgs(prompt string) []string {
 	return []string{"haft", "agent", prompt}
+}
+
+func supportsTaskResume(kind AgentKind) bool {
+	switch kind {
+	case AgentClaude, AgentCodex:
+		return true
+	default:
+		return false
+	}
 }
 
 func decisionFeatureBranchName(branchName string, labels ...string) string {

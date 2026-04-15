@@ -1,3 +1,5 @@
+import type { main as GoMain } from "../../wailsjs/go/models";
+
 // API layer — wraps Wails Go bindings with mock fallback for standalone dev.
 // After `wails dev` generates bindings at wailsjs/go/main/App, this module
 // imports them. When running standalone (npm run dev), it uses mock data.
@@ -438,6 +440,15 @@ export interface DesktopConfig {
   auto_wire_mcp: boolean;
 }
 
+// Derive the frontend transcript shape from the Wails-generated Go model so
+// desktop chat blocks stay aligned with the backend source of truth.
+export type ChatBlock = Partial<GoMain.ChatBlock> & Pick<GoMain.ChatBlock, "id" | "type">;
+
+export interface ChatEntry {
+  block: ChatBlock;
+  toolResults: ChatBlock[];
+}
+
 export interface TaskState {
   id: string;
   title: string;
@@ -454,7 +465,226 @@ export interface TaskState {
   completed_at: string;
   error_message: string;
   output: string;
+  chat_blocks: ChatBlock[];
+  raw_output: string;
   auto_run: boolean;
+}
+
+export type ChatTranscriptState = Pick<
+  TaskState,
+  "chat_blocks" | "raw_output" | "output" | "status" | "error_message" | "agent"
+>;
+
+export interface TaskOutputEvent {
+  id: string;
+  chunk: string;
+  output: string;
+}
+
+export function hasStructuredChatBlocks(task: Pick<TaskState, "chat_blocks">): boolean {
+  const entries = buildChatEntries(task.chat_blocks);
+
+  return entries.some((entry) => isStructuredEntry(entry.block));
+}
+
+export function taskTranscriptText(task: Pick<TaskState, "raw_output" | "output">): string {
+  const rawOutput = task.raw_output.trim();
+  if (rawOutput !== "") {
+    return rawOutput;
+  }
+
+  return task.output;
+}
+
+export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
+  const mergedBlocks = coalesceNarrativeBlocks(blocks);
+  const toolParentByCallID = new Map<string, string>();
+  const toolResultsByParentID = new Map<string, ChatBlock[]>();
+
+  mergedBlocks.forEach((block) => {
+    if (block.type !== "tool_use") {
+      return;
+    }
+
+    if (block.call_id && block.id) {
+      toolParentByCallID.set(block.call_id, block.id);
+    }
+  });
+
+  mergedBlocks.forEach((block) => {
+    if (block.type !== "tool_result") {
+      return;
+    }
+
+    const parentID = resolveToolParentID(block, toolParentByCallID);
+    if (!parentID) {
+      return;
+    }
+
+    const normalizedResult = parentID === block.parent_id
+      ? block
+      : { ...block, parent_id: parentID };
+    const parentResults = toolResultsByParentID.get(parentID) ?? [];
+    toolResultsByParentID.set(parentID, [...parentResults, normalizedResult]);
+  });
+
+  return mergedBlocks.reduce<ChatEntry[]>((entries, block) => {
+    if (block.type === "tool_result" && resolveToolParentID(block, toolParentByCallID)) {
+      return entries;
+    }
+
+    entries.push({
+      block,
+      toolResults: block.type === "tool_use"
+        ? toolResultsByParentID.get(block.id) ?? []
+        : [],
+    });
+
+    return entries;
+  }, []);
+}
+
+function isStructuredEntry(block: ChatBlock): boolean {
+  if (block.type === "tool_use" || block.type === "tool_result" || block.type === "thinking") {
+    return hasRenderableBlockValue(block);
+  }
+
+  if (block.type !== "text") {
+    return hasRenderableBlockValue(block);
+  }
+
+  return (block.role ?? "").trim() !== "user" && hasRenderableBlockValue(block);
+}
+
+function hasRenderableBlockValue(block: ChatBlock): boolean {
+  return firstNonEmptyChatBlockValue(
+    block.text,
+    block.output,
+    block.input,
+    block.name,
+  ).trim() !== "";
+}
+
+function coalesceNarrativeBlocks(blocks: ChatBlock[]): ChatBlock[] {
+  return blocks.reduce<ChatBlock[]>((mergedBlocks, block) => {
+    const previousBlock = mergedBlocks[mergedBlocks.length - 1];
+
+    if (!canMergeNarrativeBlock(previousBlock, block)) {
+      mergedBlocks.push(block);
+      return mergedBlocks;
+    }
+
+    const previousText = previousBlock.text ?? "";
+    const nextText = block.text ?? "";
+    mergedBlocks[mergedBlocks.length - 1] = {
+      ...previousBlock,
+      text: mergeNarrativeText(previousText, nextText),
+    };
+
+    return mergedBlocks;
+  }, []);
+}
+
+function canMergeNarrativeBlock(
+  previousBlock: ChatBlock | undefined,
+  nextBlock: ChatBlock,
+): boolean {
+  if (!previousBlock) {
+    return false;
+  }
+
+  if (previousBlock.type !== nextBlock.type) {
+    return false;
+  }
+
+  if (previousBlock.type !== "text" && previousBlock.type !== "thinking") {
+    return false;
+  }
+
+  if ((previousBlock.role ?? "") !== (nextBlock.role ?? "")) {
+    return false;
+  }
+
+  return true;
+}
+
+function mergeNarrativeText(previousText: string, nextText: string): string {
+  if (previousText === "") {
+    return nextText;
+  }
+
+  if (nextText === "") {
+    return previousText;
+  }
+
+  if (previousText === nextText) {
+    return previousText;
+  }
+
+  if (nextText.startsWith(previousText)) {
+    return nextText;
+  }
+
+  if (previousText.endsWith(nextText) || previousText.includes(nextText)) {
+    return previousText;
+  }
+
+  if (nextText.includes(previousText)) {
+    return nextText;
+  }
+
+  if (previousText.endsWith("\n") || nextText.startsWith("\n")) {
+    return `${previousText}${nextText}`;
+  }
+
+  if (previousText.endsWith(" ") || nextText.startsWith(" ")) {
+    return `${previousText}${nextText}`;
+  }
+
+  if (startsMarkdownBlock(nextText) || endsSentence(previousText)) {
+    return `${previousText}\n\n${nextText}`;
+  }
+
+  return `${previousText}${nextText}`;
+}
+
+function startsMarkdownBlock(value: string): boolean {
+  return /^(#{1,6}\s|>\s?|[-*+]\s|\d+\.\s|```)/.test(value.trimStart());
+}
+
+function endsSentence(value: string): boolean {
+  return /[.!?:]$/.test(value.trimEnd());
+}
+
+function resolveToolParentID(
+  block: ChatBlock,
+  toolParentByCallID: Map<string, string>,
+): string {
+  const parentID = block.parent_id?.trim();
+
+  if (parentID) {
+    return parentID;
+  }
+
+  if (!block.call_id) {
+    return "";
+  }
+
+  return toolParentByCallID.get(block.call_id) ?? "";
+}
+
+function firstNonEmptyChatBlockValue(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+
+    if (value.trim() !== "") {
+      return value;
+    }
+  }
+
+  return "";
 }
 
 export interface PullRequestResult {
@@ -556,6 +786,7 @@ type WailsBindings = {
   ListTasks?: () => Promise<TaskState[]>;
   SpawnTask?: (agent: string, prompt: string, worktree: boolean, branch: string) => Promise<TaskState>;
   CancelTask?: (id: string) => Promise<void>;
+  WriteTaskInput?: (id: string, data: string) => Promise<void>;
   ArchiveTask?: (id: string) => Promise<void>;
   GetTaskOutput?: (id: string) => Promise<string>;
   ListAllTasks?: () => Promise<TaskState[]>;
@@ -937,7 +1168,66 @@ let mockTasks: TaskState[] = [
     started_at: nowString(),
     completed_at: "",
     error_message: "",
-    output: "Inspecting the current desktop runtime...\nAdding flow scheduler bindings...",
+    output: [
+      "Inspect the current desktop runtime and map the task lifecycle.",
+      "[tool] exec_command",
+      "rg -n \"chat_blocks|raw_output\" desktop",
+      "desktop/agents.go:79: ChatBlocks []ChatBlock",
+      "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+      "## Extraction plan",
+      "",
+      "- Move transcript rendering into reusable components.",
+      "- Preserve raw fallback for legacy tasks.",
+    ].join("\n"),
+    chat_blocks: [
+      {
+        id: "block-mock-1",
+        type: "thinking",
+        role: "assistant",
+        text: "Inspect the current desktop runtime and map the task lifecycle.",
+      },
+      {
+        id: "block-mock-2",
+        type: "tool_use",
+        role: "assistant",
+        name: "exec_command",
+        call_id: "call-mock-1",
+        input: "rg -n \"chat_blocks|raw_output\" desktop",
+      },
+      {
+        id: "block-mock-3",
+        type: "tool_result",
+        role: "assistant",
+        call_id: "call-mock-1",
+        parent_id: "block-mock-2",
+        output: [
+          "desktop/agents.go:79: ChatBlocks []ChatBlock",
+          "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+        ].join("\n"),
+      },
+      {
+        id: "block-mock-4",
+        type: "text",
+        role: "assistant",
+        text: [
+          "## Extraction plan",
+          "",
+          "- Move transcript rendering into reusable components.",
+          "- Preserve raw fallback for legacy tasks.",
+        ].join("\n"),
+      },
+    ],
+    raw_output: [
+      "Inspect the current desktop runtime and map the task lifecycle.",
+      "[tool] exec_command",
+      "rg -n \"chat_blocks|raw_output\" desktop",
+      "desktop/agents.go:79: ChatBlocks []ChatBlock",
+      "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+      "## Extraction plan",
+      "",
+      "- Move transcript rendering into reusable components.",
+      "- Preserve raw fallback for legacy tasks.",
+    ].join("\n"),
   },
   {
     id: "task-mock-2",
@@ -955,6 +1245,8 @@ let mockTasks: TaskState[] = [
     completed_at: nowString(),
     error_message: "",
     output: "Decision coverage report complete.",
+    chat_blocks: [],
+    raw_output: "Decision coverage report complete.",
   },
 ];
 
@@ -983,7 +1275,7 @@ let mockFlows: DesktopFlow[] = [
 
 let mockTerminalSessions: TerminalSession[] = [];
 
-function nextMockID(prefix: "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
+function nextMockID(prefix: "block" | "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -1851,6 +2143,7 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
   const task = await callBinding<TaskState>("SpawnTask", agent, prompt, worktree, branch);
   if (task) return task;
 
+  const initialTranscript = `[user] ${prompt}`;
   const createdTask: TaskState = {
     id: nextMockID("task"),
     title: prompt.slice(0, 60),
@@ -1866,7 +2159,16 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
     started_at: new Date().toISOString(),
     completed_at: "",
     error_message: "",
-    output: "",
+    output: initialTranscript,
+    chat_blocks: [
+      {
+        id: nextMockID("block"),
+        type: "text",
+        role: "user",
+        text: prompt,
+      },
+    ],
+    raw_output: initialTranscript,
   };
 
   mockTasks = [createdTask, ...mockTasks];
@@ -1880,6 +2182,40 @@ export async function cancelTask(id: string): Promise<void> {
       ? { ...task, status: "cancelled", completed_at: nowString() }
       : task,
   );
+}
+
+export async function writeTaskInput(id: string, data: string): Promise<void> {
+  const trimmed = data.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  await callBinding<void>("WriteTaskInput", id, trimmed);
+
+  mockTasks = mockTasks.map((task) => {
+    if (task.id !== id || task.status !== "running") {
+      return task;
+    }
+
+    const nextOutput = [task.output, `[user] ${trimmed}`]
+      .filter(Boolean)
+      .join("\n");
+
+    return {
+      ...task,
+      output: nextOutput,
+      raw_output: nextOutput,
+      chat_blocks: [
+        ...task.chat_blocks,
+        {
+          id: nextMockID("block"),
+          type: "text",
+          role: "user",
+          text: trimmed,
+        },
+      ],
+    };
+  });
 }
 
 export async function archiveTask(id: string): Promise<void> {
@@ -1897,6 +2233,26 @@ export async function getTaskOutput(id: string): Promise<string> {
   return mockTasks.find((task) => task.id === id)?.output ?? "";
 }
 
+export async function getTaskTranscriptState(id: string): Promise<ChatTranscriptState> {
+  const task = await listTasks()
+    .then((tasks) => tasks.find((item) => item.id === id) ?? null);
+
+  if (task) {
+    return pickTaskTranscriptState(task);
+  }
+
+  const output = await getTaskOutput(id);
+
+  return {
+    chat_blocks: [],
+    raw_output: output,
+    output,
+    status: "",
+    error_message: "",
+    agent: "",
+  };
+}
+
 export async function handoffTask(id: string, agent: string): Promise<TaskState> {
   const task = await callBinding<TaskState>("HandoffTask", id, agent);
   if (task) return task;
@@ -1907,6 +2263,17 @@ export async function handoffTask(id: string, agent: string): Promise<TaskState>
   }
 
   return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
+}
+
+function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState {
+  return {
+    chat_blocks: task.chat_blocks ?? [],
+    raw_output: task.raw_output ?? "",
+    output: task.output ?? "",
+    status: task.status ?? "",
+    error_message: task.error_message ?? "",
+    agent: task.agent ?? "",
+  };
 }
 
 export async function listFlows(): Promise<DesktopFlow[]> {

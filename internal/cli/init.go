@@ -143,11 +143,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  ✓ Database OK")
 	}
 
-	binaryPath, err := getBinaryPath()
-	if err != nil {
-		fmt.Printf("  ⚠ Could not determine binary path: %v\n", err)
-		binaryPath = "haft"
-	}
+	// Always use bare "haft" — let PATH resolve.
+	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
+	binaryPath := "haft"
 
 	if initAll {
 		initClaude, initCursor, initGemini, initCodex, initAir = true, true, true, true, true

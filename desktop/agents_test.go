@@ -60,6 +60,193 @@ func TestNormalizeTaskOutputKeepsNewestLines(t *testing.T) {
 	}
 }
 
+func TestBuildAgentArgsClaudeUsesStreamJSON(t *testing.T) {
+	args := buildAgentArgs(AgentClaude, "inspect the task", "/tmp/ignored")
+
+	if len(args) == 0 {
+		t.Fatal("expected claude args")
+	}
+
+	if !containsArgs(args, "--output-format", "stream-json") {
+		t.Fatalf("expected claude args to include stream-json output, got %v", args)
+	}
+}
+
+func TestTaskTranscriptParsesClaudeStreamJSONAndStripsANSI(t *testing.T) {
+	transcript := newTaskTranscript(AgentClaude)
+	stream := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"sess-1","cwd":"/tmp"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"\u001b[31mplan\u001b[0m"},{"type":"text","text":"\u001b[32mhello\u001b[0m"},{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"echo hi"}}]}}`,
+		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"\u001b[34mstdout\u001b[0m"}]}}`,
+		"\x1b[35mraw fallback\x1b[0m",
+	}, "\n") + "\n"
+
+	display := transcript.AppendChunk(stream)
+	blocks := transcript.Blocks()
+
+	if len(blocks) != 5 {
+		t.Fatalf("expected 5 blocks, got %d", len(blocks))
+	}
+
+	if transcript.SessionID() != "sess-1" {
+		t.Fatalf("expected transcript session id sess-1, got %q", transcript.SessionID())
+	}
+
+	if blocks[0].Type != "thinking" || blocks[0].Text != "plan" {
+		t.Fatalf("unexpected thinking block: %#v", blocks[0])
+	}
+
+	if blocks[1].Type != "text" || blocks[1].Role != "assistant" || blocks[1].Text != "hello" {
+		t.Fatalf("unexpected text block: %#v", blocks[1])
+	}
+
+	if blocks[2].Type != "tool_use" || blocks[2].Name != "Bash" || blocks[2].CallID != "toolu_1" {
+		t.Fatalf("unexpected tool use block: %#v", blocks[2])
+	}
+
+	if blocks[3].Type != "tool_result" || blocks[3].Output != "stdout" || blocks[3].ParentID != blocks[2].ID {
+		t.Fatalf("unexpected tool result block: %#v", blocks[3])
+	}
+
+	if blocks[4].Type != "text" || blocks[4].Text != "raw fallback" {
+		t.Fatalf("unexpected raw fallback block: %#v", blocks[4])
+	}
+
+	assertNoANSI(t, display)
+	assertNoANSI(t, blocks[0].Text)
+	assertNoANSI(t, blocks[1].Text)
+	assertNoANSI(t, blocks[3].Output)
+	if !strings.Contains(display, "hello") || !strings.Contains(display, "stdout") || !strings.Contains(display, "raw fallback") {
+		t.Fatalf("expected display output to include parsed content, got %q", display)
+	}
+}
+
+func TestTaskTranscriptParsesClaudeMessageEnvelopeAndResultOutput(t *testing.T) {
+	transcript := newTaskTranscript(AgentClaude)
+	stream := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"sess-2","cwd":"/tmp"}`,
+		`{"type":"message","message":{"role":"assistant","content":"\u001b[32mhello from message\u001b[0m"}}`,
+		`{"type":"result","subtype":"success","session_id":"sess-2","result":"\u001b[34mfinal answer\u001b[0m"}`,
+	}, "\n") + "\n"
+
+	display := transcript.AppendChunk(stream)
+	blocks := transcript.Blocks()
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	if transcript.SessionID() != "sess-2" {
+		t.Fatalf("expected transcript session id sess-2, got %q", transcript.SessionID())
+	}
+
+	if blocks[0].Type != "text" || blocks[0].Role != "assistant" || blocks[0].Text != "hello from message" {
+		t.Fatalf("unexpected message block: %#v", blocks[0])
+	}
+
+	if blocks[1].Type != "text" || blocks[1].Role != "assistant" || blocks[1].Text != "final answer" {
+		t.Fatalf("unexpected result block: %#v", blocks[1])
+	}
+
+	assertNoANSI(t, display)
+	assertNoANSI(t, blocks[0].Text)
+	assertNoANSI(t, blocks[1].Text)
+	if !strings.Contains(display, "hello from message") || !strings.Contains(display, "final answer") {
+		t.Fatalf("expected display output to include parsed Claude message/result content, got %q", display)
+	}
+}
+
+func TestTaskTranscriptParsesCodexJSONAndStripsANSI(t *testing.T) {
+	transcript := newTaskTranscript(AgentCodex)
+	stream := strings.Join([]string{
+		`{"type":"thread.started","thread_id":"thread-1"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"item.started","item":{"id":"cmd_1","type":"command_execution","command":"echo hi","status":"in_progress"}}`,
+		`{"type":"item.completed","item":{"id":"reason_1","type":"reasoning","text":"\u001b[31mplan\u001b[0m"}}`,
+		`{"type":"item.completed","item":{"id":"msg_1","type":"agent_message","text":"\u001b[32mDone\u001b[0m"}}`,
+		`{"type":"item.completed","item":{"id":"cmd_1","type":"command_execution","status":"failed","aggregated_output":"\u001b[33mcommand failed\u001b[0m","exit_code":1}}`,
+	}, "\n") + "\n"
+
+	display := transcript.AppendChunk(stream)
+	blocks := transcript.Blocks()
+
+	if len(blocks) != 4 {
+		t.Fatalf("expected 4 blocks, got %d", len(blocks))
+	}
+
+	if transcript.SessionID() != "thread-1" {
+		t.Fatalf("expected transcript session id thread-1, got %q", transcript.SessionID())
+	}
+
+	if blocks[0].Type != "tool_use" || blocks[0].CallID != "cmd_1" || blocks[0].Input != "echo hi" {
+		t.Fatalf("unexpected tool use block: %#v", blocks[0])
+	}
+
+	if blocks[1].Type != "thinking" || blocks[1].Text != "plan" {
+		t.Fatalf("unexpected thinking block: %#v", blocks[1])
+	}
+
+	if blocks[2].Type != "text" || blocks[2].Text != "Done" {
+		t.Fatalf("unexpected text block: %#v", blocks[2])
+	}
+
+	if blocks[3].Type != "tool_result" || blocks[3].Output != "command failed" || !blocks[3].IsError || blocks[3].ParentID != blocks[0].ID {
+		t.Fatalf("unexpected tool result block: %#v", blocks[3])
+	}
+
+	assertNoANSI(t, display)
+	assertNoANSI(t, blocks[1].Text)
+	assertNoANSI(t, blocks[2].Text)
+	assertNoANSI(t, blocks[3].Output)
+	if !strings.Contains(display, "Done") || !strings.Contains(display, "command failed") {
+		t.Fatalf("expected display output to include parsed codex content, got %q", display)
+	}
+}
+
+func TestTaskTranscriptParsesCodexAssistantItemsAndMCPToolCalls(t *testing.T) {
+	transcript := newTaskTranscript(AgentCodex)
+	stream := strings.Join([]string{
+		`{"type":"thread.started","thread_id":"thread-2"}`,
+		`{"type":"item.started","item":{"id":"msg_0","type":"assistant_message","status":"in_progress"}}`,
+		`{"type":"item.started","item":{"id":"mcp_1","type":"mcp_tool_call","server":"github","tool":"search","arguments":{"query":"repo"}}}`,
+		`{"type":"item.completed","item":{"id":"mcp_1","type":"mcp_tool_call","server":"github","tool":"search","result":{"content":[{"type":"text","text":"\u001b[33mfound\u001b[0m"}]}}}`,
+		`{"type":"item.completed","item":{"id":"msg_1","type":"assistant_message","text":"\u001b[32mDone\u001b[0m"}}`,
+		`{"type":"item.completed","item":{"id":"err_1","type":"error","text":"\u001b[31mboom\u001b[0m"}}`,
+	}, "\n") + "\n"
+
+	display := transcript.AppendChunk(stream)
+	blocks := transcript.Blocks()
+
+	if len(blocks) != 4 {
+		t.Fatalf("expected 4 blocks, got %d", len(blocks))
+	}
+
+	if blocks[0].Type != "tool_use" || blocks[0].Name != "github:search" || blocks[0].Input != `{"query":"repo"}` {
+		t.Fatalf("unexpected codex tool use block: %#v", blocks[0])
+	}
+
+	if blocks[1].Type != "tool_result" || blocks[1].Output != "found" || blocks[1].ParentID != blocks[0].ID {
+		t.Fatalf("unexpected codex tool result block: %#v", blocks[1])
+	}
+
+	if blocks[2].Type != "text" || blocks[2].Role != "assistant" || blocks[2].Text != "Done" {
+		t.Fatalf("unexpected codex assistant message block: %#v", blocks[2])
+	}
+
+	if blocks[3].Type != "text" || blocks[3].Role != "system" || blocks[3].Text != "boom" || !blocks[3].IsError {
+		t.Fatalf("unexpected codex error block: %#v", blocks[3])
+	}
+
+	assertNoANSI(t, display)
+	assertNoANSI(t, blocks[0].Input)
+	assertNoANSI(t, blocks[1].Output)
+	assertNoANSI(t, blocks[2].Text)
+	assertNoANSI(t, blocks[3].Text)
+	if !strings.Contains(display, "found") || !strings.Contains(display, "Done") || !strings.Contains(display, "boom") {
+		t.Fatalf("expected display output to include parsed Codex content, got %q", display)
+	}
+}
+
 func maxInt(a int, b int) int {
 	if a > b {
 		return a
@@ -96,8 +283,48 @@ func TestBuildAgentArgsCodexUsesWorktreeApprovalGate(t *testing.T) {
 		t.Fatalf("expected codex args to include checkpointed approval gate, got %v", args)
 	}
 
+	if !containsArg(args, "--json") {
+		t.Fatalf("expected codex args to include JSON output, got %v", args)
+	}
+
 	if containsArg(args, "--full-auto") {
 		t.Fatalf("expected codex checkpointed args to avoid --full-auto, got %v", args)
+	}
+}
+
+func TestBuildClaudeResumeArgsUsesSessionID(t *testing.T) {
+	args := buildAgentTurnArgs(AgentClaude, "follow up", "/tmp/ignored", "sess-42")
+
+	if !containsArgs(args, "--resume", "sess-42") {
+		t.Fatalf("expected claude resume args to include session id, got %v", args)
+	}
+
+	if !containsArg(args, "-p") {
+		t.Fatalf("expected claude resume args to stay in print mode, got %v", args)
+	}
+}
+
+func TestBuildCodexResumeArgsUsesSessionID(t *testing.T) {
+	args := buildAgentTurnArgs(AgentCodex, "follow up", "/tmp/ignored", "thread-42")
+
+	if len(args) < 4 || args[0] != "codex" || args[1] != "exec" || args[2] != "resume" {
+		t.Fatalf("expected codex resume command, got %v", args)
+	}
+
+	if !containsArg(args, "--json") {
+		t.Fatalf("expected codex resume args to include JSON output, got %v", args)
+	}
+
+	foundSession := false
+	for _, arg := range args {
+		if arg == "thread-42" {
+			foundSession = true
+			break
+		}
+	}
+
+	if !foundSession {
+		t.Fatalf("expected codex resume args to include session id, got %v", args)
 	}
 }
 
@@ -453,6 +680,432 @@ func TestImplementDecisionWaitsForReviewUntilAutoRunEnabled(t *testing.T) {
 
 	if !strings.Contains(final.Output, "approved=y") {
 		t.Fatalf("expected approval marker in final output, got %q", final.Output)
+	}
+}
+
+func TestSpawnTaskFollowUpPersistsConversationAcrossRestart(t *testing.T) {
+	app := newAuthoringTestApp(t)
+
+	installStubAgentBinary(
+		t,
+		"claude",
+		`#!/bin/sh
+resume=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--print|--verbose)
+      shift
+      ;;
+    --output-format|--permission-mode|--resume)
+      if [ "$1" = "--resume" ]; then
+        resume="$2"
+      fi
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -n "$resume" ]; then
+  printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"follow-up reply"}]}}\n'
+  exit 0
+fi
+
+printf '{"type":"system","subtype":"init","session_id":"sess-follow-up"}\n'
+printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"initial reply"}]}}\n'
+`,
+	)
+
+	task, err := app.SpawnTask("claude", "Inspect the runtime state", false, "")
+	if err != nil {
+		t.Fatalf("SpawnTask: %v", err)
+	}
+
+	waitForTaskOutputContains(t, app, task.ID, "initial reply")
+
+	liveState, err := app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState initial: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("task status after initial reply = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 2 {
+		t.Fatalf("expected 2 chat blocks after initial reply, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[0].Role != "user" || liveState.ChatBlocks[0].Text != "Inspect the runtime state" {
+		t.Fatalf("unexpected initial user block: %#v", liveState.ChatBlocks[0])
+	}
+
+	if liveState.ChatBlocks[1].Role != "assistant" || liveState.ChatBlocks[1].Text != "initial reply" {
+		t.Fatalf("unexpected initial chat blocks: %#v", liveState.ChatBlocks)
+	}
+
+	if err := app.WriteTaskInput(task.ID, "Please continue"); err != nil {
+		t.Fatalf("WriteTaskInput: %v", err)
+	}
+
+	liveOutput := waitForTaskOutputContains(t, app, task.ID, "follow-up reply")
+	if !strings.Contains(liveOutput, "[user] Please continue") {
+		t.Fatalf("expected user follow-up in live output, got %q", liveOutput)
+	}
+
+	liveState, err = app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState follow-up: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("task status after follow-up = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 4 {
+		t.Fatalf("expected 4 chat blocks after follow-up, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[2].Role != "user" || liveState.ChatBlocks[2].Text != "Please continue" {
+		t.Fatalf("unexpected user follow-up block: %#v", liveState.ChatBlocks[2])
+	}
+
+	if liveState.ChatBlocks[3].Role != "assistant" || liveState.ChatBlocks[3].Text != "follow-up reply" {
+		t.Fatalf("unexpected follow-up reply block: %#v", liveState.ChatBlocks[3])
+	}
+
+	projectRoot := app.projectRoot
+	app.shutdown(context.Background())
+
+	reopened := NewApp()
+	reopened.projectRoot = projectRoot
+	reopened.startup(context.Background())
+	defer reopened.shutdown(context.Background())
+
+	restored, err := reopened.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState reopened: %v", err)
+	}
+
+	if restored.Status != "interrupted" {
+		t.Fatalf("restored task status = %q, want interrupted", restored.Status)
+	}
+
+	if len(restored.ChatBlocks) != 4 {
+		t.Fatalf("expected reopened task to keep 4 chat blocks, got %d", len(restored.ChatBlocks))
+	}
+
+	if restored.ChatBlocks[0].Role != "user" || restored.ChatBlocks[0].Text != "Inspect the runtime state" {
+		t.Fatalf("unexpected reopened initial user block: %#v", restored.ChatBlocks[0])
+	}
+
+	if restored.ChatBlocks[2].Role != "user" || restored.ChatBlocks[2].Text != "Please continue" {
+		t.Fatalf("unexpected reopened user block: %#v", restored.ChatBlocks[2])
+	}
+
+	if restored.ChatBlocks[3].Text != "follow-up reply" {
+		t.Fatalf("unexpected reopened assistant block: %#v", restored.ChatBlocks[3])
+	}
+
+	if !strings.Contains(restored.Output, "[user] Inspect the runtime state") ||
+		!strings.Contains(restored.Output, "initial reply") ||
+		!strings.Contains(restored.Output, "follow-up reply") {
+		t.Fatalf("expected reopened output to preserve transcript, got %q", restored.Output)
+	}
+}
+
+func TestSpawnTaskCodexFollowUpPersistsConversationAcrossRestart(t *testing.T) {
+	app := newAuthoringTestApp(t)
+
+	installStubAgentBinary(
+		t,
+		"codex",
+		`#!/bin/sh
+resume=""
+thread=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    exec)
+      shift
+      ;;
+    resume)
+      resume="1"
+      shift
+      ;;
+    --cd|--ask-for-approval|-c)
+      shift 2
+      ;;
+    --json)
+      shift
+      ;;
+    *)
+      if [ -n "$resume" ] && [ -z "$thread" ]; then
+        thread="$1"
+        shift
+        continue
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [ -n "$resume" ]; then
+  printf '{"type":"item.completed","item":{"id":"msg_2","type":"agent_message","text":"follow-up reply"}}\n'
+  exit 0
+fi
+
+printf '{"type":"thread.started","thread_id":"thread-follow-up"}\n'
+printf '{"type":"item.started","item":{"id":"cmd_1","type":"command_execution","command":"echo hi","status":"in_progress"}}\n'
+printf '{"type":"item.completed","item":{"id":"cmd_1","type":"command_execution","status":"completed","aggregated_output":"tool stdout"}}\n'
+printf 'raw fallback line\n'
+printf '{"type":"item.completed","item":{"id":"msg_1","type":"agent_message","text":"initial reply"}}\n'
+`,
+	)
+
+	task, err := app.SpawnTask("codex", "Inspect the runtime state", false, "")
+	if err != nil {
+		t.Fatalf("SpawnTask: %v", err)
+	}
+
+	waitForTaskOutputContains(t, app, task.ID, "initial reply")
+
+	liveState, err := app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState initial: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("task status after initial reply = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 5 {
+		t.Fatalf("expected 5 chat blocks after initial reply, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[0].Role != "user" || liveState.ChatBlocks[0].Text != "Inspect the runtime state" {
+		t.Fatalf("unexpected codex initial user block: %#v", liveState.ChatBlocks[0])
+	}
+
+	if liveState.ChatBlocks[1].Type != "tool_use" || liveState.ChatBlocks[1].Input != "echo hi" {
+		t.Fatalf("unexpected codex tool use block: %#v", liveState.ChatBlocks[1])
+	}
+
+	if liveState.ChatBlocks[2].Type != "tool_result" ||
+		liveState.ChatBlocks[2].Output != "tool stdout" ||
+		liveState.ChatBlocks[2].ParentID != liveState.ChatBlocks[1].ID {
+		t.Fatalf("unexpected codex tool result block: %#v", liveState.ChatBlocks[2])
+	}
+
+	if liveState.ChatBlocks[3].Type != "text" || liveState.ChatBlocks[3].Text != "raw fallback line" {
+		t.Fatalf("unexpected codex raw fallback block: %#v", liveState.ChatBlocks[3])
+	}
+
+	if liveState.ChatBlocks[4].Role != "assistant" || liveState.ChatBlocks[4].Text != "initial reply" {
+		t.Fatalf("unexpected codex initial reply block: %#v", liveState.ChatBlocks[4])
+	}
+
+	if err := app.WriteTaskInput(task.ID, "Please continue"); err != nil {
+		t.Fatalf("WriteTaskInput: %v", err)
+	}
+
+	liveOutput := waitForTaskOutputContains(t, app, task.ID, "follow-up reply")
+	if !strings.Contains(liveOutput, "[user] Please continue") {
+		t.Fatalf("expected user follow-up in live output, got %q", liveOutput)
+	}
+
+	liveState, err = app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState follow-up: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("task status after follow-up = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 7 {
+		t.Fatalf("expected 7 chat blocks after follow-up, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[5].Role != "user" || liveState.ChatBlocks[5].Text != "Please continue" {
+		t.Fatalf("unexpected codex user follow-up block: %#v", liveState.ChatBlocks[5])
+	}
+
+	if liveState.ChatBlocks[6].Role != "assistant" || liveState.ChatBlocks[6].Text != "follow-up reply" {
+		t.Fatalf("unexpected codex follow-up reply block: %#v", liveState.ChatBlocks[6])
+	}
+
+	projectRoot := app.projectRoot
+	app.shutdown(context.Background())
+
+	reopened := NewApp()
+	reopened.projectRoot = projectRoot
+	reopened.startup(context.Background())
+	defer reopened.shutdown(context.Background())
+
+	restored, err := reopened.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState reopened: %v", err)
+	}
+
+	if restored.Status != "interrupted" {
+		t.Fatalf("restored task status = %q, want interrupted", restored.Status)
+	}
+
+	if len(restored.ChatBlocks) != 7 {
+		t.Fatalf("expected reopened task to keep 7 chat blocks, got %d", len(restored.ChatBlocks))
+	}
+
+	if restored.ChatBlocks[0].Role != "user" || restored.ChatBlocks[0].Text != "Inspect the runtime state" {
+		t.Fatalf("unexpected reopened codex initial user block: %#v", restored.ChatBlocks[0])
+	}
+
+	if restored.ChatBlocks[3].Text != "raw fallback line" {
+		t.Fatalf("unexpected reopened codex raw fallback block: %#v", restored.ChatBlocks[3])
+	}
+
+	if restored.ChatBlocks[5].Role != "user" || restored.ChatBlocks[5].Text != "Please continue" {
+		t.Fatalf("unexpected reopened codex user block: %#v", restored.ChatBlocks[5])
+	}
+
+	if restored.ChatBlocks[6].Text != "follow-up reply" {
+		t.Fatalf("unexpected reopened codex assistant block: %#v", restored.ChatBlocks[6])
+	}
+
+	if !strings.Contains(restored.Output, "[user] Inspect the runtime state") ||
+		!strings.Contains(restored.Output, "tool stdout") ||
+		!strings.Contains(restored.Output, "raw fallback line") ||
+		!strings.Contains(restored.Output, "initial reply") ||
+		!strings.Contains(restored.Output, "follow-up reply") {
+		t.Fatalf("expected reopened codex output to preserve transcript, got %q", restored.Output)
+	}
+}
+
+func TestVerifyDecisionKeepsTaskConversational(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	installStubAgentBinary(
+		t,
+		"claude",
+		`#!/bin/sh
+resume=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--print|--verbose)
+      shift
+      ;;
+    --output-format|--permission-mode|--resume)
+      if [ "$1" = "--resume" ]; then
+        resume="$2"
+      fi
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -n "$resume" ]; then
+  printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"verification follow-up"}]}}\n'
+  exit 0
+fi
+
+printf '{"type":"system","subtype":"init","session_id":"sess-verify"}\n'
+printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"verification initial"}]}}\n'
+`,
+	)
+
+	problem, err := app.CreateProblem(ProblemCreateInput{
+		Title:       "Keep verify tasks conversational",
+		Signal:      "Verification tasks stop after the first assistant reply.",
+		Acceptance:  "The operator can continue the same verification thread with follow-up input.",
+		BlastRadius: "Desktop task runner only",
+		Mode:        "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateProblem: %v", err)
+	}
+
+	decision, err := app.CreateDecision(DecisionCreateInput{
+		ProblemRef:      problem.ID,
+		SelectedTitle:   "Conversational verification",
+		WhySelected:     "Verification needs iterative follow-up in the same task thread.",
+		SelectionPolicy: "Prefer the smallest runner change that preserves task continuity.",
+		CounterArgument: "Single-shot verification is simpler to implement.",
+		WeakestLink:     "The agent backend must expose a resumable session identifier.",
+		WhyNotOthers: []DecisionRejectionInput{
+			{
+				Variant: "Single-shot verification",
+				Reason:  "It blocks follow-up questions after the first response.",
+			},
+		},
+		Rollback: &DecisionRollbackInput{
+			Triggers: []string{
+				"Verification follow-up cannot resume after the first reply.",
+			},
+		},
+		Mode: "tactical",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision: %v", err)
+	}
+
+	task, err := app.VerifyDecision(decision.ID, "claude")
+	if err != nil {
+		t.Fatalf("VerifyDecision: %v", err)
+	}
+
+	waitForTaskOutputContains(t, app, task.ID, "verification initial")
+
+	liveState, err := app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState initial: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("verify task status after initial reply = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 2 {
+		t.Fatalf("expected 2 verify chat blocks after initial reply, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[0].Role != "user" || liveState.ChatBlocks[0].Text != strings.TrimSpace(task.Prompt) {
+		t.Fatalf("unexpected verify prompt block: %#v", liveState.ChatBlocks[0])
+	}
+
+	if liveState.ChatBlocks[1].Role != "assistant" || liveState.ChatBlocks[1].Text != "verification initial" {
+		t.Fatalf("unexpected verify initial reply block: %#v", liveState.ChatBlocks[1])
+	}
+
+	if err := app.WriteTaskInput(task.ID, "Double-check the evidence links"); err != nil {
+		t.Fatalf("WriteTaskInput: %v", err)
+	}
+
+	waitForTaskOutputContains(t, app, task.ID, "verification follow-up")
+
+	liveState, err = app.loadTaskState(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskState follow-up: %v", err)
+	}
+
+	if liveState.Status != "running" {
+		t.Fatalf("verify task status after follow-up = %q, want running", liveState.Status)
+	}
+
+	if len(liveState.ChatBlocks) != 4 {
+		t.Fatalf("expected 4 verify chat blocks after follow-up, got %d", len(liveState.ChatBlocks))
+	}
+
+	if liveState.ChatBlocks[2].Role != "user" || liveState.ChatBlocks[2].Text != "Double-check the evidence links" {
+		t.Fatalf("unexpected verify follow-up block: %#v", liveState.ChatBlocks[2])
+	}
+
+	if liveState.ChatBlocks[3].Role != "assistant" || liveState.ChatBlocks[3].Text != "verification follow-up" {
+		t.Fatalf("unexpected verify follow-up reply block: %#v", liveState.ChatBlocks[3])
 	}
 }
 
@@ -1025,6 +1678,14 @@ func containsWarning(warnings []string, want string) bool {
 	}
 
 	return false
+}
+
+func assertNoANSI(t *testing.T, value string) {
+	t.Helper()
+
+	if strings.ContainsRune(value, '\x1b') {
+		t.Fatalf("expected ANSI to be stripped, got %q", value)
+	}
 }
 
 func createReadyForPRTask(t *testing.T, app *App) (*DecisionDetailView, TaskState) {

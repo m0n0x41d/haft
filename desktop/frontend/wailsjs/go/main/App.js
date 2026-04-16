@@ -6,6 +6,10 @@ export function AddProject(arg1) {
   return window['go']['main']['App']['AddProject'](arg1);
 }
 
+export function Adopt(arg1) {
+  return window['go']['main']['App']['Adopt'](arg1);
+}
+
 export function AdoptProblemCandidate(arg1) {
   return window['go']['main']['App']['AdoptProblemCandidate'](arg1);
 }
@@ -16,6 +20,10 @@ export function ArchiveTask(arg1) {
 
 export function AssessComparisonReadiness(arg1) {
   return window['go']['main']['App']['AssessComparisonReadiness'](arg1);
+}
+
+export function BaselineDecision(arg1) {
+  return window['go']['main']['App']['BaselineDecision'](arg1);
 }
 
 export function CancelTask(arg1) {
@@ -50,12 +58,20 @@ export function CreateProblem(arg1) {
   return window['go']['main']['App']['CreateProblem'](arg1);
 }
 
+export function CreatePullRequest(arg1) {
+  return window['go']['main']['App']['CreatePullRequest'](arg1);
+}
+
 export function CreateTerminalSession(arg1) {
   return window['go']['main']['App']['CreateTerminalSession'](arg1);
 }
 
 export function DeleteFlow(arg1) {
   return window['go']['main']['App']['DeleteFlow'](arg1);
+}
+
+export function DeprecateDecision(arg1, arg2) {
+  return window['go']['main']['App']['DeprecateDecision'](arg1, arg2);
 }
 
 export function DetectAgents() {
@@ -100,6 +116,10 @@ export function GetTaskOutput(arg1) {
 
 export function HandoffTask(arg1, arg2) {
   return window['go']['main']['App']['HandoffTask'](arg1, arg2);
+}
+
+export function Implement(arg1) {
+  return window['go']['main']['App']['Implement'](arg1);
 }
 
 export function ImplementDecision(arg1, arg2, arg3, arg4) {
@@ -150,6 +170,10 @@ export function ListTerminalSessions() {
   return window['go']['main']['App']['ListTerminalSessions']();
 }
 
+export function MeasureDecision(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MeasureDecision'](arg1, arg2, arg3);
+}
+
 export function OpenDirectoryPicker() {
   return window['go']['main']['App']['OpenDirectoryPicker']();
 }
@@ -162,8 +186,32 @@ export function RefreshGovernance() {
   return window['go']['main']['App']['RefreshGovernance']();
 }
 
+export function ReopenDecision(arg1, arg2) {
+  return window['go']['main']['App']['ReopenDecision'](arg1, arg2);
+}
+
 export function ResizeTerminalSession(arg1, arg2, arg3) {
   return window['go']['main']['App']['ResizeTerminalSession'](arg1, arg2, arg3);
+}
+
+export function ResolveAdoptBaseline(arg1) {
+  return window['go']['main']['App']['ResolveAdoptBaseline'](arg1);
+}
+
+export function ResolveAdoptDeprecate(arg1, arg2) {
+  return window['go']['main']['App']['ResolveAdoptDeprecate'](arg1, arg2);
+}
+
+export function ResolveAdoptMeasure(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ResolveAdoptMeasure'](arg1, arg2, arg3);
+}
+
+export function ResolveAdoptReopen(arg1, arg2) {
+  return window['go']['main']['App']['ResolveAdoptReopen'](arg1, arg2);
+}
+
+export function ResolveAdoptWaive(arg1, arg2) {
+  return window['go']['main']['App']['ResolveAdoptWaive'](arg1, arg2);
 }
 
 export function RunFlowNow(arg1) {
@@ -204,6 +252,14 @@ export function UpdateFlow(arg1) {
 
 export function VerifyDecision(arg1, arg2) {
   return window['go']['main']['App']['VerifyDecision'](arg1, arg2);
+}
+
+export function WaiveDecision(arg1, arg2) {
+  return window['go']['main']['App']['WaiveDecision'](arg1, arg2);
+}
+
+export function WriteTaskInput(arg1, arg2) {
+  return window['go']['main']['App']['WriteTaskInput'](arg1, arg2);
 }
 
 export function WriteTerminalInput(arg1, arg2) {

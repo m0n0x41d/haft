@@ -183,6 +183,29 @@ func TestDesktopReasoningAuthoringFlow(t *testing.T) {
 	}
 }
 
+func TestDesktopStartupUsesSharedProjectDatabaseForArtifactsAndTasks(t *testing.T) {
+	app := newAuthoringTestApp(t)
+	defer app.shutdown(context.Background())
+
+	if app.dbConn == nil {
+		t.Fatal("expected desktop database connection after startup")
+	}
+
+	if app.tasks == nil || app.tasks.store == nil || app.tasks.store.db == nil {
+		t.Fatal("expected desktop task store after startup")
+	}
+
+	rawDB := app.dbConn.GetRawDB()
+
+	if app.store.DB() != rawDB {
+		t.Fatal("expected artifact store to use the active project database")
+	}
+
+	if app.tasks.store.db != rawDB {
+		t.Fatal("expected task store to use the active project database")
+	}
+}
+
 func newAuthoringTestApp(t *testing.T) *App {
 	t.Helper()
 

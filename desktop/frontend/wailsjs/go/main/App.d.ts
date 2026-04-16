@@ -5,11 +5,15 @@ import {graph} from '../models';
 
 export function AddProject(arg1:string):Promise<main.ProjectInfo>;
 
+export function Adopt(arg1:string):Promise<main.TaskState>;
+
 export function AdoptProblemCandidate(arg1:string):Promise<main.ProblemDetailView>;
 
 export function ArchiveTask(arg1:string):Promise<void>;
 
 export function AssessComparisonReadiness(arg1:string):Promise<graph.ReadinessReport>;
+
+export function BaselineDecision(arg1:string):Promise<main.DecisionDetailView>;
 
 export function CancelTask(arg1:string):Promise<void>;
 
@@ -27,9 +31,13 @@ export function CreatePortfolio(arg1:main.PortfolioCreateInput):Promise<main.Por
 
 export function CreateProblem(arg1:main.ProblemCreateInput):Promise<main.ProblemDetailView>;
 
+export function CreatePullRequest(arg1:string):Promise<main.PullRequestResult>;
+
 export function CreateTerminalSession(arg1:string):Promise<main.TerminalSession>;
 
 export function DeleteFlow(arg1:string):Promise<void>;
+
+export function DeprecateDecision(arg1:string,arg2:string):Promise<main.DecisionDetailView>;
 
 export function DetectAgents():Promise<Array<main.InstalledAgent>>;
 
@@ -52,6 +60,8 @@ export function GetProblem(arg1:string):Promise<main.ProblemDetailView>;
 export function GetTaskOutput(arg1:string):Promise<string>;
 
 export function HandoffTask(arg1:string,arg2:string):Promise<main.TaskState>;
+
+export function Implement(arg1:string):Promise<main.TaskState>;
 
 export function ImplementDecision(arg1:string,arg2:string,arg3:boolean,arg4:string):Promise<main.TaskState>;
 
@@ -77,13 +87,27 @@ export function ListTasks():Promise<Array<main.TaskState>>;
 
 export function ListTerminalSessions():Promise<Array<main.TerminalSession>>;
 
+export function MeasureDecision(arg1:string,arg2:string,arg3:string):Promise<main.DecisionDetailView>;
+
 export function OpenDirectoryPicker():Promise<string>;
 
 export function OpenPathInIDE(arg1:string):Promise<void>;
 
 export function RefreshGovernance():Promise<main.GovernanceOverviewView>;
 
+export function ReopenDecision(arg1:string,arg2:string):Promise<main.ProblemDetailView>;
+
 export function ResizeTerminalSession(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function ResolveAdoptBaseline(arg1:string):Promise<main.DecisionDetailView>;
+
+export function ResolveAdoptDeprecate(arg1:string,arg2:string):Promise<main.DecisionDetailView>;
+
+export function ResolveAdoptMeasure(arg1:string,arg2:string,arg3:string):Promise<main.DecisionDetailView>;
+
+export function ResolveAdoptReopen(arg1:string,arg2:string):Promise<main.ProblemDetailView>;
+
+export function ResolveAdoptWaive(arg1:string,arg2:string):Promise<main.DecisionDetailView>;
 
 export function RunFlowNow(arg1:string):Promise<main.TaskState>;
 
@@ -104,5 +128,9 @@ export function ToggleFlow(arg1:string,arg2:boolean):Promise<main.DesktopFlow>;
 export function UpdateFlow(arg1:main.FlowInput):Promise<main.DesktopFlow>;
 
 export function VerifyDecision(arg1:string,arg2:string):Promise<main.TaskState>;
+
+export function WaiveDecision(arg1:string,arg2:string):Promise<main.DecisionDetailView>;
+
+export function WriteTaskInput(arg1:string,arg2:string):Promise<void>;
 
 export function WriteTerminalInput(arg1:string,arg2:string):Promise<void>;

@@ -123,16 +123,16 @@ func (a *App) shutdown(_ context.Context) {
 		a.flows.shutdown()
 	}
 
+	if a.tasks != nil {
+		a.tasks.shutdown()
+	}
+
 	if a.terminals != nil {
 		a.terminals.shutdown()
 	}
 
 	if a.canUseNotifications() {
 		runtime.CleanupNotifications(a.ctx)
-	}
-
-	if a.tasks != nil {
-		a.tasks.shutdown()
 	}
 
 	if a.dbConn != nil {
@@ -697,6 +697,7 @@ func (a *App) VerifyDecision(decisionID string, agentKind string) (*TaskState, e
 		false,
 		"",
 		decisionTaskTitle("Verify", detail),
+		taskRunPlan{Conversational: true},
 	)
 }
 

@@ -585,9 +585,13 @@ export function Tasks({
       return;
     }
 
-    // For conversational agents, allow sending even when status is "completed"
-    // (backend will start a new turn via --resume).
-    if (detail.status !== "running" && !isConversationalAgent) {
+    // Allow sending when running, idle (turn finished, awaiting follow-up),
+    // or for conversational agents even when completed.
+    const canSend = detail.status === "running"
+      || detail.status === "idle"
+      || isConversationalAgent;
+
+    if (!canSend) {
       return;
     }
 
@@ -821,14 +825,16 @@ export function Tasks({
 
             <ChatInput
               agentLabel={detail.agent}
-              disabled={!isConversationalAgent && detail.status !== "running"}
+              disabled={detail.status !== "running" && detail.status !== "idle" && !isConversationalAgent}
               isSubmitting={isSubmittingFollowUp}
               placeholder={
                 detail.status === "running"
                   ? "Message..."
-                  : isConversationalAgent
+                  : detail.status === "idle"
                     ? "Continue this conversation..."
-                    : "Task ended"
+                    : isConversationalAgent
+                      ? "Continue this conversation..."
+                      : "Task ended"
               }
               value={followUpInput}
               onChange={setFollowUpInput}
@@ -1080,6 +1086,7 @@ function StatusBadge({ status }: { status: string }) {
     Planned: "border-border bg-surface-2 text-text-muted",
     running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
     Running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    idle: "border-accent/30 bg-accent/10 text-accent",
     Verifying: "border-warning/20 bg-warning/10 text-warning",
     completed: "border-success/20 bg-success/10 text-success",
     failed: "border-danger/20 bg-danger/10 text-danger",

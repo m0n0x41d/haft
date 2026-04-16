@@ -30,6 +30,7 @@ type App struct {
 	flows       *flowController
 	governance  *governanceController
 	terminals   *terminalManager
+	userEnv     []string // full user shell environment (resolved once at startup)
 }
 
 func NewApp() *App {
@@ -38,21 +39,68 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	initDebugLog()
 
+	cwd, _ := os.Getwd()
+	dlog.Info().
+		Str("cwd", cwd).
+		Str("env_project_root", os.Getenv("HAFT_PROJECT_ROOT")).
+		Str("env_haft_debug", os.Getenv("HAFT_DEBUG")).
+		Msg("startup begin")
+
+	// Resolve the user's full shell environment once. macOS apps launched
+	// from Spotlight/Finder get a minimal PATH — this ensures agent binaries
+	// (claude, codex, git, etc.) are found.
+	a.userEnv = resolveUserShellEnv()
+	dlog.Debug().Int("env_vars", len(a.userEnv)).Msg("resolved user shell env")
+
+	// Resolve initial project to focus.
+	// Priority: already set (SwitchProject) > env var (haft desktop) > cwd walk > first registered > none.
 	root := strings.TrimSpace(a.projectRoot)
+	source := "pre-set"
 	if root == "" {
-		detectedRoot, err := findProjectRoot()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "haft desktop: no .haft/ directory found: %v\n", err)
-			return
-		}
-
-		root = detectedRoot
+		root = strings.TrimSpace(os.Getenv("HAFT_PROJECT_ROOT"))
+		source = "env:HAFT_PROJECT_ROOT"
 	}
+	if root == "" {
+		if detectedRoot, err := findProjectRoot(); err == nil {
+			root = detectedRoot
+			source = "cwd-walk"
+		} else {
+			dlog.Debug().Err(err).Msg("findProjectRoot failed")
+		}
+	}
+	if root == "" {
+		if reg, err := loadRegistry(); err == nil && len(reg.Projects) > 0 {
+			root = reg.Projects[0].Path
+			source = "registry-fallback"
+			dlog.Debug().Int("registry_projects", len(reg.Projects)).Msg("using registry fallback")
+		} else {
+			dlog.Debug().Err(err).Msg("registry fallback failed")
+		}
+	}
+
+	dlog.Info().Str("root", root).Str("source", source).Msg("resolved project root")
+
+	// App starts regardless — no project is fine, user can add one from UI.
+	if root != "" {
+		a.loadProject(root)
+	} else {
+		dlog.Warn().Msg("no project found — starting in empty state")
+	}
+
+	a.terminals = newTerminalManager(a)
+	dlog.Info().Str("project_name", a.projectName).Str("project_root", a.projectRoot).Msg("startup complete")
+}
+
+// loadProject opens a project's DB and initializes all controllers.
+// Called from startup() and SwitchProject().
+func (a *App) loadProject(root string) {
+	dlog.Info().Str("root", root).Msg("loadProject begin")
 
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "haft desktop: failed to resolve project root: %v\n", err)
+		dlog.Error().Err(err).Str("root", root).Msg("filepath.Abs failed")
 		return
 	}
 	a.projectRoot = absRoot
@@ -60,10 +108,17 @@ func (a *App) startup(ctx context.Context) {
 	haftDir := filepath.Join(a.projectRoot, ".haft")
 	projCfg, err := project.Load(haftDir)
 	if err != nil || projCfg == nil {
-		fmt.Fprintf(os.Stderr, "haft desktop: failed to load project config: %v\n", err)
+		dlog.Error().Err(err).Str("haft_dir", haftDir).Msg("project.Load failed")
 		return
 	}
-	a.projectName = projCfg.Name
+
+	a.projectName = filepath.Base(a.projectRoot)
+	dlog.Info().
+		Str("project_name", a.projectName).
+		Str("project_root", a.projectRoot).
+		Str("config_name", projCfg.Name).
+		Str("config_id", projCfg.ID).
+		Msg("project config loaded")
 
 	dbPath, err := projCfg.DBPath()
 	if err != nil {
@@ -93,7 +148,6 @@ func (a *App) startup(ctx context.Context) {
 		a.projectRoot,
 		resolveGovernanceScanInterval(),
 	)
-	a.terminals = newTerminalManager(a)
 
 	if err := a.tasks.restore(a.ctx, a.projectRoot); err != nil {
 		fmt.Fprintf(os.Stderr, "haft desktop: failed to restore desktop tasks: %v\n", err)
@@ -1246,16 +1300,68 @@ func findProjectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	home, _ := os.UserHomeDir()
 	for {
-		if _, err := os.Stat(filepath.Join(dir, ".haft")); err == nil {
-			return dir, nil
+		haftDir := filepath.Join(dir, ".haft")
+		// Skip ~/.haft/ — that's the global config dir, not a project
+		if dir == home {
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				return "", fmt.Errorf("no .haft/ project found")
+			}
+			dir = parent
+			continue
+		}
+		if _, err := os.Stat(haftDir); err == nil {
+			// Verify it's a project (has project.yaml), not just any .haft/ dir
+			if _, err := os.Stat(filepath.Join(haftDir, "project.yaml")); err == nil {
+				return dir, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no .haft/ found")
+			return "", fmt.Errorf("no .haft/ project found")
 		}
 		dir = parent
 	}
+}
+
+// resolveUserShellEnv runs the user's login shell to capture the full environment.
+// macOS apps launched from Spotlight/Finder get a minimal env — this ensures
+// binaries installed via homebrew, npm, etc. are found.
+func resolveUserShellEnv() []string {
+	shell, err := defaultShellPath()
+	if err != nil {
+		dlog.Warn().Err(err).Msg("resolveUserShellEnv: no shell found, using os.Environ")
+		return os.Environ()
+	}
+
+	dlog.Debug().Str("shell", shell).Msg("resolveUserShellEnv: running shell to capture env")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, shell, "-l", "-c", "env")
+	cmd.Dir = os.TempDir()
+	out, err := cmd.Output()
+	if err != nil {
+		dlog.Warn().Err(err).Msg("resolveUserShellEnv: shell env capture failed, using os.Environ")
+		return os.Environ()
+	}
+
+	lines := strings.Split(string(out), "\n")
+	env := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.Contains(line, "=") {
+			env = append(env, line)
+		}
+	}
+
+	if len(env) == 0 {
+		return os.Environ()
+	}
+
+	return env
 }
 
 func mapArtifacts[T any](arts []*artifact.Artifact, fn func(*artifact.Artifact) T, limit int) []T {

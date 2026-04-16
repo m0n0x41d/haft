@@ -77,10 +77,11 @@ export default function App() {
   useEffect(() => {
     listProjects()
       .then((p) => {
+        console.log("[haft] ListProjects:", JSON.stringify(p.map((proj) => ({ name: proj.name, path: proj.path, active: proj.is_active }))));
         setProjects(p);
 
-        const active = p.find((proj) => proj.is_active);
-        if (active) setExpandedProjects(new Set([active.path]));
+        // Expand all projects — like Zenflow, all repos visible in sidebar
+        setExpandedProjects(new Set(p.map((proj) => proj.path)));
       })
       .catch((error) => {
         reportError(error, "projects");
@@ -167,8 +168,15 @@ export default function App() {
   };
 
   const activeProject = projects.find((p) => p.is_active);
-  const projectTasks = (projectPath: string) =>
-    tasks.filter((task) => task.project_path === projectPath);
+  const projectTasks = (projectPath: string) => {
+    // Backend ListTasks already filters by active project — show all tasks
+    // under the active project in the sidebar regardless of path string match.
+    const isActive = activeProject?.path === projectPath;
+    if (isActive) {
+      return tasks;
+    }
+    return tasks.filter((task) => task.project_path === projectPath);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -393,7 +401,7 @@ export default function App() {
       {showNewProject && (
         <NewProjectModal
           onClose={() => setShowNewProject(false)}
-          onProjectAdded={() => { setRefreshKey((k) => k + 1); setShowNewProject(false); }}
+          onProjectAdded={() => { setRefreshKey((k) => k + 1); setShowNewProject(false); setPage("dashboard"); setSelectedId(null); }}
         />
       )}
 
@@ -424,6 +432,7 @@ function NewProjectModal({
   const [discovered, setDiscovered] = useState<ProjectInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     setScanning(true);
@@ -444,32 +453,32 @@ function NewProjectModal({
     } catch { /* ignore */ }
   };
 
-  const handleAdd = async (path: string) => {
+  // Smart add: checks for .haft/, inits if missing, registers, and switches.
+  const handleSmartAdd = async (path: string) => {
+    if (!path.trim() || adding) return;
+    setAdding(true);
     try {
-      const { addProject } = await import("./lib/api");
-      await addProject(path);
+      const { addProjectSmart } = await import("./lib/api");
+      await addProjectSmart(path);
       onProjectAdded();
-    } catch (e) { console.error(e); }
-  };
-
-  const handleInit = async (path: string) => {
-    try {
-      const { initProject } = await import("./lib/api");
-      await initProject(path);
-      onProjectAdded();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error("Failed to add project:", e);
+      const { reportError } = await import("./lib/errors");
+      reportError(e, "add project");
+    } finally {
+      setAdding(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-[480px] rounded-2xl border border-border bg-surface-1 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold">New project</h3>
+          <h3 className="text-lg font-semibold">Add project</h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary">x</button>
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Manual path */}
           <div className="flex gap-2">
             <input
               value={selectedPath}
@@ -483,33 +492,25 @@ function NewProjectModal({
           </div>
 
           {selectedPath && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleAdd(selectedPath)}
-                className="rounded-full bg-accent px-3 py-2 text-sm text-surface-0 hover:bg-accent-hover transition-colors"
-              >
-                Add existing project
-              </button>
-              <button
-                onClick={() => handleInit(selectedPath)}
-                className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-3 transition-colors"
-              >
-                Init new project
-              </button>
-            </div>
+            <button
+              onClick={() => handleSmartAdd(selectedPath)}
+              disabled={adding}
+              className="rounded-full bg-accent px-4 py-2 text-sm text-surface-0 hover:bg-accent-hover transition-colors disabled:opacity-50"
+            >
+              {adding ? "Adding..." : "Add project"}
+            </button>
           )}
 
-          {/* Discovered projects */}
           {scanning ? (
             <p className="text-xs text-text-muted text-center py-4">Scanning for projects...</p>
           ) : discovered.length > 0 ? (
             <div>
-              <p className="text-xs text-text-muted uppercase tracking-wider mb-2">Suggested</p>
+              <p className="text-xs text-text-muted uppercase tracking-wider mb-2">Discovered</p>
               <div className="space-y-1.5 max-h-64 overflow-y-auto">
                 {discovered.map((p) => (
                   <button
                     key={p.path}
-                    onClick={() => handleAdd(p.path)}
+                    onClick={() => handleSmartAdd(p.path)}
                     className="w-full flex items-center gap-3 rounded-lg border border-border bg-surface-2/50 px-4 py-3 text-left hover:bg-surface-2 transition-colors"
                   >
                     <FolderPlus size={16} className="text-text-muted shrink-0" />
@@ -521,9 +522,9 @@ function NewProjectModal({
                 ))}
               </div>
             </div>
-          ) : (
-            <p className="text-xs text-text-muted text-center py-4">No additional .haft/ projects found</p>
-          )}
+          ) : !selectedPath ? (
+            <p className="text-xs text-text-muted text-center py-4">Browse or paste a project path</p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -616,6 +617,7 @@ function SidebarTask({
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
     running: "bg-accent animate-pulse",
+    idle: "bg-accent",
     completed: "bg-success",
     failed: "bg-danger",
     cancelled: "bg-text-muted",

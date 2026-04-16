@@ -6,6 +6,10 @@ export function AddProject(arg1) {
   return window['go']['main']['App']['AddProject'](arg1);
 }
 
+export function AddProjectSmart(arg1) {
+  return window['go']['main']['App']['AddProjectSmart'](arg1);
+}
+
 export function Adopt(arg1) {
   return window['go']['main']['App']['Adopt'](arg1);
 }

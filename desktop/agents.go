@@ -376,8 +376,16 @@ func (r *taskRunner) finishTaskTurn(rt *runningTask, turn *taskTurn, waitErr err
 		waitErr == nil &&
 		strings.TrimSpace(current.sessionID) != ""
 
+	dlog.Debug().
+		Bool("keep_alive", keepAlive).
+		Str("task_id", rt.state.ID).
+		Str("session_id", current.sessionID).
+		Bool("conversational", current.plan.Conversational).
+		Msg("finishTaskTurn")
+
 	if keepAlive {
 		current.turn = nil
+		current.state.Status = "idle"
 
 		state := current.state
 		state = normalizeTaskState(state)
@@ -700,7 +708,7 @@ func (r *taskRunner) startTaskTurn(rt *runningTask, prompt string, recordUserInp
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = rt.workDir
 	cmd.Env = append(
-		os.Environ(),
+		r.app.userEnv,
 		"TERM=xterm-256color",
 		"HAFT_PROJECT_ROOT="+rt.state.ProjectPath,
 		"HAFT_TASK_ID="+rt.state.ID,
@@ -786,7 +794,7 @@ func (r *taskRunner) writeTaskInput(id string, data string) error {
 			return fmt.Errorf("task not found: %s", id)
 		}
 
-		if rt.state.Status != "running" {
+		if rt.state.Status != "running" && rt.state.Status != "idle" {
 			status := rt.state.Status
 			r.mu.Unlock()
 			return fmt.Errorf("task %s is %s, not running", id, status)
@@ -812,6 +820,7 @@ func (r *taskRunner) writeTaskInput(id string, data string) error {
 		}
 
 		if rt.turn == nil {
+			rt.state.Status = "running"
 			r.mu.Unlock()
 			return r.startTaskTurn(rt, data, true)
 		}
@@ -2360,10 +2369,17 @@ func (a *App) spawnTaskWithTitle(
 // ListTasks returns all non-archived tasks for the active project.
 func (a *App) ListTasks() ([]TaskState, error) {
 	if a.tasks == nil {
+		dlog.Debug().Msg("ListTasks: task runner is nil")
 		return []TaskState{}, nil
 	}
 
-	return a.tasks.list(a.ctx, a.projectRoot)
+	tasks, err := a.tasks.list(a.ctx, a.projectRoot)
+	dlog.Debug().
+		Str("project_root", a.projectRoot).
+		Int("count", len(tasks)).
+		Err(err).
+		Msg("ListTasks")
+	return tasks, err
 }
 
 // GetTaskOutput returns the current buffered output for a task.

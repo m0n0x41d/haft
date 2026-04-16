@@ -7,7 +7,7 @@ import {
   createPullRequest,
   detectAgents,
   getConfig,
-  getTaskOutput,
+  getTaskTranscriptState,
   handoffTask,
   listTasks,
   openPathInIDE,
@@ -17,11 +17,16 @@ import {
   resolveAdoptReopen,
   resolveAdoptWaive,
   spawnTask,
+  writeTaskInput,
+  type ChatTranscriptState,
   type DesktopConfig,
   type InstalledAgent,
   type PullRequestResult,
+  type TaskOutputEvent,
   type TaskState,
 } from "../lib/api";
+import { ChatInput } from "../components/ChatInput";
+import { ChatView } from "../components/ChatView";
 import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
 import {
   buildIrreversibleActionDialogModel,
@@ -33,12 +38,6 @@ import {
   type TaskExecutionLadder,
   type ExecutionLadderStep,
 } from "./taskExecutionLadder";
-
-interface TaskOutputEvent {
-  id: string;
-  chunk: string;
-  output: string;
-}
 
 type AdoptResolutionMode = "drift" | "stale";
 type AdoptResolutionContext = {
@@ -82,9 +81,13 @@ export function Tasks({
   const [handoffAgent, setHandoffAgent] = useState("codex");
   const [resolutionAction, setResolutionAction] = useState("");
   const [taskActionMessage, setTaskActionMessage] = useState("");
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [isSubmittingFollowUp, setIsSubmittingFollowUp] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] =
     useState<TaskPendingConfirmation | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const selectedTaskRef = useRef<string | null>(externalSelectedTask ?? null);
+  const transcriptRefreshTimerRef = useRef<number | null>(null);
   const tasks = controlledTasks ?? internalTasks;
   const setTasks = onTasksChange ?? setInternalTasks;
 
@@ -112,6 +115,39 @@ export function Tasks({
     }
   }, [onTasksRefresh, setTasks]);
 
+  const syncTaskTranscript = useCallback(
+    async (taskID: string) => {
+      try {
+        const transcript = await getTaskTranscriptState(taskID);
+
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskID
+              ? mergeTaskTranscript(task, transcript)
+              : task,
+          ),
+        );
+      } catch (error) {
+        reportError(error, "task transcript");
+      }
+    },
+    [setTasks],
+  );
+
+  const scheduleTaskTranscriptSync = useCallback(
+    (taskID: string) => {
+      if (transcriptRefreshTimerRef.current !== null) {
+        window.clearTimeout(transcriptRefreshTimerRef.current);
+      }
+
+      transcriptRefreshTimerRef.current = window.setTimeout(() => {
+        transcriptRefreshTimerRef.current = null;
+        void syncTaskTranscript(taskID);
+      }, 150);
+    },
+    [syncTaskTranscript],
+  );
+
   useEffect(() => {
     if (externalShow) {
       setInternalShow(true);
@@ -125,6 +161,18 @@ export function Tasks({
 
     setSelectedTask(externalSelectedTask);
   }, [externalSelectedTask]);
+
+  useEffect(() => {
+    selectedTaskRef.current = selectedTask;
+  }, [selectedTask]);
+
+  useEffect(() => {
+    return () => {
+      if (transcriptRefreshTimerRef.current !== null) {
+        window.clearTimeout(transcriptRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     detectAgents()
@@ -162,10 +210,15 @@ export function Tasks({
             ? {
                 ...task,
                 output: payload.output,
+                raw_output: payload.output,
               }
             : task,
         ),
       );
+
+      if (selectedTaskRef.current === payload.id) {
+        scheduleTaskTranscriptSync(payload.id);
+      }
     });
 
     const stopStatus = EventsOn("task.status", (payload: TaskState) => {
@@ -176,7 +229,7 @@ export function Tasks({
       stopOutput?.();
       stopStatus?.();
     };
-  }, []);
+  }, [scheduleTaskTranscriptSync, setTasks]);
 
   useEffect(() => {
     if (tasks.length === 0) {
@@ -196,36 +249,33 @@ export function Tasks({
       return;
     }
 
-    getTaskOutput(selectedTask)
-      .then((output) => {
+    getTaskTranscriptState(selectedTask)
+      .then((transcript) => {
         setTasks((current) =>
           current.map((task) =>
             task.id === selectedTask
-              ? {
-                  ...task,
-                  output,
-                }
+              ? mergeTaskTranscript(task, transcript)
               : task,
           ),
         );
       })
       .catch((error) => {
-        reportError(error, "task output");
+        reportError(error, "task transcript");
       });
-  }, [selectedTask]);
+  }, [selectedTask, setTasks]);
 
   const detail = tasks.find((task) => task.id === selectedTask) ?? null;
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
   const adoptResolution = getAdoptResolutionContext(detail);
   const executionLadder = detail ? getTaskExecutionLadder(detail) : null;
   const displayStatus = executionLadder?.currentLabel ?? detail?.status ?? "";
-  const statusMessage = detail
-    ? taskStatusMessage(detail, executionLadder)
-    : "";
+  const shouldShowInitialBrief = detail ? shouldRenderInitialBrief(detail) : false;
 
   useEffect(() => {
     setResolutionAction("");
     setTaskActionMessage("");
+    setFollowUpInput("");
+    setIsSubmittingFollowUp(false);
     setPendingConfirmation(null);
   }, [detail?.id]);
 
@@ -526,6 +576,34 @@ export function Tasks({
     }
   };
 
+  const isConversationalAgent = detail
+    ? detail.agent === "claude" || detail.agent === "codex"
+    : false;
+
+  const handleFollowUpSubmit = async (value: string) => {
+    if (!detail) {
+      return;
+    }
+
+    // For conversational agents, allow sending even when status is "completed"
+    // (backend will start a new turn via --resume).
+    if (detail.status !== "running" && !isConversationalAgent) {
+      return;
+    }
+
+    setIsSubmittingFollowUp(true);
+
+    try {
+      await writeTaskInput(detail.id, value);
+      setFollowUpInput("");
+      scheduleTaskTranscriptSync(detail.id);
+    } catch (error) {
+      reportError(error, "task follow-up");
+    } finally {
+      setIsSubmittingFollowUp(false);
+    }
+  };
+
   // handleCopy removed — not used in chat view
 
   return (
@@ -566,15 +644,15 @@ export function Tasks({
             </div>
           </div>
         ) : (
-          <div className="flex h-[calc(100vh-12rem)] flex-col">
+          <div className="flex flex-col -mx-6 -mb-6" style={{ height: "calc(100vh - 7rem)" }}>
             {/* Compact header bar */}
             <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <StatusBadge status={displayStatus} />
+                <span className="truncate text-sm text-text-primary font-medium max-w-[200px]" title={detail.title}>
+                  {detail.title}
+                </span>
                 <span className="text-xs text-text-muted">{detail.agent}</span>
-                {detail.branch && (
-                  <span className="text-xs text-text-muted font-mono truncate">{detail.branch}</span>
-                )}
                 {detail.status === "running" && detail.started_at && (
                   <ElapsedTimer startedAt={detail.started_at} />
                 )}
@@ -655,118 +733,107 @@ export function Tasks({
           {/* Chat messages area */}
           <div
             ref={outputRef}
-            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+            className="flex flex-1 flex-col justify-end overflow-y-auto px-6 py-4"
           >
-            {/* User message: the prompt */}
-            <div className="flex justify-end">
-              <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-accent/15 border border-accent/20 px-4 py-3">
-                <p className="whitespace-pre-wrap text-sm text-text-primary">{detail.prompt}</p>
-              </div>
-            </div>
-
-            {/* Error message if any */}
-            {detail.error_message && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-danger/20 bg-danger/5 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider text-danger mb-1">Error</p>
-                  <p className="text-sm text-danger/90">{detail.error_message}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Agent response: streaming output */}
-            {detail.output ? (
-              <AgentOutputBubble output={detail.output} running={detail.status === "running"} />
-            ) : detail.status === "running" ? (
-              <div className="flex justify-start">
-                <div className="rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                    <span className="text-xs text-text-muted">Agent is working...</span>
+            <div className="space-y-3">
+              {shouldShowInitialBrief && (
+                <div className="flex justify-end">
+                  <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-accent/10 px-4 py-3">
+                    <p className="whitespace-pre-wrap text-sm text-text-primary">{detail.prompt}</p>
                   </div>
                 </div>
-              </div>
-            ) : null}
+              )}
+
+              <ChatView
+                task={detail}
+                emptyMessage="No transcript yet."
+              />
+            </div>
           </div>
 
           {/* Input area at bottom */}
-          <div className="shrink-0 border-t border-border bg-surface-1/50 px-4 py-3">
+          <div className="shrink-0">
             {adoptResolution && detail.status !== "running" && (
-              <div className="mb-3 rounded-xl border border-border bg-surface-0 px-4 py-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wider text-text-muted">
-                      Adopt Resolution
-                    </p>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {adoptResolution.mode === "drift"
-                        ? `Resolve drift for ${adoptResolution.decisionID} with re-baseline, reopen, or waive.`
-                        : `Resolve staleness for ${adoptResolution.decisionID} with measure, waive, deprecate, or reopen.`}
-                    </p>
-                  </div>
+              <div className="border-t border-border bg-surface-1/50 px-4 pt-3">
+                <div className="mb-3 rounded-xl border border-border bg-surface-0 px-4 py-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider text-text-muted">
+                        Adopt Resolution
+                      </p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        {adoptResolution.mode === "drift"
+                          ? `Resolve drift for ${adoptResolution.decisionID} with re-baseline, reopen, or waive.`
+                          : `Resolve staleness for ${adoptResolution.decisionID} with measure, waive, deprecate, or reopen.`}
+                      </p>
+                    </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {adoptResolution.mode === "drift" && (
+                    <div className="flex flex-wrap gap-2">
+                      {adoptResolution.mode === "drift" && (
+                        <button
+                          onClick={() => void handleRebaseline(adoptResolution)}
+                          disabled={resolutionAction !== ""}
+                          className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                        >
+                          {resolutionAction === "baseline" ? "Re-baselining..." : "Re-baseline"}
+                        </button>
+                      )}
+                      {adoptResolution.mode === "stale" && (
+                        <button
+                          onClick={() => void handleMeasure(adoptResolution, detail)}
+                          disabled={resolutionAction !== ""}
+                          className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                        >
+                          {resolutionAction === "measure" ? "Measuring..." : "Measure"}
+                        </button>
+                      )}
                       <button
-                        onClick={() => void handleRebaseline(adoptResolution)}
+                        onClick={() => void handleWaive(adoptResolution, detail)}
                         disabled={resolutionAction !== ""}
                         className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
                       >
-                        {resolutionAction === "baseline" ? "Re-baselining..." : "Re-baseline"}
+                        {resolutionAction === "waive" ? "Waiving..." : "Waive"}
                       </button>
-                    )}
-                    {adoptResolution.mode === "stale" && (
+                      {adoptResolution.mode === "stale" && (
+                        <button
+                          onClick={() => void handleDeprecate(adoptResolution, detail)}
+                          disabled={resolutionAction !== ""}
+                          className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
+                        >
+                          {resolutionAction === "deprecate" ? "Deprecating..." : "Deprecate"}
+                        </button>
+                      )}
                       <button
-                        onClick={() => void handleMeasure(adoptResolution, detail)}
+                        onClick={() => void handleReopen(adoptResolution, detail)}
                         disabled={resolutionAction !== ""}
-                        className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
+                        className="rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
                       >
-                        {resolutionAction === "measure" ? "Measuring..." : "Measure"}
+                        {resolutionAction === "reopen" ? "Reopening..." : "Reopen"}
                       </button>
-                    )}
-                    <button
-                      onClick={() => void handleWaive(adoptResolution, detail)}
-                      disabled={resolutionAction !== ""}
-                      className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-50"
-                    >
-                      {resolutionAction === "waive" ? "Waiving..." : "Waive"}
-                    </button>
-                    {adoptResolution.mode === "stale" && (
-                      <button
-                        onClick={() => void handleDeprecate(adoptResolution, detail)}
-                        disabled={resolutionAction !== ""}
-                        className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
-                      >
-                        {resolutionAction === "deprecate" ? "Deprecating..." : "Deprecate"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => void handleReopen(adoptResolution, detail)}
-                      disabled={resolutionAction !== ""}
-                      className="rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
-                    >
-                      {resolutionAction === "reopen" ? "Reopening..." : "Reopen"}
-                    </button>
+                    </div>
                   </div>
+                  {taskActionMessage.trim() !== "" && (
+                    <p className="mt-2 text-xs text-success">{taskActionMessage}</p>
+                  )}
                 </div>
               </div>
             )}
 
-            <div className="flex items-end gap-3">
-              <div className="flex-1 rounded-xl border border-border bg-surface-0 px-4 py-2.5">
-                <p className="text-xs text-text-muted">{statusMessage}</p>
-                {taskActionMessage && (
-                  <p className="mt-2 whitespace-pre-wrap text-xs text-success">
-                    {taskActionMessage}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs text-text-muted px-2 py-1 rounded-lg border border-border bg-surface-2">
-                  {detail.agent}
-                </span>
-              </div>
-            </div>
+            <ChatInput
+              agentLabel={detail.agent}
+              disabled={!isConversationalAgent && detail.status !== "running"}
+              isSubmitting={isSubmittingFollowUp}
+              placeholder={
+                detail.status === "running"
+                  ? "Message..."
+                  : isConversationalAgent
+                    ? "Continue this conversation..."
+                    : "Task ended"
+              }
+              value={followUpInput}
+              onChange={setFollowUpInput}
+              onSubmit={handleFollowUpSubmit}
+            />
           </div>
         </div>
         )}
@@ -978,43 +1045,6 @@ function NewTaskModal({
   );
 }
 
-const OUTPUT_MAX_LINES = 500;
-const OUTPUT_VISIBLE_LINES = 200;
-
-function AgentOutputBubble({ output, running }: { output: string; running: boolean }) {
-  const [showFull, setShowFull] = useState(false);
-
-  const lines = output.split("\n");
-  const truncated = !showFull && lines.length > OUTPUT_MAX_LINES;
-  const visible = truncated
-    ? lines.slice(-OUTPUT_VISIBLE_LINES).join("\n")
-    : output;
-
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
-        {running && (
-          <div className="flex items-center gap-2 mb-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-            <span className="text-[11px] text-accent">Generating...</span>
-          </div>
-        )}
-        {truncated && (
-          <button
-            onClick={() => setShowFull(true)}
-            className="mb-2 text-xs text-accent hover:text-accent-hover transition-colors"
-          >
-            Showing last {OUTPUT_VISIBLE_LINES} of {lines.length} lines. Show full output.
-          </button>
-        )}
-        <pre className="whitespace-pre-wrap font-mono text-xs text-text-secondary leading-relaxed">
-          {visible}
-        </pre>
-      </div>
-    </div>
-  );
-}
-
 function ElapsedTimer({ startedAt }: { startedAt: string }) {
   const [, setTick] = useState(0);
 
@@ -1024,7 +1054,7 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
   }, []);
 
   return (
-    <span className="text-xs text-text-muted animate-pulse">
+    <span className="text-xs text-text-muted">
       {elapsedSince(startedAt)}
     </span>
   );
@@ -1245,6 +1275,44 @@ function mergeTaskList(current: TaskState[], next: TaskState): TaskState[] {
   return merged;
 }
 
+function mergeTaskTranscript(
+  task: TaskState,
+  transcript: ChatTranscriptState,
+): TaskState {
+  const nextOutput = transcript.output || task.output;
+  const nextRawOutput = transcript.raw_output || nextOutput || task.raw_output;
+  const nextChatBlocks = transcript.chat_blocks.length > 0 || task.chat_blocks.length === 0
+    ? transcript.chat_blocks
+    : task.chat_blocks;
+  const nextStatus = transcript.status || task.status;
+  const shouldReplaceError = transcript.status !== "" || transcript.error_message !== "";
+
+  return {
+    ...task,
+    output: nextOutput,
+    raw_output: nextRawOutput,
+    chat_blocks: nextChatBlocks,
+    status: nextStatus,
+    error_message: shouldReplaceError
+      ? transcript.error_message
+      : task.error_message,
+  };
+}
+
+function shouldRenderInitialBrief(task: Pick<TaskState, "prompt" | "chat_blocks">): boolean {
+  const prompt = task.prompt.trim();
+
+  if (prompt === "") {
+    return false;
+  }
+
+  const transcriptHasPrompt = task.chat_blocks.some((block) =>
+    block.role === "user" && (block.text ?? "").trim() === prompt,
+  );
+
+  return !transcriptHasPrompt;
+}
+
 function getAdoptResolutionContext(
   task: TaskState | null,
 ): AdoptResolutionContext | null {
@@ -1347,25 +1415,6 @@ function promptForMeasureVerdict(): string {
 
 function compactNonEmptyStrings(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
-}
-
-function taskStatusMessage(
-  task: TaskState,
-  ladder: TaskExecutionLadder | null,
-): string {
-  if (ladder) {
-    return ladder.summary;
-  }
-
-  if (task.status === "running") {
-    return "Agent is working on this task...";
-  }
-
-  if (task.status === "completed") {
-    return "Task completed. Create a new task to continue.";
-  }
-
-  return "Task ended.";
 }
 
 // parsePromptSections kept for future use if we add collapsible brief sections to chat

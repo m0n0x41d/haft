@@ -62,7 +62,7 @@ tasks:
 
   build:
     desc: Build Go binary + TUI bundle
-    deps: [tui, fpf-index]
+    deps: [tui, fpf-refresh]
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
@@ -70,7 +70,7 @@ tasks:
 
   install:
     desc: Build and install haft (binary + TUI) locally
-    deps: [tui, fpf-index]
+    deps: [tui, fpf-refresh]
     cmds:
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - mkdir -p {{.TUI_INSTALL_DIR}}

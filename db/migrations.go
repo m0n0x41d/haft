@@ -390,4 +390,20 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE desktop_tasks ADD COLUMN auto_run INTEGER NOT NULL DEFAULT 0",
 		},
 	},
+	{
+		Version:     26,
+		Description: "Add structured chat transcript persistence to desktop tasks",
+		Statements: []string{
+			"ALTER TABLE desktop_tasks ADD COLUMN chat_blocks_json TEXT NOT NULL DEFAULT '[]'",
+			"ALTER TABLE desktop_tasks ADD COLUMN raw_output TEXT NOT NULL DEFAULT ''",
+		},
+	},
+	{
+		Version:     27,
+		Description: "Backfill desktop task transcript fallbacks",
+		Statements: []string{
+			"UPDATE desktop_tasks SET chat_blocks_json = '[]' WHERE TRIM(COALESCE(chat_blocks_json, '')) = ''",
+			"UPDATE desktop_tasks SET raw_output = output_tail WHERE TRIM(COALESCE(raw_output, '')) = '' AND TRIM(COALESCE(output_tail, '')) != ''",
+		},
+	},
 }

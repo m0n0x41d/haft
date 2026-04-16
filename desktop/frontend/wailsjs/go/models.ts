@@ -189,6 +189,36 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ChatBlock {
+	    id: string;
+	    type: string;
+	    role?: string;
+	    text?: string;
+	    name?: string;
+	    call_id?: string;
+	    parent_id?: string;
+	    input?: string;
+	    output?: string;
+	    is_error?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatBlock(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.role = source["role"];
+	        this.text = source["text"];
+	        this.name = source["name"];
+	        this.call_id = source["call_id"];
+	        this.parent_id = source["parent_id"];
+	        this.input = source["input"];
+	        this.output = source["output"];
+	        this.is_error = source["is_error"];
+	    }
+	}
 	export class ClaimView {
 	    id: string;
 	    claim: string;
@@ -379,6 +409,22 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class DecisionImplementGuardView {
+	    blocked_reason: string;
+	    confirmation_messages: string[];
+	    warning_messages: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DecisionImplementGuardView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.blocked_reason = source["blocked_reason"];
+	        this.confirmation_messages = source["confirmation_messages"];
+	        this.warning_messages = source["warning_messages"];
+	    }
+	}
 	export class DecisionView {
 	    id: string;
 	    title: string;
@@ -388,6 +434,7 @@ export namespace main {
 	    weakest_link: string;
 	    valid_until: string;
 	    created_at: string;
+	    implement_guard: DecisionImplementGuardView;
 	
 	    static createFrom(source: any = {}) {
 	        return new DecisionView(source);
@@ -403,7 +450,26 @@ export namespace main {
 	        this.weakest_link = source["weakest_link"];
 	        this.valid_until = source["valid_until"];
 	        this.created_at = source["created_at"];
+	        this.implement_guard = this.convertValues(source["implement_guard"], DecisionImplementGuardView);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ProblemView {
 	    id: string;
@@ -440,6 +506,9 @@ export namespace main {
 	    stale_count: number;
 	    recent_problems: ProblemView[];
 	    recent_decisions: DecisionView[];
+	    healthy_decisions: DecisionView[];
+	    pending_decisions: DecisionView[];
+	    unassessed_decisions: DecisionView[];
 	    stale_items: ArtifactView[];
 	
 	    static createFrom(source: any = {}) {
@@ -456,6 +525,9 @@ export namespace main {
 	        this.stale_count = source["stale_count"];
 	        this.recent_problems = this.convertValues(source["recent_problems"], ProblemView);
 	        this.recent_decisions = this.convertValues(source["recent_decisions"], DecisionView);
+	        this.healthy_decisions = this.convertValues(source["healthy_decisions"], DecisionView);
+	        this.pending_decisions = this.convertValues(source["pending_decisions"], DecisionView);
+	        this.unassessed_decisions = this.convertValues(source["unassessed_decisions"], DecisionView);
 	        this.stale_items = this.convertValues(source["stale_items"], ArtifactView);
 	    }
 	
@@ -767,6 +839,7 @@ export namespace main {
 		    return a;
 		}
 	}
+	
 	
 	
 	
@@ -1506,6 +1579,36 @@ export namespace main {
 	        this.stale_count = source["stale_count"];
 	    }
 	}
+	export class PullRequestResult {
+	    task_id: string;
+	    decision_ref: string;
+	    branch: string;
+	    title: string;
+	    body: string;
+	    url: string;
+	    pushed: boolean;
+	    draft_created: boolean;
+	    copied_to_clipboard: boolean;
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PullRequestResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.task_id = source["task_id"];
+	        this.decision_ref = source["decision_ref"];
+	        this.branch = source["branch"];
+	        this.title = source["title"];
+	        this.body = source["body"];
+	        this.url = source["url"];
+	        this.pushed = source["pushed"];
+	        this.draft_created = source["draft_created"];
+	        this.copied_to_clipboard = source["copied_to_clipboard"];
+	        this.warnings = source["warnings"];
+	    }
+	}
 	
 	export class TaskState {
 	    id: string;
@@ -1523,6 +1626,8 @@ export namespace main {
 	    completed_at: string;
 	    error_message: string;
 	    output: string;
+	    chat_blocks: ChatBlock[];
+	    raw_output: string;
 	    auto_run: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -1546,8 +1651,28 @@ export namespace main {
 	        this.completed_at = source["completed_at"];
 	        this.error_message = source["error_message"];
 	        this.output = source["output"];
+	        this.chat_blocks = this.convertValues(source["chat_blocks"], ChatBlock);
+	        this.raw_output = source["raw_output"];
 	        this.auto_run = source["auto_run"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class TerminalSession {
 	    id: string;

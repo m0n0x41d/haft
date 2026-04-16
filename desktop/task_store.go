@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type desktopTaskStore struct {
@@ -19,7 +21,32 @@ func (s *desktopTaskStore) UpsertTask(ctx context.Context, state TaskState) erro
 		return fmt.Errorf("desktop task store is not initialized")
 	}
 
-	_, err := s.db.ExecContext(
+	chatBlocksJSON, err := marshalTaskChatBlocks(state.ChatBlocks)
+	if err != nil {
+		return err
+	}
+
+	output := normalizeTaskOutput(state.Output)
+	rawOutput := normalizeTaskOutput(state.RawOutput)
+	renderedTranscript := displayTextForBlocks(state.ChatBlocks)
+
+	if output == "" {
+		output = renderedTranscript
+	}
+
+	if rawOutput == "" {
+		rawOutput = renderedTranscript
+	}
+
+	if output == "" {
+		output = rawOutput
+	}
+
+	if rawOutput == "" {
+		rawOutput = output
+	}
+
+	_, err = s.db.ExecContext(
 		ctx,
 		`INSERT INTO desktop_tasks (
 			id,
@@ -35,11 +62,14 @@ func (s *desktopTaskStore) UpsertTask(ctx context.Context, state TaskState) erro
 			reused_worktree,
 			error_message,
 			output_tail,
+			auto_run,
+			chat_blocks_json,
+			raw_output,
 			started_at,
 			completed_at,
 			updated_at,
 			archived_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT(id) DO UPDATE SET
 			project_name = excluded.project_name,
 			project_path = excluded.project_path,
@@ -53,6 +83,9 @@ func (s *desktopTaskStore) UpsertTask(ctx context.Context, state TaskState) erro
 			reused_worktree = excluded.reused_worktree,
 			error_message = excluded.error_message,
 			output_tail = excluded.output_tail,
+			auto_run = excluded.auto_run,
+			chat_blocks_json = excluded.chat_blocks_json,
+			raw_output = excluded.raw_output,
 			started_at = excluded.started_at,
 			completed_at = excluded.completed_at,
 			updated_at = excluded.updated_at`,
@@ -68,7 +101,10 @@ func (s *desktopTaskStore) UpsertTask(ctx context.Context, state TaskState) erro
 		state.WorktreePath,
 		boolToInt(state.ReusedWorktree),
 		state.ErrorMessage,
-		normalizeTaskOutput(state.Output),
+		output,
+		boolToInt(state.AutoRun),
+		chatBlocksJSON,
+		rawOutput,
 		state.StartedAt,
 		nullString(state.CompletedAt),
 		nowRFC3339(),
@@ -82,12 +118,15 @@ func (s *desktopTaskStore) UpdateOutput(ctx context.Context, id string, output s
 		return fmt.Errorf("desktop task store is not initialized")
 	}
 
+	normalizedOutput := normalizeTaskOutput(output)
+
 	_, err := s.db.ExecContext(
 		ctx,
 		`UPDATE desktop_tasks
-		SET output_tail = ?, updated_at = ?
+		SET output_tail = ?, raw_output = ?, updated_at = ?
 		WHERE id = ?`,
-		normalizeTaskOutput(output),
+		normalizedOutput,
+		normalizedOutput,
 		nowRFC3339(),
 		id,
 	)
@@ -118,7 +157,9 @@ func (s *desktopTaskStore) ListTasks(ctx context.Context, projectPath string) ([
 			output_tail,
 			started_at,
 			COALESCE(completed_at, ''),
-			COALESCE(auto_run, 0)
+			COALESCE(auto_run, 0),
+			COALESCE(chat_blocks_json, '[]'),
+			COALESCE(raw_output, '')
 		FROM desktop_tasks
 		WHERE archived_at IS NULL
 			AND project_path = ?
@@ -171,7 +212,9 @@ func (s *desktopTaskStore) GetTask(ctx context.Context, id string) (*TaskState, 
 			output_tail,
 			started_at,
 			COALESCE(completed_at, ''),
-			COALESCE(auto_run, 0)
+			COALESCE(auto_run, 0),
+			COALESCE(chat_blocks_json, '[]'),
+			COALESCE(raw_output, '')
 		FROM desktop_tasks
 		WHERE id = ?
 			AND archived_at IS NULL`,
@@ -195,7 +238,7 @@ func (s *desktopTaskStore) GetTaskOutput(ctx context.Context, id string) (string
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT COALESCE(output_tail, '')
+		`SELECT COALESCE(NULLIF(raw_output, ''), NULLIF(output_tail, ''), '')
 		FROM desktop_tasks
 		WHERE id = ?
 			AND archived_at IS NULL`,
@@ -289,8 +332,9 @@ func (s *desktopTaskStore) SetAutoRun(ctx context.Context, id string, autoRun bo
 
 	_, err := s.db.ExecContext(
 		ctx,
-		`UPDATE desktop_tasks SET auto_run = ? WHERE id = ?`,
+		`UPDATE desktop_tasks SET auto_run = ?, updated_at = ? WHERE id = ?`,
 		val,
+		nowRFC3339(),
 		id,
 	)
 	return err
@@ -305,6 +349,8 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 	var worktree int
 	var reusedWorktree int
 	var autoRun int
+	var chatBlocksJSON string
+	var rawOutput string
 
 	err := scanner.Scan(
 		&state.ID,
@@ -323,7 +369,14 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 		&state.StartedAt,
 		&state.CompletedAt,
 		&autoRun,
+		&chatBlocksJSON,
+		&rawOutput,
 	)
+	if err != nil {
+		return TaskState{}, err
+	}
+
+	chatBlocks, err := unmarshalTaskChatBlocks(chatBlocksJSON)
 	if err != nil {
 		return TaskState{}, err
 	}
@@ -331,9 +384,61 @@ func scanTaskState(scanner rowScanner) (TaskState, error) {
 	state.Worktree = worktree == 1
 	state.ReusedWorktree = reusedWorktree == 1
 	state.AutoRun = autoRun == 1
+	state.ChatBlocks = chatBlocks
 	state.Output = normalizeTaskOutput(state.Output)
+	state.RawOutput = normalizeTaskOutput(rawOutput)
+	renderedTranscript := displayTextForBlocks(state.ChatBlocks)
+
+	if state.Output == "" {
+		state.Output = renderedTranscript
+	}
+
+	if state.RawOutput == "" {
+		state.RawOutput = renderedTranscript
+	}
+
+	if state.Output == "" && state.RawOutput != "" {
+		state.Output = state.RawOutput
+	}
+
+	if state.RawOutput == "" {
+		state.RawOutput = state.Output
+	}
 
 	return state, nil
+}
+
+func marshalTaskChatBlocks(blocks []ChatBlock) (string, error) {
+	if len(blocks) == 0 {
+		return "[]", nil
+	}
+
+	data, err := json.Marshal(blocks)
+	if err != nil {
+		return "", fmt.Errorf("marshal task chat blocks: %w", err)
+	}
+
+	return string(data), nil
+}
+
+func unmarshalTaskChatBlocks(value string) ([]ChatBlock, error) {
+	if strings.TrimSpace(value) == "" {
+		return []ChatBlock{}, nil
+	}
+
+	var blocks []ChatBlock
+
+	if err := json.Unmarshal([]byte(value), &blocks); err != nil {
+		// Legacy rows may contain pre-canonical transcript blobs; prefer loading
+		// the task with raw-output fallback over failing the entire task list.
+		return []ChatBlock{}, nil
+	}
+
+	if blocks == nil {
+		return []ChatBlock{}, nil
+	}
+
+	return blocks, nil
 }
 
 func boolToInt(value bool) int {

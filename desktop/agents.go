@@ -369,9 +369,29 @@ func (r *taskRunner) finishTaskTurn(rt *runningTask, turn *taskTurn, waitErr err
 
 	_ = normalizeTaskState(current.state)
 
-	// Process exited — always finalize. keepAlive only applies when process
-	// is still running (e.g. checkpointed mode where process pauses but doesn't exit).
-	// When waitErr == nil, the process exited cleanly — task is done.
+	// Conversational agents (claude/codex) exit after each turn but can be
+	// resumed with --resume. Keep the task alive when the process exited
+	// cleanly and we have a session ID to resume from.
+	keepAlive := current.plan.Conversational &&
+		waitErr == nil &&
+		strings.TrimSpace(current.sessionID) != ""
+
+	if keepAlive {
+		current.turn = nil
+
+		state := current.state
+		state = normalizeTaskState(state)
+
+		r.mu.Unlock()
+
+		if err := r.persistState(state); err != nil {
+			r.app.emitAppError("task turn persist", err)
+		}
+
+		r.emitTaskStatus(state)
+		return
+	}
+
 	r.mu.Unlock()
 
 	r.finalizeTask(current, waitErr)

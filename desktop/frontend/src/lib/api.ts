@@ -1382,11 +1382,11 @@ function taskPromptMetaValue(prompt: string, label: string): string {
 // --- Public API ---
 
 export async function getDashboard(): Promise<DashboardData> {
-  const b = await loadBindings();
-  if (b) return b.GetDashboard();
+  const result = await callBinding<DashboardData>("GetDashboard");
+  if (result) return result;
 
   return {
-    project_name: "haft",
+    project_name: "",
     problem_count: mockProblems.length,
     decision_count: mockDecisions.length,
     portfolio_count: mockPortfolios.length,
@@ -2158,6 +2158,12 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function addProject(path: string): Promise<ProjectInfo> {
   const b = await loadBindings();
   if (b) return b.AddProject(path);
+  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+}
+
+export async function addProjectSmart(path: string): Promise<ProjectInfo> {
+  const result = await callBinding<ProjectInfo>("AddProjectSmart", path);
+  if (result) return result;
   return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 

@@ -268,7 +268,7 @@ func (s *desktopTaskStore) MarkRunningTasksInterrupted(ctx context.Context, proj
 			updated_at = ?
 		WHERE project_path = ?
 			AND archived_at IS NULL
-			AND status = 'running'`,
+			AND status IN ('running', 'idle')`,
 		nowRFC3339(),
 		nowRFC3339(),
 		projectPath,

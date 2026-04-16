@@ -730,8 +730,8 @@ printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"te
 		t.Fatalf("loadTaskState initial: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("task status after initial reply = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("task status after initial reply = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 2 {
@@ -760,8 +760,8 @@ printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"te
 		t.Fatalf("loadTaskState follow-up: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("task status after follow-up = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("task status after follow-up = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 4 {
@@ -876,8 +876,8 @@ printf '{"type":"item.completed","item":{"id":"msg_1","type":"agent_message","te
 		t.Fatalf("loadTaskState initial: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("task status after initial reply = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("task status after initial reply = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 5 {
@@ -920,8 +920,8 @@ printf '{"type":"item.completed","item":{"id":"msg_1","type":"agent_message","te
 		t.Fatalf("loadTaskState follow-up: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("task status after follow-up = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("task status after follow-up = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 7 {
@@ -1065,8 +1065,8 @@ printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"te
 		t.Fatalf("loadTaskState initial: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("verify task status after initial reply = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("verify task status after initial reply = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 2 {
@@ -1092,8 +1092,8 @@ printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"te
 		t.Fatalf("loadTaskState follow-up: %v", err)
 	}
 
-	if liveState.Status != "running" {
-		t.Fatalf("verify task status after follow-up = %q, want running", liveState.Status)
+	if liveState.Status != "idle" {
+		t.Fatalf("verify task status after follow-up = %q, want idle", liveState.Status)
 	}
 
 	if len(liveState.ChatBlocks) != 4 {

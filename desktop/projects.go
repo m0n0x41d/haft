@@ -144,8 +144,11 @@ func acquireAtomicWriteLock(lockPath string) (func(), error) {
 
 // ListProjects returns all registered projects with stats.
 func (a *App) ListProjects() ([]ProjectInfo, error) {
+	dlog.Debug().Str("active_root", a.projectRoot).Msg("ListProjects called")
+
 	reg, err := loadRegistry()
 	if err != nil {
+		dlog.Error().Err(err).Msg("ListProjects: loadRegistry failed")
 		return nil, err
 	}
 
@@ -180,6 +183,20 @@ func (a *App) ListProjects() ([]ProjectInfo, error) {
 	sort.Slice(infos, func(i, j int) bool {
 		return strings.ToLower(infos[i].Name) < strings.ToLower(infos[j].Name)
 	})
+
+	names := make([]string, len(infos))
+	activeName := ""
+	for i, info := range infos {
+		names[i] = info.Name
+		if info.IsActive {
+			activeName = info.Name
+		}
+	}
+	dlog.Debug().
+		Strs("projects", names).
+		Str("active", activeName).
+		Int("count", len(infos)).
+		Msg("ListProjects result")
 
 	return infos, nil
 }
@@ -287,9 +304,67 @@ func (a *App) InitProject(path string) (*ProjectInfo, error) {
 	return a.AddProject(absPath)
 }
 
+// AddProjectSmart adds a project directory — auto-initializes .haft/ if missing,
+// registers in the project registry, and switches to it.
+func (a *App) AddProjectSmart(path string) (*ProjectInfo, error) {
+	dlog.Info().Str("path", path).Msg("AddProjectSmart called")
+
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot access %s: %w", absPath, err)
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory: %s", absPath)
+	}
+
+	// Auto-init if no .haft/ exists
+	haftDir := filepath.Join(absPath, ".haft")
+	if _, err := os.Stat(haftDir); os.IsNotExist(err) {
+		if _, initErr := a.InitProject(absPath); initErr != nil {
+			return nil, fmt.Errorf("init project: %w", initErr)
+		}
+	}
+
+	// Register
+	reg, err := loadRegistry()
+	if err != nil {
+		return nil, err
+	}
+
+	rp, err := a.addProjectToRegistry(reg, absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Switch to the new project
+	if err := a.SwitchProject(absPath); err != nil {
+		return nil, err
+	}
+
+	return &ProjectInfo{
+		Path:     rp.Path,
+		Name:     rp.Name,
+		ID:       rp.ID,
+		IsActive: true,
+	}, nil
+}
+
 // SwitchProject changes the active project — closes current DB, opens new one.
 // Validates the new project's DB is accessible BEFORE tearing down the old one.
 func (a *App) SwitchProject(path string) error {
+	dlog.Info().Str("path", path).Str("current_root", a.projectRoot).Msg("SwitchProject called")
+
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return fmt.Errorf("path is required")
@@ -345,12 +420,13 @@ func (a *App) SwitchProject(path string) error {
 	}
 
 	// Re-init with validated project
-	a.projectRoot = path
-	a.startup(a.ctx)
+	a.projectRoot = ""
+	a.projectName = ""
+	a.loadProject(path)
 
-	// Verify startup succeeded
+	// Verify loadProject succeeded
 	if a.store == nil {
-		return fmt.Errorf("failed to initialize project %s — store is nil after startup", path)
+		return fmt.Errorf("failed to initialize project %s — store is nil after load", path)
 	}
 
 	return nil
@@ -441,10 +517,14 @@ func (a *App) addProjectToRegistry(reg *ProjectRegistry, path string) (*Register
 		return nil, err
 	}
 
-	// Check if already registered
-	for _, rp := range reg.Projects {
+	// Check if already registered — update name to directory basename
+	for i, rp := range reg.Projects {
 		if rp.Path == absPath {
-			return &rp, nil
+			if rp.Name != filepath.Base(absPath) {
+				reg.Projects[i].Name = filepath.Base(absPath)
+				_ = saveRegistry(reg)
+			}
+			return &reg.Projects[i], nil
 		}
 	}
 
@@ -455,10 +535,10 @@ func (a *App) addProjectToRegistry(reg *ProjectRegistry, path string) (*Register
 		return nil, err
 	}
 
+	// Always use directory name for display — it's what users recognize
 	name := filepath.Base(absPath)
 	id := ""
 	if cfg != nil {
-		name = cfg.Name
 		id = cfg.ID
 	}
 

@@ -118,9 +118,11 @@ func (m *terminalManager) create(projectPath string, cwd string) (*TerminalSessi
 		return nil, err
 	}
 
+	dlog.Info().Str("shell", shellPath).Str("cwd", absPath).Msg("creating terminal session")
+
 	cmd := exec.Command(shellPath, "-l")
 	cmd.Dir = absPath
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(m.app.userEnv, "TERM=xterm-256color")
 
 	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: 32,

@@ -5,6 +5,8 @@ import {graph} from '../models';
 
 export function AddProject(arg1:string):Promise<main.ProjectInfo>;
 
+export function AddProjectSmart(arg1:string):Promise<main.ProjectInfo>;
+
 export function Adopt(arg1:string):Promise<main.TaskState>;
 
 export function AdoptProblemCandidate(arg1:string):Promise<main.ProblemDetailView>;

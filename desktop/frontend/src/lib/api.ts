@@ -447,6 +447,9 @@ export type ChatBlock = Partial<GoMain.ChatBlock> & Pick<GoMain.ChatBlock, "id" 
 export interface ChatEntry {
   block: ChatBlock;
   toolResults: ChatBlock[];
+  groupedTools?: ChatEntry[];
+  toolCount?: number;
+  thinkingCount?: number;
 }
 
 export interface TaskState {
@@ -497,7 +500,8 @@ export function taskTranscriptText(task: Pick<TaskState, "raw_output" | "output"
 }
 
 export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
-  const mergedBlocks = coalesceNarrativeBlocks(blocks);
+  const filteredBlocks = blocks.filter((block) => !isNoiseBlock(block));
+  const mergedBlocks = coalesceNarrativeBlocks(filteredBlocks);
   const toolParentByCallID = new Map<string, string>();
   const toolResultsByParentID = new Map<string, ChatBlock[]>();
 
@@ -528,7 +532,7 @@ export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
     toolResultsByParentID.set(parentID, [...parentResults, normalizedResult]);
   });
 
-  return mergedBlocks.reduce<ChatEntry[]>((entries, block) => {
+  const ungrouped = mergedBlocks.reduce<ChatEntry[]>((entries, block) => {
     if (block.type === "tool_result" && resolveToolParentID(block, toolParentByCallID)) {
       return entries;
     }
@@ -542,6 +546,73 @@ export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
 
     return entries;
   }, []);
+
+  return groupConsecutiveToolUse(ungrouped);
+}
+
+function isNoiseBlock(block: ChatBlock): boolean {
+  const text = (block.text ?? "").trim();
+
+  if (text.startsWith('{"type":"rate_limit_event"')) {
+    return true;
+  }
+
+  if (text.startsWith('{"type":"system"')) {
+    return true;
+  }
+
+  return false;
+}
+
+function isGroupableEntry(entry: ChatEntry): boolean {
+  return entry.block.type === "tool_use" || entry.block.type === "thinking";
+}
+
+function groupConsecutiveToolUse(entries: ChatEntry[]): ChatEntry[] {
+  const result: ChatEntry[] = [];
+  let group: ChatEntry[] = [];
+
+  const flushGroup = () => {
+    if (group.length === 0) {
+      return;
+    }
+
+    // Single tool_use stays ungrouped; single thinking also stays ungrouped
+    if (group.length === 1) {
+      result.push(group[0]);
+      group = [];
+      return;
+    }
+
+    const toolCount = group.filter((e) => e.block.type === "tool_use").length;
+    const thinkingCount = group.filter((e) => e.block.type === "thinking").length;
+
+    result.push({
+      block: {
+        id: `group-${group[0].block.id}`,
+        type: "tool_group",
+      },
+      toolResults: [],
+      groupedTools: group,
+      toolCount,
+      thinkingCount,
+    });
+
+    group = [];
+  };
+
+  entries.forEach((entry) => {
+    if (isGroupableEntry(entry)) {
+      group.push(entry);
+      return;
+    }
+
+    flushGroup();
+    result.push(entry);
+  });
+
+  flushGroup();
+  return result;
 }
 
 function isStructuredEntry(block: ChatBlock): boolean {

@@ -102,7 +102,25 @@ export function TerminalPanel({
     void createSession();
   }, [open, sessions.length, createSession]);
 
-  const startResize = () => {
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const handleCloseTab = useCallback((id: string) => {
+    closeTerminalSession(id)
+      .then(() => {
+        setSessions((current) => {
+          const remaining = current.filter((session) => session.id !== id);
+          setActiveId((active) => (active === id ? remaining[0]?.id ?? null : active));
+          return remaining;
+        });
+      })
+      .catch((error) => {
+        reportError(error, "close terminal");
+      });
+  }, []);
+
+  const startResize = useCallback(() => {
     const handleMouseMove = (event: MouseEvent) => {
       setHeight((current) => {
         const nextHeight = window.innerHeight - event.clientY;
@@ -121,7 +139,7 @@ export function TerminalPanel({
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-  };
+  }, []);
 
   if (!open) {
     return null;
@@ -132,19 +150,20 @@ export function TerminalPanel({
       className="border-t border-border bg-surface-1/95 backdrop-blur-sm"
       style={{ height }}
     >
-      <button
+      <div
         onMouseDown={startResize}
         className="flex h-3 w-full cursor-row-resize items-center justify-center text-text-muted"
       >
         <span className="h-1 w-16 rounded-full bg-border" />
-      </button>
+      </div>
 
-      <div className="flex h-[calc(100%-0.75rem)] flex-col">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+      <div className="flex h-[calc(100%-0.75rem)] flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
           <div className="flex items-center gap-2 overflow-x-auto">
             {sessions.map((session) => (
               <button
                 key={session.id}
+                type="button"
                 onClick={() => setActiveId(session.id)}
                 className={`rounded-lg px-3 py-1 text-xs transition-colors ${
                   activeId === session.id
@@ -157,6 +176,7 @@ export function TerminalPanel({
             ))}
 
             <button
+              type="button"
               onClick={() => void createSession()}
               className="rounded-lg border border-border bg-surface-2 px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
             >
@@ -167,26 +187,16 @@ export function TerminalPanel({
           <div className="flex items-center gap-2">
             {activeId && (
               <button
-                onClick={() => {
-                  void closeTerminalSession(activeId)
-                    .then(() => {
-                      setSessions((current) => {
-                        const remaining = current.filter((session) => session.id !== activeId);
-                        setActiveId(remaining[0]?.id ?? null);
-                        return remaining;
-                      });
-                    })
-                    .catch((error) => {
-                      reportError(error, "close terminal");
-                    });
-                }}
+                type="button"
+                onClick={() => handleCloseTab(activeId)}
                 className="rounded-lg border border-border bg-surface-2 px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
               >
                 Close tab
               </button>
             )}
             <button
-              onClick={onClose}
+              type="button"
+              onClick={handleClose}
               className="rounded-lg border border-border bg-surface-2 px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
             >
               Hide
@@ -194,7 +204,7 @@ export function TerminalPanel({
           </div>
         </div>
 
-        <div className="flex-1 bg-[#080809]">
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#080809]">
           {sessions.map((session) => (
             <TerminalViewport
               key={session.id}
@@ -224,6 +234,7 @@ function TerminalViewport({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const fitFrameRef = useRef<number>(0);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -264,26 +275,38 @@ function TerminalViewport({
       });
     });
 
-    const resize = () => {
+    const safeFit = () => {
       const container = containerRef.current;
-      if (!container || container.offsetParent === null || !fitAddonRef.current || !terminalRef.current) {
+      if (!container || !fitAddonRef.current || !terminalRef.current) {
         return;
       }
 
-      fitAddonRef.current.fit();
-      void resizeTerminalSession(session.id, terminalRef.current.cols, terminalRef.current.rows).catch((error) => {
-        reportError(error, "terminal resize");
-      });
+      if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+        return;
+      }
+
+      try {
+        fitAddonRef.current.fit();
+        void resizeTerminalSession(session.id, terminalRef.current.cols, terminalRef.current.rows).catch(() => {});
+      } catch {
+        // FitAddon.fit() throws when dimensions are invalid — ignore
+      }
     };
 
-    const observer = new ResizeObserver(() => {
-      resize();
-    });
+    const debouncedFit = () => {
+      cancelAnimationFrame(fitFrameRef.current);
+      fitFrameRef.current = requestAnimationFrame(safeFit);
+    };
 
+    const observer = new ResizeObserver(debouncedFit);
     observer.observe(containerRef.current);
-    resize();
+
+    // Delay initial fit to let layout settle
+    const initTimer = setTimeout(safeFit, 50);
 
     return () => {
+      clearTimeout(initTimer);
+      cancelAnimationFrame(fitFrameRef.current);
       observer.disconnect();
       dataListener.dispose();
       stopOutput?.();
@@ -298,16 +321,23 @@ function TerminalViewport({
       return;
     }
 
-    fitAddonRef.current.fit();
-    void resizeTerminalSession(session.id, terminalRef.current.cols, terminalRef.current.rows).catch((error) => {
-      reportError(error, "terminal resize");
-    });
+    const container = containerRef.current;
+    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
+      return;
+    }
+
+    try {
+      fitAddonRef.current.fit();
+      void resizeTerminalSession(session.id, terminalRef.current.cols, terminalRef.current.rows).catch(() => {});
+    } catch {
+      // ignore
+    }
   }, [active, session.id]);
 
   return (
     <div
       ref={containerRef}
-      className={`h-full w-full ${active ? "block" : "hidden"}`}
+      className={`h-full w-full overflow-hidden ${active ? "block" : "hidden"}`}
     />
   );
 }

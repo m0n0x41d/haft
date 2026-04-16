@@ -615,7 +615,7 @@ function SidebarTask({
 
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    running: "bg-blue-400 animate-pulse",
+    running: "bg-accent animate-pulse",
     completed: "bg-success",
     failed: "bg-danger",
     cancelled: "bg-text-muted",

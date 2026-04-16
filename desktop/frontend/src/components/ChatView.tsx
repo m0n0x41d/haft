@@ -53,7 +53,7 @@ export function ChatView({
   }
 
   return (
-    <div className={joinClassNames("space-y-4", className)}>
+    <div className={joinClassNames("space-y-3", className)}>
       {hasErrorMessage && (
         <div className="flex justify-start">
           <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-danger/20 bg-danger/5 px-4 py-3">
@@ -74,6 +74,9 @@ export function ChatView({
               key={entry.block.id || `${entry.block.type}-${entry.block.call_id || "block"}`}
               block={entry.block}
               toolResults={entry.toolResults}
+              groupedTools={entry.groupedTools}
+              toolCount={entry.toolCount}
+              thinkingCount={entry.thinkingCount}
             />
           ))}
           {entries.length === 0 && isRunning && (
@@ -89,17 +92,6 @@ export function ChatView({
         </>
       ) : (
         <RawTranscriptBubble output={transcript} running={isRunning} />
-      )}
-
-      {isRunning && hasStructuredBlocks && (
-        <div className="flex justify-start">
-          <div className="rounded-2xl rounded-tl-sm border border-border bg-surface-1 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-              <span className="text-xs text-text-muted">Agent is working...</span>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

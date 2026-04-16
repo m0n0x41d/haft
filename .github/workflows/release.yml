@@ -43,7 +43,7 @@ jobs:
         run: go test -race $(go list ./... | grep -v /desktop)
 
   build:
-    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    name: Build CLI ${{ matrix.goos }}-${{ matrix.goarch }}
     needs: [test, tui-bundle]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -106,9 +106,70 @@ jobs:
           name: haft-${{ matrix.goos }}-${{ matrix.goarch }}
           path: _dist/*.tar.gz
 
+  desktop:
+    name: Desktop ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: [test]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { runner: macos-latest,     goos: darwin,  goarch: arm64 }
+          - { runner: macos-latest,     goos: darwin,  goarch: amd64 }
+          - { runner: ubuntu-latest,    goos: linux,   goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Build desktop app
+        working-directory: desktop
+        env:
+          CGO_ENABLED: '1'
+        run: wails build
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package macOS app
+        if: matrix.goos == 'darwin'
+        run: |
+          mkdir -p _dist
+          APP_NAME="Haft.app"
+          cd desktop/build/bin
+          tar czf ../../../_dist/haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz "$APP_NAME"
+
+      - name: Package Linux binary
+        if: matrix.goos == 'linux'
+        run: |
+          mkdir -p _dist
+          cp desktop/build/bin/haft-desktop .
+          tar czf _dist/haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz haft-desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: _dist/*.tar.gz
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

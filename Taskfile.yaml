@@ -8,6 +8,7 @@ vars:
   TUI_INSTALL_DIR: ~/.haft/tui
   FPF_SPEC: data/FPF/FPF-Spec.md
   FPF_DB: internal/cli/fpf.db
+  DESKTOP_APP_NAME: Haft
 
 tasks:
   default:
@@ -69,12 +70,13 @@ tasks:
       - '{{.BIN_NAME}}'
 
   install:
-    desc: Build and install haft (binary + TUI) locally
+    desc: Build and install haft (CLI + TUI + Desktop) locally
     deps: [tui, fpf-refresh]
     cmds:
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - mkdir -p {{.TUI_INSTALL_DIR}}
       - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs
+      - task desktop:install
       - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
       - echo "Installed {{.TUI_INSTALL_DIR}}/bundle.mjs"
 
@@ -96,17 +98,68 @@ tasks:
       - wails dev
 
   desktop:build:
-    desc: Build Haft desktop app (production .app bundle)
+    desc: Build Haft desktop app (production binary/bundle)
     dir: desktop
     cmds:
       - wails build
-      - echo "Built desktop/build/bin/haft.app"
+
+  desktop:install:
+    desc: Build and install Haft desktop app locally
+    deps: [desktop:build]
+    cmds:
+      - |
+        case "$(uname -s)" in
+          Darwin)
+            APP_SRC="desktop/build/bin/{{.DESKTOP_APP_NAME}}.app"
+            APP_DST="$HOME/Applications/{{.DESKTOP_APP_NAME}}.app"
+            if [ -d "$APP_SRC" ]; then
+              mkdir -p "$HOME/Applications"
+              rm -rf "$APP_DST"
+              cp -R "$APP_SRC" "$APP_DST"
+              echo "Installed $APP_DST (Spotlight-launchable)"
+            else
+              echo "Warning: .app bundle not found at $APP_SRC"
+            fi
+            ;;
+          Linux)
+            BIN_SRC="desktop/build/bin/haft-desktop"
+            BIN_DST="$HOME/.haft/bin/haft-desktop"
+            if [ -f "$BIN_SRC" ]; then
+              mkdir -p "$HOME/.haft/bin"
+              cp "$BIN_SRC" "$BIN_DST"
+              chmod +x "$BIN_DST"
+              echo "Installed $BIN_DST"
+              # Install .desktop file for app launchers
+              DESKTOP_DIR="$HOME/.local/share/applications"
+              mkdir -p "$DESKTOP_DIR"
+              cat > "$DESKTOP_DIR/haft.desktop" <<DESKTOP_EOF
+        [Desktop Entry]
+        Name=Haft
+        Comment=Engineering decision framework
+        Exec=$BIN_DST
+        Icon=$HOME/.haft/icon.png
+        Type=Application
+        Categories=Development;
+        DESKTOP_EOF
+              echo "Installed $DESKTOP_DIR/haft.desktop"
+            else
+              echo "Warning: desktop binary not found at $BIN_SRC"
+            fi
+            ;;
+          *)
+            echo "Unsupported platform for desktop install"
+            ;;
+        esac
 
   desktop:open:
     desc: Build and open Haft desktop app
-    deps: [desktop:build]
+    deps: [desktop:install]
     cmds:
-      - open desktop/build/bin/haft.app
+      - |
+        case "$(uname -s)" in
+          Darwin) open "$HOME/Applications/{{.DESKTOP_APP_NAME}}.app" ;;
+          Linux) "$HOME/.haft/bin/haft-desktop" & ;;
+        esac
 
   clean:
     desc: Remove local build artifacts
@@ -121,4 +174,7 @@ tasks:
       - rm -rf tui/dist
       - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
       - rm -rf {{.TUI_INSTALL_DIR}}
+      - rm -rf ~/Applications/{{.DESKTOP_APP_NAME}}.app
+      - rm -f ~/.haft/bin/haft-desktop
+      - rm -f ~/.local/share/applications/haft.desktop
       - echo "Cleaned up"

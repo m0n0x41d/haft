@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { subscribe } from "../lib/events";
 import {
   archiveTask,
   cancelTask,
@@ -203,7 +203,7 @@ export function Tasks({
   }, [onTasksRefresh, refresh]);
 
   useEffect(() => {
-    const stopOutput = EventsOn("task.output", (payload: TaskOutputEvent) => {
+    const stopOutput = subscribe<TaskOutputEvent>("task.output", (payload) => {
       setTasks((current) =>
         current.map((task) =>
           task.id === payload.id
@@ -221,7 +221,7 @@ export function Tasks({
       }
     });
 
-    const stopStatus = EventsOn("task.status", (payload: TaskState) => {
+    const stopStatus = subscribe<TaskState>("task.status", (payload) => {
       setTasks((current) => mergeTaskList(current, payload));
     });
 

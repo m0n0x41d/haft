@@ -25,9 +25,9 @@ import { SearchOverlay } from "./components/SearchOverlay";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
-import { listProjects, switchProject, listTasks, type ProjectInfo, type TaskState } from "./lib/api";
+import { listProjects, switchProject, listTasks, toggleMaximize, type ProjectInfo, type TaskState } from "./lib/api";
 import { getPageTitle, resolveNavigation, type Page } from "./navigation";
-import { EventsOn, WindowToggleMaximise } from "../wailsjs/runtime/runtime";
+import { subscribe } from "./lib/events";
 
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -77,7 +77,6 @@ export default function App() {
   useEffect(() => {
     listProjects()
       .then((p) => {
-        console.log("[haft] ListProjects:", JSON.stringify(p.map((proj) => ({ name: proj.name, path: proj.path, active: proj.is_active }))));
         setProjects(p);
 
         // Expand all projects — like Zenflow, all repos visible in sidebar
@@ -104,25 +103,13 @@ export default function App() {
       setToasts((current) => [...current, detail].slice(-4));
     });
 
-    let stopBackendErrors: (() => void) | undefined;
+    const stopBackendErrors = subscribe<{ scope?: string; message?: string }>("app.error", (payload) => {
+      reportError(payload?.message ?? "Unexpected error", payload?.scope);
+    });
 
-    try {
-      stopBackendErrors = EventsOn("app.error", (payload: { scope?: string; message?: string }) => {
-        reportError(payload?.message ?? "Unexpected error", payload?.scope);
-      });
-    } catch {
-      stopBackendErrors = undefined;
-    }
-
-    let stopNotifications: (() => void) | undefined;
-
-    try {
-      stopNotifications = EventsOn("notification.push", (payload: DesktopNotification) => {
-        setNotifications((current) => [...current, payload].slice(-4));
-      });
-    } catch {
-      stopNotifications = undefined;
-    }
+    const stopNotifications = subscribe<DesktopNotification>("notification.push", (payload) => {
+      setNotifications((current) => [...current, payload].slice(-4));
+    });
 
     return () => {
       stopListening();
@@ -182,7 +169,7 @@ export default function App() {
     <div className="flex h-screen overflow-hidden">
       {/* Icon rail */}
       <div className="w-12 shrink-0 bg-surface-1 border-r border-border flex flex-col items-center py-2">
-        <div className="wails-drag h-12 w-full" />
+        <div data-tauri-drag-region className="h-12 w-full" />
 
         <RailBtn
           icon={sidebarExpanded ? PanelLeftClose : PanelLeftOpen}
@@ -243,8 +230,9 @@ export default function App() {
       {sidebarExpanded && (
         <div className="w-56 shrink-0 bg-surface-1 border-r border-border flex flex-col overflow-hidden">
           <div
-            className="wails-drag h-10"
-            onDoubleClick={() => { try { WindowToggleMaximise(); } catch { /* ignore */ } }}
+            data-tauri-drag-region
+            className="h-10"
+            onDoubleClick={() => { void toggleMaximize().catch(() => {}); }}
           />
 
           {/* Project tree */}
@@ -343,8 +331,9 @@ export default function App() {
       <div className="flex flex-1 flex-col overflow-hidden bg-surface-0">
         <main className="flex-1 overflow-y-auto bg-surface-0">
           <div
-            className="wails-drag sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-surface-0/80 px-6 backdrop-blur-sm"
-            onDoubleClick={() => { try { WindowToggleMaximise(); } catch { /* ignore */ } }}
+            data-tauri-drag-region
+            className="sticky top-0 z-10 flex h-10 items-center justify-between border-b border-border bg-surface-0/80 px-6 backdrop-blur-sm"
+            onDoubleClick={() => { void toggleMaximize().catch(() => {}); }}
           >
             <h2 className="text-sm font-medium text-text-secondary">
               {activeProject?.name && <span className="text-text-muted">{activeProject.name} / </span>}
@@ -353,13 +342,13 @@ export default function App() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTerminalOpen((current) => !current)}
-                className="wails-no-drag rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
+                className="rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
               >
                 Terminal <span className="ml-1 text-text-muted/50">Cmd+`</span>
               </button>
               <button
                 onClick={() => setSearchOpen(true)}
-                className="wails-no-drag rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
+                className="rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
               >
                 Search... <span className="ml-1 text-text-muted/50">Cmd+K</span>
               </button>

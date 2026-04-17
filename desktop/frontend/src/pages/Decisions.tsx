@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { subscribe } from "../lib/events";
 import { DecisionForm } from "../components/DecisionForm";
 import {
   adoptProblemCandidate,
@@ -79,10 +79,10 @@ export function Decisions({
     let stopDrift: (() => void) | undefined;
 
     try {
-      stopStale = EventsOn("scan.stale", () => {
+      stopStale = subscribe("scan.stale", () => {
         void refreshGovernanceOverview();
       });
-      stopDrift = EventsOn("scan.drift", () => {
+      stopDrift = subscribe("scan.drift", () => {
         void refreshGovernanceOverview();
       });
     } catch {

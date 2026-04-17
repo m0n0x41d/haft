@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { subscribe } from "../lib/events";
 import {
   adoptProblemCandidate,
   dismissProblemCandidate,
@@ -86,10 +86,10 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     let stopDrift: (() => void) | undefined;
 
     try {
-      stopStale = EventsOn("scan.stale", () => {
+      stopStale = subscribe("scan.stale", () => {
         void refresh();
       });
-      stopDrift = EventsOn("scan.drift", () => {
+      stopDrift = subscribe("scan.drift", () => {
         void refresh();
       });
     } catch {

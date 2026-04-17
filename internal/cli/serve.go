@@ -394,7 +394,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.ProblemResponse("frame", a, filePath, navStrip), nil
+		return present.ProblemResponse("frame", a, filePath, navStrip) + present.FPFPhaseHint("frame"), nil
 
 	case "characterize":
 		input := artifact.CharacterizeInput{}
@@ -428,7 +428,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.ProblemResponse("characterize", a, filePath, navStrip), nil
+		return present.ProblemResponse("characterize", a, filePath, navStrip) + present.FPFPhaseHint("characterize"), nil
 
 	case "select":
 		problems, err := artifact.SelectProblems(ctx, store, contextName, 20)
@@ -494,7 +494,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.SolutionResponse("explore", a, filePath, navStrip), nil
+		return present.SolutionResponse("explore", a, filePath, navStrip) + present.FPFPhaseHint("explore"), nil
 
 	case "compare":
 		input := artifact.CompareInput{}
@@ -681,7 +681,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote, nil
+		return present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote + present.FPFPhaseHint("decide"), nil
 
 	case "apply":
 		decisionRef, _ := args["decision_ref"].(string)
@@ -761,7 +761,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("measure", a, "", extra, navStrip), nil
+		return present.DecisionResponse("measure", a, "", extra, navStrip) + present.FPFPhaseHint("verify"), nil
 
 	case "evidence":
 		input := artifact.EvidenceInput{
@@ -1365,7 +1365,7 @@ func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string)
 	response := present.SolutionResponse("compare", a, filePath, "")
 	warnings := artifact.ExtractComparisonWarnings(a.Body)
 	if len(warnings) == 0 {
-		return response + navStrip
+		return response + navStrip + present.FPFPhaseHint("compare")
 	}
 
 	var builder strings.Builder
@@ -1377,6 +1377,7 @@ func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string)
 		builder.WriteString("\n")
 	}
 	builder.WriteString(navStrip)
+	builder.WriteString(present.FPFPhaseHint("compare"))
 
 	return builder.String()
 }

@@ -46,6 +46,9 @@ type DecideInput struct {
 	Predictions         []PredictionInput `json:"predictions,omitempty"`
 	SearchKeywords      string            `json:"search_keywords,omitempty"`
 	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
+	// GovernanceMode is "module" | "exact" | "" (default "module"). Controls
+	// whether affected_files widen to module scope at baseline time.
+	GovernanceMode string `json:"governance_mode,omitempty"`
 }
 
 // PredictionInput is a testable claim that measure should verify.
@@ -357,6 +360,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		EvidenceRequirements: input.EvidenceReqs,
 		RefreshTriggers:      input.RefreshTriggers,
 		FirstModuleCoverage:  input.FirstModuleCoverage,
+		GovernanceMode:       GovernanceMode(strings.TrimSpace(input.GovernanceMode)),
 	}
 	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
@@ -677,6 +681,10 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
 	input = normalizeDecisionInput(input)
 
+	if _, err := ParseGovernanceMode(input.GovernanceMode); err != nil {
+		return nil, "", err
+	}
+
 	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
 	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
 		return nil, "", err
@@ -866,9 +874,16 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		}
 	}
 
-	driftManifests, err := buildDriftScopeManifests(projectRoot, files)
-	if err != nil {
-		return nil, fmt.Errorf("build drift manifests: %w", err)
+	// Drift manifests are only built for module-mode governance. Exact-mode
+	// decisions track only the listed files; siblings are not auto-captured
+	// as drift. This honors X-SCOPE: explicit files mean explicit files.
+	mode := a.UnmarshalDecisionFields().EffectiveGovernanceMode()
+	var driftManifests []DriftScopeManifest
+	if mode == GovernanceModeModule {
+		driftManifests, err = buildDriftScopeManifests(projectRoot, files)
+		if err != nil {
+			return nil, fmt.Errorf("build drift manifests: %w", err)
+		}
 	}
 
 	err = persistDriftManifests(ctx, store, a, driftManifests)

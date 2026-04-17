@@ -30,3 +30,4 @@ desktop/desktop
 .zenflow/**
 DESIGN.md
 .playwright-mcp/
+/desktop-tauri/target/

@@ -1,8 +1,8 @@
-import type { main as GoMain } from "../../wailsjs/go/models";
+import { invoke } from "@tauri-apps/api/core";
 
-// API layer — wraps Wails Go bindings with mock fallback for standalone dev.
-// After `wails dev` generates bindings at wailsjs/go/main/App, this module
-// imports them. When running standalone (npm run dev), it uses mock data.
+// API layer — wraps Tauri invoke() with mock fallback for standalone dev.
+// When running inside Tauri, calls invoke() from @tauri-apps/api/core.
+// When running standalone (npm run dev), it uses mock data.
 
 export interface DashboardData {
   project_name: string;
@@ -440,9 +440,18 @@ export interface DesktopConfig {
   auto_wire_mcp: boolean;
 }
 
-// Derive the frontend transcript shape from the Wails-generated Go model so
-// desktop chat blocks stay aligned with the backend source of truth.
-export type ChatBlock = Partial<GoMain.ChatBlock> & Pick<GoMain.ChatBlock, "id" | "type">;
+export interface ChatBlock {
+  id: string;
+  type: string;
+  role?: string;
+  text?: string;
+  name?: string;
+  call_id?: string;
+  parent_id?: string;
+  input?: string;
+  output?: string;
+  is_error?: boolean;
+}
 
 export interface ChatEntry {
   block: ChatBlock;
@@ -827,130 +836,22 @@ export interface TerminalSession {
   updated_at: string;
 }
 
-type WailsBindings = {
-  GetDashboard: () => Promise<DashboardData>;
-  GetCoverage?: () => Promise<CoverageData>;
-  GetGovernanceOverview?: () => Promise<GovernanceOverview>;
-  RefreshGovernance?: () => Promise<GovernanceOverview>;
-  ListProblemCandidates?: () => Promise<ProblemCandidate[]>;
-  DismissProblemCandidate?: (id: string) => Promise<void>;
-  AdoptProblemCandidate?: (id: string) => Promise<ProblemDetail>;
-  ListProblems: () => Promise<ProblemSummary[]>;
-  ListDecisions: () => Promise<DecisionSummary[]>;
-  GetProblem: (id: string) => Promise<ProblemDetail>;
-  GetDecision: (id: string) => Promise<DecisionDetail>;
-  ListPortfolios: () => Promise<PortfolioSummary[]>;
-  GetPortfolio: (id: string) => Promise<PortfolioDetail>;
-  CreateProblem?: (input: ProblemCreateInput) => Promise<ProblemDetail>;
-  CharacterizeProblem?: (input: ProblemCharacterizationInput) => Promise<ProblemDetail>;
-  CreatePortfolio?: (input: PortfolioCreateInput) => Promise<PortfolioDetail>;
-  ComparePortfolio?: (input: PortfolioCompareInput) => Promise<PortfolioDetail>;
-  CreateDecision?: (input: DecisionCreateInput) => Promise<DecisionDetail>;
-  SearchArtifacts: (query: string) => Promise<ArtifactSummary[]>;
-  ListProjects: () => Promise<ProjectInfo[]>;
-  AddProject: (path: string) => Promise<ProjectInfo>;
-  SwitchProject: (path: string) => Promise<void>;
-  ScanForProjects: () => Promise<ProjectInfo[]>;
-  OpenDirectoryPicker?: () => Promise<string>;
-  InitProject?: (path: string) => Promise<ProjectInfo>;
-  DetectAgents?: () => Promise<InstalledAgent[]>;
-  ListTasks?: () => Promise<TaskState[]>;
-  SpawnTask?: (agent: string, prompt: string, worktree: boolean, branch: string) => Promise<TaskState>;
-  CancelTask?: (id: string) => Promise<void>;
-  WriteTaskInput?: (id: string, data: string) => Promise<void>;
-  ArchiveTask?: (id: string) => Promise<void>;
-  GetTaskOutput?: (id: string) => Promise<string>;
-  ListAllTasks?: () => Promise<TaskState[]>;
-  HandoffTask?: (id: string, agent: string) => Promise<TaskState>;
-  ListFlows?: () => Promise<DesktopFlow[]>;
-  ListFlowTemplates?: () => Promise<FlowTemplate[]>;
-  CreateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
-  UpdateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
-  ToggleFlow?: (id: string, enabled: boolean) => Promise<DesktopFlow>;
-  DeleteFlow?: (id: string) => Promise<void>;
-  RunFlowNow?: (id: string) => Promise<TaskState>;
-  ListTerminalSessions?: () => Promise<TerminalSession[]>;
-  CreateTerminalSession?: (cwd: string) => Promise<TerminalSession>;
-  WriteTerminalInput?: (id: string, data: string) => Promise<void>;
-  ResizeTerminalSession?: (id: string, cols: number, rows: number) => Promise<void>;
-  CloseTerminalSession?: (id: string) => Promise<void>;
-  ImplementDecision?: (
-    decisionID: string,
-    agent: string,
-    worktree: boolean,
-    branch: string,
-  ) => Promise<TaskState>;
-  VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
-  CreatePullRequest?: (taskID: string) => Promise<PullRequestResult>;
-  BaselineDecision?: (decisionID: string) => Promise<DecisionDetail>;
-  MeasureDecision?: (decisionID: string, findings: string, verdict: string) => Promise<DecisionDetail>;
-  WaiveDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
-  DeprecateDecision?: (decisionID: string, reason: string) => Promise<DecisionDetail>;
-  ReopenDecision?: (decisionID: string, reason: string) => Promise<ProblemDetail>;
-  ResolveAdoptBaseline?: (findingID: string) => Promise<DecisionDetail>;
-  ResolveAdoptMeasure?: (
-    findingID: string,
-    findings: string,
-    verdict: string,
-  ) => Promise<DecisionDetail>;
-  ResolveAdoptWaive?: (findingID: string, reason: string) => Promise<DecisionDetail>;
-  ResolveAdoptDeprecate?: (findingID: string, reason: string) => Promise<DecisionDetail>;
-  ResolveAdoptReopen?: (findingID: string, reason: string) => Promise<ProblemDetail>;
-  OpenPathInIDE?: (path: string) => Promise<void>;
-  GetConfig?: () => Promise<DesktopConfig>;
-  SaveConfig?: (config: DesktopConfig) => Promise<DesktopConfig>;
-};
+// --- Transport layer ---
 
-let bindings: WailsBindings | null = null;
-
-async function loadBindings(): Promise<WailsBindings | null> {
-  if (bindings) return bindings;
-  try {
-    // Use a variable path so TypeScript doesn't try to resolve the module at build time.
-    // Wails generates these bindings at runtime via `wails dev`.
-    const bindingPath = "../../wailsjs/go/main/App";
-    const mod = await import(/* @vite-ignore */ bindingPath);
-    bindings = mod as unknown as WailsBindings;
-    return bindings;
-  } catch {
-    return null;
-  }
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function callBinding<T>(name: string, ...args: unknown[]): Promise<T | null> {
-  const b = await loadBindings();
-  const fn = b ? (b as unknown as Record<string, (...params: unknown[]) => Promise<T>>)[name] : null;
-
-  if (typeof fn === "function") {
-    return fn(...args);
-  }
-
-  const runtimeBindings = getRuntimeBindings();
-  const runtimeFn = runtimeBindings[name];
-
-  if (typeof runtimeFn !== "function") {
-    return null;
-  }
-
-  return runtimeFn(...args) as Promise<T>;
+async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
+  if (!isTauri()) return null;
+  return invoke<T>(command, args);
 }
 
-function getRuntimeBindings(): Record<string, (...params: unknown[]) => Promise<unknown>> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const runtimeBindings = (
-    window as typeof window & {
-      go?: {
-        main?: {
-          App?: Record<string, (...params: unknown[]) => Promise<unknown>>;
-        };
-      };
-    }
-  ).go?.main?.App;
-
-  return runtimeBindings ?? {};
+/** Toggle window maximize — no-op outside Tauri. */
+export async function toggleMaximize(): Promise<void> {
+  if (!isTauri()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().toggleMaximize();
 }
 
 // --- Mock data for standalone development ---
@@ -1382,7 +1283,7 @@ function taskPromptMetaValue(prompt: string, label: string): string {
 // --- Public API ---
 
 export async function getDashboard(): Promise<DashboardData> {
-  const result = await callBinding<DashboardData>("GetDashboard");
+  const result = await tauriInvoke<DashboardData>("get_dashboard");
   if (result) return result;
 
   return {
@@ -1407,38 +1308,38 @@ export async function getDashboard(): Promise<DashboardData> {
 }
 
 export async function listProblems(): Promise<ProblemSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListProblems();
+  const result = await tauriInvoke<ProblemSummary[]>("list_problems");
+  if (result) return result;
   return mockProblems;
 }
 
 export async function listDecisions(): Promise<DecisionSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListDecisions();
+  const result = await tauriInvoke<DecisionSummary[]>("list_decisions");
+  if (result) return result;
   return mockDecisions;
 }
 
 export async function getProblem(id: string): Promise<ProblemDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetProblem(id);
+  const result = await tauriInvoke<ProblemDetail>("get_problem", { id });
+  if (result) return result;
   return mockProblemDetails.get(id) ?? INITIAL_PROBLEM_DETAIL;
 }
 
 export async function getDecision(id: string): Promise<DecisionDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetDecision(id);
+  const result = await tauriInvoke<DecisionDetail>("get_decision", { id });
+  if (result) return result;
   return mockDecisionDetails.get(id) ?? INITIAL_DECISION_DETAIL;
 }
 
 export async function listPortfolios(): Promise<PortfolioSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListPortfolios();
+  const result = await tauriInvoke<PortfolioSummary[]>("list_portfolios");
+  if (result) return result;
   return mockPortfolios;
 }
 
 export async function getPortfolio(id: string): Promise<PortfolioDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetPortfolio(id);
+  const result = await tauriInvoke<PortfolioDetail>("get_portfolio", { id });
+  if (result) return result;
   return mockPortfolioDetails.get(id) ?? INITIAL_PORTFOLIO_DETAIL;
 }
 
@@ -1457,7 +1358,7 @@ export interface ReadinessReport {
 }
 
 export async function assessComparisonReadiness(portfolioID: string): Promise<ReadinessReport> {
-  const report = await callBinding<ReadinessReport>("AssessComparisonReadiness", portfolioID);
+  const report = await tauriInvoke<ReadinessReport>("assess_comparison_readiness", { portfolio_id: portfolioID });
   if (report) return { ...report, missing_scores: report.missing_scores ?? [], warnings: report.warnings ?? [] };
   return {
     portfolio_id: portfolioID,
@@ -1474,13 +1375,13 @@ export async function assessComparisonReadiness(portfolioID: string): Promise<Re
 }
 
 export async function getCoverage(): Promise<CoverageData> {
-  const coverage = await callBinding<CoverageData>("GetCoverage");
+  const coverage = await tauriInvoke<CoverageData>("get_coverage");
   if (coverage) return coverage;
   return mockGovernanceOverview.coverage;
 }
 
 export async function getGovernanceOverview(): Promise<GovernanceOverview> {
-  const overview = await callBinding<GovernanceOverview>("GetGovernanceOverview");
+  const overview = await tauriInvoke<GovernanceOverview>("get_governance_overview");
   if (overview) return normalizeOverview(overview);
   return mockGovernanceOverview;
 }
@@ -1505,7 +1406,7 @@ function normalizeOverview(o: GovernanceOverview): GovernanceOverview {
 }
 
 export async function refreshGovernance(): Promise<GovernanceOverview> {
-  const overview = await callBinding<GovernanceOverview>("RefreshGovernance");
+  const overview = await tauriInvoke<GovernanceOverview>("refresh_governance");
   if (overview) return overview;
   mockGovernanceOverview = {
     ...mockGovernanceOverview,
@@ -1519,13 +1420,13 @@ export async function refreshGovernance(): Promise<GovernanceOverview> {
 }
 
 export async function listProblemCandidates(): Promise<ProblemCandidate[]> {
-  const candidates = await callBinding<ProblemCandidate[]>("ListProblemCandidates");
+  const candidates = await tauriInvoke<ProblemCandidate[]>("list_problem_candidates");
   if (candidates) return candidates;
   return mockGovernanceOverview.problem_candidates;
 }
 
 export async function dismissProblemCandidate(id: string): Promise<void> {
-  await callBinding<void>("DismissProblemCandidate", id);
+  await tauriInvoke<void>("dismiss_problem_candidate", { id });
   mockGovernanceOverview = {
     ...mockGovernanceOverview,
     problem_candidates: mockGovernanceOverview.problem_candidates.filter((candidate) => candidate.id !== id),
@@ -1533,7 +1434,7 @@ export async function dismissProblemCandidate(id: string): Promise<void> {
 }
 
 export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> {
-  const adopted = await callBinding<ProblemDetail>("AdoptProblemCandidate", id);
+  const adopted = await tauriInvoke<ProblemDetail>("adopt_problem_candidate", { id });
   if (adopted) return adopted;
 
   const candidate = mockGovernanceOverview.problem_candidates.find((item) => item.id === id);
@@ -1594,7 +1495,7 @@ export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> 
 }
 
 export async function waiveDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("WaiveDecision", decisionID, reason);
+  const decision = await tauriInvoke<DecisionDetail>("waive_decision", { decision_id: decisionID, reason });
   if (decision) return decision;
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
@@ -1628,7 +1529,7 @@ export async function waiveDecision(decisionID: string, reason: string): Promise
 }
 
 export async function baselineDecision(decisionID: string): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("BaselineDecision", decisionID);
+  const decision = await tauriInvoke<DecisionDetail>("baseline_decision", { decision_id: decisionID });
   if (decision) return decision;
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
@@ -1653,7 +1554,7 @@ export async function resolveAdoptBaseline(
   findingID: string,
   decisionID: string,
 ): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("ResolveAdoptBaseline", findingID);
+  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_baseline", { finding_id: findingID });
   if (decision) return decision;
 
   return baselineDecision(decisionID);
@@ -1664,7 +1565,7 @@ export async function measureDecision(
   findings: string,
   verdict: string,
 ): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("MeasureDecision", decisionID, findings, verdict);
+  const decision = await tauriInvoke<DecisionDetail>("measure_decision", { decision_id: decisionID, findings, verdict });
   if (decision) return decision;
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
@@ -1717,19 +1618,14 @@ export async function resolveAdoptMeasure(
   findings: string,
   verdict: string,
 ): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>(
-    "ResolveAdoptMeasure",
-    findingID,
-    findings,
-    verdict,
-  );
+  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_measure", { finding_id: findingID, findings, verdict });
   if (decision) return decision;
 
   return measureDecision(decisionID, findings, verdict);
 }
 
 export async function deprecateDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("DeprecateDecision", decisionID, reason);
+  const decision = await tauriInvoke<DecisionDetail>("deprecate_decision", { decision_id: decisionID, reason });
   if (decision) return decision;
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
@@ -1765,18 +1661,14 @@ export async function resolveAdoptDeprecate(
   decisionID: string,
   reason: string,
 ): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>(
-    "ResolveAdoptDeprecate",
-    findingID,
-    reason,
-  );
+  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_deprecate", { finding_id: findingID, reason });
   if (decision) return decision;
 
   return deprecateDecision(decisionID, reason);
 }
 
 export async function reopenDecision(decisionID: string, reason: string): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("ReopenDecision", decisionID, reason);
+  const problem = await tauriInvoke<ProblemDetail>("reopen_decision", { decision_id: decisionID, reason });
   if (problem) return problem;
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
@@ -1846,7 +1738,7 @@ export async function resolveAdoptReopen(
   decisionID: string,
   reason: string,
 ): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("ResolveAdoptReopen", findingID, reason);
+  const problem = await tauriInvoke<ProblemDetail>("resolve_adopt_reopen", { finding_id: findingID, reason });
   if (problem) return problem;
 
   return reopenDecision(decisionID, reason);
@@ -1857,14 +1749,14 @@ export async function resolveAdoptWaive(
   decisionID: string,
   reason: string,
 ): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("ResolveAdoptWaive", findingID, reason);
+  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_waive", { finding_id: findingID, reason });
   if (decision) return decision;
 
   return waiveDecision(decisionID, reason);
 }
 
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("CreateProblem", input);
+  const problem = await tauriInvoke<ProblemDetail>("create_problem", { input });
   if (problem) return problem;
 
   const id = nextMockID("prob");
@@ -1908,7 +1800,7 @@ export async function createProblem(input: ProblemCreateInput): Promise<ProblemD
 }
 
 export async function characterizeProblem(input: ProblemCharacterizationInput): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("CharacterizeProblem", input);
+  const problem = await tauriInvoke<ProblemDetail>("characterize_problem", { input });
   if (problem) return problem;
 
   const current = mockProblemDetails.get(input.problem_ref);
@@ -1946,7 +1838,7 @@ export async function characterizeProblem(input: ProblemCharacterizationInput): 
 }
 
 export async function createPortfolio(input: PortfolioCreateInput): Promise<PortfolioDetail> {
-  const portfolio = await callBinding<PortfolioDetail>("CreatePortfolio", input);
+  const portfolio = await tauriInvoke<PortfolioDetail>("create_portfolio", { input });
   if (portfolio) return portfolio;
 
   const id = nextMockID("sol");
@@ -2003,7 +1895,7 @@ export async function createPortfolio(input: PortfolioCreateInput): Promise<Port
 }
 
 export async function comparePortfolio(input: PortfolioCompareInput): Promise<PortfolioDetail> {
-  const portfolio = await callBinding<PortfolioDetail>("ComparePortfolio", input);
+  const portfolio = await tauriInvoke<PortfolioDetail>("compare_portfolio", { input });
   if (portfolio) return portfolio;
 
   const current = mockPortfolioDetails.get(input.portfolio_ref);
@@ -2042,7 +1934,7 @@ export async function comparePortfolio(input: PortfolioCompareInput): Promise<Po
 }
 
 export async function createDecision(input: DecisionCreateInput): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("CreateDecision", input);
+  const decision = await tauriInvoke<DecisionDetail>("create_decision", { input });
   if (decision) return decision;
 
   const id = nextMockID("dec");
@@ -2132,16 +2024,16 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
 }
 
 export async function searchArtifacts(query: string): Promise<ArtifactSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.SearchArtifacts(query);
+  const result = await tauriInvoke<ArtifactSummary[]>("search_artifacts", { query });
+  if (result) return result;
   return [];
 }
 
 // --- Project management ---
 
 export async function listProjects(): Promise<ProjectInfo[]> {
-  const b = await loadBindings();
-  if (b) return b.ListProjects();
+  const result = await tauriInvoke<ProjectInfo[]>("list_projects");
+  if (result) return result;
   return [
     {
       path: "/Users/demo/projects/haft",
@@ -2156,35 +2048,34 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 }
 
 export async function addProject(path: string): Promise<ProjectInfo> {
-  const b = await loadBindings();
-  if (b) return b.AddProject(path);
+  const result = await tauriInvoke<ProjectInfo>("add_project", { path });
+  if (result) return result;
   return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function addProjectSmart(path: string): Promise<ProjectInfo> {
-  const result = await callBinding<ProjectInfo>("AddProjectSmart", path);
+  const result = await tauriInvoke<ProjectInfo>("add_project_smart", { path });
   if (result) return result;
   return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function switchProject(path: string): Promise<void> {
-  const b = await loadBindings();
-  if (b) return b.SwitchProject(path);
+  await tauriInvoke<void>("switch_project", { path });
 }
 
 export async function scanForProjects(): Promise<ProjectInfo[]> {
-  const b = await loadBindings();
-  if (b) return b.ScanForProjects();
+  const result = await tauriInvoke<ProjectInfo[]>("scan_for_projects");
+  if (result) return result;
   return [];
 }
 
 export async function openDirectoryPicker(): Promise<string> {
-  const path = await callBinding<string>("OpenDirectoryPicker");
+  const path = await tauriInvoke<string>("open_directory_picker");
   return path ?? "";
 }
 
 export async function initProject(path: string): Promise<ProjectInfo> {
-  const project = await callBinding<ProjectInfo>("InitProject", path);
+  const project = await tauriInvoke<ProjectInfo>("init_project", { path });
   if (project) return project;
   return {
     path,
@@ -2200,24 +2091,24 @@ export async function initProject(path: string): Promise<ProjectInfo> {
 // --- Task management ---
 
 export async function listTasks(): Promise<TaskState[]> {
-  const tasks = await callBinding<TaskState[]>("ListTasks");
+  const tasks = await tauriInvoke<TaskState[]>("list_tasks");
   if (tasks) return tasks;
   return mockTasks;
 }
 
 export async function listAllTasks(): Promise<TaskState[]> {
-  const tasks = await callBinding<TaskState[]>("ListAllTasks");
+  const tasks = await tauriInvoke<TaskState[]>("list_all_tasks");
   if (tasks) return tasks;
   return mockTasks;
 }
 
 export async function detectAgents(): Promise<InstalledAgent[]> {
-  const agents = await callBinding<InstalledAgent[]>("DetectAgents");
+  const agents = await tauriInvoke<InstalledAgent[]>("detect_agents");
   return agents ?? [];
 }
 
 export async function spawnTask(agent: string, prompt: string, worktree: boolean, branch: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("SpawnTask", agent, prompt, worktree, branch);
+  const task = await tauriInvoke<TaskState>("spawn_task", { agent, prompt, worktree, branch });
   if (task) return task;
 
   const initialTranscript = `[user] ${prompt}`;
@@ -2253,7 +2144,7 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
 }
 
 export async function cancelTask(id: string): Promise<void> {
-  await callBinding<void>("CancelTask", id);
+  await tauriInvoke<void>("cancel_task", { id });
   mockTasks = mockTasks.map((task) =>
     task.id === id
       ? { ...task, status: "cancelled", completed_at: nowString() }
@@ -2267,7 +2158,7 @@ export async function writeTaskInput(id: string, data: string): Promise<void> {
     return;
   }
 
-  await callBinding<void>("WriteTaskInput", id, trimmed);
+  await tauriInvoke<void>("write_task_input", { id, data: trimmed });
 
   mockTasks = mockTasks.map((task) => {
     if (task.id !== id || task.status !== "running") {
@@ -2296,16 +2187,16 @@ export async function writeTaskInput(id: string, data: string): Promise<void> {
 }
 
 export async function archiveTask(id: string): Promise<void> {
-  await callBinding<void>("ArchiveTask", id);
+  await tauriInvoke<void>("archive_task", { id });
   mockTasks = mockTasks.filter((task) => task.id !== id);
 }
 
 export async function setTaskAutoRun(id: string, autoRun: boolean): Promise<void> {
-  await callBinding<void>("SetTaskAutoRun", id, autoRun);
+  await tauriInvoke<void>("set_task_auto_run", { id, auto_run: autoRun });
 }
 
 export async function getTaskOutput(id: string): Promise<string> {
-  const output = await callBinding<string>("GetTaskOutput", id);
+  const output = await tauriInvoke<string>("get_task_output", { id });
   if (output != null) return output; // null check, not falsy — empty string "" is valid
   return mockTasks.find((task) => task.id === id)?.output ?? "";
 }
@@ -2331,7 +2222,7 @@ export async function getTaskTranscriptState(id: string): Promise<ChatTranscript
 }
 
 export async function handoffTask(id: string, agent: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("HandoffTask", id, agent);
+  const task = await tauriInvoke<TaskState>("handoff_task", { id, agent });
   if (task) return task;
 
   const source = mockTasks.find((item) => item.id === id);
@@ -2354,13 +2245,13 @@ function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState
 }
 
 export async function listFlows(): Promise<DesktopFlow[]> {
-  const flows = await callBinding<DesktopFlow[]>("ListFlows");
+  const flows = await tauriInvoke<DesktopFlow[]>("list_flows");
   if (flows) return flows;
   return mockFlows;
 }
 
 export async function listFlowTemplates(): Promise<FlowTemplate[]> {
-  const templates = await callBinding<FlowTemplate[]>("ListFlowTemplates");
+  const templates = await tauriInvoke<FlowTemplate[]>("list_flow_templates");
   if (templates) return templates;
 
   return [
@@ -2398,7 +2289,7 @@ export async function listFlowTemplates(): Promise<FlowTemplate[]> {
 }
 
 export async function createFlow(input: FlowInput): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("CreateFlow", input);
+  const flow = await tauriInvoke<DesktopFlow>("create_flow", { input });
   if (flow) return flow;
 
   const createdFlow: DesktopFlow = {
@@ -2419,7 +2310,7 @@ export async function createFlow(input: FlowInput): Promise<DesktopFlow> {
 }
 
 export async function updateFlow(input: FlowInput): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("UpdateFlow", input);
+  const flow = await tauriInvoke<DesktopFlow>("update_flow", { input });
   if (flow) return flow;
 
   const current = mockFlows.find((item) => item.id === input.id);
@@ -2438,7 +2329,7 @@ export async function updateFlow(input: FlowInput): Promise<DesktopFlow> {
 }
 
 export async function toggleFlow(id: string, enabled: boolean): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("ToggleFlow", id, enabled);
+  const flow = await tauriInvoke<DesktopFlow>("toggle_flow", { id, enabled });
   if (flow) return flow;
 
   const current = mockFlows.find((item) => item.id === id);
@@ -2458,12 +2349,12 @@ export async function toggleFlow(id: string, enabled: boolean): Promise<DesktopF
 }
 
 export async function deleteFlow(id: string): Promise<void> {
-  await callBinding<void>("DeleteFlow", id);
+  await tauriInvoke<void>("delete_flow", { id });
   mockFlows = mockFlows.filter((flow) => flow.id !== id);
 }
 
 export async function runFlowNow(id: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("RunFlowNow", id);
+  const task = await tauriInvoke<TaskState>("run_flow_now", { id });
   if (task) return task;
 
   const flow = mockFlows.find((item) => item.id === id);
@@ -2492,19 +2383,13 @@ export async function implementDecision(
   worktree: boolean,
   branch: string,
 ): Promise<TaskState> {
-  const task = await callBinding<TaskState>(
-    "ImplementDecision",
-    decisionID,
-    agent,
-    worktree,
-    branch,
-  );
+  const task = await tauriInvoke<TaskState>("implement_decision", { decision_id: decisionID, agent, worktree, branch });
   if (task) return task;
   return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
 }
 
 export async function createPullRequest(taskID: string): Promise<PullRequestResult> {
-  const result = await callBinding<PullRequestResult>("CreatePullRequest", taskID);
+  const result = await tauriInvoke<PullRequestResult>("create_pull_request", { task_id: taskID });
   if (result) return result;
 
   const task = mockTasks.find((item) => item.id === taskID);
@@ -2529,23 +2414,23 @@ export async function createPullRequest(taskID: string): Promise<PullRequestResu
 }
 
 export async function verifyDecision(decisionID: string, agent: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("VerifyDecision", decisionID, agent);
+  const task = await tauriInvoke<TaskState>("verify_decision", { decision_id: decisionID, agent });
   if (task) return task;
   return spawnTask(agent, `Verify ${decisionID}`, false, "");
 }
 
 export async function openPathInIDE(path: string): Promise<void> {
-  await callBinding<void>("OpenPathInIDE", path);
+  await tauriInvoke<void>("open_path_in_ide", { path });
 }
 
 export async function listTerminalSessions(): Promise<TerminalSession[]> {
-  const sessions = await callBinding<TerminalSession[]>("ListTerminalSessions");
+  const sessions = await tauriInvoke<TerminalSession[]>("list_terminal_sessions");
   if (sessions) return sessions;
   return mockTerminalSessions;
 }
 
 export async function createTerminalSession(cwd: string): Promise<TerminalSession> {
-  const session = await callBinding<TerminalSession>("CreateTerminalSession", cwd);
+  const session = await tauriInvoke<TerminalSession>("create_terminal_session", { cwd });
   if (session) return session;
 
   const createdSession: TerminalSession = {
@@ -2564,21 +2449,21 @@ export async function createTerminalSession(cwd: string): Promise<TerminalSessio
 }
 
 export async function writeTerminalInput(id: string, data: string): Promise<void> {
-  await callBinding<void>("WriteTerminalInput", id, data);
+  await tauriInvoke<void>("write_terminal_input", { id, data });
   void data;
 }
 
 export async function resizeTerminalSession(id: string, cols: number, rows: number): Promise<void> {
-  await callBinding<void>("ResizeTerminalSession", id, cols, rows);
+  await tauriInvoke<void>("resize_terminal_session", { id, cols, rows });
 }
 
 export async function closeTerminalSession(id: string): Promise<void> {
-  await callBinding<void>("CloseTerminalSession", id);
+  await tauriInvoke<void>("close_terminal_session", { id });
   mockTerminalSessions = mockTerminalSessions.filter((session) => session.id !== id);
 }
 
 export async function getConfig(): Promise<DesktopConfig> {
-  const config = await callBinding<DesktopConfig>("GetConfig");
+  const config = await tauriInvoke<DesktopConfig>("get_config");
   if (config) return config;
 
   return {
@@ -2600,7 +2485,7 @@ export async function getConfig(): Promise<DesktopConfig> {
 }
 
 export async function saveConfig(config: DesktopConfig): Promise<DesktopConfig> {
-  const saved = await callBinding<DesktopConfig>("SaveConfig", config);
+  const saved = await tauriInvoke<DesktopConfig>("save_config", { config });
   if (saved) return saved;
   return config;
 }

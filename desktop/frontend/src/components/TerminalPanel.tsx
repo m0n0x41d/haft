@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { subscribe } from "../lib/events";
 import {
   closeTerminalSession,
   createTerminalSession,
@@ -75,7 +75,7 @@ export function TerminalPanel({
       return;
     }
 
-    const stopStatus = EventsOn("terminal.status", (payload: TerminalSession) => {
+    const stopStatus = subscribe<TerminalSession>("terminal.status", (payload) => {
       if (payload.status === "running") {
         setSessions((current) => upsertSession(current, payload));
         setActiveId((current) => current ?? payload.id);
@@ -261,7 +261,7 @@ function TerminalViewport({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    const stopOutput = EventsOn("terminal.output", (payload: TerminalOutputEvent) => {
+    const stopOutput = subscribe<TerminalOutputEvent>("terminal.output", (payload) => {
       if (payload.id !== session.id) {
         return;
       }

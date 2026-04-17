@@ -42,7 +42,10 @@ func generatePlan(
 	invariants []string,
 	projectRoot string,
 	agent string,
-	ui *runUI,
+	tc toolchain,
+	contextFiles []string,
+	extraPrompt string,
+	ev *EventSender,
 ) (*executionPlan, error) {
 	haftDir := filepath.Join(projectRoot, ".haft")
 	_ = os.MkdirAll(filepath.Join(haftDir, "plans"), 0o755)
@@ -50,14 +53,13 @@ func generatePlan(
 	planPath := planFilePath(haftDir, decision.Meta.ID)
 
 	// Build planning prompt
-	prompt := buildPlanningPrompt(decision, files, invariants, planPath)
+	prompt := buildPlanningPrompt(decision, files, invariants, planPath, tc, projectRoot, contextFiles, extraPrompt)
 
-	ui.phase("Planning: Decomposing decision into tasks")
-	fmt.Printf("  %sAgent will analyze the decision and create a task plan%s\n", aDim, aReset)
-	fmt.Printf("  %sPlan will be saved to: %s%s\n\n", aDim, planPath, aReset)
+	ev.Phase("Planning: Decomposing decision into tasks")
+	ev.Meta("Plan path", planPath)
 
 	// Run planning agent
-	if err := spawnAgent(agent, prompt, projectRoot); err != nil {
+	if err := spawnAgentWithEvents(agent, prompt, projectRoot, ev); err != nil {
 		return nil, fmt.Errorf("planning agent failed: %w", err)
 	}
 
@@ -67,14 +69,8 @@ func generatePlan(
 		return nil, fmt.Errorf("failed to parse generated plan: %w", err)
 	}
 
-	ui.ok(fmt.Sprintf("Plan generated: %d tasks", len(plan.tasks)))
-	for _, t := range plan.tasks {
-		fmt.Printf("  %s%-4s%s %s\n", aCyan, t.id, aReset, t.title)
-		if t.acceptance != "" {
-			fmt.Printf("       %s✓ %s%s\n", aDim, t.acceptance, aReset)
-		}
-	}
-	fmt.Println()
+	ev.OK(fmt.Sprintf("Plan generated: %d tasks", len(plan.tasks)))
+	emitPlanLoaded(ev, plan)
 
 	return plan, nil
 }
@@ -84,6 +80,10 @@ func buildPlanningPrompt(
 	files []artifact.AffectedFile,
 	invariants []string,
 	outputPath string,
+	tc toolchain,
+	projectRoot string,
+	contextFiles []string,
+	extraPrompt string,
 ) string {
 	var b strings.Builder
 
@@ -107,7 +107,7 @@ func buildPlanningPrompt(
 	_, _ = b.WriteString("|---|------|-------|------------|\n")
 	_, _ = b.WriteString("| T1 | First thing to do | `path/to/file.go` | How to verify it's done |\n")
 	_, _ = b.WriteString("| T2 | Second thing | `path/a.go`, `path/b.go` | Acceptance criteria |\n")
-	_, _ = b.WriteString("| TV | Run tests and verify | all modified files | All tests pass, go build succeeds |\n")
+	_, _ = b.WriteString(fmt.Sprintf("| TV | Run tests and verify | all modified files | %s |\n", tc.acceptLine()))
 	_, _ = b.WriteString("| TR | Final review — check all invariants | — | All invariants hold, no regressions |\n")
 	_, _ = b.WriteString("```\n\n")
 
@@ -132,6 +132,8 @@ func buildPlanningPrompt(
 		}
 		_, _ = b.WriteString("\n")
 	}
+
+	appendContextAndPrompt(&b, projectRoot, contextFiles, extraPrompt)
 
 	_, _ = b.WriteString("Now create the plan and write it to the output file.\n")
 
@@ -207,24 +209,26 @@ func executePlan(
 	projectRoot string,
 	agent string,
 	auto bool,
-	ui *runUI,
+	tc toolchain,
+	contextFiles []string,
+	extraPrompt string,
+	ev *EventSender,
 ) bool {
 	allPassed := true
 
 	for i := range plan.tasks {
 		task := &plan.tasks[i]
 
-		ui.phase(fmt.Sprintf("Task %s/%d: %s", task.id, len(plan.tasks), task.title))
+		ev.Phase(fmt.Sprintf("Task %s/%d: %s", task.id, len(plan.tasks), task.title))
 		if task.acceptance != "" {
-			fmt.Printf("  %sAccept: %s%s\n", aDim, task.acceptance, aReset)
+			ev.Meta("Accept", task.acceptance)
 		}
 		if len(task.files) > 0 {
-			fmt.Printf("  %sFiles: %s%s\n", aDim, strings.Join(task.files, ", "), aReset)
+			ev.Meta("Files", strings.Join(task.files, ", "))
 		}
-		fmt.Println()
 
 		if !auto {
-			fmt.Printf("  %sRun this task? [Y/n/s(kip)] %s", aBold, aReset)
+			fmt.Printf("\n  %sRun this task? [Y/n/s(kip)] %s", aBold, aReset)
 			var answer string
 			fmt.Scanln(&answer)
 			if answer == "n" || answer == "N" {
@@ -232,19 +236,22 @@ func executePlan(
 			}
 			if answer == "s" || answer == "S" {
 				task.status = "skipped"
+				ev.TaskStatus(task.id, task.title, TaskSkipped, 0, "")
 				continue
 			}
 		}
 
 		// Build task prompt
-		prompt := buildTaskPrompt(decision, task)
+		prompt := buildTaskPrompt(decision, task, tc, projectRoot, contextFiles, extraPrompt)
 		task.status = "running"
+		ev.TaskStatus(task.id, task.title, TaskRunning, 0, "")
 
 		// Execute
 		start := time.Now()
-		if err := spawnAgent(agent, prompt, projectRoot); err != nil {
+		if err := spawnAgentWithEvents(agent, prompt, projectRoot, ev); err != nil {
+			elapsed := time.Since(start)
 			task.status = "failed"
-			ui.fail(fmt.Sprintf("Task %s failed: %v", task.id, err))
+			ev.TaskStatus(task.id, task.title, TaskFailed, elapsed, err.Error())
 			allPassed = false
 			if !auto {
 				fmt.Printf("  %sContinue? [Y/n] %s", aBold, aReset)
@@ -258,24 +265,24 @@ func executePlan(
 		}
 
 		elapsed := time.Since(start)
-		ui.ok(fmt.Sprintf("Task %s done (%ds)", task.id, int(elapsed.Seconds())))
+		ev.TaskStatus(task.id, task.title, TaskPassed, elapsed, "")
 
-		// Mid-task verification: run tests, check build
-		ui.phase(fmt.Sprintf("Verify after %s", task.id))
-		buildOk := runBuildCheck(projectRoot, ui)
+		// Mid-task verification: check build
+		ev.Phase(fmt.Sprintf("Verify after %s", task.id))
+		buildOk := runBuildCheck(tc, projectRoot, ev)
 		if !buildOk {
 			task.status = "failed"
 			allPassed = false
-			ui.fail("Build failed — spawning fix agent")
+			ev.Fail("Build failed — spawning fix agent")
 
 			fixPrompt := fmt.Sprintf(
-				"The build is broken after implementing task %s (%s). Fix the compilation errors.\nRun `go build ./cmd/haft/` to verify.\n",
-				task.id, task.title,
+				"The build is broken after implementing task %s (%s). Fix the compilation errors.\n%s\n",
+				task.id, task.title, tc.verifyHint,
 			)
-			_ = spawnAgent(agent, fixPrompt, projectRoot)
+			_ = spawnAgentWithEvents(agent, fixPrompt, projectRoot, ev)
 
-			if !runBuildCheck(projectRoot, ui) {
-				ui.fail("Build still broken after fix attempt")
+			if !runBuildCheck(tc, projectRoot, ev) {
+				ev.Fail("Build still broken after fix attempt")
 				if !auto {
 					fmt.Printf("  %sContinue? [Y/n] %s", aBold, aReset)
 					var answer string
@@ -294,7 +301,7 @@ func executePlan(
 	return allPassed
 }
 
-func buildTaskPrompt(decision *artifact.Artifact, task *planTask) string {
+func buildTaskPrompt(decision *artifact.Artifact, task *planTask, tc toolchain, projectRoot string, contextFiles []string, extraPrompt string) string {
 	var b strings.Builder
 
 	_, _ = b.WriteString(fmt.Sprintf("# Implement: %s\n\n", task.title))
@@ -322,23 +329,51 @@ func buildTaskPrompt(decision *artifact.Artifact, task *planTask) string {
 	_, _ = b.WriteString(decision.Body)
 	_, _ = b.WriteString("\n\n")
 
+	appendContextAndPrompt(&b, projectRoot, contextFiles, extraPrompt)
+
 	_, _ = b.WriteString("## Rules\n\n")
 	_, _ = b.WriteString("1. Read existing code before editing.\n")
 	_, _ = b.WriteString("2. Make minimal, focused changes for this task only.\n")
-	_, _ = b.WriteString("3. Run `go build ./cmd/haft/` to verify compilation.\n")
+	_, _ = b.WriteString(fmt.Sprintf("3. %s\n", tc.verifyHint))
 	_, _ = b.WriteString("4. Do NOT commit — the runner manages commits.\n")
 
 	return b.String()
 }
 
-func runBuildCheck(projectRoot string, ui *runUI) bool {
-	// Try go build
-	buildCmd := newShellCmd("go build -o /dev/null ./cmd/haft/", projectRoot)
-	if err := buildCmd.Run(); err != nil {
-		ui.fail("go build failed")
+// appendContextAndPrompt appends extra context files and prompt to a prompt builder.
+func appendContextAndPrompt(b *strings.Builder, projectRoot string, contextFiles []string, extraPrompt string) {
+	for _, cf := range contextFiles {
+		absPath := cf
+		if !filepath.IsAbs(cf) {
+			absPath = filepath.Join(projectRoot, cf)
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			_, _ = b.WriteString(fmt.Sprintf("## Context: %s\n\n(file not found: %v)\n\n", cf, err))
+			continue
+		}
+		_, _ = b.WriteString(fmt.Sprintf("## Context: %s\n\n", cf))
+		_, _ = b.Write(data)
+		_, _ = b.WriteString("\n\n")
+	}
+
+	if extraPrompt != "" {
+		_, _ = b.WriteString("## Additional Instructions\n\n")
+		_, _ = b.WriteString(extraPrompt)
+		_, _ = b.WriteString("\n\n")
+	}
+}
+
+func runBuildCheck(tc toolchain, projectRoot string, ev *EventSender) bool {
+	if tc.buildCmd == "" {
+		return true
+	}
+	cmd := newShellCmd(tc.buildCmd, projectRoot)
+	if err := cmd.Run(); err != nil {
+		ev.Build(tc.buildCmd, false, "")
 		return false
 	}
-	ui.ok("go build passed")
+	ev.Build(tc.buildCmd, true, "")
 	return true
 }
 
@@ -350,57 +385,66 @@ func finalReview(
 	artStore *artifact.Store,
 	projectRoot string,
 	agent string,
-	ui *runUI,
+	auto bool,
+	tc toolchain,
+	ev *EventSender,
 ) bool {
-	ui.phase("Final Review")
+	ev.Phase("Final Review")
 
 	allGood := true
 
 	// 1. Invariant verification
-	fmt.Printf("  %s── Invariants ──%s\n", aDim, aReset)
+	ev.Phase("Invariants")
 	results, err := graph.VerifyInvariants(ctx, graphStore, nil, decisionRef)
 	if err != nil {
-		ui.warn(fmt.Sprintf("Invariant check error: %v", err))
+		ev.Warn(fmt.Sprintf("Invariant check error: %v", err))
 	} else {
 		for _, r := range results {
 			switch r.Status {
 			case graph.InvariantHolds:
-				ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, true)
+				ev.Invariant(r.Invariant.DecisionID, r.Invariant.Text, true, "")
 			case graph.InvariantViolated:
 				allGood = false
-				ui.invariantResult(r.Invariant.DecisionID, r.Invariant.Text, false)
-				fmt.Printf("       %s%s%s\n", aRed, r.Reason, aReset)
+				ev.Invariant(r.Invariant.DecisionID, r.Invariant.Text, false, r.Reason)
 			default:
-				fmt.Printf("  %s?%s %s%s%s\n", aYellow, aReset, aDim, r.Invariant.Text, aReset)
+				ev.Warn(fmt.Sprintf("[%s] %s — status unknown", r.Invariant.DecisionID, r.Invariant.Text))
 			}
 		}
 	}
 
 	// 2. Build check
-	fmt.Printf("\n  %s── Build ──%s\n", aDim, aReset)
-	if !runBuildCheck(projectRoot, ui) {
+	ev.Phase("Build")
+	if !runBuildCheck(tc, projectRoot, ev) {
 		allGood = false
 	}
 
 	// 3. Test suite
-	fmt.Printf("\n  %s── Tests ──%s\n", aDim, aReset)
-	testCmd := newShellCmd("go test $(go list ./... | grep -v /desktop) 2>&1 | tail -5", projectRoot)
-	if err := testCmd.Run(); err != nil {
-		ui.fail("Tests failed")
-		allGood = false
+	ev.Phase("Tests")
+	if tc.testCmd != "" {
+		testCmd := newShellCmd(tc.testCmd, projectRoot)
+		if err := testCmd.Run(); err != nil {
+			ev.Fail("Tests failed")
+			allGood = false
+		} else {
+			ev.OK("Tests passed")
+		}
 	} else {
-		ui.ok("Tests passed")
+		ev.Warn("No test command detected — skipping")
 	}
 
 	// 4. If failures, offer fix
 	if !allGood {
-		fmt.Println()
-		ui.fail("Review found issues")
+		ev.Fail("Review found issues")
 
-		fmt.Printf("\n  %sSpawn fix agent? [Y/n] %s", aBold, aReset)
-		var answer string
-		fmt.Scanln(&answer)
-		if answer != "n" && answer != "N" {
+		spawnFix := auto
+		if !auto {
+			fmt.Printf("\n  %sSpawn fix agent? [Y/n] %s", aBold, aReset)
+			var answer string
+			fmt.Scanln(&answer)
+			spawnFix = answer != "n" && answer != "N"
+		}
+
+		if spawnFix {
 			var fixPrompt strings.Builder
 			_, _ = fixPrompt.WriteString("# Fix Review Issues\n\n")
 			_, _ = fixPrompt.WriteString("The following issues were found during final review:\n\n")
@@ -412,13 +456,13 @@ func finalReview(
 					}
 				}
 			}
-			_, _ = fixPrompt.WriteString("\nFix all issues. Run `go build ./cmd/haft/` and `go test $(go list ./... | grep -v /desktop)` to verify.\n")
+			_, _ = fixPrompt.WriteString(fmt.Sprintf("\nFix all issues. %s\n", tc.verifyHint))
 
-			ui.phase("Fix Agent")
-			_ = spawnAgent(agent, fixPrompt.String(), projectRoot)
+			ev.Phase("Fix Agent")
+			_ = spawnAgentWithEvents(agent, fixPrompt.String(), projectRoot, ev)
 
 			// Re-check
-			return finalReview(ctx, decisionRef, graphStore, artStore, projectRoot, agent, ui)
+			return finalReview(ctx, decisionRef, graphStore, artStore, projectRoot, agent, auto, tc, ev)
 		}
 	}
 

@@ -34,5 +34,47 @@
     "query": "Need a same entity rewrite and explanation-preserving summary.",
     "route_id": "rewrite-explanation",
     "expected_pattern_ids": ["A.6.3.CR", "E.17.EFP"]
+  },
+  {
+    "name": "frame phase patterns",
+    "query": "How do I frame a problem with explicit signal, scope boundary, and acceptance criteria?",
+    "route_id": "phase-frame",
+    "expected_pattern_ids": ["FRAME-01", "FRAME-02", "FRAME-03", "FRAME-05"]
+  },
+  {
+    "name": "characterize phase patterns",
+    "query": "How do I define indicator roles as constraint, target, or observation for fair characterization?",
+    "route_id": "phase-characterize",
+    "expected_pattern_ids": ["CHR-01", "CHR-02", "CHR-04", "CHR-09"]
+  },
+  {
+    "name": "explore phase patterns",
+    "query": "How do I generate rival candidates with abduction, WLNK analysis, and stepping stones?",
+    "route_id": "phase-explore",
+    "expected_pattern_ids": ["EXP-01", "EXP-02", "EXP-04", "EXP-07"]
+  },
+  {
+    "name": "compare phase patterns",
+    "query": "How do I enforce parity, identify the Pareto front, and apply a selection policy?",
+    "route_id": "phase-compare",
+    "expected_pattern_ids": ["CMP-01", "CMP-02", "CMP-03", "CMP-04"]
+  },
+  {
+    "name": "decide phase patterns",
+    "query": "What goes in a decision record? Invariants, rollback, predictions, counterargument?",
+    "route_id": "phase-decide",
+    "expected_pattern_ids": ["DEC-01", "DEC-04", "DEC-05", "DEC-06"]
+  },
+  {
+    "name": "verify phase patterns",
+    "query": "How do I check evidence decay, compute R_eff, and set refresh triggers?",
+    "route_id": "phase-verify",
+    "expected_pattern_ids": ["VER-01", "VER-02", "VER-03", "VER-07"]
+  },
+  {
+    "name": "cross-cutting patterns",
+    "query": "What are the universal WLNK, scope discipline, and transformer principles?",
+    "route_id": "cross-cutting",
+    "expected_pattern_ids": ["X-WLNK", "X-SCOPE", "X-TRANSFORMER"]
   }
 ]

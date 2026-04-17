@@ -31,7 +31,15 @@ func loadGoldenSpecChunks(t *testing.T) []SpecChunk {
 		t.Fatalf("LoadSpecIndexCorpus(%q) failed: %v", path, err)
 	}
 
-	return reindexGoldenSpecChunks(corpus.Indexed)
+	// Also load compiled pattern files
+	patternsDir := filepath.Join(testRepoRoot(t), "internal", "fpf", "patterns")
+	patternChunks, err := LoadPatternChunks(patternsDir)
+	if err != nil {
+		t.Logf("warning: could not load pattern chunks from %s: %v", patternsDir, err)
+	}
+
+	allChunks := append(corpus.Indexed, patternChunks...)
+	return reindexGoldenSpecChunks(allChunks)
 }
 
 func loadGoldenSpecChunksForPatternIDs(t *testing.T, patternIDs map[string]struct{}) []SpecChunk {

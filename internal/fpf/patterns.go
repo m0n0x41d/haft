@@ -53,6 +53,46 @@ var patternHeadingRe = regexp.MustCompile(`^## ([A-Z]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)
 var triggerRe = regexp.MustCompile(`^\*\*Trigger:\*\* (.+)$`)
 var specRe = regexp.MustCompile(`^\*\*(?:Spec|Source):\*\* (.+)$`)
 var coreRe = regexp.MustCompile(`^\*\*Core:\*\* (.+)$`)
+var validUntilRe = regexp.MustCompile(`^\*\*Valid-until:\*\* (\d{4}-\d{2}-\d{2})\b`)
+
+// PatternFileMetadata captures file-level annotations parsed from the top of
+// each pattern markdown file.
+type PatternFileMetadata struct {
+	Filename   string
+	ValidUntil string // YYYY-MM-DD when this file's patterns require review
+}
+
+// LoadPatternFileMetadata reads each pattern file and extracts its file-level
+// metadata (currently just Valid-until). Used by the self-application test
+// that fails when a pattern file's review date has passed.
+func LoadPatternFileMetadata() ([]PatternFileMetadata, error) {
+	entries, err := embeddedPatterns.ReadDir("patterns")
+	if err != nil {
+		return nil, err
+	}
+	var out []PatternFileMetadata
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		data, err := embeddedPatterns.ReadFile("patterns/" + e.Name())
+		if err != nil {
+			return nil, err
+		}
+		meta := PatternFileMetadata{Filename: e.Name()}
+		// Only scan the first 20 lines for file-level annotations.
+		lines := strings.Split(string(data), "\n")
+		scanLimit := min(len(lines), 20)
+		for i := 0; i < scanLimit; i++ {
+			if m := validUntilRe.FindStringSubmatch(lines[i]); m != nil {
+				meta.ValidUntil = m[1]
+				break
+			}
+		}
+		out = append(out, meta)
+	}
+	return out, nil
+}
 
 func parsePatternFile(content string, idCounter *int) []SpecChunk {
 	lines := strings.Split(content, "\n")

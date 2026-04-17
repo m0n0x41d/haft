@@ -1,5 +1,7 @@
 # FPF Patterns: Explore Phase
 
+**Valid-until:** 2026-10-18
+
 ## EXP-01: Abductive Loop
 **Trigger:** Problem framed; generating plausible solutions
 **Spec:** B.5.2, B.5.2.0

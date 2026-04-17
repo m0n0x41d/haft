@@ -1,5 +1,7 @@
 # FPF Patterns: Cross-Cutting (All Phases)
 
+**Valid-until:** 2026-10-18
+
 ## X-WLNK: Weakest Link Principle
 **Trigger:** Aggregating components; building assurance
 **Spec:** B.3.4.4, B.1.1

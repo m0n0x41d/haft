@@ -1,5 +1,7 @@
 # FPF Patterns: Verify Phase
 
+**Valid-until:** 2026-10-18
+
 ## VER-01: Evidence Graph
 **Trigger:** Gathering results; tracking what supports what claim
 **Spec:** A.10, B.3.5, B.1.1

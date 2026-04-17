@@ -1,5 +1,7 @@
 # FPF Patterns: Decide Phase
 
+**Valid-until:** 2026-10-18
+
 ## DEC-01: Decision Record Structure
 **Trigger:** Option chosen; preserving reasoning for review
 **Spec:** E.9, B.4, A.12

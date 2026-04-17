@@ -1,5 +1,7 @@
 # FPF Patterns: Compare Phase
 
+**Valid-until:** 2026-10-18
+
 ## CMP-01: Parity Enforcement
 **Trigger:** Comparing 2+ options; avoiding bias
 **Spec:** C.11.4.2.3

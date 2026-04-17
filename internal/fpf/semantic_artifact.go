@@ -316,41 +316,6 @@ func loadSemanticDocuments(db *sql.DB) ([]semanticDocument, error) {
 	return documents, rows.Err()
 }
 
-//nolint:unused // exercised by package tests
-func loadSemanticRoutes(db *sql.DB) ([]Route, error) {
-	rows, err := db.Query(`SELECT route_id, title, description, matchers_json, core_json, chain_json FROM routes ORDER BY route_id`)
-	if err != nil {
-		return nil, fmt.Errorf("load semantic routes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	routes := make([]Route, 0, 32)
-	for rows.Next() {
-		route := Route{}
-		matchersJSON := ""
-		coreJSON := ""
-		chainJSON := ""
-
-		err := rows.Scan(
-			&route.ID,
-			&route.Title,
-			&route.Description,
-			&matchersJSON,
-			&coreJSON,
-			&chainJSON,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		route.Matchers = decodeSemanticStringList(matchersJSON)
-		route.Core = decodeSemanticStringList(coreJSON)
-		route.Chain = decodeSemanticStringList(chainJSON)
-		routes = append(routes, route)
-	}
-
-	return routes, rows.Err()
-}
 
 func scanSemanticDocument(scanner interface {
 	Scan(dest ...any) error

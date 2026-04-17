@@ -1261,6 +1261,7 @@ dependencies = [
 name = "haft-desktop"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "notify",
  "portable-pty",
  "rusqlite",

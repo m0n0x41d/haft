@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/m0n0x41d/haft/internal/embedding"
 	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/spf13/cobra"
@@ -106,7 +107,7 @@ var (
 )
 
 var openFPFDBFunc = openFPFDB
-var newFPFSemanticEmbedder = fpf.NewOpenAISemanticEmbedder
+var newFPFSemanticEmbedder = embedding.NewOpenAI
 
 func init() {
 	fpfSearchCmd.Flags().IntVar(&fpfSearchLimit, "limit", 10, "Maximum number of results")

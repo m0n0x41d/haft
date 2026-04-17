@@ -19,12 +19,14 @@ import (
 // breaks the architecture even when the build still passes.
 var (
 	// pureCorePackages must be free of any flow/surface imports. internal/fpf
-	// is excluded — it has a known controlled exception in semantic_embedder.go
-	// (imports internal/provider for OpenAI embeddings), tracked as P2
-	// architectural debt for 6.3.
+	// is included as of 2026-04-18 — the OpenAI embedder implementation
+	// previously living in internal/fpf/semantic_embedder.go (and pulling in
+	// internal/provider) was extracted to internal/embedding. fpf now keeps
+	// only the abstract SemanticEmbedder interface + descriptor type.
 	pureCorePackages = []string{
 		"github.com/m0n0x41d/haft/internal/artifact",
 		"github.com/m0n0x41d/haft/internal/graph",
+		"github.com/m0n0x41d/haft/internal/fpf",
 		"github.com/m0n0x41d/haft/internal/reff",
 		"github.com/m0n0x41d/haft/internal/codebase",
 		"github.com/m0n0x41d/haft/assurance",
@@ -75,13 +77,14 @@ func TestPureCoreDoesNotDependOnSurfaceOrFlow(t *testing.T) {
 	t.Fatalf("pure-core packages depend on disallowed packages:\n%s", strings.Join(offenders, "\n"))
 }
 
-// TestFPFDependencyExceptions documents that internal/fpf has a known set of
-// controlled flow imports (provider for OpenAI embeddings, agent transitively).
-// Fails if NEW flow imports appear beyond this allowed set — catches drift
-// while the architectural debt is still tracked as a follow-up.
-func TestFPFDependencyExceptions(t *testing.T) {
+// TestEmbeddingPackageIsFlowLayerOnly verifies that internal/embedding is the
+// designated home for provider-bound implementations (OpenAI, eventually
+// others). It's a Flow-layer package: allowed to import provider/agent. It
+// MUST NOT be imported by Core packages — that would re-introduce the leak.
+func TestEmbeddingPackageIsFlowLayerOnly(t *testing.T) {
 	root := projectRootFromTestFile(t)
-	cmd := exec.Command("go", "list", "-deps", "./internal/fpf/...")
+	args := append([]string{"list", "-deps"}, pureCorePackages...)
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 
 	output, err := cmd.CombinedOutput()
@@ -89,34 +92,12 @@ func TestFPFDependencyExceptions(t *testing.T) {
 		t.Fatalf("go list -deps failed: %v\n%s", err, output)
 	}
 
-	// Allowed flow imports for fpf as of 2026-04-18 — semantic search prototype.
-	allowedFlowImports := map[string]bool{
-		"github.com/m0n0x41d/haft/internal/provider": true,
-		"github.com/m0n0x41d/haft/internal/agent":    true,
-	}
-
-	offenders := make([]string, 0)
-	seen := make(map[string]struct{})
+	const embeddingPkg = "github.com/m0n0x41d/haft/internal/embedding"
 	for _, line := range strings.Split(string(output), "\n") {
 		importPath := strings.TrimSpace(line)
-		if importPath == "" || strings.HasPrefix(importPath, "go:") {
-			continue
+		if importPath == embeddingPkg {
+			t.Fatalf("Core package depends on internal/embedding — provider-bound implementations belong to Flow layer only")
 		}
-		if !matchesAnyPrefix(importPath, forbiddenForCorePrefixes) {
-			continue
-		}
-		if allowedFlowImports[importPath] {
-			continue
-		}
-		if _, exists := seen[importPath]; exists {
-			continue
-		}
-		seen[importPath] = struct{}{}
-		offenders = append(offenders, importPath)
-	}
-
-	if len(offenders) > 0 {
-		t.Fatalf("fpf gained new flow imports beyond the documented exception list:\n%s\nIf intentional, update allowedFlowImports in this test.", strings.Join(offenders, "\n"))
 	}
 }
 

@@ -3,18 +3,21 @@
 ## VER-01: Evidence Graph
 **Trigger:** Gathering results; tracking what supports what claim
 **Spec:** A.10, B.3.5, B.1.1
+**Core:** true
 
 Every evidence artifact is a node in a graph. Edges: supports, refutes, partially addresses. Each link typed (measurement, test, research, audit) with Congruence Level (CL). Graph is traceable: reviewers follow any claim back to evidence. No floating claims without evidence anchors.
 
 ## VER-02: Evidence Decay and Staleness
 **Trigger:** Circumstances change; old evidence loses credibility
 **Spec:** B.3.4, B.3.4.5, G.11
+**Core:** true
 
 Every evidence artifact has valid_until date. Expired evidence scores 0.1 (weak, not absent). Track epistemic debt: as evidence ages, debt builds. Stale evidence at threshold triggers re-validation or decision reopening.
 
 ## VER-03: R_eff Computation
 **Trigger:** Multiple evidence pieces; computing overall confidence
 **Spec:** B.3.4.4
+**Core:** true
 
 R_eff = max(0, R_raw - phi(CL_min)). R_raw = min(all component Rs). phi(CL_min) = penalty from lowest congruence level. Even strong individual pieces (high R) with poor integration (low CL) reduce R_eff. Conservative: never average Rs or CL; take minimum.
 
@@ -39,6 +42,7 @@ L0 (Unsubstantiated): hypothesis, no evidence. L1 (Shaped): deduced consequences
 ## VER-07: Refresh Triggers
 **Trigger:** Decision implemented; need to know when to re-evaluate
 **Spec:** G.11, B.4
+**Core:** true
 
 Triggers: evidence expiry (valid_until passed), material context change (assumptions K no longer hold), weakest link failure, competing alternative emerges. State explicitly in decision record. Automated monitoring can flag; decision owner decides whether to reopen.
 
@@ -50,6 +54,6 @@ Every evidence, problem, comparison result has valid_until. On expiry: Refresh (
 
 ## VER-09: Cross-Session Term Persistence
 **Trigger:** Multi-session projects; term drift risk
-**Source:** Haft operational pattern (derived from semiotics practice)
+**Source:** Levenchuk FPF F.13 Lexical Continuity (semiotics slideument slide 35), adapted for haft
 
 Reuse disambiguation record from session 1 in session 2 IF: same project, same bounded context, same term family, no superseding record, within validity window. Reopen if: context shifts, term in new artifact class, ontology changes, record expired.

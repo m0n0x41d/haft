@@ -3,6 +3,7 @@
 ## DEC-01: Decision Record Structure
 **Trigger:** Option chosen; preserving reasoning for review
 **Spec:** E.9, B.4, A.12
+**Core:** true
 
 Four components: (1) Problem frame = why needed, (2) Decision = what chosen, (3) Rationale = why this over others (filters, evidence, policy), (4) Consequences = what changes, risks, enables. Traceable to code/spec.
 
@@ -21,18 +22,21 @@ Testable outcomes after implementation: "Service migrated", "Codebase uses new l
 ## DEC-04: Invariants
 **Trigger:** Non-negotiable properties (safety, compliance, data integrity)
 **Spec:** B.1.1, B.3.4.4, A.15
+**Core:** true
 
 Load-bearing constraints that hold before, during, and after implementation: "Encryption always on", "No silent failures", "Backward compatibility". Invariant violation = grounds for rollback.
 
 ## DEC-05: Rollback Plan
 **Trigger:** Insurance against being stuck with bad choice
 **Spec:** B.4, C.11, E.9
+**Core:** true
 
 Answers: (1) Triggers = what evidence indicates the decision was wrong? (2) Steps = how to revert? (3) Blast radius = what breaks on rollback? (4) Timeline = how long is rollback feasible? Document reversibility honestly.
 
 ## DEC-06: Predictions (Testable Claims)
 **Trigger:** Setting up test regime for Evidence phase
 **Spec:** B.5, C.11.4.2.4, B.3.5.1
+**Core:** true
 
 Each decision implies predictions: "If we choose X, we see Y within Z under conditions K." Falsifiable and measurable. These become measurement targets for verification.
 
@@ -45,6 +49,7 @@ For each rejected alternative: key strength, key weakness, why it lost (which cr
 ## DEC-08: Counterargument Preservation
 **Trigger:** Decision is polished; strongest objection must be visible
 **Spec:** A.12, B.5.2
+**Core:** true
 
 Persist the strongest argument AGAINST the chosen option. Not a strawman — a genuine attack. The agent that generates a decision cannot be its sole validator (External Transformer Principle). Counterargument is a self-deception check.
 

@@ -175,7 +175,7 @@ func parseCorePhases(raw string) []string {
 		return []string{"__self__"}
 	}
 	var phases []string
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		p = strings.ToLower(strings.TrimSpace(p))
 		if p != "" {
 			phases = append(phases, p)
@@ -394,10 +394,7 @@ func buildPhaseQueryKeywords() map[string]string {
 		if _, ok := result[phase]; !ok {
 			continue
 		}
-		n := take
-		if len(r.Matchers) < n {
-			n = len(r.Matchers)
-		}
+		n := min(len(r.Matchers), take)
 		if n > 0 {
 			result[phase] = strings.Join(r.Matchers[:n], " ")
 		}

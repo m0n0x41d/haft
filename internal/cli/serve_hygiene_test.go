@@ -35,7 +35,7 @@ func TestHandleQuintProblem_CharacterizeMissingProblemUsesPlainLanguage(t *testi
 func TestHandleQuintDecision_ApplyMissingDecisionUsesPlainLanguage(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 
-	result, err := handleQuintDecision(context.Background(), store, t.TempDir(), map[string]any{
+	result, _, err := handleQuintDecision(context.Background(), store, t.TempDir(), map[string]any{
 		"action": "apply",
 	})
 	if err != nil {

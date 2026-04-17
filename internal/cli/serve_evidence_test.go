@@ -33,7 +33,7 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	}
 
 	validUntil := time.Now().Add(14 * 24 * time.Hour).UTC().Format(time.RFC3339)
-	result, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":           "evidence",
 		"artifact_ref":     decision.Meta.ID,
 		"evidence_content": "Load-test evidence remains valid through the current release window.",
@@ -97,7 +97,7 @@ func TestHandleQuintDecision_EvidencePersistsClaimBinding(t *testing.T) {
 		t.Fatalf("expected 1 claim, got %+v", claims)
 	}
 
-	_, err = handleQuintDecision(ctx, store, haftDir, map[string]any{
+	_, _, err = handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":           "evidence",
 		"artifact_ref":     decision.Meta.ID,
 		"evidence_content": "Replay benchmark supports the throughput expectation.",

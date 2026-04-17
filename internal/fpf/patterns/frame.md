@@ -1,5 +1,9 @@
 # FPF Patterns: Frame Phase
 
+**Valid-until:** 2026-10-18
+
+When this date passes, review the patterns below: are they still attributed correctly, do hint Core markers still match agent behavior, are new framing patterns from current FPF/slideument work missing? Refresh + bump this date. Per VER-08 self-applied to the pattern set.
+
 ## FRAME-01: Signal Explicitness
 **Trigger:** Starting a new problem; something is broken, unclear, or anomalous
 **Spec:** B.4.1, B.5.2.0

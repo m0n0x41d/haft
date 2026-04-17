@@ -1,5 +1,7 @@
 # FPF Patterns: Characterize Phase
 
+**Valid-until:** 2026-10-18
+
 ## CHR-01: Indicator Role Taxonomy
 **Trigger:** Defining what gets measured; preventing metric hijacking
 **Spec:** B.3.4.1, C.11.4.2.2

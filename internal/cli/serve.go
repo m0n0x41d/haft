@@ -140,14 +140,14 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 		start := time.Now()
 
 		// Dispatch
-		result, toolErr := dispatchTool(ctx, store, haftDir, params.Name, params.Arguments)
+		result, createdRef, toolErr := dispatchTool(ctx, store, haftDir, params.Name, params.Arguments)
 
 		// Post-dispatch hooks
 		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
 
 		if toolErr == nil {
 			result = applyCrossProjectRecall(ctx, result, params.Name, action, params.Arguments, store, projCfg, indexStore)
-			applyCrossProjectIndex(ctx, params.Name, action, params.Arguments, store, projCfg, indexStore)
+			applyCrossProjectIndex(ctx, params.Name, action, params.Arguments, createdRef, store, projCfg, indexStore)
 		}
 
 		logAudit(ctx, store.DB(), params.Name, action, params.Arguments, toolErr)
@@ -161,22 +161,31 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 }
 
 // dispatchTool routes a tool call to its handler. Pure dispatch, no hooks.
-func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, name string, args map[string]any) (string, error) {
+// Returns (result, createdArtifactID, err). createdArtifactID is the canonical
+// ID of the artifact created by this call (e.g. "dec-20260418-001"); empty
+// string when the action does not create a primary artifact (e.g. read-only
+// queries, mutations of existing artifacts).
+func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, name string, args map[string]any) (string, string, error) {
 	switch name {
 	case "haft_note":
-		return handleQuintNote(ctx, store, haftDir, args)
+		result, err := handleQuintNote(ctx, store, haftDir, args)
+		return result, "", err
 	case "haft_problem":
-		return handleQuintProblem(ctx, store, haftDir, args)
+		result, err := handleQuintProblem(ctx, store, haftDir, args)
+		return result, "", err
 	case "haft_solution":
-		return handleQuintSolution(ctx, store, haftDir, args)
+		result, err := handleQuintSolution(ctx, store, haftDir, args)
+		return result, "", err
 	case "haft_decision":
 		return handleQuintDecision(ctx, store, haftDir, args)
 	case "haft_refresh":
-		return handleQuintRefresh(ctx, store, haftDir, args)
+		result, err := handleQuintRefresh(ctx, store, haftDir, args)
+		return result, "", err
 	case "haft_query":
-		return handleQuintQuery(ctx, store, haftDir, args)
+		result, err := handleQuintQuery(ctx, store, haftDir, args)
+		return result, "", err
 	default:
-		return "", fmt.Errorf("unknown tool: %s", name)
+		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}
 }
 
@@ -221,22 +230,29 @@ func applyCrossProjectRecall(ctx context.Context, result, name, action string, a
 	return result + "\n"
 }
 
-// applyCrossProjectIndex writes decision summaries to the global index on decide.
-func applyCrossProjectIndex(ctx context.Context, name, action string, args map[string]any, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) {
+// applyCrossProjectIndex writes decision summaries to the global index on
+// decide. The cross-project index is keyed by (project_id, decision_id) where
+// decision_id MUST be the canonical artifact ID (e.g. "dec-20260418-001"),
+// not the user-supplied selected_title — two decisions in one project can
+// legitimately share the same selected option label without colliding.
+func applyCrossProjectIndex(ctx context.Context, name, action string, args map[string]any, createdRef string, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) {
 	if name != "haft_decision" || action != "decide" || indexStore == nil || projCfg == nil {
 		return
 	}
-	selectedTitle, _ := args["selected_title"].(string)
-	if selectedTitle == "" {
+	if createdRef == "" {
+		// Defensive: handler did not return an artifact ID. Skip indexing
+		// rather than fall back to selected_title (would collide on duplicate
+		// titled options within the same project).
 		return
 	}
+	selectedTitle, _ := args["selected_title"].(string)
 	whySelected, _ := args["why_selected"].(string)
 	weakestLink, _ := args["weakest_link"].(string)
 	primaryLang := project.DetectPrimaryLanguage(store.DB())
 	_ = indexStore.WriteDecision(ctx, project.IndexEntry{
 		ProjectID:     projCfg.ID,
 		ProjectName:   projCfg.Name,
-		DecisionID:    selectedTitle,
+		DecisionID:    createdRef,
 		Title:         selectedTitle,
 		SelectedTitle: selectedTitle,
 		WhySelected:   whySelected,
@@ -244,7 +260,7 @@ func applyCrossProjectIndex(ctx context.Context, name, action string, args map[s
 		PrimaryLang:   primaryLang,
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 	})
-	logger.Debug().Str("project", projCfg.ID).Str("decision", selectedTitle).Msg("index.write")
+	logger.Debug().Str("project", projCfg.ID).Str("decision", createdRef).Str("title", selectedTitle).Msg("index.write")
 }
 
 // applyRefreshReminder appends a reminder if >5 days since last stale scan.
@@ -567,7 +583,10 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 	}
 }
 
-func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir string, args map[string]any) (string, error) {
+// handleQuintDecision returns (result, createdArtifactID, err). createdArtifactID
+// is the canonical ID of the newly created DecisionRecord on the "decide"
+// action, empty for all other actions (which mutate or read existing artifacts).
+func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir string, args map[string]any) (string, string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -594,7 +613,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			input.ProblemRef = v
 		}
 		if input.ProblemRefs, err = parseStrictStringArrayFromArgs(args, "problem_refs"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if v, ok := args["portfolio_ref"].(string); ok {
 			input.PortfolioRef = v
@@ -605,38 +624,41 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
+		if v, ok := args["governance_mode"].(string); ok {
+			input.GovernanceMode = v
+		}
 		if input.Invariants, err = parseStrictStringArrayFromArgs(args, "invariants"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.PreConditions, err = parseStrictStringArrayFromArgs(args, "pre_conditions"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.PostConditions, err = parseStrictStringArrayFromArgs(args, "post_conditions"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.Admissibility, err = parseStrictStringArrayFromArgs(args, "admissibility"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.EvidenceReqs, err = parseStrictStringArrayFromArgs(args, "evidence_requirements"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.RefreshTriggers, err = parseStrictStringArrayFromArgs(args, "refresh_triggers"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if v, ok := args["search_keywords"].(string); ok {
 			input.SearchKeywords = v
 		}
 		if input.Rollback, err = parseStrictRollbackSpecFromArgs(args, "rollback"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.WhyNotOthers, err = parseStrictRejectionReasonsFromArgs(args, "why_not_others"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.Predictions, err = parsePredictionInputsFromArgs(args, "predictions"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.ProblemRef == "" {
 			p, _ := artifact.FindActiveProblem(ctx, store, contextName)
@@ -663,7 +685,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 		a, filePath, err := artifact.Decide(ctx, store, haftDir, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		// Auto-baseline when affected_files are present
@@ -681,7 +703,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote + present.FPFPhaseHint("decide"), nil
+		return present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote + present.FPFPhaseHint("decide"), a.Meta.ID, nil
 
 	case "apply":
 		decisionRef, _ := args["decision_ref"].(string)
@@ -691,16 +713,16 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 				decisionRef = decisions[0].Meta.ID
 			} else {
 				return "No decision found.\nUse /h-decide to finalize a decision first.\n" +
-					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), "", nil
 			}
 		}
 
 		brief, err := artifact.Apply(ctx, store, decisionRef)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("apply", nil, "", brief, navStrip), nil
+		return present.DecisionResponse("apply", nil, "", brief, navStrip), "", nil
 
 	case "measure":
 		input := artifact.MeasureInput{}
@@ -715,13 +737,13 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			input.Verdict = v
 		}
 		if input.CriteriaMet, err = parseStrictStringArrayFromArgs(args, "criteria_met"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.CriteriaNotMet, err = parseStrictStringArrayFromArgs(args, "criteria_not_met"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.Measurements, err = parseStrictStringArrayFromArgs(args, "measurements"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		// Auto-detect decision
 		if input.DecisionRef == "" {
@@ -729,7 +751,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			if len(decisions) > 0 {
 				input.DecisionRef = decisions[0].Meta.ID
 			} else {
-				return "No decision found.\n" + present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
+				return "No decision found.\n" + present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), "", nil
 			}
 		}
 
@@ -743,7 +765,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			err = nil // warnings, not errors
 		}
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		// Show WLNK summary after measurement
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, a.Meta.ID)
@@ -761,7 +783,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("measure", a, "", extra, navStrip) + present.FPFPhaseHint("verify"), nil
+		return present.DecisionResponse("measure", a, "", extra, navStrip) + present.FPFPhaseHint("verify"), "", nil
 
 	case "evidence":
 		input := artifact.EvidenceInput{
@@ -794,22 +816,22 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			input.FormalityLevel = int(fl)
 		}
 		if input.ClaimRefs, err = parseStrictStringArrayFromArgs(args, "claim_refs"); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if input.ClaimScope, err = parseStrictStringArrayFromArgs(args, "claim_scope"); err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		item, err := artifact.AttachEvidence(ctx, store, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		return present.DecisionResponse("evidence", nil, "",
 			fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary),
-			navStrip), nil
+			navStrip), "", nil
 
 	case "baseline":
 		input := artifact.BaselineInput{}
@@ -832,17 +854,17 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 		files, err := artifact.Baseline(ctx, store, filepath.Dir(haftDir), input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		result := present.BaselineResponse(input.DecisionRef, files, navStrip)
 		for _, w := range baselineWarnings {
 			result = "⚠ " + w + "\n" + result
 		}
-		return result, nil
+		return result, "", nil
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', 'evidence', or 'baseline'", action)
+		return "", "", fmt.Errorf("unknown action %q — use 'decide', 'apply', 'measure', 'evidence', or 'baseline'", action)
 	}
 }
 

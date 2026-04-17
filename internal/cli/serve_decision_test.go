@@ -13,7 +13,7 @@ func TestHandleQuintDecision_DecidePersistsPredictions(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	_, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+	_, _, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":           "decide",
 		"selected_title":   "gRPC",
 		"why_selected":     "Plugin-mode decide should persist falsifiable predictions through the serve path.",
@@ -67,6 +67,89 @@ func TestHandleQuintDecision_DecidePersistsPredictions(t *testing.T) {
 	}
 }
 
+// TestHandleQuintDecision_DecideReturnsArtifactID verifies that the decide
+// action returns the canonical artifact ID as the second return value. This
+// closes the cross-project recall bug where the global index was keyed by
+// selected_title (collision-prone) instead of the real DecisionRecord ID.
+//
+// Two decisions with the same selected_title in the same project must produce
+// distinct IDs — otherwise the cross-project index silently overwrites the
+// first decision's entry on the second decide call.
+func TestHandleQuintDecision_DecideReturnsArtifactID(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	args := func() map[string]any {
+		return map[string]any{
+			"action":           "decide",
+			"selected_title":   "Use Postgres",
+			"why_selected":     "The team already operates Postgres at scale; default storage choice.",
+			"selection_policy": "Prefer the storage system the on-call team already operates at scale.",
+			"counterargument":  "Postgres at scale assumes operational maturity that may not hold for new services.",
+			"weakest_link":     "Operational maturity in this team is the binding factor.",
+			"why_not_others": []map[string]any{{
+				"variant": "MySQL",
+				"reason":  "Team has no production operational experience with MySQL at the required scale.",
+			}},
+			"rollback": map[string]any{
+				"triggers": []string{"Operational load makes Postgres untenable."},
+			},
+		}
+	}
+
+	_, ref1, err := handleQuintDecision(ctx, store, haftDir, args())
+	if err != nil {
+		t.Fatalf("first decide: %v", err)
+	}
+	if ref1 == "" {
+		t.Fatal("first decide returned empty createdRef; expected canonical artifact ID")
+	}
+
+	_, ref2, err := handleQuintDecision(ctx, store, haftDir, args())
+	if err != nil {
+		t.Fatalf("second decide: %v", err)
+	}
+	if ref2 == "" {
+		t.Fatal("second decide returned empty createdRef; expected canonical artifact ID")
+	}
+
+	if ref1 == ref2 {
+		t.Fatalf("two decisions with same selected_title produced identical IDs (%q); cross-project index would collide", ref1)
+	}
+
+	// Both refs must match real persisted artifacts.
+	for _, ref := range []string{ref1, ref2} {
+		a, err := store.Get(ctx, ref)
+		if err != nil || a == nil {
+			t.Fatalf("createdRef %q does not resolve to a stored artifact: %v", ref, err)
+		}
+		if a.Meta.Kind != artifact.KindDecisionRecord {
+			t.Fatalf("createdRef %q resolved to %s, want DecisionRecord", ref, a.Meta.Kind)
+		}
+	}
+}
+
+// TestHandleQuintDecision_NonDecideActionsReturnEmptyRef verifies that actions
+// other than "decide" do not return a createdRef. Cross-project indexing is
+// only triggered for decide; other actions mutate or read existing artifacts.
+func TestHandleQuintDecision_NonDecideActionsReturnEmptyRef(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	// Apply against missing decision returns plain-language stub, not error.
+	_, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action": "apply",
+	})
+	if err != nil {
+		t.Fatalf("apply with no decision: %v", err)
+	}
+	if ref != "" {
+		t.Fatalf("apply returned createdRef %q; expected empty for non-creating action", ref)
+	}
+}
+
 func TestHandleQuintDecision_MeasureRejectsMalformedMeasurements(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
@@ -90,7 +173,7 @@ func TestHandleQuintDecision_MeasureRejectsMalformedMeasurements(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = handleQuintDecision(ctx, store, haftDir, map[string]any{
+	_, _, err = handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":       "measure",
 		"decision_ref": decision.Meta.ID,
 		"findings":     "The payload mixed strings and numbers.",

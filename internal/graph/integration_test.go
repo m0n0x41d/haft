@@ -216,9 +216,8 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 				"Desktop is a surface and does not become a source of truth",
 			},
 			files: []string{
-				"desktop/app.go",
-				"desktop/governance.go",
-				"desktop/views.go",
+				"internal/cli/desktop_rpc.go",
+				"internal/cli/desktop_rpc_handlers.go",
 			},
 		},
 		{

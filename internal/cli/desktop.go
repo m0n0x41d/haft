@@ -19,7 +19,7 @@ Search order:
   1. ~/Applications/Haft.app (macOS)
   2. haft-desktop in PATH
   3. ~/.haft/bin/haft-desktop
-  4. desktop/build/bin/ in the project directory`,
+  4. desktop-tauri/target/release/bundle/ in the project directory (dev)`,
 	RunE: runDesktop,
 }
 
@@ -44,11 +44,11 @@ func runDesktop(cmd *cobra.Command, args []string) error {
 		}
 
 		if projectRoot != "" {
-			appPaths = append(appPaths, filepath.Join(projectRoot, "desktop", "build", "bin", "Haft.app"))
+			appPaths = append(appPaths, filepath.Join(projectRoot, "desktop-tauri", "target", "release", "bundle", "macos", "Haft.app"))
 		}
 
 		for _, appPath := range appPaths {
-			binaryPath := filepath.Join(appPath, "Contents", "MacOS", "haft-desktop")
+			binaryPath := filepath.Join(appPath, "Contents", "MacOS", "Haft")
 			if _, err := os.Stat(binaryPath); err == nil {
 				fmt.Printf("%s⟳ Launching: %s%s\n", aCyan, appPath, aReset)
 				appCmd := exec.Command(binaryPath)
@@ -77,8 +77,8 @@ func runDesktop(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if projectRoot, err := findProjectRoot(); err == nil {
-		localBuild := filepath.Join(projectRoot, "desktop", "build", "bin", "haft-desktop")
+	if projectRoot != "" {
+		localBuild := filepath.Join(projectRoot, "desktop-tauri", "target", "release", "haft-desktop")
 		if _, err := os.Stat(localBuild); err == nil {
 			candidates = append(candidates, localBuild)
 		}
@@ -89,9 +89,6 @@ func runDesktop(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println("Install it with:")
 		fmt.Println("  task desktop:install  # builds and installs to ~/Applications")
-		fmt.Println()
-		fmt.Println("Or run in dev mode:")
-		fmt.Println("  task desktop          # wails dev with hot reload")
 		return nil
 	}
 

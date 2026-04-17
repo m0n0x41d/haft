@@ -70,15 +70,15 @@ tasks:
       - '{{.BIN_NAME}}'
 
   install:
-    desc: Build and install haft (CLI + TUI + Desktop) locally
+    desc: Build and install haft (CLI + TUI) locally
     deps: [tui, fpf-refresh]
     cmds:
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - mkdir -p {{.TUI_INSTALL_DIR}}
       - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs
-      - task desktop:install
       - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
       - echo "Installed {{.TUI_INSTALL_DIR}}/bundle.mjs"
+      - echo "Desktop — run task desktop:install separately (requires Rust toolchain)"
 
   dev:
     desc: Build Go binary only (TUI runs from source via bun)
@@ -92,16 +92,16 @@ tasks:
       - go run ./cmd/haft doctor
 
   desktop:
-    desc: Run Haft desktop app (wails dev with hot reload)
-    dir: desktop
+    desc: Run Haft desktop app (Tauri dev with hot reload)
+    dir: desktop-tauri
     cmds:
-      - wails dev
+      - cargo tauri dev
 
   desktop:build:
-    desc: Build Haft desktop app (production binary/bundle)
-    dir: desktop
+    desc: Build Haft desktop app (Tauri production bundle)
+    dir: desktop-tauri
     cmds:
-      - wails build
+      - cargo tauri build
 
   desktop:install:
     desc: Build and install Haft desktop app locally
@@ -110,7 +110,7 @@ tasks:
       - |
         case "$(uname -s)" in
           Darwin)
-            APP_SRC="desktop/build/bin/{{.DESKTOP_APP_NAME}}.app"
+            APP_SRC="desktop-tauri/target/release/bundle/macos/{{.DESKTOP_APP_NAME}}.app"
             APP_DST="$HOME/Applications/{{.DESKTOP_APP_NAME}}.app"
             if [ -d "$APP_SRC" ]; then
               mkdir -p "$HOME/Applications"
@@ -122,7 +122,7 @@ tasks:
             fi
             ;;
           Linux)
-            BIN_SRC="desktop/build/bin/haft-desktop"
+            BIN_SRC="desktop-tauri/target/release/haft-desktop"
             BIN_DST="$HOME/.haft/bin/haft-desktop"
             if [ -f "$BIN_SRC" ]; then
               mkdir -p "$HOME/.haft/bin"

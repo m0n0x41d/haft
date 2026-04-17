@@ -516,7 +516,8 @@ func decisionBlocksReplacement(status Status) bool {
 	return status == StatusActive || status == StatusRefreshDue
 }
 
-func resolvePortfolioProblemRefs(portfolio *Artifact) []string {
+// ResolvePortfolioProblemRefs returns problem refs linked to a portfolio.
+func ResolvePortfolioProblemRefs(portfolio *Artifact) []string {
 	if portfolio == nil {
 		return nil
 	}
@@ -568,7 +569,7 @@ func resolveDecisionProblemRefs(ctx context.Context, store ArtifactStore, decisi
 			continue
 		}
 
-		for _, problemRef := range resolvePortfolioProblemRefs(linkedArtifact) {
+		for _, problemRef := range ResolvePortfolioProblemRefs(linkedArtifact) {
 			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
 		}
 	}
@@ -596,7 +597,7 @@ func resolveIncomingDecisionProblemRefs(
 		return resolvedRefs
 	}
 
-	for _, problemRef := range resolvePortfolioProblemRefs(portfolio) {
+	for _, problemRef := range ResolvePortfolioProblemRefs(portfolio) {
 		resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
 	}
 

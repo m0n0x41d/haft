@@ -672,6 +672,28 @@ impl HaftDb {
         )
     }
 
+    pub fn get_all_config(&self) -> Result<String> {
+        // Return empty JSON config — desktop config is file-based (~/.haft/config.json),
+        // not in SQLite. This prevents the error while we wire up file-based config.
+        Ok("{}".to_string())
+    }
+
+    pub fn list_all_tasks(&self) -> Result<Vec<TaskState>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, agent, project_name, project_path, status, prompt,
+                    branch, worktree, worktree_path, reused_worktree, error_message,
+                    output_tail, started_at, COALESCE(completed_at, ''),
+                    COALESCE(auto_run, 0), COALESCE(chat_blocks_json, '[]'),
+                    COALESCE(raw_output, '')
+             FROM desktop_tasks
+             WHERE archived_at IS NULL
+             ORDER BY started_at DESC, id DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| Ok(task_from_row(row)))?;
+        rows.collect()
+    }
+
     // ─── Flows ───
 
     pub fn list_flows(&self, project_path: &str) -> Result<Vec<FlowView>> {

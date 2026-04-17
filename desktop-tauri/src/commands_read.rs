@@ -13,10 +13,11 @@ pub struct DbState(pub Mutex<HaftDb>);
 #[tauri::command]
 pub fn get_dashboard(
     state: State<'_, DbState>,
-    project_name: String,
+    project_name: Option<String>,
 ) -> Result<DashboardView, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
-    db.get_dashboard(&project_name).map_err(|e| e.to_string())
+    let name = project_name.unwrap_or_default();
+    db.get_dashboard(&name).map_err(|e| e.to_string())
 }
 
 // ─── Problems ───
@@ -72,10 +73,14 @@ pub fn get_portfolio(
 #[tauri::command]
 pub fn list_tasks(
     state: State<'_, DbState>,
-    project_path: String,
+    project_path: Option<String>,
 ) -> Result<Vec<TaskState>, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
-    db.list_tasks(&project_path).map_err(|e| e.to_string())
+    // If no project_path provided, list all tasks across projects
+    match project_path {
+        Some(path) if !path.is_empty() => db.list_tasks(&path).map_err(|e| e.to_string()),
+        _ => db.list_all_tasks().map_err(|e| e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -107,9 +112,13 @@ pub fn search_artifacts(
 // ─── Config ───
 
 #[tauri::command]
-pub fn get_config(state: State<'_, DbState>, key: String) -> Result<String, String> {
+pub fn get_config(state: State<'_, DbState>, key: Option<String>) -> Result<String, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
-    db.get_config(&key).map_err(|e| e.to_string())
+    // If no key, return all config as JSON object
+    match key {
+        Some(k) if !k.is_empty() => db.get_config(&k).map_err(|e| e.to_string()),
+        _ => db.get_all_config().map_err(|e| e.to_string()),
+    }
 }
 
 // ─── Flows ───
@@ -117,8 +126,9 @@ pub fn get_config(state: State<'_, DbState>, key: String) -> Result<String, Stri
 #[tauri::command]
 pub fn list_flows(
     state: State<'_, DbState>,
-    project_path: String,
+    project_path: Option<String>,
 ) -> Result<Vec<FlowView>, String> {
+    let project_path = project_path.unwrap_or_default();
     let db = state.0.lock().map_err(|e| e.to_string())?;
     db.list_flows(&project_path).map_err(|e| e.to_string())
 }

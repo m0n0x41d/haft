@@ -78,14 +78,14 @@ Do not let one sentence carry rule + promise + evidence simultaneously. Split in
 
 ## CHR-11: Relational Precision Restoration Pipeline
 **Trigger:** Load-bearing word in a spec or decision is ambiguous ("quality", "done", "service", "same", "based on", "надо", "готово") — a single renaming won't fix it because the ontology underneath is unclear
-**Source:** Levenchuk FPF A.6.P Relational Precision Restoration (semiotics slideument slide 35), adapted for haft
+**Source:** Levenchuk FPF A.6.P Relational Precision Restoration. Structure here is the slideument slide 35 didactic 5-step compression; the canonical normative structure in FPF-Spec A.6.P:4 is four layers (4.1 Stable lens → 4.2 Kind-explicit relation tokens → 4.3 Slot-explicit qualified relation records → 4.4 Change-class lexicon → 4.5 Lexical guardrails). Use the 5-step form below as an entry heuristic; retrieve A.6.P:4 via `haft_query(action="fpf", query="A.6.P")` for conformant authoring.
 
-Five-step pipeline when a lexical fix alone isn't enough — the word is an umbrella that spans multiple kinds in the current situation:
+Five-step pipeline (didactic form) when a lexical fix alone isn't enough — the word is an umbrella that spans multiple kinds in the current situation:
 1. **Detect the umbrella** — name the specific trigger word that is pulling weight without precision. Do not proceed by replacement-guessing.
-2. **Ground by context** — describe the actual relations of the objects in the situation (Wittgenstein: meaning is given by use — by the object's relations to other objects). What does this word connect to in *this* project, not in general?
-3. **Pick a math lens** — choose the formal lens that makes reasoning about these relations tractable (order, partial order, algebra, graph, measure, state machine, ...). The lens constrains what can be said coherently.
-4. **Restore a coherent ontology** — separate the kinds the umbrella was collapsing. Multiple abstraction layers may emerge. Record the distinctions.
-5. **Pick the lexicon** — name each distinguished kind via F.18 Naming Protocol (dual-name: technical + plain; Pareto over SemanticFidelity / CognitiveErgonomics / OperationalAffordance / AliasRisk — see X-TERM-QUALITY).
+2. **Ground by context** — describe the actual relations of the objects in the situation (Wittgenstein: meaning is given by use — by the object's relations to other objects). What does this word connect to in *this* project, not in general? (Canonical: A.6.P:4.1 stable lens + A.6.P:4.2 kind-explicit relation tokens.)
+3. **Pick a math lens** — choose the formal lens that makes reasoning about these relations tractable (order, partial order, algebra, graph, measure, state machine, ...). The lens constrains what can be said coherently. (Canonical: A.6.P:4.1.)
+4. **Restore a coherent ontology** — separate the kinds the umbrella was collapsing. Multiple abstraction layers may emerge. Record the distinctions. (Canonical: A.6.P:4.3 slot-explicit qualified relation records.)
+5. **Pick the lexicon** — name each distinguished kind via F.18 Naming Protocol (dual-name: technical + plain; Pareto over SemanticFidelity / CognitiveErgonomics / OperationalAffordance / AliasRisk — see X-TERM-QUALITY). (Canonical: A.6.P:4.4 change-class lexicon + A.6.P:4.5 lexical guardrails.)
 
 Without steps 2-4, step 5 just reshuffles umbrellas. Without step 1, you don't even know there's a problem. For specific umbrella families (quality, action, service, sameness, wholeness), see CHR-12 for shortcut specializations.
 

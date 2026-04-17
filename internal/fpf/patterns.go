@@ -14,6 +14,9 @@ import (
 //go:embed patterns/*.md
 var embeddedPatterns embed.FS
 
+//go:embed fpf-routes.json
+var embeddedRoutes []byte
+
 // LoadPatternChunks reads all .md files from the patterns directory and
 // converts each ## section into a SpecChunk suitable for indexing alongside
 // the FPF spec sections.
@@ -251,15 +254,11 @@ func buildPhaseHints() (map[string]string, error) {
 		}
 	}
 
-	// Keywords appended to retrieval example query per phase — kept short.
-	phaseQueryKeywords := map[string]string{
-		"frame":        "frame problem signal scope",
-		"characterize": "characterize indicator parity",
-		"explore":      "explore variant abduction WLNK",
-		"compare":      "compare pareto selection parity",
-		"decide":       "decide record invariant rollback",
-		"verify":       "verify evidence decay refresh",
-	}
+	// Keywords for the retrieval example query per phase are derived from the
+	// first few matchers of the corresponding phase-* route in fpf-routes.json.
+	// This keeps the hint aligned with actual routing semantics — rename a
+	// matcher and the hint follows.
+	phaseQueryKeywords := buildPhaseQueryKeywords()
 
 	result := map[string]string{}
 	for phase, entries := range byPhase {
@@ -367,6 +366,43 @@ func phaseDisplayName(phase string) string {
 	default:
 		return phase
 	}
+}
+
+// buildPhaseQueryKeywords derives per-phase example query keywords from the
+// embedded routes file. For each route with id "phase-<name>", take the first
+// 4 matchers and join them. If the route or matchers are missing, the phase
+// falls back to its own name — the hint still works, just less descriptive.
+func buildPhaseQueryKeywords() map[string]string {
+	result := map[string]string{
+		"frame":        "frame",
+		"characterize": "characterize",
+		"explore":      "explore",
+		"compare":      "compare",
+		"decide":       "decide",
+		"verify":       "verify",
+	}
+	routes, err := ParseRoutes(strings.NewReader(string(embeddedRoutes)))
+	if err != nil {
+		return result
+	}
+	const take = 4
+	for _, r := range routes {
+		if !strings.HasPrefix(r.ID, "phase-") {
+			continue
+		}
+		phase := strings.TrimPrefix(r.ID, "phase-")
+		if _, ok := result[phase]; !ok {
+			continue
+		}
+		n := take
+		if len(r.Matchers) < n {
+			n = len(r.Matchers)
+		}
+		if n > 0 {
+			result[phase] = strings.Join(r.Matchers[:n], " ")
+		}
+	}
+	return result
 }
 
 func fileOrder(name string) int {

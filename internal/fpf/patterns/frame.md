@@ -54,12 +54,12 @@ Select problems in the zone of proximal development — beyond current capabilit
 Six questions to run on any input artifact before reasoning from it. If any answer is unclear, stop and fix the artifact (or re-frame) before proceeding.
 1. **What is the object of the conversation?** If the artifact talks about everything, it is about nothing. Name the specific holon/system/epistemic-object under discussion.
 2. **In what context does this hold?** Or is it context-soup mixing design-time / run-time / different scopes / different roles?
-3. **What statement type?** Description, requirement, promise, explanation, gate, or evidence? Or mixed? Mixed = L1 semiotic error — decompose before proceeding.
+3. **What statement type carries each load-bearing sentence?** Apply the X-STATEMENT-TYPE classification (rule / promise / explanation / gate / evidence). Mixed = L1 semiotic error — decompose via CHR-10 (boundary) or X-STATEMENT-TYPE before proceeding.
 4. **What is ad-hoc lexicon vs. term?** Local convenient words should not be treated as stable terms. If in doubt, disambiguate (CHR-07) before relying on the word.
 5. **Where does same-thing re-expression end and reinterpretation begin?** Summaries, rewordings, and "clarifications" silently shift meaning. Flag the transition.
 6. **For what result is this needed?** Or is it stale? Artifacts without a downstream consumer are candidates for deprecation (VER-08).
 
-Skip this checklist and you inherit the incoming artifact's semio-errors silently. Run it especially before summarizing, before generating patches from prose, and before treating explanations as gates.
+Skip this checklist and you inherit the incoming artifact's semio-errors silently. Run it especially before summarizing, before generating patches from prose, and before treating explanations as gates. Question 3 is the classification entry point; X-STATEMENT-TYPE is the taxonomy authority.
 
 ## FRAME-09: Strict Distinction Quad (Role / Capability / Method / Work)
 **Trigger:** Statements mix "assigned" / "can do" / "should do" / "did"; decisions fail because these were treated as the same thing

@@ -56,7 +56,7 @@ Live term bank: surface forms, normalized terms, aliases, canonical ID, local de
 Prefer method with better scaling slopes (sensitivity to data/compute/freedom) over method with better current performance if budgets are comparable. Use scale-audit at 2+ points to detect elasticity class. General methods + more budget usually win over specialized heuristics.
 
 ## X-STATEMENT-TYPE: Classify Every Load-Bearing Sentence
-**Trigger:** Text carrying project weight (requirement, spec, decision, explanation, incident report, PR description, chat message used as source-of-truth)
+**Trigger:** Text carrying project weight (requirement, spec, decision, explanation, incident report, PR description, chat message used as source-of-truth). Taxonomy authority for FRAME-08 question 3.
 **Source:** Levenchuk semiotics slideument slides 10, 20 — "document carries rule + promise + report + evidence simultaneously; unmixed statement types required for audit and handoff"
 
 Every load-bearing sentence classifies as exactly one of:

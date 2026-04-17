@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **FPF semiotic patterns** — 7 new patterns distilled from Levenchuk's semiotics slideument: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
+- **Compiled FPF pattern index** — 65 pattern chunks indexed alongside 4625 FPF spec chunks. Phase-keyed routes (frame / characterize / explore / compare / decide / verify / cross-cutting) in `fpf-routes.json`. 7 pattern files under `internal/fpf/patterns/`.
+- **Auto-injected FPF hints in reasoning tool responses** — `haft_problem`, `haft_solution`, `haft_decision` responses include compact pattern ID citations for the current phase with retrieval guidance. Hints derive from embedded pattern files at runtime via `//go:embed` — renaming a pattern heading propagates automatically.
+- **Core pattern markers** — `**Core:** true | <phase>` frontmatter in pattern markdown selectively surfaces top patterns per phase in auto-injected hints. Supports cross-phase citation (e.g. CHR-01 core in both frame and characterize).
+- **FPF Micro-Patterns baseline in h-reason SKILL.md** — compressed always-in-context versions of core patterns for direct-response mode where no tool is called and hints don't inject.
+
+### Changed
+
+- **Pattern attribution cleaned up** — patterns sourced from Levenchuk material (slideument + semiotics slideument) relabeled from generic "Haft operational pattern" to specific source references (FRAME-06/07, CHR-02/06/07/08, CMP-07, EXP-07, VER-09, X-TERM-QUALITY, X-GLOSSARY, X-BITTER-LESSON).
+- **FRAME-07 Goldilocks** — fabricated "10-20% beyond current capability" replaced with zone-of-proximal-development framing per slideument slide 7.
+- **FRAME-08 unified with X-STATEMENT-TYPE** — question 3 of the Reading Checklist delegates to the X-STATEMENT-TYPE taxonomy (rule/promise/explanation/gate/evidence) instead of duplicating a parallel list.
+- **CHR-11 source clarity** — explicit note distinguishing the slideument slide 35 didactic 5-step compression from the canonical FPF-Spec A.6.P:4 four-layer structure (Stable lens → Kind-explicit relation tokens → Slot-explicit qualified relation records → Change-class lexicon → Lexical guardrails). Each didactic step carries a canonical A.6.P:4.x reference.
+- **h-reason SKILL.md trimmed** — 400 → 359 lines. Removed Concept Index (duplicated routes matchers), merged RAG search reference into FPF spec lookup, compacted Feature Maturity table into a status-keyed list. Micro-patterns preserved as direct-response floor.
+- **Removed "Mandatory FPF retrieval (MUST execute before reasoning)" section** from h-reason SKILL.md — contradicted the interaction-mode protocol and doubled the auto-hint cost.
+- **Hint query keywords dynamized** — per-phase example retrieval keywords now derived from the first N matchers of the corresponding `phase-*` route in `fpf-routes.json` instead of a hardcoded Go map. Matcher rename propagates to hint automatically.
+
+### Fixed
+
+- **FPF hint map drift risk** — previous implementation hardcoded pattern IDs per phase in a Go map that could silently diverge from pattern files. Hints now generate from embedded markdown; renaming or removing a pattern ID is detected at build time via smoke test.
+
+### Chore
+
+- **FPF spec submodule** bumped from 08e8e6f to 585938a.
+- **Desktop Cargo.lock** — `haft-desktop` adds `dirs` dependency.
+
 ## [6.2.0] — 2026-04-14
 
 ### Added

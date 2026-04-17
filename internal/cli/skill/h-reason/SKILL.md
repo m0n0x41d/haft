@@ -332,3 +332,71 @@ In shell-only environments: `haft fpf search "<query>"` or `haft fpf section "<h
 **Verify:** evidence record, EVID, F-G-R, assurance level, corroboration, refutation, drift, staleness, refresh
 
 **Cross-cutting:** WLNK, MONO, IDEM, COMM, LOC, weakest link, cutset, ADI cycle, abduction, deduction, induction
+
+---
+
+## Mandatory FPF retrieval (MUST execute before reasoning)
+
+**Before ANY reasoning, call `haft_query(action="fpf")` to ground your work in the actual FPF methodology.** This is NOT optional. The query should match the current reasoning phase:
+
+| Phase | Query to run |
+|-------|-------------|
+| Frame | `haft_query(action="fpf", query="frame problem signal scope acceptance")` |
+| Characterize | `haft_query(action="fpf", query="characterize indicator constraint target observation parity")` |
+| Explore | `haft_query(action="fpf", query="explore variant abduction candidate WLNK stepping stone")` |
+| Compare | `haft_query(action="fpf", query="compare pareto selection policy parity dominated")` |
+| Decide | `haft_query(action="fpf", query="decide record invariant rollback prediction counterargument")` |
+| Verify | `haft_query(action="fpf", query="verify evidence decay R_eff assurance refresh")` |
+
+Use the retrieved content to ground your reasoning. Cite specific patterns (FRAME-01, CHR-03, etc.) when applying them.
+
+---
+
+## FPF Micro-Patterns (always-available baseline)
+
+These compressed patterns are your floor — always in context. For full detail, use `haft_query(action="fpf")`.
+
+### Frame
+- **FRAME-01 Signal typing**: Make the trigger explicit — anomaly, opportunity, probe, or cue. Typed signals prevent drift.
+- **FRAME-02 Scope boundary**: Declare what's in-scope AND out-of-scope. Prevents silent inflation.
+- **FRAME-03 Acceptance criteria**: What observable condition signals solved? Bridge framing to evidence.
+- **FRAME-05 Problem typing**: Classify: optimization / diagnosis / search / synthesis. Each needs different exploration.
+- **FRAME-07 Goldilocks**: Select problems 10-20% beyond current capability. Not impossible, not trivial.
+
+### Characterize
+- **CHR-01 Indicator roles**: Every dimension = constraint (hard limit), target (optimize 1-3), observation (watch, Anti-Goodhart).
+- **CHR-02 Pipeline**: normalize > indicatorize > score > compare > select. Never average disparate scales.
+- **CHR-04 Assurance tuple**: F (formality) + G (scope) + R (reliability) + CL (congruence). Snapshot of trust.
+- **CHR-08 L1/L2/L3 ambiguity**: L1=flag vague terms. L2=persist disambiguations. L3=check entity preservation.
+- **CHR-09 Parity plan**: Equal budgets, time windows, eval protocol, data freshness across variants.
+
+### Explore
+- **EXP-01 Abduction**: Frame prompt > generate rivals > apply filters > select prime hypothesis. Keep rivals visible.
+- **EXP-04 WLNK per variant**: "What breaks first?" Name the Achilles' heel. Focus evidence on testing it.
+- **EXP-05 Stepping stones**: Non-optimal but opens future search space. Allocate 1-2 bets.
+- **EXP-07 Portfolio thinking**: Pareto front = set of tradeoffs, not one winner. NQD guides selection.
+- **EXP-08 NQD**: Is this genuinely new? If yes, existing templates may mislead.
+
+### Compare
+- **CMP-01 Parity**: Same budget, assumptions, scope for all variants. Rigged comparison = no comparison.
+- **CMP-02 Selection policy up front**: Declare rule BEFORE scoring. Separates judgment from evaluation.
+- **CMP-03 Pareto front**: Identify non-dominated set. Dominated variants eliminated with rationale.
+- **CMP-06 CL across options**: CL3=exact context, CL2=similar, CL1=related, CL0=opposed. Low CL = lower trust.
+
+### Decide
+- **DEC-01 Record structure**: Problem frame + Decision + Rationale + Consequences. Traceable.
+- **DEC-04 Invariants**: Load-bearing constraints: before, during, after. Violation = rollback.
+- **DEC-05 Rollback**: Triggers + Steps + Blast radius + Timeline. Honest about reversibility.
+- **DEC-06 Predictions**: "If X, we see Y within Z under K." Falsifiable. Become measurement targets.
+- **DEC-08 Counterargument**: Strongest genuine attack on the chosen option. Self-deception check.
+
+### Verify
+- **VER-01 Evidence graph**: Every claim anchored to evidence. Typed links + CL. No floating claims.
+- **VER-02 Decay**: valid_until on all evidence. Expired = 0.1 (weak, not absent). Epistemic debt.
+- **VER-03 R_eff**: min(Rs) - penalty(CL_min). Never average. Weakest link dominates.
+- **VER-07 Refresh triggers**: Evidence expiry, context change, WLNK failure, competing alternative.
+
+### Cross-cutting
+- **X-WLNK**: System reliability <= min(component reliabilities). Never average. Invest in weakest.
+- **X-SCOPE**: Every claim has explicit where + under what + when. "Always fast" = scope inflation.
+- **X-TRANSFORMER**: External agent decides. System doesn't self-improve. Human is the principal.

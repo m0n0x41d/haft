@@ -798,11 +798,19 @@ func fallbackSectionSummary(heading string) string {
 	return firstNonEmpty(title, cleanMarkdownText(heading))
 }
 
+// haftPatternIDRE matches haft-native pattern IDs like FRAME-01, CHR-02, X-WLNK, X-BITTER-LESSON.
+var haftPatternIDRE = regexp.MustCompile(`^[A-Z]+-[A-Z0-9]+(?:-[A-Z0-9]+)*$`)
+
 func normalizePatternID(text string) string {
 	text = strings.TrimSpace(text)
 	text = strings.Trim(text, "\"'`.,;!?)]}")
 	if text == "" {
 		return ""
+	}
+
+	// Recognize haft-native pattern IDs (FRAME-01, CHR-02, X-WLNK, etc.)
+	if haftPatternIDRE.MatchString(text) {
+		return text
 	}
 
 	parts := strings.SplitN(text, ":", 2)

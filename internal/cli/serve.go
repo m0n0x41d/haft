@@ -638,16 +638,26 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if input.Predictions, err = parsePredictionInputsFromArgs(args, "predictions"); err != nil {
 			return "", err
 		}
-		if input.PortfolioRef == "" {
-			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
-			if p != nil {
-				input.PortfolioRef = p.Meta.ID
-			}
-		}
 		if input.ProblemRef == "" {
 			p, _ := artifact.FindActiveProblem(ctx, store, contextName)
 			if p != nil {
 				input.ProblemRef = p.Meta.ID
+			}
+		}
+		// Auto-detect portfolio ONLY when it's linked to the same problem.
+		// Load full artifact to get links (ListByKind returns lightweight entries).
+		if input.PortfolioRef == "" && input.ProblemRef != "" {
+			p, _ := artifact.FindActivePortfolio(ctx, store, contextName)
+			if p != nil {
+				fullPortfolio, _ := store.Get(ctx, p.Meta.ID)
+				if fullPortfolio != nil {
+					for _, ref := range artifact.ResolvePortfolioProblemRefs(fullPortfolio) {
+						if ref == input.ProblemRef {
+							input.PortfolioRef = p.Meta.ID
+							break
+						}
+					}
+				}
 			}
 		}
 

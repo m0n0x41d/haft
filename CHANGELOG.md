@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`governance_mode` field on DecisionRecord** — declares whether `affected_files` are governed at the file level (`exact`) or widened to module-level scope (`module`, default — preserves pre-6.2.x behavior). Exact mode skips the silent directory inflation in baseline / drift detection. Honors FPF X-SCOPE: every claim has explicit where + under what + when. Closes 5.4 Pro review Finding #3.
+- **Transport-parity golden test** (`internal/cli/serve_parity_test.go`) — documents the action enum drift between standalone (`internal/tools/haft.go`) and MCP (`internal/cli/serve.go` switch dispatch) for each tool. Documented drift today (haft_problem.adopt, haft_decision.apply, haft_refresh.drift/reconcile, haft_query.board/list/coverage) is captured in the test's `knownTransportDrift` map; new drift fails the test. Detection layer for the unified-contract refactor planned for 6.3.
+- **Layered architecture boundary tests** (`internal/artifact/core_boundary_test.go`) — replaced the desktop-only denylist with `TestPureCoreDoesNotDependOnSurfaceOrFlow` (asserts pure-Core packages never import flow/surface/provider/external) and `TestFPFDependencyExceptions` (documents `internal/fpf` as a controlled exception; new flow imports beyond the documented set fail the test). Tracks P2 architectural debt: extract `internal/fpf/semantic_embedder.go` out of Core in 6.3.
+- **Cross-project recall regression tests** — verifies `haft_decision(action="decide")` returns the canonical artifact ID; two decisions with the same `selected_title` in one project now produce distinct global-index entries.
 - **FPF semiotic patterns** — 7 new patterns distilled from Levenchuk's semiotics slideument: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
 - **Compiled FPF pattern index** — 65 pattern chunks indexed alongside 4625 FPF spec chunks. Phase-keyed routes (frame / characterize / explore / compare / decide / verify / cross-cutting) in `fpf-routes.json`. 7 pattern files under `internal/fpf/patterns/`.
 - **Auto-injected FPF hints in reasoning tool responses** — `haft_problem`, `haft_solution`, `haft_decision` responses include compact pattern ID citations for the current phase with retrieval guidance. Hints derive from embedded pattern files at runtime via `//go:embed` — renaming a pattern heading propagates automatically.
@@ -26,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Cross-project decision recall keyed on user-supplied title** — the global decision index was storing `selected_title` as `decision_id`, so two decisions with the same chosen option in one project would collide and overwrite each other in `~/.haft/index.db`. Now uses the canonical artifact ID returned by `artifact.Decide()`. Requires plumbing `dispatchTool` to return the created artifact ref alongside the response string. Closes 5.4 Pro review Finding #2.
+- **Dead `loadSemanticRoutes` helper** — removed unused function in `internal/fpf/semantic_artifact.go` (was guarded by a misleading `//nolint:unused // exercised by package tests` comment that no test actually used).
+- **Modernize lint hints** applied: `strings.SplitSeq` in `patterns.go`, `min()` builtin replacing manual length cap, tagged switch over `Status` in `present/format.go`.
 - **FPF hint map drift risk** — previous implementation hardcoded pattern IDs per phase in a Go map that could silently diverge from pattern files. Hints now generate from embedded markdown; renaming or removing a pattern ID is detected at build time via smoke test.
 
 ### Chore

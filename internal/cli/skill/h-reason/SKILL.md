@@ -69,22 +69,11 @@ In shell-only environments: `haft fpf search "<query>"` with optional `--full`.
 
 ## Feature maturity
 
-| Concept | Status | What Haft does |
-|---------|--------|-----------------|
-| Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Haft persists it. |
-| Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity/role on the ProblemCard. |
-| WLNK | **tracked** | Required label on variants. Haft stores the stated weakest link. |
-| Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
-| Pareto front | **computed + tracked** | Haft derives the non-dominated set from submitted comparison data. |
-| Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
-| Refresh (valid_until) | **enforced** | All artifacts with expired valid_until detected by scan. |
-| CL (congruence) | **artifact-level** | Evidence calculations exist. Tool stores explicit evidence with CL values. |
-| Impact measurement | **tracked** | `haft_decision(action="measure")` records post-implementation findings. |
-| Evidence attachment | **supported** | Attach evidence with type/verdict/CL. Set `valid_until` for decay. |
+**Computed:** Pareto front (non-dominated set from comparison data), Refresh (valid_until expiry detection).
+**Tracked (persisted but not computed):** problem framing, characterization dimensions, WLNK label on variants, stepping-stone flag, CL on evidence, measurement records.
+**Textual (stored as rules, not enforced):** parity plan — you ensure it yourself.
 
-**Key rule: don't describe textual features as if they compute something.** "WLNK bounds quality" means the user identified what bounds quality, not that the system calculated it.
-
-These skill instructions are **L1 — detection and questions.** The tools (L2) persist and enforce. Don't treat a prompt-based check as verified evidence.
+**Key rule:** don't describe textual features as if they compute something. "WLNK bounds quality" means the user identified what bounds quality, not that the system calculated it. These skill instructions are **L1 — detection and questions**; the tools (L2) persist and enforce. Don't treat a prompt-based check as verified evidence.
 
 ---
 
@@ -92,7 +81,7 @@ These skill instructions are **L1 — detection and questions.** The tools (L2) 
 
 ### Understand — "What's actually going on?"
 
-The bottleneck is **problem quality**, not solution speed. Frame before solving.
+Frame before solving. Problem quality dominates solution speed in outcome.
 
 **Framing protocol — ask these questions before recording:**
 
@@ -302,36 +291,6 @@ The `── Haft ──` strip appended to tool responses shows current state an
 - **"Available:" = menu for the user**, not instructions for the agent.
 - **Mode determines ceremony depth**, not whether Choose may bypass Explore.
 - In research + wait mode, do not auto-advance. In delegated reasoning, you may advance through modes without extra commands.
-
----
-
-## RAG search reference
-
-Use MCP-native FPF lookup when tools are available:
-
-```text
-haft_query(action="fpf", query="problem card PROB")
-haft_query(action="fpf", query="A.6", full=true)
-haft_query(action="fpf", query="How do I route boundary statements?", limit=3, explain=true)
-```
-
-In shell-only environments: `haft fpf search "<query>"` or `haft fpf section "<heading-or-id>"`.
-
----
-
-## Concept index (search terms)
-
-**Understand:** problem card, PROB, anomaly, characterization, CHR, problem portfolio, goldilocks, acceptance spec, problem typing
-
-**Explore:** SoTA survey, strategy card, method family, solution portfolio, NQD, stepping stones, diversity
-
-**Choose:** Pareto front, selection policy, SEL, parity plan, PAR, fair comparison, probe-or-commit, probe-worthiness
-
-**Execute:** decision record, DRR, rollback plan, rationale, constraints, verify_after, baseline
-
-**Verify:** evidence record, EVID, F-G-R, assurance level, corroboration, refutation, drift, staleness, refresh
-
-**Cross-cutting:** WLNK, MONO, IDEM, COMM, LOC, weakest link, cutset, ADI cycle, abduction, deduction, induction
 
 ---
 

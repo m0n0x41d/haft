@@ -17,9 +17,6 @@ use terminal::TerminalManagerState;
 use watcher::WatcherState;
 
 pub fn run() {
-    let db_path = resolve_db_path();
-
-    let db = HaftDb::open(&db_path).expect("failed to open haft.db");
     let shell_env = shell_env::resolve_user_shell_env();
 
     // Apply resolved shell env to current process so all child processes
@@ -28,6 +25,17 @@ pub fn run() {
         // SAFETY: single-threaded at this point (before Tauri runtime starts).
         unsafe { std::env::set_var(key, value) };
     }
+
+    // Resolve initial project and open DB. App starts even if no project found.
+    let db = match resolve_project_db() {
+        Some(db) => db,
+        None => {
+            eprintln!("haft desktop: no project found, starting in empty state");
+            // Open an in-memory DB so the app can start without a project.
+            // User will add a project from the UI.
+            HaftDb::open(":memory:").expect("failed to open in-memory db")
+        }
+    };
 
     tauri::Builder::default()
         .manage(DbState(Mutex::new(db)))
@@ -98,11 +106,95 @@ pub fn run() {
         .expect("failed to run haft desktop");
 }
 
-/// Resolve haft.db path: $HAFT_DB > ~/.haft/haft.db
-pub(crate) fn resolve_db_path() -> String {
+/// Resolve the project DB by finding .haft/project.yaml and computing the DB path.
+/// Priority: HAFT_PROJECT_ROOT env > cwd walk > first project in registry.
+fn resolve_project_db() -> Option<HaftDb> {
+    let db_path = resolve_db_path()?;
+    HaftDb::open(&db_path).ok()
+}
+
+/// Resolve haft.db path from the project root.
+/// Returns ~/.haft/projects/{id}/haft.db
+pub(crate) fn resolve_db_path() -> Option<String> {
+    // Try explicit env var
     if let Ok(p) = std::env::var("HAFT_DB") {
-        return p;
+        return Some(p);
     }
+
+    let project_root = resolve_project_root()?;
+    let project_yaml = std::path::Path::new(&project_root).join(".haft/project.yaml");
+    let content = std::fs::read_to_string(&project_yaml).ok()?;
+
+    // Parse project ID from yaml (simple: look for "id: qnt_...")
+    let id = content.lines()
+        .find(|line| line.starts_with("id:"))
+        .and_then(|line| line.strip_prefix("id:"))
+        .map(|s| s.trim().to_string())?;
+
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    format!("{home}/.haft/haft.db")
+    let db_path = format!("{home}/.haft/projects/{id}/haft.db");
+
+    if std::path::Path::new(&db_path).exists() {
+        Some(db_path)
+    } else {
+        eprintln!("haft desktop: DB not found at {db_path}");
+        None
+    }
+}
+
+/// Find project root: HAFT_PROJECT_ROOT > cwd walk > registry fallback.
+fn resolve_project_root() -> Option<String> {
+    // 1. Env var (set by `haft desktop` launcher)
+    if let Ok(root) = std::env::var("HAFT_PROJECT_ROOT") {
+        let root = root.trim().to_string();
+        if !root.is_empty() && std::path::Path::new(&root).join(".haft/project.yaml").exists() {
+            return Some(root);
+        }
+    }
+
+    // 2. Walk up from cwd
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut dir = cwd.as_path();
+        let home = dirs::home_dir();
+        loop {
+            // Skip ~/.haft/ (global config, not a project)
+            if let Some(ref h) = home {
+                if dir == h.as_path() {
+                    if let Some(parent) = dir.parent() {
+                        dir = parent;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            let candidate = dir.join(".haft/project.yaml");
+            if candidate.exists() {
+                return Some(dir.to_string_lossy().to_string());
+            }
+            match dir.parent() {
+                Some(parent) if parent != dir => dir = parent,
+                _ => break,
+            }
+        }
+    }
+
+    // 3. Registry fallback — read ~/.haft/desktop-projects.json
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let registry_path = format!("{home}/.haft/desktop-projects.json");
+    if let Ok(content) = std::fs::read_to_string(&registry_path) {
+        // Simple JSON parse: find first "path": "..." value
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(projects) = val.get("projects").and_then(|p| p.as_array()) {
+                for project in projects {
+                    if let Some(path) = project.get("path").and_then(|p| p.as_str()) {
+                        if std::path::Path::new(path).join(".haft/project.yaml").exists() {
+                            return Some(path.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }

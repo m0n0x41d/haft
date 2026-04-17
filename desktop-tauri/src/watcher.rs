@@ -145,7 +145,8 @@ pub fn start_watcher(
     watcher_state: State<'_, WatcherState>,
     project_root: String,
 ) -> Result<(), String> {
-    let db_path = crate::resolve_db_path();
+    let db_path = crate::resolve_db_path()
+        .ok_or_else(|| "no project DB found".to_string())?;
     let mut guard = watcher_state.0.lock().map_err(|e| e.to_string())?;
     // Drop existing watcher — stops thread, releases file handles.
     *guard = None;

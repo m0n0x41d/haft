@@ -3,12 +3,14 @@
 ## EXP-01: Abductive Loop
 **Trigger:** Problem framed; generating plausible solutions
 **Spec:** B.5.2, B.5.2.0
+**Core:** true
 
 Abduction = inference to presently most plausible candidate. Four steps: (1) Frame the prompt (anomaly/opportunity/probe/cue), (2) Generate multiple rival candidates, (3) Apply plausibility filters, (4) Select and publish prime hypothesis. Maintain visibility of why each candidate was rejected or retained.
 
 ## EXP-02: Candidate Rivalry Preservation
 **Trigger:** Landed on one appealing solution; worried about confirmation bias
 **Spec:** B.5.2, B.5.2:4.4
+**Core:** true
 
 Generate multiple candidate hypotheses (at least two), even if one looks favored early. Record the differentiating claim each candidate adds. Track whether each is live, deferred, or rejected. The most common failure: silent suppression of rivals — a polished record hides that alternatives were seriously considered.
 
@@ -21,12 +23,14 @@ Use at least two explicit filters: (1) Parsimony = only necessary structure? (2)
 ## EXP-04: Weakest Link per Variant (WLNK)
 **Trigger:** Variants look plausible; need each one's Achilles' heel
 **Spec:** B.3.4.4
+**Core:** true
 
 For each variant, ask: "What will break first if this is wrong?" The weakest link is the single component, assumption, or integration point most likely to fail. Naming WLNK makes risk transparent. Evidence-gathering focuses on testing WLNK first.
 
 ## EXP-05: Stepping Stone Identification
 **Trigger:** Option A is best today but Option B keeps doors open
 **Spec:** C.18
+**Core:** true
 
 Some variants are stepping stones: not locally optimal but enable future discovery. Mark explicitly. Document why this variant is a stepping stone and what future possibilities it opens. Prevents portfolio from collapsing to greedy local choice.
 
@@ -38,7 +42,8 @@ Every variant must have an explicit novelty marker: what is the substantive diff
 
 ## EXP-07: Portfolio Thinking on Pareto Fronts
 **Trigger:** Multiple candidates or variant solutions
-**Source:** Haft operational pattern (derived from engineering practice)
+**Source:** Levenchuk FPF seminar (slideument slide 60, NQD+BLP+SLL), adapted for haft
+**Core:** true
 
 Don't pick one winner; hold a set of non-dominated solutions (Pareto-incomparable tradeoffs). Pareto fronts shift as you add new dimensions. Use NQD (Novelty-Quality-Diversity) to guide stepping stone selection, not just quality. Allocate 1-2 "entrepreneur bets" to stepping stones even if they score lower.
 

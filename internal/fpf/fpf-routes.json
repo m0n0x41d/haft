@@ -19,13 +19,23 @@
         "blast radius",
         "reversibility",
         "what's wrong",
-        "what happened"
+        "what happened",
+        "reading checklist",
+        "object of talk",
+        "artifact review",
+        "read before",
+        "pre-reasoning",
+        "strict distinction",
+        "role capability",
+        "method work",
+        "promise evidence"
       ],
       "core": [
         "FRAME-01",
         "FRAME-02",
         "FRAME-03",
         "FRAME-05",
+        "FRAME-08",
         "CHR-01"
       ],
       "chain": [
@@ -36,6 +46,8 @@
         "FRAME-05",
         "FRAME-06",
         "FRAME-07",
+        "FRAME-08",
+        "FRAME-09",
         "CHR-01",
         "B.4.1",
         "B.5.2.0",
@@ -61,13 +73,28 @@
         "parity",
         "reproducibility",
         "disambiguation",
-        "term"
+        "term",
+        "boundary",
+        "L/A/D/E",
+        "norm square",
+        "contract",
+        "SLA",
+        "umbrella",
+        "umbrella word",
+        "relational precision",
+        "rpr",
+        "quality term",
+        "action invitation",
+        "service polysemy",
+        "sameness",
+        "wholeness"
       ],
       "core": [
         "CHR-01",
         "CHR-02",
         "CHR-04",
-        "CHR-09"
+        "CHR-09",
+        "CHR-10"
       ],
       "chain": [
         "CHR-01",
@@ -78,7 +105,10 @@
         "CHR-06",
         "CHR-07",
         "CHR-08",
-        "CHR-09"
+        "CHR-09",
+        "CHR-10",
+        "CHR-11",
+        "CHR-12"
       ]
     },
     {
@@ -251,12 +281,22 @@
         "scaling",
         "bitter lesson",
         "glossary",
-        "terminology"
+        "terminology",
+        "statement type",
+        "rule promise",
+        "gate evidence",
+        "rename",
+        "fanout",
+        "fan-out",
+        "carrier audit",
+        "concept rename",
+        "deprecate concept"
       ],
       "core": [
         "X-WLNK",
         "X-SCOPE",
-        "X-TRANSFORMER"
+        "X-TRANSFORMER",
+        "X-STATEMENT-TYPE"
       ],
       "chain": [
         "X-WLNK",
@@ -268,6 +308,8 @@
         "X-TERM-QUALITY",
         "X-GLOSSARY",
         "X-BITTER-LESSON",
+        "X-STATEMENT-TYPE",
+        "X-FANOUT-AUDIT",
         "B.1.1",
         "A.3"
       ]

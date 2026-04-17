@@ -335,20 +335,11 @@ In shell-only environments: `haft fpf search "<query>"` or `haft fpf section "<h
 
 ---
 
-## Mandatory FPF retrieval (MUST execute before reasoning)
+## FPF pattern retrieval
 
-**Before ANY reasoning, call `haft_query(action="fpf")` to ground your work in the actual FPF methodology.** This is NOT optional. The query should match the current reasoning phase:
+FPF pattern hints are **auto-injected into reasoning tool responses** — you see them for free when you call `haft_problem`, `haft_solution`, `haft_decision`. Each hint lists the pattern IDs relevant to the current phase with short labels.
 
-| Phase | Query to run |
-|-------|-------------|
-| Frame | `haft_query(action="fpf", query="frame problem signal scope acceptance")` |
-| Characterize | `haft_query(action="fpf", query="characterize indicator constraint target observation parity")` |
-| Explore | `haft_query(action="fpf", query="explore variant abduction candidate WLNK stepping stone")` |
-| Compare | `haft_query(action="fpf", query="compare pareto selection policy parity dominated")` |
-| Decide | `haft_query(action="fpf", query="decide record invariant rollback prediction counterargument")` |
-| Verify | `haft_query(action="fpf", query="verify evidence decay R_eff assurance refresh")` |
-
-Use the retrieved content to ground your reasoning. Cite specific patterns (FRAME-01, CHR-03, etc.) when applying them.
+When a hint names a pattern you want to apply, retrieve the full text with `haft_query(action="fpf", query="<PATTERN-ID>")` (e.g. `FRAME-01`, `CHR-02`). Cite specific patterns when applying them. Do not pre-fetch the whole phase before every reasoning step — that is ceremony creep.
 
 ---
 
@@ -361,7 +352,9 @@ These compressed patterns are your floor — always in context. For full detail,
 - **FRAME-02 Scope boundary**: Declare what's in-scope AND out-of-scope. Prevents silent inflation.
 - **FRAME-03 Acceptance criteria**: What observable condition signals solved? Bridge framing to evidence.
 - **FRAME-05 Problem typing**: Classify: optimization / diagnosis / search / synthesis. Each needs different exploration.
-- **FRAME-07 Goldilocks**: Select problems 10-20% beyond current capability. Not impossible, not trivial.
+- **FRAME-07 Goldilocks**: Select problems in the zone of proximal development — beyond current capability but reachable.
+- **FRAME-08 Reading checklist**: Before acting on ANY incoming artifact, run 6 questions: object of talk / context / statement type / lexicon vs term / re-expression vs reinterpretation / result purpose.
+- **FRAME-09 Strict distinction quad**: Role ≠ Capability ≠ Method ≠ Work. Assigned ≠ can do ≠ should do ≠ did.
 
 ### Characterize
 - **CHR-01 Indicator roles**: Every dimension = constraint (hard limit), target (optimize 1-3), observation (watch, Anti-Goodhart).
@@ -369,6 +362,9 @@ These compressed patterns are your floor — always in context. For full detail,
 - **CHR-04 Assurance tuple**: F (formality) + G (scope) + R (reliability) + CL (congruence). Snapshot of trust.
 - **CHR-08 L1/L2/L3 ambiguity**: L1=flag vague terms. L2=persist disambiguations. L3=check entity preservation.
 - **CHR-09 Parity plan**: Equal budgets, time windows, eval protocol, data freshness across variants.
+- **CHR-10 Boundary norm square (L/A/D/E)**: Decompose mixed boundary statements into Law (definition) / Admissibility (gate) / Deontics (duty) / Evidence (carrier). Split before acting.
+- **CHR-11 Relational precision pipeline**: umbrella-word → ground by relations → math lens → restored ontology → precise lexicon. Lexical fix alone isn't enough.
+- **CHR-12 Umbrella specializations**: Quality / action-invitation / service / sameness / wholeness / relation-slot / basedness — each family has its own repair.
 
 ### Explore
 - **EXP-01 Abduction**: Frame prompt > generate rivals > apply filters > select prime hypothesis. Keep rivals visible.
@@ -400,3 +396,5 @@ These compressed patterns are your floor — always in context. For full detail,
 - **X-WLNK**: System reliability <= min(component reliabilities). Never average. Invest in weakest.
 - **X-SCOPE**: Every claim has explicit where + under what + when. "Always fast" = scope inflation.
 - **X-TRANSFORMER**: External agent decides. System doesn't self-improve. Human is the principal.
+- **X-STATEMENT-TYPE**: Every load-bearing sentence = rule / promise / explanation / gate / evidence. Mixed = L1 error; decompose.
+- **X-FANOUT-AUDIT**: On concept rename, sweep all carriers: prose + filenames + manifests + review bundles + provenance + tests + schemas. Fixed-point until clean.

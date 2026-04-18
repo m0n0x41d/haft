@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -54,51 +55,11 @@ type Server struct {
 	instructions string
 }
 
-// parityPlanMCPSchema returns the JSON Schema fragment for the structured
-// parity_plan parameter. Required by deep-mode haft_solution(action="compare")
-// and accepted by haft_problem(action="characterize") for early declaration.
-// Mirrors artifact.ParityPlan and the FPF G.9:4.2 ParityPlan contract.
+// parityPlanMCPSchema delegates to the shared artifact.ParityPlanJSONSchema
+// so the MCP-advertised schema and the standalone tool surface stay in
+// lock-step on field shape, types, and missing_data_policy enum values.
 func parityPlanMCPSchema(description string) map[string]interface{} {
-	return map[string]interface{}{
-		"type":        "object",
-		"description": description,
-		"properties": map[string]interface{}{
-			"baseline_set": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]string{"type": "string"},
-				"description": "Variant IDs that share comparable baseline conditions (e.g., same cohort, same dataset version). Required for deep mode.",
-			},
-			"window": map[string]string{
-				"type":        "string",
-				"description": "Time / observation window across which scores are comparable (e.g., '2026-Q2 production', 'last 14 days'). Required for deep mode.",
-			},
-			"budget": map[string]string{
-				"type":        "string",
-				"description": "Resource budget assumed equal across variants (e.g., '4 GPU-hours', 'p95 latency target 200ms'). Required for deep mode.",
-			},
-			"missing_data_policy": map[string]interface{}{
-				"type":        "string",
-				"enum":        []interface{}{"explicit_abstain", "zero", "exclude"},
-				"description": "How to treat missing scores: explicit_abstain (preserve gap, flag in output), zero (treat absence as 0), exclude (drop the variant). Required for deep mode.",
-			},
-			"normalization": map[string]interface{}{
-				"type":        "array",
-				"description": "Per-dimension normalization rules to compare across heterogeneous units.",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"dimension": map[string]string{"type": "string", "description": "Dimension name being normalized"},
-						"method":    map[string]string{"type": "string", "description": "Normalization method (e.g., 'min-max', 'z-score', 'rank')"},
-					},
-				},
-			},
-			"pinned_conditions": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]string{"type": "string"},
-				"description": "Conditions that must hold for the comparison to be valid (e.g., 'same load profile', 'identical hardware').",
-			},
-		},
-	}
+	return artifact.ParityPlanJSONSchema(description)
 }
 
 func NewServer() *Server {

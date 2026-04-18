@@ -1919,33 +1919,9 @@ func jsonParityPlan(args map[string]any, key string) (*artifact.ParityPlan, bool
 	return &plan, true
 }
 
+// parityPlanSchema delegates to the shared artifact.ParityPlanJSONSchema so
+// the standalone tool surface and the MCP-advertised schema stay aligned on
+// field shape, types, and missing_data_policy enum values.
 func parityPlanSchema(description string) map[string]any {
-	return map[string]any{
-		"type":        "object",
-		"description": description,
-		"properties": map[string]any{
-			"baseline_set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"window":       map[string]any{"type": "string"},
-			"budget":       map[string]any{"type": "string"},
-			"missing_data_policy": map[string]any{
-				"type": "string",
-				"enum": []string{
-					artifact.MissingDataPolicyExplicitAbstain,
-					artifact.MissingDataPolicyZero,
-					artifact.MissingDataPolicyExclude,
-				},
-			},
-			"normalization": map[string]any{
-				"type": "array",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"dimension": map[string]any{"type": "string"},
-						"method":    map[string]any{"type": "string"},
-					},
-				},
-			},
-			"pinned_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		},
-	}
+	return artifact.ParityPlanJSONSchema(description)
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ComparisonTable } from "../components/ComparisonTable";
+import { Badge, MonoId, Pill } from "../components/primitives";
 import { VariantForm } from "../components/VariantForm";
 import {
   assessComparisonReadiness,
@@ -468,16 +469,23 @@ function PortfolioDetailView({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <MonoId id={detail.id} tone="accent" />
+            {detail.comparison ? (
+              <Badge tone="accent">parity ✓</Badge>
+            ) : (
+              <Badge tone="neutral">no comparison yet</Badge>
+            )}
+            {detail.problem_ref ? (
+              <button
+                onClick={() => onNavigate("problems", detail.problem_ref)}
+                className="text-[11px] text-accent transition-colors hover:text-accent-hover"
+              >
+                problem: {detail.problem_ref}
+              </button>
+            ) : null}
+          </div>
           <h2 className="text-xl font-semibold">{detail.title}</h2>
-          <p className="mt-1 font-mono text-xs text-text-muted">{detail.id}</p>
-          {detail.problem_ref && (
-            <button
-              onClick={() => onNavigate("problems", detail.problem_ref)}
-              className="mt-2 text-xs text-accent transition-colors hover:text-accent-hover"
-            >
-              Problem: {detail.problem_ref}
-            </button>
-          )}
         </div>
 
         <button
@@ -510,14 +518,10 @@ function PortfolioDetailView({
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{variant.title}</span>
                 {isSelected && (
-                  <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-xs text-accent">
-                    selected
-                  </span>
+                  <Pill tone="accent">selected</Pill>
                 )}
                 {isOnFront && !isSelected && (
-                  <span className="rounded-full border border-success/20 bg-success/10 px-2 py-0.5 text-xs text-success">
-                    Pareto front
-                  </span>
+                  <Badge tone="success">Pareto front</Badge>
                 )}
               </div>
               {variant.description && (

@@ -1,21 +1,32 @@
 use serde_json::Value;
 
-/// Mutation command: project_root + JSON payload → `haft desktop-rpc <cmd>`.
+/// Mutation command: optional project_root + JSON payload → `haft desktop-rpc <cmd>`.
+///
+/// `projectRoot` is optional at the IPC boundary: when the frontend omits it,
+/// the spawned `haft desktop-rpc` subprocess inherits `HAFT_PROJECT_ROOT` from
+/// the Tauri host's environment (set by the `haft desktop` launcher). Passing
+/// it explicitly lets multi-project hosts target a specific project without
+/// re-exec'ing.
 macro_rules! rpc_mutation {
     ($fn_name:ident, $rpc_cmd:expr) => {
         #[tauri::command]
-        pub fn $fn_name(project_root: String, payload: Value) -> Result<Value, String> {
-            crate::rpc::call_rpc($rpc_cmd, Some(payload), Some(&project_root))
+        pub fn $fn_name(
+            project_root: Option<String>,
+            payload: Value,
+        ) -> Result<Value, String> {
+            crate::rpc::call_rpc($rpc_cmd, Some(payload), project_root.as_deref())
         }
     };
 }
 
-/// Query command: project_root only, no payload.
+/// Query command: optional project_root only, no payload. Same optionality
+/// semantics as `rpc_mutation!` — frontend may omit `projectRoot`; the
+/// subprocess inherits `HAFT_PROJECT_ROOT` from env when omitted.
 macro_rules! rpc_query {
     ($fn_name:ident, $rpc_cmd:expr) => {
         #[tauri::command]
-        pub fn $fn_name(project_root: String) -> Result<Value, String> {
-            crate::rpc::call_rpc($rpc_cmd, None, Some(&project_root))
+        pub fn $fn_name(project_root: Option<String>) -> Result<Value, String> {
+            crate::rpc::call_rpc($rpc_cmd, None, project_root.as_deref())
         }
     };
 }

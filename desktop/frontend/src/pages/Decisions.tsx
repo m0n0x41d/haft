@@ -3,6 +3,13 @@ import { useEffect, useState } from "react";
 import { subscribe } from "../lib/events";
 import { DecisionForm } from "../components/DecisionForm";
 import {
+  Badge,
+  Eyebrow,
+  MonoId,
+  Pill,
+  type BadgeTone,
+} from "../components/primitives";
+import {
   adoptProblemCandidate,
   createDecision,
   dismissProblemCandidate,
@@ -356,11 +363,22 @@ function DecisionDetailPanel({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <MonoId id={detail.id} tone="accent" />
+            <DecisionStatusBadge status={detail.status} />
+            {detail.valid_until ? (
+              <Pill>Valid until {detail.valid_until}</Pill>
+            ) : null}
+          </div>
           <h2 className="text-xl font-semibold">{detail.selected_title}</h2>
-          <p className="mt-1 font-mono text-xs text-text-muted">{detail.id}</p>
-          {detail.valid_until && (
-            <p className="mt-1 text-xs text-text-secondary">Valid until {detail.valid_until}</p>
-          )}
+          {detail.created_at ? (
+            <p className="mt-1 text-xs text-text-muted">
+              Decided {detail.created_at.slice(0, 10)}
+              {detail.problem_refs.length > 0
+                ? ` · Linked problem ${detail.problem_refs[0]}`
+                : ""}
+            </p>
+          ) : null}
           <p className="mt-2 text-xs text-text-muted">
             Implement uses <span className="font-mono text-text-secondary">{config?.default_agent ?? "claude"}</span>
             {config?.default_worktree === false ? " in the active project folder." : " in a fresh worktree by default."}
@@ -368,6 +386,9 @@ function DecisionDetailPanel({
           <p className="mt-1 text-xs text-text-muted">
             Verify uses <span className="font-mono text-text-secondary">{config?.verify_agent ?? config?.default_agent ?? "claude"}</span>.
           </p>
+          {detail.valid_until && detail.created_at ? (
+            <DecayWindow createdAt={detail.created_at} validUntil={detail.valid_until} />
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -676,18 +697,72 @@ function ListField({
 }
 
 function ClaimStatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    unverified: "border-border bg-surface-2 text-text-muted",
-    supported: "border-success/20 bg-success/10 text-success",
-    weakened: "border-warning/20 bg-warning/10 text-warning",
-    refuted: "border-danger/20 bg-danger/10 text-danger",
-    inconclusive: "border-border bg-surface-2 text-text-muted",
+  const toneByStatus: Record<string, BadgeTone> = {
+    unverified: "neutral",
+    supported: "success",
+    weakened: "warning",
+    refuted: "danger",
+    inconclusive: "neutral",
   };
+  return <Badge tone={toneByStatus[status] ?? "neutral"}>{status}</Badge>;
+}
+
+function DecisionStatusBadge({ status }: { status: string }) {
+  const normalized = status.toLowerCase();
+  const toneByStatus: Record<string, BadgeTone> = {
+    active: "success",
+    sealed: "success",
+    shipped: "success",
+    pending: "warning",
+    refresh_due: "warning",
+    superseded: "neutral",
+    deprecated: "neutral",
+    addressed: "neutral",
+  };
+  const label = normalized.replace(/_/g, " ");
+  return <Badge tone={toneByStatus[normalized] ?? "neutral"}>{label}</Badge>;
+}
+
+/**
+ * Decay window progress bar — renders elapsed vs total days between
+ * created_at and valid_until. Mirrors haft-design-system Decision.jsx.
+ */
+function DecayWindow({
+  createdAt,
+  validUntil,
+}: {
+  createdAt: string;
+  validUntil: string;
+}) {
+  const created = Date.parse(createdAt);
+  const expires = Date.parse(validUntil);
+  if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) {
+    return null;
+  }
+  const totalDays = Math.round((expires - created) / (1000 * 60 * 60 * 24));
+  const now = Date.now();
+  const elapsedDays = Math.max(
+    0,
+    Math.min(totalDays, Math.round((now - created) / (1000 * 60 * 60 * 24))),
+  );
+  const percent = Math.max(3, Math.min(100, (elapsedDays / totalDays) * 100));
+  const isOverhalf = percent > 50;
+  const barTone = percent > 80 ? "bg-warning" : "bg-accent";
 
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs ${colors[status] ?? colors.unverified}`}>
-      {status}
-    </span>
+    <div className="mt-3 max-w-sm">
+      <Eyebrow className="mb-1.5">Decay window</Eyebrow>
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+        <div
+          className={`h-full rounded-full ${barTone} transition-all`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-text-muted">
+        {elapsedDays} of {totalDays} days elapsed
+        {isOverhalf ? " · reopens automatically if invariants break" : ""}
+      </p>
+    </div>
   );
 }
 

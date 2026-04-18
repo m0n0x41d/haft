@@ -177,11 +177,6 @@ func canonicalDecisionClaimID(index int) string {
 	return fmt.Sprintf("claim-%03d", index+1)
 }
 
-//nolint:unused // exercised by package tests
-func normalizeDecisionPredictions(values []DecisionPrediction) []DecisionPrediction {
-	return decisionPredictionsFromClaims(decisionClaimsFromPredictions(values))
-}
-
 func resolveDecisionEvidenceClaimRefs(claims []DecisionClaim, explicitRefs []string, scope []string) ([]string, error) {
 	normalizedClaims := normalizeDecisionClaims(claims)
 	normalizedRefs := normalizeClaimRefs(explicitRefs)

@@ -400,14 +400,6 @@ func initializeDatabase(dbPath string) error {
 	return nil
 }
 
-func getBinaryPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(exe)
-}
-
 type MCPConfig struct {
 	MCPServers map[string]MCPServer `json:"mcpServers"`
 }

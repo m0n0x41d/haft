@@ -12,15 +12,13 @@ import (
 
 // ANSI escape sequences for terminal formatting.
 const (
-	aBold    = "\033[1m"
-	aDim     = "\033[2m"
-	aReset   = "\033[0m"
-	aRed     = "\033[31m"
-	aGreen   = "\033[32m"
-	aYellow  = "\033[33m"
-	aBlue    = "\033[34m"
-	aMagenta = "\033[35m"
-	aCyan    = "\033[36m"
+	aBold   = "\033[1m"
+	aDim    = "\033[2m"
+	aReset  = "\033[0m"
+	aRed    = "\033[31m"
+	aGreen  = "\033[32m"
+	aYellow = "\033[33m"
+	aCyan   = "\033[36m"
 )
 
 // plainRenderer consumes RunEvents from a channel and prints formatted plain

@@ -690,12 +690,10 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 		return nil, "", err
 	}
 
-	seq, err := store.NextSequence(ctx, KindDecisionRecord)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindDecisionRecord, seq)
+	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
+	// lookup. The seq parameter is preserved on GenerateID for call-site
+	// backward compat — pass 0.
+	id := GenerateID(KindDecisionRecord, 0)
 	now := time.Now().UTC()
 
 	// Pure: merge refs

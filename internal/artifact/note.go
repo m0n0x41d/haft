@@ -282,12 +282,9 @@ func BuildNoteArtifact(id string, now time.Time, input NoteInput) *Artifact {
 
 // CreateNote creates a Note artifact. Orchestrates effects around BuildNoteArtifact.
 func CreateNote(ctx context.Context, store ArtifactStore, haftDir string, input NoteInput) (*Artifact, string, error) {
-	seq, err := store.NextSequence(ctx, KindNote)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindNote, seq)
+	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
+	// required. seq parameter preserved for backward compat — pass 0.
+	id := GenerateID(KindNote, 0)
 	a := BuildNoteArtifact(id, time.Now().UTC(), input)
 
 	if err := store.Create(ctx, a); err != nil {

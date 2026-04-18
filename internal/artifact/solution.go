@@ -282,12 +282,9 @@ func ExploreSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		}
 	}
 
-	seq, err := store.NextSequence(ctx, KindSolutionPortfolio)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindSolutionPortfolio, seq)
+	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
+	// required. seq parameter preserved for backward compat — pass 0.
+	id := GenerateID(KindSolutionPortfolio, 0)
 	var mode Mode
 	if resolvedMode == "" {
 		mode = ModeStandard

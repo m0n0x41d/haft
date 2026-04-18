@@ -6,6 +6,8 @@ export interface StatCardProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {
   label: ReactNode;
   count: ReactNode;
+  /** Optional trailing unit (e.g. "%") rendered inline at the same weight as the count. */
+  suffix?: ReactNode;
   variant?: StatCardVariant;
   className?: string;
 }
@@ -30,6 +32,7 @@ const BORDER_TONE: Record<StatCardVariant, string> = {
 export function StatCard({
   label,
   count,
+  suffix,
   variant = "default",
   className = "",
   type = "button",
@@ -45,6 +48,11 @@ export function StatCard({
         className={`text-[24px] font-semibold leading-none tracking-[-0.01em] ${NUMBER_TONE[variant]}`}
       >
         {count}
+        {suffix ? (
+          <span className="ml-0.5 text-[20px] font-medium text-text-muted">
+            {suffix}
+          </span>
+        ) : null}
       </div>
       <div className="mt-0.5 text-[11px] text-text-muted">{label}</div>
     </button>

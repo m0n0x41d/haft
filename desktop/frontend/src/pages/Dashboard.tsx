@@ -23,6 +23,7 @@ import {
   buildIrreversibleActionDialogModel,
   type IrreversibleActionDialogModel,
 } from "../components/irreversibleActionDialogModel";
+import { Eyebrow, MonoId, Pill, StatCard } from "../components/primitives";
 import { reportError } from "../lib/errors";
 import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
 import { getDecisionImplementActionState } from "./dashboardDecisionActions";
@@ -642,11 +643,13 @@ function DecisionCard({
         >
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
-            <span className="font-mono text-[11px] text-text-muted">{decision.id}</span>
+            <MonoId id={decision.id} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span>WLNK: {decision.weakest_link}</span>
-            {decision.valid_until && <span>Valid until {decision.valid_until}</span>}
+            {decision.valid_until ? (
+              <Pill>Valid until {decision.valid_until}</Pill>
+            ) : null}
           </div>
         </button>
 
@@ -861,48 +864,10 @@ function CandidateCard({
   );
 }
 
-function StatCard({
-  label,
-  count,
-  suffix = "",
-  variant = "default",
-  onClick,
-}: {
-  label: string;
-  count: number;
-  suffix?: string;
-  variant?: "default" | "warning" | "accent";
-  onClick?: () => void;
-}) {
-  const componentClassName = onClick
-    ? "cursor-pointer hover:bg-surface-2 hover:border-border-bright"
-    : "";
-  const toneClassName =
-    variant === "warning"
-      ? "text-warning"
-      : variant === "accent"
-        ? "text-accent"
-        : "text-text-primary";
-  const Component = onClick ? "button" : "div";
-
-  return (
-    <Component
-      onClick={onClick}
-      className={`rounded-xl border border-border bg-surface-1 px-4 py-4 text-left transition-colors ${componentClassName}`}
-    >
-      <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">{label}</p>
-      <p className={`mt-2 text-2xl font-semibold ${toneClassName}`}>
-        {count}
-        {suffix}
-      </p>
-    </Component>
-  );
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-3 text-xs uppercase tracking-[0.24em] text-text-muted">{title}</h3>
+      <Eyebrow className="mb-3">{title}</Eyebrow>
       {children}
     </div>
   );

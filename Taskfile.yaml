@@ -73,6 +73,9 @@ tasks:
     desc: Build and install haft (CLI + TUI) locally
     deps: [tui, fpf-refresh]
     cmds:
+      # Remove any stale `haft` in GOBIN so PATH picks up BIN_DIR/haft,
+      # not a leftover `go install`'d binary from an older build.
+      - rm -f /Users/ivanzakutnii/go/bin/haft
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       - mkdir -p {{.TUI_INSTALL_DIR}}
       - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs

@@ -10,7 +10,6 @@ import {
   ChevronRight,
   ChevronDown,
   LayoutDashboard,
-  Archive,
   ListTodo,
   FolderPlus,
   Scale,
@@ -24,6 +23,7 @@ import { NotificationViewport, type DesktopNotification } from "./components/Not
 import { SearchOverlay } from "./components/SearchOverlay";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
+import { RailBtn, SidebarTask } from "./components/shell";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
 import { listProjects, switchProject, listTasks, toggleMaximize, type ProjectInfo, type TaskState } from "./lib/api";
 import { getPageTitle, resolveNavigation, type Page } from "./navigation";
@@ -520,97 +520,3 @@ function NewProjectModal({
   );
 }
 
-function RailBtn({ icon: Icon, tip, onClick, active, accent }: {
-  icon: typeof Plus;
-  tip: string;
-  onClick: () => void;
-  active?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={tip}
-      className={`w-9 h-9 flex items-center justify-center rounded-lg mb-1 transition-colors ${
-        accent
-          ? "text-accent hover:bg-accent/10"
-          : active
-            ? "bg-surface-2 text-text-primary"
-            : "text-text-muted hover:bg-surface-2/50 hover:text-text-primary"
-      }`}
-    >
-      <Icon size={18} />
-    </button>
-  );
-}
-
-function SidebarTask({
-  task,
-  selected,
-  onSelect,
-  onArchive,
-}: {
-  task: TaskState;
-  selected: boolean;
-  onSelect: () => void;
-  onArchive: () => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  return (
-    <div className="relative group">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onSelect}
-        onContextMenu={(e) => { e.preventDefault(); setMenuOpen(!menuOpen); }}
-        onKeyDown={(e) => { if (e.key === "Enter") onSelect(); }}
-        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
-          selected
-            ? "bg-surface-2 text-text-primary"
-            : "text-text-secondary hover:bg-surface-2"
-        }`}
-      >
-        <StatusDot status={task.status} />
-        <span className="truncate flex-1 text-left">{task.title}</span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMenuOpen(!menuOpen); } }}
-          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary p-0.5 transition-opacity shrink-0 cursor-pointer"
-        >
-          <MoreHorizontal size={12} />
-        </span>
-      </div>
-
-      {menuOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-border bg-surface-1 py-1 shadow-xl">
-            <button
-              onClick={() => { setMenuOpen(false); onArchive(); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
-            >
-              <Archive size={12} />
-              Archive
-            </button>
-            {/* Delete removed — archive is the only safe operation */}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    running: "bg-accent animate-pulse",
-    idle: "bg-accent",
-    completed: "bg-success",
-    failed: "bg-danger",
-    cancelled: "bg-text-muted",
-    pending: "bg-warning",
-  };
-  return <span className={`w-2 h-2 rounded-full shrink-0 ${colors[status] ?? "bg-text-muted"}`} />;
-}

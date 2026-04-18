@@ -152,12 +152,17 @@ Use `haft_decision(action="measure", ...)` for post-implementation verification.
 
 > **Warning:** The desktop app is in pre-alpha. Use at your own risk.
 
-Built with Wails v2 (Go + React). Run with:
+Built with Tauri v2 (Rust shell + React frontend). Launch with:
 
 ```bash
-task desktop        # dev mode with hot reload
-task desktop:build  # production .app bundle
-task desktop:open   # build and open
+haft desktop        # finds Haft.app or falls back to dev build
+```
+
+Build from source (requires Rust toolchain + bun/npm for the frontend):
+
+```bash
+./scripts/build.sh --install   # builds Go binary + TUI bundle, installs locally
+cd desktop-tauri && cargo tauri build   # builds the desktop app bundle
 ```
 
 Features: dashboard with governance findings, problem board, decision detail with evidence decomposition, portfolio comparison with Pareto front, task spawning, agent chat view, terminal panel, multi-project management, search (Cmd+K).
@@ -187,14 +192,23 @@ Decision quality enforcement before automating execution:
 - Claim-scoped R_eff, evidence supersession, CL0 rejection
 - Deep `/h-onboard` with module-by-module analysis for legacy projects
 
-### v6.2 — Dashboard + Execution Primitives (next)
+### v6.2 — Dashboard + Execution Primitives (shipped)
 
-The desktop becomes an operator surface:
-- **Unified Dashboard** — decisions, governance findings, automations in one view
-- **Implement** — click a decision, agent spawns in worktree with full reasoning context
+The desktop became an operator surface:
+- **Unified Dashboard** — decisions, governance findings, recent activity in one view
+- **Implement** — click a decision, agent spawns in worktree with full reasoning context, baseline taken on success
 - **Adopt** — governance finding → agent thread for interactive resolution
-- **Automation triggers** — CI fail, dependency update, scheduled → auto-create ProblemCards
-- **DecisionRecord→Task Pipeline** — Implement generates subtasks from decision, auto-advance mode
+- **`haft run`** — same Implement pipeline from CLI, with planning + per-task verification + final invariant review
+- **Tauri v2 desktop migration** (from Wails v2)
+
+Post-release work in `[Unreleased]` (see CHANGELOG):
+- 7 new FPF semiotic patterns sourced from Levenchuk's seminar (FRAME-08 / FRAME-09 / CHR-10 / CHR-11 / CHR-12 / X-STATEMENT-TYPE / X-FANOUT-AUDIT)
+- `governance_mode` on DecisionRecord (file vs module-level governance, opt-in)
+- Random-hex artifact IDs to prevent merge conflicts across branches ([#63](https://github.com/m0n0x41d/haft/issues/63))
+- MCP `parity_plan` exposure for deep-mode comparison ([#62](https://github.com/m0n0x41d/haft/issues/62))
+- Auto-injected FPF pattern hints in reasoning tool responses, generated from embedded pattern files
+- Layered architecture boundary tests + transport-parity drift detection
+- `internal/embedding` extraction; `internal/fpf` is now pure Core
 
 ### v7 — Desktop Loop MVP
 
@@ -210,7 +224,7 @@ Background detection loops (stale, drift, dependencies) with dashboard alerts. A
 
 - Go 1.25+ (for building from source)
 - Any MCP-capable AI tool for plugin mode
-- Wails v2 for desktop app (optional)
+- Rust toolchain + Tauri v2 (only when building the desktop app from source)
 
 ## License
 

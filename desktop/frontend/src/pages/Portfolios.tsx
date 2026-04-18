@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ComparisonTable } from "../components/ComparisonTable";
 import { VariantForm } from "../components/VariantForm";
 import {
   assessComparisonReadiness,
@@ -744,75 +745,6 @@ function ComparisonEditor({
           {submitting ? "Saving..." : detail.comparison ? "Recompute compare" : "Compute Pareto front"}
         </button>
       </div>
-    </div>
-  );
-}
-
-function ComparisonTable({
-  comparison,
-}: {
-  comparison: NonNullable<PortfolioDetail["comparison"]>;
-}) {
-  const variants = Object.keys(comparison.scores);
-  const nonDominated = new Set(comparison.non_dominated_set);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium uppercase tracking-wider text-text-secondary">Compare / Pareto</h3>
-        {comparison.policy_applied && (
-          <span className="rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-muted">
-            {comparison.policy_applied}
-          </span>
-        )}
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-surface-2 text-left text-xs text-text-muted">
-              <th className="px-4 py-2.5">Dimension</th>
-              {variants.map((variant) => (
-                <th
-                  key={variant}
-                  className={`px-4 py-2.5 ${
-                    comparison.selected_ref === variant
-                      ? "text-accent"
-                      : nonDominated.has(variant)
-                        ? "text-success"
-                        : "text-text-muted"
-                  }`}
-                >
-                  {variant}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {comparison.dimensions.map((dimension) => (
-              <tr key={dimension} className="border-t border-border">
-                <td className="px-4 py-3 text-text-secondary">{dimension}</td>
-                {variants.map((variant) => (
-                  <td key={`${variant}-${dimension}`} className="px-4 py-3 text-text-primary">
-                    {comparison.scores[variant]?.[dimension] ?? "—"}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
-        Computed Pareto front: {comparison.non_dominated_set.join(", ") || "none"}
-      </div>
-
-      {comparison.recommendation && (
-        <div className="rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-text-primary">
-          <span className="text-xs uppercase tracking-[0.2em] text-accent">Recommendation</span>
-          <p className="mt-2">{comparison.recommendation}</p>
-        </div>
-      )}
     </div>
   );
 }

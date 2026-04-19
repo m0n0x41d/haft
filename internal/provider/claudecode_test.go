@@ -132,6 +132,34 @@ func TestParseClaudeStreamSkipsMalformedLines(t *testing.T) {
 	}
 }
 
+func TestEnvWithoutStripsTargetKey(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"ANTHROPIC_API_KEY=sk-leak",
+		"ANTHROPIC_API_KEY_BACKUP=keep",
+		"HOME=/root",
+	}
+	got := envWithout(env, "ANTHROPIC_API_KEY")
+	for _, e := range got {
+		if strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
+			t.Fatalf("envWithout kept target key: %v", got)
+		}
+	}
+	wantKeep := map[string]bool{
+		"PATH=/usr/bin":            true,
+		"ANTHROPIC_API_KEY_BACKUP=keep": true,
+		"HOME=/root":               true,
+	}
+	if len(got) != len(wantKeep) {
+		t.Fatalf("envWithout length = %d, want %d (%v)", len(got), len(wantKeep), got)
+	}
+	for _, e := range got {
+		if !wantKeep[e] {
+			t.Fatalf("envWithout dropped unrelated entry: %q", e)
+		}
+	}
+}
+
 func TestGuessProviderFromPrefixClaudeCodeBeatsAnthropic(t *testing.T) {
 	tests := []struct {
 		model string

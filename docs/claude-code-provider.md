@@ -40,6 +40,19 @@ haft doctor
 
 No API key block is required in `config.yaml` — auth is delegated to the CLI.
 
+### Max / Pro billing
+
+As of the [Apr 2026 fix](https://github.com/anthropics/claude-code/issues/43333),
+`claude -p` draws from an active Max/Pro subscription when the CLI is signed
+in via OAuth and no `ANTHROPIC_API_KEY` is present. This provider **unsets
+`ANTHROPIC_API_KEY` in the child process environment** before exec'ing
+`claude`, so a stray export in your shell won't silently route you to
+per-token API billing. The parent process env is untouched.
+
+If you explicitly want API-key billing instead (e.g. for higher rate limits
+or an Anthropic org account), use the `anthropic` provider instead —
+`model: claude-sonnet-4-20250514` etc. — which will read your key directly.
+
 ## Model IDs
 
 | haft model id        | CLI `--model` forwarded | Notes                         |

@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -102,6 +103,12 @@ func (p *ClaudeCodeProvider) Stream(
 
 	cmd := exec.CommandContext(ctx, p.cliPath, args...)
 	cmd.Stdin = strings.NewReader(prompt)
+	// Strip ANTHROPIC_API_KEY from the child env so Claude Code falls back to
+	// its OAuth credentials. Max/Pro subscribers who happen to have an API
+	// key exported would otherwise be silently billed per-token instead of
+	// drawing from their subscription. See
+	// https://github.com/anthropics/claude-code/issues/43333 (fixed Apr 2026).
+	cmd.Env = envWithout(os.Environ(), "ANTHROPIC_API_KEY")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -207,6 +214,21 @@ func renderParts(parts []agent.Part) string {
 		}
 	}
 	return b.String()
+}
+
+// envWithout returns env with any entries matching key=... removed. The
+// match is case-sensitive and anchored at "=" so keys that merely share
+// a prefix are left untouched.
+func envWithout(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // streamEvent captures the fields we care about from stream-json NDJSON.

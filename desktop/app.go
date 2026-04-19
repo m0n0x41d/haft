@@ -691,20 +691,11 @@ func (a *App) enrichWithGraphInvariants(detail DecisionDetailView) DecisionDetai
 // --- Helpers ---
 
 func findProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
+	root, ok := project.FindRootFromCwd()
+	if !ok {
+		return "", fmt.Errorf("no .haft/ found")
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".haft")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no .haft/ found")
-		}
-		dir = parent
-	}
+	return root, nil
 }
 
 func mapArtifacts[T any](arts []*artifact.Artifact, fn func(*artifact.Artifact) T, limit int) []T {

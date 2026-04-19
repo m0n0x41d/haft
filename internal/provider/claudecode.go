@@ -45,10 +45,15 @@ import (
 const claudeCodeBinary = "claude"
 
 // ClaudeCodeProvider invokes the `claude` CLI per turn.
+//
+// Paths that don't change during the process lifetime (haft binary, detected
+// project root) are resolved once at construction and cached so every turn
+// doesn't re-walk the filesystem.
 type ClaudeCodeProvider struct {
-	modelID string // haft model id (reported to agent loop)
-	subModel string // optional --model override passed to the CLI
-	cliPath  string
+	modelID     string // haft-facing model id (reported to the agent loop)
+	cliPath     string // resolved `claude` binary
+	haftExe     string // resolved current `haft` binary (for --mcp-config)
+	projectRoot string // detected .haft/ root; "" when not in a haft project
 }
 
 var _ LLMProvider = (*ClaudeCodeProvider)(nil)
@@ -67,20 +72,32 @@ func NewClaudeCode(modelID string) (*ClaudeCodeProvider, error) {
 		)
 	}
 
-	sub := ""
-	if rest, ok := strings.CutPrefix(modelID, "claude-code:"); ok {
-		sub = rest
-	}
+	// os.Executable / project detection may fail (test binaries, no cwd, no
+	// .haft/). Failing here would make the provider unusable in text-only
+	// contexts, so we downgrade to "MCP bridge off" by leaving fields empty.
+	haftExe, _ := os.Executable()
+	projectRoot, _ := project.FindRootFromCwd()
 
 	return &ClaudeCodeProvider{
-		modelID:  modelID,
-		subModel: sub,
-		cliPath:  path,
+		modelID:     modelID,
+		cliPath:     path,
+		haftExe:     haftExe,
+		projectRoot: projectRoot,
 	}, nil
 }
 
 // ModelID returns the haft-facing model identifier.
 func (p *ClaudeCodeProvider) ModelID() string { return p.modelID }
+
+// cliSubModel returns the optional --model override forwarded to the CLI.
+// Derived from modelID, not stored — one source of truth.
+func (p *ClaudeCodeProvider) cliSubModel() string {
+	rest, ok := strings.CutPrefix(p.modelID, "claude-code:")
+	if !ok {
+		return ""
+	}
+	return rest
+}
 
 // Stream sends the conversation to the CLI and emits text deltas.
 //
@@ -106,8 +123,8 @@ func (p *ClaudeCodeProvider) Stream(
 	// Wire haft's MCP server into the CLI so the model can call haft_*
 	// artifact tools. Opt out with HAFT_CLAUDECODE_NO_MCP=1 for text-only.
 	mcpBridged := false
-	if os.Getenv("HAFT_CLAUDECODE_NO_MCP") == "" {
-		cfgPath, projectRoot, err := writeHaftMCPConfig()
+	if p.canBridgeMCP() {
+		cfgPath, err := writeHaftMCPConfig(p.haftExe, p.projectRoot)
 		if err == nil && cfgPath != "" {
 			defer func() { _ = os.Remove(cfgPath) }()
 			args = append(args,
@@ -115,7 +132,7 @@ func (p *ClaudeCodeProvider) Stream(
 				"--permission-mode", "bypassPermissions",
 				// Use equals form so a project root starting with "-"
 				// can't be interpreted as a CLI flag.
-				"--add-dir="+projectRoot,
+				"--add-dir="+p.projectRoot,
 			)
 			mcpBridged = true
 		}
@@ -126,8 +143,8 @@ func (p *ClaudeCodeProvider) Stream(
 		args = append(args, "--allowed-tools", "")
 	}
 
-	if p.subModel != "" {
-		args = append(args, "--model", p.subModel)
+	if sub := p.cliSubModel(); sub != "" {
+		args = append(args, "--model", sub)
 	}
 	if system != "" {
 		// Replace, don't append. Claude Code's default system prompt is ~30K
@@ -167,15 +184,8 @@ func (p *ClaudeCodeProvider) Stream(
 		return nil, fmt.Errorf("claudecode: parse stream: %w", parseErr)
 	}
 	if waitErr != nil {
-		stderrTxt := strings.TrimSpace(stderrBuf.String())
-		// Cap the stderr text we fold into the error message so a chatty
-		// CLI session (e.g. --verbose + many tool rounds) can't blow up
-		// the parent's log buffers.
-		const maxStderrInError = 8 * 1024
-		if len(stderrTxt) > maxStderrInError {
-			stderrTxt = stderrTxt[:maxStderrInError] + "…(truncated)"
-		}
-		if stderrTxt != "" {
+		// stderrBuf already caps at 64KB with a tail-preserving ring.
+		if stderrTxt := strings.TrimSpace(stderrBuf.String()); stderrTxt != "" {
 			return nil, fmt.Errorf("claudecode: cli exited: %w: %s", waitErr, stderrTxt)
 		}
 		return nil, fmt.Errorf("claudecode: cli exited: %w", waitErr)
@@ -262,21 +272,21 @@ func renderParts(parts []agent.Part) string {
 	return b.String()
 }
 
+// canBridgeMCP reports whether the environment and provider state support
+// routing haft's MCP server into the CLI. Off when opted out explicitly,
+// when no haft binary was resolvable at construction, or when the provider
+// wasn't constructed inside a haft project.
+func (p *ClaudeCodeProvider) canBridgeMCP() bool {
+	if os.Getenv("HAFT_CLAUDECODE_NO_MCP") != "" {
+		return false
+	}
+	return p.haftExe != "" && p.projectRoot != ""
+}
+
 // writeHaftMCPConfig generates a tmpfile containing an --mcp-config payload
 // that exposes haft's own MCP server (via `haft serve`) to the `claude` CLI
-// subprocess. Returns the tmpfile path, the resolved project root, and any
-// error. If no haft project root is discoverable from cwd, returns
-// ("", "", nil) — the caller falls back to text-only mode.
-func writeHaftMCPConfig() (string, string, error) {
-	projectRoot, ok := project.FindRootFromCwd()
-	if !ok {
-		return "", "", nil
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", "", fmt.Errorf("locate haft binary: %w", err)
-	}
-
+// subprocess. The caller is responsible for removing the returned path.
+func writeHaftMCPConfig(haftExe, projectRoot string) (string, error) {
 	type mcpEntry struct {
 		Command string            `json:"command"`
 		Args    []string          `json:"args"`
@@ -287,7 +297,7 @@ func writeHaftMCPConfig() (string, string, error) {
 	}
 	cfg := mcpConfig{McpServers: map[string]mcpEntry{
 		"haft": {
-			Command: exe,
+			Command: haftExe,
 			Args:    []string{"serve"},
 			Env:     map[string]string{"QUINT_PROJECT_ROOT": projectRoot},
 		},
@@ -295,12 +305,12 @@ func writeHaftMCPConfig() (string, string, error) {
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	f, err := os.CreateTemp("", "haft-mcp-*.json")
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	// Defense-in-depth: CreateTemp uses 0600 on Unix with a normal umask,
 	// but a permissive umask (0000) would leave the file world-readable.
@@ -309,43 +319,53 @@ func writeHaftMCPConfig() (string, string, error) {
 	if err := f.Chmod(0o600); err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
-		return "", "", err
+		return "", err
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
-		return "", "", err
+		return "", err
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(f.Name())
-		return "", "", err
+		return "", err
 	}
-	return f.Name(), projectRoot, nil
+	return f.Name(), nil
 }
 
-// cappedBuffer is an io.Writer that retains at most `limit` bytes. Excess
-// bytes are silently dropped. Used for subprocess stderr so a chatty child
-// can't pressure the parent's memory, while still letting us surface the
-// initial error text in a non-zero-exit report.
+// cappedBuffer is an io.Writer that retains the *last* `limit` bytes written.
+// Used for subprocess stderr so a chatty child can't pressure the parent's
+// memory. Keeping the tail (not the head) matters because real failures
+// almost always print near the end of a run — startup chatter is the
+// discardable prefix, the error message is the useful suffix.
 type cappedBuffer struct {
-	limit int
-	buf   []byte
+	limit     int
+	buf       []byte
+	truncated bool
 }
 
 func (c *cappedBuffer) Write(p []byte) (int, error) {
-	remaining := c.limit - len(c.buf)
-	if remaining <= 0 {
-		return len(p), nil
+	n := len(p)
+	if n >= c.limit {
+		c.buf = append(c.buf[:0], p[n-c.limit:]...)
+		c.truncated = true
+		return n, nil
 	}
-	if len(p) > remaining {
-		c.buf = append(c.buf, p[:remaining]...)
-	} else {
-		c.buf = append(c.buf, p...)
+	if len(c.buf)+n > c.limit {
+		drop := len(c.buf) + n - c.limit
+		c.buf = c.buf[drop:]
+		c.truncated = true
 	}
-	return len(p), nil
+	c.buf = append(c.buf, p...)
+	return n, nil
 }
 
-func (c *cappedBuffer) String() string { return string(c.buf) }
+func (c *cappedBuffer) String() string {
+	if c.truncated {
+		return "…(truncated)" + string(c.buf)
+	}
+	return string(c.buf)
+}
 
 // envWithout returns env with any entries matching key=... removed. The
 // match is case-sensitive and anchored at "=" so keys that merely share

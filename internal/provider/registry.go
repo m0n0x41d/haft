@@ -395,12 +395,14 @@ func EmbeddedProviders() []ProviderInfo {
 			// Auth is owned by the `claude` CLI — no API key, no per-token cost.
 			// Sub-model variants (claude-code:opus, :sonnet, :haiku) are forwarded
 			// to the CLI via --model. The bare id "claude-code" lets the CLI pick.
+			// ContextWindow / DefaultMaxOut are left zero because those limits
+			// live in the CLI, not here; fabricating numbers would go stale.
 			ID: "claudecode", Name: "Claude Code (CLI)", APIType: "claudecode",
 			Models: []ModelInfo{
-				{ID: "claude-code", Name: "Claude Code (CLI default)", ContextWindow: 200_000, DefaultMaxOut: 16_384, CanReason: true, SupportsImages: false},
-				{ID: "claude-code:opus", Name: "Claude Code — Opus", ContextWindow: 200_000, DefaultMaxOut: 32_000, CanReason: true, SupportsImages: false},
-				{ID: "claude-code:sonnet", Name: "Claude Code — Sonnet", ContextWindow: 200_000, DefaultMaxOut: 16_000, CanReason: true, SupportsImages: false},
-				{ID: "claude-code:haiku", Name: "Claude Code — Haiku", ContextWindow: 200_000, DefaultMaxOut: 8_192, CanReason: false, SupportsImages: false},
+				{ID: "claude-code", Name: "Claude Code (CLI default)"},
+				{ID: "claude-code:opus", Name: "Claude Code — Opus"},
+				{ID: "claude-code:sonnet", Name: "Claude Code — Sonnet"},
+				{ID: "claude-code:haiku", Name: "Claude Code — Haiku"},
 			},
 		},
 		{

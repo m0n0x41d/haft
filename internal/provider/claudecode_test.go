@@ -3,7 +3,6 @@ package provider
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,17 +163,10 @@ func TestEnvWithoutStripsTargetKey(t *testing.T) {
 }
 
 func TestWriteHaftMCPConfigShape(t *testing.T) {
-	tmp := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmp, ".haft"), 0o755); err != nil {
-		t.Fatalf("mkdir .haft: %v", err)
-	}
-	orig, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(orig) })
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
+	const haftExe = "/fake/haft"
+	const projectRoot = "/fake/project"
 
-	path, projectRoot, err := writeHaftMCPConfig()
+	path, err := writeHaftMCPConfig(haftExe, projectRoot)
 	if err != nil {
 		t.Fatalf("writeHaftMCPConfig: %v", err)
 	}
@@ -182,6 +174,14 @@ func TestWriteHaftMCPConfigShape(t *testing.T) {
 		t.Fatalf("expected a tmpfile path")
 	}
 	t.Cleanup(func() { _ = os.Remove(path) })
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("tmpfile perm = %o, want 0600", mode)
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -201,14 +201,55 @@ func TestWriteHaftMCPConfigShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing haft entry: %s", data)
 	}
+	if entry.Command != haftExe {
+		t.Errorf("command = %q, want %q", entry.Command, haftExe)
+	}
 	if len(entry.Args) != 1 || entry.Args[0] != "serve" {
-		t.Fatalf("unexpected args: %v", entry.Args)
+		t.Errorf("unexpected args: %v", entry.Args)
 	}
-	if entry.Env["QUINT_PROJECT_ROOT"] == "" {
-		t.Fatalf("missing QUINT_PROJECT_ROOT in env")
+	if entry.Env["QUINT_PROJECT_ROOT"] != projectRoot {
+		t.Errorf("QUINT_PROJECT_ROOT = %q, want %q", entry.Env["QUINT_PROJECT_ROOT"], projectRoot)
 	}
-	if projectRoot == "" {
-		t.Fatalf("empty projectRoot")
+}
+
+func TestCappedBufferKeepsTail(t *testing.T) {
+	c := &cappedBuffer{limit: 10}
+	c.Write([]byte("hello "))
+	c.Write([]byte("world — how are you today?"))
+	got := c.String()
+	// Last 10 bytes of "hello world — how are you today?" is "you today?"
+	// Note: "—" is a 3-byte UTF-8 rune; we slice bytes, not runes. Any
+	// tail that ends with " today?" is sufficient to prove the ring works.
+	if !strings.HasSuffix(got, " today?") {
+		t.Fatalf("want suffix ' today?'; got %q", got)
+	}
+	if !strings.HasPrefix(got, "…(truncated)") {
+		t.Fatalf("want truncated prefix; got %q", got)
+	}
+}
+
+func TestCappedBufferNoTruncationUnderLimit(t *testing.T) {
+	c := &cappedBuffer{limit: 64}
+	c.Write([]byte("short"))
+	if got := c.String(); got != "short" {
+		t.Fatalf("got %q, want %q", got, "short")
+	}
+}
+
+func TestCliSubModel(t *testing.T) {
+	for _, tc := range []struct {
+		modelID string
+		want    string
+	}{
+		{"claude-code", ""},
+		{"claude-code:sonnet", "sonnet"},
+		{"claude-code:opus", "opus"},
+		{"claude-code:claude-opus-4-5", "claude-opus-4-5"},
+	} {
+		p := &ClaudeCodeProvider{modelID: tc.modelID}
+		if got := p.cliSubModel(); got != tc.want {
+			t.Errorf("cliSubModel(%q) = %q, want %q", tc.modelID, got, tc.want)
+		}
 	}
 }
 

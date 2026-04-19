@@ -5,17 +5,26 @@
 // without a separate ANTHROPIC_API_KEY. Auth is delegated entirely to the
 // CLI (OAuth, keychain, API key — whichever Claude Code is configured with).
 //
-// MVP scope (this file):
+// Scope:
 //   - Flattens haft's structured message history into a single prompt.
 //   - Streams assistant text via `claude -p --output-format stream-json`.
-//   - Does NOT translate haft's tool schemas into CLI tools. The agent loop
-//     will get text responses only; haft's artifact tools (haft_note, etc.)
-//     are not invokable by the model through this provider yet.
+//   - Wires haft's own MCP server (`haft serve`) into the CLI via
+//     `--mcp-config` so the model can call `haft_note`, `haft_problem`,
+//     `haft_decision`, `haft_query`, etc. Tool execution happens entirely
+//     inside the CLI subprocess — haft's outer agent loop receives the final
+//     assistant text after all tool round-trips have completed.
 //
-// Future work (explicitly out of scope for the first cut):
-//   - Expose haft's tools via --mcp-config so the CLI can call them.
-//   - Parse tool_use / tool_result events from stream-json.
-//   - Session reuse via --resume for multi-turn efficiency.
+// Caveats:
+//   - The CLI's built-in tools (Read/Write/Bash/etc.) are allowed by default
+//     under `bypassPermissions`. Haft's own per-tool hooks and permission
+//     model do not run for this provider. If that matters, use the
+//     `anthropic` or `openai` providers whose tools go through haft's loop.
+//   - Set `HAFT_CLAUDECODE_NO_MCP=1` to disable the MCP bridge and run the
+//     CLI in text-only mode (no tool-use at all).
+//
+// Future work:
+//   - Session reuse via --resume to amortize per-turn spawn cost.
+//   - Propagate CLI token-accounting into `Message.Tokens`.
 package provider
 
 import (
@@ -27,6 +36,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -90,10 +100,31 @@ func (p *ClaudeCodeProvider) Stream(
 		"-p",
 		"--output-format", "stream-json",
 		"--verbose",                // required by CLI when using stream-json
-		"--allowed-tools", "",      // disable built-in tools; agent surface is haft's, not CLI's
 		"--no-session-persistence", // ephemeral turn
 		"--input-format", "text",
 	}
+
+	// Wire haft's MCP server into the CLI so the model can call haft_*
+	// artifact tools. Opt out with HAFT_CLAUDECODE_NO_MCP=1 for text-only.
+	var cleanup func()
+	if os.Getenv("HAFT_CLAUDECODE_NO_MCP") == "" {
+		cfgPath, projectRoot, err := writeHaftMCPConfig()
+		if err == nil && cfgPath != "" {
+			defer func() { _ = os.Remove(cfgPath) }()
+			args = append(args,
+				"--mcp-config", cfgPath,
+				"--permission-mode", "bypassPermissions",
+				"--add-dir", projectRoot,
+			)
+			cleanup = func() { _ = os.Remove(cfgPath) }
+		}
+	}
+	if cleanup == nil {
+		// Text-only fallback: disable built-ins so the model can't
+		// write files when haft's own surface isn't bridged in.
+		args = append(args, "--allowed-tools", "")
+	}
+
 	if p.subModel != "" {
 		args = append(args, "--model", p.subModel)
 	}
@@ -214,6 +245,77 @@ func renderParts(parts []agent.Part) string {
 		}
 	}
 	return b.String()
+}
+
+// writeHaftMCPConfig generates a tmpfile containing an --mcp-config payload
+// that exposes haft's own MCP server (via `haft serve`) to the `claude` CLI
+// subprocess. Returns the tmpfile path, the resolved project root, and any
+// error. If no haft project root is discoverable from cwd, returns
+// ("", "", nil) — the caller falls back to text-only mode.
+func writeHaftMCPConfig() (string, string, error) {
+	projectRoot, ok := findHaftProjectRoot()
+	if !ok {
+		return "", "", nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", "", fmt.Errorf("locate haft binary: %w", err)
+	}
+
+	type mcpEntry struct {
+		Command string            `json:"command"`
+		Args    []string          `json:"args"`
+		Env     map[string]string `json:"env,omitempty"`
+	}
+	type mcpConfig struct {
+		McpServers map[string]mcpEntry `json:"mcpServers"`
+	}
+	cfg := mcpConfig{McpServers: map[string]mcpEntry{
+		"haft": {
+			Command: exe,
+			Args:    []string{"serve"},
+			Env:     map[string]string{"QUINT_PROJECT_ROOT": projectRoot},
+		},
+	}}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return "", "", err
+	}
+
+	f, err := os.CreateTemp("", "haft-mcp-*.json")
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", "", err
+	}
+	return f.Name(), projectRoot, nil
+}
+
+// findHaftProjectRoot walks up from cwd looking for a .haft directory.
+// Returns "" + false if none is found before hitting the filesystem root.
+func findHaftProjectRoot() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	for {
+		if info, err := os.Stat(filepath.Join(dir, ".haft")); err == nil && info.IsDir() {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 // envWithout returns env with any entries matching key=... removed. The

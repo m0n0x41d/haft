@@ -1,6 +1,9 @@
 package provider
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -157,6 +160,98 @@ func TestEnvWithoutStripsTargetKey(t *testing.T) {
 		if !wantKeep[e] {
 			t.Fatalf("envWithout dropped unrelated entry: %q", e)
 		}
+	}
+}
+
+func TestFindHaftProjectRoot(t *testing.T) {
+	tmp := t.TempDir()
+	nested := filepath.Join(tmp, "a", "b", "c")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(tmp, ".haft"), 0o755); err != nil {
+		t.Fatalf("mkdir .haft: %v", err)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := os.Chdir(nested); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	got, ok := findHaftProjectRoot()
+	if !ok {
+		t.Fatalf("findHaftProjectRoot = (_, false), want project found")
+	}
+	// On macOS /tmp is a symlink to /private/tmp — normalize both sides.
+	wantResolved, _ := filepath.EvalSymlinks(tmp)
+	gotResolved, _ := filepath.EvalSymlinks(got)
+	if gotResolved != wantResolved {
+		t.Fatalf("findHaftProjectRoot = %q, want %q", gotResolved, wantResolved)
+	}
+}
+
+func TestFindHaftProjectRootNoMatch(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	if _, ok := findHaftProjectRoot(); ok {
+		t.Fatalf("expected not found in bare tmp dir")
+	}
+}
+
+func TestWriteHaftMCPConfigShape(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmp, ".haft"), 0o755); err != nil {
+		t.Fatalf("mkdir .haft: %v", err)
+	}
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	path, projectRoot, err := writeHaftMCPConfig()
+	if err != nil {
+		t.Fatalf("writeHaftMCPConfig: %v", err)
+	}
+	if path == "" {
+		t.Fatalf("expected a tmpfile path")
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var parsed struct {
+		McpServers map[string]struct {
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			Env     map[string]string `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v: %s", err, data)
+	}
+	entry, ok := parsed.McpServers["haft"]
+	if !ok {
+		t.Fatalf("missing haft entry: %s", data)
+	}
+	if len(entry.Args) != 1 || entry.Args[0] != "serve" {
+		t.Fatalf("unexpected args: %v", entry.Args)
+	}
+	if entry.Env["QUINT_PROJECT_ROOT"] == "" {
+		t.Fatalf("missing QUINT_PROJECT_ROOT in env")
+	}
+	if projectRoot == "" {
+		t.Fatalf("empty projectRoot")
 	}
 }
 

@@ -1,6 +1,10 @@
 package provider
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/m0n0x41d/haft/internal/config"
+)
 
 // NewProvider creates an LLM provider based on provider ID.
 // Routes to the appropriate implementation:
@@ -48,24 +52,12 @@ func ProviderIDForModel(model string) string {
 	return guessProviderFromPrefix(model)
 }
 
+// guessProviderFromPrefix delegates to the canonical prefix table in the
+// config package. Falls back to "openai" if nothing matches — the old
+// default — so unknown model strings get routed to the most permissive path.
 func guessProviderFromPrefix(model string) string {
-	// Ordered list so longer prefixes win (e.g. "claude-code" beats "claude-").
-	type entry struct{ prefix, provider string }
-	prefixes := []entry{
-		{"claude-code", "claudecode"},
-		{"claude-", "anthropic"},
-		{"gpt-", "openai"},
-		{"o1", "openai"},
-		{"o3", "openai"},
-		{"o4", "openai"},
-		{"gemini-", "google"},
-		{"deepseek-", "deepseek"},
-		{"llama-", "groq"},
+	if id := config.ProviderForModel(model); id != "" {
+		return id
 	}
-	for _, e := range prefixes {
-		if len(model) >= len(e.prefix) && model[:len(e.prefix)] == e.prefix {
-			return e.provider
-		}
-	}
-	return "openai" // default
+	return "openai"
 }

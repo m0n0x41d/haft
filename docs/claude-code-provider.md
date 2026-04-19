@@ -76,7 +76,7 @@ claude -p \
   --mcp-config <tmpfile>   \      # points at `haft serve`
   --permission-mode bypassPermissions \
   --add-dir <project_root> \
-  --append-system-prompt "<system>" \
+  --system-prompt "<system>" \
   [--model <submodel>]
 ```
 

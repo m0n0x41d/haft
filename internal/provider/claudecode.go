@@ -29,7 +29,6 @@ package provider
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -106,7 +105,7 @@ func (p *ClaudeCodeProvider) Stream(
 
 	// Wire haft's MCP server into the CLI so the model can call haft_*
 	// artifact tools. Opt out with HAFT_CLAUDECODE_NO_MCP=1 for text-only.
-	var cleanup func()
+	mcpBridged := false
 	if os.Getenv("HAFT_CLAUDECODE_NO_MCP") == "" {
 		cfgPath, projectRoot, err := writeHaftMCPConfig()
 		if err == nil && cfgPath != "" {
@@ -114,12 +113,14 @@ func (p *ClaudeCodeProvider) Stream(
 			args = append(args,
 				"--mcp-config", cfgPath,
 				"--permission-mode", "bypassPermissions",
-				"--add-dir", projectRoot,
+				// Use equals form so a project root starting with "-"
+				// can't be interpreted as a CLI flag.
+				"--add-dir="+projectRoot,
 			)
-			cleanup = func() { _ = os.Remove(cfgPath) }
+			mcpBridged = true
 		}
 	}
-	if cleanup == nil {
+	if !mcpBridged {
 		// Text-only fallback: disable built-ins so the model can't
 		// write files when haft's own surface isn't bridged in.
 		args = append(args, "--allowed-tools", "")
@@ -145,12 +146,15 @@ func (p *ClaudeCodeProvider) Stream(
 	// https://github.com/anthropics/claude-code/issues/43333 (fixed Apr 2026).
 	cmd.Env = envWithout(os.Environ(), "ANTHROPIC_API_KEY")
 
+	// Cap stderr at 64KB so a chatty --verbose session can't blow up the
+	// parent's memory. We only need the tail to surface in error messages.
+	stderrBuf := &cappedBuffer{limit: 64 * 1024}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("claudecode: stdout pipe: %w", err)
 	}
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
+	cmd.Stderr = stderrBuf
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("claudecode: start %s: %w", p.cliPath, err)
@@ -164,6 +168,13 @@ func (p *ClaudeCodeProvider) Stream(
 	}
 	if waitErr != nil {
 		stderrTxt := strings.TrimSpace(stderrBuf.String())
+		// Cap the stderr text we fold into the error message so a chatty
+		// CLI session (e.g. --verbose + many tool rounds) can't blow up
+		// the parent's log buffers.
+		const maxStderrInError = 8 * 1024
+		if len(stderrTxt) > maxStderrInError {
+			stderrTxt = stderrTxt[:maxStderrInError] + "…(truncated)"
+		}
 		if stderrTxt != "" {
 			return nil, fmt.Errorf("claudecode: cli exited: %w: %s", waitErr, stderrTxt)
 		}
@@ -291,6 +302,15 @@ func writeHaftMCPConfig() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	// Defense-in-depth: CreateTemp uses 0600 on Unix with a normal umask,
+	// but a permissive umask (0000) would leave the file world-readable.
+	// The tmpfile embeds the haft binary path and project root, so lock
+	// it down explicitly.
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", "", err
+	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
@@ -321,6 +341,30 @@ func findHaftProjectRoot() (string, bool) {
 		dir = parent
 	}
 }
+
+// cappedBuffer is an io.Writer that retains at most `limit` bytes. Excess
+// bytes are silently dropped. Used for subprocess stderr so a chatty child
+// can't pressure the parent's memory, while still letting us surface the
+// initial error text in a non-zero-exit report.
+type cappedBuffer struct {
+	limit int
+	buf   []byte
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	remaining := c.limit - len(c.buf)
+	if remaining <= 0 {
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		c.buf = append(c.buf, p[:remaining]...)
+	} else {
+		c.buf = append(c.buf, p...)
+	}
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string { return string(c.buf) }
 
 // envWithout returns env with any entries matching key=... removed. The
 // match is case-sensitive and anchored at "=" so keys that merely share

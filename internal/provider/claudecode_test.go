@@ -163,49 +163,6 @@ func TestEnvWithoutStripsTargetKey(t *testing.T) {
 	}
 }
 
-func TestFindHaftProjectRoot(t *testing.T) {
-	tmp := t.TempDir()
-	nested := filepath.Join(tmp, "a", "b", "c")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(tmp, ".haft"), 0o755); err != nil {
-		t.Fatalf("mkdir .haft: %v", err)
-	}
-
-	orig, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(orig) })
-
-	if err := os.Chdir(nested); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	got, ok := findHaftProjectRoot()
-	if !ok {
-		t.Fatalf("findHaftProjectRoot = (_, false), want project found")
-	}
-	// On macOS /tmp is a symlink to /private/tmp — normalize both sides.
-	wantResolved, _ := filepath.EvalSymlinks(tmp)
-	gotResolved, _ := filepath.EvalSymlinks(got)
-	if gotResolved != wantResolved {
-		t.Fatalf("findHaftProjectRoot = %q, want %q", gotResolved, wantResolved)
-	}
-}
-
-func TestFindHaftProjectRootNoMatch(t *testing.T) {
-	tmp := t.TempDir()
-	orig, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(orig) })
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	if _, ok := findHaftProjectRoot(); ok {
-		t.Fatalf("expected not found in bare tmp dir")
-	}
-}
-
 func TestWriteHaftMCPConfigShape(t *testing.T) {
 	tmp := t.TempDir()
 	if err := os.Mkdir(filepath.Join(tmp, ".haft"), 0o755); err != nil {

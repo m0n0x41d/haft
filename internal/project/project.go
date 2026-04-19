@@ -16,7 +16,39 @@ type Config struct {
 	Name string `yaml:"name"` // human-readable, from directory name
 }
 
-const configFile = "project.yaml"
+const (
+	configFile = "project.yaml"
+	// HaftDirName is the marker directory that identifies a haft project root.
+	HaftDirName = ".haft"
+)
+
+// FindRoot walks up from startDir until it finds a HaftDirName directory.
+// Returns ("", false) if none is found before hitting the filesystem root.
+// Pure function modulo the filesystem probe — safe to call from anywhere.
+func FindRoot(startDir string) (string, bool) {
+	dir := startDir
+	for {
+		if info, err := os.Stat(filepath.Join(dir, HaftDirName)); err == nil && info.IsDir() {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// FindRootFromCwd is a convenience wrapper around FindRoot that uses the
+// process cwd as the starting point. Returns ("", false) on any os.Getwd
+// error.
+func FindRootFromCwd() (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	return FindRoot(cwd)
+}
 
 // Load reads project config from .haft/project.yaml.
 // Returns nil if file doesn't exist (pre-migration project).

@@ -35,11 +35,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/agent"
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 const claudeCodeBinary = "claude"
@@ -268,7 +268,7 @@ func renderParts(parts []agent.Part) string {
 // error. If no haft project root is discoverable from cwd, returns
 // ("", "", nil) — the caller falls back to text-only mode.
 func writeHaftMCPConfig() (string, string, error) {
-	projectRoot, ok := findHaftProjectRoot()
+	projectRoot, ok := project.FindRootFromCwd()
 	if !ok {
 		return "", "", nil
 	}
@@ -321,25 +321,6 @@ func writeHaftMCPConfig() (string, string, error) {
 		return "", "", err
 	}
 	return f.Name(), projectRoot, nil
-}
-
-// findHaftProjectRoot walks up from cwd looking for a .haft directory.
-// Returns "" + false if none is found before hitting the filesystem root.
-func findHaftProjectRoot() (string, bool) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", false
-	}
-	for {
-		if info, err := os.Stat(filepath.Join(dir, ".haft")); err == nil && info.IsDir() {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
 }
 
 // cappedBuffer is an io.Writer that retains at most `limit` bytes. Excess

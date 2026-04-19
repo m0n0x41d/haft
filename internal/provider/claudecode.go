@@ -129,7 +129,11 @@ func (p *ClaudeCodeProvider) Stream(
 		args = append(args, "--model", p.subModel)
 	}
 	if system != "" {
-		args = append(args, "--append-system-prompt", system)
+		// Replace, don't append. Claude Code's default system prompt is ~30K
+		// tokens and would drown haft's FPF protocol instructions. Haft
+		// owns the prompt for this provider; if it wants CLI tool usage
+		// described, it can include that itself.
+		args = append(args, "--system-prompt", system)
 	}
 
 	cmd := exec.CommandContext(ctx, p.cliPath, args...)

@@ -392,6 +392,18 @@ func EmbeddedProviders() []ProviderInfo {
 			},
 		},
 		{
+			// Auth is owned by the `claude` CLI — no API key, no per-token cost.
+			// Sub-model variants (claude-code:opus, :sonnet, :haiku) are forwarded
+			// to the CLI via --model. The bare id "claude-code" lets the CLI pick.
+			ID: "claudecode", Name: "Claude Code (CLI)", APIType: "claudecode",
+			Models: []ModelInfo{
+				{ID: "claude-code", Name: "Claude Code (CLI default)", ContextWindow: 200_000, DefaultMaxOut: 16_384, CanReason: true, SupportsImages: false},
+				{ID: "claude-code:opus", Name: "Claude Code — Opus", ContextWindow: 200_000, DefaultMaxOut: 32_000, CanReason: true, SupportsImages: false},
+				{ID: "claude-code:sonnet", Name: "Claude Code — Sonnet", ContextWindow: 200_000, DefaultMaxOut: 16_000, CanReason: true, SupportsImages: false},
+				{ID: "claude-code:haiku", Name: "Claude Code — Haiku", ContextWindow: 200_000, DefaultMaxOut: 8_192, CanReason: false, SupportsImages: false},
+			},
+		},
+		{
 			ID: "google", Name: "Google", APIType: "google",
 			Models: []ModelInfo{
 				{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", ContextWindow: 1_000_000, DefaultMaxOut: 65_536, CanReason: true, SupportsImages: true, CostPer1MIn: 1.25, CostPer1MOut: 10.0},

@@ -98,21 +98,26 @@ func (c *Config) ConfiguredProviders() []string {
 
 // ProviderForModel guesses which provider a model belongs to based on ID prefix.
 // Returns empty string if unknown.
+//
+// Prefixes are checked in order so longer ones (e.g. "claude-code") win over
+// shorter ones ("claude-") that would otherwise shadow them.
 func ProviderForModel(modelID string) string {
-	prefixes := map[string]string{
-		"gpt-":      "openai",
-		"o1":        "openai",
-		"o3":        "openai",
-		"o4":        "openai",
-		"claude-":   "anthropic",
-		"gemini-":   "google",
-		"deepseek-": "deepseek",
-		"llama-":    "groq",
-		"mistral":   "mistral",
+	type entry struct{ prefix, provider string }
+	prefixes := []entry{
+		{"claude-code", "claudecode"},
+		{"claude-", "anthropic"},
+		{"gpt-", "openai"},
+		{"o1", "openai"},
+		{"o3", "openai"},
+		{"o4", "openai"},
+		{"gemini-", "google"},
+		{"deepseek-", "deepseek"},
+		{"llama-", "groq"},
+		{"mistral", "mistral"},
 	}
-	for prefix, provider := range prefixes {
-		if len(modelID) >= len(prefix) && modelID[:len(prefix)] == prefix {
-			return provider
+	for _, e := range prefixes {
+		if len(modelID) >= len(e.prefix) && modelID[:len(e.prefix)] == e.prefix {
+			return e.provider
 		}
 	}
 	return ""

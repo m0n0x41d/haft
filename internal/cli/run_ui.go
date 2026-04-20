@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,7 +107,11 @@ func (r *plainRenderer) Run(events <-chan RunEvent) {
 // spawnAgent launches an agent subprocess. When no writer is provided (or nil),
 // stdout pipes to os.Stdout (plain-text mode). When a writer is provided, stdout
 // pipes to it and claude receives --output-format stream-json for JSONL capture.
-func spawnAgent(agent, prompt, projectRoot string, capture ...io.Writer) error {
+//
+// `ctx` is used via exec.CommandContext so canceling it (e.g. from the TUI's
+// quit handler) sends SIGKILL to the agent; otherwise `q`/`Ctrl+C` in the
+// TUI would block on cmd.Wait until the agent finished on its own.
+func spawnAgent(ctx context.Context, agent, prompt, projectRoot string, capture ...io.Writer) error {
 	var w io.Writer
 	if len(capture) > 0 {
 		w = capture[0]
@@ -115,13 +120,13 @@ func spawnAgent(agent, prompt, projectRoot string, capture ...io.Writer) error {
 	var cmd *exec.Cmd
 	switch agent {
 	case "codex":
-		cmd = exec.Command("codex", "exec", "--full-auto", "-c", "mcp_servers={}", "-")
+		cmd = exec.CommandContext(ctx, "codex", "exec", "--full-auto", "-c", "mcp_servers={}", "-")
 	case "claude":
 		args := []string{"-p", prompt, "--allowedTools", "Edit,Write,Bash,Read,Glob,Grep"}
 		if w != nil {
 			args = append(args, "--output-format", "stream-json")
 		}
-		cmd = exec.Command("claude", args...)
+		cmd = exec.CommandContext(ctx, "claude", args...)
 	default:
 		return fmt.Errorf("unknown agent: %s", agent)
 	}

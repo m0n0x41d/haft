@@ -64,7 +64,13 @@ func init() {
 }
 
 func runImplement(cmd *cobra.Command, args []string) error {
-	useTUI = isatty.IsTerminal(os.Stdout.Fd()) && !implementNoTUI
+	// TUI swallows stdin, which kills the interactive checkpoint prompts
+	// (`Proceed? [Y/n]`, `Execute?`, per-task `Run this task?`). If the
+	// user has not asked for `--auto`, fall back to plain-text rendering
+	// even on a TTY so the prompts actually reach the user. Running with
+	// `--auto` is the only path where TUI is safe because there are no
+	// prompts to display.
+	useTUI = isatty.IsTerminal(os.Stdout.Fd()) && !implementNoTUI && implementAuto
 
 	decisionRef := args[0]
 	ctx, cancel := context.WithCancel(context.Background())
@@ -136,7 +142,7 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		allInvariants = uniqueStrings(allInvariants)
 
 		// ── Header ───────────────────────────────────────────────────
-		auto := implementAuto || useTUI
+		auto := implementAuto
 		mode := "interactive"
 		if auto {
 			mode = "auto"
@@ -178,7 +184,7 @@ func runImplement(cmd *cobra.Command, args []string) error {
 			}
 			emitPlanLoaded(ev, plan)
 		} else {
-			plan, err = generatePlan(decision, affectedFiles, allInvariants, projectRoot, implementAgent, tc, implementContext, implementPrompt, ev)
+			plan, err = generatePlan(ctx, decision, affectedFiles, allInvariants, projectRoot, implementAgent, tc, implementContext, implementPrompt, ev)
 			if err != nil {
 				return fmt.Errorf("plan generation: %w", err)
 			}
@@ -300,9 +306,9 @@ func emitPlanLoaded(ev *EventSender, plan *executionPlan) {
 
 // spawnAgentWithEvents runs an agent, routing output through events when TUI mode is active.
 // In plain-text mode, agent stdout goes directly to the terminal.
-func spawnAgentWithEvents(agent, prompt, projectRoot string, ev *EventSender) error {
+func spawnAgentWithEvents(ctx context.Context, agent, prompt, projectRoot string, ev *EventSender) error {
 	if !useTUI {
-		return spawnAgent(agent, prompt, projectRoot)
+		return spawnAgent(ctx, agent, prompt, projectRoot)
 	}
 
 	pr, pw := io.Pipe()
@@ -311,7 +317,7 @@ func spawnAgentWithEvents(agent, prompt, projectRoot string, ev *EventSender) er
 		parseAgentJSONL(pr, ev)
 		close(done)
 	}()
-	err := spawnAgent(agent, prompt, projectRoot, pw)
+	err := spawnAgent(ctx, agent, prompt, projectRoot, pw)
 	_ = pw.Close()
 	<-done
 	return err

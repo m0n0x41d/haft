@@ -36,6 +36,7 @@ func planFilePath(haftDir, decisionRef string) string {
 
 // generatePlan spawns a planning agent to decompose a decision into tasks.
 func generatePlan(
+	ctx context.Context,
 	decision *artifact.Artifact,
 	files []artifact.AffectedFile,
 	invariants []string,
@@ -58,7 +59,7 @@ func generatePlan(
 	ev.Meta("Plan path", planPath)
 
 	// Run planning agent
-	if err := spawnAgentWithEvents(agent, prompt, projectRoot, ev); err != nil {
+	if err := spawnAgentWithEvents(ctx, agent, prompt, projectRoot, ev); err != nil {
 		return nil, fmt.Errorf("planning agent failed: %w", err)
 	}
 
@@ -247,7 +248,7 @@ func executePlan(
 
 		// Execute
 		start := time.Now()
-		if err := spawnAgentWithEvents(agent, prompt, projectRoot, ev); err != nil {
+		if err := spawnAgentWithEvents(ctx, agent, prompt, projectRoot, ev); err != nil {
 			elapsed := time.Since(start)
 			task.status = "failed"
 			ev.TaskStatus(task.id, task.title, TaskFailed, elapsed, err.Error())
@@ -278,7 +279,7 @@ func executePlan(
 				"The build is broken after implementing task %s (%s). Fix the compilation errors.\n%s\n",
 				task.id, task.title, tc.verifyHint,
 			)
-			_ = spawnAgentWithEvents(agent, fixPrompt, projectRoot, ev)
+			_ = spawnAgentWithEvents(ctx, agent, fixPrompt, projectRoot, ev)
 
 			if !runBuildCheck(tc, projectRoot, ev) {
 				ev.Fail("Build still broken after fix attempt")
@@ -458,7 +459,7 @@ func finalReview(
 			_, _ = fixPrompt.WriteString(fmt.Sprintf("\nFix all issues. %s\n", tc.verifyHint))
 
 			ev.Phase("Fix Agent")
-			_ = spawnAgentWithEvents(agent, fixPrompt.String(), projectRoot, ev)
+			_ = spawnAgentWithEvents(ctx, agent, fixPrompt.String(), projectRoot, ev)
 
 			// Re-check
 			return finalReview(ctx, decisionRef, graphStore, artStore, projectRoot, agent, auto, tc, ev)

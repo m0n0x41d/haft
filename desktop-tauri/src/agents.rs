@@ -462,32 +462,48 @@ pub fn run_flow_now(
 /// Spawn a sibling task with the same project context but a different agent
 /// and a handoff-framed prompt. Used when the user wants a second agent to
 /// continue an in-flight or finished task.
+///
+/// Looks up the source task in the in-memory AgentManager first (fast path
+/// for live tasks), then falls back to the persisted `desktop_tasks` row
+/// via HaftDb — completed or restart-restored tasks aren't in the manager,
+/// and the Tasks UI surfaces a handoff action for them too.
 #[tauri::command]
 pub fn handoff_task(
     app: AppHandle,
     manager: State<'_, AgentManagerState>,
     env_state: State<'_, ShellEnvState>,
+    db_state: State<'_, crate::commands_read::DbState>,
     id: String,
     agent: String,
 ) -> Result<serde_json::Value, String> {
-    let source = {
+    let (title, prompt, project_name, project_path) = {
         let mgr = manager.0.lock().map_err(|e| e.to_string())?;
-        mgr.tasks
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| format!("task not found: {id}"))?
+        if let Some(task) = mgr.tasks.get(&id).cloned() {
+            (
+                task.title.clone(),
+                task.prompt.clone(),
+                task.project_name.clone(),
+                task.project_path.clone(),
+            )
+        } else {
+            drop(mgr);
+            let db = db_state.0.lock().map_err(|e| e.to_string())?;
+            let row = db
+                .get_task(&id)
+                .map_err(|e| format!("task not found (in-memory or persisted) for {id}: {e}"))?;
+            (row.title, row.prompt, row.project, row.project_path)
+        }
     };
-    let title = source.title.clone();
-    let prompt = format!("Handoff for {title}\n\n{}", source.prompt);
+    let handoff_prompt = format!("Handoff for {title}\n\n{prompt}");
     spawn_pty_task(
         &app,
         &manager,
         &env_state,
         SpawnAgentRequest {
             agent,
-            prompt,
-            project_name: source.project_name.clone(),
-            project_path: source.project_path.clone(),
+            prompt: handoff_prompt,
+            project_name,
+            project_path,
             title: format!("handoff: {title}"),
         },
     )

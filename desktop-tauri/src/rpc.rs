@@ -47,7 +47,19 @@ pub fn call_rpc(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if let Some(root) = project_root {
+    // Decide which project root the subprocess should use.
+    //
+    // Caller-supplied `project_root` wins (multi-project routing).
+    // Otherwise we look up the active project in
+    // `~/.haft/desktop-projects.json` — that's what `switch_project` writes
+    // when the user changes projects. Without this, the subprocess inherits
+    // the stale `HAFT_PROJECT_ROOT` set at Tauri launch time, and mutations
+    // after a project switch silently land in the previously-active repo.
+    let resolved_root = match project_root {
+        Some(r) if !r.is_empty() => Some(r.to_string()),
+        _ => resolve_active_project_root(),
+    };
+    if let Some(root) = resolved_root {
         builder.env("HAFT_PROJECT_ROOT", root);
     }
 
@@ -125,4 +137,23 @@ pub fn call_rpc(
     }
 
     Ok(envelope.data.unwrap_or(serde_json::Value::Null))
+}
+
+/// Read `active_path` out of `~/.haft/desktop-projects.json`. Returns
+/// `None` if the registry is missing, unparseable, lacks `active_path`, or
+/// the listed path no longer has a `.haft/project.yaml`. Keeps the RPC
+/// subprocess pointed at whatever project the user last switched to.
+fn resolve_active_project_root() -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let registry_path = format!("{home}/.haft/desktop-projects.json");
+    let content = std::fs::read_to_string(&registry_path).ok()?;
+    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let active = val.get("active_path")?.as_str()?.trim().to_string();
+    if active.is_empty() {
+        return None;
+    }
+    if !std::path::Path::new(&active).join(".haft/project.yaml").exists() {
+        return None;
+    }
+    Some(active)
 }

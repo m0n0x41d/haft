@@ -185,6 +185,7 @@ func init() {
 		// Agents & external
 		makeRPCCommand("detect-agents", "Detect installed coding agents", handleDetectAgents),
 		makeRPCCommand("create-pull-request", "Create a pull request from a decision branch", handleCreatePullRequest),
+		makeRPCCommand("persist-task", "Persist a desktop agent task snapshot", handlePersistTask),
 	)
 
 	rootCmd.AddCommand(desktopRPCCmd)

@@ -1077,3 +1077,87 @@ func rpcSaveRegistry(reg *rpcProjectRegistry) error {
 	}
 	return os.WriteFile(path, data, 0o644)
 }
+
+// handlePersistTask UPSERTs a RunningTask snapshot from the Rust desktop
+// agent into `desktop_tasks`. Called fire-and-forget by the Tauri side on
+// every status change / output flush; failures on this RPC are non-fatal
+// on the caller side (state stays in-memory) but do drop persistence, so
+// surface any DB error to stderr for diagnosis.
+func handlePersistTask(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		ID             string `json:"id"`
+		ProjectName    string `json:"project_name"`
+		ProjectPath    string `json:"project_path"`
+		Title          string `json:"title"`
+		Agent          string `json:"agent"`
+		Status         string `json:"status"`
+		Prompt         string `json:"prompt"`
+		Branch         string `json:"branch"`
+		Worktree       bool   `json:"worktree"`
+		WorktreePath   string `json:"worktree_path"`
+		ReusedWorktree bool   `json:"reused_worktree"`
+		ErrorMessage   string `json:"error_message"`
+		OutputTail     string `json:"output_tail"`
+		ChatBlocksJSON string `json:"chat_blocks_json"`
+		RawOutput      string `json:"raw_output"`
+		StartedAt      string `json:"started_at"`
+		CompletedAt    string `json:"completed_at"`
+		UpdatedAt      string `json:"updated_at"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+	if strings.TrimSpace(input.ID) == "" {
+		return fmt.Errorf("task id is required")
+	}
+
+	var completedAt any
+	if strings.TrimSpace(input.CompletedAt) == "" {
+		completedAt = nil
+	} else {
+		completedAt = input.CompletedAt
+	}
+	if strings.TrimSpace(input.ChatBlocksJSON) == "" {
+		input.ChatBlocksJSON = "[]"
+	}
+
+	_, err := env.rawDB.ExecContext(env.ctx,
+		`INSERT INTO desktop_tasks (
+			id, project_name, project_path, title, agent, status, prompt,
+			branch, worktree, worktree_path, reused_worktree, error_message,
+			output_tail, chat_blocks_json, raw_output,
+			started_at, completed_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			project_name=excluded.project_name,
+			project_path=excluded.project_path,
+			title=excluded.title,
+			agent=excluded.agent,
+			status=excluded.status,
+			prompt=excluded.prompt,
+			branch=excluded.branch,
+			worktree=excluded.worktree,
+			worktree_path=excluded.worktree_path,
+			reused_worktree=excluded.reused_worktree,
+			error_message=excluded.error_message,
+			output_tail=excluded.output_tail,
+			chat_blocks_json=excluded.chat_blocks_json,
+			raw_output=excluded.raw_output,
+			completed_at=excluded.completed_at,
+			updated_at=excluded.updated_at`,
+		input.ID, input.ProjectName, input.ProjectPath, input.Title,
+		input.Agent, input.Status, input.Prompt,
+		input.Branch, rpcBoolToInt(input.Worktree), input.WorktreePath,
+		rpcBoolToInt(input.ReusedWorktree), input.ErrorMessage,
+		input.OutputTail, input.ChatBlocksJSON, input.RawOutput,
+		input.StartedAt, completedAt, input.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("persist task: %w", err)
+	}
+
+	return writeResult(w, map[string]any{
+		"id":     input.ID,
+		"status": input.Status,
+	})
+}

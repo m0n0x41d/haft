@@ -38,6 +38,7 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(DbState(Mutex::new(db)))
         .manage(WatcherState(Mutex::new(None)))
         .manage(ShellEnvState(Mutex::new(shell_env)))
@@ -59,6 +60,8 @@ pub fn run() {
             commands_read::set_task_auto_run,
             commands_read::list_projects,
             commands_read::scan_for_projects,
+            commands_read::open_directory_picker,
+            commands_read::open_path_in_ide,
             commands_read::search_artifacts,
             commands_read::get_config,
             commands_read::save_config,

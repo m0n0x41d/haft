@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::db::HaftDb;
 use crate::models::*;
@@ -234,6 +235,39 @@ pub fn save_config(
         .map_err(|e| format!("write config: {e}"))?;
 
     Ok(config)
+}
+
+/// Open a native directory picker. Resolves to the chosen path, or an empty
+/// string if the user cancels. Used by the Add-Project modal.
+#[tauri::command]
+pub async fn open_directory_picker(app: tauri::AppHandle) -> Result<String, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let _ = tx.send(folder.map(|f| f.to_string()).unwrap_or_default());
+    });
+    rx.recv().map_err(|e| format!("dialog channel: {e}"))
+}
+
+/// Launch the user's configured IDE at the given path. Falls back through a
+/// small list of known launchers until one succeeds (`cursor`, `code`,
+/// `idea`, `subl`). Errors when no launcher is on PATH so the UI can report
+/// back to the user; a silent `Ok(())` would hide the miss.
+#[tauri::command]
+pub fn open_path_in_ide(path: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("path is empty".into());
+    }
+    let candidates = ["cursor", "code", "idea", "subl"];
+    let mut last_err = String::from("no IDE launcher found on PATH");
+    for cmd in candidates {
+        match std::process::Command::new(cmd).arg(&path).spawn() {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_err = format!("{cmd}: {e}");
+            }
+        }
+    }
+    Err(last_err)
 }
 
 /// Walk common project-holding directories (`~/Projects`, `~/Repos`,

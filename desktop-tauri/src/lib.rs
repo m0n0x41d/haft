@@ -86,7 +86,7 @@ pub fn run() {
             commands_mutate::update_flow,
             commands_mutate::toggle_flow,
             commands_mutate::delete_flow,
-            commands_mutate::run_flow_now,
+            agents::run_flow_now,
             commands_mutate::switch_project,
             commands_mutate::add_project,
             commands_mutate::add_project_smart,

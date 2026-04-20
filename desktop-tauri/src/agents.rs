@@ -427,6 +427,38 @@ pub fn write_task_input(
     Ok(())
 }
 
+/// Run a flow on demand — loads the flow record, bumps `last_run_at`, and
+/// launches a real PTY task with the flow's agent/prompt/project. The Go
+/// side's `run-flow-now` RPC only marked the timestamp and never spawned,
+/// so clicking "Run now" from the Jobs page was a silent no-op.
+#[tauri::command]
+pub fn run_flow_now(
+    app: AppHandle,
+    manager: State<'_, AgentManagerState>,
+    env_state: State<'_, ShellEnvState>,
+    db_state: State<'_, crate::commands_read::DbState>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    let (agent, prompt, project_name, project_path) = {
+        let db = db_state.0.lock().map_err(|e| e.to_string())?;
+        let flow = db.get_flow(&id).map_err(|e| format!("load flow {id}: {e}"))?;
+        db.mark_flow_run(&id).map_err(|e| e.to_string())?;
+        (flow.agent, flow.prompt, flow.project_name, flow.project_path)
+    };
+    spawn_pty_task(
+        &app,
+        &manager,
+        &env_state,
+        SpawnAgentRequest {
+            agent,
+            prompt,
+            project_name,
+            project_path,
+            title: format!("flow: {id}"),
+        },
+    )
+}
+
 /// Spawn a sibling task with the same project context but a different agent
 /// and a handoff-framed prompt. Used when the user wants a second agent to
 /// continue an in-flight or finished task.

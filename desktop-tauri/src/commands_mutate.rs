@@ -207,7 +207,8 @@ rpc_fwd_input!(create_flow, "create-flow");
 rpc_fwd_input!(update_flow, "update-flow");
 rpc_fwd!(toggle_flow, "toggle-flow", { id: String, enabled: bool });
 rpc_fwd!(delete_flow, "delete-flow", { id: String });
-rpc_fwd!(run_flow_now, "run-flow-now", { id: String });
+// run_flow_now lives in agents.rs because it needs the shared PTY spawn
+// helper + AgentManagerState + ShellEnvState to actually launch the task.
 
 // ── Governance & analysis ──
 

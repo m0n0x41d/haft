@@ -238,13 +238,15 @@ pub struct HaftDb {
 pub type Result<T> = std::result::Result<T, rusqlite::Error>;
 
 impl HaftDb {
-    /// Open haft.db read-only with WAL mode and busy_timeout=5000ms.
-    /// WAL is set by the Go writer; read-only connections participate automatically.
+    /// Open haft.db read-write with WAL mode and busy_timeout=5000ms.
+    /// The Go writer still runs concurrently; SQLite's WAL + busy_timeout
+    /// coordinates the two. A handful of desktop-side Tauri commands
+    /// (`archive_task`, `set_task_auto_run`, flow persistence) issue UPDATEs
+    /// directly against this handle, so read-only would reject them.
     pub fn open(path: &str) -> Result<Self> {
-        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = Connection::open_with_flags(path, flags)?;
         conn.pragma_update(None, "busy_timeout", 5000)?;
-        // Attempt WAL — may be no-op on read-only, Go writer is authoritative.
         let _: std::result::Result<String, _> =
             conn.query_row("PRAGMA journal_mode=wal", [], |row| row.get(0));
         Ok(Self { conn })
@@ -762,6 +764,33 @@ impl HaftDb {
 
     pub fn list_flow_templates(&self) -> Vec<FlowTemplateView> {
         default_flow_templates()
+    }
+
+    /// Load a single flow by id. Used by `run_flow_now` on the Tauri side
+    /// to translate a flow record into a spawn request.
+    pub fn get_flow(&self, id: &str) -> Result<FlowView> {
+        self.conn.query_row(
+            "SELECT id, project_name, project_path, title, description, template_id,
+                    agent, prompt, schedule, branch, use_worktree, enabled,
+                    last_task_id, COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
+                    last_error, created_at, updated_at
+             FROM desktop_flows
+             WHERE id = ?1",
+            params![id],
+            |row| Ok(flow_from_row(row)),
+        )
+    }
+
+    /// Update `last_run_at` / `updated_at` when a flow is manually triggered.
+    /// Separate from flow mutation so the Tauri-side run path can persist
+    /// "I launched this" without waiting on a full spawn round-trip.
+    pub fn mark_flow_run(&self, id: &str) -> Result<()> {
+        let now = now_unix_ts();
+        self.conn.execute(
+            "UPDATE desktop_flows SET last_run_at = ?1, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
     }
 
     // ─── Private helpers ───

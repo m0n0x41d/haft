@@ -1263,23 +1263,6 @@ function compactList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
-function taskPromptMetaValue(prompt: string, label: string): string {
-  const prefix = `${label.trim()}:`;
-  const lines = prompt.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    if (!trimmed.startsWith(prefix)) {
-      continue;
-    }
-
-    return trimmed.slice(prefix.length).trim();
-  }
-
-  return "";
-}
-
 // --- Public API ---
 
 export async function getDashboard(): Promise<DashboardData> {

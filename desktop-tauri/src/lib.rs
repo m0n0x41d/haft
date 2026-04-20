@@ -58,6 +58,7 @@ pub fn run() {
             commands_read::archive_task,
             commands_read::set_task_auto_run,
             commands_read::list_projects,
+            commands_read::scan_for_projects,
             commands_read::search_artifacts,
             commands_read::get_config,
             commands_read::save_config,
@@ -189,11 +190,23 @@ fn resolve_project_root() -> Option<String> {
     }
 
     // 3. Registry fallback — read ~/.haft/desktop-projects.json
+    //
+    // Prefer the registry's `active_path` so a user who last switched to
+    // project B doesn't get silently reopened to project A just because A
+    // is listed first. `handleSwitchProject` writes `active_path` on every
+    // switch; `list_projects` reads it to compute the `is_active` flag.
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let registry_path = format!("{home}/.haft/desktop-projects.json");
     if let Ok(content) = std::fs::read_to_string(&registry_path) {
-        // Simple JSON parse: find first "path": "..." value
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(active) = val.get("active_path").and_then(|v| v.as_str()) {
+                let trimmed = active.trim();
+                if !trimmed.is_empty()
+                    && std::path::Path::new(trimmed).join(".haft/project.yaml").exists()
+                {
+                    return Some(trimmed.to_string());
+                }
+            }
             if let Some(projects) = val.get("projects").and_then(|p| p.as_array()) {
                 for project in projects {
                     if let Some(path) = project.get("path").and_then(|p| p.as_str()) {

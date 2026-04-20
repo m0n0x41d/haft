@@ -236,6 +236,90 @@ pub fn save_config(
     Ok(config)
 }
 
+/// Walk common project-holding directories (`~/Projects`, `~/Repos`,
+/// `~/Documents`, `~/Developer`) and return any folder that contains a
+/// `.haft/project.yaml`. Depth is capped at 3 so deep `node_modules`-style
+/// trees don't blow the walk time. Called from the New Project modal and
+/// Settings → Project scanner during mount.
+#[tauri::command]
+pub fn scan_for_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let candidates = [
+        format!("{home}/Projects"),
+        format!("{home}/Repos"),
+        format!("{home}/Documents"),
+        format!("{home}/Developer"),
+    ];
+
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    for root in &candidates {
+        if !std::path::Path::new(root).is_dir() {
+            continue;
+        }
+        walk_for_haft_projects(std::path::Path::new(root), 0, 3, &mut out, &mut seen);
+    }
+    Ok(out)
+}
+
+fn walk_for_haft_projects(
+    dir: &std::path::Path,
+    depth: usize,
+    max_depth: usize,
+    out: &mut Vec<ProjectInfo>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    if depth > max_depth {
+        return;
+    }
+    let project_yaml = dir.join(".haft/project.yaml");
+    if project_yaml.exists() {
+        let path = dir.to_string_lossy().to_string();
+        if !seen.contains(&path) {
+            seen.insert(path.clone());
+            let name = dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            out.push(ProjectInfo {
+                path,
+                name,
+                id: String::new(),
+                is_active: false,
+                problem_count: 0,
+                decision_count: 0,
+                stale_count: 0,
+            });
+        }
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // Skip common churn dirs that can't contain a haft project.
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            if matches!(
+                name,
+                "node_modules" | ".git" | "target" | "dist" | "build" | ".next" | "vendor"
+            ) {
+                continue;
+            }
+            if name.starts_with('.') && name != ".haft" {
+                continue;
+            }
+        }
+        walk_for_haft_projects(&path, depth + 1, max_depth, out, seen);
+    }
+}
+
+
 // ─── Flows ───
 
 #[tauri::command]

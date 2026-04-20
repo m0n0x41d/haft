@@ -34,10 +34,30 @@ struct TerminalExitEvent {
 
 struct TerminalSession {
     id: String,
+    title: String,
+    project_path: String,
+    cwd: String,
+    shell: String,
+    created_at: String,
+    updated_at: Mutex<String>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Option<Box<dyn portable_pty::Child + Send>>>,
     closed: AtomicBool,
+}
+
+/// Frontend-visible view of a terminal session (matches `TerminalSession`
+/// in `desktop/frontend/src/lib/api.ts`). Emitted on create and list.
+#[derive(Clone, Serialize)]
+pub struct TerminalSessionView {
+    pub id: String,
+    pub title: String,
+    pub project_path: String,
+    pub cwd: String,
+    pub shell: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 // ─── Managed state ───
@@ -88,7 +108,7 @@ pub fn create_terminal_session(
     manager: State<'_, TerminalManagerState>,
     env_state: State<'_, ShellEnvState>,
     request: CreateTerminalRequest,
-) -> Result<String, String> {
+) -> Result<TerminalSessionView, String> {
     let shell_env = env_state
         .0
         .lock()
@@ -145,9 +165,25 @@ pub fn create_terminal_session(
 
     let mut mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let session_id = mgr.next_id();
+    let created_at = now_rfc3339();
+    let title = if request.cwd.is_empty() {
+        shell.clone()
+    } else {
+        std::path::Path::new(&request.cwd)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&shell)
+            .to_string()
+    };
 
     let session = Arc::new(TerminalSession {
         id: session_id.clone(),
+        title: title.clone(),
+        project_path: request.cwd.clone(),
+        cwd: request.cwd.clone(),
+        shell: shell.clone(),
+        created_at: created_at.clone(),
+        updated_at: Mutex::new(created_at.clone()),
         master: Mutex::new(pair.master),
         writer: Mutex::new(writer),
         child: Mutex::new(Some(child)),
@@ -167,25 +203,35 @@ pub fn create_terminal_session(
     let session_wait = Arc::clone(&session);
     thread::spawn(move || terminal_wait_loop(app_wait, session_wait));
 
-    Ok(session_id)
+    Ok(session_view(&session))
 }
 
 #[tauri::command]
+pub fn list_terminal_sessions(
+    manager: State<'_, TerminalManagerState>,
+) -> Result<Vec<TerminalSessionView>, String> {
+    let mgr = manager.0.lock().map_err(|e| e.to_string())?;
+    Ok(mgr.sessions.values().map(|s| session_view(s)).collect())
+}
+
+/// Frontend sends `id` (the session identifier) — not `session_id`. Matching
+/// the Rust parameter name to the JSON key is what Tauri v2 binds against.
+#[tauri::command]
 pub fn write_terminal_input(
     manager: State<'_, TerminalManagerState>,
-    session_id: String,
+    id: String,
     data: String,
 ) -> Result<(), String> {
     let mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let session = mgr
         .sessions
-        .get(&session_id)
+        .get(&id)
         .cloned()
-        .ok_or_else(|| format!("terminal session not found: {session_id}"))?;
+        .ok_or_else(|| format!("terminal session not found: {id}"))?;
     drop(mgr);
 
     if session.closed.load(Ordering::SeqCst) {
-        return Err(format!("terminal session closed: {session_id}"));
+        return Err(format!("terminal session closed: {id}"));
     }
 
     let mut writer = session.writer.lock().map_err(|e| e.to_string())?;
@@ -199,20 +245,20 @@ pub fn write_terminal_input(
 #[tauri::command]
 pub fn resize_terminal_session(
     manager: State<'_, TerminalManagerState>,
-    session_id: String,
+    id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
     let mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let session = mgr
         .sessions
-        .get(&session_id)
+        .get(&id)
         .cloned()
-        .ok_or_else(|| format!("terminal session not found: {session_id}"))?;
+        .ok_or_else(|| format!("terminal session not found: {id}"))?;
     drop(mgr);
 
     if session.closed.load(Ordering::SeqCst) {
-        return Err(format!("terminal session closed: {session_id}"));
+        return Err(format!("terminal session closed: {id}"));
     }
 
     let master = session.master.lock().map_err(|e| e.to_string())?;
@@ -232,14 +278,14 @@ pub fn resize_terminal_session(
 pub fn close_terminal_session(
     app: AppHandle,
     manager: State<'_, TerminalManagerState>,
-    session_id: String,
+    id: String,
 ) -> Result<(), String> {
     let mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let session = mgr
         .sessions
-        .get(&session_id)
+        .get(&id)
         .cloned()
-        .ok_or_else(|| format!("terminal session not found: {session_id}"))?;
+        .ok_or_else(|| format!("terminal session not found: {id}"))?;
     drop(mgr);
 
     kill_session(&session);
@@ -247,16 +293,49 @@ pub fn close_terminal_session(
     let _ = app.emit(
         "terminal.exit",
         TerminalExitEvent {
-            session_id: session_id.clone(),
+            session_id: id.clone(),
             exit_code: 0,
         },
     );
 
     // Remove from manager.
     let mut mgr = manager.0.lock().map_err(|e| e.to_string())?;
-    mgr.sessions.remove(&session_id);
+    mgr.sessions.remove(&id);
 
     Ok(())
+}
+
+fn session_view(session: &TerminalSession) -> TerminalSessionView {
+    let status = if session.closed.load(Ordering::SeqCst) {
+        "closed".to_string()
+    } else {
+        "running".to_string()
+    };
+    let updated_at = session
+        .updated_at
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| session.created_at.clone());
+    TerminalSessionView {
+        id: session.id.clone(),
+        title: session.title.clone(),
+        project_path: session.project_path.clone(),
+        cwd: session.cwd.clone(),
+        shell: session.shell.clone(),
+        status,
+        created_at: session.created_at.clone(),
+        updated_at,
+    }
+}
+
+fn now_rfc3339() -> String {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // Approximate RFC3339: seconds-since-epoch encoded as UTC. Frontend only
+    // needs a lexicographically stable string, not a parseable date.
+    format!("t{ts}")
 }
 
 // ─── Internal ───

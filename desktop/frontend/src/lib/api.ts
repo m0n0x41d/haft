@@ -2388,8 +2388,15 @@ export async function implementDecision(
   return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
 }
 
-export async function createPullRequest(taskID: string): Promise<PullRequestResult> {
-  const result = await tauriInvoke<PullRequestResult>("create_pull_request", { task_id: taskID });
+export async function createPullRequest(
+  taskID: string,
+  decisionRef: string,
+  branch: string,
+): Promise<PullRequestResult> {
+  const result = await tauriInvoke<PullRequestResult>("create_pull_request", {
+    decision_ref: decisionRef,
+    branch,
+  });
   if (result) return result;
 
   const task = mockTasks.find((item) => item.id === taskID);
@@ -2397,12 +2404,10 @@ export async function createPullRequest(taskID: string): Promise<PullRequestResu
     throw new Error(`Task ${taskID} not found`);
   }
 
-  const decisionRef = taskPromptMetaValue(task.prompt, "Decision ID");
-
   return {
     task_id: task.id,
     decision_ref: decisionRef,
-    branch: task.branch,
+    branch,
     title: task.title,
     body: `## Summary\n\n- Decision: ${decisionRef || "unknown"}\n- Task: ${task.id}`,
     url: "",

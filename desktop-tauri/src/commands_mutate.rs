@@ -69,6 +69,28 @@ macro_rules! rpc_fwd_input {
     };
 }
 
+/// Like `rpc_fwd!`, but each field specifies an explicit JSON key used in the
+/// payload sent to the Go handler. Needed whenever the frontend-side field
+/// name diverges from the Go-side JSON tag — e.g. historical frontend code
+/// sends `decision_id` but `internal/cli/desktop_rpc_handlers.go` reads
+/// `decision_ref` (and `artifact_ref` for waive/deprecate). Every field must
+/// declare its rpc key, even if it happens to match the Rust identifier —
+/// explicit is easier to audit than mixed.
+macro_rules! rpc_fwd_renamed {
+    ($fn_name:ident, $rpc_cmd:expr, { $($field:ident as $key:literal : $ty:ty),* $(,)? }) => {
+        #[tauri::command]
+        pub fn $fn_name(
+            $($field: $ty,)*
+            project_root: Option<String>,
+        ) -> Result<Value, String> {
+            let payload = json!({
+                $($key: $field,)*
+            });
+            call_rpc($rpc_cmd, Some(payload), project_root.as_deref())
+        }
+    };
+}
+
 // ── Project management ──
 
 rpc_fwd!(switch_project, "switch-project", { path: String });
@@ -95,34 +117,73 @@ rpc_fwd_input!(compare_portfolio, "compare-portfolio");
 rpc_fwd_input!(characterize_problem, "characterize");
 
 // ── Decision lifecycle ──
+//
+// Frontend sends `decision_id` (historical name), but Go handlers read
+// `decision_ref` — translate via `rpc_fwd_renamed!`.
 
-rpc_fwd!(
+rpc_fwd_renamed!(
     implement_decision,
     "implement-decision",
     {
-        decision_id: String,
-        agent: String,
-        worktree: bool,
-        branch: String,
+        decision_id as "decision_ref": String,
+        agent as "agent": String,
+        worktree as "worktree": bool,
+        branch as "branch": String,
     }
 );
-rpc_fwd!(verify_decision, "verify-decision", { decision_id: String, agent: String });
-rpc_fwd!(baseline_decision, "baseline", { decision_id: String });
-rpc_fwd!(
+rpc_fwd_renamed!(
+    verify_decision,
+    "verify-decision",
+    {
+        decision_id as "decision_ref": String,
+        agent as "agent": String,
+    }
+);
+rpc_fwd_renamed!(
+    baseline_decision,
+    "baseline",
+    { decision_id as "decision_ref": String }
+);
+rpc_fwd_renamed!(
     measure_decision,
     "measure",
     {
-        decision_id: String,
-        findings: String,
-        verdict: String,
+        decision_id as "decision_ref": String,
+        findings as "findings": String,
+        verdict as "verdict": String,
     }
 );
 
 // ── Artifact lifecycle ──
+//
+// waive/deprecate operate on any artifact (not just decisions) and the Go
+// handler reads `artifact_ref`. reopen is decision-specific and reads
+// `decision_ref`. Frontend uniformly sends `decision_id` — translate.
 
-rpc_fwd!(waive_decision, "waive", { decision_id: String, reason: String });
-rpc_fwd!(deprecate_decision, "deprecate", { decision_id: String, reason: String });
-rpc_fwd!(reopen_decision, "reopen", { decision_id: String, reason: String });
+rpc_fwd_renamed!(
+    waive_decision,
+    "waive",
+    {
+        decision_id as "artifact_ref": String,
+        reason as "reason": String,
+    }
+);
+rpc_fwd_renamed!(
+    deprecate_decision,
+    "deprecate",
+    {
+        decision_id as "artifact_ref": String,
+        reason as "reason": String,
+    }
+);
+rpc_fwd_renamed!(
+    reopen_decision,
+    "reopen",
+    {
+        decision_id as "decision_ref": String,
+        reason as "reason": String,
+    }
+);
 
 // ── Problem candidates ──
 
@@ -156,5 +217,16 @@ rpc_query!(get_coverage, "get-coverage");
 rpc_query!(detect_agents, "detect-agents");
 
 // ── PR pipeline ──
+//
+// Go's `create-pull-request` handler reads `decision_ref` + `branch` (see
+// internal/cli/desktop_rpc_handlers.go handleCreatePullRequest). The
+// frontend derives both values from the selected task before calling.
 
-rpc_fwd!(create_pull_request, "create-pull-request", { task_id: String });
+rpc_fwd!(
+    create_pull_request,
+    "create-pull-request",
+    {
+        decision_ref: String,
+        branch: String,
+    }
+);

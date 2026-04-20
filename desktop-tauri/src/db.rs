@@ -1,9 +1,18 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OpenFlags, params};
 use serde::Deserialize;
 
 use crate::models::*;
+
+fn now_unix_ts() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("t{secs}")
+}
 
 // ─── Artifact kind constants (match Go's artifact.Kind values) ───
 
@@ -692,6 +701,28 @@ impl HaftDb {
 
         let rows = stmt.query_map([], |row| Ok(task_from_row(row)))?;
         rows.collect()
+    }
+
+    /// Soft-delete: sets `archived_at` timestamp so `list_tasks` hides the
+    /// row. Row stays on disk for audit — use an explicit purge if needed.
+    pub fn archive_task(&self, id: &str) -> Result<()> {
+        let now = now_unix_ts();
+        self.conn.execute(
+            "UPDATE desktop_tasks SET archived_at = ?1, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
+    /// Toggle the `auto_run` flag on a task row. `list_tasks` exposes the
+    /// flag as `auto_run: bool` in `TaskState`; the UI reads it per task.
+    pub fn set_task_auto_run(&self, id: &str, auto_run: bool) -> Result<()> {
+        let now = now_unix_ts();
+        self.conn.execute(
+            "UPDATE desktop_tasks SET auto_run = ?1, updated_at = ?2 WHERE id = ?3",
+            params![auto_run as i64, now, id],
+        )?;
+        Ok(())
     }
 
     // ─── Flows ───

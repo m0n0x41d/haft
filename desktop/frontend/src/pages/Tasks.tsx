@@ -517,7 +517,7 @@ export function Tasks({
         setTaskActionMessage("");
 
         try {
-          const result = await createPullRequest(task.id);
+          const result = await createPullRequest(task.id, decisionID, task.branch);
           setTaskActionMessage(buildPullRequestMessage(result));
         } finally {
           setResolutionAction("");

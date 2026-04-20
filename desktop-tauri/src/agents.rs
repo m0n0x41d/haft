@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -83,6 +83,10 @@ struct RunningTask {
     started_at: String,
     cancelled: AtomicBool,
     child: Mutex<Option<Box<dyn portable_pty::Child + Send>>>,
+    /// PTY master writer, retained so `write_task_input` can feed keystrokes
+    /// into an interactive agent. `None` when the writer was never taken
+    /// (should not happen for normal spawns) or the task has been finalized.
+    writer: Mutex<Option<Box<dyn Write + Send>>>,
 }
 
 struct OutputBuffer {
@@ -283,6 +287,7 @@ fn spawn_pty_task(
         started_at: started_at.clone(),
         cancelled: AtomicBool::new(false),
         child: Mutex::new(None),
+        writer: Mutex::new(None),
     });
 
     // Spawn PTY.
@@ -310,6 +315,14 @@ fn spawn_pty_task(
     );
     for (k, v) in &env_map {
         cmd.env(k, v);
+    }
+
+    // Retain a writer handle so `write_task_input` can feed keystrokes to
+    // interactive agents. If `take_writer` fails, the task still runs —
+    // input just silently drops.
+    if let Ok(writer) = pair.master.take_writer() {
+        let mut guard = task.writer.lock().map_err(|e| e.to_string())?;
+        *guard = Some(writer);
     }
 
     let child = pair
@@ -368,10 +381,95 @@ pub fn cancel_agent(
     manager: State<'_, AgentManagerState>,
     task_id: String,
 ) -> Result<(), String> {
+    cancel_running_task(&app, &manager, &task_id)
+}
+
+/// Frontend-side alias — sends `{ id }` to match the Tasks page convention.
+/// Delegates to the same cancellation path used by `cancel_agent`.
+#[tauri::command]
+pub fn cancel_task(
+    app: AppHandle,
+    manager: State<'_, AgentManagerState>,
+    id: String,
+) -> Result<(), String> {
+    cancel_running_task(&app, &manager, &id)
+}
+
+/// Feed `data` into a running task's PTY — the same channel the user would
+/// see on their own terminal. Used for interactive agents that prompt for
+/// input mid-run.
+#[tauri::command]
+pub fn write_task_input(
+    manager: State<'_, AgentManagerState>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
     let mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let task = mgr
         .tasks
-        .get(&task_id)
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| format!("task not found: {id}"))?;
+    drop(mgr);
+
+    if task.cancelled.load(Ordering::SeqCst) {
+        return Err(format!("task already cancelled: {id}"));
+    }
+
+    let mut guard = task.writer.lock().map_err(|e| e.to_string())?;
+    let writer = guard
+        .as_mut()
+        .ok_or_else(|| format!("task {id} has no attached writer"))?;
+    writer
+        .write_all(data.as_bytes())
+        .map_err(|e| format!("write to pty: {e}"))?;
+    writer.flush().ok();
+    Ok(())
+}
+
+/// Spawn a sibling task with the same project context but a different agent
+/// and a handoff-framed prompt. Used when the user wants a second agent to
+/// continue an in-flight or finished task.
+#[tauri::command]
+pub fn handoff_task(
+    app: AppHandle,
+    manager: State<'_, AgentManagerState>,
+    env_state: State<'_, ShellEnvState>,
+    id: String,
+    agent: String,
+) -> Result<serde_json::Value, String> {
+    let source = {
+        let mgr = manager.0.lock().map_err(|e| e.to_string())?;
+        mgr.tasks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("task not found: {id}"))?
+    };
+    let title = source.title.clone();
+    let prompt = format!("Handoff for {title}\n\n{}", source.prompt);
+    spawn_pty_task(
+        &app,
+        &manager,
+        &env_state,
+        SpawnAgentRequest {
+            agent,
+            prompt,
+            project_name: source.project_name.clone(),
+            project_path: source.project_path.clone(),
+            title: format!("handoff: {title}"),
+        },
+    )
+}
+
+fn cancel_running_task(
+    app: &AppHandle,
+    manager: &State<'_, AgentManagerState>,
+    task_id: &str,
+) -> Result<(), String> {
+    let mgr = manager.0.lock().map_err(|e| e.to_string())?;
+    let task = mgr
+        .tasks
+        .get(task_id)
         .cloned()
         .ok_or_else(|| format!("task not found: {task_id}"))?;
     drop(mgr);
@@ -411,7 +509,7 @@ pub fn cancel_agent(
     let _ = app.emit(
         "task.status",
         TaskStatusEvent {
-            id: task_id,
+            id: task_id.to_string(),
             status: "cancelled".into(),
             error_message: String::new(),
         },

@@ -93,6 +93,26 @@ pub fn list_all_tasks(state: State<'_, DbState>) -> Result<Vec<TaskState>, Strin
     db.list_all_tasks().map_err(|e| e.to_string())
 }
 
+/// Soft-delete a task row. Frontend's Jobs page calls this when the user
+/// removes a finished task from the list.
+#[tauri::command]
+pub fn archive_task(state: State<'_, DbState>, id: String) -> Result<(), String> {
+    let db = state.0.lock().map_err(|e| e.to_string())?;
+    db.archive_task(&id).map_err(|e| e.to_string())
+}
+
+/// Flip the `auto_run` flag on a task — used by the UI to toggle whether a
+/// finished task should auto-resume on restart.
+#[tauri::command]
+pub fn set_task_auto_run(
+    state: State<'_, DbState>,
+    id: String,
+    auto_run: bool,
+) -> Result<(), String> {
+    let db = state.0.lock().map_err(|e| e.to_string())?;
+    db.set_task_auto_run(&id, auto_run).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_task_output(state: State<'_, DbState>, id: String) -> Result<String, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;

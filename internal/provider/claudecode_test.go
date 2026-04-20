@@ -78,14 +78,14 @@ func TestRenderPartsIncludesToolCallsAndResults(t *testing.T) {
 
 func TestParseClaudeStreamExtractsTextDeltas(t *testing.T) {
 	stream := strings.Join([]string{
-		`{"type":"system","subtype":"init"}`,
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello "}]}}`,
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"world"}]}}`,
-		`{"type":"result","subtype":"success","is_error":false}`,
+		`{"type":"system","subtype":"init","session_id":"sess-123"}`,
+		`{"type":"assistant","session_id":"sess-123","message":{"role":"assistant","content":[{"type":"text","text":"Hello "}]}}`,
+		`{"type":"assistant","session_id":"sess-123","message":{"role":"assistant","content":[{"type":"text","text":"world"}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"session_id":"sess-123"}`,
 	}, "\n")
 
 	var deltas []string
-	text, reason, err := parseClaudeStream(strings.NewReader(stream), func(d StreamDelta) {
+	res, err := parseClaudeStream(strings.NewReader(stream), func(d StreamDelta) {
 		if d.Text != "" {
 			deltas = append(deltas, d.Text)
 		}
@@ -93,11 +93,14 @@ func TestParseClaudeStreamExtractsTextDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseClaudeStream: %v", err)
 	}
-	if text != "Hello world" {
-		t.Fatalf("concatenated text = %q, want %q", text, "Hello world")
+	if res.text != "Hello world" {
+		t.Fatalf("concatenated text = %q, want %q", res.text, "Hello world")
 	}
-	if reason != "stop" {
-		t.Fatalf("finish reason = %q, want stop", reason)
+	if res.finishReason != "stop" {
+		t.Fatalf("finish reason = %q, want stop", res.finishReason)
+	}
+	if res.sessionID != "sess-123" {
+		t.Fatalf("session id = %q, want sess-123", res.sessionID)
 	}
 	if got := strings.Join(deltas, "|"); got != "Hello |world" {
 		t.Fatalf("deltas = %q", got)
@@ -106,12 +109,12 @@ func TestParseClaudeStreamExtractsTextDeltas(t *testing.T) {
 
 func TestParseClaudeStreamHandlesErrorResult(t *testing.T) {
 	stream := `{"type":"result","subtype":"error_during_execution","is_error":true}`
-	_, reason, err := parseClaudeStream(strings.NewReader(stream), func(StreamDelta) {})
+	res, err := parseClaudeStream(strings.NewReader(stream), func(StreamDelta) {})
 	if err != nil {
 		t.Fatalf("parseClaudeStream: %v", err)
 	}
-	if reason != "error" {
-		t.Fatalf("finish reason = %q, want error", reason)
+	if res.finishReason != "error" {
+		t.Fatalf("finish reason = %q, want error", res.finishReason)
 	}
 }
 
@@ -122,43 +125,110 @@ func TestParseClaudeStreamSkipsMalformedLines(t *testing.T) {
 		``,
 		`{"type":"result","subtype":"success"}`,
 	}, "\n")
-	text, reason, err := parseClaudeStream(strings.NewReader(stream), func(StreamDelta) {})
+	res, err := parseClaudeStream(strings.NewReader(stream), func(StreamDelta) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if text != "ok" {
-		t.Fatalf("text = %q", text)
+	if res.text != "ok" {
+		t.Fatalf("text = %q", res.text)
 	}
-	if reason != "stop" {
-		t.Fatalf("reason = %q", reason)
+	if res.finishReason != "stop" {
+		t.Fatalf("reason = %q", res.finishReason)
 	}
 }
 
-func TestEnvWithoutStripsTargetKey(t *testing.T) {
-	env := []string{
-		"PATH=/usr/bin",
-		"ANTHROPIC_API_KEY=sk-leak",
-		"ANTHROPIC_API_KEY_BACKUP=keep",
-		"HOME=/root",
+func TestTakeResumeDecisionFreshOnFirstTurn(t *testing.T) {
+	p := &ClaudeCodeProvider{}
+	messages := []agent.Message{
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "hello"}}},
 	}
-	got := envWithout(env, "ANTHROPIC_API_KEY")
-	for _, e := range got {
-		if strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
-			t.Fatalf("envWithout kept target key: %v", got)
-		}
+	plan := p.takeResumeDecision(messages)
+	if plan.resume {
+		t.Fatalf("expected fresh turn on first call")
 	}
-	wantKeep := map[string]bool{
-		"PATH=/usr/bin":            true,
-		"ANTHROPIC_API_KEY_BACKUP=keep": true,
-		"HOME=/root":               true,
+	if plan.prompt == "" {
+		t.Fatalf("expected flattened prompt, got empty")
 	}
-	if len(got) != len(wantKeep) {
-		t.Fatalf("envWithout length = %d, want %d (%v)", len(got), len(wantKeep), got)
+}
+
+func TestTakeResumeDecisionContinues(t *testing.T) {
+	p := &ClaudeCodeProvider{sessionID: "sess-abc", msgsSent: 2}
+	messages := []agent.Message{
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "hi"}}},
+		{Role: agent.RoleAssistant, Parts: []agent.Part{agent.TextPart{Text: "yo"}}},
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "follow-up"}}},
 	}
-	for _, e := range got {
-		if !wantKeep[e] {
-			t.Fatalf("envWithout dropped unrelated entry: %q", e)
-		}
+	plan := p.takeResumeDecision(messages)
+	if !plan.resume {
+		t.Fatalf("expected resume plan")
+	}
+	if plan.sessionID != "sess-abc" {
+		t.Fatalf("sessionID = %q", plan.sessionID)
+	}
+	if plan.prompt != "follow-up" {
+		t.Fatalf("prompt = %q, want %q", plan.prompt, "follow-up")
+	}
+}
+
+func TestTakeResumeDecisionResetsOnGap(t *testing.T) {
+	p := &ClaudeCodeProvider{sessionID: "sess-abc", msgsSent: 2}
+	// Conversation jumped by 2 (not 1) since last turn — history was edited
+	// or branched. Fall back to fresh, clearing state.
+	messages := []agent.Message{
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "a"}}},
+		{Role: agent.RoleAssistant, Parts: []agent.Part{agent.TextPart{Text: "b"}}},
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "c"}}},
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "d"}}},
+	}
+	plan := p.takeResumeDecision(messages)
+	if plan.resume {
+		t.Fatalf("expected reset when conversation grew by >1")
+	}
+	if p.sessionID != "" || p.msgsSent != 0 {
+		t.Fatalf("state not reset: sessionID=%q msgsSent=%d", p.sessionID, p.msgsSent)
+	}
+}
+
+func TestTakeResumeDecisionResetsOnNonUserTail(t *testing.T) {
+	p := &ClaudeCodeProvider{sessionID: "sess-abc", msgsSent: 1}
+	messages := []agent.Message{
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "hi"}}},
+		{Role: agent.RoleTool, Parts: []agent.Part{agent.ToolResultPart{Content: "x"}}},
+	}
+	plan := p.takeResumeDecision(messages)
+	if plan.resume {
+		t.Fatalf("should not resume when tail is a tool-result message")
+	}
+}
+
+func TestTakeResumeDecisionHonorsEnvOptOut(t *testing.T) {
+	t.Setenv("HAFT_CLAUDECODE_NO_RESUME", "1")
+	p := &ClaudeCodeProvider{sessionID: "sess-abc", msgsSent: 2}
+	messages := []agent.Message{
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "a"}}},
+		{Role: agent.RoleAssistant, Parts: []agent.Part{agent.TextPart{Text: "b"}}},
+		{Role: agent.RoleUser, Parts: []agent.Part{agent.TextPart{Text: "c"}}},
+	}
+	plan := p.takeResumeDecision(messages)
+	if plan.resume {
+		t.Fatalf("HAFT_CLAUDECODE_NO_RESUME should force fresh turns")
+	}
+}
+
+func TestInvalidateAndRecordSession(t *testing.T) {
+	p := &ClaudeCodeProvider{}
+	p.recordTurnResult("sess-1", 3)
+	if p.sessionID != "sess-1" || p.msgsSent != 4 {
+		t.Fatalf("record: got (%q, %d)", p.sessionID, p.msgsSent)
+	}
+	// Empty new id preserves existing (CLI sometimes omits on retries).
+	p.recordTurnResult("", 5)
+	if p.sessionID != "sess-1" || p.msgsSent != 6 {
+		t.Fatalf("preserve: got (%q, %d)", p.sessionID, p.msgsSent)
+	}
+	p.invalidateSession()
+	if p.sessionID != "" || p.msgsSent != 0 {
+		t.Fatalf("invalidate: got (%q, %d)", p.sessionID, p.msgsSent)
 	}
 }
 

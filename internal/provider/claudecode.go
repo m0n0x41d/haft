@@ -36,9 +36,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/agent"
+	"github.com/m0n0x41d/haft/internal/envutil"
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -49,12 +51,21 @@ const claudeCodeBinary = "claude"
 // Paths that don't change during the process lifetime (haft binary, detected
 // project root, filtered child env) are resolved once at construction and
 // cached so every turn doesn't re-walk the filesystem or re-copy the env.
+//
+// The provider keeps a `session_id` from the CLI and forwards `--resume` on
+// turn 2+ so subsequent turns skip the ~5–10s `claude` + `haft serve` cold
+// spawn. Opt out with HAFT_CLAUDECODE_NO_RESUME=1 (behaves like the pre-
+// session-reuse implementation — every turn is fresh).
 type ClaudeCodeProvider struct {
 	modelID     string   // haft-facing model id (reported to the agent loop)
 	cliPath     string   // resolved `claude` binary
 	haftExe     string   // resolved current `haft` binary (for --mcp-config)
 	projectRoot string   // detected .haft/ root; "" when not in a haft project
 	childEnv    []string // cached env with ANTHROPIC_API_KEY stripped
+
+	mu        sync.Mutex // protects the session fields below
+	sessionID string     // CLI-issued; "" means no warm session yet
+	msgsSent  int        // count of messages haft had sent us at end of last successful turn
 }
 
 var _ LLMProvider = (*ClaudeCodeProvider)(nil)
@@ -89,7 +100,7 @@ func NewClaudeCode(modelID string) (*ClaudeCodeProvider, error) {
 		// subprocess we spawn is short-lived per turn, so a static snapshot
 		// is fine. Any env var *added* after construction will be missed —
 		// callers needing fresh env should rebuild the provider.
-		childEnv: envWithout(os.Environ(), "ANTHROPIC_API_KEY"),
+		childEnv: envutil.Strip(os.Environ(), "ANTHROPIC_API_KEY"),
 	}, nil
 }
 
@@ -106,6 +117,83 @@ func (p *ClaudeCodeProvider) cliSubModel() string {
 	return rest
 }
 
+// takeResumeDecision locks the mutex, inspects the incoming message list, and
+// returns the resume decision for this turn. On a valid resumable turn, it
+// returns the session id and the single user-text payload to forward. On any
+// mismatch (gap, edited history, tool turn, session-reuse disabled) it falls
+// back to a fresh turn and clears whatever state was tracked.
+type turnPlan struct {
+	resume    bool
+	sessionID string   // forwarded as --resume when resume is true
+	prompt    string   // stdin body
+	system    string   // --system-prompt payload (fresh turns only)
+}
+
+func (p *ClaudeCodeProvider) takeResumeDecision(messages []agent.Message) turnPlan {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	disabled := os.Getenv("HAFT_CLAUDECODE_NO_RESUME") != ""
+	last := lastUserMessage(messages)
+
+	// Conditions for a clean continuation:
+	//   - resume not disabled
+	//   - we have a session from the previous turn
+	//   - haft grew the conversation by exactly one message since last turn
+	//   - that new tail message is a user turn (we only forward user text)
+	if !disabled &&
+		p.sessionID != "" &&
+		len(messages) == p.msgsSent+1 &&
+		last != nil && last.Role == agent.RoleUser &&
+		last == &messages[len(messages)-1] {
+		return turnPlan{
+			resume:    true,
+			sessionID: p.sessionID,
+			prompt:    strings.TrimSpace(last.Text()),
+		}
+	}
+
+	// Fresh turn: drop any stale state; rebuild the full transcript.
+	p.sessionID = ""
+	p.msgsSent = 0
+	sys, body := flattenConversation(messages)
+	return turnPlan{system: sys, prompt: body}
+}
+
+// recordTurnResult is called after a successful turn; persists whatever
+// session id the CLI handed back and moves the message counter forward.
+// `consumedMsgs` is the length of the `messages` slice that was fed into
+// Stream; +1 accounts for the assistant response the caller will append.
+func (p *ClaudeCodeProvider) recordTurnResult(newSessionID string, consumedMsgs int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if newSessionID != "" {
+		p.sessionID = newSessionID
+	}
+	p.msgsSent = consumedMsgs + 1
+}
+
+// invalidateSession wipes tracking so the next turn will start fresh.
+// Used on any error so a stale session id doesn't keep failing turn after turn.
+func (p *ClaudeCodeProvider) invalidateSession() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sessionID = ""
+	p.msgsSent = 0
+}
+
+// lastUserMessage returns a pointer to the final RoleUser message in the
+// slice, or nil if there is none. Returning a pointer lets the caller assert
+// identity with the tail, catching the "last entry is assistant/tool" case.
+func lastUserMessage(messages []agent.Message) *agent.Message {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == agent.RoleUser {
+			return &messages[i]
+		}
+	}
+	return nil
+}
+
 // Stream sends the conversation to the CLI and emits text deltas.
 //
 // Tool schemas are currently ignored (see package docs). If the caller
@@ -117,13 +205,16 @@ func (p *ClaudeCodeProvider) Stream(
 	_ []agent.ToolSchema,
 	handler func(StreamDelta),
 ) (*agent.Message, error) {
-	system, prompt := flattenConversation(messages)
+	plan := p.takeResumeDecision(messages)
 
+	// Session persistence must stay on so --resume can find the session next
+	// turn. We never pass --no-session-persistence in either branch now;
+	// turn-freshness is controlled by whether we pass --resume, not by
+	// whether we persist.
 	args := []string{
 		"-p",
 		"--output-format", "stream-json",
-		"--verbose",                // required by CLI when using stream-json
-		"--no-session-persistence", // ephemeral turn
+		"--verbose", // required by CLI when using stream-json
 		"--input-format", "text",
 	}
 
@@ -153,13 +244,18 @@ func (p *ClaudeCodeProvider) Stream(
 	if sub := p.cliSubModel(); sub != "" {
 		args = append(args, "--model", sub)
 	}
-	if system != "" {
-		// Replace, don't append. Claude Code's default system prompt is ~30K
-		// tokens and would drown haft's FPF protocol instructions. Haft
-		// owns the prompt for this provider; if it wants CLI tool usage
-		// described, it can include that itself.
-		args = append(args, "--system-prompt", system)
+
+	if plan.resume {
+		// Warm-path: CLI already owns the transcript; forward only the new
+		// user message. The system prompt is whatever it was on turn 1.
+		args = append(args, "--resume", plan.sessionID)
+	} else if plan.system != "" {
+		// Cold-path: replace, don't append. Claude Code's default system
+		// prompt is ~30K tokens and would drown haft's FPF protocol
+		// instructions. Haft owns the prompt for this provider.
+		args = append(args, "--system-prompt", plan.system)
 	}
+	prompt := plan.prompt
 
 	cmd := exec.CommandContext(ctx, p.cliPath, args...)
 	cmd.Stdin = strings.NewReader(prompt)
@@ -184,13 +280,15 @@ func (p *ClaudeCodeProvider) Stream(
 		return nil, fmt.Errorf("claudecode: start %s: %w", p.cliPath, err)
 	}
 
-	text, finishReason, parseErr := parseClaudeStream(stdout, handler)
+	result, parseErr := parseClaudeStream(stdout, handler)
 	waitErr := cmd.Wait()
 
 	if parseErr != nil {
+		p.invalidateSession()
 		return nil, fmt.Errorf("claudecode: parse stream: %w", parseErr)
 	}
 	if waitErr != nil {
+		p.invalidateSession()
 		// stderrBuf already caps at 64KB with a tail-preserving ring.
 		if stderrTxt := strings.TrimSpace(stderrBuf.String()); stderrTxt != "" {
 			return nil, fmt.Errorf("claudecode: cli exited: %w: %s", waitErr, stderrTxt)
@@ -198,10 +296,16 @@ func (p *ClaudeCodeProvider) Stream(
 		return nil, fmt.Errorf("claudecode: cli exited: %w", waitErr)
 	}
 
+	finishReason := result.finishReason
 	if finishReason == "" {
 		finishReason = "stop"
 	}
 	handler(StreamDelta{Done: true, FinishReason: finishReason})
+
+	// Turn succeeded: record the session id for next-turn resume.
+	p.recordTurnResult(result.sessionID, len(messages))
+
+	text := result.text
 
 	msg := &agent.Message{
 		Role:      agent.RoleAssistant,
@@ -374,27 +478,13 @@ func (c *cappedBuffer) String() string {
 	return string(c.buf)
 }
 
-// envWithout returns env with any entries matching key=... removed. The
-// match is case-sensitive and anchored at "=" so keys that merely share
-// a prefix are left untouched.
-func envWithout(env []string, key string) []string {
-	prefix := key + "="
-	out := make([]string, 0, len(env))
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
 // streamEvent captures the fields we care about from stream-json NDJSON.
 // See: https://docs.claude.com/en/docs/claude-code/sdk
 type streamEvent struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype,omitempty"`
-	Message *struct {
+	Type      string `json:"type"`
+	Subtype   string `json:"subtype,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	Message   *struct {
 		Role    string `json:"role"`
 		Content []struct {
 			Type string `json:"type"`
@@ -404,16 +494,24 @@ type streamEvent struct {
 	IsError bool `json:"is_error,omitempty"`
 }
 
-// parseClaudeStream reads NDJSON events from the CLI's stdout and forwards
-// text deltas to handler. Returns the concatenated text, finish reason, and
-// any scanner error. Unknown event types are ignored (forward-compat).
-func parseClaudeStream(r io.Reader, handler func(StreamDelta)) (string, string, error) {
+// claudeStreamResult is what parseClaudeStream gives back — a small struct
+// instead of N return values now that we track the session id too.
+type claudeStreamResult struct {
+	text         string
+	finishReason string
+	sessionID    string
+}
+
+// parseClaudeStream reads NDJSON events from the CLI's stdout, forwards text
+// deltas to handler, and extracts the final session id for --resume on the
+// next turn. Unknown event types are ignored (forward-compat).
+func parseClaudeStream(r io.Reader, handler func(StreamDelta)) (claudeStreamResult, error) {
 	var buf strings.Builder
 	// 16KB covers the typical single-turn text response (few-KB messages plus
 	// thinking). Avoids ~4 rounds of grow-and-copy doubling for common cases;
 	// grows naturally for longer outputs.
 	buf.Grow(16 * 1024)
-	var finishReason string
+	var finishReason, sessionID string
 
 	scanner := bufio.NewScanner(r)
 	// Allow large events — a single assistant block can exceed the 64KB default.
@@ -429,6 +527,14 @@ func parseClaudeStream(r io.Reader, handler func(StreamDelta)) (string, string, 
 			// Malformed event — skip rather than abort. The CLI occasionally
 			// interleaves debug lines when --verbose is on.
 			continue
+		}
+
+		if ev.SessionID != "" {
+			// Every event but `system:init` carries a session id; the last
+			// one wins. `result` is always the final event, so this settles
+			// to whichever id the CLI used for the turn (matters on resume:
+			// the CLI sometimes mints a new id when continuing).
+			sessionID = ev.SessionID
 		}
 
 		switch ev.Type {
@@ -451,8 +557,10 @@ func parseClaudeStream(r io.Reader, handler func(StreamDelta)) (string, string, 
 			}
 		}
 	}
+
+	res := claudeStreamResult{text: buf.String(), finishReason: finishReason, sessionID: sessionID}
 	if err := scanner.Err(); err != nil {
-		return buf.String(), finishReason, err
+		return res, err
 	}
-	return buf.String(), finishReason, nil
+	return res, nil
 }

@@ -2,25 +2,17 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 // findProjectRoot walks up from cwd until it finds a .haft/ directory.
+// Thin wrapper around project.FindRootFromCwd that preserves the error-
+// returning shape the existing cli callers expect.
 func findProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
+	root, ok := project.FindRootFromCwd()
+	if !ok {
+		return "", fmt.Errorf("no .haft/ found")
 	}
-
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".haft")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no .haft/ found")
-		}
-		dir = parent
-	}
+	return root, nil
 }

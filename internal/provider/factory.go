@@ -1,26 +1,34 @@
 package provider
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/m0n0x41d/haft/internal/config"
+)
 
 // NewProvider creates an LLM provider based on provider ID.
 // Routes to the appropriate implementation:
 //   - "openai": OpenAI Responses API (also handles Codex/ChatGPT auth)
 //   - "anthropic": Anthropic Messages API
+//   - "claudecode": Claude Code CLI (uses Max/Pro subscription, no API key)
 //   - Others: treated as OpenAI-compatible (DeepSeek, Groq, Mistral, etc.)
 //
 // For OpenAI, apiKey can be empty — it resolves from env/config/codex.
 // For Anthropic, apiKey is required (from env or config).
+// For claudecode, apiKey is ignored — auth is owned by the `claude` CLI.
 func NewProvider(providerID, model, apiKey string) (LLMProvider, error) {
 	switch providerID {
 	case "openai":
 		return NewOpenAI(model)
 	case "anthropic":
 		return NewAnthropic(model, apiKey)
+	case "claudecode":
+		return NewClaudeCode(model)
 	default:
 		// OpenAI-compatible providers (DeepSeek, Groq, etc.)
 		// For now, route through OpenAI — they use the same API format.
 		// TODO: support custom base URLs for non-OpenAI providers.
-		return nil, fmt.Errorf("provider %q not yet supported — use openai or anthropic", providerID)
+		return nil, fmt.Errorf("provider %q not yet supported — use openai, anthropic, or claudecode", providerID)
 	}
 }
 
@@ -44,21 +52,12 @@ func ProviderIDForModel(model string) string {
 	return guessProviderFromPrefix(model)
 }
 
+// guessProviderFromPrefix delegates to the canonical prefix table in the
+// config package. Falls back to "openai" if nothing matches — the old
+// default — so unknown model strings get routed to the most permissive path.
 func guessProviderFromPrefix(model string) string {
-	prefixes := map[string]string{
-		"gpt-":      "openai",
-		"o1":        "openai",
-		"o3":        "openai",
-		"o4":        "openai",
-		"claude-":   "anthropic",
-		"gemini-":   "google",
-		"deepseek-": "deepseek",
-		"llama-":    "groq",
+	if id := config.ProviderForModel(model); id != "" {
+		return id
 	}
-	for prefix, provider := range prefixes {
-		if len(model) >= len(prefix) && model[:len(prefix)] == prefix {
-			return provider
-		}
-	}
-	return "openai" // default
+	return "openai"
 }

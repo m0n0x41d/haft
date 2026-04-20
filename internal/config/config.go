@@ -56,10 +56,17 @@ type ProviderAuth struct {
 // L1: Pure functions
 // ---------------------------------------------------------------------------
 
-// IsConfigured returns true if at least one provider has credentials and a default model is set.
+// IsConfigured returns true if the selected model can run.
+//
+// For the claudecode provider, auth is owned by the `claude` CLI, so no
+// credentials live in haft's config — selecting a claude-code* model is
+// sufficient. For every other provider, at least one auth entry is required.
 func (c *Config) IsConfigured() bool {
 	if c.Model == "" {
 		return false
+	}
+	if ProviderForModel(c.Model) == "claudecode" {
+		return true
 	}
 	for _, auth := range c.Providers {
 		if auth.APIKey != "" || auth.AccessToken != "" {
@@ -98,21 +105,26 @@ func (c *Config) ConfiguredProviders() []string {
 
 // ProviderForModel guesses which provider a model belongs to based on ID prefix.
 // Returns empty string if unknown.
+//
+// Prefixes are checked in order so longer ones (e.g. "claude-code") win over
+// shorter ones ("claude-") that would otherwise shadow them.
 func ProviderForModel(modelID string) string {
-	prefixes := map[string]string{
-		"gpt-":      "openai",
-		"o1":        "openai",
-		"o3":        "openai",
-		"o4":        "openai",
-		"claude-":   "anthropic",
-		"gemini-":   "google",
-		"deepseek-": "deepseek",
-		"llama-":    "groq",
-		"mistral":   "mistral",
+	type entry struct{ prefix, provider string }
+	prefixes := []entry{
+		{"claude-code", "claudecode"},
+		{"claude-", "anthropic"},
+		{"gpt-", "openai"},
+		{"o1", "openai"},
+		{"o3", "openai"},
+		{"o4", "openai"},
+		{"gemini-", "google"},
+		{"deepseek-", "deepseek"},
+		{"llama-", "groq"},
+		{"mistral", "mistral"},
 	}
-	for prefix, provider := range prefixes {
-		if len(modelID) >= len(prefix) && modelID[:len(prefix)] == prefix {
-			return provider
+	for _, e := range prefixes {
+		if len(modelID) >= len(e.prefix) && modelID[:len(e.prefix)] == e.prefix {
+			return e.provider
 		}
 	}
 	return ""

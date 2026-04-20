@@ -129,6 +129,19 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return "not set", false
 	})
 
+	warn("Claude Code CLI", func() (string, bool) {
+		path, err := exec.LookPath("claude")
+		if err != nil {
+			return "not found in PATH (install from https://docs.claude.com/en/docs/claude-code to use model=claude-code)", false
+		}
+		out, _ := exec.Command(path, "--version").Output()
+		v := trimOutput(out)
+		if v == "" {
+			v = "detected"
+		}
+		return fmt.Sprintf("%s (%s)", v, path), true
+	})
+
 	warn("Brave Search key", func() (string, bool) {
 		if key := os.Getenv("BRAVE_SEARCH_API_KEY"); key != "" {
 			return "set via BRAVE_SEARCH_API_KEY", true

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/m0n0x41d/haft/internal/envutil"
 )
 
 // spawnTUI finds the TUI entry point and launches it with bun or node.
@@ -120,25 +122,9 @@ func homeDir() string {
 }
 
 func tuiProcessEnv(base []string, term string) []string {
-	filtered := make([]string, 0, len(base)+3)
-
-	for _, entry := range base {
-		if strings.HasPrefix(entry, "DEV=") {
-			continue
-		}
-		if strings.HasPrefix(entry, "FORCE_COLOR=") {
-			continue
-		}
-		if strings.HasPrefix(entry, "TERM=") {
-			continue
-		}
-
-		filtered = append(filtered, entry)
-	}
-
-	filtered = append(filtered, "DEV=false")
-	filtered = append(filtered, "FORCE_COLOR=1")
-	filtered = append(filtered, "TERM="+term)
-
-	return filtered
+	return append(envutil.Strip(base, "DEV", "FORCE_COLOR", "TERM"),
+		"DEV=false",
+		"FORCE_COLOR=1",
+		"TERM="+term,
+	)
 }

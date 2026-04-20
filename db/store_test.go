@@ -207,12 +207,12 @@ func TestStore_AuditLog(t *testing.T) {
 
 	ctx := context.Background()
 
-	err = store.InsertAuditLog(ctx, "log-1", "quint_propose", "create_hypothesis", "agent", "hypo-1", "abc123", "SUCCESS", "", "default")
+	err = store.InsertAuditLog(ctx, "log-1", "haft_propose", "create_hypothesis", "agent", "hypo-1", "abc123", "SUCCESS", "", "default")
 	if err != nil {
 		t.Fatalf("InsertAuditLog failed: %v", err)
 	}
 
-	err = store.InsertAuditLog(ctx, "log-2", "quint_verify", "verify_hypothesis", "agent", "hypo-1", "def456", "SUCCESS", `{"verdict":"PASS"}`, "default")
+	err = store.InsertAuditLog(ctx, "log-2", "haft_verify", "verify_hypothesis", "agent", "hypo-1", "def456", "SUCCESS", `{"verdict":"PASS"}`, "default")
 	if err != nil {
 		t.Fatalf("InsertAuditLog failed: %v", err)
 	}

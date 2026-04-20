@@ -94,52 +94,32 @@ with the user prompt on stdin.
 - Opt out with `HAFT_CLAUDECODE_NO_MCP=1` — the provider falls back to
   `--allowed-tools ''` (text-only, no built-ins, no haft tools).
 
+## Session reuse
+
+After the first turn the provider caches the CLI's `session_id` and forwards
+`--resume <id>` on subsequent turns, so turn 2+ skips the cold `claude` +
+`haft serve` spawn (~3–5× faster). When haft's message list grows by exactly
+one new user message since the last successful turn, only that user text is
+sent to the CLI — the CLI already owns the transcript. Any divergence
+(history edited, branch taken, tool-role tail) falls back to a fresh turn
+and clears the session. On any subprocess or parse error the session is
+invalidated so the next turn starts clean.
+
+Opt out with `HAFT_CLAUDECODE_NO_RESUME=1` to force every turn to be fresh.
+
 ## Limitations
 
 1. **Tools bypass haft's outer loop.** Permission callbacks, hooks, and
    cycle tracking do not fire per tool call when this provider is used.
-2. **Each turn is a fresh CLI invocation.** No session reuse. On long
-   conversations this can add ~200–500ms of CLI startup overhead per turn,
-   plus another ~200ms to spawn `haft serve` inside the CLI.
-3. **Doctor check is best-effort.** `haft doctor` only verifies `claude` is on
+2. **Doctor check is best-effort.** `haft doctor` only verifies `claude` is on
    PATH, not that you're actually signed in. Run `claude login` once if the
    first turn errors out with an auth failure.
-4. **No image input** (for now — the CLI supports it, haft's converter
+3. **No image input** (for now — the CLI supports it, haft's converter
    doesn't surface `ImagePart` to the CLI yet).
+4. **Session files accumulate** in `~/.claude/`. Sessions are short and
+   disposable; the CLI's own TTL handles cleanup.
 
 ## Follow-up work
-
-### Session reuse via `--resume` (highest-impact)
-
-Each turn currently pays ~5–10s for fresh `claude` + `haft serve` spawn.
-`--resume <session_id>` would cut that to ~1–2s on turn 2+. It's the dominant
-cost and is listed separately because it's not a small change:
-
-- **Provider becomes stateful.** Today `LLMProvider.Stream` is a pure function
-  of `(ctx, messages, tools, handler)`. Adding a session_id field changes that
-  contract; `anthropic.go` / `openai.go` don't have one. Either we add a
-  lifecycle method to the interface (`Close()` at minimum, arguably `Reset()`)
-  or we keep the session TTL implicit and accept stale-session errors on
-  occasional rebuild.
-- **Message delta vs full history.** With `--resume`, the CLI owns the
-  conversation. Re-sending the full flattened history every turn would
-  double-count context. The provider needs to track "what did I send on the
-  last turn" and forward only the new user message. A simple approach: on
-  resume, send only the last `RoleUser` message's text; drop the
-  `flattenConversation` path. But that makes divergence (haft's agent loop
-  edited a prior message, for instance) silently wrong.
-- **Drop `--no-session-persistence`.** Needed so the session can be found on
-  turn 2. Consequence: `~/.claude/` accumulates haft sessions. A cleanup
-  strategy (TTL, or explicit `claude session rm`) is wanted.
-- **Fallback on stale session.** `--resume` errors on expired/deleted sessions.
-  The provider should catch this and retry as a fresh turn — silent to the
-  agent loop.
-
-A clean shape is likely a follow-up PR that introduces an optional
-`StatefulProvider` sub-interface and has only `ClaudeCodeProvider` (and maybe
-future providers that can benefit) implement it.
-
-### Other
 
 - Propagate the CLI's `result` event token counts into `Message.Tokens`.
 - Surface tool-use progress as StreamDelta `Thinking` chunks so the outer

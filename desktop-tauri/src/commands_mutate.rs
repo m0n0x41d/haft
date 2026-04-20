@@ -49,6 +49,26 @@ macro_rules! rpc_query {
     };
 }
 
+/// Generate a Tauri command whose IPC shape is `{ input: <opaque object> }`
+/// — the frontend convention for artifact-authoring commands (create_problem,
+/// create_decision, etc) — and forwards the *inner* input object as the RPC
+/// stdin payload. The Go-side handlers expect flat records
+/// (`artifact.ProblemFrameInput`, `artifact.DecideInput`, …), not a nested
+/// `{"input": …}` wrapper, so `rpc_fwd!` with its auto-wrapping behavior
+/// cannot be used here. Matches what the frontend sends via
+/// `tauriInvoke("create_problem", { input })`.
+macro_rules! rpc_fwd_input {
+    ($fn_name:ident, $rpc_cmd:expr) => {
+        #[tauri::command]
+        pub fn $fn_name(
+            input: Value,
+            project_root: Option<String>,
+        ) -> Result<Value, String> {
+            call_rpc($rpc_cmd, Some(input), project_root.as_deref())
+        }
+    };
+}
+
 // ── Project management ──
 
 rpc_fwd!(switch_project, "switch-project", { path: String });
@@ -61,15 +81,18 @@ rpc_fwd!(init_project, "init-project", { path: String });
 rpc_fwd!(add_project_smart, "add-project", { path: String });
 
 // ── Artifact authoring ──
+//
+// These commands take `{ input: ... }` on the IPC boundary but forward the
+// inner value as the RPC stdin payload — Go handlers expect flat records.
 
-rpc_fwd!(create_problem, "create-problem", { input: Value });
-rpc_fwd!(create_decision, "create-decision", { input: Value });
-rpc_fwd!(create_portfolio, "create-portfolio", { input: Value });
-rpc_fwd!(compare_portfolio, "compare-portfolio", { input: Value });
+rpc_fwd_input!(create_problem, "create-problem");
+rpc_fwd_input!(create_decision, "create-decision");
+rpc_fwd_input!(create_portfolio, "create-portfolio");
+rpc_fwd_input!(compare_portfolio, "compare-portfolio");
 
 // Frontend uses "characterize_problem" command name; CLI dispatches via
 // "characterize" RPC verb.
-rpc_fwd!(characterize_problem, "characterize", { input: Value });
+rpc_fwd_input!(characterize_problem, "characterize");
 
 // ── Decision lifecycle ──
 
@@ -119,8 +142,8 @@ rpc_fwd!(
 
 // ── Flow management ──
 
-rpc_fwd!(create_flow, "create-flow", { input: Value });
-rpc_fwd!(update_flow, "update-flow", { input: Value });
+rpc_fwd_input!(create_flow, "create-flow");
+rpc_fwd_input!(update_flow, "update-flow");
 rpc_fwd!(toggle_flow, "toggle-flow", { id: String, enabled: bool });
 rpc_fwd!(delete_flow, "delete-flow", { id: String });
 rpc_fwd!(run_flow_now, "run-flow-now", { id: String });

@@ -619,7 +619,8 @@ type rpcProjectInfo struct {
 }
 
 type rpcProjectRegistry struct {
-	Projects []rpcRegisteredProject `json:"projects"`
+	Projects   []rpcRegisteredProject `json:"projects"`
+	ActivePath string                 `json:"active_path,omitempty"`
 }
 
 type rpcRegisteredProject struct {
@@ -661,6 +662,34 @@ func handleSwitchProject(env *rpcEnv, w io.Writer) error {
 		return fmt.Errorf("cannot open DB for %s: %w", path, err)
 	}
 	_ = testDB.Close()
+
+	// Persist the switch in the registry so `list_projects` returns the
+	// right `is_active` flag and a subsequent `haft desktop` launch opens
+	// this project. Also add the project if it wasn't already registered —
+	// switch-project doubles as register-and-activate for recently-opened
+	// directories.
+	reg, err := rpcLoadRegistry()
+	if err != nil {
+		return fmt.Errorf("load registry: %w", err)
+	}
+	registered := false
+	for _, p := range reg.Projects {
+		if p.Path == path {
+			registered = true
+			break
+		}
+	}
+	if !registered {
+		reg.Projects = append(reg.Projects, rpcRegisteredProject{
+			Path: path,
+			Name: cfg.Name,
+			ID:   cfg.ID,
+		})
+	}
+	reg.ActivePath = path
+	if err := rpcSaveRegistry(reg); err != nil {
+		return fmt.Errorf("save registry: %w", err)
+	}
 
 	return writeResult(w, rpcProjectInfo{
 		Path: path,

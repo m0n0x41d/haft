@@ -1551,12 +1551,13 @@ export async function baselineDecision(decisionID: string): Promise<DecisionDeta
 }
 
 export async function resolveAdoptBaseline(
-  findingID: string,
+  _findingID: string,
   decisionID: string,
 ): Promise<DecisionDetail> {
-  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_baseline", { finding_id: findingID });
-  if (decision) return decision;
-
+  // No backend `resolve_adopt_baseline` command exists; calling tauriInvoke
+  // would throw an unknown-command error before the baseline path could run.
+  // Delegate directly to baselineDecision — findings auto-resolve when the
+  // governance scan next observes the fresh baseline.
   return baselineDecision(decisionID);
 }
 
@@ -1613,14 +1614,12 @@ export async function measureDecision(
 }
 
 export async function resolveAdoptMeasure(
-  findingID: string,
+  _findingID: string,
   decisionID: string,
   findings: string,
   verdict: string,
 ): Promise<DecisionDetail> {
-  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_measure", { finding_id: findingID, findings, verdict });
-  if (decision) return decision;
-
+  // See resolveAdoptBaseline — no backend command, delegate directly.
   return measureDecision(decisionID, findings, verdict);
 }
 
@@ -1657,13 +1656,11 @@ export async function deprecateDecision(decisionID: string, reason: string): Pro
 }
 
 export async function resolveAdoptDeprecate(
-  findingID: string,
+  _findingID: string,
   decisionID: string,
   reason: string,
 ): Promise<DecisionDetail> {
-  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_deprecate", { finding_id: findingID, reason });
-  if (decision) return decision;
-
+  // See resolveAdoptBaseline — no backend command, delegate directly.
   return deprecateDecision(decisionID, reason);
 }
 
@@ -1734,24 +1731,20 @@ export async function reopenDecision(decisionID: string, reason: string): Promis
 }
 
 export async function resolveAdoptReopen(
-  findingID: string,
+  _findingID: string,
   decisionID: string,
   reason: string,
 ): Promise<ProblemDetail> {
-  const problem = await tauriInvoke<ProblemDetail>("resolve_adopt_reopen", { finding_id: findingID, reason });
-  if (problem) return problem;
-
+  // See resolveAdoptBaseline — no backend command, delegate directly.
   return reopenDecision(decisionID, reason);
 }
 
 export async function resolveAdoptWaive(
-  findingID: string,
+  _findingID: string,
   decisionID: string,
   reason: string,
 ): Promise<DecisionDetail> {
-  const decision = await tauriInvoke<DecisionDetail>("resolve_adopt_waive", { finding_id: findingID, reason });
-  if (decision) return decision;
-
+  // See resolveAdoptBaseline — no backend command, delegate directly.
   return waiveDecision(decisionID, reason);
 }
 

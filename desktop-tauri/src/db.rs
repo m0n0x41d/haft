@@ -727,19 +727,37 @@ impl HaftDb {
 
     // ─── Flows ───
 
+    /// List flows for a specific project — or across every project when
+    /// `project_path` is empty. The frontend's Jobs page calls `list_flows`
+    /// without arguments to show all flows in one pane; restricting to the
+    /// matching row via `WHERE project_path = ?1` would return nothing in
+    /// that case.
     pub fn list_flows(&self, project_path: &str) -> Result<Vec<FlowView>> {
-        let mut stmt = self.conn.prepare(
+        let sql = if project_path.is_empty() {
+            "SELECT id, project_name, project_path, title, description, template_id,
+                    agent, prompt, schedule, branch, use_worktree, enabled,
+                    last_task_id, COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
+                    last_error, created_at, updated_at
+             FROM desktop_flows
+             ORDER BY updated_at DESC, title ASC"
+        } else {
             "SELECT id, project_name, project_path, title, description, template_id,
                     agent, prompt, schedule, branch, use_worktree, enabled,
                     last_task_id, COALESCE(last_run_at, ''), COALESCE(next_run_at, ''),
                     last_error, created_at, updated_at
              FROM desktop_flows
              WHERE project_path = ?1
-             ORDER BY updated_at DESC, title ASC",
-        )?;
+             ORDER BY updated_at DESC, title ASC"
+        };
+        let mut stmt = self.conn.prepare(sql)?;
 
-        let rows = stmt.query_map(params![project_path], |row| Ok(flow_from_row(row)))?;
-        rows.collect()
+        let rows = if project_path.is_empty() {
+            stmt.query_map([], |row| Ok(flow_from_row(row)))?.collect::<Result<Vec<_>>>()?
+        } else {
+            stmt.query_map(params![project_path], |row| Ok(flow_from_row(row)))?
+                .collect::<Result<Vec<_>>>()?
+        };
+        Ok(rows)
     }
 
     pub fn list_flow_templates(&self) -> Vec<FlowTemplateView> {

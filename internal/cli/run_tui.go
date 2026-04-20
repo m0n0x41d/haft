@@ -48,16 +48,16 @@ var (
 	sTaskFailed  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
 	sTaskSkipped = lipgloss.NewStyle().Faint(true)
 
-	sThinking = lipgloss.NewStyle().Faint(true).Italic(true)
-	sToolCall = lipgloss.NewStyle().Foreground(lipgloss.Color("13")) // magenta
-	sSummOK   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	sSummWarn = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-	sSummFail = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	sPhase    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
-	sBuildOK  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	sThinking  = lipgloss.NewStyle().Faint(true).Italic(true)
+	sToolCall  = lipgloss.NewStyle().Foreground(lipgloss.Color("13")) // magenta
+	sSummOK    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	sSummWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	sSummFail  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	sPhase     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	sBuildOK   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	sBuildFail = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	sInvOK    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	sInvFail  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	sInvOK     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	sInvFail   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
 
 // ---------------------------------------------------------------------------

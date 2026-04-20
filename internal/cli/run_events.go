@@ -52,10 +52,10 @@ type TaskStatusChanged struct {
 type AgentChunkKind int
 
 const (
-	ChunkText    AgentChunkKind = iota // assistant text output
-	ChunkThinking                      // reasoning/thinking block
-	ChunkToolUse                       // tool invocation (name + truncated args)
-	ChunkRaw                           // unstructured / fallback
+	ChunkText     AgentChunkKind = iota // assistant text output
+	ChunkThinking                       // reasoning/thinking block
+	ChunkToolUse                        // tool invocation (name + truncated args)
+	ChunkRaw                            // unstructured / fallback
 )
 
 // AgentChunk carries one fragment of live agent output.

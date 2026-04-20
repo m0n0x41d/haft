@@ -11,10 +11,10 @@ import (
 // when two branches created decisions on the same day, leading to
 // mechanically-unmergeable conflicts in `.haft/`.
 //
-// New format uses a 24-bit random hex suffix from crypto/rand. With
-// ~16M possible suffixes per kind per day, collision in a single project
-// over a typical day is negligible (birthday paradox kicks in around 4000
-// IDs/day; real-world rates are far below).
+// New format uses a 32-bit random hex suffix from crypto/rand. With
+// ~4.3B possible suffixes per kind per day, collision in a single project
+// over a typical day is negligible (birthday-paradox probability stays
+// below 10^-6 for the first few thousand IDs).
 //
 // This test creates 2000 IDs in tight succession and asserts uniqueness.
 // Failure here means the random source has degraded or the seq parameter
@@ -38,12 +38,12 @@ func TestGenerateID_NoCollisionAcrossRapidCalls(t *testing.T) {
 // downstream tools (filename globbers, .haft/ readers, regression diff
 // inspectors) have a stable contract to match against.
 func TestGenerateID_FormatMatchesContract(t *testing.T) {
-	pattern := regexp.MustCompile(`^[a-z]+-\d{8}-[0-9a-f]{6}$`)
+	pattern := regexp.MustCompile(`^[a-z]+-\d{8}-[0-9a-f]{8}$`)
 	cases := []Kind{KindNote, KindProblemCard, KindSolutionPortfolio, KindDecisionRecord, KindEvidencePack, KindRefreshReport}
 	for _, kind := range cases {
 		id := GenerateID(kind, 1)
 		if !pattern.MatchString(id) {
-			t.Errorf("ID for %s does not match `prefix-YYYYMMDD-6hex`: got %q", kind, id)
+			t.Errorf("ID for %s does not match `prefix-YYYYMMDD-8hex`: got %q", kind, id)
 		}
 	}
 }

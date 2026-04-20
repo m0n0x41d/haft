@@ -57,7 +57,9 @@ func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
 		return fmt.Errorf("loading patterns: %w", err)
 	}
 
-	allChunks := append(corpus.Indexed, patternChunks...)
+	allChunks := make([]fpf.SpecChunk, 0, len(corpus.Indexed)+len(patternChunks))
+	allChunks = append(allChunks, corpus.Indexed...)
+	allChunks = append(allChunks, patternChunks...)
 
 	if err := fpf.BuildSpecIndex(dbPath, allChunks, routes); err != nil {
 		return fmt.Errorf("building index: %w", err)

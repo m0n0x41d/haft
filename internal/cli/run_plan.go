@@ -22,12 +22,11 @@ type executionPlan struct {
 }
 
 type planTask struct {
-	id          string // T1, T2, ...
-	title       string
-	description string
-	files       []string // files this task should touch
-	acceptance  string   // how to verify this task is done
-	status      string   // pending, running, passed, failed
+	id         string // T1, T2, ...
+	title      string
+	files      []string // files this task should touch
+	acceptance string   // how to verify this task is done
+	status     string   // pending, running, passed, failed
 }
 
 // planFilePath returns where to persist the plan.
@@ -230,7 +229,7 @@ func executePlan(
 		if !auto {
 			fmt.Printf("\n  %sRun this task? [Y/n/s(kip)] %s", aBold, aReset)
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			if answer == "n" || answer == "N" {
 				return false
 			}
@@ -256,7 +255,7 @@ func executePlan(
 			if !auto {
 				fmt.Printf("  %sContinue? [Y/n] %s", aBold, aReset)
 				var answer string
-				fmt.Scanln(&answer)
+				_, _ = fmt.Scanln(&answer)
 				if answer == "n" || answer == "N" {
 					return false
 				}
@@ -286,7 +285,7 @@ func executePlan(
 				if !auto {
 					fmt.Printf("  %sContinue? [Y/n] %s", aBold, aReset)
 					var answer string
-					fmt.Scanln(&answer)
+					_, _ = fmt.Scanln(&answer)
 					if answer == "n" || answer == "N" {
 						return false
 					}
@@ -440,7 +439,7 @@ func finalReview(
 		if !auto {
 			fmt.Printf("\n  %sSpawn fix agent? [Y/n] %s", aBold, aReset)
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			spawnFix = answer != "n" && answer != "N"
 		}
 

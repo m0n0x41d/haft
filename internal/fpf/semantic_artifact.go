@@ -316,7 +316,6 @@ func loadSemanticDocuments(db *sql.DB) ([]semanticDocument, error) {
 	return documents, rows.Err()
 }
 
-
 func scanSemanticDocument(scanner interface {
 	Scan(dest ...any) error
 }) (semanticDocument, error) {

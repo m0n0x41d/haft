@@ -32,11 +32,11 @@ func handleCreateProblem(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":        art.Meta.ID,
-		"title":     art.Meta.Title,
-		"kind":      string(art.Meta.Kind),
-		"status":    string(art.Meta.Status),
-		"md_path":   mdPath,
+		"id":         art.Meta.ID,
+		"title":      art.Meta.Title,
+		"kind":       string(art.Meta.Kind),
+		"status":     string(art.Meta.Status),
+		"md_path":    mdPath,
 		"created_at": art.Meta.CreatedAt,
 	})
 }
@@ -53,11 +53,11 @@ func handleCreateDecision(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":        art.Meta.ID,
-		"title":     art.Meta.Title,
-		"kind":      string(art.Meta.Kind),
-		"status":    string(art.Meta.Status),
-		"md_path":   mdPath,
+		"id":         art.Meta.ID,
+		"title":      art.Meta.Title,
+		"kind":       string(art.Meta.Kind),
+		"status":     string(art.Meta.Status),
+		"md_path":    mdPath,
 		"created_at": art.Meta.CreatedAt,
 	})
 }
@@ -74,11 +74,11 @@ func handleCreatePortfolio(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":        art.Meta.ID,
-		"title":     art.Meta.Title,
-		"kind":      string(art.Meta.Kind),
-		"status":    string(art.Meta.Status),
-		"md_path":   mdPath,
+		"id":         art.Meta.ID,
+		"title":      art.Meta.Title,
+		"kind":       string(art.Meta.Kind),
+		"status":     string(art.Meta.Status),
+		"md_path":    mdPath,
 		"created_at": art.Meta.CreatedAt,
 	})
 }
@@ -95,11 +95,11 @@ func handleCharacterize(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":        art.Meta.ID,
-		"title":     art.Meta.Title,
-		"kind":      string(art.Meta.Kind),
-		"status":    string(art.Meta.Status),
-		"md_path":   mdPath,
+		"id":         art.Meta.ID,
+		"title":      art.Meta.Title,
+		"kind":       string(art.Meta.Kind),
+		"status":     string(art.Meta.Status),
+		"md_path":    mdPath,
 		"created_at": art.Meta.CreatedAt,
 	})
 }
@@ -116,11 +116,11 @@ func handleComparePortfolio(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":        art.Meta.ID,
-		"title":     art.Meta.Title,
-		"kind":      string(art.Meta.Kind),
-		"status":    string(art.Meta.Status),
-		"md_path":   mdPath,
+		"id":         art.Meta.ID,
+		"title":      art.Meta.Title,
+		"kind":       string(art.Meta.Kind),
+		"status":     string(art.Meta.Status),
+		"md_path":    mdPath,
 		"created_at": art.Meta.CreatedAt,
 	})
 }
@@ -178,7 +178,7 @@ func handleBaseline(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"decision_ref":  input.DecisionRef,
+		"decision_ref":   input.DecisionRef,
 		"affected_files": files,
 	})
 }
@@ -260,9 +260,9 @@ func handleReopen(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"decision_id":    decision.Meta.ID,
+		"decision_id":     decision.Meta.ID,
 		"decision_status": string(decision.Meta.Status),
-		"new_problem_id": newProblem.Meta.ID,
+		"new_problem_id":  newProblem.Meta.ID,
 	})
 }
 
@@ -372,8 +372,8 @@ func handleDismissCandidate(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":      input.ID,
-		"status":  "dismissed",
+		"id":     input.ID,
+		"status": "dismissed",
 	})
 }
 
@@ -605,7 +605,7 @@ func handleRunFlowNow(env *rpcEnv, w io.Writer) error {
 	}
 
 	return writeResult(w, map[string]any{
-		"id":          flowID,
+		"id":           flowID,
 		"triggered_at": now,
 	})
 }
@@ -660,7 +660,7 @@ func handleSwitchProject(env *rpcEnv, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("cannot open DB for %s: %w", path, err)
 	}
-	testDB.Close()
+	_ = testDB.Close()
 
 	return writeResult(w, rpcProjectInfo{
 		Path: path,
@@ -768,7 +768,7 @@ func handleInitProject(env *rpcEnv, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
-	database.Close()
+	_ = database.Close()
 
 	// Register in project registry
 	reg, err := rpcLoadRegistry()
@@ -949,14 +949,14 @@ func handleCreatePullRequest(env *rpcEnv, w io.Writer) error {
 		art.Meta.Title, decisionRef, art.Meta.Context)
 
 	result := map[string]any{
-		"decision_ref": decisionRef,
-		"branch":       branch,
-		"title":        title,
-		"body":         body,
-		"pushed":       false,
+		"decision_ref":  decisionRef,
+		"branch":        branch,
+		"title":         title,
+		"body":          body,
+		"pushed":        false,
 		"draft_created": false,
-		"url":          "",
-		"warnings":     []string{},
+		"url":           "",
+		"warnings":      []string{},
 	}
 
 	warnings := []string{}

@@ -457,12 +457,13 @@ func ResolveComparedPortfolioRef(ctx context.Context, store ArtifactStore, portf
 // GenerateID creates a unique artifact ID with the format
 // `<prefix>-YYYYMMDD-<6 hex chars>` (e.g. `dec-20260418-a3f7c1`).
 //
-// The 24-bit random hex suffix is sourced from crypto/rand to prevent
+// The 32-bit random hex suffix is sourced from crypto/rand to prevent
 // filename collisions when multiple branches create artifacts on the same
 // day (issue #63). Sequential per-day counters lose meaning across branches
 // and produce mechanically-unmergeable conflicts in `.haft/`. The hex
 // suffix makes branch merges that touched `.haft/` on the same day
-// collision-free in practice (~16M values per kind per day).
+// collision-free in practice (~4.3B values per kind per day — birthday-paradox
+// collision probability stays below 10^-6 for the first few thousand IDs).
 //
 // The seq parameter is preserved for backward-compatible call sites and
 // may be useful for in-process ordering, but is no longer rendered into the
@@ -474,14 +475,14 @@ func GenerateID(kind Kind, seq int) string {
 	return fmt.Sprintf("%s-%s-%s", kind.IDPrefix(), date, randomIDSuffix())
 }
 
-// randomIDSuffix returns a 6-character lowercase hex string sourced from
+// randomIDSuffix returns an 8-character lowercase hex string sourced from
 // crypto/rand. Falls back to a deterministic non-zero value on the
 // effectively-impossible case where crypto/rand fails — caller still gets a
 // valid ID rather than a panic.
 func randomIDSuffix() string {
-	bytes := make([]byte, 3) // 3 bytes = 6 hex chars
+	bytes := make([]byte, 4) // 4 bytes = 8 hex chars
 	if _, err := rand.Read(bytes); err != nil {
-		return "fffffe"
+		return "fffffffe"
 	}
 	return hex.EncodeToString(bytes)
 }

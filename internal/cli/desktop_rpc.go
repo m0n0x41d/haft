@@ -30,7 +30,7 @@ type rpcEnv struct {
 
 func (e *rpcEnv) close() {
 	if e.dbStore != nil {
-		e.dbStore.Close()
+		_ = e.dbStore.Close()
 	}
 }
 

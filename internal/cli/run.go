@@ -157,9 +157,9 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		if !auto {
 			fmt.Printf("\n  %sProceed? [Y/n] %s", aBold, aReset)
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			if answer == "n" || answer == "N" {
-				fmt.Println("  Cancelled.")
+				fmt.Println("  Canceled.")
 				return nil
 			}
 		}
@@ -187,7 +187,7 @@ func runImplement(cmd *cobra.Command, args []string) error {
 		if !auto {
 			fmt.Printf("  %sExecute? [Y/n/e(dit plan)] %s", aBold, aReset)
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			if answer == "n" || answer == "N" {
 				fmt.Printf("  Plan at: %s\n", plan.planFile)
 				return nil
@@ -312,8 +312,7 @@ func spawnAgentWithEvents(agent, prompt, projectRoot string, ev *EventSender) er
 		close(done)
 	}()
 	err := spawnAgent(agent, prompt, projectRoot, pw)
-	pw.Close()
+	_ = pw.Close()
 	<-done
 	return err
 }
-

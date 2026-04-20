@@ -109,7 +109,38 @@ with the user prompt on stdin.
 
 ## Follow-up work
 
-- Session reuse via `--resume` to amortize startup cost.
+### Session reuse via `--resume` (highest-impact)
+
+Each turn currently pays ~5–10s for fresh `claude` + `haft serve` spawn.
+`--resume <session_id>` would cut that to ~1–2s on turn 2+. It's the dominant
+cost and is listed separately because it's not a small change:
+
+- **Provider becomes stateful.** Today `LLMProvider.Stream` is a pure function
+  of `(ctx, messages, tools, handler)`. Adding a session_id field changes that
+  contract; `anthropic.go` / `openai.go` don't have one. Either we add a
+  lifecycle method to the interface (`Close()` at minimum, arguably `Reset()`)
+  or we keep the session TTL implicit and accept stale-session errors on
+  occasional rebuild.
+- **Message delta vs full history.** With `--resume`, the CLI owns the
+  conversation. Re-sending the full flattened history every turn would
+  double-count context. The provider needs to track "what did I send on the
+  last turn" and forward only the new user message. A simple approach: on
+  resume, send only the last `RoleUser` message's text; drop the
+  `flattenConversation` path. But that makes divergence (haft's agent loop
+  edited a prior message, for instance) silently wrong.
+- **Drop `--no-session-persistence`.** Needed so the session can be found on
+  turn 2. Consequence: `~/.claude/` accumulates haft sessions. A cleanup
+  strategy (TTL, or explicit `claude session rm`) is wanted.
+- **Fallback on stale session.** `--resume` errors on expired/deleted sessions.
+  The provider should catch this and retry as a fresh turn — silent to the
+  agent loop.
+
+A clean shape is likely a follow-up PR that introduces an optional
+`StatefulProvider` sub-interface and has only `ClaudeCodeProvider` (and maybe
+future providers that can benefit) implement it.
+
+### Other
+
 - Propagate the CLI's `result` event token counts into `Message.Tokens`.
 - Surface tool-use progress as StreamDelta `Thinking` chunks so the outer
   UI can show "Claude is calling haft_note…" rather than a silent pause.

@@ -47,13 +47,14 @@ const claudeCodeBinary = "claude"
 // ClaudeCodeProvider invokes the `claude` CLI per turn.
 //
 // Paths that don't change during the process lifetime (haft binary, detected
-// project root) are resolved once at construction and cached so every turn
-// doesn't re-walk the filesystem.
+// project root, filtered child env) are resolved once at construction and
+// cached so every turn doesn't re-walk the filesystem or re-copy the env.
 type ClaudeCodeProvider struct {
-	modelID     string // haft-facing model id (reported to the agent loop)
-	cliPath     string // resolved `claude` binary
-	haftExe     string // resolved current `haft` binary (for --mcp-config)
-	projectRoot string // detected .haft/ root; "" when not in a haft project
+	modelID     string   // haft-facing model id (reported to the agent loop)
+	cliPath     string   // resolved `claude` binary
+	haftExe     string   // resolved current `haft` binary (for --mcp-config)
+	projectRoot string   // detected .haft/ root; "" when not in a haft project
+	childEnv    []string // cached env with ANTHROPIC_API_KEY stripped
 }
 
 var _ LLMProvider = (*ClaudeCodeProvider)(nil)
@@ -83,6 +84,12 @@ func NewClaudeCode(modelID string) (*ClaudeCodeProvider, error) {
 		cliPath:     path,
 		haftExe:     haftExe,
 		projectRoot: projectRoot,
+		// Snapshot the env at construction. ANTHROPIC_API_KEY is the only
+		// var we actively mask; users rarely toggle it mid-session, and the
+		// subprocess we spawn is short-lived per turn, so a static snapshot
+		// is fine. Any env var *added* after construction will be missed —
+		// callers needing fresh env should rebuild the provider.
+		childEnv: envWithout(os.Environ(), "ANTHROPIC_API_KEY"),
 	}, nil
 }
 
@@ -156,12 +163,12 @@ func (p *ClaudeCodeProvider) Stream(
 
 	cmd := exec.CommandContext(ctx, p.cliPath, args...)
 	cmd.Stdin = strings.NewReader(prompt)
-	// Strip ANTHROPIC_API_KEY from the child env so Claude Code falls back to
+	// Child env has ANTHROPIC_API_KEY stripped so Claude Code falls back to
 	// its OAuth credentials. Max/Pro subscribers who happen to have an API
 	// key exported would otherwise be silently billed per-token instead of
 	// drawing from their subscription. See
 	// https://github.com/anthropics/claude-code/issues/43333 (fixed Apr 2026).
-	cmd.Env = envWithout(os.Environ(), "ANTHROPIC_API_KEY")
+	cmd.Env = p.childEnv
 
 	// Cap stderr at 64KB so a chatty --verbose session can't blow up the
 	// parent's memory. We only need the tail to surface in error messages.
@@ -402,6 +409,10 @@ type streamEvent struct {
 // any scanner error. Unknown event types are ignored (forward-compat).
 func parseClaudeStream(r io.Reader, handler func(StreamDelta)) (string, string, error) {
 	var buf strings.Builder
+	// 16KB covers the typical single-turn text response (few-KB messages plus
+	// thinking). Avoids ~4 rounds of grow-and-copy doubling for common cases;
+	// grows naturally for longer outputs.
+	buf.Grow(16 * 1024)
 	var finishReason string
 
 	scanner := bufio.NewScanner(r)

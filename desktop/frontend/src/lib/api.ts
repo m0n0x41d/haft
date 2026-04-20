@@ -1801,8 +1801,15 @@ export async function createProblem(input: ProblemCreateInput): Promise<ProblemD
 }
 
 export async function characterizeProblem(input: ProblemCharacterizationInput): Promise<ProblemDetail> {
-  const problem = await tauriInvoke<ProblemDetail>("characterize_problem", { input });
-  if (problem) return problem;
+  // Same hydration dance as createProblem — the characterize RPC returns
+  // only artifact metadata, not a full ProblemDetail. Without the follow-up
+  // get_problem call the UI dereferences missing arrays (`linked_portfolios`,
+  // `constraints`) and crashes right after a successful characterize.
+  const characterized = await tauriInvoke<{ id?: string }>("characterize_problem", { input });
+  if (characterized && characterized.id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: characterized.id });
+    if (hydrated) return hydrated;
+  }
 
   const current = mockProblemDetails.get(input.problem_ref);
   if (!current) {
@@ -1839,8 +1846,13 @@ export async function characterizeProblem(input: ProblemCharacterizationInput): 
 }
 
 export async function createPortfolio(input: PortfolioCreateInput): Promise<PortfolioDetail> {
-  const portfolio = await tauriInvoke<PortfolioDetail>("create_portfolio", { input });
-  if (portfolio) return portfolio;
+  // handleCreatePortfolio returns only artifact metadata; UI expects full
+  // variants / comparison. Hydrate via get_portfolio after create.
+  const created = await tauriInvoke<{ id?: string }>("create_portfolio", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<PortfolioDetail>("get_portfolio", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("sol");
   const variants = input.variants.map((variant, index) => ({
@@ -1896,8 +1908,13 @@ export async function createPortfolio(input: PortfolioCreateInput): Promise<Port
 }
 
 export async function comparePortfolio(input: PortfolioCompareInput): Promise<PortfolioDetail> {
-  const portfolio = await tauriInvoke<PortfolioDetail>("compare_portfolio", { input });
-  if (portfolio) return portfolio;
+  // handleComparePortfolio returns only artifact metadata; the UI expects
+  // full variants/comparison. Hydrate via get_portfolio after compare.
+  const compared = await tauriInvoke<{ id?: string }>("compare_portfolio", { input });
+  if (compared && compared.id) {
+    const hydrated = await tauriInvoke<PortfolioDetail>("get_portfolio", { id: compared.id });
+    if (hydrated) return hydrated;
+  }
 
   const current = mockPortfolioDetails.get(input.portfolio_ref);
   if (!current) {
@@ -1935,8 +1952,13 @@ export async function comparePortfolio(input: PortfolioCompareInput): Promise<Po
 }
 
 export async function createDecision(input: DecisionCreateInput): Promise<DecisionDetail> {
-  const decision = await tauriInvoke<DecisionDetail>("create_decision", { input });
-  if (decision) return decision;
+  // handleCreateDecision returns only artifact metadata; Decisions.tsx reads
+  // problem_refs / invariants / claims. Hydrate via get_decision after create.
+  const created = await tauriInvoke<{ id?: string }>("create_decision", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<DecisionDetail>("get_decision", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("dec");
   const portfolio = input.portfolio_ref ? mockPortfolioDetails.get(input.portfolio_ref) : null;

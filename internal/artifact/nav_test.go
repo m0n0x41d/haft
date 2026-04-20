@@ -403,15 +403,18 @@ func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
 	return states
 }
 
-// Contract: NextAction never contains tool call syntax (quint_*).
-// All actions must use slash commands (/h-*).
+// Contract: NextAction never contains raw tool-call syntax (haft_*, or
+// the legacy quint_* prefix). All user-facing actions must use slash
+// commands (/h-*).
 func TestContract_NoToolCallSyntax(t *testing.T) {
 	for status, state := range buildNavStates(t) {
 		if state.NextAction == "" {
 			continue
 		}
-		if strings.Contains(state.NextAction, "quint_") {
-			t.Errorf("[%s] NextAction uses tool call syntax: %q", status, state.NextAction)
+		for _, prefix := range []string{"haft_", "quint_"} {
+			if strings.Contains(state.NextAction, prefix) {
+				t.Errorf("[%s] NextAction uses tool-call syntax %q: %q", status, prefix, state.NextAction)
+			}
 		}
 		if !strings.Contains(state.NextAction, "/h-") {
 			t.Errorf("[%s] NextAction should use slash commands (/h-*): %q", status, state.NextAction)

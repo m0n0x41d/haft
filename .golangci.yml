@@ -32,7 +32,7 @@ linters:
       excludes:
         - G301 # directory permissions 0755 — fine for user-facing dirs
         - G302 # file permissions 0644 — fine for user-facing files
-        - G204 # subprocess with variable — we call quint/git as subprocess intentionally
+        - G204 # subprocess with variable — we call claude/git as subprocess intentionally
         - G304 # file inclusion via variable — we read user-specified paths intentionally
         - G306 # WriteFile permissions 0644 — fine for markdown/config files
         - G703 # path traversal — we construct paths from project root intentionally

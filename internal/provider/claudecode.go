@@ -410,7 +410,7 @@ func writeHaftMCPConfig(haftExe, projectRoot string) (string, error) {
 		"haft": {
 			Command: haftExe,
 			Args:    []string{"serve"},
-			Env:     map[string]string{"QUINT_PROJECT_ROOT": projectRoot},
+			Env:     map[string]string{"HAFT_PROJECT_ROOT": projectRoot},
 		},
 	}}
 

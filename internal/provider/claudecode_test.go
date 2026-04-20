@@ -277,8 +277,8 @@ func TestWriteHaftMCPConfigShape(t *testing.T) {
 	if len(entry.Args) != 1 || entry.Args[0] != "serve" {
 		t.Errorf("unexpected args: %v", entry.Args)
 	}
-	if entry.Env["QUINT_PROJECT_ROOT"] != projectRoot {
-		t.Errorf("QUINT_PROJECT_ROOT = %q, want %q", entry.Env["QUINT_PROJECT_ROOT"], projectRoot)
+	if entry.Env["HAFT_PROJECT_ROOT"] != projectRoot {
+		t.Errorf("HAFT_PROJECT_ROOT = %q, want %q", entry.Env["HAFT_PROJECT_ROOT"], projectRoot)
 	}
 }
 

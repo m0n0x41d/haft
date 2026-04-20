@@ -84,7 +84,7 @@ with the user prompt on stdin.
 
 - `<tmpfile>` is generated per turn and contains an `mcpServers.haft` entry
   telling the CLI to spawn the current `haft` binary in `serve` mode with
-  `QUINT_PROJECT_ROOT` pointing at the detected project root (discovered by
+  `HAFT_PROJECT_ROOT` pointing at the detected project root (discovered by
   walking up from `cwd` looking for `.haft/`). The tmpfile is deleted after
   the turn via `defer`.
 - The model sees haft's artifact tools as `mcp__haft__haft_note`,

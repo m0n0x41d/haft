@@ -1,6 +1,8 @@
 .quint
 .haft
 .context
+.context/
+.context/**
 .mcp.json
 quint-mcp.json
 src/mcp/quint-code

@@ -377,7 +377,18 @@ func runBuildCheck(tc toolchain, projectRoot string, ev *EventSender) bool {
 	return true
 }
 
+// finalReviewMaxFixAttempts caps how many fix→re-review cycles finalReview
+// will run before giving up. In `--auto` mode the fix agent is spawned
+// without user confirmation, and before this cap `finalReview` recursed
+// into itself on every failed review — if invariants/tests weren't
+// auto-fixable, `haft run --auto` would loop indefinitely. Two attempts
+// matches the manual workflow (user would typically try once, escalate
+// once, then triage by hand).
+const finalReviewMaxFixAttempts = 2
+
 // finalReview runs full invariant verification + drift check + test suite.
+// It is the entry point; callers pass attempt=0. Internal recursion
+// increments attempt and bails when it reaches finalReviewMaxFixAttempts.
 func finalReview(
 	ctx context.Context,
 	decisionRef string,
@@ -388,6 +399,21 @@ func finalReview(
 	auto bool,
 	tc toolchain,
 	ev *EventSender,
+) bool {
+	return finalReviewWithBudget(ctx, decisionRef, graphStore, artStore, projectRoot, agent, auto, tc, ev, 0)
+}
+
+func finalReviewWithBudget(
+	ctx context.Context,
+	decisionRef string,
+	graphStore *graph.Store,
+	artStore *artifact.Store,
+	projectRoot string,
+	agent string,
+	auto bool,
+	tc toolchain,
+	ev *EventSender,
+	attempt int,
 ) bool {
 	ev.Phase("Final Review")
 
@@ -458,11 +484,22 @@ func finalReview(
 			}
 			_, _ = fixPrompt.WriteString(fmt.Sprintf("\nFix all issues. %s\n", tc.verifyHint))
 
+			if attempt+1 >= finalReviewMaxFixAttempts {
+				ev.Fail(fmt.Sprintf(
+					"Skipping fix agent — already tried %d time(s); giving up so CI won't loop",
+					attempt+1,
+				))
+				return false
+			}
+
 			ev.Phase("Fix Agent")
 			_ = spawnAgentWithEvents(ctx, agent, fixPrompt.String(), projectRoot, ev)
 
-			// Re-check
-			return finalReview(ctx, decisionRef, graphStore, artStore, projectRoot, agent, auto, tc, ev)
+			// Re-check with the retry budget advanced.
+			return finalReviewWithBudget(
+				ctx, decisionRef, graphStore, artStore,
+				projectRoot, agent, auto, tc, ev, attempt+1,
+			)
 		}
 	}
 

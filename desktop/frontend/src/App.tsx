@@ -156,12 +156,11 @@ export default function App() {
 
   const activeProject = projects.find((p) => p.is_active);
   const projectTasks = (projectPath: string) => {
-    // Backend ListTasks already filters by active project — show all tasks
-    // under the active project in the sidebar regardless of path string match.
-    const isActive = activeProject?.path === projectPath;
-    if (isActive) {
-      return tasks;
-    }
+    // Always filter by project_path. `listTasks()` invokes the backend
+    // command with no project argument, so `tasks` is the union across
+    // every registered project — returning the whole set for the active
+    // project would duplicate entries and surface unrelated rows in the
+    // active project's sidebar.
     return tasks.filter((task) => task.project_path === projectPath);
   };
 

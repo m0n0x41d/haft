@@ -201,7 +201,7 @@ pub fn search_artifacts(
 /// Returns a typed `DesktopConfig` rather than a JSON string to match the
 /// TypeScript contract. Reads `~/.haft/config.json`; falls back to defaults
 /// when the file is absent or unparseable so the Settings page can still
-/// render (user edits will persist via `save_config` once wired).
+/// render.
 #[tauri::command]
 pub fn get_config(_state: State<'_, DbState>) -> Result<DesktopConfig, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -211,6 +211,29 @@ pub fn get_config(_state: State<'_, DbState>) -> Result<DesktopConfig, String> {
         Err(_) => return Ok(DesktopConfig::default()),
     };
     serde_json::from_str::<DesktopConfig>(&content).or_else(|_| Ok(DesktopConfig::default()))
+}
+
+/// Persist the Settings page's edits to `~/.haft/config.json`. Creates the
+/// parent directory if missing. Writes the full config snapshot on every
+/// save — we don't patch fields individually, matching the frontend contract
+/// (`saveConfig(config: DesktopConfig)`).
+#[tauri::command]
+pub fn save_config(
+    _state: State<'_, DbState>,
+    config: DesktopConfig,
+) -> Result<DesktopConfig, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let haft_dir = format!("{home}/.haft");
+    std::fs::create_dir_all(&haft_dir)
+        .map_err(|e| format!("create config dir: {e}"))?;
+
+    let config_path = format!("{haft_dir}/config.json");
+    let serialized = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("serialize config: {e}"))?;
+    std::fs::write(&config_path, serialized)
+        .map_err(|e| format!("write config: {e}"))?;
+
+    Ok(config)
 }
 
 // ─── Flows ───

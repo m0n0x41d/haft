@@ -1756,8 +1756,16 @@ export async function resolveAdoptWaive(
 }
 
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {
-  const problem = await tauriInvoke<ProblemDetail>("create_problem", { input });
-  if (problem) return problem;
+  // Backend's create_problem handler returns only {id, title, kind, status,
+  // md_path, created_at} — not a full ProblemDetail. If we render that
+  // partial record directly, pages like Problems.tsx crash accessing
+  // arrays like `linked_portfolios`. Re-hydrate via getProblem(id) so
+  // callers get the canonical ProblemDetail shape with every field present.
+  const created = await tauriInvoke<{ id?: string }>("create_problem", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("prob");
   const detail: ProblemDetail = {
@@ -2383,9 +2391,21 @@ export async function implementDecision(
   worktree: boolean,
   branch: string,
 ): Promise<TaskState> {
-  const task = await tauriInvoke<TaskState>("implement_decision", { decision_id: decisionID, agent, worktree, branch });
-  if (task) return task;
-  return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
+  // `implement_decision` RPC returns {decision_ref, brief} — not a task.
+  // We fetch the brief (optional), then spawn an actual agent task whose
+  // prompt includes the brief. If the RPC fails, fall back to a simple
+  // implement prompt so the user can still kick off the task.
+  let prompt = `Implement ${decisionID}`;
+  const briefResult = await tauriInvoke<{ brief?: string }>("implement_decision", {
+    decision_id: decisionID,
+    agent,
+    worktree,
+    branch,
+  }).catch(() => null);
+  if (briefResult && briefResult.brief) {
+    prompt = `Implement ${decisionID}\n\n${briefResult.brief}`;
+  }
+  return spawnTask(agent, prompt, worktree, branch);
 }
 
 export async function createPullRequest(
@@ -2419,9 +2439,18 @@ export async function createPullRequest(
 }
 
 export async function verifyDecision(decisionID: string, agent: string): Promise<TaskState> {
-  const task = await tauriInvoke<TaskState>("verify_decision", { decision_id: decisionID, agent });
-  if (task) return task;
-  return spawnTask(agent, `Verify ${decisionID}`, false, "");
+  // `verify_decision` RPC returns {decision_ref, invariants} — not a task.
+  // Fetch the invariants list (optional) and spawn an agent task whose
+  // prompt asks it to verify those specific invariants.
+  let prompt = `Verify ${decisionID}`;
+  const verifyResult = await tauriInvoke<{ invariants?: unknown }>("verify_decision", {
+    decision_id: decisionID,
+    agent,
+  }).catch(() => null);
+  if (verifyResult && verifyResult.invariants) {
+    prompt = `Verify ${decisionID}\n\nInvariants to check:\n${JSON.stringify(verifyResult.invariants, null, 2)}`;
+  }
+  return spawnTask(agent, prompt, false, "");
 }
 
 export async function openPathInIDE(path: string): Promise<void> {

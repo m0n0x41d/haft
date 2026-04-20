@@ -60,6 +60,7 @@ pub fn run() {
             commands_read::list_projects,
             commands_read::search_artifacts,
             commands_read::get_config,
+            commands_read::save_config,
             commands_read::list_flows,
             commands_read::list_flow_templates,
             // ── Mutate (haft desktop-rpc subprocess) ──

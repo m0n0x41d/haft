@@ -17,16 +17,20 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 
 // ─── Event payloads ───
+//
+// Field names here are the JSON keys the frontend listeners filter on
+// (TerminalPanel.tsx subscribes to `terminal.output` and reads `payload.id`).
+// Keep `id` — not `session_id` — or the filter silently drops every chunk.
 
 #[derive(Clone, Serialize)]
 struct TerminalOutputEvent {
-    session_id: String,
+    id: String,
     data: String,
 }
 
 #[derive(Clone, Serialize)]
 struct TerminalExitEvent {
-    session_id: String,
+    id: String,
     exit_code: u32,
 }
 
@@ -293,7 +297,7 @@ pub fn close_terminal_session(
     let _ = app.emit(
         "terminal.exit",
         TerminalExitEvent {
-            session_id: id.clone(),
+            id: id.clone(),
             exit_code: 0,
         },
     );
@@ -384,7 +388,7 @@ fn terminal_reader_loop(
                 let _ = app.emit(
                     "terminal.output",
                     TerminalOutputEvent {
-                        session_id: session.id.clone(),
+                        id: session.id.clone(),
                         data,
                     },
                 );
@@ -419,7 +423,7 @@ fn terminal_wait_loop(
                     let _ = app.emit(
                         "terminal.exit",
                         TerminalExitEvent {
-                            session_id: session.id.clone(),
+                            id: session.id.clone(),
                             exit_code: code,
                         },
                     );

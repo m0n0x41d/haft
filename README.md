@@ -192,23 +192,23 @@ Decision quality enforcement before automating execution:
 - Claim-scoped R_eff, evidence supersession, CL0 rejection
 - Deep `/h-onboard` with module-by-module analysis for legacy projects
 
-### v6.2 — Dashboard + Execution Primitives (shipped)
+### v6.2 — Dashboard + Execution + Design System (shipped 2026-04-20)
 
-The desktop became an operator surface:
+The desktop became a real operator surface, the reasoning vocabulary grew semiotic teeth, and the two transport layers stopped drifting from each other:
+
 - **Unified Dashboard** — decisions, governance findings, recent activity in one view
-- **Implement** — click a decision, agent spawns in worktree with full reasoning context, baseline taken on success
-- **Adopt** — governance finding → agent thread for interactive resolution
+- **Implement** — click a decision, agent spawns in worktree with full reasoning context, baseline taken on success, PR body generated from decision rationale
+- **Adopt** — governance finding → agent thread for interactive resolution; agent never auto-resolves
 - **`haft run`** — same Implement pipeline from CLI, with planning + per-task verification + final invariant review
 - **Tauri v2 desktop migration** (from Wails v2)
-
-Post-release work in `[Unreleased]` (see CHANGELOG):
-- 7 new FPF semiotic patterns sourced from Levenchuk's seminar (FRAME-08 / FRAME-09 / CHR-10 / CHR-11 / CHR-12 / X-STATEMENT-TYPE / X-FANOUT-AUDIT)
-- `governance_mode` on DecisionRecord (file vs module-level governance, opt-in)
-- Random-hex artifact IDs to prevent merge conflicts across branches ([#63](https://github.com/m0n0x41d/haft/issues/63))
-- MCP `parity_plan` exposure for deep-mode comparison ([#62](https://github.com/m0n0x41d/haft/issues/62))
-- Auto-injected FPF pattern hints in reasoning tool responses, generated from embedded pattern files
-- Layered architecture boundary tests + transport-parity drift detection
-- `internal/embedding` extraction; `internal/fpf` is now pure Core
+- **Haft Design System** — typed React primitives (Eyebrow, Button, Badge, Card, Input, StatCard, MonoId, Pill) + ComparisonTable with border-first Pareto grid + DecayWindow progress bar on decision detail
+- **Seven new FPF semiotic patterns** (FRAME-08 / FRAME-09 / CHR-10 / CHR-11 / CHR-12 / X-STATEMENT-TYPE / X-FANOUT-AUDIT) sourced from Levenchuk's seminar, auto-injected into reasoning tool responses
+- **`governance_mode` on DecisionRecord** — file-level vs module-level governance, opt-in, honors FPF X-SCOPE
+- **Random-hex artifact IDs** (`dec-20260420-a3f7c1`) to prevent merge conflicts across branches ([#63](https://github.com/m0n0x41d/haft/issues/63))
+- **MCP `parity_plan` exposure** for deep-mode comparison ([#62](https://github.com/m0n0x41d/haft/issues/62))
+- **Transport-parity drift detection** + layered architecture boundary tests
+- **`internal/embedding` extraction**; `internal/fpf` is now pure Core
+- **`Valid-until` self-application** on FPF pattern files with a failing test when content ages past six months
 
 ### v7 — Desktop Loop MVP
 

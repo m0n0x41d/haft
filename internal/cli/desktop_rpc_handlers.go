@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -268,55 +269,86 @@ func handleReopen(env *rpcEnv, w io.Writer) error {
 // ── Problem candidates ──────────────────────────────────────────────
 
 func handleAdoptCandidate(env *rpcEnv, w io.Writer) error {
+	// Accept both shapes on stdin:
+	//   { "id": "..." }                                     — minimal (desktop frontend sends this)
+	//   { "id": "...", "title": "...", "signal": "...", ... } — full (CLI / test callers)
+	//
+	// Missing fields are looked up from the desktop_problem_candidates table
+	// by id. The row is populated when the governance scanner surfaces the
+	// candidate, so the full payload is always recoverable server-side.
 	var input struct {
-		ID string `json:"id"`
+		ID         string `json:"id"`
+		Title      string `json:"title"`
+		Signal     string `json:"signal"`
+		Acceptance string `json:"acceptance"`
+		Context    string `json:"context"`
 	}
 	if err := readInput(&input); err != nil {
 		return fmt.Errorf("parse input: %w", err)
 	}
 
-	// Adopt a candidate by framing it as a tactical problem.
-	// The governance candidate store lives in the desktop DB —
-	// for the RPC bridge we simply create the problem directly
-	// from the provided candidate data.
-	var candidateInput struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Signal      string `json:"signal"`
-		Acceptance  string `json:"acceptance"`
-		Context     string `json:"context"`
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		return fmt.Errorf("adopt-candidate requires id")
 	}
-	// Re-read stdin since readInput already consumed it — use the full struct.
-	candidateInput.ID = input.ID
-	candidateInput.Title = input.ID // Tauri frontend must pass full candidate data
-	// The Tauri frontend sends the full candidate object; re-parse from the raw input.
-	raw, _ := json.Marshal(input)
-	_ = json.Unmarshal(raw, &candidateInput)
 
-	// If title is just the ID, the caller sent minimal input — look up from governance state.
-	// For the stateless RPC bridge, the caller should send the full candidate payload.
-	if candidateInput.Title == "" || candidateInput.Title == candidateInput.ID {
-		return fmt.Errorf("adopt-candidate requires title, signal, and acceptance fields from the candidate")
+	// Fill in any fields the caller omitted by querying the candidate row.
+	if input.Title == "" || input.Signal == "" || input.Acceptance == "" || input.Context == "" {
+		var title, signal, acceptance, context sql.NullString
+		err := env.rawDB.QueryRowContext(env.ctx,
+			`SELECT title, signal, acceptance, context
+			 FROM desktop_problem_candidates
+			 WHERE id = ? AND status = 'active'`,
+			id,
+		).Scan(&title, &signal, &acceptance, &context)
+		if err != nil {
+			return fmt.Errorf("lookup candidate %s: %w", id, err)
+		}
+		if input.Title == "" {
+			input.Title = title.String
+		}
+		if input.Signal == "" {
+			input.Signal = signal.String
+		}
+		if input.Acceptance == "" {
+			input.Acceptance = acceptance.String
+		}
+		if input.Context == "" {
+			input.Context = context.String
+		}
+	}
+
+	if input.Title == "" || input.Signal == "" || input.Acceptance == "" {
+		return fmt.Errorf("candidate %s missing title, signal, or acceptance after DB lookup", id)
 	}
 
 	art, _, err := artifact.FrameProblem(env.ctx, env.store, env.haftDir, artifact.ProblemFrameInput{
-		Title:       candidateInput.Title,
-		Signal:      candidateInput.Signal,
-		Acceptance:  candidateInput.Acceptance,
-		Context:     candidateInput.Context,
-		Mode:        "tactical",
-		BlastRadius: "Governance follow-up from the desktop decision loop",
-		Reversibility: "high",
-		Constraints:   []string{"Validate the surfaced governance finding with fresh evidence before making irreversible changes."},
+		Title:               input.Title,
+		Signal:              input.Signal,
+		Acceptance:          input.Acceptance,
+		Context:             input.Context,
+		Mode:                "tactical",
+		BlastRadius:         "Governance follow-up from the desktop decision loop",
+		Reversibility:       "high",
+		Constraints:         []string{"Validate the surfaced governance finding with fresh evidence before making irreversible changes."},
 		OptimizationTargets: []string{"Close the surfaced governance gap quickly"},
 	})
 	if err != nil {
 		return fmt.Errorf("adopt candidate: %w", err)
 	}
 
+	// Mark the candidate as adopted so it stops appearing in the active list
+	// and links back to the framed problem.
+	_, _ = env.rawDB.ExecContext(env.ctx,
+		`UPDATE desktop_problem_candidates
+		 SET status = 'adopted', problem_ref = ?, updated_at = ?
+		 WHERE id = ?`,
+		art.Meta.ID, time.Now().UTC().Format(time.RFC3339), id,
+	)
+
 	return writeResult(w, map[string]any{
-		"candidate_id": candidateInput.ID,
-		"problem_id":   art.Meta.ID,
+		"candidate_id":  id,
+		"problem_id":    art.Meta.ID,
 		"problem_title": art.Meta.Title,
 	})
 }

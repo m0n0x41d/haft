@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::shell_env::ShellEnvState;
@@ -93,34 +93,32 @@ impl TerminalManager {
 
 // ─── Tauri commands ───
 
-#[derive(Deserialize)]
-pub struct CreateTerminalRequest {
-    #[serde(default = "default_cols")]
-    pub cols: u16,
-    #[serde(default = "default_rows")]
-    pub rows: u16,
-    #[serde(default)]
-    pub cwd: String,
-}
-
-fn default_cols() -> u16 { DEFAULT_COLS }
-fn default_rows() -> u16 { DEFAULT_ROWS }
-
+/// Flat argument shape to match the frontend's
+/// `invoke("create_terminal_session", { cwd })` call. Tauri binds by
+/// parameter name, so wrapping these in a `request: CreateTerminalRequest`
+/// struct would force the frontend to send `{ request: { ... } }` — which
+/// it doesn't. All three fields are optional; 0/"" fall back to defaults.
 #[tauri::command]
 pub fn create_terminal_session(
     app: AppHandle,
     manager: State<'_, TerminalManagerState>,
     env_state: State<'_, ShellEnvState>,
-    request: CreateTerminalRequest,
+    cwd: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
 ) -> Result<TerminalSessionView, String> {
+    let cwd = cwd.unwrap_or_default();
+    let cols = cols.unwrap_or(DEFAULT_COLS);
+    let rows = rows.unwrap_or(DEFAULT_ROWS);
+
     let shell_env = env_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
 
-    let cols = if request.cols == 0 { DEFAULT_COLS } else { request.cols };
-    let rows = if request.rows == 0 { DEFAULT_ROWS } else { request.rows };
+    let cols = if cols == 0 { DEFAULT_COLS } else { cols };
+    let rows = if rows == 0 { DEFAULT_ROWS } else { rows };
 
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -137,8 +135,8 @@ pub fn create_terminal_session(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.args(["-l"]);
 
-    if !request.cwd.is_empty() {
-        cmd.cwd(&request.cwd);
+    if !cwd.is_empty() {
+        cmd.cwd(&cwd);
     }
 
     let env_map = crate::shell_env::build_agent_env(
@@ -170,10 +168,10 @@ pub fn create_terminal_session(
     let mut mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let session_id = mgr.next_id();
     let created_at = now_rfc3339();
-    let title = if request.cwd.is_empty() {
+    let title = if cwd.is_empty() {
         shell.clone()
     } else {
-        std::path::Path::new(&request.cwd)
+        std::path::Path::new(&cwd)
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(&shell)
@@ -183,8 +181,8 @@ pub fn create_terminal_session(
     let session = Arc::new(TerminalSession {
         id: session_id.clone(),
         title: title.clone(),
-        project_path: request.cwd.clone(),
-        cwd: request.cwd.clone(),
+        project_path: cwd.clone(),
+        cwd: cwd.clone(),
         shell: shell.clone(),
         created_at: created_at.clone(),
         updated_at: Mutex::new(created_at.clone()),

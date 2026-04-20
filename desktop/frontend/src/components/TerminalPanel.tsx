@@ -75,13 +75,12 @@ export function TerminalPanel({
       return;
     }
 
-    const stopStatus = subscribe<TerminalSession>("terminal.status", (payload) => {
-      if (payload.status === "running") {
-        setSessions((current) => upsertSession(current, payload));
-        setActiveId((current) => current ?? payload.id);
-        return;
-      }
-
+    // The backend emits `terminal.exit` when a shell process ends
+    // (either through `close_terminal_session` or a natural `exit`).
+    // There is no `terminal.status` emission — additions are handled
+    // synchronously by `createSession`; this subscription only handles
+    // removals so stale tabs don't linger after the shell dies.
+    const stopExit = subscribe<{ id: string; exit_code: number }>("terminal.exit", (payload) => {
       setSessions((current) => {
         const remaining = current.filter((session) => session.id !== payload.id);
         setActiveId((active) => (active === payload.id ? remaining[0]?.id ?? null : active));
@@ -90,7 +89,7 @@ export function TerminalPanel({
     });
 
     return () => {
-      stopStatus?.();
+      stopExit?.();
     };
   }, [open]);
 
@@ -342,7 +341,3 @@ function TerminalViewport({
   );
 }
 
-function upsertSession(current: TerminalSession[], nextSession: TerminalSession): TerminalSession[] {
-  const withoutCurrent = current.filter((session) => session.id !== nextSession.id);
-  return [...withoutCurrent, nextSession];
-}

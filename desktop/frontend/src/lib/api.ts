@@ -1665,8 +1665,17 @@ export async function resolveAdoptDeprecate(
 }
 
 export async function reopenDecision(decisionID: string, reason: string): Promise<ProblemDetail> {
-  const problem = await tauriInvoke<ProblemDetail>("reopen_decision", { decision_id: decisionID, reason });
-  if (problem) return problem;
+  // Backend returns { decision_id, decision_status, new_problem_id } — not
+  // a ProblemDetail. Callers use `problem.id` for navigation, so we need
+  // to hydrate by fetching the freshly-created problem with new_problem_id.
+  const result = await tauriInvoke<{ new_problem_id?: string }>(
+    "reopen_decision",
+    { decision_id: decisionID, reason },
+  );
+  if (result && result.new_problem_id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: result.new_problem_id });
+    if (hydrated) return hydrated;
+  }
 
   const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
   const nextDecision = {

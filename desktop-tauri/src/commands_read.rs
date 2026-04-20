@@ -83,6 +83,16 @@ pub fn list_tasks(
     }
 }
 
+/// Frontend-side alias for `list_tasks` with no project_path — lists every
+/// task across all projects. Registered separately because `api.ts` invokes
+/// `list_all_tasks` by name (see Jobs page); unifying that into one command
+/// on both sides is a follow-up.
+#[tauri::command]
+pub fn list_all_tasks(state: State<'_, DbState>) -> Result<Vec<TaskState>, String> {
+    let db = state.0.lock().map_err(|e| e.to_string())?;
+    db.list_all_tasks().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_task_output(state: State<'_, DbState>, id: String) -> Result<String, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
@@ -92,10 +102,67 @@ pub fn get_task_output(state: State<'_, DbState>, id: String) -> Result<String, 
 
 // ─── Projects ───
 
+/// Returns `Vec<ProjectInfo>` rather than `Vec<String>` to match the
+/// TypeScript contract in `desktop/frontend/src/lib/api.ts`. Source of truth
+/// is the registry at `~/.haft/desktop-projects.json`; the SQLite
+/// `desktop_tasks` table only knows about projects that already ran a task,
+/// so it misses freshly-added projects. We join:
+///
+/// - registry (path, name, id, is_active)
+/// - counts fall back to 0 here; real counts would require opening each
+///   project's own DB, which is deferred until the sidebar actually needs
+///   live numbers (see `get_dashboard` — it is per-project).
 #[tauri::command]
-pub fn list_projects(state: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let db = state.0.lock().map_err(|e| e.to_string())?;
-    db.list_projects().map_err(|e| e.to_string())
+pub fn list_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let registry_path = format!("{home}/.haft/desktop-projects.json");
+    let content = match std::fs::read_to_string(&registry_path) {
+        Ok(s) => s,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let val: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("parse registry: {e}"))?;
+    let active_path = val
+        .get("active_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let projects = val
+        .get("projects")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut out = Vec::with_capacity(projects.len());
+    for p in projects {
+        let path = p.get("path").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        if path.is_empty() {
+            continue;
+        }
+        let name = p
+            .get("name")
+            .and_then(|s| s.as_str())
+            .unwrap_or_else(|| {
+                std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+            })
+            .to_string();
+        let id = p.get("id").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let is_active = !active_path.is_empty() && path == active_path;
+        out.push(ProjectInfo {
+            path,
+            name,
+            id,
+            is_active,
+            problem_count: 0,
+            decision_count: 0,
+            stale_count: 0,
+        });
+    }
+    Ok(out)
 }
 
 // ─── Search ───
@@ -111,14 +178,19 @@ pub fn search_artifacts(
 
 // ─── Config ───
 
+/// Returns a typed `DesktopConfig` rather than a JSON string to match the
+/// TypeScript contract. Reads `~/.haft/config.json`; falls back to defaults
+/// when the file is absent or unparseable so the Settings page can still
+/// render (user edits will persist via `save_config` once wired).
 #[tauri::command]
-pub fn get_config(state: State<'_, DbState>, key: Option<String>) -> Result<String, String> {
-    let db = state.0.lock().map_err(|e| e.to_string())?;
-    // If no key, return all config as JSON object
-    match key {
-        Some(k) if !k.is_empty() => db.get_config(&k).map_err(|e| e.to_string()),
-        _ => db.get_all_config().map_err(|e| e.to_string()),
-    }
+pub fn get_config(_state: State<'_, DbState>) -> Result<DesktopConfig, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let config_path = format!("{home}/.haft/config.json");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(s) => s,
+        Err(_) => return Ok(DesktopConfig::default()),
+    };
+    serde_json::from_str::<DesktopConfig>(&content).or_else(|_| Ok(DesktopConfig::default()))
 }
 
 // ─── Flows ───

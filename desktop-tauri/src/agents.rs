@@ -165,6 +165,86 @@ pub fn spawn_agent(
     env_state: State<'_, ShellEnvState>,
     request: SpawnAgentRequest,
 ) -> Result<serde_json::Value, String> {
+    spawn_pty_task(&app, &manager, &env_state, request)
+}
+
+/// Frontend-side command — accepts the flat shape `{ agent, prompt, worktree,
+/// branch }` that `api.ts` sends and resolves `project_name` / `project_path`
+/// from the active-project registry. `worktree` / `branch` are accepted for
+/// forward compatibility but not yet honored (tracked as follow-up —
+/// spawning into a worktree requires cloning the project root on the fly).
+#[tauri::command]
+pub fn spawn_task(
+    app: AppHandle,
+    manager: State<'_, AgentManagerState>,
+    env_state: State<'_, ShellEnvState>,
+    agent: String,
+    prompt: String,
+    #[allow(unused_variables)] worktree: bool,
+    #[allow(unused_variables)] branch: String,
+) -> Result<serde_json::Value, String> {
+    let (project_path, project_name) = resolve_active_project_context();
+    spawn_pty_task(
+        &app,
+        &manager,
+        &env_state,
+        SpawnAgentRequest {
+            agent,
+            prompt,
+            project_name,
+            project_path,
+            title: String::new(),
+        },
+    )
+}
+
+/// Resolve `(project_path, project_name)` for the active desktop project
+/// from `~/.haft/desktop-projects.json`. Falls back to empty strings so the
+/// PTY spawn error surfaces at `build_agent_args` rather than here.
+fn resolve_active_project_context() -> (String, String) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let registry_path = format!("{home}/.haft/desktop-projects.json");
+    let content = match std::fs::read_to_string(&registry_path) {
+        Ok(s) => s,
+        Err(_) => return (String::new(), String::new()),
+    };
+    let val: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return (String::new(), String::new()),
+    };
+    let active = val
+        .get("active_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if active.is_empty() {
+        return (String::new(), String::new());
+    }
+    let name = val
+        .get("projects")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter().find(|p| {
+                p.get("path").and_then(|s| s.as_str()) == Some(active.as_str())
+            })
+        })
+        .and_then(|p| p.get("name").and_then(|s| s.as_str()))
+        .unwrap_or_else(|| {
+            std::path::Path::new(&active)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+        })
+        .to_string();
+    (active, name)
+}
+
+fn spawn_pty_task(
+    app: &AppHandle,
+    manager: &State<'_, AgentManagerState>,
+    env_state: &State<'_, ShellEnvState>,
+    request: SpawnAgentRequest,
+) -> Result<serde_json::Value, String> {
     let kind = AgentKind::from_str(&request.agent)
         .ok_or_else(|| format!("unsupported agent: {}", request.agent))?;
 

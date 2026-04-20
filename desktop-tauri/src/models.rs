@@ -370,3 +370,60 @@ pub struct FlowTemplateView {
     pub branch: String,
     pub use_worktree: bool,
 }
+
+// ─── Projects / Config ───
+//
+// Mirror the TypeScript types in `desktop/frontend/src/lib/api.ts`. The
+// frontend deserializes Tauri responses via these names; changing a field
+// name here silently breaks the UI because Tauri sends JSON with serde's
+// default snake_case encoding.
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProjectInfo {
+    pub path: String,
+    pub name: String,
+    pub id: String,
+    pub is_active: bool,
+    pub problem_count: i64,
+    pub decision_count: i64,
+    pub stale_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentPreset {
+    pub name: String,
+    pub agent_kind: String,
+    pub model: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesktopConfig {
+    pub default_agent: String,
+    pub review_agent: String,
+    pub verify_agent: String,
+    pub agent_presets: Vec<AgentPreset>,
+    pub task_timeout_minutes: i64,
+    pub sound_enabled: bool,
+    pub notify_enabled: bool,
+    pub default_ide: String,
+    pub default_worktree: bool,
+    pub auto_wire_mcp: bool,
+}
+
+impl Default for DesktopConfig {
+    fn default() -> Self {
+        Self {
+            default_agent: "claude".into(),
+            review_agent: "claude".into(),
+            verify_agent: "claude".into(),
+            agent_presets: Vec::new(),
+            task_timeout_minutes: 30,
+            sound_enabled: true,
+            notify_enabled: true,
+            default_ide: "cursor".into(),
+            default_worktree: true,
+            auto_wire_mcp: true,
+        }
+    }
+}

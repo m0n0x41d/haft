@@ -53,6 +53,7 @@ pub fn run() {
             commands_read::list_portfolios,
             commands_read::get_portfolio,
             commands_read::list_tasks,
+            commands_read::list_all_tasks,
             commands_read::get_task_output,
             commands_read::list_projects,
             commands_read::search_artifacts,
@@ -91,6 +92,7 @@ pub fn run() {
             commands_mutate::create_pull_request,
             // ── Agents (PTY) ──
             agents::spawn_agent,
+            agents::spawn_task,
             agents::cancel_agent,
             agents::list_running_agents,
             agents::get_agent_output,

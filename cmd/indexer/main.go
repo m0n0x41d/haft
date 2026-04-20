@@ -13,6 +13,7 @@ import (
 )
 
 const routeArtifactPath = "internal/fpf/fpf-routes.json"
+const patternsDir = "internal/fpf/patterns"
 
 func main() {
 	if err := run(); err != nil {
@@ -50,16 +51,27 @@ func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
 		return fmt.Errorf("loading routes: %w", err)
 	}
 
-	if err := fpf.BuildSpecIndex(dbPath, corpus.Indexed, routes); err != nil {
+	// Load compiled pattern files and merge into the corpus
+	patternChunks, err := fpf.LoadPatternChunks(patternsDir)
+	if err != nil {
+		return fmt.Errorf("loading patterns: %w", err)
+	}
+
+	allChunks := make([]fpf.SpecChunk, 0, len(corpus.Indexed)+len(patternChunks))
+	allChunks = append(allChunks, corpus.Indexed...)
+	allChunks = append(allChunks, patternChunks...)
+
+	if err := fpf.BuildSpecIndex(dbPath, allChunks, routes); err != nil {
 		return fmt.Errorf("building index: %w", err)
 	}
 
-	metadata := buildSpecIndexMetadata(specPath, len(corpus.Indexed), commitSHA, time.Now().UTC())
+	metadata := buildSpecIndexMetadata(specPath, len(allChunks), commitSHA, time.Now().UTC())
 	if err := fpf.SetSpecMetaEntries(dbPath, metadata); err != nil {
 		return fmt.Errorf("setting meta: %w", err)
 	}
 
-	fmt.Printf("Indexed %d chunks (from %d total) into %s\n", len(corpus.Indexed), len(corpus.Chunks), dbPath)
+	fmt.Printf("Indexed %d chunks (%d spec + %d patterns) into %s\n",
+		len(allChunks), len(corpus.Indexed), len(patternChunks), dbPath)
 	return nil
 }
 

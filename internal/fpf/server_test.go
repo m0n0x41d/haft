@@ -280,6 +280,56 @@ func TestHandleInitialize_IncludesWorkflowInstructionsWhenConfigured(t *testing.
 	}
 }
 
+// TestHandleToolsList_SolutionExposesParityPlan is the regression test for
+// GitHub issue #62 — deep-mode haft_solution(action="compare") requires a
+// structured parity plan, but the MCP-side schema in handleToolsList did not
+// expose any parameter that accepts it. Without parity_plan in the schema,
+// MCP clients (Claude Code, Cursor, Gemini CLI, Codex) cannot reach deep mode.
+//
+// The schema must expose parity_plan as an object with at minimum the four
+// fields the deep-mode validator requires per FPF G.9:4.2.
+func TestHandleToolsList_SolutionExposesParityPlan(t *testing.T) {
+	solutionSchema := mustListToolProperties(t, "haft_solution")
+
+	parityPlan, ok := solutionSchema["parity_plan"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parity_plan missing from haft_solution schema (issue #62); got: %#v", solutionSchema["parity_plan"])
+	}
+	if pType, _ := parityPlan["type"].(string); pType != "object" {
+		t.Fatalf("parity_plan should be an object schema, got type=%q", pType)
+	}
+	props, ok := parityPlan["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parity_plan.properties missing or wrong type: %#v", parityPlan["properties"])
+	}
+	for _, key := range []string{"baseline_set", "window", "budget", "missing_data_policy"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("parity_plan must expose %q (required for deep-mode comparison per FPF G.9:4.2)", key)
+		}
+	}
+}
+
+// TestHandleToolsList_ProblemExposesParityPlan ensures characterize can
+// declare a structured parity plan early, not just prose parity_rules.
+// Same MCP gap as the haft_solution case but on the characterize entry point.
+func TestHandleToolsList_ProblemExposesParityPlan(t *testing.T) {
+	problemSchema := mustListToolProperties(t, "haft_problem")
+
+	parityPlan, ok := problemSchema["parity_plan"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parity_plan missing from haft_problem schema (issue #62); got: %#v", problemSchema["parity_plan"])
+	}
+	props, ok := parityPlan["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parity_plan.properties missing or wrong type: %#v", parityPlan["properties"])
+	}
+	for _, key := range []string{"baseline_set", "window", "budget", "missing_data_policy"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("parity_plan on haft_problem must expose %q", key)
+		}
+	}
+}
+
 func TestHandleToolsList_QuerySchemaIncludesProjectionView(t *testing.T) {
 	querySchema := mustListToolProperties(t, "haft_query")
 

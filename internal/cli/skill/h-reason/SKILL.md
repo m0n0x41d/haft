@@ -69,22 +69,11 @@ In shell-only environments: `haft fpf search "<query>"` with optional `--full`.
 
 ## Feature maturity
 
-| Concept | Status | What Haft does |
-|---------|--------|-----------------|
-| Problem framing | **tracked** | Stores signal, constraints, targets, acceptance. You do the framing, Haft persists it. |
-| Characterization | **tracked** | Stores comparison dimensions with scale/unit/polarity/role on the ProblemCard. |
-| WLNK | **tracked** | Required label on variants. Haft stores the stated weakest link. |
-| Parity | **textual** | Stored as rules text. Not enforced or verified. You ensure parity yourself. |
-| Pareto front | **computed + tracked** | Haft derives the non-dominated set from submitted comparison data. |
-| Stepping stones | **tracked** | Boolean flag on variants, shown in summary table. |
-| Refresh (valid_until) | **enforced** | All artifacts with expired valid_until detected by scan. |
-| CL (congruence) | **artifact-level** | Evidence calculations exist. Tool stores explicit evidence with CL values. |
-| Impact measurement | **tracked** | `haft_decision(action="measure")` records post-implementation findings. |
-| Evidence attachment | **supported** | Attach evidence with type/verdict/CL. Set `valid_until` for decay. |
+**Computed:** Pareto front (non-dominated set from comparison data), Refresh (valid_until expiry detection).
+**Tracked (persisted but not computed):** problem framing, characterization dimensions, WLNK label on variants, stepping-stone flag, CL on evidence, measurement records.
+**Textual (stored as rules, not enforced):** parity plan — you ensure it yourself.
 
-**Key rule: don't describe textual features as if they compute something.** "WLNK bounds quality" means the user identified what bounds quality, not that the system calculated it.
-
-These skill instructions are **L1 — detection and questions.** The tools (L2) persist and enforce. Don't treat a prompt-based check as verified evidence.
+**Key rule:** don't describe textual features as if they compute something. "WLNK bounds quality" means the user identified what bounds quality, not that the system calculated it. These skill instructions are **L1 — detection and questions**; the tools (L2) persist and enforce. Don't treat a prompt-based check as verified evidence.
 
 ---
 
@@ -92,7 +81,7 @@ These skill instructions are **L1 — detection and questions.** The tools (L2) 
 
 ### Understand — "What's actually going on?"
 
-The bottleneck is **problem quality**, not solution speed. Frame before solving.
+Frame before solving. Problem quality dominates solution speed in outcome.
 
 **Framing protocol — ask these questions before recording:**
 
@@ -305,30 +294,66 @@ The `── Haft ──` strip appended to tool responses shows current state an
 
 ---
 
-## RAG search reference
+## FPF pattern retrieval
 
-Use MCP-native FPF lookup when tools are available:
+FPF pattern hints are **auto-injected into reasoning tool responses** — you see them for free when you call `haft_problem`, `haft_solution`, `haft_decision`. Each hint lists the pattern IDs relevant to the current phase with short labels.
 
-```text
-haft_query(action="fpf", query="problem card PROB")
-haft_query(action="fpf", query="A.6", full=true)
-haft_query(action="fpf", query="How do I route boundary statements?", limit=3, explain=true)
-```
-
-In shell-only environments: `haft fpf search "<query>"` or `haft fpf section "<heading-or-id>"`.
+When a hint names a pattern you want to apply, retrieve the full text with `haft_query(action="fpf", query="<PATTERN-ID>")` (e.g. `FRAME-01`, `CHR-02`). Cite specific patterns when applying them. Do not pre-fetch the whole phase before every reasoning step — that is ceremony creep.
 
 ---
 
-## Concept index (search terms)
+## FPF Micro-Patterns (always-available baseline)
 
-**Understand:** problem card, PROB, anomaly, characterization, CHR, problem portfolio, goldilocks, acceptance spec, problem typing
+These compressed patterns are your floor — always in context. For full detail, use `haft_query(action="fpf")`.
 
-**Explore:** SoTA survey, strategy card, method family, solution portfolio, NQD, stepping stones, diversity
+### Frame
+- **FRAME-01 Signal typing**: Make the trigger explicit — anomaly, opportunity, probe, or cue. Typed signals prevent drift.
+- **FRAME-02 Scope boundary**: Declare what's in-scope AND out-of-scope. Prevents silent inflation.
+- **FRAME-03 Acceptance criteria**: What observable condition signals solved? Bridge framing to evidence.
+- **FRAME-05 Problem typing**: Classify: optimization / diagnosis / search / synthesis. Each needs different exploration.
+- **FRAME-07 Goldilocks**: Select problems in the zone of proximal development — beyond current capability but reachable.
+- **FRAME-08 Reading checklist**: Before acting on ANY incoming artifact, run 6 questions: object of talk / context / statement type / lexicon vs term / re-expression vs reinterpretation / result purpose.
+- **FRAME-09 Strict distinction quad**: Role ≠ Capability ≠ Method ≠ Work. Assigned ≠ can do ≠ should do ≠ did.
 
-**Choose:** Pareto front, selection policy, SEL, parity plan, PAR, fair comparison, probe-or-commit, probe-worthiness
+### Characterize
+- **CHR-01 Indicator roles**: Every dimension = constraint (hard limit), target (optimize 1-3), observation (watch, Anti-Goodhart).
+- **CHR-02 Pipeline**: normalize > indicatorize > score > compare > select. Never average disparate scales.
+- **CHR-04 Assurance tuple**: F (formality) + G (scope) + R (reliability) + CL (congruence). Snapshot of trust.
+- **CHR-08 L1/L2/L3 ambiguity**: L1=flag vague terms. L2=persist disambiguations. L3=check entity preservation.
+- **CHR-09 Parity plan**: Equal budgets, time windows, eval protocol, data freshness across variants.
+- **CHR-10 Boundary norm square (L/A/D/E)**: Decompose mixed boundary statements into Law (definition) / Admissibility (gate) / Deontics (duty) / Evidence (carrier). Split before acting.
+- **CHR-11 Relational precision pipeline**: umbrella-word → ground by relations → math lens → restored ontology → precise lexicon. Lexical fix alone isn't enough.
+- **CHR-12 Umbrella specializations**: Quality / action-invitation / service / sameness / wholeness / relation-slot / basedness — each family has its own repair.
 
-**Execute:** decision record, DRR, rollback plan, rationale, constraints, verify_after, baseline
+### Explore
+- **EXP-01 Abduction**: Frame prompt > generate rivals > apply filters > select prime hypothesis. Keep rivals visible.
+- **EXP-04 WLNK per variant**: "What breaks first?" Name the Achilles' heel. Focus evidence on testing it.
+- **EXP-05 Stepping stones**: Non-optimal but opens future search space. Allocate 1-2 bets.
+- **EXP-07 Portfolio thinking**: Pareto front = set of tradeoffs, not one winner. NQD guides selection.
+- **EXP-08 NQD**: Is this genuinely new? If yes, existing templates may mislead.
 
-**Verify:** evidence record, EVID, F-G-R, assurance level, corroboration, refutation, drift, staleness, refresh
+### Compare
+- **CMP-01 Parity**: Same budget, assumptions, scope for all variants. Rigged comparison = no comparison.
+- **CMP-02 Selection policy up front**: Declare rule BEFORE scoring. Separates judgment from evaluation.
+- **CMP-03 Pareto front**: Identify non-dominated set. Dominated variants eliminated with rationale.
+- **CMP-06 CL across options**: CL3=exact context, CL2=similar, CL1=related, CL0=opposed. Low CL = lower trust.
 
-**Cross-cutting:** WLNK, MONO, IDEM, COMM, LOC, weakest link, cutset, ADI cycle, abduction, deduction, induction
+### Decide
+- **DEC-01 Record structure**: Problem frame + Decision + Rationale + Consequences. Traceable.
+- **DEC-04 Invariants**: Load-bearing constraints: before, during, after. Violation = rollback.
+- **DEC-05 Rollback**: Triggers + Steps + Blast radius + Timeline. Honest about reversibility.
+- **DEC-06 Predictions**: "If X, we see Y within Z under K." Falsifiable. Become measurement targets.
+- **DEC-08 Counterargument**: Strongest genuine attack on the chosen option. Self-deception check.
+
+### Verify
+- **VER-01 Evidence graph**: Every claim anchored to evidence. Typed links + CL. No floating claims.
+- **VER-02 Decay**: valid_until on all evidence. Expired = 0.1 (weak, not absent). Epistemic debt.
+- **VER-03 R_eff**: min(Rs) - penalty(CL_min). Never average. Weakest link dominates.
+- **VER-07 Refresh triggers**: Evidence expiry, context change, WLNK failure, competing alternative.
+
+### Cross-cutting
+- **X-WLNK**: System reliability <= min(component reliabilities). Never average. Invest in weakest.
+- **X-SCOPE**: Every claim has explicit where + under what + when. "Always fast" = scope inflation.
+- **X-TRANSFORMER**: External agent decides. System doesn't self-improve. Human is the principal.
+- **X-STATEMENT-TYPE**: Every load-bearing sentence = rule / promise / explanation / gate / evidence. Mixed = L1 error; decompose.
+- **X-FANOUT-AUDIT**: On concept rename, sweep all carriers: prose + filenames + manifests + review bundles + provenance + tests + schemas. Fixed-point until clean.

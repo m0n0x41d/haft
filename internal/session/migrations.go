@@ -93,6 +93,24 @@ var AgentMigrations = []db.Migration{
 		Version:     8,
 		Description: "Persist assurance tuple on reasoning cycles",
 		Statements: []string{
+			// Ensure table exists (idempotent) in case migration 6 was skipped on older DBs
+			`CREATE TABLE IF NOT EXISTS agent_cycles (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				problem_ref TEXT DEFAULT '',
+				portfolio_ref TEXT DEFAULT '',
+				decision_ref TEXT DEFAULT '',
+				phase TEXT NOT NULL DEFAULT 'framer',
+				depth TEXT NOT NULL DEFAULT 'tactical',
+				status TEXT NOT NULL DEFAULT 'active',
+				lineage TEXT DEFAULT '',
+				r_eff REAL DEFAULT 0.0,
+				cl_min INTEGER DEFAULT 3,
+				governance_json TEXT DEFAULT '[]',
+				skip_json TEXT DEFAULT '[]',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
 			"ALTER TABLE agent_cycles ADD COLUMN f_eff INTEGER DEFAULT 0",
 			"ALTER TABLE agent_cycles ADD COLUMN g_eff TEXT DEFAULT '[]'",
 		},

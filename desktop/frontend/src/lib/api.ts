@@ -1,6 +1,8 @@
-// API layer — wraps Wails Go bindings with mock fallback for standalone dev.
-// After `wails dev` generates bindings at wailsjs/go/main/App, this module
-// imports them. When running standalone (npm run dev), it uses mock data.
+import { invoke } from "@tauri-apps/api/core";
+
+// API layer — wraps Tauri invoke() with mock fallback for standalone dev.
+// When running inside Tauri, calls invoke() from @tauri-apps/api/core.
+// When running standalone (npm run dev), it uses mock data.
 
 export interface DashboardData {
   project_name: string;
@@ -37,6 +39,13 @@ export interface DecisionSummary {
   weakest_link: string;
   valid_until: string;
   created_at: string;
+  implement_guard: DecisionImplementGuard;
+}
+
+export interface DecisionImplementGuard {
+  blocked_reason: string;
+  confirmation_messages: string[];
+  warning_messages: string[];
 }
 
 export interface ArtifactSummary {
@@ -113,6 +122,12 @@ export interface DecisionDetail {
   created_at: string;
   updated_at: string;
 }
+
+const EMPTY_DECISION_IMPLEMENT_GUARD: DecisionImplementGuard = {
+  blocked_reason: "",
+  confirmation_messages: [],
+  warning_messages: [],
+};
 
 export interface CoverageData {
   total_modules: number;
@@ -425,6 +440,27 @@ export interface DesktopConfig {
   auto_wire_mcp: boolean;
 }
 
+export interface ChatBlock {
+  id: string;
+  type: string;
+  role?: string;
+  text?: string;
+  name?: string;
+  call_id?: string;
+  parent_id?: string;
+  input?: string;
+  output?: string;
+  is_error?: boolean;
+}
+
+export interface ChatEntry {
+  block: ChatBlock;
+  toolResults: ChatBlock[];
+  groupedTools?: ChatEntry[];
+  toolCount?: number;
+  thinkingCount?: number;
+}
+
 export interface TaskState {
   id: string;
   title: string;
@@ -441,7 +477,307 @@ export interface TaskState {
   completed_at: string;
   error_message: string;
   output: string;
+  chat_blocks: ChatBlock[];
+  raw_output: string;
   auto_run: boolean;
+}
+
+export type ChatTranscriptState = Pick<
+  TaskState,
+  "chat_blocks" | "raw_output" | "output" | "status" | "error_message" | "agent"
+>;
+
+export interface TaskOutputEvent {
+  id: string;
+  chunk: string;
+  output: string;
+}
+
+export function hasStructuredChatBlocks(task: Pick<TaskState, "chat_blocks">): boolean {
+  const entries = buildChatEntries(task.chat_blocks);
+
+  return entries.some((entry) => isStructuredEntry(entry.block));
+}
+
+export function taskTranscriptText(task: Pick<TaskState, "raw_output" | "output">): string {
+  const rawOutput = task.raw_output.trim();
+  if (rawOutput !== "") {
+    return rawOutput;
+  }
+
+  return task.output;
+}
+
+export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
+  const filteredBlocks = blocks.filter((block) => !isNoiseBlock(block));
+  const mergedBlocks = coalesceNarrativeBlocks(filteredBlocks);
+  const toolParentByCallID = new Map<string, string>();
+  const toolResultsByParentID = new Map<string, ChatBlock[]>();
+
+  mergedBlocks.forEach((block) => {
+    if (block.type !== "tool_use") {
+      return;
+    }
+
+    if (block.call_id && block.id) {
+      toolParentByCallID.set(block.call_id, block.id);
+    }
+  });
+
+  mergedBlocks.forEach((block) => {
+    if (block.type !== "tool_result") {
+      return;
+    }
+
+    const parentID = resolveToolParentID(block, toolParentByCallID);
+    if (!parentID) {
+      return;
+    }
+
+    const normalizedResult = parentID === block.parent_id
+      ? block
+      : { ...block, parent_id: parentID };
+    const parentResults = toolResultsByParentID.get(parentID) ?? [];
+    toolResultsByParentID.set(parentID, [...parentResults, normalizedResult]);
+  });
+
+  const ungrouped = mergedBlocks.reduce<ChatEntry[]>((entries, block) => {
+    if (block.type === "tool_result" && resolveToolParentID(block, toolParentByCallID)) {
+      return entries;
+    }
+
+    entries.push({
+      block,
+      toolResults: block.type === "tool_use"
+        ? toolResultsByParentID.get(block.id) ?? []
+        : [],
+    });
+
+    return entries;
+  }, []);
+
+  return groupConsecutiveToolUse(ungrouped);
+}
+
+function isNoiseBlock(block: ChatBlock): boolean {
+  const text = (block.text ?? "").trim();
+
+  if (text.startsWith('{"type":"rate_limit_event"')) {
+    return true;
+  }
+
+  if (text.startsWith('{"type":"system"')) {
+    return true;
+  }
+
+  return false;
+}
+
+function isGroupableEntry(entry: ChatEntry): boolean {
+  return entry.block.type === "tool_use" || entry.block.type === "thinking";
+}
+
+function groupConsecutiveToolUse(entries: ChatEntry[]): ChatEntry[] {
+  const result: ChatEntry[] = [];
+  let group: ChatEntry[] = [];
+
+  const flushGroup = () => {
+    if (group.length === 0) {
+      return;
+    }
+
+    // Single tool_use stays ungrouped; single thinking also stays ungrouped
+    if (group.length === 1) {
+      result.push(group[0]);
+      group = [];
+      return;
+    }
+
+    const toolCount = group.filter((e) => e.block.type === "tool_use").length;
+    const thinkingCount = group.filter((e) => e.block.type === "thinking").length;
+
+    result.push({
+      block: {
+        id: `group-${group[0].block.id}`,
+        type: "tool_group",
+      },
+      toolResults: [],
+      groupedTools: group,
+      toolCount,
+      thinkingCount,
+    });
+
+    group = [];
+  };
+
+  entries.forEach((entry) => {
+    if (isGroupableEntry(entry)) {
+      group.push(entry);
+      return;
+    }
+
+    flushGroup();
+    result.push(entry);
+  });
+
+  flushGroup();
+  return result;
+}
+
+function isStructuredEntry(block: ChatBlock): boolean {
+  if (block.type === "tool_use" || block.type === "tool_result" || block.type === "thinking") {
+    return hasRenderableBlockValue(block);
+  }
+
+  if (block.type !== "text") {
+    return hasRenderableBlockValue(block);
+  }
+
+  return (block.role ?? "").trim() !== "user" && hasRenderableBlockValue(block);
+}
+
+function hasRenderableBlockValue(block: ChatBlock): boolean {
+  return firstNonEmptyChatBlockValue(
+    block.text,
+    block.output,
+    block.input,
+    block.name,
+  ).trim() !== "";
+}
+
+function coalesceNarrativeBlocks(blocks: ChatBlock[]): ChatBlock[] {
+  return blocks.reduce<ChatBlock[]>((mergedBlocks, block) => {
+    const previousBlock = mergedBlocks[mergedBlocks.length - 1];
+
+    if (!canMergeNarrativeBlock(previousBlock, block)) {
+      mergedBlocks.push(block);
+      return mergedBlocks;
+    }
+
+    const previousText = previousBlock.text ?? "";
+    const nextText = block.text ?? "";
+    mergedBlocks[mergedBlocks.length - 1] = {
+      ...previousBlock,
+      text: mergeNarrativeText(previousText, nextText),
+    };
+
+    return mergedBlocks;
+  }, []);
+}
+
+function canMergeNarrativeBlock(
+  previousBlock: ChatBlock | undefined,
+  nextBlock: ChatBlock,
+): boolean {
+  if (!previousBlock) {
+    return false;
+  }
+
+  if (previousBlock.type !== nextBlock.type) {
+    return false;
+  }
+
+  if (previousBlock.type !== "text" && previousBlock.type !== "thinking") {
+    return false;
+  }
+
+  if ((previousBlock.role ?? "") !== (nextBlock.role ?? "")) {
+    return false;
+  }
+
+  return true;
+}
+
+function mergeNarrativeText(previousText: string, nextText: string): string {
+  if (previousText === "") {
+    return nextText;
+  }
+
+  if (nextText === "") {
+    return previousText;
+  }
+
+  if (previousText === nextText) {
+    return previousText;
+  }
+
+  if (nextText.startsWith(previousText)) {
+    return nextText;
+  }
+
+  if (previousText.endsWith(nextText) || previousText.includes(nextText)) {
+    return previousText;
+  }
+
+  if (nextText.includes(previousText)) {
+    return nextText;
+  }
+
+  if (previousText.endsWith("\n") || nextText.startsWith("\n")) {
+    return `${previousText}${nextText}`;
+  }
+
+  if (previousText.endsWith(" ") || nextText.startsWith(" ")) {
+    return `${previousText}${nextText}`;
+  }
+
+  if (startsMarkdownBlock(nextText) || endsSentence(previousText)) {
+    return `${previousText}\n\n${nextText}`;
+  }
+
+  return `${previousText}${nextText}`;
+}
+
+function startsMarkdownBlock(value: string): boolean {
+  return /^(#{1,6}\s|>\s?|[-*+]\s|\d+\.\s|```)/.test(value.trimStart());
+}
+
+function endsSentence(value: string): boolean {
+  return /[.!?:]$/.test(value.trimEnd());
+}
+
+function resolveToolParentID(
+  block: ChatBlock,
+  toolParentByCallID: Map<string, string>,
+): string {
+  const parentID = block.parent_id?.trim();
+
+  if (parentID) {
+    return parentID;
+  }
+
+  if (!block.call_id) {
+    return "";
+  }
+
+  return toolParentByCallID.get(block.call_id) ?? "";
+}
+
+function firstNonEmptyChatBlockValue(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+
+    if (value.trim() !== "") {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+export interface PullRequestResult {
+  task_id: string;
+  decision_ref: string;
+  branch: string;
+  title: string;
+  body: string;
+  url: string;
+  pushed: boolean;
+  draft_created: boolean;
+  copied_to_clipboard: boolean;
+  warnings: string[];
 }
 
 export interface DesktopFlow {
@@ -500,89 +836,22 @@ export interface TerminalSession {
   updated_at: string;
 }
 
-type WailsBindings = {
-  GetDashboard: () => Promise<DashboardData>;
-  GetCoverage?: () => Promise<CoverageData>;
-  GetGovernanceOverview?: () => Promise<GovernanceOverview>;
-  RefreshGovernance?: () => Promise<GovernanceOverview>;
-  ListProblemCandidates?: () => Promise<ProblemCandidate[]>;
-  DismissProblemCandidate?: (id: string) => Promise<void>;
-  AdoptProblemCandidate?: (id: string) => Promise<ProblemDetail>;
-  ListProblems: () => Promise<ProblemSummary[]>;
-  ListDecisions: () => Promise<DecisionSummary[]>;
-  GetProblem: (id: string) => Promise<ProblemDetail>;
-  GetDecision: (id: string) => Promise<DecisionDetail>;
-  ListPortfolios: () => Promise<PortfolioSummary[]>;
-  GetPortfolio: (id: string) => Promise<PortfolioDetail>;
-  CreateProblem?: (input: ProblemCreateInput) => Promise<ProblemDetail>;
-  CharacterizeProblem?: (input: ProblemCharacterizationInput) => Promise<ProblemDetail>;
-  CreatePortfolio?: (input: PortfolioCreateInput) => Promise<PortfolioDetail>;
-  ComparePortfolio?: (input: PortfolioCompareInput) => Promise<PortfolioDetail>;
-  CreateDecision?: (input: DecisionCreateInput) => Promise<DecisionDetail>;
-  SearchArtifacts: (query: string) => Promise<ArtifactSummary[]>;
-  ListProjects: () => Promise<ProjectInfo[]>;
-  AddProject: (path: string) => Promise<ProjectInfo>;
-  SwitchProject: (path: string) => Promise<void>;
-  ScanForProjects: () => Promise<ProjectInfo[]>;
-  OpenDirectoryPicker?: () => Promise<string>;
-  InitProject?: (path: string) => Promise<ProjectInfo>;
-  DetectAgents?: () => Promise<InstalledAgent[]>;
-  ListTasks?: () => Promise<TaskState[]>;
-  SpawnTask?: (agent: string, prompt: string, worktree: boolean, branch: string) => Promise<TaskState>;
-  CancelTask?: (id: string) => Promise<void>;
-  ArchiveTask?: (id: string) => Promise<void>;
-  GetTaskOutput?: (id: string) => Promise<string>;
-  ListAllTasks?: () => Promise<TaskState[]>;
-  HandoffTask?: (id: string, agent: string) => Promise<TaskState>;
-  ListFlows?: () => Promise<DesktopFlow[]>;
-  ListFlowTemplates?: () => Promise<FlowTemplate[]>;
-  CreateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
-  UpdateFlow?: (input: FlowInput) => Promise<DesktopFlow>;
-  ToggleFlow?: (id: string, enabled: boolean) => Promise<DesktopFlow>;
-  DeleteFlow?: (id: string) => Promise<void>;
-  RunFlowNow?: (id: string) => Promise<TaskState>;
-  ListTerminalSessions?: () => Promise<TerminalSession[]>;
-  CreateTerminalSession?: (cwd: string) => Promise<TerminalSession>;
-  WriteTerminalInput?: (id: string, data: string) => Promise<void>;
-  ResizeTerminalSession?: (id: string, cols: number, rows: number) => Promise<void>;
-  CloseTerminalSession?: (id: string) => Promise<void>;
-  ImplementDecision?: (
-    decisionID: string,
-    agent: string,
-    worktree: boolean,
-    branch: string,
-  ) => Promise<TaskState>;
-  VerifyDecision?: (decisionID: string, agent: string) => Promise<TaskState>;
-  OpenPathInIDE?: (path: string) => Promise<void>;
-  GetConfig?: () => Promise<DesktopConfig>;
-  SaveConfig?: (config: DesktopConfig) => Promise<DesktopConfig>;
-};
+// --- Transport layer ---
 
-let bindings: WailsBindings | null = null;
-
-async function loadBindings(): Promise<WailsBindings | null> {
-  if (bindings) return bindings;
-  try {
-    // Use a variable path so TypeScript doesn't try to resolve the module at build time.
-    // Wails generates these bindings at runtime via `wails dev`.
-    const bindingPath = "../../wailsjs/go/main/App";
-    const mod = await import(/* @vite-ignore */ bindingPath);
-    bindings = mod as unknown as WailsBindings;
-    return bindings;
-  } catch {
-    return null;
-  }
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function callBinding<T>(name: string, ...args: unknown[]): Promise<T | null> {
-  const b = await loadBindings();
-  const fn = b ? (b as unknown as Record<string, (...params: unknown[]) => Promise<T>>)[name] : null;
+async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
+  if (!isTauri()) return null;
+  return invoke<T>(command, args);
+}
 
-  if (typeof fn !== "function") {
-    return null;
-  }
-
-  return fn(...args);
+/** Toggle window maximize — no-op outside Tauri. */
+export async function toggleMaximize(): Promise<void> {
+  if (!isTauri()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().toggleMaximize();
 }
 
 // --- Mock data for standalone development ---
@@ -798,6 +1067,7 @@ let mockDecisions: DecisionSummary[] = [
     weakest_link: INITIAL_DECISION_DETAIL.weakest_link,
     valid_until: INITIAL_DECISION_DETAIL.valid_until,
     created_at: "2026-04-09",
+    implement_guard: EMPTY_DECISION_IMPLEMENT_GUARD,
   },
 ];
 
@@ -870,7 +1140,66 @@ let mockTasks: TaskState[] = [
     started_at: nowString(),
     completed_at: "",
     error_message: "",
-    output: "Inspecting the current desktop runtime...\nAdding flow scheduler bindings...",
+    output: [
+      "Inspect the current desktop runtime and map the task lifecycle.",
+      "[tool] exec_command",
+      "rg -n \"chat_blocks|raw_output\" desktop",
+      "desktop/agents.go:79: ChatBlocks []ChatBlock",
+      "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+      "## Extraction plan",
+      "",
+      "- Move transcript rendering into reusable components.",
+      "- Preserve raw fallback for legacy tasks.",
+    ].join("\n"),
+    chat_blocks: [
+      {
+        id: "block-mock-1",
+        type: "thinking",
+        role: "assistant",
+        text: "Inspect the current desktop runtime and map the task lifecycle.",
+      },
+      {
+        id: "block-mock-2",
+        type: "tool_use",
+        role: "assistant",
+        name: "exec_command",
+        call_id: "call-mock-1",
+        input: "rg -n \"chat_blocks|raw_output\" desktop",
+      },
+      {
+        id: "block-mock-3",
+        type: "tool_result",
+        role: "assistant",
+        call_id: "call-mock-1",
+        parent_id: "block-mock-2",
+        output: [
+          "desktop/agents.go:79: ChatBlocks []ChatBlock",
+          "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+        ].join("\n"),
+      },
+      {
+        id: "block-mock-4",
+        type: "text",
+        role: "assistant",
+        text: [
+          "## Extraction plan",
+          "",
+          "- Move transcript rendering into reusable components.",
+          "- Preserve raw fallback for legacy tasks.",
+        ].join("\n"),
+      },
+    ],
+    raw_output: [
+      "Inspect the current desktop runtime and map the task lifecycle.",
+      "[tool] exec_command",
+      "rg -n \"chat_blocks|raw_output\" desktop",
+      "desktop/agents.go:79: ChatBlocks []ChatBlock",
+      "desktop/task_store.go:152: COALESCE(chat_blocks_json, '[]')",
+      "## Extraction plan",
+      "",
+      "- Move transcript rendering into reusable components.",
+      "- Preserve raw fallback for legacy tasks.",
+    ].join("\n"),
   },
   {
     id: "task-mock-2",
@@ -888,6 +1217,8 @@ let mockTasks: TaskState[] = [
     completed_at: nowString(),
     error_message: "",
     output: "Decision coverage report complete.",
+    chat_blocks: [],
+    raw_output: "Decision coverage report complete.",
   },
 ];
 
@@ -916,7 +1247,7 @@ let mockFlows: DesktopFlow[] = [
 
 let mockTerminalSessions: TerminalSession[] = [];
 
-function nextMockID(prefix: "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
+function nextMockID(prefix: "block" | "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -932,14 +1263,31 @@ function compactList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
+function taskPromptMetaValue(prompt: string, label: string): string {
+  const prefix = `${label.trim()}:`;
+  const lines = prompt.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    return trimmed.slice(prefix.length).trim();
+  }
+
+  return "";
+}
+
 // --- Public API ---
 
 export async function getDashboard(): Promise<DashboardData> {
-  const b = await loadBindings();
-  if (b) return b.GetDashboard();
+  const result = await tauriInvoke<DashboardData>("get_dashboard");
+  if (result) return result;
 
   return {
-    project_name: "haft",
+    project_name: "",
     problem_count: mockProblems.length,
     decision_count: mockDecisions.length,
     portfolio_count: mockPortfolios.length,
@@ -960,38 +1308,38 @@ export async function getDashboard(): Promise<DashboardData> {
 }
 
 export async function listProblems(): Promise<ProblemSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListProblems();
+  const result = await tauriInvoke<ProblemSummary[]>("list_problems");
+  if (result) return result;
   return mockProblems;
 }
 
 export async function listDecisions(): Promise<DecisionSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListDecisions();
+  const result = await tauriInvoke<DecisionSummary[]>("list_decisions");
+  if (result) return result;
   return mockDecisions;
 }
 
 export async function getProblem(id: string): Promise<ProblemDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetProblem(id);
+  const result = await tauriInvoke<ProblemDetail>("get_problem", { id });
+  if (result) return result;
   return mockProblemDetails.get(id) ?? INITIAL_PROBLEM_DETAIL;
 }
 
 export async function getDecision(id: string): Promise<DecisionDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetDecision(id);
+  const result = await tauriInvoke<DecisionDetail>("get_decision", { id });
+  if (result) return result;
   return mockDecisionDetails.get(id) ?? INITIAL_DECISION_DETAIL;
 }
 
 export async function listPortfolios(): Promise<PortfolioSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.ListPortfolios();
+  const result = await tauriInvoke<PortfolioSummary[]>("list_portfolios");
+  if (result) return result;
   return mockPortfolios;
 }
 
 export async function getPortfolio(id: string): Promise<PortfolioDetail> {
-  const b = await loadBindings();
-  if (b) return b.GetPortfolio(id);
+  const result = await tauriInvoke<PortfolioDetail>("get_portfolio", { id });
+  if (result) return result;
   return mockPortfolioDetails.get(id) ?? INITIAL_PORTFOLIO_DETAIL;
 }
 
@@ -1010,7 +1358,7 @@ export interface ReadinessReport {
 }
 
 export async function assessComparisonReadiness(portfolioID: string): Promise<ReadinessReport> {
-  const report = await callBinding<ReadinessReport>("AssessComparisonReadiness", portfolioID);
+  const report = await tauriInvoke<ReadinessReport>("assess_comparison_readiness", { portfolio_id: portfolioID });
   if (report) return { ...report, missing_scores: report.missing_scores ?? [], warnings: report.warnings ?? [] };
   return {
     portfolio_id: portfolioID,
@@ -1027,13 +1375,13 @@ export async function assessComparisonReadiness(portfolioID: string): Promise<Re
 }
 
 export async function getCoverage(): Promise<CoverageData> {
-  const coverage = await callBinding<CoverageData>("GetCoverage");
+  const coverage = await tauriInvoke<CoverageData>("get_coverage");
   if (coverage) return coverage;
   return mockGovernanceOverview.coverage;
 }
 
 export async function getGovernanceOverview(): Promise<GovernanceOverview> {
-  const overview = await callBinding<GovernanceOverview>("GetGovernanceOverview");
+  const overview = await tauriInvoke<GovernanceOverview>("get_governance_overview");
   if (overview) return normalizeOverview(overview);
   return mockGovernanceOverview;
 }
@@ -1058,7 +1406,7 @@ function normalizeOverview(o: GovernanceOverview): GovernanceOverview {
 }
 
 export async function refreshGovernance(): Promise<GovernanceOverview> {
-  const overview = await callBinding<GovernanceOverview>("RefreshGovernance");
+  const overview = await tauriInvoke<GovernanceOverview>("refresh_governance");
   if (overview) return overview;
   mockGovernanceOverview = {
     ...mockGovernanceOverview,
@@ -1072,13 +1420,13 @@ export async function refreshGovernance(): Promise<GovernanceOverview> {
 }
 
 export async function listProblemCandidates(): Promise<ProblemCandidate[]> {
-  const candidates = await callBinding<ProblemCandidate[]>("ListProblemCandidates");
+  const candidates = await tauriInvoke<ProblemCandidate[]>("list_problem_candidates");
   if (candidates) return candidates;
   return mockGovernanceOverview.problem_candidates;
 }
 
 export async function dismissProblemCandidate(id: string): Promise<void> {
-  await callBinding<void>("DismissProblemCandidate", id);
+  await tauriInvoke<void>("dismiss_problem_candidate", { id });
   mockGovernanceOverview = {
     ...mockGovernanceOverview,
     problem_candidates: mockGovernanceOverview.problem_candidates.filter((candidate) => candidate.id !== id),
@@ -1086,7 +1434,7 @@ export async function dismissProblemCandidate(id: string): Promise<void> {
 }
 
 export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> {
-  const adopted = await callBinding<ProblemDetail>("AdoptProblemCandidate", id);
+  const adopted = await tauriInvoke<ProblemDetail>("adopt_problem_candidate", { id });
   if (adopted) return adopted;
 
   const candidate = mockGovernanceOverview.problem_candidates.find((item) => item.id === id);
@@ -1146,9 +1494,280 @@ export async function adoptProblemCandidate(id: string): Promise<ProblemDetail> 
   return detail;
 }
 
+export async function waiveDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
+  const decision = await tauriInvoke<DecisionDetail>("waive_decision", { decision_id: decisionID, reason });
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const validUntil = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const nextDecision = {
+    ...currentDecision,
+    status: "active",
+    valid_until: validUntil,
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "active",
+          valid_until: validUntil,
+        }
+      : decisionSummary,
+  );
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID || finding.category !== "evidence_expired",
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function baselineDecision(decisionID: string): Promise<DecisionDetail> {
+  const decision = await tauriInvoke<DecisionDetail>("baseline_decision", { decision_id: decisionID });
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID || finding.category !== "decision_stale",
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function resolveAdoptBaseline(
+  _findingID: string,
+  decisionID: string,
+): Promise<DecisionDetail> {
+  // No backend `resolve_adopt_baseline` command exists; calling tauriInvoke
+  // would throw an unknown-command error before the baseline path could run.
+  // Delegate directly to baselineDecision — findings auto-resolve when the
+  // governance scan next observes the fresh baseline.
+  return baselineDecision(decisionID);
+}
+
+export async function measureDecision(
+  decisionID: string,
+  findings: string,
+  verdict: string,
+): Promise<DecisionDetail> {
+  const decision = await tauriInvoke<DecisionDetail>("measure_decision", { decision_id: decisionID, findings, verdict });
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const canonicalVerdict =
+    verdict.trim().toLowerCase() === "accepted"
+      ? "supports"
+      : verdict.trim().toLowerCase() === "partial"
+        ? "weakens"
+        : "refutes";
+  const nextDecision = {
+    ...currentDecision,
+    evidence: {
+      ...currentDecision.evidence,
+      items: [
+        {
+          id: `ev-${Date.now()}`,
+          type: "measurement",
+          content: findings.trim(),
+          verdict: canonicalVerdict,
+          formality_level: 2,
+          congruence_level: 3,
+          claim_refs: [],
+          valid_until: currentDecision.valid_until,
+          is_expired: false,
+        },
+        ...currentDecision.evidence.items,
+      ],
+      covered_claims: Math.max(currentDecision.evidence.covered_claims, 1),
+      coverage_gaps: [],
+    },
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter(
+      (finding) =>
+        finding.artifact_ref !== decisionID ||
+        (finding.category !== "evidence_expired" && finding.category !== "reff_degraded"),
+    ),
+  };
+
+  return nextDecision;
+}
+
+export async function resolveAdoptMeasure(
+  _findingID: string,
+  decisionID: string,
+  findings: string,
+  verdict: string,
+): Promise<DecisionDetail> {
+  // See resolveAdoptBaseline — no backend command, delegate directly.
+  return measureDecision(decisionID, findings, verdict);
+}
+
+export async function deprecateDecision(decisionID: string, reason: string): Promise<DecisionDetail> {
+  const decision = await tauriInvoke<DecisionDetail>("deprecate_decision", { decision_id: decisionID, reason });
+  if (decision) return decision;
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    coverage_warnings: [
+      ...currentDecision.coverage_warnings,
+      `Deprecated: ${reason.trim()}`,
+    ],
+    status: "deprecated",
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "deprecated",
+        }
+      : decisionSummary,
+  );
+  mockGovernanceOverview = {
+    ...mockGovernanceOverview,
+    findings: mockGovernanceOverview.findings.filter((finding) => finding.artifact_ref !== decisionID),
+  };
+
+  return nextDecision;
+}
+
+export async function resolveAdoptDeprecate(
+  _findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<DecisionDetail> {
+  // See resolveAdoptBaseline — no backend command, delegate directly.
+  return deprecateDecision(decisionID, reason);
+}
+
+export async function reopenDecision(decisionID: string, reason: string): Promise<ProblemDetail> {
+  // Backend returns { decision_id, decision_status, new_problem_id } — not
+  // a ProblemDetail. Callers use `problem.id` for navigation, so we need
+  // to hydrate by fetching the freshly-created problem with new_problem_id.
+  const result = await tauriInvoke<{ new_problem_id?: string }>(
+    "reopen_decision",
+    { decision_id: decisionID, reason },
+  );
+  if (result && result.new_problem_id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: result.new_problem_id });
+    if (hydrated) return hydrated;
+  }
+
+  const currentDecision = mockDecisionDetails.get(decisionID) ?? INITIAL_DECISION_DETAIL;
+  const nextDecision = {
+    ...currentDecision,
+    status: "refresh_due",
+    updated_at: nowString(),
+  };
+  const problemID = nextMockID("prob");
+  const nextProblem = {
+    id: problemID,
+    title: `Revisit: ${currentDecision.selected_title}`,
+    status: "active",
+    mode: "tactical",
+    signal: `Decision ${decisionID} needs re-evaluation: ${reason}`,
+    constraints: [],
+    optimization_targets: [],
+    observation_indicators: [],
+    acceptance: "",
+    blast_radius: "Governance follow-up from the desktop decision loop",
+    reversibility: "high",
+    characterizations: [],
+    latest_characterization: null,
+    linked_portfolios: [],
+    linked_decisions: [
+      {
+        id: decisionID,
+        kind: "DecisionRecord",
+        title: currentDecision.selected_title,
+        status: "refresh_due",
+      },
+    ],
+    body: "",
+    created_at: nowString(),
+    updated_at: nowString(),
+  };
+
+  mockDecisionDetails.set(decisionID, nextDecision);
+  mockDecisions = mockDecisions.map((decisionSummary) =>
+    decisionSummary.id === decisionID
+      ? {
+          ...decisionSummary,
+          status: "refresh_due",
+        }
+      : decisionSummary,
+  );
+  mockProblemDetails.set(problemID, nextProblem);
+  mockProblems = [
+    {
+      id: nextProblem.id,
+      title: nextProblem.title,
+      status: nextProblem.status,
+      mode: nextProblem.mode,
+      signal: nextProblem.signal,
+      reversibility: nextProblem.reversibility,
+      constraints: nextProblem.constraints,
+      created_at: todayString(),
+    },
+    ...mockProblems,
+  ];
+
+  return nextProblem;
+}
+
+export async function resolveAdoptReopen(
+  _findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<ProblemDetail> {
+  // See resolveAdoptBaseline — no backend command, delegate directly.
+  return reopenDecision(decisionID, reason);
+}
+
+export async function resolveAdoptWaive(
+  _findingID: string,
+  decisionID: string,
+  reason: string,
+): Promise<DecisionDetail> {
+  // See resolveAdoptBaseline — no backend command, delegate directly.
+  return waiveDecision(decisionID, reason);
+}
+
 export async function createProblem(input: ProblemCreateInput): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("CreateProblem", input);
-  if (problem) return problem;
+  // Backend's create_problem handler returns only {id, title, kind, status,
+  // md_path, created_at} — not a full ProblemDetail. If we render that
+  // partial record directly, pages like Problems.tsx crash accessing
+  // arrays like `linked_portfolios`. Re-hydrate via getProblem(id) so
+  // callers get the canonical ProblemDetail shape with every field present.
+  const created = await tauriInvoke<{ id?: string }>("create_problem", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("prob");
   const detail: ProblemDetail = {
@@ -1191,8 +1810,15 @@ export async function createProblem(input: ProblemCreateInput): Promise<ProblemD
 }
 
 export async function characterizeProblem(input: ProblemCharacterizationInput): Promise<ProblemDetail> {
-  const problem = await callBinding<ProblemDetail>("CharacterizeProblem", input);
-  if (problem) return problem;
+  // Same hydration dance as createProblem — the characterize RPC returns
+  // only artifact metadata, not a full ProblemDetail. Without the follow-up
+  // get_problem call the UI dereferences missing arrays (`linked_portfolios`,
+  // `constraints`) and crashes right after a successful characterize.
+  const characterized = await tauriInvoke<{ id?: string }>("characterize_problem", { input });
+  if (characterized && characterized.id) {
+    const hydrated = await tauriInvoke<ProblemDetail>("get_problem", { id: characterized.id });
+    if (hydrated) return hydrated;
+  }
 
   const current = mockProblemDetails.get(input.problem_ref);
   if (!current) {
@@ -1229,8 +1855,13 @@ export async function characterizeProblem(input: ProblemCharacterizationInput): 
 }
 
 export async function createPortfolio(input: PortfolioCreateInput): Promise<PortfolioDetail> {
-  const portfolio = await callBinding<PortfolioDetail>("CreatePortfolio", input);
-  if (portfolio) return portfolio;
+  // handleCreatePortfolio returns only artifact metadata; UI expects full
+  // variants / comparison. Hydrate via get_portfolio after create.
+  const created = await tauriInvoke<{ id?: string }>("create_portfolio", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<PortfolioDetail>("get_portfolio", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("sol");
   const variants = input.variants.map((variant, index) => ({
@@ -1286,8 +1917,13 @@ export async function createPortfolio(input: PortfolioCreateInput): Promise<Port
 }
 
 export async function comparePortfolio(input: PortfolioCompareInput): Promise<PortfolioDetail> {
-  const portfolio = await callBinding<PortfolioDetail>("ComparePortfolio", input);
-  if (portfolio) return portfolio;
+  // handleComparePortfolio returns only artifact metadata; the UI expects
+  // full variants/comparison. Hydrate via get_portfolio after compare.
+  const compared = await tauriInvoke<{ id?: string }>("compare_portfolio", { input });
+  if (compared && compared.id) {
+    const hydrated = await tauriInvoke<PortfolioDetail>("get_portfolio", { id: compared.id });
+    if (hydrated) return hydrated;
+  }
 
   const current = mockPortfolioDetails.get(input.portfolio_ref);
   if (!current) {
@@ -1325,8 +1961,13 @@ export async function comparePortfolio(input: PortfolioCompareInput): Promise<Po
 }
 
 export async function createDecision(input: DecisionCreateInput): Promise<DecisionDetail> {
-  const decision = await callBinding<DecisionDetail>("CreateDecision", input);
-  if (decision) return decision;
+  // handleCreateDecision returns only artifact metadata; Decisions.tsx reads
+  // problem_refs / invariants / claims. Hydrate via get_decision after create.
+  const created = await tauriInvoke<{ id?: string }>("create_decision", { input });
+  if (created && created.id) {
+    const hydrated = await tauriInvoke<DecisionDetail>("get_decision", { id: created.id });
+    if (hydrated) return hydrated;
+  }
 
   const id = nextMockID("dec");
   const portfolio = input.portfolio_ref ? mockPortfolioDetails.get(input.portfolio_ref) : null;
@@ -1392,6 +2033,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
       weakest_link: detail.weakest_link,
       valid_until: detail.valid_until,
       created_at: todayString(),
+      implement_guard: EMPTY_DECISION_IMPLEMENT_GUARD,
     },
     ...mockDecisions,
   ];
@@ -1414,16 +2056,16 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
 }
 
 export async function searchArtifacts(query: string): Promise<ArtifactSummary[]> {
-  const b = await loadBindings();
-  if (b) return b.SearchArtifacts(query);
+  const result = await tauriInvoke<ArtifactSummary[]>("search_artifacts", { query });
+  if (result) return result;
   return [];
 }
 
 // --- Project management ---
 
 export async function listProjects(): Promise<ProjectInfo[]> {
-  const b = await loadBindings();
-  if (b) return b.ListProjects();
+  const result = await tauriInvoke<ProjectInfo[]>("list_projects");
+  if (result) return result;
   return [
     {
       path: "/Users/demo/projects/haft",
@@ -1438,29 +2080,34 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 }
 
 export async function addProject(path: string): Promise<ProjectInfo> {
-  const b = await loadBindings();
-  if (b) return b.AddProject(path);
+  const result = await tauriInvoke<ProjectInfo>("add_project", { path });
+  if (result) return result;
+  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+}
+
+export async function addProjectSmart(path: string): Promise<ProjectInfo> {
+  const result = await tauriInvoke<ProjectInfo>("add_project_smart", { path });
+  if (result) return result;
   return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function switchProject(path: string): Promise<void> {
-  const b = await loadBindings();
-  if (b) return b.SwitchProject(path);
+  await tauriInvoke<void>("switch_project", { path });
 }
 
 export async function scanForProjects(): Promise<ProjectInfo[]> {
-  const b = await loadBindings();
-  if (b) return b.ScanForProjects();
+  const result = await tauriInvoke<ProjectInfo[]>("scan_for_projects");
+  if (result) return result;
   return [];
 }
 
 export async function openDirectoryPicker(): Promise<string> {
-  const path = await callBinding<string>("OpenDirectoryPicker");
+  const path = await tauriInvoke<string>("open_directory_picker");
   return path ?? "";
 }
 
 export async function initProject(path: string): Promise<ProjectInfo> {
-  const project = await callBinding<ProjectInfo>("InitProject", path);
+  const project = await tauriInvoke<ProjectInfo>("init_project", { path });
   if (project) return project;
   return {
     path,
@@ -1476,26 +2123,27 @@ export async function initProject(path: string): Promise<ProjectInfo> {
 // --- Task management ---
 
 export async function listTasks(): Promise<TaskState[]> {
-  const tasks = await callBinding<TaskState[]>("ListTasks");
+  const tasks = await tauriInvoke<TaskState[]>("list_tasks");
   if (tasks) return tasks;
   return mockTasks;
 }
 
 export async function listAllTasks(): Promise<TaskState[]> {
-  const tasks = await callBinding<TaskState[]>("ListAllTasks");
+  const tasks = await tauriInvoke<TaskState[]>("list_all_tasks");
   if (tasks) return tasks;
   return mockTasks;
 }
 
 export async function detectAgents(): Promise<InstalledAgent[]> {
-  const agents = await callBinding<InstalledAgent[]>("DetectAgents");
+  const agents = await tauriInvoke<InstalledAgent[]>("detect_agents");
   return agents ?? [];
 }
 
 export async function spawnTask(agent: string, prompt: string, worktree: boolean, branch: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("SpawnTask", agent, prompt, worktree, branch);
+  const task = await tauriInvoke<TaskState>("spawn_task", { agent, prompt, worktree, branch });
   if (task) return task;
 
+  const initialTranscript = `[user] ${prompt}`;
   const createdTask: TaskState = {
     id: nextMockID("task"),
     title: prompt.slice(0, 60),
@@ -1511,7 +2159,16 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
     started_at: new Date().toISOString(),
     completed_at: "",
     error_message: "",
-    output: "",
+    output: initialTranscript,
+    chat_blocks: [
+      {
+        id: nextMockID("block"),
+        type: "text",
+        role: "user",
+        text: prompt,
+      },
+    ],
+    raw_output: initialTranscript,
   };
 
   mockTasks = [createdTask, ...mockTasks];
@@ -1519,7 +2176,7 @@ export async function spawnTask(agent: string, prompt: string, worktree: boolean
 }
 
 export async function cancelTask(id: string): Promise<void> {
-  await callBinding<void>("CancelTask", id);
+  await tauriInvoke<void>("cancel_task", { id });
   mockTasks = mockTasks.map((task) =>
     task.id === id
       ? { ...task, status: "cancelled", completed_at: nowString() }
@@ -1527,23 +2184,77 @@ export async function cancelTask(id: string): Promise<void> {
   );
 }
 
+export async function writeTaskInput(id: string, data: string): Promise<void> {
+  const trimmed = data.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  await tauriInvoke<void>("write_task_input", { id, data: trimmed });
+
+  mockTasks = mockTasks.map((task) => {
+    if (task.id !== id || task.status !== "running") {
+      return task;
+    }
+
+    const nextOutput = [task.output, `[user] ${trimmed}`]
+      .filter(Boolean)
+      .join("\n");
+
+    return {
+      ...task,
+      output: nextOutput,
+      raw_output: nextOutput,
+      chat_blocks: [
+        ...task.chat_blocks,
+        {
+          id: nextMockID("block"),
+          type: "text",
+          role: "user",
+          text: trimmed,
+        },
+      ],
+    };
+  });
+}
+
 export async function archiveTask(id: string): Promise<void> {
-  await callBinding<void>("ArchiveTask", id);
+  await tauriInvoke<void>("archive_task", { id });
   mockTasks = mockTasks.filter((task) => task.id !== id);
 }
 
 export async function setTaskAutoRun(id: string, autoRun: boolean): Promise<void> {
-  await callBinding<void>("SetTaskAutoRun", id, autoRun);
+  await tauriInvoke<void>("set_task_auto_run", { id, auto_run: autoRun });
 }
 
 export async function getTaskOutput(id: string): Promise<string> {
-  const output = await callBinding<string>("GetTaskOutput", id);
+  const output = await tauriInvoke<string>("get_task_output", { id });
   if (output != null) return output; // null check, not falsy — empty string "" is valid
   return mockTasks.find((task) => task.id === id)?.output ?? "";
 }
 
+export async function getTaskTranscriptState(id: string): Promise<ChatTranscriptState> {
+  const task = await listTasks()
+    .then((tasks) => tasks.find((item) => item.id === id) ?? null);
+
+  if (task) {
+    return pickTaskTranscriptState(task);
+  }
+
+  const output = await getTaskOutput(id);
+
+  return {
+    chat_blocks: [],
+    raw_output: output,
+    output,
+    status: "",
+    error_message: "",
+    agent: "",
+  };
+}
+
 export async function handoffTask(id: string, agent: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("HandoffTask", id, agent);
+  const task = await tauriInvoke<TaskState>("handoff_task", { id, agent });
   if (task) return task;
 
   const source = mockTasks.find((item) => item.id === id);
@@ -1554,14 +2265,25 @@ export async function handoffTask(id: string, agent: string): Promise<TaskState>
   return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
 }
 
+function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState {
+  return {
+    chat_blocks: task.chat_blocks ?? [],
+    raw_output: task.raw_output ?? "",
+    output: task.output ?? "",
+    status: task.status ?? "",
+    error_message: task.error_message ?? "",
+    agent: task.agent ?? "",
+  };
+}
+
 export async function listFlows(): Promise<DesktopFlow[]> {
-  const flows = await callBinding<DesktopFlow[]>("ListFlows");
+  const flows = await tauriInvoke<DesktopFlow[]>("list_flows");
   if (flows) return flows;
   return mockFlows;
 }
 
 export async function listFlowTemplates(): Promise<FlowTemplate[]> {
-  const templates = await callBinding<FlowTemplate[]>("ListFlowTemplates");
+  const templates = await tauriInvoke<FlowTemplate[]>("list_flow_templates");
   if (templates) return templates;
 
   return [
@@ -1599,7 +2321,7 @@ export async function listFlowTemplates(): Promise<FlowTemplate[]> {
 }
 
 export async function createFlow(input: FlowInput): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("CreateFlow", input);
+  const flow = await tauriInvoke<DesktopFlow>("create_flow", { input });
   if (flow) return flow;
 
   const createdFlow: DesktopFlow = {
@@ -1620,7 +2342,7 @@ export async function createFlow(input: FlowInput): Promise<DesktopFlow> {
 }
 
 export async function updateFlow(input: FlowInput): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("UpdateFlow", input);
+  const flow = await tauriInvoke<DesktopFlow>("update_flow", { input });
   if (flow) return flow;
 
   const current = mockFlows.find((item) => item.id === input.id);
@@ -1639,7 +2361,7 @@ export async function updateFlow(input: FlowInput): Promise<DesktopFlow> {
 }
 
 export async function toggleFlow(id: string, enabled: boolean): Promise<DesktopFlow> {
-  const flow = await callBinding<DesktopFlow>("ToggleFlow", id, enabled);
+  const flow = await tauriInvoke<DesktopFlow>("toggle_flow", { id, enabled });
   if (flow) return flow;
 
   const current = mockFlows.find((item) => item.id === id);
@@ -1659,12 +2381,12 @@ export async function toggleFlow(id: string, enabled: boolean): Promise<DesktopF
 }
 
 export async function deleteFlow(id: string): Promise<void> {
-  await callBinding<void>("DeleteFlow", id);
+  await tauriInvoke<void>("delete_flow", { id });
   mockFlows = mockFlows.filter((flow) => flow.id !== id);
 }
 
 export async function runFlowNow(id: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("RunFlowNow", id);
+  const task = await tauriInvoke<TaskState>("run_flow_now", { id });
   if (task) return task;
 
   const flow = mockFlows.find((item) => item.id === id);
@@ -1693,35 +2415,80 @@ export async function implementDecision(
   worktree: boolean,
   branch: string,
 ): Promise<TaskState> {
-  const task = await callBinding<TaskState>(
-    "ImplementDecision",
-    decisionID,
+  // `implement_decision` RPC returns {decision_ref, brief} — not a task.
+  // We fetch the brief (optional), then spawn an actual agent task whose
+  // prompt includes the brief. If the RPC fails, fall back to a simple
+  // implement prompt so the user can still kick off the task.
+  let prompt = `Implement ${decisionID}`;
+  const briefResult = await tauriInvoke<{ brief?: string }>("implement_decision", {
+    decision_id: decisionID,
     agent,
     worktree,
     branch,
-  );
-  if (task) return task;
-  return spawnTask(agent, `Implement ${decisionID}`, worktree, branch);
+  }).catch(() => null);
+  if (briefResult && briefResult.brief) {
+    prompt = `Implement ${decisionID}\n\n${briefResult.brief}`;
+  }
+  return spawnTask(agent, prompt, worktree, branch);
+}
+
+export async function createPullRequest(
+  taskID: string,
+  decisionRef: string,
+  branch: string,
+): Promise<PullRequestResult> {
+  const result = await tauriInvoke<PullRequestResult>("create_pull_request", {
+    decision_ref: decisionRef,
+    branch,
+  });
+  if (result) return result;
+
+  const task = mockTasks.find((item) => item.id === taskID);
+  if (!task) {
+    throw new Error(`Task ${taskID} not found`);
+  }
+
+  return {
+    task_id: task.id,
+    decision_ref: decisionRef,
+    branch,
+    title: task.title,
+    body: `## Summary\n\n- Decision: ${decisionRef || "unknown"}\n- Task: ${task.id}`,
+    url: "",
+    pushed: false,
+    draft_created: false,
+    copied_to_clipboard: true,
+    warnings: ["Automatic draft PR creation is unavailable in mock mode."],
+  };
 }
 
 export async function verifyDecision(decisionID: string, agent: string): Promise<TaskState> {
-  const task = await callBinding<TaskState>("VerifyDecision", decisionID, agent);
-  if (task) return task;
-  return spawnTask(agent, `Verify ${decisionID}`, false, "");
+  // `verify_decision` RPC returns {decision_ref, invariants} — not a task.
+  // Fetch the invariants list (optional) and spawn an agent task whose
+  // prompt asks it to verify those specific invariants.
+  let prompt = `Verify ${decisionID}`;
+  const verifyResult = await tauriInvoke<{ invariants?: unknown }>("verify_decision", {
+    decision_id: decisionID,
+    agent,
+  }).catch(() => null);
+  if (verifyResult && verifyResult.invariants) {
+    prompt = `Verify ${decisionID}\n\nInvariants to check:\n${JSON.stringify(verifyResult.invariants, null, 2)}`;
+  }
+  return spawnTask(agent, prompt, false, "");
 }
 
 export async function openPathInIDE(path: string): Promise<void> {
-  await callBinding<void>("OpenPathInIDE", path);
+  await tauriInvoke<void>("open_path_in_ide", { path });
 }
 
 export async function listTerminalSessions(): Promise<TerminalSession[]> {
-  const sessions = await callBinding<TerminalSession[]>("ListTerminalSessions");
+  const sessions = await tauriInvoke<TerminalSession[]>("list_terminal_sessions");
   if (sessions) return sessions;
   return mockTerminalSessions;
 }
 
 export async function createTerminalSession(cwd: string): Promise<TerminalSession> {
-  const session = await callBinding<TerminalSession>("CreateTerminalSession", cwd);
+  const session = await tauriInvoke<TerminalSession>("create_terminal_session", { cwd });
   if (session) return session;
 
   const createdSession: TerminalSession = {
@@ -1740,21 +2507,21 @@ export async function createTerminalSession(cwd: string): Promise<TerminalSessio
 }
 
 export async function writeTerminalInput(id: string, data: string): Promise<void> {
-  await callBinding<void>("WriteTerminalInput", id, data);
+  await tauriInvoke<void>("write_terminal_input", { id, data });
   void data;
 }
 
 export async function resizeTerminalSession(id: string, cols: number, rows: number): Promise<void> {
-  await callBinding<void>("ResizeTerminalSession", id, cols, rows);
+  await tauriInvoke<void>("resize_terminal_session", { id, cols, rows });
 }
 
 export async function closeTerminalSession(id: string): Promise<void> {
-  await callBinding<void>("CloseTerminalSession", id);
+  await tauriInvoke<void>("close_terminal_session", { id });
   mockTerminalSessions = mockTerminalSessions.filter((session) => session.id !== id);
 }
 
 export async function getConfig(): Promise<DesktopConfig> {
-  const config = await callBinding<DesktopConfig>("GetConfig");
+  const config = await tauriInvoke<DesktopConfig>("get_config");
   if (config) return config;
 
   return {
@@ -1776,7 +2543,7 @@ export async function getConfig(): Promise<DesktopConfig> {
 }
 
 export async function saveConfig(config: DesktopConfig): Promise<DesktopConfig> {
-  const saved = await callBinding<DesktopConfig>("SaveConfig", config);
+  const saved = await tauriInvoke<DesktopConfig>("save_config", { config });
   if (saved) return saved;
   return config;
 }

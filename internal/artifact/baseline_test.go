@@ -125,11 +125,14 @@ func TestBaselineFailsOnMissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Baseline(ctx, store, projectRoot, BaselineInput{
+	files, err := Baseline(ctx, store, projectRoot, BaselineInput{
 		DecisionRef: dec.Meta.ID,
 	})
-	if err == nil {
-		t.Fatal("expected error for missing file, got nil")
+	if err != nil {
+		t.Fatalf("unexpected error: %v (missing files should be skipped, not fatal)", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected 0 baselined files (missing files skipped), got %d", len(files))
 	}
 }
 

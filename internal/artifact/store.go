@@ -392,6 +392,11 @@ func (s *Store) FindStaleArtifacts(ctx context.Context) ([]*Artifact, error) {
 
 // NextSequence returns the next sequence number for a given kind on a given date.
 // Uses MAX(id) to find the highest existing sequence, avoiding TOCTOU race on COUNT.
+//
+// Deprecated: GenerateID switched to crypto/rand hex suffixes in #63 (6.2).
+// All artifact creators now pass 0 to GenerateID and skip this lookup. Kept
+// in the interface and Store for one release for external callers; planned
+// for removal in 6.3 alongside the seq parameter on GenerateID.
 func (s *Store) NextSequence(ctx context.Context, kind Kind) (int, error) {
 	prefix := fmt.Sprintf("%s-%s-", kind.IDPrefix(), time.Now().Format("20060102"))
 	var maxID sql.NullString

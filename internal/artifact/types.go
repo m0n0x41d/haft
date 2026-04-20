@@ -2,6 +2,8 @@ package artifact
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -233,6 +235,52 @@ const (
 	ProblemTypeSynthesis    ProblemType = "synthesis"
 )
 
+// GovernanceMode declares whether a decision's affected_files act as exact
+// file-level governance or as a module-level scope (recursive directory
+// coverage that auto-captures newly added sibling files as governed drift).
+//
+// Defaults to "module" when unset — preserves haft <=6.2 behavior where
+// every affected_file path silently widened to its parent directory.
+//
+// Pick "exact" when the decision is genuinely about specific files and you
+// do NOT want sibling additions to count as governed drift. This honors
+// FPF X-SCOPE: every claim has explicit where + under what + when.
+type GovernanceMode string
+
+const (
+	GovernanceModeModule GovernanceMode = "module"
+	GovernanceModeExact  GovernanceMode = "exact"
+)
+
+// IsValid reports whether the value is a recognized governance mode.
+func (m GovernanceMode) IsValid() bool {
+	return m == GovernanceModeModule || m == GovernanceModeExact
+}
+
+// EffectiveGovernanceMode resolves the mode for a decision, defaulting to
+// "module" when unset (preserves backward compatibility with pre-6.2.x
+// decisions that have no governance_mode field).
+func (df DecisionFields) EffectiveGovernanceMode() GovernanceMode {
+	if df.GovernanceMode == "" {
+		return GovernanceModeModule
+	}
+	return df.GovernanceMode
+}
+
+// ParseGovernanceMode validates and returns a GovernanceMode, or an error if
+// unrecognized. Empty input is treated as the default mode.
+func ParseGovernanceMode(value string) (GovernanceMode, error) {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return "", nil
+	}
+	mode := GovernanceMode(v)
+	if !mode.IsValid() {
+		return "", fmt.Errorf("governance_mode must be %q or %q (got %q)", GovernanceModeModule, GovernanceModeExact, value)
+	}
+	return mode, nil
+}
+
 func ParseProblemType(value string) (ProblemType, error) {
 	normalized := ProblemType(strings.TrimSpace(value))
 	switch normalized {
@@ -280,6 +328,11 @@ type DecisionFields struct {
 	RefreshTriggers      []string             `json:"refresh_triggers,omitempty"`
 	FirstModuleCoverage  bool                 `json:"first_module_coverage,omitempty"`
 	DriftManifests       []DriftScopeManifest `json:"drift_manifests,omitempty"`
+	// GovernanceMode declares how affected_files relate to drift detection.
+	// "module" (default, preserves pre-6.2.x behavior): each affected_file
+	// widens to its parent directory; sibling additions count as governed
+	// drift. "exact": only the listed files are governed. See GovernanceMode.
+	GovernanceMode GovernanceMode `json:"governance_mode,omitempty"`
 }
 
 type decisionFieldsJSON DecisionFields
@@ -401,10 +454,37 @@ func ResolveComparedPortfolioRef(ctx context.Context, store ArtifactStore, portf
 	return portfolio.Meta.ID
 }
 
-// GenerateID creates a deterministic artifact ID.
+// GenerateID creates a unique artifact ID with the format
+// `<prefix>-YYYYMMDD-<6 hex chars>` (e.g. `dec-20260418-a3f7c1`).
+//
+// The 32-bit random hex suffix is sourced from crypto/rand to prevent
+// filename collisions when multiple branches create artifacts on the same
+// day (issue #63). Sequential per-day counters lose meaning across branches
+// and produce mechanically-unmergeable conflicts in `.haft/`. The hex
+// suffix makes branch merges that touched `.haft/` on the same day
+// collision-free in practice (~4.3B values per kind per day — birthday-paradox
+// collision probability stays below 10^-6 for the first few thousand IDs).
+//
+// The seq parameter is preserved for backward-compatible call sites and
+// may be useful for in-process ordering, but is no longer rendered into the
+// ID. NextSequence may still be called by creators; its return value is
+// unused for ID construction.
 func GenerateID(kind Kind, seq int) string {
+	_ = seq // legacy parameter; collision resistance is provided by hex suffix
 	date := time.Now().Format("20060102")
-	return fmt.Sprintf("%s-%s-%03d", kind.IDPrefix(), date, seq)
+	return fmt.Sprintf("%s-%s-%s", kind.IDPrefix(), date, randomIDSuffix())
+}
+
+// randomIDSuffix returns an 8-character lowercase hex string sourced from
+// crypto/rand. Falls back to a deterministic non-zero value on the
+// effectively-impossible case where crypto/rand fails — caller still gets a
+// valid ID rather than a panic.
+func randomIDSuffix() string {
+	bytes := make([]byte, 4) // 4 bytes = 8 hex chars
+	if _, err := rand.Read(bytes); err != nil {
+		return "fffffffe"
+	}
+	return hex.EncodeToString(bytes)
 }
 
 // --- Domain-specific structured content ---

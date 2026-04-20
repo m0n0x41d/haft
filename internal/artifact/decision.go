@@ -46,6 +46,9 @@ type DecideInput struct {
 	Predictions         []PredictionInput `json:"predictions,omitempty"`
 	SearchKeywords      string            `json:"search_keywords,omitempty"`
 	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
+	// GovernanceMode is "module" | "exact" | "" (default "module"). Controls
+	// whether affected_files widen to module scope at baseline time.
+	GovernanceMode string `json:"governance_mode,omitempty"`
 }
 
 // PredictionInput is a testable claim that measure should verify.
@@ -357,6 +360,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		EvidenceRequirements: input.EvidenceReqs,
 		RefreshTriggers:      input.RefreshTriggers,
 		FirstModuleCoverage:  input.FirstModuleCoverage,
+		GovernanceMode:       GovernanceMode(strings.TrimSpace(input.GovernanceMode)),
 	}
 	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
@@ -516,7 +520,8 @@ func decisionBlocksReplacement(status Status) bool {
 	return status == StatusActive || status == StatusRefreshDue
 }
 
-func resolvePortfolioProblemRefs(portfolio *Artifact) []string {
+// ResolvePortfolioProblemRefs returns problem refs linked to a portfolio.
+func ResolvePortfolioProblemRefs(portfolio *Artifact) []string {
 	if portfolio == nil {
 		return nil
 	}
@@ -568,7 +573,7 @@ func resolveDecisionProblemRefs(ctx context.Context, store ArtifactStore, decisi
 			continue
 		}
 
-		for _, problemRef := range resolvePortfolioProblemRefs(linkedArtifact) {
+		for _, problemRef := range ResolvePortfolioProblemRefs(linkedArtifact) {
 			resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
 		}
 	}
@@ -596,7 +601,7 @@ func resolveIncomingDecisionProblemRefs(
 		return resolvedRefs
 	}
 
-	for _, problemRef := range resolvePortfolioProblemRefs(portfolio) {
+	for _, problemRef := range ResolvePortfolioProblemRefs(portfolio) {
 		resolvedRefs = appendUniqueString(resolvedRefs, problemRef)
 	}
 
@@ -676,17 +681,19 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
 	input = normalizeDecisionInput(input)
 
+	if _, err := ParseGovernanceMode(input.GovernanceMode); err != nil {
+		return nil, "", err
+	}
+
 	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
 	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
 		return nil, "", err
 	}
 
-	seq, err := store.NextSequence(ctx, KindDecisionRecord)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindDecisionRecord, seq)
+	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
+	// lookup. The seq parameter is preserved on GenerateID for call-site
+	// backward compat — pass 0.
+	id := GenerateID(KindDecisionRecord, 0)
 	now := time.Now().UTC()
 
 	// Pure: merge refs
@@ -821,15 +828,20 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
 	}
 
-	// Compute SHA-256 for each file
+	// Compute SHA-256 for each file (skip directories)
+	var hashableFiles []AffectedFile
 	for i := range files {
 		absPath := filepath.Join(projectRoot, files[i].Path)
 		hash, err := hashFile(absPath)
 		if err != nil {
-			return nil, fmt.Errorf("hash %s: %w", files[i].Path, err)
+			// Skip directories and missing files gracefully
+			logger.Debug().Str("path", files[i].Path).Err(err).Msg("baseline.skip_file")
+			continue
 		}
 		files[i].Hash = hash
+		hashableFiles = append(hashableFiles, files[i])
 	}
+	files = hashableFiles
 
 	// Store updated file hashes
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
@@ -860,9 +872,16 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		}
 	}
 
-	driftManifests, err := buildDriftScopeManifests(projectRoot, files)
-	if err != nil {
-		return nil, fmt.Errorf("build drift manifests: %w", err)
+	// Drift manifests are only built for module-mode governance. Exact-mode
+	// decisions track only the listed files; siblings are not auto-captured
+	// as drift. This honors X-SCOPE: explicit files mean explicit files.
+	mode := a.UnmarshalDecisionFields().EffectiveGovernanceMode()
+	var driftManifests []DriftScopeManifest
+	if mode == GovernanceModeModule {
+		driftManifests, err = buildDriftScopeManifests(projectRoot, files)
+		if err != nil {
+			return nil, fmt.Errorf("build drift manifests: %w", err)
+		}
 	}
 
 	err = persistDriftManifests(ctx, store, a, driftManifests)
@@ -1163,8 +1182,16 @@ func copyDriftInvariants(invariants []string) []string {
 	return append([]string(nil), invariants...)
 }
 
-// hashFile computes SHA-256 of a file's contents.
+// hashFile computes SHA-256 of a file's contents. Skips directories.
 func hashFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("skip directory: %s", path)
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err

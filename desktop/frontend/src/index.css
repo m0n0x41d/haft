@@ -58,16 +58,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Wails window drag regions */
-.wails-drag {
-  --wails-draggable: drag;
-}
-.wails-drag * {
-  --wails-draggable: drag;
-}
-.wails-no-drag {
-  --wails-draggable: no-drag;
-}
 
 /* Scrollbar — minimal, matches border palette */
 ::-webkit-scrollbar {

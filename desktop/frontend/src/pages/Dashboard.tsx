@@ -1,25 +1,55 @@
 import { useEffect, useState } from "react";
 
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+import { subscribe } from "../lib/events";
 import {
   adoptProblemCandidate,
   dismissProblemCandidate,
+  getConfig,
   getDashboard,
   getGovernanceOverview,
+  implementDecision,
+  reopenDecision,
+  waiveDecision,
   type CoverageModule,
   type DashboardData,
+  type DesktopConfig,
   type DecisionSummary,
+  type GovernanceFinding,
   type GovernanceOverview,
   type ProblemCandidate,
-  type ProblemSummary,
 } from "../lib/api";
+import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
+import {
+  buildIrreversibleActionDialogModel,
+  type IrreversibleActionDialogModel,
+} from "../components/irreversibleActionDialogModel";
+import { Eyebrow, MonoId, Pill, StatCard } from "../components/primitives";
 import { reportError } from "../lib/errors";
+import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
+import { getDecisionImplementActionState } from "./dashboardDecisionActions";
+import { getGovernanceFindingActionState } from "./dashboardGovernanceActions";
 
-type NavigateFn = (page: "dashboard" | "problems" | "decisions", id?: string) => void;
+type NavigateFn = (
+  page: "dashboard" | "problems" | "decisions" | "tasks",
+  id?: string,
+) => void;
+
+type DashboardPendingConfirmation = {
+  model: IrreversibleActionDialogModel;
+  reason: string;
+  isSubmitting: boolean;
+  run: (reason: string) => Promise<void>;
+  errorScope: string;
+};
 
 export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
+  const [config, setConfig] = useState<DesktopConfig | null>(null);
+  const [implementingDecisionIDs, setImplementingDecisionIDs] = useState<string[]>([]);
+  const [findingActionKeys, setFindingActionKeys] = useState<string[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] =
+    useState<DashboardPendingConfirmation | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
@@ -45,14 +75,22 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   }, []);
 
   useEffect(() => {
+    getConfig()
+      .then(setConfig)
+      .catch((error) => {
+        reportError(error, "dashboard config");
+      });
+  }, []);
+
+  useEffect(() => {
     let stopStale: (() => void) | undefined;
     let stopDrift: (() => void) | undefined;
 
     try {
-      stopStale = EventsOn("scan.stale", () => {
+      stopStale = subscribe("scan.stale", () => {
         void refresh();
       });
-      stopDrift = EventsOn("scan.drift", () => {
+      stopDrift = subscribe("scan.drift", () => {
         void refresh();
       });
     } catch {
@@ -85,6 +123,200 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     }
   };
 
+  const handleImplementDecision = async (decision: DecisionSummary) => {
+    const actionState = getDecisionImplementActionState(
+      decision.status,
+      decision.implement_guard,
+    );
+
+    if (actionState.disabled) {
+      return;
+    }
+
+    const decisionID = decision.id;
+    const warnings = compactNonEmptyStrings([
+      ...actionState.warningMessages,
+      ...actionState.confirmationMessages,
+    ]);
+
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "implement",
+        agent: config?.default_agent ?? "claude",
+        usesWorktree: config?.default_worktree ?? true,
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: decision.id,
+          title: decision.selected_title || decision.title,
+        },
+        warnings,
+      }),
+      reason: "",
+      isSubmitting: false,
+      run: async () => {
+        setImplementingDecisionIDs((currentDecisionIDs) => {
+          if (currentDecisionIDs.includes(decisionID)) {
+            return currentDecisionIDs;
+          }
+
+          return [...currentDecisionIDs, decisionID];
+        });
+
+        try {
+          const task = await implementDecision(
+            decisionID,
+            config?.default_agent ?? "claude",
+            config?.default_worktree ?? true,
+            "",
+          );
+
+          onNavigate("tasks", task.id);
+        } finally {
+          setImplementingDecisionIDs((currentDecisionIDs) =>
+            currentDecisionIDs.filter((currentDecisionID) => currentDecisionID !== decisionID),
+          );
+        }
+      },
+      errorScope: "implement decision",
+    });
+  };
+
+  const startFindingAction = (actionKey: string) => {
+    setFindingActionKeys((currentActionKeys) => {
+      if (currentActionKeys.includes(actionKey)) {
+        return currentActionKeys;
+      }
+
+      return [...currentActionKeys, actionKey];
+    });
+  };
+
+  const finishFindingAction = (actionKey: string) => {
+    setFindingActionKeys((currentActionKeys) =>
+      currentActionKeys.filter((currentActionKey) => currentActionKey !== actionKey),
+    );
+  };
+
+  const handleAdoptFinding = async (findingID: string, candidateID: string) => {
+    const actionKey = buildFindingActionKey(findingID, "adopt");
+    startFindingAction(actionKey);
+
+    try {
+      const problem = await adoptProblemCandidate(candidateID);
+      await refresh();
+      onNavigate("problems", problem.id);
+    } catch (error) {
+      reportError(error, "adopt governance finding");
+    } finally {
+      finishFindingAction(actionKey);
+    }
+  };
+
+  const handleWaiveFinding = async (finding: GovernanceFinding) => {
+    const decisionID = finding.artifact_ref;
+    const reason = promptForGovernanceDecisionReason("waive", finding);
+
+    if (!decisionID || reason === "") {
+      return;
+    }
+
+    const actionKey = buildFindingActionKey(finding.id, "waive");
+    startFindingAction(actionKey);
+
+    try {
+      await waiveDecision(decisionID, reason);
+      await refresh();
+      onNavigate("decisions", decisionID);
+    } catch (error) {
+      reportError(error, "waive governance finding");
+    } finally {
+      finishFindingAction(actionKey);
+    }
+  };
+
+  const handleReopenFinding = async (finding: GovernanceFinding) => {
+    const decisionID = finding.artifact_ref;
+
+    if (!decisionID) {
+      return;
+    }
+
+    setPendingConfirmation({
+      model: buildIrreversibleActionDialogModel({
+        action: "reopen",
+        currentArtifact: {
+          kind: "DecisionRecord",
+          ref: decisionID,
+          title: finding.title,
+        },
+      }),
+      reason: finding.reason,
+      isSubmitting: false,
+      run: async (reason) => {
+        const actionKey = buildFindingActionKey(finding.id, "reopen");
+        startFindingAction(actionKey);
+
+        try {
+          const problem = await reopenDecision(decisionID, reason);
+          await refresh();
+          onNavigate("problems", problem.id);
+        } finally {
+          finishFindingAction(actionKey);
+        }
+      },
+      errorScope: "reopen governance finding",
+    });
+  };
+
+  const handleCancelConfirmation = () => {
+    setPendingConfirmation((currentPendingConfirmation) => {
+      if (currentPendingConfirmation?.isSubmitting) {
+        return currentPendingConfirmation;
+      }
+
+      return null;
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    const currentPendingConfirmation = pendingConfirmation;
+
+    if (!currentPendingConfirmation) {
+      return;
+    }
+
+    if (
+      currentPendingConfirmation.model.requiresReason &&
+      currentPendingConfirmation.reason.trim() === ""
+    ) {
+      return;
+    }
+
+    setPendingConfirmation((previousPendingConfirmation) =>
+      previousPendingConfirmation
+        ? {
+            ...previousPendingConfirmation,
+            isSubmitting: true,
+          }
+        : previousPendingConfirmation,
+    );
+
+    try {
+      await currentPendingConfirmation.run(currentPendingConfirmation.reason.trim());
+      setPendingConfirmation(null);
+    } catch (error) {
+      reportError(error, currentPendingConfirmation.errorScope);
+      setPendingConfirmation((previousPendingConfirmation) =>
+        previousPendingConfirmation
+          ? {
+              ...previousPendingConfirmation,
+              isSubmitting: false,
+            }
+          : previousPendingConfirmation,
+      );
+    }
+  };
+
   if (loading && (!data || !overview)) {
     return (
       <div className="p-8 text-center">
@@ -101,17 +333,22 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     );
   }
 
+  const recentActivity = buildRecentActivity(data.recent_problems, data.recent_decisions);
+
   return (
-    <div className="space-y-8 pb-8">
+    <>
+      <div className="space-y-8 pb-8">
       <div className="mb-2">
-        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">VERIFY</p>
-        <p className="text-xs text-text-muted mt-0.5">Decision governance, evidence health, and follow-up work</p>
+        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">DASHBOARD</p>
+        <p className="mt-0.5 text-xs text-text-muted">
+          Unified operator view for active decisions, governance findings, and recent activity.
+        </p>
       </div>
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{data.project_name}</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Decision execution, verification pressure, and follow-up governance work in one view.
+            Decision execution, governance pressure, and artifact activity in one surface.
           </p>
         </div>
 
@@ -134,37 +371,60 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="space-y-6">
+          <Section title="Active Decisions">
+            {data.healthy_decisions.length === 0 &&
+            data.pending_decisions.length === 0 &&
+            data.unassessed_decisions.length === 0 ? (
+              <EmptyState text="No active decisions." />
+            ) : (
+              <div className="space-y-4">
+                <DecisionBucket
+                  title="Shipped / Healthy"
+                  decisions={data.healthy_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
+                />
+                <DecisionBucket
+                  title="Pending"
+                  decisions={data.pending_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
+                />
+                <DecisionBucket
+                  title="Unassessed"
+                  decisions={data.unassessed_decisions}
+                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
+                  onImplementDecision={handleImplementDecision}
+                  implementingDecisionIDs={implementingDecisionIDs}
+                />
+              </div>
+            )}
+          </Section>
+
           <Section title="Governance Findings">
             {overview.findings.length === 0 ? (
               <EmptyState text="No stale or drift findings." />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {overview.findings.map((finding) => (
-                  <button
+                  <GovernanceFindingCard
                     key={finding.id}
-                    onClick={() => {
+                    finding={finding}
+                    candidates={overview.problem_candidates}
+                    isAdopting={findingActionKeys.includes(buildFindingActionKey(finding.id, "adopt"))}
+                    isWaiving={findingActionKeys.includes(buildFindingActionKey(finding.id, "waive"))}
+                    isReopening={findingActionKeys.includes(buildFindingActionKey(finding.id, "reopen"))}
+                    onOpenDecision={() => {
                       if (finding.kind === "DecisionRecord" && finding.artifact_ref) {
                         onNavigate("decisions", finding.artifact_ref);
                       }
                     }}
-                    className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{finding.title}</p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
-                          {finding.category.replaceAll("_", " ")}
-                        </p>
-                      </div>
-
-                      <div className="text-right text-[11px] text-text-muted">
-                        {finding.drift_count > 0 && <p>{finding.drift_count} drift file(s)</p>}
-                        {finding.days_stale > 0 && <p>{finding.days_stale} day(s) stale</p>}
-                      </div>
-                    </div>
-
-                    <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
-                  </button>
+                    onAdopt={(candidateID) => void handleAdoptFinding(finding.id, candidateID)}
+                    onWaive={() => void handleWaiveFinding(finding)}
+                    onReopen={() => void handleReopenFinding(finding)}
+                  />
                 ))}
               </div>
             )}
@@ -194,60 +454,49 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
         </div>
 
         <div className="space-y-6">
-          <Section title="Module Coverage">
-            <CoverageSummary overview={overview} />
-          </Section>
-
-          <Section title="Decision Health">
-            {data.healthy_decisions.length === 0 &&
-            data.pending_decisions.length === 0 &&
-            data.unassessed_decisions.length === 0 ? (
-              <EmptyState text="No active decisions" />
-            ) : (
-              <div className="space-y-4">
-                <DecisionBucket
-                  title="Shipped / Healthy"
-                  decisions={data.healthy_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-                <DecisionBucket
-                  title="Pending"
-                  decisions={data.pending_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-                <DecisionBucket
-                  title="Unassessed"
-                  decisions={data.unassessed_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                />
-              </div>
-            )}
-          </Section>
-
-          <Section title="Recent Problems">
-            {data.recent_problems.length === 0 ? (
-              <EmptyState text="No active problems" />
+          <Section title="Recent Activity">
+            {recentActivity.length === 0 ? (
+              <EmptyState text="No recent problem or decision activity." />
             ) : (
               <div className="space-y-2">
-                {data.recent_problems.map((problem: ProblemSummary) => (
-                  <button
-                    key={problem.id}
-                    onClick={() => onNavigate("problems", problem.id)}
-                    className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium text-text-primary">{problem.title}</span>
-                      <span className="font-mono text-[11px] text-text-muted">{problem.id}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-text-secondary">{problem.signal}</p>
-                  </button>
+                {recentActivity.map((item) => (
+                  <RecentActivityCard
+                    key={`${item.kind}-${item.id}`}
+                    item={item}
+                    onOpen={() => onNavigate(item.page, item.id)}
+                  />
                 ))}
               </div>
             )}
           </Section>
+
+          <Section title="Module Coverage">
+            <CoverageSummary overview={overview} />
+          </Section>
         </div>
       </div>
-    </div>
+      </div>
+
+      {pendingConfirmation && (
+        <IrreversibleActionDialog
+          model={pendingConfirmation.model}
+          reason={pendingConfirmation.reason}
+          isSubmitting={pendingConfirmation.isSubmitting}
+          onReasonChange={(value) =>
+            setPendingConfirmation((currentPendingConfirmation) =>
+              currentPendingConfirmation
+                ? {
+                    ...currentPendingConfirmation,
+                    reason: value,
+                  }
+                : currentPendingConfirmation,
+            )
+          }
+          onCancel={handleCancelConfirmation}
+          onConfirm={() => void handleConfirmAction()}
+        />
+      )}
+    </>
   );
 }
 
@@ -255,10 +504,14 @@ function DecisionBucket({
   title,
   decisions,
   onOpenDecision,
+  onImplementDecision,
+  implementingDecisionIDs,
 }: {
   title: string;
   decisions: DecisionSummary[];
   onOpenDecision: (decisionID: string) => void;
+  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
+  implementingDecisionIDs: string[];
 }) {
   if (decisions.length === 0) {
     return null;
@@ -274,21 +527,141 @@ function DecisionBucket({
       </div>
 
       {decisions.map((decision) => (
-        <button
+        <DecisionCard
           key={decision.id}
+          decision={decision}
+          isImplementing={implementingDecisionIDs.includes(decision.id)}
+          onOpenDecision={onOpenDecision}
+          onImplementDecision={onImplementDecision}
+        />
+      ))}
+    </div>
+  );
+}
+
+function GovernanceFindingCard({
+  finding,
+  candidates,
+  isAdopting,
+  isWaiving,
+  isReopening,
+  onOpenDecision,
+  onAdopt,
+  onWaive,
+  onReopen,
+}: {
+  finding: GovernanceFinding;
+  candidates: ProblemCandidate[];
+  isAdopting: boolean;
+  isWaiving: boolean;
+  isReopening: boolean;
+  onOpenDecision: () => void;
+  onAdopt: (candidateID: string) => void;
+  onWaive: () => void;
+  onReopen: () => void;
+}) {
+  const actionState = getGovernanceFindingActionState(finding, candidates);
+  const canOpenDecision = finding.kind === "DecisionRecord" && finding.artifact_ref !== "";
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {canOpenDecision ? (
+            <button onClick={onOpenDecision} className="min-w-0 text-left">
+              <p className="truncate text-sm font-medium text-text-primary">{finding.title}</p>
+            </button>
+          ) : (
+            <p className="text-sm font-medium text-text-primary">{finding.title}</p>
+          )}
+          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
+            {finding.category.replaceAll("_", " ")}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right text-[11px] text-text-muted">
+          {finding.drift_count > 0 && <p>{finding.drift_count} drift file(s)</p>}
+          {finding.days_stale > 0 && <p>{finding.days_stale} day(s) stale</p>}
+        </div>
+      </div>
+
+      <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
+
+      {actionState.showActions && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => onAdopt(actionState.adoptCandidateID)}
+            disabled={actionState.adoptDisabled || isAdopting}
+            title={actionState.adoptReason}
+            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+          >
+            {isAdopting ? "Adopting..." : "Adopt"}
+          </button>
+          <button
+            onClick={onWaive}
+            disabled={isWaiving}
+            className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-border-bright hover:bg-surface-3 disabled:cursor-not-allowed disabled:text-text-muted"
+          >
+            {isWaiving ? "Waiving..." : "Waive"}
+          </button>
+          <button
+            onClick={onReopen}
+            disabled={isReopening}
+            className="rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning transition-colors hover:border-warning/50 hover:bg-warning/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+          >
+            {isReopening ? "Reopening..." : "Reopen"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DecisionCard({
+  decision,
+  isImplementing,
+  onOpenDecision,
+  onImplementDecision,
+}: {
+  decision: DecisionSummary;
+  isImplementing: boolean;
+  onOpenDecision: (decisionID: string) => void;
+  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
+}) {
+  const implementAction = getDecisionImplementActionState(
+    decision.status,
+    decision.implement_guard,
+  );
+  const isImplementDisabled = implementAction.disabled || isImplementing;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
+      <div className="flex items-start justify-between gap-3">
+        <button
           onClick={() => onOpenDecision(decision.id)}
-          className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+          className="min-w-0 flex-1 text-left"
         >
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
-            <span className="font-mono text-[11px] text-text-muted">{decision.id}</span>
+            <MonoId id={decision.id} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span>WLNK: {decision.weakest_link}</span>
-            {decision.valid_until && <span>Valid until {decision.valid_until}</span>}
+            {decision.valid_until ? (
+              <Pill>Valid until {decision.valid_until}</Pill>
+            ) : null}
           </div>
         </button>
-      ))}
+
+        <button
+          onClick={() => void onImplementDecision(decision)}
+          disabled={isImplementDisabled}
+          title={implementAction.reason}
+          className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
+        >
+          {isImplementing ? "Spawning..." : "Implement"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -328,6 +701,72 @@ function CoverageSummary({ overview }: { overview: GovernanceOverview }) {
         )}
       </div>
     </div>
+  );
+}
+
+function buildFindingActionKey(
+  findingID: string,
+  action: "adopt" | "waive" | "reopen",
+): string {
+  return `${findingID}:${action}`;
+}
+
+function promptForGovernanceDecisionReason(
+  action: "waive" | "reopen",
+  finding: GovernanceFinding,
+): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const promptMessage =
+    action === "waive"
+      ? `Waive will extend this DecisionRecord by 90 days.\n\nEnter justification for ${finding.title}:`
+      : `Reopen will mark this DecisionRecord as refresh due and create a new ProblemCard.\n\nEnter reason for ${finding.title}:`;
+  const response = window.prompt(promptMessage, finding.reason);
+
+  return response ? response.trim() : "";
+}
+
+function compactNonEmptyStrings(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function RecentActivityCard({
+  item,
+  onOpen,
+}: {
+  item: DashboardActivityItem;
+  onOpen: () => void;
+}) {
+  const badgeClassName =
+    item.kind === "DecisionRecord"
+      ? "border-success/20 bg-success/10 text-success"
+      : "border-warning/20 bg-warning/10 text-warning";
+  const badgeLabel = item.kind === "DecisionRecord" ? "Decision" : "Problem";
+
+  return (
+    <button
+      onClick={onOpen}
+      className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${badgeClassName}`}>
+              {badgeLabel}
+            </span>
+            <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm text-text-secondary">{item.summary}</p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="font-mono text-[11px] text-text-muted">{item.id}</p>
+          <p className="mt-1 text-[11px] text-text-muted">{item.created_at}</p>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -425,48 +864,10 @@ function CandidateCard({
   );
 }
 
-function StatCard({
-  label,
-  count,
-  suffix = "",
-  variant = "default",
-  onClick,
-}: {
-  label: string;
-  count: number;
-  suffix?: string;
-  variant?: "default" | "warning" | "accent";
-  onClick?: () => void;
-}) {
-  const componentClassName = onClick
-    ? "cursor-pointer hover:bg-surface-2 hover:border-border-bright"
-    : "";
-  const toneClassName =
-    variant === "warning"
-      ? "text-warning"
-      : variant === "accent"
-        ? "text-accent"
-        : "text-text-primary";
-  const Component = onClick ? "button" : "div";
-
-  return (
-    <Component
-      onClick={onClick}
-      className={`rounded-xl border border-border bg-surface-1 px-4 py-4 text-left transition-colors ${componentClassName}`}
-    >
-      <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">{label}</p>
-      <p className={`mt-2 text-2xl font-semibold ${toneClassName}`}>
-        {count}
-        {suffix}
-      </p>
-    </Component>
-  );
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-3 text-xs uppercase tracking-[0.24em] text-text-muted">{title}</h3>
+      <Eyebrow className="mb-3">{title}</Eyebrow>
       {children}
     </div>
   );

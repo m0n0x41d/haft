@@ -16,6 +16,7 @@ import {
   type InstalledAgent,
   type TaskState,
 } from "../lib/api";
+import { Badge, MonoId, Pill } from "../components/primitives";
 import { reportError } from "../lib/errors";
 
 const BOARD_COLUMNS = ["Running", "Needs Input", "Completed", "Failed"] as const;
@@ -170,16 +171,14 @@ export function Flows({
                       <h3 className="text-sm font-medium text-text-primary">{template.name}</h3>
                       <p className="mt-1 text-sm text-text-secondary">{template.description}</p>
                     </div>
-                    <span className="rounded-full border border-border bg-surface-2 px-2 py-1 text-[11px] text-text-muted">
-                      {template.agent}
-                    </span>
+                    <Pill>{template.agent}</Pill>
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
                     <span className="rounded-full border border-border bg-surface-0 px-2 py-1 font-mono">
                       {template.schedule}
                     </span>
-                    {template.use_worktree && <span>worktree</span>}
+                    {template.use_worktree ? <Pill>worktree</Pill> : null}
                   </div>
                 </button>
               ))}
@@ -205,9 +204,7 @@ export function Flows({
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-sm font-medium text-text-primary">{flow.title}</h3>
                         <StatusChip active={flow.enabled} />
-                        <span className="rounded-full border border-border bg-surface-2 px-2 py-1 text-[11px] text-text-muted">
-                          {flow.agent}
-                        </span>
+                        <Pill>{flow.agent}</Pill>
                       </div>
                       {flow.description && (
                         <p className="text-sm text-text-secondary">{flow.description}</p>
@@ -216,8 +213,8 @@ export function Flows({
                         <span className="rounded-full border border-border bg-surface-0 px-2 py-1 font-mono">
                           {flow.schedule}
                         </span>
-                        {flow.branch && <span className="font-mono">{flow.branch}</span>}
-                        {flow.use_worktree && <span>worktree</span>}
+                        {flow.branch ? <MonoId id={flow.branch} /> : null}
+                        {flow.use_worktree ? <Pill>worktree</Pill> : null}
                       </div>
                     </div>
 
@@ -589,15 +586,9 @@ function Fact({
 
 function StatusChip({ active }: { active: boolean }) {
   return (
-    <span
-      className={`rounded-full border px-2 py-1 text-[11px] ${
-        active
-          ? "border-success/20 bg-success/10 text-success"
-          : "border-border bg-surface-2 text-text-muted"
-      }`}
-    >
+    <Badge tone={active ? "success" : "neutral"}>
       {active ? "Live" : "Paused"}
-    </span>
+    </Badge>
   );
 }
 

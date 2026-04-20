@@ -742,9 +742,10 @@ func RelatedResponse(results []*artifact.Artifact, filePath string) string {
 	for _, a := range results {
 		kindLabel := UserFacingArtifactKindLabel(string(a.Meta.Kind))
 		sb.WriteString(fmt.Sprintf("- **%s** [%s] `%s`", a.Meta.Title, kindLabel, a.Meta.ID))
-		if a.Meta.Status == artifact.StatusRefreshDue {
+		switch a.Meta.Status {
+		case artifact.StatusRefreshDue:
 			sb.WriteString(" ⚠ REFRESH DUE")
-		} else if a.Meta.Status == artifact.StatusSuperseded {
+		case artifact.StatusSuperseded:
 			sb.WriteString(" (superseded)")
 		}
 		sb.WriteString("\n")

@@ -959,6 +959,7 @@ Actions:
 					},
 				},
 				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
+				"governance_mode":  map[string]any{"type": "string", "enum": []string{"module", "exact"}, "description": "How affected_files relate to drift detection. 'module' (default): each file widens to its parent dir; sibling additions count as governed drift. 'exact': only listed files governed (decide)"},
 				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide/evidence)"},
 				"context":          map[string]any{"type": "string", "description": "Optional context name (decide)"},
 				"search_keywords":  map[string]any{"type": "string", "description": "Space-separated synonyms and related terms for search enrichment (decide)"},
@@ -1162,6 +1163,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		ValidUntil:      jsonStr(args, "valid_until"),
 		Context:         jsonStr(args, "context"),
 		Mode:            jsonStr(args, "mode"),
+		GovernanceMode:  jsonStr(args, "governance_mode"),
 		Invariants:      invariants,
 		PreConditions:   preConditions,
 		PostConditions:  postConditions,
@@ -1917,33 +1919,9 @@ func jsonParityPlan(args map[string]any, key string) (*artifact.ParityPlan, bool
 	return &plan, true
 }
 
+// parityPlanSchema delegates to the shared artifact.ParityPlanJSONSchema so
+// the standalone tool surface and the MCP-advertised schema stay aligned on
+// field shape, types, and missing_data_policy enum values.
 func parityPlanSchema(description string) map[string]any {
-	return map[string]any{
-		"type":        "object",
-		"description": description,
-		"properties": map[string]any{
-			"baseline_set": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"window":       map[string]any{"type": "string"},
-			"budget":       map[string]any{"type": "string"},
-			"missing_data_policy": map[string]any{
-				"type": "string",
-				"enum": []string{
-					artifact.MissingDataPolicyExplicitAbstain,
-					artifact.MissingDataPolicyZero,
-					artifact.MissingDataPolicyExclude,
-				},
-			},
-			"normalization": map[string]any{
-				"type": "array",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"dimension": map[string]any{"type": "string"},
-						"method":    map[string]any{"type": "string"},
-					},
-				},
-			},
-			"pinned_conditions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		},
-	}
+	return artifact.ParityPlanJSONSchema(description)
 }

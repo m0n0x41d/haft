@@ -144,12 +144,9 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 
 // FrameProblem creates a ProblemCard artifact. Orchestrates effects around BuildProblemArtifact.
 func FrameProblem(ctx context.Context, store ArtifactStore, haftDir string, input ProblemFrameInput) (*Artifact, string, error) {
-	seq, err := store.NextSequence(ctx, KindProblemCard)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ID: %w", err)
-	}
-
-	id := GenerateID(KindProblemCard, seq)
+	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
+	// required. seq parameter preserved for backward compat — pass 0.
+	id := GenerateID(KindProblemCard, 0)
 
 	// Pre-fetch recall (side effect)
 	recallQuery := input.Title

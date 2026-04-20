@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -52,6 +53,13 @@ type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMes
 type Server struct {
 	v5Handler    V5ToolHandler
 	instructions string
+}
+
+// parityPlanMCPSchema delegates to the shared artifact.ParityPlanJSONSchema
+// so the MCP-advertised schema and the standalone tool surface stay in
+// lock-step on field shape, types, and missing_data_policy enum values.
+func parityPlanMCPSchema(description string) map[string]interface{} {
+	return artifact.ParityPlanJSONSchema(description)
 }
 
 func NewServer() *Server {
@@ -286,8 +294,9 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						},
 						"parity_rules": map[string]string{
 							"type":        "string",
-							"description": "(characterize) What must be equal across all variants for fair comparison",
+							"description": "(characterize) Prose rules for what must be equal across variants. Use parity_plan for the structured form required by deep mode.",
 						},
+						"parity_plan": parityPlanMCPSchema("(characterize) Structured parity plan that downstream compare can enforce. Object with baseline_set, window, budget, missing_data_policy and optional normalization / pinned_conditions per FPF G.9:4.2."),
 						"context": map[string]string{
 							"type":        "string",
 							"description": "Optional context name for grouping",
@@ -409,6 +418,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "string",
 						"description": "(compare) Selection policy that was applied",
 					},
+					"parity_plan": parityPlanMCPSchema("(compare) Structured parity plan. REQUIRED for deep mode: baseline_set, window, budget, and missing_data_policy MUST be present. Standard/tactical modes accept any subset and warn on gaps. Per FPF G.9:4.2."),
 					"selected_ref": map[string]string{
 						"type":        "string",
 						"description": "(compare) Advisory recommendation variant ID; the human still chooses",
@@ -423,7 +433,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"mode": map[string]string{
 						"type":        "string",
-						"description": "(explore) Decision mode: tactical, standard (default), deep",
+						"description": "(explore/compare) Decision mode: tactical, standard (default), deep. Deep mode requires structured parity_plan.",
 					},
 				},
 				"required": []string{"action"},

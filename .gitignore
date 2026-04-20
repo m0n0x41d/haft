@@ -1,6 +1,8 @@
 .quint
 .haft
 .context
+.context/
+.context/**
 .mcp.json
 quint-mcp.json
 src/mcp/quint-code
@@ -30,3 +32,4 @@ desktop/desktop
 .zenflow/**
 DESIGN.md
 .playwright-mcp/
+/desktop-tauri/target/

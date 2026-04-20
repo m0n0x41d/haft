@@ -789,12 +789,9 @@ func BuildRefreshReportArtifact(id string, now time.Time, decisionRef, action, r
 
 // CreateRefreshReport creates a RefreshReport artifact. Orchestrates effects.
 func CreateRefreshReport(ctx context.Context, store ArtifactStore, haftDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
-	seq, err := store.NextSequence(ctx, KindRefreshReport)
-	if err != nil {
-		return nil, err
-	}
-
-	a := BuildRefreshReportArtifact(GenerateID(KindRefreshReport, seq), time.Now().UTC(), decisionRef, action, reason, outcome)
+	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
+	// required. seq parameter preserved for backward compat — pass 0.
+	a := BuildRefreshReportArtifact(GenerateID(KindRefreshReport, 0), time.Now().UTC(), decisionRef, action, reason, outcome)
 
 	if err := store.Create(ctx, a); err != nil {
 		return nil, err

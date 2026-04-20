@@ -34,5 +34,47 @@
     "prompt": "/h-reason Rewrite this explanation without changing the entity of talk. I need a same-entity rewrite that preserves the explanation but reads cleaner.",
     "route_id": "rewrite-explanation",
     "expected_pattern_ids": ["A.6.3.CR", "E.17.EFP"]
+  },
+  {
+    "name": "frame phase h-reason prompt",
+    "prompt": "/h-reason Something is broken in our deployment pipeline. I need to frame the problem properly — what's the signal, what's in scope, what acceptance criteria should I use?",
+    "route_id": "phase-frame",
+    "expected_pattern_ids": ["FRAME-01", "FRAME-02", "FRAME-03", "FRAME-05"]
+  },
+  {
+    "name": "characterize phase h-reason prompt",
+    "prompt": "/h-reason I need to characterize the comparison dimensions for our database migration options. What indicators should I define, and how do I mark constraints vs targets vs observations?",
+    "route_id": "phase-characterize",
+    "expected_pattern_ids": ["CHR-01", "CHR-02", "CHR-04", "CHR-09"]
+  },
+  {
+    "name": "explore phase h-reason prompt",
+    "prompt": "/h-reason I have one obvious solution but I worry about confirmation bias. How do I explore genuinely different variants with proper abduction, stepping stones, and WLNK analysis?",
+    "route_id": "phase-explore",
+    "expected_pattern_ids": ["EXP-01", "EXP-02", "EXP-04", "EXP-07"]
+  },
+  {
+    "name": "compare phase h-reason prompt",
+    "prompt": "/h-reason I have three variants scored on five dimensions. How do I identify the Pareto front, enforce parity, apply a selection policy, and document dominated variants?",
+    "route_id": "phase-compare",
+    "expected_pattern_ids": ["CMP-01", "CMP-02", "CMP-03", "CMP-04"]
+  },
+  {
+    "name": "decide phase h-reason prompt",
+    "prompt": "/h-reason Time to decide. I need to create a proper decision record with invariants, rollback plan, predictions, and counterargument. What's the structure?",
+    "route_id": "phase-decide",
+    "expected_pattern_ids": ["DEC-01", "DEC-04", "DEC-05", "DEC-06"]
+  },
+  {
+    "name": "verify phase h-reason prompt",
+    "prompt": "/h-reason I need to verify our last decision. How do I check for evidence decay, compute R_eff, identify refresh triggers, and track assurance levels?",
+    "route_id": "phase-verify",
+    "expected_pattern_ids": ["VER-01", "VER-02", "VER-03", "VER-07"]
+  },
+  {
+    "name": "cross-cutting h-reason prompt",
+    "prompt": "/h-reason I keep hearing about WLNK, scope discipline, and the transformer mandate. What are the universal FPF principles that apply to every reasoning phase?",
+    "route_id": "cross-cutting",
+    "expected_pattern_ids": ["X-WLNK", "X-SCOPE", "X-TRANSFORMER"]
   }
 ]

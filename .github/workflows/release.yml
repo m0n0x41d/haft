@@ -43,7 +43,7 @@ jobs:
         run: go test -race $(go list ./... | grep -v /desktop)
 
   build:
-    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    name: Build CLI ${{ matrix.goos }}-${{ matrix.goarch }}
     needs: [test, tui-bundle]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -106,9 +106,89 @@ jobs:
           name: haft-${{ matrix.goos }}-${{ matrix.goarch }}
           path: _dist/*.tar.gz
 
+  desktop:
+    name: Desktop ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: [test]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { runner: macos-latest,  goos: darwin, goarch: arm64, rust_target: aarch64-apple-darwin }
+          - { runner: macos-latest,  goos: darwin, goarch: amd64, rust_target: x86_64-apple-darwin }
+          - { runner: ubuntu-latest, goos: linux,  goarch: amd64, rust_target: x86_64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop-tauri/target
+          key: ${{ runner.os }}-${{ matrix.rust_target }}-cargo-${{ hashFiles('desktop-tauri/Cargo.lock') }}
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Install Linux dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - name: Build frontend
+        working-directory: desktop/frontend
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Build Tauri app
+        working-directory: desktop-tauri
+        run: cargo tauri build --target ${{ matrix.rust_target }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package macOS app
+        if: matrix.goos == 'darwin'
+        run: |
+          mkdir -p _dist
+          cd desktop-tauri/target/${{ matrix.rust_target }}/release/bundle/macos
+          tar czf "$GITHUB_WORKSPACE/_dist/haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" Haft.app
+
+      - name: Package Linux binary
+        if: matrix.goos == 'linux'
+        run: |
+          mkdir -p _dist
+          cp desktop-tauri/target/${{ matrix.rust_target }}/release/haft-desktop .
+          tar czf _dist/haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz haft-desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haft-desktop-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: _dist/*.tar.gz
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

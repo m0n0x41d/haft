@@ -62,6 +62,74 @@ func TestSearchSpecWithOptions_TreeModeReturnsLeafBeforeAncestors(t *testing.T) 
 	}
 }
 
+func TestDrillDownRouteSeedsStayAheadOfFTSLeaves(t *testing.T) {
+	section := func(patternID string, parentPatternID string) drillDownSection {
+		return drillDownSection{
+			PatternID:       patternID,
+			Heading:         patternID,
+			Summary:         patternID,
+			ParentPatternID: parentPatternID,
+		}
+	}
+
+	branches := []drillDownBranch{
+		{
+			LeafPatternID: "A.6.3.CR",
+			Path: []drillDownSection{
+				section("A.6.3.CR", ""),
+			},
+			Score:     4,
+			SeedOrder: 0,
+			SeedTier:  SpecSearchTierPattern,
+		},
+		{
+			LeafPatternID: "E.17.EFP",
+			Path: []drillDownSection{
+				section("E.17.EFP", ""),
+			},
+			Score:     3,
+			SeedOrder: 1,
+			SeedTier:  SpecSearchTierPattern,
+		},
+		{
+			LeafPatternID: "A.6.3",
+			Path: []drillDownSection{
+				section("A.6.3", ""),
+			},
+			Score:     2,
+			SeedOrder: 2,
+			SeedTier:  SpecSearchTierPattern,
+		},
+		{
+			LeafPatternID: "A.6.3.RT",
+			Path: []drillDownSection{
+				section("A.6.3.RT", ""),
+			},
+			Score:     1,
+			SeedOrder: 3,
+			SeedTier:  SpecSearchTierPattern,
+		},
+		{
+			LeafPatternID: "A.6.3.CR:2",
+			Path: []drillDownSection{
+				section("A.6.3.CR:2", "A.6.3.CR"),
+				section("A.6.3.CR", ""),
+			},
+			Score:     1000,
+			SeedOrder: 4,
+			SeedTier:  SpecSearchTierFTS,
+		},
+	}
+
+	sortDrillDownBranches(branches)
+	results := buildDrillDownResults(branches, 4)
+	got := resultPatternIDs(results)
+	want := []string{"A.6.3.CR", "E.17.EFP", "A.6.3", "A.6.3.RT"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("drill-down results = %v, want %v", got, want)
+	}
+}
+
 func TestSearchSpecWithOptions_DrillDownTierFilterKeepsOnlyExperimentalHits(t *testing.T) {
 	chunks := []SpecChunk{
 		{

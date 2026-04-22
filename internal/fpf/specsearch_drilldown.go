@@ -32,6 +32,7 @@ type drillDownBranch struct {
 	Path          []drillDownSection
 	Score         int
 	SeedOrder     int
+	SeedTier      string
 }
 
 func searchTreeDrillDown(db *sql.DB, query string, limit int) ([]SpecSearchResult, error) {
@@ -169,6 +170,7 @@ func buildDrillDownBranches(
 			Path:          path,
 			Score:         scoreDrillDownPath(path, queryTokens, seedOrder),
 			SeedOrder:     seedOrder,
+			SeedTier:      seed.Tier,
 		})
 	}
 
@@ -222,6 +224,16 @@ func sortDrillDownBranches(branches []drillDownBranch) {
 }
 
 func drillDownBranchLess(left, right drillDownBranch) bool {
+	leftSeedPriority := drillDownSeedPriority(left.SeedTier)
+	rightSeedPriority := drillDownSeedPriority(right.SeedTier)
+	if leftSeedPriority != rightSeedPriority {
+		return leftSeedPriority < rightSeedPriority
+	}
+
+	return drillDownBranchScoreLess(left, right)
+}
+
+func drillDownBranchScoreLess(left, right drillDownBranch) bool {
 	if left.Score != right.Score {
 		return left.Score > right.Score
 	}
@@ -232,6 +244,17 @@ func drillDownBranchLess(left, right drillDownBranch) bool {
 		return len(left.Path) > len(right.Path)
 	}
 	return left.LeafPatternID < right.LeafPatternID
+}
+
+func drillDownSeedPriority(seedTier string) int {
+	switch seedTier {
+	case SpecSearchTierPattern:
+		return 0
+	case SpecSearchTierFTS:
+		return 1
+	default:
+		return 2
+	}
 }
 
 func buildDrillDownResults(branches []drillDownBranch, limit int) []SpecSearchResult {

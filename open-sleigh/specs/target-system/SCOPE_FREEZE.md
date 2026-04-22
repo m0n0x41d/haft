@@ -12,11 +12,11 @@ reading_order: 3
 
 ## Tiers
 
-### MVP-1 — single-variant governed pipeline (canary + 1 real ticket)
+### MVP-1 — single-variant governed pipeline (current implementation)
 
-**Goal:** One ticket on `octacore_nova` goes end-to-end through
-Frame → Execute → Measure, producing a merged PR and a Haft evidence
-pack. Canary repo first (24h green), then one real ticket.
+**Goal:** One legacy tracker-first canary goes end-to-end through Frame →
+Execute → Measure, producing a merged PR and a Haft evidence pack. This is the
+bootstrap implementation already present in `open-sleigh/`.
 
 **In scope:**
 
@@ -27,8 +27,8 @@ pack. Canary repo first (24h green), then one real ticket.
 | Semantic gates | `object_of_talk_is_specific`, `lade_quadrants_split_ok`, `no_self_evidence_semantic` (LLM-judge) | `GATES.md §2` |
 | Human gate | `commission_approved` on PR → `main` and tracker → terminal | `GATES.md §4` |
 | Observations | `gate_bypass_rate`, `agent_retry_count_per_ticket`, `human_override_count`, `reopen_after_measure_rate`, `phase_dwell_time_p90`, `judge_false_pos_rate`, `judge_false_neg_rate`, `labeller_agreement_kappa` | `GATES.md §5` |
-| Adapters | `Tracker.Adapter` impl: Linear. `Agent.Adapter` impl: Codex CLI. `Haft.Client`. `JudgeClient` (uses Codex adapter with judge prompt). | `AGENT_PROTOCOL.md`, `HAFT_CONTRACT.md` |
-| Storage | In-RAM orchestrator state + per-ticket WAL at `~/.open-sleigh/wal/` | `HAFT_CONTRACT.md §3`, `RISKS.md §2` |
+| Adapters | Legacy `Tracker.Adapter` impl: Linear. `Agent.Adapter` impl: Codex CLI. `Haft.Client`. `JudgeClient` (uses Codex adapter with judge prompt). | `AGENT_PROTOCOL.md`, `HAFT_CONTRACT.md` |
+| Storage | In-RAM orchestrator state + per-ticket WAL at `~/.open-sleigh/wal/` (commission-first uses per-commission WAL) | `HAFT_CONTRACT.md §3`, `RISKS.md §2` |
 | Config | `sleigh.md` with YAML + Markdown. L6 compiler with size budget. Hash-pinning per session. | `SLEIGH_CONFIG.md` |
 | Canary | Seeded gate-activation tickets T1/T1'/T2/T3; 24h green enforced by Taskfile | `RISKS.md §1`, `../../SPEC.md §11` |
 | Judge calibration | Golden sets ≥20/gate; CHR-04 F/G/R/CL reported; labelling rubric as first-class artifact | `GATES.md §3` |
@@ -41,6 +41,30 @@ pack. Canary repo first (24h green), then one real ticket.
 | **Per-state concurrency limits** (*v0.6*) | `agent.max_concurrent_agents_by_state` | `SLEIGH_CONFIG.md §1` |
 | **Agent protocol contract** (*v0.6*) | Normative JSON-RPC shape for Agent.Adapter (Codex MVP-1, Claude MVP-1.5) | `AGENT_PROTOCOL.md` |
 | **Optional HTTP observability API** (*v0.6, optional in MVP-1*) | `/api/v1/state`, `/api/v1/<ticket>`, `/api/v1/refresh` — observability-only, never exposes Haft artifacts | `HTTP_API.md` |
+
+### MVP-1R — commission-first refactor (Haft monorepo integration)
+
+**Goal:** Replace tracker-first intake with Haft WorkCommission intake while
+preserving the OTP harness, phase gates, WAL, and status surface.
+
+**In scope:**
+
+| Area | Item | Spec ref |
+|---|---|---|
+| Intake | `CommissionSource.Adapter` talks to Haft for runnable WorkCommissions and leases | `HAFT_CONTRACT.md`, `TARGET_SYSTEM_MODEL.md` |
+| Phase graph | Add `:preflight` before `:frame` | `PHASE_ONTOLOGY.md`, `GATES.md` |
+| Freshness | Block stale/hash-mismatched/superseded decisions before Execute | `GATES.md`, Haft `EXECUTION_CONTRACT.md` |
+| Runtime | `Session` owns WorkCommission, not tracker Ticket | `TARGET_SYSTEM_MODEL.md` |
+| Local-only | Run with no Linear/Jira/GitHub credentials | `SYSTEM_CONTEXT.md`, `TERM_MAP.md` |
+| Optional projection | ExternalProjection is published by Haft, not Open-Sleigh | Haft specs + `HAFT_CONTRACT.md` |
+| Batch/YOLO | ImplementationPlan scheduling with dependencies, locksets, leases, AutonomyEnvelope | Haft `EXECUTION_CONTRACT.md` |
+
+**Not in MVP-1R:**
+
+- Rewriting the OTP runtime in Go/Rust/Tauri.
+- Making Linear/Jira mandatory infrastructure.
+- Letting Open-Sleigh create/approve WorkCommissions.
+- Letting ProjectionWriterAgent decide status or completion.
 
 ### MVP-1.5 — Claude adapter + parity evidence
 
@@ -84,9 +108,8 @@ Generate → Parity-run → Select → Commission → Measure impact).
 
 | Item | Why deferred |
 |---|---|
-| SSH worker distribution | Not needed until concurrency > 4 active tickets; single-host OTP is sufficient |
-| GitHub tracker adapter | Linear covers day-1 need; GitHub added when a user asks |
-| Jira tracker adapter | Same |
+| SSH worker distribution | Not needed until concurrency > 4 active commissions; single-host OTP is sufficient |
+| GitHub/Jira Projection.Adapter | External projection after Linear semantics settle; not work intake |
 | Dynamic tools beyond Haft MCP | Symphony-style dynamic tool dispatch; not load-bearing for MVP-1/2 |
 | Problem portfolio management | One ticket = one problem today; portfolio-level view is Haft's concern, not ours |
 | `contract_unpacked_ok` gate | A.6.C Contract Unpacking is valuable but not in the critical path; enable when MVP-2 stabilises |
@@ -114,7 +137,7 @@ don't, and they won't, because they violate product integrity per
 | **Multi-tenant operation** | One principal, one engine instance. Multi-tenant is a v3 question. |
 | **On-call rotation / PagerDuty** | Single-operator system; no on-call surface. |
 | **Metrics to external services** (Datadog, Honeycomb, Prometheus push) | `ObservationsBus` is local ETS. Export is a later concern. |
-| **LLM-based ticket triage at engine boundary** | Tracker owns triage. We consume its `active_states` list; we don't re-triage. |
+| **LLM-based work intake or status authority at engine boundary** | Haft owns WorkCommissions and lifecycle state. LLM may write projection prose only after deterministic intent. |
 | **Variant generation inside MVP-1** | MVP-1 is single-variant by construction. Pareto lives in MVP-2. |
 | **Storage of raw agent transcripts** | Haft gets the PhaseOutcome + evidence refs. Raw transcripts are the adapter's temporary buffer; not persisted beyond Haft's scope. |
 

@@ -11,12 +11,13 @@ reading_order: 1
 ### The physical world today (without Open-Sleigh)
 
 A small engineering organisation (single principal or tiny team) runs
-software development on top of a ticket tracker (Linear, GitHub, Jira)
-and uses AI coding agents (Codex CLI, Claude Code) to author code. The
-human does both **framing** (problem definition, decomposition, scope)
-and **execution supervision** (reviewing agent output, running tests,
-merging PRs). Framing is expensive cognitive work; execution supervision
-is repetitive toil.
+software development through Haft reasoning artifacts and optional external
+coordination carriers (Linear, GitHub Issues, Jira). The human does
+**framing** (problem definition, decomposition, scope), **choice** (which
+DecisionRecord is authoritative), and **commissioning** (which work may run
+now or later). AI coding agents (Codex CLI, Claude Code) author code after the
+work is commissioned. Framing is expensive cognitive work; execution
+supervision is repetitive toil.
 
 **What goes wrong physically:**
 
@@ -25,10 +26,10 @@ is repetitive toil.
   understood the ticket, distinguished design from runtime, produced
   evidence external to its own claims, or declared when its own work is
   stale. The human has to catch these by reading.
-- **Framing evaporates.** The human does careful problem framing
-  (possibly using Haft and FPF), but that work isn't durably linked to
-  the agent's execution. The agent often re-derives a shallower version
-  at runtime and ignores the human's upstream framing.
+- **Framing and decisions evaporate before execution.** The human does careful
+  problem framing and chooses a DecisionRecord, but actual implementation may
+  start days later. If no WorkCommission and preflight boundary exists, stale
+  decisions can be executed as if nothing changed.
 - **No provenance on agent output.** Artifacts produced by the agent
   (PRs, commit messages, test output) are not linked back to the
   specific prompt version, tool allowlist, or adapter version that
@@ -50,26 +51,21 @@ is repetitive toil.
 
 ### The physical world after (with Open-Sleigh functioning in its role)
 
-- Agent work passes through a **phase-gated lifecycle**: Frame → Execute
-  → Measure. Each phase has a scoped prompt, a scoped toolset, typed
+- Agent work passes through a **phase-gated lifecycle**: Preflight → Frame →
+  Execute → Measure. Each phase has a scoped prompt, a scoped toolset, typed
   gates (structural / semantic / human), and a typed artifact handed
   forward to Haft as evidence.
-- Framing produced upstream by the human (via Haft + `/h-reason`)
-  enters Open-Sleigh as a linked `ProblemCardRef`. Open-Sleigh
-  **verifies** the ProblemCard is present, fresh, and not self-authored
-  by Open-Sleigh; it does not re-derive framing. This is a **hard
-  invariant in MVP-1, not advisory** (see `ILLEGAL_STATES.md` UP1): a
-  ticket without a valid upstream `problem_card_ref` fail-fasts at Frame
-  entry with `:no_upstream_frame`; the orchestrator posts a structured
-  tracker comment asking the human to frame upstream. The ticket never
-  enters Execute. Open-Sleigh has **no fallback path** that would let it
-  author a ProblemCard itself.
+- Framing and choice produced upstream by the human (via Haft + `/h-reason`)
+  enter Open-Sleigh as a linked `WorkCommission`. Open-Sleigh **verifies** the
+  commission, its ProblemCard, and its DecisionRecord are present, fresh, and
+  not self-authored by Open-Sleigh; it does not re-derive framing or decide
+  that stale work is still admissible. A commission without a valid upstream
+  frame/decision fail-fasts at Preflight/Frame and never enters Execute.
 - Every artifact carries `config_hash` + `valid_until` +
   `authoring_role`. Provenance is structural, not a discipline.
 - Human oversight is **structurally targeted**: HumanGate fires only on
-  transitions that cross a reversibility / blast-radius threshold
-  (PR → `main`, tracker → terminal state). Inside a phase, the agent
-  has full runway.
+  transitions that cross a reversibility / blast-radius threshold or leave the
+  approved AutonomyEnvelope. Inside a phase, the agent has full runway.
 - Failure-mode signals (gate_bypass_rate, reopen_after_measure_rate,
   judge false-neg rate) are observation indicators (§6d of SPEC) —
   watched, never optimised. The agent cannot game the gates because
@@ -88,7 +84,7 @@ is repetitive toil.
 | Human intervention points | Every PR (bottleneck) or none (risk) | Only on transitions crossing a declared blast-radius threshold |
 | Stale artifact detection | Manual | `haft_refresh` scans `valid_until` every poll tick |
 | Agent gaming surface | Opaque | `gate_bypass_rate`, `judge_false_neg_rate`, `reopen_after_measure_rate` tracked as observations |
-| Framing-to-execution link | Implicit, often broken | Explicit `ProblemCardRef` on Ticket; engine fails fast if missing |
+| Framing-to-execution link | Implicit, often broken | Explicit WorkCommission links to ProblemCard + DecisionRecord; engine fails fast if stale/missing |
 | Governance documentation growth | Unbounded (see thai case) | Compile-time size budget on `sleigh.md`; zero harness-about-harness artifacts permitted |
 
 ---
@@ -102,7 +98,7 @@ Specific sub-methods:
 
 ### Lifecycle sub-methods
 
-1. **Phase gating.** A `Ticket × Phase` session cannot exit a phase
+1. **Phase gating.** A `WorkCommission × Phase` session cannot exit a phase
    without its structural, semantic, and (where applicable) human
    gates returning pass verdicts. Gates are typed; their kinds cannot
    be confused.
@@ -121,21 +117,21 @@ Specific sub-methods:
 4. **Evidence externalisation.** Measure phase emits typed evidence
    whose `ref` cannot equal the authoring artifact's `self_id`. No
    self-evidence at the type level.
-5. **Human targeting.** HumanGate fires on a declared set of
-   transitions (PR → `main`, tracker → terminal); elsewhere the agent
-   runs unsupervised.
+5. **Human targeting.** HumanGate fires on a declared set of transitions (PR
+   → `main`, external publication, out-of-envelope change); elsewhere the
+   agent runs unsupervised inside the approved commission/envelope.
 
 ### Supervision sub-methods
 
 1. **Single-writer orchestration.** `Orchestrator` is the only process
    holding session state. No concurrent writes.
 2. **WAL on Haft unavailability.** Phase outcomes that can't reach
-   Haft are written to a per-ticket local WAL; replayed in
+   Haft are written to a per-commission local WAL; replayed in
    append-order on reconnect.
-3. **Tracker-wins reconciliation.** On a race between human tracker
-   changes and engine state, the tracker wins; worker gets a 30s
-   grace; cancellation is recorded as `haft_note(cancelled, cause,
-   partial_refs)`.
+3. **Haft-wins reconciliation.** On a race between external projection state
+   and Haft WorkCommission state, Haft wins. External tracker changes are
+   recorded as projection drift/override. Worker cancellation is driven by
+   Haft commission state, not by tracker state alone.
 4. **Canary gate.** Every harness change must run 24h green on a
    throwaway canary repo with seeded gate-activation tickets before
    touching real work.
@@ -158,21 +154,21 @@ Specific sub-methods:
 ## 3. What is the role of the target system
 
 > **Harness engine for AI coding agents, enforcing an FPF-compliant
-> governance lifecycle around every ticket.**
+> governance lifecycle around every WorkCommission.**
 
 The system is NOT a coding agent. Codex / Claude / whatever is the
 coding agent. The system is NOT a reasoning surface for the operator —
 that lives upstream in Haft / `/h-reason`. The system is NOT a CI
 system — the downstream project's CI runs the tests. The system is the
-**harness**: the gated conveyor that delivers each ticket to the agent,
-supervises its execution, records provenanced artifacts, and escalates
-to the human at declared decision points.
+**harness**: the gated conveyor that delivers each commissioned unit of work
+to the agent, supervises its execution, records provenanced artifacts, and
+escalates to the human at declared decision points.
 
 ### Sub-roles
 
 | Sub-role | What it does | Analogy |
 |---|---|---|
-| **Phase conductor** | Routes tickets through Frame → Execute → Measure (MVP-1); full lemniscate (MVP-2) | A governed pipeline with interlocked gates |
+| **Phase conductor** | Routes commissions through Preflight → Frame → Execute → Measure; full lemniscate later | A governed pipeline with interlocked gates |
 | **Capability warden** | Enforces scoped toolsets per phase; refuses out-of-scope calls | A firearm range officer: right tool, right lane, or cease fire |
 | **Provenance ledger** | Pins `config_hash` + `valid_until` + `authoring_role` on every artifact | A court reporter: every statement is tied to when, who, under which rules |
 | **Human-gate dispatcher** | Fires human approval on declared transitions only | An escalation bell, not a mandatory review loop |
@@ -186,8 +182,8 @@ The walls are at phase boundaries, not inside phases.
 | Agent autonomous (system does not supervise) | Structural enforcement (system refuses silently-illegal states) | Human-escalated (HumanGate fires) |
 |---|---|---|
 | Editing source files in downstream repo | Calling a tool not in the phase's scoped list | PR targeting `main` |
-| Running tests, reading logs | Writing outside the declared workspace path | Ticket transition to `Done` |
-| Iterating on its own output within `max_turns` | Emitting a `PhaseOutcome` without provenance fields | (MVP-2) Commissioning a Solution-Factory decision |
+| Running tests, reading logs | Writing outside the declared workspace path | External publication or terminal projection update |
+| Iterating on its own output within `max_turns` | Emitting a `PhaseOutcome` without provenance fields | Creating/approving a WorkCommission or AutonomyEnvelope |
 | Deciding how to decompose a refactor | Skipping a phase in the graph | (MVP-2) Applying a Pareto selection |
 
 ---
@@ -198,17 +194,20 @@ The walls are at phase boundaries, not inside phases.
 SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 │
 ├── Human principal (the operator — Ivan)
-│     Role: Frames problems upstream (via Haft + /h-reason),
-│            approves HumanGates, reads observations, edits sleigh.md
-│     Relationship: Open-Sleigh receives framed tickets FROM, escalates TO
+│     Role: Frames problems, chooses decisions, commissions work,
+│            approves HumanGates/envelopes, reads observations, edits sleigh.md
+│     Relationship: Open-Sleigh receives authorized WorkCommissions FROM,
+│                   escalates gates/reviews TO
 │
 ├── Haft (FPF artifact graph, MCP server)
-│     Role: Source of truth for ProblemCards, decisions, evidence
+│     Role: Source of truth for ProblemCards, decisions, WorkCommissions,
+│           RuntimeRuns, evidence, and external projection intent
 │     Relationship: Open-Sleigh is a client; speaks MCP JSON-RPC; pins version
 │
-├── Ticket tracker (Linear day 1; GitHub / Jira later)
-│     Role: Source of truth for active tickets and their states
-│     Relationship: Open-Sleigh polls, claims, posts comments, requests transitions
+├── External tracker (Linear/Jira/GitHub Issues, optional)
+│     Role: Coordination carrier for managers/analysts/leads
+│     Relationship: Haft publishes ExternalProjections; Open-Sleigh does not
+│                   use tracker state as work authority
 │
 ├── AI coding agent (Codex CLI day 1; Claude Code MVP-1.5)
 │     Role: Authors the actual code change within a phase
@@ -220,7 +219,7 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 │
 ├── CI system (downstream project's own — GitHub Actions, etc.)
 │     Role: Runs tests, reports pass/fail
-│     Relationship: Open-Sleigh reads CI verdicts via tracker-adapter hooks; does not run CI itself
+│     Relationship: Open-Sleigh reads CI verdict refs as evidence carriers; does not run CI itself
 │
 ├── LLM-judge (for semantic gates — typically the same adapter with a judge prompt)
 │     Role: Evaluates object-of-talk specificity, LADE splits, evidence semantics
@@ -235,12 +234,12 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
                         code authoring (agent does this),
                         CI execution (downstream does this),
                         evidence persistence (Haft does this),
-                        bookkeeping of tickets (tracker does this)
+                        external projection publication (Haft does this)
 ```
 
 ### What is INSIDE the boundary
 
-- `Ticket × Phase` session lifecycle management
+- `WorkCommission × Phase` session lifecycle management
 - Phase graph + transition decisions (`PhaseMachine`)
 - Gate evaluation (structural / semantic / human)
 - Adapter invocation with scoped tool enforcement
@@ -256,7 +255,8 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 - Code authoring (inside Execute phase — agent does it)
 - Test execution (downstream CI)
 - Evidence persistence (Haft SQLite — we write artifacts, we don't store them)
-- Ticket lifecycle *authorship* (tracker owns its state machine; we coordinate)
+- WorkCommission lifecycle authorship (Haft owns it; Open-Sleigh leases/runs)
+- External projection authorship (Haft projection engine owns it; Open-Sleigh reports facts)
 - Dashboard UI (MVP-1 is terminal-only; LiveView is MVP-2)
 - SSH worker distribution (MVP-2)
 - Any form of self-reflection or governance about the harness itself
@@ -269,8 +269,8 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 
 | Project Role | Agent examples | Interest | Method (how they interact) |
 |---|---|---|---|
-| **Human principal** | Ivan, any solo engineer / tiny team lead using AI agents | Work gets done on downstream repos with structural quality floors; not drown in process | Frames tickets upstream; edits `sleigh.md`; approves HumanGates; reads observations |
-| **Downstream project owner** | Same person or teammate | Their repo gets correct work; no rogue edits; clear trail | Reviews PRs the engine produced; sees tracker transitions happen at predictable moments |
+| **Human principal** | Ivan, any solo engineer / tiny team lead using AI agents | Work gets done on downstream repos with structural quality floors; not drown in process | Frames problems, chooses decisions, commissions work, approves HumanGates, approves AutonomyEnvelopes |
+| **Downstream project owner** | Same person or teammate | Their repo gets correct work; no rogue edits; clear trail | Reviews PRs the engine produced; sees Haft/local/external projection state change predictably |
 | **AI agent (Codex / Claude)** | LLM behind an adapter | Clear inputs (scoped prompt + scoped tools + declared acceptance) | Receives per-phase prompts; calls tools via dispatcher; emits structured PhaseOutcome |
 | **Attacker** | Supply-chain or prompt-injection adversary | Escalate beyond scoped tools, write outside workspace, exfiltrate tokens (INVERSE — designed against) | Prompt injection in ticket body, crafted adapter replies — we scope aggressively |
 
@@ -295,6 +295,7 @@ The system's role is its immune system. Concretely:
 
 - If a feature proposes that Open-Sleigh **write about itself** — it doesn't belong. That's the thai-disaster attractor.
 - If a feature proposes that Open-Sleigh **author a problem frame** — it doesn't belong. Framing is upstream in Haft.
+- If a feature proposes that Open-Sleigh **author work permission** — it doesn't belong. WorkCommission authority is upstream in Haft.
 - If a feature proposes that Open-Sleigh **run tests directly** — it doesn't belong. Tests run in the downstream project's CI.
 - If a feature proposes that Open-Sleigh **reason about solutions** — it doesn't belong. That's what the agent inside Execute does.
 - If a feature proposes that Open-Sleigh **grow `sleigh.md`** beyond its size budget — it doesn't belong. Compile fails.

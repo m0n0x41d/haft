@@ -60,6 +60,20 @@
 | 25 | Derived phase (Pending/Shipped/Stale) stored in database | Phases are computed from status + evidence state. Storing them creates stale-view bugs. | Phases computed at query time only. Never written to artifacts table. |
 | 26 | Advisory recommendation (`selected_ref`) treated as human choice in delegated reasoning | Violates Transformer Mandate. Agent recommends; human confirms before `/h-decide`. | Skill instructions enforce pause at Choose→Execute boundary. NavStrip shows "Available: /h-decide" not "Executing: /h-decide". |
 
+## Work Execution & External Projection (vNext)
+
+| # | Illegal state | Why | Enforcement |
+|---|--------------|-----|-------------|
+| 27 | RuntimeRun without a WorkCommission | Execution must be authorized separately from the decision. | Runner API accepts `commission_id`, not free-form decision/task text. |
+| 28 | WorkCommission running while linked DecisionRecord is stale, superseded, deprecated, or hash-mismatched | A commission cannot extend the life of the decision that authorized it. | Mandatory preflight freshness gate before `running`. |
+| 29 | WorkCommission start without an exclusive lease | Two runners can duplicate work or race on the same scope. | Atomic `claim_for_preflight` / `start_after_preflight` operation. |
+| 30 | Two running WorkCommissions with overlapping locksets under one ImplementationPlan | Parallel agents will create avoidable merge conflicts and invalid evidence. | Scheduler lockset conflict check before lease grant. |
+| 31 | YOLO/AutonomyEnvelope skipping freshness, evidence, lease, lockset, or one-way-door gates | YOLO is continuation policy, not authority expansion. | Envelope only controls auto-advance; gates remain unconditional. |
+| 32 | Agent expands an AutonomyEnvelope beyond its approved repos/paths/actions/risk ceiling | The runner would self-author authority. | Any out-of-envelope need moves commission to `needs_human_review`. |
+| 33 | ExternalProjection treated as WorkCommission/DecisionRecord source of truth | Linear/Jira/GitHub are carriers; their status changes are not evidence. | External observed state records drift/conflict only. Haft status changes require Haft evidence/actions. |
+| 34 | ProjectionWriterAgent deciding status, severity, scope, owner, deadline, or completion | LLM writer is prose transformation only. Truth is deterministic Haft state. | ProjectionIntent carries facts; ProjectionValidation rejects invented/missing claims. |
+| 35 | External projection required for local execution correctness | Haft must remain local-first and usable without tracker credentials. | `projection_policy=local_only` is a first-class mode; connector failure cannot invalidate RuntimeRun evidence. |
+
 ## Known Gaps (not yet enforced)
 
 | # | Gap | Impact | Priority |

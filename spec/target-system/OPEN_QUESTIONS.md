@@ -27,3 +27,13 @@
 | Q6 | How to measure semio-quality? | No benchmark for fanout, authority confusion, gate/evidence mixing. | When L2 language precision ships |
 | Q9 | Is "keeps the coder honest" the right tagline? | Validated in research. Slightly adversarial. Doesn't reflect verification/memory. | Next marketing pass |
 | Q11 | Role/context-scoped skills vs global skill library? | FPF suggests role+context binding. Hermes uses global. | When demand signal exists |
+
+## Open-Sleigh Integration Review Questions
+
+| # | Question | Context | Review need |
+|---|----------|---------|-------------|
+| Q12 | Is `WorkCommission` the right boundary between DecisionRecord and RuntimeRun? | We need decisions to wait safely before execution, and block if stale before work starts. | Confirm name, lifecycle, and whether it belongs in artifact store or a dedicated work table. |
+| Q13 | Should `ImplementationPlan` be a first-class artifact? | YOLO/batch mode needs DAG, dependencies, locksets, and envelope. | Decide whether plan is governance artifact, scheduler record, or both. |
+| Q14 | Should ExternalProjection be persisted as an artifact or internal sync record? | Linear/Jira/GitHub projections are optional carriers for external observers. | Balance auditability against artifact graph noise. |
+| Q15 | How strong should ProjectionWriterAgent validation be for manager-language text? | LLM writes low-formalism text, but cannot invent facts or status. | Identify minimum deterministic validator before first real tracker publish. |
+| Q16 | What is the minimum live canary for commission-first Open-Sleigh? | Current Open-Sleigh is tracker-first. | Define the smallest E2E that proves Haft-first work intake, preflight, evidence, and optional projection. |

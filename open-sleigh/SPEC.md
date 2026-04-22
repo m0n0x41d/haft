@@ -91,13 +91,13 @@
 ## 1. What Open-Sleigh is
 
 A long-running, OTP-supervised **harness engine for AI coding agents** that
-enforces an FPF-compliant governance lifecycle around every piece of work the
-agent touches. It watches a ticket tracker, spawns agents per active ticket,
-routes them through phase-gated roles, records each phase as an evidenced
-work-product via [Haft](https://github.com/m0n0x41d/quint-code), and only
-advances a ticket when the phase's FPF gates are green and — for transitions
-that cross a reversibility / blast-radius threshold — a human principal has
-approved.
+enforces an FPF-compliant governance lifecycle around every commissioned unit
+of work the agent touches. It claims Haft WorkCommissions, preflights the
+linked DecisionRecord and scope, spawns agents per commission, routes them
+through phase-gated roles, records each phase as an evidenced work-product via
+[Haft](https://github.com/m0n0x41d/quint-code), and only advances across
+one-way doors when gates are green and a human principal or approved autonomy
+envelope allows it.
 
 **MVP-1** implements a **single-variant governed pipeline**
 (`Frame → Execute → Measure`). It is a bootstrap, not yet a lemniscate: it
@@ -132,15 +132,15 @@ gated agent roles + human gates on one-way doors, built from scratch on OTP.
   `specs/target-system/`.
 - **Enabling systems** = (a) the engineering team that authors the SPEC and
   writes the code (`specs/enabling-system/`), (b) Haft, which authors
-  Open-Sleigh's evidence surface, (c) the tracker (Linear), which authors
-  the list of active problems. These are the holons that produce /
+  Open-Sleigh's evidence and work-commission surface, (c) optional external
+  trackers, which carry observer-facing projections. These are the holons that produce /
   maintain Open-Sleigh; Open-Sleigh does not produce them.
 
 **We are NOT:**
 - a fork of Symphony,
 - a reimplementation of Haft in Elixir,
 - a coding agent (we orchestrate agents; the agent is Codex / Claude / etc.),
-- an accounting or ticket system (tracker is an abstract adapter),
+- an accounting or ticket system (external trackers are projection carriers),
 - a CI system (we invoke the project's CI, we don't run tests ourselves).
 
 See `specs/target-system/SCOPE_FREEZE.md §Explicitly cut` for the full
@@ -155,7 +155,7 @@ non-goals inventory.
 | `AgentWorker` | `Task` under `Task.Supervisor` | `specs/enabling-system/FUNCTIONAL_ARCHITECTURE.md` L5 |
 | `PhaseMachine` | pure module | `specs/enabling-system/FUNCTIONAL_ARCHITECTURE.md` L3 + `specs/target-system/PHASE_ONTOLOGY.md` |
 | `StructuralGate` / `SemanticGate` / `HumanGate` | pure / effectful / triggered | `specs/target-system/GATES.md` |
-| `Tracker.Adapter` / `Agent.Adapter` | L4 behaviours | `specs/target-system/AGENT_PROTOCOL.md` + `specs/enabling-system/FUNCTIONAL_ARCHITECTURE.md` L4 |
+| `CommissionSource.Adapter` / `Projection.Adapter` / `Agent.Adapter` | L4 behaviours | `specs/target-system/AGENT_PROTOCOL.md` + `specs/enabling-system/FUNCTIONAL_ARCHITECTURE.md` L4 |
 | `Haft.Protocol` + `Haft.Client` | L4 stateless codec + typed API | `specs/target-system/HAFT_CONTRACT.md` |
 | `HaftSupervisor` + `HaftServer` | L5 process owner for `haft serve` | `specs/target-system/HAFT_CONTRACT.md §5` + `FUNCTIONAL_ARCHITECTURE.md` L5 |
 | `Observations` | `GenServer` + ETS | `specs/target-system/GATES.md §5` |
@@ -204,20 +204,27 @@ documented there.
 
 ## 5. MVP-1 scope cut — single-variant governed pipeline
 
-**Three phases, linear, single-variant.** Not a lemniscate: no Generate /
+**Four phases, linear, single-variant.** Not a lemniscate: no Generate /
 Parity-run / Select, so no Pareto discipline. This is a bootstrap that
 shortcuts straight to implementation with FPF-shaped governance around it.
 
 ```
-Frame (verify upstream ProblemCardRef) ──► Execute ──► [HumanGate, if PR targets main] ──► Measure ──► [pass | reopen]
+Preflight (verify WorkCommission + DecisionRecord freshness)
+  ──► Frame (verify upstream ProblemCardRef)
+  ──► Execute ──► [HumanGate, if PR targets main / out-of-envelope]
+  ──► Measure ──► [pass | block | reopen]
 ```
 
-- **Frame** — agent **verifies** the ticket carries a valid upstream
+- **Preflight** — Open-Sleigh leases a Haft WorkCommission, checks that its
+  linked DecisionRecord/ProblemCard/scope/envelope are still admissible, and
+  sends a PreflightReport back to Haft. Execute starts only after Haft admits
+  the commission.
+- **Frame** — agent **verifies** the commission carries a valid upstream
   `ProblemCardRef` (authored by the human via Haft + `/h-reason`). The
   agent does NOT author a ProblemCard — that is explicitly outside the
-  harness boundary. If the `ProblemCardRef` is missing, resolves to a
-  self-authored artifact, or is stale, Frame exits `Verdict.fail` with
-  reason `:no_upstream_frame`.
+  harness boundary. In commission-first mode the ref comes from the
+  WorkCommission, not tracker text. If it is missing, resolves to a
+  self-authored artifact, or is stale, Frame exits `Verdict.fail`.
 - **Execute** — agent implements, runs tests, pushes a PR. If the PR
   targets an `external_publication` branch, `HumanGate` blocks Measure
   until `/approve`.
@@ -280,7 +287,7 @@ The complete inventory is in `specs/target-system/SCOPE_FREEZE.md
 - **Not a code reviewer.** Codex/Claude do the work. We gate, we don't
   review.
 - **Not a replacement for Haft.** Haft is the FPF source of truth.
-- **Not Linear-specific.** `Tracker.Adapter` behaviour from day 1.
+- **Not Linear-specific.** External projection targets are optional carriers.
 - **Not Codex-specific long-term.** `Agent.Adapter` behaviour from day 1;
   Claude designed-in, shipped under Parity Plan.
 - **Not a reasoning engine.** We orchestrate reasoning agents; we don't
@@ -289,8 +296,8 @@ The complete inventory is in `specs/target-system/SCOPE_FREEZE.md
 ## 10. Acknowledged risks and mitigations
 
 Canonical in `specs/target-system/RISKS.md`. Covers bootstrap-risk
-(canary rule), in-RAM state loss on crash, tracker-vs-engine races
-(tracker-wins reconciliation, 30s soft-stop, compensating notes), and
+(canary rule), in-RAM state loss on crash, projection-vs-engine drift
+(Haft-wins reconciliation, 30s soft-stop, compensating notes), and
 the probabilistic nature of LLM-judge semantic gates.
 
 ## 11. Open questions and resolutions (pre-v0.5 audit trail)
@@ -316,12 +323,13 @@ Elixir toy. The 3 seeded tickets are **gate-activation regression
 tests**, not random work. Each ticket MUST exercise a specific gate
 path:
 
-| Ticket | Content | Expected gate behaviour |
+| Canary work item | Content | Expected gate behaviour |
 |---|---|---|
-| T1 | Ticket **without** a `problem_card_ref` | Frame entry: `problem_card_ref_present` MUST hard-fail with `:no_upstream_frame`. Ticket never enters Execute. |
-| T1' | Ticket **with** a `problem_card_ref` whose upstream ProblemCard has a vacuous `describedEntity` | Frame exit: `object_of_talk_is_specific` MUST trip. Ticket goes back to human; Open-Sleigh does NOT attempt to refine. |
-| T2 | Ticket with valid upstream ProblemCard but obligation-heavy body | Execute/Measure exit: `lade_quadrants_split_ok` MUST trip. Agent must decompose before publishing. |
-| T3 | Ticket with a valid upstream ProblemCard and clean specific body; PR targets `main` | All gates pass. `commission_approved` HumanGate fires — operator `/approve`s to complete. |
+| T1 | WorkCommission **without** a valid `problem_card_ref` | Frame entry: `problem_card_ref_present` MUST hard-fail with `:no_upstream_frame`. Commission never enters Execute. |
+| T1' | WorkCommission with a `problem_card_ref` whose upstream ProblemCard has a vacuous `describedEntity` | Frame exit: `object_of_talk_is_specific` MUST trip. Commission goes back to human; Open-Sleigh does NOT attempt to refine. |
+| T2 | WorkCommission with valid upstream ProblemCard but obligation-heavy body | Execute/Measure exit: `lade_quadrants_split_ok` MUST trip. Agent must decompose before publishing. |
+| T3 | WorkCommission with a valid upstream ProblemCard and clean specific body; PR targets `main` | All gates pass. `commission_approved` HumanGate fires — operator `/approve`s to complete. |
+| T4 | WorkCommission created from DecisionRecord revision R1, then decision superseded to R2 before start | Preflight MUST block as stale; Execute never starts. |
 
 The canary ticket suite is the **regression set** for every gate,
 prompt, or adapter change. See `specs/target-system/SCOPE_FREEZE.md

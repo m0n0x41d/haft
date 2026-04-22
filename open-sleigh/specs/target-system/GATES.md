@@ -31,8 +31,12 @@ Haft JSON blob returned from the relevant `haft_*` tool call. They catch
 
 | Gate | Fires at | Checks |
 |---|---|---|
-| `problem_card_ref_present` | Frame **entry** | `Ticket.problem_card_ref` is non-nil, resolves to a live Haft artifact, and its `authoring_source ≠ :open_sleigh_self`. Hard-fails Frame with `:no_upstream_frame` — the ticket goes back to the human for upstream framing. Added in v0.5. |
-| `described_entity_field_present` | Frame exit | **Upstream** ProblemCard (the one referenced by `Ticket.problem_card_ref`) has non-empty `describedEntity` and `groundingHolon`. Checks upstream human-authored content; Open-Sleigh never creates these fields. |
+| `commission_runnable` | Preflight entry | WorkCommission exists, is in `ready`/`queued` state, has an exclusive lease, and has not expired. |
+| `decision_fresh` | Preflight entry | Linked DecisionRecord exists, is active, hash/revision matches the commission snapshot, and is not refresh_due/stale/superseded/deprecated. |
+| `lockset_available` | Preflight entry | No other leased/running WorkCommission in the same plan has an overlapping lockset. |
+| `autonomy_envelope_allows` | Preflight entry | If auto-started/batch/YOLO, the approved AutonomyEnvelope allows this repo/path/action/risk class and has remaining budget. |
+| `problem_card_ref_present` | Frame **entry** | `WorkCommission.problem_card_ref` is non-nil, resolves to a live Haft artifact, and its `authoring_source ≠ :open_sleigh_self`. Hard-fails Frame with `:no_upstream_frame`; the commission goes back to Haft as blocked/review-needed. |
+| `described_entity_field_present` | Frame exit | **Upstream** ProblemCard (the one referenced by `WorkCommission.problem_card_ref`) has non-empty `describedEntity` and `groundingHolon`. Checks upstream human-authored content; Open-Sleigh never creates these fields. |
 | `valid_until_field_present` | every phase exit | Artifact has `valid_until` in the future |
 | `evidence_ref_not_self` | Measure exit | Evidence carrier `ref`/`hash` field is non-empty AND `ref ≠ artifact.self_id` at `PhaseOutcome` construction (the check lives where `self_id` is known, not on `Evidence.new` in isolation — see `ILLEGAL_STATES.md` PR5). Whether the carrier is actually *external to the authoring role* is a semantic check, moved to `no_self_evidence_semantic` (§2). |
 | `design_runtime_split_ok` | Execute entry | No `MethodDescription` nodes embedded in `Work` traces (structural check on Haft graph shape) |
@@ -50,6 +54,7 @@ LLM-judge; the expensive ones as HumanGate.
 | Gate | Fires at | Check | Implementation in MVP-1 |
 |---|---|---|---|
 | `object_of_talk_is_specific` | Frame exit | Is `describedEntity` specific (file path, module, subsystem) or vacuous ("the system", "the code")? | LLM-judge |
+| `context_material_change_review` | Preflight exit | Did repo/context changes since commission queue materially affect the selected DecisionRecord or commission scope? Agent reports; Haft validates hard facts. Uncertainty maps to human review. | LLM-judge + deterministic validation |
 | `lade_quadrants_split_ok` | any obligation-language artifact | Sentences containing MUST / guarantees / accepted / evidence are decomposed into **Law** (definition) / **Admissibility** (gate) / **Deontics** (duty) / **Work-effect ∣ Evidence** (carrier). Per `../../.context/semiotics_slideument.md` §A.6.B Slide 33 literal. Renamed from `lade_split_ok` in v0.2 — the quad is **not** {Law, Admissibility, Deontics, Evidence}; the 4th axis is explicitly "Work-effect / Evidence", and conflating those two is itself a reportable error. | LLM-judge |
 | `no_self_evidence_semantic` | Measure exit | **Two separate checks:** (a) the cited evidence is produced by a role **external to the authoring role** (FPF-Spec A.10 CC-A10.6: no self-evidence); (b) the **evidence carrier** (PR sha, CI run id, test log) is distinguished from the **work-effect** (what the merged code actually does in runtime). A carrier is not a work-effect; conflating them is the trap this gate exists to catch. | LLM-judge |
 | `contract_unpacked_ok` | any artifact containing promise-language ("I implemented X", "delivered Y") | Promise content / speech act / commitment / work-effect-evidence decomposed per `../../.context/FPF-Spec.md` A.6.C. Deferred to MVP-2; flagged now so agents publishing "done" claims don't conflate promise content with delivery evidence. | **not in MVP-1** |
@@ -131,10 +136,9 @@ another.
 
 `HumanGate` is triggered, not computed. It:
 1. Blocks the phase transition.
-2. Posts a structured approval request to the tracker (Linear comment or
-   GitHub PR review request).
-3. Listens for a confirming signal (comment body `/approve` from a user in
-   the `approvers` list in `sleigh.md`, or a GitHub "approved" review).
+2. Posts a structured approval request to the configured local/external
+   surface (Desktop/CLI, Linear/Jira/GitHub comment, or PR review request).
+3. Listens for a confirming signal from an authorized approver.
 4. On approval: releases the transition and records
    `HumanGateApproval { approver, at, reason?, config_hash }` as evidence
    on the Haft artifact.
@@ -145,8 +149,9 @@ another.
 **Triggers in MVP-1:**
 - Execute → Measure, when PR target branch matches `external_publication`
   regex in `sleigh.md` (default: `^(main|master|release/.*)$`).
-- Any tracker transition to a terminal state (Done, Won't Do, Closed) — the
-  agent proposes; the human confirms.
+- Any external projection transition to a terminal external state (Done, Won't
+  Do, Closed) when projection policy requires confirmation.
+- Any proposed action outside the approved AutonomyEnvelope.
 
 This is the concrete enforcement of the Transformer Mandate in MVP-1: the
 agent can **verify framing**, can implement, can request approval — but it
@@ -193,6 +198,7 @@ isolated from the Haft artifact graph per `ILLEGAL_STATES.md` TA1–TA3
 
 | Phase | Structural gates | Semantic gates | Human gate (trigger) |
 |---|---|---|---|
+| `:preflight` | `commission_runnable`, `decision_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
 | `:frame` | `problem_card_ref_present` (entry), `described_entity_field_present`, `valid_until_field_present` | `object_of_talk_is_specific` | — |
 | `:execute` | `design_runtime_split_ok` | `lade_quadrants_split_ok` | `commission_approved` (if `external_publication` matches) |
 | `:measure` | `evidence_ref_not_self`, `valid_until_field_present` | `no_self_evidence_semantic` | — |

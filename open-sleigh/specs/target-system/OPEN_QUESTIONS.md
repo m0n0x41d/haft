@@ -185,10 +185,10 @@ implementation.**
 
 ---
 
-### Q-OS-8 — Linear carrier for `problem_card_ref`
+### Q-OS-8 — Linear carrier for `problem_card_ref` (legacy tracker-first)
 
-**Status:** Blocking the production Linear rollout, non-blocking for
-mock/canary adapter tests.
+**Status:** Demoted by commission-first integration. Still relevant only for
+legacy tracker-first canary fixtures.
 
 **The question.** Which Linear issue carrier holds the required upstream
 `problem_card_ref`?
@@ -201,8 +201,44 @@ contract: direct payload field projection (`problem_card_ref_field`) for a
 future/alternate Linear projection, and a Markdown marker in `description`
 (`problem_card_ref_marker`, default `problem_card_ref`) for canary use.
 
-**Decision owner:** Ivan. **Resolve before running Open-Sleigh on a real
-`octacore_nova` ticket.**
+**Commission-first replacement.** WorkCommission carries `problem_card_ref`
+and `decision_ref` from Haft. Linear/Jira/GitHub issues receive those links as
+ExternalProjection text/fields; they do not serve as intake authority.
+
+**Decision owner:** Ivan. **Resolve only if legacy tracker-first canary remains
+in production use.**
+
+---
+
+### Q-OS-9 — Commission-first Haft API shape
+
+**Status:** Open, blocking MVP-1R implementation.
+
+**The question.** What exact Haft tool/API surface should expose:
+`list_runnable`, `claim_for_preflight`, `record_preflight`,
+`start_after_preflight`, `record_run_event`, and `complete_or_block`?
+
+**Recommendation.** Implement as a dedicated `haft_commission` tool/API, not
+as overloaded `haft_decision` actions. Work authorization is a separate domain
+object from choosing.
+
+**Decision owner:** Ivan. **Resolve before refactoring Orchestrator intake.**
+
+---
+
+### Q-OS-10 — Projection writer validation minimum
+
+**Status:** Open, blocking first external Linear/Jira publish.
+
+**The question.** What deterministic validator is enough before allowing an
+LLM ProjectionWriterAgent to publish manager-facing tracker text?
+
+**Recommendation.** Require: all mandatory links present, lifecycle state
+unchanged, blocking reasons preserved, no forbidden claims, no invented dates
+or owners, and redaction policy applied. Anything else becomes
+`needs_human_review`.
+
+**Decision owner:** Ivan. **Resolve before enabling `projection.mode != local_only`.**
 
 ---
 

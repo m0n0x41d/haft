@@ -92,7 +92,7 @@ Focus: one proved execution loop. BDD scenarios in `spec/target-system/EXECUTION
 
 ### Deferred to v7 (per 5.4 review)
 - Automation triggers (problem factory — don't mix with execution)
-- DecisionRecord→Task Pipeline with auto-advance (scaling factory)
+- DecisionRecord→WorkCommission→RuntimeRun pipeline with auto-advance (scaling factory)
 - Deep onboard as automation input
 
 **Terminology:** "problem" = ProblemCard only. Dashboard page = "Dashboard", not "Problem Board".
@@ -106,7 +106,38 @@ Ship exactly one vertical slice:
 - [ ] If verification fails → reopen/create ProblemCard (not straight to PR)
 - [ ] PR output is local-first: draft body + branch compare, not deep provider integration
 
-**NOT in v7:** GitHub/Linear intake, research-before-code, process metrics, autonomous agents.
+**NOT in v7:** GitHub/Linear as primary intake, research-before-code,
+process metrics, broad autonomous agents. Optional ExternalProjection design is
+allowed, but trackers remain carriers, not sources of truth.
+
+## vNext — Open-Sleigh Integration Draft
+
+Focus: make execution scalable without collapsing DecisionRecord, work
+authorization, runtime attempt, and external tracker carrier into one object.
+
+### Commissioned execution
+- [ ] `WorkCommission`: create/queue/start/cancel/expire lifecycle
+- [ ] Mandatory freshness gate before execution
+- [ ] `RuntimeRun`: one Open-Sleigh attempt per commission
+- [ ] `ImplementationPlan`: DAG of WorkCommissions with dependencies/locksets
+- [ ] `AutonomyEnvelope`: explicit YOLO/batch bounds
+
+### Projection
+- [ ] Local-only execution works with no Linear/Jira/GitHub configured
+- [ ] Optional `ExternalProjection` records desired/observed external state
+- [ ] ProjectionWriterAgent writes manager-facing text from deterministic intent
+- [ ] ProjectionValidation blocks invented progress, missing links, and forbidden claims
+- [ ] Manual tracker status changes record drift/conflict, not semantic completion
+
+### Open-Sleigh runtime
+- [ ] Open-Sleigh consumes Haft WorkCommissions, not raw tracker tickets
+- [ ] First phase is Preflight; Execute starts only after Haft admits execution
+- [ ] Batch scheduler respects dependencies, locksets, leases, and envelope limits
+- [ ] External projection publish failure does not invalidate execution evidence
+
+**Not in this slice:** project-management features such as sprints, estimation
+games, Gantt charts, manager dashboards inside Haft, or making Jira/Linear
+required infrastructure.
 
 ## v8 — Governor Signals (post day 90)
 

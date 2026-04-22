@@ -55,8 +55,8 @@ snapshots return `503`.
 If it crashes, the engine keeps working. No phase transition, gate
 evaluation, or Haft write is ever bounded by HTTP-server liveness.
 
-The tracker is the only external I/O path that is correctness-
-relevant; HTTP is convenience.
+Haft commission/evidence I/O is correctness-relevant. External trackers are
+projection carriers only; HTTP is convenience.
 
 ---
 

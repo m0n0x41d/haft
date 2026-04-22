@@ -1,6 +1,6 @@
 ---
 title: "14. Acknowledged Risks and Mitigations"
-description: Known risks accepted for MVP-1 (bootstrap-risk, in-RAM state loss, tracker-vs-engine races, probabilistic semantic gates) and their mitigations.
+description: Known risks accepted for MVP-1 (bootstrap-risk, in-RAM state loss, projection-vs-engine drift, probabilistic semantic gates) and their mitigations.
 reading_order: 14
 ---
 
@@ -35,22 +35,28 @@ All Orchestrator state is in-process Erlang maps. On crash / restart:
 
 - **Lost:** in-flight `AgentWorker` state, unwritten Haft artifacts
   (mitigated by WAL, see `HAFT_CONTRACT.md §3`).
-- **Recovered:** tracker is source of truth for active tickets;
-  workers respawn on the next poll tick. Haft SQLite is source of
-  truth for persistent evidence.
+- **Recovered:** Haft is source of truth for WorkCommissions and persistent
+  evidence; workers respawn on the next poll tick if the commission remains
+  runnable. Legacy tracker-first mode uses tracker state as a bootstrap
+  intake source only.
 - **Accepted for MVP-1.** The cost of adding SQLite persistence for
   engine state (estimated 3-4 days) is not justified until MVP-2
   concurrency. See `../enabling-system/STACK_DECISION.md §Storage
   (MVP-2+)` for the trigger.
 
-## 3. Tracker vs engine concurrency (race on manual transitions)
+## 3. External projection vs engine concurrency (race on manual transitions)
 
-A human moving a ticket in Linear while `AgentWorker` owns it creates
-a race. **Resolution: tracker wins.**
+A human moving a Linear/Jira/GitHub issue while `AgentWorker` owns the
+WorkCommission creates drift. **Resolution: Haft wins for work semantics;
+external tracker state becomes observed projection drift.**
 
-- Every poll tick, `Orchestrator` diffs tracker state vs owned tickets.
-- If tracker state changed out from under an owned ticket, the
-  `AgentWorker` receives `:cancel_grace` with a **30s soft-stop window**.
+- Every poll tick, `Orchestrator` re-checks Haft WorkCommission state and
+  external projection drift (if configured).
+- If Haft state changed out from under an owned commission, the `AgentWorker`
+  receives `:cancel_grace` with a **30s soft-stop window**.
+- If only external tracker state changed, Haft records drift/conflict and may
+  instruct cancellation; the tracker state alone does not cancel or complete
+  the work.
 - **In-flight `haft_*` call handling.** A `haft_*` call currently in
   flight when `:cancel_grace` fires MUST either (a) complete within the
   30s window, or (b) time out at `min(remaining_grace, 10s)`. It is
@@ -63,8 +69,8 @@ a race. **Resolution: tracker wins.**
 - After 30s, if the worker hasn't exited cleanly, it is killed; the
   compensating note is written by the `Orchestrator` on the worker's
   behalf using the last-known state snapshot.
-- Ticket is then released. Next poll tick may re-dispatch if the
-  tracker state is still "active".
+- Commission is then released. Next poll tick may re-dispatch if Haft still
+  reports it runnable.
 
 ## 4. LLM-judge gates are probabilistic
 

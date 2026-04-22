@@ -25,12 +25,13 @@
 | # | Document | What you learn |
 |---|----------|---------------|
 | 7 | [ILLEGAL_STATES.md](ILLEGAL_STATES.md) | What must be unrepresentable in the artifact graph |
+| 8 | [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md) | WorkCommission, RuntimeRun, preflight, YOLO, and external projection authority boundaries |
 
 ## Layer 4: Open Issues
 
 | # | Document | What you learn |
 |---|----------|---------------|
-| 8 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved design questions |
+| 9 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved design questions |
 
 ## Enabling System
 

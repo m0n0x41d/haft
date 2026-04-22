@@ -27,14 +27,14 @@ reading_order: 10
 - **No direct SQLite access ever.** Haft owns its SQLite; the MCP tool
   surface is the only read/write path.
 
-## 2. Tool surface (exactly these)
+## 2. Current tool surface
 
 | Tool | Used by phase | Purpose |
 |---|---|---|
 | `haft_problem(frame/characterize)` | Frame (verifier-read only), Characterize (MVP-2) | Create ProblemCard, add characteristics. **Frame in MVP-1 does NOT call the `frame` verb** — framing is upstream-human-only per ILLEGAL_STATES UP1. Frame phase toolset excludes `haft_problem` entirely (CL3). |
 | `haft_solution(explore/compare)` | Generate, Parity-run (MVP-2) | Register variants, Pareto compare |
 | `haft_decision(decide/apply/measure/evidence)` | Select, Commission, Measure | Record decision contract, attach evidence |
-| `haft_refresh(scan/drift)` | periodic, poll tick | Staleness check on all active tickets' artifacts |
+| `haft_refresh(scan/drift)` | periodic, poll tick | Staleness check on active commission-linked artifacts |
 | `haft_note` | any phase | Micro-decision capture; also used for compensating-note protocol (§7) |
 | `haft_query(status/search/related/fpf)` | any phase | Dashboard, cross-project recall, FPF-spec retrieval |
 
@@ -43,6 +43,32 @@ CI-style governance gate, not an MCP tool.
 
 **Contract stability.** The Haft MCP tool surface is declared stable in
 `quint-code/spec/integration/MCP_PROTOCOL.md`.
+
+## 2a. Required commission-first surface
+
+The current tool set is enough for tracker-first MVP-1, but not for the
+Haft-first integration. Commission-first Open-Sleigh requires new Haft-owned
+operations. Names are provisional until the Haft API is implemented; the
+semantics are not provisional.
+
+| Operation | Used by | Purpose |
+|---|---|---|
+| `haft_commission(list_runnable)` | CommissionPoller | Return WorkCommissions eligible for preflight under the selected plan/queue. |
+| `haft_commission(claim_for_preflight)` | Orchestrator | Atomically lease one WorkCommission for this runner. Does not grant Execute. |
+| `haft_commission(record_preflight)` | Preflight phase | Attach PreflightReport and deterministic check results. |
+| `haft_commission(start_after_preflight)` | Orchestrator | Move WorkCommission to running only if Haft validates preflight and policy gates. |
+| `haft_commission(record_run_event)` | any phase | Append RuntimeRun/phase status without mutating DecisionRecord truth. |
+| `haft_commission(complete_or_block)` | Measure/terminal | Mark commission completed/failed/blocked with evidence refs. |
+| `haft_projection(intent/draft/publish/observe)` | Projection engine | Optional ExternalProjection lifecycle; may call a ProjectionWriterAgent for wording but Haft owns facts. |
+
+Hard rules:
+
+- Open-Sleigh cannot create, approve, or refresh a WorkCommission on its own.
+- `claim_for_preflight` grants only Preflight. Execute requires
+  `start_after_preflight`.
+- External tracker publish failure does not make a RuntimeRun invalid.
+- Manual external tracker changes are returned to Haft as observed drift,
+  never as direct WorkCommission state changes.
 
 ## 3. Haft SPOF failure mode
 
@@ -56,16 +82,17 @@ predictably when it's unreachable.
   `{:error, :haft_unavailable, retry_after}` frame. The agent is instructed
   (via prompt contract) to stop and wait.
 - **New-entry behaviour:** the Orchestrator refuses to dispatch new phases
-  — tickets accumulate in the `pending` queue.
+  — WorkCommissions accumulate in the `pending` queue.
 - **Local WAL.** Phase outcomes that could not be written to Haft are
-  appended to `~/.open-sleigh/wal/` as JSON-L. **WAL is per-ticket**:
-  `wal/<ticket_id>.jsonl`, append-only.
-- **Replay ordering.** On reconnect, `Haft.Supervisor` replays **per-ticket
-  append order, ticket-by-ticket in arrival order** (FIFO by first-entry
-  timestamp of each ticket file). Within a ticket, order is preserved
-  strictly; across tickets, parallelism is allowed once each ticket's
-  first entry has replayed in arrival order. Replay completes before new
-  dispatches are accepted.
+  appended to `~/.open-sleigh/wal/` as JSON-L. In commission-first mode, WAL is
+  per-commission: `wal/<commission_id>.jsonl`, append-only. Legacy
+  tracker-first mode used `wal/<ticket_id>.jsonl`.
+- **Replay ordering.** On reconnect, `Haft.Supervisor` replays
+  **per-commission append order, commission-by-commission in arrival order**
+  (FIFO by first-entry timestamp of each commission file). Within a
+  commission, order is preserved strictly; across commissions, parallelism is
+  allowed once each commission's first entry has replayed in arrival order.
+  Replay completes before new dispatches are accepted.
 - **Operator surface:** the status dashboard (MVP-1 terminal, MVP-2 web)
   shows `:haft_unavailable` state with retry count and last error.
 
@@ -136,4 +163,4 @@ discard into auditable partial-state.
 - [ILLEGAL_STATES.md](ILLEGAL_STATES.md) — OB1–OB5 (observation isolation), TA1–TA3 (token accounting), AD3 (no silent drop on unavailable)
 - [TARGET_SYSTEM_MODEL.md](TARGET_SYSTEM_MODEL.md) — `Evidence`, `PhaseOutcome` (what gets written to Haft), `AdapterSession` (what the session handle carries)
 - [../enabling-system/FUNCTIONAL_ARCHITECTURE.md](../enabling-system/FUNCTIONAL_ARCHITECTURE.md) — L4 `Haft.Client` stateless API + L5 `HaftSupervisor` / `HaftServer` process ownership
-- [RISKS.md](RISKS.md) — tracker-wins reconciliation that invokes the cancellation protocol
+- [RISKS.md](RISKS.md) — Haft-wins reconciliation that invokes the cancellation protocol

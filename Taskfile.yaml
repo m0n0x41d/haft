@@ -164,6 +164,21 @@ tasks:
           Linux) "$HOME/.haft/bin/haft-desktop" & ;;
         esac
 
+  repomix:
+    desc: Pack all code and specs into a timestamped XML review bundle
+    vars:
+      TIMESTAMP:
+        sh: date -u +%Y%m%dT%H%M%SZ
+    cmds:
+      - mkdir -p .context
+      - >-
+        repomix
+        --include "cmd/**,internal/**,logger/**,tui/**,desktop/**,desktop-tauri/**,open-sleigh/**,spec/**,skills/**,scripts/**,assurance/**,db/**,*.md,*.go,go.mod,go.sum,Taskfile.yaml,*.sql,*.yaml,*.yml,*.json,*.toml"
+        --ignore ".git,.context,.haft,.task,.cache,.claude,.codex,.crush,.cursor,.playwright-mcp,.zenflow,.zenflow-attachments,data/FPF,desktop-tauri/target,desktop/frontend/node_modules,tui/node_modules,open-sleigh/_build,open-sleigh/deps,node_modules,dist,build,tmp,coverage.out,internal/cli/fpf.db,*.db,*.sqlite,*.log,haft"
+        --output ".context/{{.TIMESTAMP}}_repomix.xml"
+        --parsable-style
+        --include-diffs
+
   clean:
     desc: Remove local build artifacts
     cmds:

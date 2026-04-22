@@ -31,7 +31,18 @@ engine:
     host: 127.0.0.1
     port: 4767
 
-tracker:
+commission_source:
+  kind: haft
+  selector: runnable
+  lease_timeout_s: 300
+  plan_ref: null
+
+projection:
+  mode: local_only                         # local_only | external_optional | external_required
+  targets: []                              # e.g. [{kind: linear, audience: manager}]
+  writer_profile: manager_plain
+
+legacy_tracker:
   kind: linear
   team: OCT
   active_states: [In Progress, Review]
@@ -46,7 +57,7 @@ agent:
   wall_clock_timeout_s: 600
   max_retry_backoff_ms: 300000         # 5 min cap (Symphony §8.4)
   max_concurrent_agents: 2
-  max_concurrent_agents_by_state:      # per-tracker-state concurrency cap; empty = no per-state cap
+  max_concurrent_agents_by_state:      # legacy tracker-first cap; commission-first uses locksets/envelope
     "In Progress": 2
     "Review": 1
 
@@ -89,11 +100,21 @@ haft:
 
 external_publication:
   branch_regex: "^(main|master|release/.*)$"
-  tracker_transition_to: ["Done"]
+  external_transition_to: ["Done"]
   approvers: ["ivan@weareocta.com"]
   timeout_h: 24
 
 phases:
+  preflight:
+    agent_role: preflight_checker
+    tools: [haft_query, read, grep, bash]
+    gates:
+      structural:
+        - commission_runnable
+        - decision_fresh
+        - lockset_available
+        - autonomy_envelope_allows
+      semantic: [context_material_change_review]
   frame:
     agent_role: frame_verifier     # Verifier role — does NOT author ProblemCards.
     tools: [haft_query, read, grep]  # haft_problem intentionally absent: Frame
@@ -121,8 +142,8 @@ phases:
 # Prompt templates
 
 ## Frame
-You are the Frame verifier. Given ticket {{ticket.title}} and its linked
-ProblemCardRef {{ticket.problem_card_ref}}, verify that the upstream
+You are the Frame verifier. Given WorkCommission {{commission.id}} and its
+linked ProblemCardRef {{commission.problem_card_ref}}, verify that the upstream
 ProblemCard is present, fresh (`valid_until` in the future), and
 sufficiently specific. Do NOT author a new ProblemCard — if missing or
 vague, exit with fail verdict so the human can frame it upstream.
@@ -136,13 +157,15 @@ You are the Measurer. Given the closed PR ...
 
 ## 2. Config hash-pinning (prompt provenance)
 
-When a `Ticket × Phase` session starts, `WorkflowStore` resolves the effective
+When a `WorkCommission × Phase` session starts, `WorkflowStore` resolves the effective
 `sleigh.md` content and computes a **phase-scoped** hash:
 
 ```
 config_hash = sha256(
   engine
-  || tracker
+  || commission_source
+  || projection
+  || legacy_tracker
   || agent
   || judge
   || haft
@@ -155,7 +178,7 @@ config_hash = sha256(
 
 Changes to `phases.measure.*` do **not** re-pin in-flight `Frame` sessions —
 that's v0.2 scope-creep, corrected in v0.3. Cross-phase sections
-(`engine`, `tracker`, `agent`, `codex`, `judge`, `hooks`, `haft`,
+(`engine`, `commission_source`, `projection`, `legacy_tracker`, `agent`, `codex`, `judge`, `hooks`, `haft`,
 `workspace`, `external_publication`) affect all sessions and are included
 in every hash.
 

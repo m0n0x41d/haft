@@ -21,13 +21,12 @@ reading_order: 8
 > 1. **Phase-scoped tool dispatch.** Symphony exposes a tool set per
 >    session; we scope tools per **phase** within a session (Frame has
 >    different scope than Execute; Q-OS-4 hybrid mechanism).
-> 2. **No agent-owned tracker mutation.** Symphony lets the agent call
->    Linear directly via `linear_graphql` tool. Open-Sleigh routes all
->    tracker writes through `Tracker.Adapter` at L4 — the agent
->    proposes transitions as part of `PhaseOutcome`, the Orchestrator
->    effects them (with HumanGate where required).
+> 2. **No agent-owned external projection mutation.** Symphony lets the agent
+>    call Linear directly via `linear_graphql` tool. Open-Sleigh reports facts
+>    to Haft; Haft owns ExternalProjection intent/publication. The agent may
+>    propose a PhaseOutcome, but it does not mutate Linear/Jira/GitHub directly.
 > 3. **Continuation turns respect phase boundaries.** Symphony runs N
->    turns per issue in one session. We run N turns per `(Ticket ×
+>    turns per issue in one session. We run N turns per `(WorkCommission ×
 >    Phase)` session, and a phase exit closes the thread. A new phase
 >    starts a new thread.
 
@@ -60,7 +59,7 @@ awaits responses. Failure at any step produces
 # 2. initialized (notification — no response)
 {"jsonrpc": "2.0", "method": "initialized", "params": {}}
 
-# 3. thread/start — opens a thread for this (Ticket × Phase) session
+# 3. thread/start — opens a thread for this (WorkCommission × Phase) session
 {"jsonrpc": "2.0", "id": 2, "method": "thread/start",
  "params": {"approvalPolicy": "<per sleigh.md codex.approval_policy>",
             "sandbox": "<per sleigh.md codex.thread_sandbox>",
@@ -73,7 +72,7 @@ awaits responses. Failure at any step produces
  "params": {"threadId": "<thread_id>",
             "input": [{"type": "text", "text": "<rendered prompt>"}],
             "cwd": "<absolute workspace_path>",
-            "title": "<Ticket.identifier>: <Ticket.title>",
+            "title": "<WorkCommission.id>: <WorkCommission.title>",
             "approvalPolicy": "<codex.approval_policy>",
             "sandboxPolicy": {"type": "<codex.turn_sandbox_policy>"}}}
 # → response: {"result": {"turn": {"id": "<turn_id>"}}}
@@ -81,20 +80,20 @@ awaits responses. Failure at any step produces
 
 **Session identity.**
 - `session_id = "<thread_id>-<turn_id>"` (format per Symphony §10.2).
-- Same `thread_id` across all turns of one `(Ticket × Phase)` session.
+- Same `thread_id` across all turns of one `(WorkCommission × Phase)` session.
 - New `turn_id` per turn.
 - The `config_hash` from `AdapterSession` is included as a trailer line
   in the rendered prompt: `<!-- config_hash: <hex> -->` (§8.1 of SPEC).
 
 ## 3. Continuation turns within a phase session
 
-A single `(Ticket × Phase)` session may run **multiple turns** on the
+A single `(WorkCommission × Phase)` session may run **multiple turns** on the
 same live thread. The pattern:
 
 1. **Turn 1** sends the full rendered prompt for the phase.
 2. After each `turn/completed` event, the `AgentWorker`:
-   a. Re-fetches the tracker state (via `Tracker.Adapter`).
-   b. Asks: "is the ticket still in an active state AND is the phase
+   a. Re-fetches WorkCommission state from Haft (via `CommissionSource.Adapter`).
+   b. Asks: "is the commission still leased/runnable AND is the phase
       still incomplete (gates not yet all green)?"
    c. If both yes AND `turn_count < agent.max_turns`: fire another
       `turn/start` on the same thread with **continuation guidance**
@@ -108,7 +107,7 @@ same live thread. The pattern:
    Continuation guidance — Open-Sleigh Phase: <phase>
 
    - The previous turn completed, but the phase exit gates have not all passed yet.
-   - This is continuation turn #<N> of <max_turns> for this (Ticket × Phase) session.
+   - This is continuation turn #<N> of <max_turns> for this (WorkCommission × Phase) session.
    - Resume from the current workspace and conversation state.
    - The original task prompt is already present in this thread — do not repeat it.
    - Gate failures that triggered this continuation (if any): <structured list>.
@@ -123,10 +122,10 @@ same live thread. The pattern:
 
 - **Frame phase:** single turn only. `max_turns = 1`. Frame is a
   verifier; there is nothing to "iterate on." If verification fails,
-  the phase exits `Verdict.fail` and the ticket goes back to the
-  human.
+  the phase exits `Verdict.fail` and the commission goes back to Haft as
+  blocked/review-needed.
 - **Execute phase:** multi-turn, bounded by `agent.max_turns` (default
-  20). Continuation fires when tracker is still active and gates not
+  20). Continuation fires when the commission lease/state is still active and gates not
   yet green.
 - **Measure phase:** single turn. Evidence assembly is deterministic;
   if the measure agent can't assemble external evidence on the first
@@ -168,7 +167,7 @@ translates them to typed `AgentEvent.t()` values and forwards to
 The adapter closes a session by terminating the `Port` after either:
 
 - `turn_completed` + no continuation fires (phase gates all green, or
-  tracker state no longer active, or `max_turns` reached);
+  commission state/lease no longer active, or `max_turns` reached);
 - `turn_failed` / `turn_cancelled` → worker reports failure to
   `Orchestrator`, which schedules retry per Section 6;
 - `turn_input_required` → immediate hard failure (MVP-1; never wait
@@ -176,7 +175,7 @@ The adapter closes a session by terminating the `Port` after either:
   phase boundaries);
 - timeout (turn / stall) → kill `Port`, report timeout.
 
-Closing a session ends its thread. Re-claiming the same ticket for the
+Closing a session ends its thread. Re-claiming the same commission for the
 next phase opens a new thread in a new session.
 
 ## 6. Error taxonomy
@@ -229,9 +228,9 @@ adapter:
    `:haft_note`, `:haft_refresh`, `:haft_query`), routes through
    `Haft.Client` with the session's `config_hash` attached. Unavailable
    → respond with `{success: false, error: "haft_unavailable", retry_after: <ms>}`.
-5. For tracker tools (if any are ever exposed — MVP-1 exposes none):
-   NOT available to agents. Tracker mutation is orchestrator-owned per
-   SPEC §9 "Not a coding agent of tracker mutation."
+5. For tracker/projection tools (if any are ever exposed — MVP-1 exposes none):
+   NOT available to agents. External projection mutation is Haft-owned per
+   SPEC §9 "Not a coding agent of projection mutation."
 6. Returns the result inline; the turn continues.
 
 **Tool approval is implementation-defined per `codex.approval_policy`**,
@@ -247,7 +246,7 @@ Every event resets `last_event_at`. `AgentWorker` monitors
 - If `elapsed_ms > stall_timeout_ms`, kill the `Port`, report
   `:stall_timeout` to `Orchestrator`, which:
   1. Writes compensating `haft_note(cancelled, :stall, partial_refs)`
-     per `RISKS.md §3` (tracker-wins reconciliation + cancellation
+     per `RISKS.md §3` (Haft-wins reconciliation + cancellation
      protocol) and `HAFT_CONTRACT.md §7`.
   2. Schedules exponential-backoff retry (Section 6 of this doc).
 - If `stall_timeout_ms ≤ 0`, stall detection is disabled (used in
@@ -258,11 +257,11 @@ Every event resets `last_event_at`. `AgentWorker` monitors
 
 ## 9. Retry / backoff
 
-Retry policy per `RISKS.md §3` (tracker-wins reconciliation) + Symphony
+Retry policy per `RISKS.md §3` (Haft-wins reconciliation) + Symphony
 §8.4 (exponential backoff), FPF-disciplined:
 
 - **Continuation retry (after normal worker exit with gates passing):**
-  1000 ms fixed delay. Re-checks whether the ticket wants the next
+  1000 ms fixed delay. Re-checks whether the commission wants the next
   phase or terminates.
 - **Failure retry:** `delay = min(10_000 × 2^(attempt - 1), agent.max_retry_backoff_ms)` with
   `max_retry_backoff_ms` default 300_000 ms (5 min).
@@ -287,7 +286,7 @@ Every `Agent.Adapter` impl must:
    unknown-to-adapter, runtime for out-of-phase-scope.
 6. Enforce stall detection (Section 8).
 7. Respect PathGuard for any filesystem-touching tool (Section 7.3).
-8. NOT provide direct tracker-mutation tools (our boundary; see
+8. NOT provide direct tracker/projection-mutation tools (our boundary; see
    Section 7.5).
 
 The **Agent Adapter Parity Plan** (`ADAPTER_PARITY.md`) ensures these
@@ -313,7 +312,7 @@ Codex/Claude capability negotiation?" Non-blocking for MVP-1.
 - `PHASE_ONTOLOGY.md` (5-axis phase ontology incl. run-attempt sub-states)
 - `SLEIGH_CONFIG.md` (sleigh.md schema incl. `agent.*`, `codex.*`, `hooks` sections)
 - `HAFT_CONTRACT.md` (routing of `haft_*` tool calls from §7 of this doc)
-- `RISKS.md` (tracker-wins reconciliation + cancellation protocol)
+- `RISKS.md` (Haft-wins reconciliation + cancellation protocol)
 - `../enabling-system/FUNCTIONAL_ARCHITECTURE.md` L4 (adapter
   boundary), L5 (Orchestrator)
 - `../../.context/symphony/SPEC.md` §10 (source of the JSON-RPC shape)

@@ -17,7 +17,7 @@ reading_order: 4
 
 | Axis | Type | Who owns it | Example values |
 |---|---|---|---|
-| 1. Operational phase | `Phase.t()` closed sum (all MVP-1 + MVP-2 atoms pre-declared from day 1 per Q-OS-2 v0.5 resolution) | `PhaseMachine` (L3) | MVP-1: `:frame, :execute, :measure, :terminal`. MVP-2 added: `:characterize_situation, :measure_situation, :problematize, :select_spec, :accept_spec, :generate, :parity_run, :select, :commission, :measure_impact`. |
+| 1. Operational phase | `Phase.t()` closed sum (all MVP-1 + MVP-2 atoms pre-declared from day 1 per Q-OS-2 v0.5 resolution) | `PhaseMachine` (L3) | Commission-first MVP: `:preflight, :frame, :execute, :measure, :terminal`. MVP-2 added: `:characterize_situation, :measure_situation, :problematize, :select_spec, :accept_spec, :generate, :parity_run, :select, :commission, :measure_impact`. |
 | 2. Gate-result kind | `GateKind.t()` sum | `Gate` modules (L2) | `:structural`, `:semantic`, `:human` |
 | 3. Verdict | `Verdict.t()` sum | Semantic gate or Measure outcome | `:pass`, `:fail`, `:partial` |
 | 4. Authoring role | `AuthoringRole.t()` sum | Adapter / human | `:frame_verifier`, `:executor`, `:measurer`, `:judge`, `:human` |
@@ -69,6 +69,14 @@ required at L1.
 
 ```
               ┌─────────────┐
+              │ :preflight  │
+              └──────┬──────┘
+                     │ gates: commission_runnable,
+                     │        decision_fresh,
+                     │        lockset_available,
+                     │        autonomy_envelope_allows
+                     ▼
+              ┌─────────────┐
               │   :frame    │
               └──────┬──────┘
                      │ gates: described_entity_field_present,
@@ -99,7 +107,9 @@ required at L1.
 
 | From | To | Condition |
 |---|---|---|
-| (new session) | `:frame` | Orchestrator claims a Ticket |
+| (new session) | `:preflight` | Orchestrator leases a Haft WorkCommission |
+| `:preflight` | `:frame` | Haft validates PreflightReport as pass |
+| `:preflight` | `:terminal` | Commission stale/policy/conflict block or human review required |
 | `:frame` | `:execute` | All Frame gates pass |
 | `:execute` | `:measure` | All Execute gates pass + HumanGate approved (if triggered) |
 | `:measure` | `:terminal` | All Measure gates pass |
@@ -107,6 +117,7 @@ required at L1.
 
 **Illegal transitions (MVP-1):**
 
+- `:preflight` → `:execute` (must verify frame before implementation)
 - `:frame` → `:measure` (no clause)
 - `:measure` → `:execute` (no loop-back in MVP-1; reopen creates a new session)
 - `:terminal` → anything (terminal is absorbing)
@@ -191,7 +202,11 @@ pattern-matches on kind and refuses untyped merges.
 Measure's Verdict is the **ticket-level** verdict. It's the value that
 becomes the basis for:
 
-- Tracker transition (`:pass` → request transition to terminal state, subject to HumanGate; `:fail` → post structured comment, do not transition).
+- WorkCommission transition (`:pass` → request completion/evidence attach in Haft,
+  subject to HumanGate where configured; `:fail` → write failure evidence and
+  leave commission unresolved/failed).
+- ExternalProjection update when configured (`:pass` may map to Ready for
+  Review/Done, but tracker state never completes Haft work by itself).
 - `reopen_after_measure_rate` observation denominator.
 - Downstream consumers (Haft artifact graph, dashboards).
 
@@ -206,7 +221,8 @@ it validates.
 
 | Role | Produces | Example |
 |---|---|---|
-| `:frame_verifier` | Frame PhaseOutcome with verification result on an **upstream** ProblemCardRef. **Never** authors a ProblemCard — that is the upstream human's role in Haft + `/h-reason`. | Agent in Frame phase, verifying upstream framing |
+| `:preflight_checker` | PreflightReport over WorkCommission, DecisionRecord, ProblemCard, repo context, and envelope. **Never** authorizes execution by itself. | Agent in Preflight phase, reporting context to Haft |
+| `:frame_verifier` | Frame PhaseOutcome with verification result on an **upstream** ProblemCardRef carried by WorkCommission. **Never** authors a ProblemCard — that is the upstream human's role in Haft + `/h-reason`. | Agent in Frame phase, verifying upstream framing |
 | `:executor` | Code changes, PR, Execute PhaseOutcome | Agent in Execute phase |
 | `:measurer` | Measure PhaseOutcome + evidence assembly | Agent in Measure phase |
 | `:judge` | SemanticGateResult with rationale | JudgeClient (LLM-judge) |
@@ -227,7 +243,8 @@ a review finding.
 
 | Phase | Structural gates | Semantic gates | Human gate (trigger) |
 |---|---|---|---|
-| `:frame` | `described_entity_field_present`, `valid_until_field_present` | `object_of_talk_is_specific` | — |
+| `:preflight` | `commission_runnable`, `decision_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
+| `:frame` | `problem_card_ref_present`, `described_entity_field_present`, `valid_until_field_present` | `object_of_talk_is_specific` | — |
 | `:execute` | `design_runtime_split_ok` | `lade_quadrants_split_ok` | `commission_approved` (if `external_publication` matches) |
 | `:measure` | `evidence_ref_not_self`, `valid_until_field_present` | `no_self_evidence_semantic` | — |
 

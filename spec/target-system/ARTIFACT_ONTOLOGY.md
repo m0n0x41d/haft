@@ -13,6 +13,20 @@
 | **Note** | Note fast path | Micro-decision with rationale | Active → (auto-expires 90 days) → Deprecated |
 | **RefreshReport** | Verify mode | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |
 
+## Execution Records (vNext Model)
+
+These records are part of the target model for the Haft/Open-Sleigh
+integration. They are listed separately because the current artifact store does
+not yet implement these kinds.
+
+| Record | Created by | Purpose | Lifecycle |
+|--------|-----------|---------|-----------|
+| **ImplementationPlan** | Human-assisted planning from active DecisionRecord(s) | DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy | Draft → Approved → Running → Partially Blocked → Completed/Cancelled |
+| **WorkCommission** | Human/User via Haft UI/CLI/agent draft | Bounded authorization to execute a selected DecisionRecord in a declared scope | Draft → Queued → Ready → Preflighting → Running → Completed/Failed/Blocked/Cancelled/Expired |
+| **RuntimeRun** | Runner such as Open-Sleigh | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
+| **ExternalProjection** | Haft projection engine | Idempotent external tracker binding for observers | Desired → Drafted → Published → Synced/Drifted/Blocked |
+| **AutonomyEnvelope** | Human principal | Batch/YOLO permission bounds for an ImplementationPlan | Draft → Approved → Active → Exhausted/Revoked/Expired |
+
 ## Artifact Status (Stored vs Derived)
 
 ### Stored status (persisted in database)
@@ -101,6 +115,38 @@ DecisionRecord
             └──→ Verified against live dependency graph
 ```
 
+## Decision → Work Mapping
+
+```
+ProblemCard
+    └──→ SolutionPortfolio
+              └──→ DecisionRecord
+                        │
+                        ├──→ ImplementationPlan (optional)
+                        │         │
+                        │         └──→ WorkCommission*
+                        │                    │
+                        │                    ├──→ RuntimeRun*
+                        │                    │         └──→ PhaseOutcome / EvidencePack
+                        │                    │
+                        │                    └──→ ExternalProjection* (optional)
+                        │
+                        └──→ EvidencePack (decision evidence, independent of execution)
+```
+
+Rules:
+
+- A DecisionRecord may have zero WorkCommissions. A decision can wait.
+- A WorkCommission must reference an active DecisionRecord revision/hash and
+  must not keep that decision alive if it later becomes stale, superseded, or
+  deprecated.
+- A RuntimeRun must reference one WorkCommission and may start only after
+  preflight passes and a runner lease is acquired.
+- ExternalProjection is optional per workspace/commission. It is a derived
+  carrier for coordination, never semantic authority.
+- ImplementationPlan is a graph, not a list. Dependencies and locksets govern
+  batch/YOLO scheduling.
+
 **Queries available:**
 - `FindDecisionsForFile(path)` — which decisions govern this file?
 - `FindInvariantsForFile(path)` — what invariants must hold here?
@@ -125,6 +171,7 @@ DecisionRecord
 |---------|----------------|-----------|
 | **Runtime (single engineer)** | Local SQLite database | Engine operates on structured data, not markdown |
 | **Team exchange** | `.haft/*.md` projections in git | Human-readable, reviewable in PRs, mergeable |
+| **External coordination** | ExternalProjection to Linear/Jira/GitHub Issues | Manager/analyst/lead status visibility |
 | **Conflict** | SQLite wins locally; `haft sync` is explicit reconcile step | No implicit overwrite. Sync fails closed on schema mismatch. |
 
 **Projection invariant:** `.haft/*.md` files are **derived outputs** of the database. They are generated on every artifact create/update. They are NOT the source of truth for the local engineer — the database is.
@@ -146,3 +193,6 @@ Engineer B (local):
 - `.haft/*.md` is not authoritative for the local engineer (SQLite is)
 - SQLite is not shared between engineers (each has their own)
 - Neither is authoritative for the other engineer until `haft sync` runs
+- Linear/Jira/GitHub Issues are not authoritative for Haft semantics. They are
+  optional carriers. Manual external status changes are drift/override inputs,
+  not proof that a WorkCommission completed.

@@ -1,6 +1,6 @@
 ---
 title: "5. Target System Model"
-description: Engine entities — Session, Ticket, PhaseOutcome, Workflow, Evidence, HumanGateApproval. The L1 structures that carry the domain.
+description: Engine entities — WorkCommission, Session, PhaseOutcome, Workflow, Evidence, HumanGateApproval. The L1 structures that carry the domain.
 reading_order: 5
 ---
 
@@ -22,11 +22,64 @@ first. The entities here presume those vocabularies.
 
 ## Core entities
 
-### Ticket
+### WorkCommission
 
-**Definition:** A unit of work claimed from the tracker. Immutable in
-Open-Sleigh (tracker owns mutable ticket state); Open-Sleigh holds a
-snapshot + reference.
+**Definition:** A Haft-authored, human-authorized unit of work that
+Open-Sleigh may execute only if Preflight admits it. Immutable in Open-Sleigh;
+Haft owns mutable commission state and lifecycle.
+
+**Attributes:**
+
+- `id :: String.t()` (required) — Haft commission identifier
+- `decision_ref :: DecisionRecordRef.t()` (required)
+- `decision_revision_hash :: String.t()` (required) — pinned at queue time
+- `problem_card_ref :: ProblemCardRef.t()` (required)
+- `implementation_plan_ref :: String.t() | nil` — parent plan when scheduled
+  as part of a batch/YOLO graph
+- `scope :: Scope.t()` (required) — repo, target branch, base sha, allowed
+  paths, affected files/modules
+- `lockset :: [String.t()]` (required) — paths/modules/resources this
+  commission may mutate or conflicts with
+- `evidence_requirements :: [EvidenceRequirement.t()]` (required)
+- `projection_policy :: :local_only | :external_optional | :external_required`
+  (required)
+- `autonomy_envelope_ref :: String.t() | nil` — required for automatic
+  continuation beyond a single human-started commission
+- `state :: :draft | :queued | :ready | :preflighting | :running |
+  :blocked_stale | :blocked_policy | :blocked_conflict |
+  :needs_human_review | :completed | :failed | :cancelled | :expired`
+  (required; snapshot returned by Haft)
+- `valid_until :: DateTime.t()` (required)
+- `fetched_at :: DateTime.t()` (required)
+
+**Relationships:**
+
+- Belongs to one DecisionRecord.
+- Points to one ProblemCard.
+- May belong to one ImplementationPlan.
+- Has zero or more RuntimeRuns.
+- Has zero or more ExternalProjections owned by Haft.
+
+**Key rules:**
+
+- Open-Sleigh never creates or approves WorkCommissions. It may ask Haft for
+  runnable commissions and lease one for Preflight.
+- A WorkCommission whose linked DecisionRecord is stale, superseded,
+  deprecated, hash-mismatched, or expired cannot enter Execute. It becomes
+  `:blocked_stale` or `:needs_human_review`.
+- A WorkCommission may be `:queued` for an arbitrary time. Queueing is not
+  execution permission; Preflight re-checks immediately before Execute.
+- `projection_policy == :local_only` is valid. Linear/Jira/GitHub credentials
+  are not required for correctness.
+
+---
+
+### Ticket / ExternalWorkItemSnapshot
+
+**Definition:** Legacy/current-implementation snapshot of a unit of work in an
+external tracker. In the commission-first target model it becomes
+`ExternalWorkItemSnapshot`: projection evidence and approval/comment carrier,
+not source of work authority.
 
 **Attributes:**
 
@@ -35,33 +88,37 @@ snapshot + reference.
 - `title :: String.t()` (required)
 - `body :: String.t()` (required; may be empty)
 - `state :: atom()` (required) — current tracker state (snapshot)
-- `problem_card_ref :: ProblemCardRef.t()` (required in MVP-1 per v0.5 Q-OS-1 framing resolution) — link to upstream Haft ProblemCard authored by the human via Haft + `/h-reason`. Not optional: a Ticket without `problem_card_ref` fail-fasts at Frame entry via `problem_card_ref_present` gate. `Orchestrator` rejects a tracker-fetched Ticket missing this field by posting a structured comment and NOT claiming the ticket.
+- `problem_card_ref :: ProblemCardRef.t() | nil` — legacy tracker-first
+  bridge. Commission-first mode reads this from WorkCommission, not tracker
+  text.
 - `target_branch :: String.t() | nil` — hint for HumanGate `external_publication` matching
 - `metadata :: map()` — tracker-specific fields (labels, assignees, etc.)
 - `fetched_at :: DateTime.t()` (required)
 
 **Relationships:**
 
-- Has zero or one active `Session` (Orchestrator enforces single-owner via the claim protocol)
-- Has zero or more `PhaseOutcome`s (via persisted Haft artifacts)
+- May link to one ExternalProjection.
+- Does not own Session or PhaseOutcome in commission-first mode.
 
 **Key rules:**
 
-- A Ticket without `problem_card_ref` (MVP-1 AND MVP-2, v0.5 hardening) is **not accepted** by the Frame phase — Orchestrator returns `{:error, :no_upstream_frame}`, posts a structured tracker comment asking the human to frame it via Haft + `/h-reason`, and does NOT attempt to author a ProblemCard itself. Open-Sleigh never frames; framing is the upstream human's role.
-- A Ticket whose `problem_card_ref` resolves to a Haft artifact with `authoring_source == :open_sleigh_self` is rejected identically — prevents the self-authoring bypass (ILLEGAL_STATES UP3).
-- Ticket state snapshot may go stale. `TrackerPoller` refreshes on each poll tick. If tracker state changed during an active Session, see `tracker-wins` reconciliation (`RISKS.md §3`).
+- A legacy Ticket without `problem_card_ref` is not accepted by the
+  tracker-first bridge. Commission-first mode should not require parsing this
+  field from tracker text.
+- A tracker state snapshot may go stale. External changes are observed as
+  projection drift/override and never complete a WorkCommission by themselves.
 
 ---
 
 ### Session
 
-**Definition:** One `(Ticket × Phase × ConfigHash × AdapterSession)` unit
+**Definition:** One `(WorkCommission × Phase × ConfigHash × AdapterSession)` unit
 of work owned by one `AgentWorker`. Identified by opaque `SessionId`.
 
 **Attributes:**
 
 - `id :: SessionId.t()` (required; opaque binary)
-- `ticket :: Ticket.t()` (required; snapshot at claim time)
+- `commission :: WorkCommission.t()` (required; snapshot at preflight claim time)
 - `phase :: Phase.t()` (required; mutates via message to Orchestrator, never in-place)
 - `config_hash :: ConfigHash.t()` (required; pinned at session start per `SLEIGH_CONFIG.md §2`)
 - `scoped_tools :: MapSet.t(atom())` (required; derived from phase_config)
@@ -79,7 +136,7 @@ of work owned by one `AgentWorker`. Identified by opaque `SessionId`.
 
 **Relationships:**
 
-- Belongs to one `Ticket`.
+- Belongs to one `WorkCommission`.
 - Owned by exactly one `AgentWorker` (L5 Task).
 - Produces zero or more `PhaseOutcome`s during its lifetime.
 
@@ -150,6 +207,36 @@ contains the proof payload itself; always a reference with provenance.
 
 ---
 
+### PreflightReport
+
+**Definition:** Structured result of the first Open-Sleigh phase. It combines
+deterministic Haft checks with agent-assisted context inspection, then returns
+to Haft for validation. It is a report, not authority.
+
+**Attributes:**
+
+- `commission_id :: String.t()` (required)
+- `decision_ref :: DecisionRecordRef.t()` (required)
+- `decision_revision_seen :: String.t()` (required)
+- `verdict :: :pass | :block_stale | :block_policy | :block_conflict |
+  :needs_human_review` (required)
+- `checked_artifacts :: [String.t()]` (required)
+- `checked_files :: [String.t()]` (required)
+- `context_changes :: [map()]` (required)
+- `blocking_reasons :: [String.t()]` (required when verdict != `:pass`)
+- `non_blocking_observations :: [String.t()]`
+- `recommended_next_action :: String.t() | nil`
+
+**Key rules:**
+
+- PreflightReport cannot start Execute. Haft validates it and changes
+  WorkCommission state.
+- `decision_revision_seen` must match Haft's current DecisionRecord revision
+  for `:pass`.
+- Agent uncertainty maps to `:needs_human_review`, not optimistic pass.
+
+---
+
 ### Workflow
 
 **Definition:** Immutable graph data describing legal phase transitions.
@@ -160,7 +247,7 @@ contains the proof payload itself; always a reference with provenance.
 - `phases :: [Phase.t()]` (required; declared alphabet)
 - `transitions :: %{Phase.t() => [Phase.t()]}` (required; from-phase → legal to-phases)
 - `terminal :: [Phase.t()]` (required; absorbing states)
-- `entry_phase :: Phase.t()` (required)
+- `entry_phase :: Phase.t()` (required; `:preflight` in commission-first mode)
 
 **Key rules:**
 
@@ -204,7 +291,8 @@ contains the proof payload itself; always a reference with provenance.
 - `at :: DateTime.t()` (required)
 - `config_hash :: ConfigHash.t()` (required) — the hash active at approval time
 - `reason :: String.t() | nil` — ≤ 500 chars
-- `signal_source :: :tracker_comment | :github_review | :cli_ack` (required)
+- `signal_source :: :desktop_ack | :cli_ack | :tracker_comment | :github_review`
+  (required)
 - `signal_ref :: String.t()` (required) — the external reference to the approval event
 
 **Key rules:**
@@ -248,7 +336,10 @@ resolved from `sleigh.md`.
 **Attributes:**
 
 - `engine :: EngineConfig.t()` — poll interval, concurrency
-- `tracker :: TrackerConfig.t()` — kind, workspace/repo, active_states, terminal_states
+- `commission_source :: CommissionSourceConfig.t()` — Haft command/version,
+  poll interval, lease timeout, plan/queue selectors
+- `projection :: ProjectionConfig.t()` — optional external targets and writer
+  profile; may be disabled
 - `agent :: AgentConfig.t()` — kind, version_pin, command, limits
 - `haft :: HaftConfig.t()` — command, version pin
 - `external_publication :: ExternalPublicationConfig.t()` — branch regex, terminal transitions, approvers, timeout
@@ -288,7 +379,7 @@ resolved from `sleigh.md`.
 ## Relationship overview
 
 ```
-Ticket ──1──> Session (owned by AgentWorker)
+WorkCommission ──1──> Session (owned by AgentWorker)
                 │
                 ├──*──> PhaseOutcome
                 │          │
@@ -305,6 +396,8 @@ SleighConfig ──1──> PhaseConfig per Phase
 
 Workflow (immutable graph) ── referenced by PhaseMachine
 ProblemCardRef ── points to Haft artifact (upstream)
+DecisionRecordRef ── points to Haft artifact (upstream)
+ExternalWorkItemSnapshot ── optional projection carrier
 ```
 
 ---
@@ -313,7 +406,8 @@ ProblemCardRef ── points to Haft artifact (upstream)
 
 | Entity | MVP-1 location | MVP-2 location |
 |---|---|---|
-| `Ticket` (snapshot) | Orchestrator ETS | Same |
+| `WorkCommission` (snapshot) | Orchestrator ETS | Same |
+| `ExternalWorkItemSnapshot` | Optional projection cache | Same |
 | `Session` | Orchestrator GenServer state | Same (plus SQLite optional for crash recovery) |
 | `PhaseOutcome` | WAL until written to Haft; then Haft SQLite via MCP | Same |
 | `Evidence` | Attached to PhaseOutcome, flows with it | Same |
@@ -324,7 +418,8 @@ ProblemCardRef ── points to Haft artifact (upstream)
 
 Canonical rules:
 
-- **Haft SQLite is the source of truth for persistent evidence.**
-- **Tracker is the source of truth for active tickets and their states.**
+- **Haft SQLite is the source of truth for WorkCommissions, decisions, runs,
+  evidence, and projection intent.**
+- **External trackers are optional carriers for coordination.**
 - **Orchestrator is the sole writer of in-RAM session state.**
 - **ObservationsBus never reaches Haft.** Compile-time enforced.

@@ -134,7 +134,7 @@ States where `sleigh.md` compiles to an invalid `SleighConfig`.
 | CF4 | ❌ | Phase name in `sleigh.md` not in `Workflow.phases` for the declared workflow | **CI-or-module-graph-check** (L6 compile) | Compiler checks against `Workflow.mvp1/0` or `mvp2/0` output; `{:error, :unknown_phase, name}`. |
 | CF5 | ❌ | Prompt template referencing an undefined variable | **CI-or-module-graph-check** (L6 compile) | Compiler validates `{{...}}` variables against `PhaseInput.t()` schema for the phase. |
 | CF6 | ❌ | `external_publication.approvers` empty with `branch_regex` non-nil | **CI-or-module-graph-check** (L6 compile) | `{:error, :missing_approvers}`. |
-| CF7 | ❌ | Two sessions active on the same `(Ticket, phase)` pair | **runtime-guard** | `Orchestrator.handle_call({:claim, t}, ...)` checks ETS ownership table; returns `:already_owned`. |
+| CF7 | ❌ | Two sessions active on the same `(WorkCommission, phase)` pair | **runtime-guard** | `Orchestrator.handle_call({:claim, commission}, ...)` checks ETS ownership table; returns `:already_owned`. |
 | CF8 | ❌ | Modifying `SleighConfig` post-compile | **constructor-level** | `SleighConfig` has no public update function; compile produces the only instance. Direct struct update `%{sc \| phases: ...}` is forbidden by Credo rule `OpenSleigh.Credo.ImmutableCompiledConfig`. |
 | CF9 | ❌ | `sleigh.md` using `@include` or similar directive to pull in bloat from a side file (adversarial size-budget bypass) | **CI-or-module-graph-check** (L6 compile) | P5 hardening: `Sleigh.SizeBudget.check/1` follows any `@include` / `{{file "..."}}` style reference and counts transitively. No include directive admitted in MVP-1 syntax, but the budget check is structured to follow them if added later. |
 | CF10 | ❌ | `sleigh.md` embedding base64-encoded bloat or multi-megabyte comment blocks to satisfy line count while smuggling content | **CI-or-module-graph-check** (L6 compile) | P5 hardening: budget check also asserts `byte_size(source_md) < 50 KB` as a secondary constraint; exceed → `{:error, :over_budget_bytes}`. Lines + bytes together close the numerical-gaming attack. |
@@ -150,7 +150,7 @@ States where session state is corrupted by concurrency.
 | SE1 | ❌ | Two writers mutating the same session's state | **runtime-guard + type-level** | `Orchestrator` GenServer is sole writer; `AgentWorker` sends messages only. The writer-process invariant is OTP-level runtime; the no-direct-write API is type-level (no exposed setter). |
 | SE2 | ❌ | `AgentWorker` spawned without a claimed `Session.t()` | **type-level** | `Task.start_link` signature requires `Session.t()`; no sessionless constructor. |
 | SE3 | ❌ | `AgentWorker` executing with `workspace_path` that resolves (canonically) to inside `open_sleigh/` or `~/.open-sleigh/` | **runtime-guard** | `Session.new/1` runs `PathGuard.canonical/1` + git-remote check (see CL5–CL9); reject at session construction. |
-| SE4 | ❌ | WAL replay out of per-ticket append order | **runtime-guard** | WAL is per-ticket file; `Haft.Supervisor.replay/1` reads line-by-line; no reordering. |
+| SE4 | ❌ | WAL replay out of per-commission append order | **runtime-guard** | WAL is per-commission file; `Haft.Supervisor.replay/1` reads line-by-line; no reordering. Legacy tracker-first WAL remains per-ticket. |
 | SE5 | ❌ | `ObservationsBus` emitting an entry that reaches the Haft artifact graph | **CI-or-module-graph-check** (see OB1) + **type-level** at `emit/3` signature | See OB category for full treatment. |
 | SE6 | ❌ | Session surviving past its adapter's `wall_clock_timeout_s` | **runtime-guard** | `AgentWorker` is monitored; timeout triggers Task termination and `:cancel_grace` protocol. |
 | SE7 | ❌ | `Haft.Client.write_artifact/2` invoked without `AdapterSession.config_hash` | **type-level** | Signature requires `session :: AdapterSession.t()`; no arity-1 variant exists. |
@@ -209,7 +209,7 @@ but their filesystem effects must respect `PathGuard`.
 |---|---|---|---|---|
 | WH1 | ❌ | Hook script writing to a path that (after canonicalisation) resolves outside `workspace_path` | **runtime-guard** | Hook execution wraps `bash -lc` with a post-hook inode sweep: any file created / modified outside `workspace_path` (detected via `find workspace_path -newer <hook_start_time>` combined with `lsof` or kernel audit) is a post-execution fail. MVP-1 honest label: **moderate** — realistically enforceable via `chroot`-like sandboxing only; documented as "trusted configuration" and the agent-authored parts (which DO get full PathGuard) are the primary wall. |
 | WH2 | ❌ | Hook timing out past `hooks.timeout_ms` without being killed | **runtime-guard** | `Workspace.run_hook/3` runs via `System.cmd/3` under a `Task.await/2` with explicit timeout; timeout triggers `Process.exit(port, :kill)` and returns `:hook_timeout` error. |
-| WH3 | ❌ | `after_create` hook running on workspace **reuse** (existing directory) | **runtime-guard** | `Workspace.create_for_ticket/2` returns `{:ok, workspace, :new}` or `{:ok, workspace, :reused}`; hook dispatcher only runs `after_create` when result is `:new`. |
+| WH3 | ❌ | `after_create` hook running on workspace **reuse** (existing directory) | **runtime-guard** | `Workspace.create_for_commission/2` returns `{:ok, workspace, :new}` or `{:ok, workspace, :reused}`; hook dispatcher only runs `after_create` when result is `:new`. |
 | WH4 | ❌ | `before_remove` hook running on a workspace that doesn't exist | **runtime-guard** | Same dispatcher checks `File.dir?(workspace)` before running `before_remove`. |
 | WH5 | ❌ | Hook script using `$HOME` env that points inside `open_sleigh/` (e.g., operator accidentally ran engine as a user whose `$HOME` contains the harness source) | **runtime-guard** | `Session.new/1` canonicalises `$HOME` and rejects sessions where `Path.expand("~")` is inside `open_sleigh/` or `~/.open-sleigh/` parent. Same PathGuard as CL9 clone-into-workspace. |
 
@@ -222,7 +222,22 @@ Costs are observations, not evidence.
 |---|---|---|---|---|
 | TA1 | ❌ | Token count (`codex_total_tokens` etc.) being written to a Haft artifact as evidence | **CI-or-module-graph-check** | OB5 covers this at the module-graph level (no proxy bridging `ObservationsBus` to `Haft.Client`). Plus Credo rule `OpenSleigh.Credo.NoTokenCountInEvidence` scans `Evidence.new/5` callers to forbid `kind: :token_count` or `authoring_source: :token_counter`. |
 | TA2 | ❌ | Double-counting tokens when adapter emits both delta (`last_token_usage`) and absolute (`thread/tokenUsage/updated`) | **runtime-guard** | `TokenAccounting.ingest/2` has clauses for each event shape; `last_token_usage` clauses explicitly discard the payload (per Symphony §13.5 + `HAFT_CONTRACT.md §4`). Absolute updates compare against `last_reported_total_tokens` and add the delta. |
-| TA3 | ❌ | `codex_total_tokens_per_ticket` observation exceeding a threshold **blocking** a phase advance | **type-level** | Observation indicators NEVER gate transitions (§6d). The gate chain (L2) is structurally separate from the observations bus (L5). Token counts can surface in logs/dashboards but cannot be input to `GateResult.combine/1`. |
+| TA3 | ❌ | `codex_total_tokens_per_commission` observation exceeding a threshold **blocking** a phase advance | **type-level** | Observation indicators NEVER gate transitions (§6d). The gate chain (L2) is structurally separate from the observations bus (L5). Token counts can surface in logs/dashboards but cannot be input to `GateResult.combine/1`. Legacy dashboards may still label this per-ticket. |
+
+## WorkCommission / Projection invariants (WC — commission-first integration)
+
+| # | Status | Illegal state | Label | Enforcement |
+|---|---|---|---|---|
+| WC1 | ❌ | Open-Sleigh creating or approving a WorkCommission | **CI-or-module-graph-check** | Only Haft exposes commission authoring APIs. Open-Sleigh may call list/claim/preflight/run-event operations, not create/approve. |
+| WC2 | ❌ | Execute phase starting without a WorkCommission preflight lease | **runtime-guard** | Orchestrator can create Execute Session only from `start_after_preflight` success. |
+| WC3 | ❌ | Execute phase starting when DecisionRecord hash/revision differs from the WorkCommission snapshot | **runtime-guard** | `decision_fresh` gate compares current Haft revision with `decision_revision_hash`; mismatch blocks as stale. |
+| WC4 | ❌ | Stale/superseded/deprecated DecisionRecord treated as runnable because a commission was queued earlier | **runtime-guard** | Preflight checks DecisionRecord lifecycle every time before Execute. Commission becomes `:blocked_stale`. |
+| WC5 | ❌ | External tracker issue state completing a WorkCommission without Haft evidence | **runtime-guard** | Projection observations record drift/conflict only. Completion requires Haft `complete_or_block` with evidence refs. |
+| WC6 | ❌ | ProjectionWriterAgent deciding lifecycle state, severity, owner, deadline, or completion | **runtime-guard** | ProjectionIntent carries deterministic facts; ProjectionValidation rejects invented/missing forbidden claims before connector publish. |
+| WC7 | ❌ | External projection credentials required for local execution | **runtime-guard** | `projection_policy: :local_only` is a valid config path; projection adapter failure cannot fail RuntimeRun evidence. |
+| WC8 | ❌ | Two batch/YOLO commissions running with overlapping locksets | **runtime-guard** | Scheduler checks lockset intersection before lease grant. |
+| WC9 | ❌ | YOLO AutonomyEnvelope expanding itself mid-run | **constructor-level** | AutonomyEnvelope is immutable after approval; out-of-envelope needs move commission to `:needs_human_review`. |
+| WC10 | ❌ | Agent uncertainty in Preflight mapped to pass | **runtime-guard** | PreflightReport verdict `:needs_human_review` is sticky unless Haft/human resolves; validators reject pass with unresolved material changes. |
 
 ## Upstream framing invariants (UP — framing-ownership lock, v0.5)
 
@@ -231,7 +246,7 @@ Open-Sleigh verifies; it does not author.
 
 | # | Status | Illegal state | Label | Enforcement |
 |---|---|---|---|---|
-| UP1 | ❌ (**hardened from ⚠️ in v0.4**) | A Ticket without `problem_card_ref` entering `:frame` phase | **runtime-guard** at `Orchestrator.claim/1` + **runtime-guard** at Frame entry gate `problem_card_ref_present` | MVP-1 AND MVP-2: `Orchestrator` rejects a Ticket with `nil` `problem_card_ref` at claim time; posts a structured tracker comment asking the human to frame via Haft + `/h-reason`. The `problem_card_ref_present` structural gate in Frame entry is a belt-and-braces second check. **No fallback authoring path exists.** Agent's Frame `PhaseConfig.tools` excludes `haft_problem`, making the authoring tool unreachable from Frame (CL3). |
+| UP1 | ❌ (**hardened from ⚠️ in v0.4**) | A WorkCommission without `problem_card_ref` entering `:frame` phase | **runtime-guard** at Preflight + **runtime-guard** at Frame entry gate `problem_card_ref_present` | Commission-first mode rejects a WorkCommission with nil/invalid `problem_card_ref`; legacy tracker-first mode rejects a Ticket with nil `problem_card_ref`. **No fallback authoring path exists.** Agent's Frame `PhaseConfig.tools` excludes `haft_problem`, making the authoring tool unreachable from Frame (CL3). |
 | UP2 | ❌ | Open-Sleigh emitting a Haft artifact with `authoring_role == :human` | **type-level** | `AuthoringRole` sum enumerates `:frame_verifier | :executor | :measurer | :judge | :human`. Only `HumanGateListener` constructs artifacts with `:human`; it's the sole module that takes an external approval signal as input and cannot be invoked from agent-adapter code paths (enforced by Credo rule `OpenSleigh.Credo.HumanRoleOwnership`). |
 | UP3 | ❌ | A `ProblemCardRef` pointing to a Haft artifact authored by Open-Sleigh itself | **runtime-guard** | At Frame entry, the `problem_card_ref_present` gate calls `haft_query(related, artifact_id)` and rejects if `authoring_source == :open_sleigh_self` (cross-validates OB4). |
 
@@ -285,8 +300,9 @@ open but observability captures the signal. "Weak" = primary bypass open.
 | **CT (Continuation Turn)** *new v0.6* | **6** | **1** | **1** | **2** | **2** |
 | **WH (Workspace Hooks)** *new v0.6* | **5** | **0** | **0** | **5** | **0** |
 | **TA (Token Accounting isolation)** *new v0.6* | **3** | **1** | **0** | **1** | **1** |
+| **WC (WorkCommission / Projection)** *new commission-first draft* | **10** | **0** | **1** | **8** | **1** |
 | UP (Upstream Framing) | 3 | 1 | 0 | 2 | 0 |
-| **Total** | **80** | **17** | **14** | **33** | **16** |
+| **Total** | **90** | **17** | **15** | **41** | **17** |
 
 All rows are **pending** because `mix new` has not yet run. As layers
 land, each row flips to ✅ conditional on the mechanism being implemented

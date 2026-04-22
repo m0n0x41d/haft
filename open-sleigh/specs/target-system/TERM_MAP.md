@@ -15,9 +15,13 @@ reading_order: 2
 
 | Term | Canonical meaning | NOT to be confused with |
 |---|---|---|
-| **Ticket** | A unit of work in the tracker (Linear issue). Immutable identifier; mutable state owned by tracker. | Task, issue-as-local-db-row, problem (which is upstream in Haft) |
-| **Session** | One `(Ticket × Phase × ConfigHash × AdapterSession)` unit of work owned by one `AgentWorker`. Has a `SessionId`. | AdapterSession (which is the L4 effect context inside a Session) |
-| **Phase** | One of: `:frame | :execute | :measure` (MVP-1) or the MVP-2 extensions. A value of `Phase.t()` sum type. | A vague "stage of work"; unit test "phase"; git rebase "phase" |
+| **WorkCommission** | A Haft-authored, human-authorized unit of work Open-Sleigh may execute if preflight passes. Contains DecisionRecord ref, ProblemCard ref, scope, gates, evidence requirements, projection policy, and freshness snapshot. | Ticket, DecisionRecord, RuntimeRun, agent prompt |
+| **ImplementationPlan** | A Haft-authored DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy. Used for batch/YOLO execution. | Flat TODO list, tracker epic, DecisionRecord |
+| **AutonomyEnvelope** | Human-approved bounds for automatic continuation: max commissions/concurrency, allowed repos/paths/actions, forbidden actions, risk ceiling, failure strategy. | Unlimited YOLO permission; way to skip gates |
+| **ExternalWorkItemSnapshot** | Snapshot of a Linear/Jira/GitHub issue linked by ExternalProjection. Used for approvals/comments/drift observation only. | WorkCommission, source of work authority |
+| **Ticket** | Legacy name for `ExternalWorkItemSnapshot` in the current tracker-first implementation and canary fixtures. New specs should prefer WorkCommission. | Problem, DecisionRecord, WorkCommission |
+| **Session** | One `(WorkCommission × Phase × ConfigHash × AdapterSession)` unit of work owned by one `AgentWorker`. Has a `SessionId`. | AdapterSession (which is the L4 effect context inside a Session) |
+| **Phase** | One of: `:preflight | :frame | :execute | :measure` (commission-first MVP) or the MVP-2 extensions. A value of `Phase.t()` sum type. | A vague "stage of work"; unit test "phase"; git rebase "phase" |
 | **Workflow** | Pure-data graph of legal phase transitions. `Workflow.mvp1()` returns the MVP-1 graph. | Tracker's "workflow" (that's a `WorkflowState` there, not ours); reminder workflow (that's octacore's) |
 | **WorkflowState** | Per-ticket runtime state: current phase + accumulated outcomes + pending human gates. | Workflow (the graph) |
 | **PhaseOutcome** | Immutable artifact produced when a phase exits. Has provenance: `config_hash`, `valid_until`, `authoring_role`. The primary data type flowing through the system. | Phase (the discriminator), Haft artifact (which is the persisted form) |
@@ -42,7 +46,9 @@ reading_order: 2
 |---|---|---|
 | **ConfigHash** | `sha256(engine_section + tracker_section + adapter_section + haft_section + phases[this_phase] + prompts[this_phase])`. Per-phase scope. Pinned per session. | Git commit hash, Haft artifact hash |
 | **AuthoringRole** | Sum: `:frame_verifier | :executor | :measurer | :judge | :human`. Who produced this artifact. Renamed from `:framer` in v0.5 because the Frame-phase role is verification of upstream framing, not authorship of it. | Agent identity (Codex vs Claude — that's adapter identity, not role) |
-| **ProblemCardRef** | Opaque pointer to a Haft ProblemCard produced upstream by the human. | ProblemCard (the Haft artifact); Ticket body (which is tracker-side) |
+| **ProblemCardRef** | Opaque pointer to a Haft ProblemCard produced upstream by the human. In commission-first mode it is carried by WorkCommission, not parsed from tracker text. | ProblemCard (the Haft artifact); tracker issue body |
+| **DecisionRecordRef** | Opaque pointer to the Haft DecisionRecord selected for execution. WorkCommission pins both the ref and revision/hash. | DecisionRecord body; recommendation from compare |
+| **CommissionRevisionSnapshot** | The decision/problem/scope/base hash values frozen when a WorkCommission is queued. Preflight compares them to current Haft/repo state. | Runtime evidence; optimistic cache |
 | **valid_until** | ISO-8601 date: when this artifact should be re-evaluated. Required on every PhaseOutcome. | Expiration (which implies deletion); deadline (which implies failure) |
 | **Evidence** | Struct: `kind`, `ref`, `hash`, `cl`. `ref ≠ authoring artifact's self_id`. | Proof, test output (those are raw materials; Evidence wraps them with metadata) |
 | **cl (Congruence Level)** | 0..3 integer from FPF (CL0=opposed, CL1=related, CL2=similar, CL3=exact). On every Evidence. | Confidence level (LLM-style float); certainty |
@@ -52,7 +58,9 @@ reading_order: 2
 | Term | Canonical meaning | NOT to be confused with |
 |---|---|---|
 | **Agent.Adapter** | Elixir behaviour (L4). First impl: Codex. MVP-1.5: Claude. Satisfies Parity Plan. | The LLM itself; the CLI process |
-| **Tracker.Adapter** | Elixir behaviour (L4). First impl: Linear. | Ticket tracker service; Linear's API client library |
+| **CommissionSource.Adapter** | L4 behaviour that reads/leases runnable WorkCommissions from Haft. This is the primary intake boundary. | Tracker.Adapter; scheduler; agent adapter |
+| **Projection.Adapter** | L4 behaviour for optional external carriers such as Linear/Jira/GitHub Issues. Publishes validated ExternalProjection updates. | Work intake; source of truth |
+| **Tracker.Adapter** | Legacy L4 behaviour in the current implementation. It should shrink into Projection.Adapter / ExternalWorkItemSnapshot support. | WorkCommission source; Linear's API client library |
 | **Haft.Client** | L4 MCP JSON-RPC client to `haft serve`. Pooled via `Haft.Supervisor`. | Haft (which is the external MCP server); haft_* tools (which are its endpoints) |
 | **JudgeClient** | L4 client for SemanticGate evaluation. Typically uses an agent adapter with a judge prompt. | Agent.Adapter (which is for phase execution) |
 | **AdapterSession** | L4 effect context passed to every adapter call: `session_id`, `config_hash`, `scoped_tools`, `workspace_path`. | Session (which is L1 and richer); adapter process PID (which is L5 plumbing) |
@@ -68,7 +76,8 @@ reading_order: 2
 | **AgentWorker** | L5 Task under `Task.Supervisor`. Owns one Session. | Worker in the generic distributed-systems sense |
 | **WorkflowStore** | L5 GenServer that holds the compiled `SleighConfig`. Hot-reloads. | Workflow (the L1 data); tracker's workflow config |
 | **HaftSupervisor** | L5 supervisor owning the `haft serve` process and its WAL. | Haft.Client (which is inside it) |
-| **TrackerPoller** | L5 periodic task that fetches active tickets from the tracker. | Tracker.Adapter (which is the behaviour it invokes) |
+| **CommissionPoller** | L5 periodic task that asks Haft for runnable WorkCommissions and obtains preflight leases. | CommissionSource.Adapter (which is the behaviour it invokes) |
+| **TrackerPoller** | Legacy L5 periodic task that fetches active tickets from the tracker. Commission-first runtime replaces it with CommissionPoller. | Projection.Adapter; CommissionPoller |
 | **HumanGateListener** | L5 process awaiting `/approve` signals from tracker comments or PR reviews. | HumanGate (the L1 value); approver (the human) |
 | **ObservationsBus** | L5 ETS-backed metrics sink. **Zero compile-time path to `Haft.Client`.** | Haft artifact graph; telemetry library (Telemetry is a transport, not this bus) |
 
@@ -80,7 +89,9 @@ reading_order: 2
 | **SleighConfig** | L6 compiled, immutable struct produced by `Sleigh.Compiler.compile/1`. | sleigh.md (which is the source); phase_config (which is a field on it) |
 | **PhaseConfig** | Per-phase slice of `SleighConfig`: agent_role, scoped tools, gate chain, prompt template. | Phase (the L1 value) |
 | **Sleigh.Compiler** | L6 pure transformer. Validates gate names, tool names, phase names, prompt variables. | Elixir's compiler (`:elixir_compiler`) |
-| **external_publication** | Declared `sleigh.md` section: branches + tracker states that require HumanGate. | Public OSS release; any other "external" |
+| **external_publication** | Declared `sleigh.md` section: branches/actions/projection updates that require HumanGate. | Public OSS release; any other "external" |
+| **projection_policy** | WorkCommission/plan setting: `local_only`, `external_optional`, or `external_required`, with targets and audience. | Tracker state; execution status |
+| **ProjectionWriterAgent** | Bounded LLM writer that turns deterministic ProjectionIntent into plain manager-facing tracker text. | Status authority; implementation agent |
 
 ## FPF vocabulary (re-declared here because it appears in gates / prompts)
 
@@ -104,15 +115,15 @@ reading_order: 2
 | "validated" | "structurally checked" OR "semantically judged" OR "human-approved" | The three GateKinds are never interchangeable |
 | "review" (in harness vocabulary) | "HumanGate" OR "SemanticGate via JudgeClient" | Human review = HumanGate; LLM review = SemanticGate |
 | "reasoning" (in harness vocabulary) | agent's internal activity (not a harness concept) | Upstream reasoning is human + Haft; we orchestrate, we don't reason |
-| "done" (without qualification) | `Verdict.pass` OR `OperationalPhase = terminal` OR tracker-specific state | Overloaded across tracker state, phase state, verdict |
+| "done" (without qualification) | `Verdict.pass` OR `OperationalPhase = terminal` OR WorkCommission completed OR tracker-specific state | Overloaded across projection state, phase state, verdict |
 
-## Tracker-side terms (consumed, not owned)
+## External carrier terms (consumed/published, not authoritative)
 
 | Term | Canonical meaning (in Open-Sleigh context) | Where owned |
 |---|---|---|
-| **Active state** | Tracker state in the `tracker.active_states` list from `sleigh.md`. Polled and claimed by Orchestrator. | Tracker (Linear) |
-| **Terminal state** | Tracker state in `tracker.terminal_states`. Requires HumanGate for transition. | Tracker (Linear) |
-| **Approver** | Tracker user whose `/approve` comment releases a HumanGate. Matched by the `approvers` list in `sleigh.md`. | Tracker + Open-Sleigh config |
+| **Active state** | Legacy tracker state from `tracker.active_states`. In commission-first mode it is an observed projection value, not intake authority. | Tracker (Linear/Jira/GitHub) |
+| **Terminal state** | External carrier terminal value. May require HumanGate before publication; never completes Haft work by itself. | Tracker (Linear/Jira/GitHub) |
+| **Approver** | Human whose approval signal releases a HumanGate. Signal may come from Desktop, CLI, tracker comment, or PR review. Matched by config and recorded in Haft. | Human principal + Open-Sleigh config |
 
 ---
 

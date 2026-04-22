@@ -40,12 +40,17 @@ What it IS:
 - Comparison discipline enforcer (Pareto, not recommendation essays)
 - Evidence lifecycle manager (freshness, decay, drift)
 - Governance governor (invariant verification, staleness alerts)
+- Work authorization surface (turns an accepted decision into bounded,
+  auditable execution work when the human chooses to commission it)
+- Optional external projection engine (Linear/Jira/GitHub issue text is a
+  carrier for observers, not Haft's source of truth)
 
 What it is NOT:
 - Not a coding agent (doesn't compete with Claude Code on editing files)
 - Not a pattern browser (doesn't expose FPF as a catalog)
 - Not a documentation generator (persists reasoning artifacts, not specs)
-- Not a project management tool (no sprints, no tickets, no Gantt charts)
+- Not a project management tool (no sprints, no Gantt charts; tracker
+  projections are derived coordination surfaces)
 - Not a general autonomous agent (no personal assistant, no omnichannel)
 
 ## Three delivery surfaces
@@ -79,6 +84,18 @@ Quick access for scripting, CI, and terminal workflows.
 
 **A and B are primary.** C is supporting utility.
 Desktop is where humans think. MCP is where agents think. Same kernel underneath.
+
+### Optional external projections
+
+Haft must work with no Linear, Jira, GitHub Issues, or cloud tracker
+configured. Local state, Desktop status, CLI status, and `.haft/` artifact
+projections are sufficient for a solo/local workflow.
+
+When an external tracker is configured, Haft publishes **ExternalProjections**
+for human coordination. ExternalProjections may create/update Linear/Jira
+issues, comments, labels, and statuses, but they do not author the semantic
+state of work. Haft computes what is true; a bounded projection writer may
+translate that truth into plain manager-facing language.
 
 ## Supersystem
 
@@ -116,6 +133,7 @@ Haft lives inside the software engineering delivery system:
 | **Host agent** | Claude Code, Codex, any MCP client | Clean tool interface, fast responses, no interference with coding workflow |
 | **Solo engineer** | Working alone across multiple projects | Cross-project recall, accumulated judgment, local-first |
 | **Tech lead** | Responsible for architectural consistency | Decision audit trail, staleness alerts, drift detection, coverage |
+| **External observer** | Manager, analyst, lead, or teammate outside Haft | Plain-language status in Linear/Jira/GitHub, with links back to Haft artifacts |
 | **CI/CD pipeline** | Automated checks | `haft check` — verify decisions are fresh and evidence is current |
 | **PR reviewer** | Reading diffs | `.haft/decisions/*.md` in the diff — rationale visible alongside code |
 
@@ -124,7 +142,7 @@ Haft lives inside the software engineering delivery system:
 | Not for | Why |
 |---------|-----|
 | FPF researchers | Haft is a product, not an FPF reference implementation |
-| Non-technical managers | No management dashboards — engineer-first |
+| Non-technical managers (primary) | Haft is engineer-first. They may consume optional tracker projections, but they do not drive the reasoning model. |
 | Compliance auditors (primary) | Audit views exist as secondary projections, not primary UX |
 | Consumers / end users | No personal assistant surface |
 

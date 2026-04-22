@@ -1,9 +1,172 @@
-# Execution Contract — v6.2
+# Execution Contract — v6.2 + Commissioned Execution Draft
 
 > What Implement, Adopt, and verification are allowed to do.
 > BDD scenarios define the authority boundaries.
 
+## Commissioned Execution Model
+
+Direct `DecisionRecord -> agent` execution is the v6.2 local loop. The
+Haft/Open-Sleigh target model inserts a deliberate work authorization layer:
+
+```
+DecisionRecord -> WorkCommission -> Preflight -> RuntimeRun -> Evidence
+```
+
+The distinction is load-bearing:
+
+- DecisionRecord = what was chosen and why.
+- WorkCommission = permission to execute that choice in a declared scope.
+- RuntimeRun = one actual attempt by a runner.
+- Evidence = what was verified after execution.
+
+A DecisionRecord may have zero WorkCommissions. Creating a decision does not
+mean the work is scheduled. A WorkCommission may be queued for later, and must
+be revalidated before execution starts.
+
+## WorkCommission Lifecycle
+
+```gherkin
+Scenario: Queue work without executing it
+  Given a DecisionRecord with status "active"
+  When the user creates a WorkCommission from that decision
+  Then the WorkCommission stores:
+    | field                  | source                                      |
+    | decision_ref           | selected DecisionRecord                     |
+    | decision_revision_hash | current DecisionRecord content/revision     |
+    | problem_ref            | linked ProblemCard                          |
+    | scope                  | user/agent proposed repo, branch, files     |
+    | gates                  | decision invariants + workflow policy       |
+    | evidence_requirements  | decision claims + commission-specific checks |
+    | projection_policy      | local_only / external_optional / external_required |
+    | valid_until            | explicit execution freshness deadline       |
+  And the WorkCommission is "queued"
+  And no RuntimeRun starts
+```
+
+```gherkin
+Scenario: Start a fresh commission
+  Given a WorkCommission in "queued" or "ready"
+  And its linked DecisionRecord is still active
+  And the decision_revision_hash still matches
+  And the commission valid_until is in the future
+  And no linked ProblemCard or governing DecisionRecord was superseded
+  When the user starts the WorkCommission
+  Then Haft moves it to "preflighting"
+  And grants exactly one runner lease
+  And Open-Sleigh may run the Preflight phase
+```
+
+```gherkin
+Scenario: Block a stale commission before execution
+  Given a WorkCommission created from DecisionRecord revision R1
+  And the DecisionRecord was superseded to revision R2 before execution
+  When the user or YOLO scheduler attempts to start the WorkCommission
+  Then Haft marks the WorkCommission "blocked_stale"
+  And no RuntimeRun enters Execute
+  And the block reason names the invalidating artifact
+```
+
+## Preflight
+
+Preflight is mandatory before execution, including YOLO/batch runs. It has two
+parts:
+
+| Layer | May do | May NOT do |
+|-------|--------|------------|
+| Deterministic gate | Check existence, status, revisions, expiry, leases, policies, required approvals, runner eligibility | Infer semantic freshness from prose |
+| Preflight agent | Read linked artifacts, inspect repo context, summarize material changes, recommend pass/block/review | Decide final authority state or skip deterministic gates |
+
+```gherkin
+Scenario: Runner cannot bypass Haft authority
+  Given Open-Sleigh has a commission_id
+  When it starts work
+  Then it first calls Haft to claim a preflight lease
+  And it receives a signed/structured preflight context
+  And it may only continue to Execute after Haft records preflight as passed
+```
+
+```gherkin
+Scenario: Uncertain preflight needs human review
+  Given deterministic checks pass
+  But the preflight agent reports material context change it cannot classify
+  When Haft validates the PreflightReport
+  Then the WorkCommission becomes "needs_human_review"
+  And Open-Sleigh stops before Execute
+```
+
+## ImplementationPlan and YOLO Mode
+
+YOLO mode is batch continuation inside a human-approved AutonomyEnvelope. It
+does not skip freshness, evidence, lease, lockset, or one-way-door gates.
+
+```gherkin
+Scenario: Run an approved implementation plan in YOLO mode
+  Given an ImplementationPlan with 20 WorkCommissions
+  And an AutonomyEnvelope approved by the human principal:
+    | property        | example                         |
+    | max_concurrency | 4                               |
+    | allowed_repos   | current project                 |
+    | allowed_paths   | internal/**, desktop/**         |
+    | forbidden_paths | release/**, migrations/**       |
+    | allowed_actions | edit_files, run_tests, commit   |
+    | forbidden_actions | merge_pr, tag_release, delete_data |
+    | on_failure      | continue_independent            |
+    | on_stale        | block_node                      |
+  When Open-Sleigh starts the plan
+  Then it schedules only dependency-ready WorkCommissions
+  And it never runs two commissions with overlapping locksets
+  And it preflights every commission immediately before Execute
+  And it blocks stale or uncertain nodes without blocking independent nodes
+  And it records RuntimeRun and Evidence for every attempted commission
+```
+
+```gherkin
+Scenario: YOLO cannot expand its own authority
+  Given an AutonomyEnvelope forbids schema changes and release tagging
+  When an agent discovers the chosen implementation requires a schema change
+  Then the current WorkCommission becomes "needs_human_review"
+  And no schema migration or release tag is created automatically
+```
+
+## External Projection
+
+Haft works without Linear/Jira/GitHub Issues. External projection is optional
+per workspace and per WorkCommission.
+
+```gherkin
+Scenario: Local-only commission
+  Given a WorkCommission with projection_policy "local_only"
+  When it runs and completes
+  Then Desktop/CLI/.haft status are updated
+  And no external tracker call is required
+```
+
+```gherkin
+Scenario: External projection uses bounded LLM writing
+  Given a WorkCommission with projection_policy "external_optional"
+  And Linear is configured as a projection target
+  When Haft computes a ProjectionIntent
+  Then a ProjectionWriterAgent may draft manager-facing text
+  And ProjectionValidation must pass before publication
+  And the LLM may not decide lifecycle status, severity, evidence verdict, or completion
+```
+
+```gherkin
+Scenario: Manual external Done does not complete Haft work
+  Given a Linear issue linked by ExternalProjection
+  And a human manually moves the issue to Done
+  But the WorkCommission has no accepted evidence
+  When Haft observes the external state
+  Then Haft records projection drift/conflict
+  And the WorkCommission remains not completed
+```
+
 ## Implement (Decision → Agent → Verify → Baseline)
+
+The v6.2 direct Implement flow remains the local single-run surface. In the
+commissioned execution model, "Implement" becomes a convenience action that
+creates a WorkCommission and, if the user chooses "start now", immediately
+runs the same preflight path described above.
 
 ### Happy path
 
@@ -151,11 +314,14 @@ Scenario: Human must confirm before every irreversible action
 
 | Action | May create | May modify | May NOT modify |
 |--------|-----------|-----------|----------------|
-| **Implement** | worktree, branch, files in worktree | task status | DecisionRecord, evidence, baseline (until verification passes) |
+| **Create WorkCommission** | WorkCommission draft/queued record | commission status/scope before approval | DecisionRecord body, evidence, baseline |
+| **Start WorkCommission** | preflight lease, RuntimeRun shell | WorkCommission status → preflighting/running/blocked | DecisionRecord body; execution may not start if freshness gate fails |
+| **Implement** | WorkCommission, worktree, branch, files in worktree | task/commission status | DecisionRecord, evidence, baseline (until verification passes) |
 | **Post-verify (pass)** | evidence item (CL3), baseline snapshot | task status → "Ready for PR" | DecisionRecord body |
 | **Post-verify (fail)** | — | task status → "Needs attention" | nothing else until user decides |
 | **Adopt** | RefreshReport, optionally new ProblemCard | decision status (only via explicit waive/supersede/deprecate) | decision body, evidence content |
 | **Create PR** | git branch push, PR body | — | artifacts, evidence, baselines |
+| **ExternalProjection publish** | external issue/comment/update | ExternalProjection observed/sync metadata | WorkCommission semantic state, DecisionRecord, evidence |
 
 ## What Is NOT in v6.2
 
@@ -164,6 +330,6 @@ These are deferred per 5.4 review:
 | Feature | Why deferred |
 |---------|-------------|
 | Automation triggers (CI fail, dep update, scheduled) | Mixing problem factory + execution in one release = scope sprawl |
-| DecisionRecord→Task Pipeline with auto-advance | Build single Implement first, pipeline is v7 |
+| DecisionRecord→WorkCommission→RuntimeRun Pipeline with auto-advance | Build single Implement first; commissioned/batch execution is the Open-Sleigh integration path |
 | Deep onboard as automation input | Onboard prompt already deep in v6.1, automation wrapper is v7 |
 | Autonomous verification agent | Detect-only first (v8 Phase A), actuation later (Phase B) |

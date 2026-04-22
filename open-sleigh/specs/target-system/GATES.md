@@ -13,7 +13,7 @@ reading_order: 9
 > rules. This document is the **canonical gate catalogue** — every gate's
 > name, kind, firing site, check semantics, implementation, and
 > calibration discipline lives here. The four references above now point
-> in; this is the load-bearing source of truth.
+> in; this is the load-bearing reference.
 >
 > **FPF note.** Gates are **design-time claims** (closed atom set, kind-
 > aware combine, constructor consistency). Passing tests against the
@@ -33,8 +33,11 @@ Haft JSON blob returned from the relevant `haft_*` tool call. They catch
 |---|---|---|
 | `commission_runnable` | Preflight entry | WorkCommission exists, is in `ready`/`queued` state, has an exclusive lease, and has not expired. |
 | `decision_fresh` | Preflight entry | Linked DecisionRecord exists, is active, hash/revision matches the commission snapshot, and is not refresh_due/stale/superseded/deprecated. |
+| `scope_snapshot_fresh` | Preflight entry | Scope hash, base SHA, ProblemCard revision, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state match the CommissionRevisionSnapshot. |
 | `lockset_available` | Preflight entry | No other leased/running WorkCommission in the same plan has an overlapping lockset. |
 | `autonomy_envelope_allows` | Preflight entry | If auto-started/batch/YOLO, the approved AutonomyEnvelope allows this repo/path/action/risk class and has remaining budget. |
+| `mutation_within_commission_scope` | Every mutating adapter call + Execute/Measure exit | Target path/action is inside WorkCommission Scope and terminal diff contains no out-of-scope mutation. Failure is terminal, not advisory. |
+| `projection_debt_recorded` | Terminal/commission exit | For `external_required`, failed/missing external publication is represented as ProjectionDebt instead of being hidden or treated as execution evidence failure. |
 | `problem_card_ref_present` | Frame **entry** | `WorkCommission.problem_card_ref` is non-nil, resolves to a live Haft artifact, and its `authoring_source ≠ :open_sleigh_self`. Hard-fails Frame with `:no_upstream_frame`; the commission goes back to Haft as blocked/review-needed. |
 | `described_entity_field_present` | Frame exit | **Upstream** ProblemCard (the one referenced by `WorkCommission.problem_card_ref`) has non-empty `describedEntity` and `groundingHolon`. Checks upstream human-authored content; Open-Sleigh never creates these fields. |
 | `valid_until_field_present` | every phase exit | Artifact has `valid_until` in the future |
@@ -59,7 +62,8 @@ LLM-judge; the expensive ones as HumanGate.
 | `no_self_evidence_semantic` | Measure exit | **Two separate checks:** (a) the cited evidence is produced by a role **external to the authoring role** (FPF-Spec A.10 CC-A10.6: no self-evidence); (b) the **evidence carrier** (PR sha, CI run id, test log) is distinguished from the **work-effect** (what the merged code actually does in runtime). A carrier is not a work-effect; conflating them is the trap this gate exists to catch. | LLM-judge |
 | `contract_unpacked_ok` | any artifact containing promise-language ("I implemented X", "delivered Y") | Promise content / speech act / commitment / work-effect-evidence decomposed per `../../.context/FPF-Spec.md` A.6.C. Deferred to MVP-2; flagged now so agents publishing "done" claims don't conflate promise content with delivery evidence. | **not in MVP-1** |
 | `cg_frame_wellformed` | Parity-run exit (MVP-2) | Characteristics have scales/procedures; budgets equal; selection rule pre-declared; `valid_until` set; seeds recorded | LLM-judge |
-| `commission_approved` | Commission entry (MVP-2) and Execute→Measure when PR→main (MVP-1) | Human principal confirmed the transition | **HumanGate** |
+| `publish_approved` | External projection transition to terminal carrier state | Human principal confirmed the external publication/update | **HumanGate** |
+| `one_way_door_approved` | Execute→Measure when PR/protected branch publication or out-of-envelope action is requested | Human principal confirmed the irreversible or hard-to-reverse transition for the current commission snapshot | **HumanGate** |
 
 **Gate purity caveat.** Gates are pure as `f(inputs)` where `inputs` include
 not just the artifact but the relevant Haft graph slice (e.g.
@@ -148,10 +152,17 @@ another.
 
 **Triggers in MVP-1:**
 - Execute → Measure, when PR target branch matches `external_publication`
-  regex in `sleigh.md` (default: `^(main|master|release/.*)$`).
+  regex in `sleigh.md` (default: `^(main|master|release/.*)$`), using
+  `one_way_door_approved`.
 - Any external projection transition to a terminal external state (Done, Won't
-  Do, Closed) when projection policy requires confirmation.
+  Do, Closed) when projection policy requires confirmation, using
+  `publish_approved`.
 - Any proposed action outside the approved AutonomyEnvelope.
+
+`work_authorized` is not an Open-Sleigh HumanGate. It is the upstream Haft
+fact that a WorkCommission exists and is queueable. Open-Sleigh verifies it
+through `commission_runnable`; it does not ask the human to "approve the
+commission" again under the old overloaded `commission_approved` name.
 
 This is the concrete enforcement of the Transformer Mandate in MVP-1: the
 agent can **verify framing**, can implement, can request approval — but it
@@ -198,10 +209,10 @@ isolated from the Haft artifact graph per `ILLEGAL_STATES.md` TA1–TA3
 
 | Phase | Structural gates | Semantic gates | Human gate (trigger) |
 |---|---|---|---|
-| `:preflight` | `commission_runnable`, `decision_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
+| `:preflight` | `commission_runnable`, `decision_fresh`, `scope_snapshot_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
 | `:frame` | `problem_card_ref_present` (entry), `described_entity_field_present`, `valid_until_field_present` | `object_of_talk_is_specific` | — |
-| `:execute` | `design_runtime_split_ok` | `lade_quadrants_split_ok` | `commission_approved` (if `external_publication` matches) |
-| `:measure` | `evidence_ref_not_self`, `valid_until_field_present` | `no_self_evidence_semantic` | — |
+| `:execute` | `design_runtime_split_ok`, `mutation_within_commission_scope` | `lade_quadrants_split_ok` | `one_way_door_approved` (if `external_publication` matches) |
+| `:measure` | `evidence_ref_not_self`, `valid_until_field_present`, `mutation_within_commission_scope`, `projection_debt_recorded` | `no_self_evidence_semantic` | — |
 
 ## 7. Phase → gate binding (MVP-2 additions)
 

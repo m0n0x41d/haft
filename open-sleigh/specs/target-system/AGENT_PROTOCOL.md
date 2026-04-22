@@ -220,18 +220,23 @@ adapter:
    Unknown → respond with `{success: false, error: "tool_unknown_to_adapter"}`.
 2. Checks `tool_name` ∈ `AdapterSession.scoped_tools` (MapSet). Not in
    scope → respond with `{success: false, error: "tool_forbidden_by_phase_scope"}`.
-3. For filesystem-touching tools (`:read`, `:write`, `:edit`, `:bash`),
+3. For mutating filesystem tools (`:write`, `:edit`, mutating `:bash`),
+   checks the target path/action against `AdapterSession.scope`.
+   Commission-scope violation → respond with
+   `{success: false, error: "mutation_outside_commission_scope"}` and mark
+   the run terminally failed. This check is separate from workspace safety.
+4. For filesystem-touching tools (`:read`, `:write`, `:edit`, `:bash`),
    routes through `PathGuard.canonical/1` (L4). Path violation →
    respond with `{success: false, error: "path_outside_workspace"}` (or
    other PathGuard reason).
-4. For Haft tools (`:haft_problem`, `:haft_solution`, `:haft_decision`,
+5. For Haft tools (`:haft_problem`, `:haft_solution`, `:haft_decision`,
    `:haft_note`, `:haft_refresh`, `:haft_query`), routes through
    `Haft.Client` with the session's `config_hash` attached. Unavailable
    → respond with `{success: false, error: "haft_unavailable", retry_after: <ms>}`.
-5. For tracker/projection tools (if any are ever exposed — MVP-1 exposes none):
+6. For tracker/projection tools (if any are ever exposed — MVP-1 exposes none):
    NOT available to agents. External projection mutation is Haft-owned per
    SPEC §9 "Not a coding agent of projection mutation."
-6. Returns the result inline; the turn continues.
+7. Returns the result inline; the turn continues.
 
 **Tool approval is implementation-defined per `codex.approval_policy`**,
 but for MVP-1 the recommended policy is `auto_approve_in_session`

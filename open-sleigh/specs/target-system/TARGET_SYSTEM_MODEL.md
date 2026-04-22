@@ -36,8 +36,12 @@ Haft owns mutable commission state and lifecycle.
 - `problem_card_ref :: ProblemCardRef.t()` (required)
 - `implementation_plan_ref :: String.t() | nil` — parent plan when scheduled
   as part of a batch/YOLO graph
+- `implementation_plan_revision :: String.t() | nil` — parent plan revision
+  pinned in the commission snapshot
 - `scope :: Scope.t()` (required) — repo, target branch, base sha, allowed
-  paths, affected files/modules
+  paths/actions, affected files/modules
+- `scope_hash :: String.t()` (required) — canonical hash of `scope`
+- `base_sha :: String.t()` (required) — repository commit admitted at queue time
 - `lockset :: [String.t()]` (required) — paths/modules/resources this
   commission may mutate or conflicts with
 - `evidence_requirements :: [EvidenceRequirement.t()]` (required)
@@ -45,9 +49,12 @@ Haft owns mutable commission state and lifecycle.
   (required)
 - `autonomy_envelope_ref :: String.t() | nil` — required for automatic
   continuation beyond a single human-started commission
+- `autonomy_envelope_revision :: String.t() | nil` — approved envelope
+  revision pinned in the commission snapshot
 - `state :: :draft | :queued | :ready | :preflighting | :running |
   :blocked_stale | :blocked_policy | :blocked_conflict |
-  :needs_human_review | :completed | :failed | :cancelled | :expired`
+  :needs_human_review | :completed | :completed_with_projection_debt |
+  :failed | :cancelled | :expired`
   (required; snapshot returned by Haft)
 - `valid_until :: DateTime.t()` (required)
 - `fetched_at :: DateTime.t()` (required)
@@ -71,6 +78,48 @@ Haft owns mutable commission state and lifecycle.
   execution permission; Preflight re-checks immediately before Execute.
 - `projection_policy == :local_only` is valid. Linear/Jira/GitHub credentials
   are not required for correctness.
+- `scope_hash`, `decision_revision_hash`, `base_sha`,
+  `implementation_plan_revision`, and `autonomy_envelope_revision` form part
+  of the deterministic snapshot equality set. Mismatch blocks Execute.
+- Scope is not prompt context. Open-Sleigh must pass it into Session and
+  AdapterSession, enforce it before every mutating adapter call, and validate
+  the terminal diff against it.
+
+---
+
+### Scope
+
+**Definition:** Closed authorization object owned by Haft. It says what the
+runner may touch for one WorkCommission. It is immutable in Open-Sleigh and
+hashed into the commission snapshot.
+
+**Attributes:**
+
+- `repo_ref :: String.t()` (required) — repository identity
+- `base_sha :: String.t()` (required) — pinned commit for deterministic
+  comparison
+- `target_branch :: String.t()` (required) — branch or policy admitted for
+  this commission
+- `allowed_paths :: [String.t()]` (required) — path globs the runner may
+  mutate
+- `forbidden_paths :: [String.t()]` (required) — path globs the runner must
+  not mutate even if a broad allowed path matches
+- `allowed_actions :: MapSet.t(atom())` (required) — e.g. `:edit_files`,
+  `:run_tests`, `:commit`
+- `affected_files :: [String.t()]` (required) — expected evidence/mutation
+  surface
+- `allowed_modules :: [String.t()]` — optional module-level authorization
+- `lockset :: [String.t()]` (required) — concurrency-control projection
+- `hash :: String.t()` (required) — canonical serialized hash
+
+**Key rules:**
+
+- Scope is stronger than workspace safety. A path can be inside
+  `workspace_path` and still be illegal for this commission.
+- `PathGuard` prevents filesystem escapes; Scope prevents authority escapes.
+  Both checks are required for any mutating tool.
+- End-of-run diff validation must fail terminally if any mutation is outside
+  Scope, even when all phase tools and workspace checks passed.
 
 ---
 
@@ -119,6 +168,8 @@ of work owned by one `AgentWorker`. Identified by opaque `SessionId`.
 
 - `id :: SessionId.t()` (required; opaque binary)
 - `commission :: WorkCommission.t()` (required; snapshot at preflight claim time)
+- `scope :: Scope.t()` (required; copied from `commission.scope` for direct
+  adapter access)
 - `phase :: Phase.t()` (required; mutates via message to Orchestrator, never in-place)
 - `config_hash :: ConfigHash.t()` (required; pinned at session start per `SLEIGH_CONFIG.md §2`)
 - `scoped_tools :: MapSet.t(atom())` (required; derived from phase_config)
@@ -143,6 +194,8 @@ of work owned by one `AgentWorker`. Identified by opaque `SessionId`.
 **Key rules:**
 
 - `workspace_path` MUST be outside `open_sleigh/` and `~/.open-sleigh/` — validated at session construction. This is the Thai-disaster architectural guardrail expressed at L1.
+- `scope` MUST be present and hash-matched against `commission.scope_hash`.
+  Session construction fails on mismatch.
 - `scoped_tools` is a `MapSet.t(atom())` not a `list` — set semantics prevent accidental duplicates.
 - `config_hash` is pinned at session construction; hot-reloads of `sleigh.md` don't retroactively change an active session's hash.
 - Session has no mutable "status" field; all state transitions flow through `Orchestrator.handle_cast/2` → message to `AgentWorker` → new Session value.
@@ -218,6 +271,13 @@ to Haft for validation. It is a report, not authority.
 - `commission_id :: String.t()` (required)
 - `decision_ref :: DecisionRecordRef.t()` (required)
 - `decision_revision_seen :: String.t()` (required)
+- `problem_revision_seen :: String.t()` (required)
+- `scope_hash_seen :: String.t()` (required)
+- `base_sha_seen :: String.t()` (required)
+- `implementation_plan_revision_seen :: String.t() | nil`
+- `autonomy_envelope_revision_seen :: String.t() | nil`
+- `snapshot_checks :: %{atom() => :match | :mismatch | :not_applicable}`
+  (required)
 - `verdict :: :pass | :block_stale | :block_policy | :block_conflict |
   :needs_human_review` (required)
 - `checked_artifacts :: [String.t()]` (required)
@@ -233,6 +293,8 @@ to Haft for validation. It is a report, not authority.
   WorkCommission state.
 - `decision_revision_seen` must match Haft's current DecisionRecord revision
   for `:pass`.
+- `scope_hash_seen`, `base_sha_seen`, plan revision, and envelope revision
+  must match Haft's deterministic snapshot equality set for `:pass`.
 - Agent uncertainty maps to `:needs_human_review`, not optimistic pass.
 
 ---
@@ -290,6 +352,8 @@ to Haft for validation. It is a report, not authority.
 - `approver :: String.t()` (required) — matched against `sleigh.md.approvers` list
 - `at :: DateTime.t()` (required)
 - `config_hash :: ConfigHash.t()` (required) — the hash active at approval time
+- `commission_snapshot_hash :: String.t()` (required) — exact commission
+  snapshot the human approved
 - `reason :: String.t() | nil` — ≤ 500 chars
 - `signal_source :: :desktop_ack | :cli_ack | :tracker_comment | :github_review`
   (required)
@@ -299,7 +363,18 @@ to Haft for validation. It is a report, not authority.
 
 - Constructed only by `HumanGateListener` (L5) upon receiving a valid signal.
 - `approver` must be in the `approvers` set from the active `SleighConfig`; otherwise constructor fails with `{:error, :approver_not_authorised}`.
-- `HumanGateApproval`, when required, flows into `PhaseOutcome.gate_results` as a `{:human, HumanGateApproval.t()}` tuple. Per Q-OS-3 resolution (v0.5), there is **no `PhaseOutcome.new_external/3`** — a single `PhaseOutcome.new/2` validates **gate-config consistency**: if the active `PhaseConfig.gates.human` list declares `commission_approved` (or any other human gate), the constructor requires a matching approved `{:human, HumanGateApproval.t()}` entry in `gate_results`, else it fails with `:human_gate_required_by_phase_config_but_missing`. The invariant lives at the single constructor; no special-case path exists that bypasses it.
+- `HumanGateApproval`, when required, flows into `PhaseOutcome.gate_results`
+  as a `{:human, HumanGateApproval.t()}` tuple. Per Q-OS-3 resolution (v0.5),
+  there is **no `PhaseOutcome.new_external/3`** — a single
+  `PhaseOutcome.new/2` validates **gate-config consistency**: if the active
+  `PhaseConfig.gates.human` list declares `publish_approved`,
+  `one_way_door_approved`, or any other human gate, the constructor requires a
+  matching approved `{:human, HumanGateApproval.t()}` entry in `gate_results`,
+  else it fails with `:human_gate_required_by_phase_config_but_missing`.
+  The invariant lives at the single constructor; no special-case path exists
+  that bypasses it.
+- Approval is scoped to `commission_snapshot_hash`. Snapshot drift invalidates
+  reuse and requires re-approval or re-preflight.
 
 ---
 
@@ -314,6 +389,7 @@ the session-level metadata that every I/O call needs.
 - `config_hash :: ConfigHash.t()`
 - `scoped_tools :: MapSet.t(atom())`
 - `workspace_path :: Path.t()`
+- `scope :: Scope.t()`
 - `adapter_kind :: :codex | :claude | atom()`
 - `adapter_version :: String.t()`
 - `max_turns :: pos_integer()`
@@ -324,6 +400,9 @@ the session-level metadata that every I/O call needs.
 
 - `AdapterSession` is constructed by L5 when spawning an `AgentWorker`, then passed verbatim to every adapter call. No L4 function takes session-level metadata separately.
 - `scoped_tools` is the phase's tool set intersected with the adapter's capabilities; compilation of `sleigh.md` at L6 rejects tools the adapter can't bind.
+- `scope` is checked before every mutating adapter call. A tool may be known
+  to the adapter and allowed in the phase, but still rejected as
+  `:mutation_outside_commission_scope`.
 
 ---
 
@@ -418,8 +497,8 @@ ExternalWorkItemSnapshot ── optional projection carrier
 
 Canonical rules:
 
-- **Haft SQLite is the source of truth for WorkCommissions, decisions, runs,
-  evidence, and projection intent.**
+- **Haft SQLite is the authoritative object store for WorkCommissions,
+  decisions, runs, evidence, and projection intent.**
 - **External trackers are optional carriers for coordination.**
 - **Orchestrator is the sole writer of in-RAM session state.**
 - **ObservationsBus never reaches Haft.** Compile-time enforced.

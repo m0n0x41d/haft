@@ -34,7 +34,11 @@ Scenario: Queue work without executing it
     | decision_ref           | selected DecisionRecord                     |
     | decision_revision_hash | current DecisionRecord content/revision     |
     | problem_ref            | linked ProblemCard                          |
-    | scope                  | user/agent proposed repo, branch, files     |
+    | scope                  | closed Scope object: repo, branch, base SHA, paths, actions |
+    | scope_hash             | canonical hash of the Scope object          |
+    | base_sha               | repository commit pinned at queue time      |
+    | implementation_plan_revision | parent plan revision/hash, if any      |
+    | autonomy_envelope_revision | approved envelope revision/hash, if any |
     | gates                  | decision invariants + workflow policy       |
     | evidence_requirements  | decision claims + commission-specific checks |
     | projection_policy      | local_only / external_optional / external_required |
@@ -44,10 +48,36 @@ Scenario: Queue work without executing it
 ```
 
 ```gherkin
+Scenario: Scope is authorization, not prompt context
+  Given a WorkCommission with Scope S
+  Then S is serialized into a canonical form and stored as scope_hash
+  And the Scope contains:
+    | field             | meaning                                   |
+    | repo_ref          | repository identity                       |
+    | base_sha          | repository commit pinned for comparison   |
+    | target_branch     | branch or branch policy                   |
+    | allowed_paths     | paths the runner may read/write as declared |
+    | forbidden_paths   | paths the runner must not mutate          |
+    | allowed_actions   | edit_files, run_tests, commit, or similar |
+    | allowed_modules   | optional module-level slice               |
+    | affected_files    | expected mutation/evidence surface        |
+    | lockset           | concurrency-control projection            |
+  And Open-Sleigh must carry the Scope in Session and AdapterSession
+  And every file-mutating adapter call must check the target path/action
+      against the Scope before executing
+  And terminal diff validation must prove every mutation stayed inside Scope
+```
+
+```gherkin
 Scenario: Start a fresh commission
   Given a WorkCommission in "queued" or "ready"
   And its linked DecisionRecord is still active
   And the decision_revision_hash still matches
+  And the problem_ref/revision still matches
+  And the scope_hash still matches the current commission Scope
+  And the base_sha still matches the admitted repository context
+  And the implementation_plan_revision still matches, if present
+  And the autonomy_envelope_revision still matches, if present
   And the commission valid_until is in the future
   And no linked ProblemCard or governing DecisionRecord was superseded
   When the user starts the WorkCommission
@@ -66,6 +96,29 @@ Scenario: Block a stale commission before execution
   And the block reason names the invalidating artifact
 ```
 
+```gherkin
+Scenario: Block a commission after snapshot drift
+  Given a WorkCommission was queued with CommissionSnapshot C1
+  And a human approval or YOLO lease was recorded for C1
+  When the DecisionRecord revision, ProblemCard revision, Scope hash, base SHA,
+      ImplementationPlan revision, AutonomyEnvelope revision, or lease state
+      changes before Execute
+  Then the previous approval is no longer reusable
+  And Haft requires deterministic re-preflight before any RuntimeRun may Execute
+  And unresolved drift blocks as "blocked_stale" or "needs_human_review"
+```
+
+```gherkin
+Scenario: Runtime mutation outside Scope is terminal
+  Given a RuntimeRun is executing WorkCommission W with Scope S
+  When the runner attempts to edit a path outside S.allowed_paths
+  Or attempts an action not present in S.allowed_actions
+  Or the terminal diff contains a mutation outside S
+  Then the RuntimeRun fails terminally with reason "mutation_outside_commission_scope"
+  And Haft marks the WorkCommission "blocked_policy" or "failed"
+  And no evidence from the out-of-scope mutation can complete W
+```
+
 ## Preflight
 
 Preflight is mandatory before execution, including YOLO/batch runs. It has two
@@ -73,8 +126,20 @@ parts:
 
 | Layer | May do | May NOT do |
 |-------|--------|------------|
-| Deterministic gate | Check existence, status, revisions, expiry, leases, policies, required approvals, runner eligibility | Infer semantic freshness from prose |
+| Deterministic gate | Check existence, status, revisions, expiry, leases, policies, required approvals, runner eligibility, CommissionSnapshot equality, scope hash, base SHA, plan revision, envelope revision, lockset availability | Infer semantic freshness from prose |
 | Preflight agent | Read linked artifacts, inspect repo context, summarize material changes, recommend pass/block/review | Decide final authority state or skip deterministic gates |
+
+The deterministic equality set is closed for MVP-1R:
+
+| Field | Owner | Drift outcome |
+|-------|-------|---------------|
+| DecisionRecord ref/revision/hash | Haft | block stale |
+| ProblemCard ref/revision/hash | Haft | block stale or human review |
+| Scope hash | Haft | block policy |
+| base SHA / admitted repo context | Haft + repo adapter | re-preflight or block stale |
+| ImplementationPlan revision | Haft | release/recompute queue node |
+| AutonomyEnvelope revision | Haft | block policy until re-approved |
+| lease id/state | Haft | deny start_after_preflight |
 
 ```gherkin
 Scenario: Runner cannot bypass Haft authority
@@ -128,6 +193,15 @@ Scenario: YOLO cannot expand its own authority
   And no schema migration or release tag is created automatically
 ```
 
+```gherkin
+Scenario: ImplementationPlan changes after a commission is leased
+  Given a WorkCommission was leased under ImplementationPlan revision P1
+  And the plan is revised to P2 before the commission reaches Execute
+  When Open-Sleigh calls start_after_preflight
+  Then Haft rejects the start with "plan_revision_changed"
+  And the scheduler must release or re-preflight the node under P2
+```
+
 ## External Projection
 
 Haft works without Linear/Jira/GitHub Issues. External projection is optional
@@ -149,6 +223,23 @@ Scenario: External projection uses bounded LLM writing
   Then a ProjectionWriterAgent may draft manager-facing text
   And ProjectionValidation must pass before publication
   And the LLM may not decide lifecycle status, severity, evidence verdict, or completion
+```
+
+First live canary rule: use deterministic projection templates only. Enable
+ProjectionWriterAgent after the closed ProjectionIntent schema and
+ProjectionValidation field-by-field checks have their own evidence.
+
+```gherkin
+Scenario: External required creates projection debt, not execution failure
+  Given a WorkCommission with projection_policy "external_required"
+  And RuntimeRun evidence satisfies the commission evidence requirements
+  But the required external carrier publish fails or is unavailable
+  When Haft completes local execution adjudication
+  Then the RuntimeRun evidence remains valid
+  And the WorkCommission enters "completed_with_projection_debt"
+  And Haft records ProjectionDebt naming the carrier, target, last error,
+      and retry policy
+  And the commission is not shown as externally closed until the debt is resolved
 ```
 
 ```gherkin

@@ -9,8 +9,9 @@ reading_order: 11
 > **FPF note.** Hooks are `Carrier` for bootstrap work (clone repo,
 > install deps). They are NOT a `Carrier` for governance logic — that
 > attempt is a Thai-disaster attractor and the first symptom of
-> harness-about-harness drift. The workspace itself is the scope within
-> which the agent's `Description` of its work becomes `Reality`.
+> harness-about-harness drift. The workspace is only the filesystem
+> containment boundary. WorkCommission Scope is the authority boundary for
+> what the agent may mutate inside that workspace.
 
 ---
 

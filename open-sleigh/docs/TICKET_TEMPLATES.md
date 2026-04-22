@@ -63,8 +63,9 @@ target_branch: main
 Expected behavior:
 
 - Ticket reaches Execute.
-- `commission_approved` human gate is requested because `target_branch`
-  matches `external_publication.branch_regex`.
+- Legacy runtime requests the `commission_approved` human gate because
+  `target_branch` matches `external_publication.branch_regex`. Commission-first
+  target specs rename this boundary to `one_way_door_approved`.
 - Authorized approval is required before publication proceeds.
 
 ## Required Fields
@@ -75,4 +76,3 @@ Expected behavior:
 
 Do not use a self-authored ProblemCard. Open-Sleigh rejects upstream framing
 artifacts whose `authoring_source` is `open_sleigh_self`.
-

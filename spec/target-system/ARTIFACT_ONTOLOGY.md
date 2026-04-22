@@ -22,10 +22,24 @@ not yet implement these kinds.
 | Record | Created by | Purpose | Lifecycle |
 |--------|-----------|---------|-----------|
 | **ImplementationPlan** | Human-assisted planning from active DecisionRecord(s) | DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy | Draft → Approved → Running → Partially Blocked → Completed/Cancelled |
-| **WorkCommission** | Human/User via Haft UI/CLI/agent draft | Bounded authorization to execute a selected DecisionRecord in a declared scope | Draft → Queued → Ready → Preflighting → Running → Completed/Failed/Blocked/Cancelled/Expired |
+| **WorkCommission** | Human/User via Haft UI/CLI/agent draft | Bounded authorization to execute a selected DecisionRecord in a declared scope | Draft → Queued → Ready → Preflighting → Running → Completed/CompletedWithProjectionDebt/Failed/Blocked/Cancelled/Expired |
 | **RuntimeRun** | Runner such as Open-Sleigh | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
-| **ExternalProjection** | Haft projection engine | Idempotent external tracker binding for observers | Desired → Drafted → Published → Synced/Drifted/Blocked |
+| **ExternalProjection** | Haft projection engine | Idempotent external tracker binding for observers | Desired → Drafted → Published → Synced/Drifted/Blocked/ProjectionDebt |
 | **AutonomyEnvelope** | Human principal | Batch/YOLO permission bounds for an ImplementationPlan | Draft → Approved → Active → Exhausted/Revoked/Expired |
+
+## Execution Persistence Frontier
+
+The commissioned runtime model deliberately uses a hybrid frontier. Objects
+that carry human authority or runtime evidence are first-class records.
+Transport retries and connector mechanics stay internal.
+
+| Object | Persistence class | Rationale |
+|--------|-------------------|-----------|
+| **WorkCommission** | First-class Haft artifact/record | Authorization boundary between DecisionRecord and RuntimeRun. |
+| **RuntimeRun** | First-class Haft execution record | Runtime reality and evidence anchor. |
+| **AutonomyEnvelope** | First-class Haft artifact/record | Human-approved authority limit for batch/YOLO continuation. |
+| **ImplementationPlan** | Hybrid | Human-reviewed/reused plans are artifacts; compiled scheduler queues, dependency indexes, and lock tables are internal records. |
+| **ExternalProjection** | Hybrid | Haft persists intent, observed drift, validation outcome, and ProjectionDebt; connector retry counters and transport cursors remain internal. |
 
 ## Artifact Status (Stored vs Derived)
 
@@ -163,18 +177,26 @@ Rules:
 | **Cross-project index** | Decision summaries from all projects | `~/.haft/index.db` | Cross-project recall |
 | **FPF spec index** | ~800 FPF sections with route-aware retrieval | `internal/cli/fpf.db` (embedded) | FPF search tool |
 
-## Authority Model (Source of Truth)
+## Authority Model
+
+Use three authority layers. Do not collapse them:
+
+| Layer | Role | Rationale |
+|---------|----------------|-----------|
+| **Authoritative object store** | Local Haft SQLite database | Engine operates on structured objects, invariants, and transactions. |
+| **Local exchange carrier** | `.haft/*.md` projections in git | Human-readable, reviewable in PRs, mergeable. Parsed only through explicit `haft sync`. |
+| **External coordination carrier** | ExternalProjection to Linear/Jira/GitHub Issues | Manager/analyst/lead visibility and approval/comment surface. |
 
 **Precedence rule:**
 
-| Context | Source of truth | Rationale |
-|---------|----------------|-----------|
+| Context | Authority | Rationale |
+|---------|-----------|-----------|
 | **Runtime (single engineer)** | Local SQLite database | Engine operates on structured data, not markdown |
-| **Team exchange** | `.haft/*.md` projections in git | Human-readable, reviewable in PRs, mergeable |
-| **External coordination** | ExternalProjection to Linear/Jira/GitHub Issues | Manager/analyst/lead status visibility |
-| **Conflict** | SQLite wins locally; `haft sync` is explicit reconcile step | No implicit overwrite. Sync fails closed on schema mismatch. |
+| **Team exchange** | `.haft/*.md` projection as carrier, then `haft sync` into local SQLite | The markdown file transports the object, but does not act by itself |
+| **External coordination** | ExternalProjection observed/desired state as carrier, then Haft validation | External text/status is visibility, not semantic completion |
+| **Conflict** | Local SQLite wins locally; reconcile steps are explicit | No implicit overwrite. Sync fails closed on schema mismatch. |
 
-**Projection invariant:** `.haft/*.md` files are **derived outputs** of the database. They are generated on every artifact create/update. They are NOT the source of truth for the local engineer — the database is.
+**Projection invariant:** `.haft/*.md` files are **derived outputs** of the database. They are generated on every artifact create/update. They are NOT semantic authority by themselves. They are carriers that may become sync inputs only through explicit parsing, validation, and transaction into SQLite.
 
 **Team workflow invariant:** `.haft/*.md` in git is the **exchange format**. When another engineer runs `haft sync`, projections are parsed back into their local database. This is an explicit reconcile step, not a background sync.
 
@@ -189,10 +211,12 @@ Engineer B (local):
   Both engineers now see the same decisions in /h-status
 ```
 
-**What is NOT the source of truth:**
+**What is NOT authoritative by itself:**
 - `.haft/*.md` is not authoritative for the local engineer (SQLite is)
 - SQLite is not shared between engineers (each has their own)
 - Neither is authoritative for the other engineer until `haft sync` runs
 - Linear/Jira/GitHub Issues are not authoritative for Haft semantics. They are
   optional carriers. Manual external status changes are drift/override inputs,
   not proof that a WorkCommission completed.
+- Tracker terminal state is never a completion proxy unless shown beside the
+  adjacent Haft evidence state that actually supports completion.

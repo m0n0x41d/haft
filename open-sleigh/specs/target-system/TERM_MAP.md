@@ -15,7 +15,8 @@ reading_order: 2
 
 | Term | Canonical meaning | NOT to be confused with |
 |---|---|---|
-| **WorkCommission** | A Haft-authored, human-authorized unit of work Open-Sleigh may execute if preflight passes. Contains DecisionRecord ref, ProblemCard ref, scope, gates, evidence requirements, projection policy, and freshness snapshot. | Ticket, DecisionRecord, RuntimeRun, agent prompt |
+| **WorkCommission** | A Haft-authored, human-authorized unit of work Open-Sleigh may execute if preflight passes. Contains DecisionRecord ref, ProblemCard ref, Scope, gates, evidence requirements, projection policy, and freshness snapshot. | Ticket, DecisionRecord, RuntimeRun, agent prompt |
+| **Scope** | Closed Haft-owned authorization object on a WorkCommission: repo/ref, base SHA, target branch, allowed paths, forbidden paths, allowed actions, affected files/modules, optional allowed modules, and lockset. Hash is pinned in the commission snapshot. | Workspace safety, task prose, affected_files only |
 | **ImplementationPlan** | A Haft-authored DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy. Used for batch/YOLO execution. | Flat TODO list, tracker epic, DecisionRecord |
 | **AutonomyEnvelope** | Human-approved bounds for automatic continuation: max commissions/concurrency, allowed repos/paths/actions, forbidden actions, risk ceiling, failure strategy. | Unlimited YOLO permission; way to skip gates |
 | **ExternalWorkItemSnapshot** | Snapshot of a Linear/Jira/GitHub issue linked by ExternalProjection. Used for approvals/comments/drift observation only. | WorkCommission, source of work authority |
@@ -48,7 +49,7 @@ reading_order: 2
 | **AuthoringRole** | Sum: `:frame_verifier | :executor | :measurer | :judge | :human`. Who produced this artifact. Renamed from `:framer` in v0.5 because the Frame-phase role is verification of upstream framing, not authorship of it. | Agent identity (Codex vs Claude — that's adapter identity, not role) |
 | **ProblemCardRef** | Opaque pointer to a Haft ProblemCard produced upstream by the human. In commission-first mode it is carried by WorkCommission, not parsed from tracker text. | ProblemCard (the Haft artifact); tracker issue body |
 | **DecisionRecordRef** | Opaque pointer to the Haft DecisionRecord selected for execution. WorkCommission pins both the ref and revision/hash. | DecisionRecord body; recommendation from compare |
-| **CommissionRevisionSnapshot** | The decision/problem/scope/base hash values frozen when a WorkCommission is queued. Preflight compares them to current Haft/repo state. | Runtime evidence; optimistic cache |
+| **CommissionRevisionSnapshot** | The deterministic equality set frozen when a WorkCommission is queued: decision revision/hash, problem ref/revision/hash, Scope hash, base SHA, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state. Preflight compares them to current Haft/repo state. | Runtime evidence; optimistic cache; semantic freshness judgement |
 | **valid_until** | ISO-8601 date: when this artifact should be re-evaluated. Required on every PhaseOutcome. | Expiration (which implies deletion); deadline (which implies failure) |
 | **Evidence** | Struct: `kind`, `ref`, `hash`, `cl`. `ref ≠ authoring artifact's self_id`. | Proof, test output (those are raw materials; Evidence wraps them with metadata) |
 | **cl (Congruence Level)** | 0..3 integer from FPF (CL0=opposed, CL1=related, CL2=similar, CL3=exact). On every Evidence. | Confidence level (LLM-style float); certainty |
@@ -59,11 +60,11 @@ reading_order: 2
 |---|---|---|
 | **Agent.Adapter** | Elixir behaviour (L4). First impl: Codex. MVP-1.5: Claude. Satisfies Parity Plan. | The LLM itself; the CLI process |
 | **CommissionSource.Adapter** | L4 behaviour that reads/leases runnable WorkCommissions from Haft. This is the primary intake boundary. | Tracker.Adapter; scheduler; agent adapter |
-| **Projection.Adapter** | L4 behaviour for optional external carriers such as Linear/Jira/GitHub Issues. Publishes validated ExternalProjection updates. | Work intake; source of truth |
+| **Projection.Adapter** | L4 behaviour for optional external carriers such as Linear/Jira/GitHub Issues. Publishes validated ExternalProjection updates. | Work intake; semantic authority |
 | **Tracker.Adapter** | Legacy L4 behaviour in the current implementation. It should shrink into Projection.Adapter / ExternalWorkItemSnapshot support. | WorkCommission source; Linear's API client library |
 | **Haft.Client** | L4 MCP JSON-RPC client to `haft serve`. Pooled via `Haft.Supervisor`. | Haft (which is the external MCP server); haft_* tools (which are its endpoints) |
 | **JudgeClient** | L4 client for SemanticGate evaluation. Typically uses an agent adapter with a judge prompt. | Agent.Adapter (which is for phase execution) |
-| **AdapterSession** | L4 effect context passed to every adapter call: `session_id`, `config_hash`, `scoped_tools`, `workspace_path`. | Session (which is L1 and richer); adapter process PID (which is L5 plumbing) |
+| **AdapterSession** | L4 effect context passed to every adapter call: `session_id`, `config_hash`, `scoped_tools`, `workspace_path`, and `scope`. | Session (which is L1 and richer); adapter process PID (which is L5 plumbing) |
 | **AllowedTool** | Hybrid scoping (Q-OS-4 v0.5 resolution): (a) compile-time `@tool_registry` atom set per adapter — unknown-to-adapter tool fails at function-clause match; (b) runtime `AdapterSession.scoped_tools :: MapSet.t(atom())` per-phase filter — in-adapter-but-out-of-scope returns `:tool_forbidden_by_phase_scope`. NOT a per-phase generated type. | Macro-generated per-phase type (rejected as Q-OS-4 option — fights `sleigh.md` hot-reload) |
 | **EffectError** | Sum type enumerating every expected failure mode across all L4 adapters. Extending requires a source change. | Exception; `Error` class |
 | **WAL** | Write-Ahead Log. Per-ticket append-only JSON-L at `~/.open-sleigh/wal/<ticket_id>.jsonl`. | Journal, audit log (those are derived views) |
@@ -92,6 +93,12 @@ reading_order: 2
 | **external_publication** | Declared `sleigh.md` section: branches/actions/projection updates that require HumanGate. | Public OSS release; any other "external" |
 | **projection_policy** | WorkCommission/plan setting: `local_only`, `external_optional`, or `external_required`, with targets and audience. | Tracker state; execution status |
 | **ProjectionWriterAgent** | Bounded LLM writer that turns deterministic ProjectionIntent into plain manager-facing tracker text. | Status authority; implementation agent |
+| **ProjectionIntent** | Closed deterministic fact packet for external publication: state, reason, blockers, evidence links, omissions, redactions, forbidden claims. | Manager-facing prose; LLM judgement |
+| **ProjectionValidation** | Deterministic field-by-field check that a ProjectionDraft preserves ProjectionIntent and invents no status, owner, date, severity, completion, scope, or promise. | Semantic approval; LLM self-review |
+| **ProjectionDebt** | Explicit Haft state when `external_required` execution evidence is valid but external publication did not sync. | RuntimeRun failure; tracker authority |
+| **work_authorized** | Upstream Haft fact that a WorkCommission exists and has been approved/queued by the human principal. | HumanGate inside Open-Sleigh |
+| **publish_approved** | HumanGate approval for external publication to a terminal carrier state. | WorkCommission creation/authorization |
+| **one_way_door_approved** | HumanGate approval for a transition that cannot be automatically undone, such as protected branch publication or out-of-envelope action. | WorkCommission creation/authorization |
 
 ## FPF vocabulary (re-declared here because it appears in gates / prompts)
 

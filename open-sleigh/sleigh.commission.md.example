@@ -82,6 +82,7 @@ phases:
       structural:
         - commission_runnable
         - decision_fresh
+        - scope_snapshot_fresh
         - lockset_available
         - autonomy_envelope_allows
       semantic: [context_material_change_review]
@@ -98,13 +99,17 @@ phases:
     agent_role: executor
     tools: [read, write, edit, bash, haft_note]
     gates:
-      structural: [design_runtime_split_ok]
+      structural: [design_runtime_split_ok, mutation_within_commission_scope]
       semantic: [lade_quadrants_split_ok]
   measure:
     agent_role: measurer
     tools: [haft_decision, haft_refresh]
     gates:
-      structural: [evidence_ref_not_self, valid_until_field_present]
+      structural:
+        - evidence_ref_not_self
+        - valid_until_field_present
+        - mutation_within_commission_scope
+        - projection_debt_recorded
       semantic: [no_self_evidence_semantic]
 ---
 

@@ -133,6 +133,7 @@ contract behavior, not live provider quality.
 | Tool registry matches incumbent | yes | yes | parity test |
 | Unknown tool rejected as `:tool_unknown_to_adapter` | yes | yes | parity test |
 | Out-of-scope tool rejected before execution | yes | yes | parity test |
+| Out-of-commission-scope mutation rejected before execution | yes | yes | parity test |
 | Live session startup | enabled | explicit unsupported error | parity test + first real-run TODO |
 
 ## 7. MVP-2 implication

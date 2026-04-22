@@ -56,7 +56,8 @@ ILLEGAL_STATES claimed closure while the type remained open. Close the type.
 consistency**:
 
 - If the active `PhaseConfig.gates.human` list declares any human gate
-  (e.g. `commission_approved`), the passed `gate_results` list MUST
+  (e.g. `publish_approved` or `one_way_door_approved`), the passed
+  `gate_results` list MUST
   contain a matching `{:human, HumanGateApproval.t()}` element with
   `HumanGateApproval.at > session.claimed_at` and `config_hash` matching
   the session.
@@ -233,10 +234,13 @@ object from choosing.
 **The question.** What deterministic validator is enough before allowing an
 LLM ProjectionWriterAgent to publish manager-facing tracker text?
 
-**Recommendation.** Require: all mandatory links present, lifecycle state
-unchanged, blocking reasons preserved, no forbidden claims, no invented dates
-or owners, and redaction policy applied. Anything else becomes
-`needs_human_review`.
+**Recommendation.** Keep the LLM writer disabled for the first live canary.
+Before enabling it, require a closed `ProjectionIntent` schema and
+deterministic `ProjectionValidation` that checks field-by-field: all mandatory
+links present, lifecycle state unchanged, blocking reasons preserved, no
+forbidden claims, no invented status/owner/date/severity/completion/scope/
+promise, canonical omission rules followed, and redaction policy applied.
+Anything else becomes `needs_human_review`.
 
 **Decision owner:** Ivan. **Resolve before enabling `projection.mode != local_only`.**
 

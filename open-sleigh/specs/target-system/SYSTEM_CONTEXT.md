@@ -169,20 +169,21 @@ escalates to the human at declared decision points.
 | Sub-role | What it does | Analogy |
 |---|---|---|
 | **Phase conductor** | Routes commissions through Preflight → Frame → Execute → Measure; full lemniscate later | A governed pipeline with interlocked gates |
-| **Capability warden** | Enforces scoped toolsets per phase; refuses out-of-scope calls | A firearm range officer: right tool, right lane, or cease fire |
+| **Capability warden** | Enforces scoped toolsets per phase and WorkCommission Scope for mutations | A range officer: right tool, right lane, or cease fire |
 | **Provenance ledger** | Pins `config_hash` + `valid_until` + `authoring_role` on every artifact | A court reporter: every statement is tied to when, who, under which rules |
 | **Human-gate dispatcher** | Fires human approval on declared transitions only | An escalation bell, not a mandatory review loop |
 | **Observation watcher** | Emits anti-Goodhart signals (gate_bypass_rate etc.) as telemetry | A smoke detector: never a target, always a watch |
 
 ### The "narrow autonomy" principle
 
-Inside a phase, the agent has full autonomy within its scoped toolset.
+Inside a phase, the agent has autonomy within its scoped toolset and
+WorkCommission Scope.
 The walls are at phase boundaries, not inside phases.
 
 | Agent autonomous (system does not supervise) | Structural enforcement (system refuses silently-illegal states) | Human-escalated (HumanGate fires) |
 |---|---|---|
-| Editing source files in downstream repo | Calling a tool not in the phase's scoped list | PR targeting `main` |
-| Running tests, reading logs | Writing outside the declared workspace path | External publication or terminal projection update |
+| Editing source files inside WorkCommission Scope | Calling a tool not in the phase's scoped list | PR targeting `main` |
+| Running tests, reading logs | Writing outside workspace or outside WorkCommission Scope | External publication or terminal projection update |
 | Iterating on its own output within `max_turns` | Emitting a `PhaseOutcome` without provenance fields | Creating/approving a WorkCommission or AutonomyEnvelope |
 | Deciding how to decompose a refactor | Skipping a phase in the graph | (MVP-2) Applying a Pareto selection |
 
@@ -200,8 +201,8 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 │                   escalates gates/reviews TO
 │
 ├── Haft (FPF artifact graph, MCP server)
-│     Role: Source of truth for ProblemCards, decisions, WorkCommissions,
-│           RuntimeRuns, evidence, and external projection intent
+│     Role: Authoritative object store for ProblemCards, decisions,
+│           WorkCommissions, RuntimeRuns, evidence, and external projection intent
 │     Relationship: Open-Sleigh is a client; speaks MCP JSON-RPC; pins version
 │
 ├── External tracker (Linear/Jira/GitHub Issues, optional)

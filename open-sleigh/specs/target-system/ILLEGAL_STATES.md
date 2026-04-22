@@ -87,7 +87,7 @@ provenance fields.
 | PR7 | ❌ | `Evidence` without `authoring_source` | **constructor-level** | `@enforce_keys [:kind, :ref, :cl, :authoring_source, :captured_at]` on the struct. |
 | PR8 | ❌ | `HumanGateApproval` with `approver` not in the active `SleighConfig.approvers` | **runtime-guard at `HumanGateListener`** | `HumanGateListener` validates approver against the session's frozen `config_hash` approvers list; mismatch returns `{:error, :approver_not_authorised_for_config_hash}`. |
 | PR9 | ❌ | `HumanGateApproval` without `config_hash` pinned at approval time | **constructor-level** | `@enforce_keys [:approver, :at, :config_hash, :signal_source, :signal_ref]`. |
-| PR10 | ❌ | `PhaseOutcome` from a phase whose `PhaseConfig` declares a human gate, but `gate_results` contains no approved `{:human, HumanGateApproval.t()}` entry | **constructor-level** (v0.5 Q-OS-3 resolution — replaces v0.4's proposed `new_external/3` path) | `PhaseOutcome.new/2` checks gate-config consistency: for each `gate_name` in `phase_config.gates.human`, at least one matching approved `{:human, approval}` must be in `gate_results`. Missing match fails `:human_gate_required_by_phase_config_but_missing`. Single constructor; no bifurcated path. |
+| PR10 | ❌ | `PhaseOutcome` from a phase whose `PhaseConfig` declares a human gate, but `gate_results` contains no approved `{:human, HumanGateApproval.t()}` entry | **constructor-level** (v0.5 Q-OS-3 resolution — replaces v0.4's proposed `new_external/3` path) | `PhaseOutcome.new/2` checks gate-config consistency: for each `gate_name` in `phase_config.gates.human` (`publish_approved`, `one_way_door_approved`, etc.), at least one matching approved `{:human, approval}` must be in `gate_results`. Missing match fails `:human_gate_required_by_phase_config_but_missing`. Single constructor; no bifurcated path. |
 
 ---
 
@@ -238,6 +238,12 @@ Costs are observations, not evidence.
 | WC8 | ❌ | Two batch/YOLO commissions running with overlapping locksets | **runtime-guard** | Scheduler checks lockset intersection before lease grant. |
 | WC9 | ❌ | YOLO AutonomyEnvelope expanding itself mid-run | **constructor-level** | AutonomyEnvelope is immutable after approval; out-of-envelope needs move commission to `:needs_human_review`. |
 | WC10 | ❌ | Agent uncertainty in Preflight mapped to pass | **runtime-guard** | PreflightReport verdict `:needs_human_review` is sticky unless Haft/human resolves; validators reject pass with unresolved material changes. |
+| WC11 | ❌ | RuntimeRun mutates outside WorkCommission Scope but inside `workspace_path` | **runtime-guard** | `AdapterSession.scope` is checked before every mutating adapter call; end-of-run diff validation rejects `:mutation_outside_commission_scope` terminally. |
+| WC12 | ❌ | HumanGateApproval reused after CommissionRevisionSnapshot drift | **runtime-guard** | Approval carries `commission_snapshot_hash`; `start_after_preflight` / `PhaseOutcome.new/2` reject approval when current snapshot hash differs. |
+| WC13 | ❌ | ImplementationPlan revision changes after lease but before Execute without revalidation | **runtime-guard** | `scope_snapshot_fresh` and `start_after_preflight` compare `implementation_plan_revision`; mismatch releases or blocks the lease. |
+| WC14 | ❌ | `external_required` completes local execution with failed publication but no ProjectionDebt | **runtime-guard** | `projection_debt_recorded` gate requires explicit debt state before terminal completion when required external publish did not sync. |
+| WC15 | ❌ | Base SHA / admitted repo context changes after queueing without deterministic re-preflight | **runtime-guard** | `scope_snapshot_fresh` compares `base_sha_seen` with commission snapshot; mismatch blocks before Execute. |
+| WC16 | ❌ | Tracker terminal state displayed as completion without adjacent Haft evidence state | **runtime-guard** | Status/projection renderers must show external carrier state separately from WorkCommission evidence/completion state. |
 
 ## Upstream framing invariants (UP — framing-ownership lock, v0.5)
 
@@ -300,9 +306,9 @@ open but observability captures the signal. "Weak" = primary bypass open.
 | **CT (Continuation Turn)** *new v0.6* | **6** | **1** | **1** | **2** | **2** |
 | **WH (Workspace Hooks)** *new v0.6* | **5** | **0** | **0** | **5** | **0** |
 | **TA (Token Accounting isolation)** *new v0.6* | **3** | **1** | **0** | **1** | **1** |
-| **WC (WorkCommission / Projection)** *new commission-first draft* | **10** | **0** | **1** | **8** | **1** |
+| **WC (WorkCommission / Projection)** *new commission-first draft* | **16** | **0** | **1** | **14** | **1** |
 | UP (Upstream Framing) | 3 | 1 | 0 | 2 | 0 |
-| **Total** | **90** | **17** | **15** | **41** | **17** |
+| **Total** | **96** | **17** | **15** | **47** | **17** |
 
 All rows are **pending** because `mix new` has not yet run. As layers
 land, each row flips to ✅ conditional on the mechanism being implemented

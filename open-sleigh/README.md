@@ -1,6 +1,19 @@
 # Open-Sleigh
 
-Open-Sleigh is a local engineering agent runner for project work:
+Open-Sleigh is a local engineering agent runner for project work.
+
+Current implementation status:
+
+- `open-sleigh/` currently contains a legacy tracker-first CLI runtime used
+  for the bootstrap canary.
+- The Haft monorepo target is commission-first: Haft owns WorkCommissions,
+  RuntimeRuns, Evidence, and optional ExternalProjection; Open-Sleigh executes
+  leased commissions.
+- Until `CommissionSource.Adapter` and `haft_commission.*` are implemented,
+  commission-first wording in specs describes the target path, not current
+  production behavior.
+
+Target runtime loop:
 
 1. claim runnable Haft WorkCommissions,
 2. preflight each commission against its linked DecisionRecord and scope,
@@ -19,7 +32,9 @@ The current product surface is CLI-first and runs on the operator's machine.
 - `codex` with `codex app-server`
 - `haft` with `haft serve`
 - `git`
+- Linear credentials for the current legacy tracker-first canary
 - Linear/Jira/GitHub credentials only when external projections are enabled
+  in the commission-first target
 - A Git repository URL that `git clone` can read
 
 ## Configure
@@ -32,7 +47,7 @@ cp sleigh.md.example sleigh.md
 
 `sleigh.md.example` is the current legacy tracker-first fixture. The
 commission-first target shape for the Haft monorepo integration is documented
-in `sleigh.commission.md.example`.
+in `sleigh.commission.md.example` and is not yet the default runtime spine.
 
 Set the real environment:
 
@@ -46,12 +61,13 @@ export LINEAR_API_KEY=...
 URLs for GitHub, GitLab, self-hosted Git, and local Git remotes work if your
 machine can authenticate.
 
-Open-Sleigh does not require a tracker to run. Work intake is through Haft
-WorkCommissions. A commission carries the ProblemCard/DecisionRecord links,
-scope, evidence requirements, projection policy, and freshness snapshot.
+In the commission-first target, Open-Sleigh does not require a tracker to run.
+Work intake is through Haft WorkCommissions. A commission carries the
+ProblemCard/DecisionRecord links, scope, evidence requirements, projection
+policy, and freshness snapshot.
 
-Legacy tracker-first canary tickets used a ProblemCard reference in the
-description by default:
+The current legacy tracker-first canary still uses tracker tickets and a
+ProblemCard reference in the description by default:
 
 ```text
 problem_card_ref: haft-pc-123
@@ -144,7 +160,10 @@ mix open_sleigh.canary --duration 0s
 
 ## Runtime Flow
 
-- Haft selects runnable WorkCommissions and grants short-lived leases.
+- Current implementation: legacy `TrackerPoller` reads active tracker tickets
+  and constructs sessions from `Ticket` snapshots.
+- Commission-first target: Haft selects runnable WorkCommissions and grants
+  short-lived leases.
 - Open-Sleigh runs a Preflight phase before Execute. Preflight may inspect
   Haft artifacts and repository context, but Haft decides whether execution is
   admissible.
@@ -175,8 +194,9 @@ mix open_sleigh.canary --duration 0s
 
 ## Current Limits
 
-- First commission-first real-run evidence requires a Haft WorkCommission,
-  repository URL, and one canary plan. External tracker credentials are optional.
+- First commission-first real-run evidence requires the new Haft
+  `haft_commission.*` surface, a WorkCommission, repository URL, and one canary
+  plan. External tracker credentials are optional in that path.
 - The production path is Haft + Codex first. Linear/Jira/GitHub are optional
   projection targets; the Claude adapter is a parity skeleton until the Codex
   canary has live evidence.

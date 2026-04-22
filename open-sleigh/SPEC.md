@@ -17,6 +17,11 @@
 
 ## Revision log
 
+- **v0.7.1 (2026-04-22) — commission-first review corrections.**
+  Clarified that the checked-in runtime is still legacy tracker-first until
+  MVP-1R lands, made WorkCommission Scope a hard authority boundary in the
+  target docs, renamed overloaded `commission_approved` HumanGate language,
+  and added the stale/scope canary expectations from the external review.
 - **v0.7 (2026-04-22) — SPEC.md thinning.** SPEC.md refactored from a
   ~1200-line parallel authoring site to a ~300-line umbrella index,
   per the audit:
@@ -92,8 +97,14 @@
 
 A long-running, OTP-supervised **harness engine for AI coding agents** that
 enforces an FPF-compliant governance lifecycle around every commissioned unit
-of work the agent touches. It claims Haft WorkCommissions, preflights the
-linked DecisionRecord and scope, spawns agents per commission, routes them
+of work the agent touches.
+
+**Current reality:** the checked-in runtime is still a legacy tracker-first
+bootstrap canary. It uses tracker tickets as intake while preserving the
+phase/gate/adapter harness.
+
+**Target reality (MVP-1R):** it claims Haft WorkCommissions, preflights the
+linked DecisionRecord and Scope, spawns agents per commission, routes them
 through phase-gated roles, records each phase as an evidenced work-product via
 [Haft](https://github.com/m0n0x41d/quint-code), and only advances across
 one-way doors when gates are green and a human principal or approved autonomy
@@ -207,6 +218,8 @@ documented there.
 **Four phases, linear, single-variant.** Not a lemniscate: no Generate /
 Parity-run / Select, so no Pareto discipline. This is a bootstrap that
 shortcuts straight to implementation with FPF-shaped governance around it.
+The current implementation reaches this through legacy tracker-first intake;
+MVP-1R reaches it through Haft WorkCommission intake.
 
 ```
 Preflight (verify WorkCommission + DecisionRecord freshness)
@@ -225,9 +238,9 @@ Preflight (verify WorkCommission + DecisionRecord freshness)
   harness boundary. In commission-first mode the ref comes from the
   WorkCommission, not tracker text. If it is missing, resolves to a
   self-authored artifact, or is stale, Frame exits `Verdict.fail`.
-- **Execute** — agent implements, runs tests, pushes a PR. If the PR
-  targets an `external_publication` branch, `HumanGate` blocks Measure
-  until `/approve`.
+- **Execute** — agent implements inside WorkCommission Scope, runs tests,
+  pushes a PR. If the PR targets an `external_publication` branch,
+  `one_way_door_approved` blocks Measure until `/approve`.
 - **Measure** — agent calls `haft_decision(measure)`, attaches evidence
   (PR merge sha, CI run id, test counts).
 
@@ -286,7 +299,7 @@ The complete inventory is in `specs/target-system/SCOPE_FREEZE.md
   tests ourselves.
 - **Not a code reviewer.** Codex/Claude do the work. We gate, we don't
   review.
-- **Not a replacement for Haft.** Haft is the FPF source of truth.
+- **Not a replacement for Haft.** Haft is the FPF authority/object store.
 - **Not Linear-specific.** External projection targets are optional carriers.
 - **Not Codex-specific long-term.** `Agent.Adapter` behaviour from day 1;
   Claude designed-in, shipped under Parity Plan.
@@ -328,8 +341,9 @@ path:
 | T1 | WorkCommission **without** a valid `problem_card_ref` | Frame entry: `problem_card_ref_present` MUST hard-fail with `:no_upstream_frame`. Commission never enters Execute. |
 | T1' | WorkCommission with a `problem_card_ref` whose upstream ProblemCard has a vacuous `describedEntity` | Frame exit: `object_of_talk_is_specific` MUST trip. Commission goes back to human; Open-Sleigh does NOT attempt to refine. |
 | T2 | WorkCommission with valid upstream ProblemCard but obligation-heavy body | Execute/Measure exit: `lade_quadrants_split_ok` MUST trip. Agent must decompose before publishing. |
-| T3 | WorkCommission with a valid upstream ProblemCard and clean specific body; PR targets `main` | All gates pass. `commission_approved` HumanGate fires — operator `/approve`s to complete. |
+| T3 | WorkCommission with a valid upstream ProblemCard and clean specific body; PR targets `main` | All gates pass. `one_way_door_approved` HumanGate fires — operator `/approve`s to continue. |
 | T4 | WorkCommission created from DecisionRecord revision R1, then decision superseded to R2 before start | Preflight MUST block as stale; Execute never starts. |
+| T5 | WorkCommission Scope allows `lib/a.ex`; runner mutates `lib/b.ex` inside the same repo | `mutation_within_commission_scope` MUST hard-fail terminally; workspace safety is not enough. |
 
 The canary ticket suite is the **regression set** for every gate,
 prompt, or adapter change. See `specs/target-system/SCOPE_FREEZE.md

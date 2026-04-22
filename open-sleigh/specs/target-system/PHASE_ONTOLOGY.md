@@ -73,6 +73,7 @@ required at L1.
               └──────┬──────┘
                      │ gates: commission_runnable,
                      │        decision_fresh,
+                     │        scope_snapshot_fresh,
                      │        lockset_available,
                      │        autonomy_envelope_allows
                      ▼
@@ -87,8 +88,9 @@ required at L1.
               │  :execute   │
               └──────┬──────┘
                      │ gates: design_runtime_split_ok,
+                     │        mutation_within_commission_scope,
                      │        lade_quadrants_split_ok (semantic)
-                     │ HumanGate: commission_approved
+                     │ HumanGate: one_way_door_approved
                      │            (if PR targets main / release)
                      ▼
               ┌─────────────┐
@@ -96,6 +98,8 @@ required at L1.
               └──────┬──────┘
                      │ gates: evidence_ref_not_self,
                      │        valid_until_field_present,
+                     │        mutation_within_commission_scope,
+                     │        projection_debt_recorded,
                      │        no_self_evidence_semantic
                      ▼
               ┌─────────────┐
@@ -243,10 +247,10 @@ a review finding.
 
 | Phase | Structural gates | Semantic gates | Human gate (trigger) |
 |---|---|---|---|
-| `:preflight` | `commission_runnable`, `decision_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
+| `:preflight` | `commission_runnable`, `decision_fresh`, `scope_snapshot_fresh`, `lockset_available`, `autonomy_envelope_allows` | `context_material_change_review` | — |
 | `:frame` | `problem_card_ref_present`, `described_entity_field_present`, `valid_until_field_present` | `object_of_talk_is_specific` | — |
-| `:execute` | `design_runtime_split_ok` | `lade_quadrants_split_ok` | `commission_approved` (if `external_publication` matches) |
-| `:measure` | `evidence_ref_not_self`, `valid_until_field_present` | `no_self_evidence_semantic` | — |
+| `:execute` | `design_runtime_split_ok`, `mutation_within_commission_scope` | `lade_quadrants_split_ok` | `one_way_door_approved` (if `external_publication` matches) |
+| `:measure` | `evidence_ref_not_self`, `valid_until_field_present`, `mutation_within_commission_scope`, `projection_debt_recorded` | `no_self_evidence_semantic` | — |
 
 ## Gates per phase — MVP-2 additions
 

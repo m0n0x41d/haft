@@ -43,7 +43,7 @@ What it IS:
 - Work authorization surface (turns an accepted decision into bounded,
   auditable execution work when the human chooses to commission it)
 - Optional external projection engine (Linear/Jira/GitHub issue text is a
-  carrier for observers, not Haft's source of truth)
+  carrier for observers, not Haft's semantic authority)
 
 What it is NOT:
 - Not a coding agent (doesn't compete with Claude Code on editing files)

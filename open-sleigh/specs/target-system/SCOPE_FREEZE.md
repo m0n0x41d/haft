@@ -25,7 +25,7 @@ bootstrap implementation already present in `open-sleigh/`.
 | Phases | Frame, Execute, Measure (linear) | `PHASE_ONTOLOGY.md §MVP-1 phase graph` |
 | Structural gates | `described_entity_field_present`, `valid_until_field_present`, `evidence_ref_not_self`, `design_runtime_split_ok` | `GATES.md §1` |
 | Semantic gates | `object_of_talk_is_specific`, `lade_quadrants_split_ok`, `no_self_evidence_semantic` (LLM-judge) | `GATES.md §2` |
-| Human gate | `commission_approved` on PR → `main` and tracker → terminal | `GATES.md §4` |
+| Human gate | Legacy runtime name: `commission_approved`. Commission-first target split: `one_way_door_approved` on PR → `main`; `publish_approved` on tracker → terminal | `GATES.md §4` |
 | Observations | `gate_bypass_rate`, `agent_retry_count_per_ticket`, `human_override_count`, `reopen_after_measure_rate`, `phase_dwell_time_p90`, `judge_false_pos_rate`, `judge_false_neg_rate`, `labeller_agreement_kappa` | `GATES.md §5` |
 | Adapters | Legacy `Tracker.Adapter` impl: Linear. `Agent.Adapter` impl: Codex CLI. `Haft.Client`. `JudgeClient` (uses Codex adapter with judge prompt). | `AGENT_PROTOCOL.md`, `HAFT_CONTRACT.md` |
 | Storage | In-RAM orchestrator state + per-ticket WAL at `~/.open-sleigh/wal/` (commission-first uses per-commission WAL) | `HAFT_CONTRACT.md §3`, `RISKS.md §2` |
@@ -54,6 +54,7 @@ preserving the OTP harness, phase gates, WAL, and status surface.
 | Intake | `CommissionSource.Adapter` talks to Haft for runnable WorkCommissions and leases | `HAFT_CONTRACT.md`, `TARGET_SYSTEM_MODEL.md` |
 | Phase graph | Add `:preflight` before `:frame` | `PHASE_ONTOLOGY.md`, `GATES.md` |
 | Freshness | Block stale/hash-mismatched/superseded decisions before Execute | `GATES.md`, Haft `EXECUTION_CONTRACT.md` |
+| Scope enforcement | Carry Haft Scope into Session/AdapterSession; enforce mutating calls and terminal diff | `TARGET_SYSTEM_MODEL.md`, `GATES.md` |
 | Runtime | `Session` owns WorkCommission, not tracker Ticket | `TARGET_SYSTEM_MODEL.md` |
 | Local-only | Run with no Linear/Jira/GitHub credentials | `SYSTEM_CONTEXT.md`, `TERM_MAP.md` |
 | Optional projection | ExternalProjection is published by Haft, not Open-Sleigh | Haft specs + `HAFT_CONTRACT.md` |

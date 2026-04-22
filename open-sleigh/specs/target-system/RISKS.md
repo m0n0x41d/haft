@@ -35,10 +35,10 @@ All Orchestrator state is in-process Erlang maps. On crash / restart:
 
 - **Lost:** in-flight `AgentWorker` state, unwritten Haft artifacts
   (mitigated by WAL, see `HAFT_CONTRACT.md §3`).
-- **Recovered:** Haft is source of truth for WorkCommissions and persistent
-  evidence; workers respawn on the next poll tick if the commission remains
-  runnable. Legacy tracker-first mode uses tracker state as a bootstrap
-  intake source only.
+- **Recovered:** Haft is the authoritative object store for WorkCommissions
+  and persistent evidence; workers respawn on the next poll tick if the
+  commission remains runnable. Legacy tracker-first mode uses tracker state
+  as a bootstrap intake source only.
 - **Accepted for MVP-1.** The cost of adding SQLite persistence for
   engine state (estimated 3-4 days) is not justified until MVP-2
   concurrency. See `../enabling-system/STACK_DECISION.md §Storage

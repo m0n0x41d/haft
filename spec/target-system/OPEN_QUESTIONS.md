@@ -30,9 +30,22 @@
 
 ## Open-Sleigh Integration Review Questions
 
+## Review Evidence Received — 2026-04-22
+
+The external FPF-aligned review supports the direction but identifies scope
+enforcement and projection validation as the weakest links.
+
+| Question | Review disposition | Follow-up |
+|----------|--------------------|-----------|
+| Q12 WorkCommission boundary | Correct boundary between DecisionRecord and RuntimeRun | Implement Scope as a hard authorization object, not prose metadata. |
+| Q13 ImplementationPlan persistence | Hybrid recommended | Human principal should confirm artifact-vs-internal frontier before implementation. |
+| Q14 ExternalProjection persistence | Hybrid recommended | Persist intent/drift/debt/outcome in Haft; keep connector retries/cursors internal. |
+| Q15 ProjectionWriterAgent validation | Must be deterministic and closed before live publish | Start with deterministic templates; keep LLM writer disabled in first canary. |
+| Q16 Minimum canary | Two canaries, not one | Green local-only path + stale/snapshot-block path before external projection. |
+
 | # | Question | Context | Review need |
 |---|----------|---------|-------------|
-| Q12 | Is `WorkCommission` the right boundary between DecisionRecord and RuntimeRun? | We need decisions to wait safely before execution, and block if stale before work starts. | Confirm name, lifecycle, and whether it belongs in artifact store or a dedicated work table. |
+| Q12 | Is `WorkCommission` the right boundary between DecisionRecord and RuntimeRun? | We need decisions to wait safely before execution, and block if stale before work starts. | Review says yes; implementation now depends on hard Scope and snapshot enforcement. |
 | Q13 | Should `ImplementationPlan` be a first-class artifact? | YOLO/batch mode needs DAG, dependencies, locksets, and envelope. | Decide whether plan is governance artifact, scheduler record, or both. |
 | Q14 | Should ExternalProjection be persisted as an artifact or internal sync record? | Linear/Jira/GitHub projections are optional carriers for external observers. | Balance auditability against artifact graph noise. |
 | Q15 | How strong should ProjectionWriterAgent validation be for manager-language text? | LLM writes low-formalism text, but cannot invent facts or status. | Identify minimum deterministic validator before first real tracker publish. |

@@ -66,29 +66,32 @@
 | Term | Definition | NOT this |
 |------|-----------|----------|
 | **ImplementationPlan** | A graph of intended execution work derived from one or more active DecisionRecords. Contains WorkCommissions, dependencies, locksets, evidence requirements, and scheduling policy. | Not a DecisionRecord. Not a flat TODO list. Not a tracker epic. |
-| **WorkCommission** | Human-authorized, bounded permission to execute a selected DecisionRecord in a declared scope. It records repo, branch/base, affected files, gates, evidence requirements, projection policy, freshness snapshot, and allowed runner policy. | Not the decision itself. Not a Linear/Jira issue. Not a RuntimeRun. |
+| **WorkCommission** | Human-authorized, bounded permission to execute a selected DecisionRecord in a declared Scope. It records repo, branch/base SHA, scope hash, gates, evidence requirements, projection policy, freshness snapshot, and allowed runner policy. | Not the decision itself. Not a Linear/Jira issue. Not a RuntimeRun. Not a prompt hint. |
+| **Scope** | Closed authorization object for what a WorkCommission may touch: repo/ref, base SHA, target branch policy, allowed paths, forbidden paths, affected files/modules, allowed actions, optional allowed modules, and associated lockset. Its canonical serialized form is hashed into the commission snapshot. | Not a fuzzy task description. Not merely affected_files. Not a workspace safety check. |
+| **CommissionSnapshot** | Deterministic equality set frozen when a WorkCommission is queued: DecisionRecord revision/hash, ProblemCard ref/revision, Scope hash, base SHA, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state. Preflight compares this set before Execute. | Not runtime evidence. Not semantic freshness judgement. |
 | **RuntimeRun** | One concrete execution attempt against a WorkCommission by a runner such as Open-Sleigh. Carries runner id, lease, phase outcomes, logs/evidence refs, and terminal result. | Not the WorkCommission. Not proof that the decision is correct. |
 | **Preflight** | Mandatory readiness check before a WorkCommission can enter RuntimeRun execution. Checks commission state, linked DecisionRecord freshness, scope drift, lease ownership, policies, and runner eligibility. | Not implementation. Not a best-effort agent summary. |
 | **AutonomyEnvelope** | Explicit human-approved bounds for batch/YOLO execution: max commissions, concurrency, paths/repos allowed, forbidden actions, risk ceiling, failure strategy, and one-way-door exclusions. | Not unlimited permission. Not a way to skip freshness, evidence, lock, or policy gates. |
 | **Lease** | Short-lived exclusive claim on a WorkCommission or RuntimeRun phase held by one runner. Prevents two agents from executing the same work or overlapping locksets concurrently. | Not ownership of the decision. Not long-term assignment. |
-| **Lockset** | Declared files/modules/resources a WorkCommission may mutate or must avoid overlapping with another running commission. | Not affected_files evidence. Not a git lock. |
+| **Lockset** | Concurrency-control projection of Scope: files/modules/resources used to prevent overlapping running commissions. | Not authorization by itself. Not affected_files evidence. Not a git lock. |
 
 ## External Coordination
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **ExternalProjection** | Idempotent binding from Haft work state to an external coordination carrier such as Linear/Jira/GitHub Issues. Stores external id, desired state, observed state, sync hash, drift, and last sync time. | Not the source of truth. Not `.haft/*.md` artifact Projection. |
+| **ExternalProjection** | Idempotent binding from Haft work state to an external coordination carrier such as Linear/Jira/GitHub Issues. Stores external id, desired state, observed state, sync hash, drift, and last sync time. | Not semantic authority. Not `.haft/*.md` artifact Projection. |
 | **ProjectionPolicy** | WorkCommission/ImplementationPlan setting that determines external publishing: `local_only`, `external_optional`, or `external_required`, plus targets and audience. | Not tracker configuration alone. Not execution permission by itself. |
 | **ProjectionIntent** | Deterministic fact packet saying what should be communicated externally: state, reason, blockers, next actions, required links, redactions, and forbidden claims. | Not prose. Not an LLM decision. |
 | **ProjectionWriterAgent** | Bounded LLM writer that turns ProjectionIntent into plain external text for managers/analysts/leads. It may choose wording only. | Not the authority for status, severity, completion, scope, or promises. |
 | **ProjectionDraft** | Candidate title/body/comment/field update produced from ProjectionIntent by the writer. Must pass validation before publication. | Not published truth until connector writes it. |
-| **ProjectionValidation** | Deterministic check that a ProjectionDraft preserves required facts, includes required links, omits forbidden claims, and does not invent progress/promises. | Not a semantic source of work state. |
+| **ProjectionValidation** | Deterministic check that a ProjectionDraft preserves the closed ProjectionIntent field-by-field, includes required links, follows omission rules, omits forbidden claims, and does not invent status, owner, date, severity, completion, scope, or promises. | Not a semantic source of work state. |
+| **ProjectionDebt** | Explicit state created when a WorkCommission with `external_required` has valid execution evidence but required external publication has not successfully synced. Local execution may be complete; external coordination is not closed. | Not execution failure. Not proof the carrier is authoritative. |
 
 ## Persistence
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **Projection** | Markdown file in `.haft/` generated from the database. Human-readable, git-tracked, reviewable in PRs. Unqualified "Projection" means this artifact projection. | Not the source of truth (database is). Not editable (overwritten on next artifact change). Not ExternalProjection. |
+| **Projection** | Markdown file in `.haft/` generated from the database. Human-readable, git-tracked, reviewable in PRs. Unqualified "Projection" means this artifact projection. | Not semantic authority by itself. Not editable (overwritten on next artifact change). Not ExternalProjection. |
 | **Artifact graph** | The DAG of artifacts: problems link to portfolios link to decisions link to evidence. Stored in SQLite. | Not a file tree. Not a git graph. A semantic relationship graph. |
 | **.haft/ directory** | Project-local directory containing projections, project.yaml, and subdirectories for each artifact kind. Git-tracked. | Not the database. Not config. The shared-with-team surface. |
 | **~/.haft/** | User-local directory: project databases, cross-project index, config, registry. NOT git-tracked. | Not project-specific. Global to the user. |

@@ -54,11 +54,11 @@ semantics are not provisional.
 | Operation | Used by | Purpose |
 |---|---|---|
 | `haft_commission(list_runnable)` | CommissionPoller | Return WorkCommissions eligible for preflight under the selected plan/queue. |
-| `haft_commission(claim_for_preflight)` | Orchestrator | Atomically lease one WorkCommission for this runner. Does not grant Execute. |
+| `haft_commission(claim_for_preflight)` | Orchestrator | Atomically lease one WorkCommission for this runner and return the signed commission snapshot, including Scope. Does not grant Execute. |
 | `haft_commission(record_preflight)` | Preflight phase | Attach PreflightReport and deterministic check results. |
-| `haft_commission(start_after_preflight)` | Orchestrator | Move WorkCommission to running only if Haft validates preflight and policy gates. |
+| `haft_commission(start_after_preflight)` | Orchestrator | Move WorkCommission to running only if Haft validates preflight, CommissionRevisionSnapshot equality, scope hash, base SHA, plan/envelope revisions, lease state, and policy gates. |
 | `haft_commission(record_run_event)` | any phase | Append RuntimeRun/phase status without mutating DecisionRecord truth. |
-| `haft_commission(complete_or_block)` | Measure/terminal | Mark commission completed/failed/blocked with evidence refs. |
+| `haft_commission(complete_or_block)` | Measure/terminal | Mark commission completed/failed/blocked with evidence refs, or completed_with_projection_debt when execution evidence passes but required external publish did not sync. |
 | `haft_projection(intent/draft/publish/observe)` | Projection engine | Optional ExternalProjection lifecycle; may call a ProjectionWriterAgent for wording but Haft owns facts. |
 
 Hard rules:
@@ -66,7 +66,11 @@ Hard rules:
 - Open-Sleigh cannot create, approve, or refresh a WorkCommission on its own.
 - `claim_for_preflight` grants only Preflight. Execute requires
   `start_after_preflight`.
-- External tracker publish failure does not make a RuntimeRun invalid.
+- Scope is an authority boundary. Open-Sleigh must enforce the returned Scope
+  before mutating files and must report terminal diff validation.
+- External tracker publish failure does not make a RuntimeRun invalid. For
+  `external_required`, Haft records ProjectionDebt and withholds external
+  closed status until the debt resolves.
 - Manual external tracker changes are returned to Haft as observed drift,
   never as direct WorkCommission state changes.
 

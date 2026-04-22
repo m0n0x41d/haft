@@ -34,7 +34,7 @@ var initCmd = &cobra.Command{
 This command creates:
   - .haft/ directory structure (knowledge base, evidence, decisions)
   - MCP configuration for selected AI tools
-  - Slash commands / prompts (global by default, or local with --local)
+  - Slash commands / prompts / skills (global by default, or local with --local)
   - Repo-local Air skills when requested
 
 Examples:
@@ -42,6 +42,7 @@ Examples:
   haft init --local      # Claude, local commands (.claude/commands/)
   haft init --all        # All tools, global commands
   haft init --cursor     # Cursor only
+  haft init --codex      # Codex MCP + skills
   haft init --air        # Air skill + Codex-compatible prompts/MCP`,
 	RunE: runInit,
 }
@@ -220,22 +221,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
 		}
 
-		// Air currently uses the same Codex prompt/MCP bootstrap.
-		if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
-			fmt.Printf("  ⚠ Failed to install %s prompts: %v\n", targetName, err)
-		} else {
-			fmt.Printf("  ✓ Installed %d prompts (%s)\n", count, destPath)
-			fmt.Println("    Note: Use /prompts:h-note to invoke")
-		}
-
 		if initCodex {
-			if skillPath, err := installSkill("codex", false, cwd); err != nil {
-				fmt.Printf("  ⚠ Failed to install Codex skill: %v\n", err)
-			} else if skillPath != "" {
-				fmt.Printf("  ✓ Installed Codex skill $h-reason (%s)\n", skillPath)
+			if !initAir {
+				if promptPath, removed, err := cleanupCodexPromptCommands(); err != nil {
+					fmt.Printf("  ⚠ Failed to remove deprecated Codex prompts: %v\n", err)
+				} else if removed > 0 {
+					fmt.Printf("  ✓ Removed %d deprecated Codex prompts (%s)\n", removed, promptPath)
+				}
+			}
+			if skillPath, count, err := installCodexSkills(cwd, initLocal); err != nil {
+				fmt.Printf("  ⚠ Failed to install Codex skills: %v\n", err)
+			} else {
+				fmt.Printf("  ✓ Installed %d Codex skills (%s)\n", count, skillPath)
+				fmt.Println("    Note: Use $h-reason for reasoning; other $h-* skills are explicit-only")
 			}
 		}
 		if initAir {
+			// Air currently uses the same Codex prompt/MCP bootstrap.
+			if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
+				fmt.Printf("  ⚠ Failed to install Air prompts: %v\n", err)
+			} else {
+				fmt.Printf("  ✓ Installed %d Air prompts (%s)\n", count, destPath)
+				fmt.Println("    Note: Use /prompts:h-note to invoke in Air-compatible clients")
+			}
 			if skillPath, err := installSkill("air", true, cwd); err != nil {
 				fmt.Printf("  ⚠ Failed to install Air skill: %v\n", err)
 			} else if skillPath != "" {

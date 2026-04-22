@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`haft init --codex` no longer installs deprecated Codex prompts** — Codex initialization now migrates the bundled `h-*` entrypoints into Codex skills under `.agents/skills`, removes stale Haft prompts from `~/.codex/prompts` when Air is not also requested, and writes `agents/openai.yaml` so only `$h-reason` allows implicit invocation. The phase/action skills (`$h-frame`, `$h-char`, `$h-explore`, `$h-compare`, `$h-decide`, `$h-view`, `$h-verify`, `$h-status`, `$h-search`, `$h-note`, `$h-onboard`, `$h-problems`) are explicit-only. Air keeps its existing prompt bootstrap path.
+
 ## [6.2.0] — 2026-04-20
 
 ### Fixed

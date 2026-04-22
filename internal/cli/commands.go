@@ -96,6 +96,160 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 	return displayPath, count, nil
 }
 
+func installCodexSkills(projectRoot string, local bool) (string, int, error) {
+	homeDir, _ := os.UserHomeDir()
+	skillsRoot := codexSkillsRoot(homeDir, projectRoot, local)
+
+	if err := os.MkdirAll(skillsRoot, 0755); err != nil {
+		return "", 0, err
+	}
+
+	cleanupOldCodexSkills(skillsRoot)
+
+	reasonSkill := transformCodexSkillReferences(string(embeddedHReasonSkill))
+	if err := writeCodexSkill(skillsRoot, "h-reason", reasonSkill, true); err != nil {
+		return "", 0, err
+	}
+
+	entries, err := embeddedCommands.ReadDir("commands")
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to read embedded commands: %w", err)
+	}
+
+	count := 1
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		content, err := embeddedCommands.ReadFile("commands/" + entry.Name())
+		if err != nil {
+			continue
+		}
+
+		name := strings.TrimSuffix(entry.Name(), ".md")
+		skill := transformCodexCommandSkill(name, string(content))
+		if err := writeCodexSkill(skillsRoot, name, skill, false); err != nil {
+			continue
+		}
+		count++
+	}
+
+	return displayHomePath(skillsRoot, homeDir), count, nil
+}
+
+func codexSkillsRoot(homeDir, projectRoot string, local bool) string {
+	if local {
+		return filepath.Join(projectRoot, ".agents", "skills")
+	}
+	return filepath.Join(homeDir, ".agents", "skills")
+}
+
+func cleanupOldCodexSkills(skillsRoot string) {
+	for _, cmd := range deprecatedCommands {
+		_ = os.RemoveAll(filepath.Join(skillsRoot, cmd))
+	}
+}
+
+func writeCodexSkill(skillsRoot, name, content string, allowImplicit bool) error {
+	skillDir := filepath.Join(skillsRoot, name)
+	if err := os.MkdirAll(filepath.Join(skillDir, "agents"), 0755); err != nil {
+		return err
+	}
+
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	return writeCodexSkillPolicy(skillDir, allowImplicit)
+}
+
+func transformCodexCommandSkill(name, content string) string {
+	description := extractFrontmatterDescription(content)
+	if description == "" {
+		description = "Haft command: " + name
+	}
+
+	body := stripMarkdownFrontmatter(content)
+	body = transformCodexSkillReferences(body)
+	body = strings.ReplaceAll(body, "$ARGUMENTS", "Use the user's explicit skill invocation text as the request context.")
+	body = strings.TrimSpace(body)
+
+	return fmt.Sprintf(`---
+name: %s
+description: %s
+---
+
+## Codex Invocation
+
+This skill is explicit-only. Use it only when the user invokes $%s; treat the text after the skill name as the request context.
+
+%s
+`, name, yamlDoubleQuote(description), name, body)
+}
+
+func transformCodexSkillReferences(content string) string {
+	replacer := strings.NewReplacer(
+		"/h-", "$h-",
+		"Slash commands", "Explicit skill invocations",
+		"slash commands", "explicit skill invocations",
+		"Slash command", "Explicit skill",
+		"slash command", "explicit skill",
+		"Quint", "Haft",
+		"quint", "haft",
+	)
+	return replacer.Replace(content)
+}
+
+func stripMarkdownFrontmatter(content string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return content
+	}
+
+	start := 4 + end + len("\n---")
+	return strings.TrimLeft(content[start:], "\r\n")
+}
+
+func extractFrontmatterDescription(content string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return ""
+	}
+
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return ""
+	}
+
+	frontmatter := content[4 : 4+end]
+	scanner := bufio.NewScanner(strings.NewReader(frontmatter))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "description:") {
+			continue
+		}
+
+		value := strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		return strings.Trim(value, `"`)
+	}
+
+	return ""
+}
+
+func yamlDoubleQuote(value string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+	)
+	return `"` + replacer.Replace(value) + `"`
+}
+
 var deprecatedCommands = []string{
 	// v4 commands
 	"q0-init", "q-decay", "q-actualize", "q1-add", "q-implement",
@@ -104,7 +258,7 @@ var deprecatedCommands = []string{
 	// v5 q-prefix (renamed to h-prefix)
 	"q-apply", "q-char", "q-compare", "q-decide", "q-explore",
 	"q-frame", "q-note", "q-onboard", "q-problems", "q-refresh",
-	"q-search", "q-status",
+	"q-reason", "q-search", "q-status",
 	// v6 h-refresh replaced by h-verify
 	"h-refresh",
 }
@@ -114,6 +268,38 @@ func cleanupOldCommands(destDir string, ext string) {
 		path := filepath.Join(destDir, cmd+ext)
 		_ = os.Remove(path) // ignore error - file may not exist
 	}
+}
+
+func cleanupCodexPromptCommands() (string, int, error) {
+	homeDir, _ := os.UserHomeDir()
+	destDir := filepath.Join(homeDir, ".codex", "prompts")
+
+	entries, err := embeddedCommands.ReadDir("commands")
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to read embedded commands: %w", err)
+	}
+
+	names := append([]string{}, deprecatedCommands...)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(entry.Name(), ".md"))
+	}
+
+	removed := 0
+	for _, name := range names {
+		path := filepath.Join(destDir, name+".md")
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			return "", removed, err
+		}
+		removed++
+	}
+
+	return displayHomePath(destDir, homeDir), removed, nil
 }
 
 func transformClaude(filename, content string) (string, string) {
@@ -214,13 +400,42 @@ func installSkill(platform string, local bool, projectRoot string) (string, erro
 	}
 
 	destPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(destPath, embeddedHReasonSkill, 0644); err != nil {
+	content := embeddedHReasonSkill
+	if platform == "codex" {
+		content = []byte(transformCodexSkillReferences(string(embeddedHReasonSkill)))
+	}
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
 		return "", fmt.Errorf("failed to write skill: %w", err)
 	}
 
-	displayPath := skillDir
-	if strings.HasPrefix(skillDir, homeDir) {
-		displayPath = "~" + strings.TrimPrefix(skillDir, homeDir)
+	if platform == "codex" {
+		if err := writeCodexSkillPolicy(skillDir, true); err != nil {
+			return "", fmt.Errorf("failed to write skill policy: %w", err)
+		}
 	}
-	return displayPath, nil
+
+	return displayHomePath(skillDir, homeDir), nil
+}
+
+func writeCodexSkillPolicy(skillDir string, allowImplicit bool) error {
+	agentsDir := filepath.Join(skillDir, "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return err
+	}
+
+	policy := fmt.Sprintf("policy:\n  allow_implicit_invocation: %t\n", allowImplicit)
+	return os.WriteFile(filepath.Join(agentsDir, "openai.yaml"), []byte(policy), 0644)
+}
+
+func displayHomePath(path, homeDir string) string {
+	displayPath := path
+	if homeDir == "" {
+		return displayPath
+	}
+
+	homePrefix := homeDir + string(os.PathSeparator)
+	if path == homeDir || strings.HasPrefix(path, homePrefix) {
+		displayPath = "~" + strings.TrimPrefix(path, homeDir)
+	}
+	return displayPath
 }

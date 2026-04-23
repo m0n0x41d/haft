@@ -32,7 +32,6 @@ defmodule OpenSleigh.MixProject do
     ]
   end
 
-  defp extra_applications(:prod), do: [:logger]
   defp extra_applications(_env), do: [:logger, :mix]
 
   defp releases do

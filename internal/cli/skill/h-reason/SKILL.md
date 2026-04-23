@@ -52,6 +52,7 @@ Full cycle including decide + implement without pauses. If autonomous mode is OF
 | `haft_problem` | Frame problems and persist characterization dimensions on the ProblemCard | `/h-frame`, `/h-char` |
 | `haft_solution` | Explore variants, compare and identify Pareto front | `/h-explore`, `/h-compare` |
 | `haft_decision` | Decide with formal rationale; record measurement results | `/h-decide` |
+| `haft_commission` | Create/list/claim WorkCommissions for execution harnesses | `/h-commission` |
 | `haft_refresh` | Detect stale decisions, manage lifecycle | `/h-verify` |
 | `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec lookup, deterministic audience projections | `/h-search`, `/h-status`, `/h-view` |
 
@@ -183,8 +184,8 @@ The decision record should contain:
 
 Projections render the same artifact graph for a different audience — no new semantics.
 
-**Persist with:** `haft_decision(action="decide")`, `haft_decision(action="baseline")`
-**Commands:** `/h-decide`, `/h-view`
+**Persist with:** `haft_decision(action="decide")`, `haft_decision(action="baseline")`, `haft_commission(...)`
+**Commands:** `/h-decide`, `/h-view`, `/h-commission`
 
 ### Verify — "Did it work? Is it still valid?"
 

@@ -43,7 +43,7 @@ Everything below is built, tested, and being merged to main.
 
 ### Skill & Commands
 - h-reason skill with 5-mode model (Understand/Explore/Choose/Execute/Verify)
-- 12 slash commands: h-frame, h-char, h-explore, h-compare, h-decide, h-verify, h-note, h-status, h-search, h-problems, h-onboard, h-view
+- 13 slash commands: h-frame, h-char, h-explore, h-compare, h-decide, h-verify, h-note, h-status, h-search, h-problems, h-onboard, h-view, h-commission
 - Probe-or-commit readiness gate
 - Language precision triggers in skill instructions
 - Audience projections: engineer, manager, audit, compare, delegated-agent, change-rationale

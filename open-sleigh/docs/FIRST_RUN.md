@@ -64,6 +64,7 @@ task open-sleigh:smoke-real-haft-dynamic
 task open-sleigh:smoke-real-haft-from-decision
 task open-sleigh:smoke-real-haft-batch
 task open-sleigh:smoke-real-haft-plan
+task open-sleigh:smoke-harness-command
 task open-sleigh:harness-haft
 task open-sleigh:harness-from-decision DECISION=dec-...
 task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b"
@@ -75,7 +76,57 @@ temporary Haft project, creates a real `WorkCommission` with `haft commission
 create`, starts Open-Sleigh against a real temporary `haft serve`, waits for
 idle, and verifies no runnable commissions remain.
 
-For manual local setup, seed the project through the CLI:
+For normal operator use, use the packaged Haft command:
+
+```sh
+# normal path: all active DecisionRecords without WorkCommissions
+haft harness run
+
+# one decision, explicit override
+haft harness run dec-...
+
+# several independent decisions, explicit override
+haft harness run dec-a dec-b dec-c
+
+# all active decisions linked to one ProblemCard
+haft harness run --problem prob-...
+
+# all active decisions in one optional Haft context
+haft harness run --context harness-mvp
+
+# the whole active DecisionRecord backlog, including already commissioned decisions
+haft harness run --all-active-decisions
+
+# ordered decisions: dec-b waits for dec-a, dec-c waits for dec-b
+haft harness run dec-a dec-b dec-c --sequential
+
+# dry smoke: create commissions, run one mock Open-Sleigh pass, then exit
+haft harness run --mock --once
+
+# prepare only: generate .haft/plans/*.yaml and WorkCommissions, do not start runtime
+haft harness run --prepare-only
+```
+
+`haft harness run` is the preferred path. With no selectors it selects active
+DecisionRecords that do not already have WorkCommissions. `context` is only an
+optional Haft metadata filter; the operator does not need to maintain one for
+normal use. The command generates an observable plan under `.haft/plans/`,
+creates/reuses WorkCommissions, writes a temporary `sleigh.md`, and starts
+Open-Sleigh. Reusing the same `--plan` does not create duplicate commissions
+unless `--force-create-commissions` is set.
+
+Runtime lookup order:
+
+1. `--runtime`
+2. `HAFT_OPEN_SLEIGH_RUNTIME` or `OPEN_SLEIGH_RUNTIME`
+3. repo-local `open-sleigh/`
+4. installed runtime at `~/.haft/runtimes/open-sleigh/current`
+
+Release installs use the installed runtime and do not require users to install
+Elixir/Mix for normal harness runs. Source checkout runs may still use `mix`
+directly.
+
+For lower-level manual setup, seed the project through the commission CLI:
 
 ```sh
 haft commission create-from-decision dec-... \
@@ -129,6 +180,13 @@ using `haft commission create-batch`.
 For an operator run against a real local DecisionRecord:
 
 ```sh
+haft harness run
+haft harness run dec-...
+haft harness run --problem prob-...
+haft harness run --context harness-mvp
+haft harness run --all-active-decisions
+haft harness run dec-a dec-b dec-c --sequential
+haft harness run --plan .haft/plans/implementation.yaml
 task open-sleigh:harness-from-decision DECISION=dec-...
 task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b dec-c"
 task open-sleigh:harness-plan PLAN=.haft/plans/implementation.yaml

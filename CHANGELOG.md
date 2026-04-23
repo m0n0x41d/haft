@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`/h-commission` operator command** — plugin-mode users now have an explicit entrypoint for the DecisionRecord → WorkCommission authorization step. `/h-commission` creates/reuses WorkCommissions without starting execution. Codex installs it as an explicit-only `$h-commission` skill; starting Open-Sleigh remains a CLI/Desktop runtime boundary via `haft harness run`.
+- **Packaged Open-Sleigh runtime install path** — `task install`, release archives, and `install.sh` now treat Open-Sleigh as a first-class Haft runtime under `~/.haft/runtimes/open-sleigh/current`. `haft harness run` can launch either a repo-local source runtime through `mix` or an installed release runtime through `bin/open_sleigh`, so release users do not need a local `open-sleigh/` checkout for harness runs.
+
 ## [6.2.1] — 2026-04-22
 
 ### Fixed

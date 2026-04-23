@@ -131,10 +131,38 @@ haft check
 ### WorkCommission harness
 
 Open-Sleigh uses `WorkCommission` as the bounded execution authority between a
-DecisionRecord and a runtime run. The MCP tool is `haft_commission`; the local
-CLI helper is:
+DecisionRecord and a runtime run. In plugin mode, use `/h-commission` to create
+the missing WorkCommissions without starting execution. In Codex this installs
+as an explicit-only `$h-commission` skill.
+
+The packaged CLI path is:
 
 ```bash
+haft harness run --prepare-only  # create/reuse commissions, do not start runtime
+haft harness run                 # create/reuse commissions and start Open-Sleigh
+```
+
+Starting Open-Sleigh is an operator/runtime action. Use the CLI or desktop
+surface for that boundary rather than a plugin slash command.
+
+Release installs include the Open-Sleigh runtime under:
+
+```text
+~/.haft/runtimes/open-sleigh/current
+```
+
+`haft harness run` uses a repo-local `open-sleigh/` checkout when present and
+falls back to that installed runtime. Release archives bundle the BEAM runtime,
+so users do not need to install Elixir/Mix for normal harness use. Source
+fallback installs may install Elixir when they need to build the runtime
+locally.
+
+The lower-level MCP tool is `haft_commission`; the local CLI helper is:
+
+```bash
+haft commission create-from-decision dec-...
+haft commission create-batch dec-a dec-b
+haft commission create-from-plan .haft/plans/implementation.yaml
 haft commission create --json commission.json
 haft commission list-runnable
 haft commission claim wc-...

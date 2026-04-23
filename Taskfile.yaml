@@ -6,6 +6,8 @@ vars:
   TUI_DIR: tui
   TUI_BUNDLE: tui/dist/tui.mjs
   TUI_INSTALL_DIR: ~/.haft/tui
+  OPEN_SLEIGH_RELEASE_DIR: open-sleigh/_build/prod/rel/open_sleigh
+  OPEN_SLEIGH_INSTALL_DIR: ~/.haft/runtimes/open-sleigh/current
   FPF_SPEC: data/FPF/FPF-Spec.md
   FPF_DB: internal/cli/fpf.db
   DESKTOP_APP_NAME: Haft
@@ -70,8 +72,8 @@ tasks:
       - '{{.BIN_NAME}}'
 
   install:
-    desc: Build and install haft (CLI + TUI) locally
-    deps: [tui, fpf-refresh]
+    desc: Build and install haft (CLI + TUI + Open-Sleigh runtime) locally
+    deps: [tui, fpf-refresh, open-sleigh:install-runtime]
     cmds:
       # Remove any stale `haft` in GOBIN so PATH picks up BIN_DIR/haft,
       # not a leftover `go install`'d binary from an older build.
@@ -81,6 +83,7 @@ tasks:
       - cp {{.TUI_BUNDLE}} {{.TUI_INSTALL_DIR}}/bundle.mjs
       - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
       - echo "Installed {{.TUI_INSTALL_DIR}}/bundle.mjs"
+      - echo "Installed {{.OPEN_SLEIGH_INSTALL_DIR}}"
       - echo "Desktop — run task desktop:install separately (requires Rust toolchain)"
 
   dev:
@@ -228,6 +231,26 @@ tasks:
     cmds:
       - bash scripts/open_sleigh_real_haft_plan_smoke.sh
 
+  open-sleigh:smoke-harness-command:
+    desc: Prove one haft harness command can create commissions and run Open-Sleigh
+    cmds:
+      - bash scripts/open_sleigh_harness_command_smoke.sh
+
+  open-sleigh:release:
+    desc: Build packaged Open-Sleigh runtime release
+    dir: open-sleigh
+    cmds:
+      - MIX_ENV=prod mix deps.get --only prod
+      - MIX_ENV=prod mix release --overwrite
+
+  open-sleigh:install-runtime:
+    desc: Install packaged Open-Sleigh runtime under ~/.haft
+    deps: [open-sleigh:release]
+    cmds:
+      - rm -rf {{.OPEN_SLEIGH_INSTALL_DIR}}
+      - mkdir -p "$(dirname {{.OPEN_SLEIGH_INSTALL_DIR}})"
+      - cp -R {{.OPEN_SLEIGH_RELEASE_DIR}} {{.OPEN_SLEIGH_INSTALL_DIR}}
+
   open-sleigh:harness:
     desc: Run local Open-Sleigh commission harness with real agent and mock Haft/Judge
     dir: open-sleigh
@@ -260,14 +283,17 @@ tasks:
     cmds:
       - rm -f {{.BIN_NAME}}
       - rm -rf tui/dist
+      - rm -rf open-sleigh/_build
 
   cleanup:
     desc: Remove all built binaries and installed files
     cmds:
       - rm -f {{.BIN_NAME}}
       - rm -rf tui/dist
+      - rm -rf open-sleigh/_build
       - rm -f {{.BIN_DIR}}/{{.BIN_NAME}}
       - rm -rf {{.TUI_INSTALL_DIR}}
+      - rm -rf ~/.haft/runtimes/open-sleigh
       - rm -rf ~/Applications/{{.DESKTOP_APP_NAME}}.app
       - rm -f ~/.haft/bin/haft-desktop
       - rm -f ~/.local/share/applications/haft.desktop

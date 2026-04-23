@@ -28,7 +28,19 @@ The current product surface is CLI-first and runs on the operator's machine.
 
 ## Requirements
 
+For source checkout development:
+
 - Elixir 1.18
+- `codex` with `codex app-server`
+- `haft` with `haft serve`
+- `git`
+
+Haft release installs ship Open-Sleigh as a packaged runtime under
+`~/.haft/runtimes/open-sleigh/current`; normal release users do not need
+Elixir/Mix unless they build the runtime from source.
+
+Runtime execution still needs:
+
 - `codex` with `codex app-server`
 - `haft` with `haft serve`
 - `git`

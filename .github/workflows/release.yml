@@ -52,7 +52,7 @@ jobs:
           - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { runner: macos-latest,     goos: darwin, goarch: arm64 }
-          - { runner: macos-latest,      goos: darwin, goarch: amd64 }
+          - { runner: macos-13,         goos: darwin, goarch: amd64 }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -64,6 +64,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.3'
 
       - name: Prepare desktop embed
         run: |
@@ -94,12 +98,20 @@ jobs:
               -X github.com/m0n0x41d/haft/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o haft ./cmd/haft/
 
+      - name: Build Open-Sleigh runtime
+        run: |
+          cd open-sleigh
+          MIX_ENV=prod mix deps.get --only prod
+          MIX_ENV=prod mix release --overwrite
+
       - name: Package
         run: |
           mkdir -p _dist
           cp tui/dist/tui.mjs .
+          mkdir -p runtimes/open-sleigh
+          cp -R open-sleigh/_build/prod/rel/open_sleigh/. runtimes/open-sleigh/
           tar czf _dist/haft-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz \
-            haft tui.mjs README.md LICENSE CHANGELOG.md
+            haft tui.mjs runtimes README.md LICENSE CHANGELOG.md
 
       - uses: actions/upload-artifact@v4
         with:

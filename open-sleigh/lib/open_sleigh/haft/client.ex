@@ -110,11 +110,27 @@ defmodule OpenSleigh.Haft.Client do
     with {:ok, encoded} <- Protocol.encode_call(id, tool, action, params, session),
          {:ok, response_line} <- invoke_fun.(encoded),
          {:ok, {^id, result}} <- Protocol.decode_response(response_line) do
-      {:ok, Jason.encode!(result)}
+      tool_result(result)
     else
       {:ok, {_other_id, _}} -> {:error, :response_parse_error}
       {:error, _} = err -> err
     end
+  end
+
+  @doc """
+  Record a WorkCommission lifecycle event through Haft.
+
+  Legacy tracker-first sessions do not carry a `commission_id`; for those,
+  lifecycle recording is intentionally a no-op so existing tracker canaries
+  keep their old semantics.
+  """
+  @spec record_commission_lifecycle(AdapterSession.t(), atom(), map(), invoke_fun()) ::
+          :ok | {:error, EffectError.t()}
+  def record_commission_lifecycle(%AdapterSession{} = session, action, params, invoke_fun)
+      when is_atom(action) and is_map(params) and is_function(invoke_fun, 1) do
+    session
+    |> commission_id()
+    |> record_commission_lifecycle_for_id(session, action, params, invoke_fun)
   end
 
   @doc "Fetch the upstream ProblemCard referenced by a tracker ticket."
@@ -132,6 +148,34 @@ defmodule OpenSleigh.Haft.Client do
   end
 
   # ——— helpers ———
+
+  @spec tool_result(map()) :: {:ok, binary()} | {:error, EffectError.t()}
+  defp tool_result(%{"isError" => true} = result) do
+    result
+    |> tool_error_reason()
+    |> then(&{:error, &1})
+  end
+
+  defp tool_result(result), do: {:ok, Jason.encode!(result)}
+
+  @spec tool_error_reason(map()) :: EffectError.t()
+  defp tool_error_reason(%{"content" => content}) when is_list(content) do
+    content
+    |> Enum.find_value(&content_error_reason/1)
+    |> known_tool_error()
+  end
+
+  defp tool_error_reason(_result), do: :tool_execution_failed
+
+  @spec content_error_reason(map() | term()) :: String.t() | nil
+  defp content_error_reason(%{"text" => text}) when is_binary(text), do: String.trim(text)
+  defp content_error_reason(_content), do: nil
+
+  @spec known_tool_error(String.t() | nil) :: EffectError.t()
+  defp known_tool_error("commission_not_found"), do: :commission_not_found
+  defp known_tool_error("commission_not_runnable"), do: :commission_not_runnable
+  defp known_tool_error("commission_lock_conflict"), do: :commission_lock_conflict
+  defp known_tool_error(_reason), do: :tool_execution_failed
 
   @spec decode_tool_result(binary()) :: {:ok, map()} | {:error, :response_parse_error}
   defp decode_tool_result(encoded) do
@@ -260,31 +304,46 @@ defmodule OpenSleigh.Haft.Client do
   defp normalize_authoring_source(:open_sleigh_self), do: :open_sleigh_self
   defp normalize_authoring_source(value), do: value
 
-  @spec action_for_phase(atom()) :: atom()
-  defp action_for_phase(:frame), do: :frame
-  defp action_for_phase(:execute), do: :apply
-  defp action_for_phase(:measure), do: :measure
-  defp action_for_phase(_), do: :note
+  @spec action_for_phase(atom()) :: :note
+  defp action_for_phase(_phase), do: :note
 
   @spec tool_for_phase(atom()) :: Protocol.tool()
-  defp tool_for_phase(:frame), do: :haft_problem
-  defp tool_for_phase(:execute), do: :haft_note
-  defp tool_for_phase(:measure), do: :haft_decision
-  defp tool_for_phase(_), do: :haft_note
+  defp tool_for_phase(_phase), do: :haft_note
 
   @spec serialise_outcome(PhaseOutcome.t(), artifact_identity()) :: map()
   defp serialise_outcome(%PhaseOutcome{} = o, identity) do
     %{
+      "title" => phase_note_title(o),
       "phase" => Atom.to_string(o.phase),
       "config_hash" => o.config_hash,
       "valid_until" => DateTime.to_iso8601(o.valid_until),
       "authoring_role" => Atom.to_string(o.authoring_role),
       "self_id" => o.self_id,
-      "rationale" => o.rationale,
+      "rationale" => phase_note_rationale(o),
       "work_product" => o.work_product,
       "evidence" => Enum.map(o.evidence, &serialise_evidence/1)
     }
     |> put_artifact_identity(identity)
+  end
+
+  @spec phase_note_title(PhaseOutcome.t()) :: String.t()
+  defp phase_note_title(%PhaseOutcome{} = outcome) do
+    "Open-Sleigh " <> Atom.to_string(outcome.phase) <> " outcome"
+  end
+
+  @spec phase_note_rationale(PhaseOutcome.t()) :: String.t()
+  defp phase_note_rationale(%PhaseOutcome{rationale: rationale})
+       when is_binary(rationale) and rationale != "" do
+    rationale
+  end
+
+  defp phase_note_rationale(%PhaseOutcome{work_product: %{text: text}})
+       when is_binary(text) and text != "" do
+    "Open-Sleigh phase output: " <> text
+  end
+
+  defp phase_note_rationale(%PhaseOutcome{} = outcome) do
+    "Open-Sleigh recorded " <> Atom.to_string(outcome.phase) <> " phase outcome."
   end
 
   @spec put_artifact_identity(map(), artifact_identity()) :: map()
@@ -327,6 +386,48 @@ defmodule OpenSleigh.Haft.Client do
   @spec commission_id(AdapterSession.t()) :: String.t() | nil
   defp commission_id(%AdapterSession{} = session) do
     Map.get(session, :commission_id)
+  end
+
+  @spec record_commission_lifecycle_for_id(
+          String.t() | nil,
+          AdapterSession.t(),
+          atom(),
+          map(),
+          invoke_fun()
+        ) :: :ok | {:error, EffectError.t()}
+  defp record_commission_lifecycle_for_id(nil, _session, _action, _params, _invoke_fun), do: :ok
+
+  defp record_commission_lifecycle_for_id("", _session, _action, _params, _invoke_fun), do: :ok
+
+  defp record_commission_lifecycle_for_id(
+         "legacy-ticket:" <> _id,
+         _session,
+         _action,
+         _params,
+         _invoke_fun
+       ),
+       do: :ok
+
+  defp record_commission_lifecycle_for_id(commission_id, session, action, params, invoke_fun)
+       when is_binary(commission_id) do
+    params
+    |> Map.put("commission_id", commission_id)
+    |> Map.put_new("runner_id", runner_id(session))
+    |> call_tool_ok(session, :haft_commission, action, invoke_fun)
+  end
+
+  @spec call_tool_ok(map(), AdapterSession.t(), Protocol.tool(), atom(), invoke_fun()) ::
+          :ok | {:error, EffectError.t()}
+  defp call_tool_ok(params, session, tool, action, invoke_fun) do
+    case call_tool(session, tool, action, params, invoke_fun) do
+      {:ok, _result} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @spec runner_id(AdapterSession.t()) :: String.t()
+  defp runner_id(%AdapterSession{} = session) do
+    "open-sleigh:" <> session.session_id
   end
 
   @spec serialise_evidence(OpenSleigh.Evidence.t()) :: map()

@@ -46,6 +46,8 @@ defmodule OpenSleigh.AgentWorker do
     WorkspaceManager
   }
 
+  alias OpenSleigh.Agent.Adapter, as: AgentAdapter
+
   require Logger
 
   @typedoc "Per-run context bundle (all injected, no module globals)."
@@ -124,14 +126,9 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec finalize_result(session_result(), ctx()) :: :ok
   defp finalize_result({:ok, outcome}, ctx) do
-    case write_to_haft(ctx, outcome) do
-      {:ok, _artifact_id} ->
-        _ = run_hook_best_effort(ctx, :after_run)
-        notify_orchestrator(ctx, {:outcome, ctx.session.id, outcome})
-
-      {:error, reason} ->
-        _ = run_hook_best_effort(ctx, :after_run)
-        notify_orchestrator(ctx, {:error, ctx.session.id, reason})
+    case validate_terminal_diff_scope(ctx) do
+      :ok -> finalize_valid_outcome(outcome, ctx)
+      {:error, reason} -> finalize_invalid_outcome(reason, ctx)
     end
   end
 
@@ -143,6 +140,25 @@ defmodule OpenSleigh.AgentWorker do
   defp finalize_result({:await_human, outcome_attrs}, ctx) do
     _ = run_hook_best_effort(ctx, :after_run)
     notify_orchestrator(ctx, {:await_human, ctx.session.id, outcome_attrs})
+  end
+
+  @spec finalize_valid_outcome(PhaseOutcome.t(), ctx()) :: :ok
+  defp finalize_valid_outcome(outcome, ctx) do
+    case write_to_haft(ctx, outcome) do
+      {:ok, _artifact_id} ->
+        _ = run_hook_best_effort(ctx, :after_run)
+        notify_orchestrator(ctx, {:outcome, ctx.session.id, outcome})
+
+      {:error, reason} ->
+        _ = run_hook_best_effort(ctx, :after_run)
+        notify_orchestrator(ctx, {:error, ctx.session.id, reason})
+    end
+  end
+
+  @spec finalize_invalid_outcome(atom(), ctx()) :: :ok
+  defp finalize_invalid_outcome(reason, ctx) do
+    _ = run_hook_best_effort(ctx, :after_run)
+    notify_orchestrator(ctx, {:error, ctx.session.id, reason})
   end
 
   @spec prepare_workspace(ctx()) ::
@@ -645,6 +661,101 @@ defmodule OpenSleigh.AgentWorker do
   end
 
   defp build_evidence(_phase, _reply, _now), do: []
+
+  @spec validate_terminal_diff_scope(ctx()) :: :ok | {:error, atom()}
+  defp validate_terminal_diff_scope(ctx) do
+    ctx
+    |> changed_paths()
+    |> terminal_diff_scope_result(ctx)
+  end
+
+  @spec terminal_diff_scope_result({:ok, [Path.t()]} | {:error, atom()}, ctx()) ::
+          :ok | {:error, atom()}
+  defp terminal_diff_scope_result({:ok, changed_paths}, ctx) do
+    AgentAdapter.validate_terminal_diff(ctx.session.adapter_session, changed_paths)
+  end
+
+  defp terminal_diff_scope_result({:error, _reason} = error, _ctx), do: error
+
+  @spec changed_paths(ctx()) :: {:ok, [Path.t()]} | {:error, atom()}
+  defp changed_paths(ctx) do
+    ctx
+    |> workspace_path()
+    |> changed_paths_in_workspace()
+  end
+
+  @spec workspace_path(ctx()) :: Path.t()
+  defp workspace_path(ctx) do
+    ctx
+    |> Map.get(:workspace_root, ".")
+    |> Path.join(ctx.session.ticket.id)
+  end
+
+  @spec changed_paths_in_workspace(Path.t()) :: {:ok, [Path.t()]} | {:error, atom()}
+  defp changed_paths_in_workspace(workspace) do
+    workspace
+    |> git_workspace?()
+    |> changed_paths_for_git_workspace(workspace)
+  end
+
+  @spec git_workspace?(Path.t()) :: boolean()
+  defp git_workspace?(workspace) do
+    workspace
+    |> Path.join(".git")
+    |> File.exists?()
+  end
+
+  @spec changed_paths_for_git_workspace(boolean(), Path.t()) ::
+          {:ok, [Path.t()]} | {:error, atom()}
+  defp changed_paths_for_git_workspace(false, _workspace), do: {:ok, []}
+
+  defp changed_paths_for_git_workspace(true, workspace) do
+    "git"
+    |> System.find_executable()
+    |> git_status(workspace)
+  end
+
+  @spec git_status(String.t() | nil, Path.t()) :: {:ok, [Path.t()]} | {:error, atom()}
+  defp git_status(nil, _workspace), do: {:error, :tool_execution_failed}
+
+  defp git_status(git, workspace) do
+    git
+    |> System.cmd(["-C", workspace, "status", "--porcelain", "--untracked-files=all"],
+      stderr_to_stdout: true
+    )
+    |> git_status_result()
+  rescue
+    ErlangError -> {:error, :tool_execution_failed}
+  end
+
+  @spec git_status_result({String.t(), non_neg_integer()}) ::
+          {:ok, [Path.t()]} | {:error, atom()}
+  defp git_status_result({output, 0}) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.map(&git_status_path/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+    |> then(&{:ok, &1})
+  end
+
+  defp git_status_result({_output, _status}), do: {:error, :tool_execution_failed}
+
+  @spec git_status_path(String.t()) :: Path.t()
+  defp git_status_path(line) do
+    line
+    |> String.slice(3..-1//1)
+    |> String.trim()
+    |> git_status_destination_path()
+  end
+
+  @spec git_status_destination_path(Path.t()) :: Path.t()
+  defp git_status_destination_path(path) do
+    path
+    |> String.split(" -> ")
+    |> List.last()
+    |> to_string()
+  end
 
   @spec write_to_haft(ctx(), PhaseOutcome.t()) ::
           {:ok, binary()} | {:error, atom()}

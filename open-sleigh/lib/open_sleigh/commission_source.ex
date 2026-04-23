@@ -19,8 +19,14 @@ defmodule OpenSleigh.CommissionSource do
           | :fixture_read_failed
           | :fixture_parse_failed
           | :fixture_payload_invalid
+          | :commission_source_invalid
+          | :commission_response_malformed
           | :commission_not_found
           | :commission_not_runnable
+          | :commission_lock_conflict
+          | :haft_unavailable
+          | :response_parse_error
+          | :tool_execution_failed
           | Scope.new_error()
           | WorkCommission.new_error()
 

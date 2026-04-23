@@ -4,7 +4,7 @@
 
 ## Stability Contract
 
-The 6 MCP tools are the **stable API**. When dev merges to main:
+The 7 MCP tools are the **stable API**. When dev merges to main:
 
 - Tool names don't change
 - Required parameters don't change
@@ -18,6 +18,7 @@ The 6 MCP tools are the **stable API**. When dev merges to main:
 | `haft_problem` | frame, characterize, select, close | Understand |
 | `haft_solution` | explore, compare | Explore, Choose |
 | `haft_decision` | decide, apply, measure, evidence, baseline | Execute, Verify |
+| `haft_commission` | create, list_runnable, claim_for_preflight, lifecycle updates | Execute |
 | `haft_query` | status, search, list, coverage, related, fpf, view | Utility |
 | `haft_refresh` | scan, drift, waive, reopen, supersede, deprecate | Verify |
 | `haft_note` | (single action) | Note |

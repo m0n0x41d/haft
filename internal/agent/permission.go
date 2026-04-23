@@ -38,7 +38,7 @@ func EvaluatePermission(toolName string, args string) PermissionLevel {
 		return PermissionAllowed
 	// Quint kernel tools — internal artifact operations
 	case "haft_problem", "haft_solution", "haft_decision",
-		"haft_query", "haft_refresh", "haft_note":
+		"haft_commission", "haft_query", "haft_refresh", "haft_note":
 		return PermissionAllowed
 	// File mutations — need approval
 	case "write", "edit", "multiedit":

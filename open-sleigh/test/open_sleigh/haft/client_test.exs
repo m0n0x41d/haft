@@ -4,7 +4,7 @@ defmodule OpenSleigh.Haft.ClientTest do
   alias OpenSleigh.{Fixtures, Haft.Client, Haft.Mock}
 
   setup do
-    {:ok, haft} = Mock.start()
+    {:ok, haft} = Mock.start(problem_cards: :generated)
     invoke_fun = Mock.invoke_fun(haft)
     session = Fixtures.adapter_session()
 
@@ -27,6 +27,15 @@ defmodule OpenSleigh.Haft.ClientTest do
     assert request_params["arguments"]["body"] == "test"
   end
 
+  test "mock Haft resolves related ProblemCards for local harness runs", ctx do
+    assert {:ok, card} = Client.fetch_problem_card(ctx.session, "haft-pc-local", ctx.invoke_fun)
+
+    assert card["id"] == "haft-pc-local"
+    assert card["describedEntity"] == "open-sleigh/lib/open_sleigh/agent_worker.ex"
+    assert card["groundingHolon"] == "OpenSleigh.AgentWorker"
+    assert card["authoring_source"] == "human"
+  end
+
   test "write_artifact/3 serialises a PhaseOutcome and dispatches to the proper tool", ctx do
     outcome = Fixtures.phase_outcome()
 
@@ -34,9 +43,59 @@ defmodule OpenSleigh.Haft.ClientTest do
              Client.write_artifact(ctx.session, outcome, ctx.invoke_fun)
 
     [request_params] = Mock.artifacts(ctx.haft)
-    # Execute phase routes through haft_note per Client.tool_for_phase/1.
     assert request_params["name"] == "haft_note"
+    assert request_params["arguments"]["action"] == "note"
+    assert request_params["arguments"]["title"] == "Open-Sleigh execute outcome"
     assert request_params["arguments"]["config_hash"] == ctx.session.config_hash
+  end
+
+  test "record_commission_lifecycle/4 writes through haft_commission when session has a commission",
+       ctx do
+    session =
+      ctx.session
+      |> Map.put(:commission_id, "wc-client-001")
+
+    assert :ok =
+             Client.record_commission_lifecycle(
+               session,
+               :record_run_event,
+               %{"event" => "phase_outcome", "verdict" => "pass"},
+               ctx.invoke_fun
+             )
+
+    [request_params] = Mock.artifacts(ctx.haft)
+    assert request_params["name"] == "haft_commission"
+    assert request_params["arguments"]["action"] == "record_run_event"
+    assert request_params["arguments"]["commission_id"] == "wc-client-001"
+    assert request_params["arguments"]["runner_id"] == "open-sleigh:" <> session.session_id
+  end
+
+  test "record_commission_lifecycle/4 is a no-op for legacy tracker sessions", ctx do
+    assert :ok =
+             Client.record_commission_lifecycle(
+               ctx.session,
+               :record_run_event,
+               %{"event" => "phase_outcome", "verdict" => "pass"},
+               ctx.invoke_fun
+             )
+
+    assert Mock.artifacts(ctx.haft) == []
+  end
+
+  test "record_commission_lifecycle/4 skips synthetic legacy ticket commissions", ctx do
+    session =
+      ctx.session
+      |> Map.put(:commission_id, "legacy-ticket:OCT-1")
+
+    assert :ok =
+             Client.record_commission_lifecycle(
+               session,
+               :record_run_event,
+               %{"event" => "phase_outcome", "verdict" => "pass"},
+               ctx.invoke_fun
+             )
+
+    assert Mock.artifacts(ctx.haft) == []
   end
 
   test "call_tool/5 propagates invoker errors", ctx do
@@ -44,6 +103,17 @@ defmodule OpenSleigh.Haft.ClientTest do
 
     assert {:error, :haft_unavailable} =
              Client.call_tool(ctx.session, :haft_query, :status, %{}, bad_invoker)
+  end
+
+  test "call_tool/5 maps MCP tool errors into closed effect errors", ctx do
+    assert {:error, :commission_lock_conflict} =
+             Client.call_tool(
+               ctx.session,
+               :haft_commission,
+               :claim_for_preflight,
+               %{"commission_id" => "wc-conflict"},
+               tool_error_invoker("commission_lock_conflict")
+             )
   end
 
   test "fetch_problem_card/3 decodes MCP content text", ctx do
@@ -149,6 +219,26 @@ defmodule OpenSleigh.Haft.ClientTest do
           "jsonrpc" => "2.0",
           "id" => id,
           "result" => result
+        }
+        |> Jason.encode!()
+        |> Kernel.<>("\n")
+
+      {:ok, response}
+    end
+  end
+
+  defp tool_error_invoker(reason) do
+    fn request_line ->
+      {:ok, %{"id" => id}} = Jason.decode(request_line)
+
+      response =
+        %{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "result" => %{
+            "content" => [%{"type" => "text", "text" => reason}],
+            "isError" => true
+          }
         }
         |> Jason.encode!()
         |> Kernel.<>("\n")

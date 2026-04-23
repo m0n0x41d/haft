@@ -246,6 +246,26 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     assert Enum.all?(outcome.gate_results, &match?({:structural, :ok}, &1))
   end
 
+  test "terminal diff validation rejects out-of-scope git mutations", ctx do
+    commission = preflight_commission!()
+    ticket = commission_ticket!(commission)
+
+    phase_config =
+      Fixtures.phase_config_execute(%{
+        gates: %{structural: [], semantic: [], human: []},
+        max_turns: 1
+      })
+
+    message =
+      ctx
+      |> Map.put(:ticket, ticket)
+      |> worker_ctx(phase_config, fail_judge_fun())
+      |> Map.put(:hooks, %{after_create: "git init -q\nmkdir -p lib\ntouch lib/outside.ex"})
+      |> run_worker()
+
+    assert {:error, _session_id, :mutation_outside_commission_scope} = message
+  end
+
   @spec worker_ctx(map(), PhaseConfig.t(), OpenSleigh.GateChain.judge_fun()) :: AgentWorker.ctx()
   defp worker_ctx(ctx, phase_config, judge_fun) do
     worker_ctx(ctx, phase_config, judge_fun, "first-turn prompt")

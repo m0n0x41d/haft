@@ -184,6 +184,9 @@ func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, na
 	case "haft_query":
 		result, err := handleQuintQuery(ctx, store, haftDir, args)
 		return result, "", err
+	case "haft_commission":
+		result, err := handleHaftCommission(ctx, store, args)
+		return result, "", err
 	default:
 		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}

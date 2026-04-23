@@ -134,7 +134,7 @@ func (r *Registry) Get(name string) (ToolExecutor, bool) {
 func (r *Registry) ReadOnlyRegistry() *Registry {
 	writeTools := map[string]bool{
 		"bash": true, "write": true, "edit": true, "multiedit": true,
-		"haft_problem": true, "haft_solution": true, "haft_decision": true, "haft_note": true,
+		"haft_problem": true, "haft_solution": true, "haft_decision": true, "haft_commission": true, "haft_note": true,
 	}
 	ro := &Registry{tools: make(map[string]ToolExecutor)}
 	for _, name := range r.order {

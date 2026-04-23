@@ -36,6 +36,9 @@ defmodule OpenSleigh.EffectError do
           | :tracker_request_failed
           | :tracker_status_non_200
           | :tracker_response_malformed
+          | :commission_not_found
+          | :commission_not_runnable
+          | :commission_lock_conflict
           | :judge_unavailable
           | :judge_response_malformed
           | :uncalibrated
@@ -71,6 +74,9 @@ defmodule OpenSleigh.EffectError do
     :tracker_request_failed,
     :tracker_status_non_200,
     :tracker_response_malformed,
+    :commission_not_found,
+    :commission_not_runnable,
+    :commission_lock_conflict,
     :judge_unavailable,
     :judge_response_malformed,
     :uncalibrated,

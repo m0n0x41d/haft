@@ -23,6 +23,67 @@ Record:
 - scope-block: an in-workspace mutation outside Scope fails terminally as
   `mutation_outside_commission_scope`
 
+## Today Harness Path
+
+Use this path when Open-Sleigh should execute Haft-owned local
+`WorkCommission` fixtures without requiring Linear/Jira/GitHub or a live Haft
+server yet. It keeps the work source commission-first, uses mock Haft for
+ProblemCard/artifact IO, uses the deterministic judge, and leaves the agent
+adapter real.
+
+```sh
+cd open-sleigh
+mix deps.get
+export REPO_URL=/Users/ivanzakutnii/Repos/projects/haft
+mix open_sleigh.doctor --path sleigh.commission.md.example --mock-haft
+mix open_sleigh.start --path sleigh.commission.md.example --mock-haft --mock-judge
+```
+
+For a bounded smoke instead of a long-running harness, add `--once`. For a fully
+deterministic dry run, add `--mock-agent` or use `--mock`. Add
+`--once-timeout-ms=5000` when the smoke should wait for the mock phase loop to
+become idle before printing status.
+
+Use the Haft commission-source path when testing the MVP-1R intake contract
+itself. With `--mock-haft`, the in-memory Haft supplies
+`haft_commission.list_runnable` and `haft_commission.claim_for_preflight`:
+
+```sh
+cd open-sleigh
+mix open_sleigh.doctor --path sleigh.haft.md.example --mock-haft
+mix open_sleigh.start --path sleigh.haft.md.example --mock --once --once-timeout-ms=5000
+```
+
+From the repo root the same checks are available as:
+
+```sh
+task open-sleigh:doctor-haft
+task open-sleigh:smoke-haft
+task open-sleigh:smoke-real-haft
+task open-sleigh:harness-haft
+```
+
+`task open-sleigh:smoke-real-haft` builds the current Haft binary, creates a
+temporary Haft project, creates a real `WorkCommission` with `haft commission
+create`, starts Open-Sleigh against a real temporary `haft serve`, waits for
+idle, and verifies no runnable commissions remain.
+
+For manual local setup, seed the project through the CLI:
+
+```sh
+haft commission create --json commission.json
+haft commission list-runnable
+haft commission claim wc-...
+```
+
+Monitor from another shell:
+
+```sh
+cd open-sleigh
+mix open_sleigh.status --path ~/.open-sleigh/status.json
+tail -f ~/.open-sleigh/runtime.jsonl
+```
+
 ## Inputs
 
 - Date:

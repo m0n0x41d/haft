@@ -66,9 +66,10 @@ defmodule OpenSleigh.Haft.ProtocolTest do
     assert {:error, :response_parse_error} = Protocol.decode_response(Jason.encode!(%{}))
   end
 
-  test "valid_tools/0 lists the 6 canonical MCP tools" do
-    assert length(Protocol.valid_tools()) == 6
+  test "valid_tools/0 lists the canonical MCP tools" do
+    assert length(Protocol.valid_tools()) == 7
     assert :haft_problem in Protocol.valid_tools()
     assert :haft_decision in Protocol.valid_tools()
+    assert :haft_commission in Protocol.valid_tools()
   end
 end

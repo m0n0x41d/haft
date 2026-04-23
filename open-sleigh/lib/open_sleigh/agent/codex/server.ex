@@ -92,6 +92,19 @@ defmodule OpenSleigh.Agent.Codex.Server do
     :ok
   end
 
+  @impl true
+  def handle_info({port, {:data, {_mode, _chunk}}}, %{port: port} = state) do
+    {:noreply, state}
+  end
+
+  def handle_info({port, {:exit_status, _status}}, %{port: port} = state) do
+    {:noreply, Map.delete(state, :port)}
+  end
+
+  def handle_info(_message, state) do
+    {:noreply, state}
+  end
+
   @spec initial_state(map()) :: state()
   defp initial_state(opts) do
     %{

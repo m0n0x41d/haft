@@ -80,7 +80,7 @@ Existing project? Run `/h-onboard` after init — the agent scans your codebase 
 
 ## How It Works
 
-### Six MCP tools
+### Seven MCP tools
 
 | Tool | What it does |
 |------|-------------|
@@ -88,6 +88,7 @@ Existing project? Run `/h-onboard` after init — the agent scans your codebase 
 | `haft_problem` | Frame problems, define comparison dimensions with roles |
 | `haft_solution` | Explore variants with diversity check, compare with parity |
 | `haft_decision` | Decision contract with invariants, claims, evidence, baseline lifecycle |
+| `haft_commission` | WorkCommission create/list/claim lifecycle for execution harnesses |
 | `haft_refresh` | Lifecycle management for all artifacts |
 | `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec search |
 
@@ -125,6 +126,24 @@ haft run dec-20260414-001 --agent codex
   ↓
 haft check
   ↓ verify governance health
+```
+
+### WorkCommission harness
+
+Open-Sleigh uses `WorkCommission` as the bounded execution authority between a
+DecisionRecord and a runtime run. The MCP tool is `haft_commission`; the local
+CLI helper is:
+
+```bash
+haft commission create --json commission.json
+haft commission list-runnable
+haft commission claim wc-...
+```
+
+For the repeatable local E2E smoke:
+
+```bash
+task open-sleigh:smoke-real-haft
 ```
 
 The same loop powers the desktop "Implement" button. CLI and desktop are two surfaces over one kernel.

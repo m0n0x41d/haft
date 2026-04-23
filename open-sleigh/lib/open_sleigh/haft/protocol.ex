@@ -2,9 +2,9 @@ defmodule OpenSleigh.Haft.Protocol do
   @moduledoc """
   Pure JSON-RPC 2.0 codec for the Haft MCP contract.
 
-  Per `specs/target-system/HAFT_CONTRACT.md`: 6 MCP tools (`haft_problem`,
-  `haft_solution`, `haft_decision`, `haft_refresh`, `haft_note`,
-  `haft_query`). Transport is line-delimited JSON on stdio, just
+  Per `specs/target-system/HAFT_CONTRACT.md`: 7 MCP tools (`haft_problem`,
+  `haft_solution`, `haft_decision`, `haft_commission`, `haft_refresh`,
+  `haft_note`, `haft_query`). Transport is line-delimited JSON on stdio, just
   like the agent app-server — but semantics are different (request/
   response only, no streaming events).
 
@@ -21,6 +21,7 @@ defmodule OpenSleigh.Haft.Protocol do
           | :haft_refresh
           | :haft_note
           | :haft_query
+          | :haft_commission
 
   @valid_tools [
     :haft_problem,
@@ -28,7 +29,8 @@ defmodule OpenSleigh.Haft.Protocol do
     :haft_decision,
     :haft_refresh,
     :haft_note,
-    :haft_query
+    :haft_query,
+    :haft_commission
   ]
 
   @doc "Encode the MCP `initialize` request."

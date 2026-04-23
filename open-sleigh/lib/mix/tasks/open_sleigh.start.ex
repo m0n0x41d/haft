@@ -7,24 +7,34 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       mix open_sleigh.start
       mix open_sleigh.start --path=sleigh.md --mock
       mix open_sleigh.start --path=sleigh.md --mock --once
+      mix open_sleigh.start --path=sleigh.md --mock-haft --mock-judge
 
   Options:
 
     * `--path` - config file path. Defaults to `sleigh.md`.
     * `--mock` - use in-memory tracker/agent/Haft adapters.
+    * `--mock-agent` - use the in-memory agent adapter only.
+    * `--mock-haft` - use in-memory Haft while keeping the configured tracker/agent.
+    * `--mock-judge` - use the deterministic rule-based judge.
     * `--once` - boot, run one tracker poll, print status, and stop.
       Without this flag the task runs until interrupted.
+    * `--once-timeout-ms` - when `--once` is set, wait up to this
+      many milliseconds for the orchestrator to become idle before
+      printing status. Defaults to 50.
     * `--help` - print this help.
   """
 
   use Mix.Task
 
   alias OpenSleigh.Agent
+  alias OpenSleigh.CommissionSource.Haft, as: HaftCommissionSource
   alias OpenSleigh.CommissionSource.Local, as: LocalCommissionSource
   alias OpenSleigh.Haft.Mock
   alias OpenSleigh.Judge.{AgentInvoker, GoldenSets, RuleBased}
   alias OpenSleigh.Sleigh.{Compiler, Watcher}
   alias OpenSleigh.Tracker
+
+  @default_commission_max_claims 50
 
   alias OpenSleigh.{
     HaftServer,
@@ -52,7 +62,16 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     {opts, _argv, invalid} =
       OptionParser.parse(
         args,
-        switches: [path: :string, mock: :boolean, once: :boolean, help: :boolean],
+        switches: [
+          path: :string,
+          mock: :boolean,
+          mock_agent: :boolean,
+          mock_haft: :boolean,
+          mock_judge: :boolean,
+          once: :boolean,
+          once_timeout_ms: :integer,
+          help: :boolean
+        ],
         aliases: [h: :help]
       )
 
@@ -97,8 +116,9 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   defp boot_runtime(opts) do
     with {:ok, bundle} <- compile_config(opts),
          :ok <- configure_agent(bundle, opts),
-         {:ok, tracker} <- start_tracker(bundle, opts),
-         {:ok, haft} <- start_haft(bundle, opts),
+         {:ok, prestarted_haft} <- maybe_start_pretracker_haft(bundle, opts),
+         {:ok, tracker} <- start_tracker(bundle, opts, prestarted_haft),
+         {:ok, haft} <- ensure_started_haft(bundle, opts, prestarted_haft),
          {:ok, store} <- start_workflow_store(bundle),
          {:ok, watcher} <- start_watcher(config_path(opts), store),
          {:ok, orchestrator} <- start_orchestrator(bundle, tracker, haft, store, opts),
@@ -137,36 +157,66 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   defp compile_source({:ok, source}), do: Compiler.compile(source)
   defp compile_source({:error, reason}), do: {:error, {:config_read_failed, reason}}
 
-  @spec start_tracker(WorkflowStore.bundle(), keyword()) :: {:ok, map()} | {:error, term()}
-  defp start_tracker(bundle, opts) do
+  @spec maybe_start_pretracker_haft(WorkflowStore.bundle(), keyword()) ::
+          {:ok, map() | nil} | {:error, term()}
+  defp maybe_start_pretracker_haft(bundle, opts) do
+    if commission_source_kind(bundle) == "haft" do
+      start_haft(bundle, opts)
+    else
+      {:ok, nil}
+    end
+  end
+
+  @spec ensure_started_haft(WorkflowStore.bundle(), keyword(), map() | nil) ::
+          {:ok, map()} | {:error, term()}
+  defp ensure_started_haft(_bundle, _opts, %{invoke_fun: invoke_fun} = haft)
+       when is_function(invoke_fun, 1) do
+    {:ok, haft}
+  end
+
+  defp ensure_started_haft(bundle, opts, nil), do: start_haft(bundle, opts)
+
+  @spec start_tracker(WorkflowStore.bundle(), keyword(), map() | nil) ::
+          {:ok, map()} | {:error, term()}
+  defp start_tracker(bundle, opts, haft) do
     opts
     |> Keyword.get(:mock, false)
-    |> start_tracker_for_mode(bundle)
+    |> start_tracker_for_mode(bundle, haft)
   end
 
-  @spec start_tracker_for_mode(boolean(), WorkflowStore.bundle()) ::
+  @spec start_tracker_for_mode(boolean(), WorkflowStore.bundle(), map() | nil) ::
           {:ok, map()} | {:error, term()}
-  defp start_tracker_for_mode(true, bundle) do
+  defp start_tracker_for_mode(true, bundle, haft) do
     bundle
     |> commission_source_kind()
-    |> start_mock_tracker_for_source(bundle)
+    |> start_mock_tracker_for_source(bundle, haft)
   end
 
-  defp start_tracker_for_mode(false, bundle) do
+  defp start_tracker_for_mode(false, bundle, haft) do
     bundle
     |> commission_source_kind()
-    |> start_tracker_for_source(bundle)
+    |> start_tracker_for_source(bundle, haft)
   end
 
-  @spec start_mock_tracker_for_source(String.t() | nil, WorkflowStore.bundle()) ::
+  @spec start_mock_tracker_for_source(String.t() | nil, WorkflowStore.bundle(), map() | nil) ::
           {:ok, map()} | {:error, term()}
-  defp start_mock_tracker_for_source("local", bundle), do: start_local_commission_tracker(bundle)
-  defp start_mock_tracker_for_source(_kind, _bundle), do: start_mock_tracker()
+  defp start_mock_tracker_for_source("local", bundle, _haft),
+    do: start_local_commission_tracker(bundle)
 
-  @spec start_tracker_for_source(String.t() | nil, WorkflowStore.bundle()) ::
+  defp start_mock_tracker_for_source("haft", bundle, haft),
+    do: start_haft_commission_tracker(bundle, haft)
+
+  defp start_mock_tracker_for_source(_kind, _bundle, _haft), do: start_mock_tracker()
+
+  @spec start_tracker_for_source(String.t() | nil, WorkflowStore.bundle(), map() | nil) ::
           {:ok, map()} | {:error, term()}
-  defp start_tracker_for_source("local", bundle), do: start_local_commission_tracker(bundle)
-  defp start_tracker_for_source(_kind, bundle), do: start_linear_tracker(bundle)
+  defp start_tracker_for_source("local", bundle, _haft),
+    do: start_local_commission_tracker(bundle)
+
+  defp start_tracker_for_source("haft", bundle, haft),
+    do: start_haft_commission_tracker(bundle, haft)
+
+  defp start_tracker_for_source(_kind, bundle, _haft), do: start_linear_tracker(bundle)
 
   @spec start_mock_tracker() :: {:ok, map()} | {:error, term()}
   defp start_mock_tracker do
@@ -192,6 +242,78 @@ defmodule Mix.Tasks.OpenSleigh.Start do
        }}
     end
   end
+
+  @spec start_haft_commission_tracker(WorkflowStore.bundle(), map() | nil) ::
+          {:ok, map()} | {:error, term()}
+  defp start_haft_commission_tracker(_bundle, nil), do: {:error, :haft_unavailable}
+
+  defp start_haft_commission_tracker(bundle, %{invoke_fun: invoke_fun})
+       when is_function(invoke_fun, 1) do
+    with {:ok, source} <- HaftCommissionSource.new(bundle, invoke_fun),
+         {:ok, commissions} <- HaftCommissionSource.list_runnable(source),
+         {:ok, claimed} <-
+           claim_haft_commissions(source, commissions, commission_source_max_claims(bundle)),
+         {:ok, handle} <- Tracker.Mock.start(),
+         :ok <- seed_local_commission_tickets(handle, claimed) do
+      {:ok,
+       %{
+         adapter: Tracker.Mock,
+         handle: handle,
+         pids: [handle],
+         commission_source: %{adapter: HaftCommissionSource, handle: source}
+       }}
+    end
+  end
+
+  @spec claim_haft_commissions(
+          HaftCommissionSource.t(),
+          [OpenSleigh.WorkCommission.t()],
+          pos_integer()
+        ) :: {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
+  defp claim_haft_commissions(source, commissions, max_claims) do
+    commissions
+    |> Enum.reduce_while({:ok, [], max_claims}, &claim_haft_commission(source, &1, &2))
+    |> claimed_limited_commissions()
+  end
+
+  @spec claim_haft_commission(
+          HaftCommissionSource.t(),
+          OpenSleigh.WorkCommission.t(),
+          {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}
+        ) ::
+          {:cont, {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}}
+          | {:halt, {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}}
+          | {:halt, {:error, term()}}
+  defp claim_haft_commission(_source, _commission, {:ok, claimed, 0}) do
+    {:halt, {:ok, claimed, 0}}
+  end
+
+  defp claim_haft_commission(source, commission, {:ok, claimed, remaining}) do
+    case HaftCommissionSource.claim_for_preflight(source, commission.id) do
+      {:ok, next_commission} ->
+        {:cont, {:ok, [next_commission | claimed], remaining - 1}}
+
+      {:error, reason}
+      when reason in [:commission_lock_conflict, :commission_not_runnable, :commission_not_found] ->
+        {:cont, {:ok, claimed, remaining}}
+
+      {:error, reason} ->
+        {:halt, {:error, reason}}
+    end
+  end
+
+  @spec claimed_limited_commissions(
+          {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}
+          | {:error, term()}
+        ) ::
+          {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
+  defp claimed_limited_commissions({:ok, commissions, _remaining}) do
+    commissions
+    |> Enum.reverse()
+    |> then(&{:ok, &1})
+  end
+
+  defp claimed_limited_commissions({:error, _reason} = error), do: error
 
   @spec claim_local_commissions(
           LocalCommissionSource.t(),
@@ -370,7 +492,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec start_haft(WorkflowStore.bundle(), keyword()) :: {:ok, map()} | {:error, term()}
   defp start_haft(bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
+    if mock_haft?(opts) do
       start_mock_haft()
     else
       start_real_haft(bundle)
@@ -379,7 +501,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec start_mock_haft() :: {:ok, map()} | {:error, term()}
   defp start_mock_haft do
-    case Mock.start() do
+    case Mock.start(problem_cards: :generated, commissions: :generated) do
       {:ok, handle} -> {:ok, %{invoke_fun: Mock.invoke_fun(handle), pids: [handle]}}
       {:error, reason} -> {:error, reason}
     end
@@ -453,6 +575,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       hook_failure_policy: hook_failure_policy(bundle),
       hook_timeout_ms: hook_timeout_ms(bundle),
       active_states: orchestrator_active_states(bundle),
+      max_concurrency: runtime_max_concurrency(bundle),
       name: server_name("open_sleigh_orchestrator")
     )
   end
@@ -471,7 +594,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   @spec judge_invoker(WorkflowStore.bundle(), keyword()) :: JudgeClient.invoke_fun()
   defp judge_invoker(bundle, opts) do
     opts
-    |> Keyword.get(:mock, false)
+    |> mock_judge?()
     |> judge_invoker_for_mode(bundle)
   end
 
@@ -526,7 +649,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec configure_agent(WorkflowStore.bundle(), keyword()) :: :ok
   defp configure_agent(bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
+    if mock_agent?(opts) do
       :ok
     else
       configure_real_agent(bundle)
@@ -564,7 +687,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec agent_adapter(WorkflowStore.bundle(), keyword()) :: module()
   defp agent_adapter(bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
+    if mock_agent?(opts) do
       Agent.Mock
     else
       real_agent_adapter(bundle)
@@ -651,7 +774,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     :ok = TrackerPoller.poke(runtime.poller)
 
     if Keyword.get(opts, :once, false) do
-      Process.sleep(50)
+      :ok = wait_once_idle(runtime.orchestrator, once_timeout_ms(opts))
       :ok = RuntimeStatusWriter.write(runtime.status_writer)
       :ok = RuntimeLogWriter.event(runtime.log_writer, :once_poll_completed, %{})
 
@@ -667,6 +790,39 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   defp handle_boot({:error, reason}, _opts) do
     Mix.raise("Open-Sleigh start failed: #{inspect(reason)}")
+  end
+
+  @spec wait_once_idle(GenServer.server(), non_neg_integer()) :: :ok
+  defp wait_once_idle(orchestrator, timeout_ms) do
+    Process.sleep(50)
+
+    orchestrator
+    |> wait_until_idle(System.monotonic_time(:millisecond) + timeout_ms)
+  end
+
+  @spec wait_until_idle(GenServer.server(), integer()) :: :ok
+  defp wait_until_idle(orchestrator, deadline_ms) do
+    if once_idle?(orchestrator) or System.monotonic_time(:millisecond) >= deadline_ms do
+      :ok
+    else
+      Process.sleep(25)
+      wait_until_idle(orchestrator, deadline_ms)
+    end
+  end
+
+  @spec once_idle?(GenServer.server()) :: boolean()
+  defp once_idle?(orchestrator) do
+    status = Orchestrator.status(orchestrator)
+
+    status.claimed == [] and status.running == [] and status.pending_human == [] and
+      status.retries == %{}
+  end
+
+  @spec once_timeout_ms(keyword()) :: non_neg_integer()
+  defp once_timeout_ms(opts) do
+    opts
+    |> Keyword.get(:once_timeout_ms, 50)
+    |> non_negative_integer(50)
   end
 
   @spec cleanup(map()) :: :ok
@@ -813,6 +969,9 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       commission_source_kind(bundle) == "local" ->
         "commission_source:local"
 
+      commission_source_kind(bundle) == "haft" ->
+        "commission_source:haft"
+
       Keyword.get(opts, :mock, false) ->
         "mock"
 
@@ -831,13 +990,28 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec status_agent_kind(WorkflowStore.bundle(), keyword()) :: String.t()
   defp status_agent_kind(bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
+    if mock_agent?(opts) do
       "mock"
     else
       bundle.agent
       |> value_at(:kind, "codex")
       |> config_string()
     end
+  end
+
+  @spec mock_agent?(keyword()) :: boolean()
+  defp mock_agent?(opts) do
+    Keyword.get(opts, :mock, false) or Keyword.get(opts, :mock_agent, false)
+  end
+
+  @spec mock_haft?(keyword()) :: boolean()
+  defp mock_haft?(opts) do
+    Keyword.get(opts, :mock, false) or Keyword.get(opts, :mock_haft, false)
+  end
+
+  @spec mock_judge?(keyword()) :: boolean()
+  defp mock_judge?(opts) do
+    Keyword.get(opts, :mock, false) or Keyword.get(opts, :mock_judge, false)
   end
 
   @spec hooks(WorkflowStore.bundle()) :: %{optional(atom()) => String.t()}
@@ -902,6 +1076,27 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     bundle.hooks
     |> value_at(:timeout_ms)
     |> positive_integer(60_000)
+  end
+
+  @spec runtime_max_concurrency(WorkflowStore.bundle()) :: pos_integer()
+  defp runtime_max_concurrency(bundle) do
+    fallback =
+      bundle.agent
+      |> value_at(:max_concurrent_agents)
+      |> positive_integer(1)
+
+    bundle.engine
+    |> value_at(:concurrency)
+    |> positive_integer(fallback)
+  end
+
+  @spec commission_source_max_claims(WorkflowStore.bundle()) :: pos_integer()
+  defp commission_source_max_claims(bundle) do
+    fallback = Kernel.max(runtime_max_concurrency(bundle), @default_commission_max_claims)
+
+    bundle.commission_source
+    |> value_at(:max_claims)
+    |> positive_integer(fallback)
   end
 
   @spec orchestrator_active_states(WorkflowStore.bundle()) :: [atom()]

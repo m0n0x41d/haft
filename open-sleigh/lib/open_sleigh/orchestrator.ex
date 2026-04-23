@@ -77,6 +77,7 @@ defmodule OpenSleigh.Orchestrator do
           base_retry_backoff_ms: pos_integer(),
           max_retry_backoff_ms: pos_integer(),
           normal_exit_retry_ms: pos_integer(),
+          max_concurrency: pos_integer() | :infinity,
           name: atom(),
           now_fun: (-> DateTime.t()),
           now_ms_fun: (-> integer())
@@ -133,6 +134,7 @@ defmodule OpenSleigh.Orchestrator do
         Keyword.get(opts, :max_retry_backoff_ms, @default_max_retry_backoff_ms),
       normal_exit_retry_ms:
         Keyword.get(opts, :normal_exit_retry_ms, @default_normal_exit_retry_ms),
+      max_concurrency: Keyword.get(opts, :max_concurrency, :infinity),
       claimed: MapSet.new(),
       running: %{},
       pending_human: %{},
@@ -232,11 +234,27 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec maybe_dispatch(Ticket.t(), map()) :: map()
   defp maybe_dispatch(%Ticket{} = ticket, state) do
-    if MapSet.member?(state.claimed, ticket.id) do
-      state
-    else
-      dispatch(ticket, state, state.workflow.entry_phase)
-    end
+    state
+    |> dispatchable?(ticket)
+    |> maybe_dispatch_ticket(ticket, state)
+  end
+
+  @spec dispatchable?(map(), Ticket.t()) :: boolean()
+  defp dispatchable?(state, %Ticket{} = ticket) do
+    not MapSet.member?(state.claimed, ticket.id) and running_capacity_available?(state)
+  end
+
+  @spec maybe_dispatch_ticket(boolean(), Ticket.t(), map()) :: map()
+  defp maybe_dispatch_ticket(true, ticket, state),
+    do: dispatch(ticket, state, state.workflow.entry_phase)
+
+  defp maybe_dispatch_ticket(false, _ticket, state), do: state
+
+  @spec running_capacity_available?(map()) :: boolean()
+  defp running_capacity_available?(%{max_concurrency: :infinity}), do: true
+
+  defp running_capacity_available?(%{max_concurrency: max_concurrency, running: running}) do
+    map_size(running) < max_concurrency
   end
 
   @spec dispatch(Ticket.t(), map(), atom()) :: map()
@@ -870,7 +888,18 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec decide_next(map(), String.t(), map(), OpenSleigh.PhaseOutcome.t()) :: map()
   defp decide_next(state, session_id, entry, outcome) do
-    case PhaseMachine.next(entry.workflow_state, outcome) do
+    decision = PhaseMachine.next(entry.workflow_state, outcome)
+
+    case record_commission_lifecycle(state, entry, outcome, decision) do
+      :ok -> apply_next_decision(state, session_id, entry, outcome, decision)
+      {:error, reason} -> schedule_retry(state, session_id, reason)
+    end
+  end
+
+  @spec apply_next_decision(map(), String.t(), map(), OpenSleigh.PhaseOutcome.t(), term()) ::
+          map()
+  defp apply_next_decision(state, session_id, entry, outcome, decision) do
+    case decision do
       {:advance, next_phase} ->
         advance_to_next_phase(state, session_id, entry, outcome, next_phase)
 
@@ -881,12 +910,140 @@ defmodule OpenSleigh.Orchestrator do
             phase: entry.session.phase
           })
 
+        :ok = maybe_close_blocked_commission_ticket(state, entry)
         release_claim(state, session_id, entry.ticket.id)
 
       {:terminal, verdict} ->
         finalize_terminal(state, session_id, entry, verdict)
     end
   end
+
+  @spec record_commission_lifecycle(map(), map(), OpenSleigh.PhaseOutcome.t(), term()) ::
+          :ok | {:error, term()}
+  defp record_commission_lifecycle(state, entry, outcome, decision) do
+    entry
+    |> lifecycle_commands(outcome, decision)
+    |> run_lifecycle_commands(state, entry)
+  end
+
+  @spec lifecycle_commands(map(), OpenSleigh.PhaseOutcome.t(), term()) :: [{atom(), map()}]
+  defp lifecycle_commands(entry, outcome, decision) do
+    [
+      {:record_run_event, phase_outcome_lifecycle_params(entry, outcome, decision)}
+    ]
+    |> Kernel.++(preflight_lifecycle_commands(entry, outcome, decision))
+    |> Kernel.++(terminal_lifecycle_commands(entry, outcome, decision))
+  end
+
+  @spec run_lifecycle_commands([{atom(), map()}], map(), map()) :: :ok | {:error, term()}
+  defp run_lifecycle_commands(commands, state, entry) do
+    commands
+    |> Enum.reduce_while(:ok, fn {action, params}, :ok ->
+      case Client.record_commission_lifecycle(
+             entry.session.adapter_session,
+             action,
+             params,
+             state.haft_invoker
+           ) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @spec phase_outcome_lifecycle_params(map(), OpenSleigh.PhaseOutcome.t(), term()) :: map()
+  defp phase_outcome_lifecycle_params(entry, outcome, decision) do
+    entry
+    |> lifecycle_base_payload(outcome, decision)
+    |> lifecycle_params("phase_outcome", decision_verdict(decision), decision_reason(decision))
+  end
+
+  @spec preflight_lifecycle_commands(map(), OpenSleigh.PhaseOutcome.t(), term()) ::
+          [{atom(), map()}]
+  defp preflight_lifecycle_commands(entry, %{phase: :preflight} = outcome, {:advance, next_phase}) do
+    base = lifecycle_base_payload(entry, outcome, {:advance, next_phase})
+
+    [
+      {:record_preflight, lifecycle_params(base, "preflight_checked", "pass", "")},
+      {:start_after_preflight, lifecycle_params(base, "preflight_passed", "pass", "")}
+    ]
+  end
+
+  defp preflight_lifecycle_commands(entry, %{phase: :preflight} = outcome, {:block, reasons}) do
+    base = lifecycle_base_payload(entry, outcome, {:block, reasons})
+
+    [
+      {:record_preflight,
+       lifecycle_params(base, "preflight_checked", "blocked", reasons_text(reasons))}
+    ]
+  end
+
+  defp preflight_lifecycle_commands(_entry, _outcome, _decision), do: []
+
+  @spec terminal_lifecycle_commands(map(), OpenSleigh.PhaseOutcome.t(), term()) ::
+          [{atom(), map()}]
+  defp terminal_lifecycle_commands(entry, outcome, {:terminal, verdict}) do
+    base = lifecycle_base_payload(entry, outcome, {:terminal, verdict})
+
+    [
+      {:complete_or_block,
+       lifecycle_params(base, "workflow_terminal", terminal_commission_verdict(verdict), "")}
+    ]
+  end
+
+  defp terminal_lifecycle_commands(_entry, _outcome, _decision), do: []
+
+  @spec lifecycle_base_payload(map(), OpenSleigh.PhaseOutcome.t(), term()) :: map()
+  defp lifecycle_base_payload(entry, outcome, decision) do
+    %{
+      "phase" => Atom.to_string(outcome.phase),
+      "session_id" => entry.session.id,
+      "ticket_id" => entry.ticket.id,
+      "config_hash" => outcome.config_hash,
+      "next" => decision_label(decision)
+    }
+  end
+
+  @spec lifecycle_params(map(), String.t(), String.t(), String.t()) :: map()
+  defp lifecycle_params(payload, event, verdict, reason) do
+    %{
+      "event" => event,
+      "verdict" => verdict,
+      "reason" => reason,
+      "payload" => payload
+    }
+  end
+
+  @spec decision_label(term()) :: String.t()
+  defp decision_label({:advance, phase}), do: "advance:" <> Atom.to_string(phase)
+  defp decision_label({:block, _reasons}), do: "block"
+  defp decision_label({:terminal, verdict}), do: "terminal:" <> Atom.to_string(verdict)
+  defp decision_label(_decision), do: "unknown"
+
+  @spec decision_verdict(term()) :: String.t()
+  defp decision_verdict({:advance, _phase}), do: "pass"
+  defp decision_verdict({:block, _reasons}), do: "blocked"
+  defp decision_verdict({:terminal, verdict}), do: terminal_commission_verdict(verdict)
+  defp decision_verdict(_decision), do: "unknown"
+
+  @spec decision_reason(term()) :: String.t()
+  defp decision_reason({:block, reasons}), do: reasons_text(reasons)
+  defp decision_reason(_decision), do: ""
+
+  @spec terminal_commission_verdict(atom()) :: String.t()
+  defp terminal_commission_verdict(:pass), do: "pass"
+  defp terminal_commission_verdict(:fail), do: "failed"
+  defp terminal_commission_verdict(:blocked), do: "blocked"
+  defp terminal_commission_verdict(_verdict), do: "failed"
+
+  @spec reasons_text([term()] | term()) :: String.t()
+  defp reasons_text(reasons) when is_list(reasons) do
+    reasons
+    |> Enum.map(&inspect/1)
+    |> Enum.join("; ")
+  end
+
+  defp reasons_text(reason), do: inspect(reason)
 
   @spec finalize_terminal(map(), String.t(), map(), atom()) :: map()
   defp finalize_terminal(state, session_id, entry, verdict) do
@@ -896,8 +1053,61 @@ defmodule OpenSleigh.Orchestrator do
       })
 
     :ok = maybe_publish_terminal(state, entry, verdict)
+    :ok = maybe_close_terminal_commission_ticket(state, entry, verdict)
 
     release_claim(state, session_id, entry.ticket.id)
+  end
+
+  @spec maybe_close_blocked_commission_ticket(map(), map()) :: :ok
+  defp maybe_close_blocked_commission_ticket(state, entry) do
+    if commission_first_ticket?(entry.ticket) do
+      transition_local_commission_ticket(state, entry, :blocked)
+    else
+      :ok
+    end
+  end
+
+  @spec maybe_close_terminal_commission_ticket(map(), map(), atom()) :: :ok
+  defp maybe_close_terminal_commission_ticket(state, entry, verdict) do
+    if close_terminal_commission_ticket?(state, entry, verdict) do
+      state_name = terminal_commission_ticket_state(verdict)
+      transition_local_commission_ticket(state, entry, state_name)
+    else
+      :ok
+    end
+  end
+
+  @spec close_terminal_commission_ticket?(map(), map(), atom()) :: boolean()
+  defp close_terminal_commission_ticket?(state, entry, verdict) do
+    commission_first_ticket?(entry.ticket) and not terminal_publish_requested?(state, verdict)
+  end
+
+  @spec terminal_publish_requested?(map(), atom()) :: boolean()
+  defp terminal_publish_requested?(state, :pass) do
+    state.external_publication
+    |> Map.get(:tracker_transition_to, [])
+    |> first_transition_target()
+    |> is_binary()
+  end
+
+  defp terminal_publish_requested?(_state, _verdict), do: false
+
+  @spec commission_first_ticket?(Ticket.t()) :: boolean()
+  defp commission_first_ticket?(%Ticket{metadata: metadata}) do
+    Map.get(metadata, :source_mode, Map.get(metadata, "source_mode")) == :commission_first
+  end
+
+  @spec terminal_commission_ticket_state(atom()) :: atom()
+  defp terminal_commission_ticket_state(:pass), do: :done
+  defp terminal_commission_ticket_state(:blocked), do: :blocked
+  defp terminal_commission_ticket_state(_verdict), do: :failed
+
+  @spec transition_local_commission_ticket(map(), map(), atom()) :: :ok
+  defp transition_local_commission_ticket(state, entry, state_name) do
+    case state.tracker_adapter.transition(state.tracker_handle, entry.ticket.id, state_name) do
+      :ok -> :ok
+      {:error, _reason} -> :ok
+    end
   end
 
   @spec maybe_publish_terminal(map(), map(), atom()) :: :ok

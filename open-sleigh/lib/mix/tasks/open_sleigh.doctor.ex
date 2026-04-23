@@ -7,11 +7,13 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
       mix open_sleigh.doctor
       mix open_sleigh.doctor --path=sleigh.md
       mix open_sleigh.doctor --path=sleigh.md --json
+      mix open_sleigh.doctor --path=sleigh.md --mock-haft
 
   Options:
 
     * `--path` - config file path. Defaults to `sleigh.md`.
     * `--json` - print a machine-readable report.
+    * `--mock-haft` - skip the real Haft command check for local harness runs.
     * `--help` - print this help.
   """
 
@@ -32,7 +34,7 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
     {opts, _argv, invalid} =
       OptionParser.parse(
         args,
-        switches: [path: :string, json: :boolean, help: :boolean],
+        switches: [path: :string, json: :boolean, mock_haft: :boolean, help: :boolean],
         aliases: [h: :help]
       )
 
@@ -60,7 +62,6 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
   defp run_parsed({:run, opts}) do
     report =
       opts
-      |> config_path()
       |> doctor_report()
 
     report
@@ -71,10 +72,12 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
   @spec config_path(keyword()) :: Path.t()
   defp config_path(opts), do: Keyword.get(opts, :path, "sleigh.md")
 
-  @spec doctor_report(Path.t()) :: map()
-  defp doctor_report(path) do
+  @spec doctor_report(keyword()) :: map()
+  defp doctor_report(opts) do
+    path = config_path(opts)
+
     case compile_config(path) do
-      {:ok, bundle} -> runtime_report(path, bundle)
+      {:ok, bundle} -> runtime_report(path, bundle, opts)
       {:error, reason} -> failed_config_report(path, reason)
     end
   end
@@ -131,17 +134,17 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
     )
   end
 
-  @spec runtime_report(Path.t(), map()) :: map()
-  defp runtime_report(path, bundle) do
+  @spec runtime_report(Path.t(), map(), keyword()) :: map()
+  defp runtime_report(path, bundle, opts) do
     checks =
       [
-        ok_check("config.compile", "Compiled #{path}"),
-        linear_api_key_check(bundle),
-        linear_project_check(bundle),
-        linear_states_check(bundle),
-        command_check("codex.command", codex_command(bundle)),
-        command_check("haft.command", haft_command(bundle))
+        ok_check("config.compile", "Compiled #{path}")
       ]
+      |> Kernel.++(work_source_checks(bundle))
+      |> Kernel.++([
+        command_check("codex.command", codex_command(bundle)),
+        haft_command_check(bundle, opts)
+      ])
       |> Kernel.++(hook_checks(bundle))
       |> Kernel.++(workspace_checks(bundle))
       |> Kernel.++(publication_checks(bundle))
@@ -154,6 +157,86 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
       warnings: Enum.count(checks, &(&1.status == :warning)),
       checks: checks
     }
+  end
+
+  @spec work_source_checks(map()) :: [map()]
+  defp work_source_checks(bundle) do
+    bundle
+    |> commission_source_kind()
+    |> work_source_checks_for_kind(bundle)
+  end
+
+  @spec work_source_checks_for_kind(String.t() | nil, map()) :: [map()]
+  defp work_source_checks_for_kind("local", bundle), do: [local_commission_source_check(bundle)]
+  defp work_source_checks_for_kind("haft", bundle), do: [haft_commission_source_check(bundle)]
+  defp work_source_checks_for_kind(_kind, bundle), do: linear_source_checks(bundle)
+
+  @spec haft_commission_source_check(map()) :: map()
+  defp haft_commission_source_check(bundle) do
+    bundle.commission_source
+    |> value_at(:selector, "runnable")
+    |> present_string()
+    |> haft_commission_selector_result()
+  end
+
+  @spec haft_commission_selector_result(String.t() | nil) :: map()
+  defp haft_commission_selector_result(nil) do
+    error_check("commission_source.selector", "Haft commission selector is missing")
+  end
+
+  defp haft_commission_selector_result(selector) do
+    ok_check("commission_source.selector", "Haft commission selector: #{selector}")
+  end
+
+  @spec local_commission_source_check(map()) :: map()
+  defp local_commission_source_check(bundle) do
+    bundle
+    |> local_commission_fixture_path()
+    |> local_commission_fixture_result()
+  end
+
+  @spec local_commission_fixture_path(map()) :: String.t() | nil
+  defp local_commission_fixture_path(bundle) do
+    bundle.commission_source
+    |> value_at(:fixture_path, nil)
+    |> present_string()
+  end
+
+  @spec local_commission_fixture_result(String.t() | nil) :: map()
+  defp local_commission_fixture_result(nil) do
+    error_check("commission_source.fixture_path", "Local commission fixture_path is missing")
+  end
+
+  defp local_commission_fixture_result(path) do
+    path
+    |> Path.expand()
+    |> File.exists?()
+    |> local_commission_fixture_exists(path)
+  end
+
+  @spec local_commission_fixture_exists(boolean(), String.t()) :: map()
+  defp local_commission_fixture_exists(true, path) do
+    ok_check("commission_source.fixture_path", "Local commission fixture exists: #{path}")
+  end
+
+  defp local_commission_fixture_exists(false, path) do
+    error_check("commission_source.fixture_path", "Local commission fixture is missing: #{path}")
+  end
+
+  @spec linear_source_checks(map()) :: [map()]
+  defp linear_source_checks(bundle) do
+    [
+      linear_api_key_check(bundle),
+      linear_project_check(bundle),
+      linear_states_check(bundle)
+    ]
+  end
+
+  @spec commission_source_kind(map()) :: String.t() | nil
+  defp commission_source_kind(bundle) do
+    bundle.commission_source
+    |> value_at(:kind, nil)
+    |> config_string_or_nil()
   end
 
   @spec linear_api_key_check(map()) :: map()
@@ -231,6 +314,15 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
     bundle.haft
     |> value_at(:command, "haft serve")
     |> config_string()
+  end
+
+  @spec haft_command_check(map(), keyword()) :: map()
+  defp haft_command_check(bundle, opts) do
+    if Keyword.get(opts, :mock_haft, false) do
+      ok_check("haft.command", "Haft command check skipped by --mock-haft")
+    else
+      command_check("haft.command", haft_command(bundle))
+    end
   end
 
   @spec command_check(String.t(), String.t()) :: map()
@@ -742,6 +834,10 @@ defmodule Mix.Tasks.OpenSleigh.Doctor do
   defp config_string(value) when is_binary(value), do: value
   defp config_string(value) when is_atom(value), do: Atom.to_string(value)
   defp config_string(value), do: to_string(value)
+
+  @spec config_string_or_nil(term()) :: String.t() | nil
+  defp config_string_or_nil(nil), do: nil
+  defp config_string_or_nil(value), do: config_string(value)
 
   @spec present_string(term()) :: String.t() | nil
   defp present_string(value) when is_binary(value) do

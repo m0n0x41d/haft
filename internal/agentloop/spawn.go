@@ -399,7 +399,7 @@ func (c *Coordinator) subagentLoop(
 // writeTools are blocked for read-only subagents at execution time.
 var writeToolNames = map[string]bool{
 	"bash": true, "write": true, "edit": true, "multiedit": true,
-	"haft_problem": true, "haft_solution": true, "haft_decision": true, "haft_note": true,
+	"haft_problem": true, "haft_solution": true, "haft_decision": true, "haft_commission": true, "haft_note": true,
 }
 
 func (c *Coordinator) executeSubagentTool(ctx context.Context, tc agent.ToolCallPart, readOnly bool) (string, bool) {

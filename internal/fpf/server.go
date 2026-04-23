@@ -703,6 +703,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"action"},
 			},
 		})
+
+		tools = append(tools, haftCommissionTool())
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

@@ -23,6 +23,7 @@ defmodule OpenSleigh.MixTasksTest do
     assert_receive {:mix_shell, :info, [help]}, 500
     assert String.contains?(help, "mix open_sleigh.start")
     assert String.contains?(help, "--path")
+    assert String.contains?(help, "--mock-haft")
   end
 
   test "open_sleigh.canary prints help" do
@@ -39,6 +40,7 @@ defmodule OpenSleigh.MixTasksTest do
     assert_receive {:mix_shell, :info, [help]}, 500
     assert String.contains?(help, "mix open_sleigh.doctor")
     assert String.contains?(help, "--json")
+    assert String.contains?(help, "--mock-haft")
   end
 
   test "open_sleigh.status prints help" do
@@ -178,6 +180,99 @@ defmodule OpenSleigh.MixTasksTest do
     assert has_check?(report, "hooks.failure_policy", "ok")
     assert has_check?(report, "external_publication.branch_regex", "ok")
     assert has_check?(report, "gates.semantic", "ok")
+  end
+
+  test "open_sleigh.doctor passes local commission source without tracker or Haft env" do
+    old_key = System.get_env("LINEAR_API_KEY")
+    old_repo = System.get_env("REPO_URL")
+    old_path = System.get_env("PATH")
+
+    path = tmp_sleigh_path()
+    bin_dir = fake_bin_dir(["codex"])
+
+    source =
+      "sleigh.commission.md.example"
+      |> File.read!()
+      |> String.replace(
+        "fixture_path: fixtures/commissions/local_bootstrap.yaml",
+        "fixture_path: #{Path.expand("fixtures/commissions/local_bootstrap.yaml")}"
+      )
+      |> String.replace("root: ~/.open-sleigh/workspaces", "root: #{test_workspace_root(path)}")
+      |> String.replace(
+        "  after_create: |\n    git clone --depth 1 $REPO_URL .\n    mix deps.get || true",
+        "  after_create: null"
+      )
+      |> String.replace(
+        "  before_run: |\n    git pull --ff-only origin main || true",
+        "  before_run: null"
+      )
+
+    File.write!(path, source)
+
+    System.delete_env("LINEAR_API_KEY")
+    System.delete_env("REPO_URL")
+    System.put_env("PATH", bin_dir <> ":" <> old_path)
+
+    on_exit(fn ->
+      restore_env("LINEAR_API_KEY", old_key)
+      restore_env("REPO_URL", old_repo)
+      restore_env("PATH", old_path)
+      File.rm_rf!(Path.dirname(path))
+      File.rm_rf!(bin_dir)
+    end)
+
+    Mix.Task.run("open_sleigh.doctor", ["--path", path, "--mock-haft", "--json"])
+
+    assert_receive {:mix_shell, :info, [encoded]}, 500
+    assert {:ok, report} = Jason.decode(encoded)
+    assert report["ready"] == true
+    assert has_check?(report, "commission_source.fixture_path", "ok")
+    assert has_check?(report, "haft.command", "ok")
+  end
+
+  test "open_sleigh.doctor passes Haft commission source without tracker env" do
+    old_key = System.get_env("LINEAR_API_KEY")
+    old_repo = System.get_env("REPO_URL")
+    old_path = System.get_env("PATH")
+
+    path = tmp_sleigh_path()
+    bin_dir = fake_bin_dir(["codex"])
+
+    source =
+      "sleigh.commission.md.example"
+      |> File.read!()
+      |> String.replace("kind: local", "kind: haft")
+      |> String.replace("root: ~/.open-sleigh/workspaces", "root: #{test_workspace_root(path)}")
+      |> String.replace(
+        "  after_create: |\n    git clone --depth 1 $REPO_URL .\n    mix deps.get || true",
+        "  after_create: null"
+      )
+      |> String.replace(
+        "  before_run: |\n    git pull --ff-only origin main || true",
+        "  before_run: null"
+      )
+
+    File.write!(path, source)
+
+    System.delete_env("LINEAR_API_KEY")
+    System.delete_env("REPO_URL")
+    System.put_env("PATH", bin_dir <> ":" <> old_path)
+
+    on_exit(fn ->
+      restore_env("LINEAR_API_KEY", old_key)
+      restore_env("REPO_URL", old_repo)
+      restore_env("PATH", old_path)
+      File.rm_rf!(Path.dirname(path))
+      File.rm_rf!(bin_dir)
+    end)
+
+    Mix.Task.run("open_sleigh.doctor", ["--path", path, "--mock-haft", "--json"])
+
+    assert_receive {:mix_shell, :info, [encoded]}, 500
+    assert {:ok, report} = Jason.decode(encoded)
+    assert report["ready"] == true
+    assert has_check?(report, "commission_source.selector", "ok")
+    assert has_check?(report, "haft.command", "ok")
   end
 
   test "open_sleigh.doctor JSON reports schema field path and fix hint" do
@@ -474,6 +569,111 @@ defmodule OpenSleigh.MixTasksTest do
 
     assert Enum.any?(log_events, &(&1["event"] == "runtime_started"))
     assert Enum.any?(log_events, &(&1["event"] == "once_poll_completed"))
+  end
+
+  test "open_sleigh.start boots local source with independently mocked effects" do
+    old_status_path = System.get_env("OPEN_SLEIGH_STATUS_PATH")
+    old_log_path = System.get_env("OPEN_SLEIGH_LOG_PATH")
+    path = tmp_sleigh_path()
+    status_path = Path.join(Path.dirname(path), "split-status.json")
+    log_path = Path.join(Path.dirname(path), "split-runtime.jsonl")
+
+    System.put_env("OPEN_SLEIGH_STATUS_PATH", status_path)
+    System.put_env("OPEN_SLEIGH_LOG_PATH", log_path)
+
+    source =
+      "sleigh.commission.md.example"
+      |> File.read!()
+      |> String.replace(
+        "fixture_path: fixtures/commissions/local_bootstrap.yaml",
+        "fixture_path: #{Path.expand("fixtures/commissions/local_bootstrap.yaml")}"
+      )
+      |> String.replace("root: ~/.open-sleigh/workspaces", "root: #{test_workspace_root(path)}")
+      |> String.replace("status_path: ~/.open-sleigh/status.json", "status_path: #{status_path}")
+      |> String.replace("log_path: ~/.open-sleigh/runtime.jsonl", "log_path: #{log_path}")
+      |> String.replace(
+        "  after_create: |\n    git clone --depth 1 $REPO_URL .\n    mix deps.get || true",
+        "  after_create: null"
+      )
+      |> String.replace(
+        "  before_run: |\n    git pull --ff-only origin main || true",
+        "  before_run: null"
+      )
+
+    File.write!(path, source)
+
+    on_exit(fn ->
+      restore_env("OPEN_SLEIGH_STATUS_PATH", old_status_path)
+      restore_env("OPEN_SLEIGH_LOG_PATH", old_log_path)
+      File.rm_rf!(Path.dirname(path))
+    end)
+
+    Mix.Task.run(
+      "open_sleigh.start",
+      ["--path", path, "--mock-agent", "--mock-haft", "--mock-judge", "--once"]
+    )
+
+    assert_receive {:mix_shell, :info, ["Open-Sleigh engine started"]}, 1_000
+    assert_receive {:mix_shell, :info, ["Open-Sleigh status: " <> _encoded]}, 1_000
+
+    assert {:ok, stored_status} =
+             status_path
+             |> File.read!()
+             |> Jason.decode()
+
+    assert get_in(stored_status, ["metadata", "tracker_kind"]) == "commission_source:local"
+    assert get_in(stored_status, ["metadata", "agent_kind"]) == "mock"
+  end
+
+  test "open_sleigh.start boots Haft commission source with independently mocked effects" do
+    old_status_path = System.get_env("OPEN_SLEIGH_STATUS_PATH")
+    old_log_path = System.get_env("OPEN_SLEIGH_LOG_PATH")
+    path = tmp_sleigh_path()
+    status_path = Path.join(Path.dirname(path), "haft-status.json")
+    log_path = Path.join(Path.dirname(path), "haft-runtime.jsonl")
+
+    System.put_env("OPEN_SLEIGH_STATUS_PATH", status_path)
+    System.put_env("OPEN_SLEIGH_LOG_PATH", log_path)
+
+    source =
+      "sleigh.commission.md.example"
+      |> File.read!()
+      |> String.replace("kind: local", "kind: haft")
+      |> String.replace("root: ~/.open-sleigh/workspaces", "root: #{test_workspace_root(path)}")
+      |> String.replace("status_path: ~/.open-sleigh/status.json", "status_path: #{status_path}")
+      |> String.replace("log_path: ~/.open-sleigh/runtime.jsonl", "log_path: #{log_path}")
+      |> String.replace(
+        "  after_create: |\n    git clone --depth 1 $REPO_URL .\n    mix deps.get || true",
+        "  after_create: null"
+      )
+      |> String.replace(
+        "  before_run: |\n    git pull --ff-only origin main || true",
+        "  before_run: null"
+      )
+
+    File.write!(path, source)
+
+    on_exit(fn ->
+      restore_env("OPEN_SLEIGH_STATUS_PATH", old_status_path)
+      restore_env("OPEN_SLEIGH_LOG_PATH", old_log_path)
+      File.rm_rf!(Path.dirname(path))
+    end)
+
+    Mix.Task.run(
+      "open_sleigh.start",
+      ["--path", path, "--mock-agent", "--mock-haft", "--mock-judge", "--once"]
+    )
+
+    assert_receive {:mix_shell, :info, ["Open-Sleigh engine started"]}, 1_000
+    assert_receive {:mix_shell, :info, ["Open-Sleigh status: " <> _encoded]}, 1_000
+
+    assert {:ok, stored_status} =
+             status_path
+             |> File.read!()
+             |> Jason.decode()
+
+    assert get_in(stored_status, ["metadata", "tracker_kind"]) == "commission_source:haft"
+    assert get_in(stored_status, ["metadata", "agent_kind"]) == "mock"
   end
 
   test "open_sleigh.start real mode fails fast when Linear API key is missing" do

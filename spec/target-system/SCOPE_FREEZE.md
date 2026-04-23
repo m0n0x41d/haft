@@ -10,7 +10,7 @@ Everything below is built, tested, and being merged to main.
 
 ### Core (proven, stable)
 - Artifact graph: ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, Note, RefreshReport
-- 6 MCP tools: haft_problem, haft_solution, haft_decision, haft_query, haft_refresh, haft_note
+- 7 MCP tools: haft_problem, haft_solution, haft_decision, haft_commission, haft_query, haft_refresh, haft_note
 - Problem close action (mark ProblemCard as addressed)
 - FPF spec search/index (~800 sections, route-aware tiered retrieval)
 - Evidence engine: R_eff, WLNK, CL penalties, evidence decay, valid_until, verdict
@@ -37,8 +37,8 @@ Everything below is built, tested, and being merged to main.
 - Search (Cmd+K)
 
 ### Surfaces
-- MCP Plugin: stable 6-tool interface
-- CLI: haft init, serve, sync, agent, board, doctor, fpf search
+- MCP Plugin: stable 7-tool interface
+- CLI: haft init, serve, sync, agent, board, doctor, fpf search, commission
 - Desktop App: Wails v2, pre-alpha
 
 ### Skill & Commands

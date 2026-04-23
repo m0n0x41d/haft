@@ -18,6 +18,7 @@ const (
 	KindProblemCard       Kind = "ProblemCard"
 	KindSolutionPortfolio Kind = "SolutionPortfolio"
 	KindDecisionRecord    Kind = "DecisionRecord"
+	KindWorkCommission    Kind = "WorkCommission"
 	KindEvidencePack      Kind = "EvidencePack"
 	KindRefreshReport     Kind = "RefreshReport"
 )
@@ -25,7 +26,7 @@ const (
 // validKinds is the set of all valid artifact kinds (unexported — use ParseKind at boundaries).
 var validKinds = map[Kind]bool{
 	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
-	KindDecisionRecord: true, KindEvidencePack: true, KindRefreshReport: true,
+	KindDecisionRecord: true, KindWorkCommission: true, KindEvidencePack: true, KindRefreshReport: true,
 }
 
 // IsValid returns true if the kind is a recognized artifact kind.
@@ -51,6 +52,8 @@ func (k Kind) IDPrefix() string {
 		return "sol"
 	case KindDecisionRecord:
 		return "dec"
+	case KindWorkCommission:
+		return "wc"
 	case KindEvidencePack:
 		return "evid"
 	case KindRefreshReport:
@@ -71,6 +74,8 @@ func (k Kind) Dir() string {
 		return "solutions"
 	case KindDecisionRecord:
 		return "decisions"
+	case KindWorkCommission:
+		return "commissions"
 	case KindEvidencePack:
 		return "evidence"
 	case KindRefreshReport:
@@ -89,6 +94,8 @@ func (k Kind) UserFacingLabel() string {
 		return "solution portfolio"
 	case KindDecisionRecord:
 		return "decision"
+	case KindWorkCommission:
+		return "work commission"
 	case KindEvidencePack:
 		return "evidence pack"
 	case KindRefreshReport:
@@ -116,6 +123,11 @@ func (k Kind) UserFacingHeading(count int) string {
 			return "Decision"
 		}
 		return "Decisions"
+	case KindWorkCommission:
+		if count == 1 {
+			return "Work Commission"
+		}
+		return "Work Commissions"
 	case KindEvidencePack:
 		if count == 1 {
 			return "Evidence Pack"

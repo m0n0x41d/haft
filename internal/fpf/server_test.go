@@ -219,6 +219,35 @@ func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T)
 	}
 }
 
+func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.T) {
+	commissionSchema := mustListToolProperties(t, "haft_commission")
+
+	action, ok := commissionSchema["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("action schema missing or wrong type: %#v", commissionSchema["action"])
+	}
+
+	values, ok := action["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("action enum missing or wrong type: %#v", action["enum"])
+	}
+
+	got := map[string]bool{}
+	for _, value := range values {
+		name, ok := value.(string)
+		if !ok {
+			t.Fatalf("action enum value has wrong type: %#v", value)
+		}
+		got[name] = true
+	}
+
+	for _, want := range []string{"create", "list_runnable", "claim_for_preflight"} {
+		if !got[want] {
+			t.Fatalf("expected haft_commission action %q in schema enum %#v", want, values)
+		}
+	}
+}
+
 func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
 	querySchema := mustListToolProperties(t, "haft_query")
 

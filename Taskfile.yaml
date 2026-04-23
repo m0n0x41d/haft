@@ -179,6 +179,47 @@ tasks:
         --parsable-style
         --include-diffs
 
+  open-sleigh:doctor:
+    desc: Check the local Open-Sleigh commission harness prerequisites
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.doctor --path sleigh.commission.md.example --mock-haft
+
+  open-sleigh:doctor-haft:
+    desc: Check the Haft commission-source harness prerequisites
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.doctor --path sleigh.haft.md.example --mock-haft
+
+  open-sleigh:smoke:
+    desc: Run one deterministic local Open-Sleigh commission smoke
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.commission.md.example --mock --once --once-timeout-ms=5000
+
+  open-sleigh:smoke-haft:
+    desc: Run one deterministic Haft commission-source smoke
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.haft.md.example --mock --once --once-timeout-ms=5000
+
+  open-sleigh:smoke-real-haft:
+    desc: Run Open-Sleigh against a real temporary Haft MCP server and WorkCommission
+    cmds:
+      - bash scripts/open_sleigh_real_haft_smoke.sh
+
+  open-sleigh:harness:
+    desc: Run local Open-Sleigh commission harness with real agent and mock Haft/Judge
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.commission.md.example --mock-haft --mock-judge
+
+  open-sleigh:harness-haft:
+    desc: Run Haft commission-source harness with real agent and mock Haft/Judge
+    dir: open-sleigh
+    cmds:
+      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.haft.md.example --mock-haft --mock-judge
+
   clean:
     desc: Remove local build artifacts
     cmds:

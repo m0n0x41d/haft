@@ -27,6 +27,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   use Mix.Task
 
   alias OpenSleigh.Agent
+  alias OpenSleigh.CommissionSource.Intake, as: CommissionIntake
   alias OpenSleigh.CommissionSource.Haft, as: HaftCommissionSource
   alias OpenSleigh.CommissionSource.Local, as: LocalCommissionSource
   alias OpenSleigh.Haft.Mock
@@ -229,16 +230,21 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   @spec start_local_commission_tracker(WorkflowStore.bundle()) :: {:ok, map()} | {:error, term()}
   defp start_local_commission_tracker(bundle) do
     with {:ok, source} <- LocalCommissionSource.new(bundle),
-         {:ok, commissions} <- LocalCommissionSource.list_runnable(source),
-         {:ok, claimed} <- claim_local_commissions(source, commissions),
          {:ok, handle} <- Tracker.Mock.start(),
-         :ok <- seed_local_commission_tickets(handle, claimed) do
+         source_ref <-
+           commission_source_ref(
+             LocalCommissionSource,
+             source,
+             commission_source_max_claims(bundle),
+             false
+           ),
+         {:ok, _claimed_count} <- CommissionIntake.replenish(source_ref, Tracker.Mock, handle) do
       {:ok,
        %{
          adapter: Tracker.Mock,
          handle: handle,
          pids: [handle],
-         commission_source: %{adapter: LocalCommissionSource, handle: source}
+         commission_source: source_ref
        }}
     end
   end
@@ -250,145 +256,29 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   defp start_haft_commission_tracker(bundle, %{invoke_fun: invoke_fun})
        when is_function(invoke_fun, 1) do
     with {:ok, source} <- HaftCommissionSource.new(bundle, invoke_fun),
-         {:ok, commissions} <- HaftCommissionSource.list_runnable(source),
-         {:ok, claimed} <-
-           claim_haft_commissions(source, commissions, commission_source_max_claims(bundle)),
          {:ok, handle} <- Tracker.Mock.start(),
-         :ok <- seed_local_commission_tickets(handle, claimed) do
+         source_ref <-
+           commission_source_ref(
+             HaftCommissionSource,
+             source,
+             commission_source_max_claims(bundle),
+             true
+           ),
+         {:ok, _claimed_count} <- CommissionIntake.replenish(source_ref, Tracker.Mock, handle) do
       {:ok,
        %{
          adapter: Tracker.Mock,
          handle: handle,
          pids: [handle],
-         commission_source: %{adapter: HaftCommissionSource, handle: source}
+         commission_source: source_ref
        }}
     end
   end
 
-  @spec claim_haft_commissions(
-          HaftCommissionSource.t(),
-          [OpenSleigh.WorkCommission.t()],
-          pos_integer()
-        ) :: {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
-  defp claim_haft_commissions(source, commissions, max_claims) do
-    commissions
-    |> Enum.reduce_while({:ok, [], max_claims}, &claim_haft_commission(source, &1, &2))
-    |> claimed_limited_commissions()
-  end
-
-  @spec claim_haft_commission(
-          HaftCommissionSource.t(),
-          OpenSleigh.WorkCommission.t(),
-          {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}
-        ) ::
-          {:cont, {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}}
-          | {:halt, {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}}
-          | {:halt, {:error, term()}}
-  defp claim_haft_commission(_source, _commission, {:ok, claimed, 0}) do
-    {:halt, {:ok, claimed, 0}}
-  end
-
-  defp claim_haft_commission(source, commission, {:ok, claimed, remaining}) do
-    case HaftCommissionSource.claim_for_preflight(source, commission.id) do
-      {:ok, next_commission} ->
-        {:cont, {:ok, [next_commission | claimed], remaining - 1}}
-
-      {:error, reason}
-      when reason in [:commission_lock_conflict, :commission_not_runnable, :commission_not_found] ->
-        {:cont, {:ok, claimed, remaining}}
-
-      {:error, reason} ->
-        {:halt, {:error, reason}}
-    end
-  end
-
-  @spec claimed_limited_commissions(
-          {:ok, [OpenSleigh.WorkCommission.t()], non_neg_integer()}
-          | {:error, term()}
-        ) ::
-          {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
-  defp claimed_limited_commissions({:ok, commissions, _remaining}) do
-    commissions
-    |> Enum.reverse()
-    |> then(&{:ok, &1})
-  end
-
-  defp claimed_limited_commissions({:error, _reason} = error), do: error
-
-  @spec claim_local_commissions(
-          LocalCommissionSource.t(),
-          [OpenSleigh.WorkCommission.t()]
-        ) :: {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
-  defp claim_local_commissions(source, commissions) do
-    commissions
-    |> Enum.reduce_while({:ok, []}, &claim_local_commission(source, &1, &2))
-    |> claimed_local_commissions()
-  end
-
-  @spec claim_local_commission(
-          LocalCommissionSource.t(),
-          OpenSleigh.WorkCommission.t(),
-          {:ok, [OpenSleigh.WorkCommission.t()]}
-        ) :: {:cont, {:ok, [OpenSleigh.WorkCommission.t()]}} | {:halt, {:error, term()}}
-  defp claim_local_commission(source, commission, {:ok, claimed}) do
-    case LocalCommissionSource.claim_for_preflight(source, commission.id) do
-      {:ok, next_commission} -> {:cont, {:ok, [next_commission | claimed]}}
-      {:error, reason} -> {:halt, {:error, reason}}
-    end
-  end
-
-  @spec claimed_local_commissions({:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}) ::
-          {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
-  defp claimed_local_commissions({:ok, commissions}) do
-    commissions
-    |> Enum.reverse()
-    |> then(&{:ok, &1})
-  end
-
-  defp claimed_local_commissions({:error, _reason} = error), do: error
-
-  @spec seed_local_commission_tickets(pid(), [OpenSleigh.WorkCommission.t()]) ::
-          :ok | {:error, atom()}
-  defp seed_local_commission_tickets(handle, commissions) do
-    tickets =
-      commissions
-      |> Enum.map(&local_commission_ticket_attrs/1)
-
-    Tracker.Mock.seed(handle, tickets)
-  end
-
-  @spec local_commission_ticket_attrs(OpenSleigh.WorkCommission.t()) :: map()
-  defp local_commission_ticket_attrs(commission) do
-    %{
-      id: commission.id,
-      source: {:github, commission.scope.repo_ref},
-      title: "WorkCommission " <> commission.id,
-      body: "",
-      state: :todo,
-      problem_card_ref: commission.problem_card_ref,
-      target_branch: commission.scope.target_branch,
-      fetched_at: commission.fetched_at,
-      metadata: %{
-        commission: commission,
-        commission_id: commission.id,
-        source_mode: :commission_first,
-        problem_revision_hash: commission.decision_revision_hash,
-        lease_id: "local-preflight:" <> commission.id,
-        lease_state: :claimed_for_preflight,
-        current_decision: local_current_decision(commission)
-      }
-    }
-  end
-
-  @spec local_current_decision(OpenSleigh.WorkCommission.t()) :: map()
-  defp local_current_decision(commission) do
-    %{
-      decision_ref: commission.decision_ref,
-      decision_revision_hash: commission.decision_revision_hash,
-      status: :active,
-      refresh_due: false,
-      freshness: :healthy
-    }
+  @spec commission_source_ref(module(), term(), pos_integer(), boolean()) ::
+          CommissionIntake.source_ref()
+  defp commission_source_ref(adapter, source, max_claims, dynamic?) do
+    CommissionIntake.source_ref(adapter, source, max_claims, dynamic?)
   end
 
   @spec start_linear_tracker(WorkflowStore.bundle()) :: {:ok, map()} | {:error, term()}
@@ -725,6 +615,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     TrackerPoller.start_link(
       tracker_handle: tracker.handle,
       tracker_adapter: tracker.adapter,
+      commission_source: Map.get(tracker, :commission_source),
       orchestrator: orchestrator,
       interval_ms: get_in(bundle.engine, ["poll_interval_ms"]) || 30_000,
       name: server_name("open_sleigh_tracker_poller")

@@ -1,7 +1,8 @@
 defmodule OpenSleigh.TrackerPollerTest do
   use ExUnit.Case, async: false
 
-  alias OpenSleigh.{ObservationsBus, Tracker.Mock, TrackerPoller}
+  alias OpenSleigh.CommissionSource.Intake
+  alias OpenSleigh.{ObservationsBus, Scope, Tracker.Mock, TrackerPoller, WorkCommission}
 
   defmodule FakeOrchestrator do
     @moduledoc false
@@ -25,6 +26,23 @@ defmodule OpenSleigh.TrackerPollerTest do
     @impl true
     def handle_call(:received, _from, state),
       do: {:reply, Enum.reverse(state.received), state}
+  end
+
+  defmodule FakeCommissionSource do
+    @moduledoc false
+
+    def list_runnable(%{owner: owner, commission: commission}) do
+      send(owner, :commission_source_listed)
+      {:ok, [commission]}
+    end
+
+    def claim_for_preflight(%{owner: owner, commission: commission}, commission_id) do
+      send(owner, {:commission_source_claimed, commission_id})
+
+      commission
+      |> Map.put(:state, :preflighting)
+      |> then(&{:ok, &1})
+    end
   end
 
   setup do
@@ -95,4 +113,88 @@ defmodule OpenSleigh.TrackerPollerTest do
 
     assert Enum.any?(ObservationsBus.snapshot(), &(&1.metric == :tracker_poll))
   end
+
+  test "dynamic commission source is replenished before tracker candidates", ctx do
+    name = String.to_atom("TP_#{:erlang.unique_integer([:positive])}")
+
+    source =
+      Intake.source_ref(
+        FakeCommissionSource,
+        %{owner: self(), commission: commission_fixture!("wc-poller-001")},
+        1,
+        true
+      )
+
+    {:ok, _} =
+      TrackerPoller.start_link(
+        tracker_handle: ctx.tracker,
+        tracker_adapter: Mock,
+        commission_source: source,
+        orchestrator: FakeOrchestrator,
+        interval_ms: 60_000,
+        name: name
+      )
+
+    :ok = TrackerPoller.poke(name)
+    Process.sleep(50)
+
+    assert_receive :commission_source_listed
+    assert_receive {:commission_source_claimed, "wc-poller-001"}
+
+    received =
+      FakeOrchestrator.received()
+      |> List.last()
+      |> Enum.map(& &1.id)
+
+    assert "OCT-9" in received
+    assert "wc-poller-001" in received
+    assert Enum.any?(ObservationsBus.snapshot(), &(&1.metric == :commission_source_poll))
+  end
+
+  defp commission_fixture!(id) do
+    scope = scope_fixture!()
+
+    %{
+      id: id,
+      decision_ref: "dec-poller",
+      decision_revision_hash: "decision-r1",
+      problem_card_ref: "pc-poller",
+      implementation_plan_ref: "plan-poller",
+      implementation_plan_revision: "plan-r1",
+      scope: scope,
+      scope_hash: scope.hash,
+      base_sha: scope.base_sha,
+      lockset: scope.lockset,
+      evidence_requirements: [],
+      projection_policy: :local_only,
+      state: :queued,
+      valid_until: ~U[2099-01-01 00:00:00Z],
+      fetched_at: ~U[2026-04-22 10:00:00Z]
+    }
+    |> WorkCommission.new()
+    |> unwrap!()
+  end
+
+  defp scope_fixture! do
+    attrs = %{
+      repo_ref: "local:haft",
+      base_sha: "base-r1",
+      target_branch: "feature/poller",
+      allowed_paths: ["**/*"],
+      forbidden_paths: [],
+      allowed_actions: MapSet.new([:edit_files, :run_tests]),
+      affected_files: ["**/*"],
+      allowed_modules: [],
+      lockset: ["**/*"]
+    }
+
+    {:ok, hash} = Scope.canonical_hash(attrs)
+
+    attrs
+    |> Map.put(:hash, hash)
+    |> Scope.new()
+    |> unwrap!()
+  end
+
+  defp unwrap!({:ok, value}), do: value
 end

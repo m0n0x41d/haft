@@ -11,7 +11,7 @@ defmodule OpenSleigh.TrackerPoller do
 
   use GenServer
 
-  alias OpenSleigh.{ObservationsBus, Orchestrator}
+  alias OpenSleigh.{CommissionSource.Intake, ObservationsBus, Orchestrator}
 
   require Logger
 
@@ -21,6 +21,7 @@ defmodule OpenSleigh.TrackerPoller do
   @type opts :: [
           tracker_handle: term(),
           tracker_adapter: module(),
+          commission_source: Intake.source_ref() | nil,
           orchestrator: GenServer.server(),
           interval_ms: pos_integer(),
           name: atom()
@@ -40,6 +41,7 @@ defmodule OpenSleigh.TrackerPoller do
     state = %{
       tracker_handle: Keyword.fetch!(opts, :tracker_handle),
       tracker_adapter: Keyword.fetch!(opts, :tracker_adapter),
+      commission_source: Keyword.get(opts, :commission_source),
       orchestrator: Keyword.get(opts, :orchestrator, Orchestrator),
       interval_ms: Keyword.get(opts, :interval_ms, @default_interval_ms)
     }
@@ -63,6 +65,8 @@ defmodule OpenSleigh.TrackerPoller do
 
   @spec do_poll(map()) :: :ok
   defp do_poll(state) do
+    :ok = replenish_commission_source(state)
+
     case state.tracker_adapter.list_active(state.tracker_handle) do
       {:ok, tickets} ->
         :ok = ObservationsBus.emit(:tracker_poll, length(tickets), %{})
@@ -73,6 +77,30 @@ defmodule OpenSleigh.TrackerPoller do
         :ok
     end
   end
+
+  @spec replenish_commission_source(map()) :: :ok
+  defp replenish_commission_source(%{commission_source: source} = state) do
+    source
+    |> Intake.dynamic?()
+    |> maybe_replenish_commission_source(state)
+  end
+
+  @spec maybe_replenish_commission_source(boolean(), map()) :: :ok
+  defp maybe_replenish_commission_source(false, _state), do: :ok
+
+  defp maybe_replenish_commission_source(true, state) do
+    case Intake.replenish(state.commission_source, state.tracker_adapter, state.tracker_handle) do
+      {:ok, claimed_count} ->
+        ObservationsBus.emit(:commission_source_poll, claimed_count, %{})
+
+      {:error, reason} ->
+        ObservationsBus.emit(:commission_source_poll_failed, reason_text(reason), %{})
+    end
+  end
+
+  @spec reason_text(term()) :: String.t()
+  defp reason_text(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp reason_text(reason), do: inspect(reason)
 
   @spec schedule_tick(pos_integer()) :: reference()
   defp schedule_tick(ms), do: Process.send_after(self(), :tick, ms)

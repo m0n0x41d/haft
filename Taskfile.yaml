@@ -208,6 +208,11 @@ tasks:
     cmds:
       - bash scripts/open_sleigh_real_haft_smoke.sh
 
+  open-sleigh:smoke-real-haft-dynamic:
+    desc: Prove long-running Open-Sleigh picks up new Haft WorkCommissions without restart
+    cmds:
+      - bash scripts/open_sleigh_real_haft_dynamic_smoke.sh
+
   open-sleigh:harness:
     desc: Run local Open-Sleigh commission harness with real agent and mock Haft/Judge
     dir: open-sleigh

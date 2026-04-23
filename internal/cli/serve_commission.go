@@ -3,16 +3,37 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
+
+const defaultCommissionValidFor = 168 * time.Hour
+
+type commissionFromDecisionInput struct {
+	DecisionRef          string
+	RepoRef              string
+	BaseSHA              string
+	TargetBranch         string
+	AllowedPaths         []string
+	ForbiddenPaths       []string
+	AllowedActions       []string
+	AffectedFiles        []string
+	AllowedModules       []string
+	Lockset              []string
+	EvidenceRequirements []any
+	ProjectionPolicy     string
+	State                string
+	ValidUntil           string
+}
 
 func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	action := stringArg(args, "action")
@@ -20,6 +41,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 	switch action {
 	case "create":
 		return createWorkCommission(ctx, store, args)
+	case "create_from_decision":
+		return createWorkCommissionFromDecision(ctx, store, args)
 	case "list_runnable":
 		return listRunnableWorkCommissions(ctx, store)
 	case "claim_for_preflight":
@@ -38,6 +61,31 @@ func createWorkCommission(ctx context.Context, store *artifact.Store, args map[s
 	if err != nil {
 		return "", err
 	}
+
+	return persistWorkCommission(ctx, store, commission, now)
+}
+
+func createWorkCommissionFromDecision(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+) (string, error) {
+	now := time.Now().UTC()
+
+	commission, err := buildWorkCommissionFromDecision(ctx, store, args, now)
+	if err != nil {
+		return "", err
+	}
+
+	return persistWorkCommission(ctx, store, commission, now)
+}
+
+func persistWorkCommission(
+	ctx context.Context,
+	store *artifact.Store,
+	commission map[string]any,
+	now time.Time,
+) (string, error) {
 	if err := normalizeNewWorkCommission(commission, now); err != nil {
 		return "", err
 	}
@@ -64,6 +112,68 @@ func createWorkCommission(ctx context.Context, store *artifact.Store, args map[s
 	}
 
 	return commissionResponse("commission", commission)
+}
+
+func buildWorkCommissionFromDecision(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+	now time.Time,
+) (map[string]any, error) {
+	input, err := parseCommissionFromDecisionInput(args, now)
+	if err != nil {
+		return nil, err
+	}
+
+	decision, err := loadActiveDecisionRecord(ctx, store, input.DecisionRef)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+
+	problemRef, problemHash, err := primaryProblemRefAndHash(ctx, store, decision, fields)
+	if err != nil {
+		return nil, err
+	}
+
+	decisionHash, err := decisionRevisionHash(ctx, store, decision)
+	if err != nil {
+		return nil, err
+	}
+
+	scope, scopeHash, err := workCommissionScopeFromDecision(ctx, store, decision, input)
+	if err != nil {
+		return nil, err
+	}
+
+	evidence := input.EvidenceRequirements
+	if len(evidence) == 0 {
+		evidence = evidenceRequirementsFromStrings(fields.EvidenceRequirements)
+	}
+
+	commission := map[string]any{
+		"decision_ref":           decision.Meta.ID,
+		"decision_revision_hash": decisionHash,
+		"problem_card_ref":       problemRef,
+		"problem_revision_hash":  problemHash,
+		"scope":                  scope,
+		"scope_hash":             scopeHash,
+		"base_sha":               input.BaseSHA,
+		"lockset":                stringSliceToAny(scopeStringSlice(scope, "lockset")),
+		"evidence_requirements":  evidence,
+		"projection_policy":      input.ProjectionPolicy,
+		"state":                  input.State,
+		"valid_until":            input.ValidUntil,
+		"fetched_at":             now.Format(time.RFC3339),
+	}
+
+	putOptionalString(commission, "implementation_plan_ref", stringArg(args, "implementation_plan_ref"))
+	putOptionalString(commission, "implementation_plan_revision", stringArg(args, "implementation_plan_revision"))
+	putOptionalString(commission, "autonomy_envelope_ref", stringArg(args, "autonomy_envelope_ref"))
+	putOptionalString(commission, "autonomy_envelope_revision", stringArg(args, "autonomy_envelope_revision"))
+
+	return commission, nil
 }
 
 func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store) (string, error) {
@@ -172,6 +282,384 @@ func commissionPayload(args map[string]any) (map[string]any, error) {
 		payload[key] = value
 	}
 	return payload, nil
+}
+
+func parseCommissionFromDecisionInput(
+	args map[string]any,
+	now time.Time,
+) (commissionFromDecisionInput, error) {
+	validUntil, err := commissionValidUntil(args, now)
+	if err != nil {
+		return commissionFromDecisionInput{}, err
+	}
+
+	evidence, err := evidenceRequirementsFromArgs(args)
+	if err != nil {
+		return commissionFromDecisionInput{}, err
+	}
+
+	input := commissionFromDecisionInput{
+		DecisionRef:          stringArg(args, "decision_ref"),
+		RepoRef:              stringArg(args, "repo_ref"),
+		BaseSHA:              stringArg(args, "base_sha"),
+		TargetBranch:         stringArg(args, "target_branch"),
+		AllowedActions:       []string{"edit_files", "run_tests"},
+		EvidenceRequirements: evidence,
+		ProjectionPolicy:     stringArg(args, "projection_policy"),
+		State:                stringArg(args, "state"),
+		ValidUntil:           validUntil,
+	}
+
+	var parseErr error
+	if input.AllowedPaths, parseErr = parseStrictStringArrayFromArgs(args, "allowed_paths"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	}
+	if input.ForbiddenPaths, parseErr = parseStrictStringArrayFromArgs(args, "forbidden_paths"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	}
+	if input.AffectedFiles, parseErr = parseStrictStringArrayFromArgs(args, "affected_files"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	}
+	if input.AllowedModules, parseErr = parseStrictStringArrayFromArgs(args, "allowed_modules"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	}
+	if input.Lockset, parseErr = parseStrictStringArrayFromArgs(args, "lockset"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	}
+	if actions, parseErr := parseStrictStringArrayFromArgs(args, "allowed_actions"); parseErr != nil {
+		return commissionFromDecisionInput{}, parseErr
+	} else if len(actions) > 0 {
+		input.AllowedActions = actions
+	}
+
+	return validateCommissionFromDecisionInput(input)
+}
+
+func validateCommissionFromDecisionInput(
+	input commissionFromDecisionInput,
+) (commissionFromDecisionInput, error) {
+	input.DecisionRef = strings.TrimSpace(input.DecisionRef)
+	input.RepoRef = strings.TrimSpace(input.RepoRef)
+	input.BaseSHA = strings.TrimSpace(input.BaseSHA)
+	input.TargetBranch = strings.TrimSpace(input.TargetBranch)
+	input.ProjectionPolicy = strings.TrimSpace(input.ProjectionPolicy)
+	input.State = strings.TrimSpace(input.State)
+	if input.ProjectionPolicy == "" {
+		input.ProjectionPolicy = "local_only"
+	}
+	if input.State == "" {
+		input.State = "queued"
+	}
+
+	if input.DecisionRef == "" {
+		return commissionFromDecisionInput{}, fmt.Errorf("decision_ref is required")
+	}
+	if input.RepoRef == "" {
+		return commissionFromDecisionInput{}, fmt.Errorf("repo_ref is required")
+	}
+	if input.BaseSHA == "" {
+		return commissionFromDecisionInput{}, fmt.Errorf("base_sha is required")
+	}
+	if input.TargetBranch == "" {
+		return commissionFromDecisionInput{}, fmt.Errorf("target_branch is required")
+	}
+	if !validProjectionPolicy(input.ProjectionPolicy) {
+		return commissionFromDecisionInput{}, fmt.Errorf("invalid projection_policy: %s", input.ProjectionPolicy)
+	}
+	if !validWorkCommissionState(input.State) {
+		return commissionFromDecisionInput{}, fmt.Errorf("invalid WorkCommission state: %s", input.State)
+	}
+
+	return input, nil
+}
+
+func commissionValidUntil(args map[string]any, now time.Time) (string, error) {
+	if value := stringArg(args, "valid_until"); value != "" {
+		if _, err := time.Parse(time.RFC3339, value); err != nil {
+			return "", fmt.Errorf("valid_until must be RFC3339: %w", err)
+		}
+		return value, nil
+	}
+
+	duration := defaultCommissionValidFor
+	if value := stringArg(args, "valid_for"); value != "" {
+		parsed, err := time.ParseDuration(value)
+		if err != nil {
+			return "", fmt.Errorf("valid_for must be a Go duration like 168h: %w", err)
+		}
+		duration = parsed
+	}
+	if duration <= 0 {
+		return "", fmt.Errorf("valid_for must be positive")
+	}
+
+	return now.Add(duration).Format(time.RFC3339), nil
+}
+
+func loadActiveDecisionRecord(
+	ctx context.Context,
+	store *artifact.Store,
+	decisionRef string,
+) (*artifact.Artifact, error) {
+	decision, err := store.Get(ctx, decisionRef)
+	if err != nil {
+		return nil, fmt.Errorf("load decision %s: %w", decisionRef, err)
+	}
+	if decision.Meta.Kind != artifact.KindDecisionRecord {
+		return nil, fmt.Errorf("%s is %s, not DecisionRecord", decisionRef, decision.Meta.Kind)
+	}
+	if decision.Meta.Status != artifact.StatusActive {
+		return nil, fmt.Errorf("decision_not_active: %s is %s", decisionRef, decision.Meta.Status)
+	}
+
+	return decision, nil
+}
+
+func primaryProblemRefAndHash(
+	ctx context.Context,
+	store *artifact.Store,
+	decision *artifact.Artifact,
+	fields artifact.DecisionFields,
+) (string, string, error) {
+	problemRefs := decisionProblemRefs(ctx, store, decision, fields)
+	if len(problemRefs) == 0 {
+		return "", "", fmt.Errorf("decision %s has no problem_card_ref", decision.Meta.ID)
+	}
+
+	problem, err := store.Get(ctx, problemRefs[0])
+	if err != nil {
+		return problemRefs[0], "", nil
+	}
+
+	hash, err := artifactRevisionHash(problem, nil)
+	if err != nil {
+		return "", "", err
+	}
+	return problemRefs[0], hash, nil
+}
+
+func decisionProblemRefs(
+	ctx context.Context,
+	store *artifact.Store,
+	decision *artifact.Artifact,
+	fields artifact.DecisionFields,
+) []string {
+	refs := appendStringSet(nil, fields.ProblemRefs...)
+
+	for _, link := range decision.Meta.Links {
+		if link.Type != "based_on" {
+			continue
+		}
+		if strings.HasPrefix(link.Ref, artifact.KindProblemCard.IDPrefix()+"-") {
+			refs = appendStringSet(refs, link.Ref)
+			continue
+		}
+
+		portfolio, err := store.Get(ctx, link.Ref)
+		if err != nil || portfolio.Meta.Kind != artifact.KindSolutionPortfolio {
+			continue
+		}
+
+		refs = appendStringSet(refs, artifact.ResolvePortfolioProblemRefs(portfolio)...)
+	}
+
+	return refs
+}
+
+func decisionRevisionHash(
+	ctx context.Context,
+	store *artifact.Store,
+	decision *artifact.Artifact,
+) (string, error) {
+	files, err := store.GetAffectedFiles(ctx, decision.Meta.ID)
+	if err != nil {
+		return "", fmt.Errorf("load decision affected files: %w", err)
+	}
+
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+
+	return artifactRevisionHash(decision, paths)
+}
+
+func artifactRevisionHash(item *artifact.Artifact, affectedFiles []string) (string, error) {
+	links := append([]artifact.Link(nil), item.Meta.Links...)
+	sort.Slice(links, func(i, j int) bool {
+		left := links[i].Type + "\x00" + links[i].Ref
+		right := links[j].Type + "\x00" + links[j].Ref
+		return left < right
+	})
+
+	payload := struct {
+		ID             string          `json:"id"`
+		Kind           string          `json:"kind"`
+		Version        int             `json:"version"`
+		Status         string          `json:"status"`
+		Title          string          `json:"title"`
+		ValidUntil     string          `json:"valid_until,omitempty"`
+		Body           string          `json:"body"`
+		StructuredData string          `json:"structured_data"`
+		Links          []artifact.Link `json:"links,omitempty"`
+		AffectedFiles  []string        `json:"affected_files,omitempty"`
+	}{
+		ID:             item.Meta.ID,
+		Kind:           string(item.Meta.Kind),
+		Version:        item.Meta.Version,
+		Status:         string(item.Meta.Status),
+		Title:          item.Meta.Title,
+		ValidUntil:     item.Meta.ValidUntil,
+		Body:           item.Body,
+		StructuredData: item.StructuredData,
+		Links:          links,
+		AffectedFiles:  sortedUniqueStrings(affectedFiles),
+	}
+
+	return canonicalJSONHash(payload)
+}
+
+func workCommissionScopeFromDecision(
+	ctx context.Context,
+	store *artifact.Store,
+	decision *artifact.Artifact,
+	input commissionFromDecisionInput,
+) (map[string]any, string, error) {
+	decisionAffectedFiles, err := decisionAffectedFilePaths(ctx, store, decision)
+	if err != nil {
+		return nil, "", err
+	}
+
+	allowedPaths := sortedUniqueStrings(input.AllowedPaths)
+	if len(allowedPaths) == 0 {
+		allowedPaths = decisionAffectedFiles
+	}
+	if len(allowedPaths) == 0 {
+		return nil, "", fmt.Errorf("allowed_paths is required when decision has no affected_files")
+	}
+
+	affectedFiles := sortedUniqueStrings(input.AffectedFiles)
+	if len(affectedFiles) == 0 {
+		affectedFiles = allowedPaths
+	}
+
+	lockset := sortedUniqueStrings(input.Lockset)
+	if len(lockset) == 0 {
+		lockset = affectedFiles
+	}
+
+	scope := map[string]any{
+		"repo_ref":        input.RepoRef,
+		"base_sha":        input.BaseSHA,
+		"target_branch":   input.TargetBranch,
+		"allowed_paths":   stringSliceToAny(allowedPaths),
+		"forbidden_paths": stringSliceToAny(sortedUniqueStrings(input.ForbiddenPaths)),
+		"allowed_actions": stringSliceToAny(sortedUniqueStrings(input.AllowedActions)),
+		"affected_files":  stringSliceToAny(affectedFiles),
+		"allowed_modules": stringSliceToAny(sortedUniqueStrings(input.AllowedModules)),
+		"lockset":         stringSliceToAny(lockset),
+	}
+
+	scopeHash, err := workCommissionScopeHash(scope)
+	if err != nil {
+		return nil, "", err
+	}
+
+	scope["hash"] = scopeHash
+	return scope, scopeHash, nil
+}
+
+func decisionAffectedFilePaths(
+	ctx context.Context,
+	store *artifact.Store,
+	decision *artifact.Artifact,
+) ([]string, error) {
+	files, err := store.GetAffectedFiles(ctx, decision.Meta.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load decision affected files: %w", err)
+	}
+
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+
+	return sortedUniqueStrings(paths), nil
+}
+
+func evidenceRequirementsFromArgs(args map[string]any) ([]any, error) {
+	raw, ok := args["evidence_requirements"]
+	if !ok {
+		return nil, nil
+	}
+
+	switch value := raw.(type) {
+	case []string:
+		return evidenceRequirementsFromStrings(value), nil
+	case []any:
+		return evidenceRequirementsFromAny(value), nil
+	case string:
+		return evidenceRequirementsFromString(value)
+	default:
+		return nil, fmt.Errorf("evidence_requirements must be an array of strings or objects")
+	}
+}
+
+func evidenceRequirementsFromAny(values []any) []any {
+	requirements := make([]any, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if ok {
+			requirements = append(requirements, evidenceRequirementFromString(text))
+			continue
+		}
+
+		entry, ok := value.(map[string]any)
+		if ok {
+			requirements = append(requirements, entry)
+		}
+	}
+	return requirements
+}
+
+func evidenceRequirementsFromString(value string) ([]any, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	if strings.HasPrefix(trimmed, "[") {
+		values := []any{}
+		if err := json.Unmarshal([]byte(trimmed), &values); err != nil {
+			return nil, fmt.Errorf("parse evidence_requirements JSON: %w", err)
+		}
+		return evidenceRequirementsFromAny(values), nil
+	}
+
+	return evidenceRequirementsFromStrings([]string{trimmed}), nil
+}
+
+func evidenceRequirementsFromStrings(values []string) []any {
+	requirements := make([]any, 0, len(values))
+	for _, value := range values {
+		requirement := evidenceRequirementFromString(value)
+		if requirement != nil {
+			requirements = append(requirements, requirement)
+		}
+	}
+	return requirements
+}
+
+func evidenceRequirementFromString(value string) map[string]any {
+	command := strings.TrimSpace(value)
+	if command == "" {
+		return nil
+	}
+
+	return map[string]any{
+		"kind":    "command",
+		"command": command,
+	}
 }
 
 func normalizeNewWorkCommission(commission map[string]any, now time.Time) error {
@@ -474,6 +962,82 @@ func normalizeLockPath(value string) string {
 	return path.Clean(value)
 }
 
+func workCommissionScopeHash(scope map[string]any) (string, error) {
+	fields, err := canonicalScopeFields(scope)
+	if err != nil {
+		return "", err
+	}
+
+	return canonicalJSONHash(fields)
+}
+
+func canonicalScopeFields(scope map[string]any) (map[string]any, error) {
+	fields := map[string]any{
+		"affected_files":  sortedUniqueStrings(scopeStringSlice(scope, "affected_files")),
+		"allowed_actions": sortedUniqueStrings(scopeStringSlice(scope, "allowed_actions")),
+		"allowed_modules": sortedUniqueStrings(scopeStringSlice(scope, "allowed_modules")),
+		"allowed_paths":   sortedUniqueStrings(scopeStringSlice(scope, "allowed_paths")),
+		"base_sha":        stringField(scope, "base_sha"),
+		"forbidden_paths": sortedUniqueStrings(scopeStringSlice(scope, "forbidden_paths")),
+		"lockset":         sortedUniqueStrings(scopeStringSlice(scope, "lockset")),
+		"repo_ref":        stringField(scope, "repo_ref"),
+		"target_branch":   stringField(scope, "target_branch"),
+	}
+
+	if err := validateCanonicalScopeFields(fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+func validateCanonicalScopeFields(fields map[string]any) error {
+	requiredStrings := []string{"base_sha", "repo_ref", "target_branch"}
+	for _, key := range requiredStrings {
+		if stringField(fields, key) == "" {
+			return fmt.Errorf("scope.%s is required", key)
+		}
+	}
+
+	requiredLists := []string{"affected_files", "allowed_actions", "allowed_paths", "lockset"}
+	for _, key := range requiredLists {
+		if len(scopeStringSlice(fields, key)) == 0 {
+			return fmt.Errorf("scope.%s is required", key)
+		}
+	}
+
+	return nil
+}
+
+func canonicalJSONHash(value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func validProjectionPolicy(value string) bool {
+	switch value {
+	case "local_only", "external_optional", "external_required":
+		return true
+	default:
+		return false
+	}
+}
+
+func validWorkCommissionState(value string) bool {
+	switch value {
+	case "draft", "queued", "ready", "preflighting", "running", "blocked_stale",
+		"blocked_policy", "blocked_conflict", "needs_human_review", "completed",
+		"completed_with_projection_debt", "failed", "cancelled", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
 func appendLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {
 	event := map[string]any{
 		"action":      stringArg(args, "action"),
@@ -560,6 +1124,13 @@ func stringField(payload map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func putOptionalString(payload map[string]any, key string, value string) {
+	cleaned := strings.TrimSpace(value)
+	if cleaned != "" {
+		payload[key] = cleaned
+	}
+}
+
 func stringSliceField(payload map[string]any, key string) []string {
 	switch value := payload[key].(type) {
 	case []string:
@@ -569,6 +1140,59 @@ func stringSliceField(payload map[string]any, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func scopeStringSlice(payload map[string]any, key string) []string {
+	return stringSliceField(payload, key)
+}
+
+func stringSliceToAny(values []string) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
+	}
+	return result
+}
+
+func sortedUniqueStrings(values []string) []string {
+	result := cleanStringSlice(values)
+	sort.Strings(result)
+
+	if len(result) < 2 {
+		return result
+	}
+
+	unique := result[:1]
+	for _, value := range result[1:] {
+		if value != unique[len(unique)-1] {
+			unique = append(unique, value)
+		}
+	}
+	return unique
+}
+
+func appendStringSet(target []string, values ...string) []string {
+	result := append([]string(nil), target...)
+	for _, value := range values {
+		cleaned := strings.TrimSpace(value)
+		if cleaned == "" {
+			continue
+		}
+		if stringSliceContains(result, cleaned) {
+			continue
+		}
+		result = append(result, cleaned)
+	}
+	return result
+}
+
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanStringSlice(values []string) []string {

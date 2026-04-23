@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,8 +18,22 @@ import (
 )
 
 var (
-	commissionJSONPath string
-	commissionRunnerID string
+	commissionJSONPath                     string
+	commissionRunnerID                     string
+	commissionFromDecisionRepoRef          string
+	commissionFromDecisionBaseSHA          string
+	commissionFromDecisionTargetBranch     string
+	commissionFromDecisionAllowedPaths     []string
+	commissionFromDecisionForbiddenPaths   []string
+	commissionFromDecisionAllowedActions   []string
+	commissionFromDecisionAffectedFiles    []string
+	commissionFromDecisionAllowedModules   []string
+	commissionFromDecisionLockset          []string
+	commissionFromDecisionEvidence         []string
+	commissionFromDecisionProjectionPolicy string
+	commissionFromDecisionState            string
+	commissionFromDecisionValidFor         string
+	commissionFromDecisionValidUntil       string
 )
 
 var commissionCmd = &cobra.Command{
@@ -35,6 +51,13 @@ var commissionCreateCmd = &cobra.Command{
 	RunE:  runCommissionCreate,
 }
 
+var commissionCreateFromDecisionCmd = &cobra.Command{
+	Use:   "create-from-decision <decision-id>",
+	Short: "Create a runnable WorkCommission from an active DecisionRecord",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCommissionCreateFromDecision,
+}
+
 var commissionListRunnableCmd = &cobra.Command{
 	Use:   "list-runnable",
 	Short: "List queued or ready WorkCommissions",
@@ -50,9 +73,24 @@ var commissionClaimCmd = &cobra.Command{
 
 func init() {
 	commissionCreateCmd.Flags().StringVar(&commissionJSONPath, "json", "", "JSON payload path, or '-' for stdin")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionRepoRef, "repo-ref", "", "repo ref recorded in commission scope (default: local:<project-dir>)")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionBaseSHA, "base-sha", "", "git base SHA for the commission scope (default: current HEAD)")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionTargetBranch, "target-branch", "", "target branch for runner work (default: current branch)")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionAllowedPaths, "allowed-path", nil, "path the runner may edit; repeatable (default: decision affected_files)")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionForbiddenPaths, "forbidden-path", nil, "path the runner must not edit; repeatable")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionAllowedActions, "allowed-action", []string{"edit_files", "run_tests"}, "allowed runner action; repeatable")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionAffectedFiles, "affected-file", nil, "affected file/path for commission scope; repeatable (default: allowed paths)")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionAllowedModules, "allowed-module", nil, "allowed module name/path; repeatable")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionLockset, "lock", nil, "lockset path/pattern; repeatable (default: affected files)")
+	commissionCreateFromDecisionCmd.Flags().StringSliceVar(&commissionFromDecisionEvidence, "evidence", nil, "required evidence command; repeatable (default: decision evidence_requirements)")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionProjectionPolicy, "projection-policy", "local_only", "projection policy: local_only, external_optional, external_required")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionState, "state", "queued", "initial commission state")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionValidFor, "valid-for", "168h", "commission validity duration when --valid-until is omitted")
+	commissionCreateFromDecisionCmd.Flags().StringVar(&commissionFromDecisionValidUntil, "valid-until", "", "explicit commission expiry timestamp (RFC3339)")
 	commissionClaimCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the lease")
 
 	commissionCmd.AddCommand(commissionCreateCmd)
+	commissionCmd.AddCommand(commissionCreateFromDecisionCmd)
 	commissionCmd.AddCommand(commissionListRunnableCmd)
 	commissionCmd.AddCommand(commissionClaimCmd)
 	rootCmd.AddCommand(commissionCmd)
@@ -71,6 +109,18 @@ func runCommissionCreate(cmd *cobra.Command, _ []string) error {
 
 	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
 		result, err := handleHaftCommission(ctx, store, args)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
+func runCommissionCreateFromDecision(cmd *cobra.Command, args []string) error {
+	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
+		params, err := commissionFromDecisionCLIParams(projectRoot, args[0])
+		if err != nil {
+			return err
+		}
+
+		result, err := handleHaftCommission(ctx, store, params)
 		return writeCommissionResult(cmd, result, err)
 	})
 }
@@ -100,6 +150,12 @@ func runCommissionClaim(cmd *cobra.Command, args []string) error {
 }
 
 func withCommissionStore(fn func(context.Context, *artifact.Store) error) error {
+	return withCommissionProject(func(ctx context.Context, store *artifact.Store, _ string) error {
+		return fn(ctx, store)
+	})
+}
+
+func withCommissionProject(fn func(context.Context, *artifact.Store, string) error) error {
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
@@ -126,7 +182,7 @@ func withCommissionStore(fn func(context.Context, *artifact.Store) error) error 
 	defer database.Close()
 
 	store := artifact.NewStore(database.GetRawDB())
-	return fn(context.Background(), store)
+	return fn(context.Background(), store, projectRoot)
 }
 
 func readCommissionJSONPayload(stdin io.Reader, path string) (map[string]any, error) {
@@ -178,4 +234,73 @@ func writeCommissionResult(cmd *cobra.Command, result string, err error) error {
 
 	_, writeErr := fmt.Fprintln(cmd.OutOrStdout(), result)
 	return writeErr
+}
+
+func commissionFromDecisionCLIParams(projectRoot string, decisionRef string) (map[string]any, error) {
+	repoRef := commissionFromDecisionRepoRef
+	if strings.TrimSpace(repoRef) == "" {
+		repoRef = "local:" + filepath.Base(projectRoot)
+	}
+
+	baseSHA := commissionFromDecisionBaseSHA
+	if strings.TrimSpace(baseSHA) == "" {
+		value, err := gitOutput(projectRoot, "rev-parse", "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve --base-sha from git: %w", err)
+		}
+		baseSHA = value
+	}
+
+	targetBranch := commissionFromDecisionTargetBranch
+	if strings.TrimSpace(targetBranch) == "" {
+		value, err := gitOutput(projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve --target-branch from git: %w", err)
+		}
+		targetBranch = value
+	}
+
+	return map[string]any{
+		"action":                "create_from_decision",
+		"decision_ref":          decisionRef,
+		"repo_ref":              repoRef,
+		"base_sha":              baseSHA,
+		"target_branch":         targetBranch,
+		"allowed_paths":         stringsToAnySlice(commissionFromDecisionAllowedPaths),
+		"forbidden_paths":       stringsToAnySlice(commissionFromDecisionForbiddenPaths),
+		"allowed_actions":       stringsToAnySlice(commissionFromDecisionAllowedActions),
+		"affected_files":        stringsToAnySlice(commissionFromDecisionAffectedFiles),
+		"allowed_modules":       stringsToAnySlice(commissionFromDecisionAllowedModules),
+		"lockset":               stringsToAnySlice(commissionFromDecisionLockset),
+		"evidence_requirements": stringsToAnySlice(commissionFromDecisionEvidence),
+		"projection_policy":     commissionFromDecisionProjectionPolicy,
+		"state":                 commissionFromDecisionState,
+		"valid_for":             commissionFromDecisionValidFor,
+		"valid_until":           commissionFromDecisionValidUntil,
+	}, nil
+}
+
+func gitOutput(projectRoot string, args ...string) (string, error) {
+	gitArgs := append([]string{"-C", projectRoot}, args...)
+	output, err := exec.Command("git", gitArgs...).Output()
+	if err != nil {
+		return "", err
+	}
+
+	value := strings.TrimSpace(string(output))
+	if value == "" {
+		return "", fmt.Errorf("empty git output")
+	}
+	return value, nil
+}
+
+func stringsToAnySlice(values []string) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		cleaned := strings.TrimSpace(value)
+		if cleaned != "" {
+			result = append(result, cleaned)
+		}
+	}
+	return result
 }

@@ -60,6 +60,8 @@ From the repo root the same checks are available as:
 task open-sleigh:doctor-haft
 task open-sleigh:smoke-haft
 task open-sleigh:smoke-real-haft
+task open-sleigh:smoke-real-haft-dynamic
+task open-sleigh:smoke-real-haft-from-decision
 task open-sleigh:harness-haft
 ```
 
@@ -71,10 +73,24 @@ idle, and verifies no runnable commissions remain.
 For manual local setup, seed the project through the CLI:
 
 ```sh
+haft commission create-from-decision dec-... \
+  --allowed-path open-sleigh/lib/open_sleigh/commission_source/haft.ex \
+  --lock open-sleigh/lib/open_sleigh/commission_source/haft.ex \
+  --evidence "mix test test/open_sleigh/commission_source/haft_test.exs"
 haft commission create --json commission.json
 haft commission list-runnable
 haft commission claim wc-...
 ```
+
+`create-from-decision` is the preferred operator path: Haft loads the active
+DecisionRecord, freezes `decision_revision_hash`, derives default scope from
+`affected_files` when possible, and writes the runnable WorkCommission.
+`open_sleigh.start` replenishes dynamically while it is running, so a
+commission created after startup is consumed without restarting the harness.
+`task open-sleigh:smoke-real-haft-from-decision` proves the same path without a
+hand-written commission fixture: it creates a real ProblemCard and
+DecisionRecord through `haft serve`, runs `haft commission create-from-decision`,
+and verifies Open-Sleigh consumes the resulting WorkCommission.
 
 Monitor from another shell:
 

@@ -43,6 +43,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return createWorkCommission(ctx, store, args)
 	case "create_from_decision":
 		return createWorkCommissionFromDecision(ctx, store, args)
+	case "create_from_plan":
+		return createWorkCommissionsFromPlan(ctx, store, args)
 	case "create_batch_from_decisions":
 		return createWorkCommissionBatchFromDecisions(ctx, store, args)
 	case "list_runnable":
@@ -80,6 +82,35 @@ func createWorkCommissionFromDecision(
 	}
 
 	return persistWorkCommission(ctx, store, commission, now)
+}
+
+func createWorkCommissionsFromPlan(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+) (string, error) {
+	now := time.Now().UTC()
+
+	plan, err := implementationPlanPayload(args)
+	if err != nil {
+		return "", err
+	}
+
+	commissions, err := buildWorkCommissionsFromPlan(ctx, store, args, plan, now)
+	if err != nil {
+		return "", err
+	}
+
+	for _, commission := range commissions {
+		if _, err := persistWorkCommission(ctx, store, commission, now); err != nil {
+			return "", fmt.Errorf("persist commission for %s: %w", stringField(commission, "decision_ref"), err)
+		}
+	}
+
+	return commissionResponseMap(map[string]any{
+		"implementation_plan": implementationPlanSummary(plan),
+		"commissions":         commissions,
+	})
 }
 
 func createWorkCommissionBatchFromDecisions(
@@ -123,6 +154,46 @@ func createWorkCommissionBatchFromDecisions(
 	return commissionResponse("commissions", commissions)
 }
 
+func buildWorkCommissionsFromPlan(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+	plan map[string]any,
+	now time.Time,
+) ([]map[string]any, error) {
+	entries, err := implementationPlanDecisionEntries(plan)
+	if err != nil {
+		return nil, err
+	}
+
+	commissions := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		if err := rejectUnsupportedPlanDependencies(entry); err != nil {
+			return nil, err
+		}
+
+		decisionRef := implementationPlanDecisionRef(entry)
+		commissionArgs := commissionArgsForPlanDecision(args, plan, entry, decisionRef)
+
+		commission, err := buildWorkCommissionFromDecision(ctx, store, commissionArgs, now)
+		if err != nil {
+			return nil, fmt.Errorf("build commission for %s: %w", decisionRef, err)
+		}
+
+		putOptionalString(commission, "implementation_plan_ref", stringField(plan, "id"))
+		putOptionalString(commission, "implementation_plan_revision", stringField(plan, "revision"))
+		putOptionalAnySlice(commission, "plan_tags", planDecisionAnySlice(entry, "tags"))
+
+		if err := normalizeNewWorkCommission(commission, now); err != nil {
+			return nil, fmt.Errorf("normalize commission for %s: %w", decisionRef, err)
+		}
+
+		commissions = append(commissions, commission)
+	}
+
+	return commissions, nil
+}
+
 func persistWorkCommission(
 	ctx context.Context,
 	store *artifact.Store,
@@ -162,6 +233,165 @@ func commissionArgsForDecision(args map[string]any, decisionRef string) map[stri
 	next["decision_ref"] = decisionRef
 	delete(next, "decision_refs")
 	return next
+}
+
+func implementationPlanPayload(args map[string]any) (map[string]any, error) {
+	plan, ok := mapArg(args, "plan")
+	if !ok {
+		return nil, fmt.Errorf("plan is required")
+	}
+	if stringField(plan, "id") == "" {
+		return nil, fmt.Errorf("plan.id is required")
+	}
+	if stringField(plan, "revision") == "" {
+		return nil, fmt.Errorf("plan.revision is required")
+	}
+	return plan, nil
+}
+
+func implementationPlanDecisionEntries(plan map[string]any) ([]map[string]any, error) {
+	raw, ok := plan["decisions"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil, fmt.Errorf("plan.decisions is required")
+	}
+
+	entries := make([]map[string]any, 0, len(raw))
+	for index, value := range raw {
+		entry, err := implementationPlanDecisionEntry(value, index)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+func implementationPlanDecisionEntry(value any, index int) (map[string]any, error) {
+	switch entry := value.(type) {
+	case string:
+		if strings.TrimSpace(entry) == "" {
+			return nil, fmt.Errorf("plan.decisions[%d] is empty", index)
+		}
+		return map[string]any{"ref": entry}, nil
+	case map[string]any:
+		if implementationPlanDecisionRef(entry) == "" {
+			return nil, fmt.Errorf("plan.decisions[%d].ref is required", index)
+		}
+		return entry, nil
+	default:
+		return nil, fmt.Errorf("plan.decisions[%d] must be a decision ref string or object", index)
+	}
+}
+
+func implementationPlanDecisionRef(entry map[string]any) string {
+	if ref := stringField(entry, "ref"); ref != "" {
+		return ref
+	}
+	return stringField(entry, "decision_ref")
+}
+
+func rejectUnsupportedPlanDependencies(entry map[string]any) error {
+	dependencies := planDecisionStringSlice(entry, "depends_on")
+	if len(dependencies) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("plan decision %s declares depends_on; dependency scheduling is not admitted by ImplementationPlan-lite yet", implementationPlanDecisionRef(entry))
+}
+
+func commissionArgsForPlanDecision(
+	args map[string]any,
+	plan map[string]any,
+	entry map[string]any,
+	decisionRef string,
+) map[string]any {
+	defaults, _ := mapArg(plan, "defaults")
+
+	next := copyStringAnyMap(args)
+	next["decision_ref"] = decisionRef
+	next["repo_ref"] = firstStringField("repo_ref", entry, defaults, plan, args)
+	next["base_sha"] = firstStringField("base_sha", entry, defaults, plan, args)
+	next["target_branch"] = firstStringField("target_branch", entry, defaults, plan, args)
+	next["projection_policy"] = firstStringField("projection_policy", entry, defaults, plan, args)
+	next["state"] = firstStringField("state", entry, defaults, plan, args)
+	next["valid_for"] = firstStringField("valid_for", entry, defaults, plan, args)
+	next["valid_until"] = firstStringField("valid_until", entry, defaults, plan, args)
+	next["allowed_paths"] = stringSliceToAny(firstStringSliceField("allowed_paths", entry, defaults, plan, args))
+	next["forbidden_paths"] = stringSliceToAny(firstStringSliceField("forbidden_paths", entry, defaults, plan, args))
+	next["allowed_actions"] = stringSliceToAny(firstStringSliceField("allowed_actions", entry, defaults, plan, args))
+	next["affected_files"] = stringSliceToAny(firstStringSliceField("affected_files", entry, defaults, plan, args))
+	next["allowed_modules"] = stringSliceToAny(firstStringSliceField("allowed_modules", entry, defaults, plan, args))
+	next["lockset"] = stringSliceToAny(firstStringSliceField("lockset", entry, defaults, plan, args))
+	next["evidence_requirements"] = firstEvidenceRequirements(entry, defaults, plan, args)
+	next["implementation_plan_ref"] = stringField(plan, "id")
+	next["implementation_plan_revision"] = stringField(plan, "revision")
+
+	delete(next, "plan")
+	return next
+}
+
+func firstStringField(key string, maps ...map[string]any) string {
+	for _, values := range maps {
+		if values == nil {
+			continue
+		}
+		if value := stringField(values, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstStringSliceField(key string, maps ...map[string]any) []string {
+	for _, values := range maps {
+		if values == nil {
+			continue
+		}
+		if value := planDecisionStringSlice(values, key); len(value) > 0 {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstEvidenceRequirements(maps ...map[string]any) []any {
+	for _, values := range maps {
+		if values == nil {
+			continue
+		}
+		requirements, err := evidenceRequirementsFromArgs(values)
+		if err != nil || len(requirements) == 0 {
+			continue
+		}
+		return requirements
+	}
+	return nil
+}
+
+func planDecisionStringSlice(payload map[string]any, key string) []string {
+	return stringSliceField(payload, key)
+}
+
+func planDecisionAnySlice(payload map[string]any, key string) []any {
+	values, ok := payload[key].([]any)
+	if !ok {
+		return nil
+	}
+	return values
+}
+
+func implementationPlanSummary(plan map[string]any) map[string]any {
+	summary := map[string]any{
+		"id":       stringField(plan, "id"),
+		"revision": stringField(plan, "revision"),
+	}
+
+	putOptionalString(summary, "title", stringField(plan, "title"))
+	putOptionalString(summary, "failure_policy", stringField(plan, "failure_policy"))
+	putOptionalString(summary, "projection_policy", stringField(plan, "projection_policy"))
+
+	return summary
 }
 
 func buildWorkCommissionFromDecision(
@@ -1134,6 +1364,14 @@ func commissionResponse(key string, value any) (string, error) {
 	return string(encoded), nil
 }
 
+func commissionResponseMap(value map[string]any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
 func workCommissionTitle(commission map[string]any) string {
 	id := stringField(commission, "id")
 	decisionRef := stringField(commission, "decision_ref")
@@ -1178,6 +1416,12 @@ func putOptionalString(payload map[string]any, key string, value string) {
 	cleaned := strings.TrimSpace(value)
 	if cleaned != "" {
 		payload[key] = cleaned
+	}
+}
+
+func putOptionalAnySlice(payload map[string]any, key string, value []any) {
+	if len(value) > 0 {
+		payload[key] = value
 	}
 }
 

@@ -63,9 +63,11 @@ task open-sleigh:smoke-real-haft
 task open-sleigh:smoke-real-haft-dynamic
 task open-sleigh:smoke-real-haft-from-decision
 task open-sleigh:smoke-real-haft-batch
+task open-sleigh:smoke-real-haft-plan
 task open-sleigh:harness-haft
 task open-sleigh:harness-from-decision DECISION=dec-...
 task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b"
+task open-sleigh:harness-plan PLAN=.haft/plans/implementation.yaml
 ```
 
 `task open-sleigh:smoke-real-haft` builds the current Haft binary, creates a
@@ -81,6 +83,7 @@ haft commission create-from-decision dec-... \
   --lock open-sleigh/lib/open_sleigh/commission_source/haft.ex \
   --evidence "mix test test/open_sleigh/commission_source/haft_test.exs"
 haft commission create-batch dec-a dec-b dec-c
+haft commission create-from-plan .haft/plans/implementation.yaml
 haft commission create --json commission.json
 haft commission list-runnable
 haft commission claim wc-...
@@ -89,6 +92,28 @@ haft commission claim wc-...
 `create-from-decision` / `create-batch` are the preferred operator paths: Haft loads the active
 DecisionRecord, freezes `decision_revision_hash`, derives default scope from
 `affected_files` when possible, and writes the runnable WorkCommission.
+`create-from-plan` accepts an ImplementationPlan-lite YAML/JSON carrier:
+
+```yaml
+id: plan-mvp2
+revision: p1
+repo_ref: local:haft
+base_sha: base-r1
+target_branch: feature/mvp2
+projection_policy: local_only
+valid_for: 168h
+defaults:
+  allowed_actions: [edit_files, run_tests]
+  evidence_requirements:
+    - go test ./internal/cli
+decisions:
+  - ref: dec-a
+  - ref: dec-b
+```
+
+Dependency fields such as `depends_on` are intentionally rejected in
+ImplementationPlan-lite until scheduler enforcement lands; otherwise the plan
+would imply ordering that the queue cannot yet enforce.
 `open_sleigh.start` replenishes dynamically while it is running, so a
 commission created after startup is consumed without restarting the harness.
 `task open-sleigh:smoke-real-haft-from-decision` proves the same path without a
@@ -97,12 +122,14 @@ DecisionRecord through `haft serve`, runs `haft commission create-from-decision`
 and verifies Open-Sleigh consumes the resulting WorkCommission.
 `task open-sleigh:smoke-real-haft-batch` does the same for a two-decision queue
 using `haft commission create-batch`.
+`task open-sleigh:smoke-real-haft-plan` proves the plan-file path.
 
 For an operator run against a real local DecisionRecord:
 
 ```sh
 task open-sleigh:harness-from-decision DECISION=dec-...
 task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b dec-c"
+task open-sleigh:harness-plan PLAN=.haft/plans/implementation.yaml
 ```
 
 Useful environment overrides:

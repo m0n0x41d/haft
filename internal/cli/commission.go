@@ -65,6 +65,13 @@ var commissionCreateBatchCmd = &cobra.Command{
 	RunE:  runCommissionCreateBatch,
 }
 
+var commissionCreateFromPlanCmd = &cobra.Command{
+	Use:   "create-from-plan <plan-file>",
+	Short: "Create runnable WorkCommissions from an ImplementationPlan file",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCommissionCreateFromPlan,
+}
+
 var commissionListRunnableCmd = &cobra.Command{
 	Use:   "list-runnable",
 	Short: "List queued or ready WorkCommissions",
@@ -82,11 +89,13 @@ func init() {
 	commissionCreateCmd.Flags().StringVar(&commissionJSONPath, "json", "", "JSON payload path, or '-' for stdin")
 	registerCommissionFromDecisionFlags(commissionCreateFromDecisionCmd)
 	registerCommissionFromDecisionFlags(commissionCreateBatchCmd)
+	registerCommissionFromDecisionFlags(commissionCreateFromPlanCmd)
 	commissionClaimCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the lease")
 
 	commissionCmd.AddCommand(commissionCreateCmd)
 	commissionCmd.AddCommand(commissionCreateFromDecisionCmd)
 	commissionCmd.AddCommand(commissionCreateBatchCmd)
+	commissionCmd.AddCommand(commissionCreateFromPlanCmd)
 	commissionCmd.AddCommand(commissionListRunnableCmd)
 	commissionCmd.AddCommand(commissionClaimCmd)
 	rootCmd.AddCommand(commissionCmd)
@@ -141,6 +150,23 @@ func runCommissionCreateFromDecision(cmd *cobra.Command, args []string) error {
 func runCommissionCreateBatch(cmd *cobra.Command, args []string) error {
 	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
 		params, err := commissionBatchCLIParams(projectRoot, args)
+		if err != nil {
+			return err
+		}
+
+		result, err := handleHaftCommission(ctx, store, params)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
+func runCommissionCreateFromPlan(cmd *cobra.Command, args []string) error {
+	plan, err := readCommissionPlanPayload(cmd.InOrStdin(), args[0])
+	if err != nil {
+		return err
+	}
+
+	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
+		params, err := commissionFromPlanCLIParams(projectRoot, plan)
 		if err != nil {
 			return err
 		}
@@ -283,6 +309,69 @@ func commissionBatchCLIParams(projectRoot string, decisionRefs []string) (map[st
 	base["decision_refs"] = stringsToAnySlice(decisionRefs)
 
 	return base, nil
+}
+
+func commissionFromPlanCLIParams(projectRoot string, plan map[string]any) (map[string]any, error) {
+	base, err := commissionPlanBaseParams(projectRoot, plan)
+	if err != nil {
+		return nil, err
+	}
+
+	base["action"] = "create_from_plan"
+	base["plan"] = plan
+
+	return base, nil
+}
+
+func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[string]any, error) {
+	repoRef := commissionFromDecisionRepoRef
+	if strings.TrimSpace(repoRef) == "" {
+		repoRef = stringField(plan, "repo_ref")
+	}
+	if strings.TrimSpace(repoRef) == "" {
+		repoRef = "local:" + filepath.Base(projectRoot)
+	}
+
+	baseSHA := commissionFromDecisionBaseSHA
+	if strings.TrimSpace(baseSHA) == "" {
+		baseSHA = stringField(plan, "base_sha")
+	}
+	if strings.TrimSpace(baseSHA) == "" {
+		value, err := gitOutput(projectRoot, "rev-parse", "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve --base-sha from git: %w", err)
+		}
+		baseSHA = value
+	}
+
+	targetBranch := commissionFromDecisionTargetBranch
+	if strings.TrimSpace(targetBranch) == "" {
+		targetBranch = stringField(plan, "target_branch")
+	}
+	if strings.TrimSpace(targetBranch) == "" {
+		value, err := gitOutput(projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve --target-branch from git: %w", err)
+		}
+		targetBranch = value
+	}
+
+	return map[string]any{
+		"repo_ref":              repoRef,
+		"base_sha":              baseSHA,
+		"target_branch":         targetBranch,
+		"allowed_paths":         stringsToAnySlice(commissionFromDecisionAllowedPaths),
+		"forbidden_paths":       stringsToAnySlice(commissionFromDecisionForbiddenPaths),
+		"allowed_actions":       stringsToAnySlice(commissionFromDecisionAllowedActions),
+		"affected_files":        stringsToAnySlice(commissionFromDecisionAffectedFiles),
+		"allowed_modules":       stringsToAnySlice(commissionFromDecisionAllowedModules),
+		"lockset":               stringsToAnySlice(commissionFromDecisionLockset),
+		"evidence_requirements": stringsToAnySlice(commissionFromDecisionEvidence),
+		"projection_policy":     commissionFromDecisionProjectionPolicy,
+		"state":                 commissionFromDecisionState,
+		"valid_for":             commissionFromDecisionValidFor,
+		"valid_until":           commissionFromDecisionValidUntil,
+	}, nil
 }
 
 func commissionFromDecisionBaseParams(projectRoot string) (map[string]any, error) {

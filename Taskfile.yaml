@@ -223,6 +223,11 @@ tasks:
     cmds:
       - bash scripts/open_sleigh_real_haft_batch_smoke.sh
 
+  open-sleigh:smoke-real-haft-plan:
+    desc: Prove Haft can create WorkCommissions from an ImplementationPlan-lite file
+    cmds:
+      - bash scripts/open_sleigh_real_haft_plan_smoke.sh
+
   open-sleigh:harness:
     desc: Run local Open-Sleigh commission harness with real agent and mock Haft/Judge
     dir: open-sleigh
@@ -244,6 +249,11 @@ tasks:
     desc: Create WorkCommissions from DECISIONS and run the real Haft-backed Open-Sleigh harness
     cmds:
       - DECISIONS="{{.DECISIONS}}" bash scripts/open_sleigh_harness_from_decision.sh
+
+  open-sleigh:harness-plan:
+    desc: Create WorkCommissions from PLAN and run the real Haft-backed Open-Sleigh harness
+    cmds:
+      - PLAN="{{.PLAN}}" bash scripts/open_sleigh_harness_from_decision.sh
 
   clean:
     desc: Remove local build artifacts

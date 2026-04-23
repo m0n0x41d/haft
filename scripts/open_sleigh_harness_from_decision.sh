@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+plan_path="${PLAN:-}"
 decision_refs=("$@")
 if [[ "${#decision_refs[@]}" -eq 0 && -n "${DECISIONS:-}" ]]; then
   read -r -a decision_refs <<< "$DECISIONS"
@@ -10,9 +11,10 @@ if [[ "${#decision_refs[@]}" -eq 0 && -n "${DECISION:-}" ]]; then
   decision_refs=("$DECISION")
 fi
 
-if [[ "${#decision_refs[@]}" -eq 0 ]]; then
+if [[ -z "$plan_path" && "${#decision_refs[@]}" -eq 0 ]]; then
   echo "usage: task open-sleigh:harness-from-decision DECISION=dec-..." >&2
   echo "   or: task open-sleigh:harness-from-decisions DECISIONS='dec-a dec-b'" >&2
+  echo "   or: task open-sleigh:harness-plan PLAN=.haft/plans/plan.yaml" >&2
   echo "   or: scripts/open_sleigh_harness_from_decision.sh dec-a dec-b" >&2
   exit 2
 fi
@@ -42,7 +44,12 @@ fi
 
 (cd "$repo" && go build -o "$haftbin" ./cmd/haft)
 
-if [[ "${#decision_refs[@]}" -eq 1 ]]; then
+if [[ -n "$plan_path" ]]; then
+  (cd "$repo" && "$haftbin" commission create-from-plan "$plan_path" \
+    --repo-ref "$repo_ref" \
+    --valid-for "$valid_for" \
+    "${extra_commission_args[@]}")
+elif [[ "${#decision_refs[@]}" -eq 1 ]]; then
   (cd "$repo" && "$haftbin" commission create-from-decision "${decision_refs[0]}" \
     --repo-ref "$repo_ref" \
     --valid-for "$valid_for" \
@@ -201,7 +208,11 @@ if [[ "${MOCK_JUDGE:-0}" == "1" ]]; then
   run_args+=(--mock-judge)
 fi
 
-printf 'Created/queued commission(s) for %s\n' "${decision_refs[*]}"
+if [[ -n "$plan_path" ]]; then
+  printf 'Created/queued commission(s) from %s\n' "$plan_path"
+else
+  printf 'Created/queued commission(s) for %s\n' "${decision_refs[*]}"
+fi
 printf 'Open-Sleigh config: %s\n' "$sleigh_path"
 printf 'Status: %s\n' "$status_path"
 printf 'Runtime log: %s\n' "$log_path"

@@ -20,6 +20,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   use Mix.Task
 
   alias OpenSleigh.Agent
+  alias OpenSleigh.CommissionSource.Local, as: LocalCommissionSource
   alias OpenSleigh.Haft.Mock
   alias OpenSleigh.Judge.{AgentInvoker, GoldenSets, RuleBased}
   alias OpenSleigh.Sleigh.{Compiler, Watcher}
@@ -138,12 +139,34 @@ defmodule Mix.Tasks.OpenSleigh.Start do
 
   @spec start_tracker(WorkflowStore.bundle(), keyword()) :: {:ok, map()} | {:error, term()}
   defp start_tracker(bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
-      start_mock_tracker()
-    else
-      start_linear_tracker(bundle)
-    end
+    opts
+    |> Keyword.get(:mock, false)
+    |> start_tracker_for_mode(bundle)
   end
+
+  @spec start_tracker_for_mode(boolean(), WorkflowStore.bundle()) ::
+          {:ok, map()} | {:error, term()}
+  defp start_tracker_for_mode(true, bundle) do
+    bundle
+    |> commission_source_kind()
+    |> start_mock_tracker_for_source(bundle)
+  end
+
+  defp start_tracker_for_mode(false, bundle) do
+    bundle
+    |> commission_source_kind()
+    |> start_tracker_for_source(bundle)
+  end
+
+  @spec start_mock_tracker_for_source(String.t() | nil, WorkflowStore.bundle()) ::
+          {:ok, map()} | {:error, term()}
+  defp start_mock_tracker_for_source("local", bundle), do: start_local_commission_tracker(bundle)
+  defp start_mock_tracker_for_source(_kind, _bundle), do: start_mock_tracker()
+
+  @spec start_tracker_for_source(String.t() | nil, WorkflowStore.bundle()) ::
+          {:ok, map()} | {:error, term()}
+  defp start_tracker_for_source("local", bundle), do: start_local_commission_tracker(bundle)
+  defp start_tracker_for_source(_kind, bundle), do: start_linear_tracker(bundle)
 
   @spec start_mock_tracker() :: {:ok, map()} | {:error, term()}
   defp start_mock_tracker do
@@ -151,6 +174,99 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       {:ok, handle} -> {:ok, %{adapter: Tracker.Mock, handle: handle, pids: [handle]}}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @spec start_local_commission_tracker(WorkflowStore.bundle()) :: {:ok, map()} | {:error, term()}
+  defp start_local_commission_tracker(bundle) do
+    with {:ok, source} <- LocalCommissionSource.new(bundle),
+         {:ok, commissions} <- LocalCommissionSource.list_runnable(source),
+         {:ok, claimed} <- claim_local_commissions(source, commissions),
+         {:ok, handle} <- Tracker.Mock.start(),
+         :ok <- seed_local_commission_tickets(handle, claimed) do
+      {:ok,
+       %{
+         adapter: Tracker.Mock,
+         handle: handle,
+         pids: [handle],
+         commission_source: %{adapter: LocalCommissionSource, handle: source}
+       }}
+    end
+  end
+
+  @spec claim_local_commissions(
+          LocalCommissionSource.t(),
+          [OpenSleigh.WorkCommission.t()]
+        ) :: {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
+  defp claim_local_commissions(source, commissions) do
+    commissions
+    |> Enum.reduce_while({:ok, []}, &claim_local_commission(source, &1, &2))
+    |> claimed_local_commissions()
+  end
+
+  @spec claim_local_commission(
+          LocalCommissionSource.t(),
+          OpenSleigh.WorkCommission.t(),
+          {:ok, [OpenSleigh.WorkCommission.t()]}
+        ) :: {:cont, {:ok, [OpenSleigh.WorkCommission.t()]}} | {:halt, {:error, term()}}
+  defp claim_local_commission(source, commission, {:ok, claimed}) do
+    case LocalCommissionSource.claim_for_preflight(source, commission.id) do
+      {:ok, next_commission} -> {:cont, {:ok, [next_commission | claimed]}}
+      {:error, reason} -> {:halt, {:error, reason}}
+    end
+  end
+
+  @spec claimed_local_commissions({:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}) ::
+          {:ok, [OpenSleigh.WorkCommission.t()]} | {:error, term()}
+  defp claimed_local_commissions({:ok, commissions}) do
+    commissions
+    |> Enum.reverse()
+    |> then(&{:ok, &1})
+  end
+
+  defp claimed_local_commissions({:error, _reason} = error), do: error
+
+  @spec seed_local_commission_tickets(pid(), [OpenSleigh.WorkCommission.t()]) ::
+          :ok | {:error, atom()}
+  defp seed_local_commission_tickets(handle, commissions) do
+    tickets =
+      commissions
+      |> Enum.map(&local_commission_ticket_attrs/1)
+
+    Tracker.Mock.seed(handle, tickets)
+  end
+
+  @spec local_commission_ticket_attrs(OpenSleigh.WorkCommission.t()) :: map()
+  defp local_commission_ticket_attrs(commission) do
+    %{
+      id: commission.id,
+      source: {:github, commission.scope.repo_ref},
+      title: "WorkCommission " <> commission.id,
+      body: "",
+      state: :todo,
+      problem_card_ref: commission.problem_card_ref,
+      target_branch: commission.scope.target_branch,
+      fetched_at: commission.fetched_at,
+      metadata: %{
+        commission: commission,
+        commission_id: commission.id,
+        source_mode: :commission_first,
+        problem_revision_hash: commission.decision_revision_hash,
+        lease_id: "local-preflight:" <> commission.id,
+        lease_state: :claimed_for_preflight,
+        current_decision: local_current_decision(commission)
+      }
+    }
+  end
+
+  @spec local_current_decision(OpenSleigh.WorkCommission.t()) :: map()
+  defp local_current_decision(commission) do
+    %{
+      decision_ref: commission.decision_ref,
+      decision_revision_hash: commission.decision_revision_hash,
+      status: :active,
+      refresh_due: false,
+      freshness: :healthy
+    }
   end
 
   @spec start_linear_tracker(WorkflowStore.bundle()) :: {:ok, map()} | {:error, term()}
@@ -322,7 +438,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
           GenServer.on_start()
   defp start_orchestrator(bundle, tracker, haft, store, opts) do
     Orchestrator.start_link(
-      workflow: Workflow.mvp1(),
+      workflow: runtime_workflow(bundle),
       tracker_handle: tracker.handle,
       tracker_adapter: tracker.adapter,
       agent_adapter: agent_adapter(bundle, opts),
@@ -340,6 +456,10 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       name: server_name("open_sleigh_orchestrator")
     )
   end
+
+  @spec runtime_workflow(WorkflowStore.bundle()) :: Workflow.t()
+  defp runtime_workflow(%{workflow: :mvp1r}), do: Workflow.mvp1r()
+  defp runtime_workflow(_bundle), do: Workflow.mvp1()
 
   @spec judge_fun(WorkflowStore.bundle(), keyword()) :: OpenSleigh.GateChain.judge_fun()
   defp judge_fun(bundle, opts) do
@@ -688,12 +808,25 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   end
 
   @spec status_tracker_kind(WorkflowStore.bundle(), keyword()) :: String.t()
-  defp status_tracker_kind(_bundle, opts) do
-    if Keyword.get(opts, :mock, false) do
-      "mock"
-    else
-      "linear"
+  defp status_tracker_kind(bundle, opts) do
+    cond do
+      commission_source_kind(bundle) == "local" ->
+        "commission_source:local"
+
+      Keyword.get(opts, :mock, false) ->
+        "mock"
+
+      true ->
+        "linear"
     end
+  end
+
+  @spec commission_source_kind(WorkflowStore.bundle()) :: String.t() | nil
+  defp commission_source_kind(bundle) do
+    bundle
+    |> Map.get(:commission_source, %{})
+    |> value_at(:kind)
+    |> config_string_or_nil()
   end
 
   @spec status_agent_kind(WorkflowStore.bundle(), keyword()) :: String.t()
@@ -854,6 +987,10 @@ defmodule Mix.Tasks.OpenSleigh.Start do
   defp config_string(value) when is_binary(value), do: value
   defp config_string(value) when is_atom(value), do: Atom.to_string(value)
   defp config_string(value), do: to_string(value)
+
+  @spec config_string_or_nil(term()) :: String.t() | nil
+  defp config_string_or_nil(nil), do: nil
+  defp config_string_or_nil(value), do: config_string(value)
 
   @spec expand_path(String.t()) :: Path.t()
   defp expand_path("~/" <> rest) do

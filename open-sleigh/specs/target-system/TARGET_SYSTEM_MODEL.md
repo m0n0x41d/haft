@@ -305,7 +305,7 @@ to Haft for validation. It is a report, not authority.
 
 **Attributes:**
 
-- `id :: :mvp1 | :mvp2 | atom()` (required)
+- `id :: :mvp1 | :mvp1r | :mvp2 | atom()` (required)
 - `phases :: [Phase.t()]` (required; declared alphabet)
 - `transitions :: %{Phase.t() => [Phase.t()]}` (required; from-phase → legal to-phases)
 - `terminal :: [Phase.t()]` (required; absorbing states)
@@ -314,7 +314,9 @@ to Haft for validation. It is a report, not authority.
 **Key rules:**
 
 - Workflows are constructed at compile time (module attribute). No runtime graph mutation.
-- `Workflow.mvp1/0` returns the MVP-1 graph; `Workflow.mvp2/0` returns the MVP-2 graph (separate for clarity).
+- `Workflow.mvp1/0` returns the legacy tracker-first MVP-1 graph;
+  `Workflow.mvp1r/0` returns the commission-first Preflight graph;
+  `Workflow.mvp2/0` returns the MVP-2 graph (separate for clarity).
 - Invariant: every phase in `phases` either has an entry in `transitions` or is in `terminal`. A phase with no outgoing edges that isn't terminal is a construction-time error.
 
 ---

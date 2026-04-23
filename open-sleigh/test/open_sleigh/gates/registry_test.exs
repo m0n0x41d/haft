@@ -55,8 +55,9 @@ defmodule OpenSleigh.Gates.RegistryTest do
   end
 
   test "gate counts match MVP-1 spec" do
-    # Per `specs/target-system/GATES.md §1/§2/§4`: 5 structural, 3 semantic, 1 human (MVP-1).
-    assert length(Registry.structural_gates()) == 5
+    # Per `specs/target-system/GATES.md §1/§2/§4`: 8 currently implemented
+    # structural gates, 3 semantic gates, 1 human gate.
+    assert length(Registry.structural_gates()) == 8
     assert length(Registry.semantic_gates()) == 3
     assert length(Registry.human_gates()) == 1
   end

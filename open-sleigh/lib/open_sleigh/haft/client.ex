@@ -28,6 +28,11 @@ defmodule OpenSleigh.Haft.Client do
   @type invoke_fun ::
           (binary() -> {:ok, binary()} | {:error, EffectError.t()})
 
+  @type artifact_identity ::
+          {:commission, String.t(), legacy_ticket_id :: String.t() | nil}
+          | {:ticket, String.t()}
+          | :none
+
   @doc """
   Write a completed `PhaseOutcome` as a Haft artifact. Attaches the
   session's `config_hash` via the protocol codec (SE7 provenance).
@@ -36,7 +41,12 @@ defmodule OpenSleigh.Haft.Client do
           {:ok, binary()} | {:error, EffectError.t()}
   def write_artifact(%AdapterSession{} = session, %PhaseOutcome{} = outcome, invoke_fun)
       when is_function(invoke_fun, 1) do
-    write_artifact_with_ticket(session, outcome, nil, invoke_fun)
+    identity =
+      session
+      |> commission_id()
+      |> commission_identity()
+
+    write_artifact_with_identity(session, outcome, identity, invoke_fun)
   end
 
   @doc "Write a completed `PhaseOutcome` with the owning tracker ticket id."
@@ -49,18 +59,40 @@ defmodule OpenSleigh.Haft.Client do
         invoke_fun
       )
       when is_binary(ticket_id) and is_function(invoke_fun, 1) do
-    write_artifact_with_ticket(session, outcome, ticket_id, invoke_fun)
+    identity =
+      session
+      |> commission_id()
+      |> identity_for_ticket(ticket_id)
+
+    write_artifact_with_identity(session, outcome, identity, invoke_fun)
   end
 
-  @spec write_artifact_with_ticket(
+  @doc "Write a completed `PhaseOutcome` with the owning Haft WorkCommission id."
+  @spec write_commission_artifact(AdapterSession.t(), PhaseOutcome.t(), String.t(), invoke_fun()) ::
+          {:ok, binary()} | {:error, EffectError.t()}
+  def write_commission_artifact(
+        %AdapterSession{} = session,
+        %PhaseOutcome{} = outcome,
+        commission_id,
+        invoke_fun
+      )
+      when is_binary(commission_id) and is_function(invoke_fun, 1) do
+    identity =
+      commission_id
+      |> commission_identity()
+
+    write_artifact_with_identity(session, outcome, identity, invoke_fun)
+  end
+
+  @spec write_artifact_with_identity(
           AdapterSession.t(),
           PhaseOutcome.t(),
-          String.t() | nil,
+          artifact_identity(),
           invoke_fun()
         ) :: {:ok, binary()} | {:error, EffectError.t()}
-  defp write_artifact_with_ticket(session, outcome, ticket_id, invoke_fun) do
+  defp write_artifact_with_identity(session, outcome, identity, invoke_fun) do
     action = action_for_phase(outcome.phase)
-    params = serialise_outcome(outcome, ticket_id)
+    params = serialise_outcome(outcome, identity)
     tool = tool_for_phase(outcome.phase)
 
     call_tool(session, tool, action, params, invoke_fun)
@@ -240,8 +272,8 @@ defmodule OpenSleigh.Haft.Client do
   defp tool_for_phase(:measure), do: :haft_decision
   defp tool_for_phase(_), do: :haft_note
 
-  @spec serialise_outcome(PhaseOutcome.t(), String.t() | nil) :: map()
-  defp serialise_outcome(%PhaseOutcome{} = o, ticket_id) do
+  @spec serialise_outcome(PhaseOutcome.t(), artifact_identity()) :: map()
+  defp serialise_outcome(%PhaseOutcome{} = o, identity) do
     %{
       "phase" => Atom.to_string(o.phase),
       "config_hash" => o.config_hash,
@@ -252,14 +284,50 @@ defmodule OpenSleigh.Haft.Client do
       "work_product" => o.work_product,
       "evidence" => Enum.map(o.evidence, &serialise_evidence/1)
     }
-    |> maybe_put_ticket_id(ticket_id)
+    |> put_artifact_identity(identity)
   end
 
-  @spec maybe_put_ticket_id(map(), String.t() | nil) :: map()
-  defp maybe_put_ticket_id(params, ticket_id) when is_binary(ticket_id),
-    do: Map.put(params, "ticket_id", ticket_id)
+  @spec put_artifact_identity(map(), artifact_identity()) :: map()
+  defp put_artifact_identity(params, {:commission, commission_id, legacy_ticket_id}) do
+    params
+    |> Map.put("commission_id", commission_id)
+    |> Map.put("ticket_id", commission_id)
+    |> maybe_put_legacy_ticket_id(legacy_ticket_id, commission_id)
+  end
 
-  defp maybe_put_ticket_id(params, _ticket_id), do: params
+  defp put_artifact_identity(params, {:ticket, ticket_id}) do
+    Map.put(params, "ticket_id", ticket_id)
+  end
+
+  defp put_artifact_identity(params, :none), do: params
+
+  @spec maybe_put_legacy_ticket_id(map(), String.t() | nil, String.t()) :: map()
+  defp maybe_put_legacy_ticket_id(params, legacy_ticket_id, commission_id)
+       when is_binary(legacy_ticket_id) and legacy_ticket_id != commission_id do
+    Map.put(params, "legacy_ticket_id", legacy_ticket_id)
+  end
+
+  defp maybe_put_legacy_ticket_id(params, _legacy_ticket_id, _commission_id), do: params
+
+  @spec identity_for_ticket(String.t() | nil, String.t()) :: artifact_identity()
+  defp identity_for_ticket(commission_id, ticket_id)
+       when is_binary(commission_id) and commission_id != "" do
+    {:commission, commission_id, ticket_id}
+  end
+
+  defp identity_for_ticket(_commission_id, ticket_id), do: {:ticket, ticket_id}
+
+  @spec commission_identity(String.t() | nil) :: artifact_identity()
+  defp commission_identity(commission_id) when is_binary(commission_id) and commission_id != "" do
+    {:commission, commission_id, nil}
+  end
+
+  defp commission_identity(_commission_id), do: :none
+
+  @spec commission_id(AdapterSession.t()) :: String.t() | nil
+  defp commission_id(%AdapterSession{} = session) do
+    Map.get(session, :commission_id)
+  end
 
   @spec serialise_evidence(OpenSleigh.Evidence.t()) :: map()
   defp serialise_evidence(e) do

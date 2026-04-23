@@ -412,6 +412,70 @@ defmodule OpenSleigh.MixTasksTest do
     assert Enum.all?(log_events, &(get_in(&1, ["metadata", "config_path"]) == path))
   end
 
+  test "open_sleigh.start boots local commission source in mock once mode" do
+    old_status_path = System.get_env("OPEN_SLEIGH_STATUS_PATH")
+    old_log_path = System.get_env("OPEN_SLEIGH_LOG_PATH")
+    path = tmp_sleigh_path()
+    status_path = Path.join(Path.dirname(path), "commission-status.json")
+    log_path = Path.join(Path.dirname(path), "commission-runtime.jsonl")
+
+    System.put_env("OPEN_SLEIGH_STATUS_PATH", status_path)
+    System.put_env("OPEN_SLEIGH_LOG_PATH", log_path)
+
+    source =
+      "sleigh.commission.md.example"
+      |> File.read!()
+      |> String.replace(
+        "fixture_path: fixtures/commissions/local_bootstrap.yaml",
+        "fixture_path: #{Path.expand("fixtures/commissions/local_bootstrap.yaml")}"
+      )
+      |> String.replace("root: ~/.open-sleigh/workspaces", "root: #{test_workspace_root(path)}")
+      |> String.replace("status_path: ~/.open-sleigh/status.json", "status_path: #{status_path}")
+      |> String.replace("log_path: ~/.open-sleigh/runtime.jsonl", "log_path: #{log_path}")
+      |> String.replace(
+        "  after_create: |\n    git clone --depth 1 $REPO_URL .\n    mix deps.get || true",
+        "  after_create: null"
+      )
+      |> String.replace(
+        "  before_run: |\n    git pull --ff-only origin main || true",
+        "  before_run: null"
+      )
+
+    File.write!(path, source)
+
+    on_exit(fn ->
+      restore_env("OPEN_SLEIGH_STATUS_PATH", old_status_path)
+      restore_env("OPEN_SLEIGH_LOG_PATH", old_log_path)
+      File.rm_rf!(Path.dirname(path))
+    end)
+
+    Mix.Task.run("open_sleigh.start", ["--path", path, "--mock", "--once"])
+
+    assert_receive {:mix_shell, :info, ["Open-Sleigh engine started"]}, 1_000
+    assert_receive {:mix_shell, :info, ["Open-Sleigh status: " <> encoded]}, 1_000
+
+    assert {:ok, status} = Jason.decode(encoded)
+    assert is_list(status["claimed"])
+    assert is_list(status["running"])
+
+    assert {:ok, stored_status} =
+             status_path
+             |> File.read!()
+             |> Jason.decode()
+
+    assert get_in(stored_status, ["metadata", "tracker_kind"]) == "commission_source:local"
+    assert get_in(stored_status, ["metadata", "agent_kind"]) == "mock"
+
+    assert log_events =
+             log_path
+             |> File.read!()
+             |> String.split("\n", trim: true)
+             |> Enum.map(&Jason.decode!/1)
+
+    assert Enum.any?(log_events, &(&1["event"] == "runtime_started"))
+    assert Enum.any?(log_events, &(&1["event"] == "once_poll_completed"))
+  end
+
   test "open_sleigh.start real mode fails fast when Linear API key is missing" do
     old_key = System.get_env("LINEAR_API_KEY")
     System.delete_env("LINEAR_API_KEY")

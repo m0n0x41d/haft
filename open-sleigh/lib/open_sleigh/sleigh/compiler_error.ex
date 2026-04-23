@@ -68,7 +68,7 @@ defmodule OpenSleigh.Sleigh.CompilerError do
   def report({:unknown_phase, phase}) do
     %{
       path: "phases.#{phase}",
-      expected: "one of: frame, execute, measure",
+      expected: "one of the configured workflow phases",
       actual: phase,
       hint: "Remove the unknown phase or rename it to a workflow phase."
     }

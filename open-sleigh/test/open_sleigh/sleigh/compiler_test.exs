@@ -20,6 +20,19 @@ defmodule OpenSleigh.Sleigh.CompilerTest do
     assert String.contains?(bundle.prompts.execute, "<!-- config_hash: ")
   end
 
+  test "commission local example compiles without tracker credentials" do
+    assert {:ok, bundle} =
+             "sleigh.commission.md.example"
+             |> File.read!()
+             |> Compiler.compile()
+
+    assert bundle.workflow == :mvp1r
+    assert bundle.commission_source["kind"] == "local"
+    assert bundle.projection["mode"] == "local_only"
+    assert %{phase: :preflight, agent_role: :preflight_checker} = bundle.phase_configs.preflight
+    assert :commission_runnable in bundle.phase_configs.preflight.gates.structural
+  end
+
   test "Claude adapter skeleton compiles through the same adapter registry" do
     assert {:ok, bundle} =
              valid_source()

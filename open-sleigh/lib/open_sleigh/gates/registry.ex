@@ -25,14 +25,20 @@ defmodule OpenSleigh.Gates.Registry do
   }
 
   alias OpenSleigh.Gates.Structural.{
+    CommissionRunnable,
     DescribedEntityFieldPresent,
+    DecisionFresh,
     DesignRuntimeSplitOk,
     EvidenceRefNotSelf,
     ProblemCardRefPresent,
+    ScopeSnapshotFresh,
     ValidUntilFieldPresent
   }
 
   @structural %{
+    commission_runnable: CommissionRunnable,
+    decision_fresh: DecisionFresh,
+    scope_snapshot_fresh: ScopeSnapshotFresh,
     problem_card_ref_present: ProblemCardRefPresent,
     described_entity_field_present: DescribedEntityFieldPresent,
     valid_until_field_present: ValidUntilFieldPresent,

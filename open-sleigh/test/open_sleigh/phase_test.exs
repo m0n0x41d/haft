@@ -5,7 +5,8 @@ defmodule OpenSleigh.PhaseTest do
 
   describe "alphabet closure (TR5)" do
     test "all/0 contains MVP-1 and MVP-2 atoms" do
-      assert Phase.all() |> length() == 14
+      assert Phase.all() |> length() == 15
+      assert :preflight in Phase.all()
       assert :frame in Phase.all()
       assert :execute in Phase.all()
       assert :measure in Phase.all()
@@ -19,6 +20,10 @@ defmodule OpenSleigh.PhaseTest do
       assert Enum.all?(Phase.mvp1(), &(&1 in Phase.all()))
       assert length(Phase.mvp1()) == 4
       assert length(Phase.all()) > length(Phase.mvp1())
+    end
+
+    test "mvp1r/0 adds preflight to the MVP-1 pipeline" do
+      assert Phase.mvp1r() == [:preflight, :frame, :execute, :measure, :terminal]
     end
 
     test "valid?/1 accepts every declared atom" do
@@ -54,6 +59,8 @@ defmodule OpenSleigh.PhaseTest do
       for phase <- [:problematize, :generate, :parity_run, :commission] do
         refute Phase.mvp1?(phase)
       end
+
+      refute Phase.mvp1?(:preflight)
     end
   end
 
@@ -70,7 +77,8 @@ defmodule OpenSleigh.PhaseTest do
   end
 
   describe "single_turn?/1 (CT4 — Frame/Measure are single-turn)" do
-    test "Frame and Measure are single-turn" do
+    test "Preflight, Frame, and Measure are single-turn" do
+      assert Phase.single_turn?(:preflight)
       assert Phase.single_turn?(:frame)
       assert Phase.single_turn?(:measure)
     end

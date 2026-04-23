@@ -2,6 +2,7 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
   use ExUnit.Case, async: false
 
   alias OpenSleigh.Agent.Mock, as: AgentMock
+  alias OpenSleigh.Agent.Adapter, as: AgentAdapter
   alias OpenSleigh.Haft.Mock, as: HaftMock
   alias OpenSleigh.Tracker.Mock, as: TrackerMock
 
@@ -12,8 +13,10 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     Fixtures,
     ObservationsBus,
     PhaseConfig,
+    Scope,
     Session,
-    SessionId
+    SessionId,
+    WorkCommission
   }
 
   defmodule ForwardingOrchestrator do
@@ -215,6 +218,34 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
            )
   end
 
+  test "Preflight gates use runtime commission facts instead of agent-authored facts", ctx do
+    commission = preflight_commission!()
+    ticket = commission_ticket!(commission)
+
+    phase_config =
+      preflight_phase_config()
+
+    AgentMock.put_turn_replies([
+      %{
+        commission: nil,
+        commission_snapshot: nil,
+        current_snapshot: nil,
+        current_decision: %{status: :superseded},
+        checked_at: nil
+      }
+    ])
+
+    message =
+      ctx
+      |> Map.put(:ticket, ticket)
+      |> worker_ctx(phase_config, fail_judge_fun())
+      |> run_worker()
+
+    assert {:outcome, _session_id, outcome} = message
+    assert outcome.phase == :preflight
+    assert Enum.all?(outcome.gate_results, &match?({:structural, :ok}, &1))
+  end
+
   @spec worker_ctx(map(), PhaseConfig.t(), OpenSleigh.GateChain.judge_fun()) :: AgentWorker.ctx()
   defp worker_ctx(ctx, phase_config, judge_fun) do
     worker_ctx(ctx, phase_config, judge_fun, "first-turn prompt")
@@ -241,6 +272,11 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
         wall_clock_timeout_s: 600
       })
 
+    adapter_session =
+      ctx.ticket
+      |> ticket_commission()
+      |> maybe_attach_adapter_commission(adapter_session)
+
     {:ok, session} =
       Session.new(%{
         id: session_id,
@@ -252,6 +288,11 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
         claimed_at: ~U[2026-04-22 10:00:00Z],
         adapter_session: adapter_session
       })
+
+    session =
+      ctx.ticket
+      |> ticket_commission()
+      |> maybe_attach_session_commission(session)
 
     %{
       session: session,
@@ -304,5 +345,126 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
 
   defp pass_after_first_turn(_turn_id) do
     {:ok, %{verdict: :pass, cl: 3, rationale: "second turn passes"}}
+  end
+
+  @spec ticket_commission(OpenSleigh.Ticket.t()) :: WorkCommission.t() | nil
+  defp ticket_commission(ticket) do
+    ticket.metadata
+    |> Map.get(:commission)
+    |> ticket_commission_result()
+  end
+
+  @spec ticket_commission_result(term()) :: WorkCommission.t() | nil
+  defp ticket_commission_result(%WorkCommission{} = commission), do: commission
+  defp ticket_commission_result(_value), do: nil
+
+  @spec maybe_attach_adapter_commission(WorkCommission.t() | nil, AdapterSession.t()) ::
+          AdapterSession.t()
+  defp maybe_attach_adapter_commission(nil, adapter_session), do: adapter_session
+
+  defp maybe_attach_adapter_commission(%WorkCommission{} = commission, adapter_session) do
+    adapter_session
+    |> AgentAdapter.attach_commission_context(commission)
+  end
+
+  @spec maybe_attach_session_commission(WorkCommission.t() | nil, Session.t()) :: Session.t()
+  defp maybe_attach_session_commission(nil, session), do: session
+
+  defp maybe_attach_session_commission(%WorkCommission{} = commission, session) do
+    session
+    |> Map.put(:commission, commission)
+    |> Map.put(:commission_id, commission.id)
+    |> Map.put(:scope, commission.scope)
+  end
+
+  @spec preflight_phase_config() :: PhaseConfig.t()
+  defp preflight_phase_config do
+    Fixtures.phase_config_execute(%{
+      phase: :preflight,
+      agent_role: :preflight_checker,
+      tools: [:read, :grep],
+      gates: %{
+        structural: [:commission_runnable, :decision_fresh, :scope_snapshot_fresh],
+        semantic: [],
+        human: []
+      },
+      prompt_template_key: :preflight,
+      max_turns: 1,
+      default_valid_until_days: 1
+    })
+  end
+
+  @spec commission_ticket!(WorkCommission.t()) :: OpenSleigh.Ticket.t()
+  defp commission_ticket!(commission) do
+    Fixtures.ticket(%{
+      id: commission.id,
+      source: {:github, commission.scope.repo_ref},
+      title: "Preflight commission",
+      body: "",
+      state: :in_progress,
+      problem_card_ref: commission.problem_card_ref,
+      target_branch: commission.scope.target_branch,
+      fetched_at: commission.fetched_at,
+      metadata: %{
+        commission: commission,
+        commission_id: commission.id,
+        source_mode: :commission_first
+      }
+    })
+  end
+
+  @spec preflight_commission!() :: WorkCommission.t()
+  defp preflight_commission! do
+    scope = preflight_scope!()
+
+    attrs = %{
+      id: "wc-agent-worker-preflight",
+      decision_ref: "dec-20260422-001",
+      decision_revision_hash: "decision-r1",
+      problem_card_ref: "pc-agent-worker-preflight",
+      implementation_plan_ref: "plan-agent-worker-preflight",
+      implementation_plan_revision: "plan-r1",
+      scope: scope,
+      scope_hash: scope.hash,
+      base_sha: scope.base_sha,
+      lockset: scope.lockset,
+      evidence_requirements: [],
+      projection_policy: :local_only,
+      state: :preflighting,
+      valid_until: ~U[2026-05-22 10:00:00Z],
+      fetched_at: ~U[2026-04-22 10:00:00Z]
+    }
+
+    {:ok, commission} =
+      attrs
+      |> WorkCommission.new()
+
+    commission
+  end
+
+  @spec preflight_scope!() :: Scope.t()
+  defp preflight_scope! do
+    attrs = %{
+      repo_ref: "local:open-sleigh-preflight-test",
+      base_sha: "base-r1",
+      target_branch: "feature/preflight-runtime-facts",
+      allowed_paths: ["lib/open_sleigh/agent_worker.ex"],
+      forbidden_paths: [],
+      allowed_actions: MapSet.new([:edit_files, :run_tests]),
+      affected_files: ["lib/open_sleigh/agent_worker.ex"],
+      allowed_modules: ["OpenSleigh.AgentWorker"],
+      lockset: ["lib/open_sleigh/agent_worker.ex"]
+    }
+
+    {:ok, hash} =
+      attrs
+      |> Scope.canonical_hash()
+
+    {:ok, scope} =
+      attrs
+      |> Map.put(:hash, hash)
+      |> Scope.new()
+
+    scope
   end
 end

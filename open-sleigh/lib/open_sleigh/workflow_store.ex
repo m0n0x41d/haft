@@ -23,6 +23,8 @@ defmodule OpenSleigh.WorkflowStore do
           config_hashes: %{Phase.t() => ConfigHash.t()},
           external_publication: map(),
           engine: map(),
+          commission_source: map(),
+          projection: map(),
           tracker: map(),
           agent: map(),
           codex: map(),

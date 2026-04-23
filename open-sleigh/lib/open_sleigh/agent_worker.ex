@@ -42,6 +42,7 @@ defmodule OpenSleigh.AgentWorker do
     PhaseOutcome,
     Session,
     SessionScopedArtifactId,
+    WorkCommission,
     WorkspaceManager
   }
 
@@ -419,12 +420,192 @@ defmodule OpenSleigh.AgentWorker do
       ticket: ctx.session.ticket,
       self_id: self_id,
       config_hash: ctx.session.config_hash,
-      turn_result: reply,
+      turn_result: turn_result_with_runtime_facts(ctx, reply),
       evidence: evidence,
       upstream_problem_card: ctx.upstream_problem_card,
       proposed_valid_until: valid_until
     })
   end
+
+  @spec turn_result_with_runtime_facts(ctx(), map()) :: map()
+  defp turn_result_with_runtime_facts(%{session: %{phase: :preflight}} = ctx, reply) do
+    reply
+    |> Map.merge(preflight_runtime_facts(ctx))
+  end
+
+  defp turn_result_with_runtime_facts(_ctx, reply), do: reply
+
+  @spec preflight_runtime_facts(ctx()) :: map()
+  defp preflight_runtime_facts(ctx) do
+    ctx.session
+    |> session_commission()
+    |> preflight_runtime_facts(ctx)
+  end
+
+  @spec preflight_runtime_facts(WorkCommission.t() | nil, ctx()) :: map()
+  defp preflight_runtime_facts(nil, ctx) do
+    %{
+      checked_at: now_of(ctx)
+    }
+  end
+
+  defp preflight_runtime_facts(%WorkCommission{} = commission, ctx) do
+    commission_snapshot = commission_snapshot(ctx, commission)
+
+    %{
+      checked_at: now_of(ctx),
+      commission: commission,
+      commission_snapshot: commission_snapshot,
+      current_snapshot: current_snapshot(ctx, commission_snapshot),
+      current_decision: current_decision(ctx, commission)
+    }
+  end
+
+  @spec session_commission(Session.t()) :: WorkCommission.t() | nil
+  defp session_commission(%Session{} = session) do
+    session
+    |> Map.get(:commission)
+    |> session_commission_result(session)
+  end
+
+  @spec session_commission_result(term(), Session.t()) :: WorkCommission.t() | nil
+  defp session_commission_result(%WorkCommission{} = commission, _session), do: commission
+
+  defp session_commission_result(_value, %Session{} = session) do
+    session.adapter_session
+    |> Map.get(:commission)
+    |> adapter_commission_result()
+  end
+
+  @spec adapter_commission_result(term()) :: WorkCommission.t() | nil
+  defp adapter_commission_result(%WorkCommission{} = commission), do: commission
+  defp adapter_commission_result(_value), do: nil
+
+  @spec commission_snapshot(ctx(), WorkCommission.t()) ::
+          OpenSleigh.CommissionRevisionSnapshot.t() | nil
+  defp commission_snapshot(ctx, %WorkCommission{} = commission) do
+    ctx.session.ticket
+    |> metadata_value(:commission_snapshot)
+    |> commission_snapshot_value(ctx, commission)
+  end
+
+  @spec commission_snapshot_value(term(), ctx(), WorkCommission.t()) ::
+          OpenSleigh.CommissionRevisionSnapshot.t() | nil
+  defp commission_snapshot_value(
+         %OpenSleigh.CommissionRevisionSnapshot{} = snapshot,
+         _ctx,
+         _commission
+       ),
+       do: snapshot
+
+  defp commission_snapshot_value(_value, ctx, %WorkCommission{} = commission) do
+    commission
+    |> WorkCommission.revision_snapshot(commission_snapshot_attrs(ctx, commission))
+    |> commission_snapshot_result()
+  end
+
+  @spec commission_snapshot_result(
+          {:ok, OpenSleigh.CommissionRevisionSnapshot.t()}
+          | {:error, OpenSleigh.CommissionRevisionSnapshot.new_error()}
+        ) :: OpenSleigh.CommissionRevisionSnapshot.t() | nil
+  defp commission_snapshot_result({:ok, snapshot}), do: snapshot
+  defp commission_snapshot_result({:error, _reason}), do: nil
+
+  @spec commission_snapshot_attrs(ctx(), WorkCommission.t()) :: map()
+  defp commission_snapshot_attrs(ctx, %WorkCommission{} = commission) do
+    %{
+      problem_revision_hash: problem_revision_hash(ctx, commission),
+      lease_id: preflight_lease_id(ctx, commission),
+      lease_state: preflight_lease_state(ctx)
+    }
+  end
+
+  @spec problem_revision_hash(ctx(), WorkCommission.t()) :: String.t()
+  defp problem_revision_hash(ctx, %WorkCommission{} = commission) do
+    ctx.session.ticket
+    |> metadata_value(:problem_revision_hash)
+    |> string_or_default(commission.decision_revision_hash)
+  end
+
+  @spec preflight_lease_id(ctx(), WorkCommission.t()) :: String.t()
+  defp preflight_lease_id(ctx, %WorkCommission{} = commission) do
+    ctx.session.ticket
+    |> metadata_value(:lease_id)
+    |> string_or_default("local-preflight:" <> commission.id)
+  end
+
+  @spec preflight_lease_state(ctx()) :: atom()
+  defp preflight_lease_state(ctx) do
+    ctx.session.ticket
+    |> metadata_value(:lease_state)
+    |> atom_or_default(:claimed_for_preflight)
+  end
+
+  @spec current_snapshot(ctx(), OpenSleigh.CommissionRevisionSnapshot.t() | nil) ::
+          OpenSleigh.CommissionRevisionSnapshot.t() | nil
+  defp current_snapshot(ctx, commission_snapshot) do
+    ctx.session.ticket
+    |> metadata_value(:current_snapshot)
+    |> current_snapshot_value(commission_snapshot)
+  end
+
+  @spec current_snapshot_value(term(), OpenSleigh.CommissionRevisionSnapshot.t() | nil) ::
+          OpenSleigh.CommissionRevisionSnapshot.t() | nil
+  defp current_snapshot_value(%OpenSleigh.CommissionRevisionSnapshot{} = snapshot, _fallback),
+    do: snapshot
+
+  defp current_snapshot_value(_value, fallback), do: fallback
+
+  @spec current_decision(ctx(), WorkCommission.t()) :: map()
+  defp current_decision(ctx, %WorkCommission{} = commission) do
+    ctx.session.ticket
+    |> metadata_value(:current_decision)
+    |> current_decision_value(commission)
+  end
+
+  @spec current_decision_value(term(), WorkCommission.t()) :: map()
+  defp current_decision_value(%{} = decision, _commission), do: decision
+
+  defp current_decision_value(_value, %WorkCommission{} = commission) do
+    %{
+      decision_ref: commission.decision_ref,
+      decision_revision_hash: commission.decision_revision_hash,
+      status: :active,
+      refresh_due: false,
+      freshness: :healthy
+    }
+  end
+
+  @spec metadata_value(OpenSleigh.Ticket.t(), atom()) :: term()
+  defp metadata_value(ticket, key) do
+    ticket.metadata
+    |> Map.get(key, Map.get(ticket.metadata, Atom.to_string(key)))
+  end
+
+  @spec string_or_default(term(), String.t()) :: String.t()
+  defp string_or_default(value, _default) when is_binary(value) and value != "", do: value
+  defp string_or_default(_value, default), do: default
+
+  @spec atom_or_default(term(), atom()) :: atom()
+  defp atom_or_default(value, _default) when is_atom(value) and not is_nil(value), do: value
+
+  defp atom_or_default(value, default) when is_binary(value),
+    do: string_atom_or_default(value, default)
+
+  defp atom_or_default(_value, default), do: default
+
+  @spec string_atom_or_default(String.t(), atom()) :: atom()
+  defp string_atom_or_default(value, default) do
+    value
+    |> String.trim()
+    |> string_atom_value(default)
+  end
+
+  @spec string_atom_value(String.t(), atom()) :: atom()
+  defp string_atom_value("claimed_for_preflight", _default), do: :claimed_for_preflight
+  defp string_atom_value("claimed", _default), do: :claimed_for_preflight
+  defp string_atom_value("", default), do: default
+  defp string_atom_value(_value, default), do: default
 
   @spec outcome_from_assessment(ctx(), turn_assessment()) ::
           {:ok, PhaseOutcome.t()} | {:await_human, map()} | {:error, atom()}

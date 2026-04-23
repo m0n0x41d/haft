@@ -5,6 +5,9 @@ defmodule OpenSleigh.AuthoringRole do
   Per `specs/target-system/PHASE_ONTOLOGY.md` axis 4 and
   `specs/target-system/TERM_MAP.md`:
 
+  * `:preflight_checker` — agent in Preflight phase, reporting
+    deterministic commission freshness and material context changes
+    back to Haft. It does not authorize Execute by itself.
   * `:frame_verifier` — agent in Frame phase, **verifying** upstream
     human-authored framing. Renamed from `:framer` in v0.5 because the
     Frame-phase role is verification, not authorship (UP1–UP3 framing-
@@ -21,9 +24,9 @@ defmodule OpenSleigh.AuthoringRole do
   """
 
   @typedoc "An authoring-role atom."
-  @type t :: :frame_verifier | :executor | :measurer | :judge | :human
+  @type t :: :preflight_checker | :frame_verifier | :executor | :measurer | :judge | :human
 
-  @all [:frame_verifier, :executor, :measurer, :judge, :human]
+  @all [:preflight_checker, :frame_verifier, :executor, :measurer, :judge, :human]
 
   @doc "All admissible authoring-role atoms."
   @spec all() :: [t(), ...]
@@ -40,6 +43,9 @@ defmodule OpenSleigh.AuthoringRole do
   is a separate principal.)
   """
   @spec agent_phase_role?(t()) :: boolean()
-  def agent_phase_role?(role) when role in [:frame_verifier, :executor, :measurer], do: true
+  def agent_phase_role?(role)
+      when role in [:preflight_checker, :frame_verifier, :executor, :measurer],
+      do: true
+
   def agent_phase_role?(_), do: false
 end

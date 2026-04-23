@@ -120,6 +120,22 @@ defmodule OpenSleigh.Adapter.PathGuardTest do
     end
   end
 
+  describe "relative_to_workspace/3" do
+    test "returns a workspace-relative path for targets inside workspace", ctx do
+      target = Path.join(ctx.workspace, "lib/b.ex")
+
+      assert {:ok, "lib/b.ex"} =
+               PathGuard.relative_to_workspace(ctx.workspace, target, ctx.config)
+    end
+
+    test "rejects targets outside workspace without consulting commission scope", ctx do
+      target = Path.join(ctx.tmp, "outside.ex")
+
+      assert {:error, :path_outside_workspace} =
+               PathGuard.relative_to_workspace(ctx.workspace, target, ctx.config)
+    end
+  end
+
   describe "canonical/2 — invalid input" do
     test "non-binary path → :invalid_workspace_cwd" do
       config = %{forbidden_paths: [], forbidden_remote_substrings: []}

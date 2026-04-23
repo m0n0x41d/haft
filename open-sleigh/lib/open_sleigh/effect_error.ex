@@ -45,6 +45,7 @@ defmodule OpenSleigh.EffectError do
           | :path_symlink_loop
           | :workspace_is_self
           | :path_forbidden
+          | :mutation_outside_commission_scope
           | :cancel_grace_expired
 
   @all [
@@ -79,6 +80,7 @@ defmodule OpenSleigh.EffectError do
     :path_symlink_loop,
     :workspace_is_self,
     :path_forbidden,
+    :mutation_outside_commission_scope,
     :cancel_grace_expired
   ]
 

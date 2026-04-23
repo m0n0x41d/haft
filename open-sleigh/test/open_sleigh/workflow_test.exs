@@ -39,6 +39,23 @@ defmodule OpenSleigh.WorkflowTest do
     end
   end
 
+  describe "MVP-1R workflow" do
+    test "id and entry are commission preflight" do
+      wf = Workflow.mvp1r()
+      assert wf.id == :mvp1r
+      assert wf.entry_phase == :preflight
+    end
+
+    test "linear advance: preflight → frame → execute → measure → terminal" do
+      wf = Workflow.mvp1r()
+      assert :frame = Workflow.advance_from(wf, :preflight)
+      assert :execute = Workflow.advance_from(wf, :frame)
+      assert :measure = Workflow.advance_from(wf, :execute)
+      assert :terminal = Workflow.advance_from(wf, :measure)
+      assert nil == Workflow.advance_from(wf, :terminal)
+    end
+  end
+
   describe "MVP-2 workflow" do
     test "id and entry are characterize_situation" do
       wf = Workflow.mvp2()

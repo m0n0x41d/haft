@@ -26,6 +26,7 @@ defmodule OpenSleigh.Sleigh.Compiler do
   }
 
   @default_valid_until_days %{
+    preflight: 1,
     frame: 7,
     execute: 30,
     measure: 30
@@ -39,10 +40,24 @@ defmodule OpenSleigh.Sleigh.Compiler do
     "ticket.target_branch"
   ]
 
+  @commission_variables [
+    "commission.id",
+    "commission.problem_card_ref",
+    "commission.scope_hash",
+    "commission.base_sha"
+  ]
+
+  @decision_variables [
+    "decision.id"
+  ]
+
   @prompt_variables %{
-    frame: @ticket_variables,
+    preflight: @ticket_variables ++ @commission_variables ++ @decision_variables,
+    frame: @ticket_variables ++ @commission_variables,
     execute:
       @ticket_variables ++
+        @commission_variables ++
+        @decision_variables ++
         [
           "problem_card.id",
           "problem_card.ref",
@@ -52,6 +67,7 @@ defmodule OpenSleigh.Sleigh.Compiler do
         ],
     measure:
       @ticket_variables ++
+        @commission_variables ++
         [
           "problem_card.id",
           "problem_card.ref",
@@ -173,6 +189,7 @@ defmodule OpenSleigh.Sleigh.Compiler do
 
   @spec prompt_phase_by_name(String.t()) :: {:ok, atom()} | :ignore
   defp prompt_phase_by_name("frame"), do: {:ok, :frame}
+  defp prompt_phase_by_name("preflight"), do: {:ok, :preflight}
   defp prompt_phase_by_name("execute"), do: {:ok, :execute}
   defp prompt_phase_by_name("measure"), do: {:ok, :measure}
   defp prompt_phase_by_name(_), do: :ignore
@@ -192,7 +209,7 @@ defmodule OpenSleigh.Sleigh.Compiler do
   @spec build_validated_bundle(map(), %{atom() => String.t()}) ::
           {:ok, OpenSleigh.WorkflowStore.bundle()} | {:error, [CompilerError.t()]}
   defp build_validated_bundle(config, prompts) do
-    workflow = Workflow.mvp1()
+    workflow = workflow_for_config(config)
 
     with {:ok, adapter_kind, adapter_module} <- adapter_module(config),
          {:ok, phase_configs} <-
@@ -207,10 +224,39 @@ defmodule OpenSleigh.Sleigh.Compiler do
 
   @spec section_errors(map()) :: [CompilerError.t()]
   defp section_errors(config) do
-    [:engine, :tracker, :agent, :haft, :phases]
-    |> Enum.reject(&section_present?(config, &1))
-    |> Enum.map(&{:missing_section, &1})
+    common_errors =
+      [:engine, :agent, :haft, :phases]
+      |> Enum.reject(&section_present?(config, &1))
+      |> Enum.map(&{:missing_section, &1})
+
+    source_errors =
+      config
+      |> work_source_present?()
+      |> source_section_errors()
+
+    common_errors ++ source_errors
   end
+
+  @spec source_section_errors(boolean()) :: [CompilerError.t()]
+  defp source_section_errors(true), do: []
+  defp source_section_errors(false), do: [{:missing_section, :tracker}]
+
+  @spec work_source_present?(map()) :: boolean()
+  defp work_source_present?(config) do
+    [:tracker, :commission_source]
+    |> Enum.any?(&section_present?(config, &1))
+  end
+
+  @spec workflow_for_config(map()) :: Workflow.t()
+  defp workflow_for_config(config) do
+    config
+    |> section_present?(:commission_source)
+    |> workflow_for_commission_source()
+  end
+
+  @spec workflow_for_commission_source(boolean()) :: Workflow.t()
+  defp workflow_for_commission_source(true), do: Workflow.mvp1r()
+  defp workflow_for_commission_source(false), do: Workflow.mvp1()
 
   @spec section_present?(map(), atom()) :: boolean()
   defp section_present?(config, section) do
@@ -526,6 +572,8 @@ defmodule OpenSleigh.Sleigh.Compiler do
       config_hashes: config_hashes,
       external_publication: normalized_external_publication(config),
       engine: value_at(config, :engine, %{}),
+      commission_source: value_at(config, :commission_source, %{}),
+      projection: value_at(config, :projection, %{}),
       tracker: value_at(config, :tracker, %{}),
       agent: value_at(config, :agent, %{}),
       codex: value_at(config, :codex, %{}),
@@ -555,6 +603,8 @@ defmodule OpenSleigh.Sleigh.Compiler do
   defp hash_input(config, phase, prompt) do
     %{
       engine: value_at(config, :engine, %{}),
+      commission_source: value_at(config, :commission_source, %{}),
+      projection: value_at(config, :projection, %{}),
       tracker: value_at(config, :tracker, %{}),
       agent: value_at(config, :agent, %{}),
       codex: value_at(config, :codex, %{}),

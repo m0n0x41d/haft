@@ -26,6 +26,9 @@ defmodule OpenSleigh.Adapter.PathGuard do
   symlink-resolved. Callers receive either a canonicalised path
   (safe to hand to `File.write/2`) or a typed error from
   `OpenSleigh.EffectError`.
+
+  PathGuard is only a workspace-safety guard. It does not know about
+  WorkCommission Scope and must not return commission-authority errors.
   """
 
   alias OpenSleigh.EffectError
@@ -75,6 +78,29 @@ defmodule OpenSleigh.Adapter.PathGuard do
   @spec validate_workspace(Path.t(), config()) ::
           {:ok, Path.t()} | {:error, EffectError.t()}
   def validate_workspace(path, config), do: canonical(path, config)
+
+  @doc """
+  Resolve a target path and return its path relative to `workspace_path`.
+
+  This is still only the workspace guard. A returned relative path means
+  the target stayed inside the workspace; WorkCommission authorization is
+  checked separately by `OpenSleigh.Agent.Adapter`.
+  """
+  @spec relative_to_workspace(Path.t(), Path.t(), config()) ::
+          {:ok, Path.t()} | {:error, EffectError.t()}
+  def relative_to_workspace(workspace_path, path, config)
+      when is_binary(workspace_path) and is_binary(path) do
+    path =
+      path
+      |> Path.expand(workspace_path)
+
+    with {:ok, workspace} <- canonical(workspace_path, config),
+         {:ok, target} <- canonical(path, config) do
+      relative_workspace_result(target, workspace)
+    end
+  end
+
+  def relative_to_workspace(_workspace_path, _path, _config), do: {:error, :invalid_workspace_cwd}
 
   # ——— internals ———
 
@@ -137,6 +163,32 @@ defmodule OpenSleigh.Adapter.PathGuard do
     # If Path.relative_to couldn't make it relative (different root,
     # etc.), it returns the original absolute path.
     relative != child and not String.starts_with?(relative, "..")
+  end
+
+  @spec relative_workspace_result(Path.t(), Path.t()) ::
+          {:ok, Path.t()} | {:error, EffectError.t()}
+  defp relative_workspace_result(target, workspace) do
+    target
+    |> Path.relative_to(workspace)
+    |> relative_path_result(target)
+  end
+
+  @spec relative_path_result(Path.t(), Path.t()) ::
+          {:ok, Path.t()} | {:error, EffectError.t()}
+  defp relative_path_result(relative, target) do
+    cond do
+      relative == target ->
+        {:error, :path_outside_workspace}
+
+      Path.type(relative) == :absolute ->
+        {:error, :path_outside_workspace}
+
+      String.starts_with?(relative, "..") ->
+        {:error, :path_outside_workspace}
+
+      true ->
+        {:ok, relative}
+    end
   end
 
   @spec check_not_self_clone(Path.t(), [String.t()]) ::

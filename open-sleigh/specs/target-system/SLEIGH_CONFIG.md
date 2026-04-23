@@ -100,7 +100,7 @@ haft:
 
 external_publication:
   branch_regex: "^(main|master|release/.*)$"
-  external_transition_to: ["Done"]
+  tracker_transition_to: []
   approvers: ["ivan@weareocta.com"]
   timeout_h: 24
 
@@ -113,9 +113,7 @@ phases:
         - commission_runnable
         - decision_fresh
         - scope_snapshot_fresh
-        - lockset_available
-        - autonomy_envelope_allows
-      semantic: [context_material_change_review]
+      semantic: []
   frame:
     agent_role: frame_verifier     # Verifier role — does NOT author ProblemCards.
     tools: [haft_query, read, grep]  # haft_problem intentionally absent: Frame
@@ -130,7 +128,7 @@ phases:
     agent_role: executor
     tools: [read, write, edit, bash, haft_note]
     gates:
-      structural: [design_runtime_split_ok, mutation_within_commission_scope]
+      structural: [design_runtime_split_ok]
       semantic: [lade_quadrants_split_ok]
   measure:
     agent_role: measurer
@@ -139,12 +137,15 @@ phases:
       structural:
         - evidence_ref_not_self
         - valid_until_field_present
-        - mutation_within_commission_scope
-        - projection_debt_recorded
       semantic: [no_self_evidence_semantic]
 ---
 
 # Prompt templates
+
+## Preflight
+You are the Commission Preflight checker. Given WorkCommission {{commission.id}},
+report deterministic commission freshness and material context changes. Do not
+authorize execution; Haft decides after validating the PreflightReport.
 
 ## Frame
 You are the Frame verifier. Given WorkCommission {{commission.id}} and its

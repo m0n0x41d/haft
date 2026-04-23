@@ -11,7 +11,8 @@ defmodule OpenSleigh.Phase do
   alphabet and `specs/target-system/ILLEGAL_STATES.md` TR5 for the
   enforcement label.
 
-  MVP-1 uses `:frame, :execute, :measure, :terminal`. MVP-2 phases are
+  MVP-1 uses `:frame, :execute, :measure, :terminal`. MVP-1R adds
+  `:preflight` before Frame for commission-first intake. MVP-2 phases are
   declared but not yet routed through — `OpenSleigh.Workflow.mvp1/0` uses
   a strict subset; `OpenSleigh.Workflow.mvp2/0` uses the full alphabet.
   """
@@ -22,7 +23,8 @@ defmodule OpenSleigh.Phase do
   # MVP-1 alphabet (per `specs/target-system/SCOPE_FREEZE.md §MVP-1`
   # + `PHASE_ONTOLOGY.md §MVP-1 phase graph`).
   @type t ::
-          :frame
+          :preflight
+          | :frame
           | :execute
           | :measure
           | :terminal
@@ -41,6 +43,7 @@ defmodule OpenSleigh.Phase do
           | :measure_impact
 
   @mvp1 [:frame, :execute, :measure, :terminal]
+  @mvp1r [:preflight, :frame, :execute, :measure, :terminal]
 
   @mvp2_additions [
     :characterize_situation,
@@ -55,7 +58,7 @@ defmodule OpenSleigh.Phase do
     :measure_impact
   ]
 
-  @all @mvp1 ++ @mvp2_additions
+  @all @mvp1r ++ @mvp2_additions
 
   @doc """
   Full phase alphabet (MVP-1 + MVP-2). Returned as a list for enumeration;
@@ -69,6 +72,12 @@ defmodule OpenSleigh.Phase do
   """
   @spec mvp1() :: [t(), ...]
   def mvp1, do: @mvp1
+
+  @doc """
+  MVP-1R subset — phases routed by `Workflow.mvp1r/0`.
+  """
+  @spec mvp1r() :: [t(), ...]
+  def mvp1r, do: @mvp1r
 
   @doc """
   MVP-2 additions — phases added to the alphabet in MVP-2 on top of MVP-1.
@@ -108,7 +117,7 @@ defmodule OpenSleigh.Phase do
   only apply to Execute and MVP-2 Solution-Factory phases.
   """
   @spec single_turn?(t()) :: boolean()
-  def single_turn?(phase) when phase in [:frame, :measure, :terminal], do: true
+  def single_turn?(phase) when phase in [:preflight, :frame, :measure, :terminal], do: true
 
   def single_turn?(phase)
       when phase in [

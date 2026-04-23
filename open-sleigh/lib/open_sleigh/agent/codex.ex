@@ -55,10 +55,10 @@ defmodule OpenSleigh.Agent.Codex do
   @impl true
   @spec dispatch_tool(map(), atom(), map(), AdapterSession.t()) ::
           {:ok, map()} | {:error, EffectError.t()}
-  def dispatch_tool(_handle, tool, _args, %AdapterSession{} = session)
+  def dispatch_tool(_handle, tool, args, %AdapterSession{} = session)
       when tool in @tool_registry do
     session
-    |> AgentAdapter.ensure_in_scope(tool)
+    |> AgentAdapter.ensure_in_scope(tool, args)
     |> dispatch_scoped_tool(tool)
   end
 

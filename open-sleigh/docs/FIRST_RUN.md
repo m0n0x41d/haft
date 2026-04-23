@@ -3,6 +3,26 @@
 This checklist records the first non-mock canary run. It separates setup
 claims from runtime evidence.
 
+## Local Commission Canaries
+
+Run the local-only canaries before any tracker-backed run:
+
+```sh
+mix test test/open_sleigh/commission_canary_test.exs
+```
+
+These canaries use `test/fixtures/commissions/*.json` through the local
+`CommissionSource` adapter. They do not require Linear, Jira, GitHub, or Haft
+server credentials, and they do not start ProjectionWriterAgent.
+
+Record:
+
+- green local-only: fixture commission listed, claimed for preflight, admitted
+  by deterministic gates, and terminal diff stays inside Scope
+- stale-block: decision revision drift blocks as `blocked_stale` before Execute
+- scope-block: an in-workspace mutation outside Scope fails terminally as
+  `mutation_outside_commission_scope`
+
 ## Inputs
 
 - Date:

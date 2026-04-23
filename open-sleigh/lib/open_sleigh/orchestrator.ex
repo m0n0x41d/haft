@@ -46,6 +46,7 @@ defmodule OpenSleigh.Orchestrator do
     WorkflowStore
   }
 
+  alias OpenSleigh.Agent.Adapter, as: AgentAdapter
   alias OpenSleigh.Gates.Human.CommissionApproved
 
   require Logger
@@ -344,11 +345,20 @@ defmodule OpenSleigh.Orchestrator do
     with {:ok, phase_config} <- WorkflowStore.phase_config(state.workflow_store, phase),
          phase_config <- effective_phase_config(ticket, state, phase, phase_config),
          {:ok, prompt_template} <- WorkflowStore.prompt_for(state.workflow_store, phase),
+         {:ok, commission} <- Ticket.to_work_commission(ticket),
+         :ok <- validate_commission_scope_snapshot(commission),
          session_id <- SessionId.generate(),
          config_hash <- config_hash_for_phase(state, phase),
          workspace_path <- default_workspace_path(state, ticket),
          {:ok, adapter_session} <-
-           build_adapter_session(session_id, state, phase_config, workspace_path, config_hash),
+           build_adapter_session(
+             session_id,
+             state,
+             phase_config,
+             workspace_path,
+             config_hash,
+             commission
+           ),
          upstream_problem_card <-
            upstream_problem_card(
              ticket,
@@ -359,7 +369,7 @@ defmodule OpenSleigh.Orchestrator do
              prompt_template
            ),
          :ok <- validate_upstream_problem_card(phase, phase_config, upstream_problem_card),
-         prompt <- render_prompt(prompt_template, ticket, upstream_problem_card),
+         prompt <- render_prompt(prompt_template, ticket, commission, upstream_problem_card),
          {:ok, session} <-
            Session.new(%{
              id: session_id,
@@ -370,10 +380,27 @@ defmodule OpenSleigh.Orchestrator do
              workspace_path: workspace_path,
              claimed_at: state.now_fun.(),
              adapter_session: adapter_session
-           }) do
+           }),
+         session <- attach_commission_context(session, commission) do
       {:ok, session, phase_config, prompt, upstream_problem_card}
     end
   end
+
+  @spec validate_commission_scope_snapshot(OpenSleigh.WorkCommission.t()) ::
+          :ok | {:error, atom()}
+  defp validate_commission_scope_snapshot(%OpenSleigh.WorkCommission{} = commission) do
+    commission
+    |> Map.from_struct()
+    |> OpenSleigh.WorkCommission.new()
+    |> commission_snapshot_validation_result()
+  end
+
+  @spec commission_snapshot_validation_result(
+          {:ok, OpenSleigh.WorkCommission.t()}
+          | {:error, OpenSleigh.WorkCommission.new_error()}
+        ) :: :ok | {:error, atom()}
+  defp commission_snapshot_validation_result({:ok, %OpenSleigh.WorkCommission{}}), do: :ok
+  defp commission_snapshot_validation_result({:error, reason}), do: {:error, reason}
 
   @spec default_workspace_path(map(), Ticket.t()) :: Path.t()
   defp default_workspace_path(state, ticket) do
@@ -385,11 +412,19 @@ defmodule OpenSleigh.Orchestrator do
           map(),
           OpenSleigh.PhaseConfig.t(),
           Path.t(),
-          OpenSleigh.ConfigHash.t()
+          OpenSleigh.ConfigHash.t(),
+          OpenSleigh.WorkCommission.t()
         ) ::
           {:ok, AdapterSession.t()} | {:error, atom()}
-  defp build_adapter_session(session_id, state, phase_config, workspace_path, config_hash) do
-    AdapterSession.new(%{
+  defp build_adapter_session(
+         session_id,
+         state,
+         phase_config,
+         workspace_path,
+         config_hash,
+         commission
+       ) do
+    %{
       session_id: session_id,
       config_hash: config_hash,
       scoped_tools: MapSet.new(phase_config.tools),
@@ -399,7 +434,29 @@ defmodule OpenSleigh.Orchestrator do
       max_turns: phase_config.max_turns,
       max_tokens_per_turn: 80_000,
       wall_clock_timeout_s: 600
-    })
+    }
+    |> AdapterSession.new()
+    |> attach_adapter_commission_context(commission)
+  end
+
+  @spec attach_adapter_commission_context(
+          {:ok, AdapterSession.t()} | {:error, atom()},
+          OpenSleigh.WorkCommission.t()
+        ) :: {:ok, AdapterSession.t()} | {:error, atom()}
+  defp attach_adapter_commission_context({:ok, adapter_session}, commission) do
+    adapter_session
+    |> AgentAdapter.attach_commission_context(commission)
+    |> then(&{:ok, &1})
+  end
+
+  defp attach_adapter_commission_context({:error, _reason} = error, _commission), do: error
+
+  @spec attach_commission_context(Session.t(), OpenSleigh.WorkCommission.t()) :: Session.t()
+  defp attach_commission_context(%Session{} = session, %OpenSleigh.WorkCommission{} = commission) do
+    session
+    |> Map.put(:commission, commission)
+    |> Map.put(:commission_id, commission.id)
+    |> Map.put(:scope, commission.scope)
   end
 
   @spec effective_phase_config(
@@ -489,19 +546,22 @@ defmodule OpenSleigh.Orchestrator do
 
   defp validate_upstream_problem_card(_phase, _phase_config, _upstream_problem_card), do: :ok
 
-  @spec render_prompt(String.t(), Ticket.t(), map() | nil) :: String.t()
-  defp render_prompt(template, %Ticket{} = ticket, upstream_problem_card) do
-    replacements = prompt_replacements(ticket, upstream_problem_card)
+  @spec render_prompt(String.t(), Ticket.t(), OpenSleigh.WorkCommission.t(), map() | nil) ::
+          String.t()
+  defp render_prompt(template, %Ticket{} = ticket, commission, upstream_problem_card) do
+    replacements = prompt_replacements(ticket, commission, upstream_problem_card)
 
     Regex.replace(~r/{{\s*([^}]+?)\s*}}/, template, fn _match, key ->
       Map.get(replacements, String.trim(key), "")
     end)
   end
 
-  @spec prompt_replacements(Ticket.t(), map() | nil) :: %{String.t() => String.t()}
-  defp prompt_replacements(%Ticket{} = ticket, upstream_problem_card) do
+  @spec prompt_replacements(Ticket.t(), OpenSleigh.WorkCommission.t(), map() | nil) ::
+          %{String.t() => String.t()}
+  defp prompt_replacements(%Ticket{} = ticket, commission, upstream_problem_card) do
     %{}
     |> Map.merge(ticket_prompt_replacements(ticket))
+    |> Map.merge(commission_prompt_replacements(commission))
     |> Map.merge(problem_card_prompt_replacements(upstream_problem_card))
     |> Map.merge(runtime_prompt_replacements(ticket))
   end
@@ -514,6 +574,19 @@ defmodule OpenSleigh.Orchestrator do
       "ticket.body" => ticket.body,
       "ticket.problem_card_ref" => ticket.problem_card_ref,
       "ticket.target_branch" => ticket.target_branch || ""
+    }
+  end
+
+  @spec commission_prompt_replacements(OpenSleigh.WorkCommission.t()) :: %{
+          String.t() => String.t()
+        }
+  defp commission_prompt_replacements(commission) do
+    %{
+      "commission.id" => commission.id,
+      "commission.problem_card_ref" => commission.problem_card_ref,
+      "commission.scope_hash" => commission.scope_hash,
+      "commission.base_sha" => commission.base_sha,
+      "decision.id" => commission.decision_ref
     }
   end
 

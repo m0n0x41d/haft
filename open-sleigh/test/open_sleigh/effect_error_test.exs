@@ -8,6 +8,7 @@ defmodule OpenSleigh.EffectErrorTest do
     assert :agent_launch_failed in EffectError.all()
     assert :haft_unavailable in EffectError.all()
     assert :tool_forbidden_by_phase_scope in EffectError.all()
+    assert :mutation_outside_commission_scope in EffectError.all()
     assert :path_outside_workspace in EffectError.all()
     assert :workspace_is_self in EffectError.all()
     assert :uncalibrated in EffectError.all()

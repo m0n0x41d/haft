@@ -79,18 +79,20 @@ testable without a runtime. This layer is the ontology.
 
 - `SessionId` (opaque)
 - `Ticket` (struct: id, source, problem_card_ref, metadata)
-- `Phase` (closed sum with **all MVP-1 and MVP-2 atoms pre-declared from day 1**):
+- `Phase` (closed sum with **all MVP-1R and MVP-2 atoms pre-declared from day 1**):
   ```elixir
   @type t ::
-          # MVP-1 alphabet
-          :frame | :execute | :measure | :terminal
+          # MVP-1 legacy + MVP-1R commission-first alphabet
+          :preflight | :frame | :execute | :measure | :terminal
           # MVP-2 additions (pre-declared per Q-OS-2 resolution, v0.5)
           | :characterize_situation | :measure_situation | :problematize
           | :select_spec | :accept_spec | :generate | :parity_run
           | :select | :commission | :measure_impact
   ```
-  `Workflow.mvp1/0` routes only through the MVP-1 atoms; `Workflow.mvp2/0`
-  routes through the full alphabet. No `{:m2, atom()}` open-tagged variant.
+  `Workflow.mvp1/0` routes only through the legacy MVP-1 atoms;
+  `Workflow.mvp1r/0` routes `:preflight → :frame → :execute → :measure`;
+  `Workflow.mvp2/0` routes through the full MVP-2 alphabet. No `{:m2, atom()}`
+  open-tagged variant.
   `PhaseMachine.next/2` exhaustiveness is total over this closed alphabet.
 - `PhaseOutcome` (struct with required provenance fields)
 - `Verdict` (sum: `:pass | :fail | :partial`)
@@ -101,7 +103,7 @@ testable without a runtime. This layer is the ontology.
 - `ConfigHash` (opaque binary)
 - `ProblemCardRef` (opaque pointer to a Haft artifact)
 - `Workflow` (immutable graph data)
-- `AuthoringRole` (sum: `:frame_verifier | :executor | :measurer | :judge | :human`). Renamed from `:framer` in v0.5: the Frame-phase role is verification of upstream human-authored framing, not authorship.
+- `AuthoringRole` (sum: `:preflight_checker | :frame_verifier | :executor | :measurer | :judge | :human`). Renamed from `:framer` in v0.5: the Frame-phase role is verification of upstream human-authored framing, not authorship.
 
 ### Functions (examples, all pure)
 
@@ -135,6 +137,7 @@ testable without a runtime. This layer is the ontology.
 # is evidence *for*. This is the v0.5 fix to the CRITICAL-2 finding.
 
 @spec Workflow.mvp1() :: Workflow.t()
+@spec Workflow.mvp1r() :: Workflow.t()
 @spec Workflow.mvp2() :: Workflow.t()
 ```
 

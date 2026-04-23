@@ -230,6 +230,11 @@ tasks:
     cmds:
       - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.haft.md.example --mock-haft --mock-judge
 
+  open-sleigh:harness-from-decision:
+    desc: Create a WorkCommission from DECISION and run the real Haft-backed Open-Sleigh harness
+    cmds:
+      - bash scripts/open_sleigh_harness_from_decision.sh "{{.DECISION}}"
+
   clean:
     desc: Remove local build artifacts
     cmds:

@@ -63,6 +63,7 @@ task open-sleigh:smoke-real-haft
 task open-sleigh:smoke-real-haft-dynamic
 task open-sleigh:smoke-real-haft-from-decision
 task open-sleigh:harness-haft
+task open-sleigh:harness-from-decision DECISION=dec-...
 ```
 
 `task open-sleigh:smoke-real-haft` builds the current Haft binary, creates a
@@ -91,6 +92,19 @@ commission created after startup is consumed without restarting the harness.
 hand-written commission fixture: it creates a real ProblemCard and
 DecisionRecord through `haft serve`, runs `haft commission create-from-decision`,
 and verifies Open-Sleigh consumes the resulting WorkCommission.
+
+For an operator run against a real local DecisionRecord:
+
+```sh
+task open-sleigh:harness-from-decision DECISION=dec-...
+```
+
+Useful environment overrides:
+
+```sh
+ONCE=1 MOCK_AGENT=1 MOCK_JUDGE=1 task open-sleigh:harness-from-decision DECISION=dec-...
+COMMISSION_ARGS='--allowed-path internal/cli --lock internal/cli' task open-sleigh:harness-from-decision DECISION=dec-...
+```
 
 Monitor from another shell:
 

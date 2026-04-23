@@ -43,6 +43,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return createWorkCommission(ctx, store, args)
 	case "create_from_decision":
 		return createWorkCommissionFromDecision(ctx, store, args)
+	case "create_batch_from_decisions":
+		return createWorkCommissionBatchFromDecisions(ctx, store, args)
 	case "list_runnable":
 		return listRunnableWorkCommissions(ctx, store)
 	case "claim_for_preflight":
@@ -80,6 +82,47 @@ func createWorkCommissionFromDecision(
 	return persistWorkCommission(ctx, store, commission, now)
 }
 
+func createWorkCommissionBatchFromDecisions(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+) (string, error) {
+	now := time.Now().UTC()
+
+	decisionRefs, err := parseStrictStringArrayFromArgs(args, "decision_refs")
+	if err != nil {
+		return "", err
+	}
+	if len(decisionRefs) == 0 {
+		return "", fmt.Errorf("decision_refs is required")
+	}
+
+	commissions := make([]map[string]any, 0, len(decisionRefs))
+	for _, decisionRef := range sortedUniqueStrings(decisionRefs) {
+		commission, err := buildWorkCommissionFromDecision(
+			ctx,
+			store,
+			commissionArgsForDecision(args, decisionRef),
+			now,
+		)
+		if err != nil {
+			return "", fmt.Errorf("build commission for %s: %w", decisionRef, err)
+		}
+		if err := normalizeNewWorkCommission(commission, now); err != nil {
+			return "", fmt.Errorf("normalize commission for %s: %w", decisionRef, err)
+		}
+		commissions = append(commissions, commission)
+	}
+
+	for _, commission := range commissions {
+		if _, err := persistWorkCommission(ctx, store, commission, now); err != nil {
+			return "", fmt.Errorf("persist commission for %s: %w", stringField(commission, "decision_ref"), err)
+		}
+	}
+
+	return commissionResponse("commissions", commissions)
+}
+
 func persistWorkCommission(
 	ctx context.Context,
 	store *artifact.Store,
@@ -112,6 +155,13 @@ func persistWorkCommission(
 	}
 
 	return commissionResponse("commission", commission)
+}
+
+func commissionArgsForDecision(args map[string]any, decisionRef string) map[string]any {
+	next := copyStringAnyMap(args)
+	next["decision_ref"] = decisionRef
+	delete(next, "decision_refs")
+	return next
 }
 
 func buildWorkCommissionFromDecision(

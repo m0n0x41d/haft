@@ -9,8 +9,8 @@ func haftCommissionTool() Tool {
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"create", "create_from_decision", "list_runnable", "claim_for_preflight", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
-					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, list_runnable=return queued/ready non-expired commissions, claim_for_preflight=atomically move one to preflighting, other actions append lifecycle facts.",
+					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "list_runnable", "claim_for_preflight", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
+					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, list_runnable=return queued/ready non-expired commissions, claim_for_preflight=atomically move one to preflighting, other actions append lifecycle facts.",
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
@@ -23,6 +23,11 @@ func haftCommissionTool() Tool {
 				"decision_ref": map[string]string{
 					"type":        "string",
 					"description": "(create_from_decision) Active DecisionRecord id to commission.",
+				},
+				"decision_refs": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]string{"type": "string"},
+					"description": "(create_batch_from_decisions) Active DecisionRecord ids to commission as a batch.",
 				},
 				"repo_ref": map[string]string{
 					"type":        "string",

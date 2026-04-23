@@ -62,8 +62,10 @@ task open-sleigh:smoke-haft
 task open-sleigh:smoke-real-haft
 task open-sleigh:smoke-real-haft-dynamic
 task open-sleigh:smoke-real-haft-from-decision
+task open-sleigh:smoke-real-haft-batch
 task open-sleigh:harness-haft
 task open-sleigh:harness-from-decision DECISION=dec-...
+task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b"
 ```
 
 `task open-sleigh:smoke-real-haft` builds the current Haft binary, creates a
@@ -78,12 +80,13 @@ haft commission create-from-decision dec-... \
   --allowed-path open-sleigh/lib/open_sleigh/commission_source/haft.ex \
   --lock open-sleigh/lib/open_sleigh/commission_source/haft.ex \
   --evidence "mix test test/open_sleigh/commission_source/haft_test.exs"
+haft commission create-batch dec-a dec-b dec-c
 haft commission create --json commission.json
 haft commission list-runnable
 haft commission claim wc-...
 ```
 
-`create-from-decision` is the preferred operator path: Haft loads the active
+`create-from-decision` / `create-batch` are the preferred operator paths: Haft loads the active
 DecisionRecord, freezes `decision_revision_hash`, derives default scope from
 `affected_files` when possible, and writes the runnable WorkCommission.
 `open_sleigh.start` replenishes dynamically while it is running, so a
@@ -92,17 +95,21 @@ commission created after startup is consumed without restarting the harness.
 hand-written commission fixture: it creates a real ProblemCard and
 DecisionRecord through `haft serve`, runs `haft commission create-from-decision`,
 and verifies Open-Sleigh consumes the resulting WorkCommission.
+`task open-sleigh:smoke-real-haft-batch` does the same for a two-decision queue
+using `haft commission create-batch`.
 
 For an operator run against a real local DecisionRecord:
 
 ```sh
 task open-sleigh:harness-from-decision DECISION=dec-...
+task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b dec-c"
 ```
 
 Useful environment overrides:
 
 ```sh
 ONCE=1 MOCK_AGENT=1 MOCK_JUDGE=1 task open-sleigh:harness-from-decision DECISION=dec-...
+ONCE=1 MOCK_AGENT=1 MOCK_JUDGE=1 task open-sleigh:harness-from-decisions DECISIONS="dec-a dec-b"
 COMMISSION_ARGS='--allowed-path internal/cli --lock internal/cli' task open-sleigh:harness-from-decision DECISION=dec-...
 ```
 

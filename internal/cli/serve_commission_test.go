@@ -179,6 +179,66 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 	}
 }
 
+func TestHandleHaftCommission_CreateBatchFromDecisionsBuildsRunnableCommissions(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	first := createCommissionDecisionFixture(t, ctx, store, haftDir, "Batch first", "internal/cli/commission.go")
+	second := createCommissionDecisionFixture(t, ctx, store, haftDir, "Batch second", "internal/cli/serve_commission.go")
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":          "create_batch_from_decisions",
+		"decision_refs":   []any{first.Meta.ID, second.Meta.ID},
+		"repo_ref":        "local:haft",
+		"base_sha":        "base-r1",
+		"target_branch":   "dev",
+		"allowed_actions": []any{"edit_files", "run_tests"},
+		"valid_until":     "2099-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string][]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(created["commissions"]) != 2 {
+		t.Fatalf("created commissions = %#v, want two", created["commissions"])
+	}
+
+	seen := map[string]bool{}
+	for _, commission := range created["commissions"] {
+		seen[commission["decision_ref"].(string)] = true
+		if commission["state"] != "queued" {
+			t.Fatalf("commission state = %#v, want queued", commission["state"])
+		}
+		if !hexLike(commission["scope_hash"]) {
+			t.Fatalf("scope_hash = %#v, want sha256 hex", commission["scope_hash"])
+		}
+	}
+
+	if !seen[first.Meta.ID] || !seen[second.Meta.ID] {
+		t.Fatalf("created decision refs = %#v, want both decisions", seen)
+	}
+
+	listed := map[string][]map[string]any{}
+	listResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action": "list_runnable",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(listResult), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed["commissions"]) != 2 {
+		t.Fatalf("listed commissions = %#v, want two runnable commissions", listed["commissions"])
+	}
+}
+
 func TestHandleHaftCommission_CreateFromDecisionRequiresScope(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
@@ -297,6 +357,48 @@ func containsAnyString(value any, target string) bool {
 		}
 	}
 	return false
+}
+
+func createCommissionDecisionFixture(
+	t *testing.T,
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	title string,
+	affectedFile string,
+) *artifact.Artifact {
+	t.Helper()
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      title + " problem",
+		Signal:     "Harness needs batch commission intake for " + affectedFile + ".",
+		Acceptance: "A runnable WorkCommission exists for " + affectedFile + ".",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemRef:      problem.Meta.ID,
+		SelectedTitle:   title,
+		WhySelected:     "The batch harness needs one bounded WorkCommission per DecisionRecord.",
+		SelectionPolicy: "Prefer queueable commissions with independent locksets.",
+		CounterArgument: "A single large commission would be simpler.",
+		WeakestLink:     "Overlapping scopes must stay controlled by locksets.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "One large commission",
+			Reason:  "It hides per-decision authorization boundaries.",
+		}},
+		Rollback:      &artifact.RollbackSpec{Triggers: []string{"Batch commission creation regresses."}},
+		EvidenceReqs:  []string{"go test ./internal/cli"},
+		AffectedFiles: []string{affectedFile},
+		ValidUntil:    "2099-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return decision
 }
 
 func TestHandleHaftCommission_ListRunnableFiltersExpiredAndTerminal(t *testing.T) {

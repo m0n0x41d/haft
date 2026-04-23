@@ -109,11 +109,13 @@ defaults:
 decisions:
   - ref: dec-a
   - ref: dec-b
+    depends_on: [dec-a]
 ```
 
-Dependency fields such as `depends_on` are intentionally rejected in
-ImplementationPlan-lite until scheduler enforcement lands; otherwise the plan
-would imply ordering that the queue cannot yet enforce.
+`depends_on` uses DecisionRecord ids from the same plan. Haft maps those refs
+to concrete WorkCommission ids and enforces them in `list-runnable` and
+`claim`, so Open-Sleigh only sees commissions whose prerequisites are already
+completed.
 `open_sleigh.start` replenishes dynamically while it is running, so a
 commission created after startup is consumed without restarting the harness.
 `task open-sleigh:smoke-real-haft-from-decision` proves the same path without a

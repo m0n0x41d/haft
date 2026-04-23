@@ -316,7 +316,7 @@ func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing
 	}
 }
 
-func TestHandleHaftCommission_CreateFromPlanRejectsUnenforcedDependencies(t *testing.T) {
+func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -324,7 +324,7 @@ func TestHandleHaftCommission_CreateFromPlanRejectsUnenforcedDependencies(t *tes
 	first := createCommissionDecisionFixture(t, ctx, store, haftDir, "Plan dependency first", "internal/cli/commission.go")
 	second := createCommissionDecisionFixture(t, ctx, store, haftDir, "Plan dependency second", "internal/cli/serve_commission.go")
 
-	_, err := handleHaftCommission(ctx, store, map[string]any{
+	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action": "create_from_plan",
 		"plan": map[string]any{
 			"id":            "plan-cli-deps",
@@ -342,8 +342,122 @@ func TestHandleHaftCommission_CreateFromPlanRejectsUnenforcedDependencies(t *tes
 			},
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "dependency scheduling is not admitted") {
-		t.Fatalf("error = %v, want dependency scheduling rejection", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	commissions := created["commissions"].([]any)
+	firstID := commissionIDForDecision(t, commissions, first.Meta.ID)
+	secondID := commissionIDForDecision(t, commissions, second.Meta.ID)
+	secondCommission := commissionForDecision(t, commissions, second.Meta.ID)
+
+	if !containsAnyString(secondCommission["depends_on"], firstID) {
+		t.Fatalf("depends_on = %#v, want first commission id %s", secondCommission["depends_on"], firstID)
+	}
+
+	listed := map[string][]map[string]any{}
+	listResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":   "list_runnable",
+		"plan_ref": "plan-cli-deps",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(listResult), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed["commissions"]) != 1 {
+		t.Fatalf("listed commissions = %#v, want only root dependency runnable", listed["commissions"])
+	}
+	if listed["commissions"][0]["id"] != firstID {
+		t.Fatalf("listed commission id = %#v, want %s", listed["commissions"][0]["id"], firstID)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": secondID,
+		"runner_id":     "open-sleigh:test",
+	})
+	if err == nil || !strings.Contains(err.Error(), "commission_not_runnable") {
+		t.Fatalf("claim error = %v, want dependency-blocked commission_not_runnable", err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "complete_or_block",
+		"commission_id": firstID,
+		"runner_id":     "open-sleigh:test",
+		"verdict":       "completed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listed = map[string][]map[string]any{}
+	listResult, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":   "list_runnable",
+		"plan_ref": "plan-cli-deps",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(listResult), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed["commissions"]) != 1 {
+		t.Fatalf("listed commissions = %#v, want dependent commission runnable", listed["commissions"])
+	}
+	if listed["commissions"][0]["id"] != secondID {
+		t.Fatalf("listed commission id = %#v, want %s", listed["commissions"][0]["id"], secondID)
+	}
+
+	claimed := map[string]map[string]any{}
+	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":    "claim_for_preflight",
+		"runner_id": "open-sleigh:test",
+		"plan_ref":  "plan-cli-deps",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(claimResult), &claimed); err != nil {
+		t.Fatal(err)
+	}
+	if claimed["commission"]["id"] != secondID {
+		t.Fatalf("claimed commission id = %#v, want %s", claimed["commission"]["id"], secondID)
+	}
+}
+
+func TestHandleHaftCommission_CreateFromPlanRejectsUnknownDependency(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	first := createCommissionDecisionFixture(t, ctx, store, haftDir, "Plan unknown dependency", "internal/cli/commission.go")
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action": "create_from_plan",
+		"plan": map[string]any{
+			"id":            "plan-cli-unknown-dep",
+			"revision":      "p1",
+			"repo_ref":      "local:haft",
+			"base_sha":      "base-r1",
+			"target_branch": "dev",
+			"valid_until":   "2099-01-01T00:00:00Z",
+			"decisions": []any{
+				map[string]any{
+					"ref":        first.Meta.ID,
+					"depends_on": []any{"dec-missing"},
+				},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "depends on unknown decision") {
+		t.Fatalf("error = %v, want unknown dependency rejection", err)
 	}
 }
 
@@ -465,6 +579,34 @@ func containsAnyString(value any, target string) bool {
 		}
 	}
 	return false
+}
+
+func commissionIDForDecision(t *testing.T, commissions []any, decisionRef string) string {
+	t.Helper()
+
+	commission := commissionForDecision(t, commissions, decisionRef)
+	id, ok := commission["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("commission id for %s = %#v, want string", decisionRef, commission["id"])
+	}
+	return id
+}
+
+func commissionForDecision(t *testing.T, commissions []any, decisionRef string) map[string]any {
+	t.Helper()
+
+	for _, raw := range commissions {
+		commission, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("commission = %#v, want object", raw)
+		}
+		if commission["decision_ref"] == decisionRef {
+			return commission
+		}
+	}
+
+	t.Fatalf("missing commission for decision %s in %#v", decisionRef, commissions)
+	return nil
 }
 
 func createCommissionDecisionFixture(

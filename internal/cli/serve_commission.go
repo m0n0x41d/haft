@@ -35,6 +35,12 @@ type commissionFromDecisionInput struct {
 	ValidUntil           string
 }
 
+type implementationPlanCommission struct {
+	DecisionRef    string
+	DependencyRefs []string
+	Commission     map[string]any
+}
+
 func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	action := stringArg(args, "action")
 
@@ -48,7 +54,7 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 	case "create_batch_from_decisions":
 		return createWorkCommissionBatchFromDecisions(ctx, store, args)
 	case "list_runnable":
-		return listRunnableWorkCommissions(ctx, store)
+		return listRunnableWorkCommissions(ctx, store, args)
 	case "claim_for_preflight":
 		return claimWorkCommissionForPreflight(ctx, store, args)
 	case "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block":
@@ -166,12 +172,8 @@ func buildWorkCommissionsFromPlan(
 		return nil, err
 	}
 
-	commissions := make([]map[string]any, 0, len(entries))
+	drafts := make([]implementationPlanCommission, 0, len(entries))
 	for _, entry := range entries {
-		if err := rejectUnsupportedPlanDependencies(entry); err != nil {
-			return nil, err
-		}
-
 		decisionRef := implementationPlanDecisionRef(entry)
 		commissionArgs := commissionArgsForPlanDecision(args, plan, entry, decisionRef)
 
@@ -188,10 +190,18 @@ func buildWorkCommissionsFromPlan(
 			return nil, fmt.Errorf("normalize commission for %s: %w", decisionRef, err)
 		}
 
-		commissions = append(commissions, commission)
+		drafts = append(drafts, implementationPlanCommission{
+			DecisionRef:    decisionRef,
+			DependencyRefs: planDecisionStringSlice(entry, "depends_on"),
+			Commission:     commission,
+		})
 	}
 
-	return commissions, nil
+	if err := attachImplementationPlanDependencies(drafts); err != nil {
+		return nil, err
+	}
+
+	return planDraftCommissions(drafts), nil
 }
 
 func persistWorkCommission(
@@ -264,6 +274,10 @@ func implementationPlanDecisionEntries(plan map[string]any) ([]map[string]any, e
 		entries = append(entries, entry)
 	}
 
+	if err := validateImplementationPlanDecisionGraph(entries); err != nil {
+		return nil, err
+	}
+
 	return entries, nil
 }
 
@@ -291,15 +305,6 @@ func implementationPlanDecisionRef(entry map[string]any) string {
 	return stringField(entry, "decision_ref")
 }
 
-func rejectUnsupportedPlanDependencies(entry map[string]any) error {
-	dependencies := planDecisionStringSlice(entry, "depends_on")
-	if len(dependencies) == 0 {
-		return nil
-	}
-
-	return fmt.Errorf("plan decision %s declares depends_on; dependency scheduling is not admitted by ImplementationPlan-lite yet", implementationPlanDecisionRef(entry))
-}
-
 func commissionArgsForPlanDecision(
 	args map[string]any,
 	plan map[string]any,
@@ -317,6 +322,7 @@ func commissionArgsForPlanDecision(
 	next["state"] = firstStringField("state", entry, defaults, plan, args)
 	next["valid_for"] = firstStringField("valid_for", entry, defaults, plan, args)
 	next["valid_until"] = firstStringField("valid_until", entry, defaults, plan, args)
+	next["queue"] = firstStringField("queue", entry, defaults, plan, args)
 	next["allowed_paths"] = stringSliceToAny(firstStringSliceField("allowed_paths", entry, defaults, plan, args))
 	next["forbidden_paths"] = stringSliceToAny(firstStringSliceField("forbidden_paths", entry, defaults, plan, args))
 	next["allowed_actions"] = stringSliceToAny(firstStringSliceField("allowed_actions", entry, defaults, plan, args))
@@ -369,6 +375,99 @@ func firstEvidenceRequirements(maps ...map[string]any) []any {
 	return nil
 }
 
+func validateImplementationPlanDecisionGraph(entries []map[string]any) error {
+	dependenciesByRef := make(map[string][]string, len(entries))
+	for _, entry := range entries {
+		ref := implementationPlanDecisionRef(entry)
+		if _, exists := dependenciesByRef[ref]; exists {
+			return fmt.Errorf("plan decision %s is duplicated", ref)
+		}
+		dependenciesByRef[ref] = sortedUniqueStrings(planDecisionStringSlice(entry, "depends_on"))
+	}
+
+	for ref, dependencies := range dependenciesByRef {
+		for _, dependency := range dependencies {
+			if dependency == ref {
+				return fmt.Errorf("plan decision %s depends on itself", ref)
+			}
+			if _, exists := dependenciesByRef[dependency]; !exists {
+				return fmt.Errorf("plan decision %s depends on unknown decision %s", ref, dependency)
+			}
+		}
+	}
+
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	for ref := range dependenciesByRef {
+		if err := detectImplementationPlanCycle(ref, dependenciesByRef, visiting, visited); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func detectImplementationPlanCycle(
+	ref string,
+	dependenciesByRef map[string][]string,
+	visiting map[string]bool,
+	visited map[string]bool,
+) error {
+	if visited[ref] {
+		return nil
+	}
+	if visiting[ref] {
+		return fmt.Errorf("plan decision dependency cycle includes %s", ref)
+	}
+
+	visiting[ref] = true
+	for _, dependency := range dependenciesByRef[ref] {
+		if err := detectImplementationPlanCycle(dependency, dependenciesByRef, visiting, visited); err != nil {
+			return err
+		}
+	}
+	delete(visiting, ref)
+	visited[ref] = true
+
+	return nil
+}
+
+func attachImplementationPlanDependencies(drafts []implementationPlanCommission) error {
+	commissionIDsByDecisionRef := make(map[string]string, len(drafts))
+	for _, draft := range drafts {
+		commissionIDsByDecisionRef[draft.DecisionRef] = stringField(draft.Commission, "id")
+	}
+
+	for _, draft := range drafts {
+		decisionRefs := sortedUniqueStrings(draft.DependencyRefs)
+		if len(decisionRefs) == 0 {
+			continue
+		}
+
+		commissionIDs := make([]string, 0, len(decisionRefs))
+		for _, decisionRef := range decisionRefs {
+			commissionID := commissionIDsByDecisionRef[decisionRef]
+			if commissionID == "" {
+				return fmt.Errorf("plan decision %s depends on unknown decision %s", draft.DecisionRef, decisionRef)
+			}
+			commissionIDs = append(commissionIDs, commissionID)
+		}
+
+		draft.Commission["depends_on"] = stringSliceToAny(sortedUniqueStrings(commissionIDs))
+		draft.Commission["depends_on_decisions"] = stringSliceToAny(decisionRefs)
+	}
+
+	return nil
+}
+
+func planDraftCommissions(drafts []implementationPlanCommission) []map[string]any {
+	commissions := make([]map[string]any, 0, len(drafts))
+	for _, draft := range drafts {
+		commissions = append(commissions, draft.Commission)
+	}
+	return commissions
+}
+
 func planDecisionStringSlice(payload map[string]any, key string) []string {
 	return stringSliceField(payload, key)
 }
@@ -390,6 +489,7 @@ func implementationPlanSummary(plan map[string]any) map[string]any {
 	putOptionalString(summary, "title", stringField(plan, "title"))
 	putOptionalString(summary, "failure_policy", stringField(plan, "failure_policy"))
 	putOptionalString(summary, "projection_policy", stringField(plan, "projection_policy"))
+	putOptionalString(summary, "queue", stringField(plan, "queue"))
 
 	return summary
 }
@@ -452,11 +552,12 @@ func buildWorkCommissionFromDecision(
 	putOptionalString(commission, "implementation_plan_revision", stringArg(args, "implementation_plan_revision"))
 	putOptionalString(commission, "autonomy_envelope_ref", stringArg(args, "autonomy_envelope_ref"))
 	putOptionalString(commission, "autonomy_envelope_revision", stringArg(args, "autonomy_envelope_revision"))
+	putOptionalString(commission, "queue", stringArg(args, "queue"))
 
 	return commission, nil
 }
 
-func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store) (string, error) {
+func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	records, err := loadWorkCommissionPayloads(ctx, store)
 	if err != nil {
 		return "", err
@@ -465,7 +566,7 @@ func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store) (st
 	now := time.Now().UTC()
 	commissions := make([]map[string]any, 0, len(records))
 	for _, commission := range records {
-		if workCommissionRunnable(commission, now) {
+		if workCommissionRunnableForRequest(commission, records, args, now) {
 			commissions = append(commissions, commission)
 		}
 	}
@@ -474,11 +575,6 @@ func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store) (st
 }
 
 func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
-	commissionID := stringArg(args, "commission_id")
-	if commissionID == "" {
-		return "", fmt.Errorf("commission_id is required")
-	}
-
 	runnerID := stringArg(args, "runner_id")
 	if runnerID == "" {
 		runnerID = "haft"
@@ -490,14 +586,16 @@ func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store,
 	}
 	defer tx.Rollback()
 
-	commission, err := loadWorkCommissionPayloadForUpdate(ctx, tx, commissionID)
+	commissions, err := loadWorkCommissionPayloadsForClaim(ctx, tx)
 	if err != nil {
 		return "", err
 	}
-	if !workCommissionRunnable(commission, time.Now().UTC()) {
-		return "", fmt.Errorf("commission_not_runnable")
+
+	commission, err := selectWorkCommissionForClaim(commissions, args, time.Now().UTC())
+	if err != nil {
+		return "", err
 	}
-	if err := ensureWorkCommissionLocksetAvailable(ctx, tx, commission); err != nil {
+	if err := ensureWorkCommissionLocksetAvailable(commissions, commission); err != nil {
 		return "", err
 	}
 
@@ -1115,16 +1213,95 @@ func workCommissionRunnable(commission map[string]any, now time.Time) bool {
 	return validUntil.After(now)
 }
 
-func ensureWorkCommissionLocksetAvailable(
-	ctx context.Context,
-	tx *sql.Tx,
-	target map[string]any,
-) error {
-	commissions, err := loadWorkCommissionPayloadsForClaim(ctx, tx)
-	if err != nil {
-		return err
+func workCommissionRunnableForRequest(
+	commission map[string]any,
+	commissions []map[string]any,
+	args map[string]any,
+	now time.Time,
+) bool {
+	return workCommissionMatchesRequest(commission, args) &&
+		workCommissionRunnable(commission, now) &&
+		workCommissionDependenciesSatisfied(commission, commissions)
+}
+
+func workCommissionMatchesRequest(commission map[string]any, args map[string]any) bool {
+	planRef := stringArg(args, "plan_ref")
+	if planRef != "" && stringField(commission, "implementation_plan_ref") != planRef {
+		return false
 	}
 
+	queue := stringArg(args, "queue")
+	if queue != "" && stringField(commission, "queue") != queue {
+		return false
+	}
+
+	return true
+}
+
+func workCommissionDependenciesSatisfied(
+	commission map[string]any,
+	commissions []map[string]any,
+) bool {
+	dependencyIDs := stringSliceField(commission, "depends_on")
+	if len(dependencyIDs) == 0 {
+		return true
+	}
+
+	commissionsByID := make(map[string]map[string]any, len(commissions))
+	for _, candidate := range commissions {
+		commissionsByID[stringField(candidate, "id")] = candidate
+	}
+
+	for _, dependencyID := range dependencyIDs {
+		dependency := commissionsByID[dependencyID]
+		if dependency == nil {
+			return false
+		}
+		if !workCommissionDependencySatisfied(dependency) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func workCommissionDependencySatisfied(commission map[string]any) bool {
+	switch stringField(commission, "state") {
+	case "completed", "completed_with_projection_debt":
+		return true
+	default:
+		return false
+	}
+}
+
+func selectWorkCommissionForClaim(
+	commissions []map[string]any,
+	args map[string]any,
+	now time.Time,
+) (map[string]any, error) {
+	commissionID := stringArg(args, "commission_id")
+	for _, commission := range commissions {
+		if commissionID != "" && stringField(commission, "id") != commissionID {
+			continue
+		}
+		if workCommissionRunnableForRequest(commission, commissions, args, now) {
+			return commission, nil
+		}
+		if commissionID != "" {
+			return nil, fmt.Errorf("commission_not_runnable")
+		}
+	}
+
+	if commissionID != "" {
+		return nil, fmt.Errorf("commission_not_found")
+	}
+	return nil, fmt.Errorf("commission_not_runnable")
+}
+
+func ensureWorkCommissionLocksetAvailable(
+	commissions []map[string]any,
+	target map[string]any,
+) error {
 	for _, active := range commissions {
 		if workCommissionLocksetConflicts(target, active) {
 			return fmt.Errorf("commission_lock_conflict")

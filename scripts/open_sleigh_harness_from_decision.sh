@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 plan_path="${PLAN:-}"
+plan_ref="${PLAN_REF:-}"
 decision_refs=("$@")
 if [[ "${#decision_refs[@]}" -eq 0 && -n "${DECISIONS:-}" ]]; then
   read -r -a decision_refs <<< "$DECISIONS"
@@ -45,6 +46,23 @@ fi
 (cd "$repo" && go build -o "$haftbin" ./cmd/haft)
 
 if [[ -n "$plan_path" ]]; then
+  if [[ -z "$plan_ref" ]]; then
+    plan_ref="$(python3 - "$plan_path" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+for line in Path(sys.argv[1]).read_text().splitlines():
+    match = re.match(r"^\s*id\s*:\s*(.+?)\s*$", line)
+    if not match:
+        continue
+    value = match.group(1).split(" #", 1)[0].strip().strip("\"'")
+    print(value)
+    break
+PY
+)"
+  fi
+
   (cd "$repo" && "$haftbin" commission create-from-plan "$plan_path" \
     --repo-ref "$repo_ref" \
     --valid-for "$valid_for" \
@@ -59,6 +77,11 @@ else
     --repo-ref "$repo_ref" \
     --valid-for "$valid_for" \
     "${extra_commission_args[@]}")
+fi
+
+plan_ref_yaml="null"
+if [[ -n "$plan_ref" ]]; then
+  plan_ref_yaml="\"$plan_ref\""
 fi
 
 cat > "$sleigh_path" <<YAML
@@ -79,7 +102,7 @@ commission_source:
   selector: runnable
   max_claims: $max_claims
   lease_timeout_s: 300
-  plan_ref: null
+  plan_ref: $plan_ref_yaml
 
 projection:
   mode: local_only

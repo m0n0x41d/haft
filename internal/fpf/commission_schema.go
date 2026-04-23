@@ -10,7 +10,7 @@ func haftCommissionTool() Tool {
 				"action": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list_runnable", "claim_for_preflight", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
-					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list_runnable=return queued/ready non-expired commissions, claim_for_preflight=atomically move one to preflighting, other actions append lifecycle facts.",
+					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list_runnable=return queued/ready non-expired dependency-satisfied commissions, claim_for_preflight=atomically move one runnable commission to preflighting, other actions append lifecycle facts.",
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
@@ -18,11 +18,11 @@ func haftCommissionTool() Tool {
 				},
 				"plan": map[string]interface{}{
 					"type":        "object",
-					"description": "(create_from_plan) ImplementationPlan-lite object with id, revision, optional defaults, and decisions. Dependency fields are rejected until scheduler enforcement lands.",
+					"description": "(create_from_plan) ImplementationPlan-lite object with id, revision, optional defaults, and decisions. Decision entries may declare depends_on using other same-plan DecisionRecord ids; Haft maps these to WorkCommission dependencies and enforces them at list/claim time.",
 				},
 				"commission_id": map[string]string{
 					"type":        "string",
-					"description": "(claim/update) WorkCommission id.",
+					"description": "(claim/update) WorkCommission id. Optional for claim_for_preflight; omitted means claim the first runnable commission matching filters.",
 				},
 				"decision_ref": map[string]string{
 					"type":        "string",
@@ -68,6 +68,14 @@ func haftCommissionTool() Tool {
 				"selector": map[string]string{
 					"type":        "string",
 					"description": "(list_runnable) Selector name. MVP-1R supports runnable.",
+				},
+				"plan_ref": map[string]string{
+					"type":        "string",
+					"description": "(list_runnable/claim_for_preflight) Optional ImplementationPlan id filter.",
+				},
+				"queue": map[string]string{
+					"type":        "string",
+					"description": "(create_from_plan/list_runnable/claim_for_preflight) Optional queue label for operator-controlled batches.",
 				},
 				"runner_id": map[string]string{
 					"type":        "string",

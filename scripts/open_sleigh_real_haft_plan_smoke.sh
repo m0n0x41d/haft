@@ -59,7 +59,7 @@ JSON
   problem_ref="$(printf '%s' "$problem_response" | extract_tool_id prob)"
 
   cat > "$decision_call" <<JSON
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"haft_decision","arguments":{"action":"decide","problem_ref":"$problem_ref","selected_title":"$title","why_selected":"The harness should consume WorkCommissions created from an ImplementationPlan-lite file.","selection_policy":"Prefer plan-carried batch policy with per-decision authorization.","counterargument":"Passing decision ids on the CLI is simpler.","weakest_link":"The plan file must not imply dependency scheduling before enforcement exists.","why_not_others":[{"variant":"CLI decision list","reason":"It loses reusable plan context."}],"rollback":{"triggers":["Plan-created commissions are not consumed."]},"affected_files":["$affected_file"],"evidence_requirements":["go test ./internal/cli"]}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"haft_decision","arguments":{"action":"decide","problem_ref":"$problem_ref","selected_title":"$title","why_selected":"The harness should consume WorkCommissions created from an ImplementationPlan-lite file.","selection_policy":"Prefer plan-carried batch policy with per-decision authorization.","counterargument":"Passing decision ids on the CLI is simpler.","weakest_link":"The plan dependency graph must be enforced before a commission becomes runnable.","why_not_others":[{"variant":"CLI decision list","reason":"It loses reusable plan context."}],"rollback":{"triggers":["Plan-created commissions are not consumed."]},"affected_files":["$affected_file"],"evidence_requirements":["go test ./internal/cli"]}}}
 JSON
 
   decision_response="$(HAFT_PROJECT_ROOT="$project" "$haftbin" serve < "$decision_call")"
@@ -89,14 +89,34 @@ decisions:
     tags:
       - cli
   - ref: $decision_b
+    depends_on:
+      - $decision_a
 YAML
 
 (cd "$project" && "$haftbin" commission create-from-plan "$plan_path" >/dev/null)
 
+runnable_before="$(cd "$project" && "$haftbin" commission list-runnable)"
+case "$runnable_before" in
+  *"$decision_a"*)
+    ;;
+  *)
+    echo "expected root plan decision to be runnable before plan smoke" >&2
+    printf '%s\n' "$runnable_before" >&2
+    exit 1
+    ;;
+esac
+case "$runnable_before" in
+  *"$decision_b"*)
+    echo "expected dependent plan decision to wait before root completes" >&2
+    printf '%s\n' "$runnable_before" >&2
+    exit 1
+    ;;
+esac
+
 cat > "$sleigh_path" <<YAML
 ---
 engine:
-  poll_interval_ms: 30000
+  poll_interval_ms: 200
   status_path: $status_path
   status_interval_ms: 100
   log_path: $log_path
@@ -198,7 +218,9 @@ Execute {{commission.id}}.
 Measure {{commission.id}}.
 YAML
 
-(cd "$repo/open-sleigh" && mix open_sleigh.start --path "$sleigh_path" --mock-agent --mock-judge --once --once-timeout-ms=5000)
+for _ in 1 2; do
+  (cd "$repo/open-sleigh" && mix open_sleigh.start --path "$sleigh_path" --mock-agent --mock-judge --once --once-timeout-ms=8000)
+done
 
 runnable="$(cd "$project" && "$haftbin" commission list-runnable)"
 printf '%s\n' "$runnable"

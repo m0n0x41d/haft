@@ -74,7 +74,7 @@ var commissionCreateFromPlanCmd = &cobra.Command{
 
 var commissionListRunnableCmd = &cobra.Command{
 	Use:   "list-runnable",
-	Short: "List queued or ready WorkCommissions",
+	Short: "List queued or ready dependency-satisfied WorkCommissions",
 	RunE:  runCommissionListRunnable,
 }
 

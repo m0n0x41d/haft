@@ -1,5 +1,6 @@
 export type Page =
   | "dashboard"
+  | "harness"
   | "problems"
   | "portfolios"
   | "decisions"
@@ -13,11 +14,12 @@ const LEGACY_PAGE_REDIRECTS: Partial<Record<Page, Page>> = {
 };
 
 const PAGE_TITLES: Record<Page, string> = {
-  dashboard: "Dashboard",
-  decisions: "Dashboard",
+  dashboard: "Core",
+  decisions: "Core",
+  harness: "Runtime",
   jobs: "Jobs",
   portfolios: "Comparison",
-  problems: "Dashboard",
+  problems: "Core",
   settings: "Settings",
   tasks: "Tasks",
 };

@@ -353,7 +353,11 @@ impl HaftDb {
         // Backlinks: artifacts that reference this problem.
         let (linked_portfolios, linked_decisions) = self.get_problem_links(&art_id)?;
 
-        let characterizations = f.characterizations.iter().map(to_characterization_view).collect::<Vec<_>>();
+        let characterizations = f
+            .characterizations
+            .iter()
+            .map(to_characterization_view)
+            .collect::<Vec<_>>();
         let latest_characterization = f.characterizations.last().map(to_characterization_view);
 
         Ok(ProblemDetailView {
@@ -415,8 +419,8 @@ impl HaftDb {
              FROM artifacts WHERE id = ?1",
         )?;
 
-        let (art_id, status, mode, title, body, valid_until, created_at, updated_at, sd) =
-            stmt.query_row(params![id], |row| {
+        let (art_id, status, mode, title, body, valid_until, created_at, updated_at, sd) = stmt
+            .query_row(params![id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(3)?,
@@ -754,7 +758,8 @@ impl HaftDb {
         let mut stmt = self.conn.prepare(sql)?;
 
         let rows = if project_path.is_empty() {
-            stmt.query_map([], |row| Ok(flow_from_row(row)))?.collect::<Result<Vec<_>>>()?
+            stmt.query_map([], |row| Ok(flow_from_row(row)))?
+                .collect::<Result<Vec<_>>>()?
         } else {
             stmt.query_map(params![project_path], |row| Ok(flow_from_row(row)))?
                 .collect::<Result<Vec<_>>>()?
@@ -858,7 +863,10 @@ impl HaftDb {
     }
 
     /// Backlinks: artifacts that reference a problem via artifact_links.
-    fn get_problem_links(&self, problem_id: &str) -> Result<(Vec<ArtifactView>, Vec<ArtifactView>)> {
+    fn get_problem_links(
+        &self,
+        problem_id: &str,
+    ) -> Result<(Vec<ArtifactView>, Vec<ArtifactView>)> {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.kind, a.title, a.status, a.mode, a.created_at, a.updated_at
              FROM artifact_links l
@@ -894,9 +902,9 @@ impl HaftDb {
     }
 
     fn get_affected_files(&self, artifact_id: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT file_path FROM affected_files WHERE artifact_id = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path FROM affected_files WHERE artifact_id = ?1")?;
         let rows = stmt.query_map(params![artifact_id], |row| row.get(0))?;
         rows.collect()
     }
@@ -1354,7 +1362,8 @@ mod tests {
         conn.execute(
             "INSERT INTO affected_files (artifact_id, file_path, file_hash) VALUES (?1, ?2, ?3)",
             params!["dec-20260416-001", "desktop-tauri/src/lib.rs", "abc123"],
-        ).expect("insert affected file");
+        )
+        .expect("insert affected file");
 
         // Portfolio
         let sol_sd = serde_json::json!({
@@ -1407,12 +1416,14 @@ mod tests {
             "INSERT INTO artifact_links (source_id, target_id, link_type, created_at)
              VALUES ('sol-20260416-001', 'prob-20260416-001', 'based_on', '2026-04-16T09:00:00Z')",
             [],
-        ).expect("insert link sol->prob");
+        )
+        .expect("insert link sol->prob");
         conn.execute(
             "INSERT INTO artifact_links (source_id, target_id, link_type, created_at)
              VALUES ('dec-20260416-001', 'prob-20260416-001', 'based_on', '2026-04-16T11:00:00Z')",
             [],
-        ).expect("insert link dec->prob");
+        )
+        .expect("insert link dec->prob");
 
         // FTS5 entries (must be manually synced)
         conn.execute(
@@ -1438,7 +1449,8 @@ mod tests {
             "INSERT INTO desktop_governance_state (state_key, state_value, updated_at)
              VALUES ('last_scan', '2026-04-16T15:00:00Z', '2026-04-16T15:00:00Z')",
             [],
-        ).expect("insert governance state");
+        )
+        .expect("insert governance state");
 
         // Flow
         conn.execute(
@@ -1449,17 +1461,19 @@ mod tests {
     }
 
     #[test]
-    fn test_open_readonly() {
+    fn test_open_readwrite_allows_desktop_updates() {
         let (_dir, path) = setup_test_db();
         let db = HaftDb::open(&path).expect("open db");
 
-        // Verify read-only: INSERT must fail.
+        // Desktop owns a small write surface: task archival, task autorun,
+        // and flow state updates. The connection must be writable while the
+        // artifact graph remains owned by the Go core.
         let result = db.conn.execute(
             "INSERT INTO artifacts (id, kind, title, content, created_at, updated_at)
              VALUES ('x', 'Note', 'x', 'x', 'x', 'x')",
             [],
         );
-        assert!(result.is_err(), "read-only connection must reject writes");
+        assert!(result.is_ok(), "desktop connection must allow writes");
     }
 
     #[test]
@@ -1473,7 +1487,10 @@ mod tests {
         let p = &problems[0];
         assert_eq!(p.id, "prob-20260416-001");
         assert_eq!(p.signal, "Wails IPC is unreliable");
-        assert_eq!(p.constraints, vec!["Go core stays Go", "React frontend preserved"]);
+        assert_eq!(
+            p.constraints,
+            vec!["Go core stays Go", "React frontend preserved"]
+        );
         assert_eq!(p.created_at, "2026-04-16");
 
         // Verify JSON shape
@@ -1534,7 +1551,10 @@ mod tests {
         assert_eq!(detail.problem_refs, vec!["prob-20260416-001"]);
         assert_eq!(detail.why_not_others.len(), 1);
         assert_eq!(detail.why_not_others[0].variant, "Go HTTP sidecar");
-        assert_eq!(detail.invariants, vec!["Go core unchanged", "GUI reads SQLite directly"]);
+        assert_eq!(
+            detail.invariants,
+            vec!["Go core unchanged", "GUI reads SQLite directly"]
+        );
         assert_eq!(detail.claims.len(), 1);
         assert_eq!(detail.claims[0].id, "claim-001");
         assert_eq!(detail.affected_files, vec!["desktop-tauri/src/lib.rs"]);
@@ -1571,7 +1591,10 @@ mod tests {
         assert_eq!(detail.variants.len(), 1);
         assert_eq!(detail.variants[0].title, "Tauri v2");
         assert!(detail.variants[0].stepping_stone);
-        assert_eq!(detail.variants[0].strengths, vec!["No IPC", "Native performance"]);
+        assert_eq!(
+            detail.variants[0].strengths,
+            vec!["No IPC", "Native performance"]
+        );
 
         let comp = detail.comparison.as_ref().unwrap();
         assert_eq!(comp.dimensions, vec!["reliability", "complexity"]);

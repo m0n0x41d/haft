@@ -1,4 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  commissionIpcArgs,
+  listCommissionsIpcArgs,
+  type CommissionSelector,
+} from "./harnessIpc.ts";
+import { isControlPromptText } from "./controlPrompt.ts";
 
 // API layer — wraps Tauri invoke() with mock fallback for standalone dev.
 // When running inside Tauri, calls invoke() from @tauri-apps/api/core.
@@ -407,6 +413,9 @@ export interface ProjectInfo {
   path: string;
   name: string;
   id: string;
+  status?: "ready" | "needs_init" | "missing";
+  exists?: boolean;
+  has_haft?: boolean;
   is_active: boolean;
   problem_count: number;
   decision_count: number;
@@ -561,6 +570,10 @@ export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
 
 function isNoiseBlock(block: ChatBlock): boolean {
   const text = (block.text ?? "").trim();
+
+  if (isControlPromptText(text)) {
+    return true;
+  }
 
   if (text.startsWith('{"type":"rate_limit_event"')) {
     return true;
@@ -799,6 +812,62 @@ export interface DesktopFlow {
   last_error: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface WorkCommissionScope {
+  allowed_paths?: string[];
+  affected_files?: string[];
+  lockset?: string[];
+  forbidden_paths?: string[];
+  allowed_actions?: string[];
+  target_branch?: string;
+  base_sha?: string;
+  repo_ref?: string;
+}
+
+export interface WorkCommissionOperator {
+  terminal?: boolean;
+  expired?: boolean;
+  attention?: boolean;
+  attention_reason?: string;
+  suggested_actions?: string[];
+}
+
+export interface WorkCommission {
+  id: string;
+  state: string;
+  decision_ref: string;
+  problem_card_ref: string;
+  implementation_plan_ref?: string;
+  projection_policy?: string;
+  delivery_policy?: string;
+  valid_until?: string;
+  fetched_at?: string;
+  lockset?: string[];
+  scope?: WorkCommissionScope;
+  operator?: WorkCommissionOperator;
+  events?: Array<Record<string, unknown>>;
+}
+
+export interface HarnessRunResult {
+  commission: WorkCommission;
+  workspace: string;
+  raw: string;
+  lines: string[];
+  changed_files: string[];
+  can_apply: boolean;
+  runtime?: Record<string, unknown>;
+  status_updated_at?: string;
+  latest_turn?: Record<string, unknown>;
+}
+
+export interface HarnessApplyResult {
+  commission_id: string;
+  workspace: string;
+  project_root: string;
+  files: string[];
+  raw: string;
+  lines: string[];
 }
 
 export interface FlowInput {
@@ -1245,6 +1314,36 @@ let mockFlows: DesktopFlow[] = [
   },
 ];
 
+let mockCommissions: WorkCommission[] = [
+  {
+    id: "wc-mock-1",
+    state: "queued",
+    decision_ref: INITIAL_DECISION_DETAIL.id,
+    problem_card_ref: INITIAL_PROBLEM_DETAIL.id,
+    projection_policy: "local_only",
+    delivery_policy: "workspace_patch_manual",
+    valid_until: nowString(),
+    fetched_at: nowString(),
+    lockset: ["desktop/frontend/src/pages/Harness.tsx"],
+    scope: {
+      allowed_paths: ["desktop/frontend/src/pages/Harness.tsx"],
+      affected_files: ["desktop/frontend/src/pages/Harness.tsx"],
+      lockset: ["desktop/frontend/src/pages/Harness.tsx"],
+      allowed_actions: ["edit_files", "run_tests"],
+      target_branch: "dev",
+      repo_ref: "local:haft",
+    },
+    operator: {
+      terminal: false,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+    events: [],
+  },
+];
+
 let mockTerminalSessions: TerminalSession[] = [];
 
 function nextMockID(prefix: "block" | "prob" | "sol" | "dec" | "flow" | "task" | "term"): string {
@@ -1261,23 +1360,6 @@ function nowString(): string {
 
 function compactList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
-}
-
-function taskPromptMetaValue(prompt: string, label: string): string {
-  const prefix = `${label.trim()}:`;
-  const lines = prompt.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    if (!trimmed.startsWith(prefix)) {
-      continue;
-    }
-
-    return trimmed.slice(prefix.length).trim();
-  }
-
-  return "";
 }
 
 // --- Public API ---
@@ -2071,6 +2153,9 @@ export async function listProjects(): Promise<ProjectInfo[]> {
       path: "/Users/demo/projects/haft",
       name: "haft",
       id: "qnt_demo1",
+      status: "ready",
+      exists: true,
+      has_haft: true,
       is_active: true,
       problem_count: 12,
       decision_count: 8,
@@ -2082,17 +2167,21 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function addProject(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "ready", exists: true, has_haft: true, is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function addProjectSmart(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project_smart", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "ready", exists: true, has_haft: true, is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function switchProject(path: string): Promise<void> {
   await tauriInvoke<void>("switch_project", { path });
+}
+
+export async function removeProject(path: string): Promise<void> {
+  await tauriInvoke<void>("remove_project", { path });
 }
 
 export async function scanForProjects(): Promise<ProjectInfo[]> {
@@ -2113,6 +2202,9 @@ export async function initProject(path: string): Promise<ProjectInfo> {
     path,
     name: path.split("/").pop() || path,
     id: "",
+    status: "ready",
+    exists: true,
+    has_haft: true,
     is_active: false,
     problem_count: 0,
     decision_count: 0,
@@ -2265,6 +2357,35 @@ export async function handoffTask(id: string, agent: string): Promise<TaskState>
   return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
 }
 
+export async function continueTask(id: string, message: string): Promise<TaskState> {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    throw new Error("Continuation message is required");
+  }
+
+  const task = await tauriInvoke<TaskState>("continue_task", { id, message: trimmed });
+  if (task) return task;
+
+  const source = mockTasks.find((item) => item.id === id);
+  if (!source) {
+    throw new Error(`Task ${id} not found`);
+  }
+
+  const continuationPrompt = [
+    "Continue the existing desktop task.",
+    "",
+    `Task title:\n${source.title}`,
+    "",
+    `Original prompt:\n${source.prompt}`,
+    "",
+    `Prior transcript tail:\n${source.raw_output || source.output}`,
+    "",
+    `Operator follow-up:\n${trimmed}`,
+  ].join("\n");
+
+  return spawnTask(source.agent, continuationPrompt, source.worktree, source.branch);
+}
+
 function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState {
   return {
     chat_blocks: task.chat_blocks ?? [],
@@ -2273,6 +2394,162 @@ function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState
     status: task.status ?? "",
     error_message: task.error_message ?? "",
     agent: task.agent ?? "",
+  };
+}
+
+export async function listCommissions(
+  selector: CommissionSelector = "open",
+): Promise<WorkCommission[]> {
+  const result = await tauriInvoke<{ commissions?: WorkCommission[] }>(
+    "list_commissions",
+    listCommissionsIpcArgs(selector),
+  );
+  if (result) return result.commissions ?? [];
+
+  if (selector === "all") return mockCommissions;
+  if (selector === "terminal") {
+    return mockCommissions.filter((commission) => commission.operator?.terminal);
+  }
+  if (selector === "stale") {
+    return mockCommissions.filter((commission) => commission.operator?.attention);
+  }
+  if (selector === "runnable") {
+    return mockCommissions.filter((commission) => commission.state === "queued" || commission.state === "ready");
+  }
+  return mockCommissions.filter((commission) => !commission.operator?.terminal);
+}
+
+export async function showCommission(commissionID: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>(
+    "show_commission",
+    commissionIpcArgs(commissionID),
+  );
+  if (result?.commission) return result.commission;
+
+  const commission = mockCommissions.find((item) => item.id === commissionID);
+  if (!commission) {
+    throw new Error(`WorkCommission ${commissionID} not found`);
+  }
+  return commission;
+}
+
+export async function requeueCommission(commissionID: string, reason: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>("requeue_commission", {
+    ...commissionIpcArgs(commissionID),
+    reason,
+  });
+  if (result?.commission) return result.commission;
+
+  return updateMockCommission(commissionID, {
+    state: "queued",
+    operator: {
+      terminal: false,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+  });
+}
+
+export async function cancelCommission(commissionID: string, reason: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>("cancel_commission", {
+    ...commissionIpcArgs(commissionID),
+    reason,
+  });
+  if (result?.commission) return result.commission;
+
+  return updateMockCommission(commissionID, {
+    state: "cancelled",
+    operator: {
+      terminal: true,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+  });
+}
+
+export async function getHarnessResult(commissionID: string): Promise<HarnessRunResult> {
+  const result = await tauriInvoke<HarnessRunResult>(
+    "harness_result",
+    commissionIpcArgs(commissionID),
+  );
+  if (result) return normalizeHarnessResult(result);
+
+  const commission = await showCommission(commissionID);
+  return {
+    commission,
+    workspace: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+    raw: [
+      "Open-Sleigh harness result",
+      `commission: ${commission.id}`,
+      `state: ${commission.state}`,
+      `decision: ${commission.decision_ref}`,
+      "git_status:",
+      "- clean",
+      "diff_stat:",
+      "- empty",
+    ].join("\n"),
+    lines: [],
+    changed_files: [],
+    can_apply: false,
+  };
+}
+
+export async function applyHarnessResult(commissionID: string): Promise<HarnessApplyResult> {
+  const result = await tauriInvoke<HarnessApplyResult>(
+    "harness_apply",
+    commissionIpcArgs(commissionID),
+  );
+  if (result) return normalizeHarnessApplyResult(result);
+
+  return {
+    commission_id: commissionID,
+    workspace: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+    project_root: "/Users/demo/projects/haft",
+    files: [],
+    raw: "No diff available in mock mode.",
+    lines: ["No diff available in mock mode."],
+  };
+}
+
+async function updateMockCommission(
+  commissionID: string,
+  patch: Partial<WorkCommission>,
+): Promise<WorkCommission> {
+  const current = mockCommissions.find((commission) => commission.id === commissionID);
+  if (!current) {
+    throw new Error(`WorkCommission ${commissionID} not found`);
+  }
+
+  const next = {
+    ...current,
+    ...patch,
+  };
+  mockCommissions = mockCommissions.map((commission) =>
+    commission.id === commissionID ? next : commission,
+  );
+  return next;
+}
+
+function normalizeHarnessResult(result: HarnessRunResult): HarnessRunResult {
+  return {
+    ...result,
+    lines: result.lines ?? [],
+    changed_files: result.changed_files ?? [],
+    raw: result.raw ?? "",
+    can_apply: Boolean(result.can_apply),
+  };
+}
+
+function normalizeHarnessApplyResult(result: HarnessApplyResult): HarnessApplyResult {
+  return {
+    ...result,
+    files: result.files ?? [],
+    lines: result.lines ?? [],
+    raw: result.raw ?? "",
   };
 }
 

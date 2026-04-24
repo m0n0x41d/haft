@@ -1,70 +1,68 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  Bot,
+  CheckCircle2,
+  CircleAlert,
+  MessageSquare,
+  RefreshCw,
+  Workflow,
+} from "lucide-react";
 
 import { subscribe } from "../lib/events";
 import {
-  adoptProblemCandidate,
-  dismissProblemCandidate,
-  getConfig,
   getDashboard,
   getGovernanceOverview,
-  implementDecision,
-  reopenDecision,
-  waiveDecision,
-  type CoverageModule,
+  listCommissions,
+  listTasks,
   type DashboardData,
-  type DesktopConfig,
-  type DecisionSummary,
-  type GovernanceFinding,
   type GovernanceOverview,
-  type ProblemCandidate,
+  type TaskState,
+  type WorkCommission,
 } from "../lib/api";
-import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
-import {
-  buildIrreversibleActionDialogModel,
-  type IrreversibleActionDialogModel,
-} from "../components/irreversibleActionDialogModel";
-import { Eyebrow, MonoId, Pill, StatCard } from "../components/primitives";
+import { Badge, Button, Card, Eyebrow, MonoId, Pill } from "../components/primitives";
 import { reportError } from "../lib/errors";
-import { buildRecentActivity, type DashboardActivityItem } from "./dashboardActivity";
-import { getDecisionImplementActionState } from "./dashboardDecisionActions";
-import { getGovernanceFindingActionState } from "./dashboardGovernanceActions";
+import {
+  buildCoreAttention,
+  buildCoreRuntimeItems,
+  type CoreAttentionItem,
+  type CoreRuntimeItem,
+  type CoreRuntimePhase,
+  type CoreTone,
+} from "./coreModel";
+import type { Page } from "../navigation";
 
-type NavigateFn = (
-  page: "dashboard" | "problems" | "decisions" | "tasks",
-  id?: string,
-) => void;
-
-type DashboardPendingConfirmation = {
-  model: IrreversibleActionDialogModel;
-  reason: string;
-  isSubmitting: boolean;
-  run: (reason: string) => Promise<void>;
-  errorScope: string;
-};
+type NavigateFn = (page: Page, id?: string) => void;
 
 export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [overview, setOverview] = useState<GovernanceOverview | null>(null);
-  const [config, setConfig] = useState<DesktopConfig | null>(null);
-  const [implementingDecisionIDs, setImplementingDecisionIDs] = useState<string[]>([]);
-  const [findingActionKeys, setFindingActionKeys] = useState<string[]>([]);
-  const [pendingConfirmation, setPendingConfirmation] =
-    useState<DashboardPendingConfirmation | null>(null);
+  const [tasks, setTasks] = useState<TaskState[]>([]);
+  const [commissions, setCommissions] = useState<WorkCommission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [proMode, setProMode] = useState(false);
 
   const refresh = async () => {
-    setLoading(true);
-
     try {
-      const [nextDashboard, nextOverview] = await Promise.all([
+      const [
+        nextDashboard,
+        nextOverview,
+        nextTasks,
+        nextCommissions,
+      ] = await Promise.all([
         getDashboard(),
         getGovernanceOverview(),
+        listTasks(),
+        listCommissions("open"),
       ]);
 
       setData(nextDashboard);
       setOverview(nextOverview);
+      setTasks(nextTasks);
+      setCommissions(nextCommissions);
     } catch (error) {
-      reportError(error, "dashboard");
+      reportError(error, "core");
     } finally {
       setLoading(false);
     }
@@ -72,14 +70,6 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
 
   useEffect(() => {
     void refresh();
-  }, []);
-
-  useEffect(() => {
-    getConfig()
-      .then(setConfig)
-      .catch((error) => {
-        reportError(error, "dashboard config");
-      });
   }, []);
 
   useEffect(() => {
@@ -104,779 +94,447 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     };
   }, []);
 
-  const handleAdoptCandidate = async (candidateID: string) => {
-    try {
-      const problem = await adoptProblemCandidate(candidateID);
-      await refresh();
-      onNavigate("problems", problem.id);
-    } catch (error) {
-      reportError(error, "adopt problem candidate");
-    }
-  };
+  const attentionItems = useMemo(() => {
+    if (!overview) return [];
 
-  const handleDismissCandidate = async (candidateID: string) => {
-    try {
-      await dismissProblemCandidate(candidateID);
-      await refresh();
-    } catch (error) {
-      reportError(error, "dismiss problem candidate");
-    }
-  };
-
-  const handleImplementDecision = async (decision: DecisionSummary) => {
-    const actionState = getDecisionImplementActionState(
-      decision.status,
-      decision.implement_guard,
-    );
-
-    if (actionState.disabled) {
-      return;
-    }
-
-    const decisionID = decision.id;
-    const warnings = compactNonEmptyStrings([
-      ...actionState.warningMessages,
-      ...actionState.confirmationMessages,
-    ]);
-
-    setPendingConfirmation({
-      model: buildIrreversibleActionDialogModel({
-        action: "implement",
-        agent: config?.default_agent ?? "claude",
-        usesWorktree: config?.default_worktree ?? true,
-        currentArtifact: {
-          kind: "DecisionRecord",
-          ref: decision.id,
-          title: decision.selected_title || decision.title,
-        },
-        warnings,
-      }),
-      reason: "",
-      isSubmitting: false,
-      run: async () => {
-        setImplementingDecisionIDs((currentDecisionIDs) => {
-          if (currentDecisionIDs.includes(decisionID)) {
-            return currentDecisionIDs;
-          }
-
-          return [...currentDecisionIDs, decisionID];
-        });
-
-        try {
-          const task = await implementDecision(
-            decisionID,
-            config?.default_agent ?? "claude",
-            config?.default_worktree ?? true,
-            "",
-          );
-
-          onNavigate("tasks", task.id);
-        } finally {
-          setImplementingDecisionIDs((currentDecisionIDs) =>
-            currentDecisionIDs.filter((currentDecisionID) => currentDecisionID !== decisionID),
-          );
-        }
-      },
-      errorScope: "implement decision",
+    return buildCoreAttention({
+      overview,
+      tasks,
+      commissions,
     });
-  };
+  }, [overview, tasks, commissions]);
 
-  const startFindingAction = (actionKey: string) => {
-    setFindingActionKeys((currentActionKeys) => {
-      if (currentActionKeys.includes(actionKey)) {
-        return currentActionKeys;
-      }
-
-      return [...currentActionKeys, actionKey];
-    });
-  };
-
-  const finishFindingAction = (actionKey: string) => {
-    setFindingActionKeys((currentActionKeys) =>
-      currentActionKeys.filter((currentActionKey) => currentActionKey !== actionKey),
-    );
-  };
-
-  const handleAdoptFinding = async (findingID: string, candidateID: string) => {
-    const actionKey = buildFindingActionKey(findingID, "adopt");
-    startFindingAction(actionKey);
-
-    try {
-      const problem = await adoptProblemCandidate(candidateID);
-      await refresh();
-      onNavigate("problems", problem.id);
-    } catch (error) {
-      reportError(error, "adopt governance finding");
-    } finally {
-      finishFindingAction(actionKey);
-    }
-  };
-
-  const handleWaiveFinding = async (finding: GovernanceFinding) => {
-    const decisionID = finding.artifact_ref;
-    const reason = promptForGovernanceDecisionReason("waive", finding);
-
-    if (!decisionID || reason === "") {
-      return;
-    }
-
-    const actionKey = buildFindingActionKey(finding.id, "waive");
-    startFindingAction(actionKey);
-
-    try {
-      await waiveDecision(decisionID, reason);
-      await refresh();
-      onNavigate("decisions", decisionID);
-    } catch (error) {
-      reportError(error, "waive governance finding");
-    } finally {
-      finishFindingAction(actionKey);
-    }
-  };
-
-  const handleReopenFinding = async (finding: GovernanceFinding) => {
-    const decisionID = finding.artifact_ref;
-
-    if (!decisionID) {
-      return;
-    }
-
-    setPendingConfirmation({
-      model: buildIrreversibleActionDialogModel({
-        action: "reopen",
-        currentArtifact: {
-          kind: "DecisionRecord",
-          ref: decisionID,
-          title: finding.title,
-        },
-      }),
-      reason: finding.reason,
-      isSubmitting: false,
-      run: async (reason) => {
-        const actionKey = buildFindingActionKey(finding.id, "reopen");
-        startFindingAction(actionKey);
-
-        try {
-          const problem = await reopenDecision(decisionID, reason);
-          await refresh();
-          onNavigate("problems", problem.id);
-        } finally {
-          finishFindingAction(actionKey);
-        }
-      },
-      errorScope: "reopen governance finding",
-    });
-  };
-
-  const handleCancelConfirmation = () => {
-    setPendingConfirmation((currentPendingConfirmation) => {
-      if (currentPendingConfirmation?.isSubmitting) {
-        return currentPendingConfirmation;
-      }
-
-      return null;
-    });
-  };
-
-  const handleConfirmAction = async () => {
-    const currentPendingConfirmation = pendingConfirmation;
-
-    if (!currentPendingConfirmation) {
-      return;
-    }
-
-    if (
-      currentPendingConfirmation.model.requiresReason &&
-      currentPendingConfirmation.reason.trim() === ""
-    ) {
-      return;
-    }
-
-    setPendingConfirmation((previousPendingConfirmation) =>
-      previousPendingConfirmation
-        ? {
-            ...previousPendingConfirmation,
-            isSubmitting: true,
-          }
-        : previousPendingConfirmation,
-    );
-
-    try {
-      await currentPendingConfirmation.run(currentPendingConfirmation.reason.trim());
-      setPendingConfirmation(null);
-    } catch (error) {
-      reportError(error, currentPendingConfirmation.errorScope);
-      setPendingConfirmation((previousPendingConfirmation) =>
-        previousPendingConfirmation
-          ? {
-              ...previousPendingConfirmation,
-              isSubmitting: false,
-            }
-          : previousPendingConfirmation,
-      );
-    }
-  };
+  const runtimeItems = useMemo(
+    () => buildCoreRuntimeItems(commissions),
+    [commissions],
+  );
 
   if (loading && (!data || !overview)) {
-    return (
-      <div className="p-8 text-center">
-        <p className="text-sm text-text-muted">Loading...</p>
-      </div>
-    );
+    return <CoreSkeleton />;
   }
 
   if (!data || !overview) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-sm text-text-muted">Governance data is unavailable.</p>
+      <div className="mx-auto max-w-[920px] px-6 py-12">
+        <Card dashed>
+          <p className="text-sm text-text-muted">Core data is unavailable.</p>
+        </Card>
       </div>
     );
   }
 
-  const recentActivity = buildRecentActivity(data.recent_problems, data.recent_decisions);
+  const activeTasks = tasks.filter((task) =>
+    ["running", "idle", "waiting", "blocked"].includes(task.status),
+  );
+  const displayedAttention = attentionItems.slice(0, proMode ? 8 : 4);
+  const displayedRuntime = runtimeItems.slice(0, proMode ? 8 : 3);
 
   return (
-    <>
-      <div className="space-y-8 pb-8">
-      <div className="mb-2">
-        <p className="font-mono text-xs uppercase tracking-[1.2px] text-text-muted">DASHBOARD</p>
-        <p className="mt-0.5 text-xs text-text-muted">
-          Unified operator view for active decisions, governance findings, and recent activity.
+    <div className="mx-auto max-w-[980px] px-6 pb-12 pt-8">
+      <CoreHeader
+        projectName={data.project_name || "haft"}
+        attentionCount={attentionItems.length}
+        activeRunCount={runtimeItems.length}
+        activeTaskCount={activeTasks.length}
+        proMode={proMode}
+        onTogglePro={() => setProMode((current) => !current)}
+        onRefresh={() => void refresh()}
+      />
+
+      <section className="mt-8">
+        <SectionHeader
+          title={`Needs You · ${attentionItems.length}`}
+          description="Only things that require operator judgment or recovery."
+        />
+        {displayedAttention.length === 0 ? (
+          <Card className="mt-3 px-5 py-6">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 size={18} className="text-success" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">No operator work right now.</p>
+                <p className="mt-0.5 text-xs text-text-muted">
+                  Conversations, governance, and runtime queue are calm.
+                </p>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {displayedAttention.map((item) => (
+              <AttentionCard
+                key={item.id}
+                item={item}
+                onOpen={() => openAttentionItem(item, onNavigate)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <SectionHeader
+          title={`Active Runtime · ${runtimeItems.length}`}
+          description="Harness work flowing through commission phases."
+          action={
+            <Button
+              variant="ghost"
+              icon={<Workflow size={14} />}
+              onClick={() => onNavigate("harness")}
+            >
+              Open Runtime
+            </Button>
+          }
+        />
+        {displayedRuntime.length === 0 ? (
+          <Card dashed className="mt-3 px-5 py-8 text-center">
+            <p className="text-sm text-text-muted">No active WorkCommissions.</p>
+          </Card>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {displayedRuntime.map((item) => (
+              <RuntimeCard
+                key={item.id}
+                item={item}
+                onOpen={() => onNavigate("harness")}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {proMode ? (
+        <section className="mt-8">
+          <SectionHeader
+            title="System Facts"
+            description="Reference data kept out of the default cockpit path."
+          />
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <FactCard label="Problems" value={data.problem_count} />
+            <FactCard label="Decisions" value={data.decision_count} />
+            <FactCard label="Findings" value={overview.findings.length} tone="warning" />
+            <FactCard
+              label="Coverage"
+              value={`${overview.coverage.governed_percent}%`}
+              tone={overview.coverage.blind_count > 0 ? "warning" : "success"}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      <footer className="mt-8 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-xs text-text-muted">
+        <QuietJump
+          label={`${data.decision_count} decisions`}
+          onClick={() => onNavigate("dashboard")}
+        />
+        <QuietJump
+          label={`${data.problem_count} problems`}
+          onClick={() => onNavigate("dashboard")}
+        />
+        <QuietJump
+          label={`${commissions.length} commissions`}
+          onClick={() => onNavigate("harness")}
+        />
+        <QuietJump
+          label={`${overview.coverage.total_modules} modules`}
+          onClick={() => setProMode(true)}
+        />
+      </footer>
+    </div>
+  );
+}
+
+function CoreHeader({
+  projectName,
+  attentionCount,
+  activeRunCount,
+  activeTaskCount,
+  proMode,
+  onTogglePro,
+  onRefresh,
+}: {
+  projectName: string;
+  attentionCount: number;
+  activeRunCount: number;
+  activeTaskCount: number;
+  proMode: boolean;
+  onTogglePro: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <header className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+      <div>
+        <Eyebrow>Core</Eyebrow>
+        <div className="mt-2 flex flex-wrap items-baseline gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight text-text-primary">
+            {projectName}
+          </h1>
+          <Pill tone={attentionCount > 0 ? "warning" : "accent"}>
+            {attentionCount > 0 ? `${attentionCount} need attention` : "all clear"}
+          </Pill>
+        </div>
+        <p className="mt-2 max-w-2xl text-sm text-text-muted">
+          Project cockpit for conversations, FPF governance, WorkCommissions, and harness runtime.
         </p>
       </div>
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{data.project_name}</h1>
-          <p className="mt-1 text-sm text-text-muted">
-            Decision execution, governance pressure, and artifact activity in one surface.
-          </p>
-        </div>
 
-        <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 text-right">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">Last Scan</p>
-          <p className="mt-1 font-mono text-xs text-text-secondary">
-            {overview.last_scan_at || "Not scanned yet"}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip icon={<Bot size={14} />} value={`${activeTaskCount} conversations`} />
+        <StatusChip icon={<Workflow size={14} />} value={`${activeRunCount} runtime`} />
+        <Button
+          variant={proMode ? "accent-chip" : "ghost"}
+          onClick={onTogglePro}
+        >
+          Pro {proMode ? "on" : "off"}
+        </Button>
+        <Button
+          variant="ghost"
+          icon={<RefreshCw size={14} />}
+          onClick={onRefresh}
+        >
+          Refresh
+        </Button>
       </div>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="Problems" count={data.problem_count} onClick={() => onNavigate("problems")} />
-        <StatCard label="Decisions" count={data.decision_count} onClick={() => onNavigate("decisions")} />
-        <StatCard label="Portfolios" count={data.portfolio_count} />
-        <StatCard label="Coverage" count={overview.coverage.governed_percent} suffix="%" variant={overview.coverage.blind_count > 0 ? "warning" : "default"} />
-        <StatCard label="Findings" count={overview.findings.length} variant={overview.findings.length > 0 ? "warning" : "default"} />
-        <StatCard label="Candidates" count={overview.problem_candidates.length} variant={overview.problem_candidates.length > 0 ? "accent" : "default"} />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className="space-y-6">
-          <Section title="Active Decisions">
-            {data.healthy_decisions.length === 0 &&
-            data.pending_decisions.length === 0 &&
-            data.unassessed_decisions.length === 0 ? (
-              <EmptyState text="No active decisions." />
-            ) : (
-              <div className="space-y-4">
-                <DecisionBucket
-                  title="Shipped / Healthy"
-                  decisions={data.healthy_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                  onImplementDecision={handleImplementDecision}
-                  implementingDecisionIDs={implementingDecisionIDs}
-                />
-                <DecisionBucket
-                  title="Pending"
-                  decisions={data.pending_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                  onImplementDecision={handleImplementDecision}
-                  implementingDecisionIDs={implementingDecisionIDs}
-                />
-                <DecisionBucket
-                  title="Unassessed"
-                  decisions={data.unassessed_decisions}
-                  onOpenDecision={(decisionID) => onNavigate("decisions", decisionID)}
-                  onImplementDecision={handleImplementDecision}
-                  implementingDecisionIDs={implementingDecisionIDs}
-                />
-              </div>
-            )}
-          </Section>
-
-          <Section title="Governance Findings">
-            {overview.findings.length === 0 ? (
-              <EmptyState text="No stale or drift findings." />
-            ) : (
-              <div className="space-y-3">
-                {overview.findings.map((finding) => (
-                  <GovernanceFindingCard
-                    key={finding.id}
-                    finding={finding}
-                    candidates={overview.problem_candidates}
-                    isAdopting={findingActionKeys.includes(buildFindingActionKey(finding.id, "adopt"))}
-                    isWaiving={findingActionKeys.includes(buildFindingActionKey(finding.id, "waive"))}
-                    isReopening={findingActionKeys.includes(buildFindingActionKey(finding.id, "reopen"))}
-                    onOpenDecision={() => {
-                      if (finding.kind === "DecisionRecord" && finding.artifact_ref) {
-                        onNavigate("decisions", finding.artifact_ref);
-                      }
-                    }}
-                    onAdopt={(candidateID) => void handleAdoptFinding(finding.id, candidateID)}
-                    onWaive={() => void handleWaiveFinding(finding)}
-                    onReopen={() => void handleReopenFinding(finding)}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
-
-          <Section title="Follow-up Candidates">
-            {overview.problem_candidates.length === 0 ? (
-              <EmptyState text="No follow-up problems surfaced by the latest governance scan." />
-            ) : (
-              <div className="space-y-3">
-                {overview.problem_candidates.map((candidate) => (
-                  <CandidateCard
-                    key={candidate.id}
-                    candidate={candidate}
-                    onAdopt={() => void handleAdoptCandidate(candidate.id)}
-                    onDismiss={() => void handleDismissCandidate(candidate.id)}
-                    onOpenSource={() => {
-                      if (candidate.source_artifact_ref) {
-                        onNavigate("decisions", candidate.source_artifact_ref);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
-        </div>
-
-        <div className="space-y-6">
-          <Section title="Recent Activity">
-            {recentActivity.length === 0 ? (
-              <EmptyState text="No recent problem or decision activity." />
-            ) : (
-              <div className="space-y-2">
-                {recentActivity.map((item) => (
-                  <RecentActivityCard
-                    key={`${item.kind}-${item.id}`}
-                    item={item}
-                    onOpen={() => onNavigate(item.page, item.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
-
-          <Section title="Module Coverage">
-            <CoverageSummary overview={overview} />
-          </Section>
-        </div>
-      </div>
-      </div>
-
-      {pendingConfirmation && (
-        <IrreversibleActionDialog
-          model={pendingConfirmation.model}
-          reason={pendingConfirmation.reason}
-          isSubmitting={pendingConfirmation.isSubmitting}
-          onReasonChange={(value) =>
-            setPendingConfirmation((currentPendingConfirmation) =>
-              currentPendingConfirmation
-                ? {
-                    ...currentPendingConfirmation,
-                    reason: value,
-                  }
-                : currentPendingConfirmation,
-            )
-          }
-          onCancel={handleCancelConfirmation}
-          onConfirm={() => void handleConfirmAction()}
-        />
-      )}
-    </>
+    </header>
   );
 }
 
-function DecisionBucket({
+function SectionHeader({
   title,
-  decisions,
-  onOpenDecision,
-  onImplementDecision,
-  implementingDecisionIDs,
+  description,
+  action,
 }: {
   title: string;
-  decisions: DecisionSummary[];
-  onOpenDecision: (decisionID: string) => void;
-  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
-  implementingDecisionIDs: string[];
+  description: string;
+  action?: React.ReactNode;
 }) {
-  if (decisions.length === 0) {
-    return null;
-  }
-
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">{title}</p>
-        <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text-secondary">
-          {decisions.length}
-        </span>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <Eyebrow>{title}</Eyebrow>
+        <p className="mt-1 text-xs text-text-muted">{description}</p>
       </div>
-
-      {decisions.map((decision) => (
-        <DecisionCard
-          key={decision.id}
-          decision={decision}
-          isImplementing={implementingDecisionIDs.includes(decision.id)}
-          onOpenDecision={onOpenDecision}
-          onImplementDecision={onImplementDecision}
-        />
-      ))}
+      {action}
     </div>
   );
 }
 
-function GovernanceFindingCard({
-  finding,
-  candidates,
-  isAdopting,
-  isWaiving,
-  isReopening,
-  onOpenDecision,
-  onAdopt,
-  onWaive,
-  onReopen,
-}: {
-  finding: GovernanceFinding;
-  candidates: ProblemCandidate[];
-  isAdopting: boolean;
-  isWaiving: boolean;
-  isReopening: boolean;
-  onOpenDecision: () => void;
-  onAdopt: (candidateID: string) => void;
-  onWaive: () => void;
-  onReopen: () => void;
-}) {
-  const actionState = getGovernanceFindingActionState(finding, candidates);
-  const canOpenDecision = finding.kind === "DecisionRecord" && finding.artifact_ref !== "";
-
-  return (
-    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {canOpenDecision ? (
-            <button onClick={onOpenDecision} className="min-w-0 text-left">
-              <p className="truncate text-sm font-medium text-text-primary">{finding.title}</p>
-            </button>
-          ) : (
-            <p className="text-sm font-medium text-text-primary">{finding.title}</p>
-          )}
-          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
-            {finding.category.replaceAll("_", " ")}
-          </p>
-        </div>
-
-        <div className="shrink-0 text-right text-[11px] text-text-muted">
-          {finding.drift_count > 0 && <p>{finding.drift_count} drift file(s)</p>}
-          {finding.days_stale > 0 && <p>{finding.days_stale} day(s) stale</p>}
-        </div>
-      </div>
-
-      <p className="mt-2 text-sm text-text-secondary">{finding.reason}</p>
-
-      {actionState.showActions && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => onAdopt(actionState.adoptCandidateID)}
-            disabled={actionState.adoptDisabled || isAdopting}
-            title={actionState.adoptReason}
-            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
-          >
-            {isAdopting ? "Adopting..." : "Adopt"}
-          </button>
-          <button
-            onClick={onWaive}
-            disabled={isWaiving}
-            className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-border-bright hover:bg-surface-3 disabled:cursor-not-allowed disabled:text-text-muted"
-          >
-            {isWaiving ? "Waiving..." : "Waive"}
-          </button>
-          <button
-            onClick={onReopen}
-            disabled={isReopening}
-            className="rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning transition-colors hover:border-warning/50 hover:bg-warning/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
-          >
-            {isReopening ? "Reopening..." : "Reopen"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DecisionCard({
-  decision,
-  isImplementing,
-  onOpenDecision,
-  onImplementDecision,
-}: {
-  decision: DecisionSummary;
-  isImplementing: boolean;
-  onOpenDecision: (decisionID: string) => void;
-  onImplementDecision: (decision: DecisionSummary) => Promise<void>;
-}) {
-  const implementAction = getDecisionImplementActionState(
-    decision.status,
-    decision.implement_guard,
-  );
-  const isImplementDisabled = implementAction.disabled || isImplementing;
-
-  return (
-    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3 transition-colors hover:border-border-bright hover:bg-surface-2">
-      <div className="flex items-start justify-between gap-3">
-        <button
-          onClick={() => onOpenDecision(decision.id)}
-          className="min-w-0 flex-1 text-left"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium text-text-primary">{decision.selected_title}</span>
-            <MonoId id={decision.id} />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
-            <span>WLNK: {decision.weakest_link}</span>
-            {decision.valid_until ? (
-              <Pill>Valid until {decision.valid_until}</Pill>
-            ) : null}
-          </div>
-        </button>
-
-        <button
-          onClick={() => void onImplementDecision(decision)}
-          disabled={isImplementDisabled}
-          title={implementAction.reason}
-          className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-text-muted"
-        >
-          {isImplementing ? "Spawning..." : "Implement"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function CoverageSummary({ overview }: { overview: GovernanceOverview }) {
-  const impactedModules = overview.coverage.modules.filter((module) => module.impacted);
-  const displayedModules = impactedModules.length > 0
-    ? impactedModules
-    : overview.coverage.modules.slice(0, 6);
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-surface-1 px-4 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">Governed Surface</p>
-            <p className="mt-1 text-3xl font-semibold text-text-primary">
-              {overview.coverage.governed_percent}%
-            </p>
-          </div>
-
-          <div className="text-right text-xs text-text-secondary">
-            <p>{overview.coverage.covered_count} covered</p>
-            <p>{overview.coverage.partial_count} partial</p>
-            <p>{overview.coverage.blind_count} blind</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {displayedModules.map((module) => (
-          <CoverageModuleCard key={`${module.id}-${module.path}`} module={module} />
-        ))}
-
-        {displayedModules.length === 0 && (
-          <EmptyState text="Run a scan to populate module coverage." />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function buildFindingActionKey(
-  findingID: string,
-  action: "adopt" | "waive" | "reopen",
-): string {
-  return `${findingID}:${action}`;
-}
-
-function promptForGovernanceDecisionReason(
-  action: "waive" | "reopen",
-  finding: GovernanceFinding,
-): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const promptMessage =
-    action === "waive"
-      ? `Waive will extend this DecisionRecord by 90 days.\n\nEnter justification for ${finding.title}:`
-      : `Reopen will mark this DecisionRecord as refresh due and create a new ProblemCard.\n\nEnter reason for ${finding.title}:`;
-  const response = window.prompt(promptMessage, finding.reason);
-
-  return response ? response.trim() : "";
-}
-
-function compactNonEmptyStrings(values: string[]): string[] {
-  return values.map((value) => value.trim()).filter(Boolean);
-}
-
-function RecentActivityCard({
+function AttentionCard({
   item,
   onOpen,
 }: {
-  item: DashboardActivityItem;
+  item: CoreAttentionItem;
   onOpen: () => void;
 }) {
-  const badgeClassName =
-    item.kind === "DecisionRecord"
-      ? "border-success/20 bg-success/10 text-success"
-      : "border-warning/20 bg-warning/10 text-warning";
-  const badgeLabel = item.kind === "DecisionRecord" ? "Decision" : "Problem";
-
   return (
     <button
       onClick={onOpen}
-      className="w-full rounded-xl border border-border bg-surface-1 px-4 py-3 text-left transition-colors hover:border-border-bright hover:bg-surface-2"
+      className={`w-full rounded-xl border bg-surface-1 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${borderForTone(item.tone)}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start gap-3">
+        <AttentionIcon tone={item.tone} />
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${badgeClassName}`}>
-              {badgeLabel}
-            </span>
+            <Badge tone={item.tone}>{labelForKind(item.kind)}</Badge>
             <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
           </div>
-          <p className="mt-2 line-clamp-2 text-sm text-text-secondary">{item.summary}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-text-secondary">{item.detail}</p>
+          {item.meta ? (
+            <p className="mt-2 font-mono text-[11px] text-text-muted">{item.meta}</p>
+          ) : null}
         </div>
-
-        <div className="shrink-0 text-right">
-          <p className="font-mono text-[11px] text-text-muted">{item.id}</p>
-          <p className="mt-1 text-[11px] text-text-muted">{item.created_at}</p>
-        </div>
+        <ArrowRight size={15} className="mt-1 shrink-0 text-text-muted" />
       </div>
     </button>
   );
 }
 
-function CoverageModuleCard({ module }: { module: CoverageModule }) {
-  const statusClassName =
-    module.status === "covered"
-      ? "border-success/20 bg-success/10 text-success"
-      : module.status === "partial"
-        ? "border-warning/20 bg-warning/10 text-warning"
-        : "border-danger/20 bg-danger/10 text-danger";
-
-  return (
-    <div className="rounded-xl border border-border bg-surface-1 px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-text-primary">{module.path || "(root)"}</p>
-          <p className="mt-1 text-xs text-text-muted">
-            {module.lang} · {module.decision_count} decision(s)
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {module.impacted && (
-            <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">
-              impacted
-            </span>
-          )}
-          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusClassName}`}>
-            {module.status}
-          </span>
-        </div>
-      </div>
-
-      {module.files && module.files.length > 0 && (
-        <div className="mt-3 space-y-1">
-          {module.files.map((filePath) => (
-            <p key={filePath} className="font-mono text-[11px] text-text-muted">
-              {filePath}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CandidateCard({
-  candidate,
-  onAdopt,
-  onDismiss,
-  onOpenSource,
+function RuntimeCard({
+  item,
+  onOpen,
 }: {
-  candidate: ProblemCandidate;
-  onAdopt: () => void;
-  onDismiss: () => void;
-  onOpenSource: () => void;
+  item: CoreRuntimeItem;
+  onOpen: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-warning/20 bg-surface-1 px-4 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-text-primary">{candidate.title}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-warning/80">
-            {candidate.category.replaceAll("_", " ")}
+    <Card className="px-4 py-3">
+      <button onClick={onOpen} className="w-full text-left">
+        <div className="flex flex-wrap items-center gap-2">
+          <MonoId id={item.id} tone={item.tone === "accent" ? "accent" : "neutral"} />
+          <Badge tone={item.tone}>{item.state || "queued"}</Badge>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">
+            {item.title}
+          </span>
+          <span className="font-mono text-[11px] text-text-muted">{item.meta}</span>
+        </div>
+
+        <div className="mt-3">
+          <PhaseCells phase={item.phase} />
+        </div>
+
+        {item.attentionReason ? (
+          <p className="mt-2 font-mono text-[11px] text-warning">
+            {item.attentionReason}
           </p>
-        </div>
+        ) : (
+          <p className="mt-2 font-mono text-[11px] text-text-muted">
+            {item.decisionRef} · {item.problemRef}
+          </p>
+        )}
+      </button>
+    </Card>
+  );
+}
 
-        <div className="flex shrink-0 items-center gap-2">
-          {candidate.source_artifact_ref && (
-            <button
-              onClick={onOpenSource}
-              className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3"
-            >
-              Open source
-            </button>
-          )}
-          <button
-            onClick={onDismiss}
-            className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3"
+function PhaseCells({ phase }: { phase: CoreRuntimePhase }) {
+  const phases: CoreRuntimePhase[] = ["preflight", "frame", "execute", "measure", "done"];
+  const index = phase === "queued" ? -1 : phases.indexOf(phase);
+  const blocked = phase === "blocked";
+
+  return (
+    <div className="grid grid-cols-5 gap-1.5">
+      {phases.map((item, itemIndex) => {
+        const state = blocked && itemIndex === 0
+          ? "blocked"
+          : itemIndex < index
+            ? "done"
+            : itemIndex === index
+              ? "active"
+              : "pending";
+
+        return (
+          <div
+            key={item}
+            className={`min-w-0 rounded-md border px-2 py-1 ${phaseCellClass(state)}`}
           >
-            Dismiss
-          </button>
-          <button
-            onClick={onAdopt}
-            className="rounded-full bg-accent px-3 py-1.5 text-xs text-surface-0 transition-colors hover:bg-accent-hover"
-          >
-            Adopt problem
-          </button>
-        </div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[9px] opacity-70">{itemIndex + 1}</span>
+              <span className="truncate font-mono text-[10px] uppercase tracking-wide">
+                {item}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FactCard({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: number | string;
+  tone?: CoreTone;
+}) {
+  return (
+    <Card className="px-4 py-3">
+      <p className={`text-2xl font-semibold tracking-tight ${textForTone(tone)}`}>{value}</p>
+      <p className="mt-1 text-xs text-text-muted">{label}</p>
+    </Card>
+  );
+}
+
+function QuietJump({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-1 px-3 py-1 text-xs text-text-muted transition-colors hover:bg-surface-2 hover:text-text-primary"
+    >
+      {label}
+      <ArrowRight size={12} />
+    </button>
+  );
+}
+
+function StatusChip({
+  icon,
+  value,
+}: {
+  icon: React.ReactNode;
+  value: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-1 px-3 py-1 text-xs text-text-secondary">
+      {icon}
+      {value}
+    </span>
+  );
+}
+
+function AttentionIcon({ tone }: { tone: CoreTone }) {
+  if (tone === "success") return <CheckCircle2 size={18} className="mt-0.5 text-success" />;
+  if (tone === "danger") return <CircleAlert size={18} className="mt-0.5 text-danger" />;
+  if (tone === "warning") return <CircleAlert size={18} className="mt-0.5 text-warning" />;
+  if (tone === "accent") return <Activity size={18} className="mt-0.5 text-accent" />;
+
+  return <MessageSquare size={18} className="mt-0.5 text-text-muted" />;
+}
+
+function CoreSkeleton() {
+  return (
+    <div className="mx-auto max-w-[980px] px-6 py-10">
+      <div className="h-7 w-32 rounded bg-surface-2" />
+      <div className="mt-4 h-4 w-96 rounded bg-surface-2" />
+      <div className="mt-8 space-y-3">
+        <div className="h-24 rounded-xl border border-border bg-surface-1" />
+        <div className="h-24 rounded-xl border border-border bg-surface-1" />
+        <div className="h-24 rounded-xl border border-border bg-surface-1" />
       </div>
-
-      <p className="mt-3 text-sm text-text-secondary">{candidate.signal}</p>
-      <p className="mt-2 text-xs text-text-muted">Acceptance: {candidate.acceptance}</p>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Eyebrow className="mb-3">{title}</Eyebrow>
-      {children}
-    </div>
-  );
+function openAttentionItem(item: CoreAttentionItem, onNavigate: NavigateFn) {
+  switch (item.action) {
+    case "open_runtime":
+      onNavigate("harness");
+      return;
+    case "open_task":
+      onNavigate("tasks", item.actionRef);
+      return;
+    case "open_decision":
+      onNavigate("dashboard");
+      return;
+    case "open_problem":
+      onNavigate("dashboard");
+      return;
+  }
 }
 
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border bg-surface-1/60 px-4 py-8 text-center">
-      <p className="text-sm text-text-muted">{text}</p>
-    </div>
-  );
+function labelForKind(kind: CoreAttentionItem["kind"]): string {
+  if (kind === "runtime") return "Runtime";
+  if (kind === "conversation") return "Conversation";
+  if (kind === "governance") return "Governance";
+  return "Problem";
+}
+
+function borderForTone(tone: CoreTone): string {
+  if (tone === "danger") return "border-danger/30";
+  if (tone === "warning") return "border-warning/30";
+  if (tone === "success") return "border-success/30";
+  if (tone === "accent") return "border-accent-border";
+  return "border-border";
+}
+
+function textForTone(tone: CoreTone): string {
+  if (tone === "danger") return "text-danger";
+  if (tone === "warning") return "text-warning";
+  if (tone === "success") return "text-success";
+  if (tone === "accent") return "text-accent";
+  return "text-text-primary";
+}
+
+function phaseCellClass(state: "pending" | "active" | "done" | "blocked"): string {
+  if (state === "done") return "border-success/30 bg-success/10 text-success";
+  if (state === "active") return "border-warning/40 bg-warning/10 text-warning";
+  if (state === "blocked") return "border-danger/40 bg-danger/10 text-danger";
+  return "border-border bg-surface-2 text-text-muted";
 }

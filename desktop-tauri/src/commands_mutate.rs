@@ -1,4 +1,6 @@
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 
 use crate::rpc::call_rpc;
 
@@ -60,10 +62,7 @@ macro_rules! rpc_query {
 macro_rules! rpc_fwd_input {
     ($fn_name:ident, $rpc_cmd:expr) => {
         #[tauri::command]
-        pub fn $fn_name(
-            input: Value,
-            project_root: Option<String>,
-        ) -> Result<Value, String> {
+        pub fn $fn_name(input: Value, project_root: Option<String>) -> Result<Value, String> {
             call_rpc($rpc_cmd, Some(input), project_root.as_deref())
         }
     };
@@ -92,6 +91,81 @@ macro_rules! rpc_fwd_renamed {
 }
 
 // ── Project management ──
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+struct DesktopProjectRegistry {
+    #[serde(default)]
+    projects: Vec<DesktopRegisteredProject>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    active_path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct DesktopRegisteredProject {
+    path: String,
+    name: String,
+    id: String,
+}
+
+#[tauri::command]
+pub fn remove_project(path: String) -> Result<Value, String> {
+    let target = path.trim().to_string();
+    if target.is_empty() {
+        return Err("path is required".into());
+    }
+
+    let registry_path = desktop_project_registry_path()?;
+    let content = match std::fs::read_to_string(&registry_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({ "removed": false, "active_path": "" }));
+        }
+        Err(err) => return Err(format!("read project registry: {err}")),
+    };
+
+    let mut registry: DesktopProjectRegistry =
+        serde_json::from_str(&content).map_err(|err| format!("parse project registry: {err}"))?;
+
+    let before = registry.projects.len();
+    registry.projects.retain(|project| project.path != target);
+    let removed = registry.projects.len() != before;
+
+    if registry.active_path == target || !desktop_project_is_ready(&registry.active_path) {
+        registry.active_path = registry
+            .projects
+            .iter()
+            .find(|project| desktop_project_is_ready(&project.path))
+            .map(|project| project.path.clone())
+            .unwrap_or_default();
+    }
+
+    if let Some(parent) = registry_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("create registry dir: {err}"))?;
+    }
+
+    let payload = serde_json::to_vec_pretty(&registry)
+        .map_err(|err| format!("serialize project registry: {err}"))?;
+    std::fs::write(&registry_path, payload)
+        .map_err(|err| format!("write project registry: {err}"))?;
+
+    Ok(json!({ "removed": removed, "active_path": registry.active_path }))
+}
+
+fn desktop_project_registry_path() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|err| format!("resolve HOME: {err}"))?;
+
+    Ok(PathBuf::from(home)
+        .join(".haft")
+        .join("desktop-projects.json"))
+}
+
+fn desktop_project_is_ready(path: &str) -> bool {
+    if path.trim().is_empty() {
+        return false;
+    }
+
+    Path::new(path).join(".haft/project.yaml").is_file()
+}
 
 rpc_fwd!(switch_project, "switch-project", { path: String });
 rpc_fwd!(add_project, "add-project", { path: String });
@@ -208,6 +282,37 @@ rpc_fwd!(toggle_flow, "toggle-flow", { id: String, enabled: bool });
 rpc_fwd!(delete_flow, "delete-flow", { id: String });
 // run_flow_now lives in agents.rs because it needs the shared PTY spawn
 // helper + AgentManagerState + ShellEnvState to actually launch the task.
+
+// ── Harness operator ──
+
+rpc_fwd!(
+    list_commissions,
+    "list-commissions",
+    {
+        selector: String,
+        state: String,
+        older_than: String,
+    }
+);
+rpc_fwd!(show_commission, "show-commission", { commission_id: String });
+rpc_fwd!(
+    requeue_commission,
+    "requeue-commission",
+    {
+        commission_id: String,
+        reason: String,
+    }
+);
+rpc_fwd!(
+    cancel_commission,
+    "cancel-commission",
+    {
+        commission_id: String,
+        reason: String,
+    }
+);
+rpc_fwd!(harness_result, "harness-result", { commission_id: String });
+rpc_fwd!(harness_apply, "harness-apply", { commission_id: String });
 
 // ── Governance & analysis ──
 

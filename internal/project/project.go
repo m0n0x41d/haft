@@ -51,7 +51,7 @@ func Create(haftDir string, projectRoot string) (*Config, error) {
 		return nil, err
 	}
 	if existing != nil {
-		return existing, nil
+		return Repair(haftDir, projectRoot, existing)
 	}
 
 	// Generate new ID
@@ -65,17 +65,45 @@ func Create(haftDir string, projectRoot string) (*Config, error) {
 		Name: filepath.Base(projectRoot),
 	}
 
+	if err := writeConfig(haftDir, cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// Repair keeps the mutable project metadata aligned with the actual project
+// root. The ID remains immutable; the human-readable name is derived from the
+// directory name and may be repaired after a moved/copied .haft/ carrier.
+func Repair(haftDir string, projectRoot string, cfg *Config) (*Config, error) {
+	expectedName := filepath.Base(projectRoot)
+	if cfg.Name == expectedName {
+		return cfg, nil
+	}
+
+	repaired := &Config{
+		ID:   cfg.ID,
+		Name: expectedName,
+	}
+	if err := writeConfig(haftDir, repaired); err != nil {
+		return nil, err
+	}
+
+	return repaired, nil
+}
+
+func writeConfig(haftDir string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("marshal project config: %w", err)
+		return fmt.Errorf("marshal project config: %w", err)
 	}
 
 	path := filepath.Join(haftDir, configFile)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return nil, fmt.Errorf("write project config: %w", err)
+		return fmt.Errorf("write project config: %w", err)
 	}
 
-	return cfg, nil
+	return nil
 }
 
 // DBDir returns the path to this project's DB directory in the unified store.

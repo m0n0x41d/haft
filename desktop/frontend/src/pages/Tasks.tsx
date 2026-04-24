@@ -4,6 +4,7 @@ import { subscribe } from "../lib/events";
 import {
   archiveTask,
   cancelTask,
+  continueTask,
   createPullRequest,
   detectAgents,
   getConfig,
@@ -25,6 +26,7 @@ import {
   type TaskOutputEvent,
   type TaskState,
 } from "../lib/api";
+import { mergeTaskStatusEvent, type TaskStatusEvent } from "../lib/taskState";
 import { ChatInput } from "../components/ChatInput";
 import { ChatView } from "../components/ChatView";
 import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
@@ -38,6 +40,8 @@ import {
   type TaskExecutionLadder,
   type ExecutionLadderStep,
 } from "./taskExecutionLadder";
+import { taskInputCapability } from "../lib/taskInput";
+import { visibleInitialPrompt } from "../lib/taskPrompt";
 
 type AdoptResolutionMode = "drift" | "stale";
 type AdoptResolutionContext = {
@@ -221,8 +225,8 @@ export function Tasks({
       }
     });
 
-    const stopStatus = subscribe<TaskState>("task.status", (payload) => {
-      setTasks((current) => mergeTaskList(current, payload));
+    const stopStatus = subscribe<TaskStatusEvent>("task.status", (payload) => {
+      setTasks((current) => mergeTaskStatusEvent(current, payload));
     });
 
     return () => {
@@ -269,7 +273,9 @@ export function Tasks({
   const adoptResolution = getAdoptResolutionContext(detail);
   const executionLadder = detail ? getTaskExecutionLadder(detail) : null;
   const displayStatus = executionLadder?.currentLabel ?? detail?.status ?? "";
-  const shouldShowInitialBrief = detail ? shouldRenderInitialBrief(detail) : false;
+  const initialBrief = detail
+    ? visibleInitialPrompt(detail.prompt, detail.chat_blocks)
+    : "";
 
   useEffect(() => {
     setResolutionAction("");
@@ -576,31 +582,36 @@ export function Tasks({
     }
   };
 
-  const isConversationalAgent = detail
-    ? detail.agent === "claude" || detail.agent === "codex"
-    : false;
+  const inputCapability = detail
+    ? taskInputCapability(detail.status)
+    : taskInputCapability("");
 
   const handleFollowUpSubmit = async (value: string) => {
     if (!detail) {
       return;
     }
 
-    // Allow sending when running, idle (turn finished, awaiting follow-up),
-    // or for conversational agents even when completed.
-    const canSend = detail.status === "running"
-      || detail.status === "idle"
-      || isConversationalAgent;
-
-    if (!canSend) {
+    if (inputCapability.kind === "unavailable") {
       return;
     }
 
     setIsSubmittingFollowUp(true);
 
     try {
-      await writeTaskInput(detail.id, value);
+      if (inputCapability.kind === "live_input") {
+        await writeTaskInput(detail.id, value);
+        scheduleTaskTranscriptSync(detail.id);
+      } else {
+        const task = await continueTask(detail.id, value);
+
+        setTasks((current) => mergeTaskList(
+          current.filter((item) => item.id !== detail.id),
+          task,
+        ));
+        setSelectedTask(task.id);
+        await refresh();
+      }
       setFollowUpInput("");
-      scheduleTaskTranscriptSync(detail.id);
     } catch (error) {
       reportError(error, "task follow-up");
     } finally {
@@ -740,10 +751,10 @@ export function Tasks({
             className="flex flex-1 flex-col justify-end overflow-y-auto px-6 py-4"
           >
             <div className="space-y-3">
-              {shouldShowInitialBrief && (
+              {initialBrief !== "" && (
                 <div className="flex justify-end">
                   <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-accent/10 px-4 py-3">
-                    <p className="whitespace-pre-wrap text-sm text-text-primary">{detail.prompt}</p>
+                    <p className="whitespace-pre-wrap text-sm text-text-primary">{initialBrief}</p>
                   </div>
                 </div>
               )}
@@ -825,17 +836,9 @@ export function Tasks({
 
             <ChatInput
               agentLabel={detail.agent}
-              disabled={detail.status !== "running" && detail.status !== "idle" && !isConversationalAgent}
+              disabled={inputCapability.kind === "unavailable"}
               isSubmitting={isSubmittingFollowUp}
-              placeholder={
-                detail.status === "running"
-                  ? "Message..."
-                  : detail.status === "idle"
-                    ? "Continue this conversation..."
-                    : isConversationalAgent
-                      ? "Continue this conversation..."
-                      : "Task ended"
-              }
+              placeholder={inputCapability.placeholder}
               value={followUpInput}
               onChange={setFollowUpInput}
               onSubmit={handleFollowUpSubmit}
@@ -1304,20 +1307,6 @@ function mergeTaskTranscript(
       ? transcript.error_message
       : task.error_message,
   };
-}
-
-function shouldRenderInitialBrief(task: Pick<TaskState, "prompt" | "chat_blocks">): boolean {
-  const prompt = task.prompt.trim();
-
-  if (prompt === "") {
-    return false;
-  }
-
-  const transcriptHasPrompt = task.chat_blocks.some((block) =>
-    block.role === "user" && (block.text ?? "").trim() === prompt,
-  );
-
-  return !transcriptHasPrompt;
 }
 
 function getAdoptResolutionContext(

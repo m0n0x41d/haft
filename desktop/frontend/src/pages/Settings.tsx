@@ -6,6 +6,7 @@ import {
   initProject,
   listProjects,
   openDirectoryPicker,
+  removeProject,
   saveConfig,
   scanForProjects,
   switchProject,
@@ -14,15 +15,18 @@ import {
   type ProjectInfo,
 } from "../lib/api";
 import { reportError } from "../lib/errors";
+import { projectReadiness } from "../lib/projectReadiness";
 
 type SettingsTab = "general" | "projects" | "agents" | "mcp";
 
 export function Settings({
+  initialTab,
   onProjectRegistryChange,
 }: {
+  initialTab?: SettingsTab;
   onProjectRegistryChange?: () => void;
 } = {}) {
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? "general");
   const [config, setConfig] = useState<DesktopConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -34,6 +38,12 @@ export function Settings({
         reportError(error, "settings");
       });
   }, []);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
 
   const updateConfig = (next: DesktopConfig) => {
     setConfig(next);
@@ -306,6 +316,40 @@ function ProjectSettings({
     }
   };
 
+  const handleActivate = async (project: ProjectInfo) => {
+    const status = projectReadiness(project);
+
+    if (status === "needs_init") {
+      try {
+        const created = await initProject(project.path);
+
+        setProjects((current) => {
+          const nextProjects = [
+            ...current.filter((entry) => entry.path !== created.path),
+            created,
+          ];
+          return nextProjects.sort((left, right) => Number(right.is_active) - Number(left.is_active));
+        });
+        onProjectRegistryChange?.();
+      } catch (error) {
+        reportError(error, "init project");
+      }
+      return;
+    }
+
+    await handleSwitch(project.path);
+  };
+
+  const handleRemove = async (path: string) => {
+    try {
+      await removeProject(path);
+      await refreshProjects();
+      onProjectRegistryChange?.();
+    } catch (error) {
+      reportError(error, "remove project");
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
@@ -365,13 +409,22 @@ function ProjectSettings({
       </SettingsCard>
 
       <div className="space-y-2">
-        {projects.map((project) => (
+        {projects.map((project) => {
+          const status = projectReadiness(project);
+          const missing = status === "missing";
+          const needsInit = status === "needs_init";
+
+          return (
           <div
             key={project.path}
-            className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-4 py-3"
+            className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+              missing ? "border-danger/20 bg-danger/5" : "border-border bg-surface-1"
+            }`}
           >
             <div>
-              <span className="text-sm font-medium">{project.name}</span>
+              <span className={`text-sm font-medium ${missing ? "text-danger" : ""}`}>
+                {project.name}
+              </span>
               <p className="mt-0.5 font-mono text-xs text-text-muted">{project.path}</p>
             </div>
 
@@ -380,14 +433,24 @@ function ProjectSettings({
                 <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-1 text-accent">
                   Active
                 </span>
+              ) : missing ? (
+                <span className="rounded-full border border-danger/20 bg-danger/10 px-2 py-1 text-danger">
+                  Missing
+                </span>
               ) : (
                 <button
-                  onClick={() => handleSwitch(project.path)}
+                  onClick={() => void handleActivate(project)}
                   className="rounded border border-border bg-surface-2 px-2 py-1 text-text-secondary transition-colors hover:bg-surface-3"
                 >
-                  Switch
+                  {needsInit ? "Init & switch" : "Switch"}
                 </button>
               )}
+              <button
+                onClick={() => handleRemove(project.path)}
+                className="rounded border border-danger/20 bg-danger/10 px-2 py-1 text-danger transition-colors hover:bg-danger/20"
+              >
+                Remove
+              </button>
               <span>{project.problem_count} problems</span>
               <span>{project.decision_count} decisions</span>
               {project.stale_count > 0 && (
@@ -395,7 +458,8 @@ function ProjectSettings({
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {discovered.length > 0 && (

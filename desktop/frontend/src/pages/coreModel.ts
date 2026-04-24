@@ -1,0 +1,212 @@
+import type {
+  GovernanceOverview,
+  ProblemCandidate,
+  TaskState,
+  WorkCommission,
+} from "../lib/api";
+
+export type CoreTone = "neutral" | "accent" | "success" | "warning" | "danger";
+export type CoreAttentionKind =
+  | "runtime"
+  | "conversation"
+  | "governance"
+  | "candidate";
+export type CoreRuntimePhase =
+  | "queued"
+  | "preflight"
+  | "frame"
+  | "execute"
+  | "measure"
+  | "done"
+  | "blocked";
+
+export interface CoreAttentionItem {
+  id: string;
+  kind: CoreAttentionKind;
+  tone: CoreTone;
+  title: string;
+  detail: string;
+  meta: string;
+  action: "open_runtime" | "open_task" | "open_decision" | "open_problem";
+  actionRef: string;
+}
+
+export interface CoreRuntimeItem {
+  id: string;
+  state: string;
+  phase: CoreRuntimePhase;
+  decisionRef: string;
+  problemRef: string;
+  title: string;
+  meta: string;
+  tone: CoreTone;
+  attentionReason: string;
+}
+
+export interface CoreAttentionInput {
+  overview: GovernanceOverview;
+  tasks: TaskState[];
+  commissions: WorkCommission[];
+}
+
+export function buildCoreAttention(input: CoreAttentionInput): CoreAttentionItem[] {
+  return [
+    ...runtimeAttention(input.commissions),
+    ...conversationAttention(input.tasks),
+    ...governanceAttention(input.overview),
+    ...candidateAttention(input.overview.problem_candidates ?? []),
+  ];
+}
+
+export function buildCoreRuntimeItems(commissions: WorkCommission[]): CoreRuntimeItem[] {
+  return commissions
+    .filter((commission) => !commissionIsTerminal(commission))
+    .map((commission) => {
+      const state = normalizeState(commission.state);
+      const phase = commissionPhase(commission);
+      const attentionReason = commission.operator?.attention_reason?.trim() ?? "";
+
+      return {
+        id: commission.id,
+        state,
+        phase,
+        decisionRef: commission.decision_ref || "decision unknown",
+        problemRef: commission.problem_card_ref || "problem unknown",
+        title: commission.decision_ref || commission.id,
+        meta: commission.scope?.target_branch
+          ? `branch ${commission.scope.target_branch}`
+          : commission.projection_policy || "local projection",
+        tone: runtimeTone(commission),
+        attentionReason,
+      };
+    });
+}
+
+export function commissionPhase(commission: WorkCommission): CoreRuntimePhase {
+  const state = normalizeState(commission.state);
+
+  if (state.includes("block") || state.includes("fail")) return "blocked";
+  if (state.includes("preflight")) return "preflight";
+  if (state.includes("frame")) return "frame";
+  if (state.includes("measure")) return "measure";
+  if (state.includes("complete") || state === "done") return "done";
+  if (state.includes("running") || state.includes("claim") || state.includes("execute")) {
+    return "execute";
+  }
+
+  return "queued";
+}
+
+export function commissionIsTerminal(commission: WorkCommission): boolean {
+  const state = normalizeState(commission.state);
+
+  return Boolean(commission.operator?.terminal)
+    || state === "completed"
+    || state === "complete"
+    || state === "done"
+    || state === "cancelled"
+    || state === "closed";
+}
+
+function runtimeAttention(commissions: WorkCommission[]): CoreAttentionItem[] {
+  return commissions
+    .filter((commission) => commission.operator?.attention || commissionNeedsAction(commission))
+    .map((commission) => ({
+      id: `runtime:${commission.id}`,
+      kind: "runtime",
+      tone: runtimeTone(commission),
+      title: runtimeTitle(commission),
+      detail: commission.operator?.attention_reason?.trim()
+        || `WorkCommission ${commission.id} is ${commission.state}.`,
+      meta: [commission.id, commission.decision_ref].filter(Boolean).join(" · "),
+      action: "open_runtime",
+      actionRef: commission.id,
+    }));
+}
+
+function conversationAttention(tasks: TaskState[]): CoreAttentionItem[] {
+  return tasks
+    .filter((task) => taskNeedsAction(task))
+    .map((task) => ({
+      id: `task:${task.id}`,
+      kind: "conversation",
+      tone: task.status === "failed" ? "danger" : "warning",
+      title: task.status === "failed" ? "Conversation failed" : "Conversation needs input",
+      detail: task.error_message || task.title || "Agent turn needs operator attention.",
+      meta: [task.title, task.agent].filter(Boolean).join(" · "),
+      action: "open_task",
+      actionRef: task.id,
+    }));
+}
+
+function governanceAttention(overview: GovernanceOverview): CoreAttentionItem[] {
+  return (overview.findings ?? []).map((finding) => ({
+    id: `finding:${finding.id}`,
+    kind: "governance",
+    tone: finding.drift_count > 0 || finding.days_stale > 0 ? "warning" : "accent",
+    title: finding.category.replaceAll("_", " "),
+    detail: finding.reason,
+    meta: [finding.artifact_ref, finding.kind].filter(Boolean).join(" · "),
+    action: "open_decision",
+    actionRef: finding.artifact_ref,
+  }));
+}
+
+function candidateAttention(candidates: ProblemCandidate[]): CoreAttentionItem[] {
+  return candidates.map((candidate) => ({
+    id: `candidate:${candidate.id}`,
+    kind: "candidate",
+    tone: "accent",
+    title: "Follow-up problem candidate",
+    detail: candidate.title,
+    meta: candidate.category.replaceAll("_", " "),
+    action: "open_problem",
+    actionRef: candidate.problem_ref || candidate.id,
+  }));
+}
+
+function commissionNeedsAction(commission: WorkCommission): boolean {
+  const state = normalizeState(commission.state);
+
+  return state.includes("block")
+    || state.includes("fail")
+    || state.includes("stale")
+    || state.includes("expired");
+}
+
+function taskNeedsAction(task: TaskState): boolean {
+  const status = normalizeState(task.status);
+
+  return status === "failed"
+    || status === "idle"
+    || status === "waiting"
+    || status === "blocked";
+}
+
+function runtimeTitle(commission: WorkCommission): string {
+  const state = normalizeState(commission.state);
+
+  if (state.includes("block")) return "Runtime blocked";
+  if (state.includes("fail")) return "Runtime failed";
+  if (state.includes("stale") || state.includes("expired")) return "Runtime stale";
+
+  return "Runtime needs attention";
+}
+
+function runtimeTone(commission: WorkCommission): CoreTone {
+  const state = normalizeState(commission.state);
+
+  if (state.includes("block") || state.includes("fail")) return "danger";
+  if (commission.operator?.attention || state.includes("stale") || state.includes("expired")) {
+    return "warning";
+  }
+  if (state.includes("running") || state.includes("claim") || state.includes("execute")) {
+    return "accent";
+  }
+
+  return "neutral";
+}
+
+function normalizeState(state: string | undefined): string {
+  return (state ?? "").trim().toLowerCase();
+}

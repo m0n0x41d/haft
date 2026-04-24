@@ -70,8 +70,7 @@ pub fn call_rpc(
     // Pipe input to stdin, then close it.
     if let Some(ref payload) = input {
         if let Some(mut stdin) = child.stdin.take() {
-            let data =
-                serde_json::to_vec(payload).map_err(|e| format!("serialize input: {e}"))?;
+            let data = serde_json::to_vec(payload).map_err(|e| format!("serialize input: {e}"))?;
             stdin
                 .write_all(&data)
                 .map_err(|e| format!("write stdin: {e}"))?;
@@ -152,7 +151,10 @@ fn resolve_active_project_root() -> Option<String> {
     if active.is_empty() {
         return None;
     }
-    if !std::path::Path::new(&active).join(".haft/project.yaml").exists() {
+    if !std::path::Path::new(&active)
+        .join(".haft/project.yaml")
+        .exists()
+    {
         return None;
     }
     Some(active)

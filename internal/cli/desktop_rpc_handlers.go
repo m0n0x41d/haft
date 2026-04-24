@@ -610,6 +610,225 @@ func handleRunFlowNow(env *rpcEnv, w io.Writer) error {
 	})
 }
 
+// ── Harness operator ────────────────────────────────────────────────
+
+func handleListCommissions(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		Selector  string `json:"selector"`
+		State     string `json:"state"`
+		OlderThan string `json:"older_than"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	result, err := commissionRPCPayload(env, map[string]any{
+		"action":     "list",
+		"selector":   input.Selector,
+		"state":      input.State,
+		"older_than": input.OlderThan,
+	})
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
+func handleShowCommission(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	result, err := commissionRPCPayload(env, map[string]any{
+		"action":        "show",
+		"commission_id": input.CommissionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
+func handleRequeueCommission(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+		Reason       string `json:"reason"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	result, err := commissionRPCPayload(env, map[string]any{
+		"action":        "requeue",
+		"commission_id": input.CommissionID,
+		"runner_id":     "desktop",
+		"reason":        input.Reason,
+	})
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
+func handleCancelCommission(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+		Reason       string `json:"reason"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	result, err := commissionRPCPayload(env, map[string]any{
+		"action":        "cancel",
+		"commission_id": input.CommissionID,
+		"runner_id":     "desktop",
+		"reason":        input.Reason,
+	})
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
+func handleHarnessResult(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	commissionID := strings.TrimSpace(input.CommissionID)
+	if commissionID == "" {
+		return fmt.Errorf("commission_id is required")
+	}
+
+	result, err := harnessResultPayload(env, commissionID)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
+func handleHarnessApply(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	commissionID := strings.TrimSpace(input.CommissionID)
+	if commissionID == "" {
+		return fmt.Errorf("commission_id is required")
+	}
+
+	commission, err := loadWorkCommissionPayload(env.ctx, env.store, commissionID)
+	if err != nil {
+		return err
+	}
+
+	workspacePath := filepath.Join(defaultHarnessWorkspaceRoot(), commissionID)
+	summary, err := applyHarnessWorkspaceDiff(
+		env.projectRoot,
+		workspacePath,
+		harnessCommissionScopePaths(commission),
+	)
+	if err != nil {
+		return err
+	}
+
+	lines := formatHarnessApplySummary(summary)
+	return writeResult(w, map[string]any{
+		"commission_id": summary.CommissionID,
+		"workspace":     summary.Workspace,
+		"project_root":  summary.ProjectRoot,
+		"files":         summary.Files,
+		"lines":         lines,
+		"raw":           strings.Join(lines, "\n"),
+	})
+}
+
+func commissionRPCPayload(env *rpcEnv, args map[string]any) (map[string]any, error) {
+	raw, err := handleHaftCommission(env.ctx, env.store, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, fmt.Errorf("decode commission response: %w", err)
+	}
+
+	return payload, nil
+}
+
+func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, error) {
+	commission, err := loadWorkCommissionPayload(env.ctx, env.store, commissionID)
+	if err != nil {
+		return nil, err
+	}
+
+	logPath := selectedHarnessLogPath()
+	statusPath := selectedHarnessStatusPath()
+	workspaceRoot := defaultHarnessWorkspaceRoot()
+	workspacePath := filepath.Join(workspaceRoot, commissionID)
+	runtimeDetail, statusUpdatedAt := currentHarnessRuntimeDetail(statusPath, commissionID)
+	sessionID := stringField(runtimeDetail, "session_id")
+	runtimeSummary := harnessSessionLogSummaries(logPath)[sessionID]
+	latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
+	lines := formatHarnessResult(
+		commission,
+		workspaceRoot,
+		runtimeDetail,
+		statusUpdatedAt,
+		runtimeSummary,
+		latestTurn,
+	)
+	changedFiles := harnessWorkspaceChangedFiles(workspacePath)
+
+	return map[string]any{
+		"commission":        commission,
+		"workspace":         workspacePath,
+		"runtime":           runtimeDetail,
+		"status_updated_at": statusUpdatedAt,
+		"latest_turn":       latestTurn,
+		"changed_files":     changedFiles,
+		"can_apply":         stringField(commission, "state") == "completed" && len(changedFiles) > 0,
+		"lines":             lines,
+		"raw":               strings.Join(lines, "\n"),
+	}, nil
+}
+
+func harnessWorkspaceChangedFiles(workspacePath string) []string {
+	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+		return nil
+	}
+
+	tracked, err := gitChangedTrackedFiles(workspacePath)
+	if err != nil {
+		tracked = nil
+	}
+
+	untracked, err := gitUntrackedFiles(workspacePath)
+	if err != nil {
+		untracked = nil
+	}
+
+	changed := append([]string{}, tracked...)
+	changed = append(changed, untracked...)
+	return uniqueStringsPreserveOrder(cleanStringSlice(changed))
+}
+
 // ── Project management ──────────────────────────────────────────────
 
 type rpcProjectInfo struct {
@@ -646,60 +865,16 @@ func handleSwitchProject(env *rpcEnv, w io.Writer) error {
 		return fmt.Errorf("path is required")
 	}
 
-	haftDir := filepath.Join(path, ".haft")
-	if _, err := os.Stat(haftDir); os.IsNotExist(err) {
-		return fmt.Errorf("no .haft/ directory in %s", path)
-	}
-
-	cfg, err := project.Load(haftDir)
-	if err != nil || cfg == nil {
-		return fmt.Errorf("cannot load project config from %s: %w", haftDir, err)
-	}
-
-	dbPath, err := cfg.DBPath()
+	info, err := rpcEnsureProject(path)
 	if err != nil {
-		return fmt.Errorf("cannot resolve DB path: %w", err)
+		return err
 	}
 
-	testDB, err := db.NewStore(dbPath)
-	if err != nil {
-		return fmt.Errorf("cannot open DB for %s: %w", path, err)
-	}
-	_ = testDB.Close()
-
-	// Persist the switch in the registry so `list_projects` returns the
-	// right `is_active` flag and a subsequent `haft desktop` launch opens
-	// this project. Also add the project if it wasn't already registered —
-	// switch-project doubles as register-and-activate for recently-opened
-	// directories.
-	reg, err := rpcLoadRegistry()
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
-	registered := false
-	for _, p := range reg.Projects {
-		if p.Path == path {
-			registered = true
-			break
-		}
-	}
-	if !registered {
-		reg.Projects = append(reg.Projects, rpcRegisteredProject{
-			Path: path,
-			Name: cfg.Name,
-			ID:   cfg.ID,
-		})
-	}
-	reg.ActivePath = path
-	if err := rpcSaveRegistry(reg); err != nil {
-		return fmt.Errorf("save registry: %w", err)
+	if err := rpcActivateProject(info); err != nil {
+		return err
 	}
 
-	return writeResult(w, rpcProjectInfo{
-		Path: path,
-		Name: cfg.Name,
-		ID:   cfg.ID,
-	})
+	return writeResult(w, info)
 }
 
 func handleAddProject(env *rpcEnv, w io.Writer) error {
@@ -722,21 +897,12 @@ func handleAddProjectSmart(env *rpcEnv, w io.Writer) error {
 		return err
 	}
 
-	hasHaftDir, err := rpcHasHaftDir(path)
+	info, err := rpcEnsureProject(path)
 	if err != nil {
 		return err
 	}
 
-	if hasHaftDir {
-		info, err := rpcRegisterExistingProject(path)
-		if err != nil {
-			return err
-		}
-		return writeResult(w, info)
-	}
-
-	info, err := rpcInitializeProject(path)
-	if err != nil {
+	if err := rpcActivateProject(info); err != nil {
 		return err
 	}
 
@@ -754,7 +920,39 @@ func handleInitProject(env *rpcEnv, w io.Writer) error {
 		return err
 	}
 
+	if err := rpcActivateProject(info); err != nil {
+		return err
+	}
+
 	return writeResult(w, info)
+}
+
+func rpcEnsureProject(path string) (rpcProjectInfo, error) {
+	hasHaftDir, err := rpcHasHaftDir(path)
+	if err != nil {
+		return rpcProjectInfo{}, err
+	}
+
+	if hasHaftDir {
+		return rpcRegisterExistingProject(path)
+	}
+
+	return rpcInitializeProject(path)
+}
+
+func rpcActivateProject(info rpcProjectInfo) error {
+	reg, err := rpcLoadRegistry()
+	if err != nil {
+		return fmt.Errorf("load registry: %w", err)
+	}
+
+	rpcUpsertRegisteredProject(reg, info)
+	reg.ActivePath = info.Path
+	if err := rpcSaveRegistry(reg); err != nil {
+		return fmt.Errorf("save registry: %w", err)
+	}
+
+	return nil
 }
 
 func rpcReadProjectPath() (string, error) {
@@ -772,16 +970,21 @@ func rpcReadProjectPath() (string, error) {
 }
 
 func rpcRegisterExistingProject(path string) (rpcProjectInfo, error) {
-	hasHaftDir, err := rpcHasHaftDir(path)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return rpcProjectInfo{}, fmt.Errorf("resolve path: %w", err)
+	}
+
+	hasHaftDir, err := rpcHasHaftDir(absPath)
 	if err != nil {
 		return rpcProjectInfo{}, err
 	}
 	if !hasHaftDir {
-		return rpcProjectInfo{}, fmt.Errorf("no .haft/ directory found in %s", path)
+		return rpcProjectInfo{}, fmt.Errorf("no .haft/ directory found in %s", absPath)
 	}
 
-	haftDir := filepath.Join(path, ".haft")
-	cfg, err := project.Load(haftDir)
+	haftDir := filepath.Join(absPath, ".haft")
+	cfg, err := project.Create(haftDir, absPath)
 	if err != nil {
 		return rpcProjectInfo{}, fmt.Errorf("load project config: %w", err)
 	}
@@ -794,29 +997,17 @@ func rpcRegisterExistingProject(path string) (rpcProjectInfo, error) {
 		return rpcProjectInfo{}, fmt.Errorf("load registry: %w", err)
 	}
 
-	found := false
-	for _, p := range reg.Projects {
-		if p.Path == path {
-			found = true
-			break
-		}
-	}
-	if !found {
-		reg.Projects = append(reg.Projects, rpcRegisteredProject{
-			Path: path,
-			Name: cfg.Name,
-			ID:   cfg.ID,
-		})
-		if err := rpcSaveRegistry(reg); err != nil {
-			return rpcProjectInfo{}, fmt.Errorf("save registry: %w", err)
-		}
-	}
-
-	return rpcProjectInfo{
-		Path: path,
+	info := rpcProjectInfo{
+		Path: absPath,
 		Name: cfg.Name,
 		ID:   cfg.ID,
-	}, nil
+	}
+	rpcUpsertRegisteredProject(reg, info)
+	if err := rpcSaveRegistry(reg); err != nil {
+		return rpcProjectInfo{}, fmt.Errorf("save registry: %w", err)
+	}
+
+	return info, nil
 }
 
 func rpcInitializeProject(path string) (rpcProjectInfo, error) {
@@ -879,6 +1070,26 @@ func rpcInitializeProject(path string) (rpcProjectInfo, error) {
 		Name: cfg.Name,
 		ID:   cfg.ID,
 	}, nil
+}
+
+func rpcUpsertRegisteredProject(reg *rpcProjectRegistry, info rpcProjectInfo) {
+	next := make([]rpcRegisteredProject, 0, len(reg.Projects)+1)
+	for _, registered := range reg.Projects {
+		if registered.Path == info.Path {
+			continue
+		}
+		if registered.ID != "" && registered.ID == info.ID {
+			continue
+		}
+		next = append(next, registered)
+	}
+
+	next = append(next, rpcRegisteredProject{
+		Path: info.Path,
+		Name: info.Name,
+		ID:   info.ID,
+	})
+	reg.Projects = next
 }
 
 func rpcHasHaftDir(path string) (bool, error) {

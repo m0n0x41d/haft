@@ -2,14 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/spf13/cobra"
 )
@@ -136,6 +139,176 @@ func TestDesktopRPCAddProjectSmart(t *testing.T) {
 	}
 }
 
+func TestHandleSwitchProjectInitializesMissingHaftProject(t *testing.T) {
+	setRPCProjectHome(t)
+
+	targetPath := t.TempDir()
+	got := runProjectRPCHandler(t, handleSwitchProject, targetPath)
+
+	cfg := requireProjectConfig(t, targetPath)
+	if got.Path != targetPath {
+		t.Fatalf("Path = %q, want %q", got.Path, targetPath)
+	}
+	if got.ID != cfg.ID {
+		t.Fatalf("ID = %q, want %q", got.ID, cfg.ID)
+	}
+
+	reg, err := rpcLoadRegistry()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	if reg.ActivePath != targetPath {
+		t.Fatalf("ActivePath = %q, want %q", reg.ActivePath, targetPath)
+	}
+}
+
+func TestHandleAddProjectSmartActivatesProject(t *testing.T) {
+	setRPCProjectHome(t)
+
+	targetPath := t.TempDir()
+	got := runProjectRPCHandler(t, handleAddProjectSmart, targetPath)
+
+	reg, err := rpcLoadRegistry()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	if reg.ActivePath != got.Path {
+		t.Fatalf("ActivePath = %q, want %q", reg.ActivePath, got.Path)
+	}
+}
+
+func TestHandleAddProjectSmartRepairsNameAndPrunesDuplicateIdentity(t *testing.T) {
+	setRPCProjectHome(t)
+
+	stalePath := filepath.Join(t.TempDir(), "old-name")
+	targetPath := filepath.Join(t.TempDir(), "new-name")
+	if err := os.MkdirAll(filepath.Join(targetPath, ".haft"), 0o755); err != nil {
+		t.Fatalf("mkdir target .haft: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(targetPath, ".haft", "project.yaml"),
+		[]byte("id: qnt_same\nname: old-name\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write stale config: %v", err)
+	}
+
+	if err := rpcSaveRegistry(&rpcProjectRegistry{
+		Projects: []rpcRegisteredProject{{
+			Path: stalePath,
+			Name: "old-name",
+			ID:   "qnt_same",
+		}},
+		ActivePath: stalePath,
+	}); err != nil {
+		t.Fatalf("save registry: %v", err)
+	}
+
+	got := runProjectRPCHandler(t, handleAddProjectSmart, targetPath)
+	if got.Name != "new-name" {
+		t.Fatalf("Name = %q, want repaired name", got.Name)
+	}
+
+	cfg := requireProjectConfig(t, targetPath)
+	if cfg.Name != "new-name" {
+		t.Fatalf("persisted Name = %q, want repaired name", cfg.Name)
+	}
+
+	reg, err := rpcLoadRegistry()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	if len(reg.Projects) != 1 {
+		t.Fatalf("registry projects = %#v, want only canonical project", reg.Projects)
+	}
+	if reg.Projects[0].Path != targetPath {
+		t.Fatalf("registry path = %q, want %q", reg.Projects[0].Path, targetPath)
+	}
+}
+
+func TestHandleListCommissionsReturnsOperatorFields(t *testing.T) {
+	env, cleanup := createCommissionRPCEnv(t)
+	defer cleanup()
+
+	commission := workCommissionFixture("wc-desktop-rpc-stale", "blocked_policy", "2099-01-01T00:00:00Z")
+	if _, err := persistWorkCommission(env.ctx, env.store, commission, time.Now().UTC()); err != nil {
+		t.Fatalf("persist commission: %v", err)
+	}
+
+	output := bytes.Buffer{}
+	restore := setRPCInput(t, map[string]string{"selector": "stale"})
+	defer restore()
+
+	if err := handleListCommissions(env, &output); err != nil {
+		t.Fatalf("handleListCommissions: %v", err)
+	}
+
+	var decoded struct {
+		Commissions []map[string]any `json:"commissions"`
+	}
+	decodeRPCData(t, output.Bytes(), &decoded)
+
+	if len(decoded.Commissions) != 1 {
+		t.Fatalf("commissions len = %d, want 1", len(decoded.Commissions))
+	}
+
+	operator, ok := decoded.Commissions[0]["operator"].(map[string]any)
+	if !ok {
+		t.Fatalf("operator missing in %#v", decoded.Commissions[0])
+	}
+	if operator["attention"] != true {
+		t.Fatalf("operator attention = %#v, want true", operator["attention"])
+	}
+}
+
+func TestHandleCommissionOperatorActions(t *testing.T) {
+	env, cleanup := createCommissionRPCEnv(t)
+	defer cleanup()
+
+	commission := workCommissionFixture("wc-desktop-rpc-action", "blocked_policy", "2099-01-01T00:00:00Z")
+	if _, err := persistWorkCommission(env.ctx, env.store, commission, time.Now().UTC()); err != nil {
+		t.Fatalf("persist commission: %v", err)
+	}
+
+	requeueOutput := bytes.Buffer{}
+	restoreRequeue := setRPCInput(t, map[string]string{
+		"commission_id": "wc-desktop-rpc-action",
+		"reason":        "test requeue",
+	})
+	defer restoreRequeue()
+
+	if err := handleRequeueCommission(env, &requeueOutput); err != nil {
+		t.Fatalf("handleRequeueCommission: %v", err)
+	}
+
+	var requeueDecoded struct {
+		Commission map[string]any `json:"commission"`
+	}
+	decodeRPCData(t, requeueOutput.Bytes(), &requeueDecoded)
+	if requeueDecoded.Commission["state"] != "queued" {
+		t.Fatalf("requeued state = %#v, want queued", requeueDecoded.Commission["state"])
+	}
+
+	cancelOutput := bytes.Buffer{}
+	restoreCancel := setRPCInput(t, map[string]string{
+		"commission_id": "wc-desktop-rpc-action",
+		"reason":        "test cancel",
+	})
+	defer restoreCancel()
+
+	if err := handleCancelCommission(env, &cancelOutput); err != nil {
+		t.Fatalf("handleCancelCommission: %v", err)
+	}
+
+	var cancelDecoded struct {
+		Commission map[string]any `json:"commission"`
+	}
+	decodeRPCData(t, cancelOutput.Bytes(), &cancelDecoded)
+	if cancelDecoded.Commission["state"] != "cancelled" {
+		t.Fatalf("cancelled state = %#v, want cancelled", cancelDecoded.Commission["state"])
+	}
+}
+
 func runProjectRPCHandler(t *testing.T, handler testProjectRPCHandler, path string) rpcProjectInfo {
 	t.Helper()
 
@@ -163,6 +336,14 @@ func runProjectRPCHandlerError(t *testing.T, handler testProjectRPCHandler, path
 func decodeProjectRPCResult(t *testing.T, data []byte) rpcProjectInfo {
 	t.Helper()
 
+	var info rpcProjectInfo
+	decodeRPCData(t, data, &info)
+	return info
+}
+
+func decodeRPCData(t *testing.T, data []byte, target any) {
+	t.Helper()
+
 	var result rpcResult
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatalf("decode rpc result: %v\n%s", err, string(data))
@@ -171,12 +352,9 @@ func decodeProjectRPCResult(t *testing.T, data []byte) rpcProjectInfo {
 		t.Fatalf("rpc result error: %s", result.Error)
 	}
 
-	var info rpcProjectInfo
-	if err := json.Unmarshal(result.Data, &info); err != nil {
-		t.Fatalf("decode project info: %v", err)
+	if err := json.Unmarshal(result.Data, target); err != nil {
+		t.Fatalf("decode rpc data: %v", err)
 	}
-
-	return info
 }
 
 func setRPCInput(t *testing.T, payload any) func() {
@@ -251,6 +429,33 @@ func createInitializedProject(t *testing.T) string {
 	_ = database.Close()
 
 	return rootPath
+}
+
+func createCommissionRPCEnv(t *testing.T) (*rpcEnv, func()) {
+	t.Helper()
+
+	rootPath := createInitializedProject(t)
+	cfg := requireProjectConfig(t, rootPath)
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+
+	env := &rpcEnv{
+		ctx:         context.Background(),
+		store:       artifact.NewStore(database.GetRawDB()),
+		rawDB:       database.GetRawDB(),
+		dbStore:     database,
+		projectRoot: rootPath,
+		haftDir:     filepath.Join(rootPath, ".haft"),
+	}
+
+	return env, env.close
 }
 
 func requireProjectConfig(t *testing.T, rootPath string) *project.Config {

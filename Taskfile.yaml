@@ -11,6 +11,8 @@ vars:
   FPF_SPEC: data/FPF/FPF-Spec.md
   FPF_DB: internal/cli/fpf.db
   DESKTOP_APP_NAME: Haft
+  DESKTOP_DEV_CLI: desktop-tauri/target/debug/haft
+  DESKTOP_RELEASE_CLI: desktop-tauri/target/release/haft
 
 tasks:
   default:
@@ -99,15 +101,45 @@ tasks:
 
   desktop:
     desc: Run Haft desktop app (Tauri dev with hot reload)
+    deps: [desktop:cli]
     dir: desktop-tauri
     cmds:
       - cargo tauri dev
 
+  desktop:cli:
+    desc: Build the local Haft CLI used by Tauri desktop RPC in dev
+    cmds:
+      - mkdir -p desktop-tauri/target/debug
+      - go build -o {{.DESKTOP_DEV_CLI}} -trimpath ./cmd/haft/
+    sources:
+      - cmd/**/*.go
+      - db/**/*.go
+      - internal/**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.DESKTOP_DEV_CLI}}'
+
   desktop:build:
     desc: Build Haft desktop app (Tauri production bundle)
+    deps: [desktop:cli:release]
     dir: desktop-tauri
     cmds:
       - cargo tauri build
+
+  desktop:cli:release:
+    desc: Build the Haft CLI next to the release desktop binary
+    cmds:
+      - mkdir -p desktop-tauri/target/release
+      - go build -o {{.DESKTOP_RELEASE_CLI}} -trimpath ./cmd/haft/
+    sources:
+      - cmd/**/*.go
+      - db/**/*.go
+      - internal/**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.DESKTOP_RELEASE_CLI}}'
 
   desktop:install:
     desc: Build and install Haft desktop app locally

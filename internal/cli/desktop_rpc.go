@@ -171,6 +171,14 @@ func init() {
 		makeRPCCommand("delete-flow", "Delete a flow", handleDeleteFlow),
 		makeRPCCommand("run-flow-now", "Trigger a flow immediately", handleRunFlowNow),
 
+		// Harness operator
+		makeRPCCommand("list-commissions", "List WorkCommissions for the harness operator", handleListCommissions),
+		makeRPCCommand("show-commission", "Show one WorkCommission", handleShowCommission),
+		makeRPCCommand("requeue-commission", "Return a WorkCommission to the queue", handleRequeueCommission),
+		makeRPCCommand("cancel-commission", "Cancel an unfinished WorkCommission", handleCancelCommission),
+		makeRPCCommand("harness-result", "Inspect a harness run result", handleHarnessResult),
+		makeRPCCommand("harness-apply", "Apply a completed harness workspace diff", handleHarnessApply),
+
 		// Project management
 		makeRPCCommand("switch-project", "Switch active project", handleSwitchProject),
 		makeRPCCommand("add-project", "Register a project by path", handleAddProject),

@@ -89,6 +89,24 @@ defmodule OpenSleigh.Agent.AdapterScopeTest do
              Adapter.validate_terminal_diff(session, ["lib/a.ex", "lib/b.ex"])
   end
 
+  test "terminal diff observability reports exact out-of-scope paths", ctx do
+    commission =
+      ["lib/a.ex"]
+      |> scope!([])
+      |> commission!()
+
+    session =
+      ctx.workspace
+      |> adapter_session!(commission, MapSet.new([:write]))
+
+    assert ["lib/b.ex"] =
+             Adapter.terminal_diff_out_of_scope_paths(session, [
+               "lib/a.ex",
+               ".tmp/gocache/state",
+               "lib/b.ex"
+             ])
+  end
+
   test "terminal diff validation ignores runtime-owned scratch paths", ctx do
     commission =
       ["lib/a.ex"]

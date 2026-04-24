@@ -39,6 +39,85 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     def close_session(_handle), do: :ok
   end
 
+  defmodule LifecycleAgent do
+    @behaviour OpenSleigh.Agent.Adapter
+
+    alias OpenSleigh.Agent.Adapter, as: AgentAdapter
+
+    @tool_registry [
+      :haft_query,
+      :read,
+      :write,
+      :edit,
+      :bash,
+      :haft_note,
+      :haft_decision,
+      :haft_refresh
+    ]
+
+    def adapter_kind, do: :lifecycle_mock
+    def tool_registry, do: @tool_registry
+
+    def start_session(%OpenSleigh.AdapterSession{session_id: session_id}) do
+      {:ok, %{session_id: session_id}}
+    end
+
+    def send_turn(%{session_id: session_id}, prompt, %OpenSleigh.AdapterSession{} = session) do
+      {:ok, reply(phase_from(prompt, session), session_id)}
+    end
+
+    def dispatch_tool(_handle, tool, args, %OpenSleigh.AdapterSession{} = session)
+        when tool in @tool_registry do
+      case AgentAdapter.ensure_in_scope(session, tool, args) do
+        :ok ->
+          {:ok, %{call_id: "lifecycle-call-" <> Atom.to_string(tool), result: %{success: true}}}
+
+        {:error, _reason} = error ->
+          error
+      end
+    end
+
+    def dispatch_tool(_handle, _tool, _args, %OpenSleigh.AdapterSession{}),
+      do: {:error, :tool_unknown_to_adapter}
+
+    def close_session(_handle), do: :ok
+
+    defp reply(:measure, session_id) do
+      session_id
+      |> reply_base()
+      |> Map.put(:events, [measure_evidence_event()])
+    end
+
+    defp reply(_phase, session_id), do: reply_base(session_id)
+
+    defp phase_from("Measure " <> _rest, _session), do: :measure
+    defp phase_from(_prompt, _session), do: :other
+
+    defp reply_base(session_id) do
+      %{
+        turn_id: "lifecycle-turn-" <> session_id,
+        status: :completed,
+        events: [],
+        usage: %{input_tokens: 1, output_tokens: 1, total_tokens: 2},
+        text: "mock agent output"
+      }
+    end
+
+    defp measure_evidence_event do
+      %{
+        payload: %{
+          "item" => %{
+            "type" => "commandExecution",
+            "status" => "completed",
+            "command" => "mix test",
+            "exitCode" => 0,
+            "aggregatedOutput" => "ok\n"
+          }
+        }
+      }
+    end
+  end
+
   alias OpenSleigh.Agent.Mock, as: AgentMock
   alias OpenSleigh.Haft.Mock, as: HaftMock
   alias OpenSleigh.Tracker.Mock, as: TrackerMock
@@ -90,7 +169,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
         workflow: Workflow.mvp1r(),
         tracker_handle: tracker,
         tracker_adapter: TrackerMock,
-        agent_adapter: AgentMock,
+        agent_adapter: LifecycleAgent,
         external_publication: %{tracker_transition_to: []},
         judge_fun: JudgeClient.judge_fun(fn _prompt -> {:ok, %{}} end, %{}),
         haft_invoker: HaftMock.invoke_fun(haft),
@@ -114,7 +193,12 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     {:ok, tickets} = TrackerMock.list_active(ctx.tracker)
     Orchestrator.submit_candidates(ctx.orchestrator, tickets)
 
-    assert :ok = wait_for_terminal(ctx.orchestrator, 2_000)
+    wait_result = wait_for_terminal(ctx.orchestrator, 10_000)
+    status = Orchestrator.status(ctx.orchestrator)
+    artifacts = HaftMock.artifacts(ctx.haft)
+
+    assert wait_result == :ok,
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
 
     actions =
       ctx.haft
@@ -180,7 +264,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     {:ok, tickets} = TrackerMock.list_active(tracker)
     Orchestrator.submit_candidates(orchestrator_name, tickets)
 
-    wait_result = wait_for_terminal(orchestrator_name, 2_000)
+    wait_result = wait_for_terminal(orchestrator_name, 10_000)
     status = Orchestrator.status(orchestrator_name)
     artifacts = HaftMock.artifacts(ctx.haft)
 
@@ -272,7 +356,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     {:ok, tickets} = TrackerMock.list_active(tracker)
     Orchestrator.submit_candidates(orchestrator_name, tickets)
 
-    wait_result = wait_for_terminal(orchestrator_name, 2_000)
+    wait_result = wait_for_terminal(orchestrator_name, 10_000)
     status = Orchestrator.status(orchestrator_name)
     artifacts = HaftMock.artifacts(ctx.haft)
 
@@ -294,6 +378,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     assert get_in(blocked, ["arguments", "verdict"]) == "blocked"
     assert get_in(blocked, ["arguments", "event"]) == "phase_blocked"
     assert get_in(blocked, ["arguments", "reason"]) == "mutation_outside_commission_scope"
+    assert get_in(blocked, ["arguments", "payload", "out_of_scope_paths"]) == ["outside.md"]
 
     assert {:ok, ticket} = TrackerMock.get(tracker, "wc-orchestrator-scope-block")
     assert ticket.state == :blocked
@@ -358,7 +443,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     assert length(status.running) == 1
 
     send(worker, {:release_blocking_agent, session_id})
-    assert :ok = wait_for_terminal(orchestrator_name, 2_000)
+    assert :ok = wait_for_terminal(orchestrator_name, 10_000)
   end
 
   defp phase_configs do

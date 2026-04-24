@@ -18,6 +18,7 @@ defmodule OpenSleigh.Agent.Codex.Server do
   @initialize_id 1
   @thread_start_id 2
   @non_interactive_tool_input_answer "This is a non-interactive Open-Sleigh session. Operator input is unavailable."
+  @crash_dump_dir_env "OPEN_SLEIGH_CRASH_DUMP_DIR"
 
   @type state :: %{
           required(:command) => String.t(),
@@ -142,33 +143,100 @@ defmodule OpenSleigh.Agent.Codex.Server do
   end
 
   @spec open_port(AdapterSession.t(), state()) :: {:ok, port(), map()} | {:error, EffectError.t()}
-  defp open_port(%AdapterSession{workspace_path: cwd}, %{command: command}) do
+  defp open_port(%AdapterSession{workspace_path: cwd} = session, %{command: command}) do
     case System.find_executable("bash") do
       nil -> {:error, :agent_command_not_found}
-      bash -> do_open_port(bash, command, cwd)
+      bash -> do_open_port(bash, command, cwd, session)
     end
   end
 
-  @spec do_open_port(String.t(), String.t(), Path.t()) ::
+  @spec do_open_port(String.t(), String.t(), Path.t(), AdapterSession.t()) ::
           {:ok, port(), map()} | {:error, EffectError.t()}
-  defp do_open_port(bash, command, cwd) do
-    port =
-      Port.open(
-        {:spawn_executable, String.to_charlist(bash)},
-        [
-          :binary,
-          :exit_status,
-          :stderr_to_stdout,
-          args: [~c"-lc", String.to_charlist(command)],
-          cd: String.to_charlist(cwd),
-          line: @max_line_bytes
-        ]
-      )
+  defp do_open_port(bash, command, cwd, %AdapterSession{} = session) do
+    crash_dump_path = crash_dump_path(session)
 
-    {:ok, port, port_metadata(port)}
+    with :ok <- ensure_crash_dump_dir(crash_dump_path) do
+      port =
+        Port.open(
+          {:spawn_executable, String.to_charlist(bash)},
+          [
+            :binary,
+            :exit_status,
+            :stderr_to_stdout,
+            args: [~c"-lc", String.to_charlist(command)],
+            cd: String.to_charlist(cwd),
+            env: [{~c"ERL_CRASH_DUMP", String.to_charlist(crash_dump_path)}],
+            line: @max_line_bytes
+          ]
+        )
+
+      {:ok, port, port_metadata(port)}
+    else
+      {:error, _reason} -> {:error, :agent_launch_failed}
+    end
   rescue
     _ -> {:error, :agent_launch_failed}
   end
+
+  @spec ensure_crash_dump_dir(Path.t()) :: :ok | {:error, File.posix()}
+  defp ensure_crash_dump_dir(path) do
+    path
+    |> Path.dirname()
+    |> File.mkdir_p()
+  end
+
+  @spec crash_dump_path(AdapterSession.t()) :: Path.t()
+  defp crash_dump_path(%AdapterSession{session_id: session_id}) do
+    crash_dump_dir()
+    |> Path.join("agent-#{filename_fragment(session_id)}.dump")
+  end
+
+  @spec crash_dump_dir() :: Path.t()
+  defp crash_dump_dir do
+    @crash_dump_dir_env
+    |> System.get_env()
+    |> crash_dump_dir_result()
+  end
+
+  @spec crash_dump_dir_result(String.t() | nil) :: Path.t()
+  defp crash_dump_dir_result(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> crash_dump_dir_value()
+  end
+
+  defp crash_dump_dir_result(_value), do: default_crash_dump_dir()
+
+  @spec crash_dump_dir_value(String.t()) :: Path.t()
+  defp crash_dump_dir_value(""), do: default_crash_dump_dir()
+
+  defp crash_dump_dir_value(path) do
+    path
+    |> Path.expand()
+  end
+
+  @spec default_crash_dump_dir() :: Path.t()
+  defp default_crash_dump_dir do
+    case System.user_home() do
+      home when is_binary(home) and byte_size(home) > 0 ->
+        Path.join([home, ".open-sleigh", "crash_dumps"])
+
+      _other ->
+        Path.join(System.tmp_dir!(), "open-sleigh-crash-dumps")
+    end
+  end
+
+  @spec filename_fragment(String.t()) :: String.t()
+  defp filename_fragment(value) do
+    value
+    |> String.replace(~r/[^A-Za-z0-9_.-]+/, "-")
+    |> String.trim("-")
+    |> filename_fragment_result()
+  end
+
+  @spec filename_fragment_result(String.t()) :: String.t()
+  defp filename_fragment_result(""), do: "unknown-session"
+  defp filename_fragment_result(value), do: value
 
   @spec initialize_thread(
           {:ok, port(), map()} | {:error, EffectError.t()},
@@ -575,7 +643,9 @@ defmodule OpenSleigh.Agent.Codex.Server do
 
   @spec final_answer_event_text(map()) :: String.t() | nil
   defp final_answer_event_text(%{
-         payload: %{"item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}}
+         payload: %{
+           "item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}
+         }
        })
        when is_binary(text),
        do: text

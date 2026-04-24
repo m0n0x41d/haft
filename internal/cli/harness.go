@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -54,6 +57,7 @@ type harnessRunOptions struct {
 	ForceCreate         bool
 	Once                bool
 	OnceTimeoutMS       int
+	Detach              bool
 	Mock                bool
 	MockAgent           bool
 	MockJudge           bool
@@ -144,6 +148,7 @@ var (
 	harnessRunMock              bool
 	harnessRunMockAgent         bool
 	harnessRunMockJudge         bool
+	harnessRunDetach            bool
 	harnessRunConcurrency       int
 	harnessRunMaxClaims         int
 	harnessRunPollIntervalMS    int
@@ -193,6 +198,10 @@ var harnessRunCmd = &cobra.Command{
 	Use:   "run [decision-id]...",
 	Short: "Create commissions and start the Open-Sleigh harness",
 	Long: `Create commissions and start the Open-Sleigh harness.
+
+By default, run opens an append-only operator stream in this terminal and exits
+when the selected WorkCommissions reach terminal states. Use --detach to start
+the runtime and return immediately.
 
 Run existing runnable WorkCommissions:
   haft harness run
@@ -292,6 +301,7 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&harnessRunMock, "mock", false, "Use mock agent and mock judge")
 	cmd.Flags().BoolVar(&harnessRunMockAgent, "mock-agent", false, "Use mock agent")
 	cmd.Flags().BoolVar(&harnessRunMockJudge, "mock-judge", false, "Use mock judge")
+	cmd.Flags().BoolVar(&harnessRunDetach, "detach", false, "Start Open-Sleigh and return without the operator stream")
 	cmd.Flags().IntVar(&harnessRunConcurrency, "concurrency", 2, "Open-Sleigh engine concurrency")
 	cmd.Flags().IntVar(&harnessRunMaxClaims, "max-claims", 50, "Maximum commission claims per poll")
 	cmd.Flags().IntVar(&harnessRunPollIntervalMS, "poll-interval-ms", 30000, "Open-Sleigh poll interval")
@@ -548,11 +558,11 @@ func renderHarnessWatchFrame(
 	lines = append(lines, "", "watching: press Ctrl-C to stop")
 
 	if tail > 0 {
-		runtimeLines, err := recentHarnessLogLines(status, logPath, tail)
+		runtimeLines, err := recentHarnessEventLines(status, logPath, tail)
 		if err != nil {
 			return nil, err
 		}
-		lines = append(lines, "", "runtime_events:")
+		lines = append(lines, "", "recent_events:")
 		lines = append(lines, runtimeLines...)
 	}
 	return lines, nil
@@ -853,12 +863,16 @@ func harnessLastEventLine(events []map[string]any) string {
 	}
 
 	event := events[len(events)-1]
+	payload := mapField(event, "payload")
 	parts := []string{
 		presentOrUnknown(stringField(event, "event")),
 		"action=" + presentOrUnknown(stringField(event, "action")),
 		"verdict=" + presentOrUnknown(stringField(event, "verdict")),
 		"reason=" + presentOrUnknown(stringField(event, "reason")),
 		"at=" + presentOrUnknown(stringField(event, "recorded_at")),
+	}
+	if outOfScope := stringSliceField(payload, "out_of_scope_paths"); len(outOfScope) > 0 {
+		parts = append(parts, "out_of_scope="+strings.Join(outOfScope, ","))
 	}
 	return strings.Join(parts, " ")
 }
@@ -912,12 +926,17 @@ func applyHarnessWorkspaceDiff(
 		return summary, fmt.Errorf("workspace is not a git repository: %s", workspacePath)
 	}
 
-	changed, err := gitChangedTrackedFiles(workspacePath)
+	tracked, err := gitChangedTrackedFiles(workspacePath)
 	if err != nil {
 		return summary, err
 	}
+	untracked, err := gitUntrackedFiles(workspacePath)
+	if err != nil {
+		return summary, err
+	}
+	changed := uniqueStringsPreserveOrder(append(tracked, untracked...))
 	if len(changed) == 0 {
-		return summary, fmt.Errorf("workspace has no tracked diff to apply")
+		return summary, fmt.Errorf("workspace has no diff to apply")
 	}
 	if outOfScope := pathsOutsideHarnessScope(changed, scopePaths); len(outOfScope) > 0 {
 		return summary, fmt.Errorf("workspace diff contains paths outside commission scope: %s", strings.Join(outOfScope, ", "))
@@ -928,15 +947,22 @@ func applyHarnessWorkspaceDiff(
 		return summary, fmt.Errorf("target checkout has existing changes in scoped paths: %s", strings.Join(dirty, ", "))
 	}
 
-	patch, err := gitDiffBinary(workspacePath, changed)
-	if err != nil {
-		return summary, err
+	if len(tracked) > 0 {
+		patch, err := gitDiffBinary(workspacePath, tracked)
+		if err != nil {
+			return summary, err
+		}
+		if len(bytes.TrimSpace(patch)) == 0 {
+			return summary, fmt.Errorf("workspace tracked diff is empty")
+		}
+		if err := gitApplyPatch(projectRoot, patch); err != nil {
+			return summary, err
+		}
 	}
-	if len(bytes.TrimSpace(patch)) == 0 {
-		return summary, fmt.Errorf("workspace diff is empty")
-	}
-	if err := gitApplyPatch(projectRoot, patch); err != nil {
-		return summary, err
+	if len(untracked) > 0 {
+		if err := copyHarnessWorkspaceFiles(projectRoot, workspacePath, untracked); err != nil {
+			return summary, err
+		}
 	}
 
 	summary.Files = changed
@@ -976,6 +1002,14 @@ func gitChangedTrackedFiles(workdir string) ([]string, error) {
 	return uniqueStringsPreserveOrder(cleanStringSlice(strings.Split(string(output), "\n"))), nil
 }
 
+func gitUntrackedFiles(workdir string) ([]string, error) {
+	output, err := harnessGitOutput(workdir, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	return uniqueStringsPreserveOrder(cleanStringSlice(strings.Split(string(output), "\n"))), nil
+}
+
 func gitDirtyTargetPaths(workdir string, paths []string) ([]string, error) {
 	args := append([]string{"status", "--porcelain", "--"}, paths...)
 	output, err := harnessGitOutput(workdir, args...)
@@ -998,6 +1032,43 @@ func gitDirtyTargetPaths(workdir string, paths []string) ([]string, error) {
 func gitDiffBinary(workdir string, paths []string) ([]byte, error) {
 	args := append([]string{"diff", "--binary", "--"}, paths...)
 	return harnessGitOutput(workdir, args...)
+}
+
+func copyHarnessWorkspaceFiles(projectRoot string, workspacePath string, paths []string) error {
+	for _, path := range paths {
+		if err := copyHarnessWorkspaceFile(projectRoot, workspacePath, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyHarnessWorkspaceFile(projectRoot string, workspacePath string, path string) error {
+	source := filepath.Join(workspacePath, path)
+	target := filepath.Join(projectRoot, path)
+
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("stat workspace file %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("workspace path is a directory, not a file: %s", path)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("workspace symlink copy is not supported: %s", path)
+	}
+
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("read workspace file %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("create target directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(target, data, info.Mode().Perm()); err != nil {
+		return fmt.Errorf("write target file %s: %w", path, err)
+	}
+	return nil
 }
 
 func gitApplyPatch(workdir string, patch []byte) error {
@@ -1584,12 +1655,12 @@ func printHarnessRuntimeTail(
 	logPath string,
 	lineCount int,
 ) error {
-	lines, err := recentHarnessLogLines(status, logPath, lineCount)
+	lines, err := recentHarnessEventLines(status, logPath, lineCount)
 	if err != nil {
 		return err
 	}
 
-	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "runtime_events:"); err != nil {
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "recent_events:"); err != nil {
 		return err
 	}
 	for _, line := range lines {
@@ -1598,6 +1669,23 @@ func printHarnessRuntimeTail(
 		}
 	}
 	return nil
+}
+
+func recentHarnessEventLines(status map[string]any, logPath string, lineCount int) ([]string, error) {
+	lines, err := recentHarnessLogLines(status, logPath, lineCount)
+	if err != nil {
+		return nil, err
+	}
+
+	formatted := make([]string, 0, len(lines))
+	for _, line := range lines {
+		eventLine, ok := formatHarnessRuntimeLogLine(line)
+		if !ok {
+			continue
+		}
+		formatted = append(formatted, eventLine)
+	}
+	return formatted, nil
 }
 
 func recentHarnessLogLines(status map[string]any, logPath string, lineCount int) ([]string, error) {
@@ -1693,6 +1781,14 @@ func readHarnessRuntimeLogLines(logPath string) ([]string, error) {
 		result = append(result, line)
 	}
 	return result, nil
+}
+
+func formatHarnessRuntimeLogLine(line string) (string, bool) {
+	event := map[string]any{}
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		return "", false
+	}
+	return formatHarnessRuntimeEventLine(event), true
 }
 
 func formatHarnessRuntimeEventLine(event map[string]any) string {
@@ -1910,11 +2006,363 @@ func startOpenSleighAndDeliver(
 	opts harnessRunOptions,
 	configPath string,
 ) error {
+	if !opts.Once && !opts.Detach {
+		return startOpenSleighOperatorRun(ctx, cmd, store, projectRoot, selection, opts, configPath)
+	}
+
 	if err := startOpenSleigh(cmd, opts, configPath); err != nil {
 		return err
 	}
 
 	return deliverHarnessRunCommissions(ctx, cmd, store, projectRoot, selection, opts)
+}
+
+func startOpenSleighOperatorRun(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	projectRoot string,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+	configPath string,
+) error {
+	output := &bytes.Buffer{}
+	process, err := startOpenSleighProcess(opts, configPath, output, output, nil)
+	if err != nil {
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- process.Wait()
+	}()
+
+	runCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
+	waitErr := watchHarnessRunUntilTerminal(runCtx, cmd, store, selection, opts, done, output)
+	if waitErr != nil {
+		stopOpenSleighProcess(process, done)
+		return waitErr
+	}
+
+	stopOpenSleighProcess(process, done)
+	if err := printHarnessRunResults(ctx, cmd, store, selection, opts); err != nil {
+		return err
+	}
+	return deliverHarnessRunCommissions(ctx, cmd, store, projectRoot, selection, opts)
+}
+
+func watchHarnessRunUntilTerminal(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+	done <-chan error,
+	processOutput *bytes.Buffer,
+) error {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	if err := printHarnessRunOperatorHeader(cmd, selection, opts); err != nil {
+		return err
+	}
+
+	offset := 0
+	lastProgressAt := time.Time{}
+	for {
+		nextOffset, printed, err := printHarnessSelectedTailSince(
+			cmd,
+			opts.LogPath,
+			selection.CommissionIDs,
+			offset,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		offset = nextOffset
+		if printed > 0 {
+			lastProgressAt = time.Now()
+		}
+
+		terminal, err := selectedHarnessCommissionsTerminal(ctx, store, selection.CommissionIDs)
+		if err != nil {
+			return err
+		}
+		if terminal {
+			return nil
+		}
+
+		if printed == 0 && time.Since(lastProgressAt) >= 30*time.Second {
+			if err := printHarnessSelectedProgress(cmd, opts, selection.CommissionIDs); err != nil {
+				return err
+			}
+			lastProgressAt = time.Now()
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-done:
+			nextOffset, _, printErr := printHarnessSelectedTailSince(
+				cmd,
+				opts.LogPath,
+				selection.CommissionIDs,
+				offset,
+				false,
+			)
+			if printErr != nil {
+				return printErr
+			}
+			offset = nextOffset
+
+			terminal, terminalErr := selectedHarnessCommissionsTerminal(ctx, store, selection.CommissionIDs)
+			if terminalErr != nil {
+				return terminalErr
+			}
+			if terminal {
+				return nil
+			}
+			return openSleighExitedEarlyError(err, processOutput.String())
+		case <-ticker.C:
+		}
+	}
+}
+
+func printHarnessRunOperatorHeader(
+	cmd *cobra.Command,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+) error {
+	lines := []string{
+		"Harness run started",
+		"status: " + opts.StatusPath,
+		"log: " + opts.LogPath,
+		"workspace_root: " + opts.WorkspaceRoot,
+		"selected:",
+	}
+	for _, commissionID := range selection.CommissionIDs {
+		lines = append(
+			lines,
+			"- commission="+commissionID+
+				" result=haft harness result "+commissionID+
+				" tail=haft harness tail "+commissionID+" --follow"+
+				" workspace="+filepath.Join(opts.WorkspaceRoot, commissionID),
+		)
+	}
+	if len(selection.DecisionRefs) > 0 {
+		lines = append(lines, formatHarnessSelectionLine("Selected decision", selection.DecisionRefs))
+	}
+	lines = append(lines, "", "events:")
+
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printHarnessSelectedTailSince(
+	cmd *cobra.Command,
+	logPath string,
+	commissionIDs []string,
+	offset int,
+	rawJSON bool,
+) (int, int, error) {
+	lines, err := readHarnessRuntimeLogLines(logPath)
+	if err != nil {
+		return offset, 0, err
+	}
+	if offset > len(lines) {
+		offset = 0
+	}
+
+	selected := stringSet(commissionIDs)
+	printed := 0
+	for _, line := range lines[offset:] {
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if _, ok := selected[strings.TrimSpace(stringField(event, "commission_id"))]; !ok {
+			continue
+		}
+
+		output := line
+		if !rawJSON {
+			output = formatHarnessRuntimeEventLine(event)
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), output); err != nil {
+			return len(lines), printed, err
+		}
+		printed++
+	}
+	return len(lines), printed, nil
+}
+
+func printHarnessSelectedProgress(
+	cmd *cobra.Command,
+	opts harnessRunOptions,
+	commissionIDs []string,
+) error {
+	_, status, err := readHarnessStatus(opts.StatusPath)
+	if err != nil {
+		_, printErr := fmt.Fprintf(cmd.OutOrStdout(), "progress: status unavailable: %v\n", err)
+		return printErr
+	}
+
+	details := selectedHarnessRunningDetails(status, commissionIDs)
+	if len(details) == 0 {
+		_, printErr := fmt.Fprintln(cmd.OutOrStdout(), "progress: waiting for selected commissions to start or finish")
+		return printErr
+	}
+
+	sessionSummaries := harnessSessionLogSummaries(opts.LogPath)
+	for _, detail := range details {
+		line := formatHarnessRunningProgressLine(detail, sessionSummaries, time.Now().UTC())
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func selectedHarnessRunningDetails(status map[string]any, commissionIDs []string) []map[string]any {
+	selected := stringSet(commissionIDs)
+	details := mapSliceField(mapField(status, "orchestrator"), "running_details")
+	result := make([]map[string]any, 0, len(details))
+	for _, detail := range details {
+		if _, ok := selected[strings.TrimSpace(stringField(detail, "commission_id"))]; ok {
+			result = append(result, detail)
+		}
+	}
+	return result
+}
+
+func formatHarnessRunningProgressLine(
+	detail map[string]any,
+	sessionSummaries map[string]harnessSessionLogSummary,
+	now time.Time,
+) string {
+	sessionID := presentOrUnknown(stringField(detail, "session_id"))
+	sessionSummary := sessionSummaries[sessionID]
+	fields := []string{
+		"progress:",
+		"commission=" + presentOrUnknown(stringField(detail, "commission_id")),
+		"phase=" + presentOrUnknown(stringField(detail, "phase")),
+		"sub_state=" + presentOrUnknown(stringField(detail, "sub_state")),
+	}
+	if startedAt, elapsed := harnessSessionTiming(sessionSummary.StartedAt, now); startedAt != "" {
+		fields = append(fields, "elapsed="+elapsed)
+	}
+	if strings.TrimSpace(sessionSummary.LastEvent) != "" {
+		fields = append(fields, "last_event="+sessionSummary.LastEvent)
+	}
+	if strings.TrimSpace(sessionSummary.LastTurnStatus) != "" {
+		fields = append(fields, "last_turn="+sessionSummary.LastTurnStatus)
+	}
+	if workspace := strings.TrimSpace(stringField(detail, "workspace_path")); workspace != "" {
+		fields = append(fields, "workspace="+workspace)
+	}
+	return strings.Join(fields, " ")
+}
+
+func selectedHarnessCommissionsTerminal(
+	ctx context.Context,
+	store *artifact.Store,
+	commissionIDs []string,
+) (bool, error) {
+	if len(commissionIDs) == 0 {
+		return false, nil
+	}
+
+	for _, commissionID := range commissionIDs {
+		commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+		if err != nil {
+			return false, err
+		}
+		if !isHarnessTerminalState(stringField(commission, "state")) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func openSleighExitedEarlyError(err error, output string) error {
+	output = strings.TrimSpace(output)
+	if err == nil {
+		if output == "" {
+			return fmt.Errorf("Open-Sleigh exited before selected WorkCommissions reached a terminal state")
+		}
+		return fmt.Errorf("Open-Sleigh exited before selected WorkCommissions reached a terminal state:\n%s", output)
+	}
+	if output == "" {
+		return fmt.Errorf("Open-Sleigh exited before selected WorkCommissions reached a terminal state: %w", err)
+	}
+	return fmt.Errorf("Open-Sleigh exited before selected WorkCommissions reached a terminal state: %w\n%s", err, output)
+}
+
+func stopOpenSleighProcess(process *exec.Cmd, done <-chan error) {
+	if process == nil || process.Process == nil {
+		return
+	}
+
+	_ = process.Process.Signal(os.Interrupt)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		_ = process.Process.Kill()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func printHarnessRunResults(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+) error {
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "\nHarness run finished"); err != nil {
+		return err
+	}
+
+	logPath := opts.LogPath
+	sessionSummaries := harnessSessionLogSummaries(logPath)
+	for index, commissionID := range selection.CommissionIDs {
+		commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+		if err != nil {
+			return err
+		}
+		runtimeDetail, statusUpdatedAt := currentHarnessRuntimeDetail(opts.StatusPath, commissionID)
+		runtimeSummary := sessionSummaries[stringField(runtimeDetail, "session_id")]
+		latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
+
+		if index > 0 {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+				return err
+			}
+		}
+		for _, line := range formatHarnessResult(
+			commission,
+			opts.WorkspaceRoot,
+			runtimeDetail,
+			statusUpdatedAt,
+			runtimeSummary,
+			latestTurn,
+		) {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func deliverHarnessRunCommissions(
@@ -2425,6 +2873,18 @@ func uniqueStringsPreserveOrder(values []string) []string {
 	return result
 }
 
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		cleaned := strings.TrimSpace(value)
+		if cleaned == "" {
+			continue
+		}
+		set[cleaned] = struct{}{}
+	}
+	return set
+}
+
 func buildHarnessPlan(projectRoot string, decisionRefs []string) (harnessPlanFile, error) {
 	cleanRefs := sortedUniqueDecisionRefs(decisionRefs)
 	if len(cleanRefs) == 0 {
@@ -2681,6 +3141,7 @@ func defaultHarnessRunOptions(
 		ForceCreate:        harnessRunForceCreate,
 		Once:               harnessRunOnce,
 		OnceTimeoutMS:      harnessRunOnceTimeoutMS,
+		Detach:             harnessRunDetach,
 		Mock:               harnessRunMock,
 		MockAgent:          harnessRunMockAgent || harnessRunMock,
 		MockJudge:          harnessRunMockJudge || harnessRunMock,
@@ -3049,10 +3510,7 @@ func formatHarnessRunSelectionLines(
 	selection harnessRunSelection,
 	opts harnessRunOptions,
 ) []string {
-	lines := []string{
-		"Observe status: haft harness status --tail 20",
-		"Observe log: tail -f " + opts.LogPath,
-	}
+	lines := harnessRunObservationLines(opts)
 
 	if len(selection.CommissionIDs) == 0 {
 		return lines
@@ -3068,6 +3526,20 @@ func formatHarnessRunSelectionLines(
 
 	lines = append(lines, "Note: workspace changes usually appear only after execute starts editing files")
 	return lines
+}
+
+func harnessRunObservationLines(opts harnessRunOptions) []string {
+	if opts.Detach || opts.Once {
+		return []string{
+			"Observe status: haft harness status --tail 20",
+			"Observe log: tail -f " + opts.LogPath,
+		}
+	}
+
+	return []string{
+		"Operator stream: live in this terminal",
+		"Stop: Ctrl-C stops the stream and the Open-Sleigh process",
+	}
 }
 
 func formatHarnessSelectionLine(label string, values []string) string {
@@ -3094,15 +3566,44 @@ func formatHarnessSelectionLine(label string, values []string) string {
 }
 
 func startOpenSleigh(cmd *cobra.Command, opts harnessRunOptions, configPath string) error {
-	args := openSleighStartArgs(opts, configPath)
-	kind, err := openSleighRuntimeKind(opts.RuntimePath)
+	process, err := openSleighProcess(opts, configPath)
 	if err != nil {
 		return err
 	}
-	if kind == "release" {
-		return startOpenSleighRelease(cmd, opts, args)
+
+	configureOpenSleighProcess(process, opts, cmd.OutOrStdout(), cmd.ErrOrStderr(), cmd.InOrStdin())
+	return process.Run()
+}
+
+func startOpenSleighProcess(
+	opts harnessRunOptions,
+	configPath string,
+	stdout io.Writer,
+	stderr io.Writer,
+	stdin io.Reader,
+) (*exec.Cmd, error) {
+	process, err := openSleighProcess(opts, configPath)
+	if err != nil {
+		return nil, err
 	}
-	return startOpenSleighSource(cmd, opts, args)
+
+	configureOpenSleighProcess(process, opts, stdout, stderr, stdin)
+	if err := process.Start(); err != nil {
+		return nil, err
+	}
+	return process, nil
+}
+
+func openSleighProcess(opts harnessRunOptions, configPath string) (*exec.Cmd, error) {
+	args := openSleighStartArgs(opts, configPath)
+	kind, err := openSleighRuntimeKind(opts.RuntimePath)
+	if err != nil {
+		return nil, err
+	}
+	if kind == "release" {
+		return openSleighReleaseProcess(opts, args), nil
+	}
+	return openSleighSourceProcess(args), nil
 }
 
 func openSleighStartArgs(opts harnessRunOptions, configPath string) []string {
@@ -3119,33 +3620,55 @@ func openSleighStartArgs(opts harnessRunOptions, configPath string) []string {
 	return args
 }
 
-func startOpenSleighSource(cmd *cobra.Command, opts harnessRunOptions, args []string) error {
+func openSleighSourceProcess(args []string) *exec.Cmd {
 	mixArgs := append([]string{"open_sleigh.start"}, args...)
-	process := exec.Command("mix", mixArgs...)
-	return runOpenSleighProcess(cmd, opts, process)
+	return exec.Command("mix", mixArgs...)
 }
 
-func startOpenSleighRelease(cmd *cobra.Command, opts harnessRunOptions, args []string) error {
+func openSleighReleaseProcess(opts harnessRunOptions, args []string) *exec.Cmd {
 	expression := "Application.ensure_all_started(:mix); Mix.Tasks.OpenSleigh.Start.run(" +
 		elixirStringListLiteral(args) +
 		")"
 
-	process := exec.Command(openSleighReleaseExecutable(opts.RuntimePath), "eval", expression)
-	return runOpenSleighProcess(cmd, opts, process)
+	return exec.Command(openSleighReleaseExecutable(opts.RuntimePath), "eval", expression)
 }
 
 func openSleighReleaseExecutable(runtimePath string) string {
 	return filepath.Join(runtimePath, "bin", "open_sleigh")
 }
 
-func runOpenSleighProcess(cmd *cobra.Command, opts harnessRunOptions, process *exec.Cmd) error {
+func configureOpenSleighProcess(
+	process *exec.Cmd,
+	opts harnessRunOptions,
+	stdout io.Writer,
+	stderr io.Writer,
+	stdin io.Reader,
+) {
 	process.Dir = opts.RuntimePath
-	process.Env = append(os.Environ(), "REPO_URL="+opts.RepoURL)
-	process.Stdout = cmd.OutOrStdout()
-	process.Stderr = cmd.ErrOrStderr()
-	process.Stdin = cmd.InOrStdin()
+	process.Env = append(os.Environ(), "REPO_URL="+opts.RepoURL, "ERL_CRASH_DUMP="+harnessRuntimeCrashDumpPath())
+	process.Stdout = stdout
+	process.Stderr = stderr
+	process.Stdin = stdin
+}
 
-	return process.Run()
+func harnessRuntimeCrashDumpPath() string {
+	root := strings.TrimSpace(os.Getenv("OPEN_SLEIGH_CRASH_DUMP_DIR"))
+	if root == "" {
+		root = defaultHarnessCrashDumpDir()
+	}
+	if absoluteRoot, err := filepath.Abs(root); err == nil {
+		root = absoluteRoot
+	}
+	_ = os.MkdirAll(root, 0o700)
+	return filepath.Join(root, fmt.Sprintf("runtime-%d-%d.dump", os.Getpid(), time.Now().UTC().UnixNano()))
+}
+
+func defaultHarnessCrashDumpDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return filepath.Join(os.TempDir(), "open-sleigh-crash-dumps")
+	}
+	return filepath.Join(home, ".open-sleigh", "crash_dumps")
 }
 
 func elixirStringListLiteral(values []string) string {

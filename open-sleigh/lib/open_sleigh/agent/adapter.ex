@@ -151,6 +151,21 @@ defmodule OpenSleigh.Agent.Adapter do
     |> terminal_diff_result(session, changed_paths)
   end
 
+  @doc """
+  Return changed paths that would violate the terminal WorkCommission Scope.
+
+  Used by operator-facing observability after `validate_terminal_diff/2`
+  blocks a run. The authority decision stays boolean; this helper only
+  explains which paths caused the block.
+  """
+  @spec terminal_diff_out_of_scope_paths(AdapterSession.t(), [Path.t()]) :: [Path.t()]
+  def terminal_diff_out_of_scope_paths(%AdapterSession{} = session, changed_paths)
+      when is_list(changed_paths) do
+    session
+    |> scope()
+    |> terminal_diff_out_of_scope_paths_result(session, changed_paths)
+  end
+
   @doc "Attach WorkCommission context to the AdapterSession carrier."
   @spec attach_commission_context(AdapterSession.t(), WorkCommission.t()) :: AdapterSession.t()
   def attach_commission_context(
@@ -310,6 +325,20 @@ defmodule OpenSleigh.Agent.Adapter do
     |> path_allowed_result()
   end
 
+  @spec terminal_diff_out_of_scope_paths_result(Scope.t() | nil, AdapterSession.t(), [Path.t()]) ::
+          [Path.t()]
+  defp terminal_diff_out_of_scope_paths_result(nil, %AdapterSession{}, _changed_paths), do: []
+
+  defp terminal_diff_out_of_scope_paths_result(
+         %Scope{} = scope,
+         %AdapterSession{} = session,
+         changed_paths
+       ) do
+    changed_paths
+    |> Enum.reject(&terminal_path_allowed?(&1, scope, session))
+    |> Enum.uniq()
+  end
+
   @spec terminal_path_allowed?(term(), Scope.t(), AdapterSession.t()) :: boolean()
   defp terminal_path_allowed?(path, %Scope{} = scope, %AdapterSession{} = session)
        when is_binary(path) do
@@ -321,7 +350,9 @@ defmodule OpenSleigh.Agent.Adapter do
 
   @spec runtime_owned_terminal_path?(String.t()) :: boolean()
   defp runtime_owned_terminal_path?(".tmp"), do: true
-  defp runtime_owned_terminal_path?(path) when is_binary(path), do: String.starts_with?(path, ".tmp/")
+
+  defp runtime_owned_terminal_path?(path) when is_binary(path),
+    do: String.starts_with?(path, ".tmp/")
 
   @spec path_allowed?(String.t(), Scope.t(), AdapterSession.t()) :: boolean()
   defp path_allowed?(path, %Scope{} = scope, %AdapterSession{} = session) do

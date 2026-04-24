@@ -188,9 +188,9 @@ defmodule OpenSleigh.AgentWorker do
     end
   end
 
-  @spec finalize_invalid_outcome(atom(), ctx()) :: :ok
+  @spec finalize_invalid_outcome(term(), ctx()) :: :ok
   defp finalize_invalid_outcome(reason, ctx) do
-    :ok = emit_runtime_event(ctx, :terminal_diff_validation_failed, %{reason: reason})
+    :ok = emit_runtime_event(ctx, :terminal_diff_validation_failed, terminal_error_data(reason))
     _ = run_hook_best_effort(ctx, :after_run)
     notify_orchestrator(ctx, {:error, ctx.session.id, reason})
   end
@@ -221,7 +221,11 @@ defmodule OpenSleigh.AgentWorker do
           :ok | {:error, atom()}
   defp maybe_reset_reused_preflight_workspace(_ctx, _path, :new), do: :ok
 
-  defp maybe_reset_reused_preflight_workspace(%{session: %Session{phase: :preflight}} = ctx, path, :reused) do
+  defp maybe_reset_reused_preflight_workspace(
+         %{session: %Session{phase: :preflight}} = ctx,
+         path,
+         :reused
+       ) do
     :ok = emit_runtime_event(ctx, :workspace_reset_started, %{workspace_path: path})
 
     case WorkspaceManager.reset_git_workspace(path, Map.get(ctx, :hook_timeout_ms, 60_000)) do
@@ -230,7 +234,9 @@ defmodule OpenSleigh.AgentWorker do
         :ok
 
       {:error, reason} ->
-        :ok = emit_runtime_event(ctx, :workspace_reset_failed, %{workspace_path: path, reason: reason})
+        :ok =
+          emit_runtime_event(ctx, :workspace_reset_failed, %{workspace_path: path, reason: reason})
+
         {:error, reason}
     end
   end
@@ -626,7 +632,11 @@ defmodule OpenSleigh.AgentWorker do
     events
     |> Enum.reverse()
     |> Enum.find_value(fn
-      %{payload: %{"item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}}}
+      %{
+        payload: %{
+          "item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}
+        }
+      }
       when is_binary(text) ->
         text
 
@@ -864,7 +874,10 @@ defmodule OpenSleigh.AgentWorker do
   end
 
   @spec measure_evidence_from_event(map(), DateTime.t()) :: [Evidence.t()]
-  defp measure_evidence_from_event(%{payload: %{"item" => %{"type" => "commandExecution"} = item}}, now) do
+  defp measure_evidence_from_event(
+         %{payload: %{"item" => %{"type" => "commandExecution"} = item}},
+         now
+       ) do
     item
     |> command_execution_evidence(now)
     |> evidence_list()
@@ -975,7 +988,7 @@ defmodule OpenSleigh.AgentWorker do
     if String.trim(text) == "", do: nil, else: text
   end
 
-  @spec validate_terminal_diff_scope(ctx()) :: :ok | {:error, atom()}
+  @spec validate_terminal_diff_scope(ctx()) :: :ok | {:error, term()}
   defp validate_terminal_diff_scope(ctx) do
     ctx
     |> changed_paths()
@@ -983,25 +996,68 @@ defmodule OpenSleigh.AgentWorker do
   end
 
   @spec terminal_diff_scope_result({:ok, [Path.t()]} | {:error, atom()}, ctx()) ::
-          :ok | {:error, atom()}
-  defp terminal_diff_scope_result({:ok, changed_paths}, %{session: %Session{phase: :execute}} = ctx) do
+          :ok | {:error, term()}
+  defp terminal_diff_scope_result(
+         {:ok, changed_paths},
+         %{session: %Session{phase: :execute}} = ctx
+       ) do
     changed_paths
     |> material_changed_paths()
     |> execute_terminal_diff_scope_result(changed_paths, ctx)
   end
 
   defp terminal_diff_scope_result({:ok, changed_paths}, ctx) do
-    AgentAdapter.validate_terminal_diff(ctx.session.adapter_session, changed_paths)
+    ctx
+    |> validate_terminal_diff_scope_paths(changed_paths)
   end
 
   defp terminal_diff_scope_result({:error, _reason} = error, _ctx), do: error
 
-  @spec execute_terminal_diff_scope_result([Path.t()], [Path.t()], ctx()) :: :ok | {:error, atom()}
-  defp execute_terminal_diff_scope_result([], _changed_paths, _ctx), do: {:error, :no_commission_mutation}
+  @spec execute_terminal_diff_scope_result([Path.t()], [Path.t()], ctx()) ::
+          :ok | {:error, term()}
+  defp execute_terminal_diff_scope_result([], _changed_paths, _ctx),
+    do: {:error, :no_commission_mutation}
 
   defp execute_terminal_diff_scope_result(_material_paths, changed_paths, ctx) do
-    AgentAdapter.validate_terminal_diff(ctx.session.adapter_session, changed_paths)
+    ctx
+    |> validate_terminal_diff_scope_paths(changed_paths)
   end
+
+  @spec validate_terminal_diff_scope_paths(ctx(), [Path.t()]) :: :ok | {:error, term()}
+  defp validate_terminal_diff_scope_paths(ctx, changed_paths) do
+    ctx.session.adapter_session
+    |> AgentAdapter.validate_terminal_diff(changed_paths)
+    |> terminal_diff_validation_result(ctx, changed_paths)
+  end
+
+  @spec terminal_diff_validation_result(:ok | {:error, atom()}, ctx(), [Path.t()]) ::
+          :ok | {:error, term()}
+  defp terminal_diff_validation_result(:ok, _ctx, _changed_paths), do: :ok
+
+  defp terminal_diff_validation_result(
+         {:error, :mutation_outside_commission_scope},
+         ctx,
+         changed_paths
+       ) do
+    metadata = %{
+      changed_paths: changed_paths,
+      out_of_scope_paths:
+        AgentAdapter.terminal_diff_out_of_scope_paths(ctx.session.adapter_session, changed_paths)
+    }
+
+    {:error, {:mutation_outside_commission_scope, metadata}}
+  end
+
+  defp terminal_diff_validation_result({:error, reason}, _ctx, _changed_paths),
+    do: {:error, reason}
+
+  @spec terminal_error_data(term()) :: map()
+  defp terminal_error_data({reason, metadata}) when is_atom(reason) and is_map(metadata) do
+    metadata
+    |> Map.put(:reason, reason)
+  end
+
+  defp terminal_error_data(reason), do: %{reason: reason}
 
   @spec material_changed_paths([Path.t()]) :: [Path.t()]
   defp material_changed_paths(changed_paths) do
@@ -1011,7 +1067,9 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec runtime_owned_terminal_path?(Path.t()) :: boolean()
   defp runtime_owned_terminal_path?(".tmp"), do: true
-  defp runtime_owned_terminal_path?(path) when is_binary(path), do: String.starts_with?(path, ".tmp/")
+
+  defp runtime_owned_terminal_path?(path) when is_binary(path),
+    do: String.starts_with?(path, ".tmp/")
 
   @spec changed_paths(ctx()) :: {:ok, [Path.t()]} | {:error, atom()}
   defp changed_paths(ctx) do

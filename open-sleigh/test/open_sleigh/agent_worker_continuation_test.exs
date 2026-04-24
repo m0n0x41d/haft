@@ -366,7 +366,10 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
       |> Map.put(:hooks, %{after_create: "git init -q\nmkdir -p lib\ntouch lib/outside.ex"})
       |> run_worker()
 
-    assert {:error, _session_id, :mutation_outside_commission_scope} = message
+    assert {:error, _session_id,
+            {:mutation_outside_commission_scope,
+             %{changed_paths: ["lib/outside.ex"], out_of_scope_paths: ["lib/outside.ex"]}}} =
+             message
   end
 
   test "execute blocks when only runtime scratch paths changed", ctx do
@@ -439,7 +442,11 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
       |> worker_ctx(phase_config, fail_judge_fun())
       |> run_worker()
 
-    assert {:error, _session_id, :mutation_outside_commission_scope} = message
+    assert {:error, _session_id,
+            {:mutation_outside_commission_scope,
+             %{changed_paths: ["lib/outside.ex"], out_of_scope_paths: ["lib/outside.ex"]}}} =
+             message
+
     assert workspace_git_status_lines(workspace_path) == [" M lib/outside.ex"]
   end
 

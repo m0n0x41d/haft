@@ -1244,6 +1244,7 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec terminal_worker_error?(term()) :: boolean()
   defp terminal_worker_error?(:mutation_outside_commission_scope), do: true
+  defp terminal_worker_error?({:mutation_outside_commission_scope, _metadata}), do: true
   defp terminal_worker_error?(:no_commission_mutation), do: true
   defp terminal_worker_error?(_reason), do: false
 
@@ -1273,13 +1274,15 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec record_terminal_worker_error(map(), map(), term()) :: :ok | {:error, term()}
   defp record_terminal_worker_error(state, entry, reason) do
-    payload = %{
-      "phase" => Atom.to_string(entry.session.phase),
-      "session_id" => entry.session.id,
-      "ticket_id" => entry.ticket.id,
-      "config_hash" => entry.session.config_hash,
-      "next" => "block"
-    }
+    payload =
+      %{
+        "phase" => Atom.to_string(entry.session.phase),
+        "session_id" => entry.session.id,
+        "ticket_id" => entry.ticket.id,
+        "config_hash" => entry.session.config_hash,
+        "next" => "block"
+      }
+      |> Map.merge(terminal_worker_error_payload(reason))
 
     params = lifecycle_params(payload, "phase_blocked", "blocked", reason_text(reason))
 
@@ -1732,9 +1735,18 @@ defmodule OpenSleigh.Orchestrator do
   defp normalize_worker_error(reason), do: reason
 
   @spec reason_text(term()) :: String.t()
+  defp reason_text({reason, _metadata}) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_text(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_text(reason) when is_binary(reason), do: reason
   defp reason_text(reason), do: inspect(reason)
+
+  @spec terminal_worker_error_payload(term()) :: map()
+  defp terminal_worker_error_payload({_reason, metadata}) when is_map(metadata) do
+    metadata
+    |> Enum.into(%{}, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp terminal_worker_error_payload(_reason), do: %{}
 
   @spec reason_id(term()) :: String.t()
   defp reason_id(reason) do

@@ -6,6 +6,7 @@ defmodule OpenSleigh.Agent.CodexTest do
 
   setup do
     old_env = Application.get_env(:open_sleigh, Codex)
+    old_crash_dump_dir = System.get_env("OPEN_SLEIGH_CRASH_DUMP_DIR")
 
     workspace =
       System.tmp_dir!()
@@ -19,6 +20,7 @@ defmodule OpenSleigh.Agent.CodexTest do
 
     on_exit(fn ->
       restore_codex_env(old_env)
+      restore_system_env("OPEN_SLEIGH_CRASH_DUMP_DIR", old_crash_dump_dir)
       File.rm_rf!(workspace)
     end)
 
@@ -49,6 +51,40 @@ defmodule OpenSleigh.Agent.CodexTest do
     assert Enum.any?(reply.events, &(&1.event == :turn_completed))
 
     assert :ok = Codex.close_session(handle)
+  end
+
+  test "sets Erlang crash dump path outside the workspace", ctx do
+    crash_dump_dir =
+      ctx.workspace
+      |> Path.dirname()
+      |> Path.join("crash_dumps")
+
+    System.put_env("OPEN_SLEIGH_CRASH_DUMP_DIR", crash_dump_dir)
+
+    command = "MOCK_CODEX_MODE=record_crash_dump_env elixir #{shell_escape(ctx.script_path)}"
+
+    put_codex_env(
+      command: command,
+      read_timeout_ms: 2_000,
+      turn_timeout_ms: 1_000,
+      stall_timeout_ms: 500
+    )
+
+    session = adapter_session(ctx.workspace)
+
+    assert {:ok, handle} = Codex.start_session(session)
+    assert {:ok, reply} = Codex.send_turn(handle, "Record crash dump env", session)
+    assert reply.status == :completed
+    assert :ok = Codex.close_session(handle)
+
+    dump_path =
+      ctx.workspace
+      |> Path.join("crash_dump_env.txt")
+      |> File.read!()
+
+    assert String.starts_with?(Path.expand(dump_path), Path.expand(crash_dump_dir))
+    refute String.starts_with?(Path.expand(dump_path), Path.expand(ctx.workspace))
+    assert File.dir?(crash_dump_dir)
   end
 
   test "stall detection returns :stall_timeout when no turn event arrives", ctx do
@@ -146,7 +182,10 @@ defmodule OpenSleigh.Agent.CodexTest do
     session = adapter_session(ctx.workspace)
 
     assert {:ok, handle} = Codex.start_session(session)
-    assert {:ok, reply} = Codex.send_turn(handle, "Return the final answer after commentary", session)
+
+    assert {:ok, reply} =
+             Codex.send_turn(handle, "Return the final answer after commentary", session)
+
     assert reply.status == :completed
     assert reply.turn_id == "turn-1"
     assert reply.text == "final answer text"
@@ -202,6 +241,9 @@ defmodule OpenSleigh.Agent.CodexTest do
     Application.put_env(:open_sleigh, Codex, value)
   end
 
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
+
   defp shell_escape(value) do
     "'" <> String.replace(value, "'", "'\"'\"'") <> "'"
   end
@@ -210,7 +252,18 @@ defmodule OpenSleigh.Agent.CodexTest do
     ~S"""
     defmodule MockCodexAppServer do
       def run do
+        maybe_record_crash_dump_env()
         loop(0)
+      end
+
+      defp maybe_record_crash_dump_env do
+        case System.get_env("MOCK_CODEX_MODE") do
+          "record_crash_dump_env" ->
+            File.write!("crash_dump_env.txt", System.get_env("ERL_CRASH_DUMP") || "")
+
+          _other ->
+            :ok
+        end
       end
 
       defp loop(turn_count) do

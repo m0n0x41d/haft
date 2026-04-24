@@ -416,14 +416,31 @@ func TestPrintHarnessRunSummaryIncludesSelectedCommissionAndObservationCommands(
 		"Commissions: using 1 existing runnable commission(s)",
 		"Selected commission: wc-1",
 		"Selected decision: dec-1",
-		"Observe status: haft harness status --tail 20",
+		"Operator stream: live in this terminal",
+		"Stop: Ctrl-C stops the stream and the Open-Sleigh process",
 		"Observe result: haft harness result wc-1",
-		"Observe log: tail -f /tmp/runtime.jsonl",
 		"Workspace: /tmp/workspaces/wc-1",
 		"workspace changes usually appear only after execute starts editing files",
 	} {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("summary output missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
+func TestHarnessRunObservationLinesKeepsCommandsForDetachedRun(t *testing.T) {
+	lines := harnessRunObservationLines(harnessRunOptions{
+		Detach:  true,
+		LogPath: "/tmp/runtime.jsonl",
+	})
+	joined := strings.Join(lines, "\n")
+
+	for _, fragment := range []string{
+		"Observe status: haft harness status --tail 20",
+		"Observe log: tail -f /tmp/runtime.jsonl",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("detached observation output missing %q:\n%s", fragment, joined)
 		}
 	}
 }
@@ -795,6 +812,52 @@ func TestFormatHarnessResultEventsShowsCurrentAttemptOnly(t *testing.T) {
 	}
 }
 
+func TestFormatHarnessResultEventsShowsOutOfScopePaths(t *testing.T) {
+	lines := formatHarnessResultEvents([]map[string]any{
+		{
+			"event":       "phase_blocked",
+			"action":      "complete_or_block",
+			"verdict":     "blocked",
+			"reason":      "mutation_outside_commission_scope",
+			"recorded_at": "2026-04-24T09:57:53Z",
+			"payload": map[string]any{
+				"phase":              "preflight",
+				"out_of_scope_paths": []any{"erl_crash.dump"},
+			},
+		},
+	})
+	joined := strings.Join(lines, "\n")
+
+	if !strings.Contains(joined, "out_of_scope=erl_crash.dump") {
+		t.Fatalf("result output missing out-of-scope paths:\n%s", joined)
+	}
+}
+
+func TestHarnessRuntimeCrashDumpPathExpandsEnvDirectory(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(t.TempDir(), "crash_dumps")
+	relativeRoot, err := filepath.Rel(cwd, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPEN_SLEIGH_CRASH_DUMP_DIR", relativeRoot)
+
+	path := harnessRuntimeCrashDumpPath()
+	if !filepath.IsAbs(path) {
+		t.Fatalf("crash dump path = %s, want absolute", path)
+	}
+	if filepath.Dir(path) != root {
+		t.Fatalf("crash dump dir = %s, want %s", filepath.Dir(path), root)
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("crash dump dir not created: %v", err)
+	}
+}
+
 func TestRecentHarnessLogLinesFiltersToCurrentRun(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
 	status := map[string]any{
@@ -863,6 +926,56 @@ func TestRecentHarnessLogLinesFiltersToCurrentRun(t *testing.T) {
 	}
 }
 
+func TestRecentHarnessEventLinesHumanizesCurrentRun(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
+	status := map[string]any{
+		"metadata": map[string]any{
+			"config_path": "/tmp/current-sleigh.md",
+		},
+		"orchestrator": map[string]any{
+			"running_details": []any{
+				map[string]any{
+					"commission_id": "wc-current",
+				},
+			},
+		},
+	}
+
+	writeHarnessRuntimeEvents(t, logPath, []map[string]any{
+		{
+			"at":            "2026-04-24T05:01:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-current",
+			"metadata":      map[string]any{"config_path": "/tmp/current-sleigh.md"},
+			"data": map[string]any{
+				"phase":        "execute",
+				"session_id":   "session-1",
+				"turn_id":      "turn-1",
+				"status":       "completed",
+				"text_preview": "Implemented the scoped desktop RPC change.",
+			},
+		},
+	})
+
+	lines, err := recentHarnessEventLines(status, logPath, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("event lines leaked raw JSON:\n%s", joined)
+	}
+	for _, fragment := range []string{
+		"2026-04-24T05:01:00Z agent_turn_completed phase=execute status=completed session=session-1 turn=turn-1",
+		"Implemented the scoped desktop RPC change.",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("event lines missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
 func TestRecentHarnessLogLinesMissingFileReturnsEmpty(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "missing-runtime.jsonl")
 
@@ -872,6 +985,57 @@ func TestRecentHarnessLogLinesMissingFileReturnsEmpty(t *testing.T) {
 	}
 	if len(lines) != 0 {
 		t.Fatalf("lines = %#v, want empty", lines)
+	}
+}
+
+func TestPrintHarnessSelectedTailSincePrintsOnlySelectedHumanizedEvents(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
+	writeHarnessRuntimeEvents(t, logPath, []map[string]any{
+		{
+			"at":            "2026-04-24T05:00:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-other",
+			"data": map[string]any{
+				"phase":        "execute",
+				"text_preview": "other commission",
+			},
+		},
+		{
+			"at":            "2026-04-24T05:01:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-selected",
+			"data": map[string]any{
+				"phase":        "execute",
+				"status":       "completed",
+				"text_preview": "selected commission changed only scoped files",
+			},
+		},
+	})
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	offset, printed, err := printHarnessSelectedTailSince(cmd, logPath, []string{"wc-selected"}, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := out.String()
+	if offset != 2 {
+		t.Fatalf("offset = %d, want 2", offset)
+	}
+	if printed != 1 {
+		t.Fatalf("printed = %d, want 1", printed)
+	}
+	if strings.Contains(joined, "other commission") {
+		t.Fatalf("selected tail leaked other commission:\n%s", joined)
+	}
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("selected tail leaked raw JSON:\n%s", joined)
+	}
+	if !strings.Contains(joined, "selected commission changed only scoped files") {
+		t.Fatalf("selected tail missing selected preview:\n%s", joined)
 	}
 }
 
@@ -980,6 +1144,42 @@ func TestApplyHarnessWorkspaceDiffAppliesScopedTrackedDiff(t *testing.T) {
 	}
 	if string(got) != updated {
 		t.Fatalf("applied file = %q, want %q", string(got), updated)
+	}
+}
+
+func TestApplyHarnessWorkspaceDiffAppliesScopedUntrackedFiles(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspace")
+	trackedPath := filepath.Join("internal", "cli", "init.go")
+	newPath := filepath.Join("internal", "cli", "desktop_rpc_handlers_test.go")
+
+	initHarnessApplyRepo(t, projectRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	initHarnessApplyRepo(t, workspaceRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+
+	newContent := "package cli\n\nfunc TestGenerated(t *testing.T) {}\n"
+	if err := os.MkdirAll(filepath.Join(workspaceRoot, filepath.Dir(newPath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, newPath), []byte(newContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{newPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(summary.Files) != 1 || summary.Files[0] != newPath {
+		t.Fatalf("summary files = %#v, want [%s]", summary.Files, newPath)
+	}
+
+	got, err := os.ReadFile(filepath.Join(projectRoot, newPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != newContent {
+		t.Fatalf("applied untracked file = %q, want %q", string(got), newContent)
 	}
 }
 
@@ -1226,6 +1426,7 @@ func overrideHarnessTestFlags() func() {
 	oldHarnessPlanProblems := harnessPlanProblems
 	oldHarnessPlanContext := harnessPlanContext
 	oldHarnessPlanAllActive := harnessPlanAllActive
+	oldHarnessRunDetach := harnessRunDetach
 	oldCommissionRepoRef := commissionFromDecisionRepoRef
 	oldCommissionBaseSHA := commissionFromDecisionBaseSHA
 	oldCommissionTargetBranch := commissionFromDecisionTargetBranch
@@ -1250,6 +1451,7 @@ func overrideHarnessTestFlags() func() {
 	harnessPlanProblems = nil
 	harnessPlanContext = ""
 	harnessPlanAllActive = false
+	harnessRunDetach = false
 	commissionFromDecisionRepoRef = ""
 	commissionFromDecisionBaseSHA = ""
 	commissionFromDecisionTargetBranch = ""
@@ -1275,6 +1477,7 @@ func overrideHarnessTestFlags() func() {
 		harnessPlanProblems = oldHarnessPlanProblems
 		harnessPlanContext = oldHarnessPlanContext
 		harnessPlanAllActive = oldHarnessPlanAllActive
+		harnessRunDetach = oldHarnessRunDetach
 		commissionFromDecisionRepoRef = oldCommissionRepoRef
 		commissionFromDecisionBaseSHA = oldCommissionBaseSHA
 		commissionFromDecisionTargetBranch = oldCommissionTargetBranch

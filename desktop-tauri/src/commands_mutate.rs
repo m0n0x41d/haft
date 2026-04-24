@@ -98,9 +98,8 @@ rpc_fwd!(add_project, "add-project", { path: String });
 rpc_fwd!(init_project, "init-project", { path: String });
 
 // Frontend calls add_project_smart when the path may not yet be a haft
-// project — the CLI detects-or-init's. Reuses the add-project RPC for now;
-// CLI-side heuristic is still TODO (see desktop_rpc_handlers.go).
-rpc_fwd!(add_project_smart, "add-project", { path: String });
+// project — the CLI detects-or-init's.
+rpc_fwd!(add_project_smart, "add-project-smart", { path: String });
 
 // ── Artifact authoring ──
 //

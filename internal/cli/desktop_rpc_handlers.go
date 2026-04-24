@@ -629,6 +629,10 @@ type rpcRegisteredProject struct {
 	ID   string `json:"id"`
 }
 
+type rpcProjectPathInput struct {
+	Path string `json:"path"`
+}
+
 func handleSwitchProject(env *rpcEnv, w io.Writer) error {
 	var input struct {
 		Path string `json:"path"`
@@ -699,34 +703,97 @@ func handleSwitchProject(env *rpcEnv, w io.Writer) error {
 }
 
 func handleAddProject(env *rpcEnv, w io.Writer) error {
-	var input struct {
-		Path string `json:"path"`
+	path, err := rpcReadProjectPath()
+	if err != nil {
+		return err
 	}
+
+	info, err := rpcRegisterExistingProject(path)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, info)
+}
+
+func handleAddProjectSmart(env *rpcEnv, w io.Writer) error {
+	path, err := rpcReadProjectPath()
+	if err != nil {
+		return err
+	}
+
+	hasHaftDir, err := rpcHasHaftDir(path)
+	if err != nil {
+		return err
+	}
+
+	if hasHaftDir {
+		info, err := rpcRegisterExistingProject(path)
+		if err != nil {
+			return err
+		}
+		return writeResult(w, info)
+	}
+
+	info, err := rpcInitializeProject(path)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, info)
+}
+
+func handleInitProject(env *rpcEnv, w io.Writer) error {
+	path, err := rpcReadProjectPath()
+	if err != nil {
+		return err
+	}
+
+	info, err := rpcInitializeProject(path)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, info)
+}
+
+func rpcReadProjectPath() (string, error) {
+	var input rpcProjectPathInput
 	if err := readInput(&input); err != nil {
-		return fmt.Errorf("parse input: %w", err)
+		return "", fmt.Errorf("parse input: %w", err)
 	}
 
 	path := strings.TrimSpace(input.Path)
 	if path == "" {
-		return fmt.Errorf("path is required")
+		return "", fmt.Errorf("path is required")
+	}
+
+	return path, nil
+}
+
+func rpcRegisterExistingProject(path string) (rpcProjectInfo, error) {
+	hasHaftDir, err := rpcHasHaftDir(path)
+	if err != nil {
+		return rpcProjectInfo{}, err
+	}
+	if !hasHaftDir {
+		return rpcProjectInfo{}, fmt.Errorf("no .haft/ directory found in %s", path)
 	}
 
 	haftDir := filepath.Join(path, ".haft")
-	if _, err := os.Stat(haftDir); os.IsNotExist(err) {
-		return fmt.Errorf("no .haft/ directory found in %s", path)
-	}
-
 	cfg, err := project.Load(haftDir)
-	if err != nil || cfg == nil {
-		return fmt.Errorf("load project config: %w", err)
+	if err != nil {
+		return rpcProjectInfo{}, fmt.Errorf("load project config: %w", err)
+	}
+	if cfg == nil {
+		return rpcProjectInfo{}, fmt.Errorf("load project config: missing project.yaml in %s", haftDir)
 	}
 
 	reg, err := rpcLoadRegistry()
 	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("load registry: %w", err)
 	}
 
-	// Add if not already registered
 	found := false
 	for _, p := range reg.Projects {
 		if p.Path == path {
@@ -741,68 +808,55 @@ func handleAddProject(env *rpcEnv, w io.Writer) error {
 			ID:   cfg.ID,
 		})
 		if err := rpcSaveRegistry(reg); err != nil {
-			return fmt.Errorf("save registry: %w", err)
+			return rpcProjectInfo{}, fmt.Errorf("save registry: %w", err)
 		}
 	}
 
-	return writeResult(w, rpcProjectInfo{
+	return rpcProjectInfo{
 		Path: path,
 		Name: cfg.Name,
 		ID:   cfg.ID,
-	})
+	}, nil
 }
 
-func handleInitProject(env *rpcEnv, w io.Writer) error {
-	var input struct {
-		Path string `json:"path"`
-	}
-	if err := readInput(&input); err != nil {
-		return fmt.Errorf("parse input: %w", err)
-	}
-
-	path := strings.TrimSpace(input.Path)
-	if path == "" {
-		return fmt.Errorf("path is required")
-	}
-
+func rpcInitializeProject(path string) (rpcProjectInfo, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("resolve path: %w", err)
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return fmt.Errorf("access path %s: %w", absPath, err)
+		return rpcProjectInfo{}, fmt.Errorf("access path %s: %w", absPath, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("path is not a directory: %s", absPath)
+		return rpcProjectInfo{}, fmt.Errorf("path is not a directory: %s", absPath)
 	}
 
 	haftDir := filepath.Join(absPath, ".haft")
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
-		return fmt.Errorf("create .haft/: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("create .haft/: %w", err)
 	}
 
 	cfg, err := project.Create(haftDir, absPath)
 	if err != nil {
-		return fmt.Errorf("create project config: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("create project config: %w", err)
 	}
 
 	dbPath, err := cfg.DBPath()
 	if err != nil {
-		return fmt.Errorf("resolve DB path: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("resolve DB path: %w", err)
 	}
 
 	database, err := db.NewStore(dbPath)
 	if err != nil {
-		return fmt.Errorf("initialize database: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("initialize database: %w", err)
 	}
 	_ = database.Close()
 
-	// Register in project registry
 	reg, err := rpcLoadRegistry()
 	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
+		return rpcProjectInfo{}, fmt.Errorf("load registry: %w", err)
 	}
 	found := false
 	for _, p := range reg.Projects {
@@ -820,11 +874,26 @@ func handleInitProject(env *rpcEnv, w io.Writer) error {
 		_ = rpcSaveRegistry(reg)
 	}
 
-	return writeResult(w, rpcProjectInfo{
+	return rpcProjectInfo{
 		Path: absPath,
 		Name: cfg.Name,
 		ID:   cfg.ID,
-	})
+	}, nil
+}
+
+func rpcHasHaftDir(path string) (bool, error) {
+	haftDir := filepath.Join(path, ".haft")
+	info, err := os.Stat(haftDir)
+	if err == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf(".haft exists but is not a directory in %s", path)
+		}
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect .haft/ in %s: %w", path, err)
 }
 
 // ── Governance & analysis ───────────────────────────────────────────

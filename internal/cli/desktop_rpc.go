@@ -174,6 +174,7 @@ func init() {
 		// Project management
 		makeRPCCommand("switch-project", "Switch active project", handleSwitchProject),
 		makeRPCCommand("add-project", "Register a project by path", handleAddProject),
+		makeRPCCommand("add-project-smart", "Register or initialize a project by path", handleAddProjectSmart),
 		makeRPCCommand("init-project", "Initialize a new haft project", handleInitProject),
 
 		// Governance & analysis

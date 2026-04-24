@@ -420,6 +420,12 @@ type MCPServer struct {
 	Timeout int               `json:"timeout,omitempty"`
 }
 
+const (
+	claudeProjectRootEnv = "${PWD:-.}"
+	cursorProjectRootEnv = "${workspaceFolder}"
+	codexProjectRootEnv  = "."
+)
+
 func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]interface{}) error {
 	var config MCPConfig
 
@@ -469,7 +475,7 @@ func configureMCPClaude(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
+			"HAFT_PROJECT_ROOT": claudeProjectRootEnv,
 		},
 	})
 }
@@ -478,7 +484,7 @@ func configureMCPCursor(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
+			"HAFT_PROJECT_ROOT": cursorProjectRootEnv,
 		},
 	})
 }
@@ -518,7 +524,7 @@ tool_timeout_sec = 60
 
 [mcp_servers.haft.env]
 HAFT_PROJECT_ROOT = "%s"
-`, binaryPath, projectRoot)
+`, binaryPath, codexProjectRootEnv)
 
 	// Strip all existing haft and quint-code MCP sections
 	existing = removeTomlSections(existing, "mcp_servers.quint-code")

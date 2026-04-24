@@ -74,6 +74,11 @@ The binary is the same — only the MCP config and command/prompt installation l
 
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.
 
+Project-scoped MCP configs are safe to commit for shared repositories: Claude
+Code `.mcp.json`, Cursor `.cursor/mcp.json`, and Codex/Air
+`.codex/config.toml` use portable project-root values instead of your
+machine's absolute checkout path.
+
 Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
 
 ---

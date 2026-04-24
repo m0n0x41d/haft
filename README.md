@@ -265,7 +265,7 @@ The desktop became a real operator surface, the reasoning vocabulary grew semiot
 - **Haft Design System** — typed React primitives (Eyebrow, Button, Badge, Card, Input, StatCard, MonoId, Pill) + ComparisonTable with border-first Pareto grid + DecayWindow progress bar on decision detail
 - **Seven new FPF semiotic patterns** (FRAME-08 / FRAME-09 / CHR-10 / CHR-11 / CHR-12 / X-STATEMENT-TYPE / X-FANOUT-AUDIT) sourced from Levenchuk's seminar, auto-injected into reasoning tool responses
 - **`governance_mode` on DecisionRecord** — file-level vs module-level governance, opt-in, honors FPF X-SCOPE
-- **Random-hex artifact IDs** (`dec-20260420-a3f7c1`) to prevent merge conflicts across branches ([#63](https://github.com/m0n0x41d/haft/issues/63))
+- **Random-hex artifact IDs** (`dec-20260420-a3f7c1d2`) with optional DecisionRecord task slugs (`dec-20260420-task-4-a3f7c1d2`) to prevent merge conflicts while keeping filenames navigable ([#63](https://github.com/m0n0x41d/haft/issues/63), [#66](https://github.com/m0n0x41d/haft/issues/66))
 - **MCP `parity_plan` exposure** for deep-mode comparison ([#62](https://github.com/m0n0x41d/haft/issues/62))
 - **Transport-parity drift detection** + layered architecture boundary tests
 - **`internal/embedding` extraction**; `internal/fpf` is now pure Core

@@ -162,7 +162,7 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 
 // dispatchTool routes a tool call to its handler. Pure dispatch, no hooks.
 // Returns (result, createdArtifactID, err). createdArtifactID is the canonical
-// ID of the artifact created by this call (e.g. "dec-20260418-a3f7c1"); empty
+// ID of the artifact created by this call (e.g. "dec-20260418-a3f7c1d2"); empty
 // string when the action does not create a primary artifact (e.g. read-only
 // queries, mutations of existing artifacts).
 func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, name string, args map[string]any) (string, string, error) {
@@ -235,7 +235,7 @@ func applyCrossProjectRecall(ctx context.Context, result, name, action string, a
 
 // applyCrossProjectIndex writes decision summaries to the global index on
 // decide. The cross-project index is keyed by (project_id, decision_id) where
-// decision_id MUST be the canonical artifact ID (e.g. "dec-20260418-a3f7c1"),
+// decision_id MUST be the canonical artifact ID (e.g. "dec-20260418-a3f7c1d2"),
 // not the user-supplied selected_title — two decisions in one project can
 // legitimately share the same selected option label without colliding.
 func applyCrossProjectIndex(ctx context.Context, name, action string, args map[string]any, createdRef string, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) {
@@ -645,6 +645,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 		if v, ok := args["valid_until"].(string); ok {
 			input.ValidUntil = v
+		}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
 		}
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v

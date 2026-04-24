@@ -552,6 +552,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "string",
 						"description": "(decide) Space-separated synonyms and related terms for search enrichment",
 					},
+					"task_context": map[string]string{
+						"type":        "string",
+						"description": "(decide) Optional task/context text sanitized into the DecisionRecord ID filename",
+					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
 					},

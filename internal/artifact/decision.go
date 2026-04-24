@@ -41,6 +41,7 @@ type DecideInput struct {
 	WeakestLink         string            `json:"weakest_link,omitempty"`
 	ValidUntil          string            `json:"valid_until,omitempty"`
 	Context             string            `json:"context,omitempty"`
+	TaskContext         string            `json:"task_context,omitempty"`
 	Mode                string            `json:"mode,omitempty"`
 	AffectedFiles       []string          `json:"affected_files,omitempty"`
 	Predictions         []PredictionInput `json:"predictions,omitempty"`
@@ -190,6 +191,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.WeakestLink = strings.TrimSpace(input.WeakestLink)
 	input.ValidUntil = strings.TrimSpace(input.ValidUntil)
 	input.Context = strings.TrimSpace(input.Context)
+	input.TaskContext = strings.TrimSpace(input.TaskContext)
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
 
@@ -348,6 +350,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		SelectionPolicy:      input.SelectionPolicy,
 		CounterArgument:      input.CounterArgument,
 		WeakestLink:          input.WeakestLink,
+		TaskContext:          sanitizeIDSlug(input.TaskContext),
 		WhyNotOthers:         input.WhyNotOthers,
 		Claims:               newDecisionClaims(input.Predictions),
 		PreConditions:        input.PreConditions,
@@ -693,7 +696,7 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
 	// lookup. The seq parameter is preserved on GenerateID for call-site
 	// backward compat — pass 0.
-	id := GenerateID(KindDecisionRecord, 0)
+	id := GenerateIDWithTaskContext(KindDecisionRecord, 0, input.TaskContext)
 	now := time.Now().UTC()
 
 	// Pure: merge refs

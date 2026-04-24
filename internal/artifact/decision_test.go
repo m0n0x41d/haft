@@ -2,7 +2,9 @@ package artifact
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -187,6 +189,55 @@ func TestDecide_FullDRR(t *testing.T) {
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
 		t.Errorf("expected 2 affected files, got %d", len(files))
+	}
+}
+
+func TestDecide_TaskContextSlugInIDAndFilename(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	a, filePath, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use gRPC",
+		WhySelected:   "Task-scoped decisions should remain navigable without weakening random suffix collision safety.",
+		TaskContext:   "Task #4: API/CLI cleanup",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
+	if !pattern.MatchString(a.Meta.ID) {
+		t.Fatalf("decision ID = %q, want task-context slug before 8-hex suffix", a.Meta.ID)
+	}
+
+	filename := filepath.Base(filePath)
+	if filename != a.Meta.ID+".md" {
+		t.Fatalf("filename = %q, want %q", filename, a.Meta.ID+".md")
+	}
+
+	fields := a.UnmarshalDecisionFields()
+	if fields.TaskContext != "task-4-api-cli-cleanup" {
+		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
+	}
+}
+
+func TestDecide_ContextDoesNotChangeDefaultIDFormat(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	a, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "Use gRPC",
+		WhySelected:   "Existing context metadata must remain separate from filename task context.",
+		Context:       "transport",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pattern := regexp.MustCompile(`^dec-\d{8}-[0-9a-f]{8}$`)
+	if !pattern.MatchString(a.Meta.ID) {
+		t.Fatalf("decision ID = %q, want default format when task_context is omitted", a.Meta.ID)
 	}
 }
 

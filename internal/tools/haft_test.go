@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1698,6 +1699,7 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 
 	for _, key := range []string{
 		"context",
+		"task_context",
 		"problem_refs",
 		"pre_conditions",
 		"evidence_requirements",
@@ -1707,6 +1709,41 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 		if _, ok := properties[key]; !ok {
 			t.Fatalf("schema missing %q", key)
 		}
+	}
+}
+
+func TestHaftDecisionTool_DecideUsesTaskContextInArtifactID(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Tool-mode decide should pass task_context into the DecisionRecord ID.",
+		"task_context":   "Task #4: API/CLI cleanup",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected decision artifact metadata")
+	}
+
+	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
+	if !pattern.MatchString(result.Meta.ArtifactRef) {
+		t.Fatalf("artifact ref = %q, want sanitized task_context slug before 8-hex suffix", result.Meta.ArtifactRef)
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TaskContext != "task-4-api-cli-cleanup" {
+		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
 	}
 }
 

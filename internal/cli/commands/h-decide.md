@@ -22,6 +22,7 @@ Use `haft_decision` tool with `action="decide"` and:
 - `evidence_requirements`: explicit evidence the implementation/review loop must gather
 - `refresh_triggers`: concrete future conditions that should trigger re-evaluation
 - `search_keywords`: compact retrieval aliases for later recall
+- `task_context`: optional task/context text for the DecisionRecord filename slug; sanitized before it is inserted into the ID
 - `predictions`: falsifiable claims to verify later; each item MUST include `claim`, `observable`, and `threshold`
 - `weakest_link`: selected variant weakest link; what most plausibly breaks this choice (required)
 - `rollback.triggers`: at least one concrete trigger that would force reversal (required)

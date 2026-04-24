@@ -181,6 +181,20 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	}
 }
 
+func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	taskContext, ok := decisionSchema["task_context"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("task_context schema missing or wrong type: %#v", decisionSchema["task_context"])
+	}
+
+	description, _ := taskContext["description"].(string)
+	if !strings.Contains(description, "DecisionRecord ID filename") {
+		t.Fatalf("unexpected task_context description: %q", description)
+	}
+}
+
 func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T) {
 	decisionSchema := mustListToolProperties(t, "haft_decision")
 

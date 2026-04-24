@@ -1,85 +1,101 @@
 # Functional Architecture
 
-> Four modules, layered. Each depends only on the layer below.
+> Layered enabling-system architecture for Haft as a project harnessability
+> system. Each layer depends only on the layer directly below it.
 
 ## Module Hierarchy
 
 ```
 ┌─────────────────────────────────────────────┐
 │               SURFACES                       │
-│  Desktop (Wails)  │  MCP Plugin  │  CLI     │
-└────────┬──────────┴──────┬───────┴────┬─────┘
-         │                 │            │
-         └────────┬────────┴────────┬───┘
-                  ▼                 ▼
+│ Desktop Cockpit │ MCP Plugin │ CLI │ Runtime │
+└────────────────────┬────────────────────────┘
+                     ▼
 ┌─────────────────────────────────────────────┐
 │              GOVERNOR                        │
-│  Background scanner, drift, stale refresh,  │
-│  invariant verification, problem factory     │
+│ spec freshness, drift, stale refresh,        │
+│ invariant verification, problem factory      │
 └────────────────────┬────────────────────────┘
                      ▼
 ┌─────────────────────────────────────────────┐
 │                FLOW                          │
-│  Task runner, worktree lifecycle, agent      │
-│  spawning, invariant injection, verification │
+│ onboarding, spec planning, commissioning,    │
+│ worktree lifecycle, agent spawning, verify   │
 └────────────────────┬────────────────────────┘
                      ▼
 ┌─────────────────────────────────────────────┐
-│                CORE                          │
-│                                             │
-│  Artifact Graph  │  Knowledge  │  Codebase  │
-│  (problems,      │  Graph      │  Analysis  │
-│   portfolios,    │  (decision→ │  (modules, │
-│   decisions,     │   code via  │   imports,  │
-│   evidence,      │   deps)     │   symbols)  │
-│   notes)         │             │             │
-│                  │             │             │
-│  FPF Spec Index  │  Evidence Engine          │
-│  (~800 sections, │  (R_eff, WLNK, CL,       │
-│   route-aware)   │   decay, valid_until)     │
-└─────────────────────────────────────────────┘
+│             REASONING CORE                   │
+│ ProblemCard │ SolutionPortfolio │            │
+│ DecisionRecord │ EvidencePack │ Note         │
+│ R_eff │ Pareto │ Refresh │ FPF index          │
+└────────────────────┬────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────┐
+│          SPECIFICATION CORE                  │
+│ TargetSystemSpec │ EnablingSystemSpec        │
+│ TermMap │ SpecSection │ SpecCoverage          │
+│ SemanticArchitecture │ SpecCheck              │
+└────────────────────┬────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────┐
+│            CODEBASE CORE                     │
+│ module detection │ imports │ symbols          │
+│ file/module/function refs │ test refs          │
+└────────────────────┬────────────────────────┘
                      ▼
 ┌─────────────────────────────────────────────┐
 │             PERSISTENCE                      │
-│  SQLite (per project) │  .haft/ (markdown)  │
-│  ~/.haft/ (global)    │  fpf.db (embedded)  │
+│ SQLite (per project) │ .haft/ markdown        │
+│ ~/.haft/ global │ fpf.db embedded             │
 └─────────────────────────────────────────────┘
 ```
 
 ## Layer Rules
 
-1. **Core depends on nothing above.** Pure domain logic + store interface.
-2. **Flow depends on Core.** Uses artifact store, knowledge graph, codebase analysis.
-3. **Governor depends on Core + Flow.** Scans artifacts, checks invariants, spawns verification tasks.
-4. **Surfaces depend on everything below.** Desktop/MCP/CLI call through Go bindings.
-5. **No skip-level access.** Desktop does NOT query SQLite directly — goes through Core.
-6. **Side effects only at Flow and above.** Core is pure queries + mutations through Store interface.
+1. **Codebase Core depends on Persistence only.** It normalizes files/modules/tests/symbols into references.
+2. **Specification Core depends on Codebase Core.** It parses specs, validates terms, and computes spec coverage edges.
+3. **Reasoning Core depends on Specification Core.** Decisions may reference spec sections; evidence may satisfy spec requirements.
+4. **Flow depends on Reasoning Core.** It runs onboarding, spec planning, commissioning, runtime control, and verification.
+5. **Governor depends on Flow.** It scans specs, artifacts, code, evidence, and runtime state for drift/staleness.
+6. **Surfaces depend on Governor/Flow only.** Desktop/MCP/CLI do not query SQLite or raw files directly.
+7. **Side effects only at Flow and above.** Core layers expose pure transformations plus explicit store interfaces.
 
-## Data Flow: Think → Run → Govern
+## Data Flow: Specify → Think → Run → Govern
 
 ```
+SPECIFY (human + onboarding agent)
+  │
+  ├─ Initialize .haft and host-agent MCP config
+  ├─ Draft TargetSystemSpec
+  ├─ Draft EnablingSystemSpec
+  ├─ Validate TermMap and SpecSections
+  └─ Compute SpecCoverage
+       │
+       ▼
 THINK (human via desktop, or agent via MCP)
   │
-  ├─ Frame problem (signal, constraints, acceptance)
+  ├─ Frame problem from spec gap, drift, or human signal
   ├─ Explore variants (3+ genuinely distinct)
   ├─ [Probe-or-commit gate]
   ├─ Compare under parity (Pareto front computed)
-  └─ Decide (invariants, claims, rollback, valid_until)
+  └─ Decide (spec refs, invariants, claims, rollback, valid_until)
        │
        ▼
 RUN (agent via Flow layer)
   │
-  ├─ Create worktree
+  ├─ Create WorkCommission from DecisionRecord
+  ├─ Preflight spec/decision/scope freshness
+  ├─ Create isolated workspace
   ├─ Inject invariants from knowledge graph
   ├─ Spawn agent (Claude Code / Codex / custom)
   ├─ Agent executes with full reasoning context
   ├─ Post-execution: verify invariants
-  └─ Baseline affected files
+  └─ Attach evidence and update SpecCoverage
        │
        ▼
 GOVERN (background via Governor layer)
   │
-  ├─ Detect file drift (hash mismatch vs baseline)
+  ├─ Detect spec drift and file drift
   ├─ Verify invariants against dependency graph
   ├─ Check evidence freshness (valid_until countdown)
   ├─ Compute impact propagation (transitive dependencies)
@@ -97,9 +113,11 @@ cmd/haft/main.go               CLI entry point
 internal/artifact/              CORE: artifact store, types, refresh, drift
 internal/graph/                 CORE: knowledge graph queries, impact, verify
 internal/codebase/              CORE: module detection, imports, symbols, coverage
+internal/spec/                  CORE: spec parser/checker, term map, spec coverage (planned)
 internal/fpf/                   CORE: FPF spec index and search
 internal/reff/                  CORE: R_eff computation, evidence scoring
 internal/cli/serve.go           MCP: tool dispatch, schema, cross-project recall
+internal/cli/spec.go            CLI: spec check/plan/onboard commands (planned)
 internal/cli/agent.go           FLOW: standalone agent launcher
 internal/cli/sync.go            FLOW: team sync (.haft/*.md → SQLite)
 internal/agentloop/             FLOW: ReAct coordinator (standalone mode)

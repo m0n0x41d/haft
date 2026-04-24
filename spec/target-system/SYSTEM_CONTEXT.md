@@ -4,7 +4,7 @@
 
 ## What needs to change in the environment
 
-Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. These agents generate solutions fast. The bottleneck shifted from "write the code" to "know what to build and why." Four things are broken:
+Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. These agents generate solutions fast. The bottleneck shifted from "write the code" to "know what to build and why." Five things are broken:
 
 1. **Decisions evaporate.** Agent recommends X in a chat session. Two weeks later nobody can answer "what did we decide about auth and why?" The rationale is buried in a conversation that no one will search.
 
@@ -12,14 +12,17 @@ Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. T
 
 3. **Evidence rots silently.** A decision made when traffic was 100 RPS is still governing the system at 10K RPS. Nobody tracks when assumptions expire.
 
-4. **Past experience doesn't compound.** Every project starts from zero, even for the same engineer. Decisions from one project never inform another.
+4. **Projects are not harness-ready.** Runner-style systems assume the repository already has clear specs, term maps, boundaries, test contracts, and execution policy. Most real repositories do not. Agents can run, but the project is not yet admissible for harness engineering.
+
+5. **Past experience doesn't compound.** Every project starts from zero, even for the same engineer. Decisions from one project never inform another.
 
 ## Method — how we change the environment
 
-A **local-first engineering governor** with two coupled methods:
+A **local-first project harnessability system** with three coupled methods:
 
-1. a reasoning runtime any AI agent can plug into (`haft serve` / MCP),
-2. a commissioned execution runtime (`haft harness`, currently implemented by
+1. a specification/onboarding runtime that turns a repository into a harnessable project,
+2. a reasoning runtime any AI agent can plug into (`haft serve` / MCP),
+3. a commissioned execution runtime (`haft harness`, currently implemented by
    the Open-Sleigh subsystem).
 
 Together they add engineering discipline:
@@ -33,19 +36,29 @@ Together they add engineering discipline:
 - Long-running, scope-bounded execution with preflight, gates, and evidence
 - Drift detection and staleness scanning after code ships
 - Cross-project recall with context-transfer penalties
+- Parseable target-system and enabling-system specifications
+- Spec coverage from specification sections to decisions, code, tests, commissions, and evidence
+- Term-map and semantic-architecture validation before execution scaling
 
-The discipline comes from FPF (First Principles Framework). Users never see FPF. They see 5 engineering modes: **Understand, Explore, Choose, Execute, Verify** — plus **Note** for quick captures.
+The discipline comes from FPF (First Principles Framework). Users do not need
+to study FPF to operate Haft, but serious users may see the value explained in
+product language: formal specs, term maps, target/enabling split, evidence,
+and freshness. The everyday mode names remain **Understand, Explore, Choose,
+Execute, Verify** — plus **Note** for quick captures.
 
 ## Role of the target system
 
-**Haft = engineering governor and commissioned execution system for AI-assisted software delivery.**
+**Haft = project harnessability cockpit and commissioned execution system for AI-assisted software delivery.**
 
-One-liner: the system that makes engineering decisions explicit, comparable,
-commissionable, executable, and verifiable.
+One-liner: the system that makes a repository harnessable by building formal
+project specifications, compiling them into decisions and commissions, and
+closing the loop with runtime evidence.
 Tagline: keeps the coder honest.
 
 What it IS:
 - Reasoning persistence layer (decisions survive sessions)
+- Project onboarding system (turns existing or greenfield repos into Haft projects)
+- Specification harness (TargetSystemSpec, EnablingSystemSpec, TermMap, SpecCoverage)
 - Comparison discipline enforcer (Pareto, not recommendation essays)
 - Evidence lifecycle manager (freshness, decay, drift)
 - Governance governor (invariant verification, staleness alerts)
@@ -60,10 +73,42 @@ What it IS:
 What it is NOT:
 - Not a coding agent (doesn't compete with Claude Code on editing files)
 - Not a pattern browser (doesn't expose FPF as a catalog)
-- Not a documentation generator (persists reasoning artifacts, not specs)
+- Not a generic documentation generator (specs are parseable authority carriers
+  that feed decisions, commissions, and evidence)
 - Not a project management tool (no sprints, no Gantt charts; tracker
   projections are derived coordination surfaces)
 - Not a general autonomous agent (no personal assistant, no omnichannel)
+
+## Project harnessability layer
+
+Haft's primary product promise is not "run agents on tickets". Its primary
+promise is:
+
+```text
+Make this project ready for rigorous AI-assisted engineering.
+```
+
+That readiness requires a **ProjectSpecificationSet**:
+
+```text
+TargetSystemSpec
+  -> EnablingSystemSpec
+  -> TermMap
+  -> SpecCoverage
+  -> DecisionRecords
+  -> WorkCommissions
+  -> RuntimeRuns
+  -> Evidence
+```
+
+The TargetSystemSpec answers what must change in the target system's
+environment, by what method, and what role the target system plays. The
+EnablingSystemSpec answers how the repository, tests, agents, CI, hooks,
+runtime, and review process produce and maintain that target system.
+
+Large formal specs are intentional. They are the price of admissible harness
+engineering. The UX must make that depth navigable and valuable; it must not
+pretend the depth is unnecessary.
 
 ## Execution subsystem
 
@@ -88,6 +133,7 @@ its own process boundary.
 The visual cockpit where the engineer lives during reasoning work.
 
 - See: problem board, decision health, evidence quality, coverage, drift
+- Specify: build target/enabling specs, term maps, and spec coverage
 - Think: frame problems, explore variants, compare on Pareto front, decide
 - Act: create commissions, start/stop harness runs, verify claims, create PRs from decisions
 - Govern: dashboard with findings, stale alerts, invariant violations
@@ -98,7 +144,7 @@ Technology: Wails (Go + native WebView). Single binary. Local-first.
 
 How AI agents access the reasoning kernel during their coding work.
 
-- 6 reasoning tools: problem, solution, decision, query, refresh, note
+- 7 reasoning tools: problem, solution, decision, commission, query, refresh, note
 - Commissioning tools for bounded execution work
 - Stable API contract: tool names, required params, return shapes don't break
 - Any MCP-compatible host: Claude Code, Codex, Cursor, Gemini CLI, Air
@@ -144,8 +190,8 @@ Haft lives inside the software engineering delivery system:
 │       │           ┌────────────────────┐     │   │
 │       │           │       HAFT         │     │   │
 │       └──────────→│                    │←────┘   │
-│                   │  Think → Run →     │         │
-│                   │         Govern     │         │
+│                   │  Specify → Think → │         │
+│                   │  Run → Govern      │         │
 │                   └────────────────────┘         │
 │                        │                         │
 │                   ┌────┴────┐                    │
@@ -161,10 +207,10 @@ Haft lives inside the software engineering delivery system:
 
 | Role | Who | What they need from Haft |
 |------|-----|-------------------------|
-| **Primary user** | Engineer using AI agent daily | Decisions that survive, honest comparisons, "what did we decide and why?" |
+| **Primary user** | Engineer using AI agent daily | A repo made harnessable: formal specs, decisions that survive, honest comparisons, evidence-backed execution |
 | **Host agent** | Claude Code, Codex, any MCP client | Clean tool interface, fast responses, no interference with coding workflow |
 | **Solo engineer** | Working alone across multiple projects | Cross-project recall, accumulated judgment, local-first |
-| **Tech lead** | Responsible for architectural consistency | Decision audit trail, staleness alerts, drift detection, coverage |
+| **Tech lead** | Responsible for architectural consistency | Target/enabling spec coverage, decision audit trail, staleness alerts, drift detection |
 | **External observer** | Manager, analyst, lead, or teammate outside Haft | Plain-language status in Linear/Jira/GitHub, with links back to Haft artifacts |
 | **CI/CD pipeline** | Automated checks | `haft check` — verify decisions are fresh and evidence is current |
 | **PR reviewer** | Reading diffs | `.haft/decisions/*.md` in the diff — rationale visible alongside code |
@@ -182,10 +228,11 @@ Haft lives inside the software engineering delivery system:
 
 1. **Local-first.** Works without any server or cloud service.
 2. **Solo-first.** Valuable for one engineer before needing teams.
-3. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
-4. **Plugin-compatible.** MCP plugin is the highest-reach integration channel.
-5. **FPF inside.** Users never need to learn FPF terminology. 5 words + Note.
-6. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and
+3. **Spec-first.** Formal target/enabling specs are the entry point for serious harness work.
+4. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
+5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel.
+6. **FPF inside.** Users should not need to study FPF terminology, but the product may explain why formal specs, term maps, and target/enabling split matter.
+7. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and
    installs or operates the harness runtime.
 
 ## Enabling system (what builds Haft)
@@ -194,7 +241,7 @@ The enabling system is NOT the runtime. It's the "third factory":
 
 - SoTA harvesting (Symphony, Zenflow, Hermes, Air — what patterns to adopt)
 - Parity benchmarks (seeded corpus, catch rate, false positive rate)
-- Workflow R&D (how to improve Think → Run → Govern cycle)
+- Workflow R&D (how to improve Specify → Think → Run → Govern cycle)
 - FPF formalization (which of 214 patterns need L2/L3 enforcement)
 - Semiotics review (term drift, authority confusion, gate/evidence mixing)
 

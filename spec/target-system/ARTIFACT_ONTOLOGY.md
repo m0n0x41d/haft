@@ -6,6 +6,9 @@
 
 | Kind | Created by | Purpose | Lifecycle |
 |------|-----------|---------|-----------|
+| **ProjectSpecificationSet** | Onboarding flow + human principal | Governing parseable spec set for target/enabling systems, term map, workflow policy, and coverage | Draft → Active → Stale → Superseded/Deprecated |
+| **SpecSection** | Onboarding flow, spec edit, or sync | Stable-id unit inside TargetSystemSpec or EnablingSystemSpec | Draft → Active → Stale → Superseded/Deprecated |
+| **SpecCoverageEdge** | Spec parser, decision tools, commission tools, evidence tools | Link from spec sections to reasoning artifacts, code, tests, runtime, and evidence | Active → Stale/Superseded |
 | **ProblemCard** | Understand mode | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
 | **SolutionPortfolio** | Explore mode | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
 | **DecisionRecord** | Execute mode | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
@@ -84,6 +87,30 @@ Both dimensions are **view concerns** — shown in `/h-status`, desktop dashboar
 ## Artifact Relationships (DAG)
 
 ```
+ProjectSpecificationSet
+    │
+    ├──→ TargetSystemSpec
+    │         └──→ SpecSection*
+    │
+    ├──→ EnablingSystemSpec
+    │         └──→ SpecSection*
+    │
+    ├──→ TermMap
+    │
+    └──→ SpecCoverageEdge*
+              │
+              ├──→ ProblemCard
+              ├──→ DecisionRecord
+              ├──→ WorkCommission
+              ├──→ RuntimeRun
+              ├──→ EvidencePack
+              ├──→ Code surface (file/module/function)
+              └──→ Test surface
+```
+
+Reasoning artifacts remain a separate graph, but may be linked to spec sections:
+
+```
 ProblemCard
     │
     ├── characterization (dimensions on the ProblemCard itself)
@@ -108,6 +135,35 @@ ProblemCard
 
 Notes are standalone — linked by semantic overlap detection, not explicit refs.
 RefreshReports reference the artifact they acted on.
+
+## Spec → Decision → Evidence Mapping
+
+```
+SpecSection
+    │
+    ├──→ ProblemCard (gap, contradiction, or change request)
+    │         └──→ SolutionPortfolio
+    │                   └──→ DecisionRecord
+    │                             ├──→ WorkCommission
+    │                             │         └──→ RuntimeRun
+    │                             │                   └──→ EvidencePack
+    │                             └──→ EvidencePack (non-runtime verification)
+    │
+    ├──→ Code surface (file/module/function)
+    └──→ Test surface
+```
+
+Rules:
+
+- A DecisionRecord should reference the SpecSections it governs when the
+  project has an active ProjectSpecificationSet.
+- A WorkCommission created from a spec-linked DecisionRecord inherits those
+  section refs into its snapshot.
+- Evidence may satisfy a DecisionRecord claim, a WorkCommission requirement, or
+  a SpecSection evidence requirement. The carrier must state which claim it
+  supports.
+- SpecCoverage state is derived from these links and evidence freshness. It is
+  never a manually edited status field.
 
 ## Artifact → Code Mapping (Knowledge Graph)
 

@@ -4,6 +4,30 @@
 >
 > Rule: if it's not in v6, don't model it in detail. Don't build it. Don't test it.
 
+## Strategic Product Pivot
+
+The product center has moved from "decision governance plus task execution" to
+**project harnessability**.
+
+Haft must not merely run agents on a repository. Haft must make the repository
+ready for rigorous AI-assisted engineering:
+
+```text
+Add project
+  -> Init .haft and host-agent MCP config
+  -> Onboard TargetSystemSpec
+  -> Onboard EnablingSystemSpec
+  -> Validate TermMap and SpecCoverage
+  -> Create Decisions from spec sections
+  -> Create WorkCommissions from decisions
+  -> Run harness runtime
+  -> Attach Evidence and update SpecCoverage
+```
+
+Large formal specs are not deferred research. They are the primary harness
+material. The implementation must be staged, but the target product model is
+spec-first.
+
 ## v6.0 — Ship (current release)
 
 Everything below is built, tested, and being merged to main.
@@ -91,24 +115,58 @@ Focus: one proved execution loop. BDD scenarios in `spec/target-system/EXECUTION
 - [ ] RefreshReport recorded
 
 ### Deferred to v7 (per 5.4 review)
+- Full project harnessability onboarding
+- Spec parser/checker and SpecCoverage graph
 - Automation triggers (problem factory — don't mix with execution)
+- Broad autonomous execution over many commissions
 - DecisionRecord→WorkCommission→RuntimeRun pipeline with auto-advance (scaling factory)
-- Deep onboard as automation input
 
 **Terminology:** "problem" = ProblemCard only. Dashboard page = "Dashboard", not "Problem Board".
 
-## v7.0 — Desktop Loop MVP (days 61-90)
+## v7.0 — Project Harnessability MVP (next major slice)
 
-Focus: one golden path, not a broad feature wave.
+Focus: one golden path that proves Haft can make a real project harnessable,
+not merely run an agent task.
 
 Ship exactly one vertical slice:
-- [ ] **Decision → Implement → Verify → Baseline → PR draft/export**
-- [ ] If verification fails → reopen/create ProblemCard (not straight to PR)
-- [ ] PR output is local-first: draft body + branch compare, not deep provider integration
+- [ ] Add existing project from Desktop and detect readiness (`ready`, `needs_init`, `needs_onboard`, `missing`)
+- [ ] `haft init` / Desktop init creates `.haft/`, workflow policy, and host-agent MCP config
+- [ ] Onboarding agent drafts `TargetSystemSpec` with stable SpecSection ids
+- [ ] Onboarding agent drafts `EnablingSystemSpec` only after target spec passes structural validation
+- [ ] `haft spec check` validates required sections, term map, statement types, and target/enabling split
+- [ ] `haft spec plan` proposes DecisionRecord drafts linked to spec sections
+- [ ] Create one WorkCommission from a spec-linked decision
+- [ ] Harness runtime executes that commission and writes evidence
+- [ ] SpecCoverage updates the relevant section from `commissioned` to `verified`
 
-**NOT in v7:** GitHub/Linear as primary intake, research-before-code,
-process metrics, broad autonomous agents. Optional ExternalProjection design is
-allowed, but trackers remain carriers, not sources of truth.
+**NOT in v7:** GitHub/Linear as primary intake, process metrics, broad
+autonomous campaigns, perfect semantic validation, function-level coverage, or
+manager dashboards. Optional ExternalProjection design is allowed, but trackers
+remain carriers, not sources of truth.
+
+## v7.1 — Desktop Cockpit for Spec-First Work
+
+Focus: make the deep spec workflow operationally usable.
+
+- [ ] Project readiness panel: init/spec/coverage/runtime state
+- [ ] Target spec workspace: section tree, missing required sections, term gaps
+- [ ] Enabling spec workspace: repo architecture, tests, agent policy, runtime policy
+- [ ] Spec coverage view: uncovered/reasoned/commissioned/verified/stale
+- [ ] Decision planning view: accept/merge/split/discard spec-derived decision drafts
+- [ ] Runtime cockpit: runnable/running/blocked/completed commissions, evidence, apply/cancel/requeue
+- [ ] Long-lived conversations bound to project/spec/decision context, not terminal one-shot tasks
+
+## v7.2 — Spec Enforcement Hardening
+
+Focus: make formal specs executable enough to justify autonomy.
+
+- [ ] Strict markdown parser for `spec-section` YAML blocks
+- [ ] TermMap parser and ambiguous-term checker
+- [ ] SpecSection revision/hash snapshots
+- [ ] SpecCoverage graph persisted as edges, derived as view state
+- [ ] Preflight checks spec section revisions for spec-linked commissions
+- [ ] Behavior/interface/spec test links as evidence carriers
+- [ ] `haft check` includes spec readiness and stale section checks
 
 ## vNext — Haft Harness Runtime (Open-Sleigh subsystem)
 
@@ -167,7 +225,7 @@ Things we know about but explicitly defer:
 | Feature | Why deferred |
 |---------|-------------|
 | Server mode (PostgreSQL) | Needs real multi-user demand signal. Solo/team-via-git is sufficient now. |
-| Formal spec (Quint/TLA+) | Research project. No validated use case yet. |
+| Formal methods spec (Quint/TLA+) | Different from Haft's parseable project specs. Useful later for selected high-risk modules, not the default carrier. |
 | FSRS spaced repetition for reviews | Needs server mode. |
 | Full autonomy budgets (FPF E.16) | Redundant with host agent permissions for now. |
 | Web UI | Desktop app is the visual surface. No browser version. |

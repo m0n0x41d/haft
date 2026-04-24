@@ -64,10 +64,17 @@ semantics are not provisional.
 Hard rules:
 
 - Open-Sleigh cannot create, approve, or refresh a WorkCommission on its own.
+- Open-Sleigh cannot create, approve, or revise TargetSystemSpec,
+  EnablingSystemSpec, TermMap, or SpecCoverage objects. It may read the
+  spec-linked context carried by a WorkCommission and may write RuntimeRun /
+  PhaseOutcome / Evidence records back to Haft.
 - `claim_for_preflight` grants only Preflight. Execute requires
   `start_after_preflight`.
 - Scope is an authority boundary. Open-Sleigh must enforce the returned Scope
   before mutating files and must report terminal diff validation.
+- SpecSection refs and revision hashes in the commission snapshot are part of
+  the freshness boundary. A spec-linked commission whose section changed must
+  block or re-preflight before Execute.
 - External tracker publish failure does not make a RuntimeRun invalid. For
   `external_required`, Haft records ProjectionDebt and withholds external
   closed status until the debt resolves.

@@ -60,12 +60,14 @@ supervision is repetitive toil.
   Execute → Measure. Each phase has a scoped prompt, a scoped toolset, typed
   gates (structural / semantic / human), and a typed artifact handed
   forward to Haft as evidence.
-- Framing and choice produced upstream by the human (via Haft + `/h-reason`)
-  enter Open-Sleigh as a linked `WorkCommission`. Open-Sleigh **verifies** the
-  commission, its ProblemCard, and its DecisionRecord are present, fresh, and
-  not self-authored by Open-Sleigh; it does not re-derive framing or decide
-  that stale work is still admissible. A commission without a valid upstream
-  frame/decision fail-fasts at Preflight/Frame and never enters Execute.
+- Specification, framing, and choice produced upstream by the human (via Haft
+  onboarding + `/h-reason`) enter Open-Sleigh as a linked `WorkCommission`.
+  Open-Sleigh **verifies** the commission, its SpecSection refs (when present),
+  ProblemCard, and DecisionRecord are present, fresh, and not self-authored by
+  Open-Sleigh; it does not author target/enabling specs, re-derive framing, or
+  decide that stale work is still admissible. A commission without a valid
+  upstream spec/frame/decision fail-fasts at Preflight/Frame and never enters
+  Execute.
 - Every artifact carries `config_hash` + `valid_until` +
   `authoring_role`. Provenance is structural, not a discipline.
 - Human oversight is **structurally targeted**: HumanGate fires only on

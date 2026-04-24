@@ -4,7 +4,10 @@
 
 **True harness engineering for AI-assisted software delivery.**
 
-Your agents write code fast. Nobody checks if the decisions behind that code are any good — or still valid a month later. Haft does.
+Your agents write code fast. Most repositories are not ready for serious
+harness engineering: the target system is underspecified, the enabling system
+is implicit, term maps are missing, and runtime evidence is detached from the
+spec. Haft makes the project harnessable before it scales execution.
 
 ---
 
@@ -12,9 +15,12 @@ Your agents write code fast. Nobody checks if the decisions behind that code are
 
 Haft is the engineering governor that sits between your intentions and your agents' execution. It enforces the discipline that separates "we shipped fast" from "we shipped right": frame the problem before solving it, compare options under parity, record decisions as falsifiable contracts, and know the moment assumptions go stale.
 
-**Think → Run → Govern.**
+**Specify → Think → Run → Govern.**
 
-Not a coding agent. Not a documentation tool. The handle between the tool and the hand — the part that turns raw capability into directed engineering work.
+Not a coding agent. Not a generic documentation tool. The handle between the
+tool and the hand — the part that turns raw capability into formal
+specification, governed decisions, bounded commissions, and evidence-backed
+engineering work.
 
 ### Two primary surfaces
 
@@ -79,7 +85,10 @@ Code `.mcp.json`, Cursor `.cursor/mcp.json`, and Codex/Air
 `.codex/config.toml` use portable project-root values instead of your
 machine's absolute checkout path.
 
-Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
+Existing project? Run `/h-onboard` after init. The target direction is deeper
+than codebase summarization: onboarding should build a parseable target-system
+spec, enabling-system spec, term map, and spec coverage graph before broad
+harness execution.
 
 ---
 
@@ -275,9 +284,14 @@ The desktop became a real operator surface, the reasoning vocabulary grew semiot
 - **`internal/embedding` extraction**; `internal/fpf` is now pure Core
 - **`Valid-until` self-application** on FPF pattern files with a failing test when content ages past six months
 
-### v7 — Desktop Loop MVP
+### v7 — Project Harnessability MVP
 
-One proved cycle: **Decision → Implement → Verify → Baseline → PR draft**. Verification failure → reopen as ProblemCard.
+One proved cycle:
+
+**Add project → Init → Target spec → Enabling spec → Spec check → Decision → WorkCommission → RuntimeRun → Evidence → SpecCoverage.**
+
+The goal is not a better task runner. The goal is to turn an arbitrary repo
+into a harnessable engineering system.
 
 ### v8 — Governor Signals
 

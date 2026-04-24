@@ -5,15 +5,16 @@
 
 ## Commissioned Execution Model
 
-Direct `DecisionRecord -> agent` execution is the v6.2 local loop. The
-Haft target model inserts a deliberate work authorization layer:
+Direct `DecisionRecord -> agent` execution is the legacy/local loop. The
+Haft target model inserts two deliberate boundaries:
 
 ```
-DecisionRecord -> WorkCommission -> Preflight -> RuntimeRun -> Evidence
+SpecSection -> DecisionRecord -> WorkCommission -> Preflight -> RuntimeRun -> Evidence
 ```
 
 The distinction is load-bearing:
 
+- SpecSection = what the project specification says must be true.
 - DecisionRecord = what was chosen and why.
 - WorkCommission = permission to execute that choice in a declared scope.
 - RuntimeRun = one actual attempt by a runner.
@@ -26,6 +27,41 @@ A DecisionRecord may have zero WorkCommissions. Creating a decision does not
 mean the work is scheduled. A WorkCommission may be queued for later, and must
 be revalidated before execution starts.
 
+If a project has an active ProjectSpecificationSet, a DecisionRecord created
+from spec planning should reference the SpecSections it governs. A
+WorkCommission created from that DecisionRecord inherits those refs into the
+CommissionSnapshot so RuntimeRun evidence can update SpecCoverage.
+
+## Specification-Gated Execution
+
+```gherkin
+Scenario: Spec-linked work carries section authority
+  Given a ProjectSpecificationSet is active
+  And a DecisionRecord references SpecSections S1 and S2
+  When the user creates a WorkCommission from that decision
+  Then the WorkCommission snapshot includes S1 and S2
+  And evidence requirements include the relevant section evidence requirements
+  And RuntimeRun evidence must name the section or decision claim it satisfies
+```
+
+```gherkin
+Scenario: Missing spec coverage blocks broad autonomous execution
+  Given a project is marked "needs_onboard" or has uncovered required target sections
+  When the user attempts batch/YOLO harness execution
+  Then Haft blocks autonomous execution by default
+  And shows the missing spec sections or coverage gaps
+  And allows only explicit tactical override with a recorded out-of-spec commission reason
+```
+
+```gherkin
+Scenario: Spec drift invalidates queued execution
+  Given a WorkCommission snapshot references SpecSection revision R1
+  And that section is superseded, deprecated, or materially edited to revision R2
+  When the runtime attempts preflight
+  Then Haft blocks the commission as "blocked_stale"
+  And requires re-planning or human confirmation before Execute
+```
+
 ## WorkCommission Lifecycle
 
 ```gherkin
@@ -36,6 +72,8 @@ Scenario: Queue work without executing it
     | field                  | source                                      |
     | decision_ref           | selected DecisionRecord                     |
     | decision_revision_hash | current DecisionRecord content/revision     |
+    | spec_section_refs      | spec sections governed by the decision, if any |
+    | spec_revision_hashes   | current revisions for those sections        |
     | problem_ref            | linked ProblemCard                          |
     | scope                  | closed Scope object: repo, branch, base SHA, paths, actions |
     | scope_hash             | canonical hash of the Scope object          |
@@ -138,6 +176,7 @@ The deterministic equality set is closed for MVP-1R:
 |-------|-------|---------------|
 | DecisionRecord ref/revision/hash | Haft | block stale |
 | ProblemCard ref/revision/hash | Haft | block stale or human review |
+| SpecSection refs/revisions/hashes | Haft | block stale or re-plan |
 | Scope hash | Haft | block policy |
 | base SHA / admitted repo context | Haft + repo adapter | re-preflight or block stale |
 | ImplementationPlan revision | Haft | release/recompute queue node |
@@ -423,7 +462,8 @@ These are deferred per 5.4 review:
 
 | Feature | Why deferred |
 |---------|-------------|
+| Project harnessability onboarding | Requires dedicated TargetSystemSpec / EnablingSystemSpec / TermMap / SpecCoverage workflow, now scoped as v7 Project Harnessability MVP |
+| Spec parser/checker and SpecCoverage graph | Needs strict markdown carrier, section ids, term validation, and coverage edge model before runtime gating |
 | Automation triggers (CI fail, dep update, scheduled) | Mixing problem factory + execution in one release = scope sprawl |
-| DecisionRecord→WorkCommission→RuntimeRun Pipeline with auto-advance | Build single Implement first; commissioned/batch execution is the Open-Sleigh integration path |
-| Deep onboard as automation input | Onboard prompt already deep in v6.1, automation wrapper is v7 |
+| DecisionRecord→WorkCommission→RuntimeRun Pipeline with broad auto-advance | Single spec-linked commission must work first; batch execution follows after spec readiness gates |
 | Autonomous verification agent | Detect-only first (v8 Phase A), actuation later (Phase B) |

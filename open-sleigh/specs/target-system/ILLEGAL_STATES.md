@@ -49,6 +49,8 @@ writes outside its allowed workspace.
 | CL2 | ❌ | Executor agent invoking a tool known to the adapter but NOT in the active `PhaseConfig.tools` (e.g. `:haft_decision` in `:execute` phase) | **runtime-guard** | `MapSet.member?(session.scoped_tools, tool)` check before dispatch; violation returns `{:error, :tool_forbidden_by_phase_scope}`. This is runtime-enforced because `sleigh.md` hot-reload can change scope without recompile. |
 | CL3 | ❌ | Frame-phase agent invoking `haft_problem(frame)` (i.e. attempting to author a ProblemCard) | **runtime-guard** | Frame's `PhaseConfig.tools` deliberately excludes `haft_problem`; any dispatch attempt triggers `:tool_forbidden_by_phase_scope` per CL2. The agent cannot author upstream framing from inside the harness (v0.5 framing-ownership lock). |
 | CL4 | ❌ | Adapter dispatcher accepting a tool name string instead of atom | **type-level** | `dispatch_tool/3` takes `atom()` in its `@spec`; strings fail pattern match. |
+| CL4a | ❌ | Any phase agent authoring or approving Haft TargetSystemSpec, EnablingSystemSpec, TermMap, or SpecCoverage | **runtime-guard** | Spec authoring tools are not in Open-Sleigh phase toolsets. Open-Sleigh may consume spec refs carried by WorkCommission and may write RuntimeRun/PhaseOutcome/Evidence only. |
+| CL4b | ❌ | RuntimeRun proceeding after a spec-linked WorkCommission's SpecSection revision/hash changed | **runtime-guard** | `start_after_preflight` validates spec section refs/revisions/hashes in the CommissionRevisionSnapshot; mismatch blocks before Execute. |
 
 ### Workspace-path safety — bypass test matrix
 

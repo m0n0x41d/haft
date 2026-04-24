@@ -17,6 +17,21 @@
 | **Note** | Micro-decision artifact: what was decided and why, with rationale validation. Auto-expires in 90 days. | Not a comment. Not a log entry. Not a TODO. | — |
 | **RefreshReport** | Artifact documenting a lifecycle action (waive, reopen, supersede, deprecate) | Not an audit log entry (though audit log exists separately). | — |
 
+## Project Specification & Harnessability
+
+| Term | Definition | NOT this | Aliases allowed |
+|------|------------|----------|-----------------|
+| **HarnessableProject** | A project whose TargetSystemSpec, EnablingSystemSpec, TermMap, workflow policy, and SpecCoverage are parseable enough for decisions and WorkCommissions to be created without inventing authority. | Not merely a repo with `.haft/`. Not a project with a README. Not a tracker project. | "harness-ready project" |
+| **ProjectSpecificationSet** | The project-local set of parseable specs: TargetSystemSpec, EnablingSystemSpec, TermMap, SpecCoverage, and WorkflowPolicy. | Not generic documentation. Not a single Markdown file. Not the SQLite artifact graph. | "spec set" |
+| **TargetSystemSpec** | Parseable specification of the target system: environment change, method, target role, materials, boundaries, interfaces, invariants, acceptance, risks, and target-domain terms. | Not implementation plan. Not repo architecture. Not a backlog. | "target spec" |
+| **EnablingSystemSpec** | Parseable specification of the engineering system that produces and maintains the target system: repository architecture, work methods, tests, agents, CI, hooks, runtime, release policy, and evidence methods. | Not the product spec. Not agent instructions alone. Not build docs alone. | "enabling spec" |
+| **SpecSection** | One stable-id unit inside a target/enabling spec with kind, statement_type, owner, status, valid_until, terms, dependencies, and evidence requirements. | Not a heading by itself. Not arbitrary prose. Not a TODO bullet. | "section" when context is clear |
+| **SpecCoverage** | Derived graph connecting spec sections to ProblemCards, DecisionRecords, WorkCommissions, RuntimeRuns, EvidencePacks, files, modules, functions, and tests. | Not code coverage. Not decision coverage alone. Not a percentage without edges. | "spec coverage" |
+| **SemanticArchitecture** | Explicit relation model that preserves term meanings and system boundaries: composition, dependencies, governance, verification, projection, supersession, and blocking relations. | Not folder architecture. Not an ontology diagram detached from execution. | — |
+| **SpecCheck** | Deterministic validation pass over spec carriers and parsed spec objects: syntax, required sections, stable IDs, term uniqueness, target/enabling split, stale sections, and coverage gaps. | Not LLM review. Not proof the product is correct. | `haft spec check` |
+| **OnboardingAgent** | Bounded host-agent workflow that reads repo carriers, asks the human principal for missing decisions, drafts ProjectSpecificationSet sections, and explains why formal spec depth is required. | Not autonomous product owner. Not runtime executor. Not semantic authority. | "onboarder" |
+| **SpecPlan** | Proposed grouping from uncovered/changed spec sections into coherent DecisionRecord drafts. | Not WorkPlan. Not one decision per bullet. Not execution scheduling. | `haft spec plan` |
+
 ## Engineering Modes (User-Facing)
 
 | Term | Definition | NOT this | FPF mapping (internal only) |

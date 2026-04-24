@@ -18,6 +18,22 @@
 | 8 | Note with >70% title word overlap with active DecisionRecord | Note duplicates an existing decision. | `haft_note` rejects at >70% overlap. Warns at 50-70%. |
 | 9 | Artifact with status `addressed` that is not a ProblemCard | Only problems can be "addressed." Other artifacts use superseded/deprecated. | `close` action only on ProblemCard kind. |
 
+## Project Specification & Harnessability
+
+| # | Illegal state | Why | Enforcement |
+|---|--------------|-----|-------------|
+| S1 | EnablingSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The enabling system exists to produce the target system. If the target role/boundary is not admissible, enabling mechanics will silently define product intent. | `spec check` blocks enabling readiness until required target sections pass L0/L1 validation. |
+| S2 | SpecSection without stable id, kind, statement_type, owner, or status | The section cannot participate in coverage, staleness, authority, or evidence checks. | Strict markdown parser rejects the section. |
+| S3 | One SpecSection mixes definition, admissibility, duty, evidence, and explanation claims | Mixed statement types hide authority and evidence boundaries. | `spec check` flags mixed load-bearing language and requires split sections. |
+| S4 | Load-bearing term used in an active SpecSection without a TermMap entry | Agents and humans may use the same word differently while believing they agree. | `spec check` flags unknown terms; active readiness requires definitions for load-bearing terms. |
+| S5 | Same term defined differently in target and enabling specs without domain qualification | Target/enabling semantic drift becomes invisible. | TermMap validator requires one definition or explicit domain-qualified terms. |
+| S6 | DecisionRecord created from spec planning without SpecSection refs when a ProjectSpecificationSet is active | The decision cannot be traced back to the formal harness. | `spec plan` and decision tools require section refs unless user explicitly creates an out-of-spec exploratory decision. |
+| S7 | WorkCommission generated from a spec-linked DecisionRecord without carrying spec section refs in its snapshot | Runtime evidence would not update SpecCoverage. | Commission builder copies section refs into CommissionSnapshot and rejects missing refs for spec-linked decisions. |
+| S8 | RuntimeRun evidence accepted as satisfying a SpecSection without naming the exact section and claim | Evidence becomes generic reassurance, not coverage. | Evidence ingest requires artifact_ref + claim/section ref for spec coverage. |
+| S9 | SpecCoverage stored as a manually edited status | Coverage is derived from links and evidence. Manual status will drift. | SpecCoverage states are query-time projections only. |
+| S10 | OnboardingAgent rewrites target-system role, boundary, or acceptance without human approval | The agent would become product authority. | Load-bearing target sections require human approval before becoming active. |
+| S11 | Harness runtime starts commissioned work in a project marked `needs_onboard` for the relevant scope | Execution would proceed without the semantic architecture needed to judge correctness. | Preflight checks ProjectSpecificationSet readiness for spec-required work. Tactical explicit override records an out-of-spec commission. |
+
 ## Evidence & Trust
 
 | # | Illegal state | Why | Enforcement |

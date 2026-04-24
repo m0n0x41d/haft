@@ -28,6 +28,18 @@
 | Q9 | Is "keeps the coder honest" the right tagline? | Validated in research. Slightly adversarial. Doesn't reflect verification/memory. | Next marketing pass |
 | Q11 | Role/context-scoped skills vs global skill library? | FPF suggests role+context binding. Hermes uses global. | When demand signal exists |
 
+## Project Harnessability Questions
+
+These are now product-shaping questions for the spec-first harness direction.
+
+| # | Question | Current stance | Review need |
+|---|----------|----------------|-------------|
+| Q17 | Are large formal target/enabling specs acceptable as product ceremony? | Yes. They are the price of making arbitrary projects harnessable. UX should make depth navigable, not hide it. | Validate whether this is a coherent market/category choice and whether the acceptance burden is framed honestly. |
+| Q18 | What is the minimum strict markdown schema for SpecSections? | YAML block under stable markdown heading: id, kind, statement_type, owner, status, valid_until, terms, evidence_required. | Check if this is enough for parse/check/coverage without over-designing a DSL. |
+| Q19 | Should TargetSystemSpec readiness gate EnablingSystemSpec readiness? | Yes. Enabling mechanics must not define target purpose. | Challenge edge cases: brownfield projects with strong repo architecture but weak product framing. |
+| Q20 | Does SpecCoverage belong in the same graph as DecisionCoverage? | Yes as a higher-order derived graph: spec -> decision -> commission -> run -> evidence -> code/test. | Validate persistence frontier: edges vs derived views vs markdown carriers. |
+| Q21 | Should broad YOLO/harness execution require spec readiness? | Yes by default. Tactical explicit override may exist, but must record an out-of-spec commission reason. | Review whether this balances product rigor and early adoption. |
+
 ## Open-Sleigh Integration Review Questions
 
 ## Review Evidence Received — 2026-04-22

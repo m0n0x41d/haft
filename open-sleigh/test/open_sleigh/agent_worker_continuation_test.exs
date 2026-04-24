@@ -99,6 +99,34 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
         gates: %{structural: [], semantic: [:no_self_evidence_semantic], human: []}
       })
 
+    AgentMock.put_turn_replies([
+      %{
+        events: [
+          %{
+            payload: %{
+              "item" => %{
+                "type" => "commandExecution",
+                "status" => "completed",
+                "command" => "go test ./internal/cli -run TestInit",
+                "exitCode" => 0,
+                "aggregatedOutput" => "ok  github.com/m0n0x41d/haft/internal/cli 0.123s\n"
+              }
+            }
+          },
+          %{
+            payload: %{
+              "item" => %{
+                "id" => "msg-final",
+                "type" => "agentMessage",
+                "phase" => "final_answer",
+                "text" => "The focused init test passed."
+              }
+            }
+          }
+        ]
+      }
+    ])
+
     message =
       ctx
       |> worker_ctx(phase_config, fail_judge_fun())
@@ -108,6 +136,78 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     assert outcome.phase == :measure
     assert length(AgentMock.turn_prompts()) == 1
     assert AgentMock.start_count() == 1
+  end
+
+  test "measure passes final claim text and command evidence into semantic gates", ctx do
+    phase_config =
+      Fixtures.phase_config_measure(%{
+        gates: %{structural: [], semantic: [:no_self_evidence_semantic], human: []}
+      })
+
+    AgentMock.put_turn_replies([
+      %{
+        events: [
+          %{
+            payload: %{
+              "item" => %{
+                "id" => "msg-commentary",
+                "type" => "agentMessage",
+                "phase" => "commentary",
+                "text" => "commentary text"
+              }
+            }
+          },
+          %{
+            payload: %{
+              "item" => %{
+                "type" => "commandExecution",
+                "status" => "completed",
+                "command" => "go test ./internal/cli -run TestInit",
+                "exitCode" => 0,
+                "aggregatedOutput" => "ok  github.com/m0n0x41d/haft/internal/cli 0.123s\n"
+              }
+            }
+          },
+          %{
+            payload: %{
+              "item" => %{
+                "id" => "msg-final",
+                "type" => "agentMessage",
+                "phase" => "final_answer",
+                "text" =>
+                  "The portability change is verified: the focused init test command passed and observed output was `ok`."
+              }
+            }
+          }
+        ]
+      }
+    ])
+
+    judge_fun = capture_gate_context(self())
+
+    message =
+      ctx
+      |> worker_ctx(phase_config, judge_fun)
+      |> run_worker()
+
+    assert {:outcome, _session_id, outcome} = message
+    assert outcome.phase == :measure
+
+    assert_receive {:gate_context, gate_context}, 1_000
+    assert gate_context.turn_result.claim =~ "The portability change is verified"
+
+    assert [
+             %OpenSleigh.Evidence{
+               kind: :external_measurement,
+               authoring_source: :external,
+               cl: 3,
+               ref: ref
+             }
+           ] = gate_context.evidence
+
+    assert ref =~ "command: go test ./internal/cli -run TestInit"
+    assert ref =~ "exit_code: 0"
+    assert ref =~ "ok  github.com/m0n0x41d/haft/internal/cli 0.123s"
   end
 
   test "Execute sessions run up to max_turns while gates do not pass", ctx do
@@ -122,6 +222,7 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     message =
       ctx
       |> worker_ctx(phase_config, fail_judge_fun(), first_prompt)
+      |> Map.put(:hooks, execute_seed_hooks())
       |> run_worker()
 
     prompts = AgentMock.turn_prompts()
@@ -147,6 +248,7 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     message =
       ctx
       |> worker_ctx(phase_config, pass_on_second_turn_judge_fun())
+      |> Map.put(:hooks, execute_seed_hooks())
       |> run_worker()
 
     assert {:outcome, _session_id, outcome} = message
@@ -170,6 +272,7 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
     message =
       ctx
       |> worker_ctx(phase_config, fail_judge_fun())
+      |> Map.put(:hooks, execute_seed_hooks())
       |> run_worker()
 
     assert {:outcome, _session_id, outcome} = message
@@ -264,6 +367,80 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
       |> run_worker()
 
     assert {:error, _session_id, :mutation_outside_commission_scope} = message
+  end
+
+  test "execute blocks when only runtime scratch paths changed", ctx do
+    commission = preflight_commission!()
+    ticket = commission_ticket!(commission)
+
+    phase_config =
+      Fixtures.phase_config_execute(%{
+        gates: %{structural: [], semantic: [], human: []},
+        max_turns: 1
+      })
+
+    message =
+      ctx
+      |> Map.put(:ticket, ticket)
+      |> worker_ctx(phase_config, fail_judge_fun())
+      |> Map.put(
+        :hooks,
+        %{
+          after_create:
+            "git init -q\n" <>
+              "git config user.email test@example.com\n" <>
+              "git config user.name 'Open Sleigh Test'\n" <>
+              "mkdir -p lib/open_sleigh .tmp/gocache\n" <>
+              "printf 'baseline\\n' > lib/open_sleigh/agent_worker.ex\n" <>
+              "git add lib/open_sleigh/agent_worker.ex\n" <>
+              "git commit -qm 'baseline'\n" <>
+              "printf 'cache\\n' > .tmp/gocache/state"
+        }
+      )
+      |> run_worker()
+
+    assert {:error, _session_id, :no_commission_mutation} = message
+  end
+
+  test "reused preflight workspace resets stale git diff before validation", ctx do
+    commission = preflight_commission!()
+    ticket = commission_ticket!(commission)
+    workspace_path = Path.join(ctx.workspace_root, ticket.id)
+
+    :ok = seed_reused_git_workspace(workspace_path)
+
+    message =
+      ctx
+      |> Map.put(:ticket, ticket)
+      |> worker_ctx(preflight_phase_config(), fail_judge_fun())
+      |> run_worker()
+
+    assert {:outcome, _session_id, outcome} = message
+    assert outcome.phase == :preflight
+    assert workspace_git_status_lines(workspace_path) == []
+  end
+
+  test "reused non-preflight workspace keeps stale git diff for validation", ctx do
+    commission = preflight_commission!()
+    ticket = commission_ticket!(commission)
+    workspace_path = Path.join(ctx.workspace_root, ticket.id)
+
+    :ok = seed_reused_git_workspace(workspace_path)
+
+    phase_config =
+      Fixtures.phase_config_execute(%{
+        gates: %{structural: [], semantic: [], human: []},
+        max_turns: 1
+      })
+
+    message =
+      ctx
+      |> Map.put(:ticket, ticket)
+      |> worker_ctx(phase_config, fail_judge_fun())
+      |> run_worker()
+
+    assert {:error, _session_id, :mutation_outside_commission_scope} = message
+    assert workspace_git_status_lines(workspace_path) == [" M lib/outside.ex"]
   end
 
   @spec worker_ctx(map(), PhaseConfig.t(), OpenSleigh.GateChain.judge_fun()) :: AgentWorker.ctx()
@@ -365,6 +542,14 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
 
   defp pass_after_first_turn(_turn_id) do
     {:ok, %{verdict: :pass, cl: 3, rationale: "second turn passes"}}
+  end
+
+  @spec capture_gate_context(pid()) :: OpenSleigh.GateChain.judge_fun()
+  defp capture_gate_context(owner) do
+    fn _gate_module, gate_context ->
+      send(owner, {:gate_context, gate_context})
+      {:ok, %{verdict: :pass, cl: 3, rationale: "captured"}}
+    end
   end
 
   @spec ticket_commission(OpenSleigh.Ticket.t()) :: WorkCommission.t() | nil
@@ -486,5 +671,64 @@ defmodule OpenSleigh.AgentWorkerContinuationTest do
       |> Scope.new()
 
     scope
+  end
+
+  @spec seed_reused_git_workspace(Path.t()) :: :ok
+  defp seed_reused_git_workspace(workspace_path) do
+    File.mkdir_p!(Path.join(workspace_path, "lib/open_sleigh"))
+    File.mkdir_p!(Path.join(workspace_path, "lib"))
+
+    script =
+      """
+      git init -q
+      git config user.email test@example.com
+      git config user.name "Open Sleigh Test"
+      printf 'allowed\\n' > lib/open_sleigh/agent_worker.ex
+      printf 'outside\\n' > lib/outside.ex
+      git add lib/open_sleigh/agent_worker.ex lib/outside.ex
+      git commit -qm 'baseline'
+      printf 'dirty\\n' >> lib/outside.ex
+      """
+      |> String.trim()
+
+    {"", 0} =
+      System.cmd("bash", ["-lc", script],
+        cd: workspace_path,
+        stderr_to_stdout: true
+      )
+
+    :ok
+  end
+
+  @spec workspace_git_status_lines(Path.t()) :: [String.t()]
+  defp workspace_git_status_lines(workspace_path) do
+    {_output, 0} =
+      System.cmd("git", ["-C", workspace_path, "rev-parse", "--is-inside-work-tree"],
+        stderr_to_stdout: true
+      )
+
+    {output, 0} =
+      System.cmd("git", ["-C", workspace_path, "status", "--porcelain", "--untracked-files=all"],
+        stderr_to_stdout: true
+      )
+
+    output
+    |> String.split("\n", trim: true)
+  end
+
+  @spec execute_seed_hooks() :: map()
+  defp execute_seed_hooks do
+    %{
+      after_create: """
+      git init -q
+      git config user.email test@example.com
+      git config user.name "Open Sleigh Test"
+      mkdir -p lib/open_sleigh
+      printf 'baseline\\n' > lib/open_sleigh/agent_worker.ex
+      git add lib/open_sleigh/agent_worker.ex
+      git commit -qm 'baseline'
+      printf 'dirty\\n' >> lib/open_sleigh/agent_worker.ex
+      """
+    }
   end
 end

@@ -73,6 +73,206 @@ func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
 	}
 }
 
+func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-show-001", "queued", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "show",
+		"commission_id": "wc-show-001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shown := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &shown); err != nil {
+		t.Fatal(err)
+	}
+
+	if shown["commission"]["id"] != "wc-show-001" {
+		t.Fatalf("shown commission id = %#v", shown["commission"]["id"])
+	}
+}
+
+func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-requeue-001", "queued", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": "wc-requeue-001",
+		"runner_id":     "open-sleigh:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "requeue",
+		"commission_id": "wc-requeue-001",
+		"runner_id":     "haft-cli:test",
+		"reason":        "stale_operator_recovery",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requeued := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &requeued); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := requeued["commission"]
+	if commission["state"] != "queued" {
+		t.Fatalf("state = %#v, want queued", commission["state"])
+	}
+	if _, ok := commission["lease"]; ok {
+		t.Fatalf("lease = %#v, want removed", commission["lease"])
+	}
+
+	events, ok := commission["events"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events = %#v, want one recovery event", commission["events"])
+	}
+
+	event, ok := events[0].(map[string]any)
+	if !ok {
+		t.Fatalf("event = %#v, want object", events[0])
+	}
+	if event["event"] != "commission_requeued" {
+		t.Fatalf("event = %#v, want commission_requeued", event["event"])
+	}
+	if event["reason"] != "stale_operator_recovery" {
+		t.Fatalf("reason = %#v", event["reason"])
+	}
+
+	listed := map[string][]map[string]any{}
+	listResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action": "list_runnable",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(listResult), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed["commissions"]) != 1 {
+		t.Fatalf("listed commissions = %#v, want requeued commission runnable", listed["commissions"])
+	}
+}
+
+func TestHandleHaftCommission_RequeueRejectsTerminalCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-requeue-terminal", "completed", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "requeue",
+		"commission_id": "wc-requeue-terminal",
+	})
+	if err == nil {
+		t.Fatal("expected terminal requeue to fail")
+	}
+	if !strings.Contains(err.Error(), "commission_not_requeueable") {
+		t.Fatalf("err = %v, want commission_not_requeueable", err)
+	}
+}
+
+func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-blocked-001", "queued", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": "wc-blocked-001",
+		"runner_id":     "open-sleigh:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "start_after_preflight",
+		"commission_id": "wc-blocked-001",
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_passed",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "complete_or_block",
+		"commission_id": "wc-blocked-001",
+		"runner_id":     "open-sleigh:test",
+		"event":         "phase_blocked",
+		"verdict":       "blocked",
+		"reason":        "semantic gate failed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blocked := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &blocked); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := blocked["commission"]
+	if commission["state"] != "blocked_policy" {
+		t.Fatalf("state = %#v, want blocked_policy", commission["state"])
+	}
+
+	events, ok := commission["events"].([]any)
+	if !ok || len(events) != 2 {
+		t.Fatalf("events = %#v, want two lifecycle events", commission["events"])
+	}
+
+	lastEvent, ok := events[len(events)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("last event = %#v, want object", events[len(events)-1])
+	}
+	if lastEvent["event"] != "phase_blocked" {
+		t.Fatalf("event = %#v, want phase_blocked", lastEvent["event"])
+	}
+	if lastEvent["verdict"] != "blocked" {
+		t.Fatalf("verdict = %#v, want blocked", lastEvent["verdict"])
+	}
+}
+
 func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

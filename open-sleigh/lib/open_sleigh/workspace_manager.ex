@@ -34,6 +34,11 @@ defmodule OpenSleigh.WorkspaceManager do
           :ok
           | {:error, :hook_timeout | :hook_failed}
 
+  @typedoc "Result of resetting a reused git workspace before a fresh preflight."
+  @type reset_result ::
+          :ok
+          | {:error, :workspace_reset_timeout | :workspace_reset_failed}
+
   @doc """
   Ensure the per-ticket workspace exists. Returns `:new` when the
   directory was created on this call, `:reused` if it already
@@ -75,6 +80,28 @@ defmodule OpenSleigh.WorkspaceManager do
     |> hook_result(timeout_ms)
   end
 
+  @doc """
+  Reset a reused git workspace back to clean `HEAD` state before a new
+  preflight attempt. Non-git directories or repos without commits are
+  treated as already clean.
+  """
+  @spec reset_git_workspace(Path.t(), pos_integer()) :: reset_result()
+  def reset_git_workspace(workspace_path, timeout_ms)
+      when is_binary(workspace_path) and is_integer(timeout_ms) and timeout_ms > 0 do
+    script =
+      """
+      git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+      git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
+      git reset --hard HEAD
+      git clean -fd
+      """
+      |> String.trim()
+
+    fn -> exec_hook(workspace_path, script) end
+    |> Task.async()
+    |> reset_result(timeout_ms)
+  end
+
   @spec hook_result(Task.t(), pos_integer()) :: hook_result()
   defp hook_result(task, timeout_ms) do
     task
@@ -89,6 +116,22 @@ defmodule OpenSleigh.WorkspaceManager do
   defp interpret_hook_yield(nil, task) do
     _ = Task.shutdown(task, :brutal_kill)
     {:error, :hook_timeout}
+  end
+
+  @spec reset_result(Task.t(), pos_integer()) :: reset_result()
+  defp reset_result(task, timeout_ms) do
+    task
+    |> Task.yield(timeout_ms)
+    |> interpret_reset_yield(task)
+  end
+
+  @spec interpret_reset_yield({:ok, {binary(), integer()}} | nil, Task.t()) :: reset_result()
+  defp interpret_reset_yield({:ok, {_out, 0}}, _task), do: :ok
+  defp interpret_reset_yield({:ok, {_out, _nonzero}}, _task), do: {:error, :workspace_reset_failed}
+
+  defp interpret_reset_yield(nil, task) do
+    _ = Task.shutdown(task, :brutal_kill)
+    {:error, :workspace_reset_timeout}
   end
 
   @doc """

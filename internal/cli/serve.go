@@ -268,7 +268,10 @@ func applyCrossProjectIndex(ctx context.Context, name, action string, args map[s
 
 // applyRefreshReminder appends a reminder if >5 days since last stale scan.
 func applyRefreshReminder(ctx context.Context, result, name string, store *artifact.Store) string {
-	if name == "haft_refresh" {
+	if refreshReminderDisabled(name) {
+		return result
+	}
+	if machineJSONResponse(result) {
 		return result
 	}
 	lastScan := store.LastRefreshScan(ctx)
@@ -280,6 +283,25 @@ func applyRefreshReminder(ctx context.Context, result, name string, store *artif
 		result += fmt.Sprintf("\n\n--- Refresh reminder: %d days since last stale scan. Run haft_refresh(action=\"scan\") to check for stale decisions and evidence decay. ---\n", daysSince)
 	}
 	return result
+}
+
+func refreshReminderDisabled(name string) bool {
+	switch name {
+	case "haft_refresh":
+		return true
+	case "haft_commission":
+		return true
+	default:
+		return false
+	}
+}
+
+func machineJSONResponse(result string) bool {
+	trimmed := strings.TrimSpace(result)
+	if trimmed == "" {
+		return false
+	}
+	return json.Valid([]byte(trimmed))
 }
 
 func truncateStr(s string, maxLen int) string {
@@ -1063,6 +1085,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		}
 
 	case "related":
+		artifactRef := firstNonEmptyQueryArg(args, "artifact_id", "ref")
+		if artifactRef != "" {
+			return artifactQueryContractResponse(ctx, store, artifactRef)
+		}
+
 		file, _ := args["file"].(string)
 		results, err := artifact.FetchRelatedArtifacts(ctx, store, file)
 		if err != nil {
@@ -1141,6 +1168,72 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', or 'fpf'", action)
+	}
+}
+
+func firstNonEmptyQueryArg(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, _ := args[key].(string)
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func artifactQueryContractResponse(ctx context.Context, store *artifact.Store, artifactRef string) (string, error) {
+	item, err := store.Get(ctx, artifactRef)
+	if err != nil {
+		return "", err
+	}
+
+	key := "artifact"
+	if item.Meta.Kind == artifact.KindProblemCard {
+		key = "problem_card"
+	}
+
+	encoded, err := json.Marshal(map[string]any{
+		key: artifactQueryContractPayload(item),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return string(encoded), nil
+}
+
+func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {
+	meta := map[string]any{
+		"id":          item.Meta.ID,
+		"kind":        string(item.Meta.Kind),
+		"version":     item.Meta.Version,
+		"status":      string(item.Meta.Status),
+		"context":     item.Meta.Context,
+		"mode":        string(item.Meta.Mode),
+		"title":       item.Meta.Title,
+		"valid_until": item.Meta.ValidUntil,
+		"created_at":  item.Meta.CreatedAt.Format(time.RFC3339),
+		"updated_at":  item.Meta.UpdatedAt.Format(time.RFC3339),
+		"links":       item.Meta.Links,
+	}
+
+	return map[string]any{
+		"id":              item.Meta.ID,
+		"kind":            string(item.Meta.Kind),
+		"version":         item.Meta.Version,
+		"status":          string(item.Meta.Status),
+		"context":         item.Meta.Context,
+		"mode":            string(item.Meta.Mode),
+		"title":           item.Meta.Title,
+		"valid_until":     item.Meta.ValidUntil,
+		"created_at":      item.Meta.CreatedAt.Format(time.RFC3339),
+		"updated_at":      item.Meta.UpdatedAt.Format(time.RFC3339),
+		"body":            item.Body,
+		"content":         item.Body,
+		"description":     item.Body,
+		"search_keywords": item.SearchKeywords,
+		"structured_data": item.StructuredData,
+		"meta":            meta,
 	}
 }
 

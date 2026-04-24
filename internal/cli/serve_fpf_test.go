@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -142,6 +143,52 @@ func TestHandleQuintQuery_FPFEmptyStateKeepsNavStrip(t *testing.T) {
 	}
 	if !strings.Contains(result, "── Haft") {
 		t.Fatalf("expected nav strip in empty-state output, got:\n%s", result)
+	}
+}
+
+func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+
+	problem := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:         "prob-20260423-test",
+			Kind:       artifact.KindProblemCard,
+			Title:      "Portable project MCP config",
+			ValidUntil: "2026-05-23",
+		},
+		Body:           "Problem body for Open-Sleigh frame verification.",
+		StructuredData: `{"signal":"shared config embeds an absolute path"}`,
+	}
+	if err := store.Create(ctx, problem); err != nil {
+		t.Fatalf("create problem: %v", err)
+	}
+
+	result, err := handleQuintQuery(ctx, store, t.TempDir(), map[string]any{
+		"action":      "related",
+		"artifact_id": problem.Meta.ID,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery returned error: %v", err)
+	}
+
+	var payload map[string]map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("expected JSON response, got %v:\n%s", err, result)
+	}
+
+	card := payload["problem_card"]
+	if card["id"] != problem.Meta.ID {
+		t.Fatalf("problem_card.id = %#v, want %s", card["id"], problem.Meta.ID)
+	}
+	if card["kind"] != string(artifact.KindProblemCard) {
+		t.Fatalf("problem_card.kind = %#v", card["kind"])
+	}
+	if card["body"] != problem.Body {
+		t.Fatalf("problem_card.body = %#v, want %q", card["body"], problem.Body)
+	}
+	if card["structured_data"] != problem.StructuredData {
+		t.Fatalf("problem_card.structured_data = %#v", card["structured_data"])
 	}
 }
 

@@ -12,6 +12,7 @@ defmodule OpenSleigh.Agent.Codex.Server do
 
   alias OpenSleigh.{AdapterSession, EffectError}
   alias OpenSleigh.Agent.Protocol
+  alias OpenSleigh.Agent.ToolRuntime
 
   @max_line_bytes 10_000_000
   @initialize_id 1
@@ -28,9 +29,12 @@ defmodule OpenSleigh.Agent.Codex.Server do
           required(:thread_sandbox) => String.t(),
           required(:turn_sandbox_policy) => map(),
           required(:next_id) => pos_integer(),
+          optional(:dynamic_tool_timeout_ms) => pos_integer(),
+          optional(:haft_invoker) => (binary() -> {:ok, binary()} | {:error, EffectError.t()}),
           optional(:port) => port(),
           optional(:thread_id) => String.t(),
-          optional(:app_server_pid) => String.t()
+          optional(:app_server_pid) => String.t(),
+          optional(:session) => AdapterSession.t()
         }
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -42,6 +46,13 @@ defmodule OpenSleigh.Agent.Codex.Server do
           {:ok, map()} | {:error, EffectError.t()}
   def start_session(server, %AdapterSession{} = session) when is_pid(server) do
     GenServer.call(server, {:start_session, session}, :infinity)
+  end
+
+  @spec dispatch_tool(pid(), atom(), map(), AdapterSession.t()) ::
+          {:ok, map()} | {:error, EffectError.t()}
+  def dispatch_tool(server, tool, args, %AdapterSession{} = session)
+      when is_pid(server) and is_atom(tool) and is_map(args) do
+    GenServer.call(server, {:dispatch_tool, tool, args, session}, :infinity)
   end
 
   @spec close(pid()) :: :ok
@@ -79,6 +90,11 @@ defmodule OpenSleigh.Agent.Codex.Server do
       |> await_turn_result(state)
 
     reply_turn_result(result, state)
+  end
+
+  def handle_call({:dispatch_tool, tool, args, %AdapterSession{} = session}, _from, state) do
+    result = tool_dispatch_result(tool, args, session, state)
+    {:reply, result, state}
   end
 
   def handle_call(:close, _from, state) do
@@ -119,6 +135,8 @@ defmodule OpenSleigh.Agent.Codex.Server do
         |> auto_approve_requests?(),
       thread_sandbox: Map.get(opts, :thread_sandbox, "workspace-write"),
       turn_sandbox_policy: Map.get(opts, :turn_sandbox_policy, %{"type" => "workspaceWrite"}),
+      dynamic_tool_timeout_ms: Map.get(opts, :dynamic_tool_timeout_ms, 60_000),
+      haft_invoker: Map.get(opts, :haft_invoker),
       next_id: 3
     }
   end
@@ -168,7 +186,12 @@ defmodule OpenSleigh.Agent.Codex.Server do
         |> Map.put(:thread_id, thread_id)
         |> Map.put(:server, self())
 
-      {:ok, metadata, Map.put(state, :thread_id, thread_id)}
+      new_state =
+        state
+        |> Map.put(:thread_id, thread_id)
+        |> Map.put(:session, session)
+
+      {:ok, metadata, new_state}
     else
       {:error, reason} ->
         close_port(state)
@@ -464,23 +487,27 @@ defmodule OpenSleigh.Agent.Codex.Server do
 
   @spec completed_reply(String.t(), map(), [map()]) :: map()
   defp completed_reply(turn_id, event, events) do
+    all_events = Enum.reverse([event | events])
+
     %{
       turn_id: event_turn_id(event, turn_id),
       status: :completed,
-      events: Enum.reverse([event | events]),
+      events: all_events,
       usage: event_usage(event),
-      text: event_text(event)
+      text: reply_text(all_events)
     }
   end
 
   @spec terminal_reply(:failed | :cancelled, String.t(), map(), [map()]) :: map()
   defp terminal_reply(status, turn_id, event, events) do
+    all_events = Enum.reverse([event | events])
+
     %{
       turn_id: event_turn_id(event, turn_id),
       status: status,
-      events: Enum.reverse([event | events]),
+      events: all_events,
       usage: event_usage(event),
-      text: event_text(event)
+      text: reply_text(all_events)
     }
   end
 
@@ -499,10 +526,98 @@ defmodule OpenSleigh.Agent.Codex.Server do
   defp event_usage(%{payload: %{"turn" => %{"usage" => usage}}}) when is_map(usage), do: usage
   defp event_usage(_event), do: %{}
 
-  @spec event_text(map()) :: String.t()
-  defp event_text(%{payload: %{"text" => text}}) when is_binary(text), do: text
-  defp event_text(%{payload: %{"message" => text}}) when is_binary(text), do: text
-  defp event_text(_event), do: "codex turn completed"
+  @spec reply_text([map()]) :: String.t()
+  defp reply_text(events) do
+    events
+    |> preferred_reply_text()
+    |> fallback_reply_text()
+  end
+
+  @spec preferred_reply_text([map()]) :: String.t() | nil
+  defp preferred_reply_text(events) do
+    [
+      &turn_completed_text/1,
+      &final_answer_text/1,
+      &last_agent_message_text/1,
+      &delta_text/1
+    ]
+    |> Enum.find_value(fn text_fun ->
+      events
+      |> text_fun.()
+      |> blank_to_nil()
+    end)
+  end
+
+  @spec turn_completed_text([map()]) :: String.t() | nil
+  defp turn_completed_text(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find_value(&turn_completed_event_text/1)
+  end
+
+  @spec turn_completed_event_text(map()) :: String.t() | nil
+  defp turn_completed_event_text(%{event: :turn_completed, payload: %{"text" => text}})
+       when is_binary(text),
+       do: text
+
+  defp turn_completed_event_text(%{event: :turn_failed, payload: %{"message" => text}})
+       when is_binary(text),
+       do: text
+
+  defp turn_completed_event_text(_event), do: nil
+
+  @spec final_answer_text([map()]) :: String.t() | nil
+  defp final_answer_text(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find_value(&final_answer_event_text/1)
+  end
+
+  @spec final_answer_event_text(map()) :: String.t() | nil
+  defp final_answer_event_text(%{
+         payload: %{"item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}}
+       })
+       when is_binary(text),
+       do: text
+
+  defp final_answer_event_text(_event), do: nil
+
+  @spec last_agent_message_text([map()]) :: String.t() | nil
+  defp last_agent_message_text(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find_value(&agent_message_text/1)
+  end
+
+  @spec agent_message_text(map()) :: String.t() | nil
+  defp agent_message_text(%{payload: %{"item" => %{"type" => "agentMessage", "text" => text}}})
+       when is_binary(text),
+       do: text
+
+  defp agent_message_text(_event), do: nil
+
+  @spec delta_text([map()]) :: String.t()
+  defp delta_text(events) do
+    events
+    |> Enum.map(&delta_fragment/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join()
+  end
+
+  @spec delta_fragment(map()) :: String.t() | nil
+  defp delta_fragment(%{payload: %{"delta" => delta}}) when is_binary(delta), do: delta
+  defp delta_fragment(_event), do: nil
+
+  @spec blank_to_nil(String.t() | nil) :: String.t() | nil
+  defp blank_to_nil(nil), do: nil
+
+  defp blank_to_nil(text) do
+    if String.trim(text) == "", do: nil, else: text
+  end
+
+  @spec fallback_reply_text(String.t() | nil) :: String.t()
+  defp fallback_reply_text(text) when is_binary(text), do: text
+  defp fallback_reply_text(nil), do: "codex turn completed"
 
   @spec malformed_event(String.t()) :: map()
   defp malformed_event(line) do
@@ -643,17 +758,10 @@ defmodule OpenSleigh.Agent.Codex.Server do
     {:ok, %{"answers" => tool_input_answers(params)}}
   end
 
-  defp client_request_response("item/tool/call", _params, _state) do
-    {:ok,
-     %{
-       "success" => false,
-       "contentItems" => [
-         %{
-           "type" => "text",
-           "text" => "Open-Sleigh does not expose dynamic client tools in this MVP runtime."
-         }
-       ]
-     }}
+  defp client_request_response("item/tool/call", params, state) do
+    params
+    |> tool_call_input()
+    |> tool_call_response(state)
   end
 
   defp client_request_response(method, _params, _state) do
@@ -685,6 +793,66 @@ defmodule OpenSleigh.Agent.Codex.Server do
   end
 
   defp tool_input_answer(_question), do: nil
+
+  @spec tool_dispatch_result(atom(), map(), AdapterSession.t(), state()) ::
+          {:ok, map()} | {:error, EffectError.t()}
+  defp tool_dispatch_result(tool, args, %AdapterSession{} = session, state) do
+    tool
+    |> ToolRuntime.execute(args, session, dynamic_tool_opts(state))
+    |> dispatch_tool_result(tool)
+  end
+
+  @spec dispatch_tool_result({:ok, map()} | {:error, EffectError.t()}, atom()) ::
+          {:ok, map()} | {:error, EffectError.t()}
+  defp dispatch_tool_result({:ok, execution}, tool) do
+    {:ok,
+     %{
+       call_id: "codex-call-" <> Atom.to_string(tool),
+       result: execution
+     }}
+  end
+
+  defp dispatch_tool_result({:error, _reason} = error, _tool), do: error
+
+  @spec tool_call_input(map()) :: {String.t() | atom(), term()}
+  defp tool_call_input(params) do
+    tool = Map.get(params, "tool")
+    arguments = Map.get(params, "arguments", %{})
+    {tool, arguments}
+  end
+
+  @spec tool_call_response({String.t() | atom(), term()}, state()) ::
+          {:ok, map()} | {:error, EffectError.t()}
+  defp tool_call_response({tool, arguments}, %{session: %AdapterSession{} = session} = state) do
+    ToolRuntime.dynamic_response(tool, arguments, session, dynamic_tool_opts(state))
+  end
+
+  defp tool_call_response({_tool, _arguments}, _state) do
+    ToolRuntime.dynamic_response("unknown", %{}, placeholder_session())
+  end
+
+  @spec dynamic_tool_opts(state()) :: keyword()
+  defp dynamic_tool_opts(state) do
+    [
+      haft_invoker: Map.get(state, :haft_invoker),
+      bash_timeout_ms: Map.get(state, :dynamic_tool_timeout_ms, 60_000)
+    ]
+  end
+
+  @spec placeholder_session() :: AdapterSession.t()
+  defp placeholder_session do
+    %AdapterSession{
+      session_id: "sess-placeholder",
+      config_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+      scoped_tools: MapSet.new(),
+      workspace_path: File.cwd!(),
+      adapter_kind: :codex,
+      adapter_version: "placeholder",
+      max_turns: 1,
+      max_tokens_per_turn: 1,
+      wall_clock_timeout_s: 1
+    }
+  end
 
   @spec send_client_response(
           {:ok, map()} | {:rpc_error, map()} | {:error, EffectError.t()},

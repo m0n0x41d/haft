@@ -98,6 +98,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
         guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
         task_supervisor: OpenSleigh.AgentSupervisor,
         workflow_store: store_name,
+        hooks: execute_seed_hooks(),
         name: orchestrator_name
       )
 
@@ -142,6 +143,161 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     assert {:ok, ticket} = TrackerMock.get(ctx.tracker, "wc-orchestrator-lifecycle")
     assert ticket.state == :done
     assert {:ok, []} = TrackerMock.list_active(ctx.tracker)
+  end
+
+  test "blocked non-terminal phases also close WorkCommission lifecycle", ctx do
+    {:ok, tracker} = TrackerMock.start()
+    commission = commission_fixture!("wc-orchestrator-blocked")
+    :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
+
+    orchestrator_name = :"commission_lifecycle_block_orch_#{System.unique_integer([:positive])}"
+    store_name = :"commission_lifecycle_block_store_#{System.unique_integer([:positive])}"
+
+    {:ok, _store} =
+      WorkflowStore.start_link(
+        phase_configs: phase_configs_with_frame_semantic_gate(),
+        prompts: prompts(),
+        external_publication: %{branch_regex: "^(main|master)$"},
+        name: store_name
+      )
+
+    {:ok, _orchestrator} =
+      Orchestrator.start_link(
+        workflow: Workflow.mvp1r(),
+        tracker_handle: tracker,
+        tracker_adapter: TrackerMock,
+        agent_adapter: AgentMock,
+        external_publication: %{tracker_transition_to: []},
+        judge_fun: fail_judge_fun(),
+        haft_invoker: HaftMock.invoke_fun(ctx.haft),
+        workspace_root: ctx.workspace_root,
+        guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
+        task_supervisor: OpenSleigh.AgentSupervisor,
+        workflow_store: store_name,
+        name: orchestrator_name
+      )
+
+    {:ok, tickets} = TrackerMock.list_active(tracker)
+    Orchestrator.submit_candidates(orchestrator_name, tickets)
+
+    wait_result = wait_for_terminal(orchestrator_name, 2_000)
+    status = Orchestrator.status(orchestrator_name)
+    artifacts = HaftMock.artifacts(ctx.haft)
+
+    assert wait_result == :ok,
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+
+    actions =
+      ctx.haft
+      |> HaftMock.artifacts()
+      |> Enum.filter(&(Map.get(&1, "name") == "haft_commission"))
+      |> Enum.map(&get_in(&1, ["arguments", "action"]))
+
+    assert actions == [
+             "record_run_event",
+             "record_preflight",
+             "start_after_preflight",
+             "record_run_event",
+             "complete_or_block"
+           ]
+
+    blocked =
+      ctx.haft
+      |> HaftMock.artifacts()
+      |> Enum.find(&(get_in(&1, ["arguments", "action"]) == "complete_or_block"))
+
+    assert get_in(blocked, ["arguments", "commission_id"]) == "wc-orchestrator-blocked"
+    assert get_in(blocked, ["arguments", "verdict"]) == "blocked"
+    assert get_in(blocked, ["arguments", "event"]) == "phase_blocked"
+
+    assert {:ok, ticket} = TrackerMock.get(tracker, "wc-orchestrator-blocked")
+    assert ticket.state == :blocked
+    assert {:ok, []} = TrackerMock.list_active(tracker)
+  end
+
+  test "terminal diff validation failure also closes WorkCommission lifecycle", ctx do
+    {:ok, tracker} = TrackerMock.start()
+    commission =
+      "wc-orchestrator-scope-block"
+      |> commission_fixture!(%{
+        scope:
+          scope_fixture!(%{
+            allowed_paths: ["allowed.md"],
+            affected_files: ["allowed.md"],
+            lockset: ["allowed.md"]
+          })
+      })
+
+    :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
+
+    orchestrator_name = :"commission_lifecycle_scope_block_orch_#{System.unique_integer([:positive])}"
+    store_name = :"commission_lifecycle_scope_block_store_#{System.unique_integer([:positive])}"
+
+    {:ok, _store} =
+      WorkflowStore.start_link(
+        phase_configs: phase_configs_without_execute_semantic_gates(),
+        prompts: prompts(),
+        external_publication: %{branch_regex: "^(main|master)$"},
+        name: store_name
+      )
+
+    {:ok, _orchestrator} =
+      Orchestrator.start_link(
+        workflow: Workflow.mvp1r(),
+        tracker_handle: tracker,
+        tracker_adapter: TrackerMock,
+        agent_adapter: AgentMock,
+        external_publication: %{tracker_transition_to: []},
+        judge_fun: JudgeClient.judge_fun(fn _prompt -> {:ok, %{}} end, %{}),
+        haft_invoker: HaftMock.invoke_fun(ctx.haft),
+        workspace_root: ctx.workspace_root,
+        guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
+        task_supervisor: OpenSleigh.AgentSupervisor,
+        workflow_store: store_name,
+        hooks: %{
+          after_create: """
+          git init -q
+          git config user.email test@example.com
+          git config user.name "Open Sleigh Test"
+          printf 'allowed\\n' > allowed.md
+          printf 'outside\\n' > outside.md
+          git add allowed.md outside.md
+          git commit -qm 'baseline'
+          printf 'scope violation\\n' >> outside.md
+          """
+        },
+        name: orchestrator_name
+      )
+
+    {:ok, tickets} = TrackerMock.list_active(tracker)
+    Orchestrator.submit_candidates(orchestrator_name, tickets)
+
+    wait_result = wait_for_terminal(orchestrator_name, 2_000)
+    status = Orchestrator.status(orchestrator_name)
+    artifacts = HaftMock.artifacts(ctx.haft)
+
+    assert wait_result == :ok,
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+
+    blocked =
+      ctx.haft
+      |> HaftMock.artifacts()
+      |> Enum.find(&(get_in(&1, ["arguments", "commission_id"]) == "wc-orchestrator-scope-block"))
+      |> then(fn _ ->
+        ctx.haft
+        |> HaftMock.artifacts()
+        |> Enum.filter(&(get_in(&1, ["arguments", "commission_id"]) == "wc-orchestrator-scope-block"))
+        |> Enum.find(&(get_in(&1, ["arguments", "action"]) == "complete_or_block"))
+      end)
+
+    assert get_in(blocked, ["arguments", "commission_id"]) == "wc-orchestrator-scope-block"
+    assert get_in(blocked, ["arguments", "verdict"]) == "blocked"
+    assert get_in(blocked, ["arguments", "event"]) == "phase_blocked"
+    assert get_in(blocked, ["arguments", "reason"]) == "mutation_outside_commission_scope"
+
+    assert {:ok, ticket} = TrackerMock.get(tracker, "wc-orchestrator-scope-block")
+    assert ticket.state == :blocked
+    assert {:ok, []} = TrackerMock.list_active(tracker)
   end
 
   test "max_concurrency keeps extra commission tickets queued" do
@@ -215,6 +371,20 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     }
   end
 
+  defp phase_configs_with_frame_semantic_gate do
+    phase_configs()
+    |> Map.update!(:frame, fn config ->
+      %{config | gates: %{structural: [], semantic: [:lade_quadrants_split_ok], human: []}}
+    end)
+  end
+
+  defp phase_configs_without_execute_semantic_gates do
+    phase_configs()
+    |> Map.update!(:execute, fn config ->
+      %{config | gates: %{structural: [], semantic: [], human: []}, max_turns: 1}
+    end)
+  end
+
   defp phase_config(phase, role, tools, prompt_key, max_turns) do
     %{
       phase: phase,
@@ -236,6 +406,12 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
       execute: "Execute {{commission.id}}",
       measure: "Measure {{commission.id}}"
     }
+  end
+
+  defp fail_judge_fun do
+    fn _gate_module, _gate_context ->
+      {:ok, %{verdict: :fail, cl: 3, rationale: "phase exit gates still fail"}}
+    end
   end
 
   defp ticket_attrs(%WorkCommission{} = commission) do
@@ -262,8 +438,25 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     |> Map.put(:advance_map, %{preflight: :terminal})
   end
 
-  defp commission_fixture!(id \\ "wc-orchestrator-lifecycle") do
-    scope = scope_fixture!()
+  defp execute_seed_hooks do
+    %{
+      after_create: """
+      git init -q
+      git config user.email test@example.com
+      git config user.name "Open Sleigh Test"
+      mkdir -p lib/open_sleigh
+      printf 'baseline\\n' > lib/open_sleigh/orchestrator.ex
+      git add lib/open_sleigh/orchestrator.ex
+      git commit -qm 'baseline'
+      printf 'dirty\\n' >> lib/open_sleigh/orchestrator.ex
+      """
+    }
+  end
+
+  defp commission_fixture!(id \\ "wc-orchestrator-lifecycle", overrides \\ %{}) do
+    scope =
+      overrides
+      |> Map.get(:scope, scope_fixture!())
 
     %{
       id: id,
@@ -282,11 +475,12 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
       valid_until: ~U[2099-01-01 00:00:00Z],
       fetched_at: ~U[2026-04-22 10:00:00Z]
     }
+    |> Map.merge(Map.delete(overrides, :scope))
     |> WorkCommission.new()
     |> unwrap!()
   end
 
-  defp scope_fixture! do
+  defp scope_fixture!(overrides \\ %{}) do
     attrs = %{
       repo_ref: "local:haft",
       base_sha: "base-r1",
@@ -298,6 +492,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
       allowed_modules: [],
       lockset: ["**/*"]
     }
+    |> Map.merge(overrides)
 
     {:ok, hash} = Scope.canonical_hash(attrs)
 

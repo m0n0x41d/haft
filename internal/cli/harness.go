@@ -78,6 +78,24 @@ type harnessRunOptions struct {
 	CommissionQueueName string
 }
 
+type harnessSessionLogSummary struct {
+	StartedAt       string
+	LastEvent       string
+	LastEventAt     string
+	LastTurnID      string
+	LastTurnStatus  string
+	LastTextPreview string
+}
+
+type harnessCommissionLogSummary struct {
+	Phase       string
+	Event       string
+	At          string
+	TurnID      string
+	TurnStatus  string
+	TextPreview string
+}
+
 var (
 	harnessPlanOut          string
 	harnessPlanID           string
@@ -106,18 +124,24 @@ var (
 	harnessRunWorkspaceRoot     string
 	harnessRunRuntimePath       string
 	harnessRunRepoURL           string
+
+	harnessStatusPath    string
+	harnessStatusLogPath string
+	harnessStatusJSON    bool
+	harnessStatusTail    int
 )
 
 var harnessCmd = &cobra.Command{
 	Use:   "harness",
-	Short: "Run Open-Sleigh from Haft decisions",
-	Long: `Run Open-Sleigh from Haft DecisionRecords.
+	Short: "Operate Haft Harness over WorkCommissions",
+	Long: `Operate Haft Harness over WorkCommissions.
 
-This is the operator path: author ProblemCards and DecisionRecords in Haft,
-then run the harness. By default Haft selects active DecisionRecords that do
-not already have WorkCommissions, creates bounded WorkCommissions, and starts
-Open-Sleigh. Open-Sleigh claims runnable work, and dependencies are enforced
-by Haft.`,
+Haft is the product and semantic authority. ` + "`haft harness`" + ` is the
+commissioned execution surface, backed today by the Open-Sleigh runtime.
+
+The harness executes runnable WorkCommissions. Planning, decision slicing, and
+commission creation stay upstream in Haft via ProblemCards, DecisionRecords,
+plans, and commission commands.`,
 }
 
 var harnessPlanCmd = &cobra.Command{
@@ -132,10 +156,10 @@ var harnessRunCmd = &cobra.Command{
 	Short: "Create commissions and start the Open-Sleigh harness",
 	Long: `Create commissions and start the Open-Sleigh harness.
 
-Run the normal active backlog path:
+Run existing runnable WorkCommissions:
   haft harness run
 
-Pass decision ids directly for an explicit override:
+Create commissions from explicit decision ids:
   haft harness run dec-a dec-b --sequential
 
 Or select decisions from Haft:
@@ -145,8 +169,23 @@ Or select decisions from Haft:
 
 Or pass an existing plan:
   haft harness run --plan .haft/plans/mvp.yaml`,
-	Args: cobra.ArbitraryArgs,
-	RunE: runHarnessRun,
+	Args:         cobra.ArbitraryArgs,
+	SilenceUsage: true,
+	RunE:         runHarnessRun,
+}
+
+var harnessStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the latest Haft Harness status",
+	RunE:  runHarnessStatus,
+}
+
+var harnessResultCmd = &cobra.Command{
+	Use:          "result [commission-id]",
+	Short:        "Show the latest harness result and workspace diff",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE:         runHarnessResult,
 }
 
 func init() {
@@ -156,9 +195,12 @@ func init() {
 	registerCommissionFromDecisionFlags(harnessRunCmd)
 	registerHarnessPlanFlags(harnessRunCmd)
 	registerHarnessRunFlags(harnessRunCmd)
+	registerHarnessStatusFlags(harnessStatusCmd)
 
 	harnessCmd.AddCommand(harnessPlanCmd)
 	harnessCmd.AddCommand(harnessRunCmd)
+	harnessCmd.AddCommand(harnessStatusCmd)
+	harnessCmd.AddCommand(harnessResultCmd)
 	rootCmd.AddCommand(harnessCmd)
 }
 
@@ -194,6 +236,13 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&harnessRunRepoURL, "repo-url", "", "Repository URL/path cloned into workspaces (default: project root)")
 }
 
+func registerHarnessStatusFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&harnessStatusPath, "status-path", "", "Status JSON path")
+	cmd.Flags().StringVar(&harnessStatusLogPath, "log-path", "", "Runtime JSONL log path")
+	cmd.Flags().BoolVar(&harnessStatusJSON, "json", false, "Print raw status JSON")
+	cmd.Flags().IntVar(&harnessStatusTail, "tail", 0, "Print the last N runtime log events")
+}
+
 func runHarnessPlan(cmd *cobra.Command, decisionRefs []string) error {
 	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
 		selectedRefs, err := resolveHarnessDecisionRefs(ctx, store, decisionRefs)
@@ -216,12 +265,799 @@ func runHarnessPlan(cmd *cobra.Command, decisionRefs []string) error {
 	})
 }
 
+func runHarnessStatus(cmd *cobra.Command, _args []string) error {
+	statusPath := selectedHarnessStatusPath()
+	logPath := selectedHarnessLogPath()
+
+	encoded, err := os.ReadFile(statusPath)
+	if err != nil {
+		return fmt.Errorf("read harness status %s: %w", statusPath, err)
+	}
+
+	if harnessStatusJSON {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(encoded)))
+		return err
+	}
+
+	status := map[string]any{}
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		return fmt.Errorf("decode harness status %s: %w", statusPath, err)
+	}
+
+	for _, line := range formatHarnessStatus(status, statusPath, logPath, harnessSessionLogSummaries(logPath)) {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+			return err
+		}
+	}
+
+	if harnessStatusTail <= 0 {
+		return nil
+	}
+
+	return printHarnessRuntimeTail(cmd, status, logPath, harnessStatusTail)
+}
+
+func runHarnessResult(cmd *cobra.Command, args []string) error {
+	return withCommissionProject(func(ctx context.Context, store *artifact.Store, _projectRoot string) error {
+		commissionID, err := harnessResultCommissionID(ctx, store, args)
+		if err != nil {
+			return err
+		}
+
+		commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+		if err != nil {
+			return err
+		}
+
+		logPath := selectedHarnessLogPath()
+		runtimeDetail, statusUpdatedAt := currentHarnessRuntimeDetail(selectedHarnessStatusPath(), commissionID)
+		summary := harnessSessionLogSummaries(logPath)[stringField(runtimeDetail, "session_id")]
+		latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
+		for _, line := range formatHarnessResult(
+			commission,
+			defaultHarnessWorkspaceRoot(),
+			runtimeDetail,
+			statusUpdatedAt,
+			summary,
+			latestTurn,
+		) {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func harnessResultCommissionID(
+	ctx context.Context,
+	store *artifact.Store,
+	args []string,
+) (string, error) {
+	if len(args) == 1 {
+		return strings.TrimSpace(args[0]), nil
+	}
+
+	statusIDs := harnessStatusCommissionIDs(selectedHarnessStatusPath())
+	if len(statusIDs) == 1 {
+		return statusIDs[0], nil
+	}
+
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return "", err
+	}
+
+	runnable := runnableHarnessCommissions(records)
+	if len(runnable) == 1 {
+		return stringField(runnable[0], "id"), nil
+	}
+
+	return "", fmt.Errorf("commission id is required when the current harness result is ambiguous")
+}
+
+func harnessStatusCommissionIDs(statusPath string) []string {
+	encoded, err := os.ReadFile(statusPath)
+	if err != nil {
+		return nil
+	}
+
+	status := map[string]any{}
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		return nil
+	}
+
+	orchestrator := mapField(status, "orchestrator")
+	ids := []string{}
+	for _, detail := range mapSliceField(orchestrator, "running_details") {
+		ids = append(ids, stringField(detail, "commission_id"))
+	}
+
+	return uniqueStringsPreserveOrder(cleanStringSlice(ids))
+}
+
+func currentHarnessRuntimeDetail(statusPath string, commissionID string) (map[string]any, string) {
+	encoded, err := os.ReadFile(statusPath)
+	if err != nil {
+		return nil, ""
+	}
+
+	status := map[string]any{}
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		return nil, ""
+	}
+
+	orchestrator := mapField(status, "orchestrator")
+	for _, detail := range mapSliceField(orchestrator, "running_details") {
+		if stringField(detail, "commission_id") == commissionID {
+			return detail, stringField(status, "updated_at")
+		}
+	}
+
+	return nil, stringField(status, "updated_at")
+}
+
+func formatHarnessResult(
+	commission map[string]any,
+	workspaceRoot string,
+	runtimeDetail map[string]any,
+	statusUpdatedAt string,
+	runtimeSummary harnessSessionLogSummary,
+	latestTurn harnessCommissionLogSummary,
+) []string {
+	commissionID := stringField(commission, "id")
+	workspacePath := filepath.Join(workspaceRoot, commissionID)
+
+	lines := []string{
+		"Open-Sleigh harness result",
+		"commission: " + presentOrUnknown(commissionID),
+		"state: " + presentOrUnknown(stringField(commission, "state")),
+		"decision: " + presentOrUnknown(stringField(commission, "decision_ref")),
+		"plan: " + presentOrUnknown(stringField(commission, "implementation_plan_ref")),
+		"workspace: " + workspacePath,
+	}
+
+	lines = append(lines, formatHarnessCurrentRuntime(runtimeDetail, statusUpdatedAt, runtimeSummary)...)
+	lines = append(lines, formatHarnessLatestAgentTurn(latestTurn)...)
+	lines = append(lines, formatHarnessResultEvents(mapSliceField(commission, "events"))...)
+	lines = append(lines, formatHarnessWorkspaceGit(workspacePath)...)
+	return lines
+}
+
+func formatHarnessCurrentRuntime(
+	runtimeDetail map[string]any,
+	statusUpdatedAt string,
+	runtimeSummary harnessSessionLogSummary,
+) []string {
+	if len(runtimeDetail) == 0 {
+		return nil
+	}
+
+	fields := []string{
+		"phase=" + presentOrUnknown(stringField(runtimeDetail, "phase")),
+		"sub_state=" + presentOrUnknown(stringField(runtimeDetail, "sub_state")),
+		"session=" + presentOrUnknown(stringField(runtimeDetail, "session_id")),
+		"task_pid=" + presentOrUnknown(stringField(runtimeDetail, "task_pid")),
+		"workspace=" + presentOrUnknown(stringField(runtimeDetail, "workspace_path")),
+	}
+
+	if strings.TrimSpace(statusUpdatedAt) != "" {
+		fields = append(fields, "status_updated_at="+statusUpdatedAt)
+	}
+	if strings.TrimSpace(runtimeSummary.LastEvent) != "" {
+		fields = append(fields, "last_event="+runtimeSummary.LastEvent)
+	}
+	if strings.TrimSpace(runtimeSummary.LastEventAt) != "" {
+		fields = append(fields, "last_event_at="+runtimeSummary.LastEventAt)
+	}
+	if strings.TrimSpace(runtimeSummary.LastTurnStatus) != "" {
+		fields = append(fields, "last_turn="+runtimeSummary.LastTurnStatus)
+	}
+	if strings.TrimSpace(runtimeSummary.LastTurnID) != "" {
+		fields = append(fields, "turn_id="+runtimeSummary.LastTurnID)
+	}
+
+	lines := []string{
+		"current_runtime:",
+		"- " + strings.Join(fields, " "),
+	}
+	if preview := strings.TrimSpace(runtimeSummary.LastTextPreview); preview != "" {
+		lines = append(lines, "  preview="+preview)
+	}
+	return lines
+}
+
+func formatHarnessLatestAgentTurn(summary harnessCommissionLogSummary) []string {
+	if strings.TrimSpace(summary.Event) == "" {
+		return nil
+	}
+
+	fields := []string{
+		"phase=" + presentOrUnknown(summary.Phase),
+		"event=" + presentOrUnknown(summary.Event),
+		"at=" + presentOrUnknown(summary.At),
+	}
+	if strings.TrimSpace(summary.TurnStatus) != "" {
+		fields = append(fields, "status="+summary.TurnStatus)
+	}
+	if strings.TrimSpace(summary.TurnID) != "" {
+		fields = append(fields, "turn_id="+summary.TurnID)
+	}
+
+	lines := []string{
+		"last_agent_turn:",
+		"- " + strings.Join(fields, " "),
+	}
+	if preview := strings.TrimSpace(summary.TextPreview); preview != "" {
+		lines = append(lines, "  preview="+preview)
+	}
+	return lines
+}
+
+func formatHarnessResultEvents(events []map[string]any) []string {
+	attemptEvents := currentHarnessAttemptEvents(events)
+
+	lines := []string{"phase_events:"}
+	outcomes := harnessPhaseOutcomeLines(attemptEvents)
+	if len(outcomes) == 0 {
+		lines = append(lines, "- none")
+	} else {
+		lines = append(lines, outcomes...)
+	}
+
+	lines = append(lines, "last_event: "+harnessLastEventLine(attemptEvents))
+	return lines
+}
+
+func currentHarnessAttemptEvents(events []map[string]any) []map[string]any {
+	if len(events) == 0 {
+		return nil
+	}
+
+	start := 0
+	for i, event := range events {
+		if stringField(event, "event") == "commission_requeued" {
+			start = i
+		}
+	}
+
+	return events[start:]
+}
+
+func harnessPhaseOutcomeLines(events []map[string]any) []string {
+	latest := map[string]string{}
+	for _, event := range events {
+		if stringField(event, "event") != "phase_outcome" {
+			continue
+		}
+
+		payload := mapField(event, "payload")
+		phase := stringField(payload, "phase")
+		line := fmt.Sprintf(
+			"- %s verdict=%s next=%s at=%s",
+			presentOrUnknown(phase),
+			presentOrUnknown(stringField(event, "verdict")),
+			presentOrUnknown(stringField(payload, "next")),
+			presentOrUnknown(stringField(event, "recorded_at")),
+		)
+		latest[phase] = line
+	}
+
+	lines := []string{}
+	for _, phase := range []string{"preflight", "frame", "execute", "measure", "terminal"} {
+		line, ok := latest[phase]
+		if !ok {
+			continue
+		}
+		lines = append(lines, line)
+		delete(latest, phase)
+	}
+
+	extras := make([]string, 0, len(latest))
+	for phase := range latest {
+		extras = append(extras, phase)
+	}
+	sort.Strings(extras)
+	for _, phase := range extras {
+		lines = append(lines, latest[phase])
+	}
+	return lines
+}
+
+func harnessLastEventLine(events []map[string]any) string {
+	if len(events) == 0 {
+		return "none"
+	}
+
+	event := events[len(events)-1]
+	parts := []string{
+		presentOrUnknown(stringField(event, "event")),
+		"action=" + presentOrUnknown(stringField(event, "action")),
+		"verdict=" + presentOrUnknown(stringField(event, "verdict")),
+		"reason=" + presentOrUnknown(stringField(event, "reason")),
+		"at=" + presentOrUnknown(stringField(event, "recorded_at")),
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatHarnessWorkspaceGit(workspacePath string) []string {
+	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+		return []string{"git_status: workspace not found or not a git repository"}
+	}
+
+	status := trimmedCommandOutput(workspacePath, "git", "status", "--short")
+	diffStat := trimmedCommandOutput(workspacePath, "git", "diff", "--stat")
+
+	lines := []string{"git_status:"}
+	if status == "" {
+		lines = append(lines, "- clean")
+	} else {
+		lines = append(lines, indentLines(status)...)
+	}
+
+	lines = append(lines, "diff_stat:")
+	if diffStat == "" {
+		lines = append(lines, "- empty")
+	} else {
+		lines = append(lines, indentLines(diffStat)...)
+	}
+	return lines
+}
+
+func trimmedCommandOutput(workdir string, name string, args ...string) string {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = workdir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return strings.TrimSpace(string(output))
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func indentLines(value string) []string {
+	lines := []string{}
+	for _, line := range strings.Split(value, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, "- "+line)
+	}
+	return lines
+}
+
+func selectedHarnessStatusPath() string {
+	if strings.TrimSpace(harnessStatusPath) != "" {
+		return harnessStatusPath
+	}
+	if env := strings.TrimSpace(os.Getenv("OPEN_SLEIGH_STATUS_PATH")); env != "" {
+		return env
+	}
+	return defaultHarnessStatusPath()
+}
+
+func selectedHarnessLogPath() string {
+	if strings.TrimSpace(harnessStatusLogPath) != "" {
+		return harnessStatusLogPath
+	}
+	if env := strings.TrimSpace(os.Getenv("OPEN_SLEIGH_LOG_PATH")); env != "" {
+		return env
+	}
+	return defaultHarnessLogPath()
+}
+
+func defaultHarnessStatusPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".open-sleigh", "status.json")
+}
+
+func defaultHarnessLogPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".open-sleigh", "runtime.jsonl")
+}
+
+func defaultHarnessWorkspaceRoot() string {
+	return filepath.Join(os.Getenv("HOME"), ".open-sleigh", "workspaces")
+}
+
+func formatHarnessStatus(
+	status map[string]any,
+	statusPath string,
+	logPath string,
+	sessionSummaries map[string]harnessSessionLogSummary,
+) []string {
+	metadata := mapField(status, "metadata")
+	orchestrator := mapField(status, "orchestrator")
+	claimed := stringSliceField(orchestrator, "claimed")
+	running := stringSliceField(orchestrator, "running")
+	pendingHuman := stringSliceField(orchestrator, "pending_human")
+	failures := mapSliceField(status, "failures")
+
+	lines := []string{
+		"Open-Sleigh harness status",
+		"updated_at: " + stringField(status, "updated_at"),
+		"status_path: " + statusPath,
+		"runtime_log: " + logPath,
+		"agent: " + presentOrUnknown(stringField(metadata, "agent_kind")),
+		"tracker: " + presentOrUnknown(stringField(metadata, "tracker_kind")),
+		"config: " + presentOrUnknown(stringField(metadata, "config_path")),
+		"workspace_root: " + presentOrUnknown(stringField(metadata, "workspace_root")),
+		"claimed: " + strconv.Itoa(len(claimed)),
+		"running: " + strconv.Itoa(len(running)),
+		"pending_human: " + strconv.Itoa(len(pendingHuman)),
+		"failures: " + strconv.Itoa(len(failures)),
+	}
+
+	lines = append(
+		lines,
+		formatRunningDetails(mapSliceField(orchestrator, "running_details"), sessionSummaries, time.Now().UTC())...,
+	)
+	lines = append(lines, formatFailures(failures)...)
+	return lines
+}
+
+func formatRunningDetails(
+	details []map[string]any,
+	sessionSummaries map[string]harnessSessionLogSummary,
+	now time.Time,
+) []string {
+	if len(details) == 0 {
+		return nil
+	}
+
+	lines := []string{"running_details:"}
+	for _, detail := range details {
+		lines = append(lines, formatRunningDetailLines(detail, sessionSummaries, now)...)
+	}
+	return lines
+}
+
+func formatRunningDetailLines(
+	detail map[string]any,
+	sessionSummaries map[string]harnessSessionLogSummary,
+	now time.Time,
+) []string {
+	sessionID := presentOrUnknown(stringField(detail, "session_id"))
+	sessionSummary := sessionSummaries[sessionID]
+	fields := []string{
+		"session=" + sessionID,
+		"commission=" + presentOrUnknown(stringField(detail, "commission_id")),
+		"phase=" + presentOrUnknown(stringField(detail, "phase")),
+		"sub_state=" + presentOrUnknown(stringField(detail, "sub_state")),
+		"task_pid=" + presentOrUnknown(stringField(detail, "task_pid")),
+		"workspace=" + presentOrUnknown(stringField(detail, "workspace_path")),
+	}
+
+	if startedAt, elapsed := harnessSessionTiming(sessionSummary.StartedAt, now); startedAt != "" {
+		fields = append(fields, "started_at="+startedAt, "elapsed="+elapsed)
+	}
+	if strings.TrimSpace(sessionSummary.LastEvent) != "" {
+		fields = append(fields, "last_event="+sessionSummary.LastEvent)
+	}
+	if strings.TrimSpace(sessionSummary.LastEventAt) != "" {
+		fields = append(fields, "last_event_at="+sessionSummary.LastEventAt)
+	}
+	if strings.TrimSpace(sessionSummary.LastTurnStatus) != "" {
+		fields = append(fields, "last_turn="+sessionSummary.LastTurnStatus)
+	}
+	if strings.TrimSpace(sessionSummary.LastTurnID) != "" {
+		fields = append(fields, "turn_id="+sessionSummary.LastTurnID)
+	}
+
+	lines := []string{"- " + strings.Join(fields, " ")}
+	if preview := strings.TrimSpace(sessionSummary.LastTextPreview); preview != "" {
+		lines = append(lines, "  preview="+preview)
+	}
+	return lines
+}
+
+func harnessSessionLogSummaries(logPath string) map[string]harnessSessionLogSummary {
+	encoded, err := os.ReadFile(logPath)
+	if err != nil {
+		return map[string]harnessSessionLogSummary{}
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
+	summaries := map[string]harnessSessionLogSummary{}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		data := mapField(event, "data")
+		sessionID := strings.TrimSpace(stringField(data, "session_id"))
+		if sessionID == "" {
+			continue
+		}
+
+		at := strings.TrimSpace(stringField(event, "at"))
+		eventName := strings.TrimSpace(stringField(event, "event"))
+		summary := summaries[sessionID]
+
+		if eventName == "session_started" && summary.StartedAt == "" {
+			summary.StartedAt = at
+		}
+		if eventName != "" {
+			summary.LastEvent = eventName
+			summary.LastEventAt = at
+		}
+
+		switch eventName {
+		case "agent_turn_started":
+			summary.LastTurnStatus = "started"
+			summary.LastTextPreview = ""
+		case "agent_turn_completed":
+			summary.LastTurnStatus = presentOrUnknown(stringField(data, "status"))
+			summary.LastTurnID = strings.TrimSpace(stringField(data, "turn_id"))
+			summary.LastTextPreview = harnessCompactPreview(stringField(data, "text_preview"))
+		case "agent_turn_failed":
+			summary.LastTurnStatus = "failed"
+			summary.LastTextPreview = harnessCompactPreview(stringField(data, "reason"))
+		}
+
+		summaries[sessionID] = summary
+	}
+	return summaries
+}
+
+func harnessLatestCommissionLogSummary(logPath string, commissionID string) harnessCommissionLogSummary {
+	if strings.TrimSpace(commissionID) == "" {
+		return harnessCommissionLogSummary{}
+	}
+
+	encoded, err := os.ReadFile(logPath)
+	if err != nil {
+		return harnessCommissionLogSummary{}
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
+	summary := harnessCommissionLogSummary{}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if strings.TrimSpace(stringField(event, "commission_id")) != commissionID {
+			continue
+		}
+
+		eventName := strings.TrimSpace(stringField(event, "event"))
+		if !isHarnessAgentTurnEvent(eventName) {
+			continue
+		}
+
+		data := mapField(event, "data")
+		summary = harnessCommissionLogSummary{
+			Phase:       strings.TrimSpace(stringField(data, "phase")),
+			Event:       eventName,
+			At:          strings.TrimSpace(stringField(event, "at")),
+			TurnID:      strings.TrimSpace(stringField(data, "turn_id")),
+			TurnStatus:  harnessCommissionTurnStatus(eventName, data),
+			TextPreview: harnessCommissionPreview(eventName, data),
+		}
+	}
+	return summary
+}
+
+func isHarnessAgentTurnEvent(event string) bool {
+	switch event {
+	case "agent_turn_started", "agent_turn_completed", "agent_turn_failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func harnessCommissionTurnStatus(eventName string, data map[string]any) string {
+	switch eventName {
+	case "agent_turn_started":
+		return "started"
+	case "agent_turn_failed":
+		return "failed"
+	default:
+		return strings.TrimSpace(stringField(data, "status"))
+	}
+}
+
+func harnessCommissionPreview(eventName string, data map[string]any) string {
+	switch eventName {
+	case "agent_turn_failed":
+		return harnessCompactPreview(stringField(data, "reason"))
+	default:
+		return harnessCompactPreview(stringField(data, "text_preview"))
+	}
+}
+
+func harnessSessionTiming(startedAt string, now time.Time) (string, string) {
+	if strings.TrimSpace(startedAt) == "" {
+		return "", ""
+	}
+
+	startTime, err := time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return startedAt, "unknown"
+	}
+
+	return startedAt, now.Sub(startTime).Round(time.Second).String()
+}
+
+func harnessCompactPreview(value string) string {
+	cleaned := strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if cleaned == "" {
+		return ""
+	}
+	if len(cleaned) <= 180 {
+		return cleaned
+	}
+	return cleaned[:177] + "..."
+}
+
+func formatFailures(failures []map[string]any) []string {
+	if len(failures) == 0 {
+		return nil
+	}
+
+	lines := []string{"recent_failures:"}
+	for _, failure := range failures {
+		lines = append(lines, "- "+formatFailure(failure))
+	}
+	return lines
+}
+
+func formatFailure(failure map[string]any) string {
+	fields := []string{
+		"metric=" + presentOrUnknown(stringField(failure, "metric")),
+		"reason=" + presentOrUnknown(stringField(failure, "reason")),
+		"commission=" + presentOrUnknown(stringField(failure, "commission_id")),
+		"session=" + presentOrUnknown(stringField(failure, "session_id")),
+		"phase=" + presentOrUnknown(stringField(failure, "phase")),
+	}
+	return strings.Join(fields, " ")
+}
+
+func printHarnessRuntimeTail(
+	cmd *cobra.Command,
+	status map[string]any,
+	logPath string,
+	lineCount int,
+) error {
+	lines, err := recentHarnessLogLines(status, logPath, lineCount)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "runtime_events:"); err != nil {
+		return err
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func recentHarnessLogLines(status map[string]any, logPath string, lineCount int) ([]string, error) {
+	encoded, err := os.ReadFile(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("read harness runtime log %s: %w", logPath, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
+	filtered := filterHarnessLogLines(status, lines)
+	if len(filtered) == 0 {
+		filtered = lines
+	}
+	if len(filtered) <= lineCount {
+		return filtered, nil
+	}
+	return filtered[len(filtered)-lineCount:], nil
+}
+
+func filterHarnessLogLines(status map[string]any, lines []string) []string {
+	configPath := strings.TrimSpace(stringField(mapField(status, "metadata"), "config_path"))
+	commissionSet := harnessRunningCommissionSet(status)
+	if configPath == "" && len(commissionSet) == 0 {
+		return nil
+	}
+
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if harnessLogLineMatchesCurrentRun(event, configPath, commissionSet) {
+			filtered = append(filtered, line)
+		}
+	}
+	return filtered
+}
+
+func harnessRunningCommissionSet(status map[string]any) map[string]struct{} {
+	orchestrator := mapField(status, "orchestrator")
+	details := mapSliceField(orchestrator, "running_details")
+	set := make(map[string]struct{}, len(details))
+	for _, detail := range details {
+		commissionID := strings.TrimSpace(stringField(detail, "commission_id"))
+		if commissionID == "" {
+			continue
+		}
+		set[commissionID] = struct{}{}
+	}
+	return set
+}
+
+func harnessLogLineMatchesCurrentRun(
+	event map[string]any,
+	configPath string,
+	commissionSet map[string]struct{},
+) bool {
+	if configPath != "" && stringField(mapField(event, "metadata"), "config_path") == configPath {
+		return true
+	}
+
+	commissionID := strings.TrimSpace(stringField(event, "commission_id"))
+	if commissionID == "" {
+		return false
+	}
+
+	_, exists := commissionSet[commissionID]
+	return exists
+}
+
+func mapField(payload map[string]any, key string) map[string]any {
+	if value, ok := payload[key].(map[string]any); ok {
+		return value
+	}
+	return map[string]any{}
+}
+
+func mapSliceField(payload map[string]any, key string) []map[string]any {
+	values, ok := payload[key].([]any)
+	if !ok {
+		return nil
+	}
+
+	result := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		if item, ok := value.(map[string]any); ok {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func presentOrUnknown(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "unknown"
+	}
+	return value
+}
+
 func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 	if harnessRunPlanPath != "" && harnessDecisionSelectorsPresent(decisionRefs) {
 		return fmt.Errorf("use either decision selectors or --plan, not both")
 	}
 
 	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
+		if shouldRunExistingHarnessCommissions(decisionRefs) {
+			handled, err := runExistingHarnessCommissions(ctx, cmd, store, projectRoot)
+			if err != nil {
+				return err
+			}
+			if handled {
+				return nil
+			}
+			return fmt.Errorf("no runnable WorkCommissions; create commissions explicitly with `haft harness run <decision-id> --prepare-only`, `haft harness run --problem <problem-id> --prepare-only`, or `haft commission create-from-decision <decision-id>`")
+		}
+
 		selectedRefs, err := harnessRunDecisionRefs(ctx, store, decisionRefs)
 		if err != nil {
 			return err
@@ -252,6 +1088,122 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 
 		return startOpenSleigh(cmd, opts, configPath)
 	})
+}
+
+func shouldRunExistingHarnessCommissions(decisionRefs []string) bool {
+	return harnessRunPlanPath == "" && !harnessDecisionSelectorsPresent(decisionRefs)
+}
+
+func runExistingHarnessCommissions(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	projectRoot string,
+) (bool, error) {
+	planPath, plan, result, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	opts := defaultHarnessRunOptions(projectRoot, planPath, plan)
+	configPath, err := writeHarnessRuntimeConfig(projectRoot, opts)
+	if err != nil {
+		return false, err
+	}
+
+	if err := printHarnessRunSummary(cmd, planPath, configPath, false, result, opts); err != nil {
+		return false, err
+	}
+	if opts.PrepareOnly {
+		return true, nil
+	}
+
+	return true, startOpenSleigh(cmd, opts, configPath)
+}
+
+func existingRunnableHarnessPlan(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+) (string, map[string]any, string, bool, error) {
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return "", nil, "", false, err
+	}
+
+	runnable := runnableHarnessCommissions(records)
+	if len(runnable) == 0 {
+		return "", nil, "", false, nil
+	}
+
+	plan := existingRunnablePlan(runnable)
+	planPath := existingRunnablePlanPath(projectRoot, plan)
+	result := fmt.Sprintf("using %d existing runnable commission(s)", len(runnable))
+	return planPath, plan, result, true, nil
+}
+
+func runnableHarnessCommissions(records []map[string]any) []map[string]any {
+	runnable := make([]map[string]any, 0, len(records))
+	now := time.Now().UTC()
+
+	for _, commission := range records {
+		if workCommissionRunnableForRequest(commission, records, nil, now) {
+			runnable = append(runnable, commission)
+		}
+	}
+	return runnable
+}
+
+func existingRunnablePlan(commissions []map[string]any) map[string]any {
+	planRef, planRevision, ok := commonCommissionPlan(commissions)
+	if !ok {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		"id":       planRef,
+		"revision": planRevision,
+	}
+}
+
+func commonCommissionPlan(commissions []map[string]any) (string, string, bool) {
+	if len(commissions) == 0 {
+		return "", "", false
+	}
+
+	firstPlanRef := stringField(commissions[0], "implementation_plan_ref")
+	firstRevision := stringField(commissions[0], "implementation_plan_revision")
+	if firstPlanRef == "" {
+		return "", "", false
+	}
+
+	for _, commission := range commissions[1:] {
+		if stringField(commission, "implementation_plan_ref") != firstPlanRef {
+			return "", "", false
+		}
+		if stringField(commission, "implementation_plan_revision") != firstRevision {
+			return "", "", false
+		}
+	}
+
+	return firstPlanRef, firstRevision, true
+}
+
+func existingRunnablePlanPath(projectRoot string, plan map[string]any) string {
+	planRef := stringField(plan, "id")
+	if planRef == "" {
+		return "(existing runnable commissions)"
+	}
+
+	path := filepath.Join(projectRoot, ".haft", "plans", planRef+".yaml")
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+
+	return "plan " + planRef + " (existing runnable commissions)"
 }
 
 func harnessRunDecisionRefs(
@@ -312,7 +1264,7 @@ func resolveHarnessDecisionRefs(
 		if len(refs) == 0 {
 			return nil, fmt.Errorf("no active decisions without WorkCommissions")
 		}
-		return refs, nil
+		return defaultRunnableDecisionRefs(ctx, store, refs)
 	}
 
 	if harnessPlanAllActive {
@@ -355,7 +1307,56 @@ func resolveHarnessDecisionRefs(
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no selected active decisions without WorkCommissions")
 	}
+	if len(explicitRefs) == 0 && len(commissionFromDecisionAllowedPaths) == 0 {
+		return defaultRunnableDecisionRefs(ctx, store, filtered)
+	}
 	return filtered, nil
+}
+
+func defaultRunnableDecisionRefs(
+	ctx context.Context,
+	store *artifact.Store,
+	decisionRefs []string,
+) ([]string, error) {
+	if len(commissionFromDecisionAllowedPaths) > 0 {
+		return decisionRefs, nil
+	}
+
+	refs, skipped, err := decisionRefsWithAffectedFiles(ctx, store, decisionRefs)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) > 0 {
+		return refs, nil
+	}
+
+	return nil, fmt.Errorf(
+		"no runnable commissions and no selected active decisions with affected_files; skipped %s. Add affected_files to a DecisionRecord or pass --allowed-path",
+		strings.Join(skipped, ", "),
+	)
+}
+
+func decisionRefsWithAffectedFiles(
+	ctx context.Context,
+	store *artifact.Store,
+	decisionRefs []string,
+) ([]string, []string, error) {
+	refs := make([]string, 0, len(decisionRefs))
+	skipped := make([]string, 0)
+
+	for _, ref := range decisionRefs {
+		files, err := store.GetAffectedFiles(ctx, ref)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load decision affected files for %s: %w", ref, err)
+		}
+		if len(files) == 0 {
+			skipped = append(skipped, ref)
+			continue
+		}
+		refs = append(refs, ref)
+	}
+
+	return refs, skipped, nil
 }
 
 func harnessPlanSelectorFlagsPresent() bool {
@@ -748,17 +1749,17 @@ func defaultHarnessRunOptions(
 ) harnessRunOptions {
 	statusPath := harnessRunStatusPath
 	if strings.TrimSpace(statusPath) == "" {
-		statusPath = filepath.Join(os.Getenv("HOME"), ".open-sleigh", "status.json")
+		statusPath = defaultHarnessStatusPath()
 	}
 
 	logPath := harnessRunLogPath
 	if strings.TrimSpace(logPath) == "" {
-		logPath = filepath.Join(os.Getenv("HOME"), ".open-sleigh", "runtime.jsonl")
+		logPath = defaultHarnessLogPath()
 	}
 
 	workspaceRoot := harnessRunWorkspaceRoot
 	if strings.TrimSpace(workspaceRoot) == "" {
-		workspaceRoot = filepath.Join(os.Getenv("HOME"), ".open-sleigh", "workspaces")
+		workspaceRoot = defaultHarnessWorkspaceRoot()
 	}
 
 	repoURL := harnessRunRepoURL
@@ -1006,8 +2007,8 @@ func harnessPhaseConfig() map[string]any {
 			"agent_role": "frame_verifier",
 			"tools":      []string{"haft_query", "read", "grep"},
 			"gates": map[string]any{
-				"structural": []string{"problem_card_ref_present", "described_entity_field_present", "valid_until_field_present"},
-				"semantic":   []string{"object_of_talk_is_specific"},
+				"structural": []string{"problem_card_ref_present", "valid_until_field_present"},
+				"semantic":   []string{},
 			},
 		},
 		"execute": map[string]any{
@@ -1020,7 +2021,7 @@ func harnessPhaseConfig() map[string]any {
 		},
 		"measure": map[string]any{
 			"agent_role": "measurer",
-			"tools":      []string{"haft_decision", "haft_refresh"},
+			"tools":      []string{"bash", "read", "grep", "haft_query", "haft_decision", "haft_refresh"},
 			"gates": map[string]any{
 				"structural": []string{"evidence_ref_not_self", "valid_until_field_present"},
 				"semantic":   []string{"no_self_evidence_semantic"},
@@ -1034,16 +2035,73 @@ func harnessPromptTemplates() string {
 		"# Prompt templates",
 		"",
 		"## Preflight",
-		"You are the Commission Preflight checker. Given WorkCommission {{commission.id}}, read the linked ProblemCard, DecisionRecord, scope, base branch, and lockset. Report whether current context materially changed. You do not authorize execution; Haft decides after validating deterministic preflight facts.",
+		strings.Join([]string{
+			"You are the Commission Preflight checker for WorkCommission {{commission.id}}.",
+			"",
+			"Use this authoritative WorkCommission snapshot. Do not discover the commission by scanning the repository.",
+			"",
+			"```json",
+			"{{commission.json}}",
+			"```",
+			"",
+			"Task:",
+			"- Inspect only the linked ProblemCard, linked DecisionRecord, current git status, current HEAD, and the allowed_paths in the scope.",
+			"- Do not implement, edit files, create commits, or widen scope.",
+			"- Do not search the whole repository unless a listed allowed_path or linked artifact is missing.",
+			"- Report a concise PreflightReport with: commission_id, decision_ref, problem_card_ref, current_head, workspace_dirty, material_context_change, reason.",
+			"- If the deterministic snapshot looks stale or uncertain, say so directly. You do not authorize execution; Haft decides after validating deterministic preflight facts.",
+		}, "\n"),
 		"",
 		"## Frame",
-		"You are the Frame verifier. Given WorkCommission {{commission.id}} and linked ProblemCardRef {{commission.problem_card_ref}}, verify that the upstream ProblemCard is present, fresh, and sufficiently specific.",
+		strings.Join([]string{
+			"You are the Frame verifier for WorkCommission {{commission.id}}.",
+			"",
+			"Linked ProblemCardRef: {{commission.problem_card_ref}}",
+			"",
+			"ProblemCard:",
+			"{{problem_card.body}}",
+			"",
+			"Verify that this upstream problem frame is present and still compatible with the WorkCommission. Do not implement or edit files in this phase.",
+		}, "\n"),
 		"",
 		"## Execute",
-		"You are the Executor. Given DecisionRecord {{decision.id}} and WorkCommission {{commission.id}}, implement only the bounded scope and produce external evidence.",
+		strings.Join([]string{
+			"You are the Executor for WorkCommission {{commission.id}}.",
+			"",
+			"Use this authoritative WorkCommission snapshot. Do not rediscover the commission by scanning the repository.",
+			"",
+			"```json",
+			"{{commission.json}}",
+			"```",
+			"",
+			"Linked ProblemCard:",
+			"{{problem_card.body}}",
+			"",
+			"Task:",
+			"- Implement DecisionRecord {{decision.id}} inside the bounded scope only.",
+			"- Do not stop at analysis, narration, or a plan. Make the actual file changes now if the commission is runnable.",
+			"- Edit only files inside `scope.allowed_paths` and do not widen scope.",
+			"- Leave final evidence adjudication to the Measure phase.",
+		}, "\n"),
 		"",
 		"## Measure",
-		"You are the Measurer. Given WorkCommission {{commission.id}}, assemble external evidence and decide whether the measured outcome passes.",
+		strings.Join([]string{
+			"You are the Measurer for WorkCommission {{commission.id}}.",
+			"",
+			"Use this authoritative WorkCommission snapshot.",
+			"",
+			"```json",
+			"{{commission.json}}",
+			"```",
+			"",
+			"Linked ProblemCard:",
+			"{{problem_card.body}}",
+			"",
+			"Task:",
+			"- Run or inspect the required evidence listed in the commission snapshot.",
+			"- Do not edit product files in this phase.",
+			"- Record an honest measurement with concrete evidence: pass, partial, or failed.",
+		}, "\n"),
 		"",
 	}, "\n")
 }
@@ -1076,6 +2134,9 @@ func printHarnessRunSummary(
 		lines = append(lines, "Commissions: created")
 	} else {
 		lines = append(lines, "Commissions: "+commissionResult)
+	}
+	if !opts.PrepareOnly {
+		lines = append(lines, "Observe: haft harness status --tail 20")
 	}
 
 	for _, line := range lines {

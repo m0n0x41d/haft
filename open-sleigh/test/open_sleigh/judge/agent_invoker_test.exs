@@ -79,4 +79,27 @@ defmodule OpenSleigh.Judge.AgentInvokerTest do
 
     assert {:error, :judge_response_malformed} = AgentInvoker.invoke("Judge this", config)
   end
+
+  test "creates a missing workspace before starting the judge adapter", ctx do
+    Mock.put_turn_replies([
+      %{
+        text: ~s({"verdict":"pass","cl":2,"rationale":"workspace created"})
+      }
+    ])
+
+    workspace = Path.join(ctx.workspace, "_missing_judge_workspace")
+    refute File.dir?(workspace)
+
+    config =
+      AgentInvoker.config(
+        Mock,
+        workspace,
+        ConfigHash.from_iodata("judge-test"),
+        %{}
+      )
+
+    assert {:ok, response} = AgentInvoker.invoke("Judge this", config)
+    assert response["verdict"] == "pass"
+    assert File.dir?(workspace)
+  end
 end

@@ -55,11 +55,18 @@ defmodule OpenSleigh.Agent.Codex do
   @impl true
   @spec dispatch_tool(map(), atom(), map(), AdapterSession.t()) ::
           {:ok, map()} | {:error, EffectError.t()}
+  def dispatch_tool(%{server: server}, tool, args, %AdapterSession{} = session)
+      when is_pid(server) and tool in @tool_registry do
+    session
+    |> AgentAdapter.ensure_in_scope(tool, args)
+    |> dispatch_scoped_tool(server, tool, args, session)
+  end
+
   def dispatch_tool(_handle, tool, args, %AdapterSession{} = session)
       when tool in @tool_registry do
     session
     |> AgentAdapter.ensure_in_scope(tool, args)
-    |> dispatch_scoped_tool(tool)
+    |> dispatch_unstarted_tool()
   end
 
   def dispatch_tool(_handle, _tool, _args, %AdapterSession{}),
@@ -93,10 +100,24 @@ defmodule OpenSleigh.Agent.Codex do
 
   defp complete_start_session({:error, _reason} = error, _session), do: error
 
-  @spec dispatch_scoped_tool(:ok | {:error, EffectError.t()}, atom()) ::
+  @spec dispatch_scoped_tool(
+          :ok | {:error, EffectError.t()},
+          pid(),
+          atom(),
+          map(),
+          AdapterSession.t()
+        ) ::
           {:ok, map()} | {:error, EffectError.t()}
-  defp dispatch_scoped_tool(:ok, _tool), do: {:error, :tool_execution_failed}
-  defp dispatch_scoped_tool({:error, _reason} = error, _tool), do: error
+  defp dispatch_scoped_tool(:ok, server, tool, args, session) do
+    Server.dispatch_tool(server, tool, args, session)
+  end
+
+  defp dispatch_scoped_tool({:error, _reason} = error, _server, _tool, _args, _session), do: error
+
+  @spec dispatch_unstarted_tool(:ok | {:error, EffectError.t()}) ::
+          {:ok, map()} | {:error, EffectError.t()}
+  defp dispatch_unstarted_tool(:ok), do: {:error, :tool_execution_failed}
+  defp dispatch_unstarted_tool({:error, _reason} = error), do: error
 
   @spec server_opts() :: keyword()
   defp server_opts do

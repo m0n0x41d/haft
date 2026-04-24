@@ -170,6 +170,57 @@ defmodule OpenSleigh.Haft.ClientTest do
     end)
   end
 
+  test "fetch_problem_card/3 accepts current Haft artifact ProblemCard shape", ctx do
+    result = %{
+      "problem_card" => %{
+        "id" => "prob-20260423-shape",
+        "kind" => "ProblemCard",
+        "title" => "Project MCP config portability",
+        "valid_until" => "2026-05-23",
+        "body" => "ProblemCard body from the Haft artifact store.",
+        "structured_data" => "{\"signal\":\"absolute path in committed config\"}"
+      }
+    }
+
+    assert {:ok, card} =
+             Client.fetch_problem_card(
+               ctx.session,
+               "prob-20260423-shape",
+               problem_card_invoker(result)
+             )
+
+    assert card["ref"] == "prob-20260423-shape"
+    assert card["kind"] == "ProblemCard"
+    assert card["body"] == "ProblemCard body from the Haft artifact store."
+    assert card["description"] == "ProblemCard body from the Haft artifact store."
+    assert card["valid_until"] == "2026-05-23"
+  end
+
+  test "fetch_problem_card/3 accepts current Haft artifact shape in MCP content text", ctx do
+    payload =
+      Jason.encode!(%{
+        "problem_card" => %{
+          "id" => "prob-20260423-content",
+          "kind" => "ProblemCard",
+          "title" => "Project MCP config portability",
+          "body" => "ProblemCard body from MCP content text."
+        }
+      })
+
+    result = %{"content" => [%{"type" => "text", "text" => payload}]}
+
+    assert {:ok, card} =
+             Client.fetch_problem_card(
+               ctx.session,
+               "prob-20260423-content",
+               problem_card_invoker(result)
+             )
+
+    assert card["ref"] == "prob-20260423-content"
+    assert card["kind"] == "ProblemCard"
+    assert card["body"] == "ProblemCard body from MCP content text."
+  end
+
   test "fetch_problem_card/3 rejects missing and malformed contract fixtures", ctx do
     malformed_results = [
       %{},

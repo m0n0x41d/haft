@@ -1,14 +1,19 @@
 ---
 title: "1. System Context"
-description: The highest-level description of the target system — why it exists, its role, who it affects
+description: Subsystem-level system context for Haft's commissioned execution runtime — why it exists, its role, who it affects
 reading_order: 1
 ---
 
 # Open-Sleigh: System Context
 
+> **Subsystem note.** Product target system = **Haft**. This document scopes
+> the commissioned execution subsystem currently implemented by
+> **Open-Sleigh** and exposed operator-side as `haft harness`. Local
+> references to "target system" below mean this subsystem, not a peer product.
+
 ## 1. What needs to change in the environment of the target system
 
-### The physical world today (without Open-Sleigh)
+### The physical world today (without Haft's harness runtime)
 
 A small engineering organisation (single principal or tiny team) runs
 software development through Haft reasoning artifacts and optional external
@@ -49,7 +54,7 @@ supervision is repetitive toil.
   of tooling, 99% of commits from the agent writing governance rather
   than product code).
 
-### The physical world after (with Open-Sleigh functioning in its role)
+### The physical world after (with the harness runtime functioning in its role)
 
 - Agent work passes through a **phase-gated lifecycle**: Preflight → Frame →
   Execute → Measure. Each phase has a scoped prompt, a scoped toolset, typed
@@ -153,16 +158,17 @@ Specific sub-methods:
 
 ## 3. What is the role of the target system
 
-> **Harness engine for AI coding agents, enforcing an FPF-compliant
+> **Commissioned execution subsystem for Haft, enforcing an FPF-compliant
 > governance lifecycle around every WorkCommission.**
 
 The system is NOT a coding agent. Codex / Claude / whatever is the
-coding agent. The system is NOT a reasoning surface for the operator —
-that lives upstream in Haft / `/h-reason`. The system is NOT a CI
-system — the downstream project's CI runs the tests. The system is the
-**harness**: the gated conveyor that delivers each commissioned unit of work
-to the agent, supervises its execution, records provenanced artifacts, and
-escalates to the human at declared decision points.
+coding agent. The system is NOT a peer product beside Haft. The system is NOT
+a reasoning surface for the operator — that lives upstream in Haft /
+`/h-reason`. The system is NOT a CI system — the downstream project's CI runs
+the tests. The system is the **harness runtime**: the gated conveyor that
+delivers each commissioned unit of work to the agent, supervises its
+execution, records provenanced artifacts, and escalates to the human at
+declared decision points.
 
 ### Sub-roles
 
@@ -200,10 +206,12 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 │     Relationship: Open-Sleigh receives authorized WorkCommissions FROM,
 │                   escalates gates/reviews TO
 │
-├── Haft (FPF artifact graph, MCP server)
+├── Haft (parent product, artifact graph, operator surfaces)
 │     Role: Authoritative object store for ProblemCards, decisions,
 │           WorkCommissions, RuntimeRuns, evidence, and external projection intent
-│     Relationship: Open-Sleigh is a client; speaks MCP JSON-RPC; pins version
+│     Relationship: Open-Sleigh is a commissioned-execution subsystem. In the
+│                   current implementation seam it is also an MCP/JSON-RPC client
+│                   of `haft serve`
 │
 ├── External tracker (Linear/Jira/GitHub Issues, optional)
 │     Role: Coordination carrier for managers/analysts/leads
@@ -226,8 +234,8 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 │     Role: Evaluates object-of-talk specificity, LADE splits, evidence semantics
 │     Relationship: Open-Sleigh invokes via JudgeClient; calibrated via golden sets
 │
-└── >>> Open-Sleigh <<<
-      Role: Harness engine — phase-gated agent orchestration
+└── >>> Open-Sleigh (Haft Harness runtime) <<<
+      Role: Harness runtime — phase-gated agent orchestration
       Boundary INSIDE:  phase machine, gate algebra, session state,
                         adapter invocation, WAL, observations,
                         sleigh.md compilation
@@ -287,10 +295,10 @@ SUPERSYSTEM: "AI-assisted software development for a small engineering org"
 
 ## 6. Product integrity principle
 
-> "Open-Sleigh is a harness. It is not a coding agent, not a reasoner,
-> not a ticket tracker, not a CI system, not a knowledge base. Every
-> feature that doesn't serve phase-gated AI-agent orchestration is
-> either a separate system or it doesn't exist."
+> "Open-Sleigh is Haft's harness runtime. It is not a coding agent, not a
+> peer product, not a reasoner, not a ticket tracker, not a CI system, not a
+> knowledge base. Every feature that doesn't serve phase-gated AI-agent
+> orchestration is either owned by Haft or it doesn't exist."
 
 The system's role is its immune system. Concretely:
 

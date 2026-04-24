@@ -89,6 +89,24 @@ defmodule OpenSleigh.Agent.AdapterScopeTest do
              Adapter.validate_terminal_diff(session, ["lib/a.ex", "lib/b.ex"])
   end
 
+  test "terminal diff validation ignores runtime-owned scratch paths", ctx do
+    commission =
+      ["lib/a.ex"]
+      |> scope!([])
+      |> commission!()
+
+    session =
+      ctx.workspace
+      |> adapter_session!(commission, MapSet.new([:write]))
+
+    assert :ok =
+             Adapter.validate_terminal_diff(session, [
+               "lib/a.ex",
+               ".tmp/gocache/cache-entry",
+               ".tmp/home/go/pkg/mod/cache"
+             ])
+  end
+
   test "forbidden path overrides broad allowed scope", ctx do
     commission =
       ["lib/**"]

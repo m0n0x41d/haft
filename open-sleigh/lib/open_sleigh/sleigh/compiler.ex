@@ -44,7 +44,8 @@ defmodule OpenSleigh.Sleigh.Compiler do
     "commission.id",
     "commission.problem_card_ref",
     "commission.scope_hash",
-    "commission.base_sha"
+    "commission.base_sha",
+    "commission.json"
   ]
 
   @decision_variables [
@@ -53,7 +54,16 @@ defmodule OpenSleigh.Sleigh.Compiler do
 
   @prompt_variables %{
     preflight: @ticket_variables ++ @commission_variables ++ @decision_variables,
-    frame: @ticket_variables ++ @commission_variables,
+    frame:
+      @ticket_variables ++
+        @commission_variables ++
+        [
+          "problem_card.id",
+          "problem_card.ref",
+          "problem_card.title",
+          "problem_card.body",
+          "problem_card.description"
+        ],
     execute:
       @ticket_variables ++
         @commission_variables ++
@@ -71,6 +81,9 @@ defmodule OpenSleigh.Sleigh.Compiler do
         [
           "problem_card.id",
           "problem_card.ref",
+          "problem_card.title",
+          "problem_card.body",
+          "problem_card.description",
           "pr.url",
           "pr.sha",
           "ci.run_id",

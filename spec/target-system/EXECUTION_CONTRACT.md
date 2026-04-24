@@ -6,7 +6,7 @@
 ## Commissioned Execution Model
 
 Direct `DecisionRecord -> agent` execution is the v6.2 local loop. The
-Haft/Open-Sleigh target model inserts a deliberate work authorization layer:
+Haft target model inserts a deliberate work authorization layer:
 
 ```
 DecisionRecord -> WorkCommission -> Preflight -> RuntimeRun -> Evidence
@@ -18,6 +18,9 @@ The distinction is load-bearing:
 - WorkCommission = permission to execute that choice in a declared scope.
 - RuntimeRun = one actual attempt by a runner.
 - Evidence = what was verified after execution.
+
+`Open-Sleigh` is the current runtime implementation of `haft harness`. It is
+the execution subsystem of Haft, not a peer source of truth.
 
 A DecisionRecord may have zero WorkCommissions. Creating a decision does not
 mean the work is scheduled. A WorkCommission may be queued for later, and must

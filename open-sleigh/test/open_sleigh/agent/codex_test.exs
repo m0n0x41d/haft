@@ -88,6 +88,71 @@ defmodule OpenSleigh.Agent.CodexTest do
     assert :ok = Codex.close_session(handle)
   end
 
+  test "handles dynamic tool calls during a turn", ctx do
+    command = "MOCK_CODEX_MODE=tool_call_read elixir #{shell_escape(ctx.script_path)}"
+
+    File.write!(Path.join(ctx.workspace, "notes.txt"), "hello from tool")
+
+    put_codex_env(
+      command: command,
+      read_timeout_ms: 2_000,
+      turn_timeout_ms: 1_000,
+      stall_timeout_ms: 500,
+      approval_policy: "never"
+    )
+
+    session = adapter_session(ctx.workspace)
+
+    assert {:ok, handle} = Codex.start_session(session)
+    assert {:ok, reply} = Codex.send_turn(handle, "Read the file via the dynamic tool", session)
+    assert reply.status == :completed
+    assert reply.turn_id == "turn-1"
+    assert reply.text == "mock tool turn completed"
+    assert :ok = Codex.close_session(handle)
+  end
+
+  test "extracts final text from agentMessage events when turn/completed has no text", ctx do
+    command = "MOCK_CODEX_MODE=agent_message elixir #{shell_escape(ctx.script_path)}"
+
+    put_codex_env(
+      command: command,
+      read_timeout_ms: 2_000,
+      turn_timeout_ms: 1_000,
+      stall_timeout_ms: 500,
+      approval_policy: "never"
+    )
+
+    session = adapter_session(ctx.workspace)
+
+    assert {:ok, handle} = Codex.start_session(session)
+    assert {:ok, reply} = Codex.send_turn(handle, "Return structured JSON", session)
+    assert reply.status == :completed
+    assert reply.turn_id == "turn-1"
+    assert reply.text == ~s({"verdict":"pass","cl":3,"rationale":"ok"})
+    assert :ok = Codex.close_session(handle)
+  end
+
+  test "prefers final_answer text over earlier commentary text", ctx do
+    command = "MOCK_CODEX_MODE=commentary_then_final elixir #{shell_escape(ctx.script_path)}"
+
+    put_codex_env(
+      command: command,
+      read_timeout_ms: 2_000,
+      turn_timeout_ms: 1_000,
+      stall_timeout_ms: 500,
+      approval_policy: "never"
+    )
+
+    session = adapter_session(ctx.workspace)
+
+    assert {:ok, handle} = Codex.start_session(session)
+    assert {:ok, reply} = Codex.send_turn(handle, "Return the final answer after commentary", session)
+    assert reply.status == :completed
+    assert reply.turn_id == "turn-1"
+    assert reply.text == "final answer text"
+    assert :ok = Codex.close_session(handle)
+  end
+
   @tag :integration
   test "real CODEX_CMD app-server completes handshake and one turn", ctx do
     case System.get_env("CODEX_CMD") do
@@ -215,6 +280,51 @@ defmodule OpenSleigh.Agent.CodexTest do
                 |> IO.puts()
             end
 
+          "tool_call_read" ->
+            turn_number
+            |> read_tool_request()
+            |> IO.puts()
+
+            case IO.read(:line) do
+              response when is_binary(response) ->
+                if String.contains?(response, "\"success\":true") and
+                     String.contains?(response, "hello from tool") and
+                     String.contains?(response, "\"inputText\"") do
+                  turn_number
+                  |> tool_completed_event()
+                  |> IO.puts()
+                else
+                  failed_event(turn_number, "tool call response missing expected content")
+                  |> IO.puts()
+                end
+
+              _ ->
+                failed_event(turn_number, "tool call response missing")
+                |> IO.puts()
+            end
+
+          "agent_message" ->
+            turn_number
+            |> agent_message_event()
+            |> IO.puts()
+
+            turn_number
+            |> completed_without_text_event()
+            |> IO.puts()
+
+          "commentary_then_final" ->
+            turn_number
+            |> commentary_event()
+            |> IO.puts()
+
+            turn_number
+            |> final_answer_event()
+            |> IO.puts()
+
+            turn_number
+            |> completed_without_text_event()
+            |> IO.puts()
+
           _ ->
             turn_number
             |> completed_event()
@@ -226,12 +336,40 @@ defmodule OpenSleigh.Agent.CodexTest do
         ~s({"jsonrpc":"2.0","id":101,"method":"item/commandExecution/requestApproval","params":{"turn":{"id":"turn-#{turn_number}"},"command":"echo ok"}})
       end
 
+      defp read_tool_request(turn_number) do
+        ~s({"jsonrpc":"2.0","id":102,"method":"item/tool/call","params":{"threadId":"thread-1","turnId":"turn-#{turn_number}","callId":"call-#{turn_number}","namespace":null,"tool":"read","arguments":{"path":"notes.txt"}}})
+      end
+
       defp completed_event(turn_number) do
         ~s({"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"id":"turn-#{turn_number}"},"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18},"text":"mock turn completed"}})
       end
 
+      defp tool_completed_event(turn_number) do
+        ~s({"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"id":"turn-#{turn_number}"},"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18},"text":"mock tool turn completed"}})
+      end
+
+      defp agent_message_event(turn_number) do
+        ~s({"jsonrpc":"2.0","method":"conversation/item/completed","params":{"threadId":"thread-1","turnId":"turn-#{turn_number}","item":{"id":"msg-#{turn_number}","type":"agentMessage","phase":"final_answer","text":"{\\"verdict\\":\\"pass\\",\\"cl\\":3,\\"rationale\\":\\"ok\\"}"}}})
+      end
+
+      defp completed_without_text_event(turn_number) do
+        ~s({"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"id":"turn-#{turn_number}"},"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}})
+      end
+
+      defp commentary_event(turn_number) do
+        ~s({"jsonrpc":"2.0","method":"conversation/item/completed","params":{"threadId":"thread-1","turnId":"turn-#{turn_number}","item":{"id":"msg-commentary-#{turn_number}","type":"agentMessage","phase":"commentary","text":"commentary text"}}})
+      end
+
+      defp final_answer_event(turn_number) do
+        ~s({"jsonrpc":"2.0","method":"conversation/item/completed","params":{"threadId":"thread-1","turnId":"turn-#{turn_number}","item":{"id":"msg-final-#{turn_number}","type":"agentMessage","phase":"final_answer","text":"final answer text"}}})
+      end
+
       defp failed_event(turn_number) do
-        ~s({"jsonrpc":"2.0","method":"turn/failed","params":{"turn":{"id":"turn-#{turn_number}"},"message":"approval response missing"}})
+        failed_event(turn_number, "approval response missing")
+      end
+
+      defp failed_event(turn_number, message) do
+        ~s({"jsonrpc":"2.0","method":"turn/failed","params":{"turn":{"id":"turn-#{turn_number}"},"message":"#{message}"}})
       end
 
       defp method?(line, method) do

@@ -30,7 +30,8 @@ defmodule OpenSleigh.Judge.AgentInvoker do
   @doc "Invoke the configured agent adapter once and parse a JSON object reply."
   @spec invoke(String.t(), config()) :: invoke_result()
   def invoke(prompt, %{adapter: adapter} = config) when is_binary(prompt) and is_atom(adapter) do
-    with {:ok, session} <- adapter_session(config),
+    with :ok <- ensure_workspace(config),
+         {:ok, session} <- adapter_session(config),
          {:ok, handle} <- adapter.start_session(session) do
       handle
       |> send_judge_turn(adapter, prompt, session)
@@ -39,6 +40,19 @@ defmodule OpenSleigh.Judge.AgentInvoker do
   end
 
   def invoke(_prompt, _config), do: {:error, :judge_unavailable}
+
+  @spec ensure_workspace(config()) :: :ok | {:error, EffectError.t()}
+  defp ensure_workspace(%{workspace_path: workspace_path}) when is_binary(workspace_path) do
+    workspace_path
+    |> File.mkdir_p()
+    |> ensure_workspace_result()
+  end
+
+  defp ensure_workspace(_config), do: {:error, :judge_unavailable}
+
+  @spec ensure_workspace_result(:ok | {:error, term()}) :: :ok | {:error, EffectError.t()}
+  defp ensure_workspace_result(:ok), do: :ok
+  defp ensure_workspace_result({:error, _reason}), do: {:error, :judge_unavailable}
 
   @spec config(module(), Path.t(), ConfigHash.t(), map()) :: config()
   def config(adapter, workspace_path, config_hash, attrs)

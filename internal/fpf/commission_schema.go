@@ -9,8 +9,8 @@ func haftCommissionTool() Tool {
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list_runnable", "claim_for_preflight", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
-					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list_runnable=return queued/ready non-expired dependency-satisfied commissions, claim_for_preflight=atomically move one runnable commission to preflighting, other actions append lifecycle facts.",
+					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list_runnable", "show", "claim_for_preflight", "requeue", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
+					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list_runnable=return queued/ready non-expired dependency-satisfied commissions, show=return one WorkCommission, claim_for_preflight=atomically move one runnable commission to preflighting, requeue=operator/runtime recovery that clears an active lease and returns allowed states to queued, other actions append lifecycle facts.",
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
@@ -22,7 +22,7 @@ func haftCommissionTool() Tool {
 				},
 				"commission_id": map[string]string{
 					"type":        "string",
-					"description": "(claim/update) WorkCommission id. Optional for claim_for_preflight; omitted means claim the first runnable commission matching filters.",
+					"description": "(show/claim/update/requeue) WorkCommission id. Optional for claim_for_preflight; omitted means claim the first runnable commission matching filters.",
 				},
 				"decision_ref": map[string]string{
 					"type":        "string",
@@ -91,7 +91,7 @@ func haftCommissionTool() Tool {
 				},
 				"reason": map[string]string{
 					"type":        "string",
-					"description": "(record_preflight/complete_or_block) Deterministic reason for block/failure.",
+					"description": "(record_preflight/complete_or_block/requeue) Deterministic reason for block/failure/recovery.",
 				},
 				"payload": map[string]interface{}{
 					"type":        "object",

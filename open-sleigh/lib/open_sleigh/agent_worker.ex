@@ -40,6 +40,7 @@ defmodule OpenSleigh.AgentWorker do
     ObservationsBus,
     Phase,
     PhaseOutcome,
+    RuntimeLogWriter,
     Session,
     SessionScopedArtifactId,
     WorkCommission,
@@ -68,6 +69,7 @@ defmodule OpenSleigh.AgentWorker do
           optional(:now_fun) => (-> DateTime.t()),
           optional(:tracker_handle) => term(),
           optional(:tracker_adapter) => module(),
+          optional(:runtime_log_writer) => GenServer.server(),
           optional(:active_states) => [atom()]
         }
 
@@ -105,6 +107,8 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec run_session(ctx()) :: session_result()
   defp run_session(ctx) do
+    :ok = emit_runtime_event(ctx, :session_started, %{})
+
     with {:ok, _workspace} <- prepare_workspace(ctx),
          :ok <- run_hook(ctx, :before_run),
          {:ok, handle} <- start_session(ctx) do
@@ -113,8 +117,29 @@ defmodule OpenSleigh.AgentWorker do
   end
 
   @spec start_session(ctx()) :: {:ok, term()} | {:error, atom()}
-  defp start_session(%{agent_adapter: adapter, session: session}) do
+  defp start_session(%{agent_adapter: adapter, session: session} = ctx) do
+    :ok = emit_runtime_event(ctx, :agent_session_starting, %{agent_kind: adapter.adapter_kind()})
+
+    adapter
+    |> start_adapter_session(session)
+    |> log_agent_session_result(ctx)
+  end
+
+  @spec start_adapter_session(module(), Session.t()) :: {:ok, term()} | {:error, atom()}
+  defp start_adapter_session(adapter, %Session{} = session) do
     adapter.start_session(session.adapter_session)
+  end
+
+  @spec log_agent_session_result({:ok, term()} | {:error, atom()}, ctx()) ::
+          {:ok, term()} | {:error, atom()}
+  defp log_agent_session_result({:ok, _handle} = result, ctx) do
+    :ok = emit_runtime_event(ctx, :agent_session_started, %{})
+    result
+  end
+
+  defp log_agent_session_result({:error, reason} = result, ctx) do
+    :ok = emit_runtime_event(ctx, :agent_session_failed, %{reason: reason})
+    result
   end
 
   @spec run_open_session(ctx(), term()) :: session_result()
@@ -126,6 +151,8 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec finalize_result(session_result(), ctx()) :: :ok
   defp finalize_result({:ok, outcome}, ctx) do
+    :ok = emit_runtime_event(ctx, :terminal_diff_validation_started, %{})
+
     case validate_terminal_diff_scope(ctx) do
       :ok -> finalize_valid_outcome(outcome, ctx)
       {:error, reason} -> finalize_invalid_outcome(reason, ctx)
@@ -133,23 +160,29 @@ defmodule OpenSleigh.AgentWorker do
   end
 
   defp finalize_result({:error, reason}, ctx) do
+    :ok = emit_runtime_event(ctx, :session_failed, %{reason: reason})
     _ = run_hook_best_effort(ctx, :after_run)
     notify_orchestrator(ctx, {:error, ctx.session.id, reason})
   end
 
   defp finalize_result({:await_human, outcome_attrs}, ctx) do
+    :ok = emit_runtime_event(ctx, :session_waiting_human, outcome_attrs)
     _ = run_hook_best_effort(ctx, :after_run)
     notify_orchestrator(ctx, {:await_human, ctx.session.id, outcome_attrs})
   end
 
   @spec finalize_valid_outcome(PhaseOutcome.t(), ctx()) :: :ok
   defp finalize_valid_outcome(outcome, ctx) do
+    :ok = emit_runtime_event(ctx, :haft_write_started, %{phase: outcome.phase})
+
     case write_to_haft(ctx, outcome) do
       {:ok, _artifact_id} ->
+        :ok = emit_runtime_event(ctx, :haft_write_completed, %{phase: outcome.phase})
         _ = run_hook_best_effort(ctx, :after_run)
         notify_orchestrator(ctx, {:outcome, ctx.session.id, outcome})
 
       {:error, reason} ->
+        :ok = emit_runtime_event(ctx, :haft_write_failed, %{phase: outcome.phase, reason: reason})
         _ = run_hook_best_effort(ctx, :after_run)
         notify_orchestrator(ctx, {:error, ctx.session.id, reason})
     end
@@ -157,6 +190,7 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec finalize_invalid_outcome(atom(), ctx()) :: :ok
   defp finalize_invalid_outcome(reason, ctx) do
+    :ok = emit_runtime_event(ctx, :terminal_diff_validation_failed, %{reason: reason})
     _ = run_hook_best_effort(ctx, :after_run)
     notify_orchestrator(ctx, {:error, ctx.session.id, reason})
   end
@@ -169,7 +203,8 @@ defmodule OpenSleigh.AgentWorker do
 
     case WorkspaceManager.create_for_ticket(workspace_root, session.ticket.id, guard_config) do
       {:ok, path, freshness} ->
-        with :ok <- maybe_run_after_create(ctx, freshness) do
+        with :ok <- maybe_run_after_create(ctx, freshness),
+             :ok <- maybe_reset_reused_preflight_workspace(ctx, path, freshness) do
           {:ok, path}
         end
 
@@ -181,6 +216,26 @@ defmodule OpenSleigh.AgentWorker do
   @spec maybe_run_after_create(ctx(), :new | :reused) :: :ok | {:error, atom()}
   defp maybe_run_after_create(ctx, :new), do: run_hook(ctx, :after_create)
   defp maybe_run_after_create(_ctx, :reused), do: :ok
+
+  @spec maybe_reset_reused_preflight_workspace(ctx(), Path.t(), :new | :reused) ::
+          :ok | {:error, atom()}
+  defp maybe_reset_reused_preflight_workspace(_ctx, _path, :new), do: :ok
+
+  defp maybe_reset_reused_preflight_workspace(%{session: %Session{phase: :preflight}} = ctx, path, :reused) do
+    :ok = emit_runtime_event(ctx, :workspace_reset_started, %{workspace_path: path})
+
+    case WorkspaceManager.reset_git_workspace(path, Map.get(ctx, :hook_timeout_ms, 60_000)) do
+      :ok ->
+        :ok = emit_runtime_event(ctx, :workspace_reset_completed, %{workspace_path: path})
+        :ok
+
+      {:error, reason} ->
+        :ok = emit_runtime_event(ctx, :workspace_reset_failed, %{workspace_path: path, reason: reason})
+        {:error, reason}
+    end
+  end
+
+  defp maybe_reset_reused_preflight_workspace(_ctx, _path, :reused), do: :ok
 
   @spec run_hook(ctx(), atom()) :: :ok | {:error, atom()}
   defp run_hook(ctx, hook_name) do
@@ -271,16 +326,108 @@ defmodule OpenSleigh.AgentWorker do
           session_result()
   defp run_turn(ctx, handle, turn_number, prompt) do
     with {:ok, reply} <- send_turn(ctx, handle, prompt),
-         {:ok, assessment} <- assess_turn(ctx, reply) do
+         {:ok, assessment} <- assess_turn_with_log(ctx, reply) do
       maybe_continue(ctx, handle, turn_number, assessment)
     end
   end
 
   @spec send_turn(ctx(), term(), String.t()) ::
           {:ok, map()} | {:error, atom()}
-  defp send_turn(%{agent_adapter: adapter, session: session}, handle, prompt) do
+  defp send_turn(%{agent_adapter: adapter, session: session} = ctx, handle, prompt) do
+    :ok = emit_runtime_event(ctx, :agent_turn_started, %{agent_kind: adapter.adapter_kind()})
+
     adapter.send_turn(handle, prompt, session.adapter_session)
     |> normalize_turn_reply()
+    |> log_agent_turn_result(ctx)
+  end
+
+  @spec log_agent_turn_result({:ok, map()} | {:error, atom()}, ctx()) ::
+          {:ok, map()} | {:error, atom()}
+  defp log_agent_turn_result({:ok, reply} = result, ctx) do
+    :ok = emit_runtime_event(ctx, :agent_turn_completed, agent_turn_result_data(reply))
+    result
+  end
+
+  defp log_agent_turn_result({:error, reason} = result, ctx) do
+    :ok = emit_runtime_event(ctx, :agent_turn_failed, %{reason: reason})
+    result
+  end
+
+  @spec agent_turn_result_data(map()) :: map()
+  defp agent_turn_result_data(reply) do
+    %{
+      turn_id: Map.get(reply, :turn_id, Map.get(reply, "turn_id")),
+      status: Map.get(reply, :status, Map.get(reply, "status")),
+      text_preview:
+        reply
+        |> Map.get(:text, Map.get(reply, "text"))
+        |> text_preview(),
+      event_count:
+        reply
+        |> Map.get(:events, Map.get(reply, "events", []))
+        |> length_or_zero()
+    }
+  end
+
+  @spec length_or_zero(term()) :: non_neg_integer()
+  defp length_or_zero(value) when is_list(value), do: length(value)
+  defp length_or_zero(_value), do: 0
+
+  @spec text_preview(term()) :: String.t() | nil
+  defp text_preview(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.slice(0, 2_000)
+  end
+
+  defp text_preview(_value), do: nil
+
+  @spec assess_turn_with_log(ctx(), map()) :: {:ok, turn_assessment()} | {:error, term()}
+  defp assess_turn_with_log(ctx, reply) do
+    :ok = emit_runtime_event(ctx, :gate_evaluation_started, %{})
+
+    ctx
+    |> assess_turn(reply)
+    |> log_gate_evaluation_result(ctx)
+  end
+
+  @spec log_gate_evaluation_result({:ok, turn_assessment()} | {:error, term()}, ctx()) ::
+          {:ok, turn_assessment()} | {:error, term()}
+  defp log_gate_evaluation_result({:ok, assessment} = result, ctx) do
+    :ok =
+      emit_runtime_event(ctx, :gate_evaluation_completed, %{
+        gate_count: length(assessment.gate_results)
+      })
+
+    result
+  end
+
+  defp log_gate_evaluation_result({:error, reason} = result, ctx) do
+    :ok = emit_runtime_event(ctx, :gate_evaluation_failed, %{reason: reason})
+    result
+  end
+
+  @spec emit_runtime_event(ctx(), atom(), map()) :: :ok
+  defp emit_runtime_event(ctx, event, data) do
+    case Map.get(ctx, :runtime_log_writer) do
+      log_writer when is_pid(log_writer) ->
+        RuntimeLogWriter.event(log_writer, event, Map.merge(session_event_data(ctx), data))
+
+      _no_log_writer ->
+        :ok
+    end
+  end
+
+  @spec session_event_data(ctx()) :: map()
+  defp session_event_data(%{session: %Session{} = session}) do
+    %{
+      session_id: session.id,
+      ticket_id: session.ticket.id,
+      commission_id: session.ticket.id,
+      phase: session.phase,
+      sub_state: session.sub_state,
+      workspace_path: session.workspace_path
+    }
   end
 
   @spec normalize_turn_reply({:ok, map()} | {:error, atom()}) :: {:ok, map()} | {:error, atom()}
@@ -447,9 +594,64 @@ defmodule OpenSleigh.AgentWorker do
   defp turn_result_with_runtime_facts(%{session: %{phase: :preflight}} = ctx, reply) do
     reply
     |> Map.merge(preflight_runtime_facts(ctx))
+    |> with_claim_text()
   end
 
-  defp turn_result_with_runtime_facts(_ctx, reply), do: reply
+  defp turn_result_with_runtime_facts(_ctx, reply), do: with_claim_text(reply)
+
+  @spec with_claim_text(map()) :: map()
+  defp with_claim_text(reply) do
+    reply
+    |> reply_claim_text()
+    |> blank_to_nil()
+    |> claim_text_result(reply)
+  end
+
+  @spec reply_claim_text(map()) :: String.t() | nil
+  defp reply_claim_text(reply) do
+    [
+      reply_explicit_claim(reply),
+      final_agent_message_claim(reply_events(reply)),
+      last_agent_message_claim(reply_events(reply)),
+      Map.get(reply, :text, Map.get(reply, "text"))
+    ]
+    |> Enum.find(&is_binary/1)
+  end
+
+  @spec reply_explicit_claim(map()) :: String.t() | nil
+  defp reply_explicit_claim(reply), do: Map.get(reply, :claim, Map.get(reply, "claim"))
+
+  @spec final_agent_message_claim([map()]) :: String.t() | nil
+  defp final_agent_message_claim(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      %{payload: %{"item" => %{"type" => "agentMessage", "phase" => "final_answer", "text" => text}}}
+      when is_binary(text) ->
+        text
+
+      _event ->
+        nil
+    end)
+  end
+
+  @spec last_agent_message_claim([map()]) :: String.t() | nil
+  defp last_agent_message_claim(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      %{payload: %{"item" => %{"type" => "agentMessage", "text" => text}}}
+      when is_binary(text) ->
+        text
+
+      _event ->
+        nil
+    end)
+  end
+
+  @spec claim_text_result(String.t() | nil, map()) :: map()
+  defp claim_text_result(nil, reply), do: reply
+  defp claim_text_result(text, reply), do: Map.put_new(reply, :claim, text)
 
   @spec preflight_runtime_facts(ctx()) :: map()
   defp preflight_runtime_facts(ctx) do
@@ -646,21 +848,132 @@ defmodule OpenSleigh.AgentWorker do
     end
   end
 
-  # MVP-1 skeleton evidence builder. Real `AgentWorker` will extract
-  # evidence from `tool_call` / `tool_result` events in the adapter's
-  # reply.events stream (AGENT_PROTOCOL.md §4). For now, Measure
-  # synthesises one placeholder so `:evidence_required_on_measure`
-  # passes end-to-end; `authoring_source: :test` makes the
-  # placeholder obvious in Haft artifacts.
   @spec build_evidence(atom(), map(), DateTime.t()) :: [Evidence.t()]
-  defp build_evidence(:measure, _reply, now) do
-    case Evidence.new(:test_count, "mvp1-skeleton-placeholder", nil, 2, :test, now) do
-      {:ok, e} -> [e]
-      _ -> []
+  defp build_evidence(:measure, reply, now),
+    do: reply |> reply_events() |> build_measure_evidence(now)
+
+  defp build_evidence(_phase, _reply, _now), do: []
+
+  @spec reply_events(map()) :: [map()]
+  defp reply_events(reply), do: Map.get(reply, :events, Map.get(reply, "events", []))
+
+  @spec build_measure_evidence([map()], DateTime.t()) :: [Evidence.t()]
+  defp build_measure_evidence(events, now) do
+    events
+    |> Enum.flat_map(&measure_evidence_from_event(&1, now))
+  end
+
+  @spec measure_evidence_from_event(map(), DateTime.t()) :: [Evidence.t()]
+  defp measure_evidence_from_event(%{payload: %{"item" => %{"type" => "commandExecution"} = item}}, now) do
+    item
+    |> command_execution_evidence(now)
+    |> evidence_list()
+  end
+
+  defp measure_evidence_from_event(%{event: :tool_result, payload: payload}, now) do
+    payload
+    |> tool_result_evidence(now)
+    |> evidence_list()
+  end
+
+  defp measure_evidence_from_event(_event, _now), do: []
+
+  @spec command_execution_evidence(map(), DateTime.t()) :: {:ok, Evidence.t()} | :skip
+  defp command_execution_evidence(%{"status" => "completed"} = item, now) do
+    item
+    |> command_execution_ref()
+    |> evidence_from_ref(now, evidence_cl(item), :external_measurement)
+  end
+
+  defp command_execution_evidence(_item, _now), do: :skip
+
+  @spec tool_result_evidence(map(), DateTime.t()) :: {:ok, Evidence.t()} | :skip
+  defp tool_result_evidence(%{"result" => %{"contentItems" => items}}, now) when is_list(items) do
+    items
+    |> content_item_text()
+    |> blank_to_nil()
+    |> evidence_from_ref(now, 2, :external_measurement)
+  end
+
+  defp tool_result_evidence(_payload, _now), do: :skip
+
+  @spec content_item_text([map()]) :: String.t() | nil
+  defp content_item_text(items) do
+    items
+    |> Enum.find_value(fn
+      %{"text" => text} when is_binary(text) -> text
+      _item -> nil
+    end)
+  end
+
+  @spec command_execution_ref(map()) :: String.t() | nil
+  defp command_execution_ref(item) do
+    [
+      command_execution_command(item),
+      command_execution_exit_code(item),
+      command_execution_output(item)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n")
+    |> blank_to_nil()
+  end
+
+  @spec command_execution_command(map()) :: String.t() | nil
+  defp command_execution_command(%{"command" => command}) when is_binary(command) do
+    "command: " <> command
+  end
+
+  defp command_execution_command(_item), do: nil
+
+  @spec command_execution_exit_code(map()) :: String.t() | nil
+  defp command_execution_exit_code(%{"exitCode" => exit_code}) when is_integer(exit_code) do
+    "exit_code: " <> Integer.to_string(exit_code)
+  end
+
+  defp command_execution_exit_code(_item), do: nil
+
+  @spec command_execution_output(map()) :: String.t() | nil
+  defp command_execution_output(%{"aggregatedOutput" => output}) when is_binary(output) do
+    output
+    |> String.trim()
+    |> blank_to_nil()
+    |> command_execution_output_result()
+  end
+
+  defp command_execution_output(_item), do: nil
+
+  @spec command_execution_output_result(String.t() | nil) :: String.t() | nil
+  defp command_execution_output_result(nil), do: nil
+
+  defp command_execution_output_result(output) do
+    "observed_output:\n" <> String.slice(output, 0, 20_000)
+  end
+
+  @spec evidence_cl(map()) :: 2 | 3
+  defp evidence_cl(%{"exitCode" => 0}), do: 3
+  defp evidence_cl(_item), do: 2
+
+  @spec evidence_from_ref(String.t() | nil, DateTime.t(), 0..3, atom()) ::
+          {:ok, Evidence.t()} | :skip
+  defp evidence_from_ref(nil, _now, _cl, _kind), do: :skip
+
+  defp evidence_from_ref(ref, now, cl, kind) do
+    case Evidence.new(kind, ref, nil, cl, :external, now) do
+      {:ok, evidence} -> {:ok, evidence}
+      {:error, _reason} -> :skip
     end
   end
 
-  defp build_evidence(_phase, _reply, _now), do: []
+  @spec evidence_list({:ok, Evidence.t()} | :skip) :: [Evidence.t()]
+  defp evidence_list({:ok, evidence}), do: [evidence]
+  defp evidence_list(:skip), do: []
+
+  @spec blank_to_nil(String.t() | nil) :: String.t() | nil
+  defp blank_to_nil(nil), do: nil
+
+  defp blank_to_nil(text) do
+    if String.trim(text) == "", do: nil, else: text
+  end
 
   @spec validate_terminal_diff_scope(ctx()) :: :ok | {:error, atom()}
   defp validate_terminal_diff_scope(ctx) do
@@ -671,11 +984,34 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec terminal_diff_scope_result({:ok, [Path.t()]} | {:error, atom()}, ctx()) ::
           :ok | {:error, atom()}
+  defp terminal_diff_scope_result({:ok, changed_paths}, %{session: %Session{phase: :execute}} = ctx) do
+    changed_paths
+    |> material_changed_paths()
+    |> execute_terminal_diff_scope_result(changed_paths, ctx)
+  end
+
   defp terminal_diff_scope_result({:ok, changed_paths}, ctx) do
     AgentAdapter.validate_terminal_diff(ctx.session.adapter_session, changed_paths)
   end
 
   defp terminal_diff_scope_result({:error, _reason} = error, _ctx), do: error
+
+  @spec execute_terminal_diff_scope_result([Path.t()], [Path.t()], ctx()) :: :ok | {:error, atom()}
+  defp execute_terminal_diff_scope_result([], _changed_paths, _ctx), do: {:error, :no_commission_mutation}
+
+  defp execute_terminal_diff_scope_result(_material_paths, changed_paths, ctx) do
+    AgentAdapter.validate_terminal_diff(ctx.session.adapter_session, changed_paths)
+  end
+
+  @spec material_changed_paths([Path.t()]) :: [Path.t()]
+  defp material_changed_paths(changed_paths) do
+    changed_paths
+    |> Enum.reject(&runtime_owned_terminal_path?/1)
+  end
+
+  @spec runtime_owned_terminal_path?(Path.t()) :: boolean()
+  defp runtime_owned_terminal_path?(".tmp"), do: true
+  defp runtime_owned_terminal_path?(path) when is_binary(path), do: String.starts_with?(path, ".tmp/")
 
   @spec changed_paths(ctx()) :: {:ok, [Path.t()]} | {:error, atom()}
   defp changed_paths(ctx) do

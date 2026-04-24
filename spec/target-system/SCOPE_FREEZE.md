@@ -110,10 +110,12 @@ Ship exactly one vertical slice:
 process metrics, broad autonomous agents. Optional ExternalProjection design is
 allowed, but trackers remain carriers, not sources of truth.
 
-## vNext — Open-Sleigh Integration Draft
+## vNext — Haft Harness Runtime (Open-Sleigh subsystem)
 
-Focus: make execution scalable without collapsing DecisionRecord, work
-authorization, runtime attempt, and external tracker carrier into one object.
+Focus: make execution scalable inside the **Haft product** without collapsing
+DecisionRecord, work authorization, runtime attempt, and external tracker
+carrier into one object. Open-Sleigh is the current runtime implementation of
+this subsystem, not a peer product.
 
 ### Commissioned execution
 - [ ] `WorkCommission`: create/queue/start/cancel/expire lifecycle
@@ -129,11 +131,12 @@ authorization, runtime attempt, and external tracker carrier into one object.
 - [ ] ProjectionValidation blocks invented progress, missing links, and forbidden claims
 - [ ] Manual tracker status changes record drift/conflict, not semantic completion
 
-### Open-Sleigh runtime
+### Harness runtime
 - [ ] Open-Sleigh consumes Haft WorkCommissions, not raw tracker tickets
 - [ ] First phase is Preflight; Execute starts only after Haft admits execution
 - [ ] Batch scheduler respects dependencies, locksets, leases, and envelope limits
 - [ ] External projection publish failure does not invalidate execution evidence
+- [ ] Product/operator surface stays `haft harness`; runtime codename remains internal
 
 **Not in this slice:** project-management features such as sprints, estimation
 games, Gantt charts, manager dashboards inside Haft, or making Jira/Linear

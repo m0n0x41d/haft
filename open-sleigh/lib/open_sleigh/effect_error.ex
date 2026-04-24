@@ -49,6 +49,7 @@ defmodule OpenSleigh.EffectError do
           | :workspace_is_self
           | :path_forbidden
           | :mutation_outside_commission_scope
+          | :no_commission_mutation
           | :cancel_grace_expired
 
   @all [
@@ -87,6 +88,7 @@ defmodule OpenSleigh.EffectError do
     :workspace_is_self,
     :path_forbidden,
     :mutation_outside_commission_scope,
+    :no_commission_mutation,
     :cancel_grace_expired
   ]
 

@@ -18,7 +18,7 @@ defmodule OpenSleigh.Judge.GoldenSetsTest do
     rows = GoldenSets.evaluate(&RuleBased.invoke/1)
     summary = GoldenSets.summary(rows)
 
-    assert summary.total == 6
+    assert summary.total == 7
     assert summary.failed == 0
     assert Enum.all?(rows, &(&1.status == :pass))
   end

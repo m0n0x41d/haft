@@ -568,6 +568,10 @@ defmodule OpenSleigh.MixTasksTest do
              |> Enum.map(&Jason.decode!/1)
 
     assert Enum.any?(log_events, &(&1["event"] == "runtime_started"))
+    assert Enum.any?(log_events, &(&1["event"] == "session_dispatched"))
+    assert Enum.any?(log_events, &(&1["event"] == "agent_session_starting"))
+    assert Enum.any?(log_events, &(&1["event"] == "agent_turn_started"))
+    assert Enum.any?(log_events, &(&1["event"] == "agent_turn_completed"))
     assert Enum.any?(log_events, &(&1["event"] == "once_poll_completed"))
   end
 

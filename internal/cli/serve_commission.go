@@ -55,8 +55,12 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return createWorkCommissionBatchFromDecisions(ctx, store, args)
 	case "list_runnable":
 		return listRunnableWorkCommissions(ctx, store, args)
+	case "show":
+		return showWorkCommission(ctx, store, args)
 	case "claim_for_preflight":
 		return claimWorkCommissionForPreflight(ctx, store, args)
+	case "requeue":
+		return requeueWorkCommission(ctx, store, args)
 	case "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block":
 		return appendWorkCommissionLifecycle(ctx, store, args)
 	default:
@@ -574,6 +578,20 @@ func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store, arg
 	return commissionResponse("commissions", commissions)
 }
 
+func showWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+	commissionID := stringArg(args, "commission_id")
+	if commissionID == "" {
+		return "", fmt.Errorf("commission_id is required")
+	}
+
+	commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+	if err != nil {
+		return "", err
+	}
+
+	return commissionResponse("commission", commission)
+}
+
 func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	runnerID := stringArg(args, "runner_id")
 	if runnerID == "" {
@@ -612,6 +630,40 @@ func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store,
 	}
 	if err := tx.Commit(); err != nil {
 		return "", fmt.Errorf("commit WorkCommission claim: %w", err)
+	}
+
+	return commissionResponse("commission", commission)
+}
+
+func requeueWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+	commissionID := stringArg(args, "commission_id")
+	if commissionID == "" {
+		return "", fmt.Errorf("commission_id is required")
+	}
+
+	tx, err := store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin WorkCommission requeue: %w", err)
+	}
+	defer tx.Rollback()
+
+	commission, err := loadWorkCommissionPayloadForUpdate(ctx, tx, commissionID)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureWorkCommissionRequeueable(commission); err != nil {
+		return "", err
+	}
+
+	commission = appendRequeueLifecycleEvent(commission, args)
+	commission["state"] = "queued"
+	delete(commission, "lease")
+
+	if err := updateWorkCommissionPayload(ctx, tx, commission); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit WorkCommission requeue: %w", err)
 	}
 
 	return commissionResponse("commission", commission)
@@ -1106,6 +1158,22 @@ func loadWorkCommissionPayloads(ctx context.Context, store *artifact.Store) ([]m
 	return commissions, rows.Err()
 }
 
+func loadWorkCommissionPayload(
+	ctx context.Context,
+	store *artifact.Store,
+	commissionID string,
+) (map[string]any, error) {
+	item, err := store.Get(ctx, commissionID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Meta.Kind != artifact.KindWorkCommission {
+		return nil, fmt.Errorf("%s is %s, not WorkCommission", commissionID, item.Meta.Kind)
+	}
+
+	return decodeWorkCommissionPayload(commissionID, item.StructuredData)
+}
+
 func loadWorkCommissionPayloadForUpdate(ctx context.Context, tx *sql.Tx, commissionID string) (map[string]any, error) {
 	var structuredData string
 	err := tx.QueryRowContext(ctx, `
@@ -1493,6 +1561,37 @@ func validWorkCommissionState(value string) bool {
 	default:
 		return false
 	}
+}
+
+func ensureWorkCommissionRequeueable(commission map[string]any) error {
+	switch stringField(commission, "state") {
+	case "queued", "ready", "preflighting", "running", "blocked_stale",
+		"blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return nil
+	case "completed", "completed_with_projection_debt", "cancelled", "expired", "draft":
+		return fmt.Errorf("commission_not_requeueable: state=%s", stringField(commission, "state"))
+	default:
+		return fmt.Errorf("commission_not_requeueable: state=%s", stringField(commission, "state"))
+	}
+}
+
+func appendRequeueLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {
+	payload := map[string]any{
+		"previous_state": stringField(commission, "state"),
+	}
+	if lease, ok := mapArg(commission, "lease"); ok {
+		payload["previous_lease"] = lease
+	}
+
+	eventArgs := map[string]any{
+		"action":    "requeue",
+		"runner_id": stringArg(args, "runner_id"),
+		"event":     "commission_requeued",
+		"reason":    stringArg(args, "reason"),
+		"payload":   payload,
+	}
+
+	return appendLifecycleEvent(commission, eventArgs)
 }
 
 func appendLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {

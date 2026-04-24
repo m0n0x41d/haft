@@ -16,13 +16,21 @@ Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. T
 
 ## Method — how we change the environment
 
-A **reasoning runtime** that any AI agent can plug into (MCP plugin) or that operates as a standalone orchestrator (desktop app). The runtime adds engineering discipline:
+A **local-first engineering governor** with two coupled methods:
+
+1. a reasoning runtime any AI agent can plug into (`haft serve` / MCP),
+2. a commissioned execution runtime (`haft harness`, currently implemented by
+   the Open-Sleigh subsystem).
+
+Together they add engineering discipline:
 
 - Structured problem framing before jumping to solutions
 - Genuinely different alternatives, not 3 variations on the same idea
 - Honest comparison with explicit dimensions and Pareto trade-offs
 - "Probe or commit" gate before decision — should we keep looking?
 - Persistent decisions with verifiable claims, evidence, and expiry dates
+- Explicit compilation from accepted decision to bounded WorkCommission
+- Long-running, scope-bounded execution with preflight, gates, and evidence
 - Drift detection and staleness scanning after code ships
 - Cross-project recall with context-transfer penalties
 
@@ -30,9 +38,10 @@ The discipline comes from FPF (First Principles Framework). Users never see FPF.
 
 ## Role of the target system
 
-**Haft = engineering reasoning runtime for AI-assisted software delivery.**
+**Haft = engineering governor and commissioned execution system for AI-assisted software delivery.**
 
-One-liner: the system that makes engineering decisions explicit, comparable, and verifiable.
+One-liner: the system that makes engineering decisions explicit, comparable,
+commissionable, executable, and verifiable.
 Tagline: keeps the coder honest.
 
 What it IS:
@@ -42,6 +51,9 @@ What it IS:
 - Governance governor (invariant verification, staleness alerts)
 - Work authorization surface (turns an accepted decision into bounded,
   auditable execution work when the human chooses to commission it)
+- Commission compiler (`DecisionRecord -> WorkCommission -> RuntimeRun`)
+- Execution-runtime host (`haft harness`, with Open-Sleigh as the current
+  runtime implementation)
 - Optional external projection engine (Linear/Jira/GitHub issue text is a
   carrier for observers, not Haft's semantic authority)
 
@@ -53,6 +65,22 @@ What it is NOT:
   projections are derived coordination surfaces)
 - Not a general autonomous agent (no personal assistant, no omnichannel)
 
+## Execution subsystem
+
+`Haft Harness` is the commissioned execution subsystem of Haft. Today its
+runtime implementation is `Open-Sleigh`.
+
+This distinction is load-bearing:
+
+- **Haft owns semantic authority:** ProblemCards, DecisionRecords,
+  WorkCommissions, Evidence, stale/refresh logic, and external projections.
+- **Open-Sleigh owns runtime execution mechanics:** long-running orchestration,
+  sessions, workspaces, retries, phase machine, leases, and agent adapters.
+
+That means Open-Sleigh is **not** a peer product and **not** a second source
+of truth. It is a subsystem/runtime of Haft, even if the implementation keeps
+its own process boundary.
+
 ## Three delivery surfaces
 
 ### Surface A — Desktop App (primary: human)
@@ -61,7 +89,7 @@ The visual cockpit where the engineer lives during reasoning work.
 
 - See: problem board, decision health, evidence quality, coverage, drift
 - Think: frame problems, explore variants, compare on Pareto front, decide
-- Act: spawn execution agents, verify claims, create PRs from decisions
+- Act: create commissions, start/stop harness runs, verify claims, create PRs from decisions
 - Govern: dashboard with findings, stale alerts, invariant violations
 
 Technology: Wails (Go + native WebView). Single binary. Local-first.
@@ -71,6 +99,7 @@ Technology: Wails (Go + native WebView). Single binary. Local-first.
 How AI agents access the reasoning kernel during their coding work.
 
 - 6 reasoning tools: problem, solution, decision, query, refresh, note
+- Commissioning tools for bounded execution work
 - Stable API contract: tool names, required params, return shapes don't break
 - Any MCP-compatible host: Claude Code, Codex, Cursor, Gemini CLI, Air
 
@@ -79,11 +108,14 @@ How AI agents access the reasoning kernel during their coding work.
 Quick access for scripting, CI, and terminal workflows.
 
 - `haft init`, `haft serve`, `haft sync`, `haft board`, `haft search`
+- `haft commission ...`, `haft harness run/status/result`
 - `haft fpf search` (FPF spec lookup)
 - `haft agent` (standalone agent mode — secondary to desktop)
 
 **A and B are primary.** C is supporting utility.
-Desktop is where humans think. MCP is where agents think. Same kernel underneath.
+Desktop is where humans think. MCP is where agents think. CLI is the operator
+surface for automation and harness runtime control. Same kernel and artifact
+graph underneath.
 
 ### Optional external projections
 
@@ -153,7 +185,8 @@ Haft lives inside the software engineering delivery system:
 3. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
 4. **Plugin-compatible.** MCP plugin is the highest-reach integration channel.
 5. **FPF inside.** Users never need to learn FPF terminology. 5 words + Note.
-6. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and agent mode.
+6. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and
+   installs or operates the harness runtime.
 
 ## Enabling system (what builds Haft)
 

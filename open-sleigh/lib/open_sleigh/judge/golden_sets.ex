@@ -60,6 +60,17 @@ defmodule OpenSleigh.Judge.GoldenSets do
       }
     },
     %{
+      id: "lade-process-narration",
+      gate: :lade_quadrants_split_ok,
+      expected: :pass,
+      input: %{
+        turn_result: %{
+          text:
+            "I’m locating the decision record and commission first, then I’ll extract the bounded implementation scope and verify what code changes and evidence commands are required before making changes."
+        }
+      }
+    },
+    %{
       id: "lade-mixed-obligation",
       gate: :lade_quadrants_split_ok,
       expected: :fail,

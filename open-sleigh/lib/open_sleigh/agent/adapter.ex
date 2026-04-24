@@ -313,10 +313,15 @@ defmodule OpenSleigh.Agent.Adapter do
   @spec terminal_path_allowed?(term(), Scope.t(), AdapterSession.t()) :: boolean()
   defp terminal_path_allowed?(path, %Scope{} = scope, %AdapterSession{} = session)
        when is_binary(path) do
-    path_allowed?(path, scope, session)
+    normalized = normalize_scope_path(path, session)
+    runtime_owned_terminal_path?(normalized) or scoped_relative_path_allowed?(normalized, scope)
   end
 
   defp terminal_path_allowed?(_path, %Scope{}, %AdapterSession{}), do: false
+
+  @spec runtime_owned_terminal_path?(String.t()) :: boolean()
+  defp runtime_owned_terminal_path?(".tmp"), do: true
+  defp runtime_owned_terminal_path?(path) when is_binary(path), do: String.starts_with?(path, ".tmp/")
 
   @spec path_allowed?(String.t(), Scope.t(), AdapterSession.t()) :: boolean()
   defp path_allowed?(path, %Scope{} = scope, %AdapterSession{} = session) do

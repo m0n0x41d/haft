@@ -96,6 +96,18 @@ defmodule OpenSleigh.Sleigh.CompilerTest do
     assert {:unknown_prompt_variable, :frame, "ticket.unknown"} in errors
   end
 
+  test "measure prompt accepts problem card body variables" do
+    source =
+      valid_source()
+      |> String.replace(
+        "You are the Measurer. Given ticket {{ticket.title}} and ProblemCard {{problem_card.id}}, assemble external evidence and decide whether the measured outcome passes.",
+        "Problem card body:\n{{problem_card.body}}"
+      )
+
+    assert {:ok, compiled} = Compiler.compile(source)
+    assert Map.has_key?(compiled.prompts, :measure)
+  end
+
   test "CF6 rejects publication regex without approvers" do
     source =
       valid_source()

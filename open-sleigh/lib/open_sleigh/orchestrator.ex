@@ -38,9 +38,12 @@ defmodule OpenSleigh.Orchestrator do
     Haft.Client,
     HumanGateApproval,
     PhaseMachine,
+    RuntimeLogWriter,
+    Scope,
     Session,
     SessionId,
     Ticket,
+    WorkCommission,
     Workflow,
     WorkflowState,
     WorkflowStore
@@ -69,6 +72,7 @@ defmodule OpenSleigh.Orchestrator do
           guard_config: map(),
           task_supervisor: pid() | atom(),
           workflow_store: GenServer.server(),
+          runtime_log_writer: GenServer.server() | nil,
           external_publication: map(),
           hooks: %{optional(atom()) => String.t()},
           hook_failure_policy: %{optional(atom()) => atom()},
@@ -100,6 +104,12 @@ defmodule OpenSleigh.Orchestrator do
     GenServer.call(server, :status)
   end
 
+  @doc "Abort currently running sessions and release commission leases for operator shutdown."
+  @spec abort_active(GenServer.server(), term()) :: :ok
+  def abort_active(server \\ __MODULE__, reason) do
+    GenServer.call(server, {:abort_active, reason}, :infinity)
+  end
+
   @doc "Return pending HumanGate entries for a listener."
   @spec pending_human_gates(GenServer.server()) :: [map()]
   def pending_human_gates(server) do
@@ -121,6 +131,7 @@ defmodule OpenSleigh.Orchestrator do
       guard_config: Keyword.fetch!(opts, :guard_config),
       task_supervisor: Keyword.fetch!(opts, :task_supervisor),
       workflow_store: Keyword.get(opts, :workflow_store, WorkflowStore),
+      runtime_log_writer: Keyword.get(opts, :runtime_log_writer),
       external_publication: Keyword.get(opts, :external_publication, %{}),
       hooks: Keyword.get(opts, :hooks, %{}),
       hook_failure_policy: Keyword.get(opts, :hook_failure_policy, %{}),
@@ -150,12 +161,18 @@ defmodule OpenSleigh.Orchestrator do
     snapshot = %{
       claimed: MapSet.to_list(state.claimed),
       running: Map.keys(state.running),
+      running_details: running_details(state.running),
       pending_human: Map.keys(state.pending_human),
       retries: status_retries(state.retries),
       retry_attempts: state.retry_attempts
     }
 
     {:reply, snapshot, state}
+  end
+
+  def handle_call({:abort_active, reason}, _from, state) do
+    next_state = abort_active_sessions(state, reason)
+    {:reply, :ok, next_state}
   end
 
   def handle_call(:pending_human_gates, _from, state) do
@@ -186,7 +203,11 @@ defmodule OpenSleigh.Orchestrator do
         session_error_tags(state, session_id)
       )
 
-    new_state = schedule_retry(state, session_id, normalize_worker_error(reason))
+    new_state =
+      reason
+      |> normalize_worker_error()
+      |> error_transition(state, session_id)
+
     {:noreply, new_state}
   end
 
@@ -604,8 +625,68 @@ defmodule OpenSleigh.Orchestrator do
       "commission.problem_card_ref" => commission.problem_card_ref,
       "commission.scope_hash" => commission.scope_hash,
       "commission.base_sha" => commission.base_sha,
+      "commission.json" => commission_prompt_json(commission),
       "decision.id" => commission.decision_ref
     }
+  end
+
+  @spec commission_prompt_json(WorkCommission.t()) :: String.t()
+  defp commission_prompt_json(%WorkCommission{} = commission) do
+    commission
+    |> commission_prompt_payload()
+    |> Jason.encode()
+    |> encoded_prompt_json()
+  end
+
+  @spec encoded_prompt_json({:ok, String.t()} | {:error, term()}) :: String.t()
+  defp encoded_prompt_json({:ok, encoded}), do: encoded
+  defp encoded_prompt_json({:error, _reason}), do: "{}"
+
+  @spec commission_prompt_payload(WorkCommission.t()) :: map()
+  defp commission_prompt_payload(%WorkCommission{} = commission) do
+    %{
+      id: commission.id,
+      decision_ref: commission.decision_ref,
+      decision_revision_hash: commission.decision_revision_hash,
+      problem_card_ref: commission.problem_card_ref,
+      implementation_plan_ref: commission.implementation_plan_ref,
+      implementation_plan_revision: commission.implementation_plan_revision,
+      scope_hash: commission.scope_hash,
+      base_sha: commission.base_sha,
+      lockset: commission.lockset,
+      evidence_requirements: commission.evidence_requirements,
+      projection_policy: Atom.to_string(commission.projection_policy),
+      autonomy_envelope_ref: commission.autonomy_envelope_ref,
+      autonomy_envelope_revision: commission.autonomy_envelope_revision,
+      state: Atom.to_string(commission.state),
+      valid_until: DateTime.to_iso8601(commission.valid_until),
+      fetched_at: DateTime.to_iso8601(commission.fetched_at),
+      scope: scope_prompt_payload(commission.scope)
+    }
+  end
+
+  @spec scope_prompt_payload(Scope.t()) :: map()
+  defp scope_prompt_payload(%Scope{} = scope) do
+    %{
+      repo_ref: scope.repo_ref,
+      base_sha: scope.base_sha,
+      target_branch: scope.target_branch,
+      allowed_paths: scope.allowed_paths,
+      forbidden_paths: scope.forbidden_paths,
+      allowed_actions: prompt_action_names(scope.allowed_actions),
+      affected_files: scope.affected_files,
+      allowed_modules: scope.allowed_modules,
+      lockset: scope.lockset,
+      hash: scope.hash
+    }
+  end
+
+  @spec prompt_action_names(MapSet.t(atom())) :: [String.t()]
+  defp prompt_action_names(%MapSet{} = actions) do
+    actions
+    |> MapSet.to_list()
+    |> Enum.map(&Atom.to_string/1)
+    |> Enum.sort()
   end
 
   @spec problem_card_prompt_replacements(map() | nil) :: %{String.t() => String.t()}
@@ -714,6 +795,7 @@ defmodule OpenSleigh.Orchestrator do
       now_fun: state.now_fun,
       tracker_handle: state.tracker_handle,
       tracker_adapter: state.tracker_adapter,
+      runtime_log_writer: state.runtime_log_writer,
       active_states: state.active_states
     }
 
@@ -722,6 +804,7 @@ defmodule OpenSleigh.Orchestrator do
 
     monitor_ref = Process.monitor(pid)
     workflow_state = WorkflowState.start(state.workflow)
+    :ok = emit_runtime_event(state, :session_dispatched, session_event_data(session, ticket, pid))
 
     %{
       state
@@ -736,6 +819,43 @@ defmodule OpenSleigh.Orchestrator do
           })
     }
   end
+
+  @spec running_details(map()) :: [map()]
+  defp running_details(running) do
+    running
+    |> Map.values()
+    |> Enum.map(&running_detail/1)
+  end
+
+  @spec running_detail(map()) :: map()
+  defp running_detail(%{ticket: ticket, session: session, task_pid: task_pid}) do
+    session_event_data(session, ticket, task_pid)
+  end
+
+  @spec session_event_data(Session.t(), Ticket.t(), pid() | nil) :: map()
+  defp session_event_data(%Session{} = session, %Ticket{} = ticket, task_pid) do
+    %{
+      session_id: session.id,
+      ticket_id: ticket.id,
+      commission_id: ticket.id,
+      phase: session.phase,
+      sub_state: session.sub_state,
+      workspace_path: session.workspace_path,
+      task_pid: pid_text(task_pid)
+    }
+  end
+
+  @spec emit_runtime_event(map(), atom(), map()) :: :ok
+  defp emit_runtime_event(%{runtime_log_writer: log_writer}, event, data)
+       when is_pid(log_writer) do
+    RuntimeLogWriter.event(log_writer, event, data)
+  end
+
+  defp emit_runtime_event(_state, _event, _data), do: :ok
+
+  @spec pid_text(pid() | nil) :: String.t() | nil
+  defp pid_text(pid) when is_pid(pid), do: inspect(pid)
+  defp pid_text(_pid), do: nil
 
   # ——— outcome handling ———
 
@@ -991,6 +1111,16 @@ defmodule OpenSleigh.Orchestrator do
     ]
   end
 
+  defp terminal_lifecycle_commands(entry, %{phase: phase} = outcome, {:block, reasons})
+       when phase != :preflight do
+    base = lifecycle_base_payload(entry, outcome, {:block, reasons})
+
+    [
+      {:complete_or_block,
+       lifecycle_params(base, "phase_blocked", "blocked", reasons_text(reasons))}
+    ]
+  end
+
   defp terminal_lifecycle_commands(_entry, _outcome, _decision), do: []
 
   @spec lifecycle_base_payload(map(), OpenSleigh.PhaseOutcome.t(), term()) :: map()
@@ -1101,6 +1231,64 @@ defmodule OpenSleigh.Orchestrator do
   defp terminal_commission_ticket_state(:pass), do: :done
   defp terminal_commission_ticket_state(:blocked), do: :blocked
   defp terminal_commission_ticket_state(_verdict), do: :failed
+
+  @spec error_transition(term(), map(), String.t()) :: map()
+  defp error_transition(reason, state, session_id) do
+    if terminal_worker_error?(reason) do
+      close_terminal_worker_error(state, session_id, reason)
+    else
+      schedule_retry(state, session_id, reason)
+    end
+  end
+
+  @spec terminal_worker_error?(term()) :: boolean()
+  defp terminal_worker_error?(:mutation_outside_commission_scope), do: true
+  defp terminal_worker_error?(:no_commission_mutation), do: true
+  defp terminal_worker_error?(_reason), do: false
+
+  @spec close_terminal_worker_error(map(), String.t(), term()) :: map()
+  defp close_terminal_worker_error(state, session_id, reason) do
+    case Map.fetch(state.running, session_id) do
+      {:ok, entry} ->
+        case record_terminal_worker_error(state, entry, reason) do
+          :ok ->
+            :ok =
+              ObservationsBus.emit(:phase_blocked, 1, %{
+                ticket: entry.ticket.id,
+                phase: entry.session.phase
+              })
+
+            :ok = maybe_close_blocked_commission_ticket(state, entry)
+            release_claim(state, session_id, entry.ticket.id)
+
+          {:error, lifecycle_reason} ->
+            schedule_retry(state, session_id, lifecycle_reason)
+        end
+
+      :error ->
+        state
+    end
+  end
+
+  @spec record_terminal_worker_error(map(), map(), term()) :: :ok | {:error, term()}
+  defp record_terminal_worker_error(state, entry, reason) do
+    payload = %{
+      "phase" => Atom.to_string(entry.session.phase),
+      "session_id" => entry.session.id,
+      "ticket_id" => entry.ticket.id,
+      "config_hash" => entry.session.config_hash,
+      "next" => "block"
+    }
+
+    params = lifecycle_params(payload, "phase_blocked", "blocked", reason_text(reason))
+
+    Client.record_commission_lifecycle(
+      entry.session.adapter_session,
+      :complete_or_block,
+      params,
+      state.haft_invoker
+    )
+  end
 
   @spec transition_local_commission_ticket(map(), map(), atom()) :: :ok
   defp transition_local_commission_ticket(state, entry, state_name) do
@@ -1444,6 +1632,67 @@ defmodule OpenSleigh.Orchestrator do
         claimed: MapSet.delete(state.claimed, ticket_id)
     }
   end
+
+  @spec abort_active_sessions(map(), term()) :: map()
+  defp abort_active_sessions(state, reason) do
+    state.running
+    |> Map.values()
+    |> Enum.each(&abort_running_entry(state, &1, reason))
+
+    %{
+      state
+      | running: %{},
+        claimed: MapSet.new(),
+        retries: %{},
+        retry_attempts: %{}
+    }
+  end
+
+  @spec abort_running_entry(map(), map(), term()) :: :ok
+  defp abort_running_entry(state, entry, reason) do
+    :ok = emit_runtime_event(state, :session_aborted, abort_session_event_data(entry, reason))
+    :ok = requeue_aborted_commission(state, entry, reason)
+    :ok = kill_running_task(entry)
+    demonitor(entry)
+  end
+
+  @spec abort_session_event_data(map(), term()) :: map()
+  defp abort_session_event_data(entry, reason) do
+    entry.session
+    |> session_event_data(entry.ticket, Map.get(entry, :task_pid))
+    |> Map.put(:reason, reason_text(reason))
+  end
+
+  @spec requeue_aborted_commission(map(), map(), term()) :: :ok
+  defp requeue_aborted_commission(state, entry, reason) do
+    params = %{
+      "event" => "runtime_aborted",
+      "reason" => reason_text(reason),
+      "payload" => %{
+        "phase" => Atom.to_string(entry.session.phase),
+        "session_id" => entry.session.id,
+        "ticket_id" => entry.ticket.id
+      }
+    }
+
+    case Client.record_commission_lifecycle(
+           entry.session.adapter_session,
+           :requeue,
+           params,
+           state.haft_invoker
+         ) do
+      :ok -> :ok
+      {:error, _reason} -> :ok
+    end
+  end
+
+  @spec kill_running_task(map()) :: :ok
+  defp kill_running_task(%{task_pid: pid}) when is_pid(pid) do
+    Process.exit(pid, :kill)
+    :ok
+  end
+
+  defp kill_running_task(_entry), do: :ok
 
   @spec release_claim(map(), String.t()) :: map()
   defp release_claim(state, session_id) do

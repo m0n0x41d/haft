@@ -1,8 +1,11 @@
-# Open-Sleigh — SPEC
+# Open-Sleigh — Haft Harness Runtime SPEC
 
 > **FPF note.** This document is a `Description` (design-time episteme) of the
-> target system **Open-Sleigh**. The repository code is the `Carrier`. The
-> running engine is the `Object`. Do not confuse them.
+> commissioned execution subsystem inside the **Haft** product. The product
+> target system is **Haft**. The object of talk here is the running harness
+> runtime currently codenamed **Open-Sleigh** and exposed to operators as
+> `haft harness`. The repository code is the `Carrier`. The running runtime is
+> the `Object`. Do not confuse them.
 >
 > **Role of this file.** SPEC.md is the **operator-facing umbrella index** —
 > short, narrative, one-screen-per-section. The normative content
@@ -93,11 +96,11 @@
 
 ---
 
-## 1. What Open-Sleigh is
+## 1. What Open-Sleigh is inside Haft
 
-A long-running, OTP-supervised **harness engine for AI coding agents** that
-enforces an FPF-compliant governance lifecycle around every commissioned unit
-of work the agent touches.
+Open-Sleigh is the long-running, OTP-supervised **commissioned execution
+runtime** inside Haft. It is the current implementation of the user-facing
+`haft harness` subsystem, not a peer product and not a second source of truth.
 
 **Current reality:** the checked-in runtime is still a legacy tracker-first
 bootstrap canary. It uses tracker tickets as intake while preserving the
@@ -120,34 +123,41 @@ Solution Factory) with variant generation, parity-run, and Pareto selection.
 Only from MVP-2 onward is "FPF-compliant lemniscate lifecycle" an honest
 label.
 
-**In one sentence:** Symphony's orchestration + Haft's FPF engine + phase-
-gated agent roles + human gates on one-way doors, built from scratch on OTP.
+**In one sentence:** Haft Harness runtime = Symphony-inspired orchestration
+under Haft-owned authority, scope, and evidence, built on OTP.
 
 ## 2. Influences and non-inheritance
 
 - **OpenAI Symphony** (its `SPEC.md`) — design reference for Orchestrator,
   WorkflowStore, continuation turns, dynamic tools, SSH worker topology. We
   reimplement; we do not fork.
-- **Haft** — not a dependency library; an external **MCP server** we speak
-  to. Haft owns problem/solution/decision/evidence; Open-Sleigh owns
-  orchestration/lifecycle/supervision. The contract is the MCP wire format,
-  nothing else. See `specs/target-system/HAFT_CONTRACT.md`.
+- **Haft** — the parent product and semantic authority. Haft owns
+  problem/solution/decision/evidence/work-commission semantics and the
+  operator-facing surfaces. Open-Sleigh owns runtime
+  orchestration/lifecycle/supervision. In the current implementation seam, the
+  runtime talks to the rest of Haft through `haft serve` over MCP JSON-RPC.
+  That is a subsystem protocol boundary, not a peer-product boundary. See
+  `specs/target-system/HAFT_CONTRACT.md`.
 - **FPF** (Levenchuk's First Principles Framework) — methodological basis.
   The invariant distinctions, the lemniscate, the Comparability Governance
   frame, the valid_until discipline all come from here. See `.context/FPF-Spec.md`,
-  `.context/development_for_the_developed.md`, and `.context/semiotics_slideument.md`.
+  `.context/slideument.md`, and `.context/semiotics_slideument.md`.
 
-**Target system / Enabling system split** (FPF §Target ≠ Enabling):
+**Product / subsystem / enabling split** (FPF §Target ≠ Enabling):
 
-- **Target system** = Open-Sleigh, the running engine. Canonical description:
-  `specs/target-system/`.
-- **Enabling systems** = (a) the engineering team that authors the SPEC and
-  writes the code (`specs/enabling-system/`), (b) Haft, which authors
-  Open-Sleigh's evidence and work-commission surface, (c) optional external
-  trackers, which carry observer-facing projections. These are the holons that produce /
-  maintain Open-Sleigh; Open-Sleigh does not produce them.
+- **Product target system** = Haft.
+- **Subsystem in scope here** = Open-Sleigh, Haft's commissioned execution
+  runtime. Canonical description: `specs/target-system/`.
+- **Enabling systems for this subsystem** = (a) the engineering team that
+  authors the SPEC and writes the code (`specs/enabling-system/`), (b)
+  packaging/release/install machinery that ships the runtime under `haft`, and
+  (c) agent-provider CLIs / app-servers that Open-Sleigh adapts to.
+- **Optional external trackers** are part of the product supersystem as
+  observer-facing carriers. They are not semantic authority and not the
+  subsystem's target system.
 
 **We are NOT:**
+- a peer product next to Haft,
 - a fork of Symphony,
 - a reimplementation of Haft in Elixir,
 - a coding agent (we orchestrate agents; the agent is Codex / Claude / etc.),
@@ -177,7 +187,7 @@ The entity definitions (structs, constructors, relationships) are in
 ## 4. Lemniscate phase machine — full vision (MVP-2 target)
 
 Canonical FPF phase names, aligned with
-`.context/development_for_the_developed.md` Slide 12 and
+`.context/slideument.md` and
 `.context/FPF-Spec.md` B.4 Canonical Evolution Loop:
 
 ```

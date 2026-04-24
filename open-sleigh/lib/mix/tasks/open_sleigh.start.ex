@@ -120,14 +120,16 @@ defmodule Mix.Tasks.OpenSleigh.Start do
          {:ok, prestarted_haft} <- maybe_start_pretracker_haft(bundle, opts),
          {:ok, tracker} <- start_tracker(bundle, opts, prestarted_haft),
          {:ok, haft} <- ensure_started_haft(bundle, opts, prestarted_haft),
+         :ok <- configure_runtime_agent(bundle, opts, haft),
          {:ok, store} <- start_workflow_store(bundle),
          {:ok, watcher} <- start_watcher(config_path(opts), store),
-         {:ok, orchestrator} <- start_orchestrator(bundle, tracker, haft, store, opts),
+         {:ok, log_writer} <- start_log_writer(bundle, opts),
+         {:ok, orchestrator} <-
+           start_orchestrator(bundle, tracker, haft, store, log_writer, opts),
          {:ok, listener} <- start_human_gate_listener(bundle, tracker, orchestrator),
          {:ok, poller} <- start_tracker_poller(bundle, tracker, orchestrator),
          {:ok, status_writer} <- start_status_writer(bundle, orchestrator, opts),
-         {:ok, status_http} <- start_status_http_server(bundle),
-         {:ok, log_writer} <- start_log_writer(bundle, opts) do
+         {:ok, status_http} <- start_status_http_server(bundle) do
       {:ok,
        %{
          bundle: bundle,
@@ -446,9 +448,15 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     )
   end
 
-  @spec start_orchestrator(WorkflowStore.bundle(), map(), map(), GenServer.server(), keyword()) ::
-          GenServer.on_start()
-  defp start_orchestrator(bundle, tracker, haft, store, opts) do
+  @spec start_orchestrator(
+          WorkflowStore.bundle(),
+          map(),
+          map(),
+          GenServer.server(),
+          GenServer.server(),
+          keyword()
+        ) :: GenServer.on_start()
+  defp start_orchestrator(bundle, tracker, haft, store, log_writer, opts) do
     Orchestrator.start_link(
       workflow: runtime_workflow(bundle),
       tracker_handle: tracker.handle,
@@ -461,6 +469,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
       task_supervisor: OpenSleigh.AgentSupervisor,
       workflow_store: store,
+      runtime_log_writer: log_writer,
       hooks: hooks(bundle),
       hook_failure_policy: hook_failure_policy(bundle),
       hook_timeout_ms: hook_timeout_ms(bundle),
@@ -569,10 +578,25 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       read_timeout_ms: positive_integer(value_at(codex, :read_timeout_ms), 5_000),
       turn_timeout_ms: positive_integer(value_at(codex, :turn_timeout_ms), 3_600_000),
       stall_timeout_ms: non_negative_integer(value_at(codex, :stall_timeout_ms), 300_000),
+      dynamic_tool_timeout_ms: positive_integer(value_at(codex, :dynamic_tool_timeout_ms), 60_000),
       approval_policy: config_string(value_at(codex, :approval_policy, "never")),
       thread_sandbox: config_string(value_at(codex, :thread_sandbox, "workspace-write")),
       turn_sandbox_policy: value_at(codex, :turn_sandbox_policy, %{"type" => "workspaceWrite"})
     ]
+  end
+
+  @spec configure_runtime_agent(WorkflowStore.bundle(), keyword(), map()) :: :ok
+  defp configure_runtime_agent(bundle, opts, haft) do
+    case agent_adapter(bundle, opts) do
+      Agent.Codex ->
+        bundle
+        |> codex_opts()
+        |> Keyword.put(:haft_invoker, haft.invoke_fun)
+        |> then(&Application.put_env(:open_sleigh, Agent.Codex, &1))
+
+      _adapter ->
+        :ok
+    end
   end
 
   @spec agent_adapter(WorkflowStore.bundle(), keyword()) :: module()
@@ -665,15 +689,7 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     :ok = TrackerPoller.poke(runtime.poller)
 
     if Keyword.get(opts, :once, false) do
-      :ok = wait_once_idle(runtime.orchestrator, once_timeout_ms(opts))
-      :ok = RuntimeStatusWriter.write(runtime.status_writer)
-      :ok = RuntimeLogWriter.event(runtime.log_writer, :once_poll_completed, %{})
-
-      Mix.shell().info(
-        "Open-Sleigh status: #{Jason.encode!(Orchestrator.status(runtime.orchestrator))}"
-      )
-
-      cleanup(runtime)
+      handle_once_runtime(runtime, once_timeout_ms(opts))
     else
       Process.sleep(:infinity)
     end
@@ -683,7 +699,33 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     Mix.raise("Open-Sleigh start failed: #{inspect(reason)}")
   end
 
-  @spec wait_once_idle(GenServer.server(), non_neg_integer()) :: :ok
+  @spec handle_once_runtime(map(), non_neg_integer()) :: :ok
+  defp handle_once_runtime(runtime, timeout_ms) do
+    case wait_once_idle(runtime.orchestrator, timeout_ms) do
+      :ok ->
+        :ok = RuntimeStatusWriter.write(runtime.status_writer)
+        :ok = RuntimeLogWriter.event(runtime.log_writer, :once_poll_completed, %{})
+
+        Mix.shell().info(
+          "Open-Sleigh status: #{Jason.encode!(Orchestrator.status(runtime.orchestrator))}"
+        )
+
+        cleanup(runtime)
+
+      :timeout ->
+        :ok =
+          RuntimeLogWriter.event(runtime.log_writer, :once_poll_timed_out, %{
+            timeout_ms: timeout_ms
+          })
+
+        :ok = Orchestrator.abort_active(runtime.orchestrator, :once_timeout)
+        :ok = RuntimeStatusWriter.write(runtime.status_writer)
+        cleanup(runtime)
+        Mix.raise("Open-Sleigh once timed out after #{timeout_ms}ms")
+    end
+  end
+
+  @spec wait_once_idle(GenServer.server(), non_neg_integer()) :: :ok | :timeout
   defp wait_once_idle(orchestrator, timeout_ms) do
     Process.sleep(50)
 
@@ -691,13 +733,18 @@ defmodule Mix.Tasks.OpenSleigh.Start do
     |> wait_until_idle(System.monotonic_time(:millisecond) + timeout_ms)
   end
 
-  @spec wait_until_idle(GenServer.server(), integer()) :: :ok
+  @spec wait_until_idle(GenServer.server(), integer()) :: :ok | :timeout
   defp wait_until_idle(orchestrator, deadline_ms) do
-    if once_idle?(orchestrator) or System.monotonic_time(:millisecond) >= deadline_ms do
-      :ok
-    else
-      Process.sleep(25)
-      wait_until_idle(orchestrator, deadline_ms)
+    cond do
+      once_idle?(orchestrator) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline_ms ->
+        :timeout
+
+      true ->
+        Process.sleep(25)
+        wait_until_idle(orchestrator, deadline_ms)
     end
   end
 

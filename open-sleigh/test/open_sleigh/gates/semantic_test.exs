@@ -66,6 +66,20 @@ defmodule OpenSleigh.Gates.SemanticTest do
       assert prompt =~ "Work-effect"
     end
 
+    test "prompt tells the judge to ignore process narration" do
+      ctx =
+        Fixtures.gate_context(%{
+          turn_result: %{
+            text:
+              "I’ll inspect the commission and verify what code changes and evidence commands are required."
+          }
+        })
+
+      prompt = LadeQuadrantsSplitOk.render_prompt(ctx)
+      assert prompt =~ "Ignore process narration"
+      assert prompt =~ "process narration, not quadrant conflation"
+    end
+
     test "parse_response with valid verdict/cl/rationale" do
       response = %{
         "verdict" => "fail",

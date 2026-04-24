@@ -136,14 +136,28 @@ defmodule OpenSleigh.Judge.RuleBased do
 
     Enum.any?([
       not obligation_language?(normalized),
+      process_narration?(normalized),
       explicit_lade_split?(normalized)
     ])
   end
 
   @spec obligation_language?(String.t()) :: boolean()
   defp obligation_language?(text) do
-    ["must", "guarantee", "guarantees", "accepted", "evidence", "shall", "required"]
+    ["must", "shall", "guarantee", "guarantees", "accepted", "proof", "proves"]
     |> Enum.any?(&String.contains?(text, &1))
+  end
+
+  @spec process_narration?(String.t()) :: boolean()
+  defp process_narration?(text) do
+    first_person? =
+      ["i'm", "i am", "i'll", "i will"]
+      |> Enum.any?(&String.contains?(text, &1))
+
+    exploration_verb? =
+      ["inspect", "locating", "extract", "verify", "checking", "review", "before making changes"]
+      |> Enum.any?(&String.contains?(text, &1))
+
+    first_person? and exploration_verb?
   end
 
   @spec explicit_lade_split?(String.t()) :: boolean()

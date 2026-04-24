@@ -4,8 +4,8 @@ defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
   or Commission output). Per `specs/target-system/GATES.md §2` +
   `.context/semiotics_slideument.md` §A.6.B Slide 33:
 
-  Obligation-language sentences (containing "MUST", "guarantees",
-  "accepted", "evidence", etc.) must be decomposed into the four
+  Normative claim sentences (containing "MUST", "guarantees",
+  "accepted as proof", etc.) must be decomposed into the four
   Boundary Norm Square quadrants:
 
   * **L** — Law (definition)
@@ -16,6 +16,11 @@ defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
     conflating work-effect with evidence is itself a reportable error)
 
   Geometrically `L D / E A` (Slide 33 literal).
+
+  Process narration is NOT a target here. Sentences about what the
+  agent will inspect next, which files it will read, or which evidence
+  requirements it will extract from the commission are operator
+  meta-language, not a quadrants violation by themselves.
   """
 
   @behaviour OpenSleigh.Gates.Semantic
@@ -46,14 +51,22 @@ defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
             "Work-effect / Evidence" — conflating work-effect with
             evidence is itself a reportable error)
 
-    PASS criterion: sentences that use "MUST" / "guarantees" /
-    "accepted" / "evidence" / "shall" / "required" are clearly
-    attributable to one of the four quadrants, OR the text
-    acknowledges the split explicitly.
+    First decide whether the text contains an authoritative norm or
+    claim about the target artifact/system. Ignore process narration,
+    scouting language, and operator notes about what the agent will
+    inspect next. For example, "I will inspect the commission and
+    verify what code changes and evidence commands are required"
+    is process narration, not quadrant conflation.
+
+    PASS criterion: either
+    1. there is no authoritative obligation-language in the text, or
+    2. normative claims are clearly attributable to one quadrant, or
+    3. the text acknowledges the split explicitly.
 
     FAIL criterion: obligation-language is mixed — a single
-    sentence conflates two or more quadrants (e.g., "the system
-    MUST guarantee X, evidence of Y accepted" mixes L + D + A + W-E).
+    sentence makes one combined normative claim that conflates two or
+    more quadrants (e.g., "the system MUST guarantee X, evidence of Y
+    accepted" mixes L + D + A + W-E).
 
     The artifact text is:
 

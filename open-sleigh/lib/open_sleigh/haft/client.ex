@@ -258,7 +258,9 @@ defmodule OpenSleigh.Haft.Client do
       Map.get(card, "ref"),
       Map.get(card, :ref),
       Map.get(card, "artifact_id"),
-      Map.get(card, :artifact_id)
+      Map.get(card, :artifact_id),
+      get_in(card, ["meta", "id"]),
+      get_in(card, [:meta, :id])
     ]
     |> Enum.any?(&(&1 == problem_card_ref))
   end
@@ -267,9 +269,12 @@ defmodule OpenSleigh.Haft.Client do
 
   @spec problem_card_shape?(map()) :: boolean()
   defp problem_card_shape?(card) do
-    card
-    |> Map.keys()
-    |> Enum.any?(&problem_card_key?/1)
+    legacy_shape =
+      card
+      |> Map.keys()
+      |> Enum.any?(&problem_card_key?/1)
+
+    legacy_shape or problem_card_artifact_shape?(card)
   end
 
   @spec problem_card_key?(term()) :: boolean()
@@ -279,11 +284,55 @@ defmodule OpenSleigh.Haft.Client do
   defp problem_card_key?(:groundingHolon), do: true
   defp problem_card_key?(_key), do: false
 
+  @spec problem_card_artifact_shape?(map()) :: boolean()
+  defp problem_card_artifact_shape?(card) do
+    Enum.any?([
+      Map.get(card, "kind") == "ProblemCard",
+      Map.get(card, :kind) == "ProblemCard",
+      get_in(card, ["meta", "kind"]) == "ProblemCard",
+      get_in(card, [:meta, :kind]) == "ProblemCard"
+    ])
+  end
+
   @spec normalize_problem_card(map(), String.t()) :: map()
   defp normalize_problem_card(card, problem_card_ref) do
     card
+    |> put_artifact_problem_card_fields()
     |> Map.put_new("ref", problem_card_ref)
     |> put_normalized_authoring_source()
+  end
+
+  @spec put_artifact_problem_card_fields(map()) :: map()
+  defp put_artifact_problem_card_fields(card) do
+    meta = Map.get(card, "meta", Map.get(card, :meta, %{}))
+
+    card
+    |> Map.put_new("id", Map.get(meta, "id", Map.get(meta, :id)))
+    |> Map.put_new("title", Map.get(meta, "title", Map.get(meta, :title)))
+    |> Map.put_new("valid_until", Map.get(meta, "valid_until", Map.get(meta, :valid_until)))
+    |> put_problem_card_text_field("body")
+    |> put_problem_card_text_field("description")
+  end
+
+  @spec put_problem_card_text_field(map(), String.t()) :: map()
+  defp put_problem_card_text_field(card, field) do
+    text =
+      card
+      |> Map.get(field, Map.get(card, String.to_atom(field), nil))
+      |> problem_card_text_fallback(card)
+
+    Map.put_new(card, field, text)
+  end
+
+  @spec problem_card_text_fallback(term(), map()) :: term()
+  defp problem_card_text_fallback(value, _card) when is_binary(value) and value != "", do: value
+
+  defp problem_card_text_fallback(_value, card) do
+    Map.get(
+      card,
+      "content",
+      Map.get(card, :content, Map.get(card, "body", Map.get(card, :body, "")))
+    )
   end
 
   @spec put_normalized_authoring_source(map()) :: map()

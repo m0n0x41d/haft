@@ -78,11 +78,25 @@ var commissionListRunnableCmd = &cobra.Command{
 	RunE:  runCommissionListRunnable,
 }
 
+var commissionShowCmd = &cobra.Command{
+	Use:   "show <commission-id>",
+	Short: "Show one WorkCommission",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCommissionShow,
+}
+
 var commissionClaimCmd = &cobra.Command{
 	Use:   "claim <commission-id>",
 	Short: "Claim a WorkCommission for preflight",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runCommissionClaim,
+}
+
+var commissionRequeueCmd = &cobra.Command{
+	Use:   "requeue <commission-id>",
+	Short: "Return a claimed or blocked WorkCommission to the runnable queue",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCommissionRequeue,
 }
 
 func init() {
@@ -91,13 +105,17 @@ func init() {
 	registerCommissionFromDecisionFlags(commissionCreateBatchCmd)
 	registerCommissionFromDecisionFlags(commissionCreateFromPlanCmd)
 	commissionClaimCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the lease")
+	commissionRequeueCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the recovery event")
+	commissionRequeueCmd.Flags().String("reason", "operator_requested_requeue", "reason recorded on the recovery event")
 
 	commissionCmd.AddCommand(commissionCreateCmd)
 	commissionCmd.AddCommand(commissionCreateFromDecisionCmd)
 	commissionCmd.AddCommand(commissionCreateBatchCmd)
 	commissionCmd.AddCommand(commissionCreateFromPlanCmd)
 	commissionCmd.AddCommand(commissionListRunnableCmd)
+	commissionCmd.AddCommand(commissionShowCmd)
 	commissionCmd.AddCommand(commissionClaimCmd)
+	commissionCmd.AddCommand(commissionRequeueCmd)
 	rootCmd.AddCommand(commissionCmd)
 }
 
@@ -187,11 +205,42 @@ func runCommissionListRunnable(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+func runCommissionShow(cmd *cobra.Command, args []string) error {
+	params := map[string]any{
+		"action":        "show",
+		"commission_id": args[0],
+	}
+
+	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
+		result, err := handleHaftCommission(ctx, store, params)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
 func runCommissionClaim(cmd *cobra.Command, args []string) error {
 	params := map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": args[0],
 		"runner_id":     commissionRunnerID,
+	}
+
+	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
+		result, err := handleHaftCommission(ctx, store, params)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
+func runCommissionRequeue(cmd *cobra.Command, args []string) error {
+	reason, err := cmd.Flags().GetString("reason")
+	if err != nil {
+		return err
+	}
+
+	params := map[string]any{
+		"action":        "requeue",
+		"commission_id": args[0],
+		"runner_id":     commissionRunnerID,
+		"reason":        reason,
 	}
 
 	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {

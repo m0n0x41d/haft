@@ -16,7 +16,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 type harnessPlanFile struct {
@@ -78,6 +80,12 @@ type harnessRunOptions struct {
 	CommissionQueueName string
 }
 
+type harnessRunSelection struct {
+	CommissionIDs []string
+	DecisionRefs  []string
+	PlanRef       string
+}
+
 type harnessSessionLogSummary struct {
 	StartedAt       string
 	LastEvent       string
@@ -94,6 +102,18 @@ type harnessCommissionLogSummary struct {
 	TurnID      string
 	TurnStatus  string
 	TextPreview string
+}
+
+type harnessTerminalCommissionSummary struct {
+	CommissionID string
+	State        string
+	DecisionRef  string
+	PlanRef      string
+	LastEvent    string
+	LastVerdict  string
+	RecordedAt   string
+	Workspace    string
+	Preview      string
 }
 
 var (
@@ -129,6 +149,16 @@ var (
 	harnessStatusLogPath string
 	harnessStatusJSON    bool
 	harnessStatusTail    int
+
+	harnessWatchStatusPath string
+	harnessWatchLogPath    string
+	harnessWatchTail       int
+	harnessWatchIntervalMS int
+
+	harnessTailStatusPath string
+	harnessTailLogPath    string
+	harnessTailFollow     bool
+	harnessTailJSON       bool
 )
 
 var harnessCmd = &cobra.Command{
@@ -175,9 +205,24 @@ Or pass an existing plan:
 }
 
 var harnessStatusCmd = &cobra.Command{
-	Use:   "status",
+	Use:   "status [commission-id]",
 	Short: "Show the latest Haft Harness status",
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runHarnessStatus,
+}
+
+var harnessWatchCmd = &cobra.Command{
+	Use:   "watch",
+	Short: "Watch Haft Harness status live",
+	RunE:  runHarnessWatch,
+}
+
+var harnessTailCmd = &cobra.Command{
+	Use:          "tail [commission-id]",
+	Short:        "Show harness runtime events for a commission",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE:         runHarnessTail,
 }
 
 var harnessResultCmd = &cobra.Command{
@@ -196,10 +241,14 @@ func init() {
 	registerHarnessPlanFlags(harnessRunCmd)
 	registerHarnessRunFlags(harnessRunCmd)
 	registerHarnessStatusFlags(harnessStatusCmd)
+	registerHarnessWatchFlags(harnessWatchCmd)
+	registerHarnessTailFlags(harnessTailCmd)
 
 	harnessCmd.AddCommand(harnessPlanCmd)
 	harnessCmd.AddCommand(harnessRunCmd)
 	harnessCmd.AddCommand(harnessStatusCmd)
+	harnessCmd.AddCommand(harnessWatchCmd)
+	harnessCmd.AddCommand(harnessTailCmd)
 	harnessCmd.AddCommand(harnessResultCmd)
 	rootCmd.AddCommand(harnessCmd)
 }
@@ -243,6 +292,20 @@ func registerHarnessStatusFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&harnessStatusTail, "tail", 0, "Print the last N runtime log events")
 }
 
+func registerHarnessWatchFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&harnessWatchStatusPath, "status-path", "", "Status JSON path")
+	cmd.Flags().StringVar(&harnessWatchLogPath, "log-path", "", "Runtime JSONL log path")
+	cmd.Flags().IntVar(&harnessWatchTail, "tail", 10, "Print the last N runtime log events")
+	cmd.Flags().IntVar(&harnessWatchIntervalMS, "interval-ms", 1000, "Refresh interval in milliseconds")
+}
+
+func registerHarnessTailFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&harnessTailStatusPath, "status-path", "", "Status JSON path")
+	cmd.Flags().StringVar(&harnessTailLogPath, "log-path", "", "Runtime JSONL log path")
+	cmd.Flags().BoolVar(&harnessTailFollow, "follow", false, "Follow new runtime events")
+	cmd.Flags().BoolVar(&harnessTailJSON, "json", false, "Print raw JSONL events")
+}
+
 func runHarnessPlan(cmd *cobra.Command, decisionRefs []string) error {
 	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
 		selectedRefs, err := resolveHarnessDecisionRefs(ctx, store, decisionRefs)
@@ -265,13 +328,17 @@ func runHarnessPlan(cmd *cobra.Command, decisionRefs []string) error {
 	})
 }
 
-func runHarnessStatus(cmd *cobra.Command, _args []string) error {
+func runHarnessStatus(cmd *cobra.Command, args []string) error {
+	if len(args) == 1 && !harnessStatusJSON {
+		return runHarnessResult(cmd, args)
+	}
+
 	statusPath := selectedHarnessStatusPath()
 	logPath := selectedHarnessLogPath()
 
-	encoded, err := os.ReadFile(statusPath)
+	encoded, status, err := readHarnessStatus(statusPath)
 	if err != nil {
-		return fmt.Errorf("read harness status %s: %w", statusPath, err)
+		return err
 	}
 
 	if harnessStatusJSON {
@@ -279,12 +346,11 @@ func runHarnessStatus(cmd *cobra.Command, _args []string) error {
 		return err
 	}
 
-	status := map[string]any{}
-	if err := json.Unmarshal(encoded, &status); err != nil {
-		return fmt.Errorf("decode harness status %s: %w", statusPath, err)
-	}
+	store, cleanup := openOptionalHarnessStore()
+	defer cleanup()
 
-	for _, line := range formatHarnessStatus(status, statusPath, logPath, harnessSessionLogSummaries(logPath)) {
+	recent := loadHarnessRecentTerminalSummaries(context.Background(), store, logPath, 5)
+	for _, line := range formatHarnessStatus(status, statusPath, logPath, harnessSessionLogSummaries(logPath), recent) {
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
 			return err
 		}
@@ -295,6 +361,61 @@ func runHarnessStatus(cmd *cobra.Command, _args []string) error {
 	}
 
 	return printHarnessRuntimeTail(cmd, status, logPath, harnessStatusTail)
+}
+
+func runHarnessWatch(cmd *cobra.Command, _args []string) error {
+	statusPath := selectedHarnessStatusPathValue(harnessWatchStatusPath)
+	logPath := selectedHarnessLogPathValue(harnessWatchLogPath)
+	intervalMS := harnessWatchIntervalMS
+	if intervalMS < 200 {
+		intervalMS = 200
+	}
+
+	store, cleanup := openOptionalHarnessStore()
+	defer cleanup()
+
+	for {
+		lines, err := renderHarnessWatchFrame(statusPath, logPath, harnessWatchTail, store)
+		if err != nil {
+			return err
+		}
+
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), "\x1b[H\x1b[2J"); err != nil {
+			return err
+		}
+		for _, line := range lines {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+				return err
+			}
+		}
+		time.Sleep(time.Duration(intervalMS) * time.Millisecond)
+	}
+}
+
+func runHarnessTail(cmd *cobra.Command, args []string) error {
+	statusPath := selectedHarnessStatusPathValue(harnessTailStatusPath)
+	logPath := selectedHarnessLogPathValue(harnessTailLogPath)
+	commissionID, err := harnessTailCommissionID(args, statusPath)
+	if err != nil {
+		return err
+	}
+
+	offset, err := printHarnessTailSnapshot(cmd, logPath, commissionID, harnessTailJSON)
+	if err != nil {
+		return err
+	}
+	if !harnessTailFollow {
+		return nil
+	}
+
+	for {
+		time.Sleep(time.Second)
+		nextOffset, _, err := printHarnessTailSince(cmd, logPath, commissionID, offset, harnessTailJSON)
+		if err != nil {
+			return err
+		}
+		offset = nextOffset
+	}
 }
 
 func runHarnessResult(cmd *cobra.Command, args []string) error {
@@ -354,6 +475,85 @@ func harnessResultCommissionID(
 	}
 
 	return "", fmt.Errorf("commission id is required when the current harness result is ambiguous")
+}
+
+func harnessTailCommissionID(args []string, statusPath string) (string, error) {
+	if len(args) == 1 {
+		return strings.TrimSpace(args[0]), nil
+	}
+
+	statusIDs := harnessStatusCommissionIDs(statusPath)
+	if len(statusIDs) == 1 {
+		return statusIDs[0], nil
+	}
+	return "", fmt.Errorf("commission id is required when no single harness run is active")
+}
+
+func renderHarnessWatchFrame(
+	statusPath string,
+	logPath string,
+	tail int,
+	store *artifact.Store,
+) ([]string, error) {
+	_, status, err := readHarnessStatus(statusPath)
+	if err != nil {
+		return nil, err
+	}
+
+	recent := loadHarnessRecentTerminalSummaries(context.Background(), store, logPath, 5)
+	lines := formatHarnessStatus(status, statusPath, logPath, harnessSessionLogSummaries(logPath), recent)
+	lines = append(lines, "", "watching: press Ctrl-C to stop")
+
+	if tail > 0 {
+		runtimeLines, err := recentHarnessLogLines(status, logPath, tail)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, "", "runtime_events:")
+		lines = append(lines, runtimeLines...)
+	}
+	return lines, nil
+}
+
+func readHarnessStatus(statusPath string) ([]byte, map[string]any, error) {
+	encoded, err := os.ReadFile(statusPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			status := emptyHarnessStatus()
+			payload, marshalErr := json.Marshal(status)
+			if marshalErr != nil {
+				return nil, nil, marshalErr
+			}
+			return payload, status, nil
+		}
+		return nil, nil, fmt.Errorf("read harness status %s: %w", statusPath, err)
+	}
+
+	status := map[string]any{}
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		return nil, nil, fmt.Errorf("decode harness status %s: %w", statusPath, err)
+	}
+	return encoded, status, nil
+}
+
+func emptyHarnessStatus() map[string]any {
+	return map[string]any{
+		"updated_at": "",
+		"metadata": map[string]any{
+			"agent_kind":     "",
+			"tracker_kind":   "commission_source:haft",
+			"config_path":    "",
+			"workspace_root": defaultHarnessWorkspaceRoot(),
+		},
+		"orchestrator": map[string]any{
+			"claimed":         []any{},
+			"running":         []any{},
+			"pending_human":   []any{},
+			"running_details": []any{},
+		},
+		"failures":           []any{},
+		"status_unavailable": true,
+	}
 }
 
 func harnessStatusCommissionIDs(statusPath string) []string {
@@ -626,8 +826,12 @@ func indentLines(value string) []string {
 }
 
 func selectedHarnessStatusPath() string {
-	if strings.TrimSpace(harnessStatusPath) != "" {
-		return harnessStatusPath
+	return selectedHarnessStatusPathValue(harnessStatusPath)
+}
+
+func selectedHarnessStatusPathValue(override string) string {
+	if strings.TrimSpace(override) != "" {
+		return override
 	}
 	if env := strings.TrimSpace(os.Getenv("OPEN_SLEIGH_STATUS_PATH")); env != "" {
 		return env
@@ -636,8 +840,12 @@ func selectedHarnessStatusPath() string {
 }
 
 func selectedHarnessLogPath() string {
-	if strings.TrimSpace(harnessStatusLogPath) != "" {
-		return harnessStatusLogPath
+	return selectedHarnessLogPathValue(harnessStatusLogPath)
+}
+
+func selectedHarnessLogPathValue(override string) string {
+	if strings.TrimSpace(override) != "" {
+		return override
 	}
 	if env := strings.TrimSpace(os.Getenv("OPEN_SLEIGH_LOG_PATH")); env != "" {
 		return env
@@ -662,6 +870,7 @@ func formatHarnessStatus(
 	statusPath string,
 	logPath string,
 	sessionSummaries map[string]harnessSessionLogSummary,
+	recentTerminal []harnessTerminalCommissionSummary,
 ) []string {
 	metadata := mapField(status, "metadata")
 	orchestrator := mapField(status, "orchestrator")
@@ -673,6 +882,7 @@ func formatHarnessStatus(
 	lines := []string{
 		"Open-Sleigh harness status",
 		"updated_at: " + stringField(status, "updated_at"),
+		"runtime_state: " + harnessRuntimeState(status, claimed, running, pendingHuman, time.Now().UTC()),
 		"status_path: " + statusPath,
 		"runtime_log: " + logPath,
 		"agent: " + presentOrUnknown(stringField(metadata, "agent_kind")),
@@ -690,6 +900,109 @@ func formatHarnessStatus(
 		formatRunningDetails(mapSliceField(orchestrator, "running_details"), sessionSummaries, time.Now().UTC())...,
 	)
 	lines = append(lines, formatFailures(failures)...)
+	lines = append(lines, formatRecentTerminalCommissions(recentTerminal)...)
+	lines = append(lines, formatHarnessOperatorHints(claimed, running, pendingHuman, recentTerminal)...)
+	return lines
+}
+
+func harnessRuntimeState(
+	status map[string]any,
+	claimed []string,
+	running []string,
+	pendingHuman []string,
+	now time.Time,
+) string {
+	if len(claimed)+len(running)+len(pendingHuman) > 0 {
+		return "active"
+	}
+	if boolField(status, "status_unavailable") {
+		return "unavailable"
+	}
+
+	updatedAt := parseHarnessTimestamp(stringField(status, "updated_at"))
+	if updatedAt.IsZero() {
+		return "unknown"
+	}
+	if now.Sub(updatedAt) > 2*time.Minute {
+		return "stale"
+	}
+	return "idle"
+}
+
+func boolField(payload map[string]any, key string) bool {
+	value, ok := payload[key].(bool)
+	return ok && value
+}
+
+func formatHarnessOperatorHints(
+	claimed []string,
+	running []string,
+	pendingHuman []string,
+	recent []harnessTerminalCommissionSummary,
+) []string {
+	if len(claimed)+len(running)+len(pendingHuman) > 0 {
+		return []string{
+			"operator_next:",
+			"- watch live: haft harness watch",
+			"- inspect current run: haft harness status <commission-id>",
+			"- tail current run: haft harness tail <commission-id> --follow",
+		}
+	}
+
+	if len(recent) > 0 {
+		latest := recent[0].CommissionID
+		return []string{
+			"operator_next:",
+			"- inspect latest result: haft harness result " + latest,
+			"- tail latest run: haft harness tail " + latest,
+			"- run queued commissions: haft harness run",
+		}
+	}
+
+	return []string{
+		"operator_next:",
+		"- no active harness run detected",
+		"- create a commission: haft commission create-from-decision <decision-id>",
+		"- create a plan and commissions: haft harness run <decision-id> --prepare-only",
+		"- run queued commissions: haft harness run",
+	}
+}
+
+func formatRecentTerminalCommissions(recent []harnessTerminalCommissionSummary) []string {
+	if len(recent) == 0 {
+		return nil
+	}
+
+	lines := []string{"recent_terminal:"}
+	for _, summary := range recent {
+		fields := []string{
+			"commission=" + presentOrUnknown(summary.CommissionID),
+			"state=" + presentOrUnknown(summary.State),
+			"decision=" + presentOrUnknown(summary.DecisionRef),
+		}
+		if strings.TrimSpace(summary.PlanRef) != "" {
+			fields = append(fields, "plan="+summary.PlanRef)
+		}
+		if strings.TrimSpace(summary.LastEvent) != "" {
+			fields = append(fields, "last_event="+summary.LastEvent)
+		}
+		if strings.TrimSpace(summary.LastVerdict) != "" {
+			fields = append(fields, "verdict="+summary.LastVerdict)
+		}
+		if strings.TrimSpace(summary.RecordedAt) != "" {
+			fields = append(fields, "at="+summary.RecordedAt)
+		}
+
+		lines = append(lines, "- "+strings.Join(fields, " "))
+		lines = append(lines, "  result=haft harness result "+summary.CommissionID)
+		lines = append(lines, "  tail=haft harness tail "+summary.CommissionID)
+		if strings.TrimSpace(summary.Workspace) != "" {
+			lines = append(lines, "  workspace="+summary.Workspace)
+		}
+		if strings.TrimSpace(summary.Preview) != "" {
+			lines = append(lines, "  preview="+summary.Preview)
+		}
+	}
 	return lines
 }
 
@@ -921,6 +1234,120 @@ func formatFailure(failure map[string]any) string {
 	return strings.Join(fields, " ")
 }
 
+func openOptionalHarnessStore() (*artifact.Store, func()) {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return nil, func() {}
+	}
+
+	haftDir := filepath.Join(projectRoot, ".haft")
+	projCfg, err := project.Load(haftDir)
+	if err != nil || projCfg == nil {
+		return nil, func() {}
+	}
+
+	dbPath, err := projCfg.DBPath()
+	if err != nil {
+		return nil, func() {}
+	}
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		return nil, func() {}
+	}
+
+	return artifact.NewStore(database.GetRawDB()), func() {
+		_ = database.Close()
+	}
+}
+
+func loadHarnessRecentTerminalSummaries(
+	ctx context.Context,
+	store *artifact.Store,
+	logPath string,
+	limit int,
+) []harnessTerminalCommissionSummary {
+	if store == nil || limit <= 0 {
+		return nil
+	}
+
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return nil
+	}
+
+	summaries := make([]harnessTerminalCommissionSummary, 0, len(records))
+	for _, commission := range records {
+		state := strings.TrimSpace(stringField(commission, "state"))
+		if !isHarnessTerminalState(state) {
+			continue
+		}
+
+		events := currentHarnessAttemptEvents(mapSliceField(commission, "events"))
+		lastEvent := map[string]any{}
+		if len(events) > 0 {
+			lastEvent = events[len(events)-1]
+		}
+
+		commissionID := stringField(commission, "id")
+		latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
+		recordedAt := strings.TrimSpace(stringField(lastEvent, "recorded_at"))
+		if recordedAt == "" {
+			recordedAt = latestTurn.At
+		}
+
+		summaries = append(summaries, harnessTerminalCommissionSummary{
+			CommissionID: commissionID,
+			State:        state,
+			DecisionRef:  stringField(commission, "decision_ref"),
+			PlanRef:      stringField(commission, "implementation_plan_ref"),
+			LastEvent:    stringField(lastEvent, "event"),
+			LastVerdict:  stringField(lastEvent, "verdict"),
+			RecordedAt:   recordedAt,
+			Workspace:    filepath.Join(defaultHarnessWorkspaceRoot(), commissionID),
+			Preview:      latestTurn.TextPreview,
+		})
+	}
+
+	sort.SliceStable(summaries, func(i, j int) bool {
+		left := parseHarnessTimestamp(summaries[i].RecordedAt)
+		right := parseHarnessTimestamp(summaries[j].RecordedAt)
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		return summaries[i].CommissionID > summaries[j].CommissionID
+	})
+
+	if len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
+	return summaries
+}
+
+func isHarnessTerminalState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "completed", "completed_with_projection_debt", "failed", "blocked_policy", "blocked_stale", "cancelled", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseHarnessTimestamp(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+
+	for _, format := range []string{time.RFC3339Nano, time.RFC3339} {
+		parsed, err := time.Parse(format, value)
+		if err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
 func printHarnessRuntimeTail(
 	cmd *cobra.Command,
 	status map[string]any,
@@ -944,12 +1371,11 @@ func printHarnessRuntimeTail(
 }
 
 func recentHarnessLogLines(status map[string]any, logPath string, lineCount int) ([]string, error) {
-	encoded, err := os.ReadFile(logPath)
+	lines, err := readHarnessRuntimeLogLines(logPath)
 	if err != nil {
-		return nil, fmt.Errorf("read harness runtime log %s: %w", logPath, err)
+		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
 	filtered := filterHarnessLogLines(status, lines)
 	if len(filtered) == 0 {
 		filtered = lines
@@ -958,6 +1384,123 @@ func recentHarnessLogLines(status map[string]any, logPath string, lineCount int)
 		return filtered, nil
 	}
 	return filtered[len(filtered)-lineCount:], nil
+}
+
+func printHarnessTailSnapshot(
+	cmd *cobra.Command,
+	logPath string,
+	commissionID string,
+	rawJSON bool,
+) (int, error) {
+	offset, printed, err := printHarnessTailSince(cmd, logPath, commissionID, 0, rawJSON)
+	if err != nil {
+		return offset, err
+	}
+	if printed == 0 && !rawJSON {
+		_, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"No runtime events for commission %s yet. Use `haft harness tail %s --follow` to wait.\n",
+			commissionID,
+			commissionID,
+		)
+		return offset, err
+	}
+	return offset, nil
+}
+
+func printHarnessTailSince(
+	cmd *cobra.Command,
+	logPath string,
+	commissionID string,
+	offset int,
+	rawJSON bool,
+) (int, int, error) {
+	lines, err := readHarnessRuntimeLogLines(logPath)
+	if err != nil {
+		return offset, 0, err
+	}
+	if offset > len(lines) {
+		offset = 0
+	}
+
+	printed := 0
+	for _, line := range lines[offset:] {
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if strings.TrimSpace(stringField(event, "commission_id")) != commissionID {
+			continue
+		}
+
+		output := line
+		if !rawJSON {
+			output = formatHarnessRuntimeEventLine(event)
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), output); err != nil {
+			return len(lines), printed, err
+		}
+		printed++
+	}
+	return len(lines), printed, nil
+}
+
+func readHarnessRuntimeLogLines(logPath string) ([]string, error) {
+	encoded, err := os.ReadFile(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read harness runtime log %s: %w", logPath, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		result = append(result, line)
+	}
+	return result, nil
+}
+
+func formatHarnessRuntimeEventLine(event map[string]any) string {
+	data := mapField(event, "data")
+	fields := []string{
+		presentOrUnknown(stringField(event, "at")),
+		presentOrUnknown(stringField(event, "event")),
+	}
+
+	if phase := strings.TrimSpace(stringField(data, "phase")); phase != "" {
+		fields = append(fields, "phase="+phase)
+	}
+	if status := strings.TrimSpace(stringField(data, "status")); status != "" {
+		fields = append(fields, "status="+status)
+	}
+	if sessionID := strings.TrimSpace(stringField(data, "session_id")); sessionID != "" {
+		fields = append(fields, "session="+sessionID)
+	}
+	if turnID := strings.TrimSpace(stringField(data, "turn_id")); turnID != "" {
+		fields = append(fields, "turn="+turnID)
+	}
+
+	line := strings.Join(fields, " ")
+	if preview := harnessRuntimeEventPreview(event); preview != "" {
+		line += "\n  " + preview
+	}
+	return line
+}
+
+func harnessRuntimeEventPreview(event map[string]any) string {
+	data := mapField(event, "data")
+	for _, key := range []string{"text_preview", "reason"} {
+		preview := harnessCompactPreview(stringField(data, key))
+		if preview != "" {
+			return preview
+		}
+	}
+	return ""
 }
 
 func filterHarnessLogLines(status map[string]any, lines []string) []string {
@@ -1072,6 +1615,10 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 		if err != nil {
 			return err
 		}
+		selection, err := loadHarnessRunSelectionForPlan(ctx, store, plan)
+		if err != nil {
+			return err
+		}
 
 		opts := defaultHarnessRunOptions(projectRoot, planPath, plan)
 		configPath, err := writeHarnessRuntimeConfig(projectRoot, opts)
@@ -1079,7 +1626,7 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 			return err
 		}
 
-		if err := printHarnessRunSummary(cmd, planPath, configPath, created, result, opts); err != nil {
+		if err := printHarnessRunSummary(cmd, planPath, configPath, created, result, selection, opts); err != nil {
 			return err
 		}
 		if opts.PrepareOnly {
@@ -1100,7 +1647,7 @@ func runExistingHarnessCommissions(
 	store *artifact.Store,
 	projectRoot string,
 ) (bool, error) {
-	planPath, plan, result, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
+	planPath, plan, result, selection, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
 	if err != nil {
 		return false, err
 	}
@@ -1114,7 +1661,7 @@ func runExistingHarnessCommissions(
 		return false, err
 	}
 
-	if err := printHarnessRunSummary(cmd, planPath, configPath, false, result, opts); err != nil {
+	if err := printHarnessRunSummary(cmd, planPath, configPath, false, result, selection, opts); err != nil {
 		return false, err
 	}
 	if opts.PrepareOnly {
@@ -1128,21 +1675,22 @@ func existingRunnableHarnessPlan(
 	ctx context.Context,
 	store *artifact.Store,
 	projectRoot string,
-) (string, map[string]any, string, bool, error) {
+) (string, map[string]any, string, harnessRunSelection, bool, error) {
 	records, err := loadWorkCommissionPayloads(ctx, store)
 	if err != nil {
-		return "", nil, "", false, err
+		return "", nil, "", harnessRunSelection{}, false, err
 	}
 
 	runnable := runnableHarnessCommissions(records)
 	if len(runnable) == 0 {
-		return "", nil, "", false, nil
+		return "", nil, "", harnessRunSelection{}, false, nil
 	}
 
 	plan := existingRunnablePlan(runnable)
 	planPath := existingRunnablePlanPath(projectRoot, plan)
 	result := fmt.Sprintf("using %d existing runnable commission(s)", len(runnable))
-	return planPath, plan, result, true, nil
+	selection := harnessRunSelectionFromCommissions(runnable)
+	return planPath, plan, result, selection, true, nil
 }
 
 func runnableHarnessCommissions(records []map[string]any) []map[string]any {
@@ -1155,6 +1703,70 @@ func runnableHarnessCommissions(records []map[string]any) []map[string]any {
 		}
 	}
 	return runnable
+}
+
+func loadHarnessRunSelectionForPlan(
+	ctx context.Context,
+	store *artifact.Store,
+	plan map[string]any,
+) (harnessRunSelection, error) {
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return harnessRunSelection{}, err
+	}
+
+	planRef := strings.TrimSpace(stringField(plan, "id"))
+	planCommissions := harnessPlanCommissions(records, planRef)
+	runnable := runnablePlanCommissions(records, planCommissions)
+	if len(runnable) > 0 {
+		return harnessRunSelectionFromCommissions(runnable), nil
+	}
+	return harnessRunSelectionFromCommissions(planCommissions), nil
+}
+
+func harnessPlanCommissions(records []map[string]any, planRef string) []map[string]any {
+	filtered := make([]map[string]any, 0, len(records))
+	for _, commission := range records {
+		if stringField(commission, "implementation_plan_ref") != planRef {
+			continue
+		}
+		filtered = append(filtered, commission)
+	}
+	return filtered
+}
+
+func runnablePlanCommissions(records []map[string]any, commissions []map[string]any) []map[string]any {
+	runnable := make([]map[string]any, 0, len(commissions))
+	now := time.Now().UTC()
+	for _, commission := range commissions {
+		if !workCommissionRunnableForRequest(commission, records, nil, now) {
+			continue
+		}
+		runnable = append(runnable, commission)
+	}
+	return runnable
+}
+
+func harnessRunSelectionFromCommissions(commissions []map[string]any) harnessRunSelection {
+	commissionIDs := make([]string, 0, len(commissions))
+	decisionRefs := make([]string, 0, len(commissions))
+	planRef := ""
+
+	for _, commission := range commissions {
+		commissionIDs = append(commissionIDs, stringField(commission, "id"))
+		decisionRefs = append(decisionRefs, stringField(commission, "decision_ref"))
+		if planRef == "" {
+			planRef = stringField(commission, "implementation_plan_ref")
+		}
+	}
+
+	commissionIDs = uniqueStringsPreserveOrder(cleanStringSlice(commissionIDs))
+	decisionRefs = uniqueStringsPreserveOrder(cleanStringSlice(decisionRefs))
+	return harnessRunSelection{
+		CommissionIDs: commissionIDs,
+		DecisionRefs:  decisionRefs,
+		PlanRef:       strings.TrimSpace(planRef),
+	}
 }
 
 func existingRunnablePlan(commissions []map[string]any) map[string]any {
@@ -2112,6 +2724,7 @@ func printHarnessRunSummary(
 	configPath string,
 	created bool,
 	commissionResult string,
+	selection harnessRunSelection,
 	opts harnessRunOptions,
 ) error {
 	mode := "long-running"
@@ -2136,7 +2749,7 @@ func printHarnessRunSummary(
 		lines = append(lines, "Commissions: "+commissionResult)
 	}
 	if !opts.PrepareOnly {
-		lines = append(lines, "Observe: haft harness status --tail 20")
+		lines = append(lines, formatHarnessRunSelectionLines(selection, opts)...)
 	}
 
 	for _, line := range lines {
@@ -2145,6 +2758,54 @@ func printHarnessRunSummary(
 		}
 	}
 	return nil
+}
+
+func formatHarnessRunSelectionLines(
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+) []string {
+	lines := []string{
+		"Observe status: haft harness status --tail 20",
+		"Observe log: tail -f " + opts.LogPath,
+	}
+
+	if len(selection.CommissionIDs) == 0 {
+		return lines
+	}
+
+	lines = append(lines, formatHarnessSelectionLine("Selected commission", selection.CommissionIDs))
+	lines = append(lines, "Observe result: haft harness result "+selection.CommissionIDs[0])
+	lines = append(lines, "Workspace: "+filepath.Join(opts.WorkspaceRoot, selection.CommissionIDs[0]))
+
+	if len(selection.DecisionRefs) > 0 {
+		lines = append(lines, formatHarnessSelectionLine("Selected decision", selection.DecisionRefs))
+	}
+
+	lines = append(lines, "Note: workspace changes usually appear only after execute starts editing files")
+	return lines
+}
+
+func formatHarnessSelectionLine(label string, values []string) string {
+	cleaned := uniqueStringsPreserveOrder(cleanStringSlice(values))
+	if len(cleaned) == 0 {
+		return label + ": none"
+	}
+
+	visible := cleaned
+	extra := 0
+	if len(cleaned) > 3 {
+		visible = cleaned[:3]
+		extra = len(cleaned) - len(visible)
+	}
+
+	summary := strings.Join(visible, ", ")
+	if extra > 0 {
+		summary += fmt.Sprintf(" (+%d more)", extra)
+	}
+	if len(cleaned) > 1 {
+		return label + "s: " + summary
+	}
+	return label + ": " + summary
 }
 
 func startOpenSleigh(cmd *cobra.Command, opts harnessRunOptions, configPath string) error {

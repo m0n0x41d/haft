@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/spf13/cobra"
 )
 
 func TestBuildHarnessPlanSequentialDependencies(t *testing.T) {
@@ -356,7 +358,7 @@ func TestExistingRunnableHarnessPlanFindsPreparedCommissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotPath, plan, result, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
+	gotPath, plan, result, selection, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,6 +373,54 @@ func TestExistingRunnableHarnessPlanFindsPreparedCommissions(t *testing.T) {
 	}
 	if !strings.Contains(result, "using 1 existing runnable commission") {
 		t.Fatalf("result = %q, want existing runnable commission summary", result)
+	}
+	if len(selection.CommissionIDs) != 1 || selection.CommissionIDs[0] != "wc-existing-runnable" {
+		t.Fatalf("selection commissions = %#v, want [wc-existing-runnable]", selection.CommissionIDs)
+	}
+	if len(selection.DecisionRefs) != 1 || selection.DecisionRefs[0] != "dec-20260422-001" {
+		t.Fatalf("selection decisions = %#v, want [dec-20260422-001]", selection.DecisionRefs)
+	}
+}
+
+func TestPrintHarnessRunSummaryIncludesSelectedCommissionAndObservationCommands(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := printHarnessRunSummary(
+		cmd,
+		"/tmp/.haft/plans/plan.yaml",
+		"/tmp/sleigh.md",
+		false,
+		"using 1 existing runnable commission(s)",
+		harnessRunSelection{
+			CommissionIDs: []string{"wc-1"},
+			DecisionRefs:  []string{"dec-1"},
+		},
+		harnessRunOptions{
+			StatusPath:    "/tmp/status.json",
+			LogPath:       "/tmp/runtime.jsonl",
+			WorkspaceRoot: "/tmp/workspaces",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := out.String()
+	for _, fragment := range []string{
+		"Commissions: using 1 existing runnable commission(s)",
+		"Selected commission: wc-1",
+		"Selected decision: dec-1",
+		"Observe status: haft harness status --tail 20",
+		"Observe result: haft harness result wc-1",
+		"Observe log: tail -f /tmp/runtime.jsonl",
+		"Workspace: /tmp/workspaces/wc-1",
+		"workspace changes usually appear only after execute starts editing files",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("summary output missing %q:\n%s", fragment, joined)
+		}
 	}
 }
 
@@ -468,7 +518,7 @@ func TestFormatHarnessStatusIncludesRunningDetails(t *testing.T) {
 		"failures": []any{},
 	}
 
-	lines := formatHarnessStatus(status, "/tmp/status.json", logPath, harnessSessionLogSummaries(logPath))
+	lines := formatHarnessStatus(status, "/tmp/status.json", logPath, harnessSessionLogSummaries(logPath), nil)
 	joined := strings.Join(lines, "\n")
 
 	if !strings.Contains(joined, "agent: codex") {
@@ -500,6 +550,82 @@ func TestFormatHarnessStatusIncludesRunningDetails(t *testing.T) {
 	}
 	if !strings.Contains(joined, "preview=executor inspected the scoped files") {
 		t.Fatalf("status output missing preview:\n%s", joined)
+	}
+}
+
+func TestFormatHarnessStatusIncludesRecentTerminalCommissions(t *testing.T) {
+	status := map[string]any{
+		"updated_at": "2026-04-24T05:11:34Z",
+		"metadata": map[string]any{
+			"agent_kind":     "codex",
+			"tracker_kind":   "commission_source:haft",
+			"config_path":    "/tmp/sleigh.md",
+			"workspace_root": "/tmp/workspaces",
+		},
+		"orchestrator": map[string]any{
+			"claimed":         []any{},
+			"running":         []any{},
+			"pending_human":   []any{},
+			"running_details": []any{},
+		},
+		"failures": []any{},
+	}
+
+	lines := formatHarnessStatus(
+		status,
+		"/tmp/status.json",
+		"/tmp/runtime.jsonl",
+		nil,
+		[]harnessTerminalCommissionSummary{
+			{
+				CommissionID: "wc-1",
+				State:        "completed",
+				DecisionRef:  "dec-1",
+				LastEvent:    "workflow_terminal",
+				LastVerdict:  "pass",
+				RecordedAt:   "2026-04-24T05:08:35Z",
+				Workspace:    "/tmp/workspaces/wc-1",
+				Preview:      "Measurement pass: tests completed.",
+			},
+		},
+	)
+	joined := strings.Join(lines, "\n")
+
+	for _, fragment := range []string{
+		"recent_terminal:",
+		"commission=wc-1 state=completed decision=dec-1 last_event=workflow_terminal verdict=pass",
+		"result=haft harness result wc-1",
+		"tail=haft harness tail wc-1",
+		"workspace=/tmp/workspaces/wc-1",
+		"preview=Measurement pass: tests completed.",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("status output missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
+func TestReadHarnessStatusMissingFileReturnsUnavailableDashboard(t *testing.T) {
+	statusPath := filepath.Join(t.TempDir(), "missing-status.json")
+
+	_, status, err := readHarnessStatus(statusPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := formatHarnessStatus(status, statusPath, "/tmp/missing-runtime.jsonl", nil, nil)
+	joined := strings.Join(lines, "\n")
+	for _, fragment := range []string{
+		"runtime_state: unavailable",
+		"operator_next:",
+		"no active harness run detected",
+		"create a commission: haft commission create-from-decision <decision-id>",
+		"create a plan and commissions: haft harness run <decision-id> --prepare-only",
+		"run queued commissions: haft harness run",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("missing status dashboard lacks %q:\n%s", fragment, joined)
+		}
 	}
 }
 
@@ -710,6 +836,111 @@ func TestRecentHarnessLogLinesFiltersToCurrentRun(t *testing.T) {
 	}
 	if !strings.Contains(joined, "/tmp/current-sleigh.md") {
 		t.Fatalf("filtered log missing current runtime events:\n%s", joined)
+	}
+}
+
+func TestRecentHarnessLogLinesMissingFileReturnsEmpty(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "missing-runtime.jsonl")
+
+	lines, err := recentHarnessLogLines(map[string]any{}, logPath, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 0 {
+		t.Fatalf("lines = %#v, want empty", lines)
+	}
+}
+
+func TestPrintHarnessTailSnapshotFiltersAndHumanizesCommissionEvents(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
+	events := []map[string]any{
+		{
+			"at":            "2026-04-24T05:00:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-other",
+			"data": map[string]any{
+				"phase":        "execute",
+				"status":       "completed",
+				"text_preview": "other commission",
+			},
+		},
+		{
+			"at":            "2026-04-24T05:01:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-1",
+			"data": map[string]any{
+				"phase":        "execute",
+				"session_id":   "session-1",
+				"turn_id":      "turn-1",
+				"status":       "completed",
+				"text_preview": "Implemented the scoped MCP config portability change.",
+			},
+		},
+	}
+	writeHarnessRuntimeEvents(t, logPath, events)
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	offset, err := printHarnessTailSnapshot(cmd, logPath, "wc-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := out.String()
+	if offset != 2 {
+		t.Fatalf("offset = %d, want 2", offset)
+	}
+	if strings.Contains(joined, "other commission") {
+		t.Fatalf("tail output leaked other commission:\n%s", joined)
+	}
+	for _, fragment := range []string{
+		"2026-04-24T05:01:00Z agent_turn_completed phase=execute status=completed session=session-1 turn=turn-1",
+		"Implemented the scoped MCP config portability change.",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("tail output missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
+func TestPrintHarnessTailSnapshotShowsEmptyState(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	offset, err := printHarnessTailSnapshot(cmd, filepath.Join(t.TempDir(), "missing.jsonl"), "wc-empty", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offset != 0 {
+		t.Fatalf("offset = %d, want 0", offset)
+	}
+
+	joined := out.String()
+	if !strings.Contains(joined, "No runtime events for commission wc-empty yet") {
+		t.Fatalf("tail empty state missing message:\n%s", joined)
+	}
+	if !strings.Contains(joined, "haft harness tail wc-empty --follow") {
+		t.Fatalf("tail empty state missing follow command:\n%s", joined)
+	}
+}
+
+func writeHarnessRuntimeEvents(t *testing.T, logPath string, events []map[string]any) {
+	t.Helper()
+
+	encoded := make([]string, 0, len(events))
+	for _, event := range events {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded = append(encoded, string(payload))
+	}
+
+	if err := os.WriteFile(logPath, []byte(strings.Join(encoded, "\n")), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

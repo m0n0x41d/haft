@@ -79,6 +79,12 @@ var commissionListRunnableCmd = &cobra.Command{
 	RunE:  runCommissionListRunnable,
 }
 
+var commissionListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List WorkCommissions by lifecycle selector",
+	RunE:  runCommissionList,
+}
+
 var commissionShowCmd = &cobra.Command{
 	Use:   "show <commission-id>",
 	Short: "Show one WorkCommission",
@@ -100,23 +106,37 @@ var commissionRequeueCmd = &cobra.Command{
 	RunE:  runCommissionRequeue,
 }
 
+var commissionCancelCmd = &cobra.Command{
+	Use:   "cancel <commission-id>",
+	Short: "Cancel an unfinished WorkCommission without deleting its audit record",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCommissionCancel,
+}
+
 func init() {
 	commissionCreateCmd.Flags().StringVar(&commissionJSONPath, "json", "", "JSON payload path, or '-' for stdin")
 	registerCommissionFromDecisionFlags(commissionCreateFromDecisionCmd)
 	registerCommissionFromDecisionFlags(commissionCreateBatchCmd)
 	registerCommissionFromDecisionFlags(commissionCreateFromPlanCmd)
+	commissionListCmd.Flags().String("selector", "open", "commission selector: open, stale, terminal, runnable, all")
+	commissionListCmd.Flags().String("state", "", "exact WorkCommission state filter")
+	commissionListCmd.Flags().String("older-than", "", "duration threshold for stale open commissions, e.g. 24h")
 	commissionClaimCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the lease")
 	commissionRequeueCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the recovery event")
 	commissionRequeueCmd.Flags().String("reason", "operator_requested_requeue", "reason recorded on the recovery event")
+	commissionCancelCmd.Flags().StringVar(&commissionRunnerID, "runner", "haft-cli", "runner id for the cancellation event")
+	commissionCancelCmd.Flags().String("reason", "operator_cancelled", "reason recorded on the cancellation event")
 
 	commissionCmd.AddCommand(commissionCreateCmd)
 	commissionCmd.AddCommand(commissionCreateFromDecisionCmd)
 	commissionCmd.AddCommand(commissionCreateBatchCmd)
 	commissionCmd.AddCommand(commissionCreateFromPlanCmd)
+	commissionCmd.AddCommand(commissionListCmd)
 	commissionCmd.AddCommand(commissionListRunnableCmd)
 	commissionCmd.AddCommand(commissionShowCmd)
 	commissionCmd.AddCommand(commissionClaimCmd)
 	commissionCmd.AddCommand(commissionRequeueCmd)
+	commissionCmd.AddCommand(commissionCancelCmd)
 	rootCmd.AddCommand(commissionCmd)
 }
 
@@ -207,6 +227,33 @@ func runCommissionListRunnable(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+func runCommissionList(cmd *cobra.Command, _ []string) error {
+	selector, err := cmd.Flags().GetString("selector")
+	if err != nil {
+		return err
+	}
+	state, err := cmd.Flags().GetString("state")
+	if err != nil {
+		return err
+	}
+	olderThan, err := cmd.Flags().GetString("older-than")
+	if err != nil {
+		return err
+	}
+
+	params := map[string]any{
+		"action":     "list",
+		"selector":   selector,
+		"state":      state,
+		"older_than": olderThan,
+	}
+
+	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
+		result, err := handleHaftCommission(ctx, store, params)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
 func runCommissionShow(cmd *cobra.Command, args []string) error {
 	params := map[string]any{
 		"action":        "show",
@@ -240,6 +287,25 @@ func runCommissionRequeue(cmd *cobra.Command, args []string) error {
 
 	params := map[string]any{
 		"action":        "requeue",
+		"commission_id": args[0],
+		"runner_id":     commissionRunnerID,
+		"reason":        reason,
+	}
+
+	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
+		result, err := handleHaftCommission(ctx, store, params)
+		return writeCommissionResult(cmd, result, err)
+	})
+}
+
+func runCommissionCancel(cmd *cobra.Command, args []string) error {
+	reason, err := cmd.Flags().GetString("reason")
+	if err != nil {
+		return err
+	}
+
+	params := map[string]any{
+		"action":        "cancel",
 		"commission_id": args[0],
 		"runner_id":     commissionRunnerID,
 		"reason":        reason,

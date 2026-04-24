@@ -202,6 +202,96 @@ func TestHandleHaftCommission_RequeueRejectsTerminalCommission(t *testing.T) {
 	}
 }
 
+func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	for _, commission := range []map[string]any{
+		workCommissionFixture("wc-stale-open", "queued", "2099-01-01T00:00:00Z"),
+		workCommissionFixture("wc-terminal", "completed", "2099-01-01T00:00:00Z"),
+	} {
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	staleResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "list",
+		"selector":   "stale",
+		"older_than": "1h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := map[string][]map[string]any{}
+	if err := json.Unmarshal([]byte(staleResult), &stale); err != nil {
+		t.Fatal(err)
+	}
+	if len(stale["commissions"]) != 1 {
+		t.Fatalf("stale commissions = %#v, want one open stale commission", stale["commissions"])
+	}
+	if stale["commissions"][0]["id"] != "wc-stale-open" {
+		t.Fatalf("stale commission id = %#v", stale["commissions"][0]["id"])
+	}
+
+	operator, ok := stale["commissions"][0]["operator"].(map[string]any)
+	if !ok || operator["attention"] != true {
+		t.Fatalf("operator = %#v, want attention", stale["commissions"][0]["operator"])
+	}
+
+	cancelResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "cancel",
+		"commission_id": "wc-stale-open",
+		"runner_id":     "haft-cli:test",
+		"reason":        "dogfood cleanup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cancelled := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(cancelResult), &cancelled); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := cancelled["commission"]
+	if commission["state"] != "cancelled" {
+		t.Fatalf("state = %#v, want cancelled", commission["state"])
+	}
+	events, ok := commission["events"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("events = %#v, want one cancel event", commission["events"])
+	}
+	event, ok := events[0].(map[string]any)
+	if !ok || event["event"] != "commission_cancelled" {
+		t.Fatalf("event = %#v, want commission_cancelled", events[0])
+	}
+	if event["reason"] != "dogfood cleanup" {
+		t.Fatalf("reason = %#v, want dogfood cleanup", event["reason"])
+	}
+
+	openResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":   "list",
+		"selector": "open",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	open := map[string][]map[string]any{}
+	if err := json.Unmarshal([]byte(openResult), &open); err != nil {
+		t.Fatal(err)
+	}
+	if len(open["commissions"]) != 0 {
+		t.Fatalf("open commissions = %#v, want none after cancellation", open["commissions"])
+	}
+}
+
 func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

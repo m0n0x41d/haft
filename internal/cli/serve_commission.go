@@ -20,6 +20,10 @@ const defaultCommissionValidFor = 168 * time.Hour
 
 const defaultDeliveryPolicy = "workspace_patch_manual"
 
+const defaultCommissionOpenAttentionAfter = 24 * time.Hour
+
+const defaultCommissionLeaseAttentionAfter = 2 * time.Hour
+
 type commissionFromDecisionInput struct {
 	DecisionRef          string
 	RepoRef              string
@@ -56,6 +60,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return createWorkCommissionsFromPlan(ctx, store, args)
 	case "create_batch_from_decisions":
 		return createWorkCommissionBatchFromDecisions(ctx, store, args)
+	case "list":
+		return listWorkCommissions(ctx, store, args)
 	case "list_runnable":
 		return listRunnableWorkCommissions(ctx, store, args)
 	case "show":
@@ -64,6 +70,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return claimWorkCommissionForPreflight(ctx, store, args)
 	case "requeue":
 		return requeueWorkCommission(ctx, store, args)
+	case "cancel":
+		return cancelWorkCommission(ctx, store, args)
 	case "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block":
 		return appendWorkCommissionLifecycle(ctx, store, args)
 	default:
@@ -584,6 +592,41 @@ func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store, arg
 	return commissionResponse("commissions", commissions)
 }
 
+func listWorkCommissions(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return "", err
+	}
+
+	selector := stringArg(args, "selector")
+	if selector == "" {
+		selector = "open"
+	}
+	if !validWorkCommissionListSelector(selector) {
+		return "", fmt.Errorf("invalid commission selector: %s", selector)
+	}
+
+	olderThan, err := commissionAttentionDuration(args)
+	if err != nil {
+		return "", err
+	}
+
+	stateFilter := stringArg(args, "state")
+	now := time.Now().UTC()
+	commissions := make([]map[string]any, 0, len(records))
+	for _, commission := range records {
+		if !workCommissionListSelectorMatches(commission, records, selector, args, now, olderThan) {
+			continue
+		}
+		if stateFilter != "" && stringField(commission, "state") != stateFilter {
+			continue
+		}
+		commissions = append(commissions, workCommissionWithOperatorFields(commission, now, olderThan))
+	}
+
+	return commissionResponse("commissions", commissions)
+}
+
 func showWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	commissionID := stringArg(args, "commission_id")
 	if commissionID == "" {
@@ -593,6 +636,40 @@ func showWorkCommission(ctx context.Context, store *artifact.Store, args map[str
 	commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
 	if err != nil {
 		return "", err
+	}
+
+	return commissionResponse("commission", commission)
+}
+
+func cancelWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+	commissionID := stringArg(args, "commission_id")
+	if commissionID == "" {
+		return "", fmt.Errorf("commission_id is required")
+	}
+
+	tx, err := store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin WorkCommission cancel: %w", err)
+	}
+	defer tx.Rollback()
+
+	commission, err := loadWorkCommissionPayloadForUpdate(ctx, tx, commissionID)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureWorkCommissionCancellable(commission); err != nil {
+		return "", err
+	}
+
+	commission = appendCancelLifecycleEvent(commission, args)
+	commission["state"] = "cancelled"
+	delete(commission, "lease")
+
+	if err := updateWorkCommissionPayload(ctx, tx, commission); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit WorkCommission cancel: %w", err)
 	}
 
 	return commissionResponse("commission", commission)
@@ -1585,11 +1662,174 @@ func validDeliveryPolicy(value string) bool {
 	}
 }
 
+func validWorkCommissionListSelector(value string) bool {
+	switch value {
+	case "all", "open", "stale", "terminal", "runnable":
+		return true
+	default:
+		return false
+	}
+}
+
 func validWorkCommissionState(value string) bool {
 	switch value {
 	case "draft", "queued", "ready", "preflighting", "running", "blocked_stale",
 		"blocked_policy", "blocked_conflict", "needs_human_review", "completed",
 		"completed_with_projection_debt", "failed", "cancelled", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func workCommissionListSelectorMatches(
+	commission map[string]any,
+	commissions []map[string]any,
+	selector string,
+	args map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+) bool {
+	switch selector {
+	case "all":
+		return true
+	case "open":
+		return !workCommissionTerminal(commission)
+	case "terminal":
+		return workCommissionTerminal(commission)
+	case "stale":
+		return workCommissionAttentionReason(commission, now, openAttentionAfter) != ""
+	case "runnable":
+		return workCommissionRunnableForRequest(commission, commissions, args, now)
+	default:
+		return false
+	}
+}
+
+func workCommissionWithOperatorFields(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+) map[string]any {
+	enriched := copyStringAnyMap(commission)
+	reason := workCommissionAttentionReason(commission, now, openAttentionAfter)
+	enriched["operator"] = map[string]any{
+		"terminal":          workCommissionTerminal(commission),
+		"expired":           workCommissionExpired(commission, now),
+		"attention":         reason != "",
+		"attention_reason":  reason,
+		"suggested_actions": workCommissionSuggestedActions(commission, reason),
+	}
+	return enriched
+}
+
+func workCommissionSuggestedActions(commission map[string]any, reason string) []any {
+	if reason == "" {
+		return []any{}
+	}
+
+	switch stringField(commission, "state") {
+	case "preflighting", "running":
+		return []any{"inspect", "requeue", "cancel"}
+	case "blocked_stale":
+		return []any{"refresh_decision", "requeue", "cancel"}
+	case "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return []any{"inspect", "requeue", "cancel"}
+	default:
+		return []any{"inspect", "cancel"}
+	}
+}
+
+func workCommissionAttentionReason(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+) string {
+	if workCommissionTerminal(commission) {
+		return ""
+	}
+	if workCommissionExpired(commission, now) {
+		return "expired before terminal state"
+	}
+
+	switch stringField(commission, "state") {
+	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return "requires operator decision: " + stringField(commission, "state")
+	case "preflighting", "running":
+		return activeLeaseAttentionReason(commission, now)
+	default:
+		return openCommissionAttentionReason(commission, now, openAttentionAfter)
+	}
+}
+
+func activeLeaseAttentionReason(commission map[string]any, now time.Time) string {
+	lease, ok := mapArg(commission, "lease")
+	if !ok {
+		return "active state has no lease"
+	}
+
+	claimedAt, ok := parseRFC3339Field(lease, "claimed_at")
+	if !ok {
+		return "active lease has no claimed_at"
+	}
+	if now.Sub(claimedAt) >= defaultCommissionLeaseAttentionAfter {
+		return "active lease older than " + defaultCommissionLeaseAttentionAfter.String()
+	}
+	return ""
+}
+
+func openCommissionAttentionReason(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+) string {
+	fetchedAt, ok := parseRFC3339Field(commission, "fetched_at")
+	if !ok {
+		return "open commission has no fetched_at"
+	}
+	if now.Sub(fetchedAt) >= openAttentionAfter {
+		return "open longer than " + openAttentionAfter.String()
+	}
+	return ""
+}
+
+func commissionAttentionDuration(args map[string]any) (time.Duration, error) {
+	value := stringArg(args, "older_than")
+	if value == "" {
+		return defaultCommissionOpenAttentionAfter, nil
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("older_than must be a Go duration like 24h: %w", err)
+	}
+	if duration <= 0 {
+		return 0, fmt.Errorf("older_than must be positive")
+	}
+	return duration, nil
+}
+
+func workCommissionExpired(commission map[string]any, now time.Time) bool {
+	validUntil, ok := parseRFC3339Field(commission, "valid_until")
+	return ok && !validUntil.After(now)
+}
+
+func parseRFC3339Field(payload map[string]any, key string) (time.Time, bool) {
+	value := stringField(payload, key)
+	if value == "" {
+		return time.Time{}, false
+	}
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func workCommissionTerminal(commission map[string]any) bool {
+	switch stringField(commission, "state") {
+	case "completed", "completed_with_projection_debt", "cancelled", "expired":
 		return true
 	default:
 		return false
@@ -1608,6 +1848,13 @@ func ensureWorkCommissionRequeueable(commission map[string]any) error {
 	}
 }
 
+func ensureWorkCommissionCancellable(commission map[string]any) error {
+	if workCommissionTerminal(commission) {
+		return fmt.Errorf("commission_not_cancellable: state=%s", stringField(commission, "state"))
+	}
+	return nil
+}
+
 func appendRequeueLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {
 	payload := map[string]any{
 		"previous_state": stringField(commission, "state"),
@@ -1621,6 +1868,30 @@ func appendRequeueLifecycleEvent(commission map[string]any, args map[string]any)
 		"runner_id": stringArg(args, "runner_id"),
 		"event":     "commission_requeued",
 		"reason":    stringArg(args, "reason"),
+		"payload":   payload,
+	}
+
+	return appendLifecycleEvent(commission, eventArgs)
+}
+
+func appendCancelLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {
+	payload := map[string]any{
+		"previous_state": stringField(commission, "state"),
+	}
+	if lease, ok := mapArg(commission, "lease"); ok {
+		payload["previous_lease"] = lease
+	}
+
+	reason := stringArg(args, "reason")
+	if reason == "" {
+		reason = "operator_cancelled"
+	}
+
+	eventArgs := map[string]any{
+		"action":    "cancel",
+		"runner_id": stringArg(args, "runner_id"),
+		"event":     "commission_cancelled",
+		"reason":    reason,
 		"payload":   payload,
 	}
 

@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -130,6 +131,9 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 
 	staleArtifacts := collectStaleArtifacts(ctx, store, addItem)
 	for _, a := range staleArtifacts {
+		if !staleArtifactShouldSurface(ctx, store, a) {
+			continue
+		}
 		addItem(buildExpiredStaleItem(a, now))
 	}
 
@@ -293,6 +297,24 @@ func collectStaleArtifacts(ctx context.Context, store ArtifactStore, addItem fun
 	appendUnique(staleOther)
 
 	return stale
+}
+
+func staleArtifactShouldSurface(ctx context.Context, store ArtifactStore, item *Artifact) bool {
+	if item.Meta.Kind != KindWorkCommission {
+		return true
+	}
+
+	full, err := store.Get(ctx, item.Meta.ID)
+	if err != nil {
+		return true
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(full.StructuredData), &payload); err != nil {
+		return true
+	}
+
+	return !workCommissionStateTerminal(textField(payload, "state"))
 }
 
 func buildExpiredStaleItem(a *Artifact, now time.Time) StaleItem {

@@ -178,6 +178,10 @@ haft commission create-from-decision dec-...
 haft commission create-batch dec-a dec-b
 haft commission create-from-plan .haft/plans/implementation.yaml
 haft commission create --json commission.json
+haft commission list --selector stale
+haft commission show wc-...
+haft commission requeue wc-... --reason stale_operator_recovery
+haft commission cancel wc-... --reason no_longer_relevant
 haft commission list-runnable
 haft commission claim wc-...
 ```

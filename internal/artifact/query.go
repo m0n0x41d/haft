@@ -2,10 +2,16 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
+
+const defaultCommissionAttentionAfter = 24 * time.Hour
+
+const defaultCommissionLeaseAttentionAfter = 2 * time.Hour
 
 // QueryInput is the input for query operations.
 type QueryInput struct {
@@ -94,6 +100,8 @@ type StatusData struct {
 	UnassessedDecisions []*Artifact
 	DecisionHealth      map[string]DecisionHealth // decision ID -> derived maturity/freshness
 	StaleItems          []StaleItem
+	OpenCommissions     []WorkCommissionStatus
+	CommissionAttention []WorkCommissionStatus
 	InProgressProblems  []*Artifact
 	InProgressBy        map[string]string // problem ID -> portfolio ID
 	BacklogProblems     []*Artifact
@@ -151,6 +159,18 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 		}
 	} else {
 		data.StaleItems = allStaleItems
+	}
+
+	if commissions, err := FetchWorkCommissionStatuses(ctx, store); err == nil {
+		for _, commission := range commissions {
+			if commission.Terminal {
+				continue
+			}
+			data.OpenCommissions = append(data.OpenCommissions, commission)
+			if commission.AttentionReason != "" {
+				data.CommissionAttention = append(data.CommissionAttention, commission)
+			}
+		}
 	}
 
 	// Active problems — three-way split: Backlog / In Progress / Addressed
@@ -216,6 +236,176 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	}
 
 	return data, nil
+}
+
+type WorkCommissionStatus struct {
+	ID               string
+	State            string
+	DecisionRef      string
+	PlanRef          string
+	ValidUntil       string
+	FetchedAt        string
+	Terminal         bool
+	Expired          bool
+	AttentionReason  string
+	SuggestedActions []string
+}
+
+func FetchWorkCommissionStatuses(ctx context.Context, store ArtifactStore) ([]WorkCommissionStatus, error) {
+	items, err := store.ListByKind(ctx, KindWorkCommission, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	statuses := make([]WorkCommissionStatus, 0, len(items))
+	for _, item := range items {
+		full, err := store.Get(ctx, item.Meta.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		payload := map[string]any{}
+		if err := json.Unmarshal([]byte(full.StructuredData), &payload); err != nil {
+			return nil, fmt.Errorf("decode WorkCommission %s: %w", item.Meta.ID, err)
+		}
+		if textField(payload, "id") == "" {
+			payload["id"] = item.Meta.ID
+		}
+
+		statuses = append(statuses, workCommissionStatusFromPayload(payload, now))
+	}
+
+	return statuses, nil
+}
+
+func workCommissionStatusFromPayload(payload map[string]any, now time.Time) WorkCommissionStatus {
+	state := textField(payload, "state")
+	terminal := workCommissionStateTerminal(state)
+	expired := workCommissionStateExpired(payload, now)
+	attentionReason := workCommissionStatusAttentionReason(payload, now, terminal, expired)
+
+	return WorkCommissionStatus{
+		ID:               textField(payload, "id"),
+		State:            state,
+		DecisionRef:      textField(payload, "decision_ref"),
+		PlanRef:          textField(payload, "implementation_plan_ref"),
+		ValidUntil:       textField(payload, "valid_until"),
+		FetchedAt:        textField(payload, "fetched_at"),
+		Terminal:         terminal,
+		Expired:          expired,
+		AttentionReason:  attentionReason,
+		SuggestedActions: workCommissionStatusSuggestedActions(state, attentionReason),
+	}
+}
+
+func workCommissionStatusAttentionReason(
+	payload map[string]any,
+	now time.Time,
+	terminal bool,
+	expired bool,
+) string {
+	if terminal {
+		return ""
+	}
+	if expired {
+		return "expired before terminal state"
+	}
+
+	state := textField(payload, "state")
+	switch state {
+	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return "requires operator decision: " + state
+	case "preflighting", "running":
+		return workCommissionLeaseAttentionReason(payload, now)
+	default:
+		return workCommissionOpenAttentionReason(payload, now)
+	}
+}
+
+func workCommissionLeaseAttentionReason(payload map[string]any, now time.Time) string {
+	lease, ok := objectField(payload, "lease")
+	if !ok {
+		return "active state has no lease"
+	}
+
+	claimedAt, ok := timeField(lease, "claimed_at")
+	if !ok {
+		return "active lease has no claimed_at"
+	}
+	if now.Sub(claimedAt) >= defaultCommissionLeaseAttentionAfter {
+		return "active lease older than " + defaultCommissionLeaseAttentionAfter.String()
+	}
+	return ""
+}
+
+func workCommissionOpenAttentionReason(payload map[string]any, now time.Time) string {
+	fetchedAt, ok := timeField(payload, "fetched_at")
+	if !ok {
+		return "open commission has no fetched_at"
+	}
+	if now.Sub(fetchedAt) >= defaultCommissionAttentionAfter {
+		return "open longer than " + defaultCommissionAttentionAfter.String()
+	}
+	return ""
+}
+
+func workCommissionStatusSuggestedActions(state string, reason string) []string {
+	if reason == "" {
+		return nil
+	}
+
+	switch state {
+	case "preflighting", "running":
+		return []string{"inspect", "requeue", "cancel"}
+	case "blocked_stale":
+		return []string{"refresh_decision", "requeue", "cancel"}
+	case "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return []string{"inspect", "requeue", "cancel"}
+	default:
+		return []string{"inspect", "cancel"}
+	}
+}
+
+func workCommissionStateTerminal(state string) bool {
+	switch state {
+	case "completed", "completed_with_projection_debt", "cancelled", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func workCommissionStateExpired(payload map[string]any, now time.Time) bool {
+	validUntil, ok := timeField(payload, "valid_until")
+	return ok && !validUntil.After(now)
+}
+
+func textField(payload map[string]any, key string) string {
+	value, _ := payload[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func objectField(payload map[string]any, key string) (map[string]any, bool) {
+	value, ok := payload[key]
+	if !ok {
+		return nil, false
+	}
+	object, ok := value.(map[string]any)
+	return object, ok
+}
+
+func timeField(payload map[string]any, key string) (time.Time, bool) {
+	value := textField(payload, key)
+	if value == "" {
+		return time.Time{}, false
+	}
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 // ListData holds data for artifact listing by kind.

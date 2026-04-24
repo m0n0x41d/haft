@@ -633,6 +633,30 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
+	if len(data.CommissionAttention) > 0 {
+		sb.WriteString(fmt.Sprintf("### WorkCommissions Need Attention (%d)\n\n", len(data.CommissionAttention)))
+		cap := 5
+		for i, commission := range data.CommissionAttention {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.CommissionAttention)-cap))
+				break
+			}
+			sb.WriteString(formatCommissionStatusEntry(commission) + "\n")
+		}
+		sb.WriteString("\n")
+	} else if len(data.OpenCommissions) > 0 {
+		sb.WriteString(fmt.Sprintf("### Open WorkCommissions (%d)\n\n", len(data.OpenCommissions)))
+		cap := 5
+		for i, commission := range data.OpenCommissions {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.OpenCommissions)-cap))
+				break
+			}
+			sb.WriteString(formatCommissionStatusEntry(commission) + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(data.InProgressProblems) > 0 {
 		sb.WriteString(fmt.Sprintf("### In Progress (%d)\n\n", len(data.InProgressProblems)))
 		cap := 5
@@ -684,6 +708,8 @@ func StatusResponse(data artifact.StatusData) string {
 		len(data.PendingDecisions) > 0 ||
 		len(data.UnassessedDecisions) > 0 ||
 		len(data.StaleItems) > 0 ||
+		len(data.OpenCommissions) > 0 ||
+		len(data.CommissionAttention) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
 		len(data.AddressedProblems) > 0 ||
@@ -693,6 +719,20 @@ func StatusResponse(data artifact.StatusData) string {
 	}
 
 	return sb.String()
+}
+
+func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {
+	line := fmt.Sprintf("- `%s` %s", commission.ID, commission.State)
+	if commission.DecisionRef != "" {
+		line += fmt.Sprintf(" → %s", commission.DecisionRef)
+	}
+	if commission.AttentionReason != "" {
+		line += " — " + commission.AttentionReason
+	}
+	if len(commission.SuggestedActions) > 0 {
+		line += " — actions: " + strings.Join(commission.SuggestedActions, ", ")
+	}
+	return line
 }
 
 // ListResponse formats artifacts of a given kind as markdown.

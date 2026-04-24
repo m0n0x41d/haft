@@ -8,6 +8,19 @@ Create or reuse WorkCommissions from Haft DecisionRecords. This is the
 authorization step only: it must not start Open-Sleigh or any long-running
 runtime.
 
+Operator recovery path:
+
+```bash
+haft commission list --selector stale
+haft commission show wc-...
+haft commission requeue wc-... --reason stale_operator_recovery
+haft commission cancel wc-... --reason no_longer_relevant
+```
+
+Use cancellation instead of deleting a WorkCommission. A WorkCommission is an
+audit/authority record; "remove it from work" means move it to `cancelled` with
+a reason.
+
 Default path:
 
 ```bash
@@ -34,6 +47,10 @@ tool instead of the packaged operator path, use `haft_commission`:
 - `action="create_from_decision"` for one decision
 - `action="create_batch_from_decisions"` for several decisions
 - `action="create_from_plan"` for a prepared ImplementationPlan
+- `action="list", selector="stale"` to find old or blocked commissions
+- `action="show"` to inspect one commission
+- `action="requeue"` to return a claimed/blocked/failed commission to queued
+- `action="cancel"` to close unfinished work without deleting the record
 
 Required discipline:
 
@@ -42,6 +59,8 @@ Required discipline:
   ambiguous DecisionRecord.
 - Preserve the boundary: DecisionRecord = chosen direction;
   WorkCommission = bounded permission to execute; RuntimeRun = actual attempt.
+- Do not physically delete WorkCommissions during normal operation; cancel or
+  requeue them so status/verify can explain what happened.
 - Prefer default scope derived from `affected_files`; add explicit
   `--allowed-path`, `--lock`, or `--evidence` only when the user gives them or
   the DecisionRecord is too broad to run safely.

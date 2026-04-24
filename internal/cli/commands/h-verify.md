@@ -14,6 +14,13 @@ Call `haft_refresh(action="scan")` to find ALL issues at once:
 - claims with verify_after dates that passed but remain unverified
 - file drift on baselined decisions (use `haft_refresh(action="drift")` if project root available)
 
+Then call `haft_commission(action="list", selector="stale")` to find execution
+authority objects that still need operator attention:
+- queued/ready commissions open longer than the default threshold
+- preflighting/running commissions with stale leases
+- blocked, failed, or human-review commissions
+- expired commissions that never reached a terminal state
+
 ## Step 2: Triage (present to user)
 
 For each stale item, explain in human terms:
@@ -21,6 +28,8 @@ For each stale item, explain in human terms:
 - say what the decision/problem/note was about in one short phrase
 - explain the concrete issue: weak evidence, no baseline, expired, drift, or pending verification
 - for pending verify_after claims: show the observable and threshold so the user knows what to check
+- for stale WorkCommissions: show the commission id, linked decision, state,
+  reason, and suggested actions
 
 ## Step 3: Act (for each item, suggest an action)
 
@@ -32,6 +41,8 @@ For each stale item, explain in human terms:
 | Artifact replaced by newer one | Supersede | `haft_refresh(action="supersede", artifact_ref=..., new_artifact_ref=..., reason=...)` |
 | Problem/note no longer relevant | Archive | `haft_refresh(action="deprecate", artifact_ref=..., reason=...)` |
 | Code drifted materially | Re-verify or reopen | Check if drift breaks invariants, then measure or reopen |
+| WorkCommission still valid but stuck | Requeue | `haft_commission(action="requeue", commission_id=..., reason=...)` |
+| WorkCommission obsolete or duplicate | Cancel | `haft_commission(action="cancel", commission_id=..., reason=...)` |
 
 Present the triage to the user. Let them decide what to do with each item. Execute the chosen actions.
 

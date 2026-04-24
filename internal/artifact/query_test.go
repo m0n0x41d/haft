@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -75,6 +76,31 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 		Rationale: "Low contention verified by load test",
 	})
 
+	commissionPayload := map[string]any{
+		"id":                      "wc-status-stale",
+		"decision_ref":            "dec-status",
+		"implementation_plan_ref": "plan-status",
+		"state":                   "queued",
+		"valid_until":             time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339),
+		"fetched_at":              time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339),
+	}
+	encodedCommission, err := json.Marshal(commissionPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:         "wc-status-stale",
+			Kind:       KindWorkCommission,
+			Status:     StatusActive,
+			Title:      "WorkCommission wc-status-stale",
+			ValidUntil: commissionPayload["valid_until"].(string),
+		},
+		StructuredData: string(encodedCommission),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	data, err := FetchStatusData(ctx, store, "")
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +117,15 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	}
 	if len(data.RecentNotes) == 0 {
 		t.Error("missing recent notes")
+	}
+	if len(data.OpenCommissions) != 1 {
+		t.Fatalf("open commissions = %#v, want one", data.OpenCommissions)
+	}
+	if len(data.CommissionAttention) != 1 {
+		t.Fatalf("commission attention = %#v, want one", data.CommissionAttention)
+	}
+	if data.CommissionAttention[0].ID != "wc-status-stale" {
+		t.Fatalf("commission attention id = %s, want wc-status-stale", data.CommissionAttention[0].ID)
 	}
 }
 
@@ -219,6 +254,7 @@ func TestFetchStatusData_DerivesDecisionHealthBuckets(t *testing.T) {
 	if !foundStale {
 		t.Fatal("expected stale decision in refresh queue")
 	}
+
 }
 
 func decisionIDs(items []*Artifact) []string {

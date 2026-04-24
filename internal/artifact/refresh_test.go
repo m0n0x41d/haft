@@ -55,6 +55,56 @@ func TestScanStale_NoneStale(t *testing.T) {
 	}
 }
 
+func TestScanStale_SuppressesTerminalWorkCommissions(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	past := time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
+	for _, payload := range []map[string]any{
+		{
+			"id":          "wc-cancelled",
+			"state":       "cancelled",
+			"valid_until": past,
+			"fetched_at":  past,
+		},
+		{
+			"id":          "wc-open-expired",
+			"state":       "queued",
+			"valid_until": past,
+			"fetched_at":  past,
+		},
+	} {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Create(ctx, &Artifact{
+			Meta: Meta{
+				ID:         payload["id"].(string),
+				Kind:       KindWorkCommission,
+				Status:     StatusActive,
+				Title:      "WorkCommission " + payload["id"].(string),
+				ValidUntil: past,
+			},
+			StructuredData: string(encoded),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := ScanStale(ctx, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one open expired WorkCommission", items)
+	}
+	if items[0].ID != "wc-open-expired" {
+		t.Fatalf("item id = %s, want wc-open-expired", items[0].ID)
+	}
+}
+
 func TestWaiveArtifact_Decision(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

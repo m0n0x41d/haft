@@ -255,7 +255,7 @@ func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.
 		got[name] = true
 	}
 
-	for _, want := range []string{"create", "list_runnable", "show", "claim_for_preflight", "requeue"} {
+	for _, want := range []string{"create", "list", "list_runnable", "show", "claim_for_preflight", "requeue", "cancel"} {
 		if !got[want] {
 			t.Fatalf("expected haft_commission action %q in schema enum %#v", want, values)
 		}

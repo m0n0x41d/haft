@@ -9,8 +9,8 @@ func haftCommissionTool() Tool {
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list_runnable", "show", "claim_for_preflight", "requeue", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
-					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list_runnable=return queued/ready non-expired dependency-satisfied commissions, show=return one WorkCommission, claim_for_preflight=atomically move one runnable commission to preflighting, requeue=operator/runtime recovery that clears an active lease and returns allowed states to queued, other actions append lifecycle facts.",
+					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list", "list_runnable", "show", "claim_for_preflight", "requeue", "cancel", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
+					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list=return commissions by selector open/stale/terminal/runnable/all with operator hints, list_runnable=return queued/ready non-expired dependency-satisfied commissions, show=return one WorkCommission, claim_for_preflight=atomically move one runnable commission to preflighting, requeue=operator/runtime recovery that clears an active lease and returns allowed states to queued, cancel=operator cancellation that keeps the audit record, other actions append lifecycle facts.",
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
@@ -67,7 +67,15 @@ func haftCommissionTool() Tool {
 				},
 				"selector": map[string]string{
 					"type":        "string",
-					"description": "(list_runnable) Selector name. MVP-1R supports runnable.",
+					"description": "(list/list_runnable) Selector name. list supports open, stale, terminal, runnable, all. list_runnable is equivalent to runnable.",
+				},
+				"state": map[string]string{
+					"type":        "string",
+					"description": "(list) Optional exact WorkCommission state filter.",
+				},
+				"older_than": map[string]string{
+					"type":        "string",
+					"description": "(list selector=stale) Open commission age threshold as a Go duration, e.g. 24h.",
 				},
 				"plan_ref": map[string]string{
 					"type":        "string",

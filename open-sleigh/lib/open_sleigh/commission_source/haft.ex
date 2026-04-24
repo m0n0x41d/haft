@@ -339,6 +339,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
          lockset: value_at(entry, :lockset, scope.lockset),
          evidence_requirements: value_at(entry, :evidence_requirements),
          projection_policy: projection_policy,
+         delivery_policy: value_at(entry, :delivery_policy),
          autonomy_envelope_ref: value_at(entry, :autonomy_envelope_ref),
          autonomy_envelope_revision: value_at(entry, :autonomy_envelope_revision),
          state: state,

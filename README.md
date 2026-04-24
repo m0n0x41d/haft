@@ -145,10 +145,19 @@ The packaged CLI path is:
 ```bash
 haft harness run --prepare-only  # create/reuse commissions, do not start runtime
 haft harness run                 # create/reuse commissions and start Open-Sleigh
+haft harness status              # inspect active/recent runs
+haft harness result wc-...       # inspect one completed run and workspace diff
+haft harness apply wc-...        # apply a completed workspace patch to this checkout
 ```
 
 Starting Open-Sleigh is an operator/runtime action. Use the CLI or desktop
 surface for that boundary rather than a plugin slash command.
+
+Commissions carry a `delivery_policy`. The default is
+`workspace_patch_manual`: Open-Sleigh changes stay in the isolated workspace
+until an operator runs `haft harness apply <commission-id>`. Use
+`--delivery-policy workspace_patch_manual` explicitly when preparing or running
+plans that must not mutate the main checkout automatically.
 
 Release installs include the Open-Sleigh runtime under:
 

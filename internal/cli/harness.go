@@ -29,6 +29,7 @@ type harnessPlanFile struct {
 	BaseSHA          string                `yaml:"base_sha"`
 	TargetBranch     string                `yaml:"target_branch"`
 	ProjectionPolicy string                `yaml:"projection_policy"`
+	DeliveryPolicy   string                `yaml:"delivery_policy"`
 	ValidFor         string                `yaml:"valid_for,omitempty"`
 	ValidUntil       string                `yaml:"valid_until,omitempty"`
 	Queue            string                `yaml:"queue,omitempty"`
@@ -114,6 +115,13 @@ type harnessTerminalCommissionSummary struct {
 	RecordedAt   string
 	Workspace    string
 	Preview      string
+}
+
+type harnessApplySummary struct {
+	CommissionID string
+	Workspace    string
+	ProjectRoot  string
+	Files        []string
 }
 
 var (
@@ -233,6 +241,14 @@ var harnessResultCmd = &cobra.Command{
 	RunE:         runHarnessResult,
 }
 
+var harnessApplyCmd = &cobra.Command{
+	Use:          "apply <commission-id>",
+	Short:        "Apply a completed harness workspace diff to the current project",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE:         runHarnessApply,
+}
+
 func init() {
 	registerCommissionFromDecisionFlags(harnessPlanCmd)
 	registerHarnessPlanFlags(harnessPlanCmd)
@@ -250,6 +266,7 @@ func init() {
 	harnessCmd.AddCommand(harnessWatchCmd)
 	harnessCmd.AddCommand(harnessTailCmd)
 	harnessCmd.AddCommand(harnessResultCmd)
+	harnessCmd.AddCommand(harnessApplyCmd)
 	rootCmd.AddCommand(harnessCmd)
 }
 
@@ -450,6 +467,32 @@ func runHarnessResult(cmd *cobra.Command, args []string) error {
 	})
 }
 
+func runHarnessApply(cmd *cobra.Command, args []string) error {
+	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
+		commissionID := strings.TrimSpace(args[0])
+		commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+		if err != nil {
+			return err
+		}
+
+		summary, err := applyHarnessWorkspaceDiff(
+			projectRoot,
+			filepath.Join(defaultHarnessWorkspaceRoot(), commissionID),
+			harnessCommissionScopePaths(commission),
+		)
+		if err != nil {
+			return err
+		}
+
+		for _, line := range formatHarnessApplySummary(summary) {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func harnessResultCommissionID(
 	ctx context.Context,
 	store *artifact.Store,
@@ -516,24 +559,44 @@ func renderHarnessWatchFrame(
 }
 
 func readHarnessStatus(statusPath string) ([]byte, map[string]any, error) {
-	encoded, err := os.ReadFile(statusPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			status := emptyHarnessStatus()
-			payload, marshalErr := json.Marshal(status)
-			if marshalErr != nil {
-				return nil, nil, marshalErr
+	var lastDecodeErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		encoded, err := os.ReadFile(statusPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				status := emptyHarnessStatus()
+				payload, marshalErr := json.Marshal(status)
+				if marshalErr != nil {
+					return nil, nil, marshalErr
+				}
+				return payload, status, nil
 			}
-			return payload, status, nil
+			return nil, nil, fmt.Errorf("read harness status %s: %w", statusPath, err)
 		}
-		return nil, nil, fmt.Errorf("read harness status %s: %w", statusPath, err)
+
+		status := map[string]any{}
+		if err := json.Unmarshal(encoded, &status); err == nil {
+			return encoded, status, nil
+		} else {
+			lastDecodeErr = err
+		}
+
+		if !harnessStatusDecodeRetryable(lastDecodeErr) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 
-	status := map[string]any{}
-	if err := json.Unmarshal(encoded, &status); err != nil {
-		return nil, nil, fmt.Errorf("decode harness status %s: %w", statusPath, err)
+	return nil, nil, fmt.Errorf("decode harness status %s: %w", statusPath, lastDecodeErr)
+}
+
+func harnessStatusDecodeRetryable(err error) bool {
+	if err == nil {
+		return false
 	}
-	return encoded, status, nil
+	message := err.Error()
+	return strings.Contains(message, "unexpected end of JSON input") ||
+		strings.Contains(message, "unexpected EOF")
 }
 
 func emptyHarnessStatus() map[string]any {
@@ -614,14 +677,34 @@ func formatHarnessResult(
 		"state: " + presentOrUnknown(stringField(commission, "state")),
 		"decision: " + presentOrUnknown(stringField(commission, "decision_ref")),
 		"plan: " + presentOrUnknown(stringField(commission, "implementation_plan_ref")),
+		"delivery_policy: " + presentOrUnknown(stringField(commission, "delivery_policy")),
 		"workspace: " + workspacePath,
 	}
 
 	lines = append(lines, formatHarnessCurrentRuntime(runtimeDetail, statusUpdatedAt, runtimeSummary)...)
 	lines = append(lines, formatHarnessLatestAgentTurn(latestTurn)...)
 	lines = append(lines, formatHarnessResultEvents(mapSliceField(commission, "events"))...)
+	lines = append(lines, formatHarnessDeliveryNext(commission, workspacePath)...)
 	lines = append(lines, formatHarnessWorkspaceGit(workspacePath)...)
 	return lines
+}
+
+func formatHarnessDeliveryNext(commission map[string]any, workspacePath string) []string {
+	if stringField(commission, "state") != "completed" {
+		return nil
+	}
+
+	changed, err := gitChangedTrackedFiles(workspacePath)
+	if err != nil || len(changed) == 0 {
+		return nil
+	}
+
+	commissionID := stringField(commission, "id")
+	return []string{
+		"operator_next:",
+		"- apply completed workspace diff: haft harness apply " + commissionID,
+		"- then rerun required evidence in the project checkout",
+	}
 }
 
 func formatHarnessCurrentRuntime(
@@ -812,6 +895,153 @@ func trimmedCommandOutput(workdir string, name string, args ...string) string {
 		return strings.TrimSpace(string(output))
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func applyHarnessWorkspaceDiff(
+	projectRoot string,
+	workspacePath string,
+	scopePaths []string,
+) (harnessApplySummary, error) {
+	summary := harnessApplySummary{
+		CommissionID: filepath.Base(workspacePath),
+		Workspace:    workspacePath,
+		ProjectRoot:  projectRoot,
+	}
+
+	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+		return summary, fmt.Errorf("workspace is not a git repository: %s", workspacePath)
+	}
+
+	changed, err := gitChangedTrackedFiles(workspacePath)
+	if err != nil {
+		return summary, err
+	}
+	if len(changed) == 0 {
+		return summary, fmt.Errorf("workspace has no tracked diff to apply")
+	}
+	if outOfScope := pathsOutsideHarnessScope(changed, scopePaths); len(outOfScope) > 0 {
+		return summary, fmt.Errorf("workspace diff contains paths outside commission scope: %s", strings.Join(outOfScope, ", "))
+	}
+	if dirty, err := gitDirtyTargetPaths(projectRoot, changed); err != nil {
+		return summary, err
+	} else if len(dirty) > 0 {
+		return summary, fmt.Errorf("target checkout has existing changes in scoped paths: %s", strings.Join(dirty, ", "))
+	}
+
+	patch, err := gitDiffBinary(workspacePath, changed)
+	if err != nil {
+		return summary, err
+	}
+	if len(bytes.TrimSpace(patch)) == 0 {
+		return summary, fmt.Errorf("workspace diff is empty")
+	}
+	if err := gitApplyPatch(projectRoot, patch); err != nil {
+		return summary, err
+	}
+
+	summary.Files = changed
+	return summary, nil
+}
+
+func formatHarnessApplySummary(summary harnessApplySummary) []string {
+	lines := []string{
+		"Applied harness workspace diff",
+		"commission: " + presentOrUnknown(summary.CommissionID),
+		"workspace: " + presentOrUnknown(summary.Workspace),
+		"project: " + presentOrUnknown(summary.ProjectRoot),
+		"files:",
+	}
+	for _, file := range summary.Files {
+		lines = append(lines, "- "+file)
+	}
+	lines = append(lines, "next: review with git diff, then run required evidence")
+	return lines
+}
+
+func harnessCommissionScopePaths(commission map[string]any) []string {
+	scope := mapField(commission, "scope")
+	paths := []string{}
+	paths = append(paths, stringSliceField(scope, "allowed_paths")...)
+	paths = append(paths, stringSliceField(scope, "affected_files")...)
+	paths = append(paths, stringSliceField(scope, "lockset")...)
+	paths = append(paths, stringSliceField(commission, "lockset")...)
+	return uniqueStringsPreserveOrder(cleanStringSlice(paths))
+}
+
+func gitChangedTrackedFiles(workdir string) ([]string, error) {
+	output, err := harnessGitOutput(workdir, "diff", "--name-only")
+	if err != nil {
+		return nil, err
+	}
+	return uniqueStringsPreserveOrder(cleanStringSlice(strings.Split(string(output), "\n"))), nil
+}
+
+func gitDirtyTargetPaths(workdir string, paths []string) ([]string, error) {
+	args := append([]string{"status", "--porcelain", "--"}, paths...)
+	output, err := harnessGitOutput(workdir, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	dirty := []string{}
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if len(line) > 3 {
+			dirty = append(dirty, strings.TrimSpace(line[3:]))
+		}
+	}
+	return uniqueStringsPreserveOrder(dirty), nil
+}
+
+func gitDiffBinary(workdir string, paths []string) ([]byte, error) {
+	args := append([]string{"diff", "--binary", "--"}, paths...)
+	return harnessGitOutput(workdir, args...)
+}
+
+func gitApplyPatch(workdir string, patch []byte) error {
+	cmd := exec.Command("git", "-C", workdir, "apply", "--whitespace=nowarn", "-")
+	cmd.Stdin = bytes.NewReader(patch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("apply workspace diff: %s", strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func harnessGitOutput(workdir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-C", workdir}, args...)...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(output)))
+	}
+	return output, nil
+}
+
+func pathsOutsideHarnessScope(paths []string, scopePaths []string) []string {
+	if len(scopePaths) == 0 {
+		return paths
+	}
+
+	outside := []string{}
+	for _, path := range paths {
+		if !pathWithinHarnessScope(path, scopePaths) {
+			outside = append(outside, path)
+		}
+	}
+	return outside
+}
+
+func pathWithinHarnessScope(path string, scopePaths []string) bool {
+	cleanPath := filepath.Clean(strings.TrimSpace(path))
+	for _, scopePath := range scopePaths {
+		cleanScope := filepath.Clean(strings.TrimSpace(scopePath))
+		if cleanScope == "." || cleanPath == cleanScope || strings.HasPrefix(cleanPath, cleanScope+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func indentLines(value string) []string {
@@ -1633,7 +1863,7 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 			return nil
 		}
 
-		return startOpenSleigh(cmd, opts, configPath)
+		return startOpenSleighAndDeliver(ctx, cmd, store, projectRoot, selection, opts, configPath)
 	})
 }
 
@@ -1668,7 +1898,61 @@ func runExistingHarnessCommissions(
 		return true, nil
 	}
 
-	return true, startOpenSleigh(cmd, opts, configPath)
+	return true, startOpenSleighAndDeliver(ctx, cmd, store, projectRoot, selection, opts, configPath)
+}
+
+func startOpenSleighAndDeliver(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	projectRoot string,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+	configPath string,
+) error {
+	if err := startOpenSleigh(cmd, opts, configPath); err != nil {
+		return err
+	}
+
+	return deliverHarnessRunCommissions(ctx, cmd, store, projectRoot, selection, opts)
+}
+
+func deliverHarnessRunCommissions(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	projectRoot string,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+) error {
+	for _, commissionID := range selection.CommissionIDs {
+		commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+		if err != nil {
+			return err
+		}
+		if stringField(commission, "delivery_policy") != "workspace_patch_auto_on_pass" {
+			continue
+		}
+		if stringField(commission, "state") != "completed" {
+			continue
+		}
+
+		summary, err := applyHarnessWorkspaceDiff(
+			projectRoot,
+			filepath.Join(opts.WorkspaceRoot, commissionID),
+			harnessCommissionScopePaths(commission),
+		)
+		if err != nil {
+			return fmt.Errorf("auto delivery for %s: %w", commissionID, err)
+		}
+
+		for _, line := range formatHarnessApplySummary(summary) {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func existingRunnableHarnessPlan(
@@ -2165,6 +2449,7 @@ func buildHarnessPlan(projectRoot string, decisionRefs []string) (harnessPlanFil
 		BaseSHA:          stringField(base, "base_sha"),
 		TargetBranch:     stringField(base, "target_branch"),
 		ProjectionPolicy: stringField(base, "projection_policy"),
+		DeliveryPolicy:   stringField(base, "delivery_policy"),
 		ValidFor:         stringField(base, "valid_for"),
 		ValidUntil:       stringField(base, "valid_until"),
 		Defaults: harnessPlanDefaults{

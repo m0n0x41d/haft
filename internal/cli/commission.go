@@ -31,6 +31,7 @@ var (
 	commissionFromDecisionLockset          []string
 	commissionFromDecisionEvidence         []string
 	commissionFromDecisionProjectionPolicy string
+	commissionFromDecisionDeliveryPolicy   string
 	commissionFromDecisionState            string
 	commissionFromDecisionValidFor         string
 	commissionFromDecisionValidUntil       string
@@ -131,6 +132,7 @@ func registerCommissionFromDecisionFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&commissionFromDecisionLockset, "lock", nil, "lockset path/pattern; repeatable (default: affected files)")
 	cmd.Flags().StringSliceVar(&commissionFromDecisionEvidence, "evidence", nil, "required evidence command; repeatable (default: decision evidence_requirements)")
 	cmd.Flags().StringVar(&commissionFromDecisionProjectionPolicy, "projection-policy", "local_only", "projection policy: local_only, external_optional, external_required")
+	cmd.Flags().StringVar(&commissionFromDecisionDeliveryPolicy, "delivery-policy", defaultDeliveryPolicy, "delivery policy: workspace_patch_manual, workspace_patch_auto_on_pass")
 	cmd.Flags().StringVar(&commissionFromDecisionState, "state", "queued", "initial commission state")
 	cmd.Flags().StringVar(&commissionFromDecisionValidFor, "valid-for", "168h", "commission validity duration when --valid-until is omitted")
 	cmd.Flags().StringVar(&commissionFromDecisionValidUntil, "valid-until", "", "explicit commission expiry timestamp (RFC3339)")
@@ -417,6 +419,7 @@ func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[stri
 		"lockset":               stringsToAnySlice(commissionFromDecisionLockset),
 		"evidence_requirements": stringsToAnySlice(commissionFromDecisionEvidence),
 		"projection_policy":     commissionFromDecisionProjectionPolicy,
+		"delivery_policy":       commissionFromDecisionDeliveryPolicy,
 		"state":                 commissionFromDecisionState,
 		"valid_for":             commissionFromDecisionValidFor,
 		"valid_until":           commissionFromDecisionValidUntil,
@@ -459,6 +462,7 @@ func commissionFromDecisionBaseParams(projectRoot string) (map[string]any, error
 		"lockset":               stringsToAnySlice(commissionFromDecisionLockset),
 		"evidence_requirements": stringsToAnySlice(commissionFromDecisionEvidence),
 		"projection_policy":     commissionFromDecisionProjectionPolicy,
+		"delivery_policy":       commissionFromDecisionDeliveryPolicy,
 		"state":                 commissionFromDecisionState,
 		"valid_for":             commissionFromDecisionValidFor,
 		"valid_until":           commissionFromDecisionValidUntil,

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/spf13/cobra"
@@ -48,6 +49,9 @@ func TestBuildHarnessPlanSequentialDependencies(t *testing.T) {
 	}
 	if !stringSliceContains(plan.Defaults.EvidenceRequirements, "go test ./internal/cli") {
 		t.Fatalf("evidence = %#v, want go test", plan.Defaults.EvidenceRequirements)
+	}
+	if plan.DeliveryPolicy != defaultDeliveryPolicy {
+		t.Fatalf("delivery policy = %q, want %s", plan.DeliveryPolicy, defaultDeliveryPolicy)
 	}
 }
 
@@ -629,6 +633,26 @@ func TestReadHarnessStatusMissingFileReturnsUnavailableDashboard(t *testing.T) {
 	}
 }
 
+func TestReadHarnessStatusRetriesPartialWrite(t *testing.T) {
+	statusPath := filepath.Join(t.TempDir(), "status.json")
+	if err := os.WriteFile(statusPath, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		_ = os.WriteFile(statusPath, []byte(`{"updated_at":"2026-04-24T08:03:39Z","orchestrator":{}}`), 0o644)
+	}()
+
+	_, status, err := readHarnessStatus(statusPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringField(status, "updated_at") != "2026-04-24T08:03:39Z" {
+		t.Fatalf("status = %#v, want rewritten status", status)
+	}
+}
+
 func TestFormatHarnessResultIncludesCurrentRuntime(t *testing.T) {
 	commission := map[string]any{
 		"id":                      "wc-1",
@@ -927,6 +951,148 @@ func TestPrintHarnessTailSnapshotShowsEmptyState(t *testing.T) {
 	}
 }
 
+func TestApplyHarnessWorkspaceDiffAppliesScopedTrackedDiff(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspace")
+	trackedPath := filepath.Join("internal", "cli", "init.go")
+
+	initHarnessApplyRepo(t, projectRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	initHarnessApplyRepo(t, workspaceRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+
+	updated := "package cli\n\nconst value = \"new\"\n"
+	if err := os.WriteFile(filepath.Join(workspaceRoot, trackedPath), []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{trackedPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(summary.Files) != 1 || summary.Files[0] != trackedPath {
+		t.Fatalf("summary files = %#v, want [%s]", summary.Files, trackedPath)
+	}
+
+	got, err := os.ReadFile(filepath.Join(projectRoot, trackedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != updated {
+		t.Fatalf("applied file = %q, want %q", string(got), updated)
+	}
+}
+
+func TestApplyHarnessWorkspaceDiffRejectsOutOfScopeDiff(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspace")
+	trackedPath := filepath.Join("internal", "cli", "init.go")
+
+	initHarnessApplyRepo(t, projectRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	initHarnessApplyRepo(t, workspaceRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+
+	if err := os.WriteFile(filepath.Join(workspaceRoot, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{"README.md"})
+	if err == nil || !strings.Contains(err.Error(), "outside commission scope") {
+		t.Fatalf("error = %v, want out-of-scope rejection", err)
+	}
+}
+
+func TestDeliverHarnessRunCommissionsAppliesAutoPolicy(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspaces")
+	commissionID := "wc-auto-delivery"
+	trackedPath := filepath.Join("internal", "cli", "init.go")
+
+	initHarnessApplyRepo(t, projectRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	initHarnessApplyRepo(
+		t,
+		filepath.Join(workspaceRoot, commissionID),
+		trackedPath,
+		"package cli\n\nconst value = \"old\"\n",
+	)
+
+	updated := "package cli\n\nconst value = \"new\"\n"
+	workspaceFile := filepath.Join(workspaceRoot, commissionID, trackedPath)
+	if err := os.WriteFile(workspaceFile, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	commission["delivery_policy"] = "workspace_patch_auto_on_pass"
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{trackedPath}
+	scope["affected_files"] = []any{trackedPath}
+	scope["lockset"] = []any{trackedPath}
+	commission["lockset"] = []any{trackedPath}
+
+	if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := deliverHarnessRunCommissions(
+		ctx,
+		cmd,
+		store,
+		projectRoot,
+		harnessRunSelection{CommissionIDs: []string{commissionID}},
+		harnessRunOptions{WorkspaceRoot: workspaceRoot},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(projectRoot, trackedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != updated {
+		t.Fatalf("delivered file = %q, want %q", string(got), updated)
+	}
+	if !strings.Contains(out.String(), "Applied harness workspace diff") {
+		t.Fatalf("output = %q, want apply summary", out.String())
+	}
+}
+
+func initHarnessApplyRepo(t *testing.T, root string, trackedPath string, content string) {
+	t.Helper()
+
+	fullPath := filepath.Join(root, trackedPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runHarnessApplyGit(t, root, "init")
+	runHarnessApplyGit(t, root, "config", "user.email", "test@example.com")
+	runHarnessApplyGit(t, root, "config", "user.name", "Test User")
+	runHarnessApplyGit(t, root, "add", trackedPath)
+	runHarnessApplyGit(t, root, "commit", "-m", "initial")
+}
+
+func runHarnessApplyGit(t *testing.T, root string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+	}
+}
+
 func writeHarnessRuntimeEvents(t *testing.T, logPath string, events []map[string]any) {
 	t.Helper()
 
@@ -1071,6 +1237,7 @@ func overrideHarnessTestFlags() func() {
 	oldCommissionLockset := commissionFromDecisionLockset
 	oldCommissionEvidence := commissionFromDecisionEvidence
 	oldCommissionProjectionPolicy := commissionFromDecisionProjectionPolicy
+	oldCommissionDeliveryPolicy := commissionFromDecisionDeliveryPolicy
 	oldCommissionState := commissionFromDecisionState
 	oldCommissionValidFor := commissionFromDecisionValidFor
 	oldCommissionValidUntil := commissionFromDecisionValidUntil
@@ -1094,6 +1261,7 @@ func overrideHarnessTestFlags() func() {
 	commissionFromDecisionLockset = nil
 	commissionFromDecisionEvidence = nil
 	commissionFromDecisionProjectionPolicy = "local_only"
+	commissionFromDecisionDeliveryPolicy = defaultDeliveryPolicy
 	commissionFromDecisionState = "queued"
 	commissionFromDecisionValidFor = "168h"
 	commissionFromDecisionValidUntil = ""
@@ -1118,6 +1286,7 @@ func overrideHarnessTestFlags() func() {
 		commissionFromDecisionLockset = oldCommissionLockset
 		commissionFromDecisionEvidence = oldCommissionEvidence
 		commissionFromDecisionProjectionPolicy = oldCommissionProjectionPolicy
+		commissionFromDecisionDeliveryPolicy = oldCommissionDeliveryPolicy
 		commissionFromDecisionState = oldCommissionState
 		commissionFromDecisionValidFor = oldCommissionValidFor
 		commissionFromDecisionValidUntil = oldCommissionValidUntil

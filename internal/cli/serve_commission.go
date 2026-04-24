@@ -18,6 +18,8 @@ import (
 
 const defaultCommissionValidFor = 168 * time.Hour
 
+const defaultDeliveryPolicy = "workspace_patch_manual"
+
 type commissionFromDecisionInput struct {
 	DecisionRef          string
 	RepoRef              string
@@ -31,6 +33,7 @@ type commissionFromDecisionInput struct {
 	Lockset              []string
 	EvidenceRequirements []any
 	ProjectionPolicy     string
+	DeliveryPolicy       string
 	State                string
 	ValidUntil           string
 }
@@ -323,6 +326,7 @@ func commissionArgsForPlanDecision(
 	next["base_sha"] = firstStringField("base_sha", entry, defaults, plan, args)
 	next["target_branch"] = firstStringField("target_branch", entry, defaults, plan, args)
 	next["projection_policy"] = firstStringField("projection_policy", entry, defaults, plan, args)
+	next["delivery_policy"] = firstStringField("delivery_policy", entry, defaults, plan, args)
 	next["state"] = firstStringField("state", entry, defaults, plan, args)
 	next["valid_for"] = firstStringField("valid_for", entry, defaults, plan, args)
 	next["valid_until"] = firstStringField("valid_until", entry, defaults, plan, args)
@@ -493,6 +497,7 @@ func implementationPlanSummary(plan map[string]any) map[string]any {
 	putOptionalString(summary, "title", stringField(plan, "title"))
 	putOptionalString(summary, "failure_policy", stringField(plan, "failure_policy"))
 	putOptionalString(summary, "projection_policy", stringField(plan, "projection_policy"))
+	putOptionalString(summary, "delivery_policy", stringField(plan, "delivery_policy"))
 	putOptionalString(summary, "queue", stringField(plan, "queue"))
 
 	return summary
@@ -547,6 +552,7 @@ func buildWorkCommissionFromDecision(
 		"lockset":                stringSliceToAny(scopeStringSlice(scope, "lockset")),
 		"evidence_requirements":  evidence,
 		"projection_policy":      input.ProjectionPolicy,
+		"delivery_policy":        input.DeliveryPolicy,
 		"state":                  input.State,
 		"valid_until":            input.ValidUntil,
 		"fetched_at":             now.Format(time.RFC3339),
@@ -736,6 +742,7 @@ func parseCommissionFromDecisionInput(
 		AllowedActions:       []string{"edit_files", "run_tests"},
 		EvidenceRequirements: evidence,
 		ProjectionPolicy:     stringArg(args, "projection_policy"),
+		DeliveryPolicy:       stringArg(args, "delivery_policy"),
 		State:                stringArg(args, "state"),
 		ValidUntil:           validUntil,
 	}
@@ -773,9 +780,13 @@ func validateCommissionFromDecisionInput(
 	input.BaseSHA = strings.TrimSpace(input.BaseSHA)
 	input.TargetBranch = strings.TrimSpace(input.TargetBranch)
 	input.ProjectionPolicy = strings.TrimSpace(input.ProjectionPolicy)
+	input.DeliveryPolicy = strings.TrimSpace(input.DeliveryPolicy)
 	input.State = strings.TrimSpace(input.State)
 	if input.ProjectionPolicy == "" {
 		input.ProjectionPolicy = "local_only"
+	}
+	if input.DeliveryPolicy == "" {
+		input.DeliveryPolicy = defaultDeliveryPolicy
 	}
 	if input.State == "" {
 		input.State = "queued"
@@ -795,6 +806,9 @@ func validateCommissionFromDecisionInput(
 	}
 	if !validProjectionPolicy(input.ProjectionPolicy) {
 		return commissionFromDecisionInput{}, fmt.Errorf("invalid projection_policy: %s", input.ProjectionPolicy)
+	}
+	if !validDeliveryPolicy(input.DeliveryPolicy) {
+		return commissionFromDecisionInput{}, fmt.Errorf("invalid delivery_policy: %s", input.DeliveryPolicy)
 	}
 	if !validWorkCommissionState(input.State) {
 		return commissionFromDecisionInput{}, fmt.Errorf("invalid WorkCommission state: %s", input.State)
@@ -1102,6 +1116,15 @@ func normalizeNewWorkCommission(commission map[string]any, now time.Time) error 
 	if stringField(commission, "projection_policy") == "" {
 		commission["projection_policy"] = "local_only"
 	}
+	if stringField(commission, "delivery_policy") == "" {
+		commission["delivery_policy"] = defaultDeliveryPolicy
+	}
+	if !validProjectionPolicy(stringField(commission, "projection_policy")) {
+		return fmt.Errorf("invalid projection_policy: %s", stringField(commission, "projection_policy"))
+	}
+	if !validDeliveryPolicy(stringField(commission, "delivery_policy")) {
+		return fmt.Errorf("invalid delivery_policy: %s", stringField(commission, "delivery_policy"))
+	}
 	if stringField(commission, "fetched_at") == "" {
 		commission["fetched_at"] = now.Format(time.RFC3339)
 	}
@@ -1115,6 +1138,7 @@ func normalizeNewWorkCommission(commission map[string]any, now time.Time) error 
 		"decision_revision_hash",
 		"problem_card_ref",
 		"projection_policy",
+		"delivery_policy",
 		"state",
 		"valid_until",
 		"fetched_at",
@@ -1552,6 +1576,15 @@ func validProjectionPolicy(value string) bool {
 	}
 }
 
+func validDeliveryPolicy(value string) bool {
+	switch value {
+	case "workspace_patch_manual", "workspace_patch_auto_on_pass":
+		return true
+	default:
+		return false
+	}
+}
+
 func validWorkCommissionState(value string) bool {
 	switch value {
 	case "draft", "queued", "ready", "preflighting", "running", "blocked_stale",
@@ -1665,6 +1698,7 @@ func renderWorkCommissionBody(commission map[string]any) string {
 		"- Decision: " + stringField(commission, "decision_ref"),
 		"- ProblemCard: " + stringField(commission, "problem_card_ref"),
 		"- Projection policy: " + stringField(commission, "projection_policy"),
+		"- Delivery policy: " + stringField(commission, "delivery_policy"),
 		"- Valid until: " + stringField(commission, "valid_until"),
 	}
 	return strings.Join(lines, "\n")

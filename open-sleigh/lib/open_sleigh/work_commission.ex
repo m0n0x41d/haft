@@ -12,6 +12,7 @@ defmodule OpenSleigh.WorkCommission do
   alias OpenSleigh.{CommissionRevisionSnapshot, ProblemCardRef, Scope}
 
   @projection_policies [:local_only, :external_optional, :external_required]
+  @delivery_policies [:workspace_patch_manual, :workspace_patch_auto_on_pass]
 
   @states [
     :draft,
@@ -58,6 +59,7 @@ defmodule OpenSleigh.WorkCommission do
     :lockset,
     :evidence_requirements,
     :projection_policy,
+    :delivery_policy,
     :autonomy_envelope_ref,
     :autonomy_envelope_revision,
     :state,
@@ -82,6 +84,7 @@ defmodule OpenSleigh.WorkCommission do
           | :expired
 
   @type projection_policy :: :local_only | :external_optional | :external_required
+  @type delivery_policy :: :workspace_patch_manual | :workspace_patch_auto_on_pass
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -96,6 +99,7 @@ defmodule OpenSleigh.WorkCommission do
           lockset: [String.t()],
           evidence_requirements: [term()],
           projection_policy: projection_policy(),
+          delivery_policy: delivery_policy(),
           autonomy_envelope_ref: String.t() | nil,
           autonomy_envelope_revision: String.t() | nil,
           state: state(),
@@ -119,6 +123,7 @@ defmodule OpenSleigh.WorkCommission do
           | :lockset_scope_mismatch
           | :invalid_evidence_requirements
           | :invalid_projection_policy
+          | :invalid_delivery_policy
           | :invalid_autonomy_envelope_ref
           | :invalid_autonomy_envelope_revision
           | :invalid_state
@@ -152,6 +157,7 @@ defmodule OpenSleigh.WorkCommission do
          :ok <- validate_lockset_match(lockset, scope),
          {:ok, evidence_requirements} <- required_evidence_requirements(attrs),
          {:ok, projection_policy} <- required_projection_policy(attrs),
+         {:ok, delivery_policy} <- optional_delivery_policy(attrs),
          {:ok, autonomy_envelope_ref} <-
            optional_string(attrs, :autonomy_envelope_ref, :invalid_autonomy_envelope_ref),
          {:ok, autonomy_envelope_revision} <-
@@ -177,6 +183,7 @@ defmodule OpenSleigh.WorkCommission do
          lockset: lockset,
          evidence_requirements: evidence_requirements,
          projection_policy: projection_policy,
+         delivery_policy: delivery_policy,
          autonomy_envelope_ref: autonomy_envelope_ref,
          autonomy_envelope_revision: autonomy_envelope_revision,
          state: state,
@@ -353,6 +360,49 @@ defmodule OpenSleigh.WorkCommission do
       {:error, :invalid_projection_policy}
     end
   end
+
+  @spec optional_delivery_policy(map()) ::
+          {:ok, delivery_policy()} | {:error, :invalid_delivery_policy}
+  defp optional_delivery_policy(attrs) do
+    case Map.get(attrs, :delivery_policy) do
+      nil -> {:ok, :workspace_patch_manual}
+      policy -> delivery_policy(policy)
+    end
+  end
+
+  @spec delivery_policy(term()) :: {:ok, delivery_policy()} | {:error, :invalid_delivery_policy}
+  defp delivery_policy(policy) when is_atom(policy) do
+    @delivery_policies
+    |> Enum.member?(policy)
+    |> delivery_policy_result(policy)
+  end
+
+  defp delivery_policy(policy) when is_binary(policy) do
+    policy
+    |> String.trim()
+    |> String.downcase()
+    |> delivery_policy_from_string()
+  end
+
+  defp delivery_policy(_policy), do: {:error, :invalid_delivery_policy}
+
+  @spec delivery_policy_from_string(String.t()) ::
+          {:ok, delivery_policy()} | {:error, :invalid_delivery_policy}
+  defp delivery_policy_from_string(value) do
+    @delivery_policies
+    |> Enum.find(&(Atom.to_string(&1) == value))
+    |> delivery_policy_result()
+  end
+
+  @spec delivery_policy_result(boolean(), atom()) ::
+          {:ok, delivery_policy()} | {:error, :invalid_delivery_policy}
+  defp delivery_policy_result(true, policy), do: {:ok, policy}
+  defp delivery_policy_result(false, _policy), do: {:error, :invalid_delivery_policy}
+
+  @spec delivery_policy_result(atom() | nil) ::
+          {:ok, delivery_policy()} | {:error, :invalid_delivery_policy}
+  defp delivery_policy_result(nil), do: {:error, :invalid_delivery_policy}
+  defp delivery_policy_result(policy), do: {:ok, policy}
 
   @spec required_state(map()) :: {:ok, state()} | {:error, :invalid_state}
   defp required_state(attrs) do

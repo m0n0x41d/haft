@@ -333,6 +333,9 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 	if commission["state"] != "queued" {
 		t.Fatalf("state = %#v, want queued", commission["state"])
 	}
+	if commission["delivery_policy"] != defaultDeliveryPolicy {
+		t.Fatalf("delivery_policy = %#v, want %s", commission["delivery_policy"], defaultDeliveryPolicy)
+	}
 	if !hexLike(commission["decision_revision_hash"]) {
 		t.Fatalf("decision_revision_hash = %#v, want sha256 hex", commission["decision_revision_hash"])
 	}
@@ -457,6 +460,7 @@ func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing
 			"target_branch":     "dev",
 			"valid_until":       "2099-01-01T00:00:00Z",
 			"projection_policy": "local_only",
+			"delivery_policy":   "workspace_patch_auto_on_pass",
 			"defaults": map[string]any{
 				"allowed_actions":       []any{"edit_files", "run_tests"},
 				"evidence_requirements": []any{"go test ./internal/cli"},
@@ -498,6 +502,9 @@ func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing
 		}
 		if commission["implementation_plan_revision"] != "p1" {
 			t.Fatalf("implementation_plan_revision = %#v, want p1", commission["implementation_plan_revision"])
+		}
+		if commission["delivery_policy"] != "workspace_patch_auto_on_pass" {
+			t.Fatalf("delivery_policy = %#v, want workspace_patch_auto_on_pass", commission["delivery_policy"])
 		}
 	}
 

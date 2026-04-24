@@ -14,7 +14,7 @@ func haftCommissionTool() Tool {
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
-					"description": "(create) Canonical WorkCommission payload including decision_ref, problem_card_ref, scope, evidence_requirements, projection_policy, state, valid_until, fetched_at.",
+					"description": "(create) Canonical WorkCommission payload including decision_ref, problem_card_ref, scope, evidence_requirements, projection_policy, delivery_policy, state, valid_until, fetched_at.",
 				},
 				"plan": map[string]interface{}{
 					"type":        "object",
@@ -76,6 +76,11 @@ func haftCommissionTool() Tool {
 				"queue": map[string]string{
 					"type":        "string",
 					"description": "(create_from_plan/list_runnable/claim_for_preflight) Optional queue label for operator-controlled batches.",
+				},
+				"delivery_policy": map[string]interface{}{
+					"type":        "string",
+					"enum":        []interface{}{"workspace_patch_manual", "workspace_patch_auto_on_pass"},
+					"description": "(create/create_from_decision/create_from_plan) How a completed workspace diff is adopted. MVP default is workspace_patch_manual.",
 				},
 				"runner_id": map[string]string{
 					"type":        "string",

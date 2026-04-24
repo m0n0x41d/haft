@@ -69,6 +69,14 @@ defmodule OpenSleigh.WorkCommissionTest do
     assert commission.id == "wc-123"
     assert commission.scope_hash == commission.scope.hash
     assert commission.base_sha == commission.scope.base_sha
+    assert commission.delivery_policy == :workspace_patch_manual
+  end
+
+  test "new/1 accepts explicit delivery policy" do
+    attrs = Map.put(work_commission_attrs(), :delivery_policy, "workspace_patch_auto_on_pass")
+
+    assert {:ok, %WorkCommission{} = commission} = WorkCommission.new(attrs)
+    assert commission.delivery_policy == :workspace_patch_auto_on_pass
   end
 
   test "new/1 rejects scope_hash drift" do

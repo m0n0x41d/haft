@@ -656,6 +656,7 @@ defmodule OpenSleigh.Orchestrator do
       lockset: commission.lockset,
       evidence_requirements: commission.evidence_requirements,
       projection_policy: Atom.to_string(commission.projection_policy),
+      delivery_policy: Atom.to_string(commission.delivery_policy),
       autonomy_envelope_ref: commission.autonomy_envelope_ref,
       autonomy_envelope_revision: commission.autonomy_envelope_revision,
       state: Atom.to_string(commission.state),

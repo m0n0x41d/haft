@@ -534,6 +534,54 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	}
 }
 
+func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-lifecycle-order", "queued", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, action := range []string{"record_preflight", "start_after_preflight", "complete_or_block"} {
+		_, err = handleHaftCommission(ctx, store, map[string]any{
+			"action":        action,
+			"commission_id": "wc-lifecycle-order",
+			"runner_id":     "open-sleigh:test",
+			"event":         "phase_outcome",
+			"verdict":       "pass",
+		})
+		if err == nil {
+			t.Fatalf("expected %s from queued commission to fail", action)
+		}
+		if !strings.Contains(err.Error(), "commission_lifecycle_forbidden") {
+			t.Fatalf("err = %v, want commission_lifecycle_forbidden", err)
+		}
+	}
+
+	stored, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "show",
+		"commission_id": "wc-lifecycle-order",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shown := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(stored), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if shown["commission"]["state"] != "queued" {
+		t.Fatalf("state = %#v, want queued", shown["commission"]["state"])
+	}
+	if events, ok := shown["commission"]["events"].([]any); ok && len(events) > 0 {
+		t.Fatalf("events = %#v, want no rejected lifecycle events", events)
+	}
+}
+
 func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
@@ -855,15 +903,7 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 		t.Fatalf("claim error = %v, want dependency-blocked commission_not_runnable", err)
 	}
 
-	_, err = handleHaftCommission(ctx, store, map[string]any{
-		"action":        "complete_or_block",
-		"commission_id": firstID,
-		"runner_id":     "open-sleigh:test",
-		"verdict":       "completed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	runCommissionThroughPreflight(t, ctx, store, firstID)
 
 	listed = map[string][]map[string]any{}
 	listResult, err = handleHaftCommission(ctx, store, map[string]any{
@@ -1075,6 +1115,46 @@ func commissionForDecision(t *testing.T, commissions []any, decisionRef string) 
 
 	t.Fatalf("missing commission for decision %s in %#v", decisionRef, commissions)
 	return nil
+}
+
+func runCommissionThroughPreflight(
+	t *testing.T,
+	ctx context.Context,
+	store *artifact.Store,
+	commissionID string,
+) {
+	t.Helper()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "start_after_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_passed",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "complete_or_block",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "workflow_terminal",
+		"verdict":       "completed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func createCommissionDecisionFixture(

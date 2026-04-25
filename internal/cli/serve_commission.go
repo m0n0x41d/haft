@@ -94,6 +94,13 @@ var cancelWorkCommissionTransition = workCommissionTransition{
 	RequiresReason: true,
 }
 
+var workCommissionLifecycleAllowedStatesByAction = map[string][]string{
+	"record_preflight":      {"preflighting"},
+	"start_after_preflight": {"preflighting"},
+	"record_run_event":      {"running"},
+	"complete_or_block":     {"running"},
+}
+
 func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	action := stringArg(args, "action")
 
@@ -825,6 +832,10 @@ func appendWorkCommissionLifecycle(ctx context.Context, store *artifact.Store, a
 
 	commission, err := loadWorkCommissionPayloadForUpdate(ctx, tx, commissionID)
 	if err != nil {
+		return "", err
+	}
+
+	if err := ensureWorkCommissionLifecycleTransition(commission, args); err != nil {
 		return "", err
 	}
 
@@ -1927,6 +1938,23 @@ func ensureWorkCommissionTransition(
 		return fmt.Errorf("%s: reason is required", transition.ErrorCode)
 	}
 	return nil
+}
+
+func ensureWorkCommissionLifecycleTransition(commission map[string]any, args map[string]any) error {
+	action := stringArg(args, "action")
+	state := stringField(commission, "state")
+	allowedStates := workCommissionLifecycleAllowedStatesByAction[action]
+
+	if workCommissionStateAllowed(allowedStates, state) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"commission_lifecycle_forbidden: action=%s state=%s allowed_states=%s",
+		action,
+		state,
+		strings.Join(allowedStates, ","),
+	)
 }
 
 func workCommissionStateAllowed(allowed []string, state string) bool {

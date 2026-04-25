@@ -86,6 +86,33 @@ func TestDeriveSpecCoverage_DerivesStateFromEdgesNotManualWords(t *testing.T) {
 	assertCoverageState(t, verified, SpecCoverageVerified)
 }
 
+func TestDeriveSpecCoverage_ManualVerifiedStatusDoesNotReplaceCoverageEdges(t *testing.T) {
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	section := coverageTestSection("TS.manual.001")
+
+	report := DeriveSpecCoverage(SpecCoverageInput{
+		Sections: []SpecSection{section},
+		Decisions: []SpecCoverageDecision{{
+			ID:            "dec-manual-verified",
+			Status:        "verified",
+			Title:         "Manual UI status says verified",
+			AffectedFiles: []string{"internal/manual/status.go"},
+		}},
+		Evidence: []SpecCoverageEvidence{{
+			ID:          "evid-manual-verified",
+			ArtifactRef: "manual-coverage-status",
+			Type:        "manual",
+			Verdict:     "supports",
+		}},
+		Now: now,
+	})
+
+	assertCoverageState(t, report, SpecCoverageUncovered)
+	if len(report.Sections[0].Edges) != 0 {
+		t.Fatalf("edges = %#v, want no manual-status coverage edges", report.Sections[0].Edges)
+	}
+}
+
 func TestDeriveSpecCoverage_InheritsDecisionCoverageThroughProblemRefs(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 	section := coverageTestSection("TS.onboarding.001")

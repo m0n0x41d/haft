@@ -94,6 +94,7 @@ pub fn run() {
             commands_mutate::requeue_commission,
             commands_mutate::cancel_commission,
             commands_mutate::harness_result,
+            commands_mutate::harness_tail,
             commands_mutate::harness_apply,
             agents::run_flow_now,
             commands_mutate::switch_project,

@@ -18,6 +18,7 @@ import {
   resolveAdoptReopen,
   resolveAdoptWaive,
   spawnTask,
+  setTaskAutoRun,
   writeTaskInput,
   type ChatTranscriptState,
   type DesktopConfig,
@@ -681,7 +682,6 @@ export function Tasks({
                   <button
                     onClick={async () => {
                       try {
-                        const { setTaskAutoRun } = await import("../lib/api");
                         await setTaskAutoRun(detail.id, !detail.auto_run);
                         setTasks((prev) =>
                           prev.map((t) =>

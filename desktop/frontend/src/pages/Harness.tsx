@@ -3,10 +3,12 @@ import {
   Ban,
   CheckCircle2,
   Download,
+  FileText,
   FolderOpen,
   GitBranch,
   RefreshCw,
   RotateCcw,
+  Terminal,
   Timer,
 } from "lucide-react";
 
@@ -14,12 +16,22 @@ import {
   applyHarnessResult,
   cancelCommission,
   getHarnessResult,
+  getHarnessTail,
   listCommissions,
   openPathInIDE,
   requeueCommission,
+  type HarnessTailResult,
   type HarnessRunResult,
   type WorkCommission,
 } from "../lib/api";
+import {
+  buildHarnessCockpitDetail,
+  normalizeHarnessCommissionState,
+  type HarnessActionKind,
+  type HarnessActionView,
+  type HarnessCockpitDetail,
+  type HarnessCommissionStateView,
+} from "../lib/harnessCockpit";
 import { Badge, MonoId, Pill } from "../components/primitives";
 import { reportError } from "../lib/errors";
 
@@ -38,6 +50,7 @@ export function Harness() {
   const [commissions, setCommissions] = useState<WorkCommission[]>([]);
   const [selectedID, setSelectedID] = useState("");
   const [result, setResult] = useState<HarnessRunResult | null>(null);
+  const [tail, setTail] = useState<HarnessTailResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [notice, setNotice] = useState("");
@@ -45,6 +58,11 @@ export function Harness() {
   const selectedCommission = useMemo(
     () => commissions.find((commission) => commission.id === selectedID) ?? null,
     [commissions, selectedID],
+  );
+
+  const selectedDetail = useMemo(
+    () => selectedCommission ? buildHarnessCockpitDetail(selectedCommission, result, tail) : null,
+    [selectedCommission, result, tail],
   );
 
   const refresh = useCallback(async () => {
@@ -93,6 +111,8 @@ export function Harness() {
   }, [refresh]);
 
   useEffect(() => {
+    setTail(null);
+    setResult(null);
     void refreshResult(selectedID);
   }, [refreshResult, selectedID]);
 
@@ -137,6 +157,29 @@ export function Harness() {
       setNotice(`Applied ${applyResult.files.length} file(s) from ${selectedID}`);
     });
 
+  const handleResult = () =>
+    runAction("refresh harness result", async () => {
+      if (!selectedID) return;
+      await refreshResult(selectedID);
+      setNotice(`Refreshed result for ${selectedID}`);
+    });
+
+  const handleTail = () =>
+    runAction("tail harness log", async () => {
+      if (!selectedID) return;
+      const nextTail = await getHarnessTail(selectedID, 20);
+      setTail(nextTail);
+      setNotice(`Loaded ${nextTail.lines.length} tail line(s) for ${selectedID}`);
+    });
+
+  const actionHandlers: Record<HarnessActionKind, () => void> = {
+    result: handleResult,
+    tail: handleTail,
+    apply: handleApply,
+    cancel: handleCancel,
+    requeue: handleRequeue,
+  };
+
   return (
     <div className="space-y-6 pb-8">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -164,6 +207,7 @@ export function Harness() {
               setSelector(item.id);
               setSelectedID("");
               setResult(null);
+              setTail(null);
             }}
             className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
               selector === item.id
@@ -215,12 +259,12 @@ export function Harness() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-medium text-text-primary">Run Detail</h2>
-                {selectedCommission ? <StateBadge state={selectedCommission.state} /> : null}
+                {selectedDetail ? <StateBadge state={selectedDetail.state} /> : null}
               </div>
               {selectedCommission ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <MonoId id={selectedCommission.id} tone="accent" />
-                  <MonoId id={selectedCommission.decision_ref || "decision:unknown"} />
+                  <MonoId id={selectedDetail?.decisionRef || "decision unknown"} />
                 </div>
               ) : (
                 <p className="mt-2 text-sm text-text-muted">Select a WorkCommission.</p>
@@ -228,74 +272,145 @@ export function Harness() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {selectedDetail?.actions.map((action) => (
+                <button
+                  key={action.kind}
+                  onClick={actionHandlers[action.kind]}
+                  disabled={!action.enabled || Boolean(busyAction)}
+                  title={action.reason}
+                  className={actionButtonClass(action)}
+                >
+                  <ActionIcon kind={action.kind} />
+                  {action.label}
+                </button>
+              ))}
               <button
-                onClick={() => result?.workspace && void openPathInIDE(result.workspace)}
-                disabled={!result?.workspace}
+                onClick={() => selectedDetail?.workspace.path && void openPathInIDE(selectedDetail.workspace.path)}
+                disabled={!selectedDetail?.workspace.path}
                 className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-40"
+                title="Open isolated harness workspace"
               >
                 <FolderOpen size={14} />
                 Workspace
               </button>
-              <button
-                onClick={handleRequeue}
-                disabled={!selectedCommission || !canRequeue(selectedCommission) || Boolean(busyAction)}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-40"
-              >
-                <RotateCcw size={14} />
-                Requeue
-              </button>
-              <button
-                onClick={handleCancel}
-                disabled={!selectedCommission || isTerminal(selectedCommission.state) || Boolean(busyAction)}
-                className="inline-flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger transition-colors hover:bg-danger/20 disabled:opacity-40"
-              >
-                <Ban size={14} />
-                Cancel
-              </button>
-              <button
-                onClick={handleApply}
-                disabled={!result?.can_apply || Boolean(busyAction)}
-                className="inline-flex items-center gap-2 rounded-lg border border-accent-border bg-accent-wash px-3 py-2 text-xs text-accent transition-colors hover:bg-accent/15 disabled:opacity-40"
-              >
-                <Download size={14} />
-                Apply
-              </button>
             </div>
           </div>
 
-          {selectedCommission ? (
+          {selectedDetail ? (
             <div className="space-y-4 p-4">
               <div className="grid gap-3 md:grid-cols-3">
-                <Fact icon={GitBranch} label="Branch" value={selectedCommission.scope?.target_branch || "unknown"} />
-                <Fact icon={Timer} label="Valid Until" value={formatDateTime(selectedCommission.valid_until || "")} />
-                <Fact icon={CheckCircle2} label="Delivery" value={selectedCommission.delivery_policy || "unknown"} />
+                <Fact icon={GitBranch} label="Branch" value={selectedCommission?.scope?.target_branch || "unknown"} />
+                <Fact icon={Timer} label="Valid Until" value={formatDateTime(selectedCommission?.valid_until || "")} />
+                <Fact icon={CheckCircle2} label="Delivery" value={selectedCommission?.delivery_policy || "unknown"} />
               </div>
 
-              {selectedCommission.operator?.attention_reason && (
+              {selectedCommission?.operator?.attention_reason && (
                 <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-                  {selectedCommission.operator.attention_reason}
+                  {selectedCommission.operator?.attention_reason}
                 </div>
               )}
 
-              {result?.changed_files?.length ? (
-                <div>
-                  <h3 className="mb-2 text-xs font-medium uppercase text-text-muted">Changed files</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {result.changed_files.map((file) => (
-                      <span
-                        key={file}
-                        className="rounded-full border border-border bg-surface-2 px-2 py-1 font-mono text-[11px] text-text-secondary"
-                      >
-                        {file}
-                      </span>
-                    ))}
+              <section className="rounded-lg border border-border bg-surface-0/70 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-medium uppercase text-text-muted">Workspace</h3>
+                    <p className="mt-1 font-mono text-xs text-text-secondary">
+                      {selectedDetail.workspace.path || "workspace unknown"}
+                    </p>
                   </div>
+                  <Badge tone={selectedDetail.workspace.canApply ? "accent" : "neutral"}>
+                    {selectedDetail.workspace.diffState}
+                  </Badge>
                 </div>
-              ) : null}
 
-              <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-surface-0 p-4 font-mono text-xs leading-5 text-text-secondary">
-                {result?.raw || "No run result yet."}
-              </pre>
+                {selectedDetail.workspace.error ? (
+                  <p className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                    {selectedDetail.workspace.error}
+                  </p>
+                ) : null}
+
+                <FactList
+                  title="Changed files"
+                  empty="No changed files detected."
+                  items={selectedDetail.workspace.changedFiles}
+                  mono
+                />
+                <FactList
+                  title="Git status"
+                  empty="Clean."
+                  items={selectedDetail.workspace.gitStatus}
+                  mono
+                />
+                <FactList
+                  title="Diff stat"
+                  empty="Empty."
+                  items={selectedDetail.workspace.diffStat}
+                  mono
+                />
+              </section>
+
+              <section className="rounded-lg border border-border bg-surface-0/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-xs font-medium uppercase text-text-muted">Runtime</h3>
+                  <Badge tone={selectedDetail.runtime.active ? "accent" : "neutral"}>
+                    {selectedDetail.runtime.active ? "Active" : "No active run"}
+                  </Badge>
+                </div>
+                {hasRuntimeFacts(selectedDetail) ? (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <RuntimeFact label="Phase" value={selectedDetail.runtime.phase} />
+                    <RuntimeFact label="Sub-state" value={selectedDetail.runtime.subState} />
+                    <RuntimeFact label="Session" value={selectedDetail.runtime.sessionID} mono />
+                    <RuntimeFact label="Turn" value={selectedDetail.runtime.lastTurnID} mono />
+                    <RuntimeFact label="Last event" value={selectedDetail.runtime.lastEvent} />
+                    <RuntimeFact label="Updated" value={formatDateTime(selectedDetail.runtime.statusUpdatedAt)} />
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-text-muted">No active runtime detail for this commission.</p>
+                )}
+                {selectedDetail.runtime.preview ? (
+                  <p className="mt-3 rounded-md border border-border bg-surface-2/50 px-3 py-2 text-xs text-text-secondary">
+                    {selectedDetail.runtime.preview}
+                  </p>
+                ) : null}
+              </section>
+
+              <section className="rounded-lg border border-border bg-surface-0/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-xs font-medium uppercase text-text-muted">Evidence</h3>
+                  <Badge>{selectedDetail.evidence.requiredCount} required</Badge>
+                </div>
+                <FactList
+                  title="Requirements"
+                  empty="No evidence requirements declared."
+                  items={selectedDetail.evidence.requirements}
+                />
+                <FactList
+                  title="Latest measure"
+                  empty="No measure outcome recorded."
+                  items={selectedDetail.evidence.latestMeasure ? [selectedDetail.evidence.latestMeasure] : []}
+                />
+                <FactList
+                  title="Terminal outcome"
+                  empty="No terminal outcome recorded."
+                  items={selectedDetail.evidence.terminal ? [selectedDetail.evidence.terminal] : []}
+                />
+              </section>
+
+              <section className="rounded-lg border border-border bg-surface-0/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-xs font-medium uppercase text-text-muted">Tail</h3>
+                  <span className="font-mono text-[11px] text-text-muted">
+                    {selectedDetail.tail.followCommand}
+                  </span>
+                </div>
+                <FactList
+                  title="Recent runtime events"
+                  empty="No tail lines loaded."
+                  items={selectedDetail.tail.lines}
+                  mono
+                />
+              </section>
             </div>
           ) : (
             <div className="p-12 text-center text-sm text-text-muted">
@@ -317,6 +432,8 @@ function CommissionRow({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const state = normalizeHarnessCommissionState(commission);
+
   return (
     <button
       onClick={onSelect}
@@ -330,7 +447,7 @@ function CommissionRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <MonoId id={commission.id} tone={selected ? "accent" : "neutral"} />
-            <StateBadge state={commission.state} />
+            <StateBadge state={state} />
           </div>
           <p className="mt-2 truncate font-mono text-xs text-text-secondary">
             {commission.decision_ref || "decision:unknown"}
@@ -368,32 +485,98 @@ function Fact({
   );
 }
 
-function StateBadge({ state }: { state: string }) {
-  if (state === "completed" || state === "completed_with_projection_debt") {
-    return <Badge tone="success">{state}</Badge>;
-  }
-  if (state === "failed" || state === "cancelled" || state === "expired") {
-    return <Badge tone="danger">{state}</Badge>;
-  }
-  if (state.startsWith("blocked") || state === "needs_human_review") {
-    return <Badge tone="warning">{state}</Badge>;
-  }
-  if (state === "running" || state === "preflighting") {
-    return <Badge tone="accent">{state}</Badge>;
-  }
-  return <Badge>{state || "unknown"}</Badge>;
+function StateBadge({ state }: { state: HarnessCommissionStateView }) {
+  return <Badge tone={state.tone}>{state.label}</Badge>;
 }
 
-function canRequeue(commission: WorkCommission): boolean {
-  if (isTerminal(commission.state)) {
-    return false;
-  }
+function ActionIcon({ kind }: { kind: HarnessActionKind }) {
+  const Icon = {
+    result: FileText,
+    tail: Terminal,
+    apply: Download,
+    cancel: Ban,
+    requeue: RotateCcw,
+  }[kind];
 
-  return commission.state !== "draft";
+  return <Icon size={14} />;
 }
 
-function isTerminal(state: string): boolean {
-  return ["completed", "completed_with_projection_debt", "cancelled", "expired"].includes(state);
+function actionButtonClass(action: HarnessActionView): string {
+  const base = "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors disabled:opacity-40";
+  const variants: Record<HarnessActionKind, string> = {
+    result: "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",
+    tail: "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",
+    apply: "border-accent-border bg-accent-wash text-accent hover:bg-accent/15",
+    cancel: "border-danger/30 bg-danger/10 text-danger hover:bg-danger/20",
+    requeue: "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",
+  };
+
+  return `${base} ${variants[action.kind]}`;
+}
+
+function FactList({
+  title,
+  empty,
+  items,
+  mono,
+}: {
+  title: string;
+  empty: string;
+  items: string[];
+  mono?: boolean;
+}) {
+  return (
+    <div className="mt-4">
+      <h4 className="mb-2 text-[11px] font-medium uppercase text-text-muted">{title}</h4>
+      {items.length === 0 ? (
+        <p className="text-xs text-text-muted">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <span
+              key={item}
+              className={`rounded-md border border-border bg-surface-2 px-2 py-1 text-[11px] text-text-secondary ${
+                mono ? "font-mono" : ""
+              }`}
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuntimeFact({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-surface-2/50 px-3 py-2">
+      <div className="text-[11px] uppercase text-text-muted">{label}</div>
+      <div className={`mt-1 truncate text-xs text-text-secondary ${mono ? "font-mono" : ""}`}>
+        {value || "unknown"}
+      </div>
+    </div>
+  );
+}
+
+function hasRuntimeFacts(detail: HarnessCockpitDetail): boolean {
+  const fields = [
+    detail.runtime.phase,
+    detail.runtime.subState,
+    detail.runtime.sessionID,
+    detail.runtime.lastEvent,
+    detail.runtime.lastTurnID,
+  ];
+
+  return fields.some((field) => field.trim() !== "");
 }
 
 function formatDateTime(value: string): string {

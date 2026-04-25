@@ -19,3 +19,16 @@ export function commissionIpcArgs(commissionID: string): {
     commissionId: commissionID,
   };
 }
+
+export function commissionTailIpcArgs(
+  commissionID: string,
+  lineCount: number,
+): {
+  commissionId: string;
+  lineCount: number;
+} {
+  return {
+    commissionId: commissionID,
+    lineCount,
+  };
+}

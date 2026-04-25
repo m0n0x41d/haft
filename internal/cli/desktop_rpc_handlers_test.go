@@ -480,6 +480,158 @@ func TestHandleCommissionOperatorActions(t *testing.T) {
 	}
 }
 
+func TestHandleHarnessResultReturnsStructuredDesktopFacts(t *testing.T) {
+	homePath := setRPCProjectHome(t)
+	env, cleanup := createCommissionRPCEnv(t)
+	defer cleanup()
+
+	commissionID := "wc-desktop-rpc-result"
+	trackedPath := filepath.Join("internal", "cli", "serve_commission.go")
+	workspacePath := filepath.Join(homePath, ".open-sleigh", "workspaces", commissionID)
+	initHarnessApplyRepo(t, workspacePath, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspacePath, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	commission["events"] = []any{
+		map[string]any{
+			"event":       "phase_outcome",
+			"verdict":     "pass",
+			"recorded_at": "2026-04-24T05:08:35Z",
+			"payload": map[string]any{
+				"phase": "measure",
+				"next":  "terminal:pass",
+			},
+		},
+	}
+	if _, err := persistWorkCommission(env.ctx, env.store, commission, time.Now().UTC()); err != nil {
+		t.Fatalf("persist commission: %v", err)
+	}
+
+	output := bytes.Buffer{}
+	restore := setRPCInput(t, map[string]string{"commission_id": commissionID})
+	defer restore()
+
+	if err := handleHarnessResult(env, &output); err != nil {
+		t.Fatalf("handleHarnessResult: %v", err)
+	}
+
+	var decoded struct {
+		CanApply       bool `json:"can_apply"`
+		WorkspaceFacts struct {
+			Path         string   `json:"path"`
+			DiffState    string   `json:"diff_state"`
+			ChangedFiles []string `json:"changed_files"`
+		} `json:"workspace_facts"`
+		EvidenceFacts struct {
+			RequiredCount int `json:"required_count"`
+			LatestMeasure struct {
+				Phase   string `json:"phase"`
+				Verdict string `json:"verdict"`
+			} `json:"latest_measure"`
+		} `json:"evidence_facts"`
+		OperatorNext struct {
+			Kind string `json:"kind"`
+		} `json:"operator_next"`
+	}
+	decodeRPCData(t, output.Bytes(), &decoded)
+
+	if !decoded.CanApply {
+		t.Fatalf("CanApply = false, want true")
+	}
+	if decoded.WorkspaceFacts.Path != workspacePath {
+		t.Fatalf("workspace path = %q, want %q", decoded.WorkspaceFacts.Path, workspacePath)
+	}
+	if decoded.WorkspaceFacts.DiffState != "changed" {
+		t.Fatalf("diff state = %q, want changed", decoded.WorkspaceFacts.DiffState)
+	}
+	if strings.Join(decoded.WorkspaceFacts.ChangedFiles, ",") != trackedPath {
+		t.Fatalf("changed files = %#v, want %s", decoded.WorkspaceFacts.ChangedFiles, trackedPath)
+	}
+	if decoded.EvidenceFacts.RequiredCount != 1 {
+		t.Fatalf("required evidence = %d, want 1", decoded.EvidenceFacts.RequiredCount)
+	}
+	if decoded.EvidenceFacts.LatestMeasure.Phase != "measure" || decoded.EvidenceFacts.LatestMeasure.Verdict != "pass" {
+		t.Fatalf("latest measure = %#v, want measure pass", decoded.EvidenceFacts.LatestMeasure)
+	}
+	if decoded.OperatorNext.Kind != "apply" {
+		t.Fatalf("operator next = %q, want apply", decoded.OperatorNext.Kind)
+	}
+}
+
+func TestHandleHarnessTailUsesSnakeCaseAndHumanizedEvents(t *testing.T) {
+	homePath := setRPCProjectHome(t)
+	env, cleanup := createCommissionRPCEnv(t)
+	defer cleanup()
+
+	logPath := filepath.Join(homePath, ".open-sleigh", "runtime.jsonl")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHarnessRuntimeEvents(t, logPath, []map[string]any{
+		{
+			"at":            "2026-04-24T05:00:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-other",
+			"data": map[string]any{
+				"phase":        "execute",
+				"text_preview": "other commission",
+			},
+		},
+		{
+			"at":            "2026-04-24T05:01:00Z",
+			"event":         "agent_turn_completed",
+			"commission_id": "wc-tail-rpc",
+			"data": map[string]any{
+				"phase":        "execute",
+				"status":       "completed",
+				"text_preview": "selected commission done",
+			},
+		},
+	})
+
+	output := bytes.Buffer{}
+	restore := setRPCInput(t, map[string]any{
+		"commission_id": "wc-tail-rpc",
+		"line_count":    20,
+	})
+	defer restore()
+
+	if err := handleHarnessTail(env, &output); err != nil {
+		t.Fatalf("handleHarnessTail: %v", err)
+	}
+
+	var decoded struct {
+		CommissionID  string   `json:"commission_id"`
+		LineCount     int      `json:"line_count"`
+		Lines         []string `json:"lines"`
+		HasEvents     bool     `json:"has_events"`
+		FollowCommand string   `json:"follow_command"`
+	}
+	decodeRPCData(t, output.Bytes(), &decoded)
+
+	joined := strings.Join(decoded.Lines, "\n")
+	if decoded.CommissionID != "wc-tail-rpc" {
+		t.Fatalf("commission id = %q, want wc-tail-rpc", decoded.CommissionID)
+	}
+	if decoded.LineCount != 20 {
+		t.Fatalf("line count = %d, want 20", decoded.LineCount)
+	}
+	if !decoded.HasEvents {
+		t.Fatalf("HasEvents = false, want true")
+	}
+	if strings.Contains(joined, "other commission") || strings.Contains(joined, `{"`) {
+		t.Fatalf("tail output leaked wrong/raw event:\n%s", joined)
+	}
+	if !strings.Contains(joined, "selected commission done") {
+		t.Fatalf("tail output missing selected preview:\n%s", joined)
+	}
+	if decoded.FollowCommand != "haft harness tail wc-tail-rpc --follow" {
+		t.Fatalf("follow command = %q", decoded.FollowCommand)
+	}
+}
+
 func runProjectRPCHandler(t *testing.T, handler testProjectRPCHandler, path string) rpcProjectInfo {
 	t.Helper()
 

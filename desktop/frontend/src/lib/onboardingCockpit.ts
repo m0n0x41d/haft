@@ -8,7 +8,7 @@ import {
   projectNeedsOnboarding,
   projectReadiness,
   type ProjectReadiness,
-} from "./projectReadiness";
+} from "./projectReadiness.ts";
 
 export type SpecCarrierKind = "target-system" | "enabling-system" | "term-map";
 

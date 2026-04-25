@@ -194,6 +194,7 @@ func init() {
 		makeRPCCommand("requeue-commission", "Return a WorkCommission to the queue", handleRequeueCommission),
 		makeRPCCommand("cancel-commission", "Cancel an unfinished WorkCommission", handleCancelCommission),
 		makeRPCCommand("harness-result", "Inspect a harness run result", handleHarnessResult),
+		makeRPCCommand("harness-tail", "Inspect humanized harness runtime events", handleHarnessTail),
 		makeRPCCommand("harness-apply", "Apply a completed harness workspace diff", handleHarnessApply),
 
 		// Project management

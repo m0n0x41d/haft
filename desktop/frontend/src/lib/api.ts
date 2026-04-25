@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   commissionIpcArgs,
+  commissionTailIpcArgs,
   listCommissionsIpcArgs,
   type CommissionSelector,
 } from "./harnessIpc.ts";
-import { isControlPromptText } from "./controlPrompt.ts";
+import { isControlPromptText, stripControlPromptSections } from "./controlPrompt.ts";
 
 // API layer — wraps Tauri invoke() with mock fallback for standalone dev.
 // When running inside Tauri, calls invoke() from @tauri-apps/api/core.
@@ -545,15 +546,17 @@ export function hasStructuredChatBlocks(task: Pick<TaskState, "chat_blocks">): b
 
 export function taskTranscriptText(task: Pick<TaskState, "raw_output" | "output">): string {
   const rawOutput = task.raw_output.trim();
-  if (rawOutput !== "") {
-    return rawOutput;
-  }
+  const transcript = rawOutput !== ""
+    ? task.raw_output
+    : task.output;
 
-  return task.output;
+  return visibleTranscriptText(transcript);
 }
 
 export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
-  const filteredBlocks = blocks.filter((block) => !isNoiseBlock(block));
+  const filteredBlocks = blocks
+    .map(visibleChatBlock)
+    .filter((block): block is ChatBlock => block !== null);
   const mergedBlocks = coalesceNarrativeBlocks(filteredBlocks);
   const toolParentByCallID = new Map<string, string>();
   const toolResultsByParentID = new Map<string, ChatBlock[]>();
@@ -603,18 +606,38 @@ export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
   return groupConsecutiveToolUse(ungrouped);
 }
 
-function isNoiseBlock(block: ChatBlock): boolean {
+export function visibleTranscriptText(transcript: string): string {
+  const withoutControlPrompts = stripControlPromptSections(transcript);
+
+  return stripAuditOnlyProviderEnvelopeLines(withoutControlPrompts);
+}
+
+function visibleChatBlock(block: ChatBlock): ChatBlock | null {
   const text = (block.text ?? "").trim();
 
-  if (isControlPromptText(text)) {
-    return true;
+  if (text === "") {
+    return block;
   }
 
-  if (isAuditOnlyProviderEnvelope(text)) {
-    return true;
+  const visibleText = visibleTranscriptText(block.text ?? "");
+
+  if (visibleText.trim() === "" && isControlPromptText(text)) {
+    return null;
   }
 
-  return false;
+  if (visibleText.trim() === "" && isAuditOnlyProviderEnvelope(text)) {
+    return null;
+  }
+
+  const visibleBlock = visibleText === block.text
+    ? block
+    : { ...block, text: visibleText };
+
+  if (!hasRenderableBlockValue(visibleBlock)) {
+    return null;
+  }
+
+  return visibleBlock;
 }
 
 type ProviderEnvelopeVisibility = "visible" | "audit_only";
@@ -648,6 +671,17 @@ function isAuditOnlyProviderEnvelope(text: string): boolean {
   }
 
   return lines.every(isAuditOnlyProviderEnvelopeLine);
+}
+
+function stripAuditOnlyProviderEnvelopeLines(text: string): string {
+  if (isAuditOnlyProviderEnvelope(text)) {
+    return "";
+  }
+
+  return text
+    .split("\n")
+    .filter((line) => !isAuditOnlyProviderEnvelopeLine(line.trim()))
+    .join("\n");
 }
 
 function isAuditOnlyProviderEnvelopeLine(text: string): boolean {
@@ -981,9 +1015,65 @@ export interface HarnessRunResult {
   lines: string[];
   changed_files: string[];
   can_apply: boolean;
+  workspace_facts?: HarnessWorkspaceFacts;
+  runtime_facts?: HarnessRuntimeFacts;
+  evidence_facts?: HarnessEvidenceFacts;
+  operator_next?: HarnessOperatorNext;
   runtime?: Record<string, unknown>;
   status_updated_at?: string;
   latest_turn?: Record<string, unknown>;
+}
+
+export interface HarnessWorkspaceFacts {
+  path: string;
+  diff_state: string;
+  git_status: string[];
+  diff_stat: string[];
+  changed_files: string[];
+  error: string;
+}
+
+export interface HarnessRuntimeFacts {
+  active: boolean;
+  phase: string;
+  sub_state: string;
+  session_id: string;
+  task_pid: string;
+  workspace_path: string;
+  status_updated_at: string;
+  last_event: string;
+  last_event_at: string;
+  last_turn_status: string;
+  last_turn_id: string;
+  preview: string;
+}
+
+export interface HarnessEvidenceRequirement {
+  kind: string;
+  command: string;
+  description: string;
+  claim_ref: string;
+  section_ref: string;
+}
+
+export interface HarnessPhaseOutcome {
+  phase: string;
+  verdict: string;
+  next: string;
+  at: string;
+}
+
+export interface HarnessEvidenceFacts {
+  required_count: number;
+  requirements: HarnessEvidenceRequirement[];
+  latest_measure: HarnessPhaseOutcome | null;
+  terminal: HarnessPhaseOutcome | null;
+}
+
+export interface HarnessOperatorNext {
+  kind: string;
+  reason: string;
+  lines: string[];
 }
 
 export interface HarnessApplyResult {
@@ -993,6 +1083,15 @@ export interface HarnessApplyResult {
   files: string[];
   raw: string;
   lines: string[];
+}
+
+export interface HarnessTailResult {
+  commission_id: string;
+  log_path: string;
+  line_count: number;
+  lines: string[];
+  has_events: boolean;
+  follow_command: string;
 }
 
 export interface FlowInput {
@@ -2353,7 +2452,7 @@ export async function runSpecCheck(projectRoot: string): Promise<SpecCheckReport
   return normalizeSpecCheckReport(mockSpecCheckReport(projectRoot));
 }
 
-function projectRootIpcArgs(projectRoot: string): { projectRoot: string } {
+export function projectRootIpcArgs(projectRoot: string): { projectRoot: string } {
   return { projectRoot };
 }
 
@@ -2691,6 +2790,54 @@ export async function getHarnessResult(commissionID: string): Promise<HarnessRun
     lines: [],
     changed_files: [],
     can_apply: false,
+    workspace_facts: {
+      path: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+      diff_state: "clean",
+      git_status: [],
+      diff_stat: [],
+      changed_files: [],
+      error: "",
+    },
+    runtime_facts: {
+      active: false,
+      phase: "",
+      sub_state: "",
+      session_id: "",
+      task_pid: "",
+      workspace_path: "",
+      status_updated_at: "",
+      last_event: "",
+      last_event_at: "",
+      last_turn_status: "",
+      last_turn_id: "",
+      preview: "",
+    },
+    evidence_facts: {
+      required_count: 0,
+      requirements: [],
+      latest_measure: null,
+      terminal: null,
+    },
+  };
+}
+
+export async function getHarnessTail(
+  commissionID: string,
+  lineCount: number,
+): Promise<HarnessTailResult> {
+  const result = await tauriInvoke<HarnessTailResult>(
+    "harness_tail",
+    commissionTailIpcArgs(commissionID, lineCount),
+  );
+  if (result) return normalizeHarnessTailResult(result);
+
+  return {
+    commission_id: commissionID,
+    log_path: "/Users/demo/.open-sleigh/runtime.jsonl",
+    line_count: lineCount,
+    lines: [`No runtime events for commission ${commissionID} yet.`],
+    has_events: false,
+    follow_command: `haft harness tail ${commissionID} --follow`,
   };
 }
 
@@ -2737,6 +2884,14 @@ function normalizeHarnessResult(result: HarnessRunResult): HarnessRunResult {
     changed_files: result.changed_files ?? [],
     raw: result.raw ?? "",
     can_apply: Boolean(result.can_apply),
+    workspace_facts: normalizeHarnessWorkspaceFacts(result),
+    runtime_facts: normalizeHarnessRuntimeFacts(result.runtime_facts),
+    evidence_facts: normalizeHarnessEvidenceFacts(result.evidence_facts),
+    operator_next: result.operator_next ?? {
+      kind: "",
+      reason: "",
+      lines: [],
+    },
   };
 }
 
@@ -2746,6 +2901,60 @@ function normalizeHarnessApplyResult(result: HarnessApplyResult): HarnessApplyRe
     files: result.files ?? [],
     lines: result.lines ?? [],
     raw: result.raw ?? "",
+  };
+}
+
+function normalizeHarnessTailResult(result: HarnessTailResult): HarnessTailResult {
+  return {
+    ...result,
+    lines: result.lines ?? [],
+    has_events: Boolean(result.has_events),
+    follow_command: result.follow_command ?? "",
+  };
+}
+
+function normalizeHarnessWorkspaceFacts(
+  result: HarnessRunResult,
+): HarnessWorkspaceFacts {
+  const facts = result.workspace_facts;
+
+  return {
+    path: facts?.path || result.workspace || "",
+    diff_state: facts?.diff_state || "unknown",
+    git_status: facts?.git_status ?? [],
+    diff_stat: facts?.diff_stat ?? [],
+    changed_files: facts?.changed_files ?? result.changed_files ?? [],
+    error: facts?.error ?? "",
+  };
+}
+
+function normalizeHarnessRuntimeFacts(
+  facts: HarnessRuntimeFacts | undefined,
+): HarnessRuntimeFacts {
+  return {
+    active: Boolean(facts?.active),
+    phase: facts?.phase ?? "",
+    sub_state: facts?.sub_state ?? "",
+    session_id: facts?.session_id ?? "",
+    task_pid: facts?.task_pid ?? "",
+    workspace_path: facts?.workspace_path ?? "",
+    status_updated_at: facts?.status_updated_at ?? "",
+    last_event: facts?.last_event ?? "",
+    last_event_at: facts?.last_event_at ?? "",
+    last_turn_status: facts?.last_turn_status ?? "",
+    last_turn_id: facts?.last_turn_id ?? "",
+    preview: facts?.preview ?? "",
+  };
+}
+
+function normalizeHarnessEvidenceFacts(
+  facts: HarnessEvidenceFacts | undefined,
+): HarnessEvidenceFacts {
+  return {
+    required_count: facts?.required_count ?? 0,
+    requirements: facts?.requirements ?? [],
+    latest_measure: facts?.latest_measure ?? null,
+    terminal: facts?.terminal ?? null,
   };
 }
 

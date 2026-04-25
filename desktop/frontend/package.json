@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node --test tests/*.test.js src/*.test.ts src/**/*.test.ts",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview"

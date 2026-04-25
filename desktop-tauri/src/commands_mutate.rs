@@ -301,25 +301,98 @@ rpc_fwd!(
         older_than: String,
     }
 );
-rpc_fwd!(show_commission, "show-commission", { commission_id: String });
-rpc_fwd!(
-    requeue_commission,
-    "requeue-commission",
-    {
-        commission_id: String,
-        reason: String,
-    }
-);
-rpc_fwd!(
-    cancel_commission,
-    "cancel-commission",
-    {
-        commission_id: String,
-        reason: String,
-    }
-);
-rpc_fwd!(harness_result, "harness-result", { commission_id: String });
-rpc_fwd!(harness_apply, "harness-apply", { commission_id: String });
+
+#[tauri::command]
+pub fn show_commission(
+    commission_id: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "show-commission",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn requeue_commission(
+    commission_id: String,
+    reason: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "requeue-commission",
+        Some(commission_reason_payload(commission_id, reason)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn cancel_commission(
+    commission_id: String,
+    reason: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "cancel-commission",
+        Some(commission_reason_payload(commission_id, reason)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_result(
+    commission_id: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "harness-result",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_tail(
+    commission_id: String,
+    line_count: i64,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "harness-tail",
+        Some(harness_tail_payload(commission_id, line_count)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_apply(commission_id: String, project_root: Option<String>) -> Result<Value, String> {
+    call_rpc(
+        "harness-apply",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+fn commission_action_payload(commission_id: String) -> Value {
+    json!({
+        "commission_id": commission_id,
+    })
+}
+
+fn commission_reason_payload(commission_id: String, reason: String) -> Value {
+    json!({
+        "commission_id": commission_id,
+        "reason": reason,
+    })
+}
+
+fn harness_tail_payload(commission_id: String, line_count: i64) -> Value {
+    json!({
+        "commission_id": commission_id,
+        "line_count": line_count,
+    })
+}
 
 // ── Governance & analysis ──
 
@@ -342,3 +415,35 @@ rpc_fwd!(
         branch: String,
     }
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commission_action_payload_uses_go_rpc_snake_case() {
+        let payload = commission_action_payload("wc-1".into());
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert!(payload.get("commissionId").is_none());
+    }
+
+    #[test]
+    fn commission_reason_payload_uses_go_rpc_snake_case() {
+        let payload = commission_reason_payload("wc-1".into(), "operator recovery".into());
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert_eq!(payload["reason"], "operator recovery");
+        assert!(payload.get("commissionId").is_none());
+    }
+
+    #[test]
+    fn harness_tail_payload_uses_go_rpc_snake_case() {
+        let payload = harness_tail_payload("wc-1".into(), 20);
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert_eq!(payload["line_count"], 20);
+        assert!(payload.get("commissionId").is_none());
+        assert!(payload.get("lineCount").is_none());
+    }
+}

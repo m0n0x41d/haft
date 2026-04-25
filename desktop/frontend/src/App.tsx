@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState, type ComponentType } from "react";
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -17,19 +17,24 @@ import {
   Scale,
   MessageSquare,
 } from "lucide-react";
-import { Dashboard } from "./pages/Dashboard";
-import { Portfolios } from "./pages/Portfolios";
-import { Settings } from "./pages/Settings";
-import { Tasks } from "./pages/Tasks";
-import { Flows as Jobs } from "./pages/Jobs";
-import { Harness } from "./pages/Harness";
 import { NotificationViewport, type DesktopNotification } from "./components/Notifications";
 import { SearchOverlay } from "./components/SearchOverlay";
-import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { RailBtn, SidebarTask } from "./components/shell";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
-import { listProjects, removeProject, switchProject, listTasks, toggleMaximize, type ProjectInfo, type TaskState } from "./lib/api";
+import {
+  addProjectSmart,
+  archiveTask,
+  listProjects,
+  listTasks,
+  openDirectoryPicker,
+  removeProject,
+  scanForProjects,
+  switchProject,
+  toggleMaximize,
+  type ProjectInfo,
+  type TaskState,
+} from "./lib/api";
 import { getPageTitle, resolveNavigation, type Page } from "./navigation";
 import { subscribe } from "./lib/events";
 import {
@@ -39,10 +44,45 @@ import {
   projectTaskBlockedTitle,
 } from "./lib/projectReadiness";
 
+const DashboardPage = lazy(() =>
+  import("./pages/Dashboard")
+    .then((module) => toDefaultExport(module.Dashboard)),
+);
+const HarnessPage = lazy(() =>
+  import("./pages/Harness")
+    .then((module) => toDefaultExport(module.Harness)),
+);
+const JobsPage = lazy(() =>
+  import("./pages/Jobs")
+    .then((module) => toDefaultExport(module.Flows)),
+);
+const PortfoliosPage = lazy(() =>
+  import("./pages/Portfolios")
+    .then((module) => toDefaultExport(module.Portfolios)),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/Settings")
+    .then((module) => toDefaultExport(module.Settings)),
+);
+const TasksPage = lazy(() =>
+  import("./pages/Tasks")
+    .then((module) => toDefaultExport(module.Tasks)),
+);
+const TerminalPanelView = lazy(() =>
+  import("./components/TerminalPanel")
+    .then((module) => toDefaultExport(module.TerminalPanel)),
+);
+
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Core", icon: LayoutDashboard },
   { id: "portfolios", label: "Comparison", icon: Scale },
 ];
+
+function toDefaultExport<TProps>(
+  Component: ComponentType<TProps>,
+): { default: ComponentType<TProps> } {
+  return { default: Component };
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -184,6 +224,7 @@ export default function App() {
   };
 
   const activeProject = projects.find((p) => p.is_active && projectIsRunnable(p));
+  const terminalProjectPath = terminalOpen && activeProject ? activeProject.path : null;
   const projectTasks = (projectPath: string) => {
     // Always filter by project_path. `listTasks()` invokes the backend
     // command with no project argument, so `tasks` is the union across
@@ -404,8 +445,7 @@ export default function App() {
                           onSelect={() => { setPage("tasks"); setSelectedId(t.id); }}
                           onArchive={async () => {
                             try {
-                              const { archiveTask: doArchive } = await import("./lib/api");
-                              await doArchive(t.id);
+                              await archiveTask(t.id);
                               setTasks((prev) => prev.filter((x) => x.id !== t.id));
                               if (selectedId === t.id) setSelectedId(null);
                             } catch (e) { console.error(e); }
@@ -482,37 +522,43 @@ export default function App() {
           </div>
 
           <div className="p-6" key={refreshKey}>
-            {page === "dashboard" && <Dashboard onNavigate={navigate} />}
-            {page === "harness" && <Harness />}
-            {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
-            {page === "jobs" && <Jobs onOpenTask={handleOpenTask} />}
-            {page === "tasks" && (
-              <Tasks
-                selectedTaskId={selectedId}
-                showNewTask={showNewTask}
-                onNewTaskClose={() => setShowNewTask(false)}
-                tasks={tasks}
-                onTasksChange={setTasks}
-                onTasksRefresh={refreshTasks}
-              />
-            )}
-            {page === "settings" && (
-              <Settings
-                initialTab={selectedId?.startsWith("projects") ? "projects" : undefined}
-                initialProjectPath={selectedId?.startsWith("projects:") ? selectedId.slice("projects:".length) : undefined}
-                onProjectRegistryChange={() => {
-                  setRefreshKey((key) => key + 1);
-                }}
-              />
-            )}
+            <Suspense fallback={<PageFallback />}>
+              {page === "dashboard" && <DashboardPage onNavigate={navigate} />}
+              {page === "harness" && <HarnessPage />}
+              {page === "portfolios" && <PortfoliosPage selectedId={selectedId} onNavigate={navigate} />}
+              {page === "jobs" && <JobsPage onOpenTask={handleOpenTask} />}
+              {page === "tasks" && (
+                <TasksPage
+                  selectedTaskId={selectedId}
+                  showNewTask={showNewTask}
+                  onNewTaskClose={() => setShowNewTask(false)}
+                  tasks={tasks}
+                  onTasksChange={setTasks}
+                  onTasksRefresh={refreshTasks}
+                />
+              )}
+              {page === "settings" && (
+                <SettingsPage
+                  initialTab={selectedId?.startsWith("projects") ? "projects" : undefined}
+                  initialProjectPath={selectedId?.startsWith("projects:") ? selectedId.slice("projects:".length) : undefined}
+                  onProjectRegistryChange={() => {
+                    setRefreshKey((key) => key + 1);
+                  }}
+                />
+              )}
+            </Suspense>
           </div>
         </main>
 
-        <TerminalPanel
-          open={terminalOpen && Boolean(activeProject)}
-          projectPath={activeProject?.path ?? ""}
-          onClose={() => setTerminalOpen(false)}
-        />
+        {terminalProjectPath && (
+          <Suspense fallback={null}>
+            <TerminalPanelView
+              open
+              projectPath={terminalProjectPath}
+              onClose={() => setTerminalOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* New Project modal */}
@@ -540,6 +586,14 @@ export default function App() {
   );
 }
 
+function PageFallback() {
+  return (
+    <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
+    </div>
+  );
+}
+
 function NewProjectModal({
   onClose,
   onProjectAdded,
@@ -554,20 +608,32 @@ function NewProjectModal({
 
   useEffect(() => {
     setScanning(true);
-    import("./lib/api").then(({ scanForProjects, listProjects }) =>
-      Promise.all([scanForProjects(), listProjects()]).then(([found, existing]) => {
-        const existingPaths = new Set(existing.map((p: ProjectInfo) => p.path));
-        setDiscovered(found.filter((f: ProjectInfo) => !existingPaths.has(f.path)));
-        setScanning(false);
+
+    Promise.all([scanForProjects(), listProjects()])
+      .then(([found, existing]) => {
+        const existingProjectPaths = existing
+          .map((project) => project.path);
+        const existingPaths = new Set(existingProjectPaths);
+        const newProjects = found
+          .filter((project) => !existingPaths.has(project.path));
+
+        setDiscovered(newProjects);
       })
-    ).catch(() => setScanning(false));
+      .catch(() => {})
+      .finally(() => {
+        setScanning(false);
+      });
   }, []);
 
   const handlePick = async () => {
     try {
-      const { openDirectoryPicker } = await import("./lib/api");
       const path = await openDirectoryPicker();
-      if (path) setSelectedPath(path);
+
+      if (!path) {
+        return;
+      }
+
+      setSelectedPath(path);
     } catch { /* ignore */ }
   };
 
@@ -576,12 +642,10 @@ function NewProjectModal({
     if (!path.trim() || adding) return;
     setAdding(true);
     try {
-      const { addProjectSmart } = await import("./lib/api");
       await addProjectSmart(path);
       onProjectAdded();
     } catch (e) {
       console.error("Failed to add project:", e);
-      const { reportError } = await import("./lib/errors");
       reportError(e, "add project");
     } finally {
       setAdding(false);

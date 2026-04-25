@@ -14,6 +14,106 @@ import {
   type OnboardingActionHandlers,
 } from "./onboardingCockpit.ts";
 
+test("desktop readiness smoke keeps only ready projects runnable", () => {
+  const cases = [
+    {
+      name: "missing",
+      project: projectFixture({
+        exists: false,
+        has_haft: true,
+        has_specs: true,
+        status: "ready",
+      }),
+    },
+    {
+      name: "needs_init",
+      project: projectFixture({
+        exists: true,
+        has_haft: false,
+        has_specs: false,
+      }),
+    },
+    {
+      name: "needs_onboard",
+      project: projectFixture({
+        exists: true,
+        has_haft: true,
+        has_specs: false,
+      }),
+    },
+    {
+      name: "ready",
+      project: projectFixture({
+        exists: true,
+        has_haft: true,
+        has_specs: true,
+      }),
+    },
+  ];
+
+  const smoke = cases.map((entry) => {
+    const cockpit = buildOnboardingCockpit(entry.project, null);
+    const actionKinds = cockpit.visible
+      ? cockpit.actions.map((action) => action.kind)
+      : [];
+
+    return {
+      name: entry.name,
+      readiness: cockpit.readiness,
+      visible: cockpit.visible,
+      specState: cockpit.specState,
+      primaryAction: cockpit.primaryAction?.kind ?? "",
+      genericTaskPrimaryAllowed: cockpit.genericTaskPrimaryAllowed,
+      actionKinds,
+    };
+  });
+
+  assert.deepEqual(smoke, [
+    {
+      name: "missing",
+      readiness: "missing",
+      visible: false,
+      specState: "not_applicable",
+      primaryAction: "",
+      genericTaskPrimaryAllowed: false,
+      actionKinds: [],
+    },
+    {
+      name: "needs_init",
+      readiness: "needs_init",
+      visible: false,
+      specState: "not_applicable",
+      primaryAction: "",
+      genericTaskPrimaryAllowed: false,
+      actionKinds: [],
+    },
+    {
+      name: "needs_onboard",
+      readiness: "needs_onboard",
+      visible: true,
+      specState: "not_checked",
+      primaryAction: "run_spec_check",
+      genericTaskPrimaryAllowed: false,
+      actionKinds: [
+        "open_target_spec",
+        "open_enabling_spec",
+        "open_term_map",
+        "run_spec_check",
+        "refresh_readiness",
+      ],
+    },
+    {
+      name: "ready",
+      readiness: "ready",
+      visible: false,
+      specState: "not_applicable",
+      primaryAction: "",
+      genericTaskPrimaryAllowed: true,
+      actionKinds: [],
+    },
+  ]);
+});
+
 test("needs_onboard project exposes typed onboarding actions as the primary surface", () => {
   const project = needsOnboardProject();
   const cockpit = buildOnboardingCockpit(project, null);
@@ -49,6 +149,7 @@ test("spec-check findings map to carrier rows and next typed actions", () => {
   assert.equal(enablingRow?.state, "active");
   assert.equal(termMapRow?.state, "active");
   assert.equal(cockpit.findings[0].actionKind, "open_target_spec");
+  assert.equal(cockpit.findings[0].actionLabel, "Open Target Spec");
   assert.equal(cockpit.findings[0].location, ".haft/specs/target-system.md:12");
 });
 
@@ -112,15 +213,31 @@ test("onboarding action execution dispatches typed effects", async () => {
   assert.equal(refreshResult.kind, "refreshed");
 });
 
+interface ProjectFixtureInput {
+  exists: boolean;
+  has_haft: boolean;
+  has_specs: boolean;
+  status?: ProjectInfo["status"];
+}
+
 function needsOnboardProject(): ProjectInfo {
+  return projectFixture({
+    exists: true,
+    has_haft: true,
+    has_specs: false,
+    status: "needs_onboard",
+  });
+}
+
+function projectFixture(input: ProjectFixtureInput): ProjectInfo {
   return {
     path: "/tmp/haft-product",
     name: "haft-product",
     id: "qnt_test",
-    status: "needs_onboard",
-    exists: true,
-    has_haft: true,
-    has_specs: false,
+    status: input.status,
+    exists: input.exists,
+    has_haft: input.has_haft,
+    has_specs: input.has_specs,
     readiness_source: "core",
     readiness_error: "",
     is_active: false,

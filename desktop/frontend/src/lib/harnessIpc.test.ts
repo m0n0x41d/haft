@@ -3,7 +3,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { commissionIpcArgs, listCommissionsIpcArgs } from "./harnessIpc.ts";
+import {
+  commissionIpcArgs,
+  commissionTailIpcArgs,
+  listCommissionsIpcArgs,
+} from "./harnessIpc.ts";
 
 test("list commissions uses Tauri camelCase IPC arguments", () => {
   const args = listCommissionsIpcArgs("open");
@@ -23,4 +27,15 @@ test("commission id uses Tauri camelCase IPC argument", () => {
     commissionId: "wc-1",
   });
   assert.equal("commission_id" in args, false);
+});
+
+test("tail action uses Tauri camelCase IPC arguments", () => {
+  const args = commissionTailIpcArgs("wc-1", 20);
+
+  assert.deepEqual(args, {
+    commissionId: "wc-1",
+    lineCount: 20,
+  });
+  assert.equal("commission_id" in args, false);
+  assert.equal("line_count" in args, false);
 });

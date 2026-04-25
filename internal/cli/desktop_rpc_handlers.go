@@ -719,6 +719,28 @@ func handleHarnessResult(env *rpcEnv, w io.Writer) error {
 	return writeResult(w, result)
 }
 
+func handleHarnessTail(env *rpcEnv, w io.Writer) error {
+	var input struct {
+		CommissionID string `json:"commission_id"`
+		LineCount    int    `json:"line_count"`
+	}
+	if err := readInput(&input); err != nil {
+		return fmt.Errorf("parse input: %w", err)
+	}
+
+	commissionID := strings.TrimSpace(input.CommissionID)
+	if commissionID == "" {
+		return fmt.Errorf("commission_id is required")
+	}
+
+	result, err := harnessTailPayload(selectedHarnessLogPath(), commissionID, input.LineCount)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, result)
+}
+
 func handleHarnessApply(env *rpcEnv, w io.Writer) error {
 	var input struct {
 		CommissionID string `json:"commission_id"`
@@ -786,6 +808,8 @@ func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, err
 	sessionID := stringField(runtimeDetail, "session_id")
 	runtimeSummary := harnessSessionLogSummaries(logPath)[sessionID]
 	latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
+	workspaceSummary := inspectHarnessWorkspaceGit(workspacePath)
+	operatorNext := harnessOperatorActionFor(commission, workspaceSummary)
 	lines := formatHarnessResult(
 		commission,
 		workspaceRoot,
@@ -794,7 +818,6 @@ func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, err
 		runtimeSummary,
 		latestTurn,
 	)
-	changedFiles := harnessWorkspaceChangedFiles(workspacePath)
 
 	return map[string]any{
 		"commission":        commission,
@@ -802,31 +825,175 @@ func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, err
 		"runtime":           runtimeDetail,
 		"status_updated_at": statusUpdatedAt,
 		"latest_turn":       latestTurn,
-		"changed_files":     changedFiles,
-		"can_apply":         stringField(commission, "state") == "completed" && len(changedFiles) > 0,
+		"changed_files":     workspaceSummary.Changed,
+		"can_apply":         stringField(commission, "state") == "completed" && len(workspaceSummary.Changed) > 0,
+		"workspace_facts":   harnessWorkspaceFacts(workspacePath, workspaceSummary),
+		"runtime_facts":     harnessRuntimeFacts(runtimeDetail, statusUpdatedAt, runtimeSummary),
+		"evidence_facts":    harnessEvidenceFacts(commission),
+		"operator_next":     harnessOperatorActionPayload(operatorNext),
 		"lines":             lines,
 		"raw":               strings.Join(lines, "\n"),
 	}, nil
 }
 
-func harnessWorkspaceChangedFiles(workspacePath string) []string {
-	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+func harnessTailPayload(logPath string, commissionID string, lineCount int) (map[string]any, error) {
+	count := positiveOrDefault(lineCount, 20)
+	lines, hasEvents, err := harnessTailLines(logPath, commissionID, count)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"commission_id":  commissionID,
+		"log_path":       logPath,
+		"line_count":     count,
+		"lines":          lines,
+		"has_events":     hasEvents,
+		"follow_command": "haft harness tail " + commissionID + " --follow",
+	}, nil
+}
+
+func harnessTailLines(
+	logPath string,
+	commissionID string,
+	lineCount int,
+) ([]string, bool, error) {
+	logLines, err := readHarnessRuntimeLogLines(logPath)
+	if err != nil {
+		return nil, false, err
+	}
+
+	formatted := make([]string, 0, len(logLines))
+	for _, line := range logLines {
+		event := map[string]any{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if strings.TrimSpace(stringField(event, "commission_id")) != commissionID {
+			continue
+		}
+
+		formattedLine, ok := formatHarnessRuntimeEventLineForOperator(event)
+		if !ok {
+			continue
+		}
+		formatted = append(formatted, formattedLine)
+	}
+
+	if len(formatted) == 0 {
+		return []string{"No runtime events for commission " + commissionID + " yet."}, false, nil
+	}
+	if len(formatted) <= lineCount {
+		return formatted, true, nil
+	}
+	return formatted[len(formatted)-lineCount:], true, nil
+}
+
+func harnessWorkspaceFacts(
+	workspacePath string,
+	summary harnessWorkspaceGitSummary,
+) map[string]any {
+	return map[string]any{
+		"path":          workspacePath,
+		"diff_state":    string(summary.State),
+		"git_status":    splitHarnessFactLines(summary.Status),
+		"diff_stat":     splitHarnessFactLines(summary.DiffStat),
+		"changed_files": summary.Changed,
+		"error":         summary.Error,
+	}
+}
+
+func harnessRuntimeFacts(
+	runtimeDetail map[string]any,
+	statusUpdatedAt string,
+	runtimeSummary harnessSessionLogSummary,
+) map[string]any {
+	return map[string]any{
+		"active":            len(runtimeDetail) > 0,
+		"phase":             stringField(runtimeDetail, "phase"),
+		"sub_state":         stringField(runtimeDetail, "sub_state"),
+		"session_id":        stringField(runtimeDetail, "session_id"),
+		"task_pid":          stringField(runtimeDetail, "task_pid"),
+		"workspace_path":    stringField(runtimeDetail, "workspace_path"),
+		"status_updated_at": statusUpdatedAt,
+		"last_event":        runtimeSummary.LastEvent,
+		"last_event_at":     runtimeSummary.LastEventAt,
+		"last_turn_status":  runtimeSummary.LastTurnStatus,
+		"last_turn_id":      runtimeSummary.LastTurnID,
+		"preview":           runtimeSummary.LastTextPreview,
+	}
+}
+
+func harnessEvidenceFacts(commission map[string]any) map[string]any {
+	requirements := harnessEvidenceRequirements(commission)
+	events := currentHarnessAttemptEvents(mapSliceField(commission, "events"))
+	result := make([]map[string]any, 0, len(requirements))
+	for _, requirement := range requirements {
+		result = append(result, harnessEvidenceRequirementPayload(requirement))
+	}
+
+	return map[string]any{
+		"required_count": len(requirements),
+		"requirements":   result,
+		"latest_measure": harnessPhaseOutcomePayload(harnessLatestPhaseOutcome(events, "measure")),
+		"terminal":       harnessPhaseOutcomePayload(harnessLatestPhaseOutcome(events, "terminal")),
+	}
+}
+
+func harnessEvidenceRequirementPayload(requirement any) map[string]any {
+	switch value := requirement.(type) {
+	case string:
+		return map[string]any{
+			"kind":        "command",
+			"command":     strings.TrimSpace(value),
+			"description": "",
+			"claim_ref":   "",
+			"section_ref": "",
+		}
+	case map[string]any:
+		return map[string]any{
+			"kind":        stringField(value, "kind"),
+			"command":     stringField(value, "command"),
+			"description": stringField(value, "description"),
+			"claim_ref":   stringField(value, "claim_ref"),
+			"section_ref": stringField(value, "section_ref"),
+		}
+	default:
+		return map[string]any{
+			"kind":        strings.TrimSpace(fmt.Sprint(value)),
+			"command":     "",
+			"description": "",
+			"claim_ref":   "",
+			"section_ref": "",
+		}
+	}
+}
+
+func harnessPhaseOutcomePayload(event map[string]any) map[string]any {
+	if len(event) == 0 {
 		return nil
 	}
 
-	tracked, err := gitChangedTrackedFiles(workspacePath)
-	if err != nil {
-		tracked = nil
+	payload := mapField(event, "payload")
+	return map[string]any{
+		"phase":   stringField(payload, "phase"),
+		"verdict": stringField(event, "verdict"),
+		"next":    stringField(payload, "next"),
+		"at":      stringField(event, "recorded_at"),
 	}
+}
 
-	untracked, err := gitUntrackedFiles(workspacePath)
-	if err != nil {
-		untracked = nil
+func harnessOperatorActionPayload(action harnessOperatorAction) map[string]any {
+	return map[string]any{
+		"kind":   string(action.Kind),
+		"reason": action.Reason,
+		"lines":  action.Lines,
 	}
+}
 
-	changed := append([]string{}, tracked...)
-	changed = append(changed, untracked...)
-	return uniqueStringsPreserveOrder(cleanStringSlice(changed))
+func splitHarnessFactLines(value string) []string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	return cleanStringSlice(lines)
 }
 
 // ── Project management ──────────────────────────────────────────────

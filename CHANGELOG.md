@@ -25,12 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP prompt guidance updated for spec-first work** — `/h-onboard`, `/h-status`, and `/h-commission` now describe target/enabling specs, term maps, readiness, commission recovery, and the plugin/runtime boundary; regression tests cover the load-bearing prompt clauses.
 - **Harness operator output made compact and actionable** — `haft harness run`, `status`, `watch`, `tail`, and `result` now prefer one human line per meaningful runtime state, terminal next-action hints, evidence summaries, workspace/diff facts, and raw JSON only behind explicit JSON/debug output.
 - **Long-lived desktop conversation behavior tightened** — provider/control envelopes are audit-only instead of visible chat messages, and follow-up text on terminal/checkpointed/blocked tasks routes to continuation instead of writing to a dead PTY.
+- **Desktop task status normalization shared across cockpit surfaces** — raw task status values now compile through typed `TaskRunState` helpers before input capability, dashboard attention, Jobs columns, status dots, chat streaming, and implementation ladder state are derived.
 - **Spec coverage now models runtime carriers** — `haft spec coverage` derives WorkCommission → RuntimeRun → evidence edges from stored runtime events, promotes implemented/verified states from real runtime and evidence signals, and only reports RuntimeRun gaps for malformed carriers instead of emitting a synthetic global unsupported-edge gap.
 
 ### Fixed
 
 - **Desktop harness IPC action shape** — Tauri commission actions now translate camelCase UI arguments into the snake_case CLI RPC payloads expected by the Go handlers, including the new `harness_tail` command.
 - **Multi-turn desktop continuation cleanup** — third and later follow-ups now preserve durable conversation turns while stripping continuation control prompts and audit-only provider envelopes from both Rust seed blocks and TypeScript transcript rendering.
+- **WorkCommission lifecycle action ordering** — lifecycle record/start/run/complete actions now reject out-of-order updates instead of appending impossible runtime events to queued or preflight-only commission state.
+- **Project readiness false-ready projection** — Desktop readiness now combines reported status with project existence, `.haft`, and spec-carrier facts so missing or onboarding projects cannot render as runnable from an optimistic carrier status.
 - **WorkCommission attention recovery hints** — queued, ready, preflighting, and running commissions that need operator attention now keep `requeue` available when recoverable; expired commissions remain limited to inspect/cancel lifecycle actions.
 
 ### Chore

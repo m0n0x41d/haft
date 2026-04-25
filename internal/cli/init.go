@@ -26,6 +26,15 @@ var (
 	initLocal  bool
 )
 
+type initHostOptions struct {
+	claude bool
+	cursor bool
+	gemini bool
+	codex  bool
+	air    bool
+	all    bool
+}
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize FPF project structure and MCP configuration",
@@ -33,30 +42,50 @@ var initCmd = &cobra.Command{
 
 This command creates:
   - .haft/ directory structure (knowledge base, evidence, decisions)
-  - MCP configuration for selected AI tools
+  - MCP configuration for selected host agents
   - Slash commands / prompts / skills (global by default, or local with --local)
-  - Repo-local Air skills when requested
+  - Experimental legacy host configs when explicitly requested
 
 Examples:
   haft init              # Claude, global commands (~/.claude/commands/)
   haft init --local      # Claude, local commands (.claude/commands/)
-  haft init --all        # All tools, global commands
-  haft init --cursor     # Cursor only
   haft init --codex      # Codex MCP + skills
-  haft init --air        # Air skill + Codex-compatible prompts/MCP`,
+  haft init --all        # Claude + Codex, global commands
+  haft init --cursor     # Experimental Cursor config
+  haft init --gemini     # Experimental Gemini CLI config
+  haft init --air        # Experimental Air skill + Codex-compatible prompts/MCP`,
 	RunE: runInit,
 }
 
 func init() {
 	initCmd.Flags().BoolVar(&initClaude, "claude", false, "Configure for Claude Code")
-	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure for Cursor")
-	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure for Gemini CLI")
+	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure experimental Cursor MCP")
+	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure experimental Gemini CLI MCP")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
-	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure for JetBrains Air")
-	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure for all supported tools")
+	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure experimental JetBrains Air integration")
+	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all supported host agents")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
 
 	rootCmd.AddCommand(initCmd)
+}
+
+func normalizeInitHostOptions(options initHostOptions) initHostOptions {
+	normalized := options
+	if normalized.all {
+		normalized.claude = true
+		normalized.codex = true
+	}
+
+	hasHost := normalized.claude ||
+		normalized.cursor ||
+		normalized.gemini ||
+		normalized.codex ||
+		normalized.air
+	if !hasHost {
+		normalized.claude = true
+	}
+
+	return normalized
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -148,15 +177,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
 	binaryPath := "haft"
 
-	if initAll {
-		initClaude, initCursor, initGemini, initCodex, initAir = true, true, true, true, true
-	}
+	hosts := normalizeInitHostOptions(initHostOptions{
+		claude: initClaude,
+		cursor: initCursor,
+		gemini: initGemini,
+		codex:  initCodex,
+		air:    initAir,
+		all:    initAll,
+	})
 
-	if !initClaude && !initCursor && !initGemini && !initCodex && !initAir {
-		initClaude = true
-	}
-
-	if initClaude {
+	if hosts.claude {
 		if err := configureMCPClaude(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Claude Code MCP: %v\n", err)
 		} else {
@@ -174,7 +204,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCursor {
+	if hosts.cursor {
 		if err := configureMCPCursor(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Cursor MCP: %v\n", err)
 		} else {
@@ -193,7 +223,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initGemini {
+	if hosts.gemini {
 		if err := configureMCPGemini(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Gemini CLI MCP: %v\n", err)
 		} else {
@@ -206,12 +236,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCodex || initAir {
+	if hosts.codex || hosts.air {
 		targetName := "Codex CLI"
 		switch {
-		case initCodex && initAir:
+		case hosts.codex && hosts.air:
 			targetName = "Codex CLI / Air"
-		case initAir:
+		case hosts.air:
 			targetName = "Air"
 		}
 
@@ -221,8 +251,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
 		}
 
-		if initCodex {
-			if !initAir {
+		if hosts.codex {
+			if !hosts.air {
 				if promptPath, removed, err := cleanupCodexPromptCommands(); err != nil {
 					fmt.Printf("  ⚠ Failed to remove deprecated Codex prompts: %v\n", err)
 				} else if removed > 0 {
@@ -236,7 +266,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				fmt.Println("    Note: Use $h-reason for reasoning; other $h-* skills are explicit-only")
 			}
 		}
-		if initAir {
+		if hosts.air {
 			// Air currently uses the same Codex prompt/MCP bootstrap.
 			if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
 				fmt.Printf("  ⚠ Failed to install Air prompts: %v\n", err)
@@ -384,6 +414,10 @@ func createDirectoryStructure(haftDir string) error {
 		if err := os.WriteFile(gitkeep, []byte(""), 0644); err != nil {
 			return err
 		}
+	}
+
+	if err := project.EnsureSpecCarriers(haftDir); err != nil {
+		return err
 	}
 
 	workflowPath := project.WorkflowPath(haftDir)

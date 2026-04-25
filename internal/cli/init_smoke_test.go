@@ -11,9 +11,8 @@ import (
 // TestMergeMCPConfig_FreshProject is the minimum smoke check that haft init
 // still produces a valid MCP config after the schema/dispatcher refactors of
 // 6.2 (#62 parity_plan exposure, #63 ID format, governance_mode field, the
-// dispatchTool signature change). If init regresses, MCP-mode users (Claude
-// Code, Cursor, Gemini CLI, Codex) silently lose access to haft on next
-// install.
+// dispatchTool signature change). If init regresses, supported MCP-mode users
+// (Claude Code, Codex) silently lose access to haft on next install.
 func TestMergeMCPConfig_FreshProject(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, ".mcp.json")

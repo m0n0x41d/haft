@@ -752,6 +752,8 @@ func runFTSQuery(db *sql.DB, ftsQuery string, limit int) ([]SpecSearchResult, er
 		FROM fpf_fts
 		JOIN sections s ON s.id = fpf_fts.rowid - 1
 		WHERE fpf_fts MATCH ?
+			AND s.pattern_id IS NOT NULL
+			AND s.pattern_id <> ''
 		ORDER BY rank
 		LIMIT ?
 	`, ftsQuery, limit)

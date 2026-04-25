@@ -295,7 +295,7 @@ func workCommissionStatusFromPayload(payload map[string]any, now time.Time) Work
 		Terminal:         terminal,
 		Expired:          expired,
 		AttentionReason:  attentionReason,
-		SuggestedActions: workCommissionStatusSuggestedActions(state, attentionReason),
+		SuggestedActions: workCommissionStatusSuggestedActions(state, attentionReason, expired),
 	}
 }
 
@@ -350,13 +350,16 @@ func workCommissionOpenAttentionReason(payload map[string]any, now time.Time) st
 	return ""
 }
 
-func workCommissionStatusSuggestedActions(state string, reason string) []string {
+func workCommissionStatusSuggestedActions(state string, reason string, expired bool) []string {
 	if reason == "" {
 		return nil
 	}
+	if expired {
+		return []string{"inspect", "cancel"}
+	}
 
 	switch state {
-	case "preflighting", "running":
+	case "queued", "ready", "preflighting", "running":
 		return []string{"inspect", "requeue", "cancel"}
 	case "blocked_stale":
 		return []string{"refresh_decision", "requeue", "cancel"}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
@@ -193,27 +194,31 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 	}
 }
 
-func TestHandleHaftCommission_RequeueRejectsTerminalCommission(t *testing.T) {
+func TestHandleHaftCommission_RequeueRejectsTerminalCommissions(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
-	_, err := handleHaftCommission(ctx, store, map[string]any{
-		"action":     "create",
-		"commission": workCommissionFixture("wc-requeue-terminal", "completed", "2099-01-01T00:00:00Z"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, state := range []string{"completed", "completed_with_projection_debt", "cancelled", "expired"} {
+		commissionID := "wc-requeue-" + state
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": workCommissionFixture(commissionID, state, "2099-01-01T00:00:00Z"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	_, err = handleHaftCommission(ctx, store, map[string]any{
-		"action":        "requeue",
-		"commission_id": "wc-requeue-terminal",
-	})
-	if err == nil {
-		t.Fatal("expected terminal requeue to fail")
-	}
-	if !strings.Contains(err.Error(), "commission_not_requeueable") {
-		t.Fatalf("err = %v, want commission_not_requeueable", err)
+		_, err = handleHaftCommission(ctx, store, map[string]any{
+			"action":        "requeue",
+			"commission_id": commissionID,
+			"reason":        "operator_recovered",
+		})
+		if err == nil {
+			t.Fatalf("expected %s requeue to fail", state)
+		}
+		if !strings.Contains(err.Error(), "commission_not_requeueable") {
+			t.Fatalf("err = %v, want commission_not_requeueable", err)
+		}
 	}
 }
 
@@ -266,28 +271,31 @@ func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) 
 	}
 }
 
-func TestHandleHaftCommission_CancelRejectsCancelledCommission(t *testing.T) {
+func TestHandleHaftCommission_CancelRejectsTerminalCommissions(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
-	_, err := handleHaftCommission(ctx, store, map[string]any{
-		"action":     "create",
-		"commission": workCommissionFixture("wc-cancelled", "cancelled", "2099-01-01T00:00:00Z"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, state := range []string{"completed", "completed_with_projection_debt", "cancelled", "expired"} {
+		commissionID := "wc-cancel-" + state
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": workCommissionFixture(commissionID, state, "2099-01-01T00:00:00Z"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	_, err = handleHaftCommission(ctx, store, map[string]any{
-		"action":        "cancel",
-		"commission_id": "wc-cancelled",
-		"reason":        "second cancellation",
-	})
-	if err == nil {
-		t.Fatal("expected cancelled commission cancel to fail")
-	}
-	if !strings.Contains(err.Error(), "commission_not_cancellable") {
-		t.Fatalf("err = %v, want commission_not_cancellable", err)
+		_, err = handleHaftCommission(ctx, store, map[string]any{
+			"action":        "cancel",
+			"commission_id": commissionID,
+			"reason":        "operator_cancelled",
+		})
+		if err == nil {
+			t.Fatalf("expected %s cancel to fail", state)
+		}
+		if !strings.Contains(err.Error(), "commission_not_cancellable") {
+			t.Fatalf("err = %v, want commission_not_cancellable", err)
+		}
 	}
 }
 
@@ -381,6 +389,77 @@ func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
 	}
 	if len(open["commissions"]) != 0 {
 		t.Fatalf("open commissions = %#v, want none after cancellation", open["commissions"])
+	}
+}
+
+func TestHandleHaftCommission_ListStaleIncludesBlockedAndRunningTooLong(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	fresh := workCommissionFixture("wc-fresh-open", "queued", "2099-01-01T00:00:00Z")
+	fresh["fetched_at"] = now.Format(time.RFC3339)
+
+	blocked := workCommissionFixture("wc-blocked-attention", "blocked_conflict", "2099-01-01T00:00:00Z")
+	blocked["fetched_at"] = now.Format(time.RFC3339)
+
+	running := workCommissionFixture("wc-running-attention", "running", "2099-01-01T00:00:00Z")
+	running["fetched_at"] = now.Format(time.RFC3339)
+	running["lease"] = map[string]any{
+		"claimed_at": now.Add(-3 * time.Hour).Format(time.RFC3339),
+	}
+
+	completed := workCommissionFixture("wc-completed-attention", "completed", "2099-01-01T00:00:00Z")
+
+	for _, commission := range []map[string]any{fresh, blocked, running, completed} {
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "list",
+		"selector":   "stale",
+		"older_than": "24h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := map[string][]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &stale); err != nil {
+		t.Fatal(err)
+	}
+
+	commissions := commissionsByID(stale["commissions"])
+	if len(commissions) != 2 {
+		t.Fatalf("stale commissions = %#v, want blocked and running only", stale["commissions"])
+	}
+
+	blockedOperator, ok := commissions["wc-blocked-attention"]["operator"].(map[string]any)
+	if !ok {
+		t.Fatalf("blocked operator = %#v, want object", commissions["wc-blocked-attention"]["operator"])
+	}
+	if blockedOperator["attention_reason"] != "requires operator decision: blocked_conflict" {
+		t.Fatalf("blocked attention_reason = %#v", blockedOperator["attention_reason"])
+	}
+	if !containsAnyString(blockedOperator["suggested_actions"], "requeue") {
+		t.Fatalf("blocked suggested_actions = %#v, want requeue", blockedOperator["suggested_actions"])
+	}
+
+	runningOperator, ok := commissions["wc-running-attention"]["operator"].(map[string]any)
+	if !ok {
+		t.Fatalf("running operator = %#v, want object", commissions["wc-running-attention"]["operator"])
+	}
+	if runningOperator["attention_reason"] != "active lease older than 2h0m0s" {
+		t.Fatalf("running attention_reason = %#v", runningOperator["attention_reason"])
+	}
+	if !containsAnyString(runningOperator["suggested_actions"], "requeue") {
+		t.Fatalf("running suggested_actions = %#v, want requeue", runningOperator["suggested_actions"])
 	}
 }
 
@@ -1076,6 +1155,16 @@ func TestHandleHaftCommission_ListRunnableFiltersExpiredAndTerminal(t *testing.T
 	if listed["commissions"][0]["id"] != "wc-ready" {
 		t.Fatalf("listed commission id = %#v", listed["commissions"][0]["id"])
 	}
+}
+
+func commissionsByID(commissions []map[string]any) map[string]map[string]any {
+	byID := make(map[string]map[string]any, len(commissions))
+
+	for _, commission := range commissions {
+		byID[stringField(commission, "id")] = commission
+	}
+
+	return byID
 }
 
 func workCommissionFixtureWithLockset(

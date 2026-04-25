@@ -127,6 +127,71 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	if data.CommissionAttention[0].ID != "wc-status-stale" {
 		t.Fatalf("commission attention id = %s, want wc-status-stale", data.CommissionAttention[0].ID)
 	}
+	if !containsString(data.CommissionAttention[0].SuggestedActions, "requeue") {
+		t.Fatalf("commission actions = %#v, want requeue", data.CommissionAttention[0].SuggestedActions)
+	}
+}
+
+func TestFetchStatusData_CommissionAttentionCoversBlockedRunningAndExpired(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	createStatusWorkCommission(t, ctx, store, map[string]any{
+		"id":           "wc-status-blocked",
+		"decision_ref": "dec-blocked",
+		"state":        "blocked_policy",
+		"valid_until":  now.Add(24 * time.Hour).Format(time.RFC3339),
+		"fetched_at":   now.Format(time.RFC3339),
+	})
+	createStatusWorkCommission(t, ctx, store, map[string]any{
+		"id":           "wc-status-running",
+		"decision_ref": "dec-running",
+		"state":        "running",
+		"valid_until":  now.Add(24 * time.Hour).Format(time.RFC3339),
+		"fetched_at":   now.Format(time.RFC3339),
+		"lease": map[string]any{
+			"claimed_at": now.Add(-3 * time.Hour).Format(time.RFC3339),
+		},
+	})
+	createStatusWorkCommission(t, ctx, store, map[string]any{
+		"id":           "wc-status-expired",
+		"decision_ref": "dec-expired",
+		"state":        "queued",
+		"valid_until":  now.Add(-24 * time.Hour).Format(time.RFC3339),
+		"fetched_at":   now.Add(-48 * time.Hour).Format(time.RFC3339),
+	})
+
+	data, err := FetchStatusData(ctx, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attention := workCommissionStatusByID(data.CommissionAttention)
+
+	blocked := attention["wc-status-blocked"]
+	if blocked.AttentionReason != "requires operator decision: blocked_policy" {
+		t.Fatalf("blocked reason = %q", blocked.AttentionReason)
+	}
+	if !containsString(blocked.SuggestedActions, "requeue") {
+		t.Fatalf("blocked actions = %#v, want requeue", blocked.SuggestedActions)
+	}
+
+	running := attention["wc-status-running"]
+	if running.AttentionReason != "active lease older than 2h0m0s" {
+		t.Fatalf("running reason = %q", running.AttentionReason)
+	}
+	if !containsString(running.SuggestedActions, "requeue") {
+		t.Fatalf("running actions = %#v, want requeue", running.SuggestedActions)
+	}
+
+	expired := attention["wc-status-expired"]
+	if expired.AttentionReason != "expired before terminal state" {
+		t.Fatalf("expired reason = %q", expired.AttentionReason)
+	}
+	if containsString(expired.SuggestedActions, "requeue") {
+		t.Fatalf("expired actions = %#v, want no requeue", expired.SuggestedActions)
+	}
 }
 
 func TestFetchStatusData_Empty(t *testing.T) {
@@ -141,6 +206,8 @@ func TestFetchStatusData_Empty(t *testing.T) {
 		len(data.HealthyDecisions) > 0 ||
 		len(data.UnassessedDecisions) > 0 ||
 		len(data.StaleItems) > 0 ||
+		len(data.OpenCommissions) > 0 ||
+		len(data.CommissionAttention) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
 		len(data.AddressedProblems) > 0 ||
@@ -255,6 +322,46 @@ func TestFetchStatusData_DerivesDecisionHealthBuckets(t *testing.T) {
 		t.Fatal("expected stale decision in refresh queue")
 	}
 
+}
+
+func createStatusWorkCommission(
+	t *testing.T,
+	ctx context.Context,
+	store *Store,
+	payload map[string]any,
+) {
+	t.Helper()
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := payload["id"].(string)
+	validUntil := payload["valid_until"].(string)
+	err = store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:         id,
+			Kind:       KindWorkCommission,
+			Status:     StatusActive,
+			Title:      "WorkCommission " + id,
+			ValidUntil: validUntil,
+		},
+		StructuredData: string(encoded),
+	})
+	if err != nil {
+		t.Fatalf("create %s: %v", id, err)
+	}
+}
+
+func workCommissionStatusByID(items []WorkCommissionStatus) map[string]WorkCommissionStatus {
+	statuses := make(map[string]WorkCommissionStatus, len(items))
+
+	for _, item := range items {
+		statuses[item.ID] = item
+	}
+
+	return statuses
 }
 
 func decisionIDs(items []*Artifact) []string {

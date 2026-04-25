@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Harness readiness guard with tactical override** — `haft harness run` blocks broad execution for `needs_onboard` projects by default. Operators may pass `--tactical-override-reason` for explicit out-of-spec tactical work; the reason is recorded on selected WorkCommissions through `spec_readiness_override`.
 - **`/h-commission` operator command and lifecycle actions** — plugin-mode users now have an explicit entrypoint for the DecisionRecord → WorkCommission authorization step. `/h-commission` creates/reuses WorkCommissions without starting execution and can inspect, cancel, or requeue existing commissions with explicit transition constraints. Codex installs it as an explicit-only `$h-commission` skill; starting Open-Sleigh remains a CLI/Desktop runtime boundary via `haft harness run`.
 - **Packaged Open-Sleigh runtime install path** — `task install`, release archives, and `install.sh` now treat Open-Sleigh as a first-class Haft runtime under `~/.haft/runtimes/open-sleigh/current`. `haft harness run` can launch either a repo-local source runtime through `mix` or an installed release runtime through `bin/open_sleigh`, so release users do not need a local `open-sleigh/` checkout for harness runs.
+- **SpecPlan draft proposal CLI** — `haft spec plan` groups uncovered or stale spec sections by document kind, spec kind, dependency signature, and affected area, then emits review-only DecisionRecord drafts. The command is explicitly read-only: it does not create DecisionRecords, WorkCommissions, or execution authority.
+- **Desktop harness cockpit detail** — the Harness page now surfaces structured workspace, runtime, evidence, operator-next, and filtered tail facts for a selected WorkCommission instead of forcing operators to inspect raw JSON or logs.
 
 ### Changed
 
@@ -23,6 +25,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP prompt guidance updated for spec-first work** — `/h-onboard`, `/h-status`, and `/h-commission` now describe target/enabling specs, term maps, readiness, commission recovery, and the plugin/runtime boundary; regression tests cover the load-bearing prompt clauses.
 - **Harness operator output made compact and actionable** — `haft harness run`, `status`, `watch`, `tail`, and `result` now prefer one human line per meaningful runtime state, terminal next-action hints, evidence summaries, workspace/diff facts, and raw JSON only behind explicit JSON/debug output.
 - **Long-lived desktop conversation behavior tightened** — provider/control envelopes are audit-only instead of visible chat messages, and follow-up text on terminal/checkpointed/blocked tasks routes to continuation instead of writing to a dead PTY.
+- **Spec coverage now models runtime carriers** — `haft spec coverage` derives WorkCommission → RuntimeRun → evidence edges from stored runtime events, promotes implemented/verified states from real runtime and evidence signals, and only reports RuntimeRun gaps for malformed carriers instead of emitting a synthetic global unsupported-edge gap.
+
+### Fixed
+
+- **Desktop harness IPC action shape** — Tauri commission actions now translate camelCase UI arguments into the snake_case CLI RPC payloads expected by the Go handlers, including the new `harness_tail` command.
+- **Multi-turn desktop continuation cleanup** — third and later follow-ups now preserve durable conversation turns while stripping continuation control prompts and audit-only provider envelopes from both Rust seed blocks and TypeScript transcript rendering.
+- **WorkCommission attention recovery hints** — queued, ready, preflighting, and running commissions that need operator attention now keep `requeue` available when recoverable; expired commissions remain limited to inspect/cancel lifecycle actions.
+
+### Chore
+
+- **Repo-root-safe frontend unit tests** — the desktop frontend package now exposes `npm --prefix desktop/frontend test` for Node contract tests over readiness, IPC argument shape, transcript filtering, and cockpit view data.
 
 ## [6.2.1] — 2026-04-22
 

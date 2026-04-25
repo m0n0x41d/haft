@@ -301,7 +301,7 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 				State:            "queued",
 				DecisionRef:      "dec-stale",
 				AttentionReason:  "open longer than 24h0m0s",
-				SuggestedActions: []string{"inspect", "cancel"},
+				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
 		},
 		CommissionAttention: []artifact.WorkCommissionStatus{
@@ -310,7 +310,7 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 				State:            "queued",
 				DecisionRef:      "dec-stale",
 				AttentionReason:  "open longer than 24h0m0s",
-				SuggestedActions: []string{"inspect", "cancel"},
+				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
 		},
 	}
@@ -323,7 +323,7 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		"### Unassessed (1)",
 		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
 		"### WorkCommissions Need Attention (1)",
-		"`wc-stale` queued → dec-stale — open longer than 24h0m0s — actions: inspect, cancel",
+		"`wc-stale` queued → dec-stale — open longer than 24h0m0s — actions: inspect, requeue, cancel",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)

@@ -21,7 +21,8 @@ inspect or create TargetSystemSpec, EnablingSystemSpec, and TermMap, then run
 `haft spec check`. Do not treat `.haft/project.yaml` alone as execution
 readiness.
 
-If status shows WorkCommissions needing attention, treat them as operator work:
+If status shows stale, blocked, or running-too-long WorkCommissions needing
+attention, treat them as operator work:
 
 - inspect with `haft_commission(action="show", commission_id="wc-...")`
 - requeue with a reason only when the decision/scope is still current and the
@@ -33,5 +34,7 @@ If status shows WorkCommissions needing attention, treat them as operator work:
   runnable work
 - never ask an operator to physically delete a WorkCommission as normal
   lifecycle management
+- these are lifecycle management actions only; do not start Open-Sleigh or a
+  long-running runtime from `/h-status`
 
 $ARGUMENTS

@@ -225,7 +225,9 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				"needs_onboard",
 				"haft spec check",
 				"WorkCommissions",
+				"stale, blocked, or running-too-long WorkCommissions",
 				`haft_commission(action="show"`,
+				"do not start Open-Sleigh",
 			},
 		},
 		{

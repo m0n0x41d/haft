@@ -25,13 +25,25 @@ const PROJECT_TASK_BLOCKED_TITLES: Record<ProjectReadiness, string> = {
   missing: "Project is missing",
 };
 
+const PROJECT_READINESS_RANKS: Record<ProjectReadiness, number> = {
+  ready: 0,
+  needs_onboard: 1,
+  needs_init: 2,
+  missing: 3,
+};
+
 export function projectReadiness(project: ProjectReadinessInput): ProjectReadiness {
+  const candidates = [
+    projectFactReadiness(project),
+    project.status,
+  ].filter(isProjectReadiness);
+
+  return candidates.reduce(moreRestrictiveProjectReadiness, "ready");
+}
+
+function projectFactReadiness(project: ProjectReadinessInput): ProjectReadiness {
   if (project.exists === false) {
     return "missing";
-  }
-
-  if (project.status) {
-    return project.status;
   }
 
   if (project.has_haft === false) {
@@ -43,6 +55,21 @@ export function projectReadiness(project: ProjectReadinessInput): ProjectReadine
   }
 
   return "ready";
+}
+
+function isProjectReadiness(value: ProjectReadiness | undefined): value is ProjectReadiness {
+  return value !== undefined;
+}
+
+function moreRestrictiveProjectReadiness(
+  left: ProjectReadiness,
+  right: ProjectReadiness,
+): ProjectReadiness {
+  if (PROJECT_READINESS_RANKS[right] > PROJECT_READINESS_RANKS[left]) {
+    return right;
+  }
+
+  return left;
 }
 
 export function projectIsRunnable(project: ProjectReadinessInput): boolean {

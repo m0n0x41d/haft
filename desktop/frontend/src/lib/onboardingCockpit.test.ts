@@ -164,6 +164,20 @@ test("clean spec-check report is shown honestly without enabling generic tasks",
   assert.equal(cockpit.primaryAction?.kind, "run_spec_check");
 });
 
+test("reported ready project with missing specs stays in onboarding", () => {
+  const project = projectFixture({
+    exists: true,
+    has_haft: true,
+    has_specs: false,
+    status: "ready",
+  });
+  const cockpit = buildOnboardingCockpit(project, cleanSpecCheckReport());
+
+  assert.equal(cockpit.readiness, "needs_onboard");
+  assert.equal(cockpit.visible, true);
+  assert.equal(cockpit.genericTaskPrimaryAllowed, false);
+});
+
 test("no findings still blocks readiness when active spec shape is incomplete", () => {
   const project = needsOnboardProject();
   const report = draftOnlySpecCheckReport();

@@ -94,6 +94,26 @@ test("raw provider envelopes are not rendered as chat entries", () => {
   assert.equal(entries[0].block.text, "Visible response.");
 });
 
+test("provider envelope lines inside visible chat blocks stay audit-only", () => {
+  const blocks: ChatBlock[] = [
+    {
+      id: "assistant",
+      type: "text",
+      role: "assistant",
+      text: [
+        "Visible before.",
+        '{"type":"turn.completed","usage":{"input_tokens":9}}',
+        "Visible after.",
+      ].join("\n"),
+    },
+  ];
+
+  const entries = buildChatEntries(blocks);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].block.text, "Visible before.\nVisible after.");
+});
+
 test("third and fourth continuation turns render only durable conversation messages", () => {
   const blocks: ChatBlock[] = [
     {

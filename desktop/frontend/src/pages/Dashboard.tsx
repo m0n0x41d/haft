@@ -31,6 +31,7 @@ import {
   type CoreRuntimePhase,
   type CoreTone,
 } from "./coreModel";
+import { taskCountsAsActive, taskRunState } from "../lib/taskInput.ts";
 import type { Page } from "../navigation";
 
 type NavigateFn = (page: Page, id?: string) => void;
@@ -123,9 +124,11 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
     );
   }
 
-  const activeTasks = tasks.filter((task) =>
-    ["running", "checkpointed", "idle", "waiting", "blocked"].includes(task.status),
-  );
+  const activeTasks = tasks.filter((task) => {
+    const state = taskRunState(task.status);
+
+    return taskCountsAsActive(state);
+  });
   const displayedAttention = attentionItems.slice(0, proMode ? 8 : 4);
   const displayedRuntime = runtimeItems.slice(0, proMode ? 8 : 3);
 

@@ -55,6 +55,34 @@ test("only ready projects are runnable", () => {
   assert.deepEqual(runnable, [true, false, false, false]);
 });
 
+test("readiness facts prevent fake ready projects", () => {
+  const states = [
+    {
+      exists: true,
+      has_haft: false,
+      has_specs: true,
+      status: "ready" as const,
+    },
+    {
+      exists: true,
+      has_haft: true,
+      has_specs: false,
+      status: "ready" as const,
+    },
+    {
+      exists: false,
+      has_haft: true,
+      has_specs: true,
+      status: "ready" as const,
+    },
+  ];
+  const readiness = states.map(projectReadiness);
+  const runnable = states.map(projectIsRunnable);
+
+  assert.deepEqual(readiness, ["needs_init", "needs_onboard", "missing"]);
+  assert.deepEqual(runnable, [false, false, false]);
+});
+
 test("readiness helpers expose semantic UI states", () => {
   const missing = { exists: false, has_haft: false };
   const needsInit = { exists: true, has_haft: false };

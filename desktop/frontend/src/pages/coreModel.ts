@@ -4,6 +4,12 @@ import type {
   TaskState,
   WorkCommission,
 } from "../lib/api";
+import {
+  taskHasTerminalOutcome,
+  taskNeedsOperatorAction,
+  taskRunState,
+  type TaskRunState,
+} from "../lib/taskInput.ts";
 
 export type CoreTone = "neutral" | "accent" | "success" | "warning" | "danger";
 export type CoreAttentionKind =
@@ -126,17 +132,26 @@ function runtimeAttention(commissions: WorkCommission[]): CoreAttentionItem[] {
 
 function conversationAttention(tasks: TaskState[]): CoreAttentionItem[] {
   return tasks
-    .filter((task) => taskNeedsAction(task))
     .map((task) => ({
-      id: `task:${task.id}`,
-      kind: "conversation",
-      tone: task.status === "failed" ? "danger" : "warning",
-      title: task.status === "failed" ? "Conversation failed" : "Conversation needs input",
-      detail: task.error_message || task.title || "Agent turn needs operator attention.",
-      meta: [task.title, task.agent].filter(Boolean).join(" · "),
-      action: "open_task",
-      actionRef: task.id,
-    }));
+      task,
+      state: taskRunState(task.status),
+    }))
+    .filter((item) => taskNeedsOperatorAction(item.state))
+    .map((item) => {
+      const tone = taskAttentionTone(item.state);
+      const title = taskAttentionTitle(item.state);
+
+      return {
+        id: `task:${item.task.id}`,
+        kind: "conversation",
+        tone,
+        title,
+        detail: item.task.error_message || item.task.title || "Agent turn needs operator attention.",
+        meta: [item.task.title, item.task.agent].filter(Boolean).join(" · "),
+        action: "open_task",
+        actionRef: item.task.id,
+      };
+    });
 }
 
 function governanceAttention(overview: GovernanceOverview): CoreAttentionItem[] {
@@ -174,16 +189,6 @@ function commissionNeedsAction(commission: WorkCommission): boolean {
     || state.includes("expired");
 }
 
-function taskNeedsAction(task: TaskState): boolean {
-  const status = normalizeState(task.status);
-
-  return status === "failed"
-    || status === "checkpointed"
-    || status === "idle"
-    || status === "waiting"
-    || status === "blocked";
-}
-
 function runtimeTitle(commission: WorkCommission): string {
   const state = normalizeState(commission.state);
 
@@ -210,4 +215,24 @@ function runtimeTone(commission: WorkCommission): CoreTone {
 
 function normalizeState(state: string | undefined): string {
   return (state ?? "").trim().toLowerCase();
+}
+
+function taskAttentionTone(state: TaskRunState): CoreTone {
+  if (taskHasTerminalOutcome(state, "failed") || taskHasTerminalOutcome(state, "interrupted")) {
+    return "danger";
+  }
+
+  return "warning";
+}
+
+function taskAttentionTitle(state: TaskRunState): string {
+  if (taskHasTerminalOutcome(state, "failed")) {
+    return "Conversation failed";
+  }
+
+  if (taskHasTerminalOutcome(state, "interrupted")) {
+    return "Conversation interrupted";
+  }
+
+  return "Conversation needs input";
 }

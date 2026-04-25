@@ -7,6 +7,7 @@ import {
   taskTranscriptText,
   type ChatTranscriptState,
 } from "../lib/api";
+import { taskIsLive, taskRunState } from "../lib/taskInput.ts";
 
 interface ChatViewProps {
   task: ChatTranscriptState;
@@ -27,7 +28,8 @@ export function ChatView({
   const hasStructuredBlocks = hasStructuredChatBlocks(task);
   const hasFallbackTranscript = transcript.trim() !== "";
   const hasErrorMessage = task.error_message.trim() !== "";
-  const isRunning = task.status === "running";
+  const runState = taskRunState(task.status);
+  const isRunning = taskIsLive(runState);
 
   // Agents that produce structured JSONL always use structured view,
   // even when blocks are empty (still streaming). Raw transcript only

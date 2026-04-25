@@ -4,7 +4,6 @@ import { subscribe } from "../lib/events";
 import {
   archiveTask,
   cancelTask,
-  continueTask,
   createPullRequest,
   detectAgents,
   getConfig,
@@ -19,7 +18,7 @@ import {
   resolveAdoptWaive,
   spawnTask,
   setTaskAutoRun,
-  writeTaskInput,
+  submitTaskFollowUp,
   type ChatTranscriptState,
   type DesktopConfig,
   type InstalledAgent,
@@ -41,7 +40,16 @@ import {
   type TaskExecutionLadder,
   type ExecutionLadderStep,
 } from "./taskExecutionLadder";
-import { taskFollowUpAction, taskInputCapability } from "../lib/taskInput";
+import {
+  taskCanArchive,
+  taskCanCancel,
+  taskFollowUpAction,
+  taskFollowUpSubmission,
+  taskHasTerminalOutcome,
+  taskInputCapability,
+  taskIsLive,
+  taskRunState,
+} from "../lib/taskInput.ts";
 import { visibleInitialPrompt } from "../lib/taskPrompt";
 
 type AdoptResolutionMode = "drift" | "stale";
@@ -273,6 +281,8 @@ export function Tasks({
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
   const adoptResolution = getAdoptResolutionContext(detail);
   const executionLadder = detail ? getTaskExecutionLadder(detail) : null;
+  const detailRunState = taskRunState(detail?.status ?? "");
+  const detailIsLive = taskIsLive(detailRunState);
   const displayStatus = executionLadder?.currentLabel ?? detail?.status ?? "";
   const initialBrief = detail
     ? visibleInitialPrompt(detail.prompt, detail.chat_blocks)
@@ -583,12 +593,8 @@ export function Tasks({
     }
   };
 
-  const inputCapability = detail
-    ? taskInputCapability(detail.status)
-    : taskInputCapability("");
-  const followUpAction = detail
-    ? taskFollowUpAction(detail.status)
-    : taskFollowUpAction("");
+  const inputCapability = taskInputCapability(detailRunState);
+  const followUpAction = taskFollowUpAction(detailRunState);
 
   const handleFollowUpSubmit = async (value: string) => {
     if (!detail) {
@@ -602,11 +608,15 @@ export function Tasks({
     setIsSubmittingFollowUp(true);
 
     try {
-      if (followUpAction.kind === "write_live_input") {
-        await writeTaskInput(detail.id, value);
+      const submission = taskFollowUpSubmission(detail.id, detailRunState, value);
+      const result = await submitTaskFollowUp(submission);
+
+      if (result.kind === "live_input_written") {
         scheduleTaskTranscriptSync(detail.id);
-      } else {
-        const task = await continueTask(detail.id, value);
+      }
+
+      if (result.kind === "continuation_started") {
+        const { task } = result;
 
         setTasks((current) => mergeTaskList(
           current.filter((item) => item.id !== detail.id),
@@ -672,13 +682,13 @@ export function Tasks({
                   {detail.title}
                 </span>
                 <span className="text-xs text-text-muted">{detail.agent}</span>
-                {detail.status === "running" && detail.started_at && (
+                {detailIsLive && detail.started_at && (
                   <ElapsedTimer startedAt={detail.started_at} />
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* Auto-run toggle */}
-                {detail.status === "running" && (
+                {detailIsLive && (
                   <button
                     onClick={async () => {
                       try {
@@ -700,7 +710,7 @@ export function Tasks({
                     {detail.auto_run ? "Auto-run" : "Checkpointed"}
                   </button>
                 )}
-                {detail.status === "running" && (
+                {taskCanCancel(detailRunState) && (
                   <button
                     onClick={() => handleCancel(detail.id)}
                     className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
@@ -708,7 +718,7 @@ export function Tasks({
                     Cancel
                   </button>
                 )}
-                {detail.status === "Ready for PR" && (
+                {taskHasTerminalOutcome(detailRunState, "ready_for_pr") && (
                   <button
                     onClick={() => void handleCreatePullRequest(detail)}
                     disabled={resolutionAction !== ""}
@@ -735,7 +745,7 @@ export function Tasks({
                 >
                   Hand off
                 </button>
-                {detail.status !== "running" && (
+                {taskCanArchive(detailRunState) && (
                   <button
                     onClick={() => handleArchive(detail.id)}
                     className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
@@ -771,7 +781,7 @@ export function Tasks({
 
           {/* Input area at bottom */}
           <div className="shrink-0">
-            {adoptResolution && detail.status !== "running" && (
+            {adoptResolution && !detailIsLive && (
               <div className="border-t border-border bg-surface-1/50 px-4 pt-3">
                 <div className="mb-3 rounded-xl border border-border bg-surface-0 px-4 py-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1193,6 +1203,7 @@ function HandoffModal({
   onConfirm: () => void;
 }) {
   const availableAgents = agents.filter((agent) => agent.kind !== sourceTask.agent);
+  const sourceRunState = taskRunState(sourceTask.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -1245,7 +1256,7 @@ function HandoffModal({
             </select>
           </div>
 
-          {sourceTask.status === "running" && (
+          {taskIsLive(sourceRunState) && (
             <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning">
               The source task is still marked running. The handoff will preserve context, but you should
               reconcile workspace state before treating the previous output as final.

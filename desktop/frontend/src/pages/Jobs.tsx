@@ -18,6 +18,7 @@ import {
 } from "../lib/api";
 import { Badge, MonoId, Pill } from "../components/primitives";
 import { reportError } from "../lib/errors";
+import { taskHasTerminalOutcome, taskIsLive, taskRunState } from "../lib/taskInput.ts";
 
 const BOARD_COLUMNS = ["Running", "Needs Input", "Completed", "Failed"] as const;
 
@@ -652,15 +653,17 @@ function groupTasksByBoardColumn(tasks: TaskState[]): Record<BoardColumn, TaskSt
 }
 
 function taskBoardColumn(task: TaskState): BoardColumn {
-  if (task.status === "running") {
+  const state = taskRunState(task.status);
+
+  if (taskIsLive(state)) {
     return "Running";
   }
 
-  if (task.status === "completed") {
+  if (taskHasTerminalOutcome(state, "completed")) {
     return "Completed";
   }
 
-  if (task.status === "failed") {
+  if (taskHasTerminalOutcome(state, "failed")) {
     return "Failed";
   }
 

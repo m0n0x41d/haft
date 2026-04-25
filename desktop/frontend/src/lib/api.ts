@@ -6,6 +6,11 @@ import {
   type CommissionSelector,
 } from "./harnessIpc.ts";
 import { isControlPromptText, stripControlPromptSections } from "./controlPrompt.ts";
+import {
+  taskAcceptsInput,
+  taskRunState,
+  type TaskFollowUpSubmission,
+} from "./taskInput.ts";
 
 // API layer — wraps Tauri invoke() with mock fallback for standalone dev.
 // When running inside Tauri, calls invoke() from @tauri-apps/api/core.
@@ -2571,20 +2576,91 @@ export async function cancelTask(id: string): Promise<void> {
   );
 }
 
-export async function writeTaskInput(id: string, data: string): Promise<void> {
-  const trimmed = data.trim();
-  if (!trimmed) {
-    return;
+type WriteLiveInputSubmission = Extract<
+  TaskFollowUpSubmission,
+  { kind: "write_live_input" }
+>;
+
+type ContinueTaskSubmission = Extract<
+  TaskFollowUpSubmission,
+  { kind: "continue_task" }
+>;
+
+export type TaskFollowUpResult =
+  | {
+      kind: "live_input_written";
+      id: string;
+    }
+  | {
+      kind: "continuation_started";
+      task: TaskState;
+    }
+  | {
+      kind: "none";
+    };
+
+export function writeTaskInputIpcArgs(
+  submission: WriteLiveInputSubmission,
+): {
+  id: string;
+  data: string;
+} {
+  return {
+    id: submission.id,
+    data: submission.data,
+  };
+}
+
+export function continueTaskIpcArgs(
+  submission: ContinueTaskSubmission,
+): {
+  id: string;
+  message: string;
+} {
+  return {
+    id: submission.id,
+    message: submission.message,
+  };
+}
+
+export async function submitTaskFollowUp(
+  submission: TaskFollowUpSubmission,
+): Promise<TaskFollowUpResult> {
+  if (submission.kind === "none") {
+    return { kind: "none" };
   }
 
-  await tauriInvoke<void>("write_task_input", { id, data: trimmed });
+  if (submission.kind === "write_live_input") {
+    await writeTaskInput(submission);
+
+    return {
+      kind: "live_input_written",
+      id: submission.id,
+    };
+  }
+
+  const task = await continueTask(submission);
+
+  return {
+    kind: "continuation_started",
+    task,
+  };
+}
+
+async function writeTaskInput(submission: WriteLiveInputSubmission): Promise<void> {
+  await tauriInvoke<void>(
+    "write_task_input",
+    writeTaskInputIpcArgs(submission),
+  );
 
   mockTasks = mockTasks.map((task) => {
-    if (task.id !== id || task.status !== "running") {
+    const state = taskRunState(task.status);
+
+    if (task.id !== submission.id || !taskAcceptsInput(state)) {
       return task;
     }
 
-    const nextOutput = [task.output, `[user] ${trimmed}`]
+    const nextOutput = [task.output, `[user] ${submission.data}`]
       .filter(Boolean)
       .join("\n");
 
@@ -2598,7 +2674,7 @@ export async function writeTaskInput(id: string, data: string): Promise<void> {
           id: nextMockID("block"),
           type: "text",
           role: "user",
-          text: trimmed,
+          text: submission.data,
         },
       ],
     };
@@ -2652,18 +2728,16 @@ export async function handoffTask(id: string, agent: string): Promise<TaskState>
   return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
 }
 
-export async function continueTask(id: string, message: string): Promise<TaskState> {
-  const trimmed = message.trim();
-  if (!trimmed) {
-    throw new Error("Continuation message is required");
-  }
-
-  const task = await tauriInvoke<TaskState>("continue_task", { id, message: trimmed });
+async function continueTask(submission: ContinueTaskSubmission): Promise<TaskState> {
+  const task = await tauriInvoke<TaskState>(
+    "continue_task",
+    continueTaskIpcArgs(submission),
+  );
   if (task) return task;
 
-  const source = mockTasks.find((item) => item.id === id);
+  const source = mockTasks.find((item) => item.id === submission.id);
   if (!source) {
-    throw new Error(`Task ${id} not found`);
+    throw new Error(`Task ${submission.id} not found`);
   }
 
   const continuationPrompt = [
@@ -2675,7 +2749,7 @@ export async function continueTask(id: string, message: string): Promise<TaskSta
     "",
     `Prior transcript tail:\n${source.raw_output || source.output}`,
     "",
-    `Operator follow-up:\n${trimmed}`,
+    `Operator follow-up:\n${submission.message}`,
   ].join("\n");
 
   return spawnTask(source.agent, continuationPrompt, source.worktree, source.branch);

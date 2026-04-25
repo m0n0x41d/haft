@@ -62,6 +62,39 @@ test("core attention does not surface completed commissions", () => {
   assert.equal(items.length, 0);
 });
 
+test("core attention normalizes task status before choosing tone", () => {
+  const items = buildCoreAttention({
+    ...EMPTY_INPUT,
+    tasks: [
+      {
+        id: "task-1",
+        title: "Investigate failed run",
+        agent: "codex",
+        project: "haft",
+        project_path: "/repo/haft",
+        status: " FAILED ",
+        prompt: "Fix the failing run",
+        branch: "",
+        worktree: false,
+        worktree_path: "",
+        reused_worktree: false,
+        started_at: "2026-04-24T00:00:00Z",
+        completed_at: "",
+        error_message: "agent exited with code 1",
+        output: "",
+        chat_blocks: [],
+        raw_output: "",
+        auto_run: false,
+      },
+    ],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, "conversation");
+  assert.equal(items[0].tone, "danger");
+  assert.equal(items[0].title, "Conversation failed");
+});
+
 test("commission phase is normalized from runtime state names", () => {
   assert.equal(
     commissionPhase({

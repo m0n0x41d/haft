@@ -54,6 +54,16 @@ test("running implement task highlights the running step", () => {
   });
 });
 
+test("running implement task is normalized before ladder selection", () => {
+  const ladder = getTaskExecutionLadder(implementationTask({
+    status: " RUNNING ",
+  }));
+
+  assert.ok(ladder);
+  assert.equal(ladder.currentLabel, "Running");
+  assert.equal(stepStateByLabel(ladder).Running, "current");
+});
+
 test("completed implement task with verification requirements advances to verifying", () => {
   const ladder = getTaskExecutionLadder(
     implementationTask({

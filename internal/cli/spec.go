@@ -19,6 +19,7 @@ import (
 var (
 	specCheckJSON    bool
 	specCoverageJSON bool
+	specPlanJSON     bool
 	specCheckExit    = os.Exit
 )
 
@@ -51,11 +52,25 @@ primary truth.`,
 	RunE: runSpecCoverage,
 }
 
+var specPlanCmd = &cobra.Command{
+	Use:   "plan",
+	Short: "Show DecisionRecord draft proposals for uncovered or stale spec sections",
+	Long: `Show SpecPlan proposals for active spec sections whose coverage is uncovered or stale.
+
+The command groups sections by document kind, spec kind, dependency signature,
+and affected area. Output is a human-review draft surface only: proposals are
+not authority, no DecisionRecords are created, and no WorkCommissions are
+created or scheduled.`,
+	RunE: runSpecPlan,
+}
+
 func init() {
 	specCheckCmd.Flags().BoolVar(&specCheckJSON, "json", false, "print structured JSON output")
 	specCoverageCmd.Flags().BoolVar(&specCoverageJSON, "json", false, "print structured JSON output")
+	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specCmd.AddCommand(specCheckCmd)
 	specCmd.AddCommand(specCoverageCmd)
+	specCmd.AddCommand(specPlanCmd)
 	rootCmd.AddCommand(specCmd)
 }
 
@@ -104,6 +119,25 @@ func runSpecCoverage(cmd *cobra.Command, _ []string) error {
 	}
 
 	return writeSpecCoverageSummary(output, report)
+}
+
+func runSpecPlan(cmd *cobra.Command, _ []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+
+	report, err := buildSpecPlanReport(context.Background(), projectRoot)
+	if err != nil {
+		return err
+	}
+
+	output := cmd.OutOrStdout()
+	if specPlanJSON {
+		return writeSpecPlanJSON(output, report)
+	}
+
+	return writeSpecPlanSummary(output, report)
 }
 
 func writeSpecCheckJSON(w io.Writer, report project.SpecCheckReport) error {
@@ -205,12 +239,36 @@ func buildSpecCoverageReport(
 	if err != nil {
 		return project.SpecCoverageReport{}, err
 	}
-	input.Evidence, err = specCoverageEvidence(ctx, store, input.Problems, input.Decisions, sectionIDs)
+	input.RuntimeRuns, err = specCoverageRuntimeRuns(ctx, store, sectionIDs)
+	if err != nil {
+		return project.SpecCoverageReport{}, err
+	}
+	input.Evidence, err = specCoverageEvidence(
+		ctx,
+		store,
+		input.Problems,
+		input.Decisions,
+		input.Commissions,
+		input.RuntimeRuns,
+		sectionIDs,
+	)
 	if err != nil {
 		return project.SpecCoverageReport{}, err
 	}
 
 	return project.DeriveSpecCoverage(input), nil
+}
+
+func buildSpecPlanReport(
+	ctx context.Context,
+	projectRoot string,
+) (project.SpecPlanReport, error) {
+	coverage, err := buildSpecCoverageReport(ctx, projectRoot)
+	if err != nil {
+		return project.SpecPlanReport{}, err
+	}
+
+	return project.BuildSpecPlan(coverage), nil
 }
 
 func openSpecCoverageStore(projectRoot string) (*artifact.Store, func(), error) {
@@ -339,14 +397,127 @@ func specCoverageCommissions(
 	return commissions, nil
 }
 
+func specCoverageRuntimeRuns(
+	ctx context.Context,
+	store *artifact.Store,
+	sectionIDs map[string]struct{},
+) ([]project.SpecCoverageRuntimeRun, error) {
+	items, err := loadSpecCoverageArtifacts(ctx, store, artifact.KindWorkCommission)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeRuns := make([]project.SpecCoverageRuntimeRun, 0)
+	for _, item := range items {
+		payload, err := decodeWorkCommissionPayload(item.Meta.ID, item.StructuredData)
+		if err != nil {
+			return nil, err
+		}
+
+		runtimeRuns = append(runtimeRuns, specCoverageRuntimeRunsFromCommission(payload, sectionIDs)...)
+	}
+
+	return runtimeRuns, nil
+}
+
+func specCoverageRuntimeRunsFromCommission(
+	commission map[string]any,
+	sectionIDs map[string]struct{},
+) []project.SpecCoverageRuntimeRun {
+	events := mapSliceField(commission, "events")
+	runtimeRuns := make([]project.SpecCoverageRuntimeRun, 0, len(events))
+
+	for index, event := range events {
+		if !specCoverageRuntimeRunEventCandidate(event) {
+			continue
+		}
+
+		payload, _ := mapArg(event, "payload")
+		runtimeRuns = append(runtimeRuns, project.SpecCoverageRuntimeRun{
+			ID:                specCoverageRuntimeRunID(commission, event, payload, index),
+			CommissionRef:     stringField(commission, "id"),
+			Event:             stringField(event, "event"),
+			Verdict:           stringField(event, "verdict"),
+			Phase:             firstStringField("phase", event, payload),
+			Reason:            stringField(event, "reason"),
+			RecordedAt:        stringField(event, "recorded_at"),
+			ValidUntil:        firstStringField("valid_until", event, payload),
+			SectionRefs:       specCoverageRuntimeRunSectionRefs(event, payload, sectionIDs),
+			UnsupportedReason: specCoverageRuntimeRunUnsupportedReason(event),
+		})
+	}
+
+	return runtimeRuns
+}
+
+func specCoverageRuntimeRunEventCandidate(event map[string]any) bool {
+	if stringField(event, "action") == "record_run_event" {
+		return true
+	}
+	if stringField(event, "action") != "" {
+		return false
+	}
+
+	switch stringField(event, "event") {
+	case "phase_outcome":
+		return true
+	default:
+		return false
+	}
+}
+
+func specCoverageRuntimeRunID(
+	commission map[string]any,
+	event map[string]any,
+	payload map[string]any,
+	index int,
+) string {
+	if id := firstStringField("runtime_run_id", event, payload); id != "" {
+		return id
+	}
+	if id := firstStringField("run_id", event, payload); id != "" {
+		return id
+	}
+	if id := firstStringField("carrier_ref", event, payload); id != "" {
+		return id
+	}
+
+	return fmt.Sprintf("%s#runtime-run-%03d", stringField(commission, "id"), index+1)
+}
+
+func specCoverageRuntimeRunSectionRefs(
+	event map[string]any,
+	payload map[string]any,
+	sectionIDs map[string]struct{},
+) []string {
+	refs := make([]string, 0)
+	refs = append(refs, specCoverageRefsFromMap(event, sectionIDs)...)
+	refs = append(refs, specCoverageRefsFromMap(payload, sectionIDs)...)
+
+	return cleanStringSlice(refs)
+}
+
+func specCoverageRuntimeRunUnsupportedReason(event map[string]any) string {
+	if stringField(event, "event") == "" {
+		return "RuntimeRun lifecycle event is missing the event field"
+	}
+	if stringField(event, "verdict") == "" {
+		return "RuntimeRun lifecycle event is missing the verdict field"
+	}
+
+	return ""
+}
+
 func specCoverageEvidence(
 	ctx context.Context,
 	store *artifact.Store,
 	problems []project.SpecCoverageProblem,
 	decisions []project.SpecCoverageDecision,
+	commissions []project.SpecCoverageCommission,
+	runtimeRuns []project.SpecCoverageRuntimeRun,
 	sectionIDs map[string]struct{},
 ) ([]project.SpecCoverageEvidence, error) {
-	artifactRefs := specCoverageEvidenceArtifactRefs(problems, decisions)
+	artifactRefs := specCoverageEvidenceArtifactRefs(problems, decisions, commissions, runtimeRuns)
 	evidence := make([]project.SpecCoverageEvidence, 0)
 
 	for _, artifactRef := range artifactRefs {
@@ -451,14 +622,22 @@ func specCoverageAffectedFilePaths(files []artifact.AffectedFile) []string {
 func specCoverageEvidenceArtifactRefs(
 	problems []project.SpecCoverageProblem,
 	decisions []project.SpecCoverageDecision,
+	commissions []project.SpecCoverageCommission,
+	runtimeRuns []project.SpecCoverageRuntimeRun,
 ) []string {
-	refs := make([]string, 0, len(problems)+len(decisions))
+	refs := make([]string, 0, len(problems)+len(decisions)+len(commissions)+len(runtimeRuns))
 
 	for _, problem := range problems {
 		refs = append(refs, problem.ID)
 	}
 	for _, decision := range decisions {
 		refs = append(refs, decision.ID)
+	}
+	for _, commission := range commissions {
+		refs = append(refs, commission.ID)
+	}
+	for _, runtimeRun := range runtimeRuns {
+		refs = append(refs, runtimeRun.ID)
 	}
 
 	return cleanStringSlice(refs)
@@ -748,6 +927,75 @@ func writeSpecCoverageSummary(w io.Writer, report project.SpecCoverageReport) er
 	_, err := io.WriteString(w, builder.String())
 
 	return err
+}
+
+func writeSpecPlanJSON(w io.Writer, report project.SpecPlanReport) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(report)
+}
+
+func writeSpecPlanSummary(w io.Writer, report project.SpecPlanReport) error {
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf(
+		"haft spec plan: %d proposal(s) from %d uncovered/stale section(s)\n",
+		report.Summary.TotalProposals,
+		report.Summary.TotalCandidates,
+	))
+	builder.WriteString(fmt.Sprintf("authority: %s\n", report.Authority))
+	builder.WriteString(fmt.Sprintf("review_actions: %s\n", formatSpecPlanReviewActions(report.ReviewActions)))
+
+	if len(report.Proposals) > 0 {
+		builder.WriteString("\nProposals:\n")
+	}
+
+	for _, proposal := range report.Proposals {
+		builder.WriteString(fmt.Sprintf("- %s: %s\n", proposal.ID, proposal.Title))
+		builder.WriteString(fmt.Sprintf("  group: document_kind=%s spec_kind=%s affected_area=%s\n", proposal.DocumentKind, proposal.SpecKind, proposal.AffectedArea))
+		builder.WriteString(fmt.Sprintf("  dependencies: %s\n", formatSpecPlanValues(proposal.DependencyRefs)))
+		builder.WriteString(fmt.Sprintf("  sections: %s\n", strings.Join(proposal.SectionRefs, ", ")))
+		builder.WriteString(fmt.Sprintf("  states: %s\n", formatSpecPlanStates(proposal.States)))
+		builder.WriteString("  decision_record_draft:\n")
+		builder.WriteString(fmt.Sprintf("    selected_title: %s\n", proposal.DecisionRecordDraft.SelectedTitle))
+		builder.WriteString(fmt.Sprintf("    section_refs: %s\n", strings.Join(proposal.DecisionRecordDraft.SectionRefs, ", ")))
+		builder.WriteString(fmt.Sprintf("    weakest_link: %s\n", proposal.DecisionRecordDraft.WeakestLink))
+		if len(proposal.Reasons) > 0 {
+			builder.WriteString(fmt.Sprintf("  reasons: %s\n", strings.Join(proposal.Reasons, " | ")))
+		}
+	}
+
+	_, err := io.WriteString(w, builder.String())
+
+	return err
+}
+
+func formatSpecPlanReviewActions(actions []project.SpecPlanReviewAction) string {
+	kinds := make([]string, 0, len(actions))
+
+	for _, action := range actions {
+		kinds = append(kinds, action.Kind)
+	}
+
+	return strings.Join(cleanStringSlice(kinds), ", ")
+}
+
+func formatSpecPlanValues(values []string) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+
+	return strings.Join(values, ", ")
+}
+
+func formatSpecPlanStates(states []project.SpecCoverageState) string {
+	values := make([]string, 0, len(states))
+
+	for _, state := range states {
+		values = append(values, string(state))
+	}
+
+	return strings.Join(cleanStringSlice(values), ", ")
 }
 
 func specCoverageStateOrder() []project.SpecCoverageState {

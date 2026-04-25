@@ -24,6 +24,7 @@ type SpecCoverageInput struct {
 	Problems    []SpecCoverageProblem
 	Decisions   []SpecCoverageDecision
 	Commissions []SpecCoverageCommission
+	RuntimeRuns []SpecCoverageRuntimeRun
 	Evidence    []SpecCoverageEvidence
 	Now         time.Time
 }
@@ -56,6 +57,19 @@ type SpecCoverageCommission struct {
 	SectionRefs []string
 }
 
+type SpecCoverageRuntimeRun struct {
+	ID                string
+	CommissionRef     string
+	Event             string
+	Verdict           string
+	Phase             string
+	Reason            string
+	RecordedAt        string
+	ValidUntil        string
+	SectionRefs       []string
+	UnsupportedReason string
+}
+
 type SpecCoverageEvidence struct {
 	ID          string
 	ArtifactRef string
@@ -80,6 +94,8 @@ type SpecCoverageSection struct {
 	DocumentKind string             `json:"document_kind"`
 	SpecKind     string             `json:"spec_kind"`
 	Path         string             `json:"path"`
+	DependsOn    []string           `json:"depends_on,omitempty"`
+	TargetRefs   []string           `json:"target_refs,omitempty"`
 	State        SpecCoverageState  `json:"state"`
 	Why          []string           `json:"why"`
 	NextAction   string             `json:"next_action"`
@@ -109,6 +125,7 @@ type specCoverageSignals struct {
 	Problems    []SpecCoverageProblem
 	Decisions   []SpecCoverageDecision
 	Commissions []SpecCoverageCommission
+	RuntimeRuns []SpecCoverageRuntimeRun
 	Evidence    []SpecCoverageEvidence
 	CodeRefs    []string
 	TestRefs    []string
@@ -131,7 +148,7 @@ func DeriveSpecCoverage(input SpecCoverageInput) SpecCoverageReport {
 
 	report := SpecCoverageReport{
 		Sections: sections,
-		Gaps:     unsupportedSpecCoverageGaps(),
+		Gaps:     []SpecCoverageGap{},
 	}
 	report.Summary = summarizeSpecCoverage(sections)
 
@@ -146,6 +163,7 @@ func normalizeSpecCoverageInput(input SpecCoverageInput) SpecCoverageInput {
 	input.Problems = normalizeCoverageProblems(input.Problems)
 	input.Decisions = normalizeCoverageDecisions(input.Decisions)
 	input.Commissions = normalizeCoverageCommissions(input.Commissions)
+	input.RuntimeRuns = normalizeCoverageRuntimeRuns(input.RuntimeRuns)
 	input.Evidence = normalizeCoverageEvidence(input.Evidence)
 
 	sort.SliceStable(input.Sections, func(i, j int) bool {
@@ -235,6 +253,34 @@ func normalizeCoverageCommissions(values []SpecCoverageCommission) []SpecCoverag
 	return normalized
 }
 
+func normalizeCoverageRuntimeRuns(values []SpecCoverageRuntimeRun) []SpecCoverageRuntimeRun {
+	normalized := make([]SpecCoverageRuntimeRun, 0, len(values))
+
+	for _, value := range values {
+		value.ID = strings.TrimSpace(value.ID)
+		value.CommissionRef = strings.TrimSpace(value.CommissionRef)
+		value.Event = strings.TrimSpace(value.Event)
+		value.Verdict = strings.TrimSpace(value.Verdict)
+		value.Phase = strings.TrimSpace(value.Phase)
+		value.Reason = strings.TrimSpace(value.Reason)
+		value.RecordedAt = strings.TrimSpace(value.RecordedAt)
+		value.ValidUntil = strings.TrimSpace(value.ValidUntil)
+		value.UnsupportedReason = strings.TrimSpace(value.UnsupportedReason)
+		value.SectionRefs = sortedUniqueStrings(value.SectionRefs)
+		if value.ID == "" {
+			continue
+		}
+
+		normalized = append(normalized, value)
+	}
+
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].ID < normalized[j].ID
+	})
+
+	return normalized
+}
+
 func normalizeCoverageEvidence(values []SpecCoverageEvidence) []SpecCoverageEvidence {
 	normalized := make([]SpecCoverageEvidence, 0, len(values))
 
@@ -266,13 +312,16 @@ func buildSpecCoverageSignals(input SpecCoverageInput, section SpecSection) spec
 	problems := coverageProblemsForSection(input.Problems, section.ID)
 	decisions := coverageDecisionsForSection(input.Decisions, problems, section.ID)
 	commissions := coverageCommissionsForSection(input.Commissions, decisions, section.ID)
-	evidence := coverageEvidenceForSection(input.Evidence, problems, decisions, section.ID)
+	commissionRefs := coverageCommissionRefsForSection(input.Commissions, decisions, section.ID)
+	runtimeRuns := coverageRuntimeRunsForSection(input.RuntimeRuns, commissionRefs, section.ID)
+	evidence := coverageEvidenceForSection(input.Evidence, problems, decisions, commissionRefs, runtimeRuns, section.ID)
 
 	signals := specCoverageSignals{
 		Section:     section,
 		Problems:    problems,
 		Decisions:   decisions,
 		Commissions: commissions,
+		RuntimeRuns: runtimeRuns,
 		Evidence:    evidence,
 		CodeRefs:    coverageCodeRefs(decisions, evidence),
 		TestRefs:    coverageTestRefs(evidence),
@@ -372,6 +421,28 @@ func coverageCommissionsForSection(
 	return result
 }
 
+func coverageCommissionRefsForSection(
+	commissions []SpecCoverageCommission,
+	decisions []SpecCoverageDecision,
+	sectionID string,
+) []string {
+	result := make([]string, 0)
+	decisionRefs := coverageDecisionRefs(decisions)
+
+	for _, commission := range commissions {
+		if !artifactStatusIsActive(commission.Status) {
+			continue
+		}
+		if !commissionCoversSection(commission, decisionRefs, sectionID) {
+			continue
+		}
+
+		result = append(result, commission.ID)
+	}
+
+	return sortedUniqueStrings(result)
+}
+
 func coverageDecisionRefs(decisions []SpecCoverageDecision) []string {
 	refs := make([]string, 0, len(decisions))
 
@@ -397,20 +468,56 @@ func commissionCoversSection(
 	return false
 }
 
+func coverageRuntimeRunsForSection(
+	runtimeRuns []SpecCoverageRuntimeRun,
+	commissionRefs []string,
+	sectionID string,
+) []SpecCoverageRuntimeRun {
+	result := make([]SpecCoverageRuntimeRun, 0)
+
+	for _, runtimeRun := range runtimeRuns {
+		if !runtimeRunCoversSection(runtimeRun, commissionRefs, sectionID) {
+			continue
+		}
+
+		result = append(result, runtimeRun)
+	}
+
+	return result
+}
+
+func runtimeRunCoversSection(
+	runtimeRun SpecCoverageRuntimeRun,
+	commissionRefs []string,
+	sectionID string,
+) bool {
+	if containsString(runtimeRun.SectionRefs, sectionID) {
+		return true
+	}
+	if containsString(commissionRefs, runtimeRun.CommissionRef) {
+		return true
+	}
+
+	return false
+}
+
 func coverageEvidenceForSection(
 	evidence []SpecCoverageEvidence,
 	problems []SpecCoverageProblem,
 	decisions []SpecCoverageDecision,
+	commissionRefs []string,
+	runtimeRuns []SpecCoverageRuntimeRun,
 	sectionID string,
 ) []SpecCoverageEvidence {
 	result := make([]SpecCoverageEvidence, 0)
-	artifactRefs := coverageEvidenceArtifactRefs(problems, decisions)
+	artifactRefs := coverageEvidenceArtifactRefs(problems, decisions, commissionRefs, runtimeRuns)
+	runtimeRunRefs := coverageRuntimeRunRefs(runtimeRuns)
 
 	for _, item := range evidence {
 		if item.Verdict == "superseded" {
 			continue
 		}
-		if evidenceCoversSection(item, artifactRefs, sectionID) {
+		if evidenceCoversSection(item, artifactRefs, runtimeRunRefs, sectionID) {
 			result = append(result, item)
 		}
 	}
@@ -421,14 +528,28 @@ func coverageEvidenceForSection(
 func coverageEvidenceArtifactRefs(
 	problems []SpecCoverageProblem,
 	decisions []SpecCoverageDecision,
+	commissionRefs []string,
+	runtimeRuns []SpecCoverageRuntimeRun,
 ) []string {
-	refs := make([]string, 0, len(problems)+len(decisions))
+	refs := make([]string, 0, len(problems)+len(decisions)+len(commissionRefs)+len(runtimeRuns))
 
 	for _, problem := range problems {
 		refs = append(refs, problem.ID)
 	}
 	for _, decision := range decisions {
 		refs = append(refs, decision.ID)
+	}
+	refs = append(refs, commissionRefs...)
+	refs = append(refs, coverageRuntimeRunRefs(runtimeRuns)...)
+
+	return sortedUniqueStrings(refs)
+}
+
+func coverageRuntimeRunRefs(runtimeRuns []SpecCoverageRuntimeRun) []string {
+	refs := make([]string, 0, len(runtimeRuns))
+
+	for _, runtimeRun := range runtimeRuns {
+		refs = append(refs, runtimeRun.ID)
 	}
 
 	return sortedUniqueStrings(refs)
@@ -437,12 +558,16 @@ func coverageEvidenceArtifactRefs(
 func evidenceCoversSection(
 	item SpecCoverageEvidence,
 	artifactRefs []string,
+	runtimeRunRefs []string,
 	sectionID string,
 ) bool {
 	if containsString(item.SectionRefs, sectionID) {
 		return true
 	}
 	if containsString(artifactRefs, item.ArtifactRef) {
+		return true
+	}
+	if containsString(runtimeRunRefs, item.CarrierRef) {
 		return true
 	}
 
@@ -503,6 +628,11 @@ func coverageStaleFacts(now time.Time, signals specCoverageSignals) []string {
 			facts = append(facts, fmt.Sprintf("commission %s valid_until has expired", commission.ID))
 		}
 	}
+	for _, runtimeRun := range signals.RuntimeRuns {
+		if validUntilExpired(runtimeRun.ValidUntil, now) {
+			facts = append(facts, fmt.Sprintf("RuntimeRun %s valid_until has expired", runtimeRun.ID))
+		}
+	}
 	for _, item := range signals.Evidence {
 		if validUntilExpired(item.ValidUntil, now) {
 			facts = append(facts, fmt.Sprintf("evidence %s valid_until has expired", item.ID))
@@ -518,6 +648,8 @@ func deriveSpecCoverageState(signals specCoverageSignals) SpecCoverageState {
 		return SpecCoverageStale
 	case hasVerifiedSpecCoverageEvidence(signals.Evidence):
 		return SpecCoverageVerified
+	case runtimeRunsSupportImplementation(signals.RuntimeRuns) && len(signals.CodeRefs) > 0:
+		return SpecCoverageImplemented
 	case len(signals.Evidence) > 0 && len(signals.CodeRefs) > 0:
 		return SpecCoverageImplemented
 	case len(signals.Commissions) > 0:
@@ -539,6 +671,49 @@ func hasVerifiedSpecCoverageEvidence(evidence []SpecCoverageEvidence) bool {
 	return false
 }
 
+func runtimeRunsSupportImplementation(runtimeRuns []SpecCoverageRuntimeRun) bool {
+	for _, runtimeRun := range runtimeRuns {
+		if !runtimeRunSupportsImplementation(runtimeRun) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func runtimeRunSupportsImplementation(runtimeRun SpecCoverageRuntimeRun) bool {
+	if runtimeRunIsUnsupported(runtimeRun) {
+		return false
+	}
+
+	return runtimeRunVerdictSupportsImplementation(runtimeRun.Verdict)
+}
+
+func runtimeRunIsUnsupported(runtimeRun SpecCoverageRuntimeRun) bool {
+	if runtimeRun.UnsupportedReason != "" {
+		return true
+	}
+	if runtimeRun.Event == "" {
+		return true
+	}
+	if runtimeRun.Verdict == "" {
+		return true
+	}
+
+	return false
+}
+
+func runtimeRunVerdictSupportsImplementation(verdict string) bool {
+	switch strings.TrimSpace(verdict) {
+	case "pass", "completed", "accepted", "supports":
+		return true
+	default:
+		return false
+	}
+}
+
 func specCoverageSection(
 	signals specCoverageSignals,
 	state SpecCoverageState,
@@ -549,6 +724,8 @@ func specCoverageSection(
 		DocumentKind: signals.Section.DocumentKind,
 		SpecKind:     signals.Section.Kind,
 		Path:         signals.Section.Path,
+		DependsOn:    signals.Section.DependsOn,
+		TargetRefs:   signals.Section.TargetRefs,
 		State:        state,
 		Why:          specCoverageWhy(signals, state),
 		NextAction:   specCoverageNextAction(signals, state),
@@ -564,6 +741,9 @@ func specCoverageWhy(signals specCoverageSignals, state SpecCoverageState) []str
 	case SpecCoverageVerified:
 		return []string{fmt.Sprintf("%d active supporting evidence item(s) cover this section", countSupportingEvidence(signals.Evidence))}
 	case SpecCoverageImplemented:
+		if len(signals.Evidence) == 0 && runtimeRunsSupportImplementation(signals.RuntimeRuns) {
+			return []string{"active RuntimeRun exists for a decision with code scope, but no supporting verification evidence is present"}
+		}
 		return []string{"active evidence exists for a decision with code scope, but no supporting verification evidence is present"}
 	case SpecCoverageCommissioned:
 		return []string{fmt.Sprintf("%d active WorkCommission(s) cover this section", len(signals.Commissions))}
@@ -626,8 +806,14 @@ func specCoverageEdges(signals specCoverageSignals) []SpecCoverageEdge {
 	for _, commission := range signals.Commissions {
 		edges = append(edges, SpecCoverageEdge{Type: "DecisionRecord->WorkCommission", Target: commission.ID})
 	}
+	for _, runtimeRun := range signals.RuntimeRuns {
+		edges = append(edges, SpecCoverageEdge{Type: "WorkCommission->RuntimeRun", Target: runtimeRun.ID})
+	}
 	for _, item := range signals.Evidence {
 		edges = append(edges, SpecCoverageEdge{Type: "evidence_item", Target: item.ID})
+		if containsString(coverageRuntimeRunRefs(signals.RuntimeRuns), item.CarrierRef) {
+			edges = append(edges, SpecCoverageEdge{Type: "RuntimeRun->evidence_item", Target: item.ID})
+		}
 	}
 	for _, ref := range signals.CodeRefs {
 		edges = append(edges, SpecCoverageEdge{Type: "spec_section->file", Target: filepath.ToSlash(ref)})
@@ -649,7 +835,7 @@ func sectionCoverageGaps(
 	signals specCoverageSignals,
 	state SpecCoverageState,
 ) []SpecCoverageGap {
-	gaps := make([]SpecCoverageGap, 0)
+	gaps := unsupportedRuntimeRunGaps(signals)
 	sectionID := signals.Section.ID
 
 	switch state {
@@ -695,14 +881,28 @@ func sectionCoverageGaps(
 	return gaps
 }
 
-func unsupportedSpecCoverageGaps() []SpecCoverageGap {
-	return []SpecCoverageGap{
-		{
-			Kind:       "unsupported_edge",
-			Detail:     "RuntimeRun carriers are not modeled in current storage; coverage derives WorkCommission-to-evidence progress from attached evidence only.",
-			NextAction: "add RuntimeRun carriers before claiming full runtime edge coverage",
-		},
+func unsupportedRuntimeRunGaps(signals specCoverageSignals) []SpecCoverageGap {
+	gaps := make([]SpecCoverageGap, 0)
+
+	for _, runtimeRun := range signals.RuntimeRuns {
+		if !runtimeRunIsUnsupported(runtimeRun) {
+			continue
+		}
+
+		detail := runtimeRun.UnsupportedReason
+		if detail == "" {
+			detail = fmt.Sprintf("RuntimeRun %s has an unsupported storage shape", runtimeRun.ID)
+		}
+
+		gaps = append(gaps, SpecCoverageGap{
+			SectionID:  signals.Section.ID,
+			Kind:       "runtime_run_unsupported",
+			Detail:     detail,
+			NextAction: "record RuntimeRun event and verdict fields before deriving runtime coverage from this carrier",
+		})
 	}
+
+	return gaps
 }
 
 func summarizeSpecCoverage(sections []SpecCoverageSection) SpecCoverageSummary {

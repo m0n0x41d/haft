@@ -44,16 +44,18 @@ type SpecCheckSummary struct {
 }
 
 type SpecSection struct {
-	ID            string `json:"id"`
-	Kind          string `json:"kind"`
-	Title         string `json:"title,omitempty"`
-	StatementType string `json:"statement_type"`
-	ClaimLayer    string `json:"claim_layer"`
-	Status        string `json:"status"`
-	ValidUntil    string `json:"valid_until,omitempty"`
-	DocumentKind  string `json:"document_kind"`
-	Path          string `json:"path"`
-	Line          int    `json:"line,omitempty"`
+	ID            string   `json:"id"`
+	Kind          string   `json:"kind"`
+	Title         string   `json:"title,omitempty"`
+	StatementType string   `json:"statement_type"`
+	ClaimLayer    string   `json:"claim_layer"`
+	Status        string   `json:"status"`
+	ValidUntil    string   `json:"valid_until,omitempty"`
+	DependsOn     []string `json:"depends_on,omitempty"`
+	TargetRefs    []string `json:"target_refs,omitempty"`
+	DocumentKind  string   `json:"document_kind"`
+	Path          string   `json:"path"`
+	Line          int      `json:"line,omitempty"`
 }
 
 type SpecDocumentInput struct {
@@ -81,6 +83,8 @@ type parsedSpecSection struct {
 	claimLayer    string
 	status        string
 	validUntil    string
+	dependsOn     []string
+	targetRefs    []string
 	line          int
 }
 
@@ -388,6 +392,8 @@ func specSectionFromParsed(document SpecDocumentInput, section parsedSpecSection
 		ClaimLayer:    section.claimLayer,
 		Status:        section.status,
 		ValidUntil:    section.validUntil,
+		DependsOn:     section.dependsOn,
+		TargetRefs:    section.targetRefs,
 		DocumentKind:  document.Kind,
 		Path:          filepath.ToSlash(document.Path),
 		Line:          section.line,
@@ -438,6 +444,8 @@ func validateSpecSectionFields(path string, line int, fields map[string]any) (pa
 	if validUntil, ok := specSectionValidUntilString(fields["valid_until"]); ok {
 		section.validUntil = validUntil
 	}
+	section.dependsOn = specSectionRefList(fields, "depends_on")
+	section.targetRefs = specSectionRefList(fields, "target_refs")
 
 	for field, allowed := range specSectionValueSets {
 		value, ok := scalarString(fields[field])
@@ -458,6 +466,33 @@ func validateSpecSectionFields(path string, line int, fields map[string]any) (pa
 	}
 
 	return section, findings
+}
+
+func specSectionRefList(fields map[string]any, field string) []string {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	refs := make([]string, 0, len(items))
+	for _, item := range items {
+		ref, ok := strictString(item)
+		if !ok {
+			continue
+		}
+		if !isStableSpecSectionID(ref) {
+			continue
+		}
+
+		refs = append(refs, ref)
+	}
+
+	return sortedUniqueStrings(refs)
 }
 
 func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section parsedSpecSection) []SpecCheckFinding {

@@ -154,6 +154,81 @@ func TestRunSpecCoverageJSONReportsDerivedSectionStates(t *testing.T) {
 	}
 }
 
+func TestRunSpecCoverageJSONReportsRuntimeRunDerivedEdges(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	writeSpecCoverageCLICarriers(t, fixture.root)
+
+	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
+		SelectedTitle:   "Cover runtime spec",
+		WhySelected:     "The runtime section needs a WorkCommission attempt and external evidence.",
+		SelectionPolicy: "Prefer runtime/evidence carriers over manual coverage status.",
+		CounterArgument: "The fixture could pass if runtime events are ignored.",
+		WeakestLink:     "Coverage depends on WorkCommission event storage being decoded.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Manual coverage status",
+			Reason:  "Manual status would violate the derived coverage contract.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"RuntimeRun events no longer appear in SpecCoverage edges."},
+		},
+		AffectedFiles: []string{"internal/runtime/edge.go"},
+	})
+	if err := fixture.store.AddLink(context.Background(), decision.Meta.ID, "TS.covered.001", "governs"); err != nil {
+		t.Fatalf("link decision to spec section: %v", err)
+	}
+
+	commissionID := "wc-runtime-coverage"
+	runtimeRunID := "run-runtime-coverage"
+	createSpecCoverageRuntimeCommission(t, fixture, decision.Meta.ID, commissionID, runtimeRunID)
+
+	evidence, err := artifact.AttachEvidence(context.Background(), fixture.store, artifact.EvidenceInput{
+		ArtifactRef:     commissionID,
+		Content:         "Runtime evidence passed for the covered section.",
+		Type:            "measurement",
+		Verdict:         "supports",
+		CarrierRef:      runtimeRunID,
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+	})
+	if err != nil {
+		t.Fatalf("attach runtime evidence: %v", err)
+	}
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	restoreJSON := stubSpecCoverageJSON(t, true)
+	defer restoreJSON()
+
+	err = runSpecCoverage(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecCoverage returned error: %v", err)
+	}
+
+	var report project.SpecCoverageReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+	if len(report.Gaps) != 0 {
+		t.Fatalf("global gaps = %#v, want no synthetic RuntimeRun gap", report.Gaps)
+	}
+
+	section := specCoverageCLISection(report, "TS.covered.001")
+	if section.State != project.SpecCoverageVerified {
+		t.Fatalf("covered state = %q, want verified; section = %#v", section.State, section)
+	}
+	if !specCoverageCLIEdgeTarget(section.Edges, runtimeRunID) {
+		t.Fatalf("edges = %#v, want RuntimeRun edge", section.Edges)
+	}
+	if !specCoverageCLIEdgeTarget(section.Edges, evidence.ID) {
+		t.Fatalf("edges = %#v, want evidence edge", section.Edges)
+	}
+}
+
 func TestRunSpecCoverageHumanSummaryIncludesWhyAndNextAction(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	writeSpecCoverageCLICarriers(t, fixture.root)
@@ -206,6 +281,102 @@ func TestRunSpecCoverageBlocksWhenSpecCheckHasFindings(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "haft spec check") {
 		t.Fatalf("error = %q, want spec check next action", err.Error())
+	}
+}
+
+func TestRunSpecPlanJSONGroupsDraftsAndDoesNotMutateDB(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	writeSpecPlanCLICarriers(t, fixture.root)
+
+	before := countSpecPlanArtifacts(t, fixture)
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	restoreJSON := stubSpecPlanJSON(t, true)
+	defer restoreJSON()
+
+	err := runSpecPlan(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecPlan returned error: %v", err)
+	}
+
+	after := countSpecPlanArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("artifact count changed from %d to %d; spec plan must be read-only", before, after)
+	}
+	assertSpecPlanNoStoredKind(t, fixture, artifact.KindDecisionRecord)
+	assertSpecPlanNoStoredKind(t, fixture, artifact.KindWorkCommission)
+
+	var report project.SpecPlanReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+	if report.Summary.TotalCandidates != 3 {
+		t.Fatalf("total_candidates = %d, want 3", report.Summary.TotalCandidates)
+	}
+	if len(report.Proposals) != 2 {
+		t.Fatalf("proposals = %#v, want grouped proposals", report.Proposals)
+	}
+
+	proposal := specPlanCLIProposal(report, "acceptance", "checkout", []string{"TS.role.001"})
+	if got := proposal.SectionRefs; !sameSpecPlanCLIStrings(got, []string{"TS.checkout.001", "TS.checkout.002"}) {
+		t.Fatalf("checkout proposal section_refs = %#v, want grouped uncovered/stale sections", got)
+	}
+	if got := proposal.DecisionRecordDraft.SectionRefs; !sameSpecPlanCLIStrings(got, proposal.SectionRefs) {
+		t.Fatalf("draft section_refs = %#v, want proposal section refs %#v", got, proposal.SectionRefs)
+	}
+}
+
+func TestRunSpecPlanHumanSummaryStatesProposalAuthorityAndReviewActions(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	writeSpecPlanCLICarriers(t, fixture.root)
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	restoreJSON := stubSpecPlanJSON(t, false)
+	defer restoreJSON()
+
+	err := runSpecPlan(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecPlan returned error: %v", err)
+	}
+
+	result := output.String()
+	required := []string{
+		"haft spec plan:",
+		"do not create DecisionRecords",
+		"WorkCommissions",
+		"review_actions: merge, split, discard",
+		"decision_record_draft:",
+	}
+	for _, want := range required {
+		if !strings.Contains(result, want) {
+			t.Fatalf("output = %q, want %q", result, want)
+		}
+	}
+}
+
+func TestSpecPlanHelpStatesProposalsAreNotAuthority(t *testing.T) {
+	required := []string{
+		"not authority",
+		"no DecisionRecords are created",
+		"no WorkCommissions are",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(specPlanCmd.Long, want) {
+			t.Fatalf("spec plan help missing %q:\n%s", want, specPlanCmd.Long)
+		}
 	}
 }
 
@@ -270,6 +441,56 @@ func writeSpecCoverageCLICarriers(t *testing.T, root string) {
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
 }
 
+func writeSpecPlanCLICarriers(t *testing.T, root string) {
+	t.Helper()
+
+	specDir := filepath.Join(root, ".haft", "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "target-system.md"), strings.Join([]string{
+		specPlanCLISpecSection("TS.checkout.001", "Checkout active", "acceptance", "", []string{"TS.role.001"}),
+		specPlanCLISpecSection("TS.checkout.002", "Checkout stale", "acceptance", "2020-01-01", []string{"TS.role.001"}),
+		specPlanCLISpecSection("TS.checkout.003", "Checkout boundary", "acceptance", "", []string{"TS.boundary.001"}),
+	}, "\n"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), coverageCLIDraftSpecSection("ES.plan.001", "Plan draft"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
+}
+
+func specPlanCLISpecSection(
+	id string,
+	title string,
+	kind string,
+	validUntil string,
+	dependsOn []string,
+) string {
+	lines := []string{
+		"## " + id + " " + title,
+		"",
+		"```yaml spec-section",
+		"id: " + id,
+		"kind: " + kind,
+		"title: " + title,
+		"statement_type: evidence",
+		"claim_layer: object",
+		"owner: human",
+		"status: active",
+	}
+	if validUntil != "" {
+		lines = append(lines, "valid_until: "+validUntil)
+	}
+	if len(dependsOn) > 0 {
+		lines = append(lines, "depends_on:")
+		for _, ref := range dependsOn {
+			lines = append(lines, "  - "+ref)
+		}
+	}
+	lines = append(lines, "```", "")
+
+	return strings.Join(lines, "\n")
+}
+
 func coverageCLISpecSection(id string, title string) string {
 	return "## " + id + " " + title + "\n\n" +
 		"```yaml spec-section\n" +
@@ -294,6 +515,137 @@ func coverageCLIDraftSpecSection(id string, title string) string {
 		"owner: human\n" +
 		"status: draft\n" +
 		"```\n"
+}
+
+func createSpecCoverageRuntimeCommission(
+	t *testing.T,
+	fixture checkTestProject,
+	decisionID string,
+	commissionID string,
+	runtimeRunID string,
+) {
+	t.Helper()
+
+	payload := map[string]any{
+		"id":           commissionID,
+		"decision_ref": decisionID,
+		"state":        "completed",
+		"valid_until":  "2099-01-01T00:00:00Z",
+		"events": []any{
+			map[string]any{
+				"action":         "record_run_event",
+				"event":          "phase_outcome",
+				"verdict":        "pass",
+				"runtime_run_id": runtimeRunID,
+				"recorded_at":    "2026-04-25T12:00:00Z",
+				"payload": map[string]any{
+					"phase": "execute",
+					"next":  "advance:measure",
+				},
+			},
+		},
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode runtime commission: %v", err)
+	}
+
+	err = fixture.store.Create(context.Background(), &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:         commissionID,
+			Kind:       artifact.KindWorkCommission,
+			Status:     artifact.StatusActive,
+			Title:      "Runtime coverage commission",
+			ValidUntil: "2099-01-01T00:00:00Z",
+		},
+		Body:           "Runtime coverage commission",
+		StructuredData: string(encoded),
+	})
+	if err != nil {
+		t.Fatalf("create runtime commission: %v", err)
+	}
+}
+
+func specCoverageCLISection(report project.SpecCoverageReport, sectionID string) project.SpecCoverageSection {
+	for _, section := range report.Sections {
+		if section.SectionID == sectionID {
+			return section
+		}
+	}
+
+	return project.SpecCoverageSection{}
+}
+
+func specCoverageCLIEdgeTarget(edges []project.SpecCoverageEdge, target string) bool {
+	for _, edge := range edges {
+		if edge.Target == target {
+			return true
+		}
+	}
+
+	return false
+}
+
+func countSpecPlanArtifacts(t *testing.T, fixture checkTestProject) int {
+	t.Helper()
+
+	items, err := fixture.store.ListByKind(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("count artifacts: %v", err)
+	}
+
+	return len(items)
+}
+
+func assertSpecPlanNoStoredKind(t *testing.T, fixture checkTestProject, kind artifact.Kind) {
+	t.Helper()
+
+	items, err := fixture.store.ListByKind(context.Background(), kind, 0)
+	if err != nil {
+		t.Fatalf("list %s artifacts: %v", kind, err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("%s artifacts = %#v, want none", kind, items)
+	}
+}
+
+func specPlanCLIProposal(
+	report project.SpecPlanReport,
+	specKind string,
+	affectedArea string,
+	dependencyRefs []string,
+) project.SpecPlanProposal {
+	for _, proposal := range report.Proposals {
+		if proposal.SpecKind != specKind {
+			continue
+		}
+		if proposal.AffectedArea != affectedArea {
+			continue
+		}
+		if !sameSpecPlanCLIStrings(proposal.DependencyRefs, dependencyRefs) {
+			continue
+		}
+
+		return proposal
+	}
+
+	return project.SpecPlanProposal{}
+}
+
+func sameSpecPlanCLIStrings(left []string, right []string) bool {
+	left = cleanStringSlice(left)
+	right = cleanStringSlice(right)
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func writeSpecCheckCLIFile(t *testing.T, path string, content string) {
@@ -338,5 +690,16 @@ func stubSpecCoverageJSON(t *testing.T, value bool) func() {
 
 	return func() {
 		specCoverageJSON = previous
+	}
+}
+
+func stubSpecPlanJSON(t *testing.T, value bool) func() {
+	t.Helper()
+
+	previous := specPlanJSON
+	specPlanJSON = value
+
+	return func() {
+		specPlanJSON = previous
 	}
 }

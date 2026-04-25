@@ -8,8 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **`/h-commission` operator command** — plugin-mode users now have an explicit entrypoint for the DecisionRecord → WorkCommission authorization step. `/h-commission` creates/reuses WorkCommissions without starting execution. Codex installs it as an explicit-only `$h-commission` skill; starting Open-Sleigh remains a CLI/Desktop runtime boundary via `haft harness run`.
+- **Haft v7 specification onboarding spine** — `haft init` now creates parseable placeholder carriers for `.haft/specs/target-system.md`, `.haft/specs/enabling-system.md`, and `.haft/specs/term-map.md` without inventing active product claims. New `haft spec check` runs deterministic L0/L1/L1.5 checks over fenced `yaml spec-section` blocks, term-map entries, optional section fields, and obvious carrier/object authority confusion.
+- **Derived spec coverage CLI** — `haft spec coverage` and `haft spec coverage --json` derive per-section states (`uncovered`, `reasoned`, `commissioned`, `implemented`, `verified`, `stale`) from artifact links, WorkCommissions, affected files, and evidence. Output includes `why` and `next_action` rather than a single coverage percentage.
+- **Project readiness state `needs_onboard`** — Go core, Desktop Rust shell, and TypeScript UI now distinguish `ready`, `needs_init`, `needs_onboard`, and `missing`. Desktop blocks generic task spawning until a project is ready, while initialized projects with draft or incomplete spec carriers surface onboarding as the primary action.
+- **Desktop onboarding cockpit slice** — Settings now exposes typed onboarding actions for initialized projects, including `Open Target Spec`, `Open Enabling Spec`, `Open Term Map`, `Run Spec Check`, and `Refresh Readiness`, with spec-check findings grouped by carrier row.
+- **Harness readiness guard with tactical override** — `haft harness run` blocks broad execution for `needs_onboard` projects by default. Operators may pass `--tactical-override-reason` for explicit out-of-spec tactical work; the reason is recorded on selected WorkCommissions through `spec_readiness_override`.
+- **`/h-commission` operator command and lifecycle actions** — plugin-mode users now have an explicit entrypoint for the DecisionRecord → WorkCommission authorization step. `/h-commission` creates/reuses WorkCommissions without starting execution and can inspect, cancel, or requeue existing commissions with explicit transition constraints. Codex installs it as an explicit-only `$h-commission` skill; starting Open-Sleigh remains a CLI/Desktop runtime boundary via `haft harness run`.
 - **Packaged Open-Sleigh runtime install path** — `task install`, release archives, and `install.sh` now treat Open-Sleigh as a first-class Haft runtime under `~/.haft/runtimes/open-sleigh/current`. `haft harness run` can launch either a repo-local source runtime through `mix` or an installed release runtime through `bin/open_sleigh`, so release users do not need a local `open-sleigh/` checkout for harness runs.
+
+### Changed
+
+- **v7 surface model documented as Desktop Cockpit + MCP Plugin + CLI Harness over one Haft Core** — specs and README now state that Desktop is the primary human cockpit, MCP is the embedded Claude Code/Codex agent surface, and CLI Harness is the operator/runtime surface. UI buttons and plugin commands must compile to typed artifact transitions rather than free prompts.
+- **v7 host-agent support narrowed** — Claude Code and Codex are the supported embedded host-agent surfaces. Cursor, Gemini CLI, JetBrains Air, and generic MCP clients are retained only as experimental or legacy protocol carriers.
+- **MCP prompt guidance updated for spec-first work** — `/h-onboard`, `/h-status`, and `/h-commission` now describe target/enabling specs, term maps, readiness, commission recovery, and the plugin/runtime boundary; regression tests cover the load-bearing prompt clauses.
+- **Harness operator output made compact and actionable** — `haft harness run`, `status`, `watch`, `tail`, and `result` now prefer one human line per meaningful runtime state, terminal next-action hints, evidence summaries, workspace/diff facts, and raw JSON only behind explicit JSON/debug output.
+- **Long-lived desktop conversation behavior tightened** — provider/control envelopes are audit-only instead of visible chat messages, and follow-up text on terminal/checkpointed/blocked tasks routes to continuation instead of writing to a dead PTY.
 
 ## [6.2.1] — 2026-04-22
 

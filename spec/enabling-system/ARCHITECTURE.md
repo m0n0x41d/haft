@@ -117,17 +117,13 @@ internal/spec/                  CORE: spec parser/checker, term map, spec covera
 internal/fpf/                   CORE: FPF spec index and search
 internal/reff/                  CORE: R_eff computation, evidence scoring
 internal/cli/serve.go           MCP: tool dispatch, schema, cross-project recall
-internal/cli/spec.go            CLI: spec check/plan/onboard commands (planned)
+internal/cli/spec.go            CLI: spec check commands
 internal/cli/agent.go           FLOW: standalone agent launcher
 internal/cli/sync.go            FLOW: team sync (.haft/*.md → SQLite)
 internal/agentloop/             FLOW: ReAct coordinator (standalone mode)
 internal/tools/                 FLOW: tool implementations
 internal/mcp/                   MCP: protocol handler
-desktop/app.go                  SURFACE: Wails bindings (52 methods)
-desktop/agents.go               FLOW: task runner, worktree, MCP auto-wire
-desktop/governance.go           GOVERNOR: background scanner, findings
-desktop/decision_flow.go        FLOW: implementation/verification prompts (pure)
-desktop/views.go                SURFACE: domain → view model projections
-desktop/frontend/src/           SURFACE: React pages and components
+desktop-tauri/src/              SURFACE/FLOW: Tauri command shell, task runner, project readiness
+desktop/frontend/src/           SURFACE: React pages, typed workflow UI, and view models
 db/                             PERSISTENCE: SQLite schema, migrations
 ```

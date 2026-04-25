@@ -69,6 +69,9 @@ Rules:
   decisions or commissions.
 - The markdown files are carriers, not acting agents and not semantic authority
   by themselves.
+- Init-time carriers may contain parseable draft placeholders with
+  `claim_layer: carrier` and `status: draft`; validators must not treat those
+  placeholders as active product or enabling-system claims.
 - `haft spec check` validates carriers, parses them into canonical objects, and
   reports missing, stale, conflicting, or uncovered sections.
 
@@ -77,20 +80,48 @@ Rules:
 **Definition:** Parseable specification of what the target system must do in its
 environment.
 
-Minimum required sections:
+TargetSystemSpec has two canonical parts. This prevents repo architecture from
+silently replacing product purpose.
+
+```text
+TargetSystemSpec
+  A. Concept of Use / black-box
+  B. Concept of System / white-box
+```
+
+### A. Concept of Use / black-box
+
+Describes the target system from outside: what changes in the environment,
+who/what interacts with it, what scenarios matter, which boundaries are
+load-bearing, and what observable evidence counts.
+
+Required section kinds:
 
 | Section kind | Required content |
 |--------------|------------------|
 | `environment-change` | What must change in the environment of the target system |
 | `method` | The method or mode by which the environment is changed |
 | `target-role` | The role the target system plays in that change |
+| `external-actors` | Human, system, and organizational actors outside the target system |
+| `scenarios` | Operational scenarios and black-box behavior |
+| `boundaries` | In-scope/out-of-scope, external systems, authority boundaries |
+| `acceptance` | Observable post-conditions and evidence required |
+
+### B. Concept of System / white-box
+
+Describes the target system from inside: what it is made of, how it operates,
+which interfaces exist, which invariants must hold, and what risks bound its
+quality.
+
+Minimum required sections:
+
+| Section kind | Required content |
+|--------------|------------------|
 | `materials` | What the target system is made from: entities, data, protocols, resources, constraints |
 | `target-work-methods` | Methods of operation inside the target system |
-| `boundaries` | In-scope/out-of-scope, external systems, authority boundaries |
 | `term-map` | Terms used by the target spec, with forbidden meanings |
 | `interfaces` | Public API/UI/protocol/event surfaces |
 | `invariants` | Conditions that must always hold |
-| `acceptance` | Observable post-conditions and evidence required |
 | `risks` | Weakest links and refresh triggers |
 
 This is intentionally large and formal. The product value is not low ceremony.
@@ -106,12 +137,16 @@ Minimum required sections:
 | Section kind | Required content |
 |--------------|------------------|
 | `creator-role` | What role the enabling system plays for the target system |
+| `creator-graph` | Human principal, onboarding agent, coding agent, verifier, CI, harness runtime, repo/DB/spec carriers, and optional external tracker carrier |
 | `creator-actors` | Human principal, agents, CI, harness runtime, external carriers |
+| `method-boundaries` | Who may draft, approve, execute, verify, publish, revise, or cancel |
 | `work-methods` | Reasoning, design, implementation, verification, review, release methods |
 | `repo-architecture` | Modules, layers, dependency rules, ownership surfaces |
 | `effect-boundaries` | Filesystem, DB, network, agent, tracker, terminal, build/test effects |
 | `test-strategy` | Behavior/interface/spec tests, contract tests, E2E, prohibited test shapes |
 | `agent-policy` | Which agents may act, through which surfaces, with which permissions |
+| `surface-policy` | Desktop, MCP, and CLI responsibilities and non-authority constraints |
+| `autonomy-envelope-policy` | Checkpointed default, batch/YOLO approval, budget and one-way-door restrictions |
 | `commission-policy` | Scope, lockset, evidence, projection, and autonomy defaults |
 | `runtime-policy` | Harness runtime install/start/observe/apply/cancel model |
 | `hooks-and-ci` | Local hooks, CI checks, spec check, evidence refresh |
@@ -132,8 +167,10 @@ id: TS.environment-change.001
 kind: environment-change
 title: Short human-readable name
 statement_type: definition | admissibility | duty | evidence | explanation
+claim_layer: object | description | carrier | work | evidence
 owner: human | haft | agent | ci | external-carrier
 status: draft | active | deprecated | superseded
+carrier_claim_allowed: false
 valid_until: 2026-07-24
 depends_on: []
 supersedes: []
@@ -146,8 +183,12 @@ Rules:
 
 - `id` is stable. Renaming text must not change the id.
 - `statement_type` is required for every load-bearing section.
+- `claim_layer` is required so validators can detect object/description/carrier/work/evidence confusion.
 - Mixed statement types are illegal. Split the section instead.
 - `owner` names who can change the fact, not who can describe it.
+- Active target-system sections must not use `claim_layer: carrier` for product
+  object claims unless `carrier_claim_allowed: true` is explicit. This is a
+  deterministic authority-boundary guard, not proof that the section is true.
 - `valid_until` is required for sections that depend on context, market,
   architecture, dependencies, or operational assumptions.
 
@@ -162,6 +203,7 @@ Canonical section carrier:
 id: TS.environment-change.001
 kind: environment-change
 statement_type: definition
+claim_layer: object
 owner: human
 status: active
 valid_until: 2026-07-24
@@ -279,11 +321,14 @@ Haft must preserve object/description/carrier distinction:
 |-------|------|----------------|
 | L0 | Parse | Markdown/YAML syntax, IDs, required fields |
 | L1 | Structural | Required sections, unique terms, valid links, no mixed statement types |
+| L1.5 | Deterministic shape/authority guard | TermMap entry shape, optional section field shape, duplicate aliases, and obvious carrier/object authority confusion |
 | L2 | Semantic | target/enabling split, ambiguous term use, owner/authority consistency, spec coverage gaps |
 | L3 | Runtime | stale/drift detection, evidence decay, commission freshness, code/test/spec link health |
 
-MVP may ship L0/L1 first, but the product promise requires L2/L3 to become
-first-class. Without L2/L3, large specs become documentation again.
+Current `haft spec check` covers deterministic L0/L1/L1.5 checks only. It is
+not an LLM review, not proof of product correctness, and not L3 runtime
+evidence. The product promise still requires L2/L3 to become first-class;
+without L2/L3, large specs become documentation again.
 
 ## Compilation Chain
 

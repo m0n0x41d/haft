@@ -22,7 +22,7 @@
 
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
-| S1 | EnablingSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The enabling system exists to produce the target system. If the target role/boundary is not admissible, enabling mechanics will silently define product intent. | `spec check` blocks enabling readiness until required target sections pass L0/L1 validation. |
+| S1 | EnablingSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The enabling system exists to produce the target system. If the target role/boundary is not admissible, enabling mechanics will silently define product intent. | `spec check` blocks enabling readiness until required target sections pass deterministic L0/L1/L1.5 validation. |
 | S2 | SpecSection without stable id, kind, statement_type, owner, or status | The section cannot participate in coverage, staleness, authority, or evidence checks. | Strict markdown parser rejects the section. |
 | S3 | One SpecSection mixes definition, admissibility, duty, evidence, and explanation claims | Mixed statement types hide authority and evidence boundaries. | `spec check` flags mixed load-bearing language and requires split sections. |
 | S4 | Load-bearing term used in an active SpecSection without a TermMap entry | Agents and humans may use the same word differently while believing they agree. | `spec check` flags unknown terms; active readiness requires definitions for load-bearing terms. |

@@ -22,12 +22,15 @@ tool and the hand — the part that turns raw capability into formal
 specification, governed decisions, bounded commissions, and evidence-backed
 engineering work.
 
-### Two primary surfaces
+### Three surfaces, one core
 
-- **Desktop app** — visual cockpit for reasoning state, agent orchestration, and governance dashboard
-- **MCP plugin** — reasoning tools for AI coding agents (Claude Code, Cursor, Gemini CLI, Codex, Air)
+- **Desktop Cockpit** — human surface for onboarding, specs, governance, runtime visibility, and evidence
+- **MCP plugin** — embedded agent surface for Claude Code and Codex to reason, draft, query, and create commissions
+- **CLI Harness** — operator/runtime surface for prepare, run, status, result, apply, requeue, and cancel
 
-Both share the same kernel. Desktop is where humans think. MCP is where agents think.
+All three surfaces compile into the same Haft Core artifact graph. Desktop does
+not own semantic truth, MCP does not own long-running runtime lifecycle, and
+CLI does not become a second source of meaning.
 
 > **Note:** The TUI (`haft agent`) and Desktop app are in **pre-alpha** and under active development. They are not recommended for production use. The MCP plugin mode (`haft serve`) is the stable, proven interface.
 
@@ -41,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bas
 
 The install URL still points at the historical `quint-code` repository path. The installed binary is `haft`.
 
-Then in your project, run init **with your tool's flag**:
+Then in your project, run init **with your supported host-agent flag**:
 
 ```bash
 # Claude Code (default if no flag)
@@ -50,45 +53,74 @@ haft init
 # Claude Code with repo-local commands
 haft init --local
 
-# Cursor
-haft init --cursor
-
-# Gemini CLI
-haft init --gemini
-
 # Codex CLI / Codex App
 haft init --codex
 
-# JetBrains Air
-haft init --air
-
-# All tools at once
+# Claude Code + Codex
 haft init --all
+```
+
+v7 supported embedded host-agent surfaces:
+
+```text
+Claude Code
+Codex CLI / Codex App
+```
+
+Cursor, Gemini CLI, JetBrains Air, and generic MCP clients remain
+experimental/legacy integration targets. Their flags may exist while the
+runtime and docs converge, but v7 product support is intentionally narrowed to
+Claude Code and Codex.
+
+```bash
+# Experimental Cursor config
+haft init --cursor
+
+# Experimental Gemini CLI config
+haft init --gemini
 ```
 
 ### What init does per tool
 
-The binary is the same — only the MCP config and command/prompt installation locations differ:
+The binary is the same — only the MCP config and command/prompt installation
+locations differ. Supported v7 hosts:
 
 | Tool | MCP Config | Commands / Prompts | Skill |
 |------|-----------|--------------------|-------|
 | Claude Code | `.mcp.json` (project root) | `~/.claude/commands/` or `.claude/commands/` with `--local` | `~/.claude/skills/h-reason/` or local install with `--local` |
+| Codex CLI / Codex App | `.codex/config.toml` | `~/.codex/prompts/` or `.codex/prompts/` with `--local` | `~/.agents/skills/h-reason/` |
+
+Experimental/legacy hosts:
+
+| Tool | MCP Config | Commands / Prompts | Skill |
+|------|-----------|--------------------|-------|
 | Cursor | `.cursor/mcp.json` | `~/.cursor/commands/` or `.cursor/commands/` with `--local` | `~/.cursor/skills/h-reason/` or local install with `--local` |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/commands/` or local install with `--local` | — |
-| Codex CLI / Codex App | `.codex/config.toml` | `~/.codex/prompts/` or `.codex/prompts/` with `--local` | `~/.agents/skills/h-reason/` |
 | Air | `.codex/config.toml` | project `skills/` | project `skills/h-reason/` |
 
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.
 
 Project-scoped MCP configs are safe to commit for shared repositories: Claude
-Code `.mcp.json`, Cursor `.cursor/mcp.json`, and Codex/Air
-`.codex/config.toml` use portable project-root values instead of your
-machine's absolute checkout path.
+Code `.mcp.json` and Codex `.codex/config.toml` use portable project-root
+values instead of your machine's absolute checkout path.
 
 Existing project? Run `/h-onboard` after init. The target direction is deeper
 than codebase summarization: onboarding should build a parseable target-system
 spec, enabling-system spec, term map, and spec coverage graph before broad
 harness execution.
+
+Check the spec carriers locally with:
+
+```bash
+haft spec check
+haft spec check --json
+```
+
+`haft spec check` is intentionally deterministic L0/L1/L1.5 only: it parses
+fenced `yaml spec-section` blocks, checks required structural fields, validates
+known carrier shapes, and verifies that the term-map carrier contains parseable
+term entries. It does not make L2 semantic judgments, perform LLM review, prove
+product correctness, or make L3 runtime/evidence claims.
 
 ---
 
@@ -159,8 +191,15 @@ haft harness result wc-...       # inspect one completed run and workspace diff
 haft harness apply wc-...        # apply a completed workspace patch to this checkout
 ```
 
-Starting Open-Sleigh is an operator/runtime action. Use the CLI or desktop
-surface for that boundary rather than a plugin slash command.
+Broad harness execution is blocked for `needs_onboard` projects by default. If
+you intentionally need tactical out-of-spec work, pass
+`--tactical-override-reason "..."`; Haft records that reason on the selected
+WorkCommissions.
+
+Starting Open-Sleigh is an operator/runtime action. Use the CLI Harness or
+Desktop Cockpit for that boundary rather than a plugin slash command. MCP may
+create or inspect WorkCommissions, but it must not own the long-running runtime
+lifecycle.
 
 Commissions carry a `delivery_policy`. The default is
 `workspace_patch_manual`: Open-Sleigh changes stay in the isolated workspace
@@ -201,7 +240,12 @@ For the repeatable local E2E smoke:
 task open-sleigh:smoke-real-haft
 ```
 
-The same loop powers the desktop "Implement" button. CLI and desktop are two surfaces over one kernel.
+The same loop powers Desktop Cockpit workflow buttons. A button must compile to
+a typed artifact transition, not a free prompt:
+
+```text
+SpecSection(s) -> DecisionRecord -> WorkCommission -> RuntimeRun -> Evidence -> SpecCoverage
+```
 
 ### Evidence workflow
 
@@ -302,7 +346,7 @@ Background detection loops (stale, drift, dependencies) with dashboard alerts. A
 ## Requirements
 
 - Go 1.25+ (for building from source)
-- Any MCP-capable AI tool for plugin mode
+- Claude Code or Codex for supported v7 plugin mode
 - Rust toolchain + Tauri v2 (only when building the desktop app from source)
 
 ## License

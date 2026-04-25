@@ -29,6 +29,18 @@ The desktop shell is no longer modeled as a generic dashboard plus a separate pr
 - `Artifacts` remain the governance graph: problems, decisions, comparison, evidence, commissions.
 - `Settings` owns project registry, agent presets, runtime defaults, and keys.
 
+Desktop is one surface over Haft Core, not the owner of semantic authority. The
+same workflows must remain available through MCP and CLI where those surfaces
+are the better operator fit:
+
+```text
+Desktop Cockpit = primary human navigation and approval surface
+MCP Plugin      = embedded agent reasoning/authoring/commissioning surface
+CLI Harness     = runtime/operator automation surface
+Haft Core       = semantic authority and artifact graph
+Open-Sleigh     = execution mechanics
+```
+
 The key distinction:
 
 ```text
@@ -46,6 +58,9 @@ Design rule:
 - Spec readiness, not task count, is the first-class readiness state for serious harness work.
 - Counts, coverage, and raw tables are Pro/detail mode only.
 - No hidden control prompt, JSON carrier, or runtime envelope may render as a user chat message.
+- Every workflow button compiles to a typed artifact transition. It may inject
+  a prompt stage into a host agent, but the result must be an explicit
+  artifact proposal/mutation followed by deterministic validation.
 
 ## LAYER 0: Desktop Domain Core
 
@@ -60,6 +75,8 @@ Concepts:
 - `SpecReadiness`
 - `SpecCoverageSummary`
 - `OperatorAction`
+- `WorkflowIntent`
+- `ArtifactTransition`
 
 Functions:
 - `project_readiness(path, has_config) -> ProjectReadiness`
@@ -70,6 +87,8 @@ Functions:
 - `spec_readiness(project, spec_check) -> SpecReadiness`
 - `spec_coverage_summary(edges, evidence) -> SpecCoverageSummary`
 - `commission_operator_actions(state, delivery_policy) -> OperatorAction[]`
+- `workflow_intent(surface_action) -> WorkflowIntent`
+- `artifact_transition(workflow_result) -> ArtifactTransition`
 
 Inexpressible:
 - A missing project that is also active/runnable.
@@ -80,6 +99,7 @@ Inexpressible:
 - A generic dashboard item shown in Core without an operator-facing reason.
 - A project marked runnable for broad harness work while target/enabling specs are missing.
 - A spec coverage gap shown without a next operator action.
+- A Desktop button that directly sends an opaque prompt and marks semantic state ready.
 
 Depends on: none.
 
@@ -87,6 +107,7 @@ Canonical normal form:
 - Every raw status compiles to an algebraic state before UI or command logic can branch on it.
 - Every Core row is either `CoreAttentionItem` or `CoreRuntimeItem`; JSX does not construct these ad hoc.
 - Every project has exactly one readiness state: `ready`, `needs_init`, `needs_onboard`, or `missing`.
+- Every operator button has exactly one typed workflow intent.
 
 ## LAYER 1: Contract Normalization
 

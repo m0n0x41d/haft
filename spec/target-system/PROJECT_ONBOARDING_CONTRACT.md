@@ -35,7 +35,8 @@ that readiness.
 | Onboarding agent | Reads repo/docs/code, asks questions, drafts specs, points out gaps | Nothing irreversible; may propose structured sections |
 | Haft core | Parses specs, validates structure, stores artifacts, computes coverage | Deterministic admissibility only |
 | Desktop Cockpit | Primary human surface for onboarding and readiness | UI does not invent semantics |
-| MCP host agent | Uses Haft tools during coding/reasoning | May create drafts/notes/commissions only inside explicit tool contracts |
+| MCP host agent | Embedded Claude Code/Codex surface during coding/reasoning | May create drafts/notes/commissions only inside explicit tool contracts |
+| CLI Harness | Operator surface for runtime prepare/run/status/result/apply/cancel | Does not author product meaning |
 | Harness runtime | Executes WorkCommissions | No spec authoring authority |
 
 ## E2E Flow
@@ -48,7 +49,7 @@ Scenario: Desktop adds an existing repository
   When Haft adds the project
   Then Haft verifies the path exists
   And detects whether ".haft/" exists
-  And detects supported host-agent configuration surfaces
+  And detects supported v7 host-agent configuration surfaces
   And shows one of:
     | state          | meaning                                      |
     | ready          | .haft exists and spec check passes           |
@@ -64,18 +65,31 @@ Scenario: Init creates the local harness carrier
   Given a project is "needs_init"
   When the user runs "Initialize Haft"
   Then Haft creates ".haft/"
-  And configures supported host agents for MCP:
-    | host       | carrier                     |
-    | Codex      | .codex/config.toml           |
-    | Claude Code| .mcp.json or supported local config |
+  And configures selected supported host agents for MCP:
+    | selection        | host        | carrier                     |
+    | default/--claude | Claude Code | .mcp.json or supported local config |
+    | --codex/--all    | Codex       | .codex/config.toml           |
+  And does not configure experimental/deferred hosts unless explicitly requested
   And creates ".haft/workflow.md"
-  And creates empty spec carriers:
+  And creates parseable draft spec carriers that do not claim active product meaning:
     | file                              |
     | .haft/specs/target-system.md       |
     | .haft/specs/enabling-system.md     |
     | .haft/specs/term-map.md            |
   And does not create fake decisions
 ```
+
+v7 host support is intentionally narrow:
+
+| Host | Status | Reason |
+|------|--------|--------|
+| Claude Code | supported | Primary embedded coding-agent surface for local projects |
+| Codex | supported | Primary embedded coding-agent surface for Codex CLI/App workflows |
+| Cursor | experimental/deferred | May remain installable, not v7 acceptance target |
+| Gemini CLI | experimental/deferred | May remain installable, not v7 acceptance target |
+| JetBrains Air | experimental/deferred | May remain installable, not v7 acceptance target |
+| Generic MCP client | experimental/deferred | Protocol-compatible does not imply product support |
+
 
 ### Scenario: Onboard target system first
 
@@ -209,6 +223,40 @@ Required operator surfaces:
 | Spec coverage | spec sections grouped by uncovered/reasoned/commissioned/verified/stale |
 | Decision planning | proposed decisions with section refs and merge/split controls |
 | Runtime cockpit | runnable/running/blocked/completed commissions and evidence |
+
+## Surface Workflow Contract
+
+Desktop buttons, MCP tool/slash calls, and CLI commands are surfaces over the
+same typed workflow model. They must not send free prompts that silently mutate
+semantic state.
+
+Canonical form:
+
+```text
+Surface action
+  -> WorkflowIntent
+  -> PromptStage or CommandStage
+  -> ArtifactProposal or ArtifactMutation
+  -> DeterministicCheck
+  -> DerivedReadinessOrCoverageState
+```
+
+Examples:
+
+| Surface action | Typed workflow | Artifact transition |
+|----------------|----------------|---------------------|
+| `Draft Target Spec` | `onboarding.target_spec.draft` | repo carriers -> draft `SpecSection` blocks |
+| `Approve Target Section` | `onboarding.target_spec.approve` | draft section -> active section |
+| `Plan from Spec` | `spec.plan` | uncovered sections -> proposed DecisionRecords |
+| `Create WorkCommission` | `commission.create` | DecisionRecord + scope -> WorkCommission |
+| `Delegate to Harness` | `harness.run_commission` | runnable WorkCommission -> RuntimeRun |
+| `Review Evidence` | `evidence.review` | evidence carrier -> derived SpecCoverage state |
+
+Invalid shape:
+
+```text
+Button -> opaque prompt -> agent writes arbitrary markdown -> UI shows ready
+```
 
 The agent may explain the value of formal specs, but UI must not rely on
 marketing prose to compensate for missing state. The operator must be able to

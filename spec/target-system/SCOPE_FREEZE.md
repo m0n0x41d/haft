@@ -61,9 +61,9 @@ Everything below is built, tested, and being merged to main.
 - Search (Cmd+K)
 
 ### Surfaces
-- MCP Plugin: stable 7-tool interface
-- CLI: haft init, serve, sync, agent, board, doctor, fpf search, commission
-- Desktop App: Wails v2, pre-alpha
+- Desktop Cockpit: primary human surface, Wails/Tauri v2 pre-alpha during transition
+- MCP Plugin: stable 7-tool embedded agent interface, v7 supported hosts are Claude Code and Codex
+- CLI Harness: first-class operator/runtime surface for init, serve, sync, check, commission, and harness run/status/result/apply/cancel
 
 ### Skill & Commands
 - h-reason skill with 5-mode model (Understand/Explore/Choose/Execute/Verify)
@@ -130,7 +130,7 @@ not merely run an agent task.
 
 Ship exactly one vertical slice:
 - [ ] Add existing project from Desktop and detect readiness (`ready`, `needs_init`, `needs_onboard`, `missing`)
-- [ ] `haft init` / Desktop init creates `.haft/`, workflow policy, and host-agent MCP config
+- [ ] `haft init` / Desktop init creates `.haft/`, workflow policy, and supported Claude Code/Codex host-agent MCP config
 - [ ] Onboarding agent drafts `TargetSystemSpec` with stable SpecSection ids
 - [ ] Onboarding agent drafts `EnablingSystemSpec` only after target spec passes structural validation
 - [ ] `haft spec check` validates required sections, term map, statement types, and target/enabling split
@@ -155,6 +155,7 @@ Focus: make the deep spec workflow operationally usable.
 - [ ] Decision planning view: accept/merge/split/discard spec-derived decision drafts
 - [ ] Runtime cockpit: runnable/running/blocked/completed commissions, evidence, apply/cancel/requeue
 - [ ] Long-lived conversations bound to project/spec/decision context, not terminal one-shot tasks
+- [ ] Desktop workflow buttons compile to typed artifact transitions, not opaque prompts
 
 ## v7.2 — Spec Enforcement Hardening
 

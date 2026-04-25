@@ -29,6 +29,12 @@ const CONTROL_PROMPT_FOLLOW_UP: &str = "Operator follow-up:";
 const CONTROL_PROMPT_SUFFIX: &str =
     "Continue from the prior context. Do not repeat completed setup unless it is necessary.";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChatBlockVisibility {
+    Visible,
+    AuditOnly,
+}
+
 // ─── Agent kinds ───
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1729,8 +1735,7 @@ fn continuation_seed_blocks(
 ) -> Vec<ChatBlock> {
     let mut blocks: Vec<ChatBlock> = previous_blocks
         .iter()
-        .filter(|block| !is_control_prompt(&block.text))
-        .cloned()
+        .filter_map(visible_conversation_block)
         .collect();
     let prompt = original_prompt.trim();
 
@@ -1759,11 +1764,36 @@ fn visible_original_prompt(prompt: &str, blocks: &[ChatBlock]) -> String {
 
     blocks
         .iter()
+        .filter_map(visible_conversation_block)
         .find(|block| {
             block.role == "user" && !block.text.trim().is_empty() && !is_control_prompt(&block.text)
         })
         .map(|block| block.text.trim().to_string())
         .unwrap_or_default()
+}
+
+fn visible_conversation_block(block: &ChatBlock) -> Option<ChatBlock> {
+    let without_control = strip_control_prompt_sections(&block.text);
+    let visible_text = strip_audit_only_provider_envelope_lines(&without_control);
+    let visible_block = if visible_text == block.text {
+        block.clone()
+    } else {
+        let mut next = block.clone();
+        next.text = visible_text;
+        next
+    };
+
+    if chat_block_has_renderable_value(&visible_block) {
+        return Some(visible_block);
+    }
+
+    None
+}
+
+fn chat_block_has_renderable_value(block: &ChatBlock) -> bool {
+    [&block.text, &block.output, &block.input, &block.name]
+        .iter()
+        .any(|value| !value.trim().is_empty())
 }
 
 fn is_control_prompt(text: &str) -> bool {
@@ -1785,17 +1815,21 @@ fn strip_prefixed_control_prompt_sections(text: &str) -> String {
         return text.into();
     }
 
-    text.split(CONTROL_PROMPT_PREFIX)
+    let mut sections = text.split(CONTROL_PROMPT_PREFIX);
+    let head = sections.next().unwrap_or_default();
+    let visible_tails = sections
         .map(strip_control_prompt_tail)
         .collect::<Vec<_>>()
-        .join("")
+        .join("");
+
+    format!("{head}{visible_tails}")
 }
 
 fn strip_control_prompt_tail(section: &str) -> String {
     section
         .split_once(CONTROL_PROMPT_SUFFIX)
         .map(|(_, tail)| tail.to_string())
-        .unwrap_or_else(|| section.to_string())
+        .unwrap_or_default()
 }
 
 fn strip_orphaned_control_prompt_tail(text: &str) -> String {
@@ -1821,6 +1855,85 @@ fn strip_orphaned_control_prompt_tail(text: &str) -> String {
         output.push_str(&remaining[..start]);
         remaining = &remaining[end..];
     }
+}
+
+#[derive(Deserialize, Default)]
+struct ProviderEnvelope {
+    #[serde(default, rename = "type")]
+    envelope_type: String,
+}
+
+fn strip_audit_only_provider_envelope_lines(text: &str) -> String {
+    if is_audit_only_provider_envelope(text) {
+        return String::new();
+    }
+
+    text.lines()
+        .filter(|line| !is_audit_only_provider_envelope_line(line.trim()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_audit_only_provider_envelope(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    if provider_envelope_visibility(trimmed) == ChatBlockVisibility::AuditOnly {
+        return true;
+    }
+
+    let lines = trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+
+    if lines.len() <= 1 {
+        return false;
+    }
+
+    lines
+        .iter()
+        .all(|line| is_audit_only_provider_envelope_line(line))
+}
+
+fn is_audit_only_provider_envelope_line(text: &str) -> bool {
+    provider_envelope_visibility(text) == ChatBlockVisibility::AuditOnly
+}
+
+fn provider_envelope_visibility(text: &str) -> ChatBlockVisibility {
+    if !looks_like_json_container(text) {
+        return ChatBlockVisibility::Visible;
+    }
+
+    let envelope = match serde_json::from_str::<ProviderEnvelope>(text) {
+        Ok(envelope) => envelope,
+        Err(_) => return ChatBlockVisibility::Visible,
+    };
+
+    if audit_only_provider_envelope_type(&envelope.envelope_type) {
+        return ChatBlockVisibility::AuditOnly;
+    }
+
+    ChatBlockVisibility::Visible
+}
+
+fn audit_only_provider_envelope_type(envelope_type: &str) -> bool {
+    matches!(
+        envelope_type,
+        "result"
+            | "system"
+            | "rate_limit_event"
+            | "thread.started"
+            | "turn.started"
+            | "turn.completed"
+    )
+}
+
+fn looks_like_json_container(value: &str) -> bool {
+    let trimmed = value.trim();
+
+    (trimmed.starts_with('{') && trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
 }
 
 fn user_text_block(id: &str, text: &str) -> ChatBlock {
@@ -1999,6 +2112,16 @@ mod tests {
         assert!(!task_accepts_input(""));
     }
 
+    fn assistant_text_block(id: &str, text: &str) -> ChatBlock {
+        ChatBlock {
+            id: id.into(),
+            block_type: "text".into(),
+            role: "assistant".into(),
+            text: text.into(),
+            ..ChatBlock::default()
+        }
+    }
+
     #[test]
     fn continuation_prompt_preserves_follow_up_and_tail() {
         let prompt = continuation_prompt("Task", "Original", "line one\nline two", "Next step");
@@ -2050,6 +2173,96 @@ mod tests {
     }
 
     #[test]
+    fn continuation_seed_blocks_keep_durable_turns_through_fourth_follow_up() {
+        let original_prompt = "Original request";
+        let first_turn_blocks = vec![
+            user_text_block("initial-user", original_prompt),
+            assistant_text_block("assistant-1", "Completed first pass."),
+        ];
+
+        let second_turn_blocks =
+            continuation_seed_blocks(original_prompt, &first_turn_blocks, "Second follow-up");
+
+        let mut checkpoint_blocks = second_turn_blocks.clone();
+        checkpoint_blocks.push(user_text_block(
+            "control-2",
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Completed first pass.",
+                "Second follow-up",
+            ),
+        ));
+        checkpoint_blocks.push(assistant_text_block(
+            "provider-result",
+            r#"{"type":"result","usage":{"input_tokens":6}}"#,
+        ));
+        checkpoint_blocks.push(assistant_text_block("assistant-2", "Checkpoint saved."));
+
+        let third_prompt = visible_original_prompt(
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Checkpoint saved.",
+                "Third follow-up",
+            ),
+            &checkpoint_blocks,
+        );
+        let third_turn_blocks =
+            continuation_seed_blocks(&third_prompt, &checkpoint_blocks, "Third follow-up");
+
+        let mut blocked_blocks = third_turn_blocks.clone();
+        blocked_blocks.push(user_text_block(
+            "control-3",
+            &[
+                "Operator follow-up:",
+                "Third follow-up",
+                "",
+                "Continue from the prior context. Do not repeat completed setup unless it is necessary.",
+            ]
+            .join("\n"),
+        ));
+        blocked_blocks.push(assistant_text_block(
+            "provider-turn",
+            r#"{"type":"turn.completed","usage":{"input_tokens":9}}"#,
+        ));
+        blocked_blocks.push(assistant_text_block("assistant-3", "Blocked on approval."));
+
+        let fourth_prompt = visible_original_prompt(
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Blocked on approval.",
+                "Fourth follow-up",
+            ),
+            &blocked_blocks,
+        );
+        let fourth_turn_blocks =
+            continuation_seed_blocks(&fourth_prompt, &blocked_blocks, "Fourth follow-up");
+        let visible_texts = fourth_turn_blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>();
+        let rendered = visible_texts.join("\n");
+
+        assert_eq!(
+            visible_texts,
+            vec![
+                "Original request",
+                "Completed first pass.",
+                "Second follow-up",
+                "Checkpoint saved.",
+                "Third follow-up",
+                "Blocked on approval.",
+                "Fourth follow-up",
+            ],
+        );
+        assert!(!rendered.contains(r#""type":"result""#));
+        assert!(!rendered.contains("Operator follow-up:"));
+        assert!(!rendered.contains("Continue the existing desktop task."));
+    }
+
+    #[test]
     fn continuation_seed_blocks_drops_partially_parsed_control_prompt_blocks() {
         let previous = vec![user_text_block(
             "control",
@@ -2073,6 +2286,23 @@ mod tests {
     #[test]
     fn visible_original_prompt_uses_first_real_user_block_when_prompt_is_control() {
         let blocks = vec![user_text_block("user", "Hello")];
+        let prompt = visible_original_prompt(
+            "Continue the existing desktop task.\n\nOperator follow-up:\nhello",
+            &blocks,
+        );
+
+        assert_eq!(prompt, "Hello");
+    }
+
+    #[test]
+    fn visible_original_prompt_skips_audit_only_user_envelopes() {
+        let blocks = vec![
+            user_text_block(
+                "provider",
+                r#"{"type":"result","usage":{"input_tokens":6}}"#,
+            ),
+            user_text_block("user", "Hello"),
+        ];
         let prompt = visible_original_prompt(
             "Continue the existing desktop task.\n\nOperator follow-up:\nhello",
             &blocks,

@@ -47,6 +47,43 @@ test("terminal and checkpointed tasks submit follow-up as continuation", () => {
   assert.equal(taskCanSubmitFollowUp("checkpointed"), true);
 });
 
+test("third and fourth follow-ups after non-running outcomes remain continuations", () => {
+  const outcomes = ["completed", "checkpointed", "failed", "blocked"];
+  const followUpTurns = outcomes.map((status, index) => ({
+    turn: index + 2,
+    acceptsLiveInput: taskAcceptsInput(status),
+    canSubmit: taskCanSubmitFollowUp(status),
+    action: taskFollowUpAction(status),
+  }));
+
+  assert.deepEqual(followUpTurns, [
+    {
+      turn: 2,
+      acceptsLiveInput: false,
+      canSubmit: true,
+      action: { kind: "continue_task" },
+    },
+    {
+      turn: 3,
+      acceptsLiveInput: false,
+      canSubmit: true,
+      action: { kind: "continue_task" },
+    },
+    {
+      turn: 4,
+      acceptsLiveInput: false,
+      canSubmit: true,
+      action: { kind: "continue_task" },
+    },
+    {
+      turn: 5,
+      acceptsLiveInput: false,
+      canSubmit: true,
+      action: { kind: "continue_task" },
+    },
+  ]);
+});
+
 test("empty task status cannot submit follow-up", () => {
   const capability = taskInputCapability("");
 

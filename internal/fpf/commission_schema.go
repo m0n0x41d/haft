@@ -3,7 +3,7 @@ package fpf
 func haftCommissionTool() Tool {
 	return Tool{
 		Name:        "haft_commission",
-		Description: "Create, list, claim, and update WorkCommissions. WorkCommissions are bounded execution authorizations between DecisionRecords and RuntimeRuns; external trackers are optional projections, not work authority.",
+		Description: "Create, list, show, claim, requeue, cancel, and update WorkCommissions. WorkCommissions are bounded execution authorizations between DecisionRecords and RuntimeRuns; external trackers are optional projections, not work authority.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -22,7 +22,7 @@ func haftCommissionTool() Tool {
 				},
 				"commission_id": map[string]string{
 					"type":        "string",
-					"description": "(show/claim/update/requeue) WorkCommission id. Optional for claim_for_preflight; omitted means claim the first runnable commission matching filters.",
+					"description": "(show/claim/requeue/cancel/update) WorkCommission id. Optional for claim_for_preflight; omitted means claim the first runnable commission matching filters.",
 				},
 				"decision_ref": map[string]string{
 					"type":        "string",
@@ -75,7 +75,7 @@ func haftCommissionTool() Tool {
 				},
 				"older_than": map[string]string{
 					"type":        "string",
-					"description": "(list selector=stale) Open commission age threshold as a Go duration, e.g. 24h.",
+					"description": "(list/show operator hints) Open commission age threshold as a Go duration, e.g. 24h.",
 				},
 				"plan_ref": map[string]string{
 					"type":        "string",
@@ -89,6 +89,10 @@ func haftCommissionTool() Tool {
 					"type":        "string",
 					"enum":        []interface{}{"workspace_patch_manual", "workspace_patch_auto_on_pass"},
 					"description": "(create/create_from_decision/create_from_plan) How a completed workspace diff is adopted. MVP default is workspace_patch_manual.",
+				},
+				"spec_readiness_override": map[string]interface{}{
+					"type":        "object",
+					"description": "(create_from_decision/create_from_plan) Explicit tactical override record for out-of-spec work, including kind=tactical, out_of_spec=true, project_readiness, and reason.",
 				},
 				"runner_id": map[string]string{
 					"type":        "string",
@@ -104,7 +108,7 @@ func haftCommissionTool() Tool {
 				},
 				"reason": map[string]string{
 					"type":        "string",
-					"description": "(record_preflight/complete_or_block/requeue) Deterministic reason for block/failure/recovery.",
+					"description": "(record_preflight/complete_or_block/requeue/cancel) Deterministic reason for block/failure/recovery/operator closure.",
 				},
 				"payload": map[string]interface{}{
 					"type":        "object",
@@ -112,6 +116,26 @@ func haftCommissionTool() Tool {
 				},
 			},
 			"required": []string{"action"},
+			"allOf": []interface{}{
+				commissionActionRequires("show", []string{"commission_id"}),
+				commissionActionRequires("requeue", []string{"commission_id", "reason"}),
+				commissionActionRequires("cancel", []string{"commission_id", "reason"}),
+			},
+		},
+	}
+}
+
+func commissionActionRequires(action string, required []string) map[string]interface{} {
+	return map[string]interface{}{
+		"if": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"action": map[string]interface{}{
+					"const": action,
+				},
+			},
+		},
+		"then": map[string]interface{}{
+			"required": required,
 		},
 	}
 }

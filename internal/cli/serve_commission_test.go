@@ -88,6 +88,7 @@ func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "show",
 		"commission_id": "wc-show-001",
+		"older_than":    "1h",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,6 +101,17 @@ func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
 
 	if shown["commission"]["id"] != "wc-show-001" {
 		t.Fatalf("shown commission id = %#v", shown["commission"]["id"])
+	}
+
+	operator, ok := shown["commission"]["operator"].(map[string]any)
+	if !ok {
+		t.Fatalf("operator missing in %#v", shown["commission"])
+	}
+	if operator["attention"] != true {
+		t.Fatalf("operator attention = %#v, want true", operator["attention"])
+	}
+	if !containsAnyString(operator["suggested_actions"], "requeue") {
+		t.Fatalf("suggested_actions = %#v, want requeue", operator["suggested_actions"])
 	}
 }
 
@@ -145,6 +157,9 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 	}
 	if _, ok := commission["lease"]; ok {
 		t.Fatalf("lease = %#v, want removed", commission["lease"])
+	}
+	if commission["fetched_at"] == "2026-04-22T10:00:00Z" {
+		t.Fatalf("fetched_at = %#v, want refreshed queue timestamp", commission["fetched_at"])
 	}
 
 	events, ok := commission["events"].([]any)
@@ -202,6 +217,80 @@ func TestHandleHaftCommission_RequeueRejectsTerminalCommission(t *testing.T) {
 	}
 }
 
+func TestHandleHaftCommission_RequeueRequiresReasonForRecoverableState(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-requeue-no-reason", "blocked_policy", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "requeue",
+		"commission_id": "wc-requeue-no-reason",
+	})
+	if err == nil {
+		t.Fatal("expected requeue without reason to fail")
+	}
+	if !strings.Contains(err.Error(), "reason is required") {
+		t.Fatalf("err = %v, want reason is required", err)
+	}
+}
+
+func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-requeue-expired", "queued", "2000-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "requeue",
+		"commission_id": "wc-requeue-expired",
+		"reason":        "operator_recovered",
+	})
+	if err == nil {
+		t.Fatal("expected expired requeue to fail")
+	}
+	if !strings.Contains(err.Error(), "valid_until expired") {
+		t.Fatalf("err = %v, want valid_until expired", err)
+	}
+}
+
+func TestHandleHaftCommission_CancelRejectsCancelledCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture("wc-cancelled", "cancelled", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "cancel",
+		"commission_id": "wc-cancelled",
+		"reason":        "second cancellation",
+	})
+	if err == nil {
+		t.Fatal("expected cancelled commission cancel to fail")
+	}
+	if !strings.Contains(err.Error(), "commission_not_cancellable") {
+		t.Fatalf("err = %v, want commission_not_cancellable", err)
+	}
+}
+
 func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
@@ -242,6 +331,9 @@ func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
 	operator, ok := stale["commissions"][0]["operator"].(map[string]any)
 	if !ok || operator["attention"] != true {
 		t.Fatalf("operator = %#v, want attention", stale["commissions"][0]["operator"])
+	}
+	if !containsAnyString(operator["suggested_actions"], "requeue") {
+		t.Fatalf("suggested_actions = %#v, want requeue", operator["suggested_actions"])
 	}
 
 	cancelResult, err := handleHaftCommission(ctx, store, map[string]any{

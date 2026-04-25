@@ -28,8 +28,9 @@ var serveCmd = &cobra.Command{
 	Short: "Start the MCP server",
 	Long: `Start the Model Context Protocol (MCP) server for AI tool integration.
 
-The server communicates via stdio and provides Haft v5 tools to AI
-assistants like Cursor, Gemini CLI, and Codex CLI.
+The server communicates via stdio and provides Haft tools to embedded host
+agents. v7 product support targets Claude Code and Codex; other MCP clients
+may remain protocol-compatible experimental integrations.
 
 The project root is determined by:
   1. HAFT_PROJECT_ROOT environment variable (if set)

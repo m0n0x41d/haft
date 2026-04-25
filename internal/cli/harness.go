@@ -85,6 +85,21 @@ type harnessRunOptions struct {
 	CommissionQueueName string
 }
 
+type harnessRunReadinessKind string
+
+const (
+	harnessRunReadinessAdmissible      harnessRunReadinessKind = "admissible"
+	harnessRunReadinessBlocked         harnessRunReadinessKind = "blocked"
+	harnessRunReadinessTacticalAllowed harnessRunReadinessKind = "tactical_allowed"
+)
+
+type harnessRunReadinessGate struct {
+	Kind           harnessRunReadinessKind
+	ProjectStatus  project.Readiness
+	BlockReason    string
+	OverrideReason string
+}
+
 type harnessRunSelection struct {
 	CommissionIDs []string
 	DecisionRefs  []string
@@ -119,6 +134,37 @@ type harnessTerminalCommissionSummary struct {
 	RecordedAt   string
 	Workspace    string
 	Preview      string
+}
+
+type harnessWorkspaceDiffState string
+
+const (
+	harnessWorkspaceDiffUnavailable harnessWorkspaceDiffState = "workspace_unavailable"
+	harnessWorkspaceDiffClean       harnessWorkspaceDiffState = "clean"
+	harnessWorkspaceDiffChanged     harnessWorkspaceDiffState = "changed"
+)
+
+type harnessWorkspaceGitSummary struct {
+	State    harnessWorkspaceDiffState
+	Status   string
+	DiffStat string
+	Changed  []string
+	Error    string
+}
+
+type harnessOperatorActionKind string
+
+const (
+	harnessOperatorActionWait          harnessOperatorActionKind = "wait"
+	harnessOperatorActionInspect       harnessOperatorActionKind = "inspect"
+	harnessOperatorActionApply         harnessOperatorActionKind = "apply"
+	harnessOperatorActionRerunEvidence harnessOperatorActionKind = "rerun_evidence"
+)
+
+type harnessOperatorAction struct {
+	Kind   harnessOperatorActionKind
+	Lines  []string
+	Reason string
 }
 
 type harnessApplySummary struct {
@@ -157,6 +203,7 @@ var (
 	harnessRunWorkspaceRoot     string
 	harnessRunRuntimePath       string
 	harnessRunRepoURL           string
+	harnessRunTacticalReason    string
 
 	harnessStatusPath    string
 	harnessStatusLogPath string
@@ -310,6 +357,7 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&harnessRunWorkspaceRoot, "workspace-root", "", "Open-Sleigh workspace root")
 	cmd.Flags().StringVar(&harnessRunRuntimePath, "runtime", "", "Open-Sleigh runtime directory (default: project open-sleigh or installed ~/.haft runtime)")
 	cmd.Flags().StringVar(&harnessRunRepoURL, "repo-url", "", "Repository URL/path cloned into workspaces (default: project root)")
+	cmd.Flags().StringVar(&harnessRunTacticalReason, "tactical-override-reason", "", "Allow needs_onboard harness work and record each selected commission as out-of-spec tactical with this reason")
 }
 
 func registerHarnessStatusFlags(cmd *cobra.Command) {
@@ -435,6 +483,9 @@ func runHarnessTail(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	store, cleanup := openOptionalHarnessStore()
+	defer cleanup()
+
 	for {
 		time.Sleep(time.Second)
 		nextOffset, _, err := printHarnessTailSince(cmd, logPath, commissionID, offset, harnessTailJSON)
@@ -442,6 +493,18 @@ func runHarnessTail(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		offset = nextOffset
+		if harnessTailJSON {
+			continue
+		}
+
+		line, terminal, err := harnessTailFollowCompletionLine(context.Background(), store, commissionID)
+		if err != nil {
+			return err
+		}
+		if terminal {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), line)
+			return err
+		}
 	}
 }
 
@@ -680,6 +743,7 @@ func formatHarnessResult(
 ) []string {
 	commissionID := stringField(commission, "id")
 	workspacePath := filepath.Join(workspaceRoot, commissionID)
+	workspaceSummary := inspectHarnessWorkspaceGit(workspacePath)
 
 	lines := []string{
 		"Open-Sleigh harness result",
@@ -694,27 +758,10 @@ func formatHarnessResult(
 	lines = append(lines, formatHarnessCurrentRuntime(runtimeDetail, statusUpdatedAt, runtimeSummary)...)
 	lines = append(lines, formatHarnessLatestAgentTurn(latestTurn)...)
 	lines = append(lines, formatHarnessResultEvents(mapSliceField(commission, "events"))...)
-	lines = append(lines, formatHarnessDeliveryNext(commission, workspacePath)...)
-	lines = append(lines, formatHarnessWorkspaceGit(workspacePath)...)
+	lines = append(lines, formatHarnessEvidenceSummary(commission)...)
+	lines = append(lines, formatHarnessWorkspaceGitSummary(workspaceSummary)...)
+	lines = append(lines, formatHarnessOperatorNext(commission, workspaceSummary)...)
 	return lines
-}
-
-func formatHarnessDeliveryNext(commission map[string]any, workspacePath string) []string {
-	if stringField(commission, "state") != "completed" {
-		return nil
-	}
-
-	changed, err := gitChangedTrackedFiles(workspacePath)
-	if err != nil || len(changed) == 0 {
-		return nil
-	}
-
-	commissionID := stringField(commission, "id")
-	return []string{
-		"operator_next:",
-		"- apply completed workspace diff: haft harness apply " + commissionID,
-		"- then rerun required evidence in the project checkout",
-	}
 }
 
 func formatHarnessCurrentRuntime(
@@ -877,28 +924,294 @@ func harnessLastEventLine(events []map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
-func formatHarnessWorkspaceGit(workspacePath string) []string {
-	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
-		return []string{"git_status: workspace not found or not a git repository"}
+func formatHarnessEvidenceSummary(commission map[string]any) []string {
+	requirements := harnessEvidenceRequirements(commission)
+	events := currentHarnessAttemptEvents(mapSliceField(commission, "events"))
+
+	lines := []string{"evidence_summary:"}
+	lines = append(lines, "- required="+strconv.Itoa(len(requirements)))
+	if len(requirements) == 0 {
+		lines = append(lines, "- requirements: none declared")
+	} else {
+		visible := requirements
+		if len(visible) > 5 {
+			visible = visible[:5]
+		}
+		for _, requirement := range visible {
+			lines = append(lines, "- requirement: "+formatHarnessEvidenceRequirement(requirement))
+		}
+		if len(requirements) > len(visible) {
+			lines = append(lines, fmt.Sprintf("- requirement: +%d more", len(requirements)-len(visible)))
+		}
 	}
 
-	status := trimmedCommandOutput(workspacePath, "git", "status", "--short")
-	diffStat := trimmedCommandOutput(workspacePath, "git", "diff", "--stat")
+	measure := harnessLatestPhaseOutcome(events, "measure")
+	if len(measure) > 0 {
+		lines = append(lines, "- latest_measure: "+harnessPhaseEventSummary(measure))
+	}
 
-	lines := []string{"git_status:"}
-	if status == "" {
+	terminal := harnessLatestPhaseOutcome(events, "terminal")
+	if len(terminal) > 0 {
+		lines = append(lines, "- terminal: "+harnessPhaseEventSummary(terminal))
+	}
+	return lines
+}
+
+func harnessEvidenceRequirements(commission map[string]any) []any {
+	switch value := commission["evidence_requirements"].(type) {
+	case []any:
+		return value
+	case []string:
+		result := make([]any, 0, len(value))
+		for _, item := range value {
+			result = append(result, item)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func formatHarnessEvidenceRequirement(requirement any) string {
+	switch value := requirement.(type) {
+	case string:
+		return "command=" + presentOrUnknown(value)
+	case map[string]any:
+		return formatHarnessEvidenceRequirementMap(value)
+	default:
+		return "kind=" + presentOrUnknown(fmt.Sprint(value))
+	}
+}
+
+func formatHarnessEvidenceRequirementMap(requirement map[string]any) string {
+	parts := []string{}
+	for _, key := range []string{"kind", "command", "description", "claim_ref", "section_ref"} {
+		value := strings.TrimSpace(stringField(requirement, key))
+		if value == "" {
+			continue
+		}
+		parts = append(parts, key+"="+value)
+	}
+	if len(parts) == 0 {
+		return "kind=unspecified"
+	}
+	return strings.Join(parts, " ")
+}
+
+func harnessLatestPhaseOutcome(events []map[string]any, phase string) map[string]any {
+	latest := map[string]any{}
+	for _, event := range events {
+		if stringField(event, "event") != "phase_outcome" {
+			continue
+		}
+		if stringField(mapField(event, "payload"), "phase") != phase {
+			continue
+		}
+		latest = event
+	}
+	return latest
+}
+
+func harnessPhaseEventSummary(event map[string]any) string {
+	payload := mapField(event, "payload")
+	fields := []string{
+		"verdict=" + presentOrUnknown(stringField(event, "verdict")),
+		"next=" + presentOrUnknown(stringField(payload, "next")),
+		"at=" + presentOrUnknown(stringField(event, "recorded_at")),
+	}
+	return strings.Join(fields, " ")
+}
+
+func inspectHarnessWorkspaceGit(workspacePath string) harnessWorkspaceGitSummary {
+	if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+		return harnessWorkspaceGitSummary{
+			State: harnessWorkspaceDiffUnavailable,
+			Error: "workspace not found or not a git repository",
+		}
+	}
+
+	tracked, trackedErr := gitChangedTrackedFiles(workspacePath)
+	if trackedErr != nil {
+		return harnessWorkspaceGitSummary{
+			State: harnessWorkspaceDiffUnavailable,
+			Error: strings.TrimSpace(trackedErr.Error()),
+		}
+	}
+
+	untracked, untrackedErr := gitUntrackedFiles(workspacePath)
+	if untrackedErr != nil {
+		return harnessWorkspaceGitSummary{
+			State: harnessWorkspaceDiffUnavailable,
+			Error: strings.TrimSpace(untrackedErr.Error()),
+		}
+	}
+
+	changed := uniqueStringsPreserveOrder(append(tracked, untracked...))
+	state := harnessWorkspaceDiffClean
+	if len(changed) > 0 {
+		state = harnessWorkspaceDiffChanged
+	}
+
+	return harnessWorkspaceGitSummary{
+		State:    state,
+		Status:   trimmedCommandOutput(workspacePath, "git", "status", "--short"),
+		DiffStat: trimmedCommandOutput(workspacePath, "git", "diff", "--stat"),
+		Changed:  changed,
+	}
+}
+
+func formatHarnessWorkspaceGitSummary(summary harnessWorkspaceGitSummary) []string {
+	lines := []string{"diff_status: " + string(summary.State)}
+	if strings.TrimSpace(summary.Error) != "" {
+		lines = append(lines, "diff_error: "+summary.Error)
+	}
+
+	lines = append(lines, "git_status:")
+	if strings.TrimSpace(summary.Status) == "" {
 		lines = append(lines, "- clean")
 	} else {
-		lines = append(lines, indentLines(status)...)
+		lines = append(lines, indentLines(summary.Status)...)
 	}
 
 	lines = append(lines, "diff_stat:")
-	if diffStat == "" {
+	if strings.TrimSpace(summary.DiffStat) == "" {
 		lines = append(lines, "- empty")
 	} else {
-		lines = append(lines, indentLines(diffStat)...)
+		lines = append(lines, indentLines(summary.DiffStat)...)
 	}
 	return lines
+}
+
+func formatHarnessOperatorNext(
+	commission map[string]any,
+	workspaceSummary harnessWorkspaceGitSummary,
+) []string {
+	action := harnessOperatorActionFor(commission, workspaceSummary)
+	lines := []string{"operator_next:", "- next_action=" + string(action.Kind)}
+	if strings.TrimSpace(action.Reason) != "" {
+		lines = append(lines, "- reason="+action.Reason)
+	}
+	lines = append(lines, action.Lines...)
+	return lines
+}
+
+func harnessOperatorActionFor(
+	commission map[string]any,
+	workspaceSummary harnessWorkspaceGitSummary,
+) harnessOperatorAction {
+	state := stringField(commission, "state")
+	commissionID := stringField(commission, "id")
+
+	switch state {
+	case "queued", "ready", "draft":
+		return harnessQueuedOperatorAction(commissionID)
+	case "preflighting", "running":
+		return harnessRunningOperatorAction(commissionID)
+	case "completed", "completed_with_projection_debt":
+		return harnessCompletedOperatorAction(commission, workspaceSummary)
+	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+		return harnessBlockedOperatorAction(commissionID, state)
+	case "cancelled", "expired":
+		return harnessInspectOperatorAction(commissionID, "commission is "+state)
+	default:
+		return harnessInspectOperatorAction(commissionID, "commission state is "+presentOrUnknown(state))
+	}
+}
+
+func harnessQueuedOperatorAction(commissionID string) harnessOperatorAction {
+	return harnessOperatorAction{
+		Kind:   harnessOperatorActionWait,
+		Reason: "commission is runnable but not active",
+		Lines: []string{
+			"- start or continue runtime: haft harness run",
+			"- inspect queued commission: haft commission show " + commissionID,
+		},
+	}
+}
+
+func harnessRunningOperatorAction(commissionID string) harnessOperatorAction {
+	return harnessOperatorAction{
+		Kind:   harnessOperatorActionWait,
+		Reason: "runtime is still active",
+		Lines: []string{
+			"- wait for terminal state: haft harness tail " + commissionID + " --follow",
+			"- inspect current state: haft harness result " + commissionID,
+		},
+	}
+}
+
+func harnessCompletedOperatorAction(
+	commission map[string]any,
+	workspaceSummary harnessWorkspaceGitSummary,
+) harnessOperatorAction {
+	commissionID := stringField(commission, "id")
+	if workspaceSummary.State == harnessWorkspaceDiffChanged {
+		lines := []string{
+			"- apply completed workspace diff: haft harness apply " + commissionID,
+			"- then rerun required evidence in the project checkout",
+		}
+		lines = append(lines, harnessEvidenceCommandLines(commission)...)
+		return harnessOperatorAction{
+			Kind:   harnessOperatorActionApply,
+			Reason: "completed workspace has unapplied changes",
+			Lines:  lines,
+		}
+	}
+	if workspaceSummary.State == harnessWorkspaceDiffClean {
+		lines := []string{"- rerun required evidence in the project checkout before relying on the result"}
+		lines = append(lines, harnessEvidenceCommandLines(commission)...)
+		return harnessOperatorAction{
+			Kind:   harnessOperatorActionRerunEvidence,
+			Reason: "completed workspace has no unapplied diff",
+			Lines:  lines,
+		}
+	}
+	return harnessInspectOperatorAction(commissionID, "completed workspace is unavailable; inspect before applying")
+}
+
+func harnessBlockedOperatorAction(commissionID string, state string) harnessOperatorAction {
+	return harnessOperatorAction{
+		Kind:   harnessOperatorActionInspect,
+		Reason: "commission requires operator decision: " + state,
+		Lines: []string{
+			"- inspect result and phase events: haft harness result " + commissionID,
+			"- requeue after fixing the cause: haft commission requeue " + commissionID + " --reason operator_recovered",
+			"- cancel if obsolete: haft commission cancel " + commissionID + " --reason obsolete",
+		},
+	}
+}
+
+func harnessInspectOperatorAction(commissionID string, reason string) harnessOperatorAction {
+	return harnessOperatorAction{
+		Kind:   harnessOperatorActionInspect,
+		Reason: reason,
+		Lines: []string{
+			"- inspect result and phase events: haft harness result " + commissionID,
+		},
+	}
+}
+
+func harnessEvidenceCommandLines(commission map[string]any) []string {
+	lines := []string{}
+	for _, requirement := range harnessEvidenceRequirements(commission) {
+		command := harnessEvidenceRequirementCommand(requirement)
+		if command == "" {
+			continue
+		}
+		lines = append(lines, "- evidence: "+command)
+	}
+	return lines
+}
+
+func harnessEvidenceRequirementCommand(requirement any) string {
+	switch value := requirement.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case map[string]any:
+		return strings.TrimSpace(stringField(value, "command"))
+	default:
+		return ""
+	}
 }
 
 func trimmedCommandOutput(workdir string, name string, args ...string) string {
@@ -1297,6 +1610,7 @@ func formatRecentTerminalCommissions(recent []harnessTerminalCommissionSummary) 
 		lines = append(lines, "- "+strings.Join(fields, " "))
 		lines = append(lines, "  result=haft harness result "+summary.CommissionID)
 		lines = append(lines, "  tail=haft harness tail "+summary.CommissionID)
+		lines = append(lines, "  terminal_next="+harnessRecentTerminalNext(summary))
 		if strings.TrimSpace(summary.Workspace) != "" {
 			lines = append(lines, "  workspace="+summary.Workspace)
 		}
@@ -1305,6 +1619,19 @@ func formatRecentTerminalCommissions(recent []harnessTerminalCommissionSummary) 
 		}
 	}
 	return lines
+}
+
+func harnessRecentTerminalNext(summary harnessTerminalCommissionSummary) string {
+	switch strings.TrimSpace(summary.State) {
+	case "completed", "completed_with_projection_debt":
+		return "inspect result, then apply or rerun evidence"
+	case "failed", "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review":
+		return "inspect result, then requeue or cancel"
+	case "cancelled", "expired":
+		return "inspect audit trail"
+	default:
+		return "inspect result"
+	}
 }
 
 func formatRunningDetails(
@@ -1627,7 +1954,18 @@ func loadHarnessRecentTerminalSummaries(
 
 func isHarnessTerminalState(state string) bool {
 	switch strings.TrimSpace(state) {
-	case "completed", "completed_with_projection_debt", "failed", "blocked_policy", "blocked_stale", "cancelled", "expired":
+	case "completed", "completed_with_projection_debt", "failed", "blocked_policy",
+		"blocked_stale", "blocked_conflict", "needs_human_review", "cancelled", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHarnessOperatorStopState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "completed", "completed_with_projection_debt", "failed", "blocked_policy",
+		"blocked_stale", "blocked_conflict", "needs_human_review", "cancelled", "expired":
 		return true
 	default:
 		return false
@@ -1684,6 +2022,9 @@ func recentHarnessEventLines(status map[string]any, logPath string, lineCount in
 			continue
 		}
 		formatted = append(formatted, eventLine)
+	}
+	if len(formatted) == 0 {
+		return []string{"- no operator runtime events yet"}, nil
 	}
 	return formatted, nil
 }
@@ -1753,7 +2094,11 @@ func printHarnessTailSince(
 
 		output := line
 		if !rawJSON {
-			output = formatHarnessRuntimeEventLine(event)
+			formatted, ok := formatHarnessRuntimeEventLineForOperator(event)
+			if !ok {
+				continue
+			}
+			output = formatted
 		}
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), output); err != nil {
 			return len(lines), printed, err
@@ -1761,6 +2106,36 @@ func printHarnessTailSince(
 		printed++
 	}
 	return len(lines), printed, nil
+}
+
+func harnessTailFollowCompletionLine(
+	ctx context.Context,
+	store *artifact.Store,
+	commissionID string,
+) (string, bool, error) {
+	if store == nil {
+		return "", false, nil
+	}
+
+	commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
+	if err != nil {
+		return "", false, err
+	}
+	state := stringField(commission, "state")
+	if !isHarnessOperatorStopState(state) {
+		return "", false, nil
+	}
+
+	workspaceSummary := inspectHarnessWorkspaceGit(filepath.Join(defaultHarnessWorkspaceRoot(), commissionID))
+	action := harnessOperatorActionFor(commission, workspaceSummary)
+	line := strings.Join([]string{
+		"terminal:",
+		"commission=" + presentOrUnknown(commissionID),
+		"state=" + presentOrUnknown(state),
+		"next_action=" + string(action.Kind),
+		"result=haft harness result " + commissionID,
+	}, " ")
+	return line, true, nil
 }
 
 func readHarnessRuntimeLogLines(logPath string) ([]string, error) {
@@ -1788,10 +2163,15 @@ func formatHarnessRuntimeLogLine(line string) (string, bool) {
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		return "", false
 	}
-	return formatHarnessRuntimeEventLine(event), true
+	return formatHarnessRuntimeEventLineForOperator(event)
 }
 
 func formatHarnessRuntimeEventLine(event map[string]any) string {
+	line, ok := formatHarnessRuntimeEventLineForOperator(event)
+	if ok {
+		return line
+	}
+
 	data := mapField(event, "data")
 	fields := []string{
 		presentOrUnknown(stringField(event, "at")),
@@ -1811,11 +2191,91 @@ func formatHarnessRuntimeEventLine(event map[string]any) string {
 		fields = append(fields, "turn="+turnID)
 	}
 
-	line := strings.Join(fields, " ")
 	if preview := harnessRuntimeEventPreview(event); preview != "" {
-		line += "\n  " + preview
+		fields = append(fields, "preview="+preview)
 	}
-	return line
+	return strings.Join(fields, " ")
+}
+
+func formatHarnessRuntimeEventLineForOperator(event map[string]any) (string, bool) {
+	action, ok := harnessRuntimeEventAction(stringField(event, "event"))
+	if !ok {
+		return "", false
+	}
+
+	data := mapField(event, "data")
+	fields := []string{
+		presentOrUnknown(stringField(event, "at")),
+		action + ":",
+	}
+	if commissionID := strings.TrimSpace(stringField(event, "commission_id")); commissionID != "" {
+		fields = append(fields, "commission="+commissionID)
+	}
+	if phase := strings.TrimSpace(stringField(data, "phase")); phase != "" {
+		fields = append(fields, "phase="+phase)
+	}
+	if status := strings.TrimSpace(stringField(data, "status")); status != "" {
+		fields = append(fields, "status="+status)
+	}
+	if sessionID := strings.TrimSpace(stringField(data, "session_id")); sessionID != "" {
+		fields = append(fields, "session="+sessionID)
+	}
+	if turnID := strings.TrimSpace(stringField(data, "turn_id")); turnID != "" {
+		fields = append(fields, "turn="+turnID)
+	}
+	if workspace := strings.TrimSpace(stringField(data, "workspace_path")); workspace != "" {
+		fields = append(fields, "workspace="+workspace)
+	}
+	if reason := harnessCompactPreview(stringField(data, "reason")); reason != "" {
+		fields = append(fields, "reason="+reason)
+	}
+	if preview := harnessRuntimeEventPreview(event); preview != "" {
+		fields = append(fields, "preview="+preview)
+	}
+	return strings.Join(fields, " "), true
+}
+
+func harnessRuntimeEventAction(eventName string) (string, bool) {
+	switch eventName {
+	case "session_dispatched":
+		return "dispatched", true
+	case "session_started":
+		return "started", true
+	case "workspace_reset_started":
+		return "workspace_reset_started", true
+	case "workspace_reset_completed":
+		return "workspace_reset_completed", true
+	case "workspace_reset_failed":
+		return "workspace_reset_failed", true
+	case "agent_turn_started":
+		return "agent_started", true
+	case "agent_turn_completed":
+		return "agent_completed", true
+	case "agent_turn_failed":
+		return "agent_failed", true
+	case "gate_evaluation_completed":
+		return "gate_checked", true
+	case "gate_evaluation_failed":
+		return "gate_failed", true
+	case "terminal_diff_validation_failed":
+		return "diff_blocked", true
+	case "haft_write_completed":
+		return "recorded", true
+	case "haft_write_failed":
+		return "record_failed", true
+	case "session_failed":
+		return "failed", true
+	case "session_waiting_human":
+		return "waiting_human", true
+	case "session_aborted":
+		return "aborted", true
+	case "phase_blocked":
+		return "blocked", true
+	case "workflow_terminal":
+		return "terminal", true
+	default:
+		return "", false
+	}
 }
 
 func harnessRuntimeEventPreview(event map[string]any) string {
@@ -1910,14 +2370,90 @@ func presentOrUnknown(value string) string {
 	return value
 }
 
+func inspectHarnessRunReadiness() (string, project.ReadinessFacts, error) {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return "", project.ReadinessFacts{}, cwdErr
+		}
+
+		facts, readinessErr := project.InspectReadiness(cwd)
+		if readinessErr != nil {
+			return "", project.ReadinessFacts{}, readinessErr
+		}
+		return cwd, facts, nil
+	}
+
+	facts, err := project.InspectReadiness(projectRoot)
+	if err != nil {
+		return "", project.ReadinessFacts{}, err
+	}
+	return projectRoot, facts, nil
+}
+
+func harnessRunReadinessGateFor(
+	facts project.ReadinessFacts,
+	tacticalReason string,
+) harnessRunReadinessGate {
+	reason := harnessRunReadinessBlockReason(facts)
+	if reason == "" {
+		return harnessRunReadinessGate{
+			Kind:          harnessRunReadinessAdmissible,
+			ProjectStatus: facts.Status,
+		}
+	}
+
+	cleanReason := strings.TrimSpace(tacticalReason)
+	if facts.Status == project.ReadinessNeedsOnboard && cleanReason != "" {
+		return harnessRunReadinessGate{
+			Kind:           harnessRunReadinessTacticalAllowed,
+			ProjectStatus:  facts.Status,
+			BlockReason:    reason,
+			OverrideReason: cleanReason,
+		}
+	}
+
+	return harnessRunReadinessGate{
+		Kind:          harnessRunReadinessBlocked,
+		ProjectStatus: facts.Status,
+		BlockReason:   reason,
+	}
+}
+
+func harnessRunReadinessBlockReason(facts project.ReadinessFacts) string {
+	switch facts.Status {
+	case project.ReadinessReady:
+		return ""
+	case project.ReadinessNeedsInit:
+		return "haft harness run blocked: project readiness is needs_init; run `haft init` before harness execution."
+	case project.ReadinessNeedsOnboard:
+		return "haft harness run blocked: project readiness is needs_onboard; .haft exists but the ProjectSpecificationSet is missing or incomplete. Run onboarding and `haft spec check`, or pass `--tactical-override-reason \"...\"` to record out-of-spec tactical WorkCommissions."
+	case project.ReadinessMissing:
+		return "haft harness run blocked: project readiness is missing; select an existing project before harness execution."
+	default:
+		return "haft harness run blocked: project readiness is unknown."
+	}
+}
+
 func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 	if harnessRunPlanPath != "" && harnessDecisionSelectorsPresent(decisionRefs) {
 		return fmt.Errorf("use either decision selectors or --plan, not both")
 	}
 
+	_, readiness, err := inspectHarnessRunReadiness()
+	if err != nil {
+		return err
+	}
+
+	readinessGate := harnessRunReadinessGateFor(readiness, harnessRunTacticalReason)
+	if readinessGate.Kind == harnessRunReadinessBlocked {
+		return fmt.Errorf("%s", readinessGate.BlockReason)
+	}
+
 	return withCommissionProject(func(ctx context.Context, store *artifact.Store, projectRoot string) error {
 		if shouldRunExistingHarnessCommissions(decisionRefs) {
-			handled, err := runExistingHarnessCommissions(ctx, cmd, store, projectRoot)
+			handled, err := runExistingHarnessCommissions(ctx, cmd, store, projectRoot, readinessGate)
 			if err != nil {
 				return err
 			}
@@ -1937,12 +2473,15 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 			return err
 		}
 
-		created, result, err := ensureHarnessCommissions(ctx, store, projectRoot, plan)
+		created, result, err := ensureHarnessCommissions(ctx, store, projectRoot, plan, readinessGate)
 		if err != nil {
 			return err
 		}
 		selection, err := loadHarnessRunSelectionForPlan(ctx, store, plan)
 		if err != nil {
+			return err
+		}
+		if err := recordHarnessRunTacticalOverride(ctx, store, selection, readinessGate); err != nil {
 			return err
 		}
 
@@ -1972,6 +2511,7 @@ func runExistingHarnessCommissions(
 	cmd *cobra.Command,
 	store *artifact.Store,
 	projectRoot string,
+	readinessGate harnessRunReadinessGate,
 ) (bool, error) {
 	planPath, plan, result, selection, found, err := existingRunnableHarnessPlan(ctx, store, projectRoot)
 	if err != nil {
@@ -1984,6 +2524,9 @@ func runExistingHarnessCommissions(
 	opts := defaultHarnessRunOptions(projectRoot, planPath, plan)
 	configPath, err := writeHarnessRuntimeConfig(projectRoot, opts)
 	if err != nil {
+		return false, err
+	}
+	if err := recordHarnessRunTacticalOverride(ctx, store, selection, readinessGate); err != nil {
 		return false, err
 	}
 
@@ -2141,15 +2684,15 @@ func printHarnessRunOperatorHeader(
 		"status: " + opts.StatusPath,
 		"log: " + opts.LogPath,
 		"workspace_root: " + opts.WorkspaceRoot,
-		"selected:",
 	}
-	for _, commissionID := range selection.CommissionIDs {
+	if len(selection.CommissionIDs) > 0 {
+		lines = append(lines, formatHarnessSelectionLine("Selected commission", selection.CommissionIDs))
+		first := selection.CommissionIDs[0]
 		lines = append(
 			lines,
-			"- commission="+commissionID+
-				" result=haft harness result "+commissionID+
-				" tail=haft harness tail "+commissionID+" --follow"+
-				" workspace="+filepath.Join(opts.WorkspaceRoot, commissionID),
+			"result: haft harness result "+first,
+			"tail: haft harness tail "+first+" --follow",
+			"workspace: "+filepath.Join(opts.WorkspaceRoot, first),
 		)
 	}
 	if len(selection.DecisionRefs) > 0 {
@@ -2193,7 +2736,11 @@ func printHarnessSelectedTailSince(
 
 		output := line
 		if !rawJSON {
-			output = formatHarnessRuntimeEventLine(event)
+			formatted, ok := formatHarnessRuntimeEventLineForOperator(event)
+			if !ok {
+				continue
+			}
+			output = formatted
 		}
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), output); err != nil {
 			return len(lines), printed, err
@@ -2284,7 +2831,7 @@ func selectedHarnessCommissionsTerminal(
 		if err != nil {
 			return false, err
 		}
-		if !isHarnessTerminalState(stringField(commission, "state")) {
+		if !isHarnessOperatorStopState(stringField(commission, "state")) {
 			return false, nil
 		}
 	}
@@ -3053,6 +3600,7 @@ func ensureHarnessCommissions(
 	store *artifact.Store,
 	projectRoot string,
 	plan map[string]any,
+	readinessGate harnessRunReadinessGate,
 ) (bool, string, error) {
 	count, err := countExistingHarnessPlanCommissions(ctx, store, plan)
 	if err != nil {
@@ -3066,12 +3614,97 @@ func ensureHarnessCommissions(
 	if err != nil {
 		return false, "", err
 	}
+	args = withHarnessRunSpecReadinessOverride(args, readinessGate)
 
 	result, err := handleHaftCommission(ctx, store, args)
 	if err != nil {
 		return false, "", err
 	}
 	return true, result, nil
+}
+
+func withHarnessRunSpecReadinessOverride(
+	args map[string]any,
+	readinessGate harnessRunReadinessGate,
+) map[string]any {
+	override := harnessRunSpecReadinessOverride(readinessGate)
+	if override == nil {
+		return args
+	}
+
+	next := copyStringAnyMap(args)
+	next["spec_readiness_override"] = override
+	return next
+}
+
+func harnessRunSpecReadinessOverride(readinessGate harnessRunReadinessGate) map[string]any {
+	if readinessGate.Kind != harnessRunReadinessTacticalAllowed {
+		return nil
+	}
+
+	return map[string]any{
+		"kind":              "tactical",
+		"out_of_spec":       true,
+		"project_readiness": string(readinessGate.ProjectStatus),
+		"reason":            readinessGate.OverrideReason,
+	}
+}
+
+func recordHarnessRunTacticalOverride(
+	ctx context.Context,
+	store *artifact.Store,
+	selection harnessRunSelection,
+	readinessGate harnessRunReadinessGate,
+) error {
+	override := harnessRunSpecReadinessOverride(readinessGate)
+	if override == nil || len(selection.CommissionIDs) == 0 {
+		return nil
+	}
+
+	tx, err := store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tactical override record: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	for _, commissionID := range selection.CommissionIDs {
+		commission, err := loadWorkCommissionPayloadForUpdate(ctx, tx, commissionID)
+		if err != nil {
+			return err
+		}
+
+		commission = withCommissionSpecReadinessOverride(commission, override, now)
+		commission = appendLifecycleEvent(commission, map[string]any{
+			"event":     "tactical_override",
+			"runner_id": "haft-cli",
+			"reason":    readinessGate.OverrideReason,
+			"payload":   copyStringAnyMap(override),
+		})
+
+		if err := updateWorkCommissionPayload(ctx, tx, commission); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tactical override record: %w", err)
+	}
+	return nil
+}
+
+func withCommissionSpecReadinessOverride(
+	commission map[string]any,
+	override map[string]any,
+	now time.Time,
+) map[string]any {
+	record := copyStringAnyMap(override)
+	if stringField(record, "recorded_at") == "" {
+		record["recorded_at"] = now.Format(time.RFC3339)
+	}
+
+	commission["spec_readiness_override"] = record
+	return commission
 }
 
 func countExistingHarnessPlanCommissions(

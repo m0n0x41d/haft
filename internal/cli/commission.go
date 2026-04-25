@@ -43,7 +43,8 @@ var commissionCmd = &cobra.Command{
 	Long: `Manage WorkCommissions for execution harnesses.
 
 WorkCommission is the bounded authorization boundary between a DecisionRecord
-and a runtime such as Open-Sleigh.`,
+and a runtime such as Open-Sleigh. Normal operator lifecycle actions inspect,
+requeue, or cancel the record; they do not physically delete it.`,
 }
 
 var commissionCreateCmd = &cobra.Command{
@@ -101,7 +102,7 @@ var commissionClaimCmd = &cobra.Command{
 
 var commissionRequeueCmd = &cobra.Command{
 	Use:   "requeue <commission-id>",
-	Short: "Return a claimed or blocked WorkCommission to the runnable queue",
+	Short: "Return a recoverable WorkCommission to the runnable queue",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runCommissionRequeue,
 }

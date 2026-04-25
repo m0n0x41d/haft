@@ -198,3 +198,63 @@ func TestEmbeddedHReasonSkill_Path5RequiresAutonomousMode(t *testing.T) {
 		}
 	}
 }
+
+func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		required []string
+	}{
+		{
+			name: "h-onboard",
+			path: "commands/h-onboard.md",
+			required: []string{
+				"TargetSystemSpec",
+				"EnablingSystemSpec",
+				"TermMap",
+				"SpecCoverage",
+				"haft spec check",
+				"needs_onboard",
+				"Claude Code and Codex",
+			},
+		},
+		{
+			name: "h-status",
+			path: "commands/h-status.md",
+			required: []string{
+				"needs_onboard",
+				"haft spec check",
+				"WorkCommissions",
+				`haft_commission(action="show"`,
+			},
+		},
+		{
+			name: "h-commission",
+			path: "commands/h-commission.md",
+			required: []string{
+				"authorization step only",
+				"must not start Open-Sleigh",
+				"does not own runtime lifecycle",
+				"WorkCommission = bounded permission to execute",
+				"Do not requeue a commission whose `valid_until` has expired",
+				"Do not physically delete WorkCommissions",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			contentBytes, err := embeddedCommands.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("read command %s: %v", tc.path, err)
+			}
+
+			content := string(contentBytes)
+			for _, required := range tc.required {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s missing %q:\n%s", tc.path, required, content)
+				}
+			}
+		})
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -297,6 +298,164 @@ func TestResolveHarnessDecisionRefsAllActiveIncludesCommissioned(t *testing.T) {
 	}
 }
 
+func TestHarnessRunReadinessGateCoversReadyNeedsInitNeedsOnboard(t *testing.T) {
+	cases := []struct {
+		name            string
+		facts           project.ReadinessFacts
+		overrideReason  string
+		wantKind        harnessRunReadinessKind
+		wantReasonPiece string
+	}{
+		{
+			name:     "ready",
+			facts:    project.ReadinessFacts{Status: project.ReadinessReady, Exists: true, HasHaft: true, HasSpecs: true},
+			wantKind: harnessRunReadinessAdmissible,
+		},
+		{
+			name:            "needs_init",
+			facts:           project.ReadinessFacts{Status: project.ReadinessNeedsInit, Exists: true},
+			wantKind:        harnessRunReadinessBlocked,
+			wantReasonPiece: "haft init",
+		},
+		{
+			name:            "needs_onboard",
+			facts:           project.ReadinessFacts{Status: project.ReadinessNeedsOnboard, Exists: true, HasHaft: true},
+			wantKind:        harnessRunReadinessBlocked,
+			wantReasonPiece: "ProjectSpecificationSet",
+		},
+		{
+			name:           "needs_onboard_with_tactical_override",
+			facts:          project.ReadinessFacts{Status: project.ReadinessNeedsOnboard, Exists: true, HasHaft: true},
+			overrideReason: "legacy bootstrap",
+			wantKind:       harnessRunReadinessTacticalAllowed,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := harnessRunReadinessGateFor(tc.facts, tc.overrideReason)
+			if got.Kind != tc.wantKind {
+				t.Fatalf("kind = %q, want %q", got.Kind, tc.wantKind)
+			}
+			if tc.wantReasonPiece == "" {
+				return
+			}
+			if !strings.Contains(got.BlockReason, tc.wantReasonPiece) {
+				t.Fatalf("reason = %q, want fragment %q", got.BlockReason, tc.wantReasonPiece)
+			}
+		})
+	}
+}
+
+func TestRunHarnessRunBlocksNeedsOnboardWithClearReason(t *testing.T) {
+	restore := overrideHarnessTestFlags()
+	defer restore()
+
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(haftDir, "project.yaml"), []byte("id: qnt_test\nname: test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+
+	err := runHarnessRun(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("error = nil, want needs_onboard block")
+	}
+
+	message := err.Error()
+	for _, fragment := range []string{"needs_onboard", "ProjectSpecificationSet", "--tactical-override-reason"} {
+		if !strings.Contains(message, fragment) {
+			t.Fatalf("block reason missing %q:\n%s", fragment, message)
+		}
+	}
+}
+
+func TestRunHarnessRunBlocksNeedsInitWithClearReason(t *testing.T) {
+	restore := overrideHarnessTestFlags()
+	defer restore()
+
+	root := t.TempDir()
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+
+	err := runHarnessRun(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("error = nil, want needs_init block")
+	}
+
+	message := err.Error()
+	for _, fragment := range []string{"needs_init", "haft init"} {
+		if !strings.Contains(message, fragment) {
+			t.Fatalf("block reason missing %q:\n%s", fragment, message)
+		}
+	}
+}
+
+func TestRecordHarnessRunTacticalOverrideAnnotatesCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	commissionID := "wc-tactical-override"
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": workCommissionFixture(commissionID, "queued", "2099-01-01T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gate := harnessRunReadinessGateFor(
+		project.ReadinessFacts{Status: project.ReadinessNeedsOnboard, Exists: true, HasHaft: true},
+		"incident bootstrap",
+	)
+	err = recordHarnessRunTacticalOverride(
+		ctx,
+		store,
+		harnessRunSelection{CommissionIDs: []string{commissionID}},
+		gate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := loadWorkCommissionPayload(ctx, store, commissionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	override := mapField(stored, "spec_readiness_override")
+	if override["kind"] != "tactical" {
+		t.Fatalf("override kind = %#v, want tactical", override["kind"])
+	}
+	if override["out_of_spec"] != true {
+		t.Fatalf("override out_of_spec = %#v, want true", override["out_of_spec"])
+	}
+	if override["project_readiness"] != string(project.ReadinessNeedsOnboard) {
+		t.Fatalf("override readiness = %#v, want needs_onboard", override["project_readiness"])
+	}
+	if override["reason"] != "incident bootstrap" {
+		t.Fatalf("override reason = %#v, want incident bootstrap", override["reason"])
+	}
+
+	events := mapSliceField(stored, "events")
+	if len(events) == 0 {
+		t.Fatal("events = empty, want tactical override audit event")
+	}
+	last := events[len(events)-1]
+	if last["event"] != "tactical_override" {
+		t.Fatalf("last event = %#v, want tactical_override", last["event"])
+	}
+	if last["reason"] != "incident bootstrap" {
+		t.Fatalf("last reason = %#v, want incident bootstrap", last["reason"])
+	}
+}
+
 func TestEnsureHarnessCommissionsSkipsExistingPlan(t *testing.T) {
 	restore := overrideHarnessTestFlags()
 	defer restore()
@@ -315,10 +474,16 @@ func TestEnsureHarnessCommissionsSkipsExistingPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, result, err := ensureHarnessCommissions(ctx, store, t.TempDir(), map[string]any{
-		"id":       "plan-existing",
-		"revision": "p1",
-	})
+	created, result, err := ensureHarnessCommissions(
+		ctx,
+		store,
+		t.TempDir(),
+		map[string]any{
+			"id":       "plan-existing",
+			"revision": "p1",
+		},
+		harnessRunReadinessGate{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,6 +782,7 @@ func TestFormatHarnessStatusIncludesRecentTerminalCommissions(t *testing.T) {
 		"commission=wc-1 state=completed decision=dec-1 last_event=workflow_terminal verdict=pass",
 		"result=haft harness result wc-1",
 		"tail=haft harness tail wc-1",
+		"terminal_next=inspect result, then apply or rerun evidence",
 		"workspace=/tmp/workspaces/wc-1",
 		"preview=Measurement pass: tests completed.",
 	} {
@@ -757,6 +923,110 @@ func TestFormatHarnessResultIncludesLatestAgentTurnForCompletedCommission(t *tes
 	}
 	if !strings.Contains(joined, "preview=Measurement partial: both required commands passed") {
 		t.Fatalf("result output missing latest turn preview:\n%s", joined)
+	}
+}
+
+func TestFormatHarnessResultShowsCompletedDiffEvidenceAndApplyAction(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "workspaces")
+	commissionID := "wc-result-success"
+	trackedPath := filepath.Join("internal", "cli", "harness.go")
+	workspacePath := filepath.Join(workspaceRoot, commissionID)
+
+	initHarnessApplyRepo(t, workspacePath, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspacePath, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	commission["events"] = []any{
+		map[string]any{
+			"event":       "phase_outcome",
+			"verdict":     "pass",
+			"recorded_at": "2026-04-24T05:08:35Z",
+			"payload": map[string]any{
+				"phase": "measure",
+				"next":  "terminal:pass",
+			},
+		},
+	}
+
+	lines := formatHarnessResult(
+		commission,
+		workspaceRoot,
+		nil,
+		"",
+		harnessSessionLogSummary{},
+		harnessCommissionLogSummary{},
+	)
+	joined := strings.Join(lines, "\n")
+
+	for _, fragment := range []string{
+		"state: completed",
+		"workspace: " + workspacePath,
+		"evidence_summary:",
+		"required=1",
+		"requirement: kind=go_test command=go test ./...",
+		"latest_measure: verdict=pass next=terminal:pass",
+		"diff_status: changed",
+		"operator_next:",
+		"next_action=apply",
+		"haft harness apply " + commissionID,
+		"evidence: go test ./...",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("result output missing %q:\n%s", fragment, joined)
+		}
+	}
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("result output leaked raw JSON:\n%s", joined)
+	}
+}
+
+func TestFormatHarnessResultShowsBlockedPolicyOperatorActions(t *testing.T) {
+	commissionID := "wc-result-blocked"
+	commission := workCommissionFixture(commissionID, "blocked_policy", "2099-01-01T00:00:00Z")
+	commission["events"] = []any{
+		map[string]any{
+			"event":       "phase_blocked",
+			"action":      "complete_or_block",
+			"verdict":     "blocked",
+			"reason":      "mutation_outside_commission_scope",
+			"recorded_at": "2026-04-24T09:57:53Z",
+			"payload": map[string]any{
+				"phase":              "preflight",
+				"out_of_scope_paths": []any{"outside.txt"},
+			},
+		},
+	}
+
+	lines := formatHarnessResult(
+		commission,
+		t.TempDir(),
+		nil,
+		"",
+		harnessSessionLogSummary{},
+		harnessCommissionLogSummary{},
+	)
+	joined := strings.Join(lines, "\n")
+
+	for _, fragment := range []string{
+		"state: blocked_policy",
+		"diff_status: workspace_unavailable",
+		"evidence_summary:",
+		"last_event: phase_blocked",
+		"out_of_scope=outside.txt",
+		"next_action=inspect",
+		"requires operator decision: blocked_policy",
+		"haft commission requeue " + commissionID,
+		"haft commission cancel " + commissionID,
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("blocked result output missing %q:\n%s", fragment, joined)
+		}
+	}
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("blocked result output leaked raw JSON:\n%s", joined)
 	}
 }
 
@@ -967,8 +1237,8 @@ func TestRecentHarnessEventLinesHumanizesCurrentRun(t *testing.T) {
 		t.Fatalf("event lines leaked raw JSON:\n%s", joined)
 	}
 	for _, fragment := range []string{
-		"2026-04-24T05:01:00Z agent_turn_completed phase=execute status=completed session=session-1 turn=turn-1",
-		"Implemented the scoped desktop RPC change.",
+		"2026-04-24T05:01:00Z agent_completed: commission=wc-current phase=execute status=completed session=session-1 turn=turn-1",
+		"preview=Implemented the scoped desktop RPC change.",
 	} {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("event lines missing %q:\n%s", fragment, joined)
@@ -985,6 +1255,21 @@ func TestRecentHarnessLogLinesMissingFileReturnsEmpty(t *testing.T) {
 	}
 	if len(lines) != 0 {
 		t.Fatalf("lines = %#v, want empty", lines)
+	}
+}
+
+func TestRecentHarnessEventLinesShowsEmptyRuntimeLog(t *testing.T) {
+	lines, err := recentHarnessEventLines(map[string]any{}, filepath.Join(t.TempDir(), "missing-runtime.jsonl"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("empty event lines leaked raw JSON:\n%s", joined)
+	}
+	if !strings.Contains(joined, "no operator runtime events yet") {
+		t.Fatalf("empty event lines missing operator message:\n%s", joined)
 	}
 }
 
@@ -1039,6 +1324,96 @@ func TestPrintHarnessSelectedTailSincePrintsOnlySelectedHumanizedEvents(t *testi
 	}
 }
 
+func TestPrintHarnessSelectedTailSinceShowsFailedResetLoop(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
+	writeHarnessRuntimeEvents(t, logPath, []map[string]any{
+		{
+			"at":            "2026-04-24T05:00:00Z",
+			"event":         "workspace_reset_failed",
+			"commission_id": "wc-reset",
+			"data": map[string]any{
+				"phase":          "preflight",
+				"session_id":     "session-reset",
+				"workspace_path": "/tmp/workspaces/wc-reset",
+				"reason":         "dirty_workspace",
+			},
+		},
+		{
+			"at":            "2026-04-24T05:00:01Z",
+			"event":         "session_failed",
+			"commission_id": "wc-reset",
+			"data": map[string]any{
+				"phase":      "preflight",
+				"session_id": "session-reset",
+				"reason":     "dirty_workspace",
+			},
+		},
+	})
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	_, printed, err := printHarnessSelectedTailSince(cmd, logPath, []string{"wc-reset"}, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := out.String()
+	if printed != 2 {
+		t.Fatalf("printed = %d, want 2", printed)
+	}
+	for _, fragment := range []string{
+		"workspace_reset_failed: commission=wc-reset phase=preflight session=session-reset workspace=/tmp/workspaces/wc-reset reason=dirty_workspace",
+		"failed: commission=wc-reset phase=preflight session=session-reset reason=dirty_workspace",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("reset-loop output missing %q:\n%s", fragment, joined)
+		}
+	}
+	if strings.Contains(joined, `{"`) {
+		t.Fatalf("reset-loop output leaked raw JSON:\n%s", joined)
+	}
+}
+
+func TestHarnessTailFollowCompletionLineShowsTerminalSuccess(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	commissionID := "wc-tail-completed"
+	trackedPath := filepath.Join("internal", "cli", "harness.go")
+	workspacePath := filepath.Join(defaultHarnessWorkspaceRoot(), commissionID)
+	initHarnessApplyRepo(t, workspacePath, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspacePath, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := persistWorkCommission(ctx, store, workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z"), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	line, terminal, err := harnessTailFollowCompletionLine(ctx, store, commissionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !terminal {
+		t.Fatal("terminal = false, want true")
+	}
+	for _, fragment := range []string{
+		"terminal:",
+		"commission=" + commissionID,
+		"state=completed",
+		"next_action=apply",
+		"result=haft harness result " + commissionID,
+	} {
+		if !strings.Contains(line, fragment) {
+			t.Fatalf("completion line missing %q: %s", fragment, line)
+		}
+	}
+}
+
 func TestPrintHarnessTailSnapshotFiltersAndHumanizesCommissionEvents(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "runtime.jsonl")
 	events := []map[string]any{
@@ -1084,8 +1459,8 @@ func TestPrintHarnessTailSnapshotFiltersAndHumanizesCommissionEvents(t *testing.
 		t.Fatalf("tail output leaked other commission:\n%s", joined)
 	}
 	for _, fragment := range []string{
-		"2026-04-24T05:01:00Z agent_turn_completed phase=execute status=completed session=session-1 turn=turn-1",
-		"Implemented the scoped MCP config portability change.",
+		"2026-04-24T05:01:00Z agent_completed: commission=wc-1 phase=execute status=completed session=session-1 turn=turn-1",
+		"preview=Implemented the scoped MCP config portability change.",
 	} {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("tail output missing %q:\n%s", fragment, joined)
@@ -1427,6 +1802,7 @@ func overrideHarnessTestFlags() func() {
 	oldHarnessPlanContext := harnessPlanContext
 	oldHarnessPlanAllActive := harnessPlanAllActive
 	oldHarnessRunDetach := harnessRunDetach
+	oldHarnessRunTacticalReason := harnessRunTacticalReason
 	oldCommissionRepoRef := commissionFromDecisionRepoRef
 	oldCommissionBaseSHA := commissionFromDecisionBaseSHA
 	oldCommissionTargetBranch := commissionFromDecisionTargetBranch
@@ -1452,6 +1828,7 @@ func overrideHarnessTestFlags() func() {
 	harnessPlanContext = ""
 	harnessPlanAllActive = false
 	harnessRunDetach = false
+	harnessRunTacticalReason = ""
 	commissionFromDecisionRepoRef = ""
 	commissionFromDecisionBaseSHA = ""
 	commissionFromDecisionTargetBranch = ""
@@ -1478,6 +1855,7 @@ func overrideHarnessTestFlags() func() {
 		harnessPlanContext = oldHarnessPlanContext
 		harnessPlanAllActive = oldHarnessPlanAllActive
 		harnessRunDetach = oldHarnessRunDetach
+		harnessRunTacticalReason = oldHarnessRunTacticalReason
 		commissionFromDecisionRepoRef = oldCommissionRepoRef
 		commissionFromDecisionBaseSHA = oldCommissionBaseSHA
 		commissionFromDecisionTargetBranch = oldCommissionTargetBranch

@@ -1,106 +1,114 @@
 ---
-description: "Discover existing project knowledge and build a legacy map"
+description: "Onboard a project into Haft v7 specs and readiness"
 ---
 
 # Project Onboarding
 
-Haft was just initialized on this project. Discover and capture existing engineering knowledge.
+Onboard the repository into Haft v7. The goal is not to create generic notes.
+The goal is to make the project harnessable by producing parseable authority
+carriers:
 
-## Phase 1: Surface scan (always run)
-
-### 1. Project overview
-- Read `README.md` — extract purpose, tech stack, key components, architecture
-- Create a `haft_note` summarizing the project identity
-
-### 2. Existing decision records
-Scan for common decision artifact locations:
-- `docs/adr/`, `adr/`, `doc/adr/` — Architecture Decision Records
-- `docs/architecture.md`, `ARCHITECTURE.md` — architecture documentation
-- `.context/`, `docs/decisions/` — decision documentation
-- `DECISIONS.md`, `DESIGN.md` — design rationale
-
-For each decision found: create a `haft_note` with the decision's title, rationale (summarized), and affected files.
-
-### 3. Existing specifications and plans
-Scan for:
-- `docs/`, `spec/`, `specs/` — project documentation
-- `openspec/` — OpenSpec specifications
-- `TODO.md`, `ROADMAP.md`, `PLAN.md` — planning docs
-- `CONTRIBUTING.md` — development process docs
-
-For significant specs: create `haft_note` entries linking to the source files.
-
-### 4. Test documentation
-Scan for:
-- `docs/testing.md`, `test-plan.md` — test strategy
-- Benchmark results, performance baselines
-
-### 5. Tech stack and constraints
-From `go.mod`, `package.json`, `pyproject.toml`, `Cargo.toml`, `Dockerfile`, `.github/workflows/`:
-- Identify key dependencies and their versions
-- Note infrastructure constraints (CI pipeline, deployment target)
-- Create a `haft_note` capturing tech stack decisions
-
-### 6. Recent history
-Check `git log --oneline -20` for:
-- Major refactors or migrations
-- Architecture changes
-- Patterns in commit messages that suggest undocumented decisions
-
-## Phase 2: Module coverage deep scan (always run)
-
-### 7. Module coverage analysis
-Run `haft_query(action="coverage")` to get the full module map:
-- List ALL modules with their governance status (governed / partial / blind)
-- Count total modules, governed percentage, blind count
-- **Prioritize blind modules** by: number of dependents (from dependency graph), lines of code, recent git activity
-
-### 8. Deep scan of blind modules
-
-**This is the critical step.** For each blind module, starting with highest priority:
-
-- **Read the module's code** — main files, exported interfaces, key types
-- **Determine the module's responsibility** — what does it do, what invariants does it maintain
-- **Identify dependencies** — what does it import, what depends on it
-- **Look for implicit decisions** — coding patterns, error handling conventions, data flow assumptions
-- **Record findings** as `haft_note` with:
-  - Module name and responsibility
-  - Key invariants (what must hold)
-  - Implicit decisions worth making explicit
-  - Risk assessment (what breaks if this module changes without governance)
-
-**If you have subagent/parallel execution capability:** spawn one subagent per blind module for parallel analysis. Each subagent gets:
-- Module path and file list
-- Project context (README, tech stack from Phase 1)
-- Instruction: "Read all code in this module. Report: responsibility, invariants, implicit decisions, dependencies, risks. Record as haft_note."
-
-Merge subagent results and continue.
-
-### 9. Unresolved problems
-If you find architectural tensions, TODO comments about design issues, or open questions:
-- Use `haft_problem(action="frame")` to capture them as ProblemCards
-- Cross-reference with blind modules — blind modules with design tensions are highest priority
-
-## Output
-
-After scanning, report:
-
-### Coverage summary
-```
-Modules: X total, Y governed (Z%), W blind
-Blind modules scanned: N (with deep analysis)
+```text
+TargetSystemSpec
+  -> EnablingSystemSpec
+  -> TermMap
+  -> SpecCoverage gaps
+  -> DecisionRecords
+  -> WorkCommissions
+  -> RuntimeRuns
+  -> Evidence
 ```
 
-### Findings
-- Notes created: N (X from docs, Y from module analysis)
-- Problems discovered: M
-- Key decisions now searchable
-- Gaps: decisions mentioned but not documented, missing ADRs
-- **Top 3 highest-risk blind spots** with reasoning
+Use h-reason discipline before editing artifacts: frame the target system,
+separate target-system claims from enabling-system mechanics, identify the
+weakest link, then make a small reversible artifact change.
 
-### Next steps
-- `/h-status` — see the knowledge map and module coverage
-- `/h-frame` — frame the most pressing unresolved problem
-- For very large projects: suggest running onboard again focused on specific subsystems
+## Phase 0: Readiness
+
+1. Check whether `.haft/` exists.
+2. Check whether `.haft/specs/target-system.md`,
+   `.haft/specs/enabling-system.md`, and `.haft/specs/term-map.md` exist.
+3. Run `haft spec check`.
+4. If the project is `needs_init`, tell the user to run `haft init` first.
+5. If the project is `needs_onboard`, continue with the spec drafting loop.
+
+Do not start broad harness/runtime execution while the project is
+`needs_onboard`. A tactical exception must be explicit and recorded with an
+operator reason.
+
+## Phase 1: TargetSystemSpec
+
+Draft or refine `.haft/specs/target-system.md` first. Each load-bearing claim
+must have a fenced `yaml spec-section` block.
+
+Minimum target sections:
+
+- environment change: what must change in the project's environment;
+- target role: what the target system does for external actors;
+- boundaries: in-scope and out-of-scope behavior;
+- interfaces: externally visible contracts;
+- invariants: what must remain true;
+- acceptance/evidence: how the target behavior is observed;
+- risks/WLNK: the weakest link and known failure modes.
+
+Do not derive target purpose from repo folders, frameworks, or agent plans.
+Those are enabling-system facts unless they describe externally required
+behavior.
+
+## Phase 2: EnablingSystemSpec
+
+Draft or refine `.haft/specs/enabling-system.md` second.
+
+Minimum enabling sections:
+
+- creator graph: human principal, host agents, Haft Core, CLI, Desktop,
+  harness runtime, CI, external carriers;
+- work methods: how specs, decisions, commissions, runtime runs, and evidence
+  are produced;
+- effect boundaries: what each actor/surface may mutate;
+- agent policy: v7 product support is Claude Code and Codex; other hosts are
+  deferred or experimental;
+- commission policy: WorkCommission is bounded authorization, not execution;
+- runtime policy: CLI/Desktop start the harness runtime, plugin mode does not
+  own long-running lifecycle;
+- evidence policy: no verified coverage without evidence and freshness.
+
+## Phase 3: TermMap
+
+Draft or refine `.haft/specs/term-map.md`.
+
+Capture load-bearing terms only. Each term must distinguish object,
+description, and carrier when relevant. Required early terms usually include:
+
+- HarnessableProject
+- TargetSystemSpec
+- EnablingSystemSpec
+- SpecSection
+- SpecCoverage
+- DecisionRecord
+- WorkCommission
+- RuntimeRun
+- Evidence
+- ExternalProjection
+
+## Phase 4: Check And Report
+
+Run `haft spec check` again and report:
+
+```text
+readiness: ready | needs_init | needs_onboard | missing
+spec check: clean | blocked
+target sections: N active / M total
+enabling sections: N active / M total
+term-map entries: N
+remaining gaps:
+- ...
+next safe action:
+- ...
+```
+
+Only after active target and enabling sections plus term-map entries pass
+`haft spec check` should the project move toward spec planning, decisions, and
+commissions.
 
 $ARGUMENTS

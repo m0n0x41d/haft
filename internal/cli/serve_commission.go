@@ -48,6 +48,52 @@ type implementationPlanCommission struct {
 	Commission     map[string]any
 }
 
+type workCommissionTransition struct {
+	ErrorCode        string
+	TargetState      string
+	AllowedStates    []string
+	RequiresReason   bool
+	RejectsExpired   bool
+	RefreshFetchedAt bool
+}
+
+var requeueWorkCommissionTransition = workCommissionTransition{
+	ErrorCode:   "commission_not_requeueable",
+	TargetState: "queued",
+	AllowedStates: []string{
+		"queued",
+		"ready",
+		"preflighting",
+		"running",
+		"blocked_stale",
+		"blocked_policy",
+		"blocked_conflict",
+		"needs_human_review",
+		"failed",
+	},
+	RequiresReason:   true,
+	RejectsExpired:   true,
+	RefreshFetchedAt: true,
+}
+
+var cancelWorkCommissionTransition = workCommissionTransition{
+	ErrorCode:   "commission_not_cancellable",
+	TargetState: "cancelled",
+	AllowedStates: []string{
+		"draft",
+		"queued",
+		"ready",
+		"preflighting",
+		"running",
+		"blocked_stale",
+		"blocked_policy",
+		"blocked_conflict",
+		"needs_human_review",
+		"failed",
+	},
+	RequiresReason: true,
+}
+
 func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
 	action := stringArg(args, "action")
 
@@ -571,6 +617,9 @@ func buildWorkCommissionFromDecision(
 	putOptionalString(commission, "autonomy_envelope_ref", stringArg(args, "autonomy_envelope_ref"))
 	putOptionalString(commission, "autonomy_envelope_revision", stringArg(args, "autonomy_envelope_revision"))
 	putOptionalString(commission, "queue", stringArg(args, "queue"))
+	if override, ok := mapArg(args, "spec_readiness_override"); ok {
+		commission = withCommissionSpecReadinessOverride(commission, override, now)
+	}
 
 	return commission, nil
 }
@@ -633,11 +682,17 @@ func showWorkCommission(ctx context.Context, store *artifact.Store, args map[str
 		return "", fmt.Errorf("commission_id is required")
 	}
 
+	olderThan, err := commissionAttentionDuration(args)
+	if err != nil {
+		return "", err
+	}
+
 	commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
 	if err != nil {
 		return "", err
 	}
 
+	commission = workCommissionWithOperatorFields(commission, time.Now().UTC(), olderThan)
 	return commissionResponse("commission", commission)
 }
 
@@ -657,12 +712,12 @@ func cancelWorkCommission(ctx context.Context, store *artifact.Store, args map[s
 	if err != nil {
 		return "", err
 	}
-	if err := ensureWorkCommissionCancellable(commission); err != nil {
+	if err := ensureWorkCommissionTransition(commission, args, cancelWorkCommissionTransition, time.Now().UTC()); err != nil {
 		return "", err
 	}
 
 	commission = appendCancelLifecycleEvent(commission, args)
-	commission["state"] = "cancelled"
+	commission["state"] = cancelWorkCommissionTransition.TargetState
 	delete(commission, "lease")
 
 	if err := updateWorkCommissionPayload(ctx, tx, commission); err != nil {
@@ -734,12 +789,16 @@ func requeueWorkCommission(ctx context.Context, store *artifact.Store, args map[
 	if err != nil {
 		return "", err
 	}
-	if err := ensureWorkCommissionRequeueable(commission); err != nil {
+	now := time.Now().UTC()
+	if err := ensureWorkCommissionTransition(commission, args, requeueWorkCommissionTransition, now); err != nil {
 		return "", err
 	}
 
 	commission = appendRequeueLifecycleEvent(commission, args)
-	commission["state"] = "queued"
+	commission["state"] = requeueWorkCommissionTransition.TargetState
+	if requeueWorkCommissionTransition.RefreshFetchedAt {
+		commission["fetched_at"] = now.Format(time.RFC3339)
+	}
 	delete(commission, "lease")
 
 	if err := updateWorkCommissionPayload(ctx, tx, commission); err != nil {
@@ -1201,6 +1260,9 @@ func normalizeNewWorkCommission(commission map[string]any, now time.Time) error 
 	}
 	if !validDeliveryPolicy(stringField(commission, "delivery_policy")) {
 		return fmt.Errorf("invalid delivery_policy: %s", stringField(commission, "delivery_policy"))
+	}
+	if !validWorkCommissionState(stringField(commission, "state")) {
+		return fmt.Errorf("invalid WorkCommission state: %s", stringField(commission, "state"))
 	}
 	if stringField(commission, "fetched_at") == "" {
 		commission["fetched_at"] = now.Format(time.RFC3339)
@@ -1718,18 +1780,21 @@ func workCommissionWithOperatorFields(
 		"expired":           workCommissionExpired(commission, now),
 		"attention":         reason != "",
 		"attention_reason":  reason,
-		"suggested_actions": workCommissionSuggestedActions(commission, reason),
+		"suggested_actions": workCommissionSuggestedActions(commission, reason, now),
 	}
 	return enriched
 }
 
-func workCommissionSuggestedActions(commission map[string]any, reason string) []any {
+func workCommissionSuggestedActions(commission map[string]any, reason string, now time.Time) []any {
 	if reason == "" {
 		return []any{}
 	}
+	if workCommissionExpired(commission, now) {
+		return []any{"inspect", "cancel"}
+	}
 
 	switch stringField(commission, "state") {
-	case "preflighting", "running":
+	case "queued", "ready", "preflighting", "running":
 		return []any{"inspect", "requeue", "cancel"}
 	case "blocked_stale":
 		return []any{"refresh_decision", "requeue", "cancel"}
@@ -1836,23 +1901,41 @@ func workCommissionTerminal(commission map[string]any) bool {
 	}
 }
 
-func ensureWorkCommissionRequeueable(commission map[string]any) error {
-	switch stringField(commission, "state") {
-	case "queued", "ready", "preflighting", "running", "blocked_stale",
-		"blocked_policy", "blocked_conflict", "needs_human_review", "failed":
-		return nil
-	case "completed", "completed_with_projection_debt", "cancelled", "expired", "draft":
-		return fmt.Errorf("commission_not_requeueable: state=%s", stringField(commission, "state"))
-	default:
-		return fmt.Errorf("commission_not_requeueable: state=%s", stringField(commission, "state"))
+func ensureWorkCommissionTransition(
+	commission map[string]any,
+	args map[string]any,
+	transition workCommissionTransition,
+	now time.Time,
+) error {
+	state := stringField(commission, "state")
+	if !workCommissionStateAllowed(transition.AllowedStates, state) {
+		return fmt.Errorf(
+			"%s: state=%s allowed_states=%s",
+			transition.ErrorCode,
+			state,
+			strings.Join(transition.AllowedStates, ","),
+		)
 	}
-}
-
-func ensureWorkCommissionCancellable(commission map[string]any) error {
-	if workCommissionTerminal(commission) {
-		return fmt.Errorf("commission_not_cancellable: state=%s", stringField(commission, "state"))
+	if transition.RejectsExpired && workCommissionExpired(commission, now) {
+		return fmt.Errorf(
+			"%s: state=%s valid_until expired; cancel or create a fresh WorkCommission",
+			transition.ErrorCode,
+			state,
+		)
+	}
+	if transition.RequiresReason && stringArg(args, "reason") == "" {
+		return fmt.Errorf("%s: reason is required", transition.ErrorCode)
 	}
 	return nil
+}
+
+func workCommissionStateAllowed(allowed []string, state string) bool {
+	for _, candidate := range allowed {
+		if candidate == state {
+			return true
+		}
+	}
+	return false
 }
 
 func appendRequeueLifecycleEvent(commission map[string]any, args map[string]any) map[string]any {
@@ -1882,16 +1965,11 @@ func appendCancelLifecycleEvent(commission map[string]any, args map[string]any) 
 		payload["previous_lease"] = lease
 	}
 
-	reason := stringArg(args, "reason")
-	if reason == "" {
-		reason = "operator_cancelled"
-	}
-
 	eventArgs := map[string]any{
 		"action":    "cancel",
 		"runner_id": stringArg(args, "runner_id"),
 		"event":     "commission_cancelled",
-		"reason":    reason,
+		"reason":    stringArg(args, "reason"),
 		"payload":   payload,
 	}
 

@@ -12,6 +12,18 @@ import (
 func mustListToolProperties(t *testing.T, toolName string) map[string]interface{} {
 	t.Helper()
 
+	inputSchema := mustListToolInputSchema(t, toolName)
+	properties, ok := inputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s properties missing or wrong type: %#v", toolName, inputSchema["properties"])
+	}
+
+	return properties
+}
+
+func mustListToolInputSchema(t *testing.T, toolName string) map[string]interface{} {
+	t.Helper()
+
 	server := NewServer()
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
@@ -73,12 +85,7 @@ func mustListToolProperties(t *testing.T, toolName string) map[string]interface{
 			t.Fatalf("%s inputSchema missing or wrong type: %#v", toolName, tool["inputSchema"])
 		}
 
-		properties, ok := inputSchema["properties"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("%s properties missing or wrong type: %#v", toolName, inputSchema["properties"])
-		}
-
-		return properties
+		return inputSchema
 	}
 
 	t.Fatalf("%s tool schema not found", toolName)
@@ -234,7 +241,11 @@ func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T)
 }
 
 func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.T) {
-	commissionSchema := mustListToolProperties(t, "haft_commission")
+	commissionInputSchema := mustListToolInputSchema(t, "haft_commission")
+	commissionSchema, ok := commissionInputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("commission properties missing or wrong type: %#v", commissionInputSchema["properties"])
+	}
 
 	action, ok := commissionSchema["action"].(map[string]interface{})
 	if !ok {
@@ -260,6 +271,103 @@ func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.
 			t.Fatalf("expected haft_commission action %q in schema enum %#v", want, values)
 		}
 	}
+	assertCommissionActionRequires(t, commissionInputSchema, "show", []string{"commission_id"})
+	assertCommissionActionRequires(t, commissionInputSchema, "requeue", []string{"commission_id", "reason"})
+	assertCommissionActionRequires(t, commissionInputSchema, "cancel", []string{"commission_id", "reason"})
+
+	override, ok := commissionSchema["spec_readiness_override"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("spec_readiness_override schema missing or wrong type: %#v", commissionSchema["spec_readiness_override"])
+	}
+	if override["type"] != "object" {
+		t.Fatalf("spec_readiness_override type = %#v, want object", override["type"])
+	}
+}
+
+func assertCommissionActionRequires(
+	t *testing.T,
+	schema map[string]interface{},
+	action string,
+	required []string,
+) {
+	t.Helper()
+
+	allOf, ok := schema["allOf"].([]interface{})
+	if !ok {
+		t.Fatalf("commission schema allOf missing or wrong type: %#v", schema["allOf"])
+	}
+
+	for _, raw := range allOf {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			t.Fatalf("commission schema allOf entry has wrong type: %#v", raw)
+		}
+		if !commissionRequirementMatches(entry, action, required) {
+			continue
+		}
+		return
+	}
+
+	t.Fatalf("commission schema missing required args for action %s: %#v", action, allOf)
+}
+
+func commissionRequirementMatches(
+	entry map[string]interface{},
+	action string,
+	required []string,
+) bool {
+	if commissionRequirementAction(entry) != action {
+		return false
+	}
+
+	got := commissionRequirementRequiredFields(entry)
+	if len(got) != len(required) {
+		return false
+	}
+	for i := range required {
+		if got[i] != required[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func commissionRequirementAction(entry map[string]interface{}) string {
+	ifBlock, ok := entry["if"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	properties, ok := ifBlock["properties"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	actionProperty, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	action, _ := actionProperty["const"].(string)
+	return action
+}
+
+func commissionRequirementRequiredFields(entry map[string]interface{}) []string {
+	thenBlock, ok := entry["then"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	rawFields, ok := thenBlock["required"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	fields := []string{}
+	for _, rawField := range rawFields {
+		field, ok := rawField.(string)
+		if !ok {
+			return nil
+		}
+		fields = append(fields, field)
+	}
+	return fields
 }
 
 func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {

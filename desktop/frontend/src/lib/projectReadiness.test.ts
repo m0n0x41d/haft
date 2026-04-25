@@ -3,7 +3,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { projectIsRunnable, projectReadiness } from "./projectReadiness.ts";
+import {
+  projectActivationLabel,
+  projectIsMissing,
+  projectIsRunnable,
+  projectNeedsInitialization,
+  projectNeedsOnboarding,
+  projectReadiness,
+  projectReadinessBadgeLabel,
+  projectTaskBlockedTitle,
+} from "./projectReadiness.ts";
 
 test("missing path dominates project readiness", () => {
   const readiness = projectReadiness({
@@ -24,13 +33,37 @@ test("project without Haft config needs initialization", () => {
   assert.equal(readiness, "needs_init");
 });
 
+test("initialized project without spec set needs onboarding", () => {
+  const readiness = projectReadiness({
+    exists: true,
+    has_haft: true,
+    has_specs: false,
+  });
+
+  assert.equal(readiness, "needs_onboard");
+});
+
 test("only ready projects are runnable", () => {
   const states = [
-    { exists: true, has_haft: true, status: "ready" as const },
+    { exists: true, has_haft: true, has_specs: true, status: "ready" as const },
+    { exists: true, has_haft: true, has_specs: false },
     { exists: true, has_haft: false },
     { exists: false, has_haft: false },
   ];
   const runnable = states.map(projectIsRunnable);
 
-  assert.deepEqual(runnable, [true, false, false]);
+  assert.deepEqual(runnable, [true, false, false, false]);
+});
+
+test("readiness helpers expose semantic UI states", () => {
+  const missing = { exists: false, has_haft: false };
+  const needsInit = { exists: true, has_haft: false };
+  const needsOnboard = { exists: true, has_haft: true, has_specs: false };
+
+  assert.equal(projectIsMissing(missing), true);
+  assert.equal(projectNeedsInitialization(needsInit), true);
+  assert.equal(projectNeedsOnboarding(needsOnboard), true);
+  assert.equal(projectReadinessBadgeLabel(needsOnboard), "onboard");
+  assert.equal(projectActivationLabel(needsOnboard), "Onboard");
+  assert.equal(projectTaskBlockedTitle(needsOnboard), "Project needs onboarding before generic tasks");
 });

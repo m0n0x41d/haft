@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use crate::project_readiness::project_is_ready;
 use crate::rpc::call_rpc;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,11 +161,7 @@ fn desktop_project_registry_path() -> Result<PathBuf, String> {
 }
 
 fn desktop_project_is_ready(path: &str) -> bool {
-    if path.trim().is_empty() {
-        return false;
-    }
-
-    Path::new(path).join(".haft/project.yaml").is_file()
+    project_is_ready(path)
 }
 
 rpc_fwd!(switch_project, "switch-project", { path: String });
@@ -174,6 +171,16 @@ rpc_fwd!(init_project, "init-project", { path: String });
 // Frontend calls add_project_smart when the path may not yet be a haft
 // project — the CLI detects-or-init's.
 rpc_fwd!(add_project_smart, "add-project-smart", { path: String });
+
+#[tauri::command]
+pub fn run_spec_check(project_root: String) -> Result<Value, String> {
+    let root = project_root.trim();
+    if root.is_empty() {
+        return Err("projectRoot is required".into());
+    }
+
+    call_rpc("spec-check", None, Some(root))
+}
 
 // ── Artifact authoring ──
 //

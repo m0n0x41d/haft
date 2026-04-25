@@ -124,7 +124,7 @@ export function Dashboard({ onNavigate }: { onNavigate: NavigateFn }) {
   }
 
   const activeTasks = tasks.filter((task) =>
-    ["running", "idle", "waiting", "blocked"].includes(task.status),
+    ["running", "checkpointed", "idle", "waiting", "blocked"].includes(task.status),
   );
   const displayedAttention = attentionItems.slice(0, proMode ? 8 : 4);
   const displayedRuntime = runtimeItems.slice(0, proMode ? 8 : 3);

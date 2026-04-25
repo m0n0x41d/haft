@@ -382,7 +382,6 @@ function FlowModal({
     : [
         { kind: "claude", name: "Claude Code", path: "", version: "" },
         { kind: "codex", name: "Codex", path: "", version: "" },
-        { kind: "haft", name: "Haft Agent", path: "", version: "" },
       ];
 
   return (

@@ -40,7 +40,7 @@ import {
   type TaskExecutionLadder,
   type ExecutionLadderStep,
 } from "./taskExecutionLadder";
-import { taskInputCapability } from "../lib/taskInput";
+import { taskFollowUpAction, taskInputCapability } from "../lib/taskInput";
 import { visibleInitialPrompt } from "../lib/taskPrompt";
 
 type AdoptResolutionMode = "drift" | "stale";
@@ -585,20 +585,23 @@ export function Tasks({
   const inputCapability = detail
     ? taskInputCapability(detail.status)
     : taskInputCapability("");
+  const followUpAction = detail
+    ? taskFollowUpAction(detail.status)
+    : taskFollowUpAction("");
 
   const handleFollowUpSubmit = async (value: string) => {
     if (!detail) {
       return;
     }
 
-    if (inputCapability.kind === "unavailable") {
+    if (followUpAction.kind === "none") {
       return;
     }
 
     setIsSubmittingFollowUp(true);
 
     try {
-      if (inputCapability.kind === "live_input") {
+      if (followUpAction.kind === "write_live_input") {
         await writeTaskInput(detail.id, value);
         scheduleTaskTranscriptSync(detail.id);
       } else {
@@ -1026,7 +1029,6 @@ function NewTaskModal({
                 <>
                   <option value="claude">Claude Code</option>
                   <option value="codex">Codex</option>
-                  <option value="haft">Haft Agent</option>
                 </>
               )}
             </select>
@@ -1089,10 +1091,12 @@ function StatusBadge({ status }: { status: string }) {
     Planned: "border-border bg-surface-2 text-text-muted",
     running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
     Running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    checkpointed: "border-warning/20 bg-warning/10 text-warning",
     idle: "border-accent/30 bg-accent/10 text-accent",
     Verifying: "border-warning/20 bg-warning/10 text-warning",
     completed: "border-success/20 bg-success/10 text-success",
     failed: "border-danger/20 bg-danger/10 text-danger",
+    blocked: "border-danger/20 bg-danger/10 text-danger",
     cancelled: "border-border bg-surface-2 text-text-muted",
     interrupted: "border-warning/20 bg-warning/10 text-warning",
     "Ready for PR": "border-accent/30 bg-accent/10 text-accent",
@@ -1234,8 +1238,8 @@ function HandoffModal({
 
               {availableAgents.length === 0 && (
                 <>
+                  <option value="claude">Claude Code</option>
                   <option value="codex">Codex</option>
-                  <option value="haft">Haft Agent</option>
                 </>
               )}
             </select>

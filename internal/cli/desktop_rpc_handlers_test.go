@@ -54,6 +54,12 @@ func TestHandleAddProject(t *testing.T) {
 		if got.Name != cfg.Name {
 			t.Fatalf("Name = %q, want %q", got.Name, cfg.Name)
 		}
+		if got.Status != string(project.ReadinessNeedsOnboard) {
+			t.Fatalf("Status = %q, want %q", got.Status, project.ReadinessNeedsOnboard)
+		}
+		if !got.Exists || !got.HasHaft || got.HasSpecs {
+			t.Fatalf("readiness fields = exists:%t has_haft:%t has_specs:%t, want true true false", got.Exists, got.HasHaft, got.HasSpecs)
+		}
 
 		requireRegisteredProject(t, targetPath, cfg.ID)
 	})
@@ -73,6 +79,12 @@ func TestHandleAddProjectSmart(t *testing.T) {
 		if got.ID != cfg.ID {
 			t.Fatalf("ID = %q, want %q", got.ID, cfg.ID)
 		}
+		if got.Status != string(project.ReadinessNeedsOnboard) {
+			t.Fatalf("Status = %q, want %q", got.Status, project.ReadinessNeedsOnboard)
+		}
+		if !got.Exists || !got.HasHaft || got.HasSpecs {
+			t.Fatalf("readiness fields = exists:%t has_haft:%t has_specs:%t, want true true false", got.Exists, got.HasHaft, got.HasSpecs)
+		}
 
 		dbPath, err := cfg.DBPath()
 		if err != nil {
@@ -81,6 +93,7 @@ func TestHandleAddProjectSmart(t *testing.T) {
 		if _, err := os.Stat(dbPath); err != nil {
 			t.Fatalf("database stat: %v", err)
 		}
+		requireOnboardingCarriers(t, targetPath)
 
 		requireRegisteredProject(t, targetPath, cfg.ID)
 	})
@@ -136,6 +149,152 @@ func TestDesktopRPCAddProjectSmart(t *testing.T) {
 	}
 	if got.ID != cfg.ID {
 		t.Fatalf("ID = %q, want %q", got.ID, cfg.ID)
+	}
+}
+
+func TestHandleProjectReadinessUsesCoreSpecCheck(t *testing.T) {
+	setRPCProjectHome(t)
+
+	rootPath := t.TempDir()
+	haftDir := filepath.Join(rootPath, ".haft")
+	specDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(haftDir, "project.yaml"), []byte("id: qnt_test\nname: test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(haftDir, "workflow.md"), []byte("# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "target-system.md"), []byte(malformedDesktopRPCSpecSection("TS.use.001", "environment-change")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "enabling-system.md"), []byte(desktopRPCSpecSection("ES.creator.001", "creator-role")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "term-map.md"), []byte("```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runReadinessRPCHandler(t, rootPath)
+	if got.Status != string(project.ReadinessNeedsOnboard) {
+		t.Fatalf("Status = %q, want %q", got.Status, project.ReadinessNeedsOnboard)
+	}
+	if !got.Exists || !got.HasHaft || got.HasSpecs {
+		t.Fatalf("readiness fields = exists:%t has_haft:%t has_specs:%t, want true true false", got.Exists, got.HasHaft, got.HasSpecs)
+	}
+	if got.ReadinessSource != "core" || got.ReadinessError != "" {
+		t.Fatalf("readiness source/error = %q/%q, want core/empty", got.ReadinessSource, got.ReadinessError)
+	}
+}
+
+func TestHandleProjectReadinessClassifiesMissingTermMapAsNeedsOnboard(t *testing.T) {
+	setRPCProjectHome(t)
+
+	rootPath := t.TempDir()
+	haftDir := filepath.Join(rootPath, ".haft")
+	specDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(haftDir, "project.yaml"), []byte("id: qnt_test\nname: test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(haftDir, "workflow.md"), []byte("# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "target-system.md"), []byte(desktopRPCSpecSection("TS.use.001", "environment-change")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "enabling-system.md"), []byte(desktopRPCSpecSection("ES.creator.001", "creator-role")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runReadinessRPCHandler(t, rootPath)
+	if got.Status != string(project.ReadinessNeedsOnboard) {
+		t.Fatalf("Status = %q, want %q", got.Status, project.ReadinessNeedsOnboard)
+	}
+	if !got.Exists || !got.HasHaft || got.HasSpecs {
+		t.Fatalf("readiness fields = exists:%t has_haft:%t has_specs:%t, want true true false", got.Exists, got.HasHaft, got.HasSpecs)
+	}
+}
+
+func TestHandleSpecCheckReturnsCoreFindings(t *testing.T) {
+	setRPCProjectHome(t)
+
+	rootPath := t.TempDir()
+	specDir := filepath.Join(rootPath, ".haft", "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "target-system.md"), []byte(malformedDesktopRPCSpecSection("TS.use.001", "environment-change")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "enabling-system.md"), []byte(desktopRPCSpecSection("ES.creator.001", "creator-role")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "term-map.md"), []byte("```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HAFT_PROJECT_ROOT", rootPath)
+
+	output := bytes.Buffer{}
+	if err := handleSpecCheck(&output); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var report project.SpecCheckReport
+	decodeRPCData(t, output.Bytes(), &report)
+	if report.Summary.TotalFindings == 0 {
+		t.Fatalf("TotalFindings = 0, want core spec-check findings")
+	}
+	if len(report.Documents) != 3 {
+		t.Fatalf("Documents = %d, want 3", len(report.Documents))
+	}
+	if !specCheckReportHasCode(report, "spec_section_invalid_yaml") {
+		t.Fatalf("findings missing spec_section_invalid_yaml: %#v", report.Findings)
+	}
+}
+
+func TestHandleInitProjectCreatesOnboardingCarriers(t *testing.T) {
+	setRPCProjectHome(t)
+
+	targetPath := t.TempDir()
+	got := runProjectRPCHandler(t, handleInitProject, targetPath)
+	cfg := requireProjectConfig(t, targetPath)
+
+	if got.ID != cfg.ID {
+		t.Fatalf("ID = %q, want %q", got.ID, cfg.ID)
+	}
+	if got.Status != string(project.ReadinessNeedsOnboard) {
+		t.Fatalf("Status = %q, want %q", got.Status, project.ReadinessNeedsOnboard)
+	}
+	requireOnboardingCarriers(t, targetPath)
+}
+
+func TestHandleInitProjectDoesNotOverwriteExistingSpecCarriers(t *testing.T) {
+	setRPCProjectHome(t)
+
+	targetPath := t.TempDir()
+	targetCarrier := filepath.Join(targetPath, ".haft", "specs", "target-system.md")
+	customContent := "# Existing Target Spec\n\nHuman-authored target sections.\n"
+	if err := os.MkdirAll(filepath.Dir(targetCarrier), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetCarrier, []byte(customContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = runProjectRPCHandler(t, handleInitProject, targetPath)
+
+	data, err := os.ReadFile(targetCarrier)
+	if err != nil {
+		t.Fatalf("read target carrier: %v", err)
+	}
+	if string(data) != customContent {
+		t.Fatalf("target carrier overwritten:\n%s", string(data))
 	}
 }
 
@@ -223,6 +382,18 @@ func TestHandleAddProjectSmartRepairsNameAndPrunesDuplicateIdentity(t *testing.T
 	}
 	if reg.Projects[0].Path != targetPath {
 		t.Fatalf("registry path = %q, want %q", reg.Projects[0].Path, targetPath)
+	}
+}
+
+func TestSupportedDesktopAgentSpecsAreV7Hosts(t *testing.T) {
+	specs := rpcSupportedDesktopAgentSpecs()
+	kinds := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		kinds = append(kinds, spec.kind)
+	}
+
+	if strings.Join(kinds, ",") != "claude,codex" {
+		t.Fatalf("desktop agent kinds = %v, want claude,codex", kinds)
 	}
 }
 
@@ -333,12 +504,38 @@ func runProjectRPCHandlerError(t *testing.T, handler testProjectRPCHandler, path
 	return handler(&rpcEnv{}, &output)
 }
 
+func runReadinessRPCHandler(t *testing.T, path string) rpcProjectReadiness {
+	t.Helper()
+
+	output := bytes.Buffer{}
+	restore := setRPCInput(t, map[string]string{"path": path})
+	defer restore()
+
+	if err := handleProjectReadiness(&output); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var facts rpcProjectReadiness
+	decodeRPCData(t, output.Bytes(), &facts)
+	return facts
+}
+
 func decodeProjectRPCResult(t *testing.T, data []byte) rpcProjectInfo {
 	t.Helper()
 
 	var info rpcProjectInfo
 	decodeRPCData(t, data, &info)
 	return info
+}
+
+func specCheckReportHasCode(report project.SpecCheckReport, code string) bool {
+	for _, finding := range report.Findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+
+	return false
 }
 
 func decodeRPCData(t *testing.T, data []byte, target any) {
@@ -472,6 +669,26 @@ func requireProjectConfig(t *testing.T, rootPath string) *project.Config {
 	return cfg
 }
 
+func requireOnboardingCarriers(t *testing.T, rootPath string) {
+	t.Helper()
+
+	workflowPath := filepath.Join(rootPath, ".haft", "workflow.md")
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Fatalf("workflow carrier stat %s: %v", workflowPath, err)
+	}
+
+	for _, carrier := range project.MinimumSpecCarriers() {
+		path := filepath.Join(rootPath, ".haft", carrier.RelativePath)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("onboarding carrier read %s: %v", path, err)
+		}
+		if string(data) != carrier.Content {
+			t.Fatalf("onboarding carrier %s content mismatch:\n%s", path, string(data))
+		}
+	}
+}
+
 func requireRegisteredProject(t *testing.T, path string, id string) {
 	t.Helper()
 
@@ -500,4 +717,38 @@ func desktopRPCSubcommand(t *testing.T, name string) *cobra.Command {
 
 	t.Fatalf("desktop-rpc command %q is not registered", name)
 	return nil
+}
+
+type rpcProjectReadiness struct {
+	Status          string `json:"status"`
+	Exists          bool   `json:"exists"`
+	HasHaft         bool   `json:"has_haft"`
+	HasSpecs        bool   `json:"has_specs"`
+	ReadinessSource string `json:"readiness_source"`
+	ReadinessError  string `json:"readiness_error"`
+}
+
+func desktopRPCSpecSection(id string, kind string) string {
+	return "## " + id + "\n\n" +
+		"```yaml spec-section\n" +
+		"id: " + id + "\n" +
+		"kind: " + kind + "\n" +
+		"statement_type: definition\n" +
+		"claim_layer: object\n" +
+		"owner: human\n" +
+		"status: active\n" +
+		"```\n"
+}
+
+func malformedDesktopRPCSpecSection(id string, kind string) string {
+	return "## " + id + "\n\n" +
+		"```yaml spec-section\n" +
+		"id: " + id + "\n" +
+		"kind: " + kind + "\n" +
+		"statement_type: definition\n" +
+		"claim_layer: object\n" +
+		"owner: human\n" +
+		"status: active\n" +
+		"terms: [\n" +
+		"```\n"
 }

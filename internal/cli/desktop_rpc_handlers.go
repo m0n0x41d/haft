@@ -832,9 +832,19 @@ func harnessWorkspaceChangedFiles(workspacePath string) []string {
 // ── Project management ──────────────────────────────────────────────
 
 type rpcProjectInfo struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	ID   string `json:"id"`
+	Path            string `json:"path"`
+	Name            string `json:"name"`
+	ID              string `json:"id"`
+	Status          string `json:"status"`
+	Exists          bool   `json:"exists"`
+	HasHaft         bool   `json:"has_haft"`
+	HasSpecs        bool   `json:"has_specs"`
+	ReadinessSource string `json:"readiness_source"`
+	ReadinessError  string `json:"readiness_error"`
+	IsActive        bool   `json:"is_active"`
+	ProblemCount    int    `json:"problem_count"`
+	DecisionCount   int    `json:"decision_count"`
+	StaleCount      int    `json:"stale_count"`
 }
 
 type rpcProjectRegistry struct {
@@ -850,6 +860,46 @@ type rpcRegisteredProject struct {
 
 type rpcProjectPathInput struct {
 	Path string `json:"path"`
+}
+
+func handleProjectReadiness(w io.Writer) error {
+	path, err := rpcReadProjectPath()
+	if err != nil {
+		return err
+	}
+
+	facts, err := project.InspectReadiness(path)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, map[string]any{
+		"status":           string(facts.Status),
+		"exists":           facts.Exists,
+		"has_haft":         facts.HasHaft,
+		"has_specs":        facts.HasSpecs,
+		"readiness_source": "core",
+		"readiness_error":  "",
+	})
+}
+
+func handleSpecCheck(w io.Writer) error {
+	projectRoot := strings.TrimSpace(os.Getenv("HAFT_PROJECT_ROOT"))
+	if projectRoot == "" {
+		path, err := rpcReadProjectPath()
+		if err != nil {
+			return err
+		}
+
+		projectRoot = path
+	}
+
+	report, err := project.CheckSpecificationSet(projectRoot)
+	if err != nil {
+		return err
+	}
+
+	return writeResult(w, report)
 }
 
 func handleSwitchProject(env *rpcEnv, w io.Writer) error {
@@ -997,11 +1047,7 @@ func rpcRegisterExistingProject(path string) (rpcProjectInfo, error) {
 		return rpcProjectInfo{}, fmt.Errorf("load registry: %w", err)
 	}
 
-	info := rpcProjectInfo{
-		Path: absPath,
-		Name: cfg.Name,
-		ID:   cfg.ID,
-	}
+	info := rpcProjectInfoFromConfig(absPath, cfg, false)
 	rpcUpsertRegisteredProject(reg, info)
 	if err := rpcSaveRegistry(reg); err != nil {
 		return rpcProjectInfo{}, fmt.Errorf("save registry: %w", err)
@@ -1025,8 +1071,8 @@ func rpcInitializeProject(path string) (rpcProjectInfo, error) {
 	}
 
 	haftDir := filepath.Join(absPath, ".haft")
-	if err := os.MkdirAll(haftDir, 0o755); err != nil {
-		return rpcProjectInfo{}, fmt.Errorf("create .haft/: %w", err)
+	if err := createDirectoryStructure(haftDir); err != nil {
+		return rpcProjectInfo{}, fmt.Errorf("create .haft/ structure: %w", err)
 	}
 
 	cfg, err := project.Create(haftDir, absPath)
@@ -1065,11 +1111,33 @@ func rpcInitializeProject(path string) (rpcProjectInfo, error) {
 		_ = rpcSaveRegistry(reg)
 	}
 
+	return rpcProjectInfoFromConfig(absPath, cfg, false), nil
+}
+
+func rpcProjectInfoFromConfig(path string, cfg *project.Config, isActive bool) rpcProjectInfo {
+	facts, err := project.InspectReadiness(path)
+	readinessSource := "core"
+	readinessError := ""
+	if err != nil {
+		facts = project.ReadinessFacts{
+			Status: project.ReadinessMissing,
+		}
+		readinessSource = "core_error"
+		readinessError = err.Error()
+	}
+
 	return rpcProjectInfo{
-		Path: absPath,
-		Name: cfg.Name,
-		ID:   cfg.ID,
-	}, nil
+		Path:            path,
+		Name:            cfg.Name,
+		ID:              cfg.ID,
+		Status:          string(facts.Status),
+		Exists:          facts.Exists,
+		HasHaft:         facts.HasHaft,
+		HasSpecs:        facts.HasSpecs,
+		ReadinessSource: readinessSource,
+		ReadinessError:  readinessError,
+		IsActive:        isActive && facts.Status == project.ReadinessReady,
+	}
 }
 
 func rpcUpsertRegisteredProject(reg *rpcProjectRegistry, info rpcProjectInfo) {
@@ -1189,16 +1257,24 @@ type rpcInstalledAgent struct {
 	Version string `json:"version"`
 }
 
+type rpcAgentDetectionSpec struct {
+	kind        string
+	name        string
+	binary      string
+	versionFlag string
+}
+
+func rpcSupportedDesktopAgentSpecs() []rpcAgentDetectionSpec {
+	return []rpcAgentDetectionSpec{
+		{"claude", "Claude Code", "claude", "--version"},
+		{"codex", "Codex", "codex", "--version"},
+	}
+}
+
 func handleDetectAgents(_ *rpcEnv, w io.Writer) error {
 	var agents []rpcInstalledAgent
 
-	for _, spec := range []struct {
-		kind, name, binary, versionFlag string
-	}{
-		{"claude", "Claude Code", "claude", "--version"},
-		{"codex", "Codex", "codex", "--version"},
-		{"haft", "Haft Agent", "haft", "version"},
-	} {
+	for _, spec := range rpcSupportedDesktopAgentSpecs() {
 		path, err := exec.LookPath(spec.binary)
 		if err != nil {
 			continue

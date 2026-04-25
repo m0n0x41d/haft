@@ -5,6 +5,9 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::db::HaftDb;
 use crate::models::*;
+use crate::project_readiness::{
+    MISSING, NEEDS_INIT, NEEDS_ONBOARD, READY, inspect_project_readiness,
+};
 
 /// Managed state: a Mutex-wrapped HaftDb for thread-safe Tauri command access.
 pub struct DbState(pub Mutex<HaftDb>);
@@ -175,25 +178,19 @@ pub fn list_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, Str
             .and_then(|s| s.as_str())
             .unwrap_or("")
             .to_string();
-        let exists = std::path::Path::new(&path).is_dir();
-        let has_haft = std::path::Path::new(&path)
-            .join(".haft/project.yaml")
-            .is_file();
-        let status = match (exists, has_haft) {
-            (false, _) => "missing",
-            (true, false) => "needs_init",
-            (true, true) => "ready",
-        }
-        .to_string();
-        let is_active = !active_path.is_empty() && path == active_path && status == "ready";
+        let readiness = inspect_project_readiness(&path);
+        let is_active = !active_path.is_empty() && path == active_path && readiness.status == READY;
 
         out.push(ProjectInfo {
             path,
             name,
             id,
-            status,
-            exists,
-            has_haft,
+            status: readiness.status,
+            exists: readiness.exists,
+            has_haft: readiness.has_haft,
+            has_specs: readiness.has_specs,
+            readiness_source: readiness.readiness_source,
+            readiness_error: readiness.readiness_error,
             is_active,
             problem_count: 0,
             decision_count: 0,
@@ -220,9 +217,11 @@ fn project_status_rank(project: &ProjectInfo) -> i32 {
     }
 
     match project.status.as_str() {
-        "ready" => 1,
-        "needs_init" => 2,
-        _ => 3,
+        READY => 1,
+        NEEDS_ONBOARD => 2,
+        NEEDS_INIT => 3,
+        MISSING => 4,
+        _ => 5,
     }
 }
 
@@ -349,6 +348,7 @@ fn walk_for_haft_projects(
         let path = dir.to_string_lossy().to_string();
         if !seen.contains(&path) {
             seen.insert(path.clone());
+            let readiness = inspect_project_readiness(&path);
             let name = dir
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -358,9 +358,12 @@ fn walk_for_haft_projects(
                 path,
                 name,
                 id: String::new(),
-                status: "ready".into(),
-                exists: true,
-                has_haft: true,
+                status: readiness.status,
+                exists: readiness.exists,
+                has_haft: readiness.has_haft,
+                has_specs: readiness.has_specs,
+                readiness_source: readiness.readiness_source,
+                readiness_error: readiness.readiness_error,
                 is_active: false,
                 problem_count: 0,
                 decision_count: 0,

@@ -3,6 +3,7 @@ pub mod commands_mutate;
 pub mod commands_read;
 pub mod db;
 pub mod models;
+pub mod project_readiness;
 pub mod rpc;
 pub mod shell_env;
 pub mod terminal;
@@ -99,6 +100,7 @@ pub fn run() {
             commands_mutate::add_project,
             commands_mutate::add_project_smart,
             commands_mutate::init_project,
+            commands_mutate::run_spec_check,
             commands_mutate::remove_project,
             commands_mutate::refresh_governance,
             commands_mutate::get_governance_overview,

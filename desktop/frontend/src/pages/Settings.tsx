@@ -1,4 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
+import {
+  ClipboardCheck,
+  FileText,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 
 import {
   addProject,
@@ -6,24 +12,42 @@ import {
   initProject,
   listProjects,
   openDirectoryPicker,
+  openPathInIDE,
   removeProject,
+  runSpecCheck,
   saveConfig,
   scanForProjects,
   switchProject,
   type AgentPreset,
   type DesktopConfig,
   type ProjectInfo,
+  type SpecCheckReport,
 } from "../lib/api";
+import { Badge, Button, type BadgeTone } from "../components/primitives";
 import { reportError } from "../lib/errors";
-import { projectReadiness } from "../lib/projectReadiness";
+import {
+  buildOnboardingCockpit,
+  executeOnboardingAction,
+  type OnboardingAction,
+  type OnboardingActionKind,
+  type SpecCarrierState,
+} from "../lib/onboardingCockpit";
+import {
+  projectActivationLabel,
+  projectIsMissing,
+  projectNeedsInitialization,
+  projectNeedsOnboarding,
+} from "../lib/projectReadiness";
 
 type SettingsTab = "general" | "projects" | "agents" | "mcp";
 
 export function Settings({
   initialTab,
+  initialProjectPath,
   onProjectRegistryChange,
 }: {
   initialTab?: SettingsTab;
+  initialProjectPath?: string;
   onProjectRegistryChange?: () => void;
 } = {}) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? "general");
@@ -119,7 +143,10 @@ export function Settings({
           <GeneralSettings config={config} onChange={updateConfig} />
         )}
         {tab === "projects" && (
-          <ProjectSettings onProjectRegistryChange={onProjectRegistryChange} />
+          <ProjectSettings
+            initialProjectPath={initialProjectPath}
+            onProjectRegistryChange={onProjectRegistryChange}
+          />
         )}
         {tab === "agents" && config && (
           <AgentSettings config={config} onChange={updateConfig} />
@@ -217,14 +244,18 @@ function GeneralSettings({
 }
 
 function ProjectSettings({
+  initialProjectPath,
   onProjectRegistryChange,
 }: {
+  initialProjectPath?: string;
   onProjectRegistryChange?: () => void;
 }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [discovered, setDiscovered] = useState<ProjectInfo[]>([]);
   const [selectedPath, setSelectedPath] = useState("");
+  const [specReports, setSpecReports] = useState<Record<string, SpecCheckReport>>({});
+  const [pendingOnboardingAction, setPendingOnboardingAction] = useState("");
 
   const refreshProjects = async () => {
     try {
@@ -242,6 +273,12 @@ function ProjectSettings({
         reportError(error, "projects");
       });
   }, []);
+
+  useEffect(() => {
+    if (initialProjectPath) {
+      setSelectedPath(initialProjectPath);
+    }
+  }, [initialProjectPath]);
 
   const handleScan = async () => {
     setScanning(true);
@@ -317,9 +354,7 @@ function ProjectSettings({
   };
 
   const handleActivate = async (project: ProjectInfo) => {
-    const status = projectReadiness(project);
-
-    if (status === "needs_init") {
+    if (projectNeedsInitialization(project)) {
       try {
         const created = await initProject(project.path);
 
@@ -337,7 +372,45 @@ function ProjectSettings({
       return;
     }
 
+    if (projectNeedsOnboarding(project)) {
+      setSelectedPath(project.path);
+      return;
+    }
+
     await handleSwitch(project.path);
+  };
+
+  const handleOnboardingAction = async (
+    project: ProjectInfo,
+    action: OnboardingAction,
+  ) => {
+    const actionID = onboardingActionID(project.path, action.kind);
+    setPendingOnboardingAction(actionID);
+
+    try {
+      const result = await executeOnboardingAction(action, project.path, {
+        openPath: openPathInIDE,
+        runSpecCheck,
+        refreshReadiness: async (projectPath) => {
+          setSelectedPath(projectPath);
+          await refreshProjects();
+          onProjectRegistryChange?.();
+        },
+      });
+
+      if (result.kind === "checked") {
+        setSpecReports((current) => ({
+          ...current,
+          [project.path]: result.report,
+        }));
+        await refreshProjects();
+        onProjectRegistryChange?.();
+      }
+    } catch (error) {
+      reportError(error, action.label);
+    } finally {
+      setPendingOnboardingAction("");
+    }
   };
 
   const handleRemove = async (path: string) => {
@@ -349,6 +422,11 @@ function ProjectSettings({
       reportError(error, "remove project");
     }
   };
+
+  const selectedProjectPath = selectedPath.trim();
+  const activeOnboardingProject = projects.find((project) =>
+    projectNeedsOnboarding(project) && project.path === selectedProjectPath
+  ) ?? projects.find(projectNeedsOnboarding) ?? null;
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -403,16 +481,26 @@ function ProjectSettings({
           </div>
 
           <p className="text-xs text-text-muted">
-            `Add` requires an existing `.haft/` directory. `Init` creates `.haft/project.yaml` and the project database, then registers the project.
+            `Add` requires an existing `.haft/` directory. `Init` creates `.haft/project.yaml` and the project database. Projects remain in `needs_onboard` until Core readiness and `haft spec check` pass.
           </p>
         </div>
       </SettingsCard>
 
+      {activeOnboardingProject && (
+        <OnboardingCockpitPanel
+          project={activeOnboardingProject}
+          report={specReports[activeOnboardingProject.path] ?? null}
+          pendingActionID={pendingOnboardingAction}
+          onAction={(action) => {
+            void handleOnboardingAction(activeOnboardingProject, action);
+          }}
+        />
+      )}
+
       <div className="space-y-2">
         {projects.map((project) => {
-          const status = projectReadiness(project);
-          const missing = status === "missing";
-          const needsInit = status === "needs_init";
+          const missing = projectIsMissing(project);
+          const needsOnboard = projectNeedsOnboarding(project);
 
           return (
           <div
@@ -426,6 +514,9 @@ function ProjectSettings({
                 {project.name}
               </span>
               <p className="mt-0.5 font-mono text-xs text-text-muted">{project.path}</p>
+              {project.readiness_error && (
+                <p className="mt-1 max-w-xl text-xs text-warning">{project.readiness_error}</p>
+              )}
             </div>
 
             <div className="flex items-center gap-3 text-xs text-text-muted">
@@ -442,8 +533,13 @@ function ProjectSettings({
                   onClick={() => void handleActivate(project)}
                   className="rounded border border-border bg-surface-2 px-2 py-1 text-text-secondary transition-colors hover:bg-surface-3"
                 >
-                  {needsInit ? "Init & switch" : "Switch"}
+                  {projectActivationLabel(project)}
                 </button>
+              )}
+              {needsOnboard && (
+                <span className="rounded-full border border-warning/20 bg-warning/10 px-2 py-1 text-warning">
+                  Needs onboarding
+                </span>
               )}
               <button
                 onClick={() => handleRemove(project.path)}
@@ -492,6 +588,148 @@ function ProjectSettings({
       )}
     </div>
   );
+}
+
+const ACTION_ICONS: Record<OnboardingActionKind, LucideIcon> = {
+  open_target_spec: FileText,
+  open_enabling_spec: FileText,
+  open_term_map: FileText,
+  run_spec_check: ClipboardCheck,
+  refresh_readiness: RefreshCw,
+};
+
+const CARRIER_STATE_LABELS: Record<SpecCarrierState, string> = {
+  not_checked: "Not checked",
+  missing: "Missing",
+  blocked: "Blocked",
+  empty: "Empty",
+  draft: "Draft",
+  active: "Active",
+};
+
+const CARRIER_STATE_TONES: Record<SpecCarrierState, BadgeTone> = {
+  not_checked: "neutral",
+  missing: "danger",
+  blocked: "warning",
+  empty: "neutral",
+  draft: "warning",
+  active: "success",
+};
+
+function OnboardingCockpitPanel({
+  project,
+  report,
+  pendingActionID,
+  onAction,
+}: {
+  project: ProjectInfo;
+  report: SpecCheckReport | null;
+  pendingActionID: string;
+  onAction: (action: OnboardingAction) => void;
+}) {
+  const cockpit = buildOnboardingCockpit(project, report);
+
+  if (!cockpit.visible) {
+    return null;
+  }
+
+  return (
+    <SettingsCard
+      title="Onboarding cockpit"
+      description="Target spec, enabling spec, term map, and deterministic spec-check work for the selected project."
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-text-primary">{cockpit.projectName}</p>
+          <p className="mt-0.5 truncate font-mono text-xs text-text-muted">{cockpit.projectPath}</p>
+          <p className="mt-2 text-xs text-text-secondary">{cockpit.summary}</p>
+        </div>
+
+        <Badge tone={cockpit.specState === "clean" ? "success" : "warning"}>
+          {cockpit.statusLabel}
+        </Badge>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        {cockpit.carrierRows.map((row) => (
+          <div
+            key={row.kind}
+            className="rounded-lg border border-border bg-surface-2/40 px-3 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-text-secondary">{row.label}</span>
+              <Badge tone={CARRIER_STATE_TONES[row.state]}>
+                {CARRIER_STATE_LABELS[row.state]}
+              </Badge>
+            </div>
+            <p className="mt-1 truncate font-mono text-[11px] text-text-muted">{row.path}</p>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-muted">
+              {row.kind === "term-map" ? (
+                <span>{row.termMapEntries} terms</span>
+              ) : (
+                <>
+                  <span>{row.activeSections} active</span>
+                  <span>{row.totalSections} total</span>
+                </>
+              )}
+              <span>{row.findingCount} findings</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {cockpit.findings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+            Spec-check findings
+          </p>
+          {cockpit.findings.map((finding) => (
+            <div
+              key={finding.id}
+              className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="warning" mono>{finding.level}</Badge>
+                <span className="font-mono text-xs text-text-secondary">{finding.title}</span>
+                {finding.location && (
+                  <span className="font-mono text-[11px] text-text-muted">{finding.location}</span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-text-secondary">{finding.message}</p>
+              {finding.actionLabel && (
+                <p className="mt-1 text-[11px] text-warning">Next: {finding.actionLabel}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {cockpit.actions.map((action) => {
+          const Icon = ACTION_ICONS[action.kind];
+          const actionID = onboardingActionID(project.path, action.kind);
+          const pending = pendingActionID === actionID;
+          const primary = cockpit.primaryAction?.kind === action.kind;
+
+          return (
+            <Button
+              key={action.kind}
+              variant={primary ? "primary" : "secondary"}
+              icon={<Icon size={14} />}
+              disabled={pendingActionID !== ""}
+              onClick={() => onAction(action)}
+            >
+              {pending ? "Working..." : action.label}
+            </Button>
+          );
+        })}
+      </div>
+    </SettingsCard>
+  );
+}
+
+function onboardingActionID(projectPath: string, actionKind: OnboardingActionKind): string {
+  return `${projectPath}:${actionKind}`;
 }
 
 function AgentSettings({
@@ -714,7 +952,6 @@ function AgentKindSelect({
     >
       <option value="claude">Claude Code</option>
       <option value="codex">Codex</option>
-      <option value="haft">Haft Agent</option>
     </select>
   );
 }

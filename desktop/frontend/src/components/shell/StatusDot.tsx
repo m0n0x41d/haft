@@ -1,8 +1,10 @@
 export type TaskStatus =
   | "running"
+  | "checkpointed"
   | "idle"
   | "completed"
   | "failed"
+  | "blocked"
   | "cancelled"
   | "pending"
   | (string & {}); // accepts unknown strings at the type boundary; unknown → muted
@@ -14,9 +16,11 @@ export interface StatusDotProps {
 
 const STATUS_CLASSES: Record<string, string> = {
   running: "bg-accent animate-pulse",
+  checkpointed: "bg-warning",
   idle: "bg-accent",
   completed: "bg-success",
   failed: "bg-danger",
+  blocked: "bg-danger",
   cancelled: "bg-text-muted",
   pending: "bg-warning",
 };

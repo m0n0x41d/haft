@@ -32,7 +32,12 @@ import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors"
 import { listProjects, removeProject, switchProject, listTasks, toggleMaximize, type ProjectInfo, type TaskState } from "./lib/api";
 import { getPageTitle, resolveNavigation, type Page } from "./navigation";
 import { subscribe } from "./lib/events";
-import { projectIsRunnable, projectReadiness } from "./lib/projectReadiness";
+import {
+  projectIsMissing,
+  projectIsRunnable,
+  projectReadinessBadgeLabel,
+  projectTaskBlockedTitle,
+} from "./lib/projectReadiness";
 
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Core", icon: LayoutDashboard },
@@ -130,6 +135,11 @@ export default function App() {
     setSelectedId(nextNavigation.selectedId);
   };
 
+  const openProjectSettings = (path?: string) => {
+    setPage("settings");
+    setSelectedId(path ? `projects:${path}` : "projects");
+  };
+
   const handleSwitchProject = async (path: string) => {
     try {
       await switchProject(path);
@@ -210,8 +220,7 @@ export default function App() {
                   onClick={() => {
                     setShowPlusMenu(false);
                     if (!activeProject) {
-                      setPage("settings");
-                      setSelectedId("projects");
+                      openProjectSettings();
                       return;
                     }
 
@@ -298,9 +307,8 @@ export default function App() {
           {/* Project tree */}
           <div className="flex-1 overflow-y-auto px-1">
             {projects.map((proj) => {
-              const status = projectReadiness(proj);
               const runnable = projectIsRunnable(proj);
-              const missing = status === "missing";
+              const missing = projectIsMissing(proj);
               const isExpanded = runnable && expandedProjects.has(proj.path);
               const pTasks = runnable ? projectTasks(proj.path) : [];
 
@@ -310,8 +318,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         if (!runnable) {
-                          setPage("settings");
-                          setSelectedId("projects");
+                          openProjectSettings(proj.path);
                           return;
                         }
 
@@ -333,25 +340,23 @@ export default function App() {
                         <ChevronRight size={12} className="text-text-muted shrink-0" />
                       )}
                       <span className="truncate">{proj.name}</span>
-                      {status !== "ready" && (
+                      {!runnable && (
                         <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] ${
                           missing ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"
                         }`}>
-                          {missing ? "missing" : "init"}
+                          {projectReadinessBadgeLabel(proj)}
                         </span>
                       )}
                     </button>
                     <button
                       onClick={() => {
                         if (missing) {
-                          setPage("settings");
-                          setSelectedId("projects");
+                          openProjectSettings(proj.path);
                           return;
                         }
 
                         if (!runnable) {
-                          setPage("settings");
-                          setSelectedId("projects");
+                          openProjectSettings(proj.path);
                           return;
                         }
 
@@ -365,7 +370,7 @@ export default function App() {
                           : "opacity-0 text-text-muted hover:text-accent group-hover:opacity-100"
                       }`}
                       disabled={!runnable}
-                      title={runnable ? "New task" : "Project is not runnable"}
+                      title={runnable ? "New task" : projectTaskBlockedTitle(proj)}
                     >
                       <Plus size={14} />
                     </button>
@@ -454,8 +459,7 @@ export default function App() {
               <button
                 onClick={() => {
                   if (!activeProject) {
-                    setPage("settings");
-                    setSelectedId("projects");
+                    openProjectSettings();
                     return;
                   }
 
@@ -494,7 +498,8 @@ export default function App() {
             )}
             {page === "settings" && (
               <Settings
-                initialTab={selectedId === "projects" ? "projects" : undefined}
+                initialTab={selectedId?.startsWith("projects") ? "projects" : undefined}
+                initialProjectPath={selectedId?.startsWith("projects:") ? selectedId.slice("projects:".length) : undefined}
                 onProjectRegistryChange={() => {
                   setRefreshKey((key) => key + 1);
                 }}

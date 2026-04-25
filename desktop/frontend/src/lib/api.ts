@@ -413,13 +413,48 @@ export interface ProjectInfo {
   path: string;
   name: string;
   id: string;
-  status?: "ready" | "needs_init" | "missing";
+  status?: "ready" | "needs_init" | "needs_onboard" | "missing";
   exists?: boolean;
   has_haft?: boolean;
+  has_specs?: boolean;
+  readiness_source?: string;
+  readiness_error?: string;
   is_active: boolean;
   problem_count: number;
   decision_count: number;
   stale_count: number;
+}
+
+export interface SpecCheckReport {
+  level: string;
+  documents: SpecCheckDocument[];
+  findings: SpecCheckFinding[];
+  summary: SpecCheckSummary;
+}
+
+export interface SpecCheckDocument {
+  path: string;
+  kind: string;
+  spec_sections: number;
+  active_spec_sections: number;
+  term_map_entries: number;
+}
+
+export interface SpecCheckFinding {
+  level: string;
+  code: string;
+  path: string;
+  field_path?: string;
+  line?: number;
+  section_id?: string;
+  message: string;
+}
+
+export interface SpecCheckSummary {
+  total_findings: number;
+  spec_sections: number;
+  active_spec_sections: number;
+  term_map_entries: number;
 }
 
 export interface AgentPreset {
@@ -575,15 +610,105 @@ function isNoiseBlock(block: ChatBlock): boolean {
     return true;
   }
 
-  if (text.startsWith('{"type":"rate_limit_event"')) {
-    return true;
-  }
-
-  if (text.startsWith('{"type":"system"')) {
+  if (isAuditOnlyProviderEnvelope(text)) {
     return true;
   }
 
   return false;
+}
+
+type ProviderEnvelopeVisibility = "visible" | "audit_only";
+
+const AUDIT_ONLY_PROVIDER_ENVELOPE_TYPES = new Set([
+  "result",
+  "system",
+  "rate_limit_event",
+  "thread.started",
+  "turn.started",
+  "turn.completed",
+]);
+
+function isAuditOnlyProviderEnvelope(text: string): boolean {
+  const trimmed = text.trim();
+  const envelope = parseProviderEnvelope(trimmed);
+
+  if (envelope) {
+    const visibility = providerEnvelopeVisibility(envelope);
+
+    return visibility === "audit_only";
+  }
+
+  const lines = trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length <= 1) {
+    return false;
+  }
+
+  return lines.every(isAuditOnlyProviderEnvelopeLine);
+}
+
+function isAuditOnlyProviderEnvelopeLine(text: string): boolean {
+  const envelope = parseProviderEnvelope(text);
+
+  if (!envelope) {
+    return false;
+  }
+
+  const visibility = providerEnvelopeVisibility(envelope);
+
+  return visibility === "audit_only";
+}
+
+function parseProviderEnvelope(text: string): Record<string, unknown> | null {
+  if (!looksLikeJsonContainer(text)) {
+    return null;
+  }
+
+  try {
+    const value: unknown = JSON.parse(text);
+
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function providerEnvelopeVisibility(envelope: Record<string, unknown>): ProviderEnvelopeVisibility {
+  const envelopeType = envelope.type;
+
+  if (typeof envelopeType !== "string") {
+    return "visible";
+  }
+
+  if (AUDIT_ONLY_PROVIDER_ENVELOPE_TYPES.has(envelopeType)) {
+    return "audit_only";
+  }
+
+  return "visible";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looksLikeJsonContainer(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (trimmed === "") {
+    return false;
+  }
+
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
 }
 
 function isGroupableEntry(entry: ChatEntry): boolean {
@@ -2156,6 +2281,9 @@ export async function listProjects(): Promise<ProjectInfo[]> {
       status: "ready",
       exists: true,
       has_haft: true,
+      has_specs: true,
+      readiness_source: "core",
+      readiness_error: "",
       is_active: true,
       problem_count: 12,
       decision_count: 8,
@@ -2167,13 +2295,13 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function addProject(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", status: "ready", exists: true, has_haft: true, is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "needs_onboard", exists: true, has_haft: true, has_specs: false, readiness_source: "degraded_core_unavailable", readiness_error: "backend connection unavailable", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function addProjectSmart(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project_smart", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", status: "ready", exists: true, has_haft: true, is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "needs_onboard", exists: true, has_haft: true, has_specs: false, readiness_source: "degraded_core_unavailable", readiness_error: "backend connection unavailable", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function switchProject(path: string): Promise<void> {
@@ -2202,13 +2330,81 @@ export async function initProject(path: string): Promise<ProjectInfo> {
     path,
     name: path.split("/").pop() || path,
     id: "",
-    status: "ready",
+    status: "needs_onboard",
     exists: true,
     has_haft: true,
+    has_specs: false,
+    readiness_source: "degraded_core_unavailable",
+    readiness_error: "backend connection unavailable",
     is_active: false,
     problem_count: 0,
     decision_count: 0,
     stale_count: 0,
+  };
+}
+
+export async function runSpecCheck(projectRoot: string): Promise<SpecCheckReport> {
+  const report = await tauriInvoke<SpecCheckReport>(
+    "run_spec_check",
+    projectRootIpcArgs(projectRoot),
+  );
+  if (report) return normalizeSpecCheckReport(report);
+
+  return normalizeSpecCheckReport(mockSpecCheckReport(projectRoot));
+}
+
+function projectRootIpcArgs(projectRoot: string): { projectRoot: string } {
+  return { projectRoot };
+}
+
+function normalizeSpecCheckReport(report: SpecCheckReport): SpecCheckReport {
+  return {
+    level: report.level || "L0/L1/L1.5",
+    documents: report.documents ?? [],
+    findings: report.findings ?? [],
+    summary: {
+      total_findings: report.summary?.total_findings ?? 0,
+      spec_sections: report.summary?.spec_sections ?? 0,
+      active_spec_sections: report.summary?.active_spec_sections ?? 0,
+      term_map_entries: report.summary?.term_map_entries ?? 0,
+    },
+  };
+}
+
+function mockSpecCheckReport(projectRoot: string): SpecCheckReport {
+  const root = projectRoot.replace(/\/+$/, "");
+
+  return {
+    level: "L0/L1/L1.5",
+    documents: [
+      specCheckDocument(`${root}/.haft/specs/target-system.md`, "target-system"),
+      specCheckDocument(`${root}/.haft/specs/enabling-system.md`, "enabling-system"),
+      specCheckDocument(`${root}/.haft/specs/term-map.md`, "term-map"),
+    ],
+    findings: [
+      {
+        level: "L0",
+        code: "desktop_spec_check_unavailable",
+        path: "",
+        message: "Run inside Haft Desktop to execute the core spec check.",
+      },
+    ],
+    summary: {
+      total_findings: 1,
+      spec_sections: 0,
+      active_spec_sections: 0,
+      term_map_entries: 0,
+    },
+  };
+}
+
+function specCheckDocument(path: string, kind: string): SpecCheckDocument {
+  return {
+    path,
+    kind,
+    spec_sections: 0,
+    active_spec_sections: 0,
+    term_map_entries: 0,
   };
 }
 
@@ -2588,7 +2784,7 @@ export async function listFlowTemplates(): Promise<FlowTemplate[]> {
       id: "coverage-report",
       name: "Coverage Report",
       description: "Generate a weekly governance coverage summary.",
-      agent: "haft",
+      agent: "claude",
       schedule: "0 15 * * 1",
       prompt: "Summarize module governance coverage for the current project.",
       branch: "flows/coverage-report",

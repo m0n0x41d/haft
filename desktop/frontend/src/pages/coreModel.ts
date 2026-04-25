@@ -178,6 +178,7 @@ function taskNeedsAction(task: TaskState): boolean {
   const status = normalizeState(task.status);
 
   return status === "failed"
+    || status === "checkpointed"
     || status === "idle"
     || status === "waiting"
     || status === "blocked";

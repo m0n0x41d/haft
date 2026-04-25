@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::models::ChatBlock;
+use crate::project_readiness::{READY, inspect_project_readiness, project_not_ready_message};
 use crate::rpc;
 use crate::shell_env::ShellEnvState;
 
@@ -34,7 +35,6 @@ const CONTROL_PROMPT_SUFFIX: &str =
 pub enum AgentKind {
     Claude,
     Codex,
-    Haft,
 }
 
 impl AgentKind {
@@ -42,7 +42,6 @@ impl AgentKind {
         match s.trim().to_lowercase().as_str() {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
-            "haft" => Some(Self::Haft),
             _ => None,
         }
     }
@@ -51,7 +50,6 @@ impl AgentKind {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
-            Self::Haft => "haft",
         }
     }
 }
@@ -223,7 +221,8 @@ pub fn spawn_task(
 
 /// Resolve `(project_path, project_name)` for the active desktop project.
 /// A registry entry is only runnable when the path still exists and contains
-/// `.haft/project.yaml`; stale carriers must fail before PTY spawn.
+/// the minimum project specification set; stale or under-onboarded carriers
+/// must fail before PTY spawn.
 fn resolve_active_project_context() -> Result<(String, String), String> {
     let home = std::env::var("HOME").map_err(|e| format!("resolve HOME: {e}"))?;
     let registry_path = format!("{home}/.haft/desktop-projects.json");
@@ -239,10 +238,9 @@ fn resolve_active_project_context() -> Result<(String, String), String> {
     if active.is_empty() {
         return Err("no active ready project; add or switch to a project first".into());
     }
-    if !project_root_is_ready(&active) {
-        return Err(format!(
-            "active project is not ready: {active}. Remove or re-initialize it in Settings -> Projects"
-        ));
+    let readiness = inspect_project_readiness(&active);
+    if readiness.status != READY {
+        return Err(project_not_ready_message(&active, &readiness));
     }
     let name = val
         .get("projects")
@@ -394,17 +392,12 @@ fn validate_project_root(project_path: &str) -> Result<(), String> {
         return Err(format!("project path does not exist: {project_path}"));
     }
 
-    if !project_root_is_ready(project_path) {
-        return Err(format!(
-            "project is not initialized for Haft: {project_path}. Run haft init or initialize it from Settings"
-        ));
+    let readiness = inspect_project_readiness(project_path);
+    if readiness.status != READY {
+        return Err(project_not_ready_message(project_path, &readiness));
     }
 
     Ok(())
-}
-
-fn project_root_is_ready(project_path: &str) -> bool {
-    Path::new(project_path).join(".haft/project.yaml").is_file()
 }
 
 fn running_task_json(task: &RunningTask, status_override: Option<&str>) -> serde_json::Value {
@@ -996,7 +989,6 @@ fn parse_and_append_blocks(task: &RunningTask, line: &str) {
     let blocks = match task.agent {
         AgentKind::Claude => parse_claude_line(line),
         AgentKind::Codex => parse_codex_line(line),
-        AgentKind::Haft => Vec::new(), // haft agent has no structured streaming yet
     };
 
     if blocks.is_empty() {
@@ -1019,15 +1011,9 @@ struct ClaudeEnvelope {
     #[serde(default, rename = "type")]
     msg_type: String,
     #[serde(default)]
-    session_id: String,
-    #[serde(default)]
     message: ClaudeMessage,
     #[serde(default)]
     parent_tool_use_id: String,
-    #[serde(default)]
-    result: Option<serde_json::Value>,
-    #[serde(default)]
-    is_error: bool,
     #[serde(default)]
     error: Option<ClaudeError>,
 }
@@ -1077,24 +1063,7 @@ fn parse_claude_line(line: &str) -> Vec<ChatBlock> {
     match envelope.msg_type.as_str() {
         "system" | "rate_limit_event" => Vec::new(),
 
-        "result" => {
-            let text = format_json_value(envelope.result.as_ref());
-            if text.trim().is_empty() {
-                return Vec::new();
-            }
-            let role = if envelope.is_error {
-                "system"
-            } else {
-                "assistant"
-            };
-            vec![ChatBlock {
-                block_type: "text".into(),
-                role: role.into(),
-                text,
-                is_error: envelope.is_error,
-                ..Default::default()
-            }]
-        }
+        "result" => Vec::new(),
 
         "error" => {
             let text = envelope
@@ -1262,8 +1231,6 @@ fn normalize_claude_block_type(block: &ClaudeContentBlock) -> String {
 struct CodexEnvelope {
     #[serde(default, rename = "type")]
     msg_type: String,
-    #[serde(default)]
-    thread_id: String,
     #[serde(default)]
     text: String,
     #[serde(default)]
@@ -1598,7 +1565,6 @@ fn build_agent_args(kind: AgentKind, prompt: &str, work_dir: &str) -> Vec<String
             "mcp_servers={}".into(),
             prompt.into(),
         ],
-        AgentKind::Haft => vec!["haft".into(), "agent".into(), prompt.into()],
     }
 }
 
@@ -1924,6 +1890,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn agent_kind_accepts_only_v7_desktop_hosts() {
+        assert_eq!(AgentKind::from_str("claude"), Some(AgentKind::Claude));
+        assert_eq!(AgentKind::from_str("codex"), Some(AgentKind::Codex));
+        assert_eq!(AgentKind::from_str("haft"), None);
+    }
+
+    #[test]
     fn strip_ansi_removes_csi() {
         assert_eq!(strip_ansi("\x1b[32mhello\x1b[0m"), "hello");
     }
@@ -1966,6 +1939,14 @@ mod tests {
         assert_eq!(blocks[0].block_type, "text");
         assert_eq!(blocks[0].role, "system");
         assert_eq!(blocks[0].text, "rate limited");
+    }
+
+    #[test]
+    fn parse_claude_result_envelope_is_audit_only() {
+        let line = r#"{"type":"result","usage":{"input_tokens":6},"result":{"duration_ms":10}}"#;
+        let blocks = parse_claude_line(line);
+
+        assert!(blocks.is_empty());
     }
 
     #[test]
@@ -2012,6 +1993,8 @@ mod tests {
         assert!(!task_accepts_input("completed"));
         assert!(!task_accepts_input("failed"));
         assert!(!task_accepts_input("cancelled"));
+        assert!(!task_accepts_input("checkpointed"));
+        assert!(!task_accepts_input("blocked"));
         assert!(!task_accepts_input("Ready for PR"));
         assert!(!task_accepts_input(""));
     }

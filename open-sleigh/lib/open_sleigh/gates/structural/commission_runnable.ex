@@ -13,7 +13,6 @@ defmodule OpenSleigh.Gates.Structural.CommissionRunnable do
   alias OpenSleigh.{CommissionRevisionSnapshot, GateContext, WorkCommission}
 
   @gate_name :commission_runnable
-  @runnable_states [:queued, :ready, :preflighting]
   @claimed_lease_states [:claimed_for_preflight]
 
   @impl true
@@ -65,8 +64,17 @@ defmodule OpenSleigh.Gates.Structural.CommissionRunnable do
 
   @spec runnable_state(WorkCommission.t()) ::
           :ok | {:error, :commission_not_runnable}
-  defp runnable_state(%WorkCommission{state: state}) when state in @runnable_states, do: :ok
-  defp runnable_state(%WorkCommission{}), do: {:error, :commission_not_runnable}
+  defp runnable_state(%WorkCommission{state: state}) do
+    state
+    |> WorkCommission.runnable_state?()
+    |> runnable_state_result(state)
+  end
+
+  @spec runnable_state_result(boolean(), WorkCommission.state()) ::
+          :ok | {:error, :commission_not_runnable}
+  defp runnable_state_result(true, _state), do: :ok
+  defp runnable_state_result(false, :preflighting), do: :ok
+  defp runnable_state_result(false, _state), do: {:error, :commission_not_runnable}
 
   @spec checked_at(GateContext.t()) ::
           {:ok, DateTime.t()} | {:error, :missing_checked_at}

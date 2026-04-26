@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/workcommission"
 )
 
 const defaultCommissionAttentionAfter = 24 * time.Hour
@@ -313,14 +315,14 @@ func workCommissionStatusAttentionReason(
 	}
 
 	state := textField(payload, "state")
-	switch state {
-	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+	if workcommission.RequiresOperatorDecisionState(state) {
 		return "requires operator decision: " + state
-	case "preflighting", "running":
-		return workCommissionLeaseAttentionReason(payload, now)
-	default:
-		return workCommissionOpenAttentionReason(payload, now)
 	}
+	if workcommission.IsExecutingState(state) {
+		return workCommissionLeaseAttentionReason(payload, now)
+	}
+
+	return workCommissionOpenAttentionReason(payload, now)
 }
 
 func workCommissionLeaseAttentionReason(payload map[string]any, now time.Time) string {
@@ -358,25 +360,18 @@ func workCommissionStatusSuggestedActions(state string, reason string, expired b
 		return []string{"inspect", "cancel"}
 	}
 
-	switch state {
-	case "queued", "ready", "preflighting", "running":
-		return []string{"inspect", "requeue", "cancel"}
-	case "blocked_stale":
+	if state == "blocked_stale" {
 		return []string{"refresh_decision", "requeue", "cancel"}
-	case "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
-		return []string{"inspect", "requeue", "cancel"}
-	default:
-		return []string{"inspect", "cancel"}
 	}
+	if workcommission.IsRecoverableState(state) {
+		return []string{"inspect", "requeue", "cancel"}
+	}
+
+	return []string{"inspect", "cancel"}
 }
 
 func workCommissionStateTerminal(state string) bool {
-	switch state {
-	case "completed", "completed_with_projection_debt", "cancelled", "expired":
-		return true
-	default:
-		return false
-	}
+	return workcommission.IsTerminalState(state)
 }
 
 func workCommissionStateExpired(payload map[string]any, now time.Time) bool {

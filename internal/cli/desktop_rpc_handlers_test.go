@@ -560,6 +560,96 @@ func TestHandleHarnessResultReturnsStructuredDesktopFacts(t *testing.T) {
 	}
 }
 
+func TestHandleHarnessResultReturnsScopeAuthorizationFactsWhenApplyDisabled(t *testing.T) {
+	homePath := setRPCProjectHome(t)
+	env, cleanup := createCommissionRPCEnv(t)
+	defer cleanup()
+
+	commissionID := "wc-desktop-rpc-result-forbidden"
+	trackedPath := filepath.Join("internal", "cli", "serve_commission.go")
+	workspacePath := filepath.Join(homePath, ".open-sleigh", "workspaces", commissionID)
+	initHarnessApplyRepo(t, workspacePath, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspacePath, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{"**/*"}
+	scope["forbidden_paths"] = []any{trackedPath}
+	if _, err := persistWorkCommission(env.ctx, env.store, commission, time.Now().UTC()); err != nil {
+		t.Fatalf("persist commission: %v", err)
+	}
+
+	output := bytes.Buffer{}
+	restore := setRPCInput(t, map[string]string{"commission_id": commissionID})
+	defer restore()
+
+	if err := handleHarnessResult(env, &output); err != nil {
+		t.Fatalf("handleHarnessResult: %v", err)
+	}
+
+	var decoded struct {
+		CanApply       bool `json:"can_apply"`
+		WorkspaceFacts struct {
+			Authorization struct {
+				Verdict        string   `json:"verdict"`
+				CanApply       bool     `json:"can_apply"`
+				ForbiddenPaths []string `json:"forbidden_paths"`
+				OperatorReason struct {
+					Code    string   `json:"code"`
+					Verdict string   `json:"verdict"`
+					Paths   []string `json:"paths"`
+					Message string   `json:"message"`
+				} `json:"operator_reason"`
+			} `json:"authorization"`
+		} `json:"workspace_facts"`
+		OperatorNext struct {
+			Kind                string `json:"kind"`
+			Reason              string `json:"reason"`
+			ApplyDisabledReason struct {
+				Code    string   `json:"code"`
+				Verdict string   `json:"verdict"`
+				Paths   []string `json:"paths"`
+				Message string   `json:"message"`
+			} `json:"apply_disabled_reason"`
+		} `json:"operator_next"`
+	}
+	decodeRPCData(t, output.Bytes(), &decoded)
+
+	if decoded.CanApply {
+		t.Fatal("CanApply = true, want false")
+	}
+	if decoded.WorkspaceFacts.Authorization.CanApply {
+		t.Fatal("workspace authorization can_apply = true, want false")
+	}
+	if decoded.WorkspaceFacts.Authorization.Verdict != "forbidden" {
+		t.Fatalf("authorization verdict = %q, want forbidden", decoded.WorkspaceFacts.Authorization.Verdict)
+	}
+	if strings.Join(decoded.WorkspaceFacts.Authorization.ForbiddenPaths, ",") != trackedPath {
+		t.Fatalf("forbidden paths = %#v, want %s", decoded.WorkspaceFacts.Authorization.ForbiddenPaths, trackedPath)
+	}
+	if decoded.OperatorNext.Kind != "inspect" {
+		t.Fatalf("operator next = %q, want inspect", decoded.OperatorNext.Kind)
+	}
+	if decoded.OperatorNext.ApplyDisabledReason.Code != "forbidden_paths" {
+		t.Fatalf("disabled reason code = %q, want forbidden_paths", decoded.OperatorNext.ApplyDisabledReason.Code)
+	}
+	if strings.Join(decoded.OperatorNext.ApplyDisabledReason.Paths, ",") != trackedPath {
+		t.Fatalf("disabled reason paths = %#v, want %s", decoded.OperatorNext.ApplyDisabledReason.Paths, trackedPath)
+	}
+	if !strings.Contains(decoded.OperatorNext.Reason, "forbidden by commission scope") {
+		t.Fatalf("operator reason = %q, want forbidden scope message", decoded.OperatorNext.Reason)
+	}
+	if decoded.WorkspaceFacts.Authorization.OperatorReason.Message != decoded.OperatorNext.ApplyDisabledReason.Message {
+		t.Fatalf(
+			"operator reason message = %q, disabled reason message = %q",
+			decoded.WorkspaceFacts.Authorization.OperatorReason.Message,
+			decoded.OperatorNext.ApplyDisabledReason.Message,
+		)
+	}
+}
+
 func TestHandleHarnessTailUsesSnakeCaseAndHumanizedEvents(t *testing.T) {
 	homePath := setRPCProjectHome(t)
 	env, cleanup := createCommissionRPCEnv(t)

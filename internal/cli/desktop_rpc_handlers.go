@@ -16,6 +16,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/codebase"
 	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/scopeauth"
 )
 
 // ── Artifact authoring ──────────────────────────────────────────────
@@ -763,7 +764,7 @@ func handleHarnessApply(env *rpcEnv, w io.Writer) error {
 	summary, err := applyHarnessWorkspaceDiff(
 		env.projectRoot,
 		workspacePath,
-		harnessCommissionScopePaths(commission),
+		harnessCommissionScope(commission),
 	)
 	if err != nil {
 		return err
@@ -809,7 +810,14 @@ func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, err
 	runtimeSummary := harnessSessionLogSummaries(logPath)[sessionID]
 	latestTurn := harnessLatestCommissionLogSummary(logPath, commissionID)
 	workspaceSummary := inspectHarnessWorkspaceGit(workspacePath)
-	operatorNext := harnessOperatorActionFor(commission, workspaceSummary)
+	authorization := harnessWorkspaceApplyAuthorization(
+		commission,
+		workspacePath,
+		env.projectRoot,
+		workspaceSummary,
+	)
+	canApply := canApplyAuthorizedHarnessWorkspaceDiff(commission, workspaceSummary, authorization)
+	operatorNext := harnessOperatorActionFor(commission, workspaceSummary, authorization)
 	lines := formatHarnessResult(
 		commission,
 		workspaceRoot,
@@ -826,8 +834,8 @@ func harnessResultPayload(env *rpcEnv, commissionID string) (map[string]any, err
 		"status_updated_at": statusUpdatedAt,
 		"latest_turn":       latestTurn,
 		"changed_files":     workspaceSummary.Changed,
-		"can_apply":         stringField(commission, "state") == "completed" && len(workspaceSummary.Changed) > 0,
-		"workspace_facts":   harnessWorkspaceFacts(workspacePath, workspaceSummary),
+		"can_apply":         canApply,
+		"workspace_facts":   harnessWorkspaceFacts(workspacePath, workspaceSummary, authorization),
 		"runtime_facts":     harnessRuntimeFacts(runtimeDetail, statusUpdatedAt, runtimeSummary),
 		"evidence_facts":    harnessEvidenceFacts(commission),
 		"operator_next":     harnessOperatorActionPayload(operatorNext),
@@ -892,6 +900,7 @@ func harnessTailLines(
 func harnessWorkspaceFacts(
 	workspacePath string,
 	summary harnessWorkspaceGitSummary,
+	authorization scopeauth.Summary,
 ) map[string]any {
 	return map[string]any{
 		"path":          workspacePath,
@@ -900,6 +909,7 @@ func harnessWorkspaceFacts(
 		"diff_stat":     splitHarnessFactLines(summary.DiffStat),
 		"changed_files": summary.Changed,
 		"error":         summary.Error,
+		"authorization": harnessScopeAuthorizationPayload(authorization),
 	}
 }
 
@@ -985,9 +995,23 @@ func harnessPhaseOutcomePayload(event map[string]any) map[string]any {
 
 func harnessOperatorActionPayload(action harnessOperatorAction) map[string]any {
 	return map[string]any{
-		"kind":   string(action.Kind),
-		"reason": action.Reason,
-		"lines":  action.Lines,
+		"kind":                  string(action.Kind),
+		"reason":                action.Reason,
+		"lines":                 action.Lines,
+		"apply_disabled_reason": harnessOperatorApplyDisabledReasonPayload(action),
+	}
+}
+
+func harnessOperatorApplyDisabledReasonPayload(action harnessOperatorAction) map[string]any {
+	if action.ApplyDisabledReason.Code == "" {
+		return nil
+	}
+
+	return map[string]any{
+		"code":    string(action.ApplyDisabledReason.Code),
+		"verdict": string(action.ApplyDisabledReason.Verdict),
+		"paths":   action.ApplyDisabledReason.Paths,
+		"message": action.Reason,
 	}
 }
 

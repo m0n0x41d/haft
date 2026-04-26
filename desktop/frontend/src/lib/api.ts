@@ -11,6 +11,10 @@ import {
   taskRunState,
   type TaskFollowUpSubmission,
 } from "./taskInput.ts";
+import {
+  isRunnableWorkCommissionState,
+  isTerminalWorkCommissionState,
+} from "./workCommissionLifecycle.ts";
 
 // API layer — wraps Tauri invoke() with mock fallback for standalone dev.
 // When running inside Tauri, calls invoke() from @tauri-apps/api/core.
@@ -1036,6 +1040,17 @@ export interface HarnessWorkspaceFacts {
   diff_stat: string[];
   changed_files: string[];
   error: string;
+  authorization?: HarnessWorkspaceAuthorization | null;
+}
+
+export interface HarnessWorkspaceAuthorization {
+  verdict: string;
+  can_apply: boolean;
+  allowed_paths: string[];
+  out_of_scope_paths: string[];
+  forbidden_paths: string[];
+  unknown_scope_paths: string[];
+  operator_reason: HarnessApplyDisabledReason | null;
 }
 
 export interface HarnessRuntimeFacts {
@@ -1079,6 +1094,14 @@ export interface HarnessOperatorNext {
   kind: string;
   reason: string;
   lines: string[];
+  apply_disabled_reason?: HarnessApplyDisabledReason | null;
+}
+
+export interface HarnessApplyDisabledReason {
+  code: string;
+  verdict: string;
+  paths: string[];
+  message: string;
 }
 
 export interface HarnessApplyResult {
@@ -2777,15 +2800,15 @@ export async function listCommissions(
 
   if (selector === "all") return mockCommissions;
   if (selector === "terminal") {
-    return mockCommissions.filter((commission) => commission.operator?.terminal);
+    return mockCommissions.filter((commission) => isTerminalWorkCommissionState(commission.state));
   }
   if (selector === "stale") {
     return mockCommissions.filter((commission) => commission.operator?.attention);
   }
   if (selector === "runnable") {
-    return mockCommissions.filter((commission) => commission.state === "queued" || commission.state === "ready");
+    return mockCommissions.filter((commission) => isRunnableWorkCommissionState(commission.state));
   }
-  return mockCommissions.filter((commission) => !commission.operator?.terminal);
+  return mockCommissions.filter((commission) => !isTerminalWorkCommissionState(commission.state));
 }
 
 export async function showCommission(commissionID: string): Promise<WorkCommission> {
@@ -2871,6 +2894,7 @@ export async function getHarnessResult(commissionID: string): Promise<HarnessRun
       diff_stat: [],
       changed_files: [],
       error: "",
+      authorization: null,
     },
     runtime_facts: {
       active: false,
@@ -2961,11 +2985,29 @@ function normalizeHarnessResult(result: HarnessRunResult): HarnessRunResult {
     workspace_facts: normalizeHarnessWorkspaceFacts(result),
     runtime_facts: normalizeHarnessRuntimeFacts(result.runtime_facts),
     evidence_facts: normalizeHarnessEvidenceFacts(result.evidence_facts),
-    operator_next: result.operator_next ?? {
+    operator_next: normalizeHarnessOperatorNext(result.operator_next),
+  };
+}
+
+function normalizeHarnessOperatorNext(
+  operatorNext: HarnessOperatorNext | undefined,
+): HarnessOperatorNext {
+  if (!operatorNext) {
+    return {
       kind: "",
       reason: "",
       lines: [],
-    },
+      apply_disabled_reason: null,
+    };
+  }
+
+  return {
+    kind: operatorNext.kind ?? "",
+    reason: operatorNext.reason ?? "",
+    lines: operatorNext.lines ?? [],
+    apply_disabled_reason: normalizeHarnessApplyDisabledReason(
+      operatorNext.apply_disabled_reason,
+    ),
   };
 }
 
@@ -2999,6 +3041,36 @@ function normalizeHarnessWorkspaceFacts(
     diff_stat: facts?.diff_stat ?? [],
     changed_files: facts?.changed_files ?? result.changed_files ?? [],
     error: facts?.error ?? "",
+    authorization: normalizeHarnessWorkspaceAuthorization(facts?.authorization),
+  };
+}
+
+function normalizeHarnessWorkspaceAuthorization(
+  authorization: HarnessWorkspaceAuthorization | null | undefined,
+): HarnessWorkspaceAuthorization | null {
+  if (!authorization) return null;
+
+  return {
+    verdict: authorization.verdict ?? "",
+    can_apply: Boolean(authorization.can_apply),
+    allowed_paths: authorization.allowed_paths ?? [],
+    out_of_scope_paths: authorization.out_of_scope_paths ?? [],
+    forbidden_paths: authorization.forbidden_paths ?? [],
+    unknown_scope_paths: authorization.unknown_scope_paths ?? [],
+    operator_reason: normalizeHarnessApplyDisabledReason(authorization.operator_reason),
+  };
+}
+
+function normalizeHarnessApplyDisabledReason(
+  reason: HarnessApplyDisabledReason | null | undefined,
+): HarnessApplyDisabledReason | null {
+  if (!reason) return null;
+
+  return {
+    code: reason.code ?? "",
+    verdict: reason.verdict ?? "",
+    paths: reason.paths ?? [],
+    message: reason.message ?? "",
   };
 }
 

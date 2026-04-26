@@ -1,10 +1,17 @@
 import type {
+  HarnessApplyDisabledReason,
   HarnessEvidenceRequirement,
   HarnessPhaseOutcome,
   HarnessRunResult,
   HarnessTailResult,
+  HarnessWorkspaceAuthorization,
   WorkCommission,
 } from "./api.ts";
+import {
+  isRecoverableWorkCommissionState,
+  isTerminalWorkCommissionState,
+  normalizeWorkCommissionState,
+} from "./workCommissionLifecycle.ts";
 
 export type HarnessCommissionKind =
   | "runnable"
@@ -37,6 +44,27 @@ export interface HarnessActionView {
   reason: string;
 }
 
+export type HarnessApplyDisabledKind =
+  | "forbidden"
+  | "out_of_scope"
+  | "unknown_scope"
+  | "not_ready";
+
+export type HarnessApplyReadinessView =
+  | {
+      kind: "ready";
+      canApply: true;
+      reason: string;
+      paths: string[];
+    }
+  | {
+      kind: "disabled";
+      canApply: false;
+      disabledKind: HarnessApplyDisabledKind;
+      reason: string;
+      paths: string[];
+    };
+
 export interface HarnessWorkspaceView {
   path: string;
   diffState: string;
@@ -45,6 +73,7 @@ export interface HarnessWorkspaceView {
   diffStat: string[];
   error: string;
   canApply: boolean;
+  applyReadiness: HarnessApplyReadinessView;
 }
 
 export interface HarnessRuntimeView {
@@ -91,7 +120,6 @@ type StateRule = {
   kind: HarnessCommissionKind;
   label: string;
   tone: HarnessTone;
-  terminal: boolean;
 };
 
 const STATE_RULES: Record<string, StateRule> = {
@@ -99,85 +127,71 @@ const STATE_RULES: Record<string, StateRule> = {
     kind: "blocked",
     label: "Draft",
     tone: "neutral",
-    terminal: false,
   },
   queued: {
     kind: "runnable",
     label: "Runnable",
     tone: "neutral",
-    terminal: false,
   },
   ready: {
     kind: "runnable",
     label: "Runnable",
     tone: "accent",
-    terminal: false,
   },
   preflighting: {
     kind: "running",
     label: "Preflighting",
     tone: "accent",
-    terminal: false,
   },
   running: {
     kind: "running",
     label: "Running",
     tone: "accent",
-    terminal: false,
   },
   blocked_stale: {
     kind: "blocked",
     label: "Blocked stale",
     tone: "warning",
-    terminal: false,
   },
   blocked_policy: {
     kind: "blocked",
     label: "Blocked policy",
     tone: "warning",
-    terminal: false,
   },
   blocked_conflict: {
     kind: "blocked",
     label: "Blocked conflict",
     tone: "warning",
-    terminal: false,
   },
   needs_human_review: {
     kind: "blocked",
     label: "Needs review",
     tone: "warning",
-    terminal: false,
   },
   completed: {
     kind: "completed",
     label: "Completed",
     tone: "success",
-    terminal: true,
   },
   completed_with_projection_debt: {
     kind: "completed",
     label: "Projection debt",
     tone: "warning",
-    terminal: true,
   },
   failed: {
     kind: "failed",
     label: "Failed",
     tone: "danger",
-    terminal: false,
   },
   cancelled: {
     kind: "blocked",
     label: "Cancelled",
     tone: "danger",
-    terminal: true,
   },
   expired: {
     kind: "blocked",
     label: "Expired",
     tone: "danger",
-    terminal: true,
   },
 };
 
@@ -185,7 +199,6 @@ const UNKNOWN_STATE_RULE: StateRule = {
   kind: "blocked",
   label: "Unknown",
   tone: "neutral",
-  terminal: false,
 };
 
 const ACTION_ORDER: HarnessActionKind[] = [
@@ -204,17 +217,55 @@ const ACTION_LABELS: Record<HarnessActionKind, string> = {
   requeue: "Requeue",
 };
 
-const REQUEUEABLE_STATES = new Set([
-  "queued",
-  "ready",
-  "preflighting",
-  "running",
-  "blocked_stale",
-  "blocked_policy",
-  "blocked_conflict",
-  "needs_human_review",
-  "failed",
-]);
+const APPLY_READY_REASON = "completed workspace has unapplied changes";
+const APPLY_NOT_READY_REASON = "no completed workspace diff is ready to apply";
+
+const APPLY_DISABLED_KIND_BY_VERDICT: Record<string, HarnessApplyDisabledKind> = {
+  forbidden: "forbidden",
+  out_of_scope: "out_of_scope",
+  unknown_scope: "unknown_scope",
+};
+
+const APPLY_DISABLED_KIND_BY_CODE: Record<string, HarnessApplyDisabledKind> = {
+  forbidden_paths: "forbidden",
+  out_of_scope_paths: "out_of_scope",
+  unknown_scope_paths: "unknown_scope",
+};
+
+const APPLY_DISABLED_REASON_RULES: Record<
+  HarnessApplyDisabledKind,
+  {
+    prefix: string;
+    fallback: string;
+  }
+> = {
+  forbidden: {
+    prefix: "workspace diff contains paths forbidden by commission scope",
+    fallback: "workspace diff contains forbidden paths",
+  },
+  out_of_scope: {
+    prefix: "workspace diff contains paths outside commission scope",
+    fallback: "workspace diff contains paths outside commission scope",
+  },
+  unknown_scope: {
+    prefix: "workspace diff cannot be applied because commission scope is unknown for paths",
+    fallback: "workspace diff cannot be applied because commission scope is unknown",
+  },
+  not_ready: {
+    prefix: "",
+    fallback: APPLY_NOT_READY_REASON,
+  },
+};
+
+const AUTHORIZATION_PATHS_BY_KIND: Record<
+  HarnessApplyDisabledKind,
+  (authorization: HarnessWorkspaceAuthorization) => string[]
+> = {
+  forbidden: (authorization) => authorization.forbidden_paths,
+  out_of_scope: (authorization) => authorization.out_of_scope_paths,
+  unknown_scope: (authorization) => authorization.unknown_scope_paths,
+  not_ready: () => [],
+};
 
 export function buildHarnessCockpitDetail(
   commission: WorkCommission,
@@ -244,9 +295,9 @@ export function buildHarnessCockpitDetail(
 export function normalizeHarnessCommissionState(
   commission: WorkCommission,
 ): HarnessCommissionStateView {
-  const raw = normalizeState(commission.state);
+  const raw = normalizeWorkCommissionState(commission.state);
   const rule = STATE_RULES[raw] ?? UNKNOWN_STATE_RULE;
-  const terminal = Boolean(commission.operator?.terminal) || rule.terminal;
+  const terminal = isTerminalWorkCommissionState(raw);
 
   return {
     ...rule,
@@ -260,10 +311,12 @@ export function harnessCommissionActions(
   result: HarnessRunResult | null,
 ): HarnessActionView[] {
   const state = normalizeHarnessCommissionState(commission);
+  const applyReadiness = normalizeApplyReadiness(result);
   const context = {
     commission,
     result,
     state,
+    applyReadiness,
   };
 
   return ACTION_ORDER.map((kind) => actionView(kind, context));
@@ -275,6 +328,7 @@ function actionView(
     commission: WorkCommission;
     result: HarnessRunResult | null;
     state: HarnessCommissionStateView;
+    applyReadiness: HarnessApplyReadinessView;
   },
 ): HarnessActionView {
   const availability = ACTION_AVAILABILITY[kind](context);
@@ -293,6 +347,7 @@ const ACTION_AVAILABILITY: Record<
     commission: WorkCommission;
     result: HarnessRunResult | null;
     state: HarnessCommissionStateView;
+    applyReadiness: HarnessApplyReadinessView;
   }) => { enabled: boolean; reason: string }
 > = {
   result: ({ commission }) => ({
@@ -303,11 +358,9 @@ const ACTION_AVAILABILITY: Record<
     enabled: commission.id.trim() !== "",
     reason: "inspect humanized runtime events",
   }),
-  apply: ({ result }) => ({
-    enabled: Boolean(result?.can_apply),
-    reason: result?.can_apply
-      ? "completed workspace has unapplied changes"
-      : "no completed workspace diff is ready to apply",
+  apply: ({ applyReadiness }) => ({
+    enabled: applyReadiness.canApply,
+    reason: applyReadiness.reason,
   }),
   cancel: ({ state }) => ({
     enabled: !state.terminal,
@@ -318,7 +371,7 @@ const ACTION_AVAILABILITY: Record<
   requeue: ({ commission, state }) => {
     const raw = state.raw;
     const expired = Boolean(commission.operator?.expired);
-    const enabled = REQUEUEABLE_STATES.has(raw) && !expired && !state.terminal;
+    const enabled = isRecoverableWorkCommissionState(raw) && !expired && !state.terminal;
 
     return {
       enabled,
@@ -331,6 +384,7 @@ const ACTION_AVAILABILITY: Record<
 
 function normalizeWorkspaceFacts(result: HarnessRunResult | null): HarnessWorkspaceView {
   const facts = result?.workspace_facts;
+  const applyReadiness = normalizeApplyReadiness(result);
 
   return {
     path: facts?.path || result?.workspace || "",
@@ -339,8 +393,131 @@ function normalizeWorkspaceFacts(result: HarnessRunResult | null): HarnessWorksp
     gitStatus: facts?.git_status ?? [],
     diffStat: facts?.diff_stat ?? [],
     error: facts?.error ?? "",
-    canApply: Boolean(result?.can_apply),
+    canApply: applyReadiness.canApply,
+    applyReadiness,
   };
+}
+
+export function normalizeApplyReadiness(
+  result: HarnessRunResult | null,
+): HarnessApplyReadinessView {
+  if (result?.can_apply) {
+    return {
+      kind: "ready",
+      canApply: true,
+      reason: APPLY_READY_REASON,
+      paths: [],
+    };
+  }
+
+  const authorizationReadiness = applyReadinessFromAuthorization(
+    result?.workspace_facts?.authorization,
+  );
+  if (authorizationReadiness) {
+    return authorizationReadiness;
+  }
+
+  const operatorReasonReadiness = applyReadinessFromOperatorReason(
+    result?.operator_next?.apply_disabled_reason,
+  );
+  if (operatorReasonReadiness) {
+    return operatorReasonReadiness;
+  }
+
+  return disabledApplyReadiness("not_ready", [], "");
+}
+
+function applyReadinessFromAuthorization(
+  authorization: HarnessWorkspaceAuthorization | null | undefined,
+): HarnessApplyReadinessView | null {
+  if (!authorization) {
+    return null;
+  }
+
+  const disabledKind = applyDisabledKindFromVerdict(authorization.verdict);
+  if (!disabledKind) {
+    return null;
+  }
+
+  const paths = AUTHORIZATION_PATHS_BY_KIND[disabledKind](authorization);
+  const fallbackReason = authorization.operator_reason?.message ?? "";
+  return disabledApplyReadiness(disabledKind, paths, fallbackReason);
+}
+
+function applyReadinessFromOperatorReason(
+  reason: HarnessApplyDisabledReason | null | undefined,
+): HarnessApplyReadinessView | null {
+  if (!reason) {
+    return null;
+  }
+
+  const disabledKind = applyDisabledKindFromReason(reason);
+  if (!disabledKind) {
+    return null;
+  }
+
+  return disabledApplyReadiness(disabledKind, reason.paths, reason.message);
+}
+
+function applyDisabledKindFromReason(
+  reason: HarnessApplyDisabledReason,
+): HarnessApplyDisabledKind | null {
+  const codeKind = applyDisabledKindFromCode(reason.code);
+  if (codeKind) {
+    return codeKind;
+  }
+
+  return applyDisabledKindFromVerdict(reason.verdict);
+}
+
+function applyDisabledKindFromCode(code: string): HarnessApplyDisabledKind | null {
+  const normalizedCode = code.trim();
+  return APPLY_DISABLED_KIND_BY_CODE[normalizedCode] ?? null;
+}
+
+function applyDisabledKindFromVerdict(
+  verdict: string | undefined,
+): HarnessApplyDisabledKind | null {
+  const normalizedVerdict = verdict?.trim() ?? "";
+  return APPLY_DISABLED_KIND_BY_VERDICT[normalizedVerdict] ?? null;
+}
+
+function disabledApplyReadiness(
+  disabledKind: HarnessApplyDisabledKind,
+  paths: string[],
+  fallbackReason: string,
+): HarnessApplyReadinessView {
+  const cleanPaths = paths
+    .map((path) => path.trim())
+    .filter((path) => path !== "");
+  const reason = formatApplyDisabledReason(disabledKind, cleanPaths, fallbackReason);
+
+  return {
+    kind: "disabled",
+    canApply: false,
+    disabledKind,
+    reason,
+    paths: cleanPaths,
+  };
+}
+
+function formatApplyDisabledReason(
+  disabledKind: HarnessApplyDisabledKind,
+  paths: string[],
+  fallbackReason: string,
+): string {
+  const rule = APPLY_DISABLED_REASON_RULES[disabledKind];
+  const pathList = paths.join(", ");
+  if (pathList !== "" && rule.prefix !== "") {
+    return `${rule.prefix}: ${pathList}`;
+  }
+
+  const cleanFallbackReason = fallbackReason.trim();
+  if (cleanFallbackReason !== "") {
+    return cleanFallbackReason;
+  }
+
+  return rule.fallback;
 }
 
 function normalizeRuntimeFacts(result: HarnessRunResult | null): HarnessRuntimeView {
@@ -423,8 +600,4 @@ function keyValue(key: string, value: string | undefined): string {
   }
 
   return `${key}=${clean}`;
-}
-
-function normalizeState(state: string | undefined): string {
-  return (state ?? "").trim().toLowerCase();
 }

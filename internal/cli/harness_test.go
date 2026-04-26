@@ -7,12 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/scopeauth"
 	"github.com/spf13/cobra"
 )
 
@@ -939,6 +941,8 @@ func TestFormatHarnessResultShowsCompletedDiffEvidenceAndApplyAction(t *testing.
 	}
 
 	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{trackedPath}
 	commission["events"] = []any{
 		map[string]any{
 			"event":       "phase_outcome",
@@ -980,6 +984,49 @@ func TestFormatHarnessResultShowsCompletedDiffEvidenceAndApplyAction(t *testing.
 	}
 	if strings.Contains(joined, `{"`) {
 		t.Fatalf("result output leaked raw JSON:\n%s", joined)
+	}
+}
+
+func TestFormatHarnessResultDisablesApplyForOutOfScopeCompletedDiff(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "workspaces")
+	commissionID := "wc-result-out-of-scope"
+	trackedPath := filepath.Join("internal", "cli", "harness.go")
+	workspacePath := filepath.Join(workspaceRoot, commissionID)
+
+	initHarnessApplyRepo(t, workspacePath, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspacePath, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{"README.md"}
+
+	lines := formatHarnessResult(
+		commission,
+		workspaceRoot,
+		nil,
+		"",
+		harnessSessionLogSummary{},
+		harnessCommissionLogSummary{},
+	)
+	joined := strings.Join(lines, "\n")
+
+	for _, fragment := range []string{
+		"state: completed",
+		"diff_status: changed",
+		"operator_next:",
+		"next_action=inspect",
+		"reason=workspace diff contains paths outside commission scope: " + trackedPath,
+		"apply_disabled_reason=code=out_of_scope_paths verdict=out_of_scope paths=" + trackedPath,
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("result output missing %q:\n%s", fragment, joined)
+		}
+	}
+	if strings.Contains(joined, "haft harness apply "+commissionID) {
+		t.Fatalf("out-of-scope result offered apply:\n%s", joined)
 	}
 }
 
@@ -1390,7 +1437,10 @@ func TestHarnessTailFollowCompletionLineShowsTerminalSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := persistWorkCommission(ctx, store, workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z"), time.Now().UTC()); err != nil {
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{trackedPath}
+	if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1504,7 +1554,11 @@ func TestApplyHarnessWorkspaceDiffAppliesScopedTrackedDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	summary, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{trackedPath})
+	summary, err := applyHarnessWorkspaceDiff(
+		projectRoot,
+		workspaceRoot,
+		scopeauth.CommissionScope{AllowedPaths: []string{trackedPath}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1540,7 +1594,11 @@ func TestApplyHarnessWorkspaceDiffAppliesScopedUntrackedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	summary, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{newPath})
+	summary, err := applyHarnessWorkspaceDiff(
+		projectRoot,
+		workspaceRoot,
+		scopeauth.CommissionScope{AllowedPaths: []string{newPath}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1571,9 +1629,87 @@ func TestApplyHarnessWorkspaceDiffRejectsOutOfScopeDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := applyHarnessWorkspaceDiff(projectRoot, workspaceRoot, []string{"README.md"})
+	scope := scopeauth.CommissionScope{AllowedPaths: []string{"README.md"}}
+	workspaceSummary := inspectHarnessWorkspaceGit(workspaceRoot)
+	authorization := scopeauth.AuthorizeWorkspaceDiff(
+		scope,
+		workspaceSummary.Changed,
+		scopeauth.PathFacts{WorkspaceRoot: workspaceRoot, ProjectRoot: projectRoot},
+	)
+	if !slices.Equal(authorization.OutOfScope, []string{trackedPath}) {
+		t.Fatalf("result authorization out_of_scope = %#v, want %s", authorization.OutOfScope, trackedPath)
+	}
+
+	_, err := applyHarnessWorkspaceDiff(
+		projectRoot,
+		workspaceRoot,
+		scope,
+	)
 	if err == nil || !strings.Contains(err.Error(), "outside commission scope") {
 		t.Fatalf("error = %v, want out-of-scope rejection", err)
+	}
+	if !strings.Contains(err.Error(), authorization.OutOfScope[0]) {
+		t.Fatalf("error = %v, want rejected path %s", err, authorization.OutOfScope[0])
+	}
+}
+
+func TestApplyHarnessWorkspaceDiffRejectsForbiddenDiff(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspace")
+	trackedPath := filepath.Join("internal", "cli", "init.go")
+
+	initHarnessApplyRepo(t, projectRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+	initHarnessApplyRepo(t, workspaceRoot, trackedPath, "package cli\n\nconst value = \"old\"\n")
+
+	if err := os.WriteFile(filepath.Join(workspaceRoot, trackedPath), []byte("package cli\n\nconst value = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := applyHarnessWorkspaceDiff(
+		projectRoot,
+		workspaceRoot,
+		scopeauth.CommissionScope{
+			AllowedPaths:   []string{"**/*"},
+			ForbiddenPaths: []string{trackedPath},
+		},
+	)
+	if err == nil {
+		t.Fatal("error = nil, want forbidden-scope rejection")
+	}
+	if !strings.Contains(err.Error(), "forbidden by commission scope") {
+		t.Fatalf("error = %v, want forbidden rejection", err)
+	}
+	if !strings.Contains(err.Error(), trackedPath) {
+		t.Fatalf("error = %v, want rejected path %s", err, trackedPath)
+	}
+}
+
+func TestCanApplyHarnessWorkspaceDiffUsesAllowedPathsOnly(t *testing.T) {
+	workspacePath := filepath.Join("/", "tmp", "haft-workspace")
+	projectRoot := filepath.Join("/", "tmp", "haft-project")
+	workspaceSummary := harnessWorkspaceGitSummary{
+		State:   harnessWorkspaceDiffChanged,
+		Changed: []string{"src/app.go"},
+	}
+	commission := map[string]any{
+		"id":    "wc-scope-authorization",
+		"state": "completed",
+		"scope": map[string]any{
+			"affected_files": []any{"src/app.go"},
+			"lockset":        []any{"src/app.go"},
+		},
+	}
+
+	if canApplyHarnessWorkspaceDiff(commission, workspacePath, projectRoot, workspaceSummary) {
+		t.Fatalf("can apply = true, want false for affected_files/lockset-only scope")
+	}
+
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{"src/app.go"}
+
+	if !canApplyHarnessWorkspaceDiff(commission, workspacePath, projectRoot, workspaceSummary) {
+		t.Fatalf("can apply = false, want true with explicit allowed_paths")
 	}
 }
 

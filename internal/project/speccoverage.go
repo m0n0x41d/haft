@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/workcommission"
 )
 
 type SpecCoverageState string
@@ -960,12 +962,7 @@ func artifactStatusIsActive(status string) bool {
 }
 
 func workCommissionStateIsTerminal(state string) bool {
-	switch strings.TrimSpace(state) {
-	case "completed", "completed_with_projection_debt", "cancelled", "failed", "expired":
-		return true
-	default:
-		return false
-	}
+	return workcommission.IsTerminalState(state)
 }
 
 func evidenceVerdictSupports(verdict string) bool {

@@ -274,6 +274,32 @@ func TestDeriveSpecCoverage_UnsupportedRuntimeRunStorageDoesNotPromoteSection(t 
 	}
 }
 
+func TestDeriveSpecCoverage_FailedRecoverableCommissionStillCoversSection(t *testing.T) {
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	section := coverageTestSection("TS.runtime.failed")
+
+	report := DeriveSpecCoverage(SpecCoverageInput{
+		Sections: []SpecSection{section},
+		Decisions: []SpecCoverageDecision{{
+			ID:          "dec-runtime",
+			Status:      "active",
+			SectionRefs: []string{section.ID},
+		}},
+		Commissions: []SpecCoverageCommission{{
+			ID:          "wc-runtime-failed",
+			DecisionRef: "dec-runtime",
+			State:       "failed",
+			Status:      "active",
+		}},
+		Now: now,
+	})
+
+	assertCoverageState(t, report, SpecCoverageCommissioned)
+	if !coverageTestHasEdgeTarget(report.Sections[0].Edges, "wc-runtime-failed") {
+		t.Fatalf("edges = %#v, want failed recoverable WorkCommission edge", report.Sections[0].Edges)
+	}
+}
+
 func coverageTestSection(id string) SpecSection {
 	return SpecSection{
 		ID:            id,

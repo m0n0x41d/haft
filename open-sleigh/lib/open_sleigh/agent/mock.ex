@@ -123,7 +123,7 @@ defmodule OpenSleigh.Agent.Mock do
     turn_number = next_turn_number()
 
     turn_number
-    |> default_reply()
+    |> default_reply(session, prompt)
     |> Map.merge(scripted_reply(turn_number))
     |> tap(fn _reply -> record_prompt(prompt) end)
     |> tap(fn _reply -> record_scope(session.scoped_tools) end)
@@ -174,14 +174,68 @@ defmodule OpenSleigh.Agent.Mock do
     |> tap(&Process.put(@turn_count_key, &1))
   end
 
-  @spec default_reply(pos_integer()) :: map()
-  defp default_reply(turn_number) do
+  @spec default_reply(pos_integer(), AdapterSession.t(), String.t()) :: map()
+  defp default_reply(turn_number, session, prompt) do
     %{
       turn_id: "mock-turn-" <> Integer.to_string(turn_number),
       status: :completed,
-      events: [],
+      events: default_events(session, prompt),
       usage: %{input_tokens: 100, output_tokens: 50, total_tokens: 150},
       text: "mock agent output"
+    }
+  end
+
+  @spec default_events(AdapterSession.t(), String.t()) :: [map()]
+  defp default_events(%AdapterSession{} = session, prompt) do
+    session
+    |> measure_session?(prompt)
+    |> measure_events()
+  end
+
+  @spec measure_session?(AdapterSession.t(), String.t()) :: boolean()
+  defp measure_session?(%AdapterSession{scoped_tools: scoped_tools}, prompt) do
+    scoped_tools
+    |> measure_scoped_tools?()
+    |> Kernel.or(measure_prompt?(prompt))
+  end
+
+  @spec measure_scoped_tools?(MapSet.t(atom())) :: boolean()
+  defp measure_scoped_tools?(scoped_tools) do
+    scoped_tools
+    |> MapSet.member?(:haft_refresh)
+    |> Kernel.and(MapSet.member?(scoped_tools, :haft_decision))
+  end
+
+  @spec measure_prompt?(String.t()) :: boolean()
+  defp measure_prompt?(prompt) do
+    prompt
+    |> String.downcase()
+    |> measure_prompt_text?()
+  end
+
+  @spec measure_prompt_text?(String.t()) :: boolean()
+  defp measure_prompt_text?(prompt) do
+    prompt
+    |> String.contains?("measure")
+    |> Kernel.or(String.contains?(prompt, "evidence"))
+  end
+
+  @spec measure_events(boolean()) :: [map()]
+  defp measure_events(true), do: [measure_evidence_event()]
+  defp measure_events(false), do: []
+
+  @spec measure_evidence_event() :: map()
+  defp measure_evidence_event do
+    %{
+      payload: %{
+        "item" => %{
+          "type" => "commandExecution",
+          "status" => "completed",
+          "command" => "mock measure",
+          "exitCode" => 0,
+          "aggregatedOutput" => "mock evidence\n"
+        }
+      }
     }
   end
 

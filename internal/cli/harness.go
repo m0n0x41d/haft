@@ -22,6 +22,8 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/scopeauth"
+	"github.com/m0n0x41d/haft/internal/workcommission"
 )
 
 type harnessPlanFile struct {
@@ -162,9 +164,10 @@ const (
 )
 
 type harnessOperatorAction struct {
-	Kind   harnessOperatorActionKind
-	Lines  []string
-	Reason string
+	Kind                harnessOperatorActionKind
+	Lines               []string
+	Reason              string
+	ApplyDisabledReason scopeauth.BlockingReason
 }
 
 type harnessApplySummary struct {
@@ -551,7 +554,7 @@ func runHarnessApply(cmd *cobra.Command, args []string) error {
 		summary, err := applyHarnessWorkspaceDiff(
 			projectRoot,
 			filepath.Join(defaultHarnessWorkspaceRoot(), commissionID),
-			harnessCommissionScopePaths(commission),
+			harnessCommissionScope(commission),
 		)
 		if err != nil {
 			return err
@@ -744,6 +747,12 @@ func formatHarnessResult(
 	commissionID := stringField(commission, "id")
 	workspacePath := filepath.Join(workspaceRoot, commissionID)
 	workspaceSummary := inspectHarnessWorkspaceGit(workspacePath)
+	authorization := harnessWorkspaceApplyAuthorization(
+		commission,
+		workspacePath,
+		"",
+		workspaceSummary,
+	)
 
 	lines := []string{
 		"Open-Sleigh harness result",
@@ -760,7 +769,7 @@ func formatHarnessResult(
 	lines = append(lines, formatHarnessResultEvents(mapSliceField(commission, "events"))...)
 	lines = append(lines, formatHarnessEvidenceSummary(commission)...)
 	lines = append(lines, formatHarnessWorkspaceGitSummary(workspaceSummary)...)
-	lines = append(lines, formatHarnessOperatorNext(commission, workspaceSummary)...)
+	lines = append(lines, formatHarnessOperatorNext(commission, workspaceSummary, authorization)...)
 	return lines
 }
 
@@ -1085,11 +1094,15 @@ func formatHarnessWorkspaceGitSummary(summary harnessWorkspaceGitSummary) []stri
 func formatHarnessOperatorNext(
 	commission map[string]any,
 	workspaceSummary harnessWorkspaceGitSummary,
+	authorization scopeauth.Summary,
 ) []string {
-	action := harnessOperatorActionFor(commission, workspaceSummary)
+	action := harnessOperatorActionFor(commission, workspaceSummary, authorization)
 	lines := []string{"operator_next:", "- next_action=" + string(action.Kind)}
 	if strings.TrimSpace(action.Reason) != "" {
 		lines = append(lines, "- reason="+action.Reason)
+	}
+	if action.ApplyDisabledReason.Code != "" {
+		lines = append(lines, "- apply_disabled_reason="+formatHarnessApplyDisabledReason(action.ApplyDisabledReason))
 	}
 	lines = append(lines, action.Lines...)
 	return lines
@@ -1098,20 +1111,21 @@ func formatHarnessOperatorNext(
 func harnessOperatorActionFor(
 	commission map[string]any,
 	workspaceSummary harnessWorkspaceGitSummary,
+	authorization scopeauth.Summary,
 ) harnessOperatorAction {
 	state := stringField(commission, "state")
 	commissionID := stringField(commission, "id")
 
-	switch state {
-	case "queued", "ready", "draft":
+	switch {
+	case workcommission.IsRunnableState(state) || state == string(workcommission.StateDraft):
 		return harnessQueuedOperatorAction(commissionID)
-	case "preflighting", "running":
+	case workcommission.IsExecutingState(state):
 		return harnessRunningOperatorAction(commissionID)
-	case "completed", "completed_with_projection_debt":
-		return harnessCompletedOperatorAction(commission, workspaceSummary)
-	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
+	case workcommission.IsCompletionState(state):
+		return harnessCompletedOperatorAction(commission, workspaceSummary, authorization)
+	case workcommission.RequiresOperatorDecisionState(state):
 		return harnessBlockedOperatorAction(commissionID, state)
-	case "cancelled", "expired":
+	case workcommission.IsTerminalState(state):
 		return harnessInspectOperatorAction(commissionID, "commission is "+state)
 	default:
 		return harnessInspectOperatorAction(commissionID, "commission state is "+presentOrUnknown(state))
@@ -1143,9 +1157,23 @@ func harnessRunningOperatorAction(commissionID string) harnessOperatorAction {
 func harnessCompletedOperatorAction(
 	commission map[string]any,
 	workspaceSummary harnessWorkspaceGitSummary,
+	authorization scopeauth.Summary,
 ) harnessOperatorAction {
 	commissionID := stringField(commission, "id")
 	if workspaceSummary.State == harnessWorkspaceDiffChanged {
+		if !authorization.CanApply() {
+			reason := authorization.BlockingReason()
+			message := harnessScopeAuthorizationMessage(authorization)
+			return harnessOperatorAction{
+				Kind:                harnessOperatorActionInspect,
+				Reason:              message,
+				ApplyDisabledReason: reason,
+				Lines: []string{
+					"- inspect commission scope: haft commission show " + commissionID,
+					"- inspect current state: haft harness result " + commissionID,
+				},
+			}
+		}
 		lines := []string{
 			"- apply completed workspace diff: haft harness apply " + commissionID,
 			"- then rerun required evidence in the project checkout",
@@ -1167,6 +1195,58 @@ func harnessCompletedOperatorAction(
 		}
 	}
 	return harnessInspectOperatorAction(commissionID, "completed workspace is unavailable; inspect before applying")
+}
+
+func canApplyHarnessWorkspaceDiff(
+	commission map[string]any,
+	workspacePath string,
+	projectRoot string,
+	workspaceSummary harnessWorkspaceGitSummary,
+) bool {
+	authorization := harnessWorkspaceApplyAuthorization(
+		commission,
+		workspacePath,
+		projectRoot,
+		workspaceSummary,
+	)
+
+	return canApplyAuthorizedHarnessWorkspaceDiff(commission, workspaceSummary, authorization)
+}
+
+func harnessWorkspaceApplyAuthorization(
+	commission map[string]any,
+	workspacePath string,
+	projectRoot string,
+	workspaceSummary harnessWorkspaceGitSummary,
+) scopeauth.Summary {
+	if workspaceSummary.State != harnessWorkspaceDiffChanged {
+		return scopeauth.Summary{}
+	}
+
+	return scopeauth.AuthorizeWorkspaceDiff(
+		harnessCommissionScope(commission),
+		workspaceSummary.Changed,
+		scopeauth.PathFacts{WorkspaceRoot: workspacePath, ProjectRoot: projectRoot},
+	)
+}
+
+func canApplyAuthorizedHarnessWorkspaceDiff(
+	commission map[string]any,
+	workspaceSummary harnessWorkspaceGitSummary,
+	authorization scopeauth.Summary,
+) bool {
+	if !isHarnessApplyResultState(stringField(commission, "state")) {
+		return false
+	}
+	if workspaceSummary.State != harnessWorkspaceDiffChanged {
+		return false
+	}
+
+	return authorization.CanApply()
+}
+
+func isHarnessApplyResultState(state string) bool {
+	return workcommission.IsCompletionState(state)
 }
 
 func harnessBlockedOperatorAction(commissionID string, state string) harnessOperatorAction {
@@ -1227,7 +1307,7 @@ func trimmedCommandOutput(workdir string, name string, args ...string) string {
 func applyHarnessWorkspaceDiff(
 	projectRoot string,
 	workspacePath string,
-	scopePaths []string,
+	scope scopeauth.CommissionScope,
 ) (harnessApplySummary, error) {
 	summary := harnessApplySummary{
 		CommissionID: filepath.Base(workspacePath),
@@ -1251,8 +1331,13 @@ func applyHarnessWorkspaceDiff(
 	if len(changed) == 0 {
 		return summary, fmt.Errorf("workspace has no diff to apply")
 	}
-	if outOfScope := pathsOutsideHarnessScope(changed, scopePaths); len(outOfScope) > 0 {
-		return summary, fmt.Errorf("workspace diff contains paths outside commission scope: %s", strings.Join(outOfScope, ", "))
+	authorization := scopeauth.AuthorizeWorkspaceDiff(
+		scope,
+		changed,
+		scopeauth.PathFacts{WorkspaceRoot: workspacePath, ProjectRoot: projectRoot},
+	)
+	if !authorization.CanApply() {
+		return summary, harnessScopeAuthorizationError(authorization)
 	}
 	if dirty, err := gitDirtyTargetPaths(projectRoot, changed); err != nil {
 		return summary, err
@@ -1297,14 +1382,88 @@ func formatHarnessApplySummary(summary harnessApplySummary) []string {
 	return lines
 }
 
-func harnessCommissionScopePaths(commission map[string]any) []string {
+func harnessCommissionScope(commission map[string]any) scopeauth.CommissionScope {
 	scope := mapField(commission, "scope")
-	paths := []string{}
-	paths = append(paths, stringSliceField(scope, "allowed_paths")...)
-	paths = append(paths, stringSliceField(scope, "affected_files")...)
-	paths = append(paths, stringSliceField(scope, "lockset")...)
-	paths = append(paths, stringSliceField(commission, "lockset")...)
-	return uniqueStringsPreserveOrder(cleanStringSlice(paths))
+	return scopeauth.CommissionScope{
+		AllowedPaths:   uniqueStringsPreserveOrder(stringSliceField(scope, "allowed_paths")),
+		ForbiddenPaths: uniqueStringsPreserveOrder(stringSliceField(scope, "forbidden_paths")),
+		AffectedFiles:  uniqueStringsPreserveOrder(stringSliceField(scope, "affected_files")),
+		Lockset: uniqueStringsPreserveOrder(
+			append(
+				stringSliceField(scope, "lockset"),
+				stringSliceField(commission, "lockset")...,
+			),
+		),
+	}
+}
+
+func harnessScopeAuthorizationError(summary scopeauth.Summary) error {
+	return fmt.Errorf("%s", harnessScopeAuthorizationMessage(summary))
+}
+
+func harnessScopeAuthorizationMessage(summary scopeauth.Summary) string {
+	switch summary.Verdict {
+	case scopeauth.Forbidden:
+		return fmt.Sprintf(
+			"workspace diff contains paths forbidden by commission scope: %s",
+			strings.Join(summary.Forbidden, ", "),
+		)
+	case scopeauth.UnknownScope:
+		return fmt.Sprintf(
+			"workspace diff cannot be applied because commission scope is unknown for paths: %s",
+			strings.Join(summary.UnknownScope, ", "),
+		)
+	case scopeauth.OutOfScope:
+		return fmt.Sprintf(
+			"workspace diff contains paths outside commission scope: %s",
+			strings.Join(summary.OutOfScope, ", "),
+		)
+	default:
+		return "workspace diff is not authorized by commission scope"
+	}
+}
+
+func formatHarnessApplyDisabledReason(reason scopeauth.BlockingReason) string {
+	parts := []string{
+		"code=" + string(reason.Code),
+		"verdict=" + string(reason.Verdict),
+	}
+	if len(reason.Paths) > 0 {
+		parts = append(parts, "paths="+strings.Join(reason.Paths, ","))
+	}
+	return strings.Join(parts, " ")
+}
+
+func harnessScopeAuthorizationPayload(summary scopeauth.Summary) map[string]any {
+	if summary.Verdict == "" {
+		return nil
+	}
+
+	return map[string]any{
+		"verdict":             string(summary.Verdict),
+		"can_apply":           summary.CanApply(),
+		"allowed_paths":       summary.Allowed,
+		"out_of_scope_paths":  summary.OutOfScope,
+		"forbidden_paths":     summary.Forbidden,
+		"unknown_scope_paths": summary.UnknownScope,
+		"operator_reason":     harnessBlockingReasonPayload(summary.BlockingReason(), summary),
+	}
+}
+
+func harnessBlockingReasonPayload(
+	reason scopeauth.BlockingReason,
+	summary scopeauth.Summary,
+) map[string]any {
+	if reason.Code == "" {
+		return nil
+	}
+
+	return map[string]any{
+		"code":    string(reason.Code),
+		"verdict": string(reason.Verdict),
+		"paths":   reason.Paths,
+		"message": harnessScopeAuthorizationMessage(summary),
+	}
 }
 
 func gitChangedTrackedFiles(workdir string) ([]string, error) {
@@ -1401,31 +1560,6 @@ func harnessGitOutput(workdir string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(output)))
 	}
 	return output, nil
-}
-
-func pathsOutsideHarnessScope(paths []string, scopePaths []string) []string {
-	if len(scopePaths) == 0 {
-		return paths
-	}
-
-	outside := []string{}
-	for _, path := range paths {
-		if !pathWithinHarnessScope(path, scopePaths) {
-			outside = append(outside, path)
-		}
-	}
-	return outside
-}
-
-func pathWithinHarnessScope(path string, scopePaths []string) bool {
-	cleanPath := filepath.Clean(strings.TrimSpace(path))
-	for _, scopePath := range scopePaths {
-		cleanScope := filepath.Clean(strings.TrimSpace(scopePath))
-		if cleanScope == "." || cleanPath == cleanScope || strings.HasPrefix(cleanPath, cleanScope+string(os.PathSeparator)) {
-			return true
-		}
-	}
-	return false
 }
 
 func indentLines(value string) []string {
@@ -1622,12 +1756,14 @@ func formatRecentTerminalCommissions(recent []harnessTerminalCommissionSummary) 
 }
 
 func harnessRecentTerminalNext(summary harnessTerminalCommissionSummary) string {
-	switch strings.TrimSpace(summary.State) {
-	case "completed", "completed_with_projection_debt":
+	state := strings.TrimSpace(summary.State)
+
+	switch {
+	case workcommission.IsCompletionState(state):
 		return "inspect result, then apply or rerun evidence"
-	case "failed", "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review":
+	case workcommission.RequiresOperatorDecisionState(state):
 		return "inspect result, then requeue or cancel"
-	case "cancelled", "expired":
+	case workcommission.IsTerminalState(state):
 		return "inspect audit trail"
 	default:
 		return "inspect result"
@@ -1953,23 +2089,19 @@ func loadHarnessRecentTerminalSummaries(
 }
 
 func isHarnessTerminalState(state string) bool {
-	switch strings.TrimSpace(state) {
-	case "completed", "completed_with_projection_debt", "failed", "blocked_policy",
-		"blocked_stale", "blocked_conflict", "needs_human_review", "cancelled", "expired":
-		return true
-	default:
-		return false
-	}
+	return harnessStateStopsOperatorWait(state)
 }
 
 func isHarnessOperatorStopState(state string) bool {
-	switch strings.TrimSpace(state) {
-	case "completed", "completed_with_projection_debt", "failed", "blocked_policy",
-		"blocked_stale", "blocked_conflict", "needs_human_review", "cancelled", "expired":
-		return true
-	default:
-		return false
-	}
+	return harnessStateStopsOperatorWait(state)
+}
+
+func harnessStateStopsOperatorWait(state string) bool {
+	cleanState := strings.TrimSpace(state)
+
+	return workcommission.IsCompletionState(cleanState) ||
+		workcommission.RequiresOperatorDecisionState(cleanState) ||
+		workcommission.IsTerminalState(cleanState)
 }
 
 func parseHarnessTimestamp(value string) time.Time {
@@ -2126,8 +2258,15 @@ func harnessTailFollowCompletionLine(
 		return "", false, nil
 	}
 
-	workspaceSummary := inspectHarnessWorkspaceGit(filepath.Join(defaultHarnessWorkspaceRoot(), commissionID))
-	action := harnessOperatorActionFor(commission, workspaceSummary)
+	workspacePath := filepath.Join(defaultHarnessWorkspaceRoot(), commissionID)
+	workspaceSummary := inspectHarnessWorkspaceGit(workspacePath)
+	authorization := harnessWorkspaceApplyAuthorization(
+		commission,
+		workspacePath,
+		"",
+		workspaceSummary,
+	)
+	action := harnessOperatorActionFor(commission, workspaceSummary, authorization)
 	line := strings.Join([]string{
 		"terminal:",
 		"commission=" + presentOrUnknown(commissionID),
@@ -2935,7 +3074,7 @@ func deliverHarnessRunCommissions(
 		summary, err := applyHarnessWorkspaceDiff(
 			projectRoot,
 			filepath.Join(opts.WorkspaceRoot, commissionID),
-			harnessCommissionScopePaths(commission),
+			harnessCommissionScope(commission),
 		)
 		if err != nil {
 			return fmt.Errorf("auto delivery for %s: %w", commissionID, err)

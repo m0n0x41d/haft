@@ -79,6 +79,66 @@ defmodule OpenSleigh.WorkCommissionTest do
     assert commission.delivery_policy == :workspace_patch_auto_on_pass
   end
 
+  test "lifecycle predicates keep terminal and recoverable state meanings aligned" do
+    cases = [
+      %{
+        state: :failed,
+        terminal: false,
+        recoverable: true,
+        runnable: false,
+        executing: false,
+        satisfies_dependency: false
+      },
+      %{
+        state: :cancelled,
+        terminal: true,
+        recoverable: false,
+        runnable: false,
+        executing: false,
+        satisfies_dependency: false
+      },
+      %{
+        state: :expired,
+        terminal: true,
+        recoverable: false,
+        runnable: false,
+        executing: false,
+        satisfies_dependency: false
+      },
+      %{
+        state: :completed,
+        terminal: true,
+        recoverable: false,
+        runnable: false,
+        executing: false,
+        satisfies_dependency: true
+      },
+      %{
+        state: :completed_with_projection_debt,
+        terminal: true,
+        recoverable: false,
+        runnable: false,
+        executing: false,
+        satisfies_dependency: true
+      }
+    ]
+
+    observed =
+      cases
+      |> Enum.map(fn item ->
+        %{
+          state: item.state,
+          terminal: WorkCommission.terminal_state?(item.state),
+          recoverable: WorkCommission.recoverable_state?(item.state),
+          runnable: WorkCommission.runnable_state?(item.state),
+          executing: WorkCommission.executing_state?(item.state),
+          satisfies_dependency: WorkCommission.satisfies_dependency_state?(item.state)
+        }
+      end)
+
+    assert observed == cases
+  end
+
   test "new/1 rejects scope_hash drift" do
     attrs = Map.put(work_commission_attrs(), :scope_hash, String.duplicate("0", 64))
 

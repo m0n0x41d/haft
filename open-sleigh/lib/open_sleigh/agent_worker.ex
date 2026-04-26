@@ -1015,13 +1015,33 @@ defmodule OpenSleigh.AgentWorker do
 
   @spec execute_terminal_diff_scope_result([Path.t()], [Path.t()], ctx()) ::
           :ok | {:error, term()}
-  defp execute_terminal_diff_scope_result([], _changed_paths, _ctx),
-    do: {:error, :no_commission_mutation}
+  defp execute_terminal_diff_scope_result([], _changed_paths, ctx) do
+    ctx
+    |> commission_mutation_required?()
+    |> no_mutation_result()
+  end
 
   defp execute_terminal_diff_scope_result(_material_paths, changed_paths, ctx) do
     ctx
     |> validate_terminal_diff_scope_paths(changed_paths)
   end
+
+  @spec commission_mutation_required?(ctx()) :: boolean()
+  defp commission_mutation_required?(ctx) do
+    ctx.session.adapter_session
+    |> AgentAdapter.commission_id()
+    |> commission_mutation_required_for_id?()
+  end
+
+  @spec commission_mutation_required_for_id?(String.t() | nil) :: boolean()
+  defp commission_mutation_required_for_id?(nil), do: false
+  defp commission_mutation_required_for_id?(""), do: false
+  defp commission_mutation_required_for_id?("legacy-ticket:" <> _ticket_id), do: false
+  defp commission_mutation_required_for_id?(_commission_id), do: true
+
+  @spec no_mutation_result(boolean()) :: :ok | {:error, :no_commission_mutation}
+  defp no_mutation_result(true), do: {:error, :no_commission_mutation}
+  defp no_mutation_result(false), do: :ok
 
   @spec validate_terminal_diff_scope_paths(ctx(), [Path.t()]) :: :ok | {:error, term()}
   defp validate_terminal_diff_scope_paths(ctx, changed_paths) do

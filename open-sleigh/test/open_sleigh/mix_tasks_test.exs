@@ -64,7 +64,7 @@ defmodule OpenSleigh.MixTasksTest do
 
     assert_receive {:mix_shell, :info, [encoded]}, 500
     assert {:ok, report} = Jason.decode(encoded)
-    assert report["total"] == 6
+    assert report["total"] == 7
     assert report["failed"] == 0
     assert Enum.all?(report["rows"], &(&1["status"] == "pass"))
   end

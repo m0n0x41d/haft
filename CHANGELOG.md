@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Long-lived desktop conversation behavior tightened** — provider/control envelopes are audit-only instead of visible chat messages, and follow-up text on terminal/checkpointed/blocked tasks routes to continuation instead of writing to a dead PTY.
 - **Desktop task status normalization shared across cockpit surfaces** — raw task status values now compile through typed `TaskRunState` helpers before input capability, dashboard attention, Jobs columns, status dots, chat streaming, and implementation ladder state are derived.
 - **Spec coverage now models runtime carriers** — `haft spec coverage` derives WorkCommission → RuntimeRun → evidence edges from stored runtime events, promotes implemented/verified states from real runtime and evidence signals, and only reports RuntimeRun gaps for malformed carriers instead of emitting a synthetic global unsupported-edge gap.
+- **WorkCommission lifecycle semantics centralized across surfaces** — Go core, Desktop view models, CLI harness selectors, Desktop RPC, spec coverage, and Open-Sleigh now share the same lifecycle meanings. `failed` is recoverable and requires operator action, completion states satisfy dependencies, and only completed/projection-debt/cancelled/expired states are terminal.
 
 ### Fixed
 
@@ -35,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **WorkCommission lifecycle action ordering** — lifecycle record/start/run/complete actions now reject out-of-order updates instead of appending impossible runtime events to queued or preflight-only commission state.
 - **Project readiness false-ready projection** — Desktop readiness now combines reported status with project existence, `.haft`, and spec-carrier facts so missing or onboarding projects cannot render as runnable from an optimistic carrier status.
 - **WorkCommission attention recovery hints** — queued, ready, preflighting, and running commissions that need operator attention now keep `requeue` available when recoverable; expired commissions remain limited to inspect/cancel lifecycle actions.
+- **Harness workspace apply scope enforcement** — `haft harness apply`, auto-delivery, CLI result output, and Desktop harness RPC now require explicit `scope.allowed_paths`, honor `scope.forbidden_paths`, and surface typed disabled-apply reasons for forbidden, unknown, or out-of-scope workspace diffs. `affected_files` and `lockset` remain scope facts but no longer authorize mutation by themselves.
+- **Open-Sleigh legacy canary compatibility** — tracker-first legacy tickets no longer fail the new commission-mutation guard, while real WorkCommission runs still require scoped material changes. The mock adapter now emits deterministic measure evidence so legacy canaries exercise the evidence path instead of timing out.
 
 ### Chore
 

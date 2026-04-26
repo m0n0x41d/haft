@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/workcommission"
 )
 
 const defaultCommissionValidFor = 168 * time.Hour
@@ -58,39 +59,18 @@ type workCommissionTransition struct {
 }
 
 var requeueWorkCommissionTransition = workCommissionTransition{
-	ErrorCode:   "commission_not_requeueable",
-	TargetState: "queued",
-	AllowedStates: []string{
-		"queued",
-		"ready",
-		"preflighting",
-		"running",
-		"blocked_stale",
-		"blocked_policy",
-		"blocked_conflict",
-		"needs_human_review",
-		"failed",
-	},
+	ErrorCode:        "commission_not_requeueable",
+	TargetState:      "queued",
+	AllowedStates:    workcommission.RecoverableStateValues(),
 	RequiresReason:   true,
 	RejectsExpired:   true,
 	RefreshFetchedAt: true,
 }
 
 var cancelWorkCommissionTransition = workCommissionTransition{
-	ErrorCode:   "commission_not_cancellable",
-	TargetState: "cancelled",
-	AllowedStates: []string{
-		"draft",
-		"queued",
-		"ready",
-		"preflighting",
-		"running",
-		"blocked_stale",
-		"blocked_policy",
-		"blocked_conflict",
-		"needs_human_review",
-		"failed",
-	},
+	ErrorCode:      "commission_not_cancellable",
+	TargetState:    "cancelled",
+	AllowedStates:  workcommission.CancellableStateValues(),
 	RequiresReason: true,
 }
 
@@ -1444,7 +1424,7 @@ func decodeWorkCommissionPayload(id string, structuredData string) (map[string]a
 
 func workCommissionRunnable(commission map[string]any, now time.Time) bool {
 	state := stringField(commission, "state")
-	if state != "queued" && state != "ready" {
+	if !workcommission.IsRunnableState(state) {
 		return false
 	}
 
@@ -1508,12 +1488,8 @@ func workCommissionDependenciesSatisfied(
 }
 
 func workCommissionDependencySatisfied(commission map[string]any) bool {
-	switch stringField(commission, "state") {
-	case "completed", "completed_with_projection_debt":
-		return true
-	default:
-		return false
-	}
+	state := stringField(commission, "state")
+	return workcommission.SatisfiesDependencyState(state)
 }
 
 func selectWorkCommissionForClaim(
@@ -1571,7 +1547,7 @@ func workCommissionLocksetConflicts(target map[string]any, active map[string]any
 
 func workCommissionActiveLeaseState(commission map[string]any) bool {
 	state := stringField(commission, "state")
-	return state == "preflighting" || state == "running"
+	return workcommission.IsExecutingState(state)
 }
 
 func commissionRepoRef(commission map[string]any) string {
@@ -1745,14 +1721,7 @@ func validWorkCommissionListSelector(value string) bool {
 }
 
 func validWorkCommissionState(value string) bool {
-	switch value {
-	case "draft", "queued", "ready", "preflighting", "running", "blocked_stale",
-		"blocked_policy", "blocked_conflict", "needs_human_review", "completed",
-		"completed_with_projection_debt", "failed", "cancelled", "expired":
-		return true
-	default:
-		return false
-	}
+	return workcommission.IsKnownState(value)
 }
 
 func workCommissionListSelectorMatches(
@@ -1804,16 +1773,15 @@ func workCommissionSuggestedActions(commission map[string]any, reason string, no
 		return []any{"inspect", "cancel"}
 	}
 
-	switch stringField(commission, "state") {
-	case "queued", "ready", "preflighting", "running":
-		return []any{"inspect", "requeue", "cancel"}
-	case "blocked_stale":
+	state := stringField(commission, "state")
+	if state == "blocked_stale" {
 		return []any{"refresh_decision", "requeue", "cancel"}
-	case "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
-		return []any{"inspect", "requeue", "cancel"}
-	default:
-		return []any{"inspect", "cancel"}
 	}
+	if workcommission.IsRecoverableState(state) {
+		return []any{"inspect", "requeue", "cancel"}
+	}
+
+	return []any{"inspect", "cancel"}
 }
 
 func workCommissionAttentionReason(
@@ -1821,21 +1789,22 @@ func workCommissionAttentionReason(
 	now time.Time,
 	openAttentionAfter time.Duration,
 ) string {
-	if workCommissionTerminal(commission) {
+	state := stringField(commission, "state")
+	if workcommission.IsTerminalState(state) {
 		return ""
 	}
 	if workCommissionExpired(commission, now) {
 		return "expired before terminal state"
 	}
 
-	switch stringField(commission, "state") {
-	case "blocked_stale", "blocked_policy", "blocked_conflict", "needs_human_review", "failed":
-		return "requires operator decision: " + stringField(commission, "state")
-	case "preflighting", "running":
-		return activeLeaseAttentionReason(commission, now)
-	default:
-		return openCommissionAttentionReason(commission, now, openAttentionAfter)
+	if workcommission.RequiresOperatorDecisionState(state) {
+		return "requires operator decision: " + state
 	}
+	if workcommission.IsExecutingState(state) {
+		return activeLeaseAttentionReason(commission, now)
+	}
+
+	return openCommissionAttentionReason(commission, now, openAttentionAfter)
 }
 
 func activeLeaseAttentionReason(commission map[string]any, now time.Time) string {
@@ -1904,12 +1873,8 @@ func parseRFC3339Field(payload map[string]any, key string) (time.Time, bool) {
 }
 
 func workCommissionTerminal(commission map[string]any) bool {
-	switch stringField(commission, "state") {
-	case "completed", "completed_with_projection_debt", "cancelled", "expired":
-		return true
-	default:
-		return false
-	}
+	state := stringField(commission, "state")
+	return workcommission.IsTerminalState(state)
 }
 
 func ensureWorkCommissionTransition(

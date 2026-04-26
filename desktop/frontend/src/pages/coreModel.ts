@@ -10,6 +10,13 @@ import {
   taskRunState,
   type TaskRunState,
 } from "../lib/taskInput.ts";
+import {
+  isCompletionWorkCommissionState,
+  isExecutingWorkCommissionState,
+  isTerminalWorkCommissionState,
+  normalizeWorkCommissionState,
+  requiresOperatorDecisionWorkCommissionState,
+} from "../lib/workCommissionLifecycle.ts";
 
 export type CoreTone = "neutral" | "accent" | "success" | "warning" | "danger";
 export type CoreAttentionKind =
@@ -68,7 +75,7 @@ export function buildCoreRuntimeItems(commissions: WorkCommission[]): CoreRuntim
   return commissions
     .filter((commission) => !commissionIsTerminal(commission))
     .map((commission) => {
-      const state = normalizeState(commission.state);
+      const state = normalizeWorkCommissionState(commission.state);
       const phase = commissionPhase(commission);
       const attentionReason = commission.operator?.attention_reason?.trim() ?? "";
 
@@ -89,14 +96,14 @@ export function buildCoreRuntimeItems(commissions: WorkCommission[]): CoreRuntim
 }
 
 export function commissionPhase(commission: WorkCommission): CoreRuntimePhase {
-  const state = normalizeState(commission.state);
+  const state = normalizeWorkCommissionState(commission.state);
 
-  if (state.includes("block") || state.includes("fail")) return "blocked";
+  if (requiresOperatorDecisionWorkCommissionState(state)) return "blocked";
   if (state.includes("preflight")) return "preflight";
   if (state.includes("frame")) return "frame";
   if (state.includes("measure")) return "measure";
-  if (state.includes("complete") || state === "done") return "done";
-  if (state.includes("running") || state.includes("claim") || state.includes("execute")) {
+  if (isCompletionWorkCommissionState(state)) return "done";
+  if (isExecutingWorkCommissionState(state) || state.includes("claim") || state.includes("execute")) {
     return "execute";
   }
 
@@ -104,14 +111,7 @@ export function commissionPhase(commission: WorkCommission): CoreRuntimePhase {
 }
 
 export function commissionIsTerminal(commission: WorkCommission): boolean {
-  const state = normalizeState(commission.state);
-
-  return Boolean(commission.operator?.terminal)
-    || state === "completed"
-    || state === "complete"
-    || state === "done"
-    || state === "cancelled"
-    || state === "closed";
+  return isTerminalWorkCommissionState(commission.state);
 }
 
 function runtimeAttention(commissions: WorkCommission[]): CoreAttentionItem[] {
@@ -181,16 +181,15 @@ function candidateAttention(candidates: ProblemCandidate[]): CoreAttentionItem[]
 }
 
 function commissionNeedsAction(commission: WorkCommission): boolean {
-  const state = normalizeState(commission.state);
+  const state = normalizeWorkCommissionState(commission.state);
 
-  return state.includes("block")
-    || state.includes("fail")
+  return requiresOperatorDecisionWorkCommissionState(state)
     || state.includes("stale")
     || state.includes("expired");
 }
 
 function runtimeTitle(commission: WorkCommission): string {
-  const state = normalizeState(commission.state);
+  const state = normalizeWorkCommissionState(commission.state);
 
   if (state.includes("block")) return "Runtime blocked";
   if (state.includes("fail")) return "Runtime failed";
@@ -200,21 +199,17 @@ function runtimeTitle(commission: WorkCommission): string {
 }
 
 function runtimeTone(commission: WorkCommission): CoreTone {
-  const state = normalizeState(commission.state);
+  const state = normalizeWorkCommissionState(commission.state);
 
-  if (state.includes("block") || state.includes("fail")) return "danger";
+  if (requiresOperatorDecisionWorkCommissionState(state)) return "danger";
   if (commission.operator?.attention || state.includes("stale") || state.includes("expired")) {
     return "warning";
   }
-  if (state.includes("running") || state.includes("claim") || state.includes("execute")) {
+  if (isExecutingWorkCommissionState(state) || state.includes("claim") || state.includes("execute")) {
     return "accent";
   }
 
   return "neutral";
-}
-
-function normalizeState(state: string | undefined): string {
-  return (state ?? "").trim().toLowerCase();
 }
 
 function taskAttentionTone(state: TaskRunState): CoreTone {

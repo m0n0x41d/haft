@@ -12,25 +12,7 @@ defmodule OpenSleigh.CommissionSource.Local do
 
   alias OpenSleigh.{CommissionSource, Scope, WorkCommission}
 
-  @commission_states [
-    :draft,
-    :queued,
-    :ready,
-    :preflighting,
-    :running,
-    :blocked_stale,
-    :blocked_policy,
-    :blocked_conflict,
-    :needs_human_review,
-    :completed,
-    :completed_with_projection_debt,
-    :failed,
-    :cancelled,
-    :expired
-  ]
-
   @projection_policies [:local_only, :external_optional, :external_required]
-  @runnable_states [:queued, :ready]
 
   @enforce_keys [:fixture_path]
   defstruct [:fixture_path]
@@ -269,7 +251,8 @@ defmodule OpenSleigh.CommissionSource.Local do
              | :invalid_valid_until
              | :invalid_fetched_at}
   defp commission_attrs(entry, %Scope{} = scope) do
-    with {:ok, state} <- enum_atom(value_at(entry, :state), @commission_states, :invalid_state),
+    with {:ok, state} <-
+           enum_atom(value_at(entry, :state), WorkCommission.state_values(), :invalid_state),
          {:ok, projection_policy} <-
            enum_atom(
              value_at(entry, :projection_policy),
@@ -394,8 +377,8 @@ defmodule OpenSleigh.CommissionSource.Local do
 
   @spec runnable?(WorkCommission.t()) :: boolean()
   defp runnable?(%WorkCommission{} = commission) do
-    commission.state in @runnable_states and
-      DateTime.compare(commission.valid_until, DateTime.utc_now()) == :gt
+    commission
+    |> WorkCommission.runnable?(DateTime.utc_now())
   end
 
   @spec find_commission([WorkCommission.t()], String.t()) ::

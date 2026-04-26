@@ -287,7 +287,7 @@ export function Harness() {
               <button
                 onClick={() => selectedDetail?.workspace.path && void openPathInIDE(selectedDetail.workspace.path)}
                 disabled={!selectedDetail?.workspace.path}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-40"
+                className="inline-flex h-9 min-w-[6.5rem] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-3 disabled:opacity-40"
                 title="Open isolated harness workspace"
               >
                 <FolderOpen size={14} />
@@ -326,6 +326,12 @@ export function Harness() {
                 {selectedDetail.workspace.error ? (
                   <p className="mt-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                     {selectedDetail.workspace.error}
+                  </p>
+                ) : null}
+
+                {selectedDetail.workspace.applyReadiness.kind === "disabled" ? (
+                  <p className="mt-3 rounded-md border border-border bg-surface-2/50 px-3 py-2 text-xs text-text-secondary">
+                    Apply unavailable: {selectedDetail.workspace.applyReadiness.reason}
                   </p>
                 ) : null}
 
@@ -502,7 +508,7 @@ function ActionIcon({ kind }: { kind: HarnessActionKind }) {
 }
 
 function actionButtonClass(action: HarnessActionView): string {
-  const base = "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors disabled:opacity-40";
+  const base = "inline-flex h-9 min-w-[6.5rem] items-center justify-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs transition-colors disabled:opacity-40";
   const variants: Record<HarnessActionKind, string> = {
     result: "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",
     tail: "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",

@@ -6,9 +6,15 @@ import test from "node:test";
 import {
   buildHarnessCockpitDetail,
   harnessCommissionActions,
+  normalizeApplyReadiness,
   normalizeHarnessCommissionState,
 } from "./harnessCockpit.ts";
-import type { HarnessRunResult, HarnessTailResult, WorkCommission } from "./api.ts";
+import type {
+  HarnessRunResult,
+  HarnessTailResult,
+  HarnessWorkspaceAuthorization,
+  WorkCommission,
+} from "./api.ts";
 
 test("normalizes harness commission states into cockpit states", () => {
   const cases: Array<[string, string]> = [
@@ -51,6 +57,64 @@ test("failed commission exposes recovery actions but not apply without a diff", 
   assert.equal(action(actions, "apply").enabled, false);
   assert.equal(action(actions, "cancel").enabled, true);
   assert.equal(action(actions, "requeue").enabled, true);
+});
+
+test("disabled apply action surfaces typed scope authorization reasons", () => {
+  const scenarios = [
+    {
+      verdict: "out_of_scope",
+      paths: ["src/app.go"],
+      expectedKind: "out_of_scope",
+      expectedReason: "workspace diff contains paths outside commission scope: src/app.go",
+    },
+    {
+      verdict: "forbidden",
+      paths: ["secrets/key.txt"],
+      expectedKind: "forbidden",
+      expectedReason: "workspace diff contains paths forbidden by commission scope: secrets/key.txt",
+    },
+    {
+      verdict: "unknown_scope",
+      paths: ["../outside.txt"],
+      expectedKind: "unknown_scope",
+      expectedReason:
+        "workspace diff cannot be applied because commission scope is unknown for paths: ../outside.txt",
+    },
+  ];
+
+  const observed = scenarios.map((scenario) => {
+    const commission = commissionFixture("completed");
+    const result = resultFixture(commission, false);
+    const authorization = authorizationFixture(scenario.verdict, scenario.paths);
+    const facts = result.workspace_facts;
+    assert.ok(facts);
+    facts.authorization = authorization;
+    result.operator_next = staleOperatorReasonFixture();
+
+    const actions = harnessCommissionActions(commission, result);
+    const readiness = normalizeApplyReadiness(result);
+
+    return {
+      reason: action(actions, "apply").reason,
+      readiness,
+    };
+  });
+
+  assert.deepEqual(
+    observed.map((item) => item.reason),
+    scenarios.map((scenario) => scenario.expectedReason),
+  );
+  assert.deepEqual(
+    observed.map((item) => item.readiness.kind),
+    scenarios.map(() => "disabled"),
+  );
+  assert.deepEqual(
+    observed.map((item) => {
+      assert.equal(item.readiness.kind, "disabled");
+      return item.readiness.disabledKind;
+    }),
+    scenarios.map((scenario) => scenario.expectedKind),
+  );
 });
 
 test("cockpit detail renders workspace diff and evidence facts instead of raw JSON", () => {
@@ -137,6 +201,42 @@ function resultFixture(
         at: "2026-04-24T05:08:35Z",
       },
       terminal: null,
+    },
+  };
+}
+
+function authorizationFixture(
+  verdict: string,
+  paths: string[],
+): HarnessWorkspaceAuthorization {
+  const emptyPaths: string[] = [];
+
+  return {
+    verdict,
+    can_apply: false,
+    allowed_paths: [],
+    out_of_scope_paths: verdict === "out_of_scope" ? paths : emptyPaths,
+    forbidden_paths: verdict === "forbidden" ? paths : emptyPaths,
+    unknown_scope_paths: verdict === "unknown_scope" ? paths : emptyPaths,
+    operator_reason: {
+      code: "",
+      verdict,
+      paths,
+      message: "operator prose should not win over typed scope facts",
+    },
+  };
+}
+
+function staleOperatorReasonFixture() {
+  return {
+    kind: "inspect",
+    reason: "stale operator prose should not win",
+    lines: [],
+    apply_disabled_reason: {
+      code: "forbidden_paths",
+      verdict: "forbidden",
+      paths: ["stale.txt"],
+      message: "stale operator reason should not win",
     },
   };
 }

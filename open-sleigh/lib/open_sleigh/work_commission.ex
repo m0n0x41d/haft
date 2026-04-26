@@ -30,6 +30,28 @@ defmodule OpenSleigh.WorkCommission do
     :cancelled,
     :expired
   ]
+  @runnable_states [:queued, :ready]
+  @executing_states [:preflighting, :running]
+  @completion_states [:completed, :completed_with_projection_debt]
+  @terminal_states [:completed, :completed_with_projection_debt, :cancelled, :expired]
+  @recoverable_states [
+    :queued,
+    :ready,
+    :preflighting,
+    :running,
+    :blocked_stale,
+    :blocked_policy,
+    :blocked_conflict,
+    :needs_human_review,
+    :failed
+  ]
+  @operator_decision_states [
+    :blocked_stale,
+    :blocked_policy,
+    :blocked_conflict,
+    :needs_human_review,
+    :failed
+  ]
 
   @enforce_keys [
     :id,
@@ -221,6 +243,47 @@ defmodule OpenSleigh.WorkCommission do
     |> CommissionRevisionSnapshot.new()
   end
 
+  @spec state_values() :: [state()]
+  def state_values, do: @states
+
+  @spec valid_state?(term()) :: boolean()
+  def valid_state?(state) when state in @states, do: true
+  def valid_state?(_state), do: false
+
+  @spec runnable_state?(term()) :: boolean()
+  def runnable_state?(state) when state in @runnable_states, do: true
+  def runnable_state?(_state), do: false
+
+  @spec executing_state?(term()) :: boolean()
+  def executing_state?(state) when state in @executing_states, do: true
+  def executing_state?(_state), do: false
+
+  @spec completion_state?(term()) :: boolean()
+  def completion_state?(state) when state in @completion_states, do: true
+  def completion_state?(_state), do: false
+
+  @spec terminal_state?(term()) :: boolean()
+  def terminal_state?(state) when state in @terminal_states, do: true
+  def terminal_state?(_state), do: false
+
+  @spec recoverable_state?(term()) :: boolean()
+  def recoverable_state?(state) when state in @recoverable_states, do: true
+  def recoverable_state?(_state), do: false
+
+  @spec operator_decision_state?(term()) :: boolean()
+  def operator_decision_state?(state) when state in @operator_decision_states, do: true
+  def operator_decision_state?(_state), do: false
+
+  @spec satisfies_dependency_state?(term()) :: boolean()
+  def satisfies_dependency_state?(state), do: completion_state?(state)
+
+  @spec runnable?(t(), DateTime.t()) :: boolean()
+  def runnable?(%__MODULE__{} = commission, %DateTime{} = checked_at) do
+    commission.state
+    |> runnable_state?()
+    |> runnable_result(DateTime.compare(commission.valid_until, checked_at))
+  end
+
   @spec required_string(map(), atom(), new_error()) :: {:ok, String.t()} | {:error, new_error()}
   defp required_string(attrs, field, error) do
     attrs
@@ -408,12 +471,16 @@ defmodule OpenSleigh.WorkCommission do
   defp required_state(attrs) do
     state = Map.get(attrs, :state)
 
-    if state in @states do
+    if valid_state?(state) do
       {:ok, state}
     else
       {:error, :invalid_state}
     end
   end
+
+  @spec runnable_result(boolean(), :lt | :eq | :gt) :: boolean()
+  defp runnable_result(true, :gt), do: true
+  defp runnable_result(_runnable, _validity), do: false
 
   @spec required_datetime(map(), atom(), new_error()) ::
           {:ok, DateTime.t()} | {:error, new_error()}

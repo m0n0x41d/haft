@@ -27,6 +27,7 @@ coverage.out
 .crush/
 .cursor/
 .zenflow/
+.agents/
 desktop/desktop
 .zenflow/
 .zenflow/**

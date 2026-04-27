@@ -2396,4 +2396,46 @@ mod tests {
         assert!(ts.contains('T'));
         assert!(ts.ends_with('Z'));
     }
+
+    #[derive(Deserialize)]
+    struct TranscriptParityCase {
+        name: String,
+        input: String,
+        expected: String,
+    }
+
+    #[derive(Deserialize)]
+    struct TranscriptParityFixture {
+        schema: String,
+        cases: Vec<TranscriptParityCase>,
+    }
+
+    fn visible_transcript_text(text: &str) -> String {
+        let without_control = strip_control_prompt_sections(text);
+
+        strip_audit_only_provider_envelope_lines(&without_control)
+    }
+
+    #[test]
+    fn transcript_normalizer_parity_with_typescript_fixture() {
+        let raw = include_str!("../../desktop/transcript-parity/cases.json");
+        let fixture: TranscriptParityFixture =
+            serde_json::from_str(raw).expect("transcript parity fixture must parse");
+
+        assert_eq!(fixture.schema, "haft.transcript-parity.v1");
+        assert!(
+            !fixture.cases.is_empty(),
+            "fixture must declare at least one case"
+        );
+
+        for case in &fixture.cases {
+            let actual = visible_transcript_text(&case.input);
+
+            assert_eq!(
+                actual, case.expected,
+                "transcript parity mismatch on case `{}`",
+                case.name
+            );
+        }
+    }
 }

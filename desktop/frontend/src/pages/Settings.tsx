@@ -696,6 +696,9 @@ function OnboardingCockpitPanel({
                 )}
               </div>
               <p className="mt-1 text-xs text-text-secondary">{finding.message}</p>
+              {finding.nextAction && (
+                <p className="mt-1 text-[11px] text-text-secondary">{finding.nextAction}</p>
+              )}
               {finding.actionLabel && (
                 <p className="mt-1 text-[11px] text-warning">Next: {finding.actionLabel}</p>
               )}

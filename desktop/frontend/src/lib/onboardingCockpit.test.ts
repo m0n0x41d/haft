@@ -151,6 +151,7 @@ test("spec-check findings map to carrier rows and next typed actions", () => {
   assert.equal(cockpit.findings[0].actionKind, "open_target_spec");
   assert.equal(cockpit.findings[0].actionLabel, "Open Target Spec");
   assert.equal(cockpit.findings[0].location, ".haft/specs/target-system.md:12");
+  assert.equal(cockpit.findings[0].nextAction, "add the missing canonical spec-section field");
 });
 
 test("clean spec-check report is shown honestly without enabling generic tasks", () => {
@@ -296,6 +297,7 @@ function blockedSpecCheckReport(): SpecCheckReport {
         section_id: "TS.use.001",
         field_path: "$.owner",
         message: "spec-section missing required field \"owner\"",
+        next_action: "add the missing canonical spec-section field",
       },
     ],
     summary: {

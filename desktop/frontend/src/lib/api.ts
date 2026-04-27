@@ -98,6 +98,7 @@ export interface DecisionDetail {
   status: string;
   mode: string;
   problem_refs: string[];
+  section_refs: string[];
   selected_title: string;
   why_selected: string;
   selection_policy: string;
@@ -388,6 +389,7 @@ export interface DecisionCreateInput {
   evidence_requirements: string[];
   rollback: DecisionRollbackInput | null;
   refresh_triggers: string[];
+  section_refs: string[];
   weakest_link: string;
   valid_until: string;
   context: string;
@@ -458,6 +460,7 @@ export interface SpecCheckFinding {
   line?: number;
   section_id?: string;
   message: string;
+  next_action?: string;
 }
 
 export interface SpecCheckSummary {
@@ -988,9 +991,33 @@ export interface WorkCommissionScope {
   lockset?: string[];
   forbidden_paths?: string[];
   allowed_actions?: string[];
+  allowed_modules?: string[];
   target_branch?: string;
   base_sha?: string;
   repo_ref?: string;
+}
+
+export interface AutonomyEnvelopeSnapshot {
+  ref: string;
+  revision: string;
+  state: string;
+  allowed_repos: string[];
+  allowed_paths: string[];
+  forbidden_paths?: string[];
+  allowed_actions: string[];
+  allowed_modules?: string[];
+  forbidden_actions?: string[];
+  forbidden_one_way_door_actions?: string[];
+  max_concurrency: number;
+  commission_budget: number;
+  active_concurrency?: number;
+  consumed_commissions?: number;
+  on_failure: string;
+  on_stale?: string;
+  valid_until: string;
+  revoked_at?: string;
+  required_gates?: string[];
+  hash?: string;
 }
 
 export interface WorkCommissionOperator {
@@ -1001,18 +1028,31 @@ export interface WorkCommissionOperator {
   suggested_actions?: string[];
 }
 
+export interface WorkCommissionProjectionDebt {
+  carrier: string;
+  target: string;
+  last_error: string;
+  retry_policy: string;
+}
+
 export interface WorkCommission {
   id: string;
   state: string;
   decision_ref: string;
   problem_card_ref: string;
   implementation_plan_ref?: string;
+  implementation_plan_revision?: string;
+  autonomy_envelope_ref?: string;
+  autonomy_envelope_revision?: string;
   projection_policy?: string;
   delivery_policy?: string;
   valid_until?: string;
   fetched_at?: string;
   lockset?: string[];
   scope?: WorkCommissionScope;
+  autonomy_envelope_snapshot?: AutonomyEnvelopeSnapshot;
+  local_execution?: Record<string, unknown>;
+  projection_debt?: WorkCommissionProjectionDebt;
   operator?: WorkCommissionOperator;
   events?: Array<Record<string, unknown>>;
 }
@@ -1239,6 +1279,7 @@ const INITIAL_DECISION_DETAIL: DecisionDetail = {
   status: "active",
   mode: "standard",
   problem_refs: ["prob-20260409-001"],
+  section_refs: [],
   selected_title: "Reasoning Workspace — Wails native",
   why_selected: "Desktop-native from day 1. Single binary distribution, real product identity.",
   selection_policy: "Minimize regret under solo-dev constraints.",
@@ -1572,6 +1613,8 @@ let mockCommissions: WorkCommission[] = [
     state: "queued",
     decision_ref: INITIAL_DECISION_DETAIL.id,
     problem_card_ref: INITIAL_PROBLEM_DETAIL.id,
+    implementation_plan_ref: "plan-mock-1",
+    implementation_plan_revision: "p1",
     projection_policy: "local_only",
     delivery_policy: "workspace_patch_manual",
     valid_until: nowString(),
@@ -2323,6 +2366,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
     status: "active",
     mode: input.mode.trim() || (portfolio?.comparison ? "standard" : "tactical"),
     problem_refs: compactList([input.problem_ref.trim(), ...(portfolio?.problem_ref ? [portfolio.problem_ref] : [])]),
+    section_refs: compactList(input.section_refs),
     selected_title: selectedTitle,
     why_selected: input.why_selected.trim(),
     selection_policy: input.selection_policy.trim(),

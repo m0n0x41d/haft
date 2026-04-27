@@ -22,6 +22,7 @@ test("normalizes harness commission states into cockpit states", () => {
     ["running", "running"],
     ["blocked_policy", "blocked"],
     ["completed", "completed"],
+    ["completed_with_projection_debt", "completed"],
     ["failed", "failed"],
   ];
 
@@ -33,6 +34,17 @@ test("normalizes harness commission states into cockpit states", () => {
     kinds,
     cases.map(([, kind]) => kind),
   );
+});
+
+test("projection debt state is terminal and keeps warning tone", () => {
+  const state = normalizeHarnessCommissionState(
+    commissionFixture("completed_with_projection_debt"),
+  );
+
+  assert.equal(state.kind, "completed");
+  assert.equal(state.label, "Projection debt");
+  assert.equal(state.tone, "warning");
+  assert.equal(state.terminal, true);
 });
 
 test("completed commission exposes result tail and apply without cancel or requeue", () => {

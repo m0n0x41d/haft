@@ -76,6 +76,7 @@ export interface OnboardingFindingView {
   title: string;
   location: string;
   message: string;
+  nextAction: string;
   sectionID: string;
   actionKind: OnboardingOpenActionKind | null;
   actionLabel: string;
@@ -342,6 +343,7 @@ function findingView(
     title: findingTitle(finding, carrier),
     location: findingLocation(finding),
     message: finding.message,
+    nextAction: finding.next_action ?? "",
     sectionID,
     actionKind: carrier ? carrierDefinition(carrier).openActionKind : null,
     actionLabel: carrier ? carrierDefinition(carrier).openActionLabel : "",

@@ -23,7 +23,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
   @projection_policies [:local_only, :external_optional, :external_required]
 
   @enforce_keys [:invoke_fun, :session, :selector, :runner_id]
-  defstruct [:invoke_fun, :session, :selector, :runner_id, :plan_ref, :queue]
+  defstruct [:invoke_fun, :session, :selector, :runner_id, :plan_ref, :plan_revision, :queue]
 
   @type t :: %__MODULE__{
           invoke_fun: Client.invoke_fun(),
@@ -31,6 +31,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
           selector: String.t(),
           runner_id: String.t(),
           plan_ref: String.t() | nil,
+          plan_revision: String.t() | nil,
           queue: String.t() | nil
         }
 
@@ -50,6 +51,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
          selector: config_string(value_at(source, :selector, "runnable")),
          runner_id: config_string(value_at(source, :runner_id, default_runner_id())),
          plan_ref: optional_string(value_at(source, :plan_ref)),
+         plan_revision: optional_string(value_at(source, :plan_revision)),
          queue: optional_string(value_at(source, :queue))
        }}
     end
@@ -114,6 +116,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
       "runner_id" => handle.runner_id
     }
     |> maybe_put("plan_ref", handle.plan_ref)
+    |> maybe_put("plan_revision", handle.plan_revision)
     |> maybe_put("queue", handle.queue)
   end
 
@@ -314,6 +317,8 @@ defmodule OpenSleigh.CommissionSource.Haft do
          decision_ref: value_at(entry, :decision_ref),
          decision_revision_hash: value_at(entry, :decision_revision_hash),
          problem_card_ref: value_at(entry, :problem_card_ref),
+         spec_section_refs: value_at(entry, :spec_section_refs, []),
+         spec_revision_hashes: value_at(entry, :spec_revision_hashes, %{}),
          implementation_plan_ref: value_at(entry, :implementation_plan_ref),
          implementation_plan_revision: value_at(entry, :implementation_plan_revision),
          scope: scope,
@@ -325,6 +330,7 @@ defmodule OpenSleigh.CommissionSource.Haft do
          delivery_policy: value_at(entry, :delivery_policy),
          autonomy_envelope_ref: value_at(entry, :autonomy_envelope_ref),
          autonomy_envelope_revision: value_at(entry, :autonomy_envelope_revision),
+         autonomy_envelope_snapshot: value_at(entry, :autonomy_envelope_snapshot),
          state: state,
          valid_until: valid_until,
          fetched_at: fetched_at

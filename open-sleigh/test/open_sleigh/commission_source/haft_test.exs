@@ -59,6 +59,44 @@ defmodule OpenSleigh.CommissionSource.HaftTest do
     assert commission.id == "wc-content-001"
   end
 
+  test "passes plan revision filter through haft_commission request" do
+    owner = self()
+
+    invoke_fun = fn request_line ->
+      {:ok, %{"id" => id, "params" => %{"arguments" => arguments}}} = Jason.decode(request_line)
+      send(owner, {:haft_arguments, arguments})
+
+      response =
+        %{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "result" => %{"commissions" => []}
+        }
+        |> Jason.encode!()
+        |> Kernel.<>("\n")
+
+      {:ok, response}
+    end
+
+    assert {:ok, handle} =
+             Haft.new(
+               %{
+                 "commission_source" => %{
+                   "kind" => "haft",
+                   "selector" => "runnable",
+                   "plan_ref" => "plan-revisioned",
+                   "plan_revision" => "p2"
+                 }
+               },
+               invoke_fun
+             )
+
+    assert {:ok, []} = Haft.list_runnable(handle)
+    assert_receive {:haft_arguments, arguments}
+    assert arguments["plan_ref"] == "plan-revisioned"
+    assert arguments["plan_revision"] == "p2"
+  end
+
   test "rejects malformed commission responses" do
     invoke_fun = result_invoker(%{"not_commissions" => []})
 

@@ -9,7 +9,7 @@ defmodule OpenSleigh.WorkCommission do
   them.
   """
 
-  alias OpenSleigh.{CommissionRevisionSnapshot, ProblemCardRef, Scope}
+  alias OpenSleigh.{AutonomyEnvelope, CommissionRevisionSnapshot, ProblemCardRef, Scope}
 
   @projection_policies [:local_only, :external_optional, :external_required]
   @delivery_policies [:workspace_patch_manual, :workspace_patch_auto_on_pass]
@@ -73,6 +73,8 @@ defmodule OpenSleigh.WorkCommission do
     :decision_ref,
     :decision_revision_hash,
     :problem_card_ref,
+    :spec_section_refs,
+    :spec_revision_hashes,
     :implementation_plan_ref,
     :implementation_plan_revision,
     :scope,
@@ -84,6 +86,7 @@ defmodule OpenSleigh.WorkCommission do
     :delivery_policy,
     :autonomy_envelope_ref,
     :autonomy_envelope_revision,
+    :autonomy_envelope_snapshot,
     :state,
     :valid_until,
     :fetched_at
@@ -113,6 +116,8 @@ defmodule OpenSleigh.WorkCommission do
           decision_ref: String.t(),
           decision_revision_hash: String.t(),
           problem_card_ref: ProblemCardRef.t(),
+          spec_section_refs: [String.t()],
+          spec_revision_hashes: %{optional(String.t()) => String.t()},
           implementation_plan_ref: String.t() | nil,
           implementation_plan_revision: String.t() | nil,
           scope: Scope.t(),
@@ -124,6 +129,7 @@ defmodule OpenSleigh.WorkCommission do
           delivery_policy: delivery_policy(),
           autonomy_envelope_ref: String.t() | nil,
           autonomy_envelope_revision: String.t() | nil,
+          autonomy_envelope_snapshot: AutonomyEnvelope.t() | nil,
           state: state(),
           valid_until: DateTime.t(),
           fetched_at: DateTime.t()
@@ -134,6 +140,8 @@ defmodule OpenSleigh.WorkCommission do
           | :invalid_decision_ref
           | :invalid_decision_revision_hash
           | :invalid_problem_card_ref
+          | :invalid_spec_section_refs
+          | :invalid_spec_revision_hashes
           | :invalid_implementation_plan_ref
           | :invalid_implementation_plan_revision
           | :invalid_scope
@@ -148,6 +156,7 @@ defmodule OpenSleigh.WorkCommission do
           | :invalid_delivery_policy
           | :invalid_autonomy_envelope_ref
           | :invalid_autonomy_envelope_revision
+          | AutonomyEnvelope.new_error()
           | :invalid_state
           | :invalid_valid_until
           | :invalid_fetched_at
@@ -162,6 +171,8 @@ defmodule OpenSleigh.WorkCommission do
          {:ok, decision_revision_hash} <-
            required_string(attrs, :decision_revision_hash, :invalid_decision_revision_hash),
          {:ok, problem_card_ref} <- required_problem_ref(attrs),
+         {:ok, spec_section_refs} <- optional_string_list(attrs, :spec_section_refs),
+         {:ok, spec_revision_hashes} <- optional_string_map(attrs, :spec_revision_hashes),
          {:ok, implementation_plan_ref} <-
            optional_string(attrs, :implementation_plan_ref, :invalid_implementation_plan_ref),
          {:ok, implementation_plan_revision} <-
@@ -188,6 +199,7 @@ defmodule OpenSleigh.WorkCommission do
              :autonomy_envelope_revision,
              :invalid_autonomy_envelope_revision
            ),
+         {:ok, autonomy_envelope_snapshot} <- optional_autonomy_envelope_snapshot(attrs),
          {:ok, state} <- required_state(attrs),
          {:ok, valid_until} <- required_datetime(attrs, :valid_until, :invalid_valid_until),
          {:ok, fetched_at} <- required_datetime(attrs, :fetched_at, :invalid_fetched_at) do
@@ -197,6 +209,8 @@ defmodule OpenSleigh.WorkCommission do
          decision_ref: decision_ref,
          decision_revision_hash: decision_revision_hash,
          problem_card_ref: problem_card_ref,
+         spec_section_refs: spec_section_refs,
+         spec_revision_hashes: spec_revision_hashes,
          implementation_plan_ref: implementation_plan_ref,
          implementation_plan_revision: implementation_plan_revision,
          scope: scope,
@@ -208,6 +222,7 @@ defmodule OpenSleigh.WorkCommission do
          delivery_policy: delivery_policy,
          autonomy_envelope_ref: autonomy_envelope_ref,
          autonomy_envelope_revision: autonomy_envelope_revision,
+         autonomy_envelope_snapshot: autonomy_envelope_snapshot,
          state: state,
          valid_until: valid_until,
          fetched_at: fetched_at
@@ -234,6 +249,8 @@ defmodule OpenSleigh.WorkCommission do
       decision_ref: commission.decision_ref,
       decision_revision_hash: commission.decision_revision_hash,
       problem_card_ref: commission.problem_card_ref,
+      spec_section_refs: commission.spec_section_refs,
+      spec_revision_hashes: commission.spec_revision_hashes,
       scope_hash: commission.scope_hash,
       base_sha: commission.base_sha,
       implementation_plan_revision: commission.implementation_plan_revision,
@@ -315,6 +332,21 @@ defmodule OpenSleigh.WorkCommission do
   defp validate_optional_string(nil, _error), do: {:ok, nil}
   defp validate_optional_string(value, error), do: validate_string(value, error)
 
+  @spec optional_autonomy_envelope_snapshot(map()) ::
+          {:ok, AutonomyEnvelope.t() | nil} | {:error, AutonomyEnvelope.new_error()}
+  defp optional_autonomy_envelope_snapshot(attrs) do
+    attrs
+    |> Map.get(:autonomy_envelope_snapshot)
+    |> autonomy_envelope_snapshot_result()
+  end
+
+  @spec autonomy_envelope_snapshot_result(term()) ::
+          {:ok, AutonomyEnvelope.t() | nil} | {:error, AutonomyEnvelope.new_error()}
+  defp autonomy_envelope_snapshot_result(nil), do: {:ok, nil}
+  defp autonomy_envelope_snapshot_result(%AutonomyEnvelope{} = envelope), do: {:ok, envelope}
+  defp autonomy_envelope_snapshot_result(%{} = payload), do: AutonomyEnvelope.new(payload)
+  defp autonomy_envelope_snapshot_result(_payload), do: {:error, :invalid_autonomy_envelope_ref}
+
   @spec required_problem_ref(map()) ::
           {:ok, ProblemCardRef.t()} | {:error, :invalid_problem_card_ref}
   defp required_problem_ref(attrs) do
@@ -326,6 +358,83 @@ defmodule OpenSleigh.WorkCommission do
       {:error, :invalid_problem_card_ref}
     end
   end
+
+  @spec optional_string_list(map(), atom()) ::
+          {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp optional_string_list(attrs, field) do
+    attrs
+    |> Map.get(field, [])
+    |> validate_string_list()
+  end
+
+  @spec validate_string_list(term()) :: {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp validate_string_list(values) when is_list(values) do
+    values
+    |> Enum.reduce_while({:ok, []}, &accumulate_string/2)
+    |> string_list_result()
+  end
+
+  defp validate_string_list(_values), do: {:error, :invalid_spec_section_refs}
+
+  @spec accumulate_string(term(), {:ok, [String.t()]}) ::
+          {:cont, {:ok, [String.t()]}} | {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_string(value, {:ok, values}) when is_binary(value) do
+    value
+    |> String.trim()
+    |> accumulate_clean_string(values)
+  end
+
+  defp accumulate_string(_value, _values), do: {:halt, {:error, :invalid_spec_section_refs}}
+
+  @spec accumulate_clean_string(String.t(), [String.t()]) ::
+          {:cont, {:ok, [String.t()]}} | {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_clean_string("", _values), do: {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_clean_string(value, values), do: {:cont, {:ok, [value | values]}}
+
+  @spec string_list_result({:ok, [String.t()]} | {:error, :invalid_spec_section_refs}) ::
+          {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp string_list_result({:ok, values}) do
+    values
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> then(&{:ok, &1})
+  end
+
+  defp string_list_result({:error, _reason} = error), do: error
+
+  @spec optional_string_map(map(), atom()) ::
+          {:ok, %{optional(String.t()) => String.t()}} | {:error, :invalid_spec_revision_hashes}
+  defp optional_string_map(attrs, field) do
+    attrs
+    |> Map.get(field, %{})
+    |> validate_string_map()
+  end
+
+  @spec validate_string_map(term()) ::
+          {:ok, %{optional(String.t()) => String.t()}} | {:error, :invalid_spec_revision_hashes}
+  defp validate_string_map(values) when is_map(values) do
+    values
+    |> Enum.reduce_while({:ok, %{}}, &accumulate_string_pair/2)
+  end
+
+  defp validate_string_map(_values), do: {:error, :invalid_spec_revision_hashes}
+
+  @spec accumulate_string_pair({term(), term()}, {:ok, map()}) ::
+          {:cont, {:ok, map()}} | {:halt, {:error, :invalid_spec_revision_hashes}}
+  defp accumulate_string_pair({key, value}, {:ok, values})
+       when is_binary(key) and is_binary(value) do
+    clean_key = String.trim(key)
+    clean_value = String.trim(value)
+
+    if clean_key == "" or clean_value == "" do
+      {:halt, {:error, :invalid_spec_revision_hashes}}
+    else
+      {:cont, {:ok, Map.put(values, clean_key, clean_value)}}
+    end
+  end
+
+  defp accumulate_string_pair(_pair, _values),
+    do: {:halt, {:error, :invalid_spec_revision_hashes}}
 
   @spec required_scope(map()) :: {:ok, Scope.t()} | {:error, :invalid_scope}
   defp required_scope(attrs) do

@@ -25,6 +25,7 @@ defmodule OpenSleigh.Gates.Registry do
   }
 
   alias OpenSleigh.Gates.Structural.{
+    AutonomyEnvelopeAllowed,
     CommissionRunnable,
     DescribedEntityFieldPresent,
     DecisionFresh,
@@ -36,6 +37,7 @@ defmodule OpenSleigh.Gates.Registry do
   }
 
   @structural %{
+    autonomy_envelope_allowed: AutonomyEnvelopeAllowed,
     commission_runnable: CommissionRunnable,
     decision_fresh: DecisionFresh,
     scope_snapshot_fresh: ScopeSnapshotFresh,

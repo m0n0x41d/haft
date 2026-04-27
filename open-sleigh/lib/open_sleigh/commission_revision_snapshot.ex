@@ -18,6 +18,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
     :decision_revision_hash,
     :problem_card_ref,
     :problem_revision_hash,
+    :spec_section_refs,
+    :spec_revision_hashes,
     :scope_hash,
     :base_sha,
     :implementation_plan_revision,
@@ -33,6 +35,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
     :decision_revision_hash,
     :problem_card_ref,
     :problem_revision_hash,
+    :spec_section_refs,
+    :spec_revision_hashes,
     :scope_hash,
     :base_sha,
     :implementation_plan_revision,
@@ -49,6 +53,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
           decision_revision_hash: String.t(),
           problem_card_ref: ProblemCardRef.t(),
           problem_revision_hash: String.t(),
+          spec_section_refs: [String.t()],
+          spec_revision_hashes: %{optional(String.t()) => String.t()},
           scope_hash: String.t(),
           base_sha: String.t(),
           implementation_plan_revision: String.t() | nil,
@@ -65,6 +71,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
           | :invalid_decision_revision_hash
           | :invalid_problem_card_ref
           | :invalid_problem_revision_hash
+          | :invalid_spec_section_refs
+          | :invalid_spec_revision_hashes
           | :invalid_scope_hash
           | :invalid_base_sha
           | :missing_implementation_plan_revision
@@ -95,6 +103,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
          decision_revision_hash: canonical.decision_revision_hash,
          problem_card_ref: canonical.problem_card_ref,
          problem_revision_hash: canonical.problem_revision_hash,
+         spec_section_refs: canonical.spec_section_refs,
+         spec_revision_hashes: canonical.spec_revision_hashes,
          scope_hash: canonical.scope_hash,
          base_sha: canonical.base_sha,
          implementation_plan_revision: canonical.implementation_plan_revision,
@@ -128,6 +138,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
          {:ok, problem_card_ref} <- required_problem_ref(attrs),
          {:ok, problem_revision_hash} <-
            required_string(attrs, :problem_revision_hash, :invalid_problem_revision_hash),
+         {:ok, spec_section_refs} <- optional_string_list(attrs, :spec_section_refs),
+         {:ok, spec_revision_hashes} <- optional_string_map(attrs, :spec_revision_hashes),
          {:ok, scope_hash} <- required_scope_hash(attrs),
          {:ok, base_sha} <- required_string(attrs, :base_sha, :invalid_base_sha),
          {:ok, implementation_plan_revision} <-
@@ -155,6 +167,8 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
          decision_revision_hash: decision_revision_hash,
          problem_card_ref: problem_card_ref,
          problem_revision_hash: problem_revision_hash,
+         spec_section_refs: spec_section_refs,
+         spec_revision_hashes: spec_revision_hashes,
          scope_hash: scope_hash,
          base_sha: base_sha,
          implementation_plan_revision: implementation_plan_revision,
@@ -291,7 +305,95 @@ defmodule OpenSleigh.CommissionRevisionSnapshot do
       Jason.encode!(Atom.to_string(canonical.projection_policy)),
       ~s(,"scope_hash":),
       Jason.encode!(canonical.scope_hash),
+      ~s(,"spec_revision_hashes":),
+      Jason.encode!(sorted_string_pairs(canonical.spec_revision_hashes)),
+      ~s(,"spec_section_refs":),
+      Jason.encode!(canonical.spec_section_refs),
       "}"
     ]
   end
+
+  @spec sorted_string_pairs(map()) :: [[String.t()]]
+  defp sorted_string_pairs(values) do
+    values
+    |> Enum.sort()
+    |> Enum.map(fn {key, value} -> [key, value] end)
+  end
+
+  @spec optional_string_list(map(), atom()) ::
+          {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp optional_string_list(attrs, field) do
+    attrs
+    |> Map.get(field, [])
+    |> validate_string_list()
+  end
+
+  @spec validate_string_list(term()) :: {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp validate_string_list(values) when is_list(values) do
+    values
+    |> Enum.reduce_while({:ok, []}, &accumulate_string/2)
+    |> string_list_result()
+  end
+
+  defp validate_string_list(_values), do: {:error, :invalid_spec_section_refs}
+
+  @spec accumulate_string(term(), {:ok, [String.t()]}) ::
+          {:cont, {:ok, [String.t()]}} | {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_string(value, {:ok, values}) when is_binary(value) do
+    value
+    |> String.trim()
+    |> accumulate_clean_string(values)
+  end
+
+  defp accumulate_string(_value, _values), do: {:halt, {:error, :invalid_spec_section_refs}}
+
+  @spec accumulate_clean_string(String.t(), [String.t()]) ::
+          {:cont, {:ok, [String.t()]}} | {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_clean_string("", _values), do: {:halt, {:error, :invalid_spec_section_refs}}
+  defp accumulate_clean_string(value, values), do: {:cont, {:ok, [value | values]}}
+
+  @spec string_list_result({:ok, [String.t()]} | {:error, :invalid_spec_section_refs}) ::
+          {:ok, [String.t()]} | {:error, :invalid_spec_section_refs}
+  defp string_list_result({:ok, values}) do
+    values
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> then(&{:ok, &1})
+  end
+
+  defp string_list_result({:error, _reason} = error), do: error
+
+  @spec optional_string_map(map(), atom()) ::
+          {:ok, %{optional(String.t()) => String.t()}} | {:error, :invalid_spec_revision_hashes}
+  defp optional_string_map(attrs, field) do
+    attrs
+    |> Map.get(field, %{})
+    |> validate_string_map()
+  end
+
+  @spec validate_string_map(term()) ::
+          {:ok, %{optional(String.t()) => String.t()}} | {:error, :invalid_spec_revision_hashes}
+  defp validate_string_map(values) when is_map(values) do
+    values
+    |> Enum.reduce_while({:ok, %{}}, &accumulate_string_pair/2)
+  end
+
+  defp validate_string_map(_values), do: {:error, :invalid_spec_revision_hashes}
+
+  @spec accumulate_string_pair({term(), term()}, {:ok, map()}) ::
+          {:cont, {:ok, map()}} | {:halt, {:error, :invalid_spec_revision_hashes}}
+  defp accumulate_string_pair({key, value}, {:ok, values})
+       when is_binary(key) and is_binary(value) do
+    clean_key = String.trim(key)
+    clean_value = String.trim(value)
+
+    if clean_key == "" or clean_value == "" do
+      {:halt, {:error, :invalid_spec_revision_hashes}}
+    else
+      {:cont, {:ok, Map.put(values, clean_key, clean_value)}}
+    end
+  end
+
+  defp accumulate_string_pair(_pair, _values),
+    do: {:halt, {:error, :invalid_spec_revision_hashes}}
 end

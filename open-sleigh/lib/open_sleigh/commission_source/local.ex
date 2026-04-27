@@ -267,6 +267,8 @@ defmodule OpenSleigh.CommissionSource.Local do
          decision_ref: value_at(entry, :decision_ref),
          decision_revision_hash: value_at(entry, :decision_revision_hash),
          problem_card_ref: value_at(entry, :problem_card_ref),
+         spec_section_refs: value_at(entry, :spec_section_refs, []),
+         spec_revision_hashes: value_at(entry, :spec_revision_hashes, %{}),
          implementation_plan_ref: value_at(entry, :implementation_plan_ref),
          implementation_plan_revision: value_at(entry, :implementation_plan_revision),
          scope: scope,
@@ -278,6 +280,7 @@ defmodule OpenSleigh.CommissionSource.Local do
          delivery_policy: value_at(entry, :delivery_policy),
          autonomy_envelope_ref: value_at(entry, :autonomy_envelope_ref),
          autonomy_envelope_revision: value_at(entry, :autonomy_envelope_revision),
+         autonomy_envelope_snapshot: value_at(entry, :autonomy_envelope_snapshot),
          state: state,
          valid_until: valid_until,
          fetched_at: fetched_at

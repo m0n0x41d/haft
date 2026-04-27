@@ -18,6 +18,8 @@ defmodule OpenSleigh.Gates.Structural.ScopeSnapshotFresh do
     {:commission_id, :commission_id_changed},
     {:problem_card_ref, :problem_card_ref_changed},
     {:problem_revision_hash, :problem_revision_changed},
+    {:spec_section_refs, :spec_section_refs_changed},
+    {:spec_revision_hashes, :spec_revision_hashes_changed},
     {:scope_hash, :scope_hash_changed},
     {:base_sha, :base_sha_changed},
     {:implementation_plan_revision, :implementation_plan_revision_changed},
@@ -39,6 +41,8 @@ defmodule OpenSleigh.Gates.Structural.ScopeSnapshotFresh do
           | {:error, :commission_id_changed}
           | {:error, :problem_card_ref_changed}
           | {:error, :problem_revision_changed}
+          | {:error, :spec_section_refs_changed}
+          | {:error, :spec_revision_hashes_changed}
           | {:error, :scope_hash_changed}
           | {:error, :base_sha_changed}
           | {:error, :implementation_plan_revision_changed}

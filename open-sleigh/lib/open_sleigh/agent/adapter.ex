@@ -430,7 +430,24 @@ defmodule OpenSleigh.Agent.Adapter do
 
   @spec target_paths(map()) :: [String.t()]
   defp target_paths(args) do
-    [:path, "path", :paths, "paths", :file, "file", :files, "files", :target_path, "target_path"]
+    [
+      :path,
+      "path",
+      :paths,
+      "paths",
+      :file,
+      "file",
+      :files,
+      "files",
+      :filepath,
+      "filepath",
+      :target,
+      "target",
+      :target_path,
+      "target_path",
+      :filename,
+      "filename"
+    ]
     |> Enum.flat_map(&target_path_values(args, &1))
     |> Enum.filter(&is_binary/1)
   end

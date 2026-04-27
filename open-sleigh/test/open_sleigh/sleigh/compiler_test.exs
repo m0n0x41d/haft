@@ -31,6 +31,7 @@ defmodule OpenSleigh.Sleigh.CompilerTest do
     assert bundle.projection["mode"] == "local_only"
     assert %{phase: :preflight, agent_role: :preflight_checker} = bundle.phase_configs.preflight
     assert :commission_runnable in bundle.phase_configs.preflight.gates.structural
+    assert :autonomy_envelope_allowed in bundle.phase_configs.preflight.gates.structural
   end
 
   test "Claude adapter skeleton compiles through the same adapter registry" do

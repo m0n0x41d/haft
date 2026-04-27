@@ -7,10 +7,20 @@ defmodule OpenSleigh.Agent.ToolRuntime do
   supported local tools (`read`, `write`, `edit`, `grep`, `bash`) and Haft MCP
   tools (`haft_query`, `haft_note`, `haft_problem`, `haft_decision`,
   `haft_refresh`, `haft_solution`).
+
+  Scope policy:
+
+  * Every dynamic tool call passes through `OpenSleigh.Agent.Adapter.ensure_in_scope/3`
+    before this module performs IO.
+  * `write` and `edit` are pre-authorized against WorkCommission path Scope.
+  * `bash` is authorized only as the `:run_tests` action before execution. Arbitrary
+    shell commands cannot be safely path-inspected here, so any filesystem mutation
+    caused by shell remains subject to terminal diff validation as defense-in-depth.
   """
 
   alias OpenSleigh.{AdapterSession, EffectError, Haft.Client}
   alias OpenSleigh.Adapter.PathGuard
+  alias OpenSleigh.Agent.Adapter, as: AgentAdapter
 
   @bash_timeout_ms 60_000
   @empty_guard %{forbidden_paths: [], forbidden_remote_substrings: []}
@@ -81,7 +91,8 @@ defmodule OpenSleigh.Agent.ToolRuntime do
           {:ok, execution()} | {:error, EffectError.t()}
   def execute(tool, args, %AdapterSession{} = session, opts) do
     with {:ok, tool} <- normalize_tool(tool),
-         {:ok, args} <- normalize_args(args) do
+         {:ok, args} <- normalize_args(args),
+         :ok <- AgentAdapter.ensure_in_scope(session, tool, args) do
       execute_tool(tool, args, session, opts)
     end
   end
@@ -440,7 +451,11 @@ defmodule OpenSleigh.Agent.ToolRuntime do
   end
 
   defp grep_command_result(_rg, pattern, search_path, workspace_path) do
-    run_grep_with("rg", ["--line-number", "--no-heading", "--color", "never", pattern, search_path], workspace_path)
+    run_grep_with(
+      "rg",
+      ["--line-number", "--no-heading", "--color", "never", pattern, search_path],
+      workspace_path
+    )
   end
 
   @spec run_grep_with(String.t(), [String.t()], Path.t()) ::
@@ -470,7 +485,8 @@ defmodule OpenSleigh.Agent.ToolRuntime do
     |> binary_result()
   end
 
-  @spec run_bash(String.t(), Path.t(), pos_integer()) :: {:ok, String.t()} | {:error, EffectError.t()}
+  @spec run_bash(String.t(), Path.t(), pos_integer()) ::
+          {:ok, String.t()} | {:error, EffectError.t()}
   defp run_bash(command, workspace_path, timeout_ms) do
     task =
       Task.async(fn ->

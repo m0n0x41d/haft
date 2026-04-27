@@ -86,6 +86,7 @@ phases:
         - commission_runnable
         - decision_fresh
         - scope_snapshot_fresh
+        - autonomy_envelope_allowed
       semantic: []
   frame:
     agent_role: frame_verifier

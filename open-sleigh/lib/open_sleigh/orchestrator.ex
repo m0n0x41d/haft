@@ -1131,6 +1131,7 @@ defmodule OpenSleigh.Orchestrator do
       "session_id" => entry.session.id,
       "ticket_id" => entry.ticket.id,
       "config_hash" => outcome.config_hash,
+      "projection_policy" => entry |> entry_projection_policy() |> Atom.to_string(),
       "next" => decision_label(decision)
     }
   end
@@ -1210,8 +1211,26 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec close_terminal_commission_ticket?(map(), map(), atom()) :: boolean()
   defp close_terminal_commission_ticket?(state, entry, verdict) do
-    commission_first_ticket?(entry.ticket) and not terminal_publish_requested?(state, verdict)
+    commission_first_ticket?(entry.ticket) and
+      not external_required_terminal_pass?(entry, verdict) and
+      not terminal_publish_requested?(state, verdict)
   end
+
+  @spec external_required_terminal_pass?(map(), atom()) :: boolean()
+  defp external_required_terminal_pass?(entry, :pass) do
+    entry
+    |> entry_projection_policy()
+    |> Kernel.==(:external_required)
+  end
+
+  defp external_required_terminal_pass?(_entry, _verdict), do: false
+
+  @spec entry_projection_policy(map()) :: WorkCommission.projection_policy()
+  defp entry_projection_policy(%{session: %{commission: %WorkCommission{projection_policy: policy}}}) do
+    policy
+  end
+
+  defp entry_projection_policy(_entry), do: :local_only
 
   @spec terminal_publish_requested?(map(), atom()) :: boolean()
   defp terminal_publish_requested?(state, :pass) do

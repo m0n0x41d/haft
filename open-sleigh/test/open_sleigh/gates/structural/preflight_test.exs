@@ -2,6 +2,7 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
   use ExUnit.Case, async: true
 
   alias OpenSleigh.{
+    AutonomyEnvelope,
     CommissionRevisionSnapshot,
     GateContext,
     PhaseConfig,
@@ -12,6 +13,7 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
   }
 
   alias OpenSleigh.Gates.Structural.{
+    AutonomyEnvelopeAllowed,
     CommissionRunnable,
     DecisionFresh,
     ScopeSnapshotFresh
@@ -37,6 +39,7 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
       assert :ok = CommissionRunnable.apply(ctx)
       assert :ok = DecisionFresh.apply(ctx)
       assert :ok = ScopeSnapshotFresh.apply(ctx)
+      assert :ok = AutonomyEnvelopeAllowed.apply(ctx)
     end
 
     test "commission_runnable blocks expired commissions before Execute" do
@@ -151,6 +154,31 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
       assert {:error, :base_sha_changed} = ScopeSnapshotFresh.apply(ctx)
     end
 
+    test "scope_snapshot_fresh blocks spec revision drift before Execute" do
+      commission =
+        commission_with(%{
+          spec_section_refs: ["TS.freshness.001"],
+          spec_revision_hashes: %{"TS.freshness.001" => "spec-r1"}
+        })
+
+      commission_snapshot = snapshot(commission)
+
+      current_snapshot =
+        snapshot_with(commission_snapshot, %{
+          spec_revision_hashes: %{"TS.freshness.001" => "spec-r2"}
+        })
+
+      ctx =
+        context(%{
+          commission: commission,
+          commission_snapshot: commission_snapshot,
+          current_snapshot: current_snapshot,
+          current_decision: current_decision()
+        })
+
+      assert {:error, :spec_revision_hashes_changed} = ScopeSnapshotFresh.apply(ctx)
+    end
+
     test "scope_snapshot_fresh blocks implementation plan drift before Execute" do
       commission = commission()
       commission_snapshot = snapshot(commission)
@@ -202,6 +230,87 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
         })
 
       assert {:error, :missing_current_snapshot} = ScopeSnapshotFresh.apply(ctx)
+    end
+
+    test "autonomy_envelope_allowed blocks out-of-envelope one-way-door action" do
+      scoped =
+        scope_with(%{
+          allowed_actions: MapSet.new([:edit_files, :tag_release])
+        })
+
+      commission =
+        commission_with(%{
+          scope: scoped,
+          scope_hash: scoped.hash,
+          lockset: scoped.lockset,
+          autonomy_envelope_snapshot: envelope()
+        })
+
+      commission_snapshot = snapshot(commission)
+
+      ctx =
+        context(%{
+          commission: commission,
+          commission_snapshot: commission_snapshot,
+          current_snapshot: commission_snapshot,
+          current_decision: current_decision()
+        })
+
+      assert {:error, :one_way_door_action_forbidden} = AutonomyEnvelopeAllowed.apply(ctx)
+    end
+
+    test "autonomy_envelope_allowed blocks expired and revoked envelopes" do
+      for {envelope, reason} <- [
+            {envelope(%{valid_until: ~U[2026-04-21 10:00:00Z]}), :autonomy_envelope_expired},
+            {envelope(%{state: :revoked, revoked_at: ~U[2026-04-21 10:00:00Z]}),
+             :autonomy_envelope_revoked}
+          ] do
+        commission = commission_with(%{autonomy_envelope_snapshot: envelope})
+        commission_snapshot = snapshot(commission)
+
+        ctx =
+          context(%{
+            commission: commission,
+            commission_snapshot: commission_snapshot,
+            current_snapshot: commission_snapshot,
+            current_decision: current_decision()
+          })
+
+        assert {:error, ^reason} = AutonomyEnvelopeAllowed.apply(ctx)
+      end
+    end
+
+    test "autonomy envelope cannot skip freshness scope or evidence gates" do
+      attrs =
+        envelope_attrs()
+        |> Map.put(:skip_gates, [:freshness, :scope, :evidence])
+
+      assert {:error, :gate_skip_forbidden} = AutonomyEnvelope.new(attrs)
+    end
+
+    test "missing envelope blocks only when autonomous continuation is required" do
+      commission = commission()
+      commission_snapshot = snapshot(commission)
+
+      manual_ctx =
+        context(%{
+          commission: commission,
+          commission_snapshot: commission_snapshot,
+          current_snapshot: commission_snapshot,
+          current_decision: current_decision()
+        })
+
+      autonomous_ctx =
+        context(%{
+          commission: commission,
+          commission_snapshot: commission_snapshot,
+          current_snapshot: commission_snapshot,
+          current_decision: current_decision(),
+          autonomy_required: true
+        })
+
+      assert :ok = AutonomyEnvelopeAllowed.apply(manual_ctx)
+      assert {:error, :autonomy_envelope_missing} = AutonomyEnvelopeAllowed.apply(autonomous_ctx)
     end
   end
 
@@ -310,7 +419,16 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
   end
 
   defp scope do
+    scope_with(%{})
+  end
+
+  defp scope_with(overrides) do
     attrs = scope_attrs()
+
+    attrs =
+      attrs
+      |> Map.merge(overrides)
+
     {:ok, hash} = Scope.canonical_hash(attrs)
 
     {:ok, scope} =
@@ -344,6 +462,40 @@ defmodule OpenSleigh.Gates.Structural.PreflightTest do
         "open-sleigh/lib/open_sleigh/gates/structural/decision_fresh.ex",
         "open-sleigh/lib/open_sleigh/gates/structural/scope_snapshot_fresh.ex"
       ]
+    }
+  end
+
+  defp envelope do
+    envelope(%{})
+  end
+
+  defp envelope(overrides) do
+    {:ok, envelope} =
+      envelope_attrs()
+      |> Map.merge(overrides)
+      |> AutonomyEnvelope.new()
+
+    envelope
+  end
+
+  defp envelope_attrs do
+    %{
+      ref: "ae-20260422-001",
+      revision: "ae-r1",
+      state: :active,
+      allowed_repos: ["github:m0n0x41d/haft"],
+      allowed_paths: ["open-sleigh/lib/open_sleigh/gates/structural/**"],
+      forbidden_paths: ["open-sleigh/lib/open_sleigh/gates/structural/release/**"],
+      allowed_actions: [:edit_files, :run_tests],
+      allowed_modules: [],
+      forbidden_actions: [:delete_data],
+      forbidden_one_way_door_actions: [:tag_release, :merge_pr],
+      max_concurrency: 2,
+      commission_budget: 4,
+      on_failure: :block_node,
+      on_stale: :block_node,
+      valid_until: @valid_until,
+      required_gates: [:freshness, :scope, :evidence]
     }
   end
 

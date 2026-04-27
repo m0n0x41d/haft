@@ -229,6 +229,65 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     assert {:ok, []} = TrackerMock.list_active(ctx.tracker)
   end
 
+  test "external_required terminal pass leaves external carrier open", ctx do
+    {:ok, tracker} = TrackerMock.start()
+    commission = commission_fixture!("wc-external-required-carrier-open", %{projection_policy: :external_required})
+    :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
+
+    orchestrator_name = :"commission_lifecycle_projection_debt_orch_#{System.unique_integer([:positive])}"
+    store_name = :"commission_lifecycle_projection_debt_store_#{System.unique_integer([:positive])}"
+
+    {:ok, _store} =
+      WorkflowStore.start_link(
+        phase_configs: phase_configs(),
+        prompts: prompts(),
+        external_publication: %{branch_regex: "^(main|master)$"},
+        name: store_name
+      )
+
+    {:ok, _orchestrator} =
+      Orchestrator.start_link(
+        workflow: Workflow.mvp1r(),
+        tracker_handle: tracker,
+        tracker_adapter: TrackerMock,
+        agent_adapter: LifecycleAgent,
+        external_publication: %{tracker_transition_to: []},
+        judge_fun: JudgeClient.judge_fun(fn _prompt -> {:ok, %{}} end, %{}),
+        haft_invoker: HaftMock.invoke_fun(ctx.haft),
+        workspace_root: ctx.workspace_root,
+        guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
+        task_supervisor: OpenSleigh.AgentSupervisor,
+        workflow_store: store_name,
+        hooks: execute_seed_hooks(),
+        name: orchestrator_name
+      )
+
+    {:ok, tickets} = TrackerMock.list_active(tracker)
+    Orchestrator.submit_candidates(orchestrator_name, tickets)
+
+    wait_result = wait_for_terminal(orchestrator_name, 10_000)
+    status = Orchestrator.status(orchestrator_name)
+    artifacts = HaftMock.artifacts(ctx.haft)
+
+    assert wait_result == :ok,
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+
+    terminal =
+      ctx.haft
+      |> HaftMock.artifacts()
+      |> Enum.find(&(get_in(&1, ["arguments", "action"]) == "complete_or_block"))
+
+    assert get_in(terminal, ["arguments", "commission_id"]) == "wc-external-required-carrier-open"
+    assert get_in(terminal, ["arguments", "verdict"]) == "pass"
+    assert get_in(terminal, ["arguments", "payload", "projection_policy"]) == "external_required"
+
+    assert {:ok, ticket} = TrackerMock.get(tracker, "wc-external-required-carrier-open")
+    assert ticket.state == :in_progress
+
+    assert {:ok, active} = TrackerMock.list_active(tracker)
+    assert Enum.map(active, & &1.id) == ["wc-external-required-carrier-open"]
+  end
+
   test "blocked non-terminal phases also close WorkCommission lifecycle", ctx do
     {:ok, tracker} = TrackerMock.start()
     commission = commission_fixture!("wc-orchestrator-blocked")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,7 +21,9 @@ var (
 	specCheckJSON    bool
 	specCoverageJSON bool
 	specPlanJSON     bool
+	specPlanAcceptID string
 	specCheckExit    = os.Exit
+	specCoverageExit = os.Exit
 )
 
 var specCmd = &cobra.Command{
@@ -58,9 +61,13 @@ var specPlanCmd = &cobra.Command{
 	Long: `Show SpecPlan proposals for active spec sections whose coverage is uncovered or stale.
 
 The command groups sections by document kind, spec kind, dependency signature,
-and affected area. Output is a human-review draft surface only: proposals are
-not authority, no DecisionRecords are created, and no WorkCommissions are
-created or scheduled.`,
+and affected area. Listing output is a human-review draft surface only:
+proposals are not authority. No DecisionRecords are created by listing, and
+no WorkCommissions are created or scheduled.
+
+Use --accept <proposal-id> to create one DecisionRecord from a reviewed
+proposal. Merge, split, and discard are typed non-executable actions in this
+slice and are reported with command gaps.`,
 	RunE: runSpecPlan,
 }
 
@@ -68,6 +75,7 @@ func init() {
 	specCheckCmd.Flags().BoolVar(&specCheckJSON, "json", false, "print structured JSON output")
 	specCoverageCmd.Flags().BoolVar(&specCoverageJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
+	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
 	specCmd.AddCommand(specCheckCmd)
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specPlanCmd)
@@ -110,6 +118,16 @@ func runSpecCoverage(cmd *cobra.Command, _ []string) error {
 
 	report, err := buildSpecCoverageReport(context.Background(), projectRoot)
 	if err != nil {
+		blocked := &specCoverageBlockedError{}
+		if specCoverageJSON && errors.As(err, &blocked) {
+			if writeErr := writeSpecCoverageBlockedJSON(cmd.OutOrStdout(), blocked.report); writeErr != nil {
+				return writeErr
+			}
+
+			specCoverageExit(1)
+			return nil
+		}
+
 		return err
 	}
 
@@ -130,6 +148,20 @@ func runSpecPlan(cmd *cobra.Command, _ []string) error {
 	report, err := buildSpecPlanReport(context.Background(), projectRoot)
 	if err != nil {
 		return err
+	}
+
+	if strings.TrimSpace(specPlanAcceptID) != "" {
+		result, err := acceptSpecPlanProposal(context.Background(), projectRoot, report, specPlanAcceptID)
+		if err != nil {
+			return err
+		}
+
+		output := cmd.OutOrStdout()
+		if specPlanJSON {
+			return writeSpecPlanAcceptJSON(output, result)
+		}
+
+		return writeSpecPlanAcceptSummary(output, result)
 	}
 
 	output := cmd.OutOrStdout()
@@ -184,13 +216,37 @@ func formatSpecCheckFinding(finding project.SpecCheckFinding) string {
 		section = " section=" + finding.SectionID
 	}
 
-	return fmt.Sprintf("- [%s] %s %s%s - %s\n",
+	line := fmt.Sprintf("- [%s] %s %s%s - %s\n",
 		finding.Level,
 		finding.Code,
 		location,
 		section,
 		finding.Message,
 	)
+	if finding.NextAction != "" {
+		line += fmt.Sprintf("  next_action: %s\n", finding.NextAction)
+	}
+
+	return line
+}
+
+type specCoverageBlockedError struct {
+	report project.SpecCheckReport
+}
+
+func (err *specCoverageBlockedError) Error() string {
+	return fmt.Sprintf(
+		"spec coverage blocked: spec check has %d finding(s); run `haft spec check` first",
+		err.report.Summary.TotalFindings,
+	)
+}
+
+type specCoverageBlockedJSONReport struct {
+	Status     string                     `json:"status"`
+	Reason     string                     `json:"reason"`
+	NextAction string                     `json:"next_action"`
+	SpecCheck  project.SpecCheckReport    `json:"spec_check"`
+	Coverage   project.SpecCoverageReport `json:"coverage"`
 }
 
 func buildSpecCoverageReport(
@@ -202,10 +258,7 @@ func buildSpecCoverageReport(
 		return project.SpecCoverageReport{}, err
 	}
 	if specCheck.HasFindings() {
-		return project.SpecCoverageReport{}, fmt.Errorf(
-			"spec coverage blocked: spec check has %d finding(s); run `haft spec check` first",
-			specCheck.Summary.TotalFindings,
-		)
+		return project.SpecCoverageReport{}, &specCoverageBlockedError{report: specCheck}
 	}
 
 	sections, err := project.LoadSpecSections(projectRoot)
@@ -269,6 +322,99 @@ func buildSpecPlanReport(
 	}
 
 	return project.BuildSpecPlan(coverage), nil
+}
+
+type specPlanAcceptResult struct {
+	Action      string   `json:"action"`
+	ProposalID  string   `json:"proposal_id"`
+	DecisionRef string   `json:"decision_ref"`
+	DecisionMD  string   `json:"decision_md,omitempty"`
+	SectionRefs []string `json:"section_refs"`
+}
+
+func acceptSpecPlanProposal(
+	ctx context.Context,
+	projectRoot string,
+	report project.SpecPlanReport,
+	proposalID string,
+) (specPlanAcceptResult, error) {
+	proposal, ok := project.FindSpecPlanProposal(report, proposalID)
+	if !ok {
+		return specPlanAcceptResult{}, fmt.Errorf("spec plan proposal %q not found; rerun `haft spec plan`", strings.TrimSpace(proposalID))
+	}
+
+	input, err := specPlanDecisionInput(proposal)
+	if err != nil {
+		return specPlanAcceptResult{}, err
+	}
+
+	store, closeStore, err := openSpecCoverageStore(projectRoot)
+	if err != nil {
+		return specPlanAcceptResult{}, err
+	}
+	defer closeStore()
+
+	if store == nil {
+		return specPlanAcceptResult{}, fmt.Errorf("spec plan accept requires an initialized Haft project database")
+	}
+
+	decision, decisionMD, err := artifact.Decide(ctx, store, filepath.Join(projectRoot, ".haft"), input)
+	if err != nil {
+		return specPlanAcceptResult{}, err
+	}
+
+	return specPlanAcceptResult{
+		Action:      string(project.SpecPlanActionAccept),
+		ProposalID:  proposal.ID,
+		DecisionRef: decision.Meta.ID,
+		DecisionMD:  decisionMD,
+		SectionRefs: input.SectionRefs,
+	}, nil
+}
+
+func specPlanDecisionInput(proposal project.SpecPlanProposal) (artifact.DecideInput, error) {
+	proposal = normalizeCLISpecPlanProposal(proposal)
+	draft := proposal.DecisionRecordDraft
+	if len(draft.SectionRefs) == 0 {
+		return artifact.DecideInput{}, fmt.Errorf("spec plan proposal %s has no section refs", proposal.ID)
+	}
+
+	rejections := make([]artifact.RejectionReason, 0, len(draft.WhyNotOthers))
+	for _, rejection := range draft.WhyNotOthers {
+		rejections = append(rejections, artifact.RejectionReason{
+			Variant: rejection.Variant,
+			Reason:  rejection.Reason,
+		})
+	}
+
+	return artifact.DecideInput{
+		SelectedTitle:   draft.SelectedTitle,
+		WhySelected:     draft.WhySelected,
+		SelectionPolicy: draft.SelectionPolicy,
+		CounterArgument: draft.CounterArgument,
+		WhyNotOthers:    rejections,
+		WeakestLink:     draft.WeakestLink,
+		Rollback: &artifact.RollbackSpec{
+			Triggers: draft.RollbackTriggers,
+		},
+		EvidenceReqs:    draft.EvidenceRequirements,
+		RefreshTriggers: draft.RefreshTriggers,
+		SectionRefs:     draft.SectionRefs,
+		TaskContext:     proposal.ID,
+		SearchKeywords:  strings.Join(draft.SectionRefs, " "),
+	}, nil
+}
+
+func normalizeCLISpecPlanProposal(proposal project.SpecPlanProposal) project.SpecPlanProposal {
+	report := project.SpecPlanReport{
+		Proposals: []project.SpecPlanProposal{proposal},
+	}
+	found, ok := project.FindSpecPlanProposal(report, proposal.ID)
+	if ok {
+		return found
+	}
+
+	return proposal
 }
 
 func openSpecCoverageStore(projectRoot string) (*artifact.Store, func(), error) {
@@ -426,51 +572,140 @@ func specCoverageRuntimeRunsFromCommission(
 ) []project.SpecCoverageRuntimeRun {
 	events := mapSliceField(commission, "events")
 	runtimeRuns := make([]project.SpecCoverageRuntimeRun, 0, len(events))
+	var runtimeRun *project.SpecCoverageRuntimeRun
+	runtimeRunClosed := false
+	runtimeRunOrdinal := 0
 
-	for index, event := range events {
+	for _, event := range events {
 		if !specCoverageRuntimeRunEventCandidate(event) {
 			continue
 		}
 
 		payload, _ := mapArg(event, "payload")
-		runtimeRuns = append(runtimeRuns, project.SpecCoverageRuntimeRun{
-			ID:                specCoverageRuntimeRunID(commission, event, payload, index),
-			CommissionRef:     stringField(commission, "id"),
-			Event:             stringField(event, "event"),
-			Verdict:           stringField(event, "verdict"),
-			Phase:             firstStringField("phase", event, payload),
-			Reason:            stringField(event, "reason"),
-			RecordedAt:        stringField(event, "recorded_at"),
-			ValidUntil:        firstStringField("valid_until", event, payload),
-			SectionRefs:       specCoverageRuntimeRunSectionRefs(event, payload, sectionIDs),
-			UnsupportedReason: specCoverageRuntimeRunUnsupportedReason(event),
-		})
+		eventRunID := specCoverageRuntimeRunExplicitID(event, payload)
+		if specCoverageRuntimeRunNeedsNewAttempt(runtimeRun, runtimeRunClosed, eventRunID) {
+			if runtimeRun != nil {
+				runtimeRuns = append(runtimeRuns, *runtimeRun)
+			}
+
+			runtimeRunOrdinal++
+			runtimeRun = specCoverageRuntimeRunStart(commission, eventRunID, runtimeRunOrdinal, sectionIDs)
+			runtimeRunClosed = false
+		}
+
+		*runtimeRun = specCoverageRuntimeRunWithEvent(*runtimeRun, event, payload, sectionIDs)
+		if specCoverageRuntimeRunEventTerminal(event) {
+			runtimeRunClosed = true
+		}
+	}
+
+	if runtimeRun != nil {
+		runtimeRuns = append(runtimeRuns, *runtimeRun)
 	}
 
 	return runtimeRuns
 }
 
 func specCoverageRuntimeRunEventCandidate(event map[string]any) bool {
-	if stringField(event, "action") == "record_run_event" {
+	switch stringField(event, "action") {
+	case "record_run_event", "record_preflight", "start_after_preflight", "complete_or_block":
 		return true
-	}
-	if stringField(event, "action") != "" {
-		return false
-	}
-
-	switch stringField(event, "event") {
-	case "phase_outcome":
-		return true
+	case "":
+		return stringField(event, "event") == "phase_outcome"
 	default:
 		return false
 	}
 }
 
-func specCoverageRuntimeRunID(
+func specCoverageRuntimeRunNeedsNewAttempt(
+	runtimeRun *project.SpecCoverageRuntimeRun,
+	runtimeRunClosed bool,
+	eventRunID string,
+) bool {
+	if runtimeRun == nil {
+		return true
+	}
+	if runtimeRunClosed {
+		return true
+	}
+	if eventRunID == "" {
+		return false
+	}
+
+	return runtimeRun.ID != eventRunID
+}
+
+func specCoverageRuntimeRunStart(
 	commission map[string]any,
+	eventRunID string,
+	ordinal int,
+	sectionIDs map[string]struct{},
+) *project.SpecCoverageRuntimeRun {
+	runtimeRunID := eventRunID
+	if runtimeRunID == "" {
+		runtimeRunID = specCoverageRuntimeRunOrdinalID(commission, ordinal)
+	}
+
+	return &project.SpecCoverageRuntimeRun{
+		ID:             runtimeRunID,
+		CommissionRef:  stringField(commission, "id"),
+		ValidUntil:     stringField(commission, "valid_until"),
+		SectionRefs:    specCoverageRuntimeRunSectionRefs(commission, nil, nil, sectionIDs),
+		EvidenceStatus: project.RuntimeEvidenceMissing,
+	}
+}
+
+func specCoverageRuntimeRunWithEvent(
+	runtimeRun project.SpecCoverageRuntimeRun,
 	event map[string]any,
 	payload map[string]any,
-	index int,
+	sectionIDs map[string]struct{},
+) project.SpecCoverageRuntimeRun {
+	outcome := specCoverageRuntimePhaseOutcome(event, payload)
+
+	if runtimeRun.RunnerID == "" {
+		runtimeRun.RunnerID = stringField(event, "runner_id")
+	}
+	if outcome.Event != "" {
+		runtimeRun.Event = outcome.Event
+	}
+	if outcome.Verdict != "" {
+		runtimeRun.Verdict = outcome.Verdict
+	}
+	if outcome.Phase != "" {
+		runtimeRun.Phase = outcome.Phase
+	}
+	if outcome.Reason != "" {
+		runtimeRun.Reason = outcome.Reason
+	}
+	if outcome.RecordedAt != "" {
+		runtimeRun.RecordedAt = outcome.RecordedAt
+	}
+	if runtimeRun.StartedAt == "" {
+		runtimeRun.StartedAt = outcome.RecordedAt
+	}
+	if specCoverageRuntimeRunEventTerminal(event) {
+		runtimeRun.CompletedAt = outcome.RecordedAt
+	}
+	if validUntil := firstStringField("valid_until", event, payload); validUntil != "" {
+		runtimeRun.ValidUntil = validUntil
+	}
+
+	runtimeRun.SectionRefs = append(
+		runtimeRun.SectionRefs,
+		specCoverageRuntimeRunSectionRefs(nil, event, payload, sectionIDs)...,
+	)
+	runtimeRun.PhaseOutcomes = append(runtimeRun.PhaseOutcomes, outcome)
+	if reason := specCoverageRuntimeRunUnsupportedReason(event); reason != "" {
+		runtimeRun.UnsupportedReason = reason
+	}
+
+	return runtimeRun
+}
+
+func specCoverageRuntimeRunExplicitID(
+	event map[string]any,
+	payload map[string]any,
 ) string {
 	if id := firstStringField("runtime_run_id", event, payload); id != "" {
 		return id
@@ -478,19 +713,77 @@ func specCoverageRuntimeRunID(
 	if id := firstStringField("run_id", event, payload); id != "" {
 		return id
 	}
-	if id := firstStringField("carrier_ref", event, payload); id != "" {
-		return id
+	return firstStringField("carrier_ref", event, payload)
+}
+
+func specCoverageRuntimeRunOrdinalID(
+	commission map[string]any,
+	ordinal int,
+) string {
+	return fmt.Sprintf("%s#runtime-run-%03d", stringField(commission, "id"), ordinal)
+}
+
+func specCoverageRuntimePhaseOutcome(
+	event map[string]any,
+	payload map[string]any,
+) project.SpecCoverageRuntimePhaseOutcome {
+	return project.SpecCoverageRuntimePhaseOutcome{
+		Action:     stringField(event, "action"),
+		Phase:      specCoverageRuntimeRunPhase(event, payload),
+		Event:      stringField(event, "event"),
+		Verdict:    stringField(event, "verdict"),
+		Reason:     stringField(event, "reason"),
+		RecordedAt: stringField(event, "recorded_at"),
+	}
+}
+
+func specCoverageRuntimeRunPhase(
+	event map[string]any,
+	payload map[string]any,
+) string {
+	if phase := firstStringField("phase", event, payload); phase != "" {
+		return phase
 	}
 
-	return fmt.Sprintf("%s#runtime-run-%03d", stringField(commission, "id"), index+1)
+	phaseByEvent := map[string]string{
+		"preflight_checked": "preflight",
+		"preflight_passed":  "preflight",
+		"workflow_terminal": "terminal",
+		"phase_blocked":     "terminal",
+		"freshness_blocked": "terminal",
+	}
+	if phase := phaseByEvent[stringField(event, "event")]; phase != "" {
+		return phase
+	}
+	if stringField(event, "action") == "complete_or_block" {
+		return "terminal"
+	}
+
+	return ""
+}
+
+func specCoverageRuntimeRunEventTerminal(event map[string]any) bool {
+	if stringField(event, "action") == "complete_or_block" {
+		return true
+	}
+	if stringField(event, "event") == "freshness_blocked" {
+		return true
+	}
+	if stringField(event, "action") == "record_preflight" && stringField(event, "verdict") == "blocked" {
+		return true
+	}
+
+	return false
 }
 
 func specCoverageRuntimeRunSectionRefs(
+	commission map[string]any,
 	event map[string]any,
 	payload map[string]any,
 	sectionIDs map[string]struct{},
 ) []string {
 	refs := make([]string, 0)
+	refs = append(refs, specCoverageRefsFromMap(commission, sectionIDs)...)
 	refs = append(refs, specCoverageRefsFromMap(event, sectionIDs)...)
 	refs = append(refs, specCoverageRefsFromMap(payload, sectionIDs)...)
 
@@ -894,6 +1187,32 @@ func writeSpecCoverageJSON(w io.Writer, report project.SpecCoverageReport) error
 	return encoder.Encode(report)
 }
 
+func writeSpecCoverageBlockedJSON(w io.Writer, specCheck project.SpecCheckReport) error {
+	report := specCoverageBlockedJSONReport{
+		Status:     "blocked",
+		Reason:     fmt.Sprintf("spec check has %d finding(s)", specCheck.Summary.TotalFindings),
+		NextAction: "resolve spec_check.findings, then rerun `haft spec coverage --json`",
+		SpecCheck:  specCheck,
+		Coverage: project.SpecCoverageReport{
+			Sections: []project.SpecCoverageSection{},
+			Gaps: []project.SpecCoverageGap{{
+				Kind:       "spec_check_blocked",
+				Detail:     "spec coverage is derived only after deterministic spec check passes",
+				NextAction: "resolve spec_check.findings, then rerun `haft spec coverage --json`",
+			}},
+			Summary: project.SpecCoverageSummary{
+				TotalSections: 0,
+				StateCounts:   map[string]int{},
+			},
+		},
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(report)
+}
+
 func writeSpecCoverageSummary(w io.Writer, report project.SpecCoverageReport) error {
 	builder := strings.Builder{}
 	builder.WriteString(fmt.Sprintf("haft spec coverage: %d active section(s)\n", report.Summary.TotalSections))
@@ -936,6 +1255,25 @@ func writeSpecPlanJSON(w io.Writer, report project.SpecPlanReport) error {
 	return encoder.Encode(report)
 }
 
+func writeSpecPlanAcceptJSON(w io.Writer, result specPlanAcceptResult) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(result)
+}
+
+func writeSpecPlanAcceptSummary(w io.Writer, result specPlanAcceptResult) error {
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("haft spec plan: accepted %s\n", result.ProposalID))
+	builder.WriteString(fmt.Sprintf("decision_ref: %s\n", result.DecisionRef))
+	builder.WriteString(fmt.Sprintf("sections: %s\n", strings.Join(result.SectionRefs, ", ")))
+	builder.WriteString("WorkCommissions: none created\n")
+
+	_, err := io.WriteString(w, builder.String())
+
+	return err
+}
+
 func writeSpecPlanSummary(w io.Writer, report project.SpecPlanReport) error {
 	builder := strings.Builder{}
 	builder.WriteString(fmt.Sprintf(
@@ -974,7 +1312,7 @@ func formatSpecPlanReviewActions(actions []project.SpecPlanReviewAction) string 
 	kinds := make([]string, 0, len(actions))
 
 	for _, action := range actions {
-		kinds = append(kinds, action.Kind)
+		kinds = append(kinds, string(action.Kind))
 	}
 
 	return strings.Join(cleanStringSlice(kinds), ", ")

@@ -510,6 +510,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) When to re-evaluate this decision",
 					},
+					"section_refs": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) SpecSection IDs governed by this DecisionRecord",
+					},
 					"predictions": map[string]interface{}{
 						"type":        "array",
 						"description": "(decide) Testable predictions — measure will check each one",

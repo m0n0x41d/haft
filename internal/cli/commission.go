@@ -475,6 +475,7 @@ func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[stri
 	}
 
 	return map[string]any{
+		"project_root":          projectRoot,
 		"repo_ref":              repoRef,
 		"base_sha":              baseSHA,
 		"target_branch":         targetBranch,
@@ -518,6 +519,7 @@ func commissionFromDecisionBaseParams(projectRoot string) (map[string]any, error
 	}
 
 	return map[string]any{
+		"project_root":          projectRoot,
 		"repo_ref":              repoRef,
 		"base_sha":              baseSHA,
 		"target_branch":         targetBranch,

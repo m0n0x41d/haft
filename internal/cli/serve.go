@@ -186,11 +186,25 @@ func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, na
 		result, err := handleQuintQuery(ctx, store, haftDir, args)
 		return result, "", err
 	case "haft_commission":
+		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
 		result, err := handleHaftCommission(ctx, store, args)
 		return result, "", err
 	default:
 		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func commissionArgsWithProjectRoot(args map[string]any, projectRoot string) map[string]any {
+	if stringArg(args, "project_root") != "" {
+		return args
+	}
+	if strings.TrimSpace(projectRoot) == "" {
+		return args
+	}
+
+	next := copyStringAnyMap(args)
+	next["project_root"] = projectRoot
+	return next
 }
 
 // logToolEntry logs the tool call entry with extracted refs.
@@ -672,6 +686,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 		if input.RefreshTriggers, err = parseStrictStringArrayFromArgs(args, "refresh_triggers"); err != nil {
+			return "", "", err
+		}
+		if input.SectionRefs, err = parseStrictStringArrayFromArgs(args, "section_refs"); err != nil {
 			return "", "", err
 		}
 		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/implementationplan"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/scopeauth"
 	"github.com/m0n0x41d/haft/internal/workcommission"
@@ -53,38 +54,39 @@ type harnessPlanDecision struct {
 }
 
 type harnessRunOptions struct {
-	PlanPath            string
-	GeneratedPlanPath   string
-	PrepareOnly         bool
-	ForceCreate         bool
-	Once                bool
-	OnceTimeoutMS       int
-	Detach              bool
-	Mock                bool
-	MockAgent           bool
-	MockJudge           bool
-	Concurrency         int
-	MaxClaims           int
-	PollIntervalMS      int
-	StatusPath          string
-	LogPath             string
-	WorkspaceRoot       string
-	RuntimePath         string
-	RepoURL             string
-	AgentMaxTurns       int
-	AgentTurnTimeoutMS  int
-	AgentWallClockS     int
-	JudgeWallClockS     int
-	ApprovalPolicy      string
-	ThreadSandbox       string
-	ProjectionMode      string
-	ProjectionProfile   string
-	ExternalApprover    string
-	StatusHTTPEnabled   bool
-	StatusHTTPPort      int
-	CommissionRunnerID  string
-	CommissionPlanRef   string
-	CommissionQueueName string
+	PlanPath               string
+	GeneratedPlanPath      string
+	PrepareOnly            bool
+	ForceCreate            bool
+	Once                   bool
+	OnceTimeoutMS          int
+	Detach                 bool
+	Mock                   bool
+	MockAgent              bool
+	MockJudge              bool
+	Concurrency            int
+	MaxClaims              int
+	PollIntervalMS         int
+	StatusPath             string
+	LogPath                string
+	WorkspaceRoot          string
+	RuntimePath            string
+	RepoURL                string
+	AgentMaxTurns          int
+	AgentTurnTimeoutMS     int
+	AgentWallClockS        int
+	JudgeWallClockS        int
+	ApprovalPolicy         string
+	ThreadSandbox          string
+	ProjectionMode         string
+	ProjectionProfile      string
+	ExternalApprover       string
+	StatusHTTPEnabled      bool
+	StatusHTTPPort         int
+	CommissionRunnerID     string
+	CommissionPlanRef      string
+	CommissionPlanRevision string
+	CommissionQueueName    string
 }
 
 type harnessRunReadinessKind string
@@ -3134,7 +3136,8 @@ func loadHarnessRunSelectionForPlan(
 	}
 
 	planRef := strings.TrimSpace(stringField(plan, "id"))
-	planCommissions := harnessPlanCommissions(records, planRef)
+	planRevision := strings.TrimSpace(stringField(plan, "revision"))
+	planCommissions := harnessPlanCommissions(records, planRef, planRevision)
 	runnable := runnablePlanCommissions(records, planCommissions)
 	if len(runnable) > 0 {
 		return harnessRunSelectionFromCommissions(runnable), nil
@@ -3142,10 +3145,13 @@ func loadHarnessRunSelectionForPlan(
 	return harnessRunSelectionFromCommissions(planCommissions), nil
 }
 
-func harnessPlanCommissions(records []map[string]any, planRef string) []map[string]any {
+func harnessPlanCommissions(records []map[string]any, planRef string, planRevision string) []map[string]any {
 	filtered := make([]map[string]any, 0, len(records))
 	for _, commission := range records {
 		if stringField(commission, "implementation_plan_ref") != planRef {
+			continue
+		}
+		if planRevision != "" && stringField(commission, "implementation_plan_revision") != planRevision {
 			continue
 		}
 		filtered = append(filtered, commission)
@@ -3668,6 +3674,10 @@ func applyHarnessPlanDependencies(
 		plan.Decisions[index].DependsOn = sortedUniqueStrings(decision.DependsOn)
 	}
 
+	if err := validateHarnessPlanFile(plan); err != nil {
+		return harnessPlanFile{}, err
+	}
+
 	return plan, nil
 }
 
@@ -3685,6 +3695,27 @@ func parseHarnessDependency(edge string) (string, []string, error) {
 	}
 
 	return target, dependencies, nil
+}
+
+func validateHarnessPlanFile(plan harnessPlanFile) error {
+	payload := map[string]any{
+		"id":        plan.ID,
+		"revision":  plan.Revision,
+		"decisions": harnessPlanDecisionPayloads(plan.Decisions),
+	}
+	_, err := implementationplan.ParsePayload(payload)
+	return err
+}
+
+func harnessPlanDecisionPayloads(decisions []harnessPlanDecision) []any {
+	payloads := make([]any, 0, len(decisions))
+	for _, decision := range decisions {
+		payloads = append(payloads, map[string]any{
+			"ref":        decision.Ref,
+			"depends_on": stringSliceToAny(decision.DependsOn),
+		})
+	}
+	return payloads
 }
 
 func writeHarnessPlan(projectRoot string, plan harnessPlanFile, out string) (string, error) {
@@ -3908,34 +3939,35 @@ func defaultHarnessRunOptions(
 	}
 
 	return harnessRunOptions{
-		PlanPath:           planPath,
-		PrepareOnly:        harnessRunPrepareOnly,
-		ForceCreate:        harnessRunForceCreate,
-		Once:               harnessRunOnce,
-		OnceTimeoutMS:      harnessRunOnceTimeoutMS,
-		Detach:             harnessRunDetach,
-		Mock:               harnessRunMock,
-		MockAgent:          harnessRunMockAgent || harnessRunMock,
-		MockJudge:          harnessRunMockJudge || harnessRunMock,
-		Concurrency:        positiveOrDefault(harnessRunConcurrency, 2),
-		MaxClaims:          positiveOrDefault(harnessRunMaxClaims, 50),
-		PollIntervalMS:     positiveOrDefault(harnessRunPollIntervalMS, 30000),
-		StatusPath:         statusPath,
-		LogPath:            logPath,
-		WorkspaceRoot:      workspaceRoot,
-		RuntimePath:        runtimePath,
-		RepoURL:            repoURL,
-		AgentMaxTurns:      20,
-		AgentTurnTimeoutMS: 3600000,
-		AgentWallClockS:    600,
-		JudgeWallClockS:    120,
-		ApprovalPolicy:     "never",
-		ThreadSandbox:      "workspace-write",
-		ProjectionMode:     "local_only",
-		ProjectionProfile:  "manager_plain",
-		ExternalApprover:   "ivan@weareocta.com",
-		StatusHTTPPort:     4767,
-		CommissionPlanRef:  stringField(plan, "id"),
+		PlanPath:               planPath,
+		PrepareOnly:            harnessRunPrepareOnly,
+		ForceCreate:            harnessRunForceCreate,
+		Once:                   harnessRunOnce,
+		OnceTimeoutMS:          harnessRunOnceTimeoutMS,
+		Detach:                 harnessRunDetach,
+		Mock:                   harnessRunMock,
+		MockAgent:              harnessRunMockAgent || harnessRunMock,
+		MockJudge:              harnessRunMockJudge || harnessRunMock,
+		Concurrency:            positiveOrDefault(harnessRunConcurrency, 2),
+		MaxClaims:              positiveOrDefault(harnessRunMaxClaims, 50),
+		PollIntervalMS:         positiveOrDefault(harnessRunPollIntervalMS, 30000),
+		StatusPath:             statusPath,
+		LogPath:                logPath,
+		WorkspaceRoot:          workspaceRoot,
+		RuntimePath:            runtimePath,
+		RepoURL:                repoURL,
+		AgentMaxTurns:          20,
+		AgentTurnTimeoutMS:     3600000,
+		AgentWallClockS:        600,
+		JudgeWallClockS:        120,
+		ApprovalPolicy:         "never",
+		ThreadSandbox:          "workspace-write",
+		ProjectionMode:         "local_only",
+		ProjectionProfile:      "manager_plain",
+		ExternalApprover:       "ivan@weareocta.com",
+		StatusHTTPPort:         4767,
+		CommissionPlanRef:      stringField(plan, "id"),
+		CommissionPlanRevision: stringField(plan, "revision"),
 	}
 }
 
@@ -4060,6 +4092,7 @@ func harnessRuntimeConfig(projectRoot string, opts harnessRunOptions) map[string
 			"max_claims":      opts.MaxClaims,
 			"lease_timeout_s": 300,
 			"plan_ref":        opts.CommissionPlanRef,
+			"plan_revision":   opts.CommissionPlanRevision,
 			"queue":           nil,
 		},
 		"projection": map[string]any{

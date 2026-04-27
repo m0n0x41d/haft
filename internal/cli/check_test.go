@@ -462,11 +462,24 @@ func enterTestProjectRoot(t *testing.T, dir string) func() {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+	originalProjectRoot, hadProjectRoot := os.LookupEnv("HAFT_PROJECT_ROOT")
+	if err := os.Setenv("HAFT_PROJECT_ROOT", dir); err != nil {
+		t.Fatalf("set HAFT_PROJECT_ROOT: %v", err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir %s: %v", dir, err)
 	}
 
 	return func() {
+		if hadProjectRoot {
+			if err := os.Setenv("HAFT_PROJECT_ROOT", originalProjectRoot); err != nil {
+				t.Fatalf("restore HAFT_PROJECT_ROOT: %v", err)
+			}
+		} else {
+			if err := os.Unsetenv("HAFT_PROJECT_ROOT"); err != nil {
+				t.Fatalf("unset HAFT_PROJECT_ROOT: %v", err)
+			}
+		}
 		if err := os.Chdir(originalDir); err != nil {
 			t.Fatalf("restore cwd: %v", err)
 		}

@@ -73,6 +73,21 @@ func TestBuildHarnessPlanRejectsDependencyOutsidePlan(t *testing.T) {
 	}
 }
 
+func TestBuildHarnessPlanRejectsDependencyCycle(t *testing.T) {
+	restore := overrideHarnessTestFlags()
+	defer restore()
+
+	harnessPlanDependencies = []string{"dec-a:dec-b", "dec-b:dec-a"}
+	commissionFromDecisionRepoRef = "local:test"
+	commissionFromDecisionBaseSHA = "base-r1"
+	commissionFromDecisionTargetBranch = "dev"
+
+	_, err := buildHarnessPlan(t.TempDir(), []string{"dec-a", "dec-b"})
+	if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("error = %v, want dependency cycle rejection", err)
+	}
+}
+
 func TestResolveHarnessDecisionRefsByProblem(t *testing.T) {
 	restore := overrideHarnessTestFlags()
 	defer restore()
@@ -502,6 +517,40 @@ func TestEnsureHarnessCommissionsSkipsExistingPlan(t *testing.T) {
 	}
 	if len(records) != 1 {
 		t.Fatalf("records = %d, want no duplicate commissions", len(records))
+	}
+}
+
+func TestLoadHarnessRunSelectionForPlanRequiresMatchingRevision(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	for _, revision := range []string{"p1", "p2"} {
+		commission := workCommissionFixture("wc-selection-"+revision, "queued", "2099-01-01T00:00:00Z")
+		commission["decision_ref"] = "dec-selection-" + revision
+		commission["implementation_plan_ref"] = "plan-selection"
+		commission["implementation_plan_revision"] = revision
+
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	selection, err := loadHarnessRunSelectionForPlan(ctx, store, map[string]any{
+		"id":       "plan-selection",
+		"revision": "p2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.CommissionIDs) != 1 || selection.CommissionIDs[0] != "wc-selection-p2" {
+		t.Fatalf("selection commissions = %#v, want p2 only", selection.CommissionIDs)
+	}
+	if len(selection.DecisionRefs) != 1 || selection.DecisionRefs[0] != "dec-selection-p2" {
+		t.Fatalf("selection decisions = %#v, want p2 decision only", selection.DecisionRefs)
 	}
 }
 

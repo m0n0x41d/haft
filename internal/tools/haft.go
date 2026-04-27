@@ -944,6 +944,11 @@ Actions:
 					"items":       map[string]any{"type": "string"},
 					"description": "When to re-evaluate this decision (decide)",
 				},
+				"section_refs": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "SpecSection IDs governed by this DecisionRecord (decide)",
+				},
 				"predictions": map[string]any{
 					"type":        "array",
 					"description": "Testable predictions — measure will check each one (decide)",
@@ -1132,6 +1137,11 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		return agent.ToolResult{}, err
 	}
 
+	sectionRefs, err := jsonStrictStringArray(args, "section_refs")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	affectedFiles, err := jsonStrictStringArray(args, "affected_files")
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -1172,6 +1182,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		Admissibility:   admissibility,
 		EvidenceReqs:    evidenceReqs,
 		RefreshTriggers: refreshTriggers,
+		SectionRefs:     sectionRefs,
 		AffectedFiles:   affectedFiles,
 		SearchKeywords:  jsonStr(args, "search_keywords"),
 		WhyNotOthers:    whyNotOthers,

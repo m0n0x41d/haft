@@ -71,6 +71,13 @@ Lifecycle contract:
   `cancelled`.
 - `completed`, `completed_with_projection_debt`, `cancelled`, and `expired`
   commissions are audit records; do not requeue or cancel them again.
+- `external_required` does not make tracker publication semantic authority. If
+  local RuntimeRun evidence passes but the external publish is missing or
+  failed, the commission must enter `completed_with_projection_debt` and keep a
+  separate `projection_debt` record naming carrier, target, last error, and
+  retry policy.
+- `local_only` commissions complete from local evidence alone; do not require
+  tracker credentials or publication state for correctness.
 
 Required discipline:
 
@@ -79,6 +86,10 @@ Required discipline:
   ambiguous DecisionRecord.
 - Preserve the boundary: DecisionRecord = chosen direction;
   WorkCommission = bounded permission to execute; RuntimeRun = actual attempt.
+- Treat `autonomy_envelope_snapshot`, when supplied, as a limiter only. It may
+  block out-of-envelope repos, paths, actions, modules, expired/revoked state,
+  or exhausted concurrency/budget, but it never skips freshness, scope,
+  evidence, lease, lockset, or one-way-door gates.
 - Do not physically delete WorkCommissions during normal operation; cancel or
   requeue them so status/verify can explain what happened.
 - Prefer default scope derived from `affected_files`; add explicit

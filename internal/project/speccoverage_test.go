@@ -138,6 +138,37 @@ func TestDeriveSpecCoverage_InheritsDecisionCoverageThroughProblemRefs(t *testin
 	}
 }
 
+func TestDeriveSpecCoverage_DerivesCommissionEdgeFromExplicitSpecRefs(t *testing.T) {
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	section := coverageTestSection("TS.commission.refs")
+	section.Title = "Commission refs must carry authority"
+
+	report := DeriveSpecCoverage(SpecCoverageInput{
+		Sections: []SpecSection{section},
+		Decisions: []SpecCoverageDecision{{
+			ID:     "dec-title-only",
+			Status: "active",
+			Title:  section.Title,
+		}},
+		Commissions: []SpecCoverageCommission{{
+			ID:          "wc-explicit-ref",
+			DecisionRef: "dec-title-only",
+			State:       "queued",
+			Status:      "active",
+			SectionRefs: []string{section.ID},
+		}},
+		Now: now,
+	})
+
+	assertCoverageState(t, report, SpecCoverageCommissioned)
+	if coverageTestHasEdgeTarget(report.Sections[0].Edges, "dec-title-only") {
+		t.Fatalf("edges = %#v, want no title-matched DecisionRecord edge", report.Sections[0].Edges)
+	}
+	if !coverageTestHasEdgeTarget(report.Sections[0].Edges, "wc-explicit-ref") {
+		t.Fatalf("edges = %#v, want WorkCommission edge from explicit spec ref", report.Sections[0].Edges)
+	}
+}
+
 func TestDeriveSpecCoverage_StaleOverridesVerifiedEvidence(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 	section := coverageTestSection("TS.freshness.001")
@@ -242,6 +273,70 @@ func TestDeriveSpecCoverage_DerivesRuntimeRunImplementedThenEvidenceVerified(t *
 	}
 }
 
+func TestDeriveSpecCoverage_EmitsTypedCarrierEdgesWithMetadata(t *testing.T) {
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	section := coverageTestSection("TS.graph.edges")
+
+	report := DeriveSpecCoverage(SpecCoverageInput{
+		Sections: []SpecSection{section},
+		Decisions: []SpecCoverageDecision{{
+			ID:            "dec-edge",
+			Status:        "active",
+			SectionRefs:   []string{section.ID},
+			AffectedFiles: []string{"internal/edge/core.go"},
+		}},
+		Commissions: []SpecCoverageCommission{{
+			ID:          "wc-edge",
+			DecisionRef: "dec-edge",
+			State:       "completed",
+			Status:      "active",
+		}},
+		RuntimeRuns: []SpecCoverageRuntimeRun{{
+			ID:            "run-edge",
+			CommissionRef: "wc-edge",
+			Event:         "phase_outcome",
+			Verdict:       "pass",
+		}},
+		Evidence: []SpecCoverageEvidence{{
+			ID:          "evid-edge",
+			ArtifactRef: "run-edge",
+			Type:        "measurement",
+			Verdict:     "supports",
+			CarrierRef:  "run-edge",
+			TestRefs:    []string{"internal/edge/core_test.go"},
+		}},
+		Now: now,
+	})
+
+	sectionReport := report.Sections[0]
+	assertCoverageState(t, report, SpecCoverageVerified)
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeDecisionRecord, "dec-edge", func(edge SpecCoverageEdge) bool {
+		return edge.ArtifactStatus == "active"
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeWorkCommission, "wc-edge", func(edge SpecCoverageEdge) bool {
+		return edge.WorkState == "completed"
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeRuntimeRun, "run-edge", func(edge SpecCoverageEdge) bool {
+		return edge.RuntimeEvent == "phase_outcome" &&
+			edge.Verdict == "pass" &&
+			edge.CommissionRef == "wc-edge" &&
+			edge.EvidenceStatus == RuntimeEvidenceSupports &&
+			sameCoverageTestStrings(edge.EvidenceRefs, []string{"evid-edge"})
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeEvidencePack, "evid-edge", func(edge SpecCoverageEdge) bool {
+		return edge.EvidenceType == "measurement" && edge.Verdict == "supports"
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeRuntimeEvidence, "evid-edge", func(edge SpecCoverageEdge) bool {
+		return edge.EvidenceType == "measurement" && edge.Verdict == "supports"
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeFile, "internal/edge/core.go", func(edge SpecCoverageEdge) bool {
+		return edge.Target == "internal/edge/core.go"
+	})
+	assertCoverageEdge(t, sectionReport.Edges, SpecCoverageEdgeTest, "internal/edge/core_test.go", func(edge SpecCoverageEdge) bool {
+		return edge.Target == "internal/edge/core_test.go"
+	})
+}
+
 func TestDeriveSpecCoverage_UnsupportedRuntimeRunStorageDoesNotPromoteSection(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 	section := coverageTestSection("TS.runtime.003")
@@ -295,8 +390,37 @@ func TestDeriveSpecCoverage_FailedRecoverableCommissionStillCoversSection(t *tes
 	})
 
 	assertCoverageState(t, report, SpecCoverageCommissioned)
-	if !coverageTestHasEdgeTarget(report.Sections[0].Edges, "wc-runtime-failed") {
-		t.Fatalf("edges = %#v, want failed recoverable WorkCommission edge", report.Sections[0].Edges)
+	assertCoverageEdge(t, report.Sections[0].Edges, SpecCoverageEdgeWorkCommission, "wc-runtime-failed", func(edge SpecCoverageEdge) bool {
+		return edge.WorkState == "failed"
+	})
+}
+
+func TestDeriveSpecCoverage_TerminalCompletionCarrierDoesNotBecomeCommissioned(t *testing.T) {
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	section := coverageTestSection("TS.runtime.completed")
+
+	report := DeriveSpecCoverage(SpecCoverageInput{
+		Sections: []SpecSection{section},
+		Decisions: []SpecCoverageDecision{{
+			ID:          "dec-runtime",
+			Status:      "active",
+			SectionRefs: []string{section.ID},
+		}},
+		Commissions: []SpecCoverageCommission{{
+			ID:          "wc-runtime-completed",
+			DecisionRef: "dec-runtime",
+			State:       "completed",
+			Status:      "active",
+		}},
+		Now: now,
+	})
+
+	assertCoverageState(t, report, SpecCoverageReasoned)
+	assertCoverageEdge(t, report.Sections[0].Edges, SpecCoverageEdgeWorkCommission, "wc-runtime-completed", func(edge SpecCoverageEdge) bool {
+		return edge.WorkState == "completed"
+	})
+	if !coverageTestHasGapKind(report.Sections[0].Gaps, "runtime_evidence_missing") {
+		t.Fatalf("gaps = %#v, want runtime_evidence_missing", report.Sections[0].Gaps)
 	}
 }
 
@@ -334,6 +458,30 @@ func coverageTestHasEdgeTarget(edges []SpecCoverageEdge, target string) bool {
 	return false
 }
 
+func assertCoverageEdge(
+	t *testing.T,
+	edges []SpecCoverageEdge,
+	edgeType SpecCoverageEdgeType,
+	target string,
+	predicate func(SpecCoverageEdge) bool,
+) {
+	t.Helper()
+
+	for _, edge := range edges {
+		if edge.Type != edgeType {
+			continue
+		}
+		if edge.Target != target {
+			continue
+		}
+		if predicate(edge) {
+			return
+		}
+	}
+
+	t.Fatalf("edges = %#v, want %s edge to %s with expected metadata", edges, edgeType, target)
+}
+
 func coverageTestHasGapKind(gaps []SpecCoverageGap, kind string) bool {
 	for _, gap := range gaps {
 		if gap.Kind == kind {
@@ -342,4 +490,20 @@ func coverageTestHasGapKind(gaps []SpecCoverageGap, kind string) bool {
 	}
 
 	return false
+}
+
+func sameCoverageTestStrings(left []string, right []string) bool {
+	left = sortedUniqueStrings(left)
+	right = sortedUniqueStrings(right)
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+
+	return true
 }

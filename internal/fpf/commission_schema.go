@@ -14,11 +14,23 @@ func haftCommissionTool() Tool {
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",
-					"description": "(create) Canonical WorkCommission payload including decision_ref, problem_card_ref, scope, evidence_requirements, projection_policy, delivery_policy, state, valid_until, fetched_at.",
+					"description": "(create) Canonical WorkCommission payload including decision_ref, problem_card_ref, spec_section_refs or spec_readiness_override, scope, evidence_requirements, projection_policy, delivery_policy, state, valid_until, fetched_at.",
 				},
 				"plan": map[string]interface{}{
 					"type":        "object",
 					"description": "(create_from_plan) ImplementationPlan-lite object with id, revision, optional defaults, and decisions. Decision entries may declare depends_on using other same-plan DecisionRecord ids; Haft maps these to WorkCommission dependencies and enforces them at list/claim time.",
+				},
+				"autonomy_envelope_snapshot": map[string]interface{}{
+					"type":        "object",
+					"description": "(create/create_from_decision/create_from_plan) Optional human-approved AutonomyEnvelope snapshot. It may only further restrict runnable commissions; it cannot skip freshness, scope, evidence, lease, lockset, or one-way-door gates.",
+				},
+				"autonomy_envelope_ref": map[string]string{
+					"type":        "string",
+					"description": "(create/create_from_decision/create_from_plan) Optional AutonomyEnvelope id carried in the CommissionSnapshot equality set.",
+				},
+				"autonomy_envelope_revision": map[string]string{
+					"type":        "string",
+					"description": "(create/create_from_decision/create_from_plan/list_runnable/claim_for_preflight) Optional AutonomyEnvelope revision/hash carried in the CommissionSnapshot equality set.",
 				},
 				"commission_id": map[string]string{
 					"type":        "string",
@@ -27,6 +39,15 @@ func haftCommissionTool() Tool {
 				"decision_ref": map[string]string{
 					"type":        "string",
 					"description": "(create_from_decision) Active DecisionRecord id to commission.",
+				},
+				"project_root": map[string]string{
+					"type":        "string",
+					"description": "(create_from_decision/create_from_plan) Project root used to snapshot SpecSection revision hashes when available.",
+				},
+				"spec_section_refs": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]string{"type": "string"},
+					"description": "(create) SpecSection ids carried by a raw WorkCommission payload. Missing refs require spec_readiness_override with out_of_spec tactical reason.",
 				},
 				"decision_refs": map[string]interface{}{
 					"type":        "array",
@@ -81,6 +102,10 @@ func haftCommissionTool() Tool {
 					"type":        "string",
 					"description": "(list_runnable/claim_for_preflight) Optional ImplementationPlan id filter.",
 				},
+				"plan_revision": map[string]string{
+					"type":        "string",
+					"description": "(list_runnable/claim_for_preflight) Optional ImplementationPlan revision filter used with plan_ref.",
+				},
 				"queue": map[string]string{
 					"type":        "string",
 					"description": "(create_from_plan/list_runnable/claim_for_preflight) Optional queue label for operator-controlled batches.",
@@ -89,6 +114,11 @@ func haftCommissionTool() Tool {
 					"type":        "string",
 					"enum":        []interface{}{"workspace_patch_manual", "workspace_patch_auto_on_pass"},
 					"description": "(create/create_from_decision/create_from_plan) How a completed workspace diff is adopted. MVP default is workspace_patch_manual.",
+				},
+				"projection_policy": map[string]interface{}{
+					"type":        "string",
+					"enum":        []interface{}{"local_only", "external_optional", "external_required"},
+					"description": "(create/create_from_decision/create_from_plan) External projection policy. local_only never requires tracker publication; external_required records ProjectionDebt when local evidence passes but external publication is missing or failed.",
 				},
 				"spec_readiness_override": map[string]interface{}{
 					"type":        "object",
@@ -112,7 +142,7 @@ func haftCommissionTool() Tool {
 				},
 				"payload": map[string]interface{}{
 					"type":        "object",
-					"description": "Additional lifecycle payload. It is recorded as data, not authority expansion.",
+					"description": "Additional lifecycle payload. It is recorded as data, not authority expansion. For complete_or_block/pass, payload.external_publication may report carrier/target/state/last_error/retry_policy; local RuntimeRun evidence remains separate from external carrier sync.",
 				},
 			},
 			"required": []string{"action"},

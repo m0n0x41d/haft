@@ -27,13 +27,14 @@ type SpecCheckDocument struct {
 }
 
 type SpecCheckFinding struct {
-	Level     string `json:"level"`
-	Code      string `json:"code"`
-	Path      string `json:"path"`
-	FieldPath string `json:"field_path,omitempty"`
-	Line      int    `json:"line,omitempty"`
-	SectionID string `json:"section_id,omitempty"`
-	Message   string `json:"message"`
+	Level      string `json:"level"`
+	Code       string `json:"code"`
+	Path       string `json:"path"`
+	FieldPath  string `json:"field_path,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	SectionID  string `json:"section_id,omitempty"`
+	Message    string `json:"message"`
+	NextAction string `json:"next_action,omitempty"`
 }
 
 type SpecCheckSummary struct {
@@ -43,19 +44,74 @@ type SpecCheckSummary struct {
 	TermMapEntries     int `json:"term_map_entries"`
 }
 
+type ProjectSpecificationSet struct {
+	Documents      []SpecDocument     `json:"documents"`
+	Sections       []SpecSection      `json:"sections"`
+	TermMapEntries []TermMapEntry     `json:"term_map_entries"`
+	Findings       []SpecCheckFinding `json:"findings"`
+}
+
+type SpecDocumentKind string
+
+const (
+	SpecDocumentKindTargetSystem   SpecDocumentKind = "target-system"
+	SpecDocumentKindEnablingSystem SpecDocumentKind = "enabling-system"
+	SpecDocumentKindTermMap        SpecDocumentKind = "term-map"
+)
+
+type SpecDocument struct {
+	Path           string           `json:"path"`
+	Kind           SpecDocumentKind `json:"kind"`
+	Sections       []SpecSection    `json:"sections,omitempty"`
+	TermMapEntries []TermMapEntry   `json:"term_map_entries,omitempty"`
+}
+
+type SpecSectionState string
+
+const (
+	SpecSectionStateDraft      SpecSectionState = "draft"
+	SpecSectionStateActive     SpecSectionState = "active"
+	SpecSectionStateDeprecated SpecSectionState = "deprecated"
+	SpecSectionStateSuperseded SpecSectionState = "superseded"
+	SpecSectionStateStale      SpecSectionState = "stale"
+	SpecSectionStateMalformed  SpecSectionState = "malformed"
+)
+
 type SpecSection struct {
-	ID            string   `json:"id"`
-	Kind          string   `json:"kind"`
-	Title         string   `json:"title,omitempty"`
-	StatementType string   `json:"statement_type"`
-	ClaimLayer    string   `json:"claim_layer"`
-	Status        string   `json:"status"`
-	ValidUntil    string   `json:"valid_until,omitempty"`
-	DependsOn     []string `json:"depends_on,omitempty"`
-	TargetRefs    []string `json:"target_refs,omitempty"`
-	DocumentKind  string   `json:"document_kind"`
-	Path          string   `json:"path"`
-	Line          int      `json:"line,omitempty"`
+	ID               string                    `json:"id"`
+	Spec             string                    `json:"spec"`
+	Kind             string                    `json:"kind"`
+	Title            string                    `json:"title,omitempty"`
+	StatementType    string                    `json:"statement_type"`
+	ClaimLayer       string                    `json:"claim_layer"`
+	Owner            string                    `json:"owner"`
+	Status           string                    `json:"status"`
+	ValidUntil       string                    `json:"valid_until,omitempty"`
+	Terms            []string                  `json:"terms,omitempty"`
+	DependsOn        []string                  `json:"depends_on,omitempty"`
+	TargetRefs       []string                  `json:"target_refs,omitempty"`
+	EvidenceRequired []SpecEvidenceRequirement `json:"evidence_required,omitempty"`
+	DocumentKind     string                    `json:"document_kind"`
+	Path             string                    `json:"path"`
+	Line             int                       `json:"line,omitempty"`
+	Malformed        bool                      `json:"malformed,omitempty"`
+}
+
+type SpecEvidenceRequirement struct {
+	Kind        string `json:"kind,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type TermMapEntry struct {
+	Term         string   `json:"term"`
+	Domain       string   `json:"domain"`
+	Definition   string   `json:"definition"`
+	Not          []string `json:"not,omitempty"`
+	Aliases      []string `json:"aliases,omitempty"`
+	Owners       []string `json:"owners,omitempty"`
+	Path         string   `json:"path"`
+	Line         int      `json:"line,omitempty"`
+	aliasEntries []termMapAlias
 }
 
 type SpecDocumentInput struct {
@@ -73,25 +129,6 @@ type fencedBlock struct {
 	info      string
 	body      string
 	startLine int
-}
-
-type parsedSpecSection struct {
-	id            string
-	kind          string
-	title         string
-	statementType string
-	claimLayer    string
-	status        string
-	validUntil    string
-	dependsOn     []string
-	targetRefs    []string
-	line          int
-}
-
-type termMapEntry struct {
-	term    string
-	aliases []termMapAlias
-	line    int
 }
 
 type termMapAlias struct {
@@ -183,20 +220,39 @@ func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 }
 
 func CheckSpecDocuments(documents []SpecDocumentInput) SpecCheckReport {
-	report := newSpecCheckReport()
-	seenSectionIDs := make(map[string]parsedSpecSection)
-	seenTerms := make(map[string]termMapEntry)
+	specSet := ProjectSpecificationSetFromDocuments(documents)
+	return SpecCheckReportFromSpecificationSet(specSet)
+}
+
+func ProjectSpecificationSetFromDocuments(documents []SpecDocumentInput) ProjectSpecificationSet {
+	specSet := newProjectSpecificationSet()
+	seenSectionIDs := make(map[string]SpecSection)
+	seenTerms := make(map[string]TermMapEntry)
 	seenAliases := make(map[string]termMapAlias)
 
-	for _, document := range documents {
-		checked, sections, terms, findings := checkSpecDocument(document)
+	for _, documentInput := range documents {
+		document, findings := checkSpecDocument(documentInput)
 
-		report.Documents = append(report.Documents, checked)
-		report.Findings = append(report.Findings, findings...)
-		report.Findings = append(report.Findings, duplicateSectionFindings(document.Path, sections, seenSectionIDs)...)
-		report.Findings = append(report.Findings, duplicateTermFindings(document.Path, terms, seenTerms)...)
-		report.Findings = append(report.Findings, duplicateAliasFindings(document.Path, terms, seenAliases)...)
+		specSet.Documents = append(specSet.Documents, document)
+		specSet.Sections = append(specSet.Sections, document.Sections...)
+		specSet.TermMapEntries = append(specSet.TermMapEntries, document.TermMapEntries...)
+		specSet.Findings = append(specSet.Findings, findings...)
+		specSet.Findings = append(specSet.Findings, duplicateSectionFindings(document.Path, document.Sections, seenSectionIDs)...)
+		specSet.Findings = append(specSet.Findings, duplicateTermFindings(document.Path, document.TermMapEntries, seenTerms)...)
+		specSet.Findings = append(specSet.Findings, duplicateAliasFindings(document.Path, document.TermMapEntries, seenAliases)...)
 	}
+	specSet.Findings = append(specSet.Findings, projectSpecificationReadinessFindings(specSet)...)
+
+	return normalizeProjectSpecificationSet(specSet)
+}
+
+func SpecCheckReportFromSpecificationSet(specSet ProjectSpecificationSet) SpecCheckReport {
+	report := newSpecCheckReport()
+
+	for _, document := range specSet.Documents {
+		report.Documents = append(report.Documents, specCheckDocumentFromSpecDocument(document))
+	}
+	report.Findings = append(report.Findings, specSet.Findings...)
 
 	report.Summary = summarizeSpecCheck(report)
 
@@ -204,18 +260,8 @@ func CheckSpecDocuments(documents []SpecDocumentInput) SpecCheckReport {
 }
 
 func SpecSectionsFromDocuments(documents []SpecDocumentInput) []SpecSection {
-	sections := make([]SpecSection, 0)
-
-	for _, document := range documents {
-		if document.Kind == "term-map" {
-			continue
-		}
-
-		_, parsedSections, _, _ := checkSpecDocument(document)
-		for _, section := range parsedSections {
-			sections = append(sections, specSectionFromParsed(document, section))
-		}
-	}
+	specSet := ProjectSpecificationSetFromDocuments(documents)
+	sections := append([]SpecSection(nil), specSet.Sections...)
 
 	sort.SliceStable(sections, func(i, j int) bool {
 		left := sections[i]
@@ -245,9 +291,28 @@ func newSpecCheckReport() SpecCheckReport {
 	}
 }
 
+func newProjectSpecificationSet() ProjectSpecificationSet {
+	return ProjectSpecificationSet{
+		Documents:      []SpecDocument{},
+		Sections:       []SpecSection{},
+		TermMapEntries: []TermMapEntry{},
+		Findings:       []SpecCheckFinding{},
+	}
+}
+
+func specCheckDocumentFromSpecDocument(document SpecDocument) SpecCheckDocument {
+	return SpecCheckDocument{
+		Path:               filepath.ToSlash(document.Path),
+		Kind:               string(document.Kind),
+		SpecSections:       len(document.Sections),
+		ActiveSpecSections: countActiveSpecSections(document.Sections),
+		TermMapEntries:     len(document.TermMapEntries),
+	}
+}
+
 func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFinding, error) {
 	documents := make([]SpecDocumentInput, 0, len(specCheckCarriers))
-	findings := make([]SpecCheckFinding, 0)
+	findings := ignoredSpecCarrierFindings(root)
 
 	for _, carrier := range specCheckCarriers {
 		path := filepath.Join(root, carrier.relativePath)
@@ -274,32 +339,81 @@ func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFindin
 	return documents, findings, nil
 }
 
-func checkSpecDocument(document SpecDocumentInput) (SpecCheckDocument, []parsedSpecSection, []termMapEntry, []SpecCheckFinding) {
-	blocks, markdownFindings := parseFencedBlocks(document.Path, document.Content)
-	checked := SpecCheckDocument{
-		Path: filepath.ToSlash(document.Path),
-		Kind: document.Kind,
+func ignoredSpecCarrierFindings(root string) []SpecCheckFinding {
+	gitignorePath := filepath.Join(root, ".gitignore")
+	content, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return nil
 	}
 
-	switch document.Kind {
-	case "term-map":
-		terms, findings := checkTermMapBlocks(document.Path, blocks)
-		checked.TermMapEntries = len(terms)
+	lines := strings.Split(string(content), "\n")
+	findings := make([]SpecCheckFinding, 0)
+	for index, line := range lines {
+		pattern := strings.TrimSpace(line)
+		if !rootGitignoreIgnoresHaft(pattern) {
+			continue
+		}
 
-		return checked, nil, terms, append(markdownFindings, findings...)
+		findings = append(findings, SpecCheckFinding{
+			Level:      "L1",
+			Code:       "spec_carriers_gitignored",
+			Path:       ".gitignore",
+			Line:       index + 1,
+			Message:    ".gitignore ignores .haft/, so project specification carrier edits are local-only and cannot be reviewed from the repository patch",
+			NextAction: "unignore .haft/specs and other reviewable projections, or keep the carriers local and record the dogfood state in tracked specs/tests",
+		})
+	}
+
+	return findings
+}
+
+func rootGitignoreIgnoresHaft(pattern string) bool {
+	if pattern == "" {
+		return false
+	}
+	if strings.HasPrefix(pattern, "#") {
+		return false
+	}
+	if strings.HasPrefix(pattern, "!") {
+		return false
+	}
+
+	normalized := strings.TrimPrefix(pattern, "/")
+	normalized = strings.TrimSuffix(normalized, "/")
+
+	switch normalized {
+	case ".haft", ".haft/**", ".haft/*":
+		return true
 	default:
-		sections, findings := checkSpecSectionBlocks(document.Path, document.Kind, blocks)
-		checked.SpecSections = len(sections)
-		checked.ActiveSpecSections = countActiveSpecSections(sections)
-
-		return checked, sections, nil, append(markdownFindings, findings...)
+		return false
 	}
 }
 
-func checkSpecSectionBlocks(path string, documentKind string, blocks []fencedBlock) ([]parsedSpecSection, []SpecCheckFinding) {
+func checkSpecDocument(input SpecDocumentInput) (SpecDocument, []SpecCheckFinding) {
+	blocks, markdownFindings := parseFencedBlocks(input.Path, input.Content)
+	document := SpecDocument{
+		Path: filepath.ToSlash(input.Path),
+		Kind: SpecDocumentKind(strings.TrimSpace(input.Kind)),
+	}
+
+	switch input.Kind {
+	case "term-map":
+		terms, findings := checkTermMapBlocks(input.Path, blocks)
+		document.TermMapEntries = terms
+
+		return document, append(markdownFindings, findings...)
+	default:
+		sections, findings := checkSpecSectionBlocks(input.Path, input.Kind, blocks)
+		document.Sections = sections
+
+		return document, append(markdownFindings, findings...)
+	}
+}
+
+func checkSpecSectionBlocks(path string, documentKind string, blocks []fencedBlock) ([]SpecSection, []SpecCheckFinding) {
 	sectionBlocks := filterFencedBlocks(blocks, isSpecSectionFence)
 	findings := make([]SpecCheckFinding, 0)
-	sections := make([]parsedSpecSection, 0, len(sectionBlocks))
+	sections := make([]SpecSection, 0, len(sectionBlocks))
 
 	if len(sectionBlocks) == 0 {
 		findings = append(findings, SpecCheckFinding{
@@ -325,11 +439,12 @@ func checkSpecSectionBlocks(path string, documentKind string, blocks []fencedBlo
 			continue
 		}
 
-		section, sectionFindings := validateSpecSectionFields(path, block.startLine, fields)
+		section, sectionFindings := validateSpecSectionFields(path, block.startLine, documentKind, fields)
 		shapeFindings := validateSpecSectionShape(path, block.startLine, documentKind, fields, section)
 		findings = append(findings, sectionFindings...)
 		findings = append(findings, shapeFindings...)
-		if section.id != "" {
+		section.Malformed = len(sectionFindings)+len(shapeFindings) > 0
+		if section.ID != "" {
 			sections = append(sections, section)
 		}
 	}
@@ -337,10 +452,10 @@ func checkSpecSectionBlocks(path string, documentKind string, blocks []fencedBlo
 	return sections, findings
 }
 
-func checkTermMapBlocks(path string, blocks []fencedBlock) ([]termMapEntry, []SpecCheckFinding) {
+func checkTermMapBlocks(path string, blocks []fencedBlock) ([]TermMapEntry, []SpecCheckFinding) {
 	termBlocks := filterFencedBlocks(blocks, isTermMapFence)
 	findings := make([]SpecCheckFinding, 0)
-	entries := make([]termMapEntry, 0)
+	entries := make([]TermMapEntry, 0)
 
 	if len(termBlocks) == 0 {
 		findings = append(findings, SpecCheckFinding{
@@ -383,39 +498,82 @@ func checkTermMapBlocks(path string, blocks []fencedBlock) ([]termMapEntry, []Sp
 	return entries, findings
 }
 
-func specSectionFromParsed(document SpecDocumentInput, section parsedSpecSection) SpecSection {
-	return SpecSection{
-		ID:            section.id,
-		Kind:          section.kind,
-		Title:         section.title,
-		StatementType: section.statementType,
-		ClaimLayer:    section.claimLayer,
-		Status:        section.status,
-		ValidUntil:    section.validUntil,
-		DependsOn:     section.dependsOn,
-		TargetRefs:    section.targetRefs,
-		DocumentKind:  document.Kind,
-		Path:          filepath.ToSlash(document.Path),
-		Line:          section.line,
+func projectSpecificationReadinessFindings(specSet ProjectSpecificationSet) []SpecCheckFinding {
+	findings := make([]SpecCheckFinding, 0)
+
+	target, targetOK := specDocumentByKind(specSet.Documents, SpecDocumentKindTargetSystem)
+	targetActive := targetOK && countActiveSpecSections(target.Sections) > 0
+	if targetOK && !targetActive {
+		findings = append(findings, noActiveSpecSectionFinding(
+			target.Path,
+			"target-system spec has no active sections; draft placeholders do not make the product specified",
+			"run target-system onboarding and add human-approved active sections for environment change, target role, boundaries, interfaces, invariants, risks, and acceptance evidence",
+		))
+	}
+
+	enabling, enablingOK := specDocumentByKind(specSet.Documents, SpecDocumentKindEnablingSystem)
+	if enablingOK && !targetActive && countActiveSpecSections(enabling.Sections) == 0 {
+		findings = append(findings, noActiveSpecSectionFinding(
+			enabling.Path,
+			"enabling-system spec has no active sections; draft placeholders do not authorize engineering governance",
+			"after the target spec is admissible, add active enabling sections for creator roles, repo architecture, effect boundaries, test strategy, surfaces, and runtime policy",
+		))
+	}
+
+	return findings
+}
+
+func specDocumentByKind(documents []SpecDocument, kind SpecDocumentKind) (SpecDocument, bool) {
+	for _, document := range documents {
+		if document.Kind != kind {
+			continue
+		}
+
+		return document, true
+	}
+
+	return SpecDocument{}, false
+}
+
+func noActiveSpecSectionFinding(
+	path string,
+	message string,
+	nextAction string,
+) SpecCheckFinding {
+	return SpecCheckFinding{
+		Level:      "L1",
+		Code:       "spec_carrier_no_active_sections",
+		Path:       filepath.ToSlash(path),
+		FieldPath:  "$.status",
+		Message:    message,
+		NextAction: nextAction,
 	}
 }
 
-func validateSpecSectionFields(path string, line int, fields map[string]any) (parsedSpecSection, []SpecCheckFinding) {
+func validateSpecSectionFields(
+	path string,
+	line int,
+	documentKind string,
+	fields map[string]any,
+) (SpecSection, []SpecCheckFinding) {
 	findings := make([]SpecCheckFinding, 0)
-	section := parsedSpecSection{
-		line: line,
+	section := SpecSection{
+		Spec:         strings.TrimSpace(documentKind),
+		DocumentKind: strings.TrimSpace(documentKind),
+		Path:         filepath.ToSlash(path),
+		Line:         line,
 	}
 
 	for _, field := range requiredSpecSectionFields {
 		value, ok := scalarString(fields[field])
 		if !ok {
-			findings = append(findings, missingSpecSectionFieldFinding(path, line, section.id, field))
+			findings = append(findings, missingSpecSectionFieldFinding(path, line, section.ID, field))
 			continue
 		}
 
 		switch field {
 		case "id":
-			section.id = value
+			section.ID = value
 			if !isStableSpecSectionID(value) {
 				findings = append(findings, SpecCheckFinding{
 					Level:     "L0",
@@ -428,24 +586,28 @@ func validateSpecSectionFields(path string, line int, fields map[string]any) (pa
 				})
 			}
 		case "kind":
-			section.kind = value
+			section.Kind = value
 		case "statement_type":
-			section.statementType = value
+			section.StatementType = value
 		case "claim_layer":
-			section.claimLayer = value
+			section.ClaimLayer = value
+		case "owner":
+			section.Owner = value
 		case "status":
-			section.status = value
+			section.Status = value
 		}
 	}
 
 	if title, ok := scalarString(fields["title"]); ok {
-		section.title = title
+		section.Title = title
 	}
 	if validUntil, ok := specSectionValidUntilString(fields["valid_until"]); ok {
-		section.validUntil = validUntil
+		section.ValidUntil = validUntil
 	}
-	section.dependsOn = specSectionRefList(fields, "depends_on")
-	section.targetRefs = specSectionRefList(fields, "target_refs")
+	section.Terms = specSectionStringList(fields, "terms")
+	section.DependsOn = specSectionRefList(fields, "depends_on")
+	section.TargetRefs = specSectionRefList(fields, "target_refs")
+	section.EvidenceRequired = specSectionEvidenceRequirements(fields)
 
 	for field, allowed := range specSectionValueSets {
 		value, ok := scalarString(fields[field])
@@ -459,13 +621,37 @@ func validateSpecSectionFields(path string, line int, fields map[string]any) (pa
 				Path:      filepath.ToSlash(path),
 				FieldPath: "$." + field,
 				Line:      line,
-				SectionID: section.id,
+				SectionID: section.ID,
 				Message:   fmt.Sprintf("spec-section field %q has unsupported value %q", field, value),
 			})
 		}
 	}
 
 	return section, findings
+}
+
+func specSectionStringList(fields map[string]any, field string) []string {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		value, ok := strictString(item)
+		if !ok {
+			continue
+		}
+
+		values = append(values, value)
+	}
+
+	return sortedUniqueStrings(values)
 }
 
 func specSectionRefList(fields map[string]any, field string) []string {
@@ -495,32 +681,71 @@ func specSectionRefList(fields map[string]any, field string) []string {
 	return sortedUniqueStrings(refs)
 }
 
-func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section parsedSpecSection) []SpecCheckFinding {
+func specSectionEvidenceRequirements(fields map[string]any) []SpecEvidenceRequirement {
+	raw, ok := fields["evidence_required"]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	requirements := make([]SpecEvidenceRequirement, 0, len(items))
+	for _, item := range items {
+		if description, ok := strictString(item); ok {
+			requirements = append(requirements, SpecEvidenceRequirement{Description: description})
+			continue
+		}
+
+		itemFields, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		kind, kindOK := strictString(itemFields["kind"])
+		description, descriptionOK := strictString(itemFields["description"])
+		if !kindOK || !descriptionOK {
+			continue
+		}
+
+		requirements = append(requirements, SpecEvidenceRequirement{
+			Kind:        kind,
+			Description: description,
+		})
+	}
+
+	return requirements
+}
+
+func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
-	findings = append(findings, validateOptionalRefList(path, line, section.id, fields, "depends_on", "spec_section_invalid_depends_on")...)
-	findings = append(findings, validateOptionalRefList(path, line, section.id, fields, "target_refs", "spec_section_invalid_target_refs")...)
-	findings = append(findings, validateOptionalEvidenceRequired(path, line, section.id, fields)...)
-	findings = append(findings, validateOptionalValidUntil(path, line, section.id, fields, section)...)
+	findings = append(findings, validateOptionalSpecStringList(path, line, section.ID, fields, "terms", "spec_section_invalid_terms")...)
+	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "depends_on", "spec_section_invalid_depends_on")...)
+	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "target_refs", "spec_section_invalid_target_refs")...)
+	findings = append(findings, validateOptionalEvidenceRequired(path, line, section.ID, fields)...)
+	findings = append(findings, validateOptionalValidUntil(path, line, section.ID, fields, section)...)
 	findings = append(findings, validateCarrierClaimAllowance(path, line, documentKind, fields, section)...)
 
 	return findings
 }
 
-func extractTermMapEntries(path string, line int, fields map[string]any) ([]termMapEntry, []SpecCheckFinding) {
+func extractTermMapEntries(path string, line int, fields map[string]any) ([]TermMapEntry, []SpecCheckFinding) {
 	if rawEntries, ok := fields["entries"]; ok {
 		return extractTermMapEntryList(path, line, rawEntries)
 	}
 
 	entry, findings := validateTermMapEntry(path, line, "$", fields)
-	if entry.term == "" {
+	if entry.Term == "" {
 		return nil, findings
 	}
 
-	return []termMapEntry{entry}, findings
+	return []TermMapEntry{entry}, findings
 }
 
-func extractTermMapEntryList(path string, line int, rawEntries any) ([]termMapEntry, []SpecCheckFinding) {
+func extractTermMapEntryList(path string, line int, rawEntries any) ([]TermMapEntry, []SpecCheckFinding) {
 	entryItems, ok := rawEntries.([]any)
 	if !ok {
 		return nil, []SpecCheckFinding{{
@@ -532,7 +757,7 @@ func extractTermMapEntryList(path string, line int, rawEntries any) ([]termMapEn
 		}}
 	}
 
-	entries := make([]termMapEntry, 0, len(entryItems))
+	entries := make([]TermMapEntry, 0, len(entryItems))
 	findings := make([]SpecCheckFinding, 0)
 
 	for index, item := range entryItems {
@@ -552,7 +777,7 @@ func extractTermMapEntryList(path string, line int, rawEntries any) ([]termMapEn
 		entryPath := indexedFieldPath("$.entries", index)
 		entry, entryFindings := validateTermMapEntry(path, line, entryPath, entryFields)
 		findings = append(findings, entryFindings...)
-		if entry.term == "" {
+		if entry.Term == "" {
 			continue
 		}
 
@@ -562,37 +787,45 @@ func extractTermMapEntryList(path string, line int, rawEntries any) ([]termMapEn
 	return entries, findings
 }
 
-func validateTermMapEntry(path string, line int, entryPath string, fields map[string]any) (termMapEntry, []SpecCheckFinding) {
+func validateTermMapEntry(path string, line int, entryPath string, fields map[string]any) (TermMapEntry, []SpecCheckFinding) {
 	findings := make([]SpecCheckFinding, 0)
-	entry := termMapEntry{
-		line: line,
+	entry := TermMapEntry{
+		Path: filepath.ToSlash(path),
+		Line: line,
 	}
 
 	term, termFindings := requiredTermMapStringField(path, line, entryPath, fields, "term", "term_map_missing_term")
-	_, domainFindings := requiredTermMapStringField(path, line, entryPath, fields, "domain", "term_map_missing_domain")
-	_, definitionFindings := requiredTermMapStringField(path, line, entryPath, fields, "definition", "term_map_missing_definition")
+	domain, domainFindings := requiredTermMapStringField(path, line, entryPath, fields, "domain", "term_map_missing_domain")
+	definition, definitionFindings := requiredTermMapStringField(path, line, entryPath, fields, "definition", "term_map_missing_definition")
 	notFindings := validateOptionalStringList(path, line, entryPath, fields, "not", "term_map_invalid_not")
 	aliases, aliasFindings := extractTermMapAliases(path, line, entryPath, fields, term)
+	ownersFindings := validateOptionalStringList(path, line, entryPath, fields, "owners", "term_map_invalid_owners")
 
 	findings = append(findings, termFindings...)
 	findings = append(findings, domainFindings...)
 	findings = append(findings, definitionFindings...)
 	findings = append(findings, notFindings...)
 	findings = append(findings, aliasFindings...)
+	findings = append(findings, ownersFindings...)
 
-	entry.term = term
-	entry.aliases = aliases
+	entry.Term = term
+	entry.Domain = domain
+	entry.Definition = definition
+	entry.Not = termMapStringList(fields, "not")
+	entry.Aliases = termMapAliasValues(aliases)
+	entry.Owners = termMapStringList(fields, "owners")
+	entry.aliasEntries = aliases
 
 	return entry, findings
 }
 
-func duplicateSectionFindings(path string, sections []parsedSpecSection, seen map[string]parsedSpecSection) []SpecCheckFinding {
+func duplicateSectionFindings(path string, sections []SpecSection, seen map[string]SpecSection) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
 	for _, section := range sections {
-		previous, ok := seen[section.id]
+		previous, ok := seen[section.ID]
 		if !ok {
-			seen[section.id] = section
+			seen[section.ID] = section
 			continue
 		}
 
@@ -600,20 +833,20 @@ func duplicateSectionFindings(path string, sections []parsedSpecSection, seen ma
 			Level:     "L1",
 			Code:      "spec_section_duplicate_id",
 			Path:      filepath.ToSlash(path),
-			Line:      section.line,
-			SectionID: section.id,
-			Message:   fmt.Sprintf("spec-section id duplicates earlier section at line %d", previous.line),
+			Line:      section.Line,
+			SectionID: section.ID,
+			Message:   fmt.Sprintf("spec-section id duplicates earlier section at line %d", previous.Line),
 		})
 	}
 
 	return findings
 }
 
-func duplicateTermFindings(path string, entries []termMapEntry, seen map[string]termMapEntry) []SpecCheckFinding {
+func duplicateTermFindings(path string, entries []TermMapEntry, seen map[string]TermMapEntry) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
 	for _, entry := range entries {
-		normalized := strings.ToLower(entry.term)
+		normalized := strings.ToLower(entry.Term)
 		previous, ok := seen[normalized]
 		if !ok {
 			seen[normalized] = entry
@@ -624,19 +857,19 @@ func duplicateTermFindings(path string, entries []termMapEntry, seen map[string]
 			Level:   "L1",
 			Code:    "term_map_duplicate_term",
 			Path:    filepath.ToSlash(path),
-			Line:    entry.line,
-			Message: fmt.Sprintf("term %q duplicates earlier term at line %d", entry.term, previous.line),
+			Line:    entry.Line,
+			Message: fmt.Sprintf("term %q duplicates earlier term at line %d", entry.Term, previous.Line),
 		})
 	}
 
 	return findings
 }
 
-func duplicateAliasFindings(path string, entries []termMapEntry, seen map[string]termMapAlias) []SpecCheckFinding {
+func duplicateAliasFindings(path string, entries []TermMapEntry, seen map[string]termMapAlias) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
 	for _, entry := range entries {
-		for _, alias := range entry.aliases {
+		for _, alias := range entry.aliasEntries {
 			normalized := strings.ToLower(alias.value)
 			previous, ok := seen[normalized]
 			if !ok {
@@ -690,6 +923,37 @@ func validateOptionalRefList(path string, line int, sectionID string, fields map
 	return findings
 }
 
+func validateOptionalSpecStringList(path string, line int, sectionID string, fields map[string]any, field string, code string) []SpecCheckFinding {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := "$." + field
+	items, ok := raw.([]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, code, fmt.Sprintf("spec-section `%s` must be a YAML list of non-empty strings", field))}
+	}
+
+	findings := make([]SpecCheckFinding, 0)
+	for index, item := range items {
+		if _, ok := strictString(item); ok {
+			continue
+		}
+
+		findings = append(findings, invalidSpecSectionShapeFinding(
+			path,
+			line,
+			sectionID,
+			indexedFieldPath(fieldPath, index),
+			code,
+			fmt.Sprintf("spec-section `%s` entries must be non-empty strings", field),
+		))
+	}
+
+	return findings
+}
+
 func validateOptionalEvidenceRequired(path string, line int, sectionID string, fields map[string]any) []SpecCheckFinding {
 	raw, ok := fields["evidence_required"]
 	if !ok {
@@ -726,14 +990,14 @@ func validateOptionalEvidenceRequired(path string, line int, sectionID string, f
 	return findings
 }
 
-func validateOptionalValidUntil(path string, line int, sectionID string, fields map[string]any, section parsedSpecSection) []SpecCheckFinding {
+func validateOptionalValidUntil(path string, line int, sectionID string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	raw, ok := fields["valid_until"]
 	if !ok {
 		return nil
 	}
 
 	fieldPath := "$.valid_until"
-	if raw == nil && section.status == "draft" && section.claimLayer == "carrier" {
+	if raw == nil && section.Status == "draft" && section.ClaimLayer == "carrier" {
 		return nil
 	}
 	if raw == nil {
@@ -766,13 +1030,13 @@ func specSectionValidUntilString(value any) (string, bool) {
 	}
 }
 
-func validateCarrierClaimAllowance(path string, line int, documentKind string, fields map[string]any, section parsedSpecSection) []SpecCheckFinding {
+func validateCarrierClaimAllowance(path string, line int, documentKind string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	allowed := false
 	raw, exists := fields["carrier_claim_allowed"]
 	if exists {
 		value, ok := raw.(bool)
 		if !ok {
-			return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, section.id, "$.carrier_claim_allowed", "spec_section_invalid_carrier_claim_allowed", "spec-section `carrier_claim_allowed` must be a boolean")}
+			return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, section.ID, "$.carrier_claim_allowed", "spec_section_invalid_carrier_claim_allowed", "spec-section `carrier_claim_allowed` must be a boolean")}
 		}
 
 		allowed = value
@@ -781,10 +1045,10 @@ func validateCarrierClaimAllowance(path string, line int, documentKind string, f
 	if documentKind != "target-system" {
 		return nil
 	}
-	if section.status != "active" {
+	if section.Status != "active" {
 		return nil
 	}
-	if section.claimLayer != "carrier" {
+	if section.ClaimLayer != "carrier" {
 		return nil
 	}
 	if allowed {
@@ -797,7 +1061,7 @@ func validateCarrierClaimAllowance(path string, line int, documentKind string, f
 		Path:      filepath.ToSlash(path),
 		FieldPath: "$.claim_layer",
 		Line:      line,
-		SectionID: section.id,
+		SectionID: section.ID,
 		Message:   "active target-system sections must not use `claim_layer: carrier` unless `carrier_claim_allowed: true` is explicit",
 	}}
 }
@@ -850,6 +1114,40 @@ func validateOptionalStringList(path string, line int, entryPath string, fields 
 	}
 
 	return findings
+}
+
+func termMapStringList(fields map[string]any, field string) []string {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		value, ok := strictString(item)
+		if !ok {
+			continue
+		}
+
+		values = append(values, value)
+	}
+
+	return sortedUniqueStrings(values)
+}
+
+func termMapAliasValues(aliases []termMapAlias) []string {
+	values := make([]string, 0, len(aliases))
+
+	for _, alias := range aliases {
+		values = append(values, alias.value)
+	}
+
+	return sortedUniqueStrings(values)
 }
 
 func extractTermMapAliases(path string, line int, entryPath string, fields map[string]any, term string) ([]termMapAlias, []SpecCheckFinding) {
@@ -1097,11 +1395,11 @@ func isStableSpecSectionID(value string) bool {
 	return !strings.ContainsAny(value, " \t\r\n")
 }
 
-func countActiveSpecSections(sections []parsedSpecSection) int {
+func countActiveSpecSections(sections []SpecSection) int {
 	count := 0
 
 	for _, section := range sections {
-		if section.status != "active" {
+		if section.Status != "active" {
 			continue
 		}
 
@@ -1174,6 +1472,9 @@ func normalizeSpecCheckReport(report SpecCheckReport) SpecCheckReport {
 	if report.Findings == nil {
 		report.Findings = []SpecCheckFinding{}
 	}
+	for index := range report.Findings {
+		report.Findings[index] = normalizeSpecCheckFinding(report.Findings[index])
+	}
 
 	sort.SliceStable(report.Findings, func(i, j int) bool {
 		left := report.Findings[i]
@@ -1194,4 +1495,118 @@ func normalizeSpecCheckReport(report SpecCheckReport) SpecCheckReport {
 	report.Summary = summarizeSpecCheck(report)
 
 	return report
+}
+
+func normalizeSpecCheckFinding(finding SpecCheckFinding) SpecCheckFinding {
+	finding.Path = filepath.ToSlash(finding.Path)
+	if finding.NextAction == "" {
+		finding.NextAction = defaultSpecCheckNextAction(finding)
+	}
+
+	return finding
+}
+
+func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
+	switch finding.Code {
+	case "spec_carriers_gitignored":
+		return "unignore .haft/specs and other reviewable projections, or keep the carriers local and record the dogfood state in tracked specs/tests"
+	case "spec_carrier_no_active_sections":
+		return "keep placeholders draft and add human-approved active spec sections before treating readiness as passing"
+	case "spec_carrier_missing_file":
+		return "create the missing .haft/specs carrier or run `haft init` before relying on spec readiness"
+	case "term_map_missing_file":
+		return "create .haft/specs/term-map.md with term-map YAML entries for load-bearing spec terms"
+	case "spec_section_missing_block":
+		return "add a fenced `yaml spec-section` block with canonical fields to this spec carrier"
+	case "term_map_missing_block":
+		return "add a fenced YAML term-map block with entries for load-bearing spec terms"
+	case "spec_section_invalid_yaml", "term_map_invalid_yaml", "markdown_unclosed_fence":
+		return "fix the carrier syntax, then rerun `haft spec check --json`"
+	case "spec_section_missing_field":
+		return "add the missing canonical spec-section field, then rerun `haft spec check --json`"
+	case "spec_section_unstable_id":
+		return "replace the section id with a stable non-empty id that contains no whitespace"
+	case "spec_section_unsupported_value":
+		return "replace the field value with one of the canonical spec-section enum values"
+	case "spec_section_invalid_terms":
+		return "make `terms` a YAML list of non-empty strings"
+	case "spec_section_invalid_depends_on", "spec_section_invalid_target_refs":
+		return "make the reference field a YAML list of stable spec-section ids"
+	case "spec_section_invalid_evidence_required":
+		return "make each evidence requirement a non-empty string or an object with kind and description"
+	case "spec_section_invalid_valid_until":
+		return "use YYYY-MM-DD or RFC3339 valid_until; null is only allowed on draft carrier placeholders"
+	case "spec_section_invalid_carrier_claim_allowed":
+		return "set carrier_claim_allowed to true or false"
+	case "spec_section_mixed_authority":
+		return "change active target claims to claim_layer object/description/evidence, or explicitly mark a carrier-only section with carrier_claim_allowed"
+	case "term_map_missing_term":
+		return "add at least one term-map entry with term, domain, and definition before treating the spec set as ready"
+	case "term_map_missing_domain", "term_map_missing_definition":
+		return "complete the term-map entry with term, domain, and definition"
+	case "term_map_invalid_entries":
+		return "make `entries` a YAML list of term-map entry objects"
+	case "term_map_invalid_not", "term_map_invalid_aliases", "term_map_invalid_owners":
+		return "make the term-map field a YAML list of non-empty strings"
+	case "term_map_duplicate_term":
+		return "merge or domain-qualify duplicate term definitions"
+	case "term_map_duplicate_alias":
+		return "remove the duplicate alias or attach it to one canonical term"
+	case "spec_section_duplicate_id":
+		return "rename or merge duplicate spec sections so each id is unique"
+	default:
+		return "inspect the reported carrier location, repair the deterministic spec shape, and rerun `haft spec check --json`"
+	}
+}
+
+func normalizeProjectSpecificationSet(specSet ProjectSpecificationSet) ProjectSpecificationSet {
+	if specSet.Documents == nil {
+		specSet.Documents = []SpecDocument{}
+	}
+	if specSet.Sections == nil {
+		specSet.Sections = []SpecSection{}
+	}
+	if specSet.TermMapEntries == nil {
+		specSet.TermMapEntries = []TermMapEntry{}
+	}
+	if specSet.Findings == nil {
+		specSet.Findings = []SpecCheckFinding{}
+	}
+	for index := range specSet.Findings {
+		specSet.Findings[index] = normalizeSpecCheckFinding(specSet.Findings[index])
+	}
+
+	for index := range specSet.Documents {
+		if specSet.Documents[index].Sections == nil {
+			specSet.Documents[index].Sections = []SpecSection{}
+		}
+		if specSet.Documents[index].TermMapEntries == nil {
+			specSet.Documents[index].TermMapEntries = []TermMapEntry{}
+		}
+	}
+
+	return specSet
+}
+
+func (section SpecSection) LifecycleState(now time.Time) SpecSectionState {
+	if section.Malformed {
+		return SpecSectionStateMalformed
+	}
+
+	switch strings.TrimSpace(section.Status) {
+	case "draft":
+		return SpecSectionStateDraft
+	case "active":
+		if validUntilExpired(section.ValidUntil, now) {
+			return SpecSectionStateStale
+		}
+
+		return SpecSectionStateActive
+	case "deprecated":
+		return SpecSectionStateDeprecated
+	case "superseded":
+		return SpecSectionStateSuperseded
+	default:
+		return SpecSectionStateMalformed
+	}
 }

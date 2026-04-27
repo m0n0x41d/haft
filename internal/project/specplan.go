@@ -7,7 +7,16 @@ import (
 	"strings"
 )
 
-const SpecPlanAuthorityNotice = "SpecPlan proposals are review drafts only; they do not create DecisionRecords, WorkCommissions, or semantic authority."
+const SpecPlanAuthorityNotice = "SpecPlan proposals are review drafts only; listing them does not create DecisionRecords, WorkCommissions, or semantic authority."
+
+type SpecPlanActionKind string
+
+const (
+	SpecPlanActionAccept  SpecPlanActionKind = "accept"
+	SpecPlanActionMerge   SpecPlanActionKind = "merge"
+	SpecPlanActionSplit   SpecPlanActionKind = "split"
+	SpecPlanActionDiscard SpecPlanActionKind = "discard"
+)
 
 type SpecPlanReport struct {
 	Authority     string                 `json:"authority"`
@@ -17,8 +26,10 @@ type SpecPlanReport struct {
 }
 
 type SpecPlanReviewAction struct {
-	Kind   string `json:"kind"`
-	Effect string `json:"effect"`
+	Kind       SpecPlanActionKind `json:"kind"`
+	Effect     string             `json:"effect"`
+	Executable bool               `json:"executable"`
+	CommandGap string             `json:"command_gap,omitempty"`
 }
 
 type SpecPlanProposal struct {
@@ -35,12 +46,22 @@ type SpecPlanProposal struct {
 }
 
 type SpecPlanDecisionDraft struct {
-	Kind            string   `json:"kind"`
-	SelectedTitle   string   `json:"selected_title"`
-	WhySelected     string   `json:"why_selected"`
-	SelectionPolicy string   `json:"selection_policy"`
-	WeakestLink     string   `json:"weakest_link"`
-	SectionRefs     []string `json:"section_refs"`
+	Kind                 string                        `json:"kind"`
+	SelectedTitle        string                        `json:"selected_title"`
+	WhySelected          string                        `json:"why_selected"`
+	SelectionPolicy      string                        `json:"selection_policy"`
+	CounterArgument      string                        `json:"counterargument"`
+	WhyNotOthers         []SpecPlanRejectedAlternative `json:"why_not_others"`
+	WeakestLink          string                        `json:"weakest_link"`
+	RollbackTriggers     []string                      `json:"rollback_triggers"`
+	EvidenceRequirements []string                      `json:"evidence_requirements"`
+	RefreshTriggers      []string                      `json:"refresh_triggers"`
+	SectionRefs          []string                      `json:"section_refs"`
+}
+
+type SpecPlanRejectedAlternative struct {
+	Variant string `json:"variant"`
+	Reason  string `json:"reason"`
 }
 
 type SpecPlanSummary struct {
@@ -74,6 +95,46 @@ func BuildSpecPlan(report SpecCoverageReport) SpecPlanReport {
 		Proposals:     proposals,
 		Summary:       summarizeSpecPlan(candidates, proposals),
 	})
+}
+
+func ParseSpecPlanActionKind(value string) (SpecPlanActionKind, error) {
+	kind := SpecPlanActionKind(strings.TrimSpace(value))
+	if kind.IsValid() {
+		return kind, nil
+	}
+
+	return "", fmt.Errorf("invalid spec plan action %q", value)
+}
+
+func (kind SpecPlanActionKind) IsValid() bool {
+	switch kind {
+	case SpecPlanActionAccept, SpecPlanActionMerge, SpecPlanActionSplit, SpecPlanActionDiscard:
+		return true
+	default:
+		return false
+	}
+}
+
+func (kind SpecPlanActionKind) Executable() bool {
+	return kind == SpecPlanActionAccept
+}
+
+func FindSpecPlanProposal(report SpecPlanReport, proposalID string) (SpecPlanProposal, bool) {
+	id := strings.TrimSpace(proposalID)
+	if id == "" {
+		return SpecPlanProposal{}, false
+	}
+
+	report = normalizeSpecPlanReport(report)
+	for _, proposal := range report.Proposals {
+		if proposal.ID != id {
+			continue
+		}
+
+		return proposal, true
+	}
+
+	return SpecPlanProposal{}, false
 }
 
 func specPlanCandidateSections(sections []SpecCoverageSection) []SpecCoverageSection {
@@ -289,12 +350,17 @@ func specPlanProposalTitle(group specPlanGroup) string {
 
 func specPlanDecisionDraft(group specPlanGroup, sectionRefs []string) SpecPlanDecisionDraft {
 	return SpecPlanDecisionDraft{
-		Kind:            "DecisionRecord",
-		SelectedTitle:   specPlanProposalTitle(group),
-		WhySelected:     specPlanDraftWhySelected(group),
-		SelectionPolicy: "Group by document kind, spec kind, dependency signature, and affected area; human review may merge, split, or discard before deciding.",
-		WeakestLink:     "The draft is only useful if the grouped sections represent one load-bearing decision boundary after human review.",
-		SectionRefs:     sectionRefs,
+		Kind:                 "DecisionRecord",
+		SelectedTitle:        specPlanProposalTitle(group),
+		WhySelected:          specPlanDraftWhySelected(group),
+		SelectionPolicy:      "Group by document kind, spec kind, dependency signature, and affected area; human review may accept this group or defer for merge, split, or discard.",
+		CounterArgument:      "The grouped sections may not share one decision boundary; accepting without review can create a misleading DecisionRecord.",
+		WhyNotOthers:         specPlanRejectedAlternatives(),
+		WeakestLink:          "The draft is only useful if the grouped sections represent one load-bearing decision boundary after human review.",
+		RollbackTriggers:     specPlanRollbackTriggers(),
+		EvidenceRequirements: specPlanEvidenceRequirements(),
+		RefreshTriggers:      specPlanRefreshTriggers(),
+		SectionRefs:          sectionRefs,
 	}
 }
 
@@ -306,17 +372,60 @@ func specPlanDraftWhySelected(group specPlanGroup) string {
 func specPlanReviewActions() []SpecPlanReviewAction {
 	return []SpecPlanReviewAction{
 		{
-			Kind:   "merge",
-			Effect: "combine proposal groups before creating a DecisionRecord",
+			Kind:       SpecPlanActionAccept,
+			Effect:     "create one DecisionRecord from this reviewed proposal",
+			Executable: true,
 		},
 		{
-			Kind:   "split",
-			Effect: "split section refs into smaller DecisionRecord drafts",
+			Kind:       SpecPlanActionMerge,
+			Effect:     "combine proposal groups before creating a DecisionRecord",
+			Executable: false,
+			CommandGap: "No merge command is implemented in this slice; rerun spec plan and accept only coherent proposals.",
 		},
 		{
-			Kind:   "discard",
-			Effect: "drop a draft if the group is not one load-bearing decision",
+			Kind:       SpecPlanActionSplit,
+			Effect:     "split section refs into smaller DecisionRecord drafts",
+			Executable: false,
+			CommandGap: "No split command is implemented in this slice; keep the proposal unaccepted until a split command exists.",
 		},
+		{
+			Kind:       SpecPlanActionDiscard,
+			Effect:     "drop a draft if the group is not one load-bearing decision",
+			Executable: false,
+			CommandGap: "No discard command is implemented in this slice; leaving the proposal unaccepted has the same persistence effect.",
+		},
+	}
+}
+
+func specPlanRejectedAlternatives() []SpecPlanRejectedAlternative {
+	return []SpecPlanRejectedAlternative{
+		{
+			Variant: "One DecisionRecord per SpecSection",
+			Reason:  "It would turn SpecPlan into a one-decision-per-bullet factory instead of preserving a coherent decision boundary.",
+		},
+		{
+			Variant: "Leave the sections uncovered",
+			Reason:  "It would leave active uncovered or stale SpecSections without a governing DecisionRecord.",
+		},
+	}
+}
+
+func specPlanRollbackTriggers() []string {
+	return []string{
+		"Human review determines the accepted proposal combines separate decision boundaries.",
+		"SpecCoverage still reports the accepted section refs as uncovered after DecisionRecord creation.",
+	}
+}
+
+func specPlanEvidenceRequirements() []string {
+	return []string{
+		"Rerun `haft spec coverage` and confirm the accepted section refs move from uncovered or stale to reasoned or stronger.",
+	}
+}
+
+func specPlanRefreshTriggers() []string {
+	return []string{
+		"Any accepted SpecSection expires, changes materially, or drifts from its governing DecisionRecord.",
 	}
 }
 
@@ -365,8 +474,18 @@ func normalizeSpecPlanProposal(proposal SpecPlanProposal) SpecPlanProposal {
 	if proposal.States == nil {
 		proposal.States = []SpecCoverageState{}
 	}
-	if proposal.DecisionRecordDraft.SectionRefs == nil {
-		proposal.DecisionRecordDraft.SectionRefs = []string{}
+	proposal.DecisionRecordDraft.SectionRefs = sortedUniqueStrings(proposal.DecisionRecordDraft.SectionRefs)
+	if proposal.DecisionRecordDraft.WhyNotOthers == nil {
+		proposal.DecisionRecordDraft.WhyNotOthers = []SpecPlanRejectedAlternative{}
+	}
+	if proposal.DecisionRecordDraft.RollbackTriggers == nil {
+		proposal.DecisionRecordDraft.RollbackTriggers = []string{}
+	}
+	if proposal.DecisionRecordDraft.EvidenceRequirements == nil {
+		proposal.DecisionRecordDraft.EvidenceRequirements = []string{}
+	}
+	if proposal.DecisionRecordDraft.RefreshTriggers == nil {
+		proposal.DecisionRecordDraft.RefreshTriggers = []string{}
 	}
 
 	return proposal

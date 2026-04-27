@@ -241,6 +241,52 @@ func TestDecide_ContextDoesNotChangeDefaultIDFormat(t *testing.T) {
 	}
 }
 
+func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	sectionRefs := []string{"TS.checkout.001", "TS.checkout.002"}
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Cover checkout spec",
+		WhySelected:   "Spec-linked decisions must stay traceable to the exact governed sections.",
+		SectionRefs:   sectionRefs,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(fields.SectionRefs, sectionRefs) {
+		t.Fatalf("structured section refs = %#v, want %#v", fields.SectionRefs, sectionRefs)
+	}
+	if !strings.Contains(decision.Body, "TS.checkout.001") {
+		t.Fatalf("decision body missing section refs:\n%s", decision.Body)
+	}
+
+	links, err := store.GetLinks(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	for _, link := range links {
+		if link.Type != "governs" {
+			continue
+		}
+
+		seen[link.Ref] = true
+	}
+
+	for _, ref := range sectionRefs {
+		if seen[ref] {
+			continue
+		}
+
+		t.Fatalf("decision links = %#v, want governs link to %s", links, ref)
+	}
+}
+
 func TestNormalizePredictionInputs_PreservesVerifyAfter(t *testing.T) {
 	input := []PredictionInput{
 		{

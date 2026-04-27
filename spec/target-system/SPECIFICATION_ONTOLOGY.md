@@ -280,7 +280,7 @@ Coverage states are derived, not stored:
 |-------|------------|
 | `uncovered` | Active spec section has no DecisionRecord and no evidence |
 | `reasoned` | Active spec section has one or more active DecisionRecords |
-| `commissioned` | At least one active WorkCommission exists |
+| `commissioned` | At least one active recoverable WorkCommission exists; terminal WorkCommission carriers remain graph edges but do not by themselves prove implementation or verification |
 | `implemented` | Evidence shows code was changed in scope |
 | `verified` | Evidence satisfies required checks and has not decayed |
 | `stale` | Evidence or linked decision/spec section is expired or drifted |

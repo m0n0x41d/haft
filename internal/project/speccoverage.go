@@ -21,6 +21,27 @@ const (
 	SpecCoverageStale        SpecCoverageState = "stale"
 )
 
+type SpecCoverageEdgeType string
+
+const (
+	SpecCoverageEdgeProblemCard     SpecCoverageEdgeType = "spec_section->ProblemCard"
+	SpecCoverageEdgeDecisionRecord  SpecCoverageEdgeType = "spec_section->DecisionRecord"
+	SpecCoverageEdgeWorkCommission  SpecCoverageEdgeType = "DecisionRecord->WorkCommission"
+	SpecCoverageEdgeRuntimeRun      SpecCoverageEdgeType = "WorkCommission->RuntimeRun"
+	SpecCoverageEdgeEvidencePack    SpecCoverageEdgeType = "spec_section->EvidencePack"
+	SpecCoverageEdgeRuntimeEvidence SpecCoverageEdgeType = "RuntimeRun->EvidencePack"
+	SpecCoverageEdgeFile            SpecCoverageEdgeType = "spec_section->file"
+	SpecCoverageEdgeTest            SpecCoverageEdgeType = "spec_section->test"
+)
+
+const (
+	RuntimeEvidenceMissing  = "missing"
+	RuntimeEvidencePresent  = "present"
+	RuntimeEvidenceSupports = "supports"
+	RuntimeEvidenceWeakens  = "weakens"
+	RuntimeEvidenceRefutes  = "refutes"
+)
+
 type SpecCoverageInput struct {
 	Sections    []SpecSection
 	Problems    []SpecCoverageProblem
@@ -62,14 +83,29 @@ type SpecCoverageCommission struct {
 type SpecCoverageRuntimeRun struct {
 	ID                string
 	CommissionRef     string
+	RunnerID          string
 	Event             string
 	Verdict           string
 	Phase             string
 	Reason            string
 	RecordedAt        string
+	StartedAt         string
+	CompletedAt       string
 	ValidUntil        string
 	SectionRefs       []string
+	PhaseOutcomes     []SpecCoverageRuntimePhaseOutcome
+	EvidenceRefs      []string
+	EvidenceStatus    string
 	UnsupportedReason string
+}
+
+type SpecCoverageRuntimePhaseOutcome struct {
+	Action     string `json:"action,omitempty"`
+	Phase      string `json:"phase,omitempty"`
+	Event      string `json:"event,omitempty"`
+	Verdict    string `json:"verdict,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	RecordedAt string `json:"recorded_at,omitempty"`
 }
 
 type SpecCoverageEvidence struct {
@@ -106,8 +142,20 @@ type SpecCoverageSection struct {
 }
 
 type SpecCoverageEdge struct {
-	Type   string `json:"type"`
-	Target string `json:"target"`
+	Type           SpecCoverageEdgeType              `json:"type"`
+	Target         string                            `json:"target"`
+	ArtifactStatus string                            `json:"artifact_status,omitempty"`
+	WorkState      string                            `json:"work_state,omitempty"`
+	RuntimeEvent   string                            `json:"runtime_event,omitempty"`
+	EvidenceType   string                            `json:"evidence_type,omitempty"`
+	Verdict        string                            `json:"verdict,omitempty"`
+	CommissionRef  string                            `json:"commission_ref,omitempty"`
+	RecordedAt     string                            `json:"recorded_at,omitempty"`
+	StartedAt      string                            `json:"started_at,omitempty"`
+	CompletedAt    string                            `json:"completed_at,omitempty"`
+	PhaseOutcomes  []SpecCoverageRuntimePhaseOutcome `json:"phase_outcomes,omitempty"`
+	EvidenceRefs   []string                          `json:"evidence_refs,omitempty"`
+	EvidenceStatus string                            `json:"evidence_status,omitempty"`
 }
 
 type SpecCoverageGap struct {
@@ -123,15 +171,16 @@ type SpecCoverageSummary struct {
 }
 
 type specCoverageSignals struct {
-	Section     SpecSection
-	Problems    []SpecCoverageProblem
-	Decisions   []SpecCoverageDecision
-	Commissions []SpecCoverageCommission
-	RuntimeRuns []SpecCoverageRuntimeRun
-	Evidence    []SpecCoverageEvidence
-	CodeRefs    []string
-	TestRefs    []string
-	StaleFacts  []string
+	Section         SpecSection
+	Problems        []SpecCoverageProblem
+	Decisions       []SpecCoverageDecision
+	Commissions     []SpecCoverageCommission
+	OpenCommissions []SpecCoverageCommission
+	RuntimeRuns     []SpecCoverageRuntimeRun
+	Evidence        []SpecCoverageEvidence
+	CodeRefs        []string
+	TestRefs        []string
+	StaleFacts      []string
 }
 
 func DeriveSpecCoverage(input SpecCoverageInput) SpecCoverageReport {
@@ -261,14 +310,20 @@ func normalizeCoverageRuntimeRuns(values []SpecCoverageRuntimeRun) []SpecCoverag
 	for _, value := range values {
 		value.ID = strings.TrimSpace(value.ID)
 		value.CommissionRef = strings.TrimSpace(value.CommissionRef)
+		value.RunnerID = strings.TrimSpace(value.RunnerID)
 		value.Event = strings.TrimSpace(value.Event)
 		value.Verdict = strings.TrimSpace(value.Verdict)
 		value.Phase = strings.TrimSpace(value.Phase)
 		value.Reason = strings.TrimSpace(value.Reason)
 		value.RecordedAt = strings.TrimSpace(value.RecordedAt)
+		value.StartedAt = strings.TrimSpace(value.StartedAt)
+		value.CompletedAt = strings.TrimSpace(value.CompletedAt)
 		value.ValidUntil = strings.TrimSpace(value.ValidUntil)
 		value.UnsupportedReason = strings.TrimSpace(value.UnsupportedReason)
 		value.SectionRefs = sortedUniqueStrings(value.SectionRefs)
+		value.PhaseOutcomes = normalizeCoverageRuntimePhaseOutcomes(value.PhaseOutcomes)
+		value.EvidenceRefs = sortedUniqueStrings(value.EvidenceRefs)
+		value.EvidenceStatus = normalizeRuntimeEvidenceStatus(value.EvidenceStatus)
 		if value.ID == "" {
 			continue
 		}
@@ -281,6 +336,48 @@ func normalizeCoverageRuntimeRuns(values []SpecCoverageRuntimeRun) []SpecCoverag
 	})
 
 	return normalized
+}
+
+func normalizeCoverageRuntimePhaseOutcomes(
+	values []SpecCoverageRuntimePhaseOutcome,
+) []SpecCoverageRuntimePhaseOutcome {
+	normalized := make([]SpecCoverageRuntimePhaseOutcome, 0, len(values))
+
+	for _, value := range values {
+		outcome := SpecCoverageRuntimePhaseOutcome{
+			Action:     strings.TrimSpace(value.Action),
+			Phase:      strings.TrimSpace(value.Phase),
+			Event:      strings.TrimSpace(value.Event),
+			Verdict:    strings.TrimSpace(value.Verdict),
+			Reason:     strings.TrimSpace(value.Reason),
+			RecordedAt: strings.TrimSpace(value.RecordedAt),
+		}
+		if runtimePhaseOutcomeEmpty(outcome) {
+			continue
+		}
+
+		normalized = append(normalized, outcome)
+	}
+
+	return normalized
+}
+
+func runtimePhaseOutcomeEmpty(value SpecCoverageRuntimePhaseOutcome) bool {
+	return value.Action == "" &&
+		value.Phase == "" &&
+		value.Event == "" &&
+		value.Verdict == "" &&
+		value.Reason == "" &&
+		value.RecordedAt == ""
+}
+
+func normalizeRuntimeEvidenceStatus(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized != "" {
+		return normalized
+	}
+
+	return RuntimeEvidenceMissing
 }
 
 func normalizeCoverageEvidence(values []SpecCoverageEvidence) []SpecCoverageEvidence {
@@ -317,16 +414,18 @@ func buildSpecCoverageSignals(input SpecCoverageInput, section SpecSection) spec
 	commissionRefs := coverageCommissionRefsForSection(input.Commissions, decisions, section.ID)
 	runtimeRuns := coverageRuntimeRunsForSection(input.RuntimeRuns, commissionRefs, section.ID)
 	evidence := coverageEvidenceForSection(input.Evidence, problems, decisions, commissionRefs, runtimeRuns, section.ID)
+	runtimeRuns = coverageRuntimeRunsWithEvidence(runtimeRuns, evidence)
 
 	signals := specCoverageSignals{
-		Section:     section,
-		Problems:    problems,
-		Decisions:   decisions,
-		Commissions: commissions,
-		RuntimeRuns: runtimeRuns,
-		Evidence:    evidence,
-		CodeRefs:    coverageCodeRefs(decisions, evidence),
-		TestRefs:    coverageTestRefs(evidence),
+		Section:         section,
+		Problems:        problems,
+		Decisions:       decisions,
+		Commissions:     commissions,
+		OpenCommissions: coverageOpenCommissions(commissions),
+		RuntimeRuns:     runtimeRuns,
+		Evidence:        evidence,
+		CodeRefs:        coverageCodeRefs(decisions, evidence),
+		TestRefs:        coverageTestRefs(evidence),
 	}
 	signals.StaleFacts = coverageStaleFacts(input.Now, signals)
 
@@ -413,7 +512,20 @@ func coverageCommissionsForSection(
 		if !commissionCoversSection(commission, decisionRefs, sectionID) {
 			continue
 		}
-		if workCommissionStateIsTerminal(commission.State) {
+
+		result = append(result, commission)
+	}
+
+	return result
+}
+
+func coverageOpenCommissions(
+	commissions []SpecCoverageCommission,
+) []SpecCoverageCommission {
+	result := make([]SpecCoverageCommission, 0)
+
+	for _, commission := range commissions {
+		if !workCommissionStateContributesCommissioned(commission.State) {
 			continue
 		}
 
@@ -525,6 +637,91 @@ func coverageEvidenceForSection(
 	}
 
 	return result
+}
+
+func coverageRuntimeRunsWithEvidence(
+	runtimeRuns []SpecCoverageRuntimeRun,
+	evidence []SpecCoverageEvidence,
+) []SpecCoverageRuntimeRun {
+	enriched := make([]SpecCoverageRuntimeRun, 0, len(runtimeRuns))
+
+	for _, runtimeRun := range runtimeRuns {
+		runtimeRun.EvidenceRefs = coverageRuntimeRunEvidenceRefs(runtimeRun, evidence)
+		runtimeRun.EvidenceStatus = coverageRuntimeRunEvidenceStatus(runtimeRun, evidence)
+		enriched = append(enriched, runtimeRun)
+	}
+
+	return enriched
+}
+
+func coverageRuntimeRunEvidenceRefs(
+	runtimeRun SpecCoverageRuntimeRun,
+	evidence []SpecCoverageEvidence,
+) []string {
+	refs := make([]string, 0)
+
+	for _, item := range evidence {
+		if !evidenceLinksRuntimeRun(item, runtimeRun) {
+			continue
+		}
+
+		refs = append(refs, item.ID)
+	}
+
+	return sortedUniqueStrings(refs)
+}
+
+func coverageRuntimeRunEvidenceStatus(
+	runtimeRun SpecCoverageRuntimeRun,
+	evidence []SpecCoverageEvidence,
+) string {
+	status := RuntimeEvidenceMissing
+
+	for _, item := range evidence {
+		if !evidenceLinksRuntimeRun(item, runtimeRun) {
+			continue
+		}
+
+		status = runtimeEvidenceStatusJoin(status, item.Verdict)
+	}
+
+	return status
+}
+
+func evidenceLinksRuntimeRun(
+	item SpecCoverageEvidence,
+	runtimeRun SpecCoverageRuntimeRun,
+) bool {
+	if item.ArtifactRef == runtimeRun.ID {
+		return true
+	}
+	if item.CarrierRef == runtimeRun.ID {
+		return true
+	}
+
+	return false
+}
+
+func runtimeEvidenceStatusJoin(
+	current string,
+	verdict string,
+) string {
+	switch strings.TrimSpace(verdict) {
+	case "supports", "accepted":
+		return RuntimeEvidenceSupports
+	case "refutes":
+		return RuntimeEvidenceRefutes
+	case "weakens":
+		if current == RuntimeEvidenceSupports || current == RuntimeEvidenceRefutes {
+			return current
+		}
+		return RuntimeEvidenceWeakens
+	default:
+		if current == RuntimeEvidenceMissing {
+			return RuntimeEvidencePresent
+		}
+		return current
+	}
 }
 
 func coverageEvidenceArtifactRefs(
@@ -654,7 +851,7 @@ func deriveSpecCoverageState(signals specCoverageSignals) SpecCoverageState {
 		return SpecCoverageImplemented
 	case len(signals.Evidence) > 0 && len(signals.CodeRefs) > 0:
 		return SpecCoverageImplemented
-	case len(signals.Commissions) > 0:
+	case len(signals.OpenCommissions) > 0:
 		return SpecCoverageCommissioned
 	case len(signals.Decisions) > 0:
 		return SpecCoverageReasoned
@@ -690,7 +887,7 @@ func runtimeRunSupportsImplementation(runtimeRun SpecCoverageRuntimeRun) bool {
 		return false
 	}
 
-	return runtimeRunVerdictSupportsImplementation(runtimeRun.Verdict)
+	return runtimeRunHasImplementationOutcome(runtimeRun)
 }
 
 func runtimeRunIsUnsupported(runtimeRun SpecCoverageRuntimeRun) bool {
@@ -705,6 +902,59 @@ func runtimeRunIsUnsupported(runtimeRun SpecCoverageRuntimeRun) bool {
 	}
 
 	return false
+}
+
+func runtimeRunHasImplementationOutcome(runtimeRun SpecCoverageRuntimeRun) bool {
+	for _, outcome := range runtimeRun.PhaseOutcomes {
+		if !runtimePhaseOutcomeSupportsImplementation(outcome) {
+			continue
+		}
+
+		return true
+	}
+
+	if runtimeTerminalEventSupportsImplementation(runtimeRun.Event) {
+		return runtimeRunVerdictSupportsImplementation(runtimeRun.Verdict)
+	}
+	if runtimeImplementationPhase(runtimeRun.Phase) {
+		return runtimeRunVerdictSupportsImplementation(runtimeRun.Verdict)
+	}
+
+	return false
+}
+
+func runtimePhaseOutcomeSupportsImplementation(
+	outcome SpecCoverageRuntimePhaseOutcome,
+) bool {
+	if !runtimeRunVerdictSupportsImplementation(outcome.Verdict) {
+		return false
+	}
+	if runtimeImplementationPhase(outcome.Phase) {
+		return true
+	}
+	if runtimeTerminalEventSupportsImplementation(outcome.Event) {
+		return true
+	}
+
+	return false
+}
+
+func runtimeImplementationPhase(phase string) bool {
+	implementationPhases := map[string]bool{
+		"execute":  true,
+		"measure":  true,
+		"terminal": true,
+	}
+
+	return implementationPhases[strings.TrimSpace(phase)]
+}
+
+func runtimeTerminalEventSupportsImplementation(event string) bool {
+	terminalEvents := map[string]bool{
+		"workflow_terminal": true,
+	}
+
+	return terminalEvents[strings.TrimSpace(event)]
 }
 
 func runtimeRunVerdictSupportsImplementation(verdict string) bool {
@@ -748,7 +998,7 @@ func specCoverageWhy(signals specCoverageSignals, state SpecCoverageState) []str
 		}
 		return []string{"active evidence exists for a decision with code scope, but no supporting verification evidence is present"}
 	case SpecCoverageCommissioned:
-		return []string{fmt.Sprintf("%d active WorkCommission(s) cover this section", len(signals.Commissions))}
+		return []string{fmt.Sprintf("%d recoverable WorkCommission(s) cover this section", len(signals.OpenCommissions))}
 	case SpecCoverageReasoned:
 		return []string{fmt.Sprintf("%d active DecisionRecord(s) cover this section", len(signals.Decisions))}
 	default:
@@ -787,6 +1037,9 @@ func specCoverageNextAction(
 	case SpecCoverageCommissioned:
 		return "run or complete the WorkCommission and attach evidence"
 	case SpecCoverageReasoned:
+		if len(signals.Commissions) > 0 {
+			return "inspect terminal WorkCommission carriers and attach runtime evidence or create a new recoverable WorkCommission"
+		}
 		return "create a WorkCommission from the linked DecisionRecord"
 	default:
 		if len(signals.Problems) > 0 {
@@ -800,37 +1053,105 @@ func specCoverageEdges(signals specCoverageSignals) []SpecCoverageEdge {
 	edges := make([]SpecCoverageEdge, 0)
 
 	for _, problem := range signals.Problems {
-		edges = append(edges, SpecCoverageEdge{Type: "spec_section->ProblemCard", Target: problem.ID})
+		edges = append(edges, specCoverageProblemEdge(problem))
 	}
 	for _, decision := range signals.Decisions {
-		edges = append(edges, SpecCoverageEdge{Type: "spec_section->DecisionRecord", Target: decision.ID})
+		edges = append(edges, specCoverageDecisionEdge(decision))
 	}
 	for _, commission := range signals.Commissions {
-		edges = append(edges, SpecCoverageEdge{Type: "DecisionRecord->WorkCommission", Target: commission.ID})
+		edges = append(edges, specCoverageCommissionEdge(commission))
 	}
 	for _, runtimeRun := range signals.RuntimeRuns {
-		edges = append(edges, SpecCoverageEdge{Type: "WorkCommission->RuntimeRun", Target: runtimeRun.ID})
+		edges = append(edges, specCoverageRuntimeRunEdge(runtimeRun))
 	}
 	for _, item := range signals.Evidence {
-		edges = append(edges, SpecCoverageEdge{Type: "evidence_item", Target: item.ID})
+		edges = append(edges, specCoverageEvidenceEdge(item))
 		if containsString(coverageRuntimeRunRefs(signals.RuntimeRuns), item.CarrierRef) {
-			edges = append(edges, SpecCoverageEdge{Type: "RuntimeRun->evidence_item", Target: item.ID})
+			edges = append(edges, specCoverageRuntimeEvidenceEdge(item))
 		}
 	}
 	for _, ref := range signals.CodeRefs {
-		edges = append(edges, SpecCoverageEdge{Type: "spec_section->file", Target: filepath.ToSlash(ref)})
+		edges = append(edges, specCoveragePathEdge(SpecCoverageEdgeFile, ref))
 	}
 	for _, ref := range signals.TestRefs {
-		edges = append(edges, SpecCoverageEdge{Type: "spec_section->test", Target: filepath.ToSlash(ref)})
+		edges = append(edges, specCoveragePathEdge(SpecCoverageEdgeTest, ref))
 	}
 
 	sort.SliceStable(edges, func(i, j int) bool {
-		left := edges[i].Type + "\x00" + edges[i].Target
-		right := edges[j].Type + "\x00" + edges[j].Target
+		left := string(edges[i].Type) + "\x00" + edges[i].Target
+		right := string(edges[j].Type) + "\x00" + edges[j].Target
 		return left < right
 	})
 
 	return edges
+}
+
+func specCoverageProblemEdge(problem SpecCoverageProblem) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:           SpecCoverageEdgeProblemCard,
+		Target:         problem.ID,
+		ArtifactStatus: problem.Status,
+	}
+}
+
+func specCoverageDecisionEdge(decision SpecCoverageDecision) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:           SpecCoverageEdgeDecisionRecord,
+		Target:         decision.ID,
+		ArtifactStatus: decision.Status,
+	}
+}
+
+func specCoverageCommissionEdge(commission SpecCoverageCommission) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:      SpecCoverageEdgeWorkCommission,
+		Target:    commission.ID,
+		WorkState: commission.State,
+	}
+}
+
+func specCoverageRuntimeRunEdge(runtimeRun SpecCoverageRuntimeRun) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:           SpecCoverageEdgeRuntimeRun,
+		Target:         runtimeRun.ID,
+		RuntimeEvent:   runtimeRun.Event,
+		Verdict:        runtimeRun.Verdict,
+		CommissionRef:  runtimeRun.CommissionRef,
+		RecordedAt:     runtimeRun.RecordedAt,
+		StartedAt:      runtimeRun.StartedAt,
+		CompletedAt:    runtimeRun.CompletedAt,
+		PhaseOutcomes:  runtimeRun.PhaseOutcomes,
+		EvidenceRefs:   runtimeRun.EvidenceRefs,
+		EvidenceStatus: runtimeRun.EvidenceStatus,
+	}
+}
+
+func specCoverageEvidenceEdge(item SpecCoverageEvidence) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:         SpecCoverageEdgeEvidencePack,
+		Target:       item.ID,
+		EvidenceType: item.Type,
+		Verdict:      item.Verdict,
+	}
+}
+
+func specCoverageRuntimeEvidenceEdge(item SpecCoverageEvidence) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:         SpecCoverageEdgeRuntimeEvidence,
+		Target:       item.ID,
+		EvidenceType: item.Type,
+		Verdict:      item.Verdict,
+	}
+}
+
+func specCoveragePathEdge(
+	edgeType SpecCoverageEdgeType,
+	path string,
+) SpecCoverageEdge {
+	return SpecCoverageEdge{
+		Type:   edgeType,
+		Target: filepath.ToSlash(path),
+	}
 }
 
 func sectionCoverageGaps(
@@ -861,16 +1182,11 @@ func sectionCoverageGaps(
 		gaps = append(gaps, SpecCoverageGap{
 			SectionID:  sectionID,
 			Kind:       "evidence_missing",
-			Detail:     "active WorkCommission exists without linked evidence",
+			Detail:     "recoverable WorkCommission exists without linked evidence",
 			NextAction: "complete runtime work and attach evidence",
 		})
 	case SpecCoverageReasoned:
-		gaps = append(gaps, SpecCoverageGap{
-			SectionID:  sectionID,
-			Kind:       "commission_missing",
-			Detail:     "active DecisionRecord exists without an active WorkCommission",
-			NextAction: "create a WorkCommission from the decision",
-		})
+		gaps = append(gaps, reasonedSpecCoverageGap(signals))
 	default:
 		gaps = append(gaps, SpecCoverageGap{
 			SectionID:  sectionID,
@@ -881,6 +1197,24 @@ func sectionCoverageGaps(
 	}
 
 	return gaps
+}
+
+func reasonedSpecCoverageGap(signals specCoverageSignals) SpecCoverageGap {
+	if len(signals.Commissions) > 0 {
+		return SpecCoverageGap{
+			SectionID:  signals.Section.ID,
+			Kind:       "runtime_evidence_missing",
+			Detail:     "terminal WorkCommission carrier exists without runtime or verification evidence",
+			NextAction: "attach runtime evidence or create a new recoverable WorkCommission",
+		}
+	}
+
+	return SpecCoverageGap{
+		SectionID:  signals.Section.ID,
+		Kind:       "commission_missing",
+		Detail:     "active DecisionRecord exists without a recoverable WorkCommission",
+		NextAction: "create a WorkCommission from the decision",
+	}
 }
 
 func unsupportedRuntimeRunGaps(signals specCoverageSignals) []SpecCoverageGap {
@@ -961,8 +1295,12 @@ func artifactStatusIsActive(status string) bool {
 	return false
 }
 
-func workCommissionStateIsTerminal(state string) bool {
-	return workcommission.IsTerminalState(state)
+func workCommissionStateContributesCommissioned(state string) bool {
+	if strings.TrimSpace(state) == "" {
+		return true
+	}
+
+	return workcommission.IsRecoverableState(state)
 }
 
 func evidenceVerdictSupports(verdict string) bool {

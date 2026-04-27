@@ -328,6 +328,7 @@ type DecisionFields struct {
 	CounterArgument      string               `json:"counterargument,omitempty"`
 	WeakestLink          string               `json:"weakest_link,omitempty"`
 	TaskContext          string               `json:"task_context,omitempty"`
+	SectionRefs          []string             `json:"section_refs,omitempty"`
 	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
 	Claims               []DecisionClaim      `json:"claims,omitempty"`
 	Predictions          []DecisionPrediction `json:"predictions,omitempty"`

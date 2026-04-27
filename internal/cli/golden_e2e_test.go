@@ -27,10 +27,11 @@ const (
 	goldenE2ELogFileName    = "runtime.jsonl"
 )
 
-func TestGoldenE2EInitOnboardCommissionPrepareOnly(t *testing.T) {
+func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	restore := overrideGoldenE2EFlags(t)
 	defer restore()
 
+	sourceRoot := goldenE2ESourceRoot(t)
 	root := newGoldenE2ERepo(t)
 	restoreCwd := enterTestProjectRoot(t, root)
 	defer restoreCwd()
@@ -56,7 +57,12 @@ func TestGoldenE2EInitOnboardCommissionPrepareOnly(t *testing.T) {
 	}
 
 	writeGoldenE2ESpecs(t, root)
-	runGoldenE2ESpecCheck(t)
+	runGoldenE2ESpecCheck(t, sourceRoot, root)
+	uncoveredCoverage := runGoldenE2ESpecCoverage(t, sourceRoot, root)
+	assertGoldenE2ESectionStates(t, uncoveredCoverage, project.SpecCoverageUncovered)
+
+	specPlan := runGoldenE2ESpecPlan(t, sourceRoot, root)
+	assertGoldenE2EPlanCoversSections(t, specPlan, goldenE2ESectionIDs())
 
 	readyFacts := goldenE2EReadiness(t, root)
 	if readyFacts.Status != project.ReadinessReady {
@@ -64,6 +70,9 @@ func TestGoldenE2EInitOnboardCommissionPrepareOnly(t *testing.T) {
 	}
 
 	decisionID := createGoldenE2EDecision(t, root)
+	reasonedCoverage := goldenE2ESpecCoverageFromCore(t, root)
+	assertGoldenE2ESectionStates(t, reasonedCoverage, project.SpecCoverageReasoned)
+
 	runtimeRoot := newGoldenE2ERuntime(t, root)
 	configureGoldenE2EHarness(root, runtimeRoot)
 
@@ -113,6 +122,9 @@ func TestGoldenE2EInitOnboardCommissionPrepareOnly(t *testing.T) {
 		t.Fatalf("lockset = %#v, want %s", scope["lockset"], goldenE2EAffectedFile)
 	}
 
+	commissionedCoverage := goldenE2ESpecCoverageFromCore(t, root)
+	assertGoldenE2ESectionStates(t, commissionedCoverage, project.SpecCoverageCommissioned)
+
 	resultOutput := goldenE2EHarnessResult(t, commissionID)
 	for _, fragment := range []string{
 		"commission: " + commissionID,
@@ -122,6 +134,27 @@ func TestGoldenE2EInitOnboardCommissionPrepareOnly(t *testing.T) {
 	} {
 		if !strings.Contains(resultOutput, fragment) {
 			t.Fatalf("harness result missing %q:\n%s", fragment, resultOutput)
+		}
+	}
+
+	runtimeRunID := runGoldenE2EMockRuntime(t, root, commissionID)
+	implementedCoverage := goldenE2ESpecCoverageFromCore(t, root)
+	assertGoldenE2ESectionStates(t, implementedCoverage, project.SpecCoverageImplemented)
+
+	evidenceID := attachGoldenE2ERuntimeEvidence(t, root, commissionID, runtimeRunID)
+	verifiedCoverage := runGoldenE2ESpecCoverage(t, sourceRoot, root)
+	assertGoldenE2ESectionStates(t, verifiedCoverage, project.SpecCoverageVerified)
+	assertGoldenE2ERuntimeEvidenceEdges(t, verifiedCoverage, runtimeRunID, evidenceID)
+
+	completedResult := goldenE2EHarnessResult(t, commissionID)
+	for _, fragment := range []string{
+		"commission: " + commissionID,
+		"state: completed",
+		"last_event: workflow_terminal",
+		"evidence_summary:",
+	} {
+		if !strings.Contains(completedResult, fragment) {
+			t.Fatalf("completed harness result missing %q:\n%s", fragment, completedResult)
 		}
 	}
 
@@ -217,26 +250,22 @@ func goldenE2ESpecSection(id string, kind string, title string) string {
 	}, "\n")
 }
 
-func runGoldenE2ESpecCheck(t *testing.T) {
+func runGoldenE2ESpecCheck(t *testing.T, sourceRoot string, root string) project.SpecCheckReport {
 	t.Helper()
 
-	var output bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetOut(&output)
+	output := runGoldenE2EHaftCLI(t, sourceRoot, root, "spec", "check", "--json")
+	report := project.SpecCheckReport{}
+	if err := json.Unmarshal(output, &report); err != nil {
+		t.Fatalf("decode spec check JSON: %v\n%s", err, string(output))
+	}
+	if report.Summary.TotalFindings != 0 {
+		t.Fatalf("spec check findings = %#v, want clean", report.Findings)
+	}
+	if report.Summary.ActiveSpecSections != len(goldenE2ESectionIDs()) {
+		t.Fatalf("active sections = %d, want %d", report.Summary.ActiveSpecSections, len(goldenE2ESectionIDs()))
+	}
 
-	restoreJSON := stubSpecCheckJSON(t, false)
-	defer restoreJSON()
-
-	exitCode := stubSpecCheckExit(t)
-	if err := runSpecCheck(cmd, nil); err != nil {
-		t.Fatalf("run spec check: %v", err)
-	}
-	if *exitCode != 0 {
-		t.Fatalf("spec check exit = %d, want 0\n%s", *exitCode, output.String())
-	}
-	if !strings.Contains(output.String(), "haft spec check: clean") {
-		t.Fatalf("spec check output = %q, want clean", output.String())
-	}
+	return report
 }
 
 func createGoldenE2EDecision(t *testing.T, root string) string {
@@ -283,6 +312,10 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 		AffectedFiles: []string{
 			goldenE2EAffectedFile,
 		},
+		SectionRefs: []string{
+			goldenE2ETargetSection,
+			goldenE2EEnableSection,
+		},
 		ValidUntil:     "2099-01-01T00:00:00Z",
 		GovernanceMode: "exact",
 	})
@@ -316,6 +349,7 @@ func configureGoldenE2EHarness(root string, runtimeRoot string) {
 	harnessPlanID = goldenE2EPlanID
 	harnessPlanRevision = goldenE2EPlanRevision
 	harnessRunPrepareOnly = true
+	harnessRunMock = true
 	harnessRunRuntimePath = runtimeRoot
 	harnessRunStatusPath = filepath.Join(root, ".haft", "runtime", goldenE2EStatusFileName)
 	harnessRunLogPath = filepath.Join(root, ".haft", "runtime", goldenE2ELogFileName)
@@ -361,6 +395,297 @@ func goldenE2EHarnessStatus(t *testing.T) map[string]any {
 	}
 
 	return status
+}
+
+func goldenE2ESourceRoot(t *testing.T) string {
+	t.Helper()
+
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("resolve source root: %v", err)
+	}
+
+	root := strings.TrimSpace(string(output))
+	if root == "" {
+		t.Fatal("source root is empty")
+	}
+
+	return root
+}
+
+func runGoldenE2EHaftCLI(t *testing.T, sourceRoot string, root string, args ...string) []byte {
+	t.Helper()
+
+	commandArgs := append([]string{"run", "./cmd/haft"}, args...)
+	cmd := exec.Command("go", commandArgs...)
+	cmd.Dir = sourceRoot
+	cmd.Env = append(
+		os.Environ(),
+		"HAFT_PROJECT_ROOT="+root,
+		"GOCACHE="+filepath.Join(os.TempDir(), "haft-golden-go-build"),
+		"GOMODCACHE="+filepath.Join(os.TempDir(), "haft-golden-go-mod"),
+		"GOFLAGS=-modcacherw",
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf(
+			"go run ./cmd/haft %s failed: %v\nstdout:\n%s\nstderr:\n%s",
+			strings.Join(args, " "),
+			err,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+
+	return append([]byte(nil), stdout.Bytes()...)
+}
+
+func runGoldenE2ESpecCoverage(t *testing.T, sourceRoot string, root string) project.SpecCoverageReport {
+	t.Helper()
+
+	output := runGoldenE2EHaftCLI(t, sourceRoot, root, "spec", "coverage", "--json")
+	report := project.SpecCoverageReport{}
+	if err := json.Unmarshal(output, &report); err != nil {
+		t.Fatalf("decode spec coverage JSON: %v\n%s", err, string(output))
+	}
+
+	return report
+}
+
+func runGoldenE2ESpecPlan(t *testing.T, sourceRoot string, root string) project.SpecPlanReport {
+	t.Helper()
+
+	output := runGoldenE2EHaftCLI(t, sourceRoot, root, "spec", "plan", "--json")
+	report := project.SpecPlanReport{}
+	if err := json.Unmarshal(output, &report); err != nil {
+		t.Fatalf("decode spec plan JSON: %v\n%s", err, string(output))
+	}
+
+	return report
+}
+
+func goldenE2ESpecCoverageFromCore(t *testing.T, root string) project.SpecCoverageReport {
+	t.Helper()
+
+	report, err := buildSpecCoverageReport(context.Background(), root)
+	if err != nil {
+		t.Fatalf("build spec coverage: %v", err)
+	}
+
+	return report
+}
+
+func assertGoldenE2ESectionStates(
+	t *testing.T,
+	report project.SpecCoverageReport,
+	state project.SpecCoverageState,
+) {
+	t.Helper()
+
+	for _, sectionID := range goldenE2ESectionIDs() {
+		section := goldenE2ECoverageSection(report, sectionID)
+		if section.SectionID == "" {
+			t.Fatalf("coverage missing section %s in %#v", sectionID, report.Sections)
+		}
+		if section.State != state {
+			t.Fatalf("section %s state = %s, want %s; section = %#v", sectionID, section.State, state, section)
+		}
+	}
+}
+
+func assertGoldenE2EPlanCoversSections(
+	t *testing.T,
+	report project.SpecPlanReport,
+	sectionIDs []string,
+) {
+	t.Helper()
+
+	if report.Summary.TotalCandidates != len(sectionIDs) {
+		t.Fatalf("spec plan candidates = %d, want %d", report.Summary.TotalCandidates, len(sectionIDs))
+	}
+
+	planned := map[string]bool{}
+	for _, proposal := range report.Proposals {
+		for _, sectionID := range proposal.SectionRefs {
+			planned[sectionID] = true
+		}
+	}
+	for _, sectionID := range sectionIDs {
+		if planned[sectionID] {
+			continue
+		}
+		t.Fatalf("spec plan proposals = %#v, want section %s", report.Proposals, sectionID)
+	}
+}
+
+func runGoldenE2EMockRuntime(t *testing.T, root string, commissionID string) string {
+	t.Helper()
+
+	database, store := openGoldenE2EStore(t, root)
+	defer database.Close()
+
+	runtimeRunID := commissionID + "#runtime-run-golden"
+	ctx := context.Background()
+	events := []map[string]any{
+		{
+			"action":        "claim_for_preflight",
+			"commission_id": commissionID,
+			"runner_id":     "golden-e2e-runtime",
+		},
+		{
+			"action":        "record_preflight",
+			"commission_id": commissionID,
+			"runner_id":     "golden-e2e-runtime",
+			"event":         "preflight_passed",
+			"verdict":       "pass",
+			"payload": map[string]any{
+				"phase":          "preflight",
+				"runtime_run_id": runtimeRunID,
+				"section_refs":   stringsToAnySlice(goldenE2ESectionIDs()),
+			},
+		},
+		{
+			"action":        "start_after_preflight",
+			"commission_id": commissionID,
+			"runner_id":     "golden-e2e-runtime",
+			"event":         "runtime_started",
+			"verdict":       "pass",
+			"project_root":  root,
+			"payload": map[string]any{
+				"phase":          "execute",
+				"runtime_run_id": runtimeRunID,
+				"section_refs":   stringsToAnySlice(goldenE2ESectionIDs()),
+			},
+		},
+		{
+			"action":        "record_run_event",
+			"commission_id": commissionID,
+			"runner_id":     "golden-e2e-runtime",
+			"event":         "phase_outcome",
+			"verdict":       "pass",
+			"payload": map[string]any{
+				"phase":          "execute",
+				"runtime_run_id": runtimeRunID,
+				"section_refs":   stringsToAnySlice(goldenE2ESectionIDs()),
+			},
+		},
+		{
+			"action":        "complete_or_block",
+			"commission_id": commissionID,
+			"runner_id":     "golden-e2e-runtime",
+			"event":         "workflow_terminal",
+			"verdict":       "pass",
+			"payload": map[string]any{
+				"phase":          "measure",
+				"runtime_run_id": runtimeRunID,
+				"section_refs":   stringsToAnySlice(goldenE2ESectionIDs()),
+			},
+		},
+	}
+
+	for _, event := range events {
+		if _, err := handleHaftCommission(ctx, store, event); err != nil {
+			t.Fatalf("mock runtime %s: %v", stringArg(event, "action"), err)
+		}
+	}
+
+	return runtimeRunID
+}
+
+func attachGoldenE2ERuntimeEvidence(
+	t *testing.T,
+	root string,
+	commissionID string,
+	runtimeRunID string,
+) string {
+	t.Helper()
+
+	database, store := openGoldenE2EStore(t, root)
+	defer database.Close()
+
+	evidence, err := artifact.AttachEvidence(context.Background(), store, artifact.EvidenceInput{
+		ArtifactRef:     commissionID,
+		Content:         "Golden E2E mock runtime completed the required local evidence command: " + goldenE2EEvidence,
+		Type:            "test",
+		Verdict:         "supports",
+		CarrierRef:      runtimeRunID,
+		CongruenceLevel: 3,
+		FormalityLevel:  2,
+		ClaimScope: []string{
+			goldenE2ETargetSection,
+			goldenE2EEnableSection,
+			goldenE2EAffectedFile,
+			"internal/cli/golden_e2e_test.go",
+		},
+		ValidUntil: "2099-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("attach runtime evidence: %v", err)
+	}
+
+	return evidence.ID
+}
+
+func assertGoldenE2ERuntimeEvidenceEdges(
+	t *testing.T,
+	report project.SpecCoverageReport,
+	runtimeRunID string,
+	evidenceID string,
+) {
+	t.Helper()
+
+	for _, sectionID := range goldenE2ESectionIDs() {
+		section := goldenE2ECoverageSection(report, sectionID)
+		if !goldenE2EEdgeExists(section.Edges, project.SpecCoverageEdgeRuntimeRun, runtimeRunID) {
+			t.Fatalf("section %s edges = %#v, want RuntimeRun %s", sectionID, section.Edges, runtimeRunID)
+		}
+		if !goldenE2EEdgeExists(section.Edges, project.SpecCoverageEdgeRuntimeEvidence, evidenceID) {
+			t.Fatalf("section %s edges = %#v, want RuntimeRun evidence %s", sectionID, section.Edges, evidenceID)
+		}
+	}
+}
+
+func goldenE2ECoverageSection(
+	report project.SpecCoverageReport,
+	sectionID string,
+) project.SpecCoverageSection {
+	for _, section := range report.Sections {
+		if section.SectionID == sectionID {
+			return section
+		}
+	}
+
+	return project.SpecCoverageSection{}
+}
+
+func goldenE2EEdgeExists(
+	edges []project.SpecCoverageEdge,
+	edgeType project.SpecCoverageEdgeType,
+	target string,
+) bool {
+	for _, edge := range edges {
+		if edge.Type != edgeType {
+			continue
+		}
+		if edge.Target == target {
+			return true
+		}
+	}
+
+	return false
+}
+
+func goldenE2ESectionIDs() []string {
+	return []string{
+		goldenE2ETargetSection,
+		goldenE2EEnableSection,
+	}
 }
 
 func goldenE2ECommissions(t *testing.T, root string) []map[string]any {

@@ -21,6 +21,7 @@ Use `haft_decision` tool with `action="decide"` and:
 - `admissibility`: what is NOT acceptable
 - `evidence_requirements`: explicit evidence the implementation/review loop must gather
 - `refresh_triggers`: concrete future conditions that should trigger re-evaluation
+- `section_refs`: SpecSection IDs governed by this DecisionRecord when accepting or recording a spec-linked decision
 - `search_keywords`: compact retrieval aliases for later recall
 - `task_context`: optional task/context text for the DecisionRecord filename slug; sanitized before it is inserted into the ID
 - `predictions`: falsifiable claims to verify later; each item MUST include `claim`, `observable`, and `threshold`

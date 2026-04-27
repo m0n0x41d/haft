@@ -1701,6 +1701,7 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 		"context",
 		"task_context",
 		"problem_refs",
+		"section_refs",
 		"pre_conditions",
 		"evidence_requirements",
 		"refresh_triggers",
@@ -1800,6 +1801,7 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		"context":               "transport",
 		"problem_ref":           fixture.problem.Meta.ID,
 		"problem_refs":          []string{fixture.problem.Meta.ID, additionalProblem.Meta.ID},
+		"section_refs":          []string{"TS.transport.001", "ES.transport.001"},
 		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
 		"selected_title":        "gRPC",
 		"why_selected":          "Lower latency with schema-checked client generation.",
@@ -1831,6 +1833,9 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		"**Evidence requirements:**",
 		"- p99 latency stays below 20ms",
 		"- Generated clients compile in CI",
+		"**Spec sections:**",
+		"- TS.transport.001",
+		"- ES.transport.001",
 		"**Refresh triggers:**",
 		"- Latency budget regresses after rollout",
 		"- Generated clients fail across two releases",
@@ -1849,6 +1854,8 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		fixture.problem.Meta.ID:           false,
 		additionalProblem.Meta.ID:         false,
 		fixture.comparedPortfolio.Meta.ID: false,
+		"TS.transport.001":                false,
+		"ES.transport.001":                false,
 	}
 
 	for _, link := range links {
@@ -1861,6 +1868,11 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		if !found {
 			t.Fatalf("decision links missing ref %q: %+v", ref, links)
 		}
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if strings.Join(fields.SectionRefs, ",") != "TS.transport.001,ES.transport.001" {
+		t.Fatalf("decision section refs = %#v, want spec refs", fields.SectionRefs)
 	}
 }
 

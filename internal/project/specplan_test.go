@@ -63,8 +63,8 @@ func TestBuildSpecPlan_ExposesNeutralReviewActionsAndDraftAuthority(t *testing.T
 	if plan.Authority != SpecPlanAuthorityNotice {
 		t.Fatalf("authority = %q, want proposal authority notice", plan.Authority)
 	}
-	if got := specPlanTestReviewActionKinds(plan.ReviewActions); !sameStrings(got, []string{"discard", "merge", "split"}) {
-		t.Fatalf("review action kinds = %#v, want merge/split/discard", got)
+	if got := specPlanTestReviewActionKinds(plan.ReviewActions); !sameStrings(got, []string{"accept", "discard", "merge", "split"}) {
+		t.Fatalf("review action kinds = %#v, want accept/merge/split/discard", got)
 	}
 	if len(plan.Proposals) != 1 {
 		t.Fatalf("proposals = %#v, want one proposal", plan.Proposals)
@@ -74,6 +74,65 @@ func TestBuildSpecPlan_ExposesNeutralReviewActionsAndDraftAuthority(t *testing.T
 	}
 	if got := plan.Proposals[0].DecisionRecordDraft.SectionRefs; !sameStrings(got, []string{"TS.checkout.001"}) {
 		t.Fatalf("draft section refs = %#v, want exact section refs", got)
+	}
+	if plan.Proposals[0].DecisionRecordDraft.CounterArgument == "" {
+		t.Fatalf("draft counterargument is empty: %#v", plan.Proposals[0].DecisionRecordDraft)
+	}
+	if len(plan.Proposals[0].DecisionRecordDraft.WhyNotOthers) == 0 {
+		t.Fatalf("draft rejected alternatives are empty: %#v", plan.Proposals[0].DecisionRecordDraft)
+	}
+}
+
+func TestSpecPlanReviewActions_OnlyAcceptIsExecutable(t *testing.T) {
+	plan := BuildSpecPlan(SpecCoverageReport{
+		Sections: []SpecCoverageSection{
+			specPlanTestSection("TS.checkout.001", "acceptance", SpecCoverageUncovered, nil, nil),
+		},
+	})
+
+	actions := specPlanTestReviewActionsByKind(plan.ReviewActions)
+	for _, kind := range []SpecPlanActionKind{
+		SpecPlanActionAccept,
+		SpecPlanActionMerge,
+		SpecPlanActionSplit,
+		SpecPlanActionDiscard,
+	} {
+		if _, ok := actions[kind]; !ok {
+			t.Fatalf("missing action %s in %#v", kind, plan.ReviewActions)
+		}
+	}
+
+	if !actions[SpecPlanActionAccept].Executable {
+		t.Fatalf("accept action = %#v, want executable", actions[SpecPlanActionAccept])
+	}
+
+	for _, kind := range []SpecPlanActionKind{
+		SpecPlanActionMerge,
+		SpecPlanActionSplit,
+		SpecPlanActionDiscard,
+	} {
+		action := actions[kind]
+		if action.Executable {
+			t.Fatalf("%s action = %#v, want non-executable", kind, action)
+		}
+		if action.CommandGap == "" {
+			t.Fatalf("%s action has empty command gap: %#v", kind, action)
+		}
+	}
+}
+
+func TestParseSpecPlanActionKindRejectsUnknownAction(t *testing.T) {
+	kind, err := ParseSpecPlanActionKind("accept")
+	if err != nil {
+		t.Fatalf("parse accept: %v", err)
+	}
+	if kind != SpecPlanActionAccept {
+		t.Fatalf("kind = %q, want accept", kind)
+	}
+
+	_, err = ParseSpecPlanActionKind("approve")
+	if err == nil {
+		t.Fatal("ParseSpecPlanActionKind returned nil error for unknown action")
 	}
 }
 
@@ -125,10 +184,20 @@ func specPlanTestReviewActionKinds(actions []SpecPlanReviewAction) []string {
 	kinds := make([]string, 0, len(actions))
 
 	for _, action := range actions {
-		kinds = append(kinds, action.Kind)
+		kinds = append(kinds, string(action.Kind))
 	}
 
 	return sortedUniqueStrings(kinds)
+}
+
+func specPlanTestReviewActionsByKind(actions []SpecPlanReviewAction) map[SpecPlanActionKind]SpecPlanReviewAction {
+	actionsByKind := map[SpecPlanActionKind]SpecPlanReviewAction{}
+
+	for _, action := range actions {
+		actionsByKind[action.Kind] = action
+	}
+
+	return actionsByKind
 }
 
 func sameStrings(left []string, right []string) bool {

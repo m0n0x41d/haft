@@ -1,8 +1,10 @@
 package project
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -216,4 +218,78 @@ func malformedActiveReadinessSpecSection(id string, kind string) string {
 		"status: active\n" +
 		"terms: [\n" +
 		"```\n"
+}
+
+type readinessContractFixture struct {
+	Schema                 string   `json:"schema"`
+	CanonicalStatuses      []string `json:"canonical_statuses"`
+	UnknownStatusExamples  []string `json:"unknown_status_examples"`
+}
+
+func loadReadinessContractFixture(t *testing.T) readinessContractFixture {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "desktop", "readiness-contract", "canonical-statuses.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read readiness contract fixture: %v", err)
+	}
+
+	var fixture readinessContractFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parse readiness contract fixture: %v", err)
+	}
+
+	if fixture.Schema != "haft.readiness-contract.v1" {
+		t.Fatalf("fixture schema = %q, want %q", fixture.Schema, "haft.readiness-contract.v1")
+	}
+
+	return fixture
+}
+
+func TestReadinessContractCanonicalStatusesMatchEnum(t *testing.T) {
+	fixture := loadReadinessContractFixture(t)
+
+	want := []string{
+		string(ReadinessReady),
+		string(ReadinessNeedsInit),
+		string(ReadinessNeedsOnboard),
+		string(ReadinessMissing),
+	}
+
+	got := append([]string(nil), fixture.CanonicalStatuses...)
+
+	sort.Strings(got)
+	sort.Strings(want)
+
+	if len(got) != len(want) {
+		t.Fatalf("canonical statuses = %v, want %v", got, want)
+	}
+
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("canonical statuses = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestReadinessContractUnknownExamplesAreNotCanonical(t *testing.T) {
+	fixture := loadReadinessContractFixture(t)
+
+	canonical := map[string]struct{}{
+		string(ReadinessReady):        {},
+		string(ReadinessNeedsInit):    {},
+		string(ReadinessNeedsOnboard): {},
+		string(ReadinessMissing):      {},
+	}
+
+	if len(fixture.UnknownStatusExamples) == 0 {
+		t.Fatalf("fixture must declare unknown_status_examples to exercise normalization")
+	}
+
+	for _, status := range fixture.UnknownStatusExamples {
+		if _, ok := canonical[status]; ok {
+			t.Fatalf("unknown_status_examples must not contain canonical status %q", status)
+		}
+	}
 }

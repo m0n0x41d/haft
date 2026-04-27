@@ -1,0 +1,19 @@
+{
+  "schema": "haft.readiness-contract.v1",
+  "purpose": "Shared canonical-readiness contract consumed by Go (internal/project/readiness_test.go), Rust (desktop-tauri/src/project_readiness.rs), and TypeScript (desktop/frontend/src/lib/readinessContract.test.ts). All three layers must agree on the canonical status set; Rust and TypeScript must normalize unknown_status_examples without silently treating them as ready.",
+  "canonical_statuses": [
+    "ready",
+    "needs_init",
+    "needs_onboard",
+    "missing"
+  ],
+  "unknown_status_examples": [
+    "",
+    "unknown",
+    "READY",
+    "needs-init",
+    "ready ",
+    "ok",
+    "fake"
+  ]
+}

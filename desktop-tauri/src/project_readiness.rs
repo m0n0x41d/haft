@@ -219,6 +219,70 @@ mod tests {
         assert_ne!(facts.status, READY);
     }
 
+    #[derive(serde::Deserialize)]
+    struct ReadinessContractFixture {
+        schema: String,
+        canonical_statuses: Vec<String>,
+        unknown_status_examples: Vec<String>,
+    }
+
+    fn load_readiness_contract_fixture() -> ReadinessContractFixture {
+        let raw = include_str!("../../desktop/readiness-contract/canonical-statuses.json");
+        let fixture: ReadinessContractFixture =
+            serde_json::from_str(raw).expect("readiness contract fixture must parse");
+        assert_eq!(fixture.schema, "haft.readiness-contract.v1");
+        fixture
+    }
+
+    #[test]
+    fn readiness_contract_canonical_statuses_match_constants() {
+        let fixture = load_readiness_contract_fixture();
+        let mut got = fixture.canonical_statuses.clone();
+        let mut want = vec![
+            READY.to_string(),
+            NEEDS_INIT.to_string(),
+            NEEDS_ONBOARD.to_string(),
+            MISSING.to_string(),
+        ];
+
+        got.sort();
+        want.sort();
+
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn readiness_contract_unknown_statuses_normalize_to_degraded_needs_onboard() {
+        let fixture = load_readiness_contract_fixture();
+        assert!(
+            !fixture.unknown_status_examples.is_empty(),
+            "fixture must declare unknown_status_examples"
+        );
+
+        for unknown in &fixture.unknown_status_examples {
+            let facts = inspect_project_readiness_with_core("/tmp/project", |_| {
+                Ok(readiness_facts(unknown, true, true, true))
+            });
+
+            assert_eq!(
+                facts.status, NEEDS_ONBOARD,
+                "unknown status {unknown:?} should normalize to needs_onboard"
+            );
+            assert_eq!(
+                facts.readiness_source, DEGRADED_SOURCE,
+                "unknown status {unknown:?} should mark source as degraded"
+            );
+            assert!(
+                !facts.readiness_error.is_empty(),
+                "unknown status {unknown:?} should populate readiness_error"
+            );
+            assert!(
+                !facts.has_specs,
+                "unknown status {unknown:?} must not retain has_specs=true"
+            );
+        }
+    }
+
     fn readiness_facts(
         status: &str,
         exists: bool,

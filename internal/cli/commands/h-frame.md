@@ -6,6 +6,13 @@ description: "Frame an engineering problem before solving it"
 
 Frame the actual problem before jumping to solutions. The bottleneck is problem quality, not solution speed.
 
+If `haft_problem(frame)` returns a `Project readiness` warning that the
+project is `needs_onboard`, prefer running `/h-onboard` first so the
+ProblemCard and any downstream decision can link to spec section refs.
+Tactical exception: if the problem is urgent or exploratory, proceed and
+mark the work as tactical so `haft spec coverage` will not later confuse
+it with spec-driven work.
+
 Use `haft_problem` tool with `action="frame"` and:
 - `title`: problem title
 - `signal`: what's anomalous, broken, or needs changing (required)

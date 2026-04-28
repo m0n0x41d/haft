@@ -6,6 +6,13 @@ description: "Finalize a decision with full rationale"
 
 Create a DecisionRecord — the crown jewel artifact. Must include what was chosen, why, and what to watch for.
 
+If `haft_decision(decide)` returns a `Project readiness` warning that the
+project is `needs_onboard`, the resulting DecisionRecord cannot link to
+SpecSection refs — and downstream `haft_commission(create_from_decision)`
+will block until the spec set is in place. Prefer onboarding first
+(`/h-onboard`); if the decision is intentionally tactical, proceed and
+record it as out-of-spec so `haft spec coverage` reports it correctly.
+
 Use `haft_decision` tool with `action="decide"` and:
 - `selected_title`: name of chosen variant (required)
 - `why_selected`: rationale (required)

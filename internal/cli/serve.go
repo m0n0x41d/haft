@@ -155,6 +155,7 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 
 		if toolErr == nil {
 			result = applyRefreshReminder(ctx, result, params.Name, store)
+			result = applyReadinessReminder(result, params.Name, haftDir)
 		}
 
 		return result, toolErr

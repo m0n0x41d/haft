@@ -282,6 +282,27 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				"Do not physically delete WorkCommissions",
 			},
 		},
+		{
+			name: "h-frame",
+			path: "commands/h-frame.md",
+			required: []string{
+				"Project readiness",
+				"needs_onboard",
+				"/h-onboard",
+				"tactical",
+			},
+		},
+		{
+			name: "h-decide",
+			path: "commands/h-decide.md",
+			required: []string{
+				"Project readiness",
+				"needs_onboard",
+				"SpecSection refs",
+				"haft_commission(create_from_decision)",
+				"/h-onboard",
+			},
+		},
 	}
 
 	for _, tc := range cases {

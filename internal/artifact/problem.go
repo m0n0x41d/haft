@@ -11,6 +11,7 @@ import (
 // ProblemFrameInput is the input for framing a problem.
 type ProblemFrameInput struct {
 	Title                 string   `json:"title"`
+	TaskContext           string   `json:"task_context,omitempty"`
 	ProblemType           string   `json:"problem_type,omitempty"`
 	Signal                string   `json:"signal"`
 	Constraints           []string `json:"constraints,omitempty"`
@@ -146,7 +147,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 func FrameProblem(ctx context.Context, store ArtifactStore, haftDir string, input ProblemFrameInput) (*Artifact, string, error) {
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
-	id := GenerateID(KindProblemCard, 0)
+	id := GenerateIDWithTaskContext(KindProblemCard, 0, input.TaskContext)
 
 	// Pre-fetch recall (side effect)
 	recallQuery := input.Title

@@ -17,6 +17,7 @@ import (
 // ExploreInput is the input for creating a SolutionPortfolio with variants.
 type ExploreInput struct {
 	ProblemRef               string    `json:"problem_ref,omitempty"`
+	TaskContext              string    `json:"task_context,omitempty"`
 	Variants                 []Variant `json:"variants"`
 	Context                  string    `json:"context,omitempty"`
 	Mode                     string    `json:"mode,omitempty"`
@@ -285,7 +286,7 @@ func ExploreSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
-	id := GenerateID(KindSolutionPortfolio, 0)
+	id := GenerateIDWithTaskContext(KindSolutionPortfolio, 0, input.TaskContext)
 	var mode Mode
 	if resolvedMode == "" {
 		mode = ModeStandard

@@ -165,3 +165,37 @@ func TestCreateNote_Success(t *testing.T) {
 		t.Error("note not found via search")
 	}
 }
+
+func TestRecordNote_TaskContextSlugInIDAndFilename(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	a, filePath, err := CreateNote(ctx, store, haftDir, NoteInput{
+		Title:       "Task-scoped note",
+		TaskContext: "Task #12",
+		Rationale:   "Note filenames need the same optional task context as decisions.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^note-\d{8}-task-12-[0-9a-f]{8}$`)
+	assertArtifactFilenameMatchesID(t, filePath, a.Meta.ID)
+}
+
+func TestRecordNote_EmptyTaskContextKeepsDefaultIDShape(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	a, _, err := CreateNote(ctx, store, t.TempDir(), NoteInput{
+		Title:       "Default-shaped note",
+		TaskContext: "",
+		Rationale:   "Missing task context must keep the existing note ID shape.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^note-\d{8}-[0-9a-f]{8}$`)
+}

@@ -100,6 +100,46 @@ func TestExploreSolutions_Success(t *testing.T) {
 	}
 }
 
+func TestExploreSolutions_TaskContextSlugInIDAndFilename(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	a, filePath, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		TaskContext: "Task #12",
+		Variants: []Variant{
+			testVariant("Direct path", "Couples rollout to the current shell", "Keep the existing operational shape"),
+			testVariant("Adapter path", "Adds one more abstraction to own", "Introduce a bounded adapter layer"),
+		},
+		NoSteppingStoneRationale: "Both variants are direct production options.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^sol-\d{8}-task-12-[0-9a-f]{8}$`)
+	assertArtifactFilenameMatchesID(t, filePath, a.Meta.ID)
+}
+
+func TestExploreSolutions_EmptyTaskContextKeepsDefaultIDShape(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	a, _, err := ExploreSolutions(ctx, store, t.TempDir(), ExploreInput{
+		TaskContext: "",
+		Variants: []Variant{
+			testVariant("Direct path", "Couples rollout to the current shell", "Keep the existing operational shape"),
+			testVariant("Adapter path", "Adds one more abstraction to own", "Introduce a bounded adapter layer"),
+		},
+		NoSteppingStoneRationale: "Both variants are direct production options.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^sol-\d{8}-[0-9a-f]{8}$`)
+}
+
 func TestExploreSolutions_TooFewVariants(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

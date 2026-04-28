@@ -238,9 +238,52 @@ func TestCreateRefreshReport(t *testing.T) {
 	if report.Meta.Kind != KindRefreshReport {
 		t.Errorf("kind = %q", report.Meta.Kind)
 	}
+	assertArtifactIDPattern(t, report.Meta.ID, `^ref-\d{8}-[0-9a-f]{8}$`)
 	if !strings.Contains(report.Body, "waive") {
 		t.Error("report should mention action")
 	}
+}
+
+func TestRefreshReport_TaskContextSlugInID(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{ID: "dec-001", Kind: KindDecisionRecord, Title: "D", Status: StatusActive},
+		Body: "d",
+	})
+
+	report, err := CreateRefreshReportWithTaskContext(ctx, store, haftDir, "dec-001", "waive", "Still valid", "Extended 90 days", "Task #12")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, report.Meta.ID, `^ref-\d{8}-task-12-[0-9a-f]{8}$`)
+}
+
+func TestRefreshReopenDecisionWithTaskContextCreatesProblemSlug(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:      "dec-001",
+			Kind:    KindDecisionRecord,
+			Title:   "Decision: Use direct path",
+			Status:  StatusActive,
+			Context: "delivery",
+		},
+		Body: "d",
+	})
+
+	_, problem, err := ReopenDecisionWithTaskContext(ctx, store, haftDir, "dec-001", "Measurement failed", "Task #12")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, problem.Meta.ID, `^prob-\d{8}-task-12-[0-9a-f]{8}$`)
 }
 
 // --- New tests for generalized lifecycle ---

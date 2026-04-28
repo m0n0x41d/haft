@@ -383,6 +383,9 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, haftDir string,
 	if v, ok := args["title"].(string); ok {
 		input.Title = v
 	}
+	if v, ok := args["task_context"].(string); ok {
+		input.TaskContext = v
+	}
 	if v, ok := args["rationale"].(string); ok {
 		input.Rationale = v
 	}
@@ -424,6 +427,9 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 	switch action {
 	case "frame":
 		input := artifact.ProblemFrameInput{Context: contextName}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
+		}
 		if v, ok := args["title"].(string); ok {
 			input.Title = v
 		}
@@ -532,6 +538,9 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 	switch action {
 	case "explore":
 		input := artifact.ExploreInput{Context: contextName}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
+		}
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
 		}
@@ -928,6 +937,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
+	taskContext, _ := args["task_context"].(string)
 	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 
 	// Support both artifact_ref (new) and decision_ref (backward compat)
@@ -1009,18 +1019,18 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
 
 	case artifact.RefreshReopen:
 		if artifactRef == "" {
 			return "artifact_ref is required for reopen. Note: reopen only works on decisions.\n" + navStrip, nil
 		}
-		dec, newProb, err := artifact.ReopenDecision(ctx, store, haftDir, artifactRef, reason)
+		dec, newProb, err := artifact.ReopenDecisionWithTaskContext(ctx, store, haftDir, artifactRef, reason, taskContext)
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
 
 	case artifact.RefreshSupersede:
@@ -1035,7 +1045,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
 
 	case artifact.RefreshDeprecate:
@@ -1046,7 +1056,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "deprecate", reason, "Artifact deprecated")
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "deprecate", reason, "Artifact deprecated", taskContext)
 		return present.RefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
 	case artifact.RefreshReconcile:

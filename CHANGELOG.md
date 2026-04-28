@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [7.0.0] — 2026-04-28
+
+v7 promotes specs to authoritative artifacts. The product is no longer "decision governance plus task execution"; it is **project harnessability**. A repository becomes harnessable only after it carries a parseable ProjectSpecificationSet (TargetSystemSpec + EnablingSystemSpec + TermMap), and Decisions / WorkCommissions / RuntimeRuns / Evidence flow downstream as consequences of that spec. The product surface model is also clearer: one Haft Core (semantic authority) under three surfaces — Desktop Cockpit (primary human cockpit), MCP Plugin (embedded host-agent surface for Claude Code and Codex), CLI Harness (operator/runtime surface). Surfaces dispatch typed actions; they do not invent semantics.
+
+This is a major release. v6 artifacts (decisions, problems, notes, evidence, commissions) carry forward without migration; the new spec carriers and the SpecOnboardingMethod typed flow are additive. Re-run `haft init` in existing projects to pick up the updated MCP commands and placeholder spec carriers.
+
 ### Added
 
 - **Haft v7 specification onboarding spine** — `haft init` now creates parseable placeholder carriers for `.haft/specs/target-system.md`, `.haft/specs/enabling-system.md`, and `.haft/specs/term-map.md` without inventing active product claims. New `haft spec check` runs deterministic L0/L1/L1.5 checks over fenced `yaml spec-section` blocks, term-map entries, optional section fields, and obvious carrier/object authority confusion.
@@ -30,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Spec section staleness detection** — `haft spec check` and the new `haft_query(action="check")` action emit `spec_section_stale` findings for active SpecSections whose `valid_until` is past today. Refresh discipline now lives at the claim level, not only at evidence.
 - **`haft_query(action="check")` MCP action** — plugin-mode parity for the CLI `haft check` command. Returns the unified, CI-actionable enforcement report covering decision drift + evidence decay + unassessed decisions + coverage gaps + spec drift + spec stale + spec structural in one structured response. JSON parity with `haft check --json` is enforced by a contract test.
 - **`/h-onboard`, `/h-status`, `/h-verify` rewired around the new tools** — `/h-onboard` now drives onboarding through `haft_spec_section(action="next_step")` with mandatory FPF retrieval per phase via `haft_query(action="fpf", ...)` and forbids FPF citations inside `.haft/specs/*` YAML carriers. `/h-status` distinguishes overview (`status`) from CI-actionable enforcement (`check`). `/h-verify` discovery routes through `haft_query(action="check")` first; legacy `haft_refresh(action="scan")` stays for drill-down. Regression tests assert load-bearing clauses across all three prompts.
+- **Readiness nudge on MCP reasoning tools** — `haft_problem(frame)`, `haft_solution(explore)`, `haft_decision(decide)`, and `haft_note` now append a soft warning to text results when the project is `needs_onboard`. Warns the operator that decisions made now cannot link to spec refs and downstream WorkCommissions / harness runs will block until specs are in place. Skipped on machine-JSON responses, on tools that already enforce readiness (haft_commission, haft_spec_section, haft_refresh, haft_query), and on `ready` / `needs_init` / `missing` projects.
+- **`haft_query(action="resolve_term")` for investigation-first discipline** — new MCP action grounds an umbrella term in the project's bounded context in one round-trip: returns `term_map_entries`, `spec_section_refs` (sections whose `terms` field references the term), `artifact_mentions` (FTS-indexed past Decisions / Problems / Notes), and a typed `resolution` (`resolved` / `ambiguous` / `absent`) with a structured `next_action` hint. `/h-frame`, `/h-decide`, and `/h-note` slash prompts now require the host agent to sweep the bounded context via `resolve_term` BEFORE bouncing back to the operator on vague signals — and even then to ask one concrete question naming the candidates the resolver returned, not "what do you mean?".
 
 ### Changed
 

@@ -11,6 +11,7 @@ import (
 const (
 	codeSpecSectionNeedsBaseline = "spec_section_needs_baseline"
 	codeSpecSectionDrifted       = "spec_section_drifted"
+	codeSpecSectionStale         = "spec_section_stale"
 )
 
 // SectionBaselineFindings returns drift / missing-baseline findings for

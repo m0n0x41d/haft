@@ -93,6 +93,11 @@ Do not start broad harness/runtime execution while readiness is
 `needs_onboard`. A tactical exception must be explicit and recorded with an
 operator reason via `haft harness run --tactical-override-reason "..."`.
 
+For project-level enforcement state in plugin mode, call
+`haft_query(action="check")` — it returns the unified actionable findings
+(decision drift, evidence decay, spec drift, spec stale, spec structural).
+This is the MCP parity for the CLI `haft check` command; same JSON shape.
+
 The supported v7 host-agent surfaces are Claude Code and Codex. Cursor,
 Gemini CLI, JetBrains Air, and other MCP clients remain experimental
 carriers; do not assume their tooling matches this contract.

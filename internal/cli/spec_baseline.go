@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
@@ -61,29 +62,41 @@ func haftDirFor(projectRoot string) string {
 
 func noopClose() {}
 
-// appendSpecBaselineFindings runs SpecSection drift / missing-baseline
-// detection over the project's baseline store and folds the findings
-// into the existing SpecCheckReport. When the project has no DB yet
-// (pre-init / post-onboard but pre-approve) the report is returned
-// unchanged.
-func appendSpecBaselineFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
-	store, projectID, closeFn, err := projectBaseline(projectRoot)
-	defer closeFn()
-	if err != nil || store == nil {
+// appendSpecHealthFindings runs SpecSection drift / missing-baseline
+// detection AND time-based staleness detection over the project's
+// baseline store + carriers, folding both finding kinds into the
+// existing SpecCheckReport. When the project has no DB yet, drift
+// findings are skipped but staleness findings still run because
+// staleness only needs the carrier set + current time.
+//
+// Per dec-20260428-spec-enforcement-hardening-219a58b5: this is the
+// single source of truth for spec-health rollups consumed by both
+// `haft spec check` (CLI) and `haft_query(action="check")` (MCP).
+func appendSpecHealthFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
+	specSet, specErr := project.LoadProjectSpecificationSet(projectRoot)
+	if specErr != nil {
 		return report
 	}
 
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
-	if err != nil {
-		return report
-	}
+	store, projectID, closeFn, _ := projectBaseline(projectRoot)
+	defer closeFn()
 
 	driftFindings := specflow.SectionBaselineFindings(specSet, store, projectID)
-	if len(driftFindings) == 0 {
+	staleFindings := specflow.SectionStalenessFindings(specSet, time.Now().UTC())
+
+	if len(driftFindings) == 0 && len(staleFindings) == 0 {
 		return report
 	}
 
 	report.Findings = append(report.Findings, driftFindings...)
+	report.Findings = append(report.Findings, staleFindings...)
 	report.Summary.TotalFindings = len(report.Findings)
 	return report
+}
+
+// appendSpecBaselineFindings is preserved as the previous slice's name
+// for backwards compatibility within this package; new callers should
+// use appendSpecHealthFindings to get drift + stale together.
+func appendSpecBaselineFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
+	return appendSpecHealthFindings(report, projectRoot)
 }

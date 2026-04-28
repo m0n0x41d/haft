@@ -8,11 +8,23 @@ Single entry point for everything in Verify mode. Finds problems, then helps res
 
 ## Step 1: Discovery (always run first)
 
-Call `haft_refresh(action="scan")` to find ALL issues at once:
-- expired decisions and artifacts (valid_until passed)
-- evidence-degraded decisions (R_eff < 0.5 or AT RISK < 0.3)
-- claims with verify_after dates that passed but remain unverified
-- file drift on baselined decisions (use `haft_refresh(action="drift")` if project root available)
+Call `haft_query(action="check")` — the unified, CI-actionable enforcement
+report covering every kind of debt in one structured response:
+- **Stale** decisions/artifacts (valid_until passed; evidence-degraded R_eff)
+- **Drift** on baselined decisions (file hashes diverged from baseline)
+- **Unassessed** decisions (active but no evidence/measurement yet)
+- **Coverage gaps** on decisions
+- **Spec health** — drift on approved SpecSections (`spec_section_drifted`),
+  missing baselines (`spec_section_needs_baseline`), time-based staleness
+  (`spec_section_stale` — active section whose `valid_until` is past today),
+  and L0/L1/L1.5 structural carrier findings.
+
+`haft_query(action="check")` is the plugin-mode parity for the CLI `haft check`
+command and returns the same JSON shape — fixture parity is enforced by tests.
+Use `status` for an at-a-glance overview; use `check` when the operator or CI
+must act on debt. If you need finer-grained legacy data,
+`haft_refresh(action="scan")` and `haft_refresh(action="drift")` still work
+for decision/evidence-only scans.
 
 Then call `haft_commission(action="list", selector="stale")` to find execution
 authority objects that still need operator attention:
@@ -43,6 +55,10 @@ For each stale item, explain in human terms:
 | Code drifted materially | Re-verify or reopen | Check if drift breaks invariants, then measure or reopen |
 | WorkCommission still valid but stuck | Requeue | `haft_commission(action="requeue", commission_id=..., reason=...)` |
 | WorkCommission obsolete or duplicate | Cancel | `haft_commission(action="cancel", commission_id=..., reason=...)` |
+| Spec section drifted (intentional evolution) | Rebaseline with reason | `haft_spec_section(action="rebaseline", section_id=..., reason=...)` |
+| Spec section drifted (needs review) | Reopen the section | `haft_spec_section(action="reopen", section_id=..., reason=...)` |
+| Spec section stale (`valid_until` past) | Extend valid_until in carrier, then rebaseline; or reopen | `haft_spec_section(action="rebaseline" | "reopen", ...)` |
+| Spec section missing baseline | Approve | `haft_spec_section(action="approve", section_id=...)` |
 
 Present the triage to the user. Let them decide what to do with each item. Execute the chosen actions.
 

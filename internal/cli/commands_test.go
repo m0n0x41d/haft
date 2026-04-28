@@ -220,6 +220,7 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				`haft_spec_section(action="approve"`,
 				`haft_spec_section(action="rebaseline"`,
 				`haft_spec_section(action="reopen"`,
+				`haft_query(action="check")`,
 				"spec_section_needs_baseline",
 				"spec_section_drifted",
 				"enabling.architecture.draft",
@@ -253,6 +254,20 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				"stale, blocked, or running-too-long WorkCommissions",
 				`haft_commission(action="show"`,
 				"do not start Open-Sleigh",
+				`haft_query(action="check")`,
+			},
+		},
+		{
+			name: "h-verify",
+			path: "commands/h-verify.md",
+			required: []string{
+				`haft_query(action="check")`,
+				"spec_section_drifted",
+				"spec_section_stale",
+				"spec_section_needs_baseline",
+				`haft_spec_section(action="rebaseline"`,
+				`haft_spec_section(action="reopen"`,
+				`haft_spec_section(action="approve"`,
 			},
 		},
 		{

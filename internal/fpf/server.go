@@ -668,8 +668,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "projection", "list", "coverage", "fpf"},
-						"description": "search=FTS5 keyword search, status=compact dashboard, board=rich health dashboard (overview/decisions/problems/coverage/evidence/full), related=by file path, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec",
+						"enum":        []interface{}{"search", "status", "board", "related", "projection", "list", "coverage", "fpf", "check"},
+						"description": "search=FTS5 keyword search, status=compact dashboard (at-a-glance overview), board=rich health dashboard (overview/decisions/problems/coverage/evidence/full), related=by file path, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec, check=CI-actionable enforcement findings (decision drift + evidence decay + spec drift + spec stale + spec structural). Use status for overview; use check when the operator or CI must act on debt.",
 					},
 					"query": map[string]string{
 						"type":        "string",

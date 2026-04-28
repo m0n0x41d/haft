@@ -9,6 +9,12 @@ Show what's active, what's stale, and what's recent.
 Use `haft_query` tool with `action="status"`.
 Optionally filter by `context`.
 
+`status` is the at-a-glance overview. When the operator or CI needs the
+**actionable enforcement** picture (decision drift + evidence decay + spec
+drift + spec stale + spec structural in one structured response), call
+`haft_query(action="check")` instead — that is the plugin-mode parity for
+the CLI `haft check` command and the right entry point for `/h-verify`.
+
 First interpret project readiness if it is present:
 
 - `missing`: the path is not a usable project.

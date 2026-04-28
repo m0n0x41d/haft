@@ -1190,8 +1190,21 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 
 		return formatMCPFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), explain) + navStrip, nil
 
+	case "check":
+		projectRoot := filepath.Dir(haftDir)
+		report, err := buildCheckReport(ctx, store, projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("build check report: %w", err)
+		}
+		report = normalizeCheckReport(report)
+		payload, err := json.Marshal(report)
+		if err != nil {
+			return "", fmt.Errorf("marshal check report: %w", err)
+		}
+		return string(payload), nil
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', or 'fpf'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', 'fpf', or 'check'", action)
 	}
 }
 

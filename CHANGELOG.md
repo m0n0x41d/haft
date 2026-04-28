@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`task_context` on the four remaining persistent artifact kinds** ([#66](https://github.com/m0n0x41d/haft/issues/66) follow-up to v6.2 DecisionRecord work in `dec-20260424-8b141266`) — `haft_problem(action="frame")`, `haft_solution(action="explore")`, `haft_note(action="record")`, and `haft_refresh(action="waive|reopen|supersede|deprecate")` now accept an optional `task_context` string that flows into the artifact ID and filename as a sanitized slug, e.g. `prob-20260428-task-12-a1b2c3d4.md`. Empty/missing `task_context` keeps the current `<prefix>-YYYYMMDD-<8hex>` shape, so existing callers are unaffected. Sanitization stays in the canonical `sanitizeIDSlug` helper — no per-kind divergence. `ReopenDecision` and `CreateRefreshReport` got `*WithTaskContext` variants while preserving the original signatures as backwards-compat wrappers. Closes the surface-uniformity gap reported in issue #66 (DecisionRecord-only support shipped in v6.2.x).
+
 ## [7.0.0] — 2026-04-28
 
 v7 promotes specs to authoritative artifacts. The product is no longer "decision governance plus task execution"; it is **project harnessability**. A repository becomes harnessable only after it carries a parseable ProjectSpecificationSet (TargetSystemSpec + EnablingSystemSpec + TermMap), and Decisions / WorkCommissions / RuntimeRuns / Evidence flow downstream as consequences of that spec. The product surface model is also clearer: one Haft Core (semantic authority) under three surfaces — Desktop Cockpit (primary human cockpit), MCP Plugin (embedded host-agent surface for Claude Code and Codex), CLI Harness (operator/runtime surface). Surfaces dispatch typed actions; they do not invent semantics.

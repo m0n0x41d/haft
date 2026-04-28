@@ -153,21 +153,45 @@ var requiredSpecSectionFields = []string{
 	"status",
 }
 
+// SpecSectionValidStatementTypes is the canonical set of statement_type
+// values accepted by both the parser-level speccheck and the SpecOnboarding
+// method (`internal/project/specflow`). Single source so the two
+// validators cannot drift.
+var SpecSectionValidStatementTypes = []string{
+	"definition",
+	"admissibility",
+	"duty",
+	"evidence",
+	"explanation",
+}
+
+// SpecSectionValidClaimLayers is the canonical set of claim_layer values
+// accepted by both speccheck and the SpecOnboarding method.
+var SpecSectionValidClaimLayers = []string{
+	"object",
+	"description",
+	"carrier",
+	"work",
+	"evidence",
+}
+
+// SpecSectionValidGuardLocations is the canonical set of guard_location
+// values for evidence_required[].kind on invariant / illegal-state
+// sections. Mirrors the FPF / Levenchuk layer vocabulary.
+var SpecSectionValidGuardLocations = []string{
+	"type",
+	"L1",
+	"L2",
+	"L3",
+	"L4",
+	"DB",
+	"E2E",
+	"manual",
+}
+
 var specSectionValueSets = map[string]map[string]struct{}{
-	"statement_type": {
-		"definition":    {},
-		"admissibility": {},
-		"duty":          {},
-		"evidence":      {},
-		"explanation":   {},
-	},
-	"claim_layer": {
-		"object":      {},
-		"description": {},
-		"carrier":     {},
-		"work":        {},
-		"evidence":    {},
-	},
+	"statement_type": stringSliceToSet(SpecSectionValidStatementTypes),
+	"claim_layer":    stringSliceToSet(SpecSectionValidClaimLayers),
 	"owner": {
 		"human":            {},
 		"haft":             {},
@@ -181,6 +205,14 @@ var specSectionValueSets = map[string]map[string]struct{}{
 		"deprecated": {},
 		"superseded": {},
 	},
+}
+
+func stringSliceToSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		out[value] = struct{}{}
+	}
+	return out
 }
 
 func CheckSpecificationSet(projectRoot string) (SpecCheckReport, error) {

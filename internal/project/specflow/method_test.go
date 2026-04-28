@@ -77,7 +77,7 @@ func TestNextStepReachesBoundaryAfterRoleSatisfied(t *testing.T) {
 	}
 }
 
-func TestNextStepIsTerminalWhenAllPhasesSatisfied(t *testing.T) {
+func TestNextStepAdvancesPastTargetSpineWhenSatisfied(t *testing.T) {
 	state := DeriveState(project.ProjectSpecificationSet{
 		Sections: []project.SpecSection{
 			activeEnvironmentSection(),
@@ -88,8 +88,22 @@ func TestNextStepIsTerminalWhenAllPhasesSatisfied(t *testing.T) {
 
 	intent := NextStep(state)
 
+	// Target spine is fully satisfied — the registry advances into the
+	// enabling spine. Full-spine terminal coverage lives in
+	// enabling_phases_test.go (TestNextStepReachesTerminalAfterFullSpine).
+	if intent.Terminal {
+		t.Fatalf("intent.Terminal = true; want enabling spine to take over after target satisfied")
+	}
+	if intent.DocumentKind != project.SpecDocumentKindEnablingSystem {
+		t.Fatalf("intent.DocumentKind = %q, want enabling-system", intent.DocumentKind)
+	}
+	_ = intent.Reason
+}
+
+func TestNextStepReasonIsPopulatedOnTerminalIntent(t *testing.T) {
+	intent := terminalIntent("smoke")
 	if !intent.Terminal {
-		t.Fatalf("intent.Terminal = false; want true after all phases satisfied. Phase=%q Reason=%q", intent.Phase, intent.Reason)
+		t.Fatalf("terminalIntent should produce Terminal=true")
 	}
 	if intent.Reason == "" {
 		t.Fatalf("terminal intent should carry a reason")
@@ -200,7 +214,7 @@ func activeBoundarySection() project.SpecSection {
 		Title:         "Boundary norms",
 		Owner:         "human",
 		Status:        string(project.SpecSectionStateActive),
-		StatementType: "rule",
+		StatementType: "admissibility",
 		ClaimLayer:    "object",
 		ValidUntil:    "2026-10-28",
 		DependsOn:     []string{"tgt-role-1"},

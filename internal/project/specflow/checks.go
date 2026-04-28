@@ -27,18 +27,14 @@ const (
 	codeBoundaryPerspectivesMissing = "spec_boundary_perspectives_missing"
 )
 
-// Canonical sets of admissible values. Mirrors FPF/slideument vocabulary.
-// Centralized here so checks and downstream tooling agree on the set.
+// Canonical sets of admissible values are defined once in the `project`
+// package (SpecSectionValid*). specflow re-exports them so phase
+// definitions and surface code can reference a single source of truth
+// without round-tripping through SpecCheck.
 var (
-	ValidStatementTypes = []string{
-		"rule", "promise", "gate", "explanation", "evidence", "definition",
-	}
-	ValidClaimLayers = []string{
-		"object", "method", "work",
-	}
-	ValidGuardLocations = []string{
-		"type", "L1", "L2", "L3", "L4", "DB", "E2E", "manual",
-	}
+	ValidStatementTypes = project.SpecSectionValidStatementTypes
+	ValidClaimLayers    = project.SpecSectionValidClaimLayers
+	ValidGuardLocations = project.SpecSectionValidGuardLocations
 )
 
 // RequireField asserts that a SpecSection field is non-empty. Field is

@@ -113,9 +113,12 @@ Repeat until the WorkflowIntent returns `terminal: true`:
 5. Draft the YAML `spec-section` block in the carrier file named by
    `document_kind`. Populate every field listed in `expected_fields`.
    Required SoTA fields on every claim:
-   - `statement_type` — one of: rule, promise, gate, explanation, evidence,
-     definition. (Mixed types are an L1 error per X-STATEMENT-TYPE; decompose.)
-   - `claim_layer` — one of: object, method, work.
+   - `statement_type` — one of: definition, admissibility, duty, evidence,
+     explanation. (Mixed types are an L1 error per X-STATEMENT-TYPE;
+     decompose. The carrier vocab is CHR-10-aligned: definition for terms,
+     admissibility for gates, duty for promises/rules, evidence for
+     backing, explanation for rationale.)
+   - `claim_layer` — one of: object, description, carrier, work, evidence.
    - `valid_until` — RFC3339 or `YYYY-MM-DD`. Refresh discipline is at the
      claim level, not only at evidence.
    - `target_refs` — for boundary sections, enumerate at least four
@@ -160,10 +163,38 @@ what to expect. Always trust `next_step` over this README.
   perspectives (Law, Admissibility, Deontics, Evidence) named in
   `target_refs`.
 
-(Future phases not yet shipped: target interfaces, target invariants,
-target acceptance/evidence, enabling-system architecture, enabling tests,
-agent policy, runtime policy, evidence policy. Core will surface them via
-`next_step` as they ship; do not draft them speculatively.)
+### EnablingSystemSpec phases
+
+Enabling phases unlock only after `target.boundary.draft` is satisfied
+(per the contract: enabling spec starts only when the target spec is
+admissible). The order below mirrors the dependency chain registered in
+Core; let `next_step` advance you, do not draft enabling sections
+speculatively before target is approved.
+
+- `enabling.architecture.draft` — layered architecture of the team / code /
+  infra that builds and operates the target. Apply FPF Signature Stack
+  (L0..L4 layered claim landing); the YAML carries layer names and
+  one-way dependency rules.
+- `enabling.work_methods.draft` — how each load-bearing artifact (specs,
+  decisions, commissions, runtime runs, evidence) is produced. Apply
+  FRAME-09: each method names actor + capability + method + work, not
+  vague "we do X". Apply X-STATEMENT-TYPE: methods are duties, not
+  explanations.
+- `enabling.effect_boundaries.draft` — which actors / surfaces may mutate
+  what. Apply CHR-10 Boundary Norm Square; `target_refs` names the four
+  perspectives where relevant.
+- `enabling.agent_policy.draft` — supported host agents and autonomy
+  bounds. Apply X-TRANSFORMER (human is principal) and CHR-10
+  (admissibility for what the agent may do, deontics for the human's
+  delegation duties).
+- `enabling.commission_policy.draft` — how WorkCommissions are authorized,
+  scoped, and retired. Apply X-SCOPE: explicit where + under what + when.
+- `enabling.runtime_policy.draft` — which surface owns runtime lifecycle,
+  isolation, and observability of each RuntimeRun.
+- `enabling.evidence_policy.draft` — admissible evidence kinds, minimum
+  congruence level per claim class, refresh triggers. Apply VER-01 /
+  VER-02 / VER-03 / VER-07 in your reasoning. Requires `evidence_required`
+  with at least one entry whose `kind` is a guard location.
 
 ## TermMap discipline
 

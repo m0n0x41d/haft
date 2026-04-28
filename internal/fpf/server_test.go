@@ -271,9 +271,16 @@ func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.
 			t.Fatalf("expected haft_commission action %q in schema enum %#v", want, values)
 		}
 	}
-	assertCommissionActionRequires(t, commissionInputSchema, "show", []string{"commission_id"})
-	assertCommissionActionRequires(t, commissionInputSchema, "requeue", []string{"commission_id", "reason"})
-	assertCommissionActionRequires(t, commissionInputSchema, "cancel", []string{"commission_id", "reason"})
+	// Per-action conditional requirements (commission_id required for
+	// show/requeue/cancel; reason required for requeue/cancel) are
+	// enforced at the handler boundary in internal/cli/serve_commission.go,
+	// not in the MCP-advertised schema. Anthropic API rejects top-level
+	// allOf/oneOf/anyOf in input_schema (validation error
+	// "tools.N.custom.input_schema does not support oneOf, allOf, or
+	// anyOf at the top level"), so the schema only declares "action" as
+	// universally required and the handler returns an error when a
+	// conditional field is missing for the given action.
+	assertCommissionSchemaHasNoTopLevelCompositors(t, commissionInputSchema)
 
 	override, ok := commissionSchema["spec_readiness_override"].(map[string]interface{})
 	if !ok {
@@ -284,90 +291,88 @@ func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.
 	}
 }
 
-func assertCommissionActionRequires(
-	t *testing.T,
-	schema map[string]interface{},
-	action string,
-	required []string,
-) {
+// assertCommissionSchemaHasNoTopLevelCompositors guards the regression
+// from 2026-04-28: a top-level allOf with conditional if/then blocks
+// passed Go-side schema construction and Haft tests, but Anthropic API
+// rejected it as input_schema validation error, taking the entire MCP
+// server offline (`/mcp` reported `1 MCP server failed`). The handler
+// at internal/cli/serve_commission.go enforces per-action requirements;
+// the schema must remain free of top-level allOf / oneOf / anyOf.
+func assertCommissionSchemaHasNoTopLevelCompositors(t *testing.T, schema map[string]interface{}) {
 	t.Helper()
+	for _, key := range []string{"allOf", "oneOf", "anyOf"} {
+		if _, present := schema[key]; present {
+			t.Fatalf("commission schema must not declare top-level %q (Anthropic API rejects it)", key)
+		}
+	}
+}
 
-	allOf, ok := schema["allOf"].([]interface{})
-	if !ok {
-		t.Fatalf("commission schema allOf missing or wrong type: %#v", schema["allOf"])
+// TestHandleToolsList_NoToolDeclaresTopLevelCompositors is the broader
+// version of the same guard: iterates every advertised tool and asserts
+// none of them declares top-level allOf / oneOf / anyOf in
+// inputSchema. Anthropic API rejects all three at the top level
+// regardless of which tool ships them, so ALL tools must comply.
+func TestHandleToolsList_NoToolDeclaresTopLevelCompositors(t *testing.T) {
+	server := NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	request := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "tools/list",
+		ID:      "req-no-compositors",
 	}
 
-	for _, raw := range allOf {
-		entry, ok := raw.(map[string]interface{})
+	stdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { os.Stdout = stdout }()
+	os.Stdout = writer
+	server.handleToolsList(request)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	responseBytes, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := map[string]any{}
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		t.Fatalf("unmarshal tools/list: %v\n%s", err, string(responseBytes))
+	}
+	result, ok := response["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result missing: %#v", response["result"])
+	}
+	tools, ok := result["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools missing: %#v", result["tools"])
+	}
+	if len(tools) == 0 {
+		t.Fatalf("no tools advertised")
+	}
+
+	banned := []string{"allOf", "oneOf", "anyOf"}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
 		if !ok {
-			t.Fatalf("commission schema allOf entry has wrong type: %#v", raw)
+			t.Fatalf("tool entry has wrong type: %#v", raw)
 		}
-		if !commissionRequirementMatches(entry, action, required) {
-			continue
-		}
-		return
-	}
-
-	t.Fatalf("commission schema missing required args for action %s: %#v", action, allOf)
-}
-
-func commissionRequirementMatches(
-	entry map[string]interface{},
-	action string,
-	required []string,
-) bool {
-	if commissionRequirementAction(entry) != action {
-		return false
-	}
-
-	got := commissionRequirementRequiredFields(entry)
-	if len(got) != len(required) {
-		return false
-	}
-	for i := range required {
-		if got[i] != required[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func commissionRequirementAction(entry map[string]interface{}) string {
-	ifBlock, ok := entry["if"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	properties, ok := ifBlock["properties"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	actionProperty, ok := properties["action"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	action, _ := actionProperty["const"].(string)
-	return action
-}
-
-func commissionRequirementRequiredFields(entry map[string]interface{}) []string {
-	thenBlock, ok := entry["then"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	rawFields, ok := thenBlock["required"].([]interface{})
-	if !ok {
-		return nil
-	}
-
-	fields := []string{}
-	for _, rawField := range rawFields {
-		field, ok := rawField.(string)
+		name, _ := tool["name"].(string)
+		schema, ok := tool["inputSchema"].(map[string]any)
 		if !ok {
-			return nil
+			t.Fatalf("tool %q inputSchema missing", name)
 		}
-		fields = append(fields, field)
+		for _, key := range banned {
+			if _, present := schema[key]; present {
+				t.Fatalf("tool %q declares top-level %q in inputSchema; Anthropic API rejects this and takes the whole MCP server offline", name, key)
+			}
+		}
 	}
-	return fields
 }
 
 func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {

@@ -146,26 +146,6 @@ func haftCommissionTool() Tool {
 				},
 			},
 			"required": []string{"action"},
-			"allOf": []interface{}{
-				commissionActionRequires("show", []string{"commission_id"}),
-				commissionActionRequires("requeue", []string{"commission_id", "reason"}),
-				commissionActionRequires("cancel", []string{"commission_id", "reason"}),
-			},
-		},
-	}
-}
-
-func commissionActionRequires(action string, required []string) map[string]interface{} {
-	return map[string]interface{}{
-		"if": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"const": action,
-				},
-			},
-		},
-		"then": map[string]interface{}{
-			"required": required,
 		},
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -279,5 +280,72 @@ func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
 	}
 	if got["V1"]["throughput"] != "100k/s" {
 		t.Errorf("V1.throughput = %q, want 100k/s", got["V1"]["throughput"])
+	}
+}
+
+// Issue #71 regression: parseJSONArg used to return only `bool`, so callers that
+// did `_, _ = parseJSONArg(...)` silently dropped JSON parse errors. Downstream
+// validators then reported "missing variant" coverage errors that pointed
+// nowhere. parseJSONArg must surface the parse failure with the offending key.
+func TestParseJSONArg_ReturnsErrorOnMalformedShape(t *testing.T) {
+	type tradeoffNote struct {
+		Variant string `json:"variant"`
+		Summary string `json:"summary"`
+	}
+
+	cases := []struct {
+		name     string
+		args     map[string]any
+		key      string
+		wantErr  bool
+		errFrag  string
+		present  bool
+	}{
+		{
+			name:    "absent key",
+			args:    map[string]any{},
+			key:     "pareto_tradeoffs",
+			wantErr: false,
+			present: false,
+		},
+		{
+			name: "wrong shape — string where array expected",
+			args: map[string]any{
+				"pareto_tradeoffs": "definitely not a json array",
+			},
+			key:     "pareto_tradeoffs",
+			wantErr: true,
+			errFrag: "pareto_tradeoffs",
+			present: true,
+		},
+		{
+			name: "well-formed array",
+			args: map[string]any{
+				"pareto_tradeoffs": []any{
+					map[string]any{"variant": "V1", "summary": "Lowest latency."},
+				},
+			},
+			key:     "pareto_tradeoffs",
+			wantErr: false,
+			present: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var target []tradeoffNote
+			present, err := parseJSONArg(tc.args, tc.key, &target)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseJSONArg err = %v, wantErr=%v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				if !strings.Contains(err.Error(), tc.errFrag) {
+					t.Fatalf("parseJSONArg err = %v, want fragment %q", err, tc.errFrag)
+				}
+			}
+			if present != tc.present {
+				t.Fatalf("present = %v, want %v", present, tc.present)
+			}
+		})
 	}
 }

@@ -2200,3 +2200,237 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 		t.Fatalf("unexpected recommendation rationale: %q", got)
 	}
 }
+
+// Issue #71 regression: when every dimension is parse-indecisive (textual scores
+// outside the canonical ordinal vocabulary, e.g. "medium-high"), the computed
+// Pareto front collapses to the entire compare set and silently overrides the
+// caller's non_dominated_set. The honesty fallback retains the caller's set as
+// authority and emits a typed warning naming the indecisive dimensions.
+func TestCompareSolutions_HonorsCallerNonDominatedSetWhenAllDimensionsIndecisive(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Routing strategy", Signal: "Latency budget exhausted", Context: "routing",
+	})
+	if _, _, err := CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "ergonomics", Polarity: "higher_better"},
+			{Name: "operational risk", Polarity: "lower_better"},
+		},
+		ParityRules: "Same routing scenarios applied to both candidates",
+	}); err != nil {
+		t.Fatalf("characterize: %v", err)
+	}
+
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Edge router", "regional failover", "Push routing to regional edge nodes"),
+			testVariant("Central router", "single-region blast radius", "Keep one canonical router with strong consistency"),
+		},
+		NoSteppingStoneRationale: "Both options ship as direct candidates.",
+	})
+	if err != nil {
+		t.Fatalf("explore: %v", err)
+	}
+
+	// Both dimensions use textual scores OUTSIDE the canonical ordinal vocabulary.
+	// "medium-high" is the exact symptom from issue #71; parseComparableScore
+	// returns false for both pairs so compareVariantPair has zero comparable
+	// dimensions for every pair.
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"ergonomics", "operational risk"},
+			Scores: map[string]map[string]string{
+				"V1": {"ergonomics": "good", "operational risk": "medium-high"},
+				"V2": {"ergonomics": "great", "operational risk": "medium"},
+			},
+			NonDominatedSet: []string{"V1"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "V2",
+					DominatedBy: []string{"V1"},
+					Summary:     "Strong consistency wins under our ergonomics judgement; risk profile is acceptable for the rollout.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "V1", Summary: "Selected by manual ranking; scores are textual and not auto-comparable."},
+			},
+			SelectedRef: "V1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("compare: %v", err)
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		t.Fatal("expected structured comparison payload")
+	}
+	if got := fields.Comparison.NonDominatedSet; len(got) != 1 || got[0] != "V1" {
+		t.Fatalf("expected caller's non_dominated_set [V1] retained, got %+v", got)
+	}
+
+	if !strings.Contains(a.Body, "Pareto computation produced no dominance signal") {
+		t.Fatalf("expected typed indecisive-dimensions warning, body:\n%s", a.Body)
+	}
+	if !strings.Contains(a.Body, "ergonomics") || !strings.Contains(a.Body, "operational risk") {
+		t.Fatalf("expected indecisive dimension names in warning, body:\n%s", a.Body)
+	}
+	if strings.Contains(a.Body, "provided non_dominated_set disagrees with the computed Pareto front") {
+		t.Fatalf("misleading 'computed front overrides caller' warning must be suppressed in fallback, body:\n%s", a.Body)
+	}
+}
+
+// Issue #71 regression: when SOME pairs are comparable, the computed Pareto front
+// has real dominance signal and must continue to override caller's non_dominated_set
+// (status quo). This test guards against the honesty fallback over-firing.
+func TestCompareSolutions_StillOverridesCallerSetWhenAnyPairComparable(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title: "Routing strategy", Signal: "Latency budget exhausted", Context: "routing",
+	})
+	if _, _, err := CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: []ComparisonDimension{
+			{Name: "latency", Polarity: "lower_better"},
+		},
+		ParityRules: "Same workload",
+	}); err != nil {
+		t.Fatalf("characterize: %v", err)
+	}
+
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: prob.Meta.ID,
+		Variants: []Variant{
+			testVariant("Edge", "regional failover", "Push routing to regional edge nodes"),
+			testVariant("Central", "single-region blast radius", "Keep one canonical router"),
+		},
+		NoSteppingStoneRationale: "Both options ship as direct candidates.",
+	})
+	if err != nil {
+		t.Fatalf("explore: %v", err)
+	}
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"V1": {"latency": "10ms"},
+				"V2": {"latency": "5ms"},
+			},
+			NonDominatedSet: []string{"V1"}, // wrong — V2 dominates V1
+			DominatedVariants: []DominatedVariantExplanation{
+				{Variant: "V2", DominatedBy: []string{"V1"}, Summary: "Lost to V1 in this incorrect ranking."},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "V1", Summary: "Caller asserted V1 wins."},
+			},
+		},
+	})
+	// Compare validation rebuilds the explanation set against the COMPUTED front
+	// (V2), so the caller-supplied dominated_variants/pareto_tradeoffs are now
+	// inconsistent and should fail coverage.
+	if err == nil {
+		t.Fatal("expected coverage error: caller's non_dominated_set should be overridden when computed front carries dominance signal, leaving explanations inconsistent")
+	}
+	if a != nil {
+		t.Fatalf("expected nil artifact on coverage failure, got %+v", a)
+	}
+}
+
+func TestComputeParetoFront_TracksIndecisiveDimensionsAndComparablePairs(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"latency", "ergonomics"},
+		Scores: map[string]map[string]string{
+			"V1": {"latency": "10ms", "ergonomics": "good"},
+			"V2": {"latency": "5ms", "ergonomics": "great"},
+		},
+	}
+
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "latency", Role: "target", Polarity: "lower_better"},
+		{Name: "ergonomics", Role: "target", Polarity: "higher_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	if pr.comparablePairCount != 1 {
+		t.Fatalf("expected 1 comparable pair (latency parses for both), got %d", pr.comparablePairCount)
+	}
+	if len(pr.indecisiveDimensions) != 1 || pr.indecisiveDimensions[0] != "ergonomics" {
+		t.Fatalf("expected indecisiveDimensions=[ergonomics], got %+v", pr.indecisiveDimensions)
+	}
+}
+
+func TestComputeParetoFront_AllIndecisiveWhenScoresUnparseable(t *testing.T) {
+	results := ComparisonResult{
+		Dimensions: []string{"ergonomics", "operational risk"},
+		Scores: map[string]map[string]string{
+			"V1": {"ergonomics": "good", "operational risk": "medium-high"},
+			"V2": {"ergonomics": "great", "operational risk": "medium"},
+		},
+	}
+
+	pr := computeParetoFront(results, []string{"V1", "V2"}, []charDim{
+		{Name: "ergonomics", Role: "target", Polarity: "higher_better"},
+		{Name: "operational risk", Role: "target", Polarity: "lower_better"},
+	}, MissingDataPolicyExplicitAbstain)
+
+	if pr.comparablePairCount != 0 {
+		t.Fatalf("expected 0 comparable pairs (no scores in canonical ordinal vocab), got %d", pr.comparablePairCount)
+	}
+	if !sameTrimmedSet(pr.indecisiveDimensions, []string{"ergonomics", "operational risk"}) {
+		t.Fatalf("expected both dimensions indecisive, got %+v", pr.indecisiveDimensions)
+	}
+	if !sameTrimmedSet(pr.front, []string{"V1", "V2"}) {
+		t.Fatalf("expected conservative front [V1 V2] when no dominance signal, got %+v", pr.front)
+	}
+}
+
+// Issue #71 regression: validation errors for variants outside the declared
+// compare set must show the canonical id list inline so the agent can self-correct
+// without re-issuing an explore call.
+func TestValidateCompareInput_ErrorsIncludeExpectedVariantList(t *testing.T) {
+	input := CompareInput{
+		Results: ComparisonResult{
+			Dimensions: []string{"latency"},
+			Scores: map[string]map[string]string{
+				"GHOST": {"latency": "10ms"},
+			},
+			NonDominatedSet: []string{"GHOST"},
+		},
+	}
+	ctx := CompareValidationContext{
+		Mode:              ModeStandard,
+		PortfolioVariants: []string{"V1", "V2"},
+	}
+
+	_, err := ValidateCompareInput(input, ctx)
+	if err == nil {
+		t.Fatal("expected error for ghost variant outside compare set")
+	}
+	if !strings.Contains(err.Error(), `expected one of: ["V1", "V2"]`) {
+		t.Fatalf("expected canonical compare-set list inline in error, got: %v", err)
+	}
+}
+
+func TestFormatExpectedVariantList_RendersJSONArrayShape(t *testing.T) {
+	got := formatExpectedVariantList([]string{"V1", "V2", "V3"})
+	want := `["V1", "V2", "V3"]`
+	if got != want {
+		t.Fatalf("formatExpectedVariantList = %q, want %q", got, want)
+	}
+
+	// Zero variants should explain the empty case in human-readable form so the
+	// agent doesn't get a bare "[]" with no path forward.
+	if got := formatExpectedVariantList(nil); !strings.Contains(got, "no variants in the portfolio") {
+		t.Fatalf("formatExpectedVariantList(nil) = %q, want descriptive empty form", got)
+	}
+}

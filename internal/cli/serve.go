@@ -575,9 +575,15 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["recommendation_rationale"].(string); ok {
 			input.Results.RecommendationRationale = v
 		}
-		_ = parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants)
-		_ = parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
-		_ = parseJSONArg(args, "incomparable", &input.Results.Incomparable)
+		if _, err := parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants); err != nil {
+			return "", err
+		}
+		if _, err := parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs); err != nil {
+			return "", err
+		}
+		if _, err := parseJSONArg(args, "incomparable", &input.Results.Incomparable); err != nil {
+			return "", err
+		}
 		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
 		if err != nil {
 			return "", err
@@ -1502,22 +1508,29 @@ func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]ma
 	return result
 }
 
-func parseJSONArg(args map[string]any, key string, target any) bool {
+// parseJSONArg decodes a JSON-shaped argument from the MCP args map into
+// the typed target. Returns (present, error). Callers MUST propagate the
+// error: an earlier version returned only `bool` and the call sites
+// silently discarded parse failures, which produced empty payloads that
+// downstream validators reported as "missing variant" coverage errors —
+// the original symptom in github issue #71. Surfacing the parse error
+// keeps the caller's intent visible.
+func parseJSONArg(args map[string]any, key string, target any) (bool, error) {
 	value, ok := args[key]
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	data, err := json.Marshal(value)
 	if err != nil {
-		return false
+		return true, fmt.Errorf("argument %q is not JSON-encodable: %w", key, err)
 	}
 
 	if err := json.Unmarshal(data, target); err != nil {
-		return false
+		return true, fmt.Errorf("argument %q does not match the expected JSON shape: %w", key, err)
 	}
 
-	return true
+	return true, nil
 }
 
 func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string) string {

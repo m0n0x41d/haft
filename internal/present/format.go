@@ -345,6 +345,7 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
+		sb.WriteString(formatVariantsIndex(a))
 	case "compare":
 		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", a.Meta.Title))
 		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
@@ -358,6 +359,48 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 	}
 
 	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// formatVariantsIndex renders the canonical variant id -> title mapping that
+// callers need to drive `haft_solution(action="compare")` without scraping the
+// rendered markdown body. Closes the discoverability gap from issue #71.
+//
+// Surface form:
+//   Variants:
+//     V1 — First variant title
+//     V2 — Second variant title
+//
+//   Use these IDs verbatim as keys in `scores`, `dominated_variants[].variant`,
+//   `pareto_tradeoffs[].variant`, `non_dominated_set`, and `selected_ref` when
+//   calling `haft_solution(action="compare")`.
+func formatVariantsIndex(a *artifact.Artifact) string {
+	if a == nil {
+		return ""
+	}
+	fields := a.UnmarshalPortfolioFields()
+	variants := artifact.MaterializeVariantIDs(fields.Variants)
+	if len(variants) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\nVariants:\n")
+	for _, variant := range variants {
+		id := strings.TrimSpace(variant.ID)
+		if id == "" {
+			continue
+		}
+		title := strings.TrimSpace(variant.Title)
+		if title == "" {
+			sb.WriteString(fmt.Sprintf("  %s\n", id))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %s — %s\n", id, title))
+		}
+	}
+	sb.WriteString("\nUse these IDs verbatim as keys in `scores`, `dominated_variants[].variant`,\n")
+	sb.WriteString("`pareto_tradeoffs[].variant`, `non_dominated_set`, and `selected_ref` when\n")
+	sb.WriteString("calling `haft_solution(action=\"compare\")`.\n")
 	return sb.String()
 }
 

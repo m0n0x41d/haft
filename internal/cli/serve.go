@@ -1204,8 +1204,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		}
 		return string(payload), nil
 
+	case "resolve_term":
+		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', 'fpf', or 'check'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', 'fpf', 'check', or 'resolve_term'", action)
 	}
 }
 

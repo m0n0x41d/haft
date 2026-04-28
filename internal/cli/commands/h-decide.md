@@ -6,6 +6,22 @@ description: "Finalize a decision with full rationale"
 
 Create a DecisionRecord — the crown jewel artifact. Must include what was chosen, why, and what to watch for.
 
+## Investigation-first discipline (BEFORE asking the user)
+
+If the chosen variant title or rationale uses umbrella words
+("service", "process", "ready", "queue", etc.), do NOT bounce back to
+the operator. Ground the term first:
+
+- Call `haft_query(action="resolve_term", term="<umbrella>")` to get
+  term-map entries + spec sections + past mentions in one round-trip.
+- Read the `section_refs` field of any related spec section the term
+  resolves to; use those `id`s as `section_refs` when calling
+  `haft_decision(decide)`.
+- Use `Glob` / `Grep` / `Read` to ground the chosen variant in actual
+  code paths so `affected_files` is concrete, not aspirational.
+- Only if a term is genuinely ambiguous after that sweep, ask ONE
+  concrete question naming the candidates the resolver returned.
+
 If `haft_decision(decide)` returns a `Project readiness` warning that the
 project is `needs_onboard`, the resulting DecisionRecord cannot link to
 SpecSection refs — and downstream `haft_commission(create_from_decision)`

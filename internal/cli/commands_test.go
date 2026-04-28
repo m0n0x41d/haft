@@ -290,6 +290,9 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				"needs_onboard",
 				"/h-onboard",
 				"tactical",
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+				"bounded context",
 			},
 		},
 		{
@@ -301,6 +304,17 @@ func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T)
 				"SpecSection refs",
 				"haft_commission(create_from_decision)",
 				"/h-onboard",
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+			},
+		},
+		{
+			name: "h-note",
+			path: "commands/h-note.md",
+			required: []string{
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+				"bounded context",
 			},
 		},
 	}

@@ -189,6 +189,9 @@ func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, na
 		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
 		result, err := handleHaftCommission(ctx, store, args)
 		return result, "", err
+	case "haft_spec_section":
+		result, err := handleHaftSpecSection(ctx, store, haftDir, args)
+		return result, "", err
 	default:
 		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}

@@ -22,6 +22,7 @@ var (
 	specCoverageJSON bool
 	specPlanJSON     bool
 	specPlanAcceptID string
+	specOnboardJSON  bool
 	specCheckExit    = os.Exit
 	specCoverageExit = os.Exit
 )
@@ -55,6 +56,23 @@ primary truth.`,
 	RunE: runSpecCoverage,
 }
 
+var specOnboardCmd = &cobra.Command{
+	Use:   "onboard",
+	Short: "Drive the spec onboarding method one step at a time",
+	Long: `Return the next typed onboarding action for the current project.
+
+The command derives state from .haft/specs/* carriers, runs the canonical
+SpecOnboardingMethod phase registry from internal/project/specflow, and
+prints a WorkflowIntent: which phase is next, what the human should
+decide, what context the host agent needs, and which structural Checks
+the resulting section must satisfy.
+
+The command does not write spec carriers or DB rows; surfaces (Claude
+Code via MCP plugin, Desktop wizard, this CLI) all read the same intent
+and dispatch their own UX.`,
+	RunE: runSpecOnboard,
+}
+
 var specPlanCmd = &cobra.Command{
 	Use:   "plan",
 	Short: "Show DecisionRecord draft proposals for uncovered or stale spec sections",
@@ -76,9 +94,11 @@ func init() {
 	specCoverageCmd.Flags().BoolVar(&specCoverageJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
+	specOnboardCmd.Flags().BoolVar(&specOnboardJSON, "json", false, "print structured JSON output")
 	specCmd.AddCommand(specCheckCmd)
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specPlanCmd)
+	specCmd.AddCommand(specOnboardCmd)
 	rootCmd.AddCommand(specCmd)
 }
 

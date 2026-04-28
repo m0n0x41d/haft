@@ -219,6 +219,27 @@ func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 	return SpecSectionsFromDocuments(documents), nil
 }
 
+// LoadProjectSpecificationSet parses the project's spec carriers and
+// returns the canonical ProjectSpecificationSet. Surfaces (CLI, MCP,
+// Desktop) use this to feed `internal/project/specflow.DeriveState`
+// without re-implementing the load + parse pipeline.
+func LoadProjectSpecificationSet(projectRoot string) (ProjectSpecificationSet, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return ProjectSpecificationSet{}, fmt.Errorf("project root is required")
+	}
+
+	documents, loadFindings, err := loadSpecDocumentInputs(root)
+	if err != nil {
+		return ProjectSpecificationSet{}, err
+	}
+
+	specSet := ProjectSpecificationSetFromDocuments(documents)
+	specSet.Findings = append(loadFindings, specSet.Findings...)
+
+	return normalizeProjectSpecificationSet(specSet), nil
+}
+
 func CheckSpecDocuments(documents []SpecDocumentInput) SpecCheckReport {
 	specSet := ProjectSpecificationSetFromDocuments(documents)
 	return SpecCheckReportFromSpecificationSet(specSet)

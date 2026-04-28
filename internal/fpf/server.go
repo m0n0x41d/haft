@@ -713,6 +713,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 
 		tools = append(tools, haftCommissionTool())
+		tools = append(tools, haftSpecSectionTool())
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

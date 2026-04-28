@@ -57,6 +57,7 @@ defmodule OpenSleigh.Orchestrator do
   @default_base_retry_backoff_ms 10_000
   @default_max_retry_backoff_ms 300_000
   @default_normal_exit_retry_ms 1_000
+  @default_stale_lease_max_age_ms 86_400_000
 
   # ——— public API ———
 
@@ -81,6 +82,7 @@ defmodule OpenSleigh.Orchestrator do
           base_retry_backoff_ms: pos_integer(),
           max_retry_backoff_ms: pos_integer(),
           normal_exit_retry_ms: pos_integer(),
+          stale_lease_max_age_ms: non_neg_integer(),
           max_concurrency: pos_integer() | :infinity,
           name: atom(),
           now_fun: (-> DateTime.t()),
@@ -145,12 +147,15 @@ defmodule OpenSleigh.Orchestrator do
         Keyword.get(opts, :max_retry_backoff_ms, @default_max_retry_backoff_ms),
       normal_exit_retry_ms:
         Keyword.get(opts, :normal_exit_retry_ms, @default_normal_exit_retry_ms),
+      stale_lease_max_age_ms:
+        Keyword.get(opts, :stale_lease_max_age_ms, stale_lease_max_age_ms_from_env()),
       max_concurrency: Keyword.get(opts, :max_concurrency, :infinity),
       claimed: MapSet.new(),
       running: %{},
       pending_human: %{},
       retries: %{},
-      retry_attempts: %{}
+      retry_attempts: %{},
+      skipped: %{}
     }
 
     {:ok, state}
@@ -164,7 +169,8 @@ defmodule OpenSleigh.Orchestrator do
       running_details: running_details(state.running),
       pending_human: Map.keys(state.pending_human),
       retries: status_retries(state.retries),
-      retry_attempts: state.retry_attempts
+      retry_attempts: state.retry_attempts,
+      skipped: status_skipped(state.skipped)
     }
 
     {:reply, snapshot, state}
@@ -256,26 +262,127 @@ defmodule OpenSleigh.Orchestrator do
   @spec maybe_dispatch(Ticket.t(), map()) :: map()
   defp maybe_dispatch(%Ticket{} = ticket, state) do
     state
-    |> dispatchable?(ticket)
-    |> maybe_dispatch_ticket(ticket, state)
+    |> intake_decision(ticket)
+    |> apply_intake_decision(ticket, state)
   end
+
+  @spec intake_decision(map(), Ticket.t()) :: :dispatch | :ignore | {:skip, atom()}
+  defp intake_decision(state, %Ticket{} = ticket) do
+    cond do
+      stale_claimed_lease?(state, ticket) ->
+        {:skip, :lease_too_old}
+
+      dispatchable?(state, ticket) ->
+        :dispatch
+
+      true ->
+        :ignore
+    end
+  end
+
+  @spec apply_intake_decision(:dispatch | :ignore | {:skip, atom()}, Ticket.t(), map()) :: map()
+  defp apply_intake_decision(:dispatch, ticket, state),
+    do: dispatch(ticket, state, state.workflow.entry_phase)
+
+  defp apply_intake_decision({:skip, reason}, ticket, state),
+    do: record_skipped_ticket(state, ticket, reason)
+
+  defp apply_intake_decision(:ignore, _ticket, state), do: state
 
   @spec dispatchable?(map(), Ticket.t()) :: boolean()
   defp dispatchable?(state, %Ticket{} = ticket) do
     not MapSet.member?(state.claimed, ticket.id) and running_capacity_available?(state)
   end
 
-  @spec maybe_dispatch_ticket(boolean(), Ticket.t(), map()) :: map()
-  defp maybe_dispatch_ticket(true, ticket, state),
-    do: dispatch(ticket, state, state.workflow.entry_phase)
+  @spec stale_claimed_lease?(map(), Ticket.t()) :: boolean()
+  defp stale_claimed_lease?(
+         %{stale_lease_max_age_ms: max_age_ms, now_fun: now_fun},
+         %Ticket{state: :in_progress, fetched_at: %DateTime{} = fetched_at}
+       )
+       when is_integer(max_age_ms) and max_age_ms > 0 do
+    now_fun
+    |> call_now_fun()
+    |> DateTime.diff(fetched_at, :millisecond)
+    |> Kernel.>(max_age_ms)
+  end
 
-  defp maybe_dispatch_ticket(false, _ticket, state), do: state
+  defp stale_claimed_lease?(_state, _ticket), do: false
+
+  @spec call_now_fun((-> DateTime.t())) :: DateTime.t()
+  defp call_now_fun(now_fun), do: now_fun.()
+
+  @spec stale_lease_max_age_ms_from_env() :: non_neg_integer()
+  defp stale_lease_max_age_ms_from_env do
+    "OPEN_SLEIGH_STALE_LEASE_MAX_AGE_S"
+    |> System.get_env()
+    |> stale_lease_max_age_ms_from_env_value()
+  end
+
+  @spec stale_lease_max_age_ms_from_env_value(String.t() | nil) :: non_neg_integer()
+  defp stale_lease_max_age_ms_from_env_value(value) when is_binary(value) do
+    value
+    |> Integer.parse()
+    |> stale_lease_max_age_ms_from_parse()
+  end
+
+  defp stale_lease_max_age_ms_from_env_value(_value), do: @default_stale_lease_max_age_ms
+
+  @spec stale_lease_max_age_ms_from_parse({integer(), String.t()} | :error) :: non_neg_integer()
+  defp stale_lease_max_age_ms_from_parse({seconds, ""}) when seconds >= 0, do: seconds * 1_000
+  defp stale_lease_max_age_ms_from_parse(_parsed), do: @default_stale_lease_max_age_ms
 
   @spec running_capacity_available?(map()) :: boolean()
   defp running_capacity_available?(%{max_concurrency: :infinity}), do: true
 
   defp running_capacity_available?(%{max_concurrency: max_concurrency, running: running}) do
     map_size(running) < max_concurrency
+  end
+
+  @spec record_skipped_ticket(map(), Ticket.t(), atom()) :: map()
+  defp record_skipped_ticket(state, %Ticket{} = ticket, reason) do
+    :ok =
+      ObservationsBus.emit(
+        :ticket_skipped,
+        Atom.to_string(reason),
+        %{ticket: ticket.id, reason: reason}
+      )
+
+    skipped =
+      state
+      |> skipped_ticket_summary(ticket, reason)
+
+    %{state | skipped: Map.put(state.skipped, ticket.id, skipped)}
+  end
+
+  @spec skipped_ticket_summary(map(), Ticket.t(), atom()) :: map()
+  defp skipped_ticket_summary(state, %Ticket{} = ticket, reason) do
+    fetched_at = ticket_fetched_at(ticket)
+    now = state.now_fun.()
+
+    %{
+      commission_id: ticket.id,
+      ticket_id: ticket.id,
+      reason: Atom.to_string(reason),
+      state: Atom.to_string(ticket.state),
+      fetched_at: DateTime.to_iso8601(fetched_at),
+      age: lease_age_text(now, fetched_at),
+      max_age_s: div(state.stale_lease_max_age_ms, 1_000)
+    }
+  end
+
+  @spec ticket_fetched_at(Ticket.t()) :: DateTime.t()
+  defp ticket_fetched_at(%Ticket{fetched_at: %DateTime{} = fetched_at}), do: fetched_at
+
+  defp ticket_fetched_at(_ticket), do: DateTime.utc_now()
+
+  @spec lease_age_text(DateTime.t(), DateTime.t()) :: String.t()
+  defp lease_age_text(now, fetched_at) do
+    seconds =
+      now
+      |> DateTime.diff(fetched_at, :second)
+      |> max(0)
+
+    "#{seconds}s"
   end
 
   @spec dispatch(Ticket.t(), map(), atom()) :: map()
@@ -810,6 +917,7 @@ defmodule OpenSleigh.Orchestrator do
     %{
       state
       | claimed: MapSet.put(state.claimed, ticket.id),
+        skipped: Map.delete(state.skipped, ticket.id),
         running:
           Map.put(state.running, session.id, %{
             ticket: ticket,
@@ -1786,5 +1894,12 @@ defmodule OpenSleigh.Orchestrator do
     Map.new(retries, fn {ticket_id, retry} ->
       {ticket_id, Map.take(retry, [:attempt, :delay_ms, :due_at_ms, :error])}
     end)
+  end
+
+  @spec status_skipped(map()) :: [map()]
+  defp status_skipped(skipped) do
+    skipped
+    |> Map.values()
+    |> Enum.sort_by(&Map.get(&1, :commission_id, ""))
   end
 end

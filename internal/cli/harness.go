@@ -58,6 +58,7 @@ type harnessRunOptions struct {
 	GeneratedPlanPath      string
 	PrepareOnly            bool
 	ForceCreate            bool
+	Drain                  bool
 	Once                   bool
 	OnceTimeoutMS          int
 	Detach                 bool
@@ -67,6 +68,7 @@ type harnessRunOptions struct {
 	Concurrency            int
 	MaxClaims              int
 	PollIntervalMS         int
+	StaleLeaseMaxAgeS      int
 	StatusPath             string
 	LogPath                string
 	WorkspaceRoot          string
@@ -177,7 +179,26 @@ type harnessApplySummary struct {
 	Workspace    string
 	ProjectRoot  string
 	Files        []string
+	Commit       string
 }
+
+type harnessStaleLeaseSummary struct {
+	CommissionID string
+	State        string
+	FetchedAt    string
+	Age          string
+	MaxAgeS      int
+}
+
+type harnessDrainMonitor struct {
+	OpenIDs      []string
+	ObservedIDs  []string
+	StaleLeases  []harnessStaleLeaseSummary
+	RunnableIDs  []string
+	ExecutingIDs []string
+}
+
+const defaultHarnessStaleLeaseMaxAgeS = 24 * 60 * 60
 
 var (
 	harnessPlanOut          string
@@ -194,6 +215,7 @@ var (
 	harnessRunGeneratedPlanPath string
 	harnessRunPrepareOnly       bool
 	harnessRunForceCreate       bool
+	harnessRunDrain             bool
 	harnessRunOnce              bool
 	harnessRunOnceTimeoutMS     int
 	harnessRunMock              bool
@@ -203,6 +225,7 @@ var (
 	harnessRunConcurrency       int
 	harnessRunMaxClaims         int
 	harnessRunPollIntervalMS    int
+	harnessRunStaleLeaseMaxAgeS int
 	harnessRunStatusPath        string
 	harnessRunLogPath           string
 	harnessRunWorkspaceRoot     string
@@ -348,6 +371,7 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&harnessRunGeneratedPlanPath, "generated-plan", "", "Path for generated plan when decision ids are passed")
 	cmd.Flags().BoolVar(&harnessRunPrepareOnly, "prepare-only", false, "Create/reuse plan and commissions, then stop before starting Open-Sleigh")
 	cmd.Flags().BoolVar(&harnessRunForceCreate, "force-create-commissions", false, "Create another commission set even when this plan already has commissions")
+	cmd.Flags().BoolVar(&harnessRunDrain, "drain", false, "Keep running until no runnable WorkCommissions remain")
 	cmd.Flags().BoolVar(&harnessRunOnce, "once", false, "Run one Open-Sleigh polling pass")
 	cmd.Flags().IntVar(&harnessRunOnceTimeoutMS, "once-timeout-ms", 8000, "Open-Sleigh --once timeout in milliseconds")
 	cmd.Flags().BoolVar(&harnessRunMock, "mock", false, "Use mock agent and mock judge")
@@ -357,6 +381,7 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&harnessRunConcurrency, "concurrency", 2, "Open-Sleigh engine concurrency")
 	cmd.Flags().IntVar(&harnessRunMaxClaims, "max-claims", 50, "Maximum commission claims per poll")
 	cmd.Flags().IntVar(&harnessRunPollIntervalMS, "poll-interval-ms", 30000, "Open-Sleigh poll interval")
+	cmd.Flags().IntVar(&harnessRunStaleLeaseMaxAgeS, "stale-lease-max-age-s", defaultHarnessStaleLeaseMaxAgeS, "Skip claimed WorkCommission leases older than this age in seconds; 0 disables the cap")
 	cmd.Flags().StringVar(&harnessRunStatusPath, "status-path", "", "Status JSON path")
 	cmd.Flags().StringVar(&harnessRunLogPath, "log-path", "", "Runtime JSONL log path")
 	cmd.Flags().StringVar(&harnessRunWorkspaceRoot, "workspace-root", "", "Open-Sleigh workspace root")
@@ -691,6 +716,7 @@ func emptyHarnessStatus() map[string]any {
 			"running":         []any{},
 			"pending_human":   []any{},
 			"running_details": []any{},
+			"skipped":         []any{},
 		},
 		"failures":           []any{},
 		"status_unavailable": true,
@@ -1380,6 +1406,11 @@ func formatHarnessApplySummary(summary harnessApplySummary) []string {
 	for _, file := range summary.Files {
 		lines = append(lines, "- "+file)
 	}
+	if strings.TrimSpace(summary.Commit) != "" {
+		lines = append(lines, "commit: "+summary.Commit)
+		lines = append(lines, "next: review with git show "+summary.Commit+", then run required evidence")
+		return lines
+	}
 	lines = append(lines, "next: review with git diff, then run required evidence")
 	return lines
 }
@@ -1627,6 +1658,7 @@ func formatHarnessStatus(
 	claimed := stringSliceField(orchestrator, "claimed")
 	running := stringSliceField(orchestrator, "running")
 	pendingHuman := stringSliceField(orchestrator, "pending_human")
+	skipped := mapSliceField(orchestrator, "skipped")
 	failures := mapSliceField(status, "failures")
 
 	lines := []string{
@@ -1642,6 +1674,7 @@ func formatHarnessStatus(
 		"claimed: " + strconv.Itoa(len(claimed)),
 		"running: " + strconv.Itoa(len(running)),
 		"pending_human: " + strconv.Itoa(len(pendingHuman)),
+		"skipped: " + strconv.Itoa(len(skipped)),
 		"failures: " + strconv.Itoa(len(failures)),
 	}
 
@@ -1649,9 +1682,10 @@ func formatHarnessStatus(
 		lines,
 		formatRunningDetails(mapSliceField(orchestrator, "running_details"), sessionSummaries, time.Now().UTC())...,
 	)
+	lines = append(lines, formatSkippedHarnessCommissions(skipped)...)
 	lines = append(lines, formatFailures(failures)...)
 	lines = append(lines, formatRecentTerminalCommissions(recentTerminal)...)
-	lines = append(lines, formatHarnessOperatorHints(claimed, running, pendingHuman, recentTerminal)...)
+	lines = append(lines, formatHarnessOperatorHints(claimed, running, pendingHuman, skipped, recentTerminal)...)
 	return lines
 }
 
@@ -1684,10 +1718,28 @@ func boolField(payload map[string]any, key string) bool {
 	return ok && value
 }
 
+func intField(payload map[string]any, key string) int {
+	switch value := payload[key].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		parsed, err := strconv.Atoi(value.String())
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
 func formatHarnessOperatorHints(
 	claimed []string,
 	running []string,
 	pendingHuman []string,
+	skipped []map[string]any,
 	recent []harnessTerminalCommissionSummary,
 ) []string {
 	if len(claimed)+len(running)+len(pendingHuman) > 0 {
@@ -1696,6 +1748,16 @@ func formatHarnessOperatorHints(
 			"- watch live: haft harness watch",
 			"- inspect current run: haft harness status <commission-id>",
 			"- tail current run: haft harness tail <commission-id> --follow",
+		}
+	}
+
+	if len(skipped) > 0 {
+		commissionID := presentOrUnknown(stringField(skipped[0], "commission_id"))
+		return []string{
+			"operator_next:",
+			"- inspect skipped lease: haft harness result " + commissionID,
+			"- requeue after verifying it is still wanted: haft commission requeue " + commissionID + " --reason stale_lease_recovered",
+			"- cancel if obsolete: haft commission cancel " + commissionID + " --reason stale_lease_obsolete",
 		}
 	}
 
@@ -1716,6 +1778,34 @@ func formatHarnessOperatorHints(
 		"- create a plan and commissions: haft harness run <decision-id> --prepare-only",
 		"- run queued commissions: haft harness run",
 	}
+}
+
+func formatSkippedHarnessCommissions(skipped []map[string]any) []string {
+	if len(skipped) == 0 {
+		return nil
+	}
+
+	lines := []string{"skipped_leases:"}
+	for _, item := range skipped {
+		fields := []string{
+			"commission=" + presentOrUnknown(stringField(item, "commission_id")),
+			"reason=" + presentOrUnknown(stringField(item, "reason")),
+		}
+		if state := strings.TrimSpace(stringField(item, "state")); state != "" {
+			fields = append(fields, "state="+state)
+		}
+		if fetchedAt := strings.TrimSpace(stringField(item, "fetched_at")); fetchedAt != "" {
+			fields = append(fields, "fetched_at="+fetchedAt)
+		}
+		if age := strings.TrimSpace(stringField(item, "age")); age != "" {
+			fields = append(fields, "age="+age)
+		}
+		if maxAgeS := intField(item, "max_age_s"); maxAgeS > 0 {
+			fields = append(fields, "max_age_s="+strconv.Itoa(maxAgeS))
+		}
+		lines = append(lines, "- "+strings.Join(fields, " "))
+	}
+	return lines
 }
 
 func formatRecentTerminalCommissions(recent []harnessTerminalCommissionSummary) []string {
@@ -2627,6 +2717,10 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 		}
 
 		opts := defaultHarnessRunOptions(projectRoot, planPath, plan)
+		if err := validateHarnessRunOptions(opts); err != nil {
+			return err
+		}
+
 		configPath, err := writeHarnessRuntimeConfig(projectRoot, opts)
 		if err != nil {
 			return err
@@ -2663,6 +2757,10 @@ func runExistingHarnessCommissions(
 	}
 
 	opts := defaultHarnessRunOptions(projectRoot, planPath, plan)
+	if err := validateHarnessRunOptions(opts); err != nil {
+		return false, err
+	}
+
 	configPath, err := writeHarnessRuntimeConfig(projectRoot, opts)
 	if err != nil {
 		return false, err
@@ -2746,6 +2844,10 @@ func watchHarnessRunUntilTerminal(
 	done <-chan error,
 	processOutput *bytes.Buffer,
 ) error {
+	if opts.Drain {
+		return watchHarnessDrainUntilIdle(ctx, cmd, store, selection, opts, done, processOutput)
+	}
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -2813,6 +2915,110 @@ func watchHarnessRunUntilTerminal(
 		case <-ticker.C:
 		}
 	}
+}
+
+func watchHarnessDrainUntilIdle(
+	ctx context.Context,
+	cmd *cobra.Command,
+	store *artifact.Store,
+	selection harnessRunSelection,
+	opts harnessRunOptions,
+	done <-chan error,
+	processOutput *bytes.Buffer,
+) error {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	if err := printHarnessRunOperatorHeader(cmd, selection, opts); err != nil {
+		return err
+	}
+
+	offset := 0
+	lastProgressAt := time.Time{}
+	seenIDs := stringSet(selection.CommissionIDs)
+	for {
+		monitor, err := loadHarnessDrainMonitor(ctx, store, opts, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		for _, commissionID := range monitor.ObservedIDs {
+			seenIDs[commissionID] = struct{}{}
+		}
+		tailIDs := sortedSetValues(seenIDs)
+
+		nextOffset, printed, err := printHarnessSelectedTailSince(
+			cmd,
+			opts.LogPath,
+			tailIDs,
+			offset,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		offset = nextOffset
+		if printed > 0 {
+			lastProgressAt = time.Now()
+		}
+
+		if len(monitor.OpenIDs) == 0 {
+			return printHarnessDrainFinished(cmd, monitor)
+		}
+
+		if printed == 0 && time.Since(lastProgressAt) >= 30*time.Second {
+			if err := printHarnessSelectedProgress(cmd, opts, tailIDs); err != nil {
+				return err
+			}
+			lastProgressAt = time.Now()
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-done:
+			nextOffset, _, printErr := printHarnessSelectedTailSince(
+				cmd,
+				opts.LogPath,
+				tailIDs,
+				offset,
+				false,
+			)
+			if printErr != nil {
+				return printErr
+			}
+			offset = nextOffset
+
+			monitor, monitorErr := loadHarnessDrainMonitor(ctx, store, opts, time.Now().UTC())
+			if monitorErr != nil {
+				return monitorErr
+			}
+			if len(monitor.OpenIDs) == 0 {
+				return printHarnessDrainFinished(cmd, monitor)
+			}
+			return openSleighExitedEarlyError(err, processOutput.String())
+		case <-ticker.C:
+		}
+	}
+}
+
+func printHarnessDrainFinished(cmd *cobra.Command, monitor harnessDrainMonitor) error {
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "drain: runnable WorkCommission queue is empty"); err != nil {
+		return err
+	}
+	for _, stale := range monitor.StaleLeases {
+		line := strings.Join([]string{
+			"drain_skipped:",
+			"commission=" + presentOrUnknown(stale.CommissionID),
+			"reason=lease_too_old",
+			"state=" + presentOrUnknown(stale.State),
+			"age=" + presentOrUnknown(stale.Age),
+			"max_age_s=" + strconv.Itoa(stale.MaxAgeS),
+		}, " ")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func printHarnessRunOperatorHeader(
@@ -3066,10 +3272,7 @@ func deliverHarnessRunCommissions(
 		if err != nil {
 			return err
 		}
-		if stringField(commission, "delivery_policy") != "workspace_patch_auto_on_pass" {
-			continue
-		}
-		if stringField(commission, "state") != "completed" {
+		if !harnessCommissionAutoDeliveryAllowed(commission) {
 			continue
 		}
 
@@ -3081,6 +3284,16 @@ func deliverHarnessRunCommissions(
 		if err != nil {
 			return fmt.Errorf("auto delivery for %s: %w", commissionID, err)
 		}
+		commit, err := commitHarnessAutoAppliedDiff(
+			projectRoot,
+			commissionID,
+			stringField(commission, "decision_ref"),
+			summary.Files,
+		)
+		if err != nil {
+			return fmt.Errorf("auto delivery commit for %s: %w", commissionID, err)
+		}
+		summary.Commit = commit
 
 		for _, line := range formatHarnessApplySummary(summary) {
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
@@ -3089,6 +3302,101 @@ func deliverHarnessRunCommissions(
 		}
 	}
 	return nil
+}
+
+func harnessCommissionAutoDeliveryAllowed(commission map[string]any) bool {
+	if stringField(commission, "delivery_policy") != "workspace_patch_auto_on_pass" {
+		return false
+	}
+	if stringField(commission, "state") != "completed" {
+		return false
+	}
+	if !harnessCommissionTerminalPass(commission) {
+		return false
+	}
+	return harnessCommissionAutonomyAllowed(commission)
+}
+
+func harnessCommissionTerminalPass(commission map[string]any) bool {
+	events := currentHarnessAttemptEvents(mapSliceField(commission, "events"))
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		verdict := strings.TrimSpace(stringField(event, "verdict"))
+		if stringField(event, "event") == "workflow_terminal" {
+			return verdict == "pass"
+		}
+
+		payload := mapField(event, "payload")
+		if stringField(payload, "next") == "terminal:pass" {
+			return verdict == "pass"
+		}
+	}
+	return false
+}
+
+func harnessCommissionAutonomyAllowed(commission map[string]any) bool {
+	decision := harnessCommissionAutonomyDecision(commission)
+	return strings.EqualFold(decision, "allowed")
+}
+
+func harnessCommissionAutonomyDecision(commission map[string]any) string {
+	events := currentHarnessAttemptEvents(mapSliceField(commission, "events"))
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		payload := mapField(event, "payload")
+		decision := firstCleanString([]string{
+			stringField(payload, "autonomy_envelope_decision"),
+			stringField(payload, "autonomy_decision"),
+			stringField(mapField(payload, "autonomy_envelope"), "decision"),
+		})
+		if decision != "" {
+			return decision
+		}
+	}
+
+	return firstCleanString([]string{
+		stringField(commission, "autonomy_envelope_decision"),
+		stringField(commission, "autonomy_decision"),
+		stringField(mapField(commission, "autonomy_envelope"), "decision"),
+	})
+}
+
+func firstCleanString(values []string) string {
+	for _, value := range values {
+		cleaned := strings.TrimSpace(value)
+		if cleaned != "" {
+			return cleaned
+		}
+	}
+	return ""
+}
+
+func commitHarnessAutoAppliedDiff(
+	projectRoot string,
+	commissionID string,
+	decisionRef string,
+	files []string,
+) (string, error) {
+	if len(files) == 0 {
+		return "", nil
+	}
+
+	addArgs := append([]string{"add", "--"}, files...)
+	if _, err := harnessGitOutput(projectRoot, addArgs...); err != nil {
+		return "", err
+	}
+
+	message := "Auto-apply WorkCommission " + commissionID
+	body := "Decision: " + presentOrUnknown(decisionRef)
+	if _, err := harnessGitOutput(projectRoot, "commit", "-m", message, "-m", body); err != nil {
+		return "", err
+	}
+
+	output, err := harnessGitOutput(projectRoot, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func existingRunnableHarnessPlan(
@@ -3123,6 +3431,93 @@ func runnableHarnessCommissions(records []map[string]any) []map[string]any {
 		}
 	}
 	return runnable
+}
+
+func loadHarnessDrainMonitor(
+	ctx context.Context,
+	store *artifact.Store,
+	opts harnessRunOptions,
+	now time.Time,
+) (harnessDrainMonitor, error) {
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return harnessDrainMonitor{}, err
+	}
+
+	return harnessDrainMonitorFromRecords(records, opts, now), nil
+}
+
+func harnessDrainMonitorFromRecords(
+	records []map[string]any,
+	opts harnessRunOptions,
+	now time.Time,
+) harnessDrainMonitor {
+	monitor := harnessDrainMonitor{}
+
+	for _, commission := range records {
+		commissionID := strings.TrimSpace(stringField(commission, "id"))
+		if commissionID == "" {
+			continue
+		}
+
+		stale, summary := harnessStaleLeaseSummaryFor(commission, opts.StaleLeaseMaxAgeS, now)
+		if stale {
+			monitor.StaleLeases = append(monitor.StaleLeases, summary)
+			monitor.ObservedIDs = append(monitor.ObservedIDs, commissionID)
+			continue
+		}
+
+		if workCommissionRunnableForRequest(commission, records, nil, now) {
+			monitor.RunnableIDs = append(monitor.RunnableIDs, commissionID)
+			monitor.OpenIDs = append(monitor.OpenIDs, commissionID)
+			monitor.ObservedIDs = append(monitor.ObservedIDs, commissionID)
+			continue
+		}
+
+		if workcommission.IsExecutingState(stringField(commission, "state")) {
+			monitor.ExecutingIDs = append(monitor.ExecutingIDs, commissionID)
+			monitor.OpenIDs = append(monitor.OpenIDs, commissionID)
+			monitor.ObservedIDs = append(monitor.ObservedIDs, commissionID)
+		}
+	}
+
+	monitor.OpenIDs = uniqueStringsPreserveOrder(monitor.OpenIDs)
+	monitor.ObservedIDs = uniqueStringsPreserveOrder(monitor.ObservedIDs)
+	monitor.RunnableIDs = uniqueStringsPreserveOrder(monitor.RunnableIDs)
+	monitor.ExecutingIDs = uniqueStringsPreserveOrder(monitor.ExecutingIDs)
+	return monitor
+}
+
+func harnessStaleLeaseSummaryFor(
+	commission map[string]any,
+	maxAgeS int,
+	now time.Time,
+) (bool, harnessStaleLeaseSummary) {
+	if maxAgeS <= 0 {
+		return false, harnessStaleLeaseSummary{}
+	}
+	state := stringField(commission, "state")
+	if !workcommission.IsExecutingState(state) {
+		return false, harnessStaleLeaseSummary{}
+	}
+
+	fetchedAt := parseHarnessTimestamp(stringField(commission, "fetched_at"))
+	if fetchedAt.IsZero() {
+		return false, harnessStaleLeaseSummary{}
+	}
+
+	age := now.Sub(fetchedAt)
+	if age <= time.Duration(maxAgeS)*time.Second {
+		return false, harnessStaleLeaseSummary{}
+	}
+
+	return true, harnessStaleLeaseSummary{
+		CommissionID: stringField(commission, "id"),
+		State:        state,
+		FetchedAt:    fetchedAt.Format(time.RFC3339),
+		Age:          age.Round(time.Second).String(),
+		MaxAgeS:      maxAgeS,
+	}
 }
 
 func loadHarnessRunSelectionForPlan(
@@ -3577,6 +3972,15 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
+func sortedSetValues(set map[string]struct{}) []string {
+	values := make([]string, 0, len(set))
+	for value := range set {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
 func buildHarnessPlan(projectRoot string, decisionRefs []string) (harnessPlanFile, error) {
 	cleanRefs := sortedUniqueDecisionRefs(decisionRefs)
 	if len(cleanRefs) == 0 {
@@ -3942,6 +4346,7 @@ func defaultHarnessRunOptions(
 		PlanPath:               planPath,
 		PrepareOnly:            harnessRunPrepareOnly,
 		ForceCreate:            harnessRunForceCreate,
+		Drain:                  harnessRunDrain,
 		Once:                   harnessRunOnce,
 		OnceTimeoutMS:          harnessRunOnceTimeoutMS,
 		Detach:                 harnessRunDetach,
@@ -3951,6 +4356,7 @@ func defaultHarnessRunOptions(
 		Concurrency:            positiveOrDefault(harnessRunConcurrency, 2),
 		MaxClaims:              positiveOrDefault(harnessRunMaxClaims, 50),
 		PollIntervalMS:         positiveOrDefault(harnessRunPollIntervalMS, 30000),
+		StaleLeaseMaxAgeS:      harnessRunStaleLeaseMaxAgeS,
 		StatusPath:             statusPath,
 		LogPath:                logPath,
 		WorkspaceRoot:          workspaceRoot,
@@ -3969,6 +4375,22 @@ func defaultHarnessRunOptions(
 		CommissionPlanRef:      stringField(plan, "id"),
 		CommissionPlanRevision: stringField(plan, "revision"),
 	}
+}
+
+func validateHarnessRunOptions(opts harnessRunOptions) error {
+	if opts.StaleLeaseMaxAgeS < 0 {
+		return fmt.Errorf("--stale-lease-max-age-s must be >= 0")
+	}
+	if !opts.Drain {
+		return nil
+	}
+	if opts.Once {
+		return fmt.Errorf("--drain cannot be combined with --once")
+	}
+	if opts.Detach {
+		return fmt.Errorf("--drain requires the operator stream; omit --detach")
+	}
+	return nil
 }
 
 func writeHarnessRuntimeConfig(
@@ -4087,13 +4509,14 @@ func harnessRuntimeConfig(projectRoot string, opts harnessRunOptions) map[string
 			},
 		},
 		"commission_source": map[string]any{
-			"kind":            "haft",
-			"selector":        "runnable",
-			"max_claims":      opts.MaxClaims,
-			"lease_timeout_s": 300,
-			"plan_ref":        opts.CommissionPlanRef,
-			"plan_revision":   opts.CommissionPlanRevision,
-			"queue":           nil,
+			"kind":                  "haft",
+			"selector":              "runnable",
+			"max_claims":            opts.MaxClaims,
+			"lease_timeout_s":       300,
+			"stale_lease_max_age_s": opts.StaleLeaseMaxAgeS,
+			"plan_ref":              opts.CommissionPlanRef,
+			"plan_revision":         opts.CommissionPlanRevision,
+			"queue":                 nil,
 		},
 		"projection": map[string]any{
 			"mode":           opts.ProjectionMode,
@@ -4278,10 +4701,7 @@ func printHarnessRunSummary(
 	selection harnessRunSelection,
 	opts harnessRunOptions,
 ) error {
-	mode := "long-running"
-	if opts.Once {
-		mode = "once"
-	}
+	mode := harnessRunMode(opts)
 	if opts.MockAgent && opts.MockJudge {
 		mode += " mock"
 	}
@@ -4292,6 +4712,7 @@ func printHarnessRunSummary(
 		"Status: " + opts.StatusPath,
 		"Runtime log: " + opts.LogPath,
 		"Mode: " + mode,
+		"Stale lease max age: " + strconv.Itoa(opts.StaleLeaseMaxAgeS) + "s",
 	}
 
 	if created {
@@ -4309,6 +4730,16 @@ func printHarnessRunSummary(
 		}
 	}
 	return nil
+}
+
+func harnessRunMode(opts harnessRunOptions) string {
+	if opts.Once {
+		return "once"
+	}
+	if opts.Drain {
+		return "drain"
+	}
+	return "long-running"
 }
 
 func formatHarnessRunSelectionLines(
@@ -4341,10 +4772,14 @@ func harnessRunObservationLines(opts harnessRunOptions) []string {
 		}
 	}
 
-	return []string{
+	lines := []string{
 		"Operator stream: live in this terminal",
 		"Stop: Ctrl-C stops the stream and the Open-Sleigh process",
 	}
+	if opts.Drain {
+		lines = append(lines, "Drain: exits when the runnable WorkCommission queue is empty")
+	}
+	return lines
 }
 
 func formatHarnessSelectionLine(label string, values []string) string {
@@ -4450,7 +4885,12 @@ func configureOpenSleighProcess(
 	stdin io.Reader,
 ) {
 	process.Dir = opts.RuntimePath
-	process.Env = append(os.Environ(), "REPO_URL="+opts.RepoURL, "ERL_CRASH_DUMP="+harnessRuntimeCrashDumpPath())
+	process.Env = append(
+		os.Environ(),
+		"REPO_URL="+opts.RepoURL,
+		"ERL_CRASH_DUMP="+harnessRuntimeCrashDumpPath(),
+		"OPEN_SLEIGH_STALE_LEASE_MAX_AGE_S="+strconv.Itoa(opts.StaleLeaseMaxAgeS),
+	)
 	process.Stdout = stdout
 	process.Stderr = stderr
 	process.Stdin = stdin

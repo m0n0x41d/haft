@@ -644,6 +644,76 @@ func TestPrintHarnessRunSummaryIncludesSelectedCommissionAndObservationCommands(
 	}
 }
 
+func TestHarnessRun_DrainWaitsForOpenCommissionsAndSkipsStaleLease(t *testing.T) {
+	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+
+	runnable := workCommissionFixture("wc-drain-runnable", "queued", "2099-01-01T00:00:00Z")
+	runnable["decision_ref"] = "dec-drain-runnable"
+	executing := workCommissionFixture("wc-drain-executing", "preflighting", "2099-01-01T00:00:00Z")
+	executing["decision_ref"] = "dec-drain-executing"
+	executing["fetched_at"] = now.Add(-time.Hour).Format(time.RFC3339)
+	stale := workCommissionFixture("wc-drain-stale", "preflighting", "2099-01-01T00:00:00Z")
+	stale["decision_ref"] = "dec-drain-stale"
+	stale["fetched_at"] = now.Add(-48 * time.Hour).Format(time.RFC3339)
+	completed := workCommissionFixture("wc-drain-completed", "completed", "2099-01-01T00:00:00Z")
+	completed["decision_ref"] = "dec-drain-completed"
+
+	monitor := harnessDrainMonitorFromRecords(
+		[]map[string]any{runnable, executing, stale, completed},
+		harnessRunOptions{Drain: true, StaleLeaseMaxAgeS: defaultHarnessStaleLeaseMaxAgeS},
+		now,
+	)
+
+	if !slices.Equal(monitor.OpenIDs, []string{"wc-drain-runnable", "wc-drain-executing"}) {
+		t.Fatalf("open ids = %#v, want runnable and executing only", monitor.OpenIDs)
+	}
+	if !slices.Equal(monitor.RunnableIDs, []string{"wc-drain-runnable"}) {
+		t.Fatalf("runnable ids = %#v, want queued runnable", monitor.RunnableIDs)
+	}
+	if !slices.Equal(monitor.ExecutingIDs, []string{"wc-drain-executing"}) {
+		t.Fatalf("executing ids = %#v, want fresh executing", monitor.ExecutingIDs)
+	}
+	if len(monitor.StaleLeases) != 1 || monitor.StaleLeases[0].CommissionID != "wc-drain-stale" {
+		t.Fatalf("stale leases = %#v, want wc-drain-stale", monitor.StaleLeases)
+	}
+}
+
+func TestHarnessRun_DrainSummaryShowsDrainMode(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := printHarnessRunSummary(
+		cmd,
+		"/tmp/.haft/plans/plan.yaml",
+		"/tmp/sleigh.md",
+		false,
+		"using 2 existing runnable commission(s)",
+		harnessRunSelection{CommissionIDs: []string{"wc-1", "wc-2"}},
+		harnessRunOptions{
+			Drain:             true,
+			StatusPath:        "/tmp/status.json",
+			LogPath:           "/tmp/runtime.jsonl",
+			WorkspaceRoot:     "/tmp/workspaces",
+			StaleLeaseMaxAgeS: defaultHarnessStaleLeaseMaxAgeS,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined := out.String()
+	for _, fragment := range []string{
+		"Mode: drain",
+		"Stale lease max age: 86400s",
+		"Drain: exits when the runnable WorkCommission queue is empty",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("drain summary missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
 func TestHarnessRunObservationLinesKeepsCommandsForDetachedRun(t *testing.T) {
 	lines := harnessRunObservationLines(harnessRunOptions{
 		Detach:  true,
@@ -863,6 +933,67 @@ func TestReadHarnessStatusMissingFileReturnsUnavailableDashboard(t *testing.T) {
 	} {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("missing status dashboard lacks %q:\n%s", fragment, joined)
+		}
+	}
+}
+
+func TestStaleLeaseCapConfigAndStatusSurfaceTypedSkip(t *testing.T) {
+	config := harnessRuntimeConfig("/tmp/project", harnessRunOptions{
+		StatusPath:        "/tmp/status.json",
+		LogPath:           "/tmp/runtime.jsonl",
+		WorkspaceRoot:     "/tmp/workspaces",
+		RepoURL:           "/tmp/project",
+		RuntimePath:       "/tmp/open-sleigh",
+		Concurrency:       2,
+		MaxClaims:         50,
+		PollIntervalMS:    30000,
+		StaleLeaseMaxAgeS: defaultHarnessStaleLeaseMaxAgeS,
+	})
+
+	source := mapField(config, "commission_source")
+	if intField(source, "stale_lease_max_age_s") != defaultHarnessStaleLeaseMaxAgeS {
+		t.Fatalf("stale_lease_max_age_s = %#v, want default cap", source["stale_lease_max_age_s"])
+	}
+
+	status := map[string]any{
+		"updated_at": "2026-04-28T12:00:00Z",
+		"metadata": map[string]any{
+			"agent_kind":     "codex",
+			"tracker_kind":   "commission_source:haft",
+			"config_path":    "/tmp/sleigh.md",
+			"workspace_root": "/tmp/workspaces",
+		},
+		"orchestrator": map[string]any{
+			"claimed":         []any{},
+			"running":         []any{},
+			"pending_human":   []any{},
+			"running_details": []any{},
+			"skipped": []any{
+				map[string]any{
+					"commission_id": "wc-stale",
+					"reason":        "lease_too_old",
+					"state":         "preflighting",
+					"fetched_at":    "2026-04-26T12:00:00Z",
+					"age":           "48h0m0s",
+					"max_age_s":     defaultHarnessStaleLeaseMaxAgeS,
+				},
+			},
+		},
+		"failures": []any{},
+	}
+
+	lines := formatHarnessStatus(status, "/tmp/status.json", "/tmp/runtime.jsonl", nil, nil)
+	joined := strings.Join(lines, "\n")
+	for _, fragment := range []string{
+		"skipped: 1",
+		"skipped_leases:",
+		"commission=wc-stale reason=lease_too_old state=preflighting",
+		"max_age_s=86400",
+		"haft commission requeue wc-stale --reason stale_lease_recovered",
+		"haft commission cancel wc-stale --reason stale_lease_obsolete",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("stale lease status missing %q:\n%s", fragment, joined)
 		}
 	}
 }
@@ -1787,6 +1918,17 @@ func TestDeliverHarnessRunCommissionsAppliesAutoPolicy(t *testing.T) {
 
 	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
 	commission["delivery_policy"] = "workspace_patch_auto_on_pass"
+	commission["autonomy_envelope_decision"] = "allowed"
+	commission["events"] = []any{
+		map[string]any{
+			"event":       "workflow_terminal",
+			"verdict":     "pass",
+			"recorded_at": "2026-04-28T10:00:00Z",
+			"payload": map[string]any{
+				"next": "terminal:pass",
+			},
+		},
+	}
 	scope := mapField(commission, "scope")
 	scope["allowed_paths"] = []any{trackedPath}
 	scope["affected_files"] = []any{trackedPath}
@@ -1823,6 +1965,121 @@ func TestDeliverHarnessRunCommissionsAppliesAutoPolicy(t *testing.T) {
 	if !strings.Contains(out.String(), "Applied harness workspace diff") {
 		t.Fatalf("output = %q, want apply summary", out.String())
 	}
+	if !strings.Contains(out.String(), "commit: ") {
+		t.Fatalf("output = %q, want auto-apply commit", out.String())
+	}
+	log := trimmedCommandOutput(projectRoot, "git", "log", "--oneline", "-1")
+	if !strings.Contains(log, commissionID) {
+		t.Fatalf("latest commit = %q, want commission id", log)
+	}
+}
+
+func TestHandleQuintCommission_AutoApplyRequiresPassPolicyAndEnvelopeAllowed(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	workspaceRoot := filepath.Join(root, "workspaces")
+	allowedID := "wc-auto-allowed"
+	blockedID := "wc-auto-blocked"
+	allowedPath := filepath.Join("internal", "cli", "allowed.go")
+	blockedPath := filepath.Join("internal", "cli", "blocked.go")
+
+	initHarnessApplyRepo(t, projectRoot, allowedPath, "package cli\n\nconst allowed = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(projectRoot, blockedPath), []byte("package cli\n\nconst blocked = \"old\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runHarnessApplyGit(t, projectRoot, "add", blockedPath)
+	runHarnessApplyGit(t, projectRoot, "commit", "-m", "add blocked fixture")
+
+	initHarnessApplyRepo(t, filepath.Join(workspaceRoot, allowedID), allowedPath, "package cli\n\nconst allowed = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspaceRoot, allowedID, allowedPath), []byte("package cli\n\nconst allowed = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	initHarnessApplyRepo(t, filepath.Join(workspaceRoot, blockedID), blockedPath, "package cli\n\nconst blocked = \"old\"\n")
+	if err := os.WriteFile(filepath.Join(workspaceRoot, blockedID, blockedPath), []byte("package cli\n\nconst blocked = \"new\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	allowed := autoDeliveryCommissionFixture(allowedID, allowedPath, "allowed", "pass")
+	blocked := autoDeliveryCommissionFixture(blockedID, blockedPath, "blocked", "pass")
+	for _, commission := range []map[string]any{allowed, blocked} {
+		if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := deliverHarnessRunCommissions(
+		ctx,
+		cmd,
+		store,
+		projectRoot,
+		harnessRunSelection{CommissionIDs: []string{allowedID, blockedID}},
+		harnessRunOptions{WorkspaceRoot: workspaceRoot},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowedGot, err := os.ReadFile(filepath.Join(projectRoot, allowedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(allowedGot) != "package cli\n\nconst allowed = \"new\"\n" {
+		t.Fatalf("allowed auto delivery = %q, want new content", string(allowedGot))
+	}
+
+	blockedGot, err := os.ReadFile(filepath.Join(projectRoot, blockedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blockedGot) != "package cli\n\nconst blocked = \"old\"\n" {
+		t.Fatalf("blocked auto delivery = %q, want old content", string(blockedGot))
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "commit: ") {
+		t.Fatalf("output = %q, want committed auto apply", output)
+	}
+	log := trimmedCommandOutput(projectRoot, "git", "log", "--oneline", "-1")
+	if !strings.Contains(log, allowedID) {
+		t.Fatalf("latest commit = %q, want allowed commission id", log)
+	}
+	if strings.Contains(log, blockedID) {
+		t.Fatalf("latest commit = %q, blocked envelope should not commit", log)
+	}
+}
+
+func autoDeliveryCommissionFixture(
+	commissionID string,
+	trackedPath string,
+	autonomyDecision string,
+	terminalVerdict string,
+) map[string]any {
+	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
+	commission["delivery_policy"] = "workspace_patch_auto_on_pass"
+	commission["autonomy_envelope_decision"] = autonomyDecision
+	commission["events"] = []any{
+		map[string]any{
+			"event":       "workflow_terminal",
+			"verdict":     terminalVerdict,
+			"recorded_at": "2026-04-28T10:00:00Z",
+			"payload": map[string]any{
+				"next": "terminal:" + terminalVerdict,
+			},
+		},
+	}
+	scope := mapField(commission, "scope")
+	scope["allowed_paths"] = []any{trackedPath}
+	scope["affected_files"] = []any{trackedPath}
+	scope["lockset"] = []any{trackedPath}
+	commission["lockset"] = []any{trackedPath}
+	return commission
 }
 
 func initHarnessApplyRepo(t *testing.T, root string, trackedPath string, content string) {
@@ -1986,7 +2243,9 @@ func overrideHarnessTestFlags() func() {
 	oldHarnessPlanProblems := harnessPlanProblems
 	oldHarnessPlanContext := harnessPlanContext
 	oldHarnessPlanAllActive := harnessPlanAllActive
+	oldHarnessRunDrain := harnessRunDrain
 	oldHarnessRunDetach := harnessRunDetach
+	oldHarnessRunStaleLeaseMaxAgeS := harnessRunStaleLeaseMaxAgeS
 	oldHarnessRunTacticalReason := harnessRunTacticalReason
 	oldCommissionRepoRef := commissionFromDecisionRepoRef
 	oldCommissionBaseSHA := commissionFromDecisionBaseSHA
@@ -2012,7 +2271,9 @@ func overrideHarnessTestFlags() func() {
 	harnessPlanProblems = nil
 	harnessPlanContext = ""
 	harnessPlanAllActive = false
+	harnessRunDrain = false
 	harnessRunDetach = false
+	harnessRunStaleLeaseMaxAgeS = defaultHarnessStaleLeaseMaxAgeS
 	harnessRunTacticalReason = ""
 	commissionFromDecisionRepoRef = ""
 	commissionFromDecisionBaseSHA = ""
@@ -2039,7 +2300,9 @@ func overrideHarnessTestFlags() func() {
 		harnessPlanProblems = oldHarnessPlanProblems
 		harnessPlanContext = oldHarnessPlanContext
 		harnessPlanAllActive = oldHarnessPlanAllActive
+		harnessRunDrain = oldHarnessRunDrain
 		harnessRunDetach = oldHarnessRunDetach
+		harnessRunStaleLeaseMaxAgeS = oldHarnessRunStaleLeaseMaxAgeS
 		harnessRunTacticalReason = oldHarnessRunTacticalReason
 		commissionFromDecisionRepoRef = oldCommissionRepoRef
 		commissionFromDecisionBaseSHA = oldCommissionBaseSHA

@@ -18,13 +18,18 @@ import (
 )
 
 var (
-	specCheckJSON    bool
-	specCoverageJSON bool
-	specPlanJSON     bool
-	specPlanAcceptID string
-	specOnboardJSON  bool
-	specCheckExit    = os.Exit
-	specCoverageExit = os.Exit
+	specCheckJSON         bool
+	specCoverageJSON      bool
+	specPlanJSON          bool
+	specPlanAcceptID      string
+	specOnboardJSON       bool
+	specOnboardApproveID  string
+	specOnboardReopenID   string
+	specOnboardRebaseline string
+	specOnboardReason     string
+	specOnboardApprovedBy string
+	specCheckExit         = os.Exit
+	specCoverageExit      = os.Exit
 )
 
 var specCmd = &cobra.Command{
@@ -95,6 +100,11 @@ func init() {
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
 	specOnboardCmd.Flags().BoolVar(&specOnboardJSON, "json", false, "print structured JSON output")
+	specOnboardCmd.Flags().StringVar(&specOnboardApproveID, "approve", "", "record a SpecSectionBaseline for the given active section id")
+	specOnboardCmd.Flags().StringVar(&specOnboardRebaseline, "rebaseline", "", "overwrite an existing SpecSectionBaseline for the given section id (requires --reason)")
+	specOnboardCmd.Flags().StringVar(&specOnboardReopenID, "reopen", "", "delete the SpecSectionBaseline for the given section id so it re-enters the onboarding loop")
+	specOnboardCmd.Flags().StringVar(&specOnboardReason, "reason", "", "audit-trail rationale recorded with --rebaseline / --reopen")
+	specOnboardCmd.Flags().StringVar(&specOnboardApprovedBy, "approved-by", "", "identifier of who approved the baseline (default: human)")
 	specCmd.AddCommand(specCheckCmd)
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specPlanCmd)
@@ -112,6 +122,8 @@ func runSpecCheck(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
+	report = appendSpecBaselineFindings(report, projectRoot)
 
 	output := cmd.OutOrStdout()
 	if specCheckJSON {

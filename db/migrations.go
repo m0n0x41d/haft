@@ -406,4 +406,19 @@ var kernelMigrations = []Migration{
 			"UPDATE desktop_tasks SET raw_output = output_tail WHERE TRIM(COALESCE(raw_output, '')) = '' AND TRIM(COALESCE(output_tail, '')) != ''",
 		},
 	},
+	{
+		Version:     28,
+		Description: "Add spec_section_baselines for SpecSection drift detection",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS spec_section_baselines (
+				project_id TEXT NOT NULL,
+				section_id TEXT NOT NULL,
+				hash TEXT NOT NULL,
+				captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				approved_by TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (project_id, section_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_spec_section_baselines_project ON spec_section_baselines(project_id)`,
+		},
+	},
 }

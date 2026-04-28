@@ -13,6 +13,7 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/spf13/cobra"
 )
 
@@ -57,6 +58,7 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	}
 
 	writeGoldenE2ESpecs(t, root)
+	baselineGoldenE2ESpecSections(t, root)
 	runGoldenE2ESpecCheck(t, sourceRoot, root)
 	uncoveredCoverage := runGoldenE2ESpecCoverage(t, sourceRoot, root)
 	assertGoldenE2ESectionStates(t, uncoveredCoverage, project.SpecCoverageUncovered)
@@ -711,6 +713,56 @@ func goldenE2EReadiness(t *testing.T, root string) project.ReadinessFacts {
 	}
 
 	return facts
+}
+
+// baselineGoldenE2ESpecSections records SpecSection baselines for every
+// active section in the golden fixture, mirroring what the slice 3c
+// `haft_spec_section(action="approve", ...)` will do once it ships.
+// Without baselines, slice 3b drift detection rightfully reports
+// `spec_section_needs_baseline` for active sections; the golden test
+// asserts a clean spec check, so it must approve its own fixture.
+func baselineGoldenE2ESpecSections(t *testing.T, root string) {
+	t.Helper()
+
+	specSet, err := project.LoadProjectSpecificationSet(root)
+	if err != nil {
+		t.Fatalf("load spec set: %v", err)
+	}
+
+	cfg, err := project.Load(filepath.Join(root, ".haft"))
+	if err != nil {
+		t.Fatalf("load project config: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("project config missing")
+	}
+
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		t.Fatalf("resolve db path: %v", err)
+	}
+
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	store := specflow.NewSQLiteBaselineStore(database.GetRawDB())
+	for _, section := range specSet.Sections {
+		if !strings.EqualFold(strings.TrimSpace(section.Status), string(project.SpecSectionStateActive)) {
+			continue
+		}
+		baseline := specflow.SectionBaseline{
+			ProjectID:  cfg.ID,
+			SectionID:  section.ID,
+			Hash:       specflow.HashSection(section),
+			ApprovedBy: "golden-fixture",
+		}
+		if err := store.Put(baseline); err != nil {
+			t.Fatalf("put baseline %s: %v", section.ID, err)
+		}
+	}
 }
 
 func openGoldenE2EStore(t *testing.T, root string) (*db.Store, *artifact.Store) {

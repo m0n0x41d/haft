@@ -127,7 +127,21 @@ Repeat until the WorkflowIntent returns `terminal: true`:
 7. Mark the section active in the YAML (`status: active`) only after the
    human approves the load-bearing claims. Status flips are the explicit
    approval moment.
-8. Repeat from step 1.
+8. Record the SpecSectionBaseline immediately after the status flip:
+   `haft_spec_section(action="approve", section_id=<id>, approved_by="human")`.
+   Without a baseline the section reports `spec_section_needs_baseline`
+   in `haft spec check` and stays blocking in `next_step`. The baseline
+   is what makes drift detection meaningful for hand-edited carriers.
+9. If `haft spec check` later reports `spec_section_drifted` for this
+   section, triage with the operator:
+   - intentional evolution → `haft_spec_section(action="rebaseline",
+     section_id=<id>, reason="...")` (reason is required);
+   - the section needs review → `haft_spec_section(action="reopen",
+     section_id=<id>, reason="...")` to drop the baseline and re-enter
+     the onboarding loop;
+   - mistaken edit → revert the YAML change in the carrier; the next
+     `haft spec check` should be clean against the existing baseline.
+10. Repeat from step 1.
 
 ## Phase content reference
 

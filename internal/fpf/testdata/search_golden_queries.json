@@ -48,8 +48,8 @@
     "query": "design rationale change management",
     "search_tier": "fts",
     "expected_tier": "fts",
-    "top_n": 3,
+    "top_n": 4,
     "minimum_hits": 1,
-    "expected_pattern_ids": ["E.9", "E.9:4", "E.9:6"]
+    "expected_pattern_ids": ["E.9", "E.9:4", "E.9:6", "E.9:7"]
   }
 ]

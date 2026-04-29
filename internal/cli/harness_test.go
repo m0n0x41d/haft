@@ -2472,3 +2472,128 @@ func TestHarnessSelectionMultiCommissionWarnings_QuietWhenSliceDescribed(t *test
 		t.Fatalf("expected no warnings (disjoint locksets + slice_described), got %d:\n%v", len(warnings), warnings)
 	}
 }
+
+func TestHarnessOperatorLabels_AssignsLettersInOrder(t *testing.T) {
+	labels := newHarnessOperatorLabels()
+
+	if got := labels.Get("wc-first"); got != "A" {
+		t.Errorf("first commission label = %q, want A", got)
+	}
+	if got := labels.Get("wc-second"); got != "B" {
+		t.Errorf("second commission label = %q, want B", got)
+	}
+	if got := labels.Get("wc-third"); got != "C" {
+		t.Errorf("third commission label = %q, want C", got)
+	}
+	// Same ID returns same label
+	if got := labels.Get("wc-first"); got != "A" {
+		t.Errorf("repeat lookup of wc-first = %q, want A (stable)", got)
+	}
+	// Empty / whitespace returns ?
+	if got := labels.Get(""); got != "?" {
+		t.Errorf("empty commission label = %q, want ?", got)
+	}
+	if got := labels.Get("   "); got != "?" {
+		t.Errorf("whitespace commission label = %q, want ?", got)
+	}
+}
+
+func TestHarnessAgentSelfVerdictWarning_FlagsMeasurementFailedInPreview(t *testing.T) {
+	cases := []struct {
+		name      string
+		event     map[string]any
+		wantEmpty bool
+		wantHas   string
+	}{
+		{
+			name: "agent_turn_completed with measurement failed surfaces warning",
+			event: map[string]any{
+				"event":         "agent_turn_completed",
+				"commission_id": "wc-test-1",
+				"data": map[string]any{
+					"phase":        "measure",
+					"text_preview": "**Measurement: Failed** evidence run did not pass",
+				},
+			},
+			wantHas: "agent self-reported \"Failed\" in measure phase",
+		},
+		{
+			name: "agent_turn_completed with passing preview emits nothing",
+			event: map[string]any{
+				"event":         "agent_turn_completed",
+				"commission_id": "wc-test-2",
+				"data": map[string]any{
+					"phase":        "measure",
+					"text_preview": "Measurement: pass — all evidence commands green",
+				},
+			},
+			wantEmpty: true,
+		},
+		{
+			name: "non-agent_turn_completed event emits nothing",
+			event: map[string]any{
+				"event":         "agent_turn_started",
+				"commission_id": "wc-test-3",
+				"data": map[string]any{
+					"phase":        "measure",
+					"text_preview": "Measurement: Failed",
+				},
+			},
+			wantEmpty: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := harnessAgentSelfVerdictWarning(tc.event, harnessAnsi{})
+			if tc.wantEmpty {
+				if got != "" {
+					t.Errorf("expected empty, got %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantHas) {
+				t.Errorf("expected warning to contain %q, got %q", tc.wantHas, got)
+			}
+		})
+	}
+}
+
+func TestFormatHarnessRuntimeEventLineForOperatorLabeled_AddsLabelPrefix(t *testing.T) {
+	labels := newHarnessOperatorLabels()
+	event := map[string]any{
+		"event":         "agent_turn_started",
+		"at":            "2026-04-29T12:34:56.789Z",
+		"commission_id": "wc-1c0e",
+		"data": map[string]any{
+			"phase":      "execute",
+			"session_id": "sess-1",
+		},
+	}
+
+	line, ok := formatHarnessRuntimeEventLineForOperatorLabeled(event, labels, harnessAnsi{})
+	if !ok {
+		t.Fatal("expected event to render")
+	}
+	if !strings.HasPrefix(line, "[A] ") {
+		t.Errorf("expected line to start with [A] prefix, got %q", line)
+	}
+	if !strings.Contains(line, "phase=execute") {
+		t.Errorf("expected line to retain phase field, got %q", line)
+	}
+
+	// Second commission gets B
+	event2 := map[string]any{
+		"event":         "agent_turn_started",
+		"at":            "2026-04-29T12:34:57Z",
+		"commission_id": "wc-557d",
+		"data":          map[string]any{"phase": "frame"},
+	}
+	line2, ok := formatHarnessRuntimeEventLineForOperatorLabeled(event2, labels, harnessAnsi{})
+	if !ok {
+		t.Fatal("expected event2 to render")
+	}
+	if !strings.HasPrefix(line2, "[B] ") {
+		t.Errorf("expected second commission to start with [B] prefix, got %q", line2)
+	}
+}

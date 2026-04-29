@@ -2469,6 +2469,183 @@ func formatHarnessRuntimeEventLineForOperator(event map[string]any) (string, boo
 	return strings.Join(fields, " "), true
 }
 
+// harnessOperatorLabels assigns short letter labels (A, B, C, ...) to
+// commission IDs in order of first appearance. Used to disambiguate event
+// lines from concurrent commissions in a drain run. Reset per `harness run`
+// invocation; not persisted.
+type harnessOperatorLabels struct {
+	byID map[string]string
+	used int
+}
+
+func newHarnessOperatorLabels() *harnessOperatorLabels {
+	return &harnessOperatorLabels{byID: map[string]string{}}
+}
+
+func (l *harnessOperatorLabels) Get(commissionID string) string {
+	commissionID = strings.TrimSpace(commissionID)
+	if commissionID == "" {
+		return "?"
+	}
+	if existing, ok := l.byID[commissionID]; ok {
+		return existing
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var label string
+	if l.used < len(alphabet) {
+		label = string(alphabet[l.used])
+	} else {
+		// Fallback for >26 commissions: short suffix of the ID.
+		label = commissionID
+		if len(label) > 4 {
+			label = label[len(label)-4:]
+		}
+	}
+	l.byID[commissionID] = label
+	l.used++
+	return label
+}
+
+// ANSI colors used in operator stream rendering. Empty when stdout is not a
+// TTY so log captures and CI output stay grep-friendly.
+type harnessAnsi struct {
+	reset, bold, dim                              string
+	red, green, yellow, cyan, blue, magenta, gray string
+}
+
+func newHarnessAnsi(useColor bool) harnessAnsi {
+	if !useColor {
+		return harnessAnsi{}
+	}
+	return harnessAnsi{
+		reset:   "\033[0m",
+		bold:    "\033[1m",
+		dim:     "\033[2m",
+		red:     "\033[31m",
+		green:   "\033[32m",
+		yellow:  "\033[33m",
+		blue:    "\033[34m",
+		magenta: "\033[35m",
+		cyan:    "\033[36m",
+		gray:    "\033[90m",
+	}
+}
+
+// stdoutIsTTY returns true when cmd.OutOrStdout() is a terminal that supports
+// ANSI colors. Falls back to false on capture / redirected output.
+func stdoutIsTTY(cmd *cobra.Command) bool {
+	out := cmd.OutOrStdout()
+	file, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// harnessPhaseColor returns the ANSI color for a phase name.
+func harnessPhaseColor(ansi harnessAnsi, phase string) string {
+	switch strings.TrimSpace(phase) {
+	case "preflight":
+		return ansi.gray
+	case "frame":
+		return ansi.blue
+	case "execute":
+		return ansi.yellow
+	case "measure":
+		return ansi.cyan
+	default:
+		return ""
+	}
+}
+
+// formatHarnessRuntimeEventLineForOperatorLabeled wraps the operator event
+// line with a per-commission label prefix and phase-colored label, when
+// useColor is true. Returns (line, ok) where ok is false for events that
+// should not surface in operator stream.
+func formatHarnessRuntimeEventLineForOperatorLabeled(
+	event map[string]any,
+	labels *harnessOperatorLabels,
+	ansi harnessAnsi,
+) (string, bool) {
+	line, ok := formatHarnessRuntimeEventLineForOperator(event)
+	if !ok {
+		return "", false
+	}
+	commissionID := strings.TrimSpace(stringField(event, "commission_id"))
+	if commissionID == "" {
+		return line, true
+	}
+	label := labels.Get(commissionID)
+	data := mapField(event, "data")
+	phase := stringField(data, "phase")
+	color := harnessPhaseColor(ansi, phase)
+	prefix := "[" + label + "]"
+	if color != "" {
+		prefix = color + prefix + ansi.reset
+	}
+
+	// Highlight terminal events with explicit color when applicable.
+	eventName := stringField(event, "event")
+	switch eventName {
+	case "session_failed", "agent_turn_failed", "phase_blocked", "terminal_diff_validation_failed", "haft_write_failed", "session_aborted", "gate_evaluation_failed":
+		if ansi.red != "" {
+			line = ansi.red + line + ansi.reset
+		}
+	case "workflow_terminal":
+		verdict := strings.TrimSpace(stringField(data, "verdict"))
+		switch verdict {
+		case "pass", "completed":
+			if ansi.green != "" {
+				line = ansi.green + line + ansi.reset
+			}
+		case "blocked", "failed":
+			if ansi.red != "" {
+				line = ansi.red + line + ansi.reset
+			}
+		}
+	}
+
+	return prefix + " " + line, true
+}
+
+// harnessAgentSelfVerdictWarning emits a warning when an agent's
+// `agent_turn_completed` text_preview contains an explicit "Failed" or
+// "blocked" self-claim while the workflow continues — this divergence
+// (semantic gate accepted phase, agent's text says no) is the
+// confusion source the v7 dogfood batch surfaced. Returns "" when no
+// divergence detected.
+func harnessAgentSelfVerdictWarning(event map[string]any, ansi harnessAnsi) string {
+	if stringField(event, "event") != "agent_turn_completed" {
+		return ""
+	}
+	data := mapField(event, "data")
+	preview := strings.ToLower(stringField(data, "text_preview"))
+	if preview == "" {
+		return ""
+	}
+	if !strings.Contains(preview, "measurement: failed") &&
+		!strings.Contains(preview, "measurement: **failed**") &&
+		!strings.Contains(preview, "verdict: failed") &&
+		!strings.Contains(preview, "**failed**") {
+		return ""
+	}
+	commissionID := strings.TrimSpace(stringField(event, "commission_id"))
+	phase := stringField(data, "phase")
+	msg := fmt.Sprintf(
+		"agent self-reported \"Failed\" in %s phase preview; gate may still accept the phase but evidence carrier should be reviewed before treating verdict=pass as authoritative",
+		phase,
+	)
+	prefix := "WARN [" + commissionID + "]:"
+	if ansi.red != "" {
+		prefix = ansi.red + prefix + ansi.reset
+	}
+	return prefix + " " + msg
+}
+
 func harnessRuntimeEventAction(eventName string) (string, bool) {
 	switch eventName {
 	case "session_dispatched":
@@ -2859,15 +3036,20 @@ func watchHarnessRunUntilTerminal(
 		return err
 	}
 
+	labels := newHarnessOperatorLabels()
+	ansi := newHarnessAnsi(stdoutIsTTY(cmd))
+
 	offset := 0
 	lastProgressAt := time.Time{}
 	for {
-		nextOffset, printed, err := printHarnessSelectedTailSince(
+		nextOffset, printed, err := printHarnessSelectedTailSinceLabeled(
 			cmd,
 			opts.LogPath,
 			selection.CommissionIDs,
 			offset,
 			false,
+			labels,
+			ansi,
 		)
 		if err != nil {
 			return err
@@ -2886,7 +3068,7 @@ func watchHarnessRunUntilTerminal(
 		}
 
 		if printed == 0 && time.Since(lastProgressAt) >= 30*time.Second {
-			if err := printHarnessSelectedProgress(cmd, opts, selection.CommissionIDs); err != nil {
+			if err := printHarnessDashboard(cmd, opts, selection.CommissionIDs, labels, ansi, time.Now().UTC()); err != nil {
 				return err
 			}
 			lastProgressAt = time.Now()
@@ -2896,12 +3078,14 @@ func watchHarnessRunUntilTerminal(
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-done:
-			nextOffset, _, printErr := printHarnessSelectedTailSince(
+			nextOffset, _, printErr := printHarnessSelectedTailSinceLabeled(
 				cmd,
 				opts.LogPath,
 				selection.CommissionIDs,
 				offset,
 				false,
+				labels,
+				ansi,
 			)
 			if printErr != nil {
 				return printErr
@@ -2937,6 +3121,9 @@ func watchHarnessDrainUntilIdle(
 	if err := printHarnessRunOperatorHeader(ctx, cmd, store, selection, opts); err != nil {
 		return err
 	}
+
+	labels := newHarnessOperatorLabels()
+	ansi := newHarnessAnsi(stdoutIsTTY(cmd))
 
 	offset := 0
 	lastProgressAt := time.Time{}
@@ -2987,12 +3174,14 @@ func watchHarnessDrainUntilIdle(
 		}
 		tailIDs := sortedSetValues(seenIDs)
 
-		nextOffset, printed, err := printHarnessSelectedTailSince(
+		nextOffset, printed, err := printHarnessSelectedTailSinceLabeled(
 			cmd,
 			opts.LogPath,
 			tailIDs,
 			offset,
 			false,
+			labels,
+			ansi,
 		)
 		if err != nil {
 			return err
@@ -3007,7 +3196,7 @@ func watchHarnessDrainUntilIdle(
 		}
 
 		if printed == 0 && time.Since(lastProgressAt) >= 30*time.Second {
-			if err := printHarnessSelectedProgress(cmd, opts, tailIDs); err != nil {
+			if err := printHarnessDashboard(cmd, opts, tailIDs, labels, ansi, time.Now().UTC()); err != nil {
 				return err
 			}
 			lastProgressAt = time.Now()
@@ -3017,12 +3206,14 @@ func watchHarnessDrainUntilIdle(
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-done:
-			nextOffset, _, printErr := printHarnessSelectedTailSince(
+			nextOffset, _, printErr := printHarnessSelectedTailSinceLabeled(
 				cmd,
 				opts.LogPath,
 				tailIDs,
 				offset,
 				false,
+				labels,
+				ansi,
 			)
 			if printErr != nil {
 				return printErr
@@ -3205,6 +3396,22 @@ func printHarnessSelectedTailSince(
 	offset int,
 	rawJSON bool,
 ) (int, int, error) {
+	return printHarnessSelectedTailSinceLabeled(cmd, logPath, commissionIDs, offset, rawJSON, nil, harnessAnsi{})
+}
+
+// printHarnessSelectedTailSinceLabeled is the labeled / colorized variant.
+// When labels and ansi are non-nil/non-zero, every event line is prefixed
+// with the per-commission letter label, terminal events are colored, and
+// agent self-verdict mismatches emit a follow-up WARN line.
+func printHarnessSelectedTailSinceLabeled(
+	cmd *cobra.Command,
+	logPath string,
+	commissionIDs []string,
+	offset int,
+	rawJSON bool,
+	labels *harnessOperatorLabels,
+	ansi harnessAnsi,
+) (int, int, error) {
 	lines, err := readHarnessRuntimeLogLines(logPath)
 	if err != nil {
 		return offset, 0, err
@@ -3226,7 +3433,13 @@ func printHarnessSelectedTailSince(
 
 		output := line
 		if !rawJSON {
-			formatted, ok := formatHarnessRuntimeEventLineForOperator(event)
+			var formatted string
+			var ok bool
+			if labels != nil {
+				formatted, ok = formatHarnessRuntimeEventLineForOperatorLabeled(event, labels, ansi)
+			} else {
+				formatted, ok = formatHarnessRuntimeEventLineForOperator(event)
+			}
 			if !ok {
 				continue
 			}
@@ -3236,6 +3449,14 @@ func printHarnessSelectedTailSince(
 			return len(lines), printed, err
 		}
 		printed++
+		if labels != nil && !rawJSON {
+			if warning := harnessAgentSelfVerdictWarning(event, ansi); warning != "" {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), warning); err != nil {
+					return len(lines), printed, err
+				}
+				printed++
+			}
+		}
 	}
 	return len(lines), printed, nil
 }
@@ -3245,27 +3466,188 @@ func printHarnessSelectedProgress(
 	opts harnessRunOptions,
 	commissionIDs []string,
 ) error {
+	return printHarnessDashboard(cmd, opts, commissionIDs, nil, harnessAnsi{}, time.Now().UTC())
+}
+
+// printHarnessDashboard renders a multi-line operator dashboard summarizing
+// drain state instead of the old per-tick `progress:` spam. Output shape:
+//
+//	─── drain at 12:34:56 (12m elapsed) ───────────────
+//	running: 2  claimed: 2  skipped: 0  failures: 0
+//	active:
+//	  [A: wc-1c0e] execute   3m12s  agent_started
+//	  [B: wc-557d] measure   45s    haft_write_completed
+//	recent_terminal:
+//	  [C: wc-3136] pass at 12:30:21 → manual apply pending
+//	───────────────────────────────────────────────────
+//
+// When labels is nil the per-commission letter prefix is omitted (single-
+// commission run). When ansi is the empty value, output is plain text.
+func printHarnessDashboard(
+	cmd *cobra.Command,
+	opts harnessRunOptions,
+	commissionIDs []string,
+	labels *harnessOperatorLabels,
+	ansi harnessAnsi,
+	now time.Time,
+) error {
 	_, status, err := readHarnessStatus(opts.StatusPath)
 	if err != nil {
-		_, printErr := fmt.Fprintf(cmd.OutOrStdout(), "progress: status unavailable: %v\n", err)
+		_, printErr := fmt.Fprintf(cmd.OutOrStdout(), "dashboard: status unavailable: %v\n", err)
 		return printErr
 	}
 
+	orchestrator := mapField(status, "orchestrator")
 	details := selectedHarnessRunningDetails(status, commissionIDs)
-	if len(details) == 0 {
-		_, printErr := fmt.Fprintln(cmd.OutOrStdout(), "progress: waiting for selected commissions to start or finish")
-		return printErr
+	sessionSummaries := harnessSessionLogSummaries(opts.LogPath)
+
+	rule := strings.Repeat("─", 60)
+	header := fmt.Sprintf("%s drain at %s %s",
+		rule[:3], now.Format("15:04:05"), rule[len(rule)-30:])
+	if ansi.bold != "" {
+		header = ansi.bold + header + ansi.reset
 	}
 
-	sessionSummaries := harnessSessionLogSummaries(opts.LogPath)
-	for _, detail := range details {
-		line := formatHarnessRunningProgressLine(detail, sessionSummaries, time.Now().UTC())
+	stats := fmt.Sprintf("running: %d  claimed: %d  skipped: %d  failures: %d",
+		intField(orchestrator, "running"),
+		intField(orchestrator, "claimed"),
+		intField(orchestrator, "skipped"),
+		intField(orchestrator, "failures"),
+	)
+	if ansi.dim != "" {
+		stats = ansi.dim + stats + ansi.reset
+	}
+
+	lines := []string{"", header, stats}
+
+	if len(details) == 0 {
+		hint := "active: (none — waiting for selected commissions to start or finish)"
+		if ansi.dim != "" {
+			hint = ansi.dim + hint + ansi.reset
+		}
+		lines = append(lines, hint)
+	} else {
+		lines = append(lines, "active:")
+		for _, detail := range details {
+			lines = append(lines, "  "+formatHarnessDashboardActiveRow(detail, sessionSummaries, labels, ansi, now))
+		}
+	}
+
+	terminal := mapSliceField(orchestrator, "recent_terminal")
+	if len(terminal) > 0 {
+		filtered := make([]map[string]any, 0, len(terminal))
+		selected := stringSet(commissionIDs)
+		for _, item := range terminal {
+			if _, ok := selected[strings.TrimSpace(stringField(item, "commission_id"))]; ok {
+				filtered = append(filtered, item)
+			}
+		}
+		if len(filtered) > 0 {
+			lines = append(lines, "recent_terminal:")
+			for _, item := range filtered {
+				lines = append(lines, "  "+formatHarnessDashboardTerminalRow(item, labels, ansi))
+			}
+		}
+	}
+
+	footer := strings.Repeat("─", 60)
+	if ansi.dim != "" {
+		footer = ansi.dim + footer + ansi.reset
+	}
+	lines = append(lines, footer, "")
+
+	for _, line := range lines {
 		if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+func formatHarnessDashboardActiveRow(
+	detail map[string]any,
+	sessionSummaries map[string]harnessSessionLogSummary,
+	labels *harnessOperatorLabels,
+	ansi harnessAnsi,
+	now time.Time,
+) string {
+	commissionID := stringField(detail, "commission_id")
+	phase := stringField(detail, "phase")
+	lastEvent := stringField(detail, "last_event")
+	sessionID := stringField(detail, "session_id")
+	startedAt, elapsed := harnessSessionTiming(sessionSummaries[sessionID].StartedAt, now)
+	if startedAt == "" {
+		elapsed = "?"
+	}
+
+	prefix := ""
+	if labels != nil {
+		prefix = "[" + labels.Get(commissionID) + ": " + commissionID + "] "
+	} else {
+		prefix = "[" + commissionID + "] "
+	}
+	if color := harnessPhaseColor(ansi, phase); color != "" {
+		prefix = color + prefix + ansi.reset
+	}
+
+	return fmt.Sprintf("%s%-9s %-7s %s",
+		prefix,
+		presentOrUnknown(phase),
+		presentOrUnknown(elapsed),
+		presentOrUnknown(lastEvent),
+	)
+}
+
+func formatHarnessDashboardTerminalRow(
+	item map[string]any,
+	labels *harnessOperatorLabels,
+	ansi harnessAnsi,
+) string {
+	commissionID := stringField(item, "commission_id")
+	state := stringField(item, "state")
+	verdict := stringField(item, "verdict")
+	at := stringField(item, "at")
+	terminalNext := stringField(item, "terminal_next")
+
+	prefix := ""
+	if labels != nil {
+		prefix = "[" + labels.Get(commissionID) + ": " + commissionID + "] "
+	} else {
+		prefix = "[" + commissionID + "] "
+	}
+
+	verdictText := verdict
+	if verdict == "" {
+		verdictText = state
+	}
+	verdictColor := ""
+	switch verdict {
+	case "pass", "completed":
+		verdictColor = ansi.green
+	case "blocked", "failed":
+		verdictColor = ansi.red
+	}
+	if verdictColor != "" {
+		verdictText = verdictColor + verdictText + ansi.reset
+	}
+
+	atShort := at
+	if t, err := time.Parse(time.RFC3339, at); err == nil {
+		atShort = t.Format("15:04:05")
+	}
+
+	if terminalNext == "" {
+		terminalNext = "(no next action)"
+	}
+
+	return fmt.Sprintf("%s%s at %s → %s",
+		prefix,
+		verdictText,
+		atShort,
+		terminalNext,
+	)
+}
+
 
 func selectedHarnessRunningDetails(status map[string]any, commissionIDs []string) []map[string]any {
 	selected := stringSet(commissionIDs)

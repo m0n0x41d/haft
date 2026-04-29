@@ -85,6 +85,17 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      # Defense in depth: regenerate the embedded FPF SQLite index from the
+      # current submodule SHA. The committed internal/cli/fpf.db should
+      # already match, but a developer who forgot to run `task fpf-refresh`
+      # before tagging would otherwise ship a stale corpus to users.
+      - name: Rebuild FPF index from submodule
+        run: |
+          go run ./cmd/indexer \
+            data/FPF/FPF-Spec.md \
+            internal/cli/fpf.db \
+            "$(git -C data/FPF rev-parse HEAD)"
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}

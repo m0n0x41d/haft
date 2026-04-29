@@ -505,72 +505,11 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     assert :ok = wait_for_terminal(orchestrator_name, 10_000)
   end
 
-  test "claimed leases older than cap are skipped with typed reason" do
-    workspace_root =
-      System.tmp_dir!()
-      |> Path.join("orchestrator_stale_lease_#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(workspace_root)
-    on_exit(fn -> File.rm_rf!(workspace_root) end)
-
-    {:ok, haft} = HaftMock.start()
-    {:ok, tracker} = TrackerMock.start()
-
-    commission =
-      commission_fixture!("wc-stale-lease", %{
-        fetched_at: ~U[2026-04-26 10:00:00Z]
-      })
-
-    :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
-
-    suffix = :erlang.unique_integer([:positive])
-    store_name = String.to_atom("commission_stale_lease_store_#{suffix}")
-    orchestrator_name = String.to_atom("commission_stale_lease_orch_#{suffix}")
-
-    {:ok, _store} =
-      WorkflowStore.start_link(
-        phase_configs: Map.take(phase_configs(), [:preflight]),
-        prompts: Map.take(prompts(), [:preflight]),
-        external_publication: %{},
-        name: store_name
-      )
-
-    {:ok, _orchestrator} =
-      Orchestrator.start_link(
-        workflow: single_phase_preflight_workflow(),
-        tracker_handle: tracker,
-        tracker_adapter: TrackerMock,
-        agent_adapter: LifecycleAgent,
-        external_publication: %{tracker_transition_to: []},
-        judge_fun: JudgeClient.judge_fun(fn _prompt -> {:ok, %{}} end, %{}),
-        haft_invoker: HaftMock.invoke_fun(haft),
-        workspace_root: workspace_root,
-        guard_config: %{forbidden_paths: [], forbidden_remote_substrings: ["open-sleigh"]},
-        task_supervisor: OpenSleigh.AgentSupervisor,
-        workflow_store: store_name,
-        now_fun: fn -> ~U[2026-04-28 12:00:00Z] end,
-        stale_lease_max_age_ms: 86_400_000,
-        name: orchestrator_name
-      )
-
-    {:ok, tickets} = TrackerMock.list_active(tracker)
-    Orchestrator.submit_candidates(orchestrator_name, tickets)
-    Process.sleep(50)
-
-    status = Orchestrator.status(orchestrator_name)
-
-    assert status.running == []
-    assert status.claimed == []
-
-    assert [
-             %{
-               commission_id: "wc-stale-lease",
-               reason: "lease_too_old",
-               state: "in_progress",
-               max_age_s: 86_400
-             }
-           ] = status.skipped
-  end
+  # Stale-lease cap was originally bundled into Slice 1's orchestrator changes
+  # but interferes with retry-timer semantics. The canonical implementation lives
+  # in OpenSleigh.CommissionSource.Intake (Slice 3) at the poll boundary; see
+  # test/open_sleigh/commission_source/intake_test.exs for the corresponding
+  # coverage of `lease_too_old` skipping with typed reason.
 
   defp phase_configs do
     %{

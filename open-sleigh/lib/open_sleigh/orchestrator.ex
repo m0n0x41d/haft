@@ -268,24 +268,18 @@ defmodule OpenSleigh.Orchestrator do
 
   @spec intake_decision(map(), Ticket.t()) :: :dispatch | :ignore | {:skip, atom()}
   defp intake_decision(state, %Ticket{} = ticket) do
-    cond do
-      stale_claimed_lease?(state, ticket) ->
-        {:skip, :lease_too_old}
-
-      dispatchable?(state, ticket) ->
-        :dispatch
-
-      true ->
-        :ignore
-    end
+    # Stale-lease cap was originally bundled into Slice 1's orchestrator changes
+    # but interferes with retry-timer semantics (a ticket re-armed by retry can
+    # legitimately be older than the cap). The canonical stale-lease cap lives
+    # in OpenSleigh.CommissionSource.Intake (Slice 3) at the poll boundary,
+    # before tickets reach the orchestrator. Keep this dispatcher purely about
+    # dispatch capacity.
+    if dispatchable?(state, ticket), do: :dispatch, else: :ignore
   end
 
   @spec apply_intake_decision(:dispatch | :ignore | {:skip, atom()}, Ticket.t(), map()) :: map()
   defp apply_intake_decision(:dispatch, ticket, state),
     do: dispatch(ticket, state, state.workflow.entry_phase)
-
-  defp apply_intake_decision({:skip, reason}, ticket, state),
-    do: record_skipped_ticket(state, ticket, reason)
 
   defp apply_intake_decision(:ignore, _ticket, state), do: state
 
@@ -293,23 +287,6 @@ defmodule OpenSleigh.Orchestrator do
   defp dispatchable?(state, %Ticket{} = ticket) do
     not MapSet.member?(state.claimed, ticket.id) and running_capacity_available?(state)
   end
-
-  @spec stale_claimed_lease?(map(), Ticket.t()) :: boolean()
-  defp stale_claimed_lease?(
-         %{stale_lease_max_age_ms: max_age_ms, now_fun: now_fun},
-         %Ticket{state: :in_progress, fetched_at: %DateTime{} = fetched_at}
-       )
-       when is_integer(max_age_ms) and max_age_ms > 0 do
-    now_fun
-    |> call_now_fun()
-    |> DateTime.diff(fetched_at, :millisecond)
-    |> Kernel.>(max_age_ms)
-  end
-
-  defp stale_claimed_lease?(_state, _ticket), do: false
-
-  @spec call_now_fun((-> DateTime.t())) :: DateTime.t()
-  defp call_now_fun(now_fun), do: now_fun.()
 
   @spec stale_lease_max_age_ms_from_env() :: non_neg_integer()
   defp stale_lease_max_age_ms_from_env do
@@ -336,53 +313,6 @@ defmodule OpenSleigh.Orchestrator do
 
   defp running_capacity_available?(%{max_concurrency: max_concurrency, running: running}) do
     map_size(running) < max_concurrency
-  end
-
-  @spec record_skipped_ticket(map(), Ticket.t(), atom()) :: map()
-  defp record_skipped_ticket(state, %Ticket{} = ticket, reason) do
-    :ok =
-      ObservationsBus.emit(
-        :ticket_skipped,
-        Atom.to_string(reason),
-        %{ticket: ticket.id, reason: reason}
-      )
-
-    skipped =
-      state
-      |> skipped_ticket_summary(ticket, reason)
-
-    %{state | skipped: Map.put(state.skipped, ticket.id, skipped)}
-  end
-
-  @spec skipped_ticket_summary(map(), Ticket.t(), atom()) :: map()
-  defp skipped_ticket_summary(state, %Ticket{} = ticket, reason) do
-    fetched_at = ticket_fetched_at(ticket)
-    now = state.now_fun.()
-
-    %{
-      commission_id: ticket.id,
-      ticket_id: ticket.id,
-      reason: Atom.to_string(reason),
-      state: Atom.to_string(ticket.state),
-      fetched_at: DateTime.to_iso8601(fetched_at),
-      age: lease_age_text(now, fetched_at),
-      max_age_s: div(state.stale_lease_max_age_ms, 1_000)
-    }
-  end
-
-  @spec ticket_fetched_at(Ticket.t()) :: DateTime.t()
-  defp ticket_fetched_at(%Ticket{fetched_at: %DateTime{} = fetched_at}), do: fetched_at
-
-  defp ticket_fetched_at(_ticket), do: DateTime.utc_now()
-
-  @spec lease_age_text(DateTime.t(), DateTime.t()) :: String.t()
-  defp lease_age_text(now, fetched_at) do
-    seconds =
-      now
-      |> DateTime.diff(fetched_at, :second)
-      |> max(0)
-
-    "#{seconds}s"
   end
 
   @spec dispatch(Ticket.t(), map(), atom()) :: map()

@@ -55,6 +55,53 @@ tool instead of the packaged operator path, use `haft_commission`:
 - `action="cancel"` with `commission_id` and `reason` to close unfinished work
   without deleting the record
 
+Delivery policy (apply-authority gate, since v7.x):
+
+The `delivery_policy` field on a WorkCommission controls who applies the
+workspace diff after the runtime terminates with `verdict=pass`. Two values:
+
+- `workspace_patch_manual` (default) — diff stays in the workspace clone after
+  terminal+pass. Operator decides whether to apply via
+  `haft harness apply <commission-id>`. Use this for commissions touching
+  load-bearing code, security-sensitive paths, or anything where pre-apply
+  human review is required.
+- `workspace_patch_auto_on_pass` — opt-in. On terminal+pass, the harness drain
+  loop calls the same scope-checked apply path automatically and emits
+  `auto_apply_succeeded: commission=... files=N` (or `auto_apply_failed: ...`)
+  on operator stdout. Use this for low-risk commissions (docs, formatting,
+  mechanical refactors) where the verdict gate is sufficient.
+
+Per V3 invariants (`dec-20260428-harness-drain-v3-16bf21f3`):
+
+- AutonomyEnvelope evaluates at create / preflight / execute, NOT at apply.
+  A missing envelope snapshot does not block auto-apply on pass.
+- An EXPLICITLY blocked envelope decision still keeps the manual path even
+  on `workspace_patch_auto_on_pass`, because that represents a concrete
+  operator decision rather than a missing snapshot.
+- Lockset enforcement at claim time does not change under drain mode.
+- Per-commission apply remains a discrete revertable git operation; drain
+  performs no remote operations (no push, no PR, no comments).
+
+Drain mode (long-running batch operator path):
+
+```bash
+haft harness run --drain --concurrency N
+```
+
+Keeps the runtime alive while runnable WorkCommissions remain, runs up to N
+codex sessions in parallel, exits cleanly when the queue is empty. Emits
+`auto_apply_succeeded` / `auto_apply_failed` lines on stdout for terminal
+commissions whose `delivery_policy=workspace_patch_auto_on_pass`. Stale leases
+older than the configured cap (default 24h, override via
+`OPEN_SLEIGH_STALE_LEASE_MAX_AGE_S` env) are skipped at intake with typed
+`lease_too_old` reason and surfaced in `haft harness status` for operator
+action. `--drain` requires the operator stream — do not combine with
+`--detach`.
+
+Single-commission baseline behavior (no `--drain`) is unchanged: operator
+runs `haft harness run` with explicit selectors, monitors progress, applies
+diffs manually after terminal+pass.
+
 Lifecycle contract:
 
 - `list` and `show` are read-only; they must not change commission state.

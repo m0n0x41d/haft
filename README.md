@@ -266,6 +266,32 @@ Use `haft_decision(action="measure", ...)` for post-implementation verification.
 
 ---
 
+## Batch Harness (Beta — v7.x)
+
+> **Status:** Single-commission `haft harness run` is the trustworthy operator path. Drain mode (`--drain --concurrency N`) and `workspace_patch_auto_on_pass` auto-apply landed in v7.x and have been validated end-to-end on docs-class commissions; treat them as Beta on production-code commissions.
+
+The harness lets you commission work from `DecisionRecord` artifacts and run it under a real codex agent in an isolated workspace, with scope guards (`allowed_paths`/`forbidden_paths`), per-commission lockset enforcement, and discrete revertable apply commits per commission.
+
+```bash
+# 1. Decision exists (via /h-decide or haft_decision MCP). Create commissions:
+haft harness run --prepare-only         # auto-selects active decisions
+haft commission create-from-decision dec-... --delivery-policy workspace_patch_auto_on_pass
+
+# 2. Drain the queue overnight (manual apply by default; auto on pass when policy allows):
+haft harness run --drain --concurrency 4
+
+# 3. Outcome:
+#    workspace_patch_manual    -> diff held in workspace clone, run `haft harness apply <id>`
+#    workspace_patch_auto_on_pass + verdict=pass -> auto-applied as a discrete commit
+#    blocked_policy / failed   -> stays for operator decision (requeue / cancel)
+```
+
+`AutonomyEnvelope` continues to gate creation, preflight, and execute; the apply step is purely policy + verdict per the V3 invariant. Stale claims older than the configurable cap (default 24h) are skipped at intake with a typed `lease_too_old` reason.
+
+Detailed guide, real-world flows, and known rough edges: see [`docs/7.x/harness-batch`](https://haft.dev/docs/7.0/harness-batch).
+
+---
+
 ## Desktop App (pre-alpha)
 
 > **Warning:** The desktop app is in pre-alpha. Use at your own risk.

@@ -47,7 +47,7 @@ test("readiness contract canonical statuses match the TypeScript union", () => {
 for (const unknown of fixture.unknown_status_examples) {
   test(`unknown status ${JSON.stringify(unknown)} cannot fake-ready an unready project`, () => {
     const readiness = projectReadiness({
-      status: unknown,
+      status: unknown as ProjectReadiness,
       exists: true,
       has_haft: true,
       has_specs: false,
@@ -62,7 +62,7 @@ for (const unknown of fixture.unknown_status_examples) {
 
   test(`unknown status ${JSON.stringify(unknown)} cannot fake-ready a missing project`, () => {
     const readiness = projectReadiness({
-      status: unknown,
+      status: unknown as ProjectReadiness,
       exists: false,
       has_haft: false,
       has_specs: false,

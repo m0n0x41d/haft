@@ -73,8 +73,8 @@ func TestMemoryBaselineStoreGetReturnsNotFoundWhenAbsent(t *testing.T) {
 	store := NewMemoryBaselineStore()
 
 	_, err := store.Get("proj-1", "tgt-env-1")
-	if !errors.Is(err, BaselineNotFound) {
-		t.Fatalf("err = %v, want BaselineNotFound", err)
+	if !errors.Is(err, ErrBaselineNotFound) {
+		t.Fatalf("err = %v, want ErrBaselineNotFound", err)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestSQLiteBaselineStoreRoundTripWithMigration(t *testing.T) {
 	if err := store.Delete("qnt_test", "tgt-role-1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := store.Get("qnt_test", "tgt-role-1"); !errors.Is(err, BaselineNotFound) {
-		t.Fatalf("err = %v, want BaselineNotFound after Delete", err)
+	if _, err := store.Get("qnt_test", "tgt-role-1"); !errors.Is(err, ErrBaselineNotFound) {
+		t.Fatalf("err = %v, want ErrBaselineNotFound after Delete", err)
 	}
 }
 

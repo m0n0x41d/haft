@@ -24,11 +24,11 @@ type SectionBaseline struct {
 	ApprovedBy string
 }
 
-// BaselineNotFound is returned by stores when no baseline exists for a
+// ErrBaselineNotFound is returned by stores when no baseline exists for a
 // (project_id, section_id) pair. Surfaces use this to distinguish "needs
 // baseline" from "drifted" — both are blocking but require different
 // operator next-actions.
-var BaselineNotFound = errors.New("spec section baseline not found")
+var ErrBaselineNotFound = errors.New("spec section baseline not found")
 
 // BaselineStore is the storage contract for SpecSection baselines. The
 // SQLite implementation lives in this package; tests can substitute an
@@ -121,7 +121,7 @@ func (s *SQLiteBaselineStore) Get(projectID, sectionID string) (SectionBaseline,
 	var captured time.Time
 	if err := row.Scan(&baseline.ProjectID, &baseline.SectionID, &baseline.Hash, &captured, &baseline.ApprovedBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return SectionBaseline{}, BaselineNotFound
+			return SectionBaseline{}, ErrBaselineNotFound
 		}
 		return SectionBaseline{}, fmt.Errorf("read spec section baseline: %w", err)
 	}
@@ -227,7 +227,7 @@ func memoryBaselineKey(projectID, sectionID string) string {
 func (s *MemoryBaselineStore) Get(projectID, sectionID string) (SectionBaseline, error) {
 	baseline, ok := s.rows[memoryBaselineKey(projectID, sectionID)]
 	if !ok {
-		return SectionBaseline{}, BaselineNotFound
+		return SectionBaseline{}, ErrBaselineNotFound
 	}
 	return baseline, nil
 }

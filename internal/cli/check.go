@@ -18,12 +18,12 @@ import (
 )
 
 type checkReport struct {
-	Stale        []checkStaleFinding         `json:"stale"`
-	Drifted      []checkDriftFinding         `json:"drifted"`
-	Unassessed   []checkDecisionFinding      `json:"unassessed"`
-	CoverageGaps []checkCoverageGapFinding   `json:"coverage_gaps"`
-	SpecHealth   []project.SpecCheckFinding  `json:"spec_health,omitempty"`
-	Summary      checkSummary                `json:"summary"`
+	Stale        []checkStaleFinding        `json:"stale"`
+	Drifted      []checkDriftFinding        `json:"drifted"`
+	Unassessed   []checkDecisionFinding     `json:"unassessed"`
+	CoverageGaps []checkCoverageGapFinding  `json:"coverage_gaps"`
+	SpecHealth   []project.SpecCheckFinding `json:"spec_health,omitempty"`
+	Summary      checkSummary               `json:"summary"`
 }
 
 type checkSummary struct {

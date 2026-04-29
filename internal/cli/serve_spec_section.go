@@ -78,24 +78,24 @@ type SpecSectionBaselineResult struct {
 func handleSpecSectionApprove(projectRoot string, args map[string]any) (string, error) {
 	return runBaselineMutation(projectRoot, args, baselineMutation{
 		actionLabel: "approve",
-		require: requireApprove,
-		apply: applyApprove,
+		require:     requireApprove,
+		apply:       applyApprove,
 	})
 }
 
 func handleSpecSectionRebaseline(projectRoot string, args map[string]any) (string, error) {
 	return runBaselineMutation(projectRoot, args, baselineMutation{
 		actionLabel: "rebaseline",
-		require: requireSectionAndReason,
-		apply: applyRebaseline,
+		require:     requireSectionAndReason,
+		apply:       applyRebaseline,
 	})
 }
 
 func handleSpecSectionReopen(projectRoot string, args map[string]any) (string, error) {
 	return runBaselineMutation(projectRoot, args, baselineMutation{
 		actionLabel: "reopen",
-		require: requireSectionID,
-		apply: applyReopen,
+		require:     requireSectionID,
+		apply:       applyReopen,
 	})
 }
 
@@ -189,7 +189,7 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 
 	existing, err := ctx.store.Get(ctx.projectID, sectionID)
 	switch {
-	case errors.Is(err, specflow.BaselineNotFound):
+	case errors.Is(err, specflow.ErrBaselineNotFound):
 		// fresh baseline below.
 	case err != nil:
 		return SpecSectionBaselineResult{}, err

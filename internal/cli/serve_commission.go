@@ -2260,19 +2260,6 @@ func workCommissionDependencySatisfied(commission map[string]any) bool {
 	return workcommission.SatisfiesDependencyState(state)
 }
 
-func selectWorkCommissionForClaim(
-	commissions []map[string]any,
-	args map[string]any,
-	now time.Time,
-) (map[string]any, error) {
-	return selectWorkCommissionForClaimWithLeaseCap(
-		commissions,
-		args,
-		now,
-		defaultCommissionLeaseAgeCap,
-	)
-}
-
 func selectWorkCommissionForClaimWithLeaseCap(
 	commissions []map[string]any,
 	args map[string]any,
@@ -2458,25 +2445,6 @@ func validWorkCommissionState(value string) bool {
 	return workcommission.IsKnownState(value)
 }
 
-func workCommissionListSelectorMatches(
-	commission map[string]any,
-	commissions []map[string]any,
-	selector string,
-	args map[string]any,
-	now time.Time,
-	openAttentionAfter time.Duration,
-) bool {
-	return workCommissionListSelectorMatchesWithLeaseCap(
-		commission,
-		commissions,
-		selector,
-		args,
-		now,
-		openAttentionAfter,
-		defaultCommissionLeaseAgeCap,
-	)
-}
-
 func workCommissionListSelectorMatchesWithLeaseCap(
 	commission map[string]any,
 	commissions []map[string]any,
@@ -2500,19 +2468,6 @@ func workCommissionListSelectorMatchesWithLeaseCap(
 	default:
 		return false
 	}
-}
-
-func workCommissionWithOperatorFields(
-	commission map[string]any,
-	now time.Time,
-	openAttentionAfter time.Duration,
-) map[string]any {
-	return workCommissionWithOperatorFieldsAndLeaseCap(
-		commission,
-		now,
-		openAttentionAfter,
-		defaultCommissionLeaseAgeCap,
-	)
 }
 
 func workCommissionWithOperatorFieldsAndLeaseCap(
@@ -2553,19 +2508,6 @@ func workCommissionSuggestedActions(commission map[string]any, reason string, no
 	return []any{"inspect", "cancel"}
 }
 
-func workCommissionAttentionReason(
-	commission map[string]any,
-	now time.Time,
-	openAttentionAfter time.Duration,
-) string {
-	return workCommissionAttentionWithLeaseCap(
-		commission,
-		now,
-		openAttentionAfter,
-		defaultCommissionLeaseAgeCap,
-	).Reason
-}
-
 func workCommissionAttentionWithLeaseCap(
 	commission map[string]any,
 	now time.Time,
@@ -2600,10 +2542,6 @@ func workCommissionAttentionWithLeaseCap(
 	return openCommissionAttention(commission, now, openAttentionAfter)
 }
 
-func activeLeaseAttentionReason(commission map[string]any, now time.Time) string {
-	return activeLeaseAttention(commission, now).Reason
-}
-
 func activeLeaseAttention(commission map[string]any, now time.Time) commissionOperatorAttention {
 	lease, ok := mapArg(commission, "lease")
 	if !ok {
@@ -2627,14 +2565,6 @@ func activeLeaseAttention(commission map[string]any, now time.Time) commissionOp
 		}
 	}
 	return commissionOperatorAttention{}
-}
-
-func openCommissionAttentionReason(
-	commission map[string]any,
-	now time.Time,
-	openAttentionAfter time.Duration,
-) string {
-	return openCommissionAttention(commission, now, openAttentionAfter).Reason
 }
 
 func openCommissionAttention(

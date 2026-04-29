@@ -1528,7 +1528,7 @@ func TestPrintHarnessSelectedTailSincePrintsOnlySelectedHumanizedEvents(t *testi
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	offset, printed, err := printHarnessSelectedTailSince(cmd, logPath, []string{"wc-selected"}, 0, false)
+	offset, printed, err := printHarnessSelectedTailSinceLabeled(cmd, logPath, []string{"wc-selected"}, 0, false, nil, harnessAnsi{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1581,7 +1581,7 @@ func TestPrintHarnessSelectedTailSinceShowsFailedResetLoop(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	_, printed, err := printHarnessSelectedTailSince(cmd, logPath, []string{"wc-reset"}, 0, false)
+	_, printed, err := printHarnessSelectedTailSinceLabeled(cmd, logPath, []string{"wc-reset"}, 0, false, nil, harnessAnsi{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1881,14 +1881,19 @@ func TestCanApplyHarnessWorkspaceDiffUsesAllowedPathsOnly(t *testing.T) {
 		},
 	}
 
-	if canApplyHarnessWorkspaceDiff(commission, workspacePath, projectRoot, workspaceSummary) {
+	canApply := func(c map[string]any) bool {
+		auth := harnessWorkspaceApplyAuthorization(c, workspacePath, projectRoot, workspaceSummary)
+		return canApplyAuthorizedHarnessWorkspaceDiff(c, workspaceSummary, auth)
+	}
+
+	if canApply(commission) {
 		t.Fatalf("can apply = true, want false for affected_files/lockset-only scope")
 	}
 
 	scope := mapField(commission, "scope")
 	scope["allowed_paths"] = []any{"src/app.go"}
 
-	if !canApplyHarnessWorkspaceDiff(commission, workspacePath, projectRoot, workspaceSummary) {
+	if !canApply(commission) {
 		t.Fatalf("can apply = false, want true with explicit allowed_paths")
 	}
 }

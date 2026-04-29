@@ -367,13 +367,14 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 // rendered markdown body. Closes the discoverability gap from issue #71.
 //
 // Surface form:
-//   Variants:
-//     V1 — First variant title
-//     V2 — Second variant title
 //
-//   Use these IDs verbatim as keys in `scores`, `dominated_variants[].variant`,
-//   `pareto_tradeoffs[].variant`, `non_dominated_set`, and `selected_ref` when
-//   calling `haft_solution(action="compare")`.
+//	Variants:
+//	  V1 — First variant title
+//	  V2 — Second variant title
+//
+//	Use these IDs verbatim as keys in `scores`, `dominated_variants[].variant`,
+//	`pareto_tradeoffs[].variant`, `non_dominated_set`, and `selected_ref` when
+//	calling `haft_solution(action="compare")`.
 func formatVariantsIndex(a *artifact.Artifact) string {
 	if a == nil {
 		return ""

@@ -17,12 +17,12 @@ import (
 // agent can frame work without bouncing back to the operator with vague
 // "what do you mean?" questions. Investigation-first discipline.
 type ResolveTermResult struct {
-	Term            string                       `json:"term"`
-	Resolution      string                       `json:"resolution"` // resolved | ambiguous | absent
-	TermMapEntries  []project.TermMapEntry       `json:"term_map_entries"`
-	SpecSectionRefs []ResolveTermSpecSectionRef  `json:"spec_section_refs"`
+	Term             string                       `json:"term"`
+	Resolution       string                       `json:"resolution"` // resolved | ambiguous | absent
+	TermMapEntries   []project.TermMapEntry       `json:"term_map_entries"`
+	SpecSectionRefs  []ResolveTermSpecSectionRef  `json:"spec_section_refs"`
 	ArtifactMentions []ResolveTermArtifactMention `json:"artifact_mentions"`
-	NextAction      string                       `json:"next_action"`
+	NextAction       string                       `json:"next_action"`
 }
 
 // ResolveTermSpecSectionRef is a SpecSection whose `terms` field

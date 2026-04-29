@@ -35,14 +35,14 @@ const (
 // registered in phases.go; new phases are added by appending to the
 // registry, never by branching on PhaseID at call sites.
 type Phase struct {
-	ID            PhaseID
-	DependsOn     []PhaseID
-	DocumentKind  project.SpecDocumentKind
-	SectionKind   string
-	PromptForUser string
+	ID              PhaseID
+	DependsOn       []PhaseID
+	DocumentKind    project.SpecDocumentKind
+	SectionKind     string
+	PromptForUser   string
 	ContextForAgent string
-	ExpectedFields []string
-	Checks        []Check
+	ExpectedFields  []string
+	Checks          []Check
 }
 
 // Check is the unit of validation reused between SpecOnboardingMethod
@@ -62,17 +62,17 @@ type Check interface {
 // this typed payload to the human and to the host agent. The shape is
 // identical across MCP, CLI, and Desktop — that is the contract.
 type WorkflowIntent struct {
-	Phase            PhaseID                  `json:"phase"`
-	Audience         Audience                 `json:"audience"`
-	DocumentKind     project.SpecDocumentKind `json:"document_kind"`
-	SectionKind      string                   `json:"section_kind"`
-	PromptForUser    string                   `json:"prompt_for_user"`
-	ContextForAgent  string                   `json:"context_for_agent"`
-	ExpectedFields   []string                 `json:"expected_fields,omitempty"`
-	Checks           []string                 `json:"checks,omitempty"`
+	Phase            PhaseID                    `json:"phase"`
+	Audience         Audience                   `json:"audience"`
+	DocumentKind     project.SpecDocumentKind   `json:"document_kind"`
+	SectionKind      string                     `json:"section_kind"`
+	PromptForUser    string                     `json:"prompt_for_user"`
+	ContextForAgent  string                     `json:"context_for_agent"`
+	ExpectedFields   []string                   `json:"expected_fields,omitempty"`
+	Checks           []string                   `json:"checks,omitempty"`
 	BlockingFindings []project.SpecCheckFinding `json:"blocking_findings,omitempty"`
-	Terminal         bool                     `json:"terminal"`
-	Reason           string                   `json:"reason,omitempty"`
+	Terminal         bool                       `json:"terminal"`
+	Reason           string                     `json:"reason,omitempty"`
 }
 
 // terminalIntent is the intent NextStep returns when no further phase

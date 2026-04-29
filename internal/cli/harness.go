@@ -1228,22 +1228,6 @@ func harnessCompletedOperatorAction(
 	return harnessInspectOperatorAction(commissionID, "completed workspace is unavailable; inspect before applying")
 }
 
-func canApplyHarnessWorkspaceDiff(
-	commission map[string]any,
-	workspacePath string,
-	projectRoot string,
-	workspaceSummary harnessWorkspaceGitSummary,
-) bool {
-	authorization := harnessWorkspaceApplyAuthorization(
-		commission,
-		workspacePath,
-		projectRoot,
-		workspaceSummary,
-	)
-
-	return canApplyAuthorizedHarnessWorkspaceDiff(commission, workspaceSummary, authorization)
-}
-
 func harnessWorkspaceApplyAuthorization(
 	commission map[string]any,
 	workspacePath string,
@@ -2400,37 +2384,6 @@ func formatHarnessRuntimeLogLine(line string) (string, bool) {
 	return formatHarnessRuntimeEventLineForOperator(event)
 }
 
-func formatHarnessRuntimeEventLine(event map[string]any) string {
-	line, ok := formatHarnessRuntimeEventLineForOperator(event)
-	if ok {
-		return line
-	}
-
-	data := mapField(event, "data")
-	fields := []string{
-		presentOrUnknown(stringField(event, "at")),
-		presentOrUnknown(stringField(event, "event")),
-	}
-
-	if phase := strings.TrimSpace(stringField(data, "phase")); phase != "" {
-		fields = append(fields, "phase="+phase)
-	}
-	if status := strings.TrimSpace(stringField(data, "status")); status != "" {
-		fields = append(fields, "status="+status)
-	}
-	if sessionID := strings.TrimSpace(stringField(data, "session_id")); sessionID != "" {
-		fields = append(fields, "session="+sessionID)
-	}
-	if turnID := strings.TrimSpace(stringField(data, "turn_id")); turnID != "" {
-		fields = append(fields, "turn="+turnID)
-	}
-
-	if preview := harnessRuntimeEventPreview(event); preview != "" {
-		fields = append(fields, "preview="+preview)
-	}
-	return strings.Join(fields, " ")
-}
-
 func formatHarnessRuntimeEventLineForOperator(event map[string]any) (string, bool) {
 	action, ok := harnessRuntimeEventAction(stringField(event, "event"))
 	if !ok {
@@ -3078,7 +3031,7 @@ func watchHarnessRunUntilTerminal(
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-done:
-			nextOffset, _, printErr := printHarnessSelectedTailSinceLabeled(
+			_, _, printErr := printHarnessSelectedTailSinceLabeled(
 				cmd,
 				opts.LogPath,
 				selection.CommissionIDs,
@@ -3090,7 +3043,6 @@ func watchHarnessRunUntilTerminal(
 			if printErr != nil {
 				return printErr
 			}
-			offset = nextOffset
 
 			terminal, terminalErr := selectedHarnessCommissionsTerminal(ctx, store, selection.CommissionIDs)
 			if terminalErr != nil {
@@ -3206,7 +3158,7 @@ func watchHarnessDrainUntilIdle(
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-done:
-			nextOffset, _, printErr := printHarnessSelectedTailSinceLabeled(
+			_, _, printErr := printHarnessSelectedTailSinceLabeled(
 				cmd,
 				opts.LogPath,
 				tailIDs,
@@ -3218,7 +3170,6 @@ func watchHarnessDrainUntilIdle(
 			if printErr != nil {
 				return printErr
 			}
-			offset = nextOffset
 
 			monitor, monitorErr := loadHarnessDrainMonitor(ctx, store, opts, time.Now().UTC())
 			if monitorErr != nil {
@@ -3389,16 +3340,6 @@ func printHarnessRunOperatorHeader(
 	return nil
 }
 
-func printHarnessSelectedTailSince(
-	cmd *cobra.Command,
-	logPath string,
-	commissionIDs []string,
-	offset int,
-	rawJSON bool,
-) (int, int, error) {
-	return printHarnessSelectedTailSinceLabeled(cmd, logPath, commissionIDs, offset, rawJSON, nil, harnessAnsi{})
-}
-
 // printHarnessSelectedTailSinceLabeled is the labeled / colorized variant.
 // When labels and ansi are non-nil/non-zero, every event line is prefixed
 // with the per-commission letter label, terminal events are colored, and
@@ -3459,14 +3400,6 @@ func printHarnessSelectedTailSinceLabeled(
 		}
 	}
 	return len(lines), printed, nil
-}
-
-func printHarnessSelectedProgress(
-	cmd *cobra.Command,
-	opts harnessRunOptions,
-	commissionIDs []string,
-) error {
-	return printHarnessDashboard(cmd, opts, commissionIDs, nil, harnessAnsi{}, time.Now().UTC())
 }
 
 // printHarnessDashboard renders a multi-line operator dashboard summarizing
@@ -3648,7 +3581,6 @@ func formatHarnessDashboardTerminalRow(
 	)
 }
 
-
 func selectedHarnessRunningDetails(status map[string]any, commissionIDs []string) []map[string]any {
 	selected := stringSet(commissionIDs)
 	details := mapSliceField(mapField(status, "orchestrator"), "running_details")
@@ -3659,34 +3591,6 @@ func selectedHarnessRunningDetails(status map[string]any, commissionIDs []string
 		}
 	}
 	return result
-}
-
-func formatHarnessRunningProgressLine(
-	detail map[string]any,
-	sessionSummaries map[string]harnessSessionLogSummary,
-	now time.Time,
-) string {
-	sessionID := presentOrUnknown(stringField(detail, "session_id"))
-	sessionSummary := sessionSummaries[sessionID]
-	fields := []string{
-		"progress:",
-		"commission=" + presentOrUnknown(stringField(detail, "commission_id")),
-		"phase=" + presentOrUnknown(stringField(detail, "phase")),
-		"sub_state=" + presentOrUnknown(stringField(detail, "sub_state")),
-	}
-	if startedAt, elapsed := harnessSessionTiming(sessionSummary.StartedAt, now); startedAt != "" {
-		fields = append(fields, "elapsed="+elapsed)
-	}
-	if strings.TrimSpace(sessionSummary.LastEvent) != "" {
-		fields = append(fields, "last_event="+sessionSummary.LastEvent)
-	}
-	if strings.TrimSpace(sessionSummary.LastTurnStatus) != "" {
-		fields = append(fields, "last_turn="+sessionSummary.LastTurnStatus)
-	}
-	if workspace := strings.TrimSpace(stringField(detail, "workspace_path")); workspace != "" {
-		fields = append(fields, "workspace="+workspace)
-	}
-	return strings.Join(fields, " ")
 }
 
 func selectedHarnessCommissionsTerminal(

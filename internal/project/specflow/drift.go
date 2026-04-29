@@ -40,7 +40,7 @@ func SectionBaselineFindings(set project.ProjectSpecificationSet, store Baseline
 		baseline, err := store.Get(projectID, section.ID)
 		currentHash := HashSection(section)
 
-		if errors.Is(err, BaselineNotFound) {
+		if errors.Is(err, ErrBaselineNotFound) {
 			findings = append(findings, project.SpecCheckFinding{
 				Level:      FindingLevelError,
 				Code:       codeSpecSectionNeedsBaseline,

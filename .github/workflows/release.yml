@@ -52,7 +52,12 @@ jobs:
           - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { runner: macos-latest,     goos: darwin, goarch: arm64 }
-          - { runner: macos-13,         goos: darwin, goarch: amd64 }
+          # darwin-amd64 (Intel Mac) CLI build dropped at v7.0.0:
+          # GitHub-hosted macos-13 runners (last Intel Mac image) deprecated
+          # by GitHub, scheduling priority lowered, jobs queue 30+ min during
+          # peak hours. Apple Silicon now ~95%+ of dev Mac fleet. Intel users
+          # can stay on v6.2.1 or request a v7.0.x patch with hand-built
+          # darwin-amd64 artifact uploaded via `gh release upload`.
     steps:
       - uses: actions/checkout@v6
         with:

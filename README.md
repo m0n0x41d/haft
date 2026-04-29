@@ -363,6 +363,28 @@ into a harnessable engineering system.
 
 Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation after trust is earned.
 
+### Cross-repo harness — research track (post-v7.0)
+
+Multi-project workflows where each registered haft project becomes an
+addressable endpoint that other projects' agents can ask typed questions of
+("what does your enabling spec say about commission policy?", "what's the
+status of decision X?") and request typed changes from
+(MessageEnvelope → ProblemCard → DecisionRecord → WorkCommission in the
+target project, with the target's normal decide-then-commission discipline
+intact). Built on what v7 already ships: spec carriers as the addressable
+"what this repo is about" surface, AutonomyEnvelope's `allowed_repos`
+whitelist as the structural cross-repo gate, Open-Sleigh worktree clones at
+`base_sha` as the read-only-by-default response runner, and the existing
+Evidence model as the "no claim without carrier" response contract. **This
+is post-v7.0 work**: target audience is multi-repo developers who currently
+copy context between repos by hand; sequencing starts with cross-project
+READ through `haft_query(project_ref=..., ...)` (small, additive, no new
+artifact kinds) and only moves to typed change requests after the read
+surface earns evidence on real multi-repo work. Detailed mapping of how
+this composes with v7 primitives lives in
+`.context/cross-repo-mail-haft-mapping.md`. Not committed to a release
+version yet.
+
 ### Desktop App — alpha track (no committed version)
 
 The Tauri v2 desktop app exists as an alpha exploration of a human surface

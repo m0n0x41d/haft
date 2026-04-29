@@ -74,7 +74,14 @@ func TestLifecycleSemanticsForTerminalAndRecoverableStates(t *testing.T) {
 	}
 }
 
-func TestDeliveryAfterLocalEvidenceRequiresPassPolicyAndEnvelopeAllowed(t *testing.T) {
+func TestDeliveryAfterLocalEvidence_PolicyAndVerdictDriveAutoApply(t *testing.T) {
+	// V3 invariant (dec-20260428-harness-drain-v3-16bf21f3): the apply gate is
+	// purely (delivery_policy + verdict). AutonomyEnvelope already gates
+	// creation/preflight/execute; reaching terminal+pass means it didn't block
+	// earlier. Missing envelope on terminal must NOT prevent auto-apply,
+	// otherwise the V3 path collapses back to V2's runtime-envelope behavior.
+	// An EXPLICITLY blocked envelope still keeps the manual path because it
+	// represents a concrete operator decision, not a missing snapshot.
 	cases := []struct {
 		Name      string
 		Policy    DeliveryPolicy
@@ -84,12 +91,20 @@ func TestDeliveryAfterLocalEvidenceRequiresPassPolicyAndEnvelopeAllowed(t *testi
 		Reason    string
 	}{
 		{
-			Name:      "auto on pass allowed",
+			Name:      "auto on pass with envelope allowed",
 			Policy:    DeliveryPolicyWorkspacePatchAutoOnPass,
 			Verdict:   DeliveryVerdictPass,
 			Gate:      DeliveryGateAllowed,
 			AutoApply: true,
-			Reason:    "policy_auto_on_pass_and_envelope_allowed",
+			Reason:    "policy_auto_on_pass_and_verdict_pass",
+		},
+		{
+			Name:      "auto on pass with envelope missing still auto-applies (V3 invariant)",
+			Policy:    DeliveryPolicyWorkspacePatchAutoOnPass,
+			Verdict:   DeliveryVerdictPass,
+			Gate:      DeliveryGateMissing,
+			AutoApply: true,
+			Reason:    "policy_auto_on_pass_and_verdict_pass",
 		},
 		{
 			Name:    "manual policy",
@@ -99,7 +114,7 @@ func TestDeliveryAfterLocalEvidenceRequiresPassPolicyAndEnvelopeAllowed(t *testi
 			Reason:  "delivery_policy_manual",
 		},
 		{
-			Name:    "blocked envelope",
+			Name:    "blocked envelope keeps manual path",
 			Policy:  DeliveryPolicyWorkspacePatchAutoOnPass,
 			Verdict: DeliveryVerdictPass,
 			Gate:    DeliveryGateBlocked,

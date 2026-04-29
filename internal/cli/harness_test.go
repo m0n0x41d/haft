@@ -2321,3 +2321,67 @@ func overrideHarnessTestFlags() func() {
 		commissionFromDecisionValidUntil = oldCommissionValidUntil
 	}
 }
+
+func TestShouldAutoApplyCommission_GatesOnStateAndAutoApplyAllowed(t *testing.T) {
+	cases := []struct {
+		name       string
+		commission map[string]any
+		want       bool
+	}{
+		{
+			name: "completed + allowed",
+			commission: map[string]any{
+				"state":      "completed",
+				"auto_apply": map[string]any{"allowed": true},
+			},
+			want: true,
+		},
+		{
+			name: "completed + not allowed",
+			commission: map[string]any{
+				"state":      "completed",
+				"auto_apply": map[string]any{"allowed": false},
+			},
+			want: false,
+		},
+		{
+			name: "completed + missing auto_apply payload",
+			commission: map[string]any{
+				"state": "completed",
+			},
+			want: false,
+		},
+		{
+			name: "not in apply-result state (running)",
+			commission: map[string]any{
+				"state":      "running",
+				"auto_apply": map[string]any{"allowed": true},
+			},
+			want: false,
+		},
+		{
+			name: "not in apply-result state (blocked_policy)",
+			commission: map[string]any{
+				"state":      "blocked_policy",
+				"auto_apply": map[string]any{"allowed": true},
+			},
+			want: false,
+		},
+		{
+			name: "auto_apply present but allowed not bool",
+			commission: map[string]any{
+				"state":      "completed",
+				"auto_apply": map[string]any{"allowed": "yes"},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldAutoApplyCommission(tc.commission); got != tc.want {
+				t.Fatalf("shouldAutoApplyCommission = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

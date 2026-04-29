@@ -2822,7 +2822,7 @@ func startOpenSleighOperatorRun(
 	runCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
-	waitErr := watchHarnessRunUntilTerminal(runCtx, cmd, store, selection, opts, done, output)
+	waitErr := watchHarnessRunUntilTerminal(runCtx, cmd, store, projectRoot, selection, opts, done, output)
 	if waitErr != nil {
 		stopOpenSleighProcess(process, done)
 		return waitErr
@@ -2839,13 +2839,14 @@ func watchHarnessRunUntilTerminal(
 	ctx context.Context,
 	cmd *cobra.Command,
 	store *artifact.Store,
+	projectRoot string,
 	selection harnessRunSelection,
 	opts harnessRunOptions,
 	done <-chan error,
 	processOutput *bytes.Buffer,
 ) error {
 	if opts.Drain {
-		return watchHarnessDrainUntilIdle(ctx, cmd, store, selection, opts, done, processOutput)
+		return watchHarnessDrainUntilIdle(ctx, cmd, store, projectRoot, selection, opts, done, processOutput)
 	}
 
 	ticker := time.NewTicker(time.Second)
@@ -2921,6 +2922,7 @@ func watchHarnessDrainUntilIdle(
 	ctx context.Context,
 	cmd *cobra.Command,
 	store *artifact.Store,
+	projectRoot string,
 	selection harnessRunSelection,
 	opts harnessRunOptions,
 	done <-chan error,
@@ -2936,6 +2938,11 @@ func watchHarnessDrainUntilIdle(
 	offset := 0
 	lastProgressAt := time.Time{}
 	seenIDs := stringSet(selection.CommissionIDs)
+	autoApplyAttempted := map[string]struct{}{}
+	workspaceRoot := opts.WorkspaceRoot
+	if workspaceRoot == "" {
+		workspaceRoot = defaultHarnessWorkspaceRoot()
+	}
 	for {
 		monitor, err := loadHarnessDrainMonitor(ctx, store, opts, time.Now().UTC())
 		if err != nil {
@@ -2943,6 +2950,32 @@ func watchHarnessDrainUntilIdle(
 		}
 		for _, commissionID := range monitor.ObservedIDs {
 			seenIDs[commissionID] = struct{}{}
+		}
+		// Auto-apply hook: any commission that's left the open set with
+		// auto_apply.allowed=true gets the workspace diff applied as a
+		// discrete revertable commit. Best-effort — failures are logged but
+		// don't abort the drain loop. Each commission is attempted at most
+		// once per drain run.
+		openSet := stringSet(monitor.OpenIDs)
+		for _, commissionID := range monitor.ObservedIDs {
+			if _, attempted := autoApplyAttempted[commissionID]; attempted {
+				continue
+			}
+			if _, stillOpen := openSet[commissionID]; stillOpen {
+				continue
+			}
+			commission, loadErr := loadWorkCommissionPayload(ctx, store, commissionID)
+			if loadErr != nil {
+				continue
+			}
+			eligible, _ := attemptHarnessAutoApply(cmd, commission, projectRoot, workspaceRoot)
+			if eligible {
+				autoApplyAttempted[commissionID] = struct{}{}
+				lastProgressAt = time.Now()
+			} else {
+				// not eligible — never need to re-check
+				autoApplyAttempted[commissionID] = struct{}{}
+			}
 		}
 		tailIDs := sortedSetValues(seenIDs)
 
@@ -3486,6 +3519,60 @@ func harnessDrainMonitorFromRecords(
 	monitor.RunnableIDs = uniqueStringsPreserveOrder(monitor.RunnableIDs)
 	monitor.ExecutingIDs = uniqueStringsPreserveOrder(monitor.ExecutingIDs)
 	return monitor
+}
+
+// shouldAutoApplyCommission reports whether a terminal commission's
+// delivery_decision says it should be auto-applied. Pure: examines the
+// commission payload, performs no I/O.
+func shouldAutoApplyCommission(commission map[string]any) bool {
+	if !isHarnessApplyResultState(stringField(commission, "state")) {
+		return false
+	}
+	autoApply := mapField(commission, "auto_apply")
+	if len(autoApply) == 0 {
+		return false
+	}
+	allowed, _ := autoApply["allowed"].(bool)
+	return allowed
+}
+
+// attemptHarnessAutoApply runs the standard harness apply path for a single
+// terminal commission when its delivery_decision marks auto_apply.allowed.
+// Best-effort: failures emit a typed line on cmd output but do not abort the
+// surrounding drain/run loop. Returns whether the commission was eligible and
+// any apply error (regardless of eligibility, the drain caller should treat
+// the commission as "auto-apply attempt complete" and move on).
+func attemptHarnessAutoApply(
+	cmd *cobra.Command,
+	commission map[string]any,
+	projectRoot string,
+	workspaceRoot string,
+) (bool, error) {
+	if !shouldAutoApplyCommission(commission) {
+		return false, nil
+	}
+	commissionID := stringField(commission, "id")
+	summary, err := applyHarnessWorkspaceDiff(
+		projectRoot,
+		filepath.Join(workspaceRoot, commissionID),
+		harnessCommissionScope(commission),
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"auto_apply_failed: commission=%s reason=%q\n",
+			commissionID,
+			err.Error(),
+		)
+		return true, err
+	}
+	_, _ = fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"auto_apply_succeeded: commission=%s files=%d\n",
+		commissionID,
+		len(summary.Files),
+	)
+	return true, nil
 }
 
 func harnessStaleLeaseSummaryFor(

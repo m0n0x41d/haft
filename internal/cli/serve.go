@@ -28,8 +28,9 @@ var serveCmd = &cobra.Command{
 	Short: "Start the MCP server",
 	Long: `Start the Model Context Protocol (MCP) server for AI tool integration.
 
-The server communicates via stdio and provides Haft v5 tools to AI
-assistants like Cursor, Gemini CLI, and Codex CLI.
+The server communicates via stdio and provides Haft tools to embedded host
+agents. v7 product support targets Claude Code and Codex; other MCP clients
+may remain protocol-compatible experimental integrations.
 
 The project root is determined by:
   1. HAFT_PROJECT_ROOT environment variable (if set)
@@ -154,6 +155,7 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 
 		if toolErr == nil {
 			result = applyRefreshReminder(ctx, result, params.Name, store)
+			result = applyReadinessReminder(result, params.Name, haftDir)
 		}
 
 		return result, toolErr
@@ -162,7 +164,7 @@ func makeV5Handler(store *artifact.Store, haftDir string, projCfg *project.Confi
 
 // dispatchTool routes a tool call to its handler. Pure dispatch, no hooks.
 // Returns (result, createdArtifactID, err). createdArtifactID is the canonical
-// ID of the artifact created by this call (e.g. "dec-20260418-a3f7c1"); empty
+// ID of the artifact created by this call (e.g. "dec-20260418-a3f7c1d2"); empty
 // string when the action does not create a primary artifact (e.g. read-only
 // queries, mutations of existing artifacts).
 func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, name string, args map[string]any) (string, string, error) {
@@ -184,9 +186,29 @@ func dispatchTool(ctx context.Context, store *artifact.Store, haftDir string, na
 	case "haft_query":
 		result, err := handleQuintQuery(ctx, store, haftDir, args)
 		return result, "", err
+	case "haft_commission":
+		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
+		result, err := handleHaftCommission(ctx, store, args)
+		return result, "", err
+	case "haft_spec_section":
+		result, err := handleHaftSpecSection(ctx, store, haftDir, args)
+		return result, "", err
 	default:
 		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func commissionArgsWithProjectRoot(args map[string]any, projectRoot string) map[string]any {
+	if stringArg(args, "project_root") != "" {
+		return args
+	}
+	if strings.TrimSpace(projectRoot) == "" {
+		return args
+	}
+
+	next := copyStringAnyMap(args)
+	next["project_root"] = projectRoot
+	return next
 }
 
 // logToolEntry logs the tool call entry with extracted refs.
@@ -232,7 +254,7 @@ func applyCrossProjectRecall(ctx context.Context, result, name, action string, a
 
 // applyCrossProjectIndex writes decision summaries to the global index on
 // decide. The cross-project index is keyed by (project_id, decision_id) where
-// decision_id MUST be the canonical artifact ID (e.g. "dec-20260418-a3f7c1"),
+// decision_id MUST be the canonical artifact ID (e.g. "dec-20260418-a3f7c1d2"),
 // not the user-supplied selected_title — two decisions in one project can
 // legitimately share the same selected option label without colliding.
 func applyCrossProjectIndex(ctx context.Context, name, action string, args map[string]any, createdRef string, store *artifact.Store, projCfg *project.Config, indexStore *project.IndexStore) {
@@ -265,7 +287,10 @@ func applyCrossProjectIndex(ctx context.Context, name, action string, args map[s
 
 // applyRefreshReminder appends a reminder if >5 days since last stale scan.
 func applyRefreshReminder(ctx context.Context, result, name string, store *artifact.Store) string {
-	if name == "haft_refresh" {
+	if refreshReminderDisabled(name) {
+		return result
+	}
+	if machineJSONResponse(result) {
 		return result
 	}
 	lastScan := store.LastRefreshScan(ctx)
@@ -277,6 +302,25 @@ func applyRefreshReminder(ctx context.Context, result, name string, store *artif
 		result += fmt.Sprintf("\n\n--- Refresh reminder: %d days since last stale scan. Run haft_refresh(action=\"scan\") to check for stale decisions and evidence decay. ---\n", daysSince)
 	}
 	return result
+}
+
+func refreshReminderDisabled(name string) bool {
+	switch name {
+	case "haft_refresh":
+		return true
+	case "haft_commission":
+		return true
+	default:
+		return false
+	}
+}
+
+func machineJSONResponse(result string) bool {
+	trimmed := strings.TrimSpace(result)
+	if trimmed == "" {
+		return false
+	}
+	return json.Valid([]byte(trimmed))
 }
 
 func truncateStr(s string, maxLen int) string {
@@ -339,6 +383,9 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, haftDir string,
 	if v, ok := args["title"].(string); ok {
 		input.Title = v
 	}
+	if v, ok := args["task_context"].(string); ok {
+		input.TaskContext = v
+	}
 	if v, ok := args["rationale"].(string); ok {
 		input.Rationale = v
 	}
@@ -380,6 +427,9 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 	switch action {
 	case "frame":
 		input := artifact.ProblemFrameInput{Context: contextName}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
+		}
 		if v, ok := args["title"].(string); ok {
 			input.Title = v
 		}
@@ -488,6 +538,9 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 	switch action {
 	case "explore":
 		input := artifact.ExploreInput{Context: contextName}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
+		}
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
 		}
@@ -531,9 +584,15 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["recommendation_rationale"].(string); ok {
 			input.Results.RecommendationRationale = v
 		}
-		_ = parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants)
-		_ = parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
-		_ = parseJSONArg(args, "incomparable", &input.Results.Incomparable)
+		if _, err := parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants); err != nil {
+			return "", err
+		}
+		if _, err := parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs); err != nil {
+			return "", err
+		}
+		if _, err := parseJSONArg(args, "incomparable", &input.Results.Incomparable); err != nil {
+			return "", err
+		}
 		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
 		if err != nil {
 			return "", err
@@ -621,6 +680,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["valid_until"].(string); ok {
 			input.ValidUntil = v
 		}
+		if v, ok := args["task_context"].(string); ok {
+			input.TaskContext = v
+		}
 		if v, ok := args["mode"].(string); ok {
 			input.Mode = v
 		}
@@ -643,6 +705,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 		if input.RefreshTriggers, err = parseStrictStringArrayFromArgs(args, "refresh_triggers"); err != nil {
+			return "", "", err
+		}
+		if input.SectionRefs, err = parseStrictStringArrayFromArgs(args, "section_refs"); err != nil {
 			return "", "", err
 		}
 		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {
@@ -872,6 +937,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
+	taskContext, _ := args["task_context"].(string)
 	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 
 	// Support both artifact_ref (new) and decision_ref (backward compat)
@@ -953,18 +1019,18 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "waive", reason, fmt.Sprintf("Extended to %s", a.Meta.ValidUntil), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshWaive, a, nil, navStrip), nil
 
 	case artifact.RefreshReopen:
 		if artifactRef == "" {
 			return "artifact_ref is required for reopen. Note: reopen only works on decisions.\n" + navStrip, nil
 		}
-		dec, newProb, err := artifact.ReopenDecision(ctx, store, haftDir, artifactRef, reason)
+		dec, newProb, err := artifact.ReopenDecisionWithTaskContext(ctx, store, haftDir, artifactRef, reason, taskContext)
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "reopen", reason, fmt.Sprintf("New problem: %s", newProb.Meta.ID), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshReopen, dec, newProb, navStrip), nil
 
 	case artifact.RefreshSupersede:
@@ -979,7 +1045,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef))
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "supersede", reason, fmt.Sprintf("Replaced by %s", newRef), taskContext)
 		return present.RefreshActionResponse(artifact.RefreshSupersede, a, nil, navStrip), nil
 
 	case artifact.RefreshDeprecate:
@@ -990,7 +1056,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, store, haftDir, artifactRef, "deprecate", reason, "Artifact deprecated")
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, store, haftDir, artifactRef, "deprecate", reason, "Artifact deprecated", taskContext)
 		return present.RefreshActionResponse(artifact.RefreshDeprecate, a, nil, navStrip), nil
 
 	case artifact.RefreshReconcile:
@@ -1060,6 +1126,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 		}
 
 	case "related":
+		artifactRef := firstNonEmptyQueryArg(args, "artifact_id", "ref")
+		if artifactRef != "" {
+			return artifactQueryContractResponse(ctx, store, artifactRef)
+		}
+
 		file, _ := args["file"].(string)
 		results, err := artifact.FetchRelatedArtifacts(ctx, store, file)
 		if err != nil {
@@ -1136,8 +1207,90 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, haftDir string
 
 		return formatMCPFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), explain) + navStrip, nil
 
+	case "check":
+		projectRoot := filepath.Dir(haftDir)
+		report, err := buildCheckReport(ctx, store, projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("build check report: %w", err)
+		}
+		report = normalizeCheckReport(report)
+		payload, err := json.Marshal(report)
+		if err != nil {
+			return "", fmt.Errorf("marshal check report: %w", err)
+		}
+		return string(payload), nil
+
+	case "resolve_term":
+		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
+
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', or 'fpf'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'projection', 'list', 'coverage', 'fpf', 'check', or 'resolve_term'", action)
+	}
+}
+
+func firstNonEmptyQueryArg(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, _ := args[key].(string)
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func artifactQueryContractResponse(ctx context.Context, store *artifact.Store, artifactRef string) (string, error) {
+	item, err := store.Get(ctx, artifactRef)
+	if err != nil {
+		return "", err
+	}
+
+	key := "artifact"
+	if item.Meta.Kind == artifact.KindProblemCard {
+		key = "problem_card"
+	}
+
+	encoded, err := json.Marshal(map[string]any{
+		key: artifactQueryContractPayload(item),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return string(encoded), nil
+}
+
+func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {
+	meta := map[string]any{
+		"id":          item.Meta.ID,
+		"kind":        string(item.Meta.Kind),
+		"version":     item.Meta.Version,
+		"status":      string(item.Meta.Status),
+		"context":     item.Meta.Context,
+		"mode":        string(item.Meta.Mode),
+		"title":       item.Meta.Title,
+		"valid_until": item.Meta.ValidUntil,
+		"created_at":  item.Meta.CreatedAt.Format(time.RFC3339),
+		"updated_at":  item.Meta.UpdatedAt.Format(time.RFC3339),
+		"links":       item.Meta.Links,
+	}
+
+	return map[string]any{
+		"id":              item.Meta.ID,
+		"kind":            string(item.Meta.Kind),
+		"version":         item.Meta.Version,
+		"status":          string(item.Meta.Status),
+		"context":         item.Meta.Context,
+		"mode":            string(item.Meta.Mode),
+		"title":           item.Meta.Title,
+		"valid_until":     item.Meta.ValidUntil,
+		"created_at":      item.Meta.CreatedAt.Format(time.RFC3339),
+		"updated_at":      item.Meta.UpdatedAt.Format(time.RFC3339),
+		"body":            item.Body,
+		"content":         item.Body,
+		"description":     item.Body,
+		"search_keywords": item.SearchKeywords,
+		"structured_data": item.StructuredData,
+		"meta":            meta,
 	}
 }
 
@@ -1365,22 +1518,29 @@ func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]ma
 	return result
 }
 
-func parseJSONArg(args map[string]any, key string, target any) bool {
+// parseJSONArg decodes a JSON-shaped argument from the MCP args map into
+// the typed target. Returns (present, error). Callers MUST propagate the
+// error: an earlier version returned only `bool` and the call sites
+// silently discarded parse failures, which produced empty payloads that
+// downstream validators reported as "missing variant" coverage errors —
+// the original symptom in github issue #71. Surfacing the parse error
+// keeps the caller's intent visible.
+func parseJSONArg(args map[string]any, key string, target any) (bool, error) {
 	value, ok := args[key]
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	data, err := json.Marshal(value)
 	if err != nil {
-		return false
+		return true, fmt.Errorf("argument %q is not JSON-encodable: %w", key, err)
 	}
 
 	if err := json.Unmarshal(data, target); err != nil {
-		return false
+		return true, fmt.Errorf("argument %q does not match the expected JSON shape: %w", key, err)
 	}
 
-	return true
+	return true, nil
 }
 
 func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string) string {

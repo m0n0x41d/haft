@@ -734,13 +734,13 @@ function DecayWindow({
   createdAt: string;
   validUntil: string;
 }) {
+  const [now] = useState(() => Date.now());
   const created = Date.parse(createdAt);
   const expires = Date.parse(validUntil);
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) {
     return null;
   }
   const totalDays = Math.round((expires - created) / (1000 * 60 * 60 * 24));
-  const now = Date.now();
   const elapsedDays = Math.max(
     0,
     Math.min(totalDays, Math.round((now - created) / (1000 * 60 * 60 * 24))),

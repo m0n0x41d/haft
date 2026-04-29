@@ -3,6 +3,7 @@ pub mod commands_mutate;
 pub mod commands_read;
 pub mod db;
 pub mod models;
+pub mod project_readiness;
 pub mod rpc;
 pub mod shell_env;
 pub mod terminal;
@@ -43,7 +44,9 @@ pub fn run() {
         .manage(WatcherState(Mutex::new(None)))
         .manage(ShellEnvState(Mutex::new(shell_env)))
         .manage(AgentManagerState(Mutex::new(agents::AgentManager::new())))
-        .manage(TerminalManagerState(Mutex::new(terminal::TerminalManager::new())))
+        .manage(TerminalManagerState(Mutex::new(
+            terminal::TerminalManager::new(),
+        )))
         .invoke_handler(tauri::generate_handler![
             // ── Read (direct SQLite) ──
             commands_read::get_dashboard,
@@ -86,11 +89,20 @@ pub fn run() {
             commands_mutate::update_flow,
             commands_mutate::toggle_flow,
             commands_mutate::delete_flow,
+            commands_mutate::list_commissions,
+            commands_mutate::show_commission,
+            commands_mutate::requeue_commission,
+            commands_mutate::cancel_commission,
+            commands_mutate::harness_result,
+            commands_mutate::harness_tail,
+            commands_mutate::harness_apply,
             agents::run_flow_now,
             commands_mutate::switch_project,
             commands_mutate::add_project,
             commands_mutate::add_project_smart,
             commands_mutate::init_project,
+            commands_mutate::run_spec_check,
+            commands_mutate::remove_project,
             commands_mutate::refresh_governance,
             commands_mutate::get_governance_overview,
             commands_mutate::get_coverage,
@@ -104,6 +116,7 @@ pub fn run() {
             agents::cancel_task,
             agents::write_task_input,
             agents::handoff_task,
+            agents::continue_task,
             agents::list_running_agents,
             agents::get_agent_output,
             // ── Terminal (interactive PTY) ──
@@ -140,7 +153,8 @@ pub(crate) fn resolve_db_path() -> Option<String> {
     let content = std::fs::read_to_string(&project_yaml).ok()?;
 
     // Parse project ID from yaml (simple: look for "id: qnt_...")
-    let id = content.lines()
+    let id = content
+        .lines()
         .find(|line| line.starts_with("id:"))
         .and_then(|line| line.strip_prefix("id:"))
         .map(|s| s.trim().to_string())?;
@@ -161,7 +175,11 @@ fn resolve_project_root() -> Option<String> {
     // 1. Env var (set by `haft desktop` launcher)
     if let Ok(root) = std::env::var("HAFT_PROJECT_ROOT") {
         let root = root.trim().to_string();
-        if !root.is_empty() && std::path::Path::new(&root).join(".haft/project.yaml").exists() {
+        if !root.is_empty()
+            && std::path::Path::new(&root)
+                .join(".haft/project.yaml")
+                .exists()
+        {
             return Some(root);
         }
     }
@@ -205,7 +223,9 @@ fn resolve_project_root() -> Option<String> {
             if let Some(active) = val.get("active_path").and_then(|v| v.as_str()) {
                 let trimmed = active.trim();
                 if !trimmed.is_empty()
-                    && std::path::Path::new(trimmed).join(".haft/project.yaml").exists()
+                    && std::path::Path::new(trimmed)
+                        .join(".haft/project.yaml")
+                        .exists()
                 {
                     return Some(trimmed.to_string());
                 }
@@ -213,7 +233,10 @@ fn resolve_project_root() -> Option<String> {
             if let Some(projects) = val.get("projects").and_then(|p| p.as_array()) {
                 for project in projects {
                     if let Some(path) = project.get("path").and_then(|p| p.as_str()) {
-                        if std::path::Path::new(path).join(".haft/project.yaml").exists() {
+                        if std::path::Path::new(path)
+                            .join(".haft/project.yaml")
+                            .exists()
+                        {
                             return Some(path.to_string());
                         }
                     }

@@ -6,6 +6,29 @@ description: "Finalize a decision with full rationale"
 
 Create a DecisionRecord — the crown jewel artifact. Must include what was chosen, why, and what to watch for.
 
+## Investigation-first discipline (BEFORE asking the user)
+
+If the chosen variant title or rationale uses umbrella words
+("service", "process", "ready", "queue", etc.), do NOT bounce back to
+the operator. Ground the term first:
+
+- Call `haft_query(action="resolve_term", term="<umbrella>")` to get
+  term-map entries + spec sections + past mentions in one round-trip.
+- Read the `section_refs` field of any related spec section the term
+  resolves to; use those `id`s as `section_refs` when calling
+  `haft_decision(decide)`.
+- Use `Glob` / `Grep` / `Read` to ground the chosen variant in actual
+  code paths so `affected_files` is concrete, not aspirational.
+- Only if a term is genuinely ambiguous after that sweep, ask ONE
+  concrete question naming the candidates the resolver returned.
+
+If `haft_decision(decide)` returns a `Project readiness` warning that the
+project is `needs_onboard`, the resulting DecisionRecord cannot link to
+SpecSection refs — and downstream `haft_commission(create_from_decision)`
+will block until the spec set is in place. Prefer onboarding first
+(`/h-onboard`); if the decision is intentionally tactical, proceed and
+record it as out-of-spec so `haft spec coverage` reports it correctly.
+
 Use `haft_decision` tool with `action="decide"` and:
 - `selected_title`: name of chosen variant (required)
 - `why_selected`: rationale (required)
@@ -21,7 +44,9 @@ Use `haft_decision` tool with `action="decide"` and:
 - `admissibility`: what is NOT acceptable
 - `evidence_requirements`: explicit evidence the implementation/review loop must gather
 - `refresh_triggers`: concrete future conditions that should trigger re-evaluation
+- `section_refs`: SpecSection IDs governed by this DecisionRecord when accepting or recording a spec-linked decision
 - `search_keywords`: compact retrieval aliases for later recall
+- `task_context`: optional task/context text for the DecisionRecord filename slug; sanitized before it is inserted into the ID
 - `predictions`: falsifiable claims to verify later; each item MUST include `claim`, `observable`, and `threshold`
 - `weakest_link`: selected variant weakest link; what most plausibly breaks this choice (required)
 - `rollback.triggers`: at least one concrete trigger that would force reversal (required)

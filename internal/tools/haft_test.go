@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1698,7 +1699,9 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 
 	for _, key := range []string{
 		"context",
+		"task_context",
 		"problem_refs",
+		"section_refs",
 		"pre_conditions",
 		"evidence_requirements",
 		"refresh_triggers",
@@ -1707,6 +1710,41 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 		if _, ok := properties[key]; !ok {
 			t.Fatalf("schema missing %q", key)
 		}
+	}
+}
+
+func TestHaftDecisionTool_DecideUsesTaskContextInArtifactID(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "Tool-mode decide should pass task_context into the DecisionRecord ID.",
+		"task_context":   "Task #4: API/CLI cleanup",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected decision artifact metadata")
+	}
+
+	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
+	if !pattern.MatchString(result.Meta.ArtifactRef) {
+		t.Fatalf("artifact ref = %q, want sanitized task_context slug before 8-hex suffix", result.Meta.ArtifactRef)
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TaskContext != "task-4-api-cli-cleanup" {
+		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
 	}
 }
 
@@ -1763,6 +1801,7 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		"context":               "transport",
 		"problem_ref":           fixture.problem.Meta.ID,
 		"problem_refs":          []string{fixture.problem.Meta.ID, additionalProblem.Meta.ID},
+		"section_refs":          []string{"TS.transport.001", "ES.transport.001"},
 		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
 		"selected_title":        "gRPC",
 		"why_selected":          "Lower latency with schema-checked client generation.",
@@ -1794,6 +1833,9 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		"**Evidence requirements:**",
 		"- p99 latency stays below 20ms",
 		"- Generated clients compile in CI",
+		"**Spec sections:**",
+		"- TS.transport.001",
+		"- ES.transport.001",
 		"**Refresh triggers:**",
 		"- Latency budget regresses after rollout",
 		"- Generated clients fail across two releases",
@@ -1812,6 +1854,8 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		fixture.problem.Meta.ID:           false,
 		additionalProblem.Meta.ID:         false,
 		fixture.comparedPortfolio.Meta.ID: false,
+		"TS.transport.001":                false,
+		"ES.transport.001":                false,
 	}
 
 	for _, link := range links {
@@ -1824,6 +1868,11 @@ func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T
 		if !found {
 			t.Fatalf("decision links missing ref %q: %+v", ref, links)
 		}
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if strings.Join(fields.SectionRefs, ",") != "TS.transport.001,ES.transport.001" {
+		t.Fatalf("decision section refs = %#v, want spec refs", fields.SectionRefs)
 	}
 }
 

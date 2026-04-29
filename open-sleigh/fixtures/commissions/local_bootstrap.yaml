@@ -1,0 +1,38 @@
+commissions:
+  - id: "wc-local-bootstrap-001"
+    decision_ref: "dec-20260422-001"
+    decision_revision_hash: "decision-r1"
+    problem_card_ref: "pc-local-bootstrap-001"
+    implementation_plan_ref: "plan-local-bootstrap-001"
+    implementation_plan_revision: "plan-r1"
+    evidence_requirements:
+      - kind: "mix_test"
+        command: "mix test"
+    projection_policy: "local_only"
+    state: "queued"
+    valid_until: "2099-01-01T00:00:00Z"
+    fetched_at: "2026-04-22T10:00:00Z"
+    scope:
+      repo_ref: "local:open-sleigh-bootstrap"
+      base_sha: "base-r1"
+      target_branch: "feature/open-sleigh-local-bootstrap"
+      allowed_paths:
+        - "open-sleigh/lib/open_sleigh/**"
+        - "open-sleigh/test/open_sleigh/**"
+        - "open-sleigh/fixtures/commissions/**"
+      forbidden_paths:
+        - ".env"
+        - ".env.local"
+      allowed_actions:
+        - "edit_files"
+        - "run_tests"
+      affected_files:
+        - "open-sleigh/lib/open_sleigh/agent_worker.ex"
+        - "open-sleigh/lib/mix/tasks/open_sleigh.start.ex"
+        - "open-sleigh/fixtures/commissions/local_bootstrap.yaml"
+      allowed_modules:
+        - "OpenSleigh.AgentWorker"
+        - "Mix.Tasks.OpenSleigh.Start"
+      lockset:
+        - "open-sleigh/lib/open_sleigh/agent_worker.ex"
+        - "open-sleigh/lib/mix/tasks/open_sleigh.start.ex"

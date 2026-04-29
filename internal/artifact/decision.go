@@ -41,7 +41,9 @@ type DecideInput struct {
 	WeakestLink         string            `json:"weakest_link,omitempty"`
 	ValidUntil          string            `json:"valid_until,omitempty"`
 	Context             string            `json:"context,omitempty"`
+	TaskContext         string            `json:"task_context,omitempty"`
 	Mode                string            `json:"mode,omitempty"`
+	SectionRefs         []string          `json:"section_refs,omitempty"`
 	AffectedFiles       []string          `json:"affected_files,omitempty"`
 	Predictions         []PredictionInput `json:"predictions,omitempty"`
 	SearchKeywords      string            `json:"search_keywords,omitempty"`
@@ -190,6 +192,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.WeakestLink = strings.TrimSpace(input.WeakestLink)
 	input.ValidUntil = strings.TrimSpace(input.ValidUntil)
 	input.Context = strings.TrimSpace(input.Context)
+	input.TaskContext = strings.TrimSpace(input.TaskContext)
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
 
@@ -200,6 +203,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.Admissibility = compactStrings(input.Admissibility)
 	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
 	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
+	input.SectionRefs = compactStrings(input.SectionRefs)
 	input.AffectedFiles = compactStrings(input.AffectedFiles)
 	input.Predictions = normalizePredictionInputs(input.Predictions)
 	input.Rollback = normalizeRollbackSpec(input.Rollback)
@@ -348,6 +352,8 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		SelectionPolicy:      input.SelectionPolicy,
 		CounterArgument:      input.CounterArgument,
 		WeakestLink:          input.WeakestLink,
+		TaskContext:          sanitizeIDSlug(input.TaskContext),
+		SectionRefs:          input.SectionRefs,
 		WhyNotOthers:         input.WhyNotOthers,
 		Claims:               newDecisionClaims(input.Predictions),
 		PreConditions:        input.PreConditions,
@@ -368,6 +374,13 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString("\n**Invariants:**\n")
 		for _, inv := range input.Invariants {
 			body.WriteString(fmt.Sprintf("- %s\n", inv))
+		}
+	}
+
+	if len(input.SectionRefs) > 0 {
+		body.WriteString("\n**Spec sections:**\n")
+		for _, ref := range input.SectionRefs {
+			body.WriteString(fmt.Sprintf("- %s\n", ref))
 		}
 	}
 
@@ -677,6 +690,30 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 	return links
 }
 
+func BuildLinksWithSectionRefs(problemRefs []string, portfolioRef string, sectionRefs []string) []Link {
+	links := BuildLinks(problemRefs, portfolioRef)
+	sectionLinks := BuildSpecSectionLinks(sectionRefs)
+	links = append(links, sectionLinks...)
+
+	return links
+}
+
+func BuildSpecSectionLinks(sectionRefs []string) []Link {
+	links := make([]Link, 0, len(sectionRefs))
+	seen := map[string]struct{}{}
+
+	for _, ref := range compactStrings(sectionRefs) {
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+
+		seen[ref] = struct{}{}
+		links = append(links, Link{Ref: ref, Type: "governs"})
+	}
+
+	return links
+}
+
 // Decide creates a DecisionRecord artifact. Orchestrates effects around BuildDecisionArtifact.
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
 	input = normalizeDecisionInput(input)
@@ -693,11 +730,11 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
 	// lookup. The seq parameter is preserved on GenerateID for call-site
 	// backward compat — pass 0.
-	id := GenerateID(KindDecisionRecord, 0)
+	id := GenerateIDWithTaskContext(KindDecisionRecord, 0, input.TaskContext)
 	now := time.Now().UTC()
 
 	// Pure: merge refs
-	links := BuildLinks(problemRefs, input.PortfolioRef)
+	links := BuildLinksWithSectionRefs(problemRefs, input.PortfolioRef, input.SectionRefs)
 
 	// Effects: compute mode from chain
 	var declaredMode Mode

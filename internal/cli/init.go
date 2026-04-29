@@ -17,14 +17,25 @@ import (
 )
 
 var (
-	initClaude bool
-	initCursor bool
-	initGemini bool
-	initCodex  bool
-	initAir    bool
-	initAll    bool
-	initLocal  bool
+	initClaude   bool
+	initCursor   bool
+	initGemini   bool
+	initCodex    bool
+	initAir      bool
+	initOpencode bool
+	initAll      bool
+	initLocal    bool
 )
+
+type initHostOptions struct {
+	claude   bool
+	cursor   bool
+	gemini   bool
+	codex    bool
+	air      bool
+	opencode bool
+	all      bool
+}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -33,30 +44,53 @@ var initCmd = &cobra.Command{
 
 This command creates:
   - .haft/ directory structure (knowledge base, evidence, decisions)
-  - MCP configuration for selected AI tools
+  - MCP configuration for selected host agents
   - Slash commands / prompts / skills (global by default, or local with --local)
-  - Repo-local Air skills when requested
+  - Experimental legacy host configs when explicitly requested
 
 Examples:
   haft init              # Claude, global commands (~/.claude/commands/)
   haft init --local      # Claude, local commands (.claude/commands/)
-  haft init --all        # All tools, global commands
-  haft init --cursor     # Cursor only
   haft init --codex      # Codex MCP + skills
-  haft init --air        # Air skill + Codex-compatible prompts/MCP`,
+  haft init --opencode   # OpenCode MCP + commands (sst/opencode)
+  haft init --all        # Claude + Codex, global commands
+  haft init --cursor     # Experimental Cursor config
+  haft init --gemini     # Experimental Gemini CLI config
+  haft init --air        # Experimental Air skill + Codex-compatible prompts/MCP`,
 	RunE: runInit,
 }
 
 func init() {
 	initCmd.Flags().BoolVar(&initClaude, "claude", false, "Configure for Claude Code")
-	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure for Cursor")
-	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure for Gemini CLI")
+	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure experimental Cursor MCP")
+	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure experimental Gemini CLI MCP")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
-	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure for JetBrains Air")
-	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure for all supported tools")
+	initCmd.Flags().BoolVar(&initOpencode, "opencode", false, "Configure for OpenCode (sst/opencode) — writes opencode.json with the haft MCP server, installs slash commands under .opencode/commands/")
+	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure experimental JetBrains Air integration")
+	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all supported host agents")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
 
 	rootCmd.AddCommand(initCmd)
+}
+
+func normalizeInitHostOptions(options initHostOptions) initHostOptions {
+	normalized := options
+	if normalized.all {
+		normalized.claude = true
+		normalized.codex = true
+	}
+
+	hasHost := normalized.claude ||
+		normalized.cursor ||
+		normalized.gemini ||
+		normalized.codex ||
+		normalized.air ||
+		normalized.opencode
+	if !hasHost {
+		normalized.claude = true
+	}
+
+	return normalized
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -148,15 +182,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
 	binaryPath := "haft"
 
-	if initAll {
-		initClaude, initCursor, initGemini, initCodex, initAir = true, true, true, true, true
-	}
+	hosts := normalizeInitHostOptions(initHostOptions{
+		claude:   initClaude,
+		cursor:   initCursor,
+		gemini:   initGemini,
+		codex:    initCodex,
+		air:      initAir,
+		opencode: initOpencode,
+		all:      initAll,
+	})
 
-	if !initClaude && !initCursor && !initGemini && !initCodex && !initAir {
-		initClaude = true
-	}
-
-	if initClaude {
+	if hosts.claude {
 		if err := configureMCPClaude(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Claude Code MCP: %v\n", err)
 		} else {
@@ -174,7 +210,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCursor {
+	if hosts.cursor {
 		if err := configureMCPCursor(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Cursor MCP: %v\n", err)
 		} else {
@@ -193,7 +229,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initGemini {
+	if hosts.gemini {
 		if err := configureMCPGemini(cwd, binaryPath); err != nil {
 			fmt.Printf("  ⚠ Failed to configure Gemini CLI MCP: %v\n", err)
 		} else {
@@ -206,12 +242,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if initCodex || initAir {
+	if hosts.codex || hosts.air {
 		targetName := "Codex CLI"
 		switch {
-		case initCodex && initAir:
+		case hosts.codex && hosts.air:
 			targetName = "Codex CLI / Air"
-		case initAir:
+		case hosts.air:
 			targetName = "Air"
 		}
 
@@ -221,8 +257,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
 		}
 
-		if initCodex {
-			if !initAir {
+		if hosts.codex {
+			if !hosts.air {
 				if promptPath, removed, err := cleanupCodexPromptCommands(); err != nil {
 					fmt.Printf("  ⚠ Failed to remove deprecated Codex prompts: %v\n", err)
 				} else if removed > 0 {
@@ -236,7 +272,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				fmt.Println("    Note: Use $h-reason for reasoning; other $h-* skills are explicit-only")
 			}
 		}
-		if initAir {
+		if hosts.air {
 			// Air currently uses the same Codex prompt/MCP bootstrap.
 			if destPath, count, err := installCommands(cwd, "codex", false); err != nil {
 				fmt.Printf("  ⚠ Failed to install Air prompts: %v\n", err)
@@ -249,6 +285,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 			} else if skillPath != "" {
 				fmt.Printf("  ✓ Installed Air skill h-reason (%s)\n", skillPath)
 			}
+		}
+	}
+
+	if hosts.opencode {
+		if err := configureMCPOpencode(cwd, binaryPath); err != nil {
+			fmt.Printf("  ⚠ Failed to configure OpenCode MCP: %v\n", err)
+		} else {
+			fmt.Printf("  ✓ Configured MCP for OpenCode (opencode.json, project: %s)\n", cwd)
+		}
+		if destPath, count, err := installCommands(cwd, "opencode", initLocal); err != nil {
+			fmt.Printf("  ⚠ Failed to install OpenCode commands: %v\n", err)
+		} else {
+			fmt.Printf("  ✓ Installed %d OpenCode commands (%s)\n", count, destPath)
+		}
+		if skillPath, err := installSkill("opencode", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed /h-reason skill (%s)\n", skillPath)
 		}
 	}
 
@@ -386,6 +440,10 @@ func createDirectoryStructure(haftDir string) error {
 		}
 	}
 
+	if err := project.EnsureSpecCarriers(haftDir); err != nil {
+		return err
+	}
+
 	workflowPath := project.WorkflowPath(haftDir)
 	if _, err := os.Stat(workflowPath); os.IsNotExist(err) {
 		if err := os.WriteFile(workflowPath, []byte(project.ExampleWorkflowMarkdown()), 0o644); err != nil {
@@ -419,6 +477,12 @@ type MCPServer struct {
 	Env     map[string]string `json:"env,omitempty"`
 	Timeout int               `json:"timeout,omitempty"`
 }
+
+const (
+	claudeProjectRootEnv = "${PWD:-.}"
+	cursorProjectRootEnv = "${workspaceFolder}"
+	codexProjectRootEnv  = "."
+)
 
 func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]interface{}) error {
 	var config MCPConfig
@@ -469,7 +533,7 @@ func configureMCPClaude(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
+			"HAFT_PROJECT_ROOT": claudeProjectRootEnv,
 		},
 	})
 }
@@ -478,7 +542,7 @@ func configureMCPCursor(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
+			"HAFT_PROJECT_ROOT": cursorProjectRootEnv,
 		},
 	})
 }
@@ -518,7 +582,7 @@ tool_timeout_sec = 60
 
 [mcp_servers.haft.env]
 HAFT_PROJECT_ROOT = "%s"
-`, binaryPath, projectRoot)
+`, binaryPath, codexProjectRootEnv)
 
 	// Strip all existing haft and quint-code MCP sections
 	existing = removeTomlSections(existing, "mcp_servers.quint-code")
@@ -530,6 +594,53 @@ HAFT_PROJECT_ROOT = "%s"
 	}
 
 	return os.WriteFile(configPath, []byte(trimmed+"\n\n"+tomlSection), 0644)
+}
+
+// configureMCPOpencode merges a `mcp.haft` block into opencode.json at the
+// project root. OpenCode's MCP schema is JSON-based and uses
+// `{type, command, environment, enabled}` fields per server (per
+// https://opencode.ai/docs/mcp-servers). Existing keys outside `mcp.haft`
+// are preserved; the legacy `mcp.quint-code` key is removed if present.
+func configureMCPOpencode(projectRoot, binaryPath string) error {
+	configPath := filepath.Join(projectRoot, "opencode.json")
+
+	config := map[string]any{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if jsonErr := json.Unmarshal(data, &config); jsonErr != nil {
+			// Existing file is malformed JSON — refuse to clobber it
+			// silently. Operator must hand-resolve.
+			return fmt.Errorf("opencode.json exists but is not valid JSON; refusing to overwrite: %w", jsonErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if _, ok := config["$schema"]; !ok {
+		config["$schema"] = "https://opencode.ai/config.json"
+	}
+
+	mcpRaw, _ := config["mcp"].(map[string]any)
+	if mcpRaw == nil {
+		mcpRaw = map[string]any{}
+	}
+	delete(mcpRaw, "quint-code")
+
+	mcpRaw["haft"] = map[string]any{
+		"type":    "local",
+		"command": []string{binaryPath, "serve"},
+		"environment": map[string]string{
+			"HAFT_PROJECT_ROOT": projectRoot,
+		},
+		"enabled": true,
+	}
+	config["mcp"] = mcpRaw
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
 }
 
 // removeTomlSections removes all TOML sections whose header starts with the

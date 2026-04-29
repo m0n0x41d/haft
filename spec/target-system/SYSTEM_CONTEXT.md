@@ -4,7 +4,10 @@
 
 ## What needs to change in the environment
 
-Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. These agents generate solutions fast. The bottleneck shifted from "write the code" to "know what to build and why." Four things are broken:
+Engineers use AI coding agents daily. Haft v7 intentionally supports Claude
+Code and Codex as embedded host-agent surfaces. These agents generate
+solutions fast. The bottleneck shifted from "write the code" to "know what to
+build and why." Five things are broken:
 
 1. **Decisions evaporate.** Agent recommends X in a chat session. Two weeks later nobody can answer "what did we decide about auth and why?" The rationale is buried in a conversation that no one will search.
 
@@ -12,73 +15,215 @@ Engineers use AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) daily. T
 
 3. **Evidence rots silently.** A decision made when traffic was 100 RPS is still governing the system at 10K RPS. Nobody tracks when assumptions expire.
 
-4. **Past experience doesn't compound.** Every project starts from zero, even for the same engineer. Decisions from one project never inform another.
+4. **Projects are not harness-ready.** Runner-style systems assume the repository already has clear specs, term maps, boundaries, test contracts, and execution policy. Most real repositories do not. Agents can run, but the project is not yet admissible for harness engineering.
+
+5. **Past experience doesn't compound.** Every project starts from zero, even for the same engineer. Decisions from one project never inform another.
 
 ## Method — how we change the environment
 
-A **reasoning runtime** that any AI agent can plug into (MCP plugin) or that operates as a standalone orchestrator (desktop app). The runtime adds engineering discipline:
+A **local-first project harnessability system** with three coupled methods:
+
+1. a specification/onboarding runtime that turns a repository into a harnessable project,
+2. a reasoning runtime any AI agent can plug into (`haft serve` / MCP),
+3. a commissioned execution runtime (`haft harness`, currently implemented by
+   the Open-Sleigh subsystem).
+
+Together they add engineering discipline:
 
 - Structured problem framing before jumping to solutions
 - Genuinely different alternatives, not 3 variations on the same idea
 - Honest comparison with explicit dimensions and Pareto trade-offs
 - "Probe or commit" gate before decision — should we keep looking?
 - Persistent decisions with verifiable claims, evidence, and expiry dates
+- Explicit compilation from accepted decision to bounded WorkCommission
+- Long-running, scope-bounded execution with preflight, gates, and evidence
 - Drift detection and staleness scanning after code ships
 - Cross-project recall with context-transfer penalties
+- Parseable target-system and enabling-system specifications
+- Spec coverage from specification sections to decisions, code, tests, commissions, and evidence
+- Term-map and semantic-architecture validation before execution scaling
 
-The discipline comes from FPF (First Principles Framework). Users never see FPF. They see 5 engineering modes: **Understand, Explore, Choose, Execute, Verify** — plus **Note** for quick captures.
+The discipline comes from FPF (First Principles Framework). Users do not need
+to study FPF to operate Haft, but serious users may see the value explained in
+product language: formal specs, term maps, target/enabling split, evidence,
+and freshness. The everyday mode names remain **Understand, Explore, Choose,
+Execute, Verify** — plus **Note** for quick captures.
 
 ## Role of the target system
 
-**Haft = engineering reasoning runtime for AI-assisted software delivery.**
+**Haft = project harnessability cockpit and commissioned execution system for AI-assisted software delivery.**
 
-One-liner: the system that makes engineering decisions explicit, comparable, and verifiable.
+One-liner: the system that makes a repository harnessable by building formal
+project specifications, compiling them into decisions and commissions, and
+closing the loop with runtime evidence.
 Tagline: keeps the coder honest.
 
 What it IS:
 - Reasoning persistence layer (decisions survive sessions)
+- Project onboarding system (turns existing or greenfield repos into Haft projects)
+- Specification harness (TargetSystemSpec, EnablingSystemSpec, TermMap, SpecCoverage)
 - Comparison discipline enforcer (Pareto, not recommendation essays)
 - Evidence lifecycle manager (freshness, decay, drift)
 - Governance governor (invariant verification, staleness alerts)
+- Work authorization surface (turns an accepted decision into bounded,
+  auditable execution work when the human chooses to commission it)
+- Commission compiler (`DecisionRecord -> WorkCommission -> RuntimeRun`)
+- Execution-runtime host (`haft harness`, with Open-Sleigh as the current
+  runtime implementation)
+- Optional external projection engine (Linear/Jira/GitHub issue text is a
+  carrier for observers, not Haft's semantic authority)
 
 What it is NOT:
 - Not a coding agent (doesn't compete with Claude Code on editing files)
 - Not a pattern browser (doesn't expose FPF as a catalog)
-- Not a documentation generator (persists reasoning artifacts, not specs)
-- Not a project management tool (no sprints, no tickets, no Gantt charts)
+- Not a generic documentation generator (specs are parseable authority carriers
+  that feed decisions, commissions, and evidence)
+- Not a project management tool (no sprints, no Gantt charts; tracker
+  projections are derived coordination surfaces)
 - Not a general autonomous agent (no personal assistant, no omnichannel)
 
-## Three delivery surfaces
+## Project harnessability layer
+
+Haft's primary product promise is not "run agents on tickets". Its primary
+promise is:
+
+```text
+Make this project ready for rigorous AI-assisted engineering.
+```
+
+That readiness requires a **ProjectSpecificationSet**:
+
+```text
+TargetSystemSpec
+  -> EnablingSystemSpec
+  -> TermMap
+  -> SpecCoverage
+  -> DecisionRecords
+  -> WorkCommissions
+  -> RuntimeRuns
+  -> Evidence
+```
+
+The TargetSystemSpec answers what must change in the target system's
+environment, by what method, and what role the target system plays. The
+EnablingSystemSpec answers how the repository, tests, agents, CI, hooks,
+runtime, and review process produce and maintain that target system.
+
+Large formal specs are intentional. They are the price of admissible harness
+engineering. The UX must make that depth navigable and valuable; it must not
+pretend the depth is unnecessary.
+
+## Execution subsystem
+
+`Haft Harness` is the commissioned execution subsystem of Haft. Today its
+runtime implementation is `Open-Sleigh`.
+
+This distinction is load-bearing:
+
+- **Haft owns semantic authority:** ProblemCards, DecisionRecords,
+  WorkCommissions, Evidence, stale/refresh logic, and external projections.
+- **Open-Sleigh owns runtime execution mechanics:** long-running orchestration,
+  sessions, workspaces, retries, phase machine, leases, and agent adapters.
+
+That means Open-Sleigh is **not** a peer product and **not** a second source
+of truth. It is a subsystem/runtime of Haft, even if the implementation keeps
+its own process boundary.
+
+## Three delivery surfaces over one semantic core
+
+All delivery surfaces compile to the same Haft Core artifact graph:
+
+```text
+TargetSystemSpec
+  -> EnablingSystemSpec
+  -> TermMap
+  -> SpecCoverage
+  -> ProblemCards
+  -> DecisionRecords
+  -> WorkCommissions
+  -> RuntimeRuns
+  -> Evidence
+```
+
+No surface owns truth. Desktop is the richest human cockpit. MCP is the
+embedded agent-facing authoring surface. CLI is the runtime/operator surface.
+Haft Core owns semantic authority; Open-Sleigh owns execution mechanics.
 
 ### Surface A — Desktop App (primary: human)
 
 The visual cockpit where the engineer lives during reasoning work.
 
 - See: problem board, decision health, evidence quality, coverage, drift
+- Specify: build target/enabling specs, term maps, and spec coverage
 - Think: frame problems, explore variants, compare on Pareto front, decide
-- Act: spawn execution agents, verify claims, create PRs from decisions
+- Act: create commissions, start/stop harness runs, verify claims, create PRs from decisions
 - Govern: dashboard with findings, stale alerts, invariant violations
 
-Technology: Wails (Go + native WebView). Single binary. Local-first.
+Technology: Tauri v2 (Rust shell + native WebView + React frontend).
+Local-first. Desktop remains a surface over Haft Core and CLI/RPC contracts.
 
-### Surface B — MCP Plugin (primary: agent)
+### Surface B — MCP Plugin (primary: embedded agent)
 
 How AI agents access the reasoning kernel during their coding work.
 
-- 6 reasoning tools: problem, solution, decision, query, refresh, note
+- Supported v7 hosts: Claude Code and Codex
+- 7 reasoning tools: problem, solution, decision, commission, query, refresh, note
+- Commissioning tools for bounded execution work
+- Spec/onboarding tools for target specs, enabling specs, term map, status, and refresh
 - Stable API contract: tool names, required params, return shapes don't break
-- Any MCP-compatible host: Claude Code, Codex, Cursor, Gemini CLI, Air
+- May create or inspect WorkCommissions, but must not own long-running runtime lifecycle
 
-### Surface C — CLI (utility)
+Deferred or experimental hosts: Cursor, Gemini CLI, JetBrains Air, and generic
+MCP clients. They may remain installable while v7 narrows support, but product
+support and acceptance tests target Claude Code and Codex.
 
-Quick access for scripting, CI, and terminal workflows.
+### Surface C — CLI Harness (primary: runtime/operator)
+
+Operator access for scripting, CI, terminal workflows, and the harness runtime
+boundary.
 
 - `haft init`, `haft serve`, `haft sync`, `haft board`, `haft search`
+- `haft commission ...`
+- `haft harness prepare/run/status/watch/tail/result/apply/requeue/cancel`
 - `haft fpf search` (FPF spec lookup)
 - `haft agent` (standalone agent mode — secondary to desktop)
 
-**A and B are primary.** C is supporting utility.
-Desktop is where humans think. MCP is where agents think. Same kernel underneath.
+The CLI is not a second semantic system. It exposes operator commands for the
+harness runtime and local automation. Runtime preflight must still check
+WorkCommission, linked DecisionRecord, Scope, freshness, lockset, and autonomy
+envelope through Haft Core.
+
+## Surface transition rule
+
+Desktop workflow buttons, MCP slash/tool calls, and CLI commands must compile
+to typed artifact transitions, not free prompts:
+
+```text
+Button or command
+  -> typed workflow
+  -> explicit artifact mutation/proposal
+  -> deterministic check
+  -> derived status
+```
+
+Examples:
+
+- `Draft Target Spec` -> OnboardingAgent draft -> `SpecSection` carriers -> spec check -> human approval.
+- `Create WorkCommission` -> `DecisionRecord` + scope -> `WorkCommission` snapshot -> runnable queue.
+- `Delegate to Harness` -> runnable `WorkCommission` -> preflight -> `RuntimeRun`.
+- `Review Evidence` -> evidence carrier -> claim/spec coverage derivation.
+
+### Optional external projections
+
+Haft must work with no Linear, Jira, GitHub Issues, or cloud tracker
+configured. Local state, Desktop status, CLI status, and `.haft/` artifact
+projections are sufficient for a solo/local workflow.
+
+When an external tracker is configured, Haft publishes **ExternalProjections**
+for human coordination. ExternalProjections may create/update Linear/Jira
+issues, comments, labels, and statuses, but they do not author the semantic
+state of work. Haft computes what is true; a bounded projection writer may
+translate that truth into plain manager-facing language.
 
 ## Supersystem
 
@@ -95,8 +240,8 @@ Haft lives inside the software engineering delivery system:
 │       │           ┌────────────────────┐     │   │
 │       │           │       HAFT         │     │   │
 │       └──────────→│                    │←────┘   │
-│                   │  Think → Run →     │         │
-│                   │         Govern     │         │
+│                   │  Specify → Think → │         │
+│                   │  Run → Govern      │         │
 │                   └────────────────────┘         │
 │                        │                         │
 │                   ┌────┴────┐                    │
@@ -112,10 +257,11 @@ Haft lives inside the software engineering delivery system:
 
 | Role | Who | What they need from Haft |
 |------|-----|-------------------------|
-| **Primary user** | Engineer using AI agent daily | Decisions that survive, honest comparisons, "what did we decide and why?" |
-| **Host agent** | Claude Code, Codex, any MCP client | Clean tool interface, fast responses, no interference with coding workflow |
+| **Primary user** | Engineer using AI agent daily | A repo made harnessable: formal specs, decisions that survive, honest comparisons, evidence-backed execution |
+| **Host agent** | Claude Code, Codex | Clean tool interface, fast responses, no interference with coding workflow |
 | **Solo engineer** | Working alone across multiple projects | Cross-project recall, accumulated judgment, local-first |
-| **Tech lead** | Responsible for architectural consistency | Decision audit trail, staleness alerts, drift detection, coverage |
+| **Tech lead** | Responsible for architectural consistency | Target/enabling spec coverage, decision audit trail, staleness alerts, drift detection |
+| **External observer** | Manager, analyst, lead, or teammate outside Haft | Plain-language status in Linear/Jira/GitHub, with links back to Haft artifacts |
 | **CI/CD pipeline** | Automated checks | `haft check` — verify decisions are fresh and evidence is current |
 | **PR reviewer** | Reading diffs | `.haft/decisions/*.md` in the diff — rationale visible alongside code |
 
@@ -124,7 +270,7 @@ Haft lives inside the software engineering delivery system:
 | Not for | Why |
 |---------|-----|
 | FPF researchers | Haft is a product, not an FPF reference implementation |
-| Non-technical managers | No management dashboards — engineer-first |
+| Non-technical managers (primary) | Haft is engineer-first. They may consume optional tracker projections, but they do not drive the reasoning model. |
 | Compliance auditors (primary) | Audit views exist as secondary projections, not primary UX |
 | Consumers / end users | No personal assistant surface |
 
@@ -132,10 +278,12 @@ Haft lives inside the software engineering delivery system:
 
 1. **Local-first.** Works without any server or cloud service.
 2. **Solo-first.** Valuable for one engineer before needing teams.
-3. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
-4. **Plugin-compatible.** MCP plugin is the highest-reach integration channel.
-5. **FPF inside.** Users never need to learn FPF terminology. 5 words + Note.
-6. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and agent mode.
+3. **Spec-first.** Formal target/enabling specs are the entry point for serious harness work.
+4. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
+5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as v7 supported hosts.
+6. **FPF inside.** Users should not need to study FPF terminology, but the product may explain why formal specs, term maps, and target/enabling split matter.
+7. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and
+   installs or operates the harness runtime.
 
 ## Enabling system (what builds Haft)
 
@@ -143,7 +291,7 @@ The enabling system is NOT the runtime. It's the "third factory":
 
 - SoTA harvesting (Symphony, Zenflow, Hermes, Air — what patterns to adopt)
 - Parity benchmarks (seeded corpus, catch rate, false positive rate)
-- Workflow R&D (how to improve Think → Run → Govern cycle)
+- Workflow R&D (how to improve Specify → Think → Run → Govern cycle)
 - FPF formalization (which of 214 patterns need L2/L3 enforcement)
 - Semiotics review (term drift, authority confusion, gate/evidence mixing)
 

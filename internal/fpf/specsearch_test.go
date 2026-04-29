@@ -702,6 +702,44 @@ func TestSearchSpec_FindsByKeywordFallback(t *testing.T) {
 	}
 }
 
+func TestSearchSpec_FTSIgnoresBlankPatternSections(t *testing.T) {
+	chunks := []SpecChunk{
+		{
+			ID:      0,
+			Heading: "Unaddressable overview",
+			Level:   2,
+			Body:    "Decision rationale management overview.",
+		},
+		{
+			ID:        1,
+			Heading:   "E.9 - Design-Rationale Record",
+			Level:     2,
+			Body:      "Decision rationale record.",
+			PatternID: "E.9",
+			Keywords:  []string{"decision", "rationale", "record"},
+		},
+	}
+
+	_, db, cleanup := buildIndexWithChunks(t, chunks, false)
+	defer cleanup()
+
+	results, err := SearchSpecWithOptions(db, "decision rationale management", SpecSearchOptions{
+		Limit: 5,
+		Tier:  SpecSearchTierFTS,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := resultPatternIDs(results)
+	if containsString(got, "") {
+		t.Fatalf("FTS returned blank pattern id in %v", got)
+	}
+	if !containsString(got, "E.9") {
+		t.Fatalf("FTS blank-pattern AND hit suppressed addressable fallback; got %v", got)
+	}
+}
+
 func TestSearchSpec_NoResults(t *testing.T) {
 	_, db, cleanup := buildTestIndex(t)
 	defer cleanup()

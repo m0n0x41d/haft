@@ -4,7 +4,10 @@
 
 **True harness engineering for AI-assisted software delivery.**
 
-Your agents write code fast. Nobody checks if the decisions behind that code are any good — or still valid a month later. Haft does.
+Your agents write code fast. Most repositories are not ready for serious
+harness engineering: the target system is underspecified, the enabling system
+is implicit, term maps are missing, and runtime evidence is detached from the
+spec. Haft makes the project harnessable before it scales execution.
 
 ---
 
@@ -12,18 +15,21 @@ Your agents write code fast. Nobody checks if the decisions behind that code are
 
 Haft is the engineering governor that sits between your intentions and your agents' execution. It enforces the discipline that separates "we shipped fast" from "we shipped right": frame the problem before solving it, compare options under parity, record decisions as falsifiable contracts, and know the moment assumptions go stale.
 
-**Think → Run → Govern.**
+**Specify → Think → Run → Govern.**
 
-Not a coding agent. Not a documentation tool. The handle between the tool and the hand — the part that turns raw capability into directed engineering work.
+Not a coding agent. Not a generic documentation tool. The handle between the
+tool and the hand — the part that turns raw capability into formal
+specification, governed decisions, bounded commissions, and evidence-backed
+engineering work.
 
-### Two primary surfaces
+### Two production surfaces, one core
 
-- **Desktop app** — visual cockpit for reasoning state, agent orchestration, and governance dashboard
-- **MCP plugin** — reasoning tools for AI coding agents (Claude Code, Cursor, Gemini CLI, Codex, Air)
+- **MCP plugin** — embedded agent surface for Claude Code and Codex to reason, draft, query, and create commissions
+- **CLI Harness** — operator/runtime surface for prepare, run, status, result, apply, requeue, and cancel
 
-Both share the same kernel. Desktop is where humans think. MCP is where agents think.
+Both surfaces compile into the same Haft Core artifact graph. MCP does not own long-running runtime lifecycle, and CLI does not become a second source of meaning.
 
-> **Note:** The TUI (`haft agent`) and Desktop app are in **pre-alpha** and under active development. They are not recommended for production use. The MCP plugin mode (`haft serve`) is the stable, proven interface.
+> **Note:** The TUI (`haft agent`) and Desktop app exist as **alpha** tracks under active development. They are not part of the v7 production envelope and are not recommended for production use. The MCP plugin mode (`haft serve`) and `haft harness` CLI are the stable, proven interfaces.
 
 ---
 
@@ -35,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bas
 
 The install URL still points at the historical `quint-code` repository path. The installed binary is `haft`.
 
-Then in your project, run init **with your tool's flag**:
+Then in your project, run init **with your supported host-agent flag**:
 
 ```bash
 # Claude Code (default if no flag)
@@ -44,43 +50,84 @@ haft init
 # Claude Code with repo-local commands
 haft init --local
 
-# Cursor
-haft init --cursor
-
-# Gemini CLI
-haft init --gemini
-
 # Codex CLI / Codex App
 haft init --codex
 
-# JetBrains Air
-haft init --air
-
-# All tools at once
+# Claude Code + Codex
 haft init --all
+```
+
+v7 supported embedded host-agent surfaces:
+
+```text
+Claude Code
+Codex CLI / Codex App
+```
+
+Cursor, Gemini CLI, JetBrains Air, and generic MCP clients remain
+experimental/legacy integration targets. Their flags may exist while the
+runtime and docs converge, but v7 product support is intentionally narrowed to
+Claude Code and Codex.
+
+```bash
+# Experimental Cursor config
+haft init --cursor
+
+# Experimental Gemini CLI config
+haft init --gemini
+
+# Experimental OpenCode config
+haft init --opencode
 ```
 
 ### What init does per tool
 
-The binary is the same — only the MCP config and command/prompt installation locations differ:
+The binary is the same — only the MCP config and command/prompt installation
+locations differ. Supported v7 hosts:
 
 | Tool | MCP Config | Commands / Prompts | Skill |
 |------|-----------|--------------------|-------|
 | Claude Code | `.mcp.json` (project root) | `~/.claude/commands/` or `.claude/commands/` with `--local` | `~/.claude/skills/h-reason/` or local install with `--local` |
+| Codex CLI / Codex App | `.codex/config.toml` | `~/.codex/prompts/` or `.codex/prompts/` with `--local` | `~/.agents/skills/h-reason/` |
+
+Experimental/legacy hosts:
+
+| Tool | MCP Config | Commands / Prompts | Skill |
+|------|-----------|--------------------|-------|
 | Cursor | `.cursor/mcp.json` | `~/.cursor/commands/` or `.cursor/commands/` with `--local` | `~/.cursor/skills/h-reason/` or local install with `--local` |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/commands/` or local install with `--local` | — |
-| Codex CLI / Codex App | `.codex/config.toml` | `~/.codex/prompts/` or `.codex/prompts/` with `--local` | `~/.agents/skills/h-reason/` |
+| OpenCode | `opencode.json` (project root) | `~/.config/opencode/commands/` or `.opencode/commands/` with `--local` | `~/.config/opencode/skills/h-reason/` or `.opencode/skills/h-reason/` with `--local` |
 | Air | `.codex/config.toml` | project `skills/` | project `skills/h-reason/` |
 
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.
 
-Existing project? Run `/h-onboard` after init — the agent scans your codebase for existing decisions worth capturing.
+Project-scoped MCP configs are safe to commit for shared repositories: Claude
+Code `.mcp.json` and Codex `.codex/config.toml` use portable project-root
+values instead of your machine's absolute checkout path.
+
+Existing project? Run `/h-onboard` after init. The target direction is deeper
+than codebase summarization: onboarding should build a parseable target-system
+spec, enabling-system spec, term map, and spec coverage graph before broad
+harness execution.
+
+Check the spec carriers locally with:
+
+```bash
+haft spec check
+haft spec check --json
+```
+
+`haft spec check` is intentionally deterministic L0/L1/L1.5 only: it parses
+fenced `yaml spec-section` blocks, checks required structural fields, validates
+known carrier shapes, and verifies that the term-map carrier contains parseable
+term entries. It does not make L2 semantic judgments, perform LLM review, prove
+product correctness, or make L3 runtime/evidence claims.
 
 ---
 
 ## How It Works
 
-### Six MCP tools
+### Seven MCP tools
 
 | Tool | What it does |
 |------|-------------|
@@ -88,6 +135,7 @@ Existing project? Run `/h-onboard` after init — the agent scans your codebase 
 | `haft_problem` | Frame problems, define comparison dimensions with roles |
 | `haft_solution` | Explore variants with diversity check, compare with parity |
 | `haft_decision` | Decision contract with invariants, claims, evidence, baseline lifecycle |
+| `haft_commission` | WorkCommission create/list/claim lifecycle for execution harnesses |
 | `haft_refresh` | Lifecycle management for all artifacts |
 | `haft_query` | Search, status dashboard, file-to-decision lookup, FPF spec search |
 
@@ -127,7 +175,77 @@ haft check
   ↓ verify governance health
 ```
 
-The same loop powers the desktop "Implement" button. CLI and desktop are two surfaces over one kernel.
+### WorkCommission harness
+
+Open-Sleigh uses `WorkCommission` as the bounded execution authority between a
+DecisionRecord and a runtime run. In plugin mode, use `/h-commission` to create
+the missing WorkCommissions without starting execution. In Codex this installs
+as an explicit-only `$h-commission` skill.
+
+The packaged CLI path is:
+
+```bash
+haft harness run --prepare-only  # create/reuse commissions, do not start runtime
+haft harness run                 # create/reuse commissions and start Open-Sleigh
+haft harness status              # inspect active/recent runs
+haft harness result wc-...       # inspect one completed run and workspace diff
+haft harness apply wc-...        # apply a completed workspace patch to this checkout
+```
+
+Broad harness execution is blocked for `needs_onboard` projects by default. If
+you intentionally need tactical out-of-spec work, pass
+`--force-skip-specs "..."`; Haft records that reason on the selected
+WorkCommissions.
+
+Starting Open-Sleigh is an operator/runtime action. Use the CLI Harness for
+that boundary rather than a plugin slash command. MCP may create or inspect
+WorkCommissions, but it must not own the long-running runtime lifecycle.
+
+Commissions carry a `delivery_policy`. The default is
+`workspace_patch_manual`: Open-Sleigh changes stay in the isolated workspace
+until an operator runs `haft harness apply <commission-id>`. Use
+`--delivery-policy workspace_patch_manual` explicitly when preparing or running
+plans that must not mutate the main checkout automatically.
+
+Release installs include the Open-Sleigh runtime under:
+
+```text
+~/.haft/runtimes/open-sleigh/current
+```
+
+`haft harness run` uses a repo-local `open-sleigh/` checkout when present and
+falls back to that installed runtime. Release archives bundle the BEAM runtime,
+so users do not need to install Elixir/Mix for normal harness use. Source
+fallback installs may install Elixir when they need to build the runtime
+locally.
+
+The lower-level MCP tool is `haft_commission`; the local CLI helper is:
+
+```bash
+haft commission create-from-decision dec-...
+haft commission create-batch dec-a dec-b
+haft commission create-from-plan .haft/plans/implementation.yaml
+haft commission create --json commission.json
+haft commission list --selector stale
+haft commission show wc-...
+haft commission requeue wc-... --reason stale_operator_recovery
+haft commission cancel wc-... --reason no_longer_relevant
+haft commission list-runnable
+haft commission claim wc-...
+```
+
+For the repeatable local E2E smoke:
+
+```bash
+task open-sleigh:smoke-real-haft
+```
+
+The same loop is what alpha Desktop workflow buttons compile to. A button must
+become a typed artifact transition, not a free prompt:
+
+```text
+SpecSection(s) -> DecisionRecord -> WorkCommission -> RuntimeRun -> Evidence -> SpecCoverage
+```
 
 ### Evidence workflow
 
@@ -145,6 +263,32 @@ Use `haft_decision(action="measure", ...)` for post-implementation verification.
 - **Memory across sessions** — related past decisions surface during framing, similar variants during exploration
 - **The loop closes** — failed measurements reopen decisions, evidence decay triggers review, drift detection flags violations
 - **Decisions are contracts** — invariants, claims with thresholds, rollback plan, valid-until date
+
+---
+
+## Batch Harness (Beta — v7.x)
+
+> **Status:** Single-commission `haft harness run` is the trustworthy operator path. Drain mode (`--drain --concurrency N`) and `workspace_patch_auto_on_pass` auto-apply landed in v7.x and have been validated end-to-end on docs-class commissions; treat them as Beta on production-code commissions.
+
+The harness lets you commission work from `DecisionRecord` artifacts and run it under a real codex agent in an isolated workspace, with scope guards (`allowed_paths`/`forbidden_paths`), per-commission lockset enforcement, and discrete revertable apply commits per commission.
+
+```bash
+# 1. Decision exists (via /h-decide or haft_decision MCP). Create commissions:
+haft harness run --prepare-only         # auto-selects active decisions
+haft commission create-from-decision dec-... --delivery-policy workspace_patch_auto_on_pass
+
+# 2. Drain the queue overnight (manual apply by default; auto on pass when policy allows):
+haft harness run --drain --concurrency 4
+
+# 3. Outcome:
+#    workspace_patch_manual    -> diff held in workspace clone, run `haft harness apply <id>`
+#    workspace_patch_auto_on_pass + verdict=pass -> auto-applied as a discrete commit
+#    blocked_policy / failed   -> stays for operator decision (requeue / cancel)
+```
+
+`AutonomyEnvelope` continues to gate creation, preflight, and execute; the apply step is purely policy + verdict per the V3 invariant. Stale claims older than the configurable cap (default 24h) are skipped at intake with a typed `lease_too_old` reason.
+
+Detailed guide, real-world flows, and known rough edges: see [`docs/7.x/harness-batch`](https://haft.dev/docs/7.0/harness-batch).
 
 ---
 
@@ -204,26 +348,68 @@ The desktop became a real operator surface, the reasoning vocabulary grew semiot
 - **Haft Design System** — typed React primitives (Eyebrow, Button, Badge, Card, Input, StatCard, MonoId, Pill) + ComparisonTable with border-first Pareto grid + DecayWindow progress bar on decision detail
 - **Seven new FPF semiotic patterns** (FRAME-08 / FRAME-09 / CHR-10 / CHR-11 / CHR-12 / X-STATEMENT-TYPE / X-FANOUT-AUDIT) sourced from Levenchuk's seminar, auto-injected into reasoning tool responses
 - **`governance_mode` on DecisionRecord** — file-level vs module-level governance, opt-in, honors FPF X-SCOPE
-- **Random-hex artifact IDs** (`dec-20260420-a3f7c1`) to prevent merge conflicts across branches ([#63](https://github.com/m0n0x41d/haft/issues/63))
+- **Random-hex artifact IDs** (`dec-20260420-a3f7c1d2`) with optional DecisionRecord task slugs (`dec-20260420-task-4-a3f7c1d2`) to prevent merge conflicts while keeping filenames navigable ([#63](https://github.com/m0n0x41d/haft/issues/63), [#66](https://github.com/m0n0x41d/haft/issues/66))
 - **MCP `parity_plan` exposure** for deep-mode comparison ([#62](https://github.com/m0n0x41d/haft/issues/62))
 - **Transport-parity drift detection** + layered architecture boundary tests
 - **`internal/embedding` extraction**; `internal/fpf` is now pure Core
 - **`Valid-until` self-application** on FPF pattern files with a failing test when content ages past six months
 
-### v7 — Desktop Loop MVP
+### v7 — Project Harnessability MVP
 
-One proved cycle: **Decision → Implement → Verify → Baseline → PR draft**. Verification failure → reopen as ProblemCard.
+One proved cycle:
+
+**Add project → Init → Target spec → Enabling spec → Spec check → Decision → WorkCommission → RuntimeRun → Evidence → SpecCoverage.**
+
+The goal is not a better task runner. The goal is to turn an arbitrary repo
+into a harnessable engineering system.
 
 ### v8 — Governor Signals
 
 Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation after trust is earned.
+
+### Cross-repo harness — research track (post-v7.0)
+
+Multi-project workflows where each registered haft project becomes an
+addressable endpoint that other projects' agents can ask typed questions of
+("what does your enabling spec say about commission policy?", "what's the
+status of decision X?") and request typed changes from
+(MessageEnvelope → ProblemCard → DecisionRecord → WorkCommission in the
+target project, with the target's normal decide-then-commission discipline
+intact). Built on what v7 already ships: spec carriers as the addressable
+"what this repo is about" surface, AutonomyEnvelope's `allowed_repos`
+whitelist as the structural cross-repo gate, Open-Sleigh worktree clones at
+`base_sha` as the read-only-by-default response runner, and the existing
+Evidence model as the "no claim without carrier" response contract. **This
+is post-v7.0 work**: target audience is multi-repo developers who currently
+copy context between repos by hand; sequencing starts with cross-project
+READ through `haft_query(project_ref=..., ...)` (small, additive, no new
+artifact kinds) and only moves to typed change requests after the read
+surface earns evidence on real multi-repo work. Detailed mapping of how
+this composes with v7 primitives lives in
+`.context/cross-repo-mail-haft-mapping.md`. Not committed to a release
+version yet.
+
+### Desktop App — alpha track (no committed version)
+
+The Tauri v2 desktop app exists as an alpha exploration of a human surface
+over the same Haft Core. It is **not part of the v7 production envelope**: not
+extensively tested, not the canonical operator surface, and not load-bearing
+for any v7 acceptance criteria. The canonical surfaces for v7 are MCP plugin
+(`haft serve`) and CLI Harness (`haft harness ...`); the desktop app will
+graduate out of alpha when (a) its onboarding, harness, and verify panels each
+have end-to-end dogfood evidence on the level of CLI/MCP, and (b)
+desktop-specific contracts (Tauri IPC argument shape, transcript filtering,
+readiness projection) carry their own regression suites at the same depth as
+the Go/MCP surfaces. Until then it ships as a "preview from source" build
+behind the alpha warning. No release version is committed to it on the v7
+timeline.
 
 ---
 
 ## Requirements
 
 - Go 1.25+ (for building from source)
-- Any MCP-capable AI tool for plugin mode
+- Claude Code or Codex for supported v7 plugin mode
 - Rust toolchain + Tauri v2 (only when building the desktop app from source)
 
 ## License

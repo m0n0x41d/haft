@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState, type ComponentType } from "react";
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -6,33 +6,83 @@ import {
   Zap,
   Search,
   MoreHorizontal,
+  X,
   Settings as SettingsIcon,
   ChevronRight,
   ChevronDown,
+  Workflow,
   LayoutDashboard,
   ListTodo,
   FolderPlus,
   Scale,
+  MessageSquare,
 } from "lucide-react";
-import { Dashboard } from "./pages/Dashboard";
-import { Portfolios } from "./pages/Portfolios";
-import { Settings } from "./pages/Settings";
-import { Tasks } from "./pages/Tasks";
-import { Flows as Jobs } from "./pages/Jobs";
 import { NotificationViewport, type DesktopNotification } from "./components/Notifications";
 import { SearchOverlay } from "./components/SearchOverlay";
-import { TerminalPanel } from "./components/TerminalPanel";
 import { ToastViewport } from "./components/Toast";
 import { RailBtn, SidebarTask } from "./components/shell";
 import { listenForErrors, reportError, type AppErrorDetail } from "./lib/errors";
-import { listProjects, switchProject, listTasks, toggleMaximize, type ProjectInfo, type TaskState } from "./lib/api";
+import {
+  addProjectSmart,
+  archiveTask,
+  listProjects,
+  listTasks,
+  openDirectoryPicker,
+  removeProject,
+  scanForProjects,
+  switchProject,
+  toggleMaximize,
+  type ProjectInfo,
+  type TaskState,
+} from "./lib/api";
 import { getPageTitle, resolveNavigation, type Page } from "./navigation";
 import { subscribe } from "./lib/events";
+import {
+  projectIsMissing,
+  projectIsRunnable,
+  projectReadinessBadgeLabel,
+  projectTaskBlockedTitle,
+} from "./lib/projectReadiness";
+
+const DashboardPage = lazy(() =>
+  import("./pages/Dashboard")
+    .then((module) => toDefaultExport(module.Dashboard)),
+);
+const HarnessPage = lazy(() =>
+  import("./pages/Harness")
+    .then((module) => toDefaultExport(module.Harness)),
+);
+const JobsPage = lazy(() =>
+  import("./pages/Jobs")
+    .then((module) => toDefaultExport(module.Flows)),
+);
+const PortfoliosPage = lazy(() =>
+  import("./pages/Portfolios")
+    .then((module) => toDefaultExport(module.Portfolios)),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/Settings")
+    .then((module) => toDefaultExport(module.Settings)),
+);
+const TasksPage = lazy(() =>
+  import("./pages/Tasks")
+    .then((module) => toDefaultExport(module.Tasks)),
+);
+const TerminalPanelView = lazy(() =>
+  import("./components/TerminalPanel")
+    .then((module) => toDefaultExport(module.TerminalPanel)),
+);
 
 const REASONING_NAV: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "dashboard", label: "Core", icon: LayoutDashboard },
   { id: "portfolios", label: "Comparison", icon: Scale },
 ];
+
+function toDefaultExport<TProps>(
+  Component: ComponentType<TProps>,
+): { default: ComponentType<TProps> } {
+  return { default: Component };
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -125,6 +175,11 @@ export default function App() {
     setSelectedId(nextNavigation.selectedId);
   };
 
+  const openProjectSettings = (path?: string) => {
+    setPage("settings");
+    setSelectedId(path ? `projects:${path}` : "projects");
+  };
+
   const handleSwitchProject = async (path: string) => {
     try {
       await switchProject(path);
@@ -133,6 +188,20 @@ export default function App() {
       setSelectedId(null);
     } catch (error) {
       reportError(error, "switch project");
+    }
+  };
+
+  const handleRemoveProject = async (path: string) => {
+    try {
+      await removeProject(path);
+      setProjects((current) => current.filter((project) => project.path !== path));
+      setExpandedProjects((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+    } catch (error) {
+      reportError(error, "remove project");
     }
   };
 
@@ -154,7 +223,8 @@ export default function App() {
     });
   };
 
-  const activeProject = projects.find((p) => p.is_active);
+  const activeProject = projects.find((p) => p.is_active && projectIsRunnable(p));
+  const terminalProjectPath = terminalOpen && activeProject ? activeProject.path : null;
   const projectTasks = (projectPath: string) => {
     // Always filter by project_path. `listTasks()` invokes the backend
     // command with no project argument, so `tasks` is the union across
@@ -188,11 +258,24 @@ export default function App() {
               <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
               <div className="absolute left-12 top-0 z-50 w-40 rounded-lg border border-border bg-surface-1 py-1 shadow-xl">
                 <button
-                  onClick={() => { setShowPlusMenu(false); setPage("tasks"); setShowNewTask(true); }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
+                  onClick={() => {
+                    setShowPlusMenu(false);
+                    if (!activeProject) {
+                      openProjectSettings();
+                      return;
+                    }
+
+                    setPage("tasks");
+                    setShowNewTask(true);
+                  }}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors ${
+                    activeProject
+                      ? "text-text-secondary hover:bg-surface-2"
+                      : "text-text-muted hover:bg-surface-2"
+                  }`}
                 >
                   <ListTodo size={14} />
-                  New task
+                  {activeProject ? "New task" : "Select project first"}
                 </button>
                 <button
                   onClick={() => { setShowPlusMenu(false); setShowNewProject(true); }}
@@ -206,19 +289,47 @@ export default function App() {
           )}
         </div>
         <RailBtn
+          icon={LayoutDashboard}
+          tip="Core"
+          label="core"
+          onClick={() => setPage("dashboard")}
+          active={page === "dashboard"}
+        />
+        <RailBtn
+          icon={MessageSquare}
+          tip="Conversations"
+          label="chat"
+          onClick={() => setPage("tasks")}
+          active={page === "tasks"}
+        />
+        <RailBtn
           icon={Zap}
           tip="Jobs"
+          label="jobs"
           onClick={() => setPage("jobs")}
           active={page === "jobs"}
         />
-        <RailBtn icon={Search} tip="Search (Cmd+K)" onClick={() => setSearchOpen(true)} />
-        <RailBtn icon={MoreHorizontal} tip="More" onClick={() => {}} />
+        <RailBtn
+          icon={Workflow}
+          tip="Runtime"
+          label="run"
+          onClick={() => setPage("harness")}
+          active={page === "harness"}
+        />
+        <RailBtn
+          icon={Search}
+          tip="Search (Cmd+K)"
+          label="find"
+          onClick={() => setSearchOpen(true)}
+        />
+        <RailBtn icon={MoreHorizontal} tip="More" label="more" onClick={() => {}} />
 
         <div className="flex-1" />
 
         <RailBtn
           icon={SettingsIcon}
           tip="Settings"
+          label="set"
           onClick={() => navigate("settings")}
           active={page === "settings"}
         />
@@ -237,19 +348,32 @@ export default function App() {
           {/* Project tree */}
           <div className="flex-1 overflow-y-auto px-1">
             {projects.map((proj) => {
-              const isExpanded = expandedProjects.has(proj.path);
-              const pTasks = projectTasks(proj.path);
+              const runnable = projectIsRunnable(proj);
+              const missing = projectIsMissing(proj);
+              const isExpanded = runnable && expandedProjects.has(proj.path);
+              const pTasks = runnable ? projectTasks(proj.path) : [];
+
               return (
                 <div key={proj.path} className="mb-1">
                   <div className="flex items-center group">
                     <button
                       onClick={() => {
+                        if (!runnable) {
+                          openProjectSettings(proj.path);
+                          return;
+                        }
+
                         toggleProject(proj.path);
                         if (!proj.is_active) handleSwitchProject(proj.path);
                       }}
                       className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-sm transition-colors ${
-                        proj.is_active ? "text-text-primary" : "text-text-secondary hover:text-text-primary"
+                        proj.is_active
+                          ? "text-text-primary"
+                          : missing
+                            ? "text-danger hover:text-danger"
+                            : "text-text-secondary hover:text-text-primary"
                       }`}
+                      title={runnable ? proj.path : `${proj.path} is not runnable. Open Settings to repair it.`}
                     >
                       {isExpanded ? (
                         <ChevronDown size={12} className="text-text-muted shrink-0" />
@@ -257,20 +381,54 @@ export default function App() {
                         <ChevronRight size={12} className="text-text-muted shrink-0" />
                       )}
                       <span className="truncate">{proj.name}</span>
+                      {!runnable && (
+                        <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] ${
+                          missing ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"
+                        }`}>
+                          {projectReadinessBadgeLabel(proj)}
+                        </span>
+                      )}
                     </button>
                     <button
                       onClick={() => {
+                        if (missing) {
+                          openProjectSettings(proj.path);
+                          return;
+                        }
+
+                        if (!runnable) {
+                          openProjectSettings(proj.path);
+                          return;
+                        }
+
                         if (!proj.is_active) handleSwitchProject(proj.path);
                         setPage("tasks");
                         setShowNewTask(true);
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent p-0.5 transition-opacity"
-                      title="New task"
+                      className={`p-0.5 transition-opacity ${
+                        !runnable
+                          ? "opacity-0 text-text-muted"
+                          : "opacity-0 text-text-muted hover:text-accent group-hover:opacity-100"
+                      }`}
+                      disabled={!runnable}
+                      title={runnable ? "New task" : projectTaskBlockedTitle(proj)}
                     >
                       <Plus size={14} />
                     </button>
-                    <button className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary p-0.5 transition-opacity">
-                      <MoreHorizontal size={14} />
+                    <button
+                      onClick={() => {
+                        if (missing) {
+                          void handleRemoveProject(proj.path);
+                        }
+                      }}
+                      className={`p-0.5 transition-opacity ${
+                        missing
+                          ? "text-danger opacity-100 hover:text-danger/80"
+                          : "text-text-muted opacity-0 hover:text-text-primary group-hover:opacity-100"
+                      }`}
+                      title={missing ? "Remove missing project" : "Project options"}
+                    >
+                      {missing ? <X size={14} /> : <MoreHorizontal size={14} />}
                     </button>
                   </div>
 
@@ -287,8 +445,7 @@ export default function App() {
                           onSelect={() => { setPage("tasks"); setSelectedId(t.id); }}
                           onArchive={async () => {
                             try {
-                              const { archiveTask: doArchive } = await import("./lib/api");
-                              await doArchive(t.id);
+                              await archiveTask(t.id);
                               setTasks((prev) => prev.filter((x) => x.id !== t.id));
                               if (selectedId === t.id) setSelectedId(null);
                             } catch (e) { console.error(e); }
@@ -340,8 +497,18 @@ export default function App() {
             </h2>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setTerminalOpen((current) => !current)}
-                className="rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-muted transition-colors hover:text-text-secondary"
+                onClick={() => {
+                  if (!activeProject) {
+                    openProjectSettings();
+                    return;
+                  }
+
+                  setTerminalOpen((current) => !current);
+                }}
+                className={`rounded border border-border bg-surface-1 px-2 py-1 text-xs transition-colors ${
+                  activeProject ? "text-text-muted hover:text-text-secondary" : "text-text-muted/50"
+                }`}
+                title={activeProject ? "Open project terminal" : "Select a ready project first"}
               >
                 Terminal <span className="ml-1 text-text-muted/50">Cmd+`</span>
               </button>
@@ -355,34 +522,43 @@ export default function App() {
           </div>
 
           <div className="p-6" key={refreshKey}>
-            {page === "dashboard" && <Dashboard onNavigate={navigate} />}
-            {page === "portfolios" && <Portfolios selectedId={selectedId} onNavigate={navigate} />}
-            {page === "jobs" && <Jobs onOpenTask={handleOpenTask} />}
-            {page === "tasks" && (
-              <Tasks
-                selectedTaskId={selectedId}
-                showNewTask={showNewTask}
-                onNewTaskClose={() => setShowNewTask(false)}
-                tasks={tasks}
-                onTasksChange={setTasks}
-                onTasksRefresh={refreshTasks}
-              />
-            )}
-            {page === "settings" && (
-              <Settings
-                onProjectRegistryChange={() => {
-                  setRefreshKey((key) => key + 1);
-                }}
-              />
-            )}
+            <Suspense fallback={<PageFallback />}>
+              {page === "dashboard" && <DashboardPage onNavigate={navigate} />}
+              {page === "harness" && <HarnessPage />}
+              {page === "portfolios" && <PortfoliosPage selectedId={selectedId} onNavigate={navigate} />}
+              {page === "jobs" && <JobsPage onOpenTask={handleOpenTask} />}
+              {page === "tasks" && (
+                <TasksPage
+                  selectedTaskId={selectedId}
+                  showNewTask={showNewTask}
+                  onNewTaskClose={() => setShowNewTask(false)}
+                  tasks={tasks}
+                  onTasksChange={setTasks}
+                  onTasksRefresh={refreshTasks}
+                />
+              )}
+              {page === "settings" && (
+                <SettingsPage
+                  initialTab={selectedId?.startsWith("projects") ? "projects" : undefined}
+                  initialProjectPath={selectedId?.startsWith("projects:") ? selectedId.slice("projects:".length) : undefined}
+                  onProjectRegistryChange={() => {
+                    setRefreshKey((key) => key + 1);
+                  }}
+                />
+              )}
+            </Suspense>
           </div>
         </main>
 
-        <TerminalPanel
-          open={terminalOpen}
-          projectPath={activeProject?.path ?? ""}
-          onClose={() => setTerminalOpen(false)}
-        />
+        {terminalProjectPath && (
+          <Suspense fallback={null}>
+            <TerminalPanelView
+              open
+              projectPath={terminalProjectPath}
+              onClose={() => setTerminalOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* New Project modal */}
@@ -410,6 +586,14 @@ export default function App() {
   );
 }
 
+function PageFallback() {
+  return (
+    <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-accent" />
+    </div>
+  );
+}
+
 function NewProjectModal({
   onClose,
   onProjectAdded,
@@ -424,20 +608,32 @@ function NewProjectModal({
 
   useEffect(() => {
     setScanning(true);
-    import("./lib/api").then(({ scanForProjects, listProjects }) =>
-      Promise.all([scanForProjects(), listProjects()]).then(([found, existing]) => {
-        const existingPaths = new Set(existing.map((p: ProjectInfo) => p.path));
-        setDiscovered(found.filter((f: ProjectInfo) => !existingPaths.has(f.path)));
-        setScanning(false);
+
+    Promise.all([scanForProjects(), listProjects()])
+      .then(([found, existing]) => {
+        const existingProjectPaths = existing
+          .map((project) => project.path);
+        const existingPaths = new Set(existingProjectPaths);
+        const newProjects = found
+          .filter((project) => !existingPaths.has(project.path));
+
+        setDiscovered(newProjects);
       })
-    ).catch(() => setScanning(false));
+      .catch(() => {})
+      .finally(() => {
+        setScanning(false);
+      });
   }, []);
 
   const handlePick = async () => {
     try {
-      const { openDirectoryPicker } = await import("./lib/api");
       const path = await openDirectoryPicker();
-      if (path) setSelectedPath(path);
+
+      if (!path) {
+        return;
+      }
+
+      setSelectedPath(path);
     } catch { /* ignore */ }
   };
 
@@ -446,12 +642,10 @@ function NewProjectModal({
     if (!path.trim() || adding) return;
     setAdding(true);
     try {
-      const { addProjectSmart } = await import("./lib/api");
       await addProjectSmart(path);
       onProjectAdded();
     } catch (e) {
       console.error("Failed to add project:", e);
-      const { reportError } = await import("./lib/errors");
       reportError(e, "add project");
     } finally {
       setAdding(false);
@@ -518,4 +712,3 @@ function NewProjectModal({
     </div>
   );
 }
-

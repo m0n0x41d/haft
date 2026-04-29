@@ -298,6 +298,7 @@ Subagents are valuable for parallelizing independent queries or for protecting t
 - haft_problem: frame problems, characterize dimensions, select from portfolio
 - haft_solution: explore variants, compare and identify Pareto front
 - haft_decision: decide with full rationale, measure post-implementation, attach evidence
+- haft_commission: create/list/show/claim/requeue/cancel/batch/plan WorkCommissions for bounded execution harnesses
 - haft_query: search artifacts, check status, find related decisions, look up FPF spec
 - haft_refresh: detect stale decisions, manage lifecycle. When reporting results, name the artifact title first, summarize what the decision/problem/note is about, and state the concrete issue (e.g. no baseline, weak evidence, modified files) instead of mostly quoting IDs.
 - haft_note: record micro-decisions during coding (auto-capture when you observe decisions)

@@ -1,0 +1,48 @@
+# Local CI mirror. pre-commit catches the cheap stuff that would
+# block PR #N; pre-push runs the same shape of checks CI does on
+# pushes to dev/main so you don't waste a CI cycle. CI stays
+# authoritative — these hooks are the shift-left budget.
+#
+# Install once:   brew install lefthook && lefthook install
+# Skip ad-hoc:    LEFTHOOK=0 git commit ...   (or git commit --no-verify)
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        if [ -n "$unformatted" ]; then
+          echo "gofmt: not formatted:" >&2
+          echo "$unformatted" >&2
+          echo "fix: gofmt -w {staged_files}" >&2
+          exit 1
+        fi
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+    lint-fast:
+      glob: "*.go"
+      # Only newly-introduced issues vs origin/dev — fast on local edits.
+      # Pre-push runs the full lint to match CI.
+      run: golangci-lint run --timeout=2m --new-from-rev=origin/dev
+
+pre-push:
+  parallel: false
+  commands:
+    mod-tidy:
+      run: |
+        go mod tidy
+        if ! git diff --exit-code go.mod go.sum; then
+          echo "go.mod/go.sum not tidy — commit the diff and retry" >&2
+          exit 1
+        fi
+    build:
+      run: go build ./...
+    lint:
+      run: golangci-lint run --timeout=5m
+    test:
+      # No -race on pre-push (CI runs it). Local pre-push trades fidelity
+      # for speed; CI is authoritative.
+      run: go test ./...

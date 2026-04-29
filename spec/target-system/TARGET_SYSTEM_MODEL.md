@@ -16,21 +16,24 @@
 
 | # | Document | What you learn |
 |---|----------|---------------|
-| 4 | [MODE_ONTOLOGY.md](MODE_ONTOLOGY.md) | The 5 engineering modes, depth calibration, interaction modes |
-| 5 | [ARTIFACT_ONTOLOGY.md](ARTIFACT_ONTOLOGY.md) | Artifact kinds, lifecycle states, relationships |
-| 6 | [EVIDENCE_ONTOLOGY.md](EVIDENCE_ONTOLOGY.md) | R_eff, CL, decay, claims, verdicts, measurement |
+| 4 | [SPECIFICATION_ONTOLOGY.md](SPECIFICATION_ONTOLOGY.md) | ProjectSpecificationSet, TargetSystemSpec, EnablingSystemSpec, SpecCoverage, semantic architecture |
+| 5 | [MODE_ONTOLOGY.md](MODE_ONTOLOGY.md) | The 5 engineering modes, depth calibration, interaction modes |
+| 6 | [ARTIFACT_ONTOLOGY.md](ARTIFACT_ONTOLOGY.md) | Artifact kinds, lifecycle states, relationships |
+| 7 | [EVIDENCE_ONTOLOGY.md](EVIDENCE_ONTOLOGY.md) | R_eff, CL, decay, claims, verdicts, measurement |
 
 ## Layer 3: Constraints (15 min)
 
 | # | Document | What you learn |
 |---|----------|---------------|
-| 7 | [ILLEGAL_STATES.md](ILLEGAL_STATES.md) | What must be unrepresentable in the artifact graph |
+| 8 | [PROJECT_ONBOARDING_CONTRACT.md](PROJECT_ONBOARDING_CONTRACT.md) | Add/init/onboard/spec-check/spec-plan/commission/runtime E2E contract |
+| 9 | [ILLEGAL_STATES.md](ILLEGAL_STATES.md) | What must be unrepresentable in the artifact graph |
+| 10 | [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md) | WorkCommission, RuntimeRun, preflight, YOLO, and external projection authority boundaries |
 
 ## Layer 4: Open Issues
 
 | # | Document | What you learn |
 |---|----------|---------------|
-| 8 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved design questions |
+| 11 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved design questions |
 
 ## Enabling System
 

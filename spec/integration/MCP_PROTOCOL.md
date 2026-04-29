@@ -4,7 +4,7 @@
 
 ## Stability Contract
 
-The 6 MCP tools are the **stable API**. When dev merges to main:
+The 7 MCP tools are the **stable API**. When dev merges to main:
 
 - Tool names don't change
 - Required parameters don't change
@@ -18,21 +18,33 @@ The 6 MCP tools are the **stable API**. When dev merges to main:
 | `haft_problem` | frame, characterize, select, close | Understand |
 | `haft_solution` | explore, compare | Explore, Choose |
 | `haft_decision` | decide, apply, measure, evidence, baseline | Execute, Verify |
+| `haft_commission` | create, list_runnable, claim_for_preflight, lifecycle updates | Execute |
 | `haft_query` | status, search, list, coverage, related, fpf, view | Utility |
 | `haft_refresh` | scan, drift, waive, reopen, supersede, deprecate | Verify |
 | `haft_note` | (single action) | Note |
 
 ## Host Agents
 
+v7 product support targets Claude Code and Codex. Other MCP hosts may remain
+installable as experimental/legacy integrations, but compatibility is not the
+same as product support.
+
+Supported:
+
 | Agent | Config location | Init flag |
 |-------|----------------|-----------|
 | Claude Code | `.mcp.json` | `--claude` (default) |
+| Codex CLI / App | `.codex/config.toml` | `--codex` |
+
+Experimental/legacy:
+
+| Agent | Config location | Init flag |
+|-------|----------------|-----------|
 | Cursor | `.cursor/mcp.json` | `--cursor` |
 | Gemini CLI | `~/.gemini/settings.json` | `--gemini` |
-| Codex CLI / App | `.codex/config.toml` | `--codex` |
 | JetBrains Air | `.codex/config.toml` | `--air` |
 
-All use same binary (`haft serve`), same protocol (JSON-RPC over stdin/stdout), same tools.
+All use same binary (`haft serve`), same protocol (JSON-RPC over stdin/stdout), same tools. Only supported hosts are acceptance targets for v7.
 
 ## Environment
 

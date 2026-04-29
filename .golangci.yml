@@ -20,6 +20,11 @@ linters:
   settings:
     misspell:
       locale: US
+      ignore-rules:
+        # "cancelled" is the canonical wire-format spelling for the
+        # WorkCommission state and is persisted in artifacts; switching
+        # to US "canceled" would be a backwards-incompat data break.
+        - cancelled
     gocritic:
       disabled-checks:
         - ifElseChain

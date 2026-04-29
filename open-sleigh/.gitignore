@@ -1,0 +1,45 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where third-party dependencies like ExDoc output generated docs.
+/doc/
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Ignore package tarball (built via "mix hex.build").
+open_sleigh-*.tar
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# Dialyzer PLTs
+/priv/plts/
+
+# Editor / OS
+.DS_Store
+.elixir_ls/
+.idea/
+*.iml
+
+# Secrets — never commit
+.env
+.env.local
+.local.env
+# Keep .env.staging as a committed example template
+
+# Open-Sleigh runtime state (per specs/target-system/HAFT_CONTRACT.md §3
+# WAL replay + specs/target-system/RISKS.md §2 accepted in-RAM state loss).
+# Per-ticket WAL + Haft SQLite live under ~/.open-sleigh/ by default.
+# Golden-set fixtures sourced from non-canary repos stay out of the tree
+# until OSS-flip audit (specs/target-system/OPEN_QUESTIONS.md Q-OS-6).
+/fixtures/octacore_nova/

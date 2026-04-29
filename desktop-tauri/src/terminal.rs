@@ -111,11 +111,7 @@ pub fn create_terminal_session(
     let cols = cols.unwrap_or(DEFAULT_COLS);
     let rows = rows.unwrap_or(DEFAULT_ROWS);
 
-    let shell_env = env_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
+    let shell_env = env_state.0.lock().map_err(|e| e.to_string())?.clone();
 
     let cols = if cols == 0 { DEFAULT_COLS } else { cols };
     let rows = if rows == 0 { DEFAULT_ROWS } else { rows };
@@ -139,10 +135,7 @@ pub fn create_terminal_session(
         cmd.cwd(&cwd);
     }
 
-    let env_map = crate::shell_env::build_agent_env(
-        &shell_env,
-        &[("TERM", "xterm-256color")],
-    );
+    let env_map = crate::shell_env::build_agent_env(&shell_env, &[("TERM", "xterm-256color")]);
     for (k, v) in &env_map {
         cmd.env(k, v);
     }
@@ -192,7 +185,8 @@ pub fn create_terminal_session(
         closed: AtomicBool::new(false),
     });
 
-    mgr.sessions.insert(session_id.clone(), Arc::clone(&session));
+    mgr.sessions
+        .insert(session_id.clone(), Arc::clone(&session));
     drop(mgr);
 
     // Reader thread — streams raw PTY output as events.
@@ -396,10 +390,7 @@ fn terminal_reader_loop(
     }
 }
 
-fn terminal_wait_loop(
-    app: AppHandle,
-    session: Arc<TerminalSession>,
-) {
+fn terminal_wait_loop(app: AppHandle, session: Arc<TerminalSession>) {
     loop {
         if session.closed.load(Ordering::SeqCst) {
             return;

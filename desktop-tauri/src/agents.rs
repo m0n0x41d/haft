@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::models::ChatBlock;
+use crate::project_readiness::{READY, inspect_project_readiness, project_not_ready_message};
 use crate::rpc;
 use crate::shell_env::ShellEnvState;
 
@@ -21,6 +23,17 @@ const OUTPUT_MAX_LINES: usize = 500;
 const OUTPUT_MAX_CHARS: usize = 64 * 1024;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(350);
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
+const CONTINUATION_TRANSCRIPT_MAX_CHARS: usize = 12_000;
+const CONTROL_PROMPT_PREFIX: &str = "Continue the existing desktop task.";
+const CONTROL_PROMPT_FOLLOW_UP: &str = "Operator follow-up:";
+const CONTROL_PROMPT_SUFFIX: &str =
+    "Continue from the prior context. Do not repeat completed setup unless it is necessary.";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChatBlockVisibility {
+    Visible,
+    AuditOnly,
+}
 
 // ─── Agent kinds ───
 
@@ -28,7 +41,6 @@ const CANCEL_GRACE: Duration = Duration::from_secs(2);
 pub enum AgentKind {
     Claude,
     Codex,
-    Haft,
 }
 
 impl AgentKind {
@@ -36,7 +48,6 @@ impl AgentKind {
         match s.trim().to_lowercase().as_str() {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
-            "haft" => Some(Self::Haft),
             _ => None,
         }
     }
@@ -45,7 +56,6 @@ impl AgentKind {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
-            Self::Haft => "haft",
         }
     }
 }
@@ -92,6 +102,16 @@ struct RunningTask {
 struct OutputBuffer {
     lines: Vec<String>,
     total_chars: usize,
+}
+
+struct TaskContinuationContext {
+    title: String,
+    prompt: String,
+    agent: String,
+    project_name: String,
+    project_path: String,
+    transcript: String,
+    chat_blocks: Vec<ChatBlock>,
 }
 
 impl OutputBuffer {
@@ -160,6 +180,8 @@ pub struct SpawnAgentRequest {
     pub project_path: String,
     #[serde(default)]
     pub title: String,
+    #[serde(default)]
+    pub initial_chat_blocks: Vec<ChatBlock>,
 }
 
 #[tauri::command]
@@ -187,7 +209,7 @@ pub fn spawn_task(
     #[allow(unused_variables)] worktree: bool,
     #[allow(unused_variables)] branch: String,
 ) -> Result<serde_json::Value, String> {
-    let (project_path, project_name) = resolve_active_project_context();
+    let (project_path, project_name) = resolve_active_project_context()?;
     spawn_pty_task(
         &app,
         &manager,
@@ -198,39 +220,40 @@ pub fn spawn_task(
             project_name,
             project_path,
             title: String::new(),
+            initial_chat_blocks: Vec::new(),
         },
     )
 }
 
-/// Resolve `(project_path, project_name)` for the active desktop project
-/// from `~/.haft/desktop-projects.json`. Falls back to empty strings so the
-/// PTY spawn error surfaces at `build_agent_args` rather than here.
-fn resolve_active_project_context() -> (String, String) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+/// Resolve `(project_path, project_name)` for the active desktop project.
+/// A registry entry is only runnable when the path still exists and contains
+/// the minimum project specification set; stale or under-onboarded carriers
+/// must fail before PTY spawn.
+fn resolve_active_project_context() -> Result<(String, String), String> {
+    let home = std::env::var("HOME").map_err(|e| format!("resolve HOME: {e}"))?;
     let registry_path = format!("{home}/.haft/desktop-projects.json");
-    let content = match std::fs::read_to_string(&registry_path) {
-        Ok(s) => s,
-        Err(_) => return (String::new(), String::new()),
-    };
-    let val: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return (String::new(), String::new()),
-    };
+    let content = std::fs::read_to_string(&registry_path)
+        .map_err(|e| format!("read project registry: {e}"))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("parse project registry: {e}"))?;
     let active = val
         .get("active_path")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
     if active.is_empty() {
-        return (String::new(), String::new());
+        return Err("no active ready project; add or switch to a project first".into());
+    }
+    let readiness = inspect_project_readiness(&active);
+    if readiness.status != READY {
+        return Err(project_not_ready_message(&active, &readiness));
     }
     let name = val
         .get("projects")
         .and_then(|v| v.as_array())
         .and_then(|arr| {
-            arr.iter().find(|p| {
-                p.get("path").and_then(|s| s.as_str()) == Some(active.as_str())
-            })
+            arr.iter()
+                .find(|p| p.get("path").and_then(|s| s.as_str()) == Some(active.as_str()))
         })
         .and_then(|p| p.get("name").and_then(|s| s.as_str()))
         .unwrap_or_else(|| {
@@ -240,7 +263,7 @@ fn resolve_active_project_context() -> (String, String) {
                 .unwrap_or("")
         })
         .to_string();
-    (active, name)
+    Ok((active, name))
 }
 
 fn spawn_pty_task(
@@ -251,17 +274,14 @@ fn spawn_pty_task(
 ) -> Result<serde_json::Value, String> {
     let kind = AgentKind::from_str(&request.agent)
         .ok_or_else(|| format!("unsupported agent: {}", request.agent))?;
+    validate_project_root(&request.project_path)?;
 
     let args = build_agent_args(kind, &request.prompt, &request.project_path);
     if args.is_empty() {
         return Err(format!("cannot build args for agent: {}", request.agent));
     }
 
-    let shell_env = env_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
+    let shell_env = env_state.0.lock().map_err(|e| e.to_string())?.clone();
 
     let mut mgr = manager.0.lock().map_err(|e| e.to_string())?;
     let task_id = mgr.next_id();
@@ -282,7 +302,7 @@ fn spawn_pty_task(
         status: Mutex::new("running".into()),
         error_message: Mutex::new(String::new()),
         output: Mutex::new(OutputBuffer::new()),
-        chat_blocks: Mutex::new(Vec::new()),
+        chat_blocks: Mutex::new(request.initial_chat_blocks.clone()),
         block_seq: AtomicU64::new(0),
         started_at: started_at.clone(),
         cancelled: AtomicBool::new(false),
@@ -366,13 +386,71 @@ fn spawn_pty_task(
         },
     );
 
-    Ok(serde_json::json!({
-        "id": task_id,
-        "title": title,
-        "agent": kind.as_str(),
-        "status": "running",
-        "started_at": started_at,
-    }))
+    Ok(running_task_json(&task, Some("running")))
+}
+
+fn validate_project_root(project_path: &str) -> Result<(), String> {
+    if project_path.trim().is_empty() {
+        return Err("project path is required before starting an agent".into());
+    }
+
+    if !Path::new(project_path).is_dir() {
+        return Err(format!("project path does not exist: {project_path}"));
+    }
+
+    let readiness = inspect_project_readiness(project_path);
+    if readiness.status != READY {
+        return Err(project_not_ready_message(project_path, &readiness));
+    }
+
+    Ok(())
+}
+
+fn running_task_json(task: &RunningTask, status_override: Option<&str>) -> serde_json::Value {
+    let status = status_override
+        .map(String::from)
+        .or_else(|| task.status.lock().ok().map(|s| s.clone()))
+        .unwrap_or_else(|| "running".into());
+
+    let error_message = task
+        .error_message
+        .lock()
+        .map(|e| e.clone())
+        .unwrap_or_default();
+
+    let output = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
+
+    let chat_blocks = task
+        .chat_blocks
+        .lock()
+        .map(|b| b.clone())
+        .unwrap_or_default();
+
+    let completed_at = match status.as_str() {
+        "completed" | "failed" | "cancelled" => now_rfc3339(),
+        _ => String::new(),
+    };
+
+    serde_json::json!({
+        "id": task.id,
+        "title": task.title,
+        "agent": task.agent.as_str(),
+        "project": task.project_name,
+        "project_path": task.project_path,
+        "status": status,
+        "prompt": task.prompt,
+        "branch": "",
+        "worktree": false,
+        "worktree_path": "",
+        "reused_worktree": false,
+        "started_at": task.started_at,
+        "completed_at": completed_at,
+        "error_message": error_message,
+        "output": output,
+        "chat_blocks": chat_blocks,
+        "raw_output": output,
+        "auto_run": false,
+    })
 }
 
 #[tauri::command]
@@ -416,13 +494,18 @@ pub fn write_task_input(
         return Err(format!("task already cancelled: {id}"));
     }
 
+    let status = task.status.lock().map_err(|e| e.to_string())?.clone();
+    if !task_accepts_input(&status) {
+        return Err(task_input_rejection_message(&id, &status));
+    }
+
     let mut guard = task.writer.lock().map_err(|e| e.to_string())?;
     let writer = guard
         .as_mut()
-        .ok_or_else(|| format!("task {id} has no attached writer"))?;
-    writer
-        .write_all(data.as_bytes())
-        .map_err(|e| format!("write to pty: {e}"))?;
+        .ok_or_else(|| task_input_rejection_message(&id, "closed"))?;
+    writer.write_all(data.as_bytes()).map_err(|e| {
+        format!("task {id} input stream is closed: {e}. Start a handoff or new task.")
+    })?;
     writer.flush().ok();
     Ok(())
 }
@@ -441,9 +524,16 @@ pub fn run_flow_now(
 ) -> Result<serde_json::Value, String> {
     let (agent, prompt, project_name, project_path) = {
         let db = db_state.0.lock().map_err(|e| e.to_string())?;
-        let flow = db.get_flow(&id).map_err(|e| format!("load flow {id}: {e}"))?;
+        let flow = db
+            .get_flow(&id)
+            .map_err(|e| format!("load flow {id}: {e}"))?;
         db.mark_flow_run(&id).map_err(|e| e.to_string())?;
-        (flow.agent, flow.prompt, flow.project_name, flow.project_path)
+        (
+            flow.agent,
+            flow.prompt,
+            flow.project_name,
+            flow.project_path,
+        )
     };
     spawn_pty_task(
         &app,
@@ -455,6 +545,7 @@ pub fn run_flow_now(
             project_name,
             project_path,
             title: format!("flow: {id}"),
+            initial_chat_blocks: Vec::new(),
         },
     )
 }
@@ -505,8 +596,101 @@ pub fn handoff_task(
             project_name,
             project_path,
             title: format!("handoff: {title}"),
+            initial_chat_blocks: Vec::new(),
         },
     )
+}
+
+#[tauri::command]
+pub fn continue_task(
+    app: AppHandle,
+    manager: State<'_, AgentManagerState>,
+    env_state: State<'_, ShellEnvState>,
+    db_state: State<'_, crate::commands_read::DbState>,
+    id: String,
+    message: String,
+) -> Result<serde_json::Value, String> {
+    let trimmed_message = message.trim();
+    if trimmed_message.is_empty() {
+        return Err("continuation message is required".into());
+    }
+
+    let context = task_continuation_context(&manager, &db_state, &id)?;
+    let visible_prompt = visible_original_prompt(&context.prompt, &context.chat_blocks);
+    let transcript = strip_control_prompt_sections(&context.transcript);
+    let prompt = continuation_prompt(
+        &context.title,
+        &visible_prompt,
+        &transcript,
+        trimmed_message,
+    );
+    let initial_chat_blocks =
+        continuation_seed_blocks(&visible_prompt, &context.chat_blocks, trimmed_message);
+
+    let next_task = spawn_pty_task(
+        &app,
+        &manager,
+        &env_state,
+        SpawnAgentRequest {
+            agent: context.agent,
+            prompt,
+            project_name: context.project_name,
+            project_path: context.project_path,
+            title: context.title,
+            initial_chat_blocks,
+        },
+    )?;
+
+    // Continuation is a new runtime turn for the same operator conversation.
+    // Hide the old terminal turn from the task list so the sidebar remains a
+    // conversation list rather than a process-history list.
+    if let Ok(db) = db_state.0.lock() {
+        let _ = db.archive_task(&id);
+    }
+
+    Ok(next_task)
+}
+
+fn task_continuation_context(
+    manager: &State<'_, AgentManagerState>,
+    db_state: &State<'_, crate::commands_read::DbState>,
+    id: &str,
+) -> Result<TaskContinuationContext, String> {
+    let mgr = manager.0.lock().map_err(|e| e.to_string())?;
+    if let Some(task) = mgr.tasks.get(id).cloned() {
+        let transcript = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
+
+        return Ok(TaskContinuationContext {
+            title: task.title.clone(),
+            prompt: task.prompt.clone(),
+            agent: task.agent.as_str().into(),
+            project_name: task.project_name.clone(),
+            project_path: task.project_path.clone(),
+            transcript,
+            chat_blocks: task
+                .chat_blocks
+                .lock()
+                .map(|blocks| blocks.clone())
+                .unwrap_or_default(),
+        });
+    }
+    drop(mgr);
+
+    let db = db_state.0.lock().map_err(|e| e.to_string())?;
+    let row = db
+        .get_task(id)
+        .map_err(|e| format!("task not found (in-memory or persisted) for {id}: {e}"))?;
+    let transcript = first_nonempty(&[&row.raw_output, &row.output]);
+
+    Ok(TaskContinuationContext {
+        title: row.title,
+        prompt: row.prompt,
+        agent: row.agent,
+        project_name: row.project,
+        project_path: row.project_path,
+        transcript,
+        chat_blocks: row.chat_blocks,
+    })
 }
 
 fn cancel_running_task(
@@ -553,6 +737,7 @@ fn cancel_running_task(
     if let Ok(mut status) = task.status.lock() {
         *status = "cancelled".into();
     }
+    close_task_writer(&task);
 
     let _ = app.emit(
         "task.status",
@@ -603,11 +788,7 @@ pub fn get_agent_output(
         .get(&task_id)
         .ok_or_else(|| format!("task not found: {task_id}"))?;
 
-    let output = task
-        .output
-        .lock()
-        .map(|b| b.snapshot())
-        .unwrap_or_default();
+    let output = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
     let blocks = task
         .chat_blocks
         .lock()
@@ -625,11 +806,7 @@ pub fn get_agent_output(
 
 // ─── PTY reader ───
 
-fn pty_reader_loop(
-    app: AppHandle,
-    task: Arc<RunningTask>,
-    mut reader: Box<dyn Read + Send>,
-) {
+fn pty_reader_loop(app: AppHandle, task: Arc<RunningTask>, mut reader: Box<dyn Read + Send>) {
     let mut buf = [0u8; 4096];
     let mut line_buf = String::new();
     let mut last_emit = Instant::now();
@@ -658,11 +835,7 @@ fn pty_reader_loop(
 
                 // Emit output event (debounced to avoid flooding).
                 if last_emit.elapsed() >= Duration::from_millis(50) {
-                    let snapshot = task
-                        .output
-                        .lock()
-                        .map(|b| b.snapshot())
-                        .unwrap_or_default();
+                    let snapshot = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
                     let _ = app.emit(
                         "task.output",
                         TaskOutputEvent {
@@ -685,11 +858,7 @@ fn pty_reader_loop(
     }
 
     // Final output emit.
-    let snapshot = task
-        .output
-        .lock()
-        .map(|b| b.snapshot())
-        .unwrap_or_default();
+    let snapshot = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
     let _ = app.emit(
         "task.output",
         TaskOutputEvent {
@@ -702,10 +871,7 @@ fn pty_reader_loop(
 
 // ─── Wait + finalize ───
 
-fn wait_and_finalize(
-    app: AppHandle,
-    task: Arc<RunningTask>,
-) {
+fn wait_and_finalize(app: AppHandle, task: Arc<RunningTask>) {
     // Periodic flush to RPC while running.
     let flush_task = Arc::clone(&task);
     let flush_stop = Arc::new(AtomicBool::new(false));
@@ -751,6 +917,7 @@ fn wait_and_finalize(
                     if let Ok(mut s) = task.status.lock() {
                         *s = final_status.into();
                     }
+                    close_task_writer(&task);
 
                     if final_status == "failed" {
                         if let Ok(mut em) = task.error_message.lock() {
@@ -808,6 +975,7 @@ fn wait_and_finalize(
             *s = "failed".into();
         }
     }
+    close_task_writer(&task);
 
     persist_task_state(&task, Some("failed"));
 
@@ -827,7 +995,6 @@ fn parse_and_append_blocks(task: &RunningTask, line: &str) {
     let blocks = match task.agent {
         AgentKind::Claude => parse_claude_line(line),
         AgentKind::Codex => parse_codex_line(line),
-        AgentKind::Haft => Vec::new(), // haft agent has no structured streaming yet
     };
 
     if blocks.is_empty() {
@@ -850,15 +1017,9 @@ struct ClaudeEnvelope {
     #[serde(default, rename = "type")]
     msg_type: String,
     #[serde(default)]
-    session_id: String,
-    #[serde(default)]
     message: ClaudeMessage,
     #[serde(default)]
     parent_tool_use_id: String,
-    #[serde(default)]
-    result: Option<serde_json::Value>,
-    #[serde(default)]
-    is_error: bool,
     #[serde(default)]
     error: Option<ClaudeError>,
 }
@@ -908,24 +1069,7 @@ fn parse_claude_line(line: &str) -> Vec<ChatBlock> {
     match envelope.msg_type.as_str() {
         "system" | "rate_limit_event" => Vec::new(),
 
-        "result" => {
-            let text = format_json_value(envelope.result.as_ref());
-            if text.trim().is_empty() {
-                return Vec::new();
-            }
-            let role = if envelope.is_error {
-                "system"
-            } else {
-                "assistant"
-            };
-            vec![ChatBlock {
-                block_type: "text".into(),
-                role: role.into(),
-                text,
-                is_error: envelope.is_error,
-                ..Default::default()
-            }]
-        }
+        "result" => Vec::new(),
 
         "error" => {
             let text = envelope
@@ -959,10 +1103,8 @@ fn parse_claude_line(line: &str) -> Vec<ChatBlock> {
                 let block_type = normalize_claude_block_type(&cb);
                 match block_type.as_str() {
                     "text" => {
-                        let text = first_nonempty(&[
-                            &cb.text,
-                            &format_json_value(cb.content.as_ref()),
-                        ]);
+                        let text =
+                            first_nonempty(&[&cb.text, &format_json_value(cb.content.as_ref())]);
                         if !text.is_empty() {
                             blocks.push(ChatBlock {
                                 block_type: "text".into(),
@@ -1096,8 +1238,6 @@ struct CodexEnvelope {
     #[serde(default, rename = "type")]
     msg_type: String,
     #[serde(default)]
-    thread_id: String,
-    #[serde(default)]
     text: String,
     #[serde(default)]
     delta: String,
@@ -1194,8 +1334,13 @@ fn parse_codex_line(line: &str) -> Vec<ChatBlock> {
             Vec::new()
         }
 
-        "agent_message" | "assistant_message" | "assistant_message_delta"
-        | "assistant_response" | "assistant" | "agent_message_delta" | "message"
+        "agent_message"
+        | "assistant_message"
+        | "assistant_message_delta"
+        | "assistant_response"
+        | "assistant"
+        | "agent_message_delta"
+        | "message"
         | "message_delta" => {
             let text = first_nonempty(&[
                 &envelope.text,
@@ -1426,7 +1571,6 @@ fn build_agent_args(kind: AgentKind, prompt: &str, work_dir: &str) -> Vec<String
             "mcp_servers={}".into(),
             prompt.into(),
         ],
-        AgentKind::Haft => vec!["haft".into(), "agent".into(), prompt.into()],
     }
 }
 
@@ -1438,11 +1582,7 @@ fn persist_task_state(task: &RunningTask, status_override: Option<&str>) {
         .or_else(|| task.status.lock().ok().map(|s| s.clone()))
         .unwrap_or_else(|| "running".into());
 
-    let output = task
-        .output
-        .lock()
-        .map(|b| b.snapshot())
-        .unwrap_or_default();
+    let output = task.output.lock().map(|b| b.snapshot()).unwrap_or_default();
 
     let blocks = task
         .chat_blocks
@@ -1486,6 +1626,22 @@ fn persist_task_state(task: &RunningTask, status_override: Option<&str>) {
 }
 
 // ─── Helpers ───
+
+fn task_accepts_input(status: &str) -> bool {
+    matches!(status.trim().to_lowercase().as_str(), "running" | "idle")
+}
+
+fn task_input_rejection_message(task_id: &str, status: &str) -> String {
+    format!(
+        "task {task_id} is not accepting input (status: {status}). Start a handoff or new task."
+    )
+}
+
+fn close_task_writer(task: &RunningTask) {
+    if let Ok(mut writer) = task.writer.lock() {
+        *writer = None;
+    }
+}
 
 fn strip_ansi(s: &str) -> String {
     let bytes = s.as_bytes();
@@ -1564,6 +1720,243 @@ fn first_nonempty(candidates: &[&str]) -> String {
     String::new()
 }
 
+fn continuation_prompt(title: &str, prompt: &str, transcript: &str, message: &str) -> String {
+    let transcript_tail = tail_text(transcript, CONTINUATION_TRANSCRIPT_MAX_CHARS);
+
+    format!(
+        "{CONTROL_PROMPT_PREFIX}\n\nTask title:\n{title}\n\nOriginal prompt:\n{prompt}\n\nPrior transcript tail:\n{transcript_tail}\n\n{CONTROL_PROMPT_FOLLOW_UP}\n{message}\n\n{CONTROL_PROMPT_SUFFIX}"
+    )
+}
+
+fn continuation_seed_blocks(
+    original_prompt: &str,
+    previous_blocks: &[ChatBlock],
+    message: &str,
+) -> Vec<ChatBlock> {
+    let mut blocks: Vec<ChatBlock> = previous_blocks
+        .iter()
+        .filter_map(visible_conversation_block)
+        .collect();
+    let prompt = original_prompt.trim();
+
+    if !prompt.is_empty() && !is_control_prompt(prompt) && !has_user_text(&blocks, prompt) {
+        blocks.insert(0, user_text_block("initial-user", prompt));
+    }
+
+    let continuation_id = format!("continuation-user-{}", blocks.len() + 1);
+    blocks.push(user_text_block(&continuation_id, message.trim()));
+
+    blocks
+}
+
+fn has_user_text(blocks: &[ChatBlock], text: &str) -> bool {
+    blocks
+        .iter()
+        .any(|block| block.role == "user" && block.text.trim() == text)
+}
+
+fn visible_original_prompt(prompt: &str, blocks: &[ChatBlock]) -> String {
+    let trimmed_prompt = prompt.trim();
+
+    if !trimmed_prompt.is_empty() && !is_control_prompt(trimmed_prompt) {
+        return trimmed_prompt.into();
+    }
+
+    blocks
+        .iter()
+        .filter_map(visible_conversation_block)
+        .find(|block| {
+            block.role == "user" && !block.text.trim().is_empty() && !is_control_prompt(&block.text)
+        })
+        .map(|block| block.text.trim().to_string())
+        .unwrap_or_default()
+}
+
+fn visible_conversation_block(block: &ChatBlock) -> Option<ChatBlock> {
+    let without_control = strip_control_prompt_sections(&block.text);
+    let visible_text = strip_audit_only_provider_envelope_lines(&without_control);
+    let visible_block = if visible_text == block.text {
+        block.clone()
+    } else {
+        let mut next = block.clone();
+        next.text = visible_text;
+        next
+    };
+
+    if chat_block_has_renderable_value(&visible_block) {
+        return Some(visible_block);
+    }
+
+    None
+}
+
+fn chat_block_has_renderable_value(block: &ChatBlock) -> bool {
+    [&block.text, &block.output, &block.input, &block.name]
+        .iter()
+        .any(|value| !value.trim().is_empty())
+}
+
+fn is_control_prompt(text: &str) -> bool {
+    let trimmed = text.trim_start();
+
+    trimmed.starts_with(CONTROL_PROMPT_PREFIX)
+        || trimmed.contains(CONTROL_PROMPT_PREFIX)
+        || (trimmed.contains(CONTROL_PROMPT_FOLLOW_UP) && trimmed.contains(CONTROL_PROMPT_SUFFIX))
+}
+
+fn strip_control_prompt_sections(text: &str) -> String {
+    let prefixed = strip_prefixed_control_prompt_sections(text);
+
+    strip_orphaned_control_prompt_tail(&prefixed)
+}
+
+fn strip_prefixed_control_prompt_sections(text: &str) -> String {
+    if !text.contains(CONTROL_PROMPT_PREFIX) {
+        return text.into();
+    }
+
+    let mut sections = text.split(CONTROL_PROMPT_PREFIX);
+    let head = sections.next().unwrap_or_default();
+    let visible_tails = sections
+        .map(strip_control_prompt_tail)
+        .collect::<Vec<_>>()
+        .join("");
+
+    format!("{head}{visible_tails}")
+}
+
+fn strip_control_prompt_tail(section: &str) -> String {
+    section
+        .split_once(CONTROL_PROMPT_SUFFIX)
+        .map(|(_, tail)| tail.to_string())
+        .unwrap_or_default()
+}
+
+fn strip_orphaned_control_prompt_tail(text: &str) -> String {
+    if !text.contains(CONTROL_PROMPT_FOLLOW_UP) || !text.contains(CONTROL_PROMPT_SUFFIX) {
+        return text.into();
+    }
+
+    let mut output = String::new();
+    let mut remaining = text;
+
+    loop {
+        let Some(start) = remaining.find(CONTROL_PROMPT_FOLLOW_UP) else {
+            output.push_str(remaining);
+            return output;
+        };
+        let tail = &remaining[start..];
+        let Some(end_rel) = tail.find(CONTROL_PROMPT_SUFFIX) else {
+            output.push_str(remaining);
+            return output;
+        };
+        let end = start + end_rel + CONTROL_PROMPT_SUFFIX.len();
+
+        output.push_str(&remaining[..start]);
+        remaining = &remaining[end..];
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct ProviderEnvelope {
+    #[serde(default, rename = "type")]
+    envelope_type: String,
+}
+
+fn strip_audit_only_provider_envelope_lines(text: &str) -> String {
+    if is_audit_only_provider_envelope(text) {
+        return String::new();
+    }
+
+    text.lines()
+        .filter(|line| !is_audit_only_provider_envelope_line(line.trim()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_audit_only_provider_envelope(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    if provider_envelope_visibility(trimmed) == ChatBlockVisibility::AuditOnly {
+        return true;
+    }
+
+    let lines = trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+
+    if lines.len() <= 1 {
+        return false;
+    }
+
+    lines
+        .iter()
+        .all(|line| is_audit_only_provider_envelope_line(line))
+}
+
+fn is_audit_only_provider_envelope_line(text: &str) -> bool {
+    provider_envelope_visibility(text) == ChatBlockVisibility::AuditOnly
+}
+
+fn provider_envelope_visibility(text: &str) -> ChatBlockVisibility {
+    if !looks_like_json_container(text) {
+        return ChatBlockVisibility::Visible;
+    }
+
+    let envelope = match serde_json::from_str::<ProviderEnvelope>(text) {
+        Ok(envelope) => envelope,
+        Err(_) => return ChatBlockVisibility::Visible,
+    };
+
+    if audit_only_provider_envelope_type(&envelope.envelope_type) {
+        return ChatBlockVisibility::AuditOnly;
+    }
+
+    ChatBlockVisibility::Visible
+}
+
+fn audit_only_provider_envelope_type(envelope_type: &str) -> bool {
+    matches!(
+        envelope_type,
+        "result"
+            | "system"
+            | "rate_limit_event"
+            | "thread.started"
+            | "turn.started"
+            | "turn.completed"
+    )
+}
+
+fn looks_like_json_container(value: &str) -> bool {
+    let trimmed = value.trim();
+
+    (trimmed.starts_with('{') && trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+}
+
+fn user_text_block(id: &str, text: &str) -> ChatBlock {
+    ChatBlock {
+        id: id.into(),
+        block_type: "text".into(),
+        role: "user".into(),
+        text: text.into(),
+        ..ChatBlock::default()
+    }
+}
+
+fn tail_text(s: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+
+    if chars.len() <= max_chars {
+        return s.to_string();
+    }
+
+    let tail: String = chars[chars.len() - max_chars..].iter().collect();
+    format!("[truncated]\n{tail}")
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
@@ -1608,6 +2001,13 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_kind_accepts_only_v7_desktop_hosts() {
+        assert_eq!(AgentKind::from_str("claude"), Some(AgentKind::Claude));
+        assert_eq!(AgentKind::from_str("codex"), Some(AgentKind::Codex));
+        assert_eq!(AgentKind::from_str("haft"), None);
+    }
 
     #[test]
     fn strip_ansi_removes_csi() {
@@ -1655,6 +2055,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_claude_result_envelope_is_audit_only() {
+        let line = r#"{"type":"result","usage":{"input_tokens":6},"result":{"duration_ms":10}}"#;
+        let blocks = parse_claude_line(line);
+
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
     fn parse_codex_agent_message() {
         let line = r#"{"type":"agent_message","text":"I'll help you"}"#;
         let blocks = parse_codex_line(line);
@@ -1690,6 +2098,292 @@ mod tests {
     }
 
     #[test]
+    fn task_input_acceptance_is_terminal_state_aware() {
+        assert!(task_accepts_input("running"));
+        assert!(task_accepts_input("idle"));
+        assert!(task_accepts_input(" RUNNING "));
+
+        assert!(!task_accepts_input("completed"));
+        assert!(!task_accepts_input("failed"));
+        assert!(!task_accepts_input("cancelled"));
+        assert!(!task_accepts_input("checkpointed"));
+        assert!(!task_accepts_input("blocked"));
+        assert!(!task_accepts_input("Ready for PR"));
+        assert!(!task_accepts_input(""));
+    }
+
+    fn assistant_text_block(id: &str, text: &str) -> ChatBlock {
+        ChatBlock {
+            id: id.into(),
+            block_type: "text".into(),
+            role: "assistant".into(),
+            text: text.into(),
+            ..ChatBlock::default()
+        }
+    }
+
+    #[test]
+    fn continuation_prompt_preserves_follow_up_and_tail() {
+        let prompt = continuation_prompt("Task", "Original", "line one\nline two", "Next step");
+
+        assert!(prompt.contains("Task title:\nTask"));
+        assert!(prompt.contains("Original prompt:\nOriginal"));
+        assert!(prompt.contains("Prior transcript tail:\nline one\nline two"));
+        assert!(prompt.contains("Operator follow-up:\nNext step"));
+    }
+
+    #[test]
+    fn tail_text_keeps_recent_context() {
+        let tail = tail_text("abcdef", 3);
+
+        assert_eq!(tail, "[truncated]\ndef");
+    }
+
+    #[test]
+    fn continuation_seed_blocks_adds_visible_user_turns() {
+        let previous = vec![ChatBlock {
+            id: "assistant-1".into(),
+            block_type: "text".into(),
+            role: "assistant".into(),
+            text: "Hello again.".into(),
+            ..ChatBlock::default()
+        }];
+
+        let blocks = continuation_seed_blocks("Hello", &previous, "What next?");
+
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].role, "user");
+        assert_eq!(blocks[0].text, "Hello");
+        assert_eq!(blocks[1].role, "assistant");
+        assert_eq!(blocks[2].role, "user");
+        assert_eq!(blocks[2].text, "What next?");
+    }
+
+    #[test]
+    fn continuation_seed_blocks_drops_control_prompt_blocks() {
+        let previous = vec![user_text_block(
+            "control",
+            "Continue the existing desktop task.\n\nOperator follow-up:\nhello",
+        )];
+
+        let blocks = continuation_seed_blocks("", &previous, "actual follow-up");
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "actual follow-up");
+    }
+
+    #[test]
+    fn continuation_seed_blocks_keep_durable_turns_through_fourth_follow_up() {
+        let original_prompt = "Original request";
+        let first_turn_blocks = vec![
+            user_text_block("initial-user", original_prompt),
+            assistant_text_block("assistant-1", "Completed first pass."),
+        ];
+
+        let second_turn_blocks =
+            continuation_seed_blocks(original_prompt, &first_turn_blocks, "Second follow-up");
+
+        let mut checkpoint_blocks = second_turn_blocks.clone();
+        checkpoint_blocks.push(user_text_block(
+            "control-2",
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Completed first pass.",
+                "Second follow-up",
+            ),
+        ));
+        checkpoint_blocks.push(assistant_text_block(
+            "provider-result",
+            r#"{"type":"result","usage":{"input_tokens":6}}"#,
+        ));
+        checkpoint_blocks.push(assistant_text_block("assistant-2", "Checkpoint saved."));
+
+        let third_prompt = visible_original_prompt(
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Checkpoint saved.",
+                "Third follow-up",
+            ),
+            &checkpoint_blocks,
+        );
+        let third_turn_blocks =
+            continuation_seed_blocks(&third_prompt, &checkpoint_blocks, "Third follow-up");
+
+        let mut blocked_blocks = third_turn_blocks.clone();
+        blocked_blocks.push(user_text_block(
+            "control-3",
+            &[
+                "Operator follow-up:",
+                "Third follow-up",
+                "",
+                "Continue from the prior context. Do not repeat completed setup unless it is necessary.",
+            ]
+            .join("\n"),
+        ));
+        blocked_blocks.push(assistant_text_block(
+            "provider-turn",
+            r#"{"type":"turn.completed","usage":{"input_tokens":9}}"#,
+        ));
+        blocked_blocks.push(assistant_text_block("assistant-3", "Blocked on approval."));
+
+        let fourth_prompt = visible_original_prompt(
+            &continuation_prompt(
+                "Task",
+                original_prompt,
+                "Blocked on approval.",
+                "Fourth follow-up",
+            ),
+            &blocked_blocks,
+        );
+        let fourth_turn_blocks =
+            continuation_seed_blocks(&fourth_prompt, &blocked_blocks, "Fourth follow-up");
+        let visible_texts = fourth_turn_blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>();
+        let rendered = visible_texts.join("\n");
+
+        assert_eq!(
+            visible_texts,
+            vec![
+                "Original request",
+                "Completed first pass.",
+                "Second follow-up",
+                "Checkpoint saved.",
+                "Third follow-up",
+                "Blocked on approval.",
+                "Fourth follow-up",
+            ],
+        );
+        assert!(!rendered.contains(r#""type":"result""#));
+        assert!(!rendered.contains("Operator follow-up:"));
+        assert!(!rendered.contains("Continue the existing desktop task."));
+    }
+
+    #[test]
+    fn continuation_seed_blocks_drops_partially_parsed_control_prompt_blocks() {
+        let previous = vec![user_text_block(
+            "control",
+            &[
+                r#"{"type":"result","usage":{"input_tokens":6}}"#,
+                "",
+                "Operator follow-up:",
+                "how are you?",
+                "",
+                "Continue from the prior context. Do not repeat completed setup unless it is necessary.",
+            ]
+            .join("\n"),
+        )];
+
+        let blocks = continuation_seed_blocks("", &previous, "actual follow-up");
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "actual follow-up");
+    }
+
+    #[test]
+    fn visible_original_prompt_uses_first_real_user_block_when_prompt_is_control() {
+        let blocks = vec![user_text_block("user", "Hello")];
+        let prompt = visible_original_prompt(
+            "Continue the existing desktop task.\n\nOperator follow-up:\nhello",
+            &blocks,
+        );
+
+        assert_eq!(prompt, "Hello");
+    }
+
+    #[test]
+    fn visible_original_prompt_skips_audit_only_user_envelopes() {
+        let blocks = vec![
+            user_text_block(
+                "provider",
+                r#"{"type":"result","usage":{"input_tokens":6}}"#,
+            ),
+            user_text_block("user", "Hello"),
+        ];
+        let prompt = visible_original_prompt(
+            "Continue the existing desktop task.\n\nOperator follow-up:\nhello",
+            &blocks,
+        );
+
+        assert_eq!(prompt, "Hello");
+    }
+
+    #[test]
+    fn strip_control_prompt_sections_removes_envelope() {
+        let text = [
+            "before",
+            "Continue the existing desktop task.",
+            "Task title:",
+            "Hello",
+            "Continue from the prior context. Do not repeat completed setup unless it is necessary.",
+            "after",
+        ]
+        .join("\n");
+
+        let stripped = strip_control_prompt_sections(&text);
+
+        assert!(stripped.contains("before"));
+        assert!(stripped.contains("after"));
+        assert!(!stripped.contains("Operator follow-up"));
+        assert!(!stripped.contains("Task title:"));
+    }
+
+    #[test]
+    fn strip_control_prompt_sections_removes_orphaned_control_tail() {
+        let text = [
+            "before",
+            r#"{"type":"result","usage":{"input_tokens":6}}"#,
+            "Operator follow-up:",
+            "how are you?",
+            "Continue from the prior context. Do not repeat completed setup unless it is necessary.",
+            "after",
+        ]
+        .join("\n");
+
+        let stripped = strip_control_prompt_sections(&text);
+
+        assert!(stripped.contains("before"));
+        assert!(stripped.contains(r#"{"type":"result""#));
+        assert!(stripped.contains("after"));
+        assert!(!stripped.contains("Operator follow-up"));
+        assert!(!stripped.contains("how are you?"));
+    }
+
+    #[test]
+    fn running_task_json_contains_full_frontend_contract() {
+        let task = RunningTask {
+            id: "task-1".into(),
+            agent: AgentKind::Codex,
+            project_name: "haft".into(),
+            project_path: "/repo/haft".into(),
+            title: "Test task".into(),
+            prompt: "Do work".into(),
+            status: Mutex::new("running".into()),
+            error_message: Mutex::new(String::new()),
+            output: Mutex::new(OutputBuffer::new()),
+            chat_blocks: Mutex::new(Vec::new()),
+            block_seq: AtomicU64::new(0),
+            started_at: "2026-04-24T00:00:00Z".into(),
+            cancelled: AtomicBool::new(false),
+            child: Mutex::new(None),
+            writer: Mutex::new(None),
+        };
+
+        let value = running_task_json(&task, Some("running"));
+
+        assert_eq!(value["id"], "task-1");
+        assert_eq!(value["project"], "haft");
+        assert_eq!(value["project_path"], "/repo/haft");
+        assert_eq!(value["prompt"], "Do work");
+        assert!(value["chat_blocks"].is_array());
+        assert_eq!(value["raw_output"], "");
+        assert_eq!(value["auto_run"], false);
+    }
+
+    #[test]
     fn first_nonempty_picks_first() {
         assert_eq!(first_nonempty(&["", "  ", "hello"]), "hello");
         assert_eq!(first_nonempty(&["first", "second"]), "first");
@@ -1701,5 +2395,47 @@ mod tests {
         let ts = now_rfc3339();
         assert!(ts.contains('T'));
         assert!(ts.ends_with('Z'));
+    }
+
+    #[derive(Deserialize)]
+    struct TranscriptParityCase {
+        name: String,
+        input: String,
+        expected: String,
+    }
+
+    #[derive(Deserialize)]
+    struct TranscriptParityFixture {
+        schema: String,
+        cases: Vec<TranscriptParityCase>,
+    }
+
+    fn visible_transcript_text(text: &str) -> String {
+        let without_control = strip_control_prompt_sections(text);
+
+        strip_audit_only_provider_envelope_lines(&without_control)
+    }
+
+    #[test]
+    fn transcript_normalizer_parity_with_typescript_fixture() {
+        let raw = include_str!("../../desktop/transcript-parity/cases.json");
+        let fixture: TranscriptParityFixture =
+            serde_json::from_str(raw).expect("transcript parity fixture must parse");
+
+        assert_eq!(fixture.schema, "haft.transcript-parity.v1");
+        assert!(
+            !fixture.cases.is_empty(),
+            "fixture must declare at least one case"
+        );
+
+        for case in &fixture.cases {
+            let actual = visible_transcript_text(&case.input);
+
+            assert_eq!(
+                actual, case.expected,
+                "transcript parity mismatch on case `{}`",
+                case.name
+            );
+        }
     }
 }

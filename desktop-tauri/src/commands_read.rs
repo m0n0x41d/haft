@@ -5,6 +5,9 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::db::HaftDb;
 use crate::models::*;
+use crate::project_readiness::{
+    MISSING, NEEDS_INIT, NEEDS_ONBOARD, READY, inspect_project_readiness,
+};
 
 /// Managed state: a Mutex-wrapped HaftDb for thread-safe Tauri command access.
 pub struct DbState(pub Mutex<HaftDb>);
@@ -44,10 +47,7 @@ pub fn list_decisions(state: State<'_, DbState>) -> Result<Vec<DecisionView>, St
 }
 
 #[tauri::command]
-pub fn get_decision(
-    state: State<'_, DbState>,
-    id: String,
-) -> Result<DecisionDetailView, String> {
+pub fn get_decision(state: State<'_, DbState>, id: String) -> Result<DecisionDetailView, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
     db.get_decision(&id).map_err(|e| e.to_string())
 }
@@ -61,10 +61,7 @@ pub fn list_portfolios(state: State<'_, DbState>) -> Result<Vec<PortfolioSummary
 }
 
 #[tauri::command]
-pub fn get_portfolio(
-    state: State<'_, DbState>,
-    id: String,
-) -> Result<PortfolioDetailView, String> {
+pub fn get_portfolio(state: State<'_, DbState>, id: String) -> Result<PortfolioDetailView, String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
     db.get_portfolio(&id).map_err(|e| e.to_string())
 }
@@ -111,7 +108,8 @@ pub fn set_task_auto_run(
     auto_run: bool,
 ) -> Result<(), String> {
     let db = state.0.lock().map_err(|e| e.to_string())?;
-    db.set_task_auto_run(&id, auto_run).map_err(|e| e.to_string())
+    db.set_task_auto_run(&id, auto_run)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -142,8 +140,8 @@ pub fn list_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, Str
         Err(_) => return Ok(Vec::new()),
     };
 
-    let val: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("parse registry: {e}"))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("parse registry: {e}"))?;
     let active_path = val
         .get("active_path")
         .and_then(|v| v.as_str())
@@ -157,7 +155,11 @@ pub fn list_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, Str
 
     let mut out = Vec::with_capacity(projects.len());
     for p in projects {
-        let path = p.get("path").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let path = p
+            .get("path")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string();
         if path.is_empty() {
             continue;
         }
@@ -171,19 +173,56 @@ pub fn list_projects(_state: State<'_, DbState>) -> Result<Vec<ProjectInfo>, Str
                     .unwrap_or("")
             })
             .to_string();
-        let id = p.get("id").and_then(|s| s.as_str()).unwrap_or("").to_string();
-        let is_active = !active_path.is_empty() && path == active_path;
+        let id = p
+            .get("id")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string();
+        let readiness = inspect_project_readiness(&path);
+        let is_active = !active_path.is_empty() && path == active_path && readiness.status == READY;
+
         out.push(ProjectInfo {
             path,
             name,
             id,
+            status: readiness.status,
+            exists: readiness.exists,
+            has_haft: readiness.has_haft,
+            has_specs: readiness.has_specs,
+            readiness_source: readiness.readiness_source,
+            readiness_error: readiness.readiness_error,
             is_active,
             problem_count: 0,
             decision_count: 0,
             stale_count: 0,
         });
     }
+
+    out.sort_by(|left, right| {
+        let left_rank = project_status_rank(left);
+        let right_rank = project_status_rank(right);
+
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+
     Ok(out)
+}
+
+fn project_status_rank(project: &ProjectInfo) -> i32 {
+    if project.is_active {
+        return 0;
+    }
+
+    match project.status.as_str() {
+        READY => 1,
+        NEEDS_ONBOARD => 2,
+        NEEDS_INIT => 3,
+        MISSING => 4,
+        _ => 5,
+    }
 }
 
 // ─── Search ───
@@ -225,14 +264,12 @@ pub fn save_config(
 ) -> Result<DesktopConfig, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let haft_dir = format!("{home}/.haft");
-    std::fs::create_dir_all(&haft_dir)
-        .map_err(|e| format!("create config dir: {e}"))?;
+    std::fs::create_dir_all(&haft_dir).map_err(|e| format!("create config dir: {e}"))?;
 
     let config_path = format!("{haft_dir}/config.json");
-    let serialized = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("serialize config: {e}"))?;
-    std::fs::write(&config_path, serialized)
-        .map_err(|e| format!("write config: {e}"))?;
+    let serialized =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("serialize config: {e}"))?;
+    std::fs::write(&config_path, serialized).map_err(|e| format!("write config: {e}"))?;
 
     Ok(config)
 }
@@ -311,6 +348,7 @@ fn walk_for_haft_projects(
         let path = dir.to_string_lossy().to_string();
         if !seen.contains(&path) {
             seen.insert(path.clone());
+            let readiness = inspect_project_readiness(&path);
             let name = dir
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -320,6 +358,12 @@ fn walk_for_haft_projects(
                 path,
                 name,
                 id: String::new(),
+                status: readiness.status,
+                exists: readiness.exists,
+                has_haft: readiness.has_haft,
+                has_specs: readiness.has_specs,
+                readiness_source: readiness.readiness_source,
+                readiness_error: readiness.readiness_error,
                 is_active: false,
                 problem_count: 0,
                 decision_count: 0,
@@ -352,7 +396,6 @@ fn walk_for_haft_projects(
         walk_for_haft_projects(&path, depth + 1, max_depth, out, seen);
     }
 }
-
 
 // ─── Flows ───
 

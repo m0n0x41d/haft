@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -18,6 +19,7 @@ const (
 	KindProblemCard       Kind = "ProblemCard"
 	KindSolutionPortfolio Kind = "SolutionPortfolio"
 	KindDecisionRecord    Kind = "DecisionRecord"
+	KindWorkCommission    Kind = "WorkCommission"
 	KindEvidencePack      Kind = "EvidencePack"
 	KindRefreshReport     Kind = "RefreshReport"
 )
@@ -25,7 +27,7 @@ const (
 // validKinds is the set of all valid artifact kinds (unexported — use ParseKind at boundaries).
 var validKinds = map[Kind]bool{
 	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
-	KindDecisionRecord: true, KindEvidencePack: true, KindRefreshReport: true,
+	KindDecisionRecord: true, KindWorkCommission: true, KindEvidencePack: true, KindRefreshReport: true,
 }
 
 // IsValid returns true if the kind is a recognized artifact kind.
@@ -51,6 +53,8 @@ func (k Kind) IDPrefix() string {
 		return "sol"
 	case KindDecisionRecord:
 		return "dec"
+	case KindWorkCommission:
+		return "wc"
 	case KindEvidencePack:
 		return "evid"
 	case KindRefreshReport:
@@ -71,6 +75,8 @@ func (k Kind) Dir() string {
 		return "solutions"
 	case KindDecisionRecord:
 		return "decisions"
+	case KindWorkCommission:
+		return "commissions"
 	case KindEvidencePack:
 		return "evidence"
 	case KindRefreshReport:
@@ -89,6 +95,8 @@ func (k Kind) UserFacingLabel() string {
 		return "solution portfolio"
 	case KindDecisionRecord:
 		return "decision"
+	case KindWorkCommission:
+		return "work commission"
 	case KindEvidencePack:
 		return "evidence pack"
 	case KindRefreshReport:
@@ -116,6 +124,11 @@ func (k Kind) UserFacingHeading(count int) string {
 			return "Decision"
 		}
 		return "Decisions"
+	case KindWorkCommission:
+		if count == 1 {
+			return "Work Commission"
+		}
+		return "Work Commissions"
 	case KindEvidencePack:
 		if count == 1 {
 			return "Evidence Pack"
@@ -314,6 +327,8 @@ type DecisionFields struct {
 	SelectionPolicy      string               `json:"selection_policy,omitempty"`
 	CounterArgument      string               `json:"counterargument,omitempty"`
 	WeakestLink          string               `json:"weakest_link,omitempty"`
+	TaskContext          string               `json:"task_context,omitempty"`
+	SectionRefs          []string             `json:"section_refs,omitempty"`
 	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
 	Claims               []DecisionClaim      `json:"claims,omitempty"`
 	Predictions          []DecisionPrediction `json:"predictions,omitempty"`
@@ -454,8 +469,12 @@ func ResolveComparedPortfolioRef(ctx context.Context, store ArtifactStore, portf
 	return portfolio.Meta.ID
 }
 
+var idSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
+
+const maxIDSlugLength = 48
+
 // GenerateID creates a unique artifact ID with the format
-// `<prefix>-YYYYMMDD-<6 hex chars>` (e.g. `dec-20260418-a3f7c1`).
+// `<prefix>-YYYYMMDD-<8 hex chars>` (e.g. `dec-20260418-a3f7c1d2`).
 //
 // The 32-bit random hex suffix is sourced from crypto/rand to prevent
 // filename collisions when multiple branches create artifacts on the same
@@ -470,9 +489,46 @@ func ResolveComparedPortfolioRef(ctx context.Context, store ArtifactStore, portf
 // ID. NextSequence may still be called by creators; its return value is
 // unused for ID construction.
 func GenerateID(kind Kind, seq int) string {
+	return GenerateIDWithTaskContext(kind, seq, "")
+}
+
+// GenerateIDWithTaskContext creates an artifact ID with optional filename-safe
+// task context before the random suffix, e.g. `dec-20260424-task-4-a3f7c1d2`.
+// Empty or fully-invalid context falls back to the default GenerateID shape.
+func GenerateIDWithTaskContext(kind Kind, seq int, taskContext string) string {
 	_ = seq // legacy parameter; collision resistance is provided by hex suffix
 	date := time.Now().Format("20060102")
-	return fmt.Sprintf("%s-%s-%s", kind.IDPrefix(), date, randomIDSuffix())
+	slug := sanitizeIDSlug(taskContext)
+	suffix := randomIDSuffix()
+
+	return formatGeneratedID(kind.IDPrefix(), date, slug, suffix)
+}
+
+func formatGeneratedID(prefix, date, slug, suffix string) string {
+	if slug == "" {
+		return fmt.Sprintf("%s-%s-%s", prefix, date, suffix)
+	}
+
+	return fmt.Sprintf("%s-%s-%s-%s", prefix, date, slug, suffix)
+}
+
+func sanitizeIDSlug(value string) string {
+	slug := strings.TrimSpace(value)
+	slug = strings.ToLower(slug)
+	slug = idSlugUnsafeChars.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	slug = truncateIDSlug(slug)
+	slug = strings.Trim(slug, "-")
+
+	return slug
+}
+
+func truncateIDSlug(slug string) string {
+	if len(slug) <= maxIDSlugLength {
+		return slug
+	}
+
+	return slug[:maxIDSlugLength]
 }
 
 // randomIDSuffix returns an 8-character lowercase hex string sourced from

@@ -1,0 +1,107 @@
+{
+  "schema": "haft.transcript-parity.v1",
+  "purpose": "Shared fixtures asserting that the TypeScript and Rust transcript normalizers produce identical visible output for the same input. Each case is consumed by desktop/frontend/src/lib/transcriptParity.test.ts and a matching Rust test in desktop-tauri/src/agents.rs.",
+  "normalizer": "strip_control_prompt_sections >> strip_audit_only_provider_envelope_lines",
+  "cases": [
+    {
+      "name": "empty_input_passes_through",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "name": "plain_visible_text_passes_through",
+      "input": "hello operator",
+      "expected": "hello operator"
+    },
+    {
+      "name": "single_control_prompt_section_is_removed",
+      "input": "Continue the existing desktop task.\n\nOperator follow-up:\nhello\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.",
+      "expected": ""
+    },
+    {
+      "name": "control_prompt_section_with_trailing_visible_text",
+      "input": "Continue the existing desktop task.\n\nOperator follow-up:\nhello\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.\nvisible tail",
+      "expected": "\nvisible tail"
+    },
+    {
+      "name": "orphaned_control_tail_is_removed",
+      "input": "leading visible\nOperator follow-up:\nhello\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.\ntrailing visible",
+      "expected": "leading visible\n\ntrailing visible"
+    },
+    {
+      "name": "audit_only_envelope_result_is_removed",
+      "input": "{\"type\":\"result\",\"value\":42}",
+      "expected": ""
+    },
+    {
+      "name": "audit_only_envelope_system_is_removed",
+      "input": "{\"type\":\"system\",\"note\":\"started\"}",
+      "expected": ""
+    },
+    {
+      "name": "audit_only_envelope_rate_limit_event_is_removed",
+      "input": "{\"type\":\"rate_limit_event\"}",
+      "expected": ""
+    },
+    {
+      "name": "audit_only_envelope_thread_started_is_removed",
+      "input": "{\"type\":\"thread.started\"}",
+      "expected": ""
+    },
+    {
+      "name": "audit_only_envelope_turn_started_is_removed",
+      "input": "{\"type\":\"turn.started\"}",
+      "expected": ""
+    },
+    {
+      "name": "audit_only_envelope_turn_completed_is_removed",
+      "input": "{\"type\":\"turn.completed\"}",
+      "expected": ""
+    },
+    {
+      "name": "visible_envelope_with_unknown_type_is_kept",
+      "input": "{\"type\":\"assistant_message\",\"text\":\"hi\"}",
+      "expected": "{\"type\":\"assistant_message\",\"text\":\"hi\"}"
+    },
+    {
+      "name": "envelope_without_type_field_is_kept",
+      "input": "{\"text\":\"hi\"}",
+      "expected": "{\"text\":\"hi\"}"
+    },
+    {
+      "name": "malformed_json_that_looks_like_container_is_kept",
+      "input": "{not json}",
+      "expected": "{not json}"
+    },
+    {
+      "name": "multi_line_all_audit_envelopes_collapse_to_empty",
+      "input": "{\"type\":\"turn.started\"}\n{\"type\":\"turn.completed\"}",
+      "expected": ""
+    },
+    {
+      "name": "mixed_visible_and_audit_lines_keeps_visible_only",
+      "input": "{\"type\":\"turn.started\"}\nhello\n{\"type\":\"turn.completed\"}",
+      "expected": "hello"
+    },
+    {
+      "name": "control_prompt_then_audit_envelope_then_visible",
+      "input": "Continue the existing desktop task.\n\nOperator follow-up:\nseed\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.\n{\"type\":\"system\"}\nvisible answer",
+      "expected": "\nvisible answer"
+    },
+    {
+      "name": "two_back_to_back_control_prompt_sections_are_both_removed",
+      "input": "Continue the existing desktop task.\n\nOperator follow-up:\nfirst\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.Continue the existing desktop task.\n\nOperator follow-up:\nsecond\n\nContinue from the prior context. Do not repeat completed setup unless it is necessary.\nfinal visible",
+      "expected": "\nfinal visible"
+    },
+    {
+      "name": "single_audit_envelope_line_inside_otherwise_visible_block_is_removed",
+      "input": "leading visible\n{\"type\":\"rate_limit_event\"}\ntrailing visible",
+      "expected": "leading visible\ntrailing visible"
+    },
+    {
+      "name": "json_array_envelope_does_not_match_provider_shape",
+      "input": "[1,2,3]",
+      "expected": "[1,2,3]"
+    }
+  ]
+}

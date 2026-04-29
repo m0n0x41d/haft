@@ -12,6 +12,18 @@ import (
 func mustListToolProperties(t *testing.T, toolName string) map[string]interface{} {
 	t.Helper()
 
+	inputSchema := mustListToolInputSchema(t, toolName)
+	properties, ok := inputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s properties missing or wrong type: %#v", toolName, inputSchema["properties"])
+	}
+
+	return properties
+}
+
+func mustListToolInputSchema(t *testing.T, toolName string) map[string]interface{} {
+	t.Helper()
+
 	server := NewServer()
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
@@ -73,12 +85,7 @@ func mustListToolProperties(t *testing.T, toolName string) map[string]interface{
 			t.Fatalf("%s inputSchema missing or wrong type: %#v", toolName, tool["inputSchema"])
 		}
 
-		properties, ok := inputSchema["properties"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("%s properties missing or wrong type: %#v", toolName, inputSchema["properties"])
-		}
-
-		return properties
+		return inputSchema
 	}
 
 	t.Fatalf("%s tool schema not found", toolName)
@@ -181,6 +188,20 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	}
 }
 
+func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	taskContext, ok := decisionSchema["task_context"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("task_context schema missing or wrong type: %#v", decisionSchema["task_context"])
+	}
+
+	description, _ := taskContext["description"].(string)
+	if !strings.Contains(description, "DecisionRecord ID filename") {
+		t.Fatalf("unexpected task_context description: %q", description)
+	}
+}
+
 func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T) {
 	decisionSchema := mustListToolProperties(t, "haft_decision")
 
@@ -215,6 +236,141 @@ func TestHandleToolsList_DecisionSchemaRequiresCompletePredictions(t *testing.T)
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("prediction required fields = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestHandleToolsList_CommissionSchemaExposesRunnableClaimActions(t *testing.T) {
+	commissionInputSchema := mustListToolInputSchema(t, "haft_commission")
+	commissionSchema, ok := commissionInputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("commission properties missing or wrong type: %#v", commissionInputSchema["properties"])
+	}
+
+	action, ok := commissionSchema["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("action schema missing or wrong type: %#v", commissionSchema["action"])
+	}
+
+	values, ok := action["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("action enum missing or wrong type: %#v", action["enum"])
+	}
+
+	got := map[string]bool{}
+	for _, value := range values {
+		name, ok := value.(string)
+		if !ok {
+			t.Fatalf("action enum value has wrong type: %#v", value)
+		}
+		got[name] = true
+	}
+
+	for _, want := range []string{"create", "list", "list_runnable", "show", "claim_for_preflight", "requeue", "cancel"} {
+		if !got[want] {
+			t.Fatalf("expected haft_commission action %q in schema enum %#v", want, values)
+		}
+	}
+	// Per-action conditional requirements (commission_id required for
+	// show/requeue/cancel; reason required for requeue/cancel) are
+	// enforced at the handler boundary in internal/cli/serve_commission.go,
+	// not in the MCP-advertised schema. Anthropic API rejects top-level
+	// allOf/oneOf/anyOf in input_schema (validation error
+	// "tools.N.custom.input_schema does not support oneOf, allOf, or
+	// anyOf at the top level"), so the schema only declares "action" as
+	// universally required and the handler returns an error when a
+	// conditional field is missing for the given action.
+	assertCommissionSchemaHasNoTopLevelCompositors(t, commissionInputSchema)
+
+	override, ok := commissionSchema["spec_readiness_override"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("spec_readiness_override schema missing or wrong type: %#v", commissionSchema["spec_readiness_override"])
+	}
+	if override["type"] != "object" {
+		t.Fatalf("spec_readiness_override type = %#v, want object", override["type"])
+	}
+}
+
+// assertCommissionSchemaHasNoTopLevelCompositors guards the regression
+// from 2026-04-28: a top-level allOf with conditional if/then blocks
+// passed Go-side schema construction and Haft tests, but Anthropic API
+// rejected it as input_schema validation error, taking the entire MCP
+// server offline (`/mcp` reported `1 MCP server failed`). The handler
+// at internal/cli/serve_commission.go enforces per-action requirements;
+// the schema must remain free of top-level allOf / oneOf / anyOf.
+func assertCommissionSchemaHasNoTopLevelCompositors(t *testing.T, schema map[string]interface{}) {
+	t.Helper()
+	for _, key := range []string{"allOf", "oneOf", "anyOf"} {
+		if _, present := schema[key]; present {
+			t.Fatalf("commission schema must not declare top-level %q (Anthropic API rejects it)", key)
+		}
+	}
+}
+
+// TestHandleToolsList_NoToolDeclaresTopLevelCompositors is the broader
+// version of the same guard: iterates every advertised tool and asserts
+// none of them declares top-level allOf / oneOf / anyOf in
+// inputSchema. Anthropic API rejects all three at the top level
+// regardless of which tool ships them, so ALL tools must comply.
+func TestHandleToolsList_NoToolDeclaresTopLevelCompositors(t *testing.T) {
+	server := NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	request := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "tools/list",
+		ID:      "req-no-compositors",
+	}
+
+	stdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { os.Stdout = stdout }()
+	os.Stdout = writer
+	server.handleToolsList(request)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	responseBytes, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := map[string]any{}
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		t.Fatalf("unmarshal tools/list: %v\n%s", err, string(responseBytes))
+	}
+	result, ok := response["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result missing: %#v", response["result"])
+	}
+	tools, ok := result["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools missing: %#v", result["tools"])
+	}
+	if len(tools) == 0 {
+		t.Fatalf("no tools advertised")
+	}
+
+	banned := []string{"allOf", "oneOf", "anyOf"}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("tool entry has wrong type: %#v", raw)
+		}
+		name, _ := tool["name"].(string)
+		schema, ok := tool["inputSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool %q inputSchema missing", name)
+		}
+		for _, key := range banned {
+			if _, present := schema[key]; present {
+				t.Fatalf("tool %q declares top-level %q in inputSchema; Anthropic API rejects this and takes the whole MCP server offline", name, key)
+			}
 		}
 	}
 }

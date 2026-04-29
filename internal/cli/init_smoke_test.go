@@ -11,9 +11,8 @@ import (
 // TestMergeMCPConfig_FreshProject is the minimum smoke check that haft init
 // still produces a valid MCP config after the schema/dispatcher refactors of
 // 6.2 (#62 parity_plan exposure, #63 ID format, governance_mode field, the
-// dispatchTool signature change). If init regresses, MCP-mode users (Claude
-// Code, Cursor, Gemini CLI, Codex) silently lose access to haft on next
-// install.
+// dispatchTool signature change). If init regresses, supported MCP-mode users
+// (Claude Code, Codex) silently lose access to haft on next install.
 func TestMergeMCPConfig_FreshProject(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, ".mcp.json")
@@ -93,10 +92,10 @@ func TestMergeMCPConfig_Idempotent(t *testing.T) {
 	}
 }
 
-// TestConfigureMCPClaude_CreatesProjectRootMCP verifies the Claude Code
-// integration writes .mcp.json at the project root with the HAFT_PROJECT_ROOT
-// env var so the spawned haft serve picks up the correct project context.
-func TestConfigureMCPClaude_CreatesProjectRootMCP(t *testing.T) {
+// TestConfigureMCPClaude_CreatesPortableProjectRootMCP verifies the Claude Code
+// integration writes .mcp.json at the project root with a portable
+// HAFT_PROJECT_ROOT value suitable for committed project-scoped config.
+func TestConfigureMCPClaude_CreatesPortableProjectRootMCP(t *testing.T) {
 	tmp := t.TempDir()
 
 	if err := configureMCPClaude(tmp, "haft"); err != nil {
@@ -114,8 +113,31 @@ func TestConfigureMCPClaude_CreatesProjectRootMCP(t *testing.T) {
 	if !strings.Contains(string(data), `"HAFT_PROJECT_ROOT"`) {
 		t.Errorf("expected HAFT_PROJECT_ROOT env var to be set:\n%s", string(data))
 	}
-	if !strings.Contains(string(data), tmp) {
-		t.Errorf("expected project root %q in env, got:\n%s", tmp, string(data))
+
+	var got MCPConfig
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("produced config not valid JSON: %v\n%s", err, string(data))
+	}
+
+	server := got.MCPServers["haft"]
+	root := server.Env["HAFT_PROJECT_ROOT"]
+	if root != claudeProjectRootEnv {
+		t.Errorf("HAFT_PROJECT_ROOT = %q, want portable %q", root, claudeProjectRootEnv)
+	}
+	if strings.Contains(string(data), tmp) {
+		t.Errorf("committed .mcp.json contains absolute temp path %q:\n%s", tmp, string(data))
+	}
+
+	first := string(data)
+	if err := configureMCPClaude(tmp, "haft"); err != nil {
+		t.Fatalf("configureMCPClaude second run: %v", err)
+	}
+	secondData, err := os.ReadFile(filepath.Join(tmp, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("read .mcp.json after second run: %v", err)
+	}
+	if first != string(secondData) {
+		t.Errorf("configureMCPClaude is not idempotent.\nfirst:\n%s\nsecond:\n%s", first, string(secondData))
 	}
 }
 
@@ -139,5 +161,58 @@ func TestConfigureMCPCursor_CreatesProjectScopedMCP(t *testing.T) {
 	}
 	if _, ok := got.MCPServers["haft"]; !ok {
 		t.Fatalf("expected haft entry in cursor mcp.json: %+v", got.MCPServers)
+	}
+
+	server := got.MCPServers["haft"]
+	root := server.Env["HAFT_PROJECT_ROOT"]
+	if root != cursorProjectRootEnv {
+		t.Errorf("HAFT_PROJECT_ROOT = %q, want portable %q", root, cursorProjectRootEnv)
+	}
+	if strings.Contains(string(data), tmp) {
+		t.Errorf("committed .cursor/mcp.json contains absolute temp path %q:\n%s", tmp, string(data))
+	}
+}
+
+// TestConfigureMCPCodex_CreatesPortableProjectRootMCP verifies the Codex/Air
+// project-local TOML does not commit the current machine checkout path.
+func TestConfigureMCPCodex_CreatesPortableProjectRootMCP(t *testing.T) {
+	tmp := t.TempDir()
+
+	if err := configureMCPCodex(tmp, "haft"); err != nil {
+		t.Fatalf("configureMCPCodex: %v", err)
+	}
+
+	configPath := filepath.Join(tmp, ".codex", "config.toml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected .codex/config.toml: %v", err)
+	}
+
+	text := string(data)
+	for _, fragment := range []string{
+		`[mcp_servers.haft]`,
+		`command = "haft"`,
+		`args = ["serve"]`,
+		`[mcp_servers.haft.env]`,
+		`HAFT_PROJECT_ROOT = "."`,
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("codex config missing %q:\n%s", fragment, text)
+		}
+	}
+	if strings.Contains(text, tmp) {
+		t.Fatalf("committed .codex/config.toml contains absolute temp path %q:\n%s", tmp, text)
+	}
+
+	first := text
+	if err := configureMCPCodex(tmp, "haft"); err != nil {
+		t.Fatalf("configureMCPCodex second run: %v", err)
+	}
+	secondData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read .codex/config.toml after second run: %v", err)
+	}
+	if first != string(secondData) {
+		t.Fatalf("configureMCPCodex is not idempotent.\nfirst:\n%s\nsecond:\n%s", first, string(secondData))
 	}
 }

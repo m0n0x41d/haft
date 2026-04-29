@@ -6,6 +6,41 @@ description: "Frame an engineering problem before solving it"
 
 Frame the actual problem before jumping to solutions. The bottleneck is problem quality, not solution speed.
 
+## Investigation-first discipline (BEFORE asking the user)
+
+Haft's bounded context is ONE repository. If the operator's signal
+contains umbrella words ("service", "process", "ready", "stable",
+"auth flow", "queue", etc.), DO NOT bounce back with "what do you
+mean?" — the answer almost certainly already exists in the project.
+Sweep the bounded context first:
+
+1. Call `haft_query(action="resolve_term", term="<umbrella word>")`
+   in ONE round-trip. It returns term-map entries + spec sections that
+   reference the term + past artifact mentions (decisions/notes/
+   problems). Read the `resolution` field:
+   - `resolved` → use the canonical entry directly, do not ask.
+   - `absent` → the term is not in the project's vocabulary; skip to
+     step 4.
+   - `ambiguous` → multiple candidates; jump to step 3.
+2. Cross-check with `Glob` / `Grep` / `Read` if you need to ground
+   the term in actual source code (e.g. "the auth service" — find the
+   directory or package name, look at the structure).
+3. If after investigation there is GENUINE ambiguity (multiple real
+   referents, conflicting spec sections), ask the operator ONE
+   concrete question that names the candidates you found. Bad: "what
+   do you mean by 'service'?" Good: "I found `internal/auth/oauth/`
+   and `internal/auth/sessions/` — which one is slow?"
+4. If the term is load-bearing and absent, propose adding it to
+   `.haft/specs/term-map.md` as a side-task, then frame with the
+   working definition.
+
+If `haft_problem(frame)` returns a `Project readiness` warning that the
+project is `needs_onboard`, prefer running `/h-onboard` first so the
+ProblemCard and any downstream decision can link to spec section refs.
+Tactical exception: if the problem is urgent or exploratory, proceed and
+mark the work as tactical so `haft spec coverage` will not later confuse
+it with spec-driven work.
+
 Use `haft_problem` tool with `action="frame"` and:
 - `title`: problem title
 - `signal`: what's anomalous, broken, or needs changing (required)

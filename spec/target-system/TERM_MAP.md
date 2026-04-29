@@ -17,6 +17,21 @@
 | **Note** | Micro-decision artifact: what was decided and why, with rationale validation. Auto-expires in 90 days. | Not a comment. Not a log entry. Not a TODO. | — |
 | **RefreshReport** | Artifact documenting a lifecycle action (waive, reopen, supersede, deprecate) | Not an audit log entry (though audit log exists separately). | — |
 
+## Project Specification & Harnessability
+
+| Term | Definition | NOT this | Aliases allowed |
+|------|------------|----------|-----------------|
+| **HarnessableProject** | A project whose TargetSystemSpec, EnablingSystemSpec, TermMap, workflow policy, and SpecCoverage are parseable enough for decisions and WorkCommissions to be created without inventing authority. | Not merely a repo with `.haft/`. Not a project with a README. Not a tracker project. | "harness-ready project" |
+| **ProjectSpecificationSet** | The project-local set of parseable specs: TargetSystemSpec, EnablingSystemSpec, TermMap, SpecCoverage, and WorkflowPolicy. | Not generic documentation. Not a single Markdown file. Not the SQLite artifact graph. | "spec set" |
+| **TargetSystemSpec** | Parseable specification of the target system: environment change, method, target role, materials, boundaries, interfaces, invariants, acceptance, risks, and target-domain terms. | Not implementation plan. Not repo architecture. Not a backlog. | "target spec" |
+| **EnablingSystemSpec** | Parseable specification of the engineering system that produces and maintains the target system: repository architecture, work methods, tests, agents, CI, hooks, runtime, release policy, and evidence methods. | Not the product spec. Not agent instructions alone. Not build docs alone. | "enabling spec" |
+| **SpecSection** | One stable-id unit inside a target/enabling spec with kind, statement_type, claim_layer, owner, status, valid_until, terms, dependencies, and evidence requirements. | Not a heading by itself. Not arbitrary prose. Not a TODO bullet. | "section" when context is clear |
+| **SpecCoverage** | Derived graph connecting spec sections to ProblemCards, DecisionRecords, WorkCommissions, RuntimeRuns, EvidencePacks, files, modules, functions, and tests. | Not code coverage. Not decision coverage alone. Not a percentage without edges. | "spec coverage" |
+| **SemanticArchitecture** | Explicit relation model that preserves term meanings and system boundaries: composition, dependencies, governance, verification, projection, supersession, and blocking relations. | Not folder architecture. Not an ontology diagram detached from execution. | — |
+| **SpecCheck** | Deterministic validation pass over spec carriers and parsed spec objects. Current CLI coverage is L0/L1/L1.5: syntax, required structural fields, stable IDs, term-map entry shape, optional section field shape, duplicate terms/aliases, and obvious carrier/object authority confusion. | Not LLM review. Not proof the product is correct. Not runtime evidence. | `haft spec check` |
+| **OnboardingAgent** | Bounded host-agent workflow that reads repo carriers, asks the human principal for missing decisions, drafts ProjectSpecificationSet sections, and explains why formal spec depth is required. | Not autonomous product owner. Not runtime executor. Not semantic authority. | "onboarder" |
+| **SpecPlan** | Proposed grouping from uncovered/changed spec sections into coherent DecisionRecord drafts. | Not WorkPlan. Not one decision per bullet. Not execution scheduling. | `haft spec plan` |
+
 ## Engineering Modes (User-Facing)
 
 | Term | Definition | NOT this | FPF mapping (internal only) |
@@ -58,14 +73,45 @@
 | **Core** | Architecture module: artifact graph, knowledge graph, FPF search, evidence engine, codebase analysis. Pure domain logic + persistence. No UI dependencies. | Not "core team." Not "core features." The domain kernel. |
 | **Flow** | Architecture module: task runner, worktree lifecycle, agent spawning, invariant injection, post-execution verification. | Not "workflow tool." The execution orchestration layer. |
 | **Governor** | Architecture module: background scanner, drift detection, stale refresh, invariant verification, problem factory. | Not "governance framework." The automated post-merge integrity system. |
-| **Surface** | A user-facing entry point: Desktop App, MCP Plugin, or CLI. Surfaces depend on Core/Flow/Governor. | Not "interface" in the Go sense. A product delivery channel. |
+| **Surface** | A user-facing entry point over the same Haft Core artifact graph: Desktop Cockpit, MCP Plugin, or CLI Harness. | Not "interface" in the Go sense. Not semantic authority. A product delivery channel. |
+| **Desktop Cockpit** | Primary human surface for onboarding, approvals, navigation, runtime visibility, evidence, and governance. | Not semantic authority. Not the only way to operate Haft. |
+| **MCP Plugin** | Embedded agent surface for Claude Code and Codex to reason, draft, query, create decisions, and create/inspect commissions through explicit tool contracts. | Not owner of long-running runtime lifecycle. Not generic MCP product support for every host. |
+| **CLI Harness** | Operator/runtime surface for prepare, run, status, watch, tail, result, apply, requeue, and cancel. | Not a second source of truth. Not the runtime implementation itself. |
+| **WorkflowIntent** | Typed meaning of a surface action before any prompt or command runs. | Not button text. Not an opaque prompt. |
+| **ArtifactTransition** | Explicit artifact proposal or mutation produced by a workflow: draft section, active section, DecisionRecord, WorkCommission, RuntimeRun, Evidence, or derived coverage update. | Not chat output. Not UI-only state. |
 | **Knowledge graph** | Query interface over artifact→code→module→dependency relationships. Maps decisions to files, invariants to modules, drift to impact. | Not a Neo4j graph. SQLite queries over existing tables with cycle-safe traversal. |
+
+## Work Execution
+
+| Term | Definition | NOT this |
+|------|-----------|----------|
+| **ImplementationPlan** | A graph of intended execution work derived from one or more active DecisionRecords. Contains WorkCommissions, dependencies, locksets, evidence requirements, and scheduling policy. | Not a DecisionRecord. Not a flat TODO list. Not a tracker epic. |
+| **WorkCommission** | Human-authorized, bounded permission to execute a selected DecisionRecord in a declared Scope. It records repo, branch/base SHA, scope hash, gates, evidence requirements, projection policy, freshness snapshot, and allowed runner policy. | Not the decision itself. Not a Linear/Jira issue. Not a RuntimeRun. Not a prompt hint. |
+| **Scope** | Closed authorization object for what a WorkCommission may touch: repo/ref, base SHA, target branch policy, allowed paths, forbidden paths, affected files/modules, allowed actions, optional allowed modules, and associated lockset. Its canonical serialized form is hashed into the commission snapshot. | Not a fuzzy task description. Not merely affected_files. Not a workspace safety check. |
+| **CommissionSnapshot** | Deterministic equality set frozen when a WorkCommission is queued: DecisionRecord revision/hash, ProblemCard ref/revision, Scope hash, base SHA, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state. Preflight compares this set before Execute. | Not runtime evidence. Not semantic freshness judgement. |
+| **RuntimeRun** | One concrete execution attempt against a WorkCommission by a runner such as Open-Sleigh. Carries runner id, lease, phase outcomes, logs/evidence refs, and terminal result. | Not the WorkCommission. Not proof that the decision is correct. |
+| **Preflight** | Mandatory readiness check before a WorkCommission can enter RuntimeRun execution. Checks commission state, linked DecisionRecord freshness, scope drift, lease ownership, policies, and runner eligibility. | Not implementation. Not a best-effort agent summary. |
+| **AutonomyEnvelope** | Explicit human-approved bounds for batch/YOLO execution: max commissions, concurrency, paths/repos allowed, forbidden actions, risk ceiling, failure strategy, and one-way-door exclusions. | Not unlimited permission. Not a way to skip freshness, evidence, lock, or policy gates. |
+| **Lease** | Short-lived exclusive claim on a WorkCommission or RuntimeRun phase held by one runner. Prevents two agents from executing the same work or overlapping locksets concurrently. | Not ownership of the decision. Not long-term assignment. |
+| **Lockset** | Concurrency-control projection of Scope: files/modules/resources used to prevent overlapping running commissions. | Not authorization by itself. Not affected_files evidence. Not a git lock. |
+
+## External Coordination
+
+| Term | Definition | NOT this |
+|------|-----------|----------|
+| **ExternalProjection** | Idempotent binding from Haft work state to an external coordination carrier such as Linear/Jira/GitHub Issues. Stores external id, desired state, observed state, sync hash, drift, and last sync time. | Not semantic authority. Not `.haft/*.md` artifact Projection. |
+| **ProjectionPolicy** | WorkCommission/ImplementationPlan setting that determines external publishing: `local_only`, `external_optional`, or `external_required`, plus targets and audience. | Not tracker configuration alone. Not execution permission by itself. |
+| **ProjectionIntent** | Deterministic fact packet saying what should be communicated externally: state, reason, blockers, next actions, required links, redactions, and forbidden claims. | Not prose. Not an LLM decision. |
+| **ProjectionWriterAgent** | Bounded LLM writer that turns ProjectionIntent into plain external text for managers/analysts/leads. It may choose wording only. | Not the authority for status, severity, completion, scope, or promises. |
+| **ProjectionDraft** | Candidate title/body/comment/field update produced from ProjectionIntent by the writer. Must pass validation before publication. | Not published truth until connector writes it. |
+| **ProjectionValidation** | Deterministic check that a ProjectionDraft preserves the closed ProjectionIntent field-by-field, includes required links, follows omission rules, omits forbidden claims, and does not invent status, owner, date, severity, completion, scope, or promises. | Not a semantic source of work state. |
+| **ProjectionDebt** | Explicit state created when a WorkCommission with `external_required` has valid execution evidence but required external publication has not successfully synced. Local execution may be complete; external coordination is not closed. | Not execution failure. Not proof the carrier is authoritative. |
 
 ## Persistence
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **Projection** | Markdown file in `.haft/` generated from the database. Human-readable, git-tracked, reviewable in PRs. | Not the source of truth (database is). Not editable (overwritten on next artifact change). |
+| **Projection** | Markdown file in `.haft/` generated from the database. Human-readable, git-tracked, reviewable in PRs. Unqualified "Projection" means this artifact projection. | Not semantic authority by itself. Not editable (overwritten on next artifact change). Not ExternalProjection. |
 | **Artifact graph** | The DAG of artifacts: problems link to portfolios link to decisions link to evidence. Stored in SQLite. | Not a file tree. Not a git graph. A semantic relationship graph. |
 | **.haft/ directory** | Project-local directory containing projections, project.yaml, and subdirectories for each artifact kind. Git-tracked. | Not the database. Not config. The shared-with-team surface. |
 | **~/.haft/** | User-local directory: project databases, cross-project index, config, registry. NOT git-tracked. | Not project-specific. Global to the user. |

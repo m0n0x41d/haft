@@ -294,6 +294,7 @@ function buildDecisionInput(portfolio: PortfolioDetail): DecisionCreateInput {
       blast_radius: "",
     },
     refresh_triggers: [""],
+    section_refs: [],
     weakest_link: selectedVariant?.weakest_link ?? "",
     valid_until: "",
     context: "",

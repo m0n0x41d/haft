@@ -171,6 +171,52 @@ func TestProblemResponse_ShowsProblemType(t *testing.T) {
 	}
 }
 
+// Issue #71 regression: explore responses must inline the canonical variant
+// id-to-title index. Without it, the agent's only path to the ids was scraping
+// a "Generated id: V1" log line from explore output, which ChatGPT/Codex agents
+// routinely missed and then sent free-form titles to compare.
+func TestSolutionResponse_ExploreShowsVariantsIndexAndUsageHint(t *testing.T) {
+	fields, err := json.Marshal(artifact.PortfolioFields{
+		Variants: []artifact.Variant{
+			{ID: "V1", Title: "Kafka"},
+			{ID: "V2", Title: "NATS JetStream"},
+			{ID: "V3", Title: "Redis Streams"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "sol-001",
+			Kind:  artifact.KindSolutionPortfolio,
+			Title: "Transport portfolio",
+		},
+		StructuredData: string(fields),
+	}
+
+	response := present.SolutionResponse("explore", a, "/tmp/sol.md", "")
+
+	required := []string{
+		"Variants:",
+		"V1 — Kafka",
+		"V2 — NATS JetStream",
+		"V3 — Redis Streams",
+		"`scores`",
+		"`dominated_variants",
+		"`pareto_tradeoffs",
+		"`non_dominated_set`",
+		"`selected_ref`",
+		`haft_solution(action="compare")`,
+	}
+	for _, want := range required {
+		if !strings.Contains(response, want) {
+			t.Fatalf("explore response missing %q:\n%s", want, response)
+		}
+	}
+}
+
 func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 	fields, err := json.Marshal(artifact.PortfolioFields{
 		Variants: []artifact.Variant{
@@ -295,6 +341,24 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 				Reason: "evidence degraded (R_eff: 0.40)",
 			},
 		},
+		OpenCommissions: []artifact.WorkCommissionStatus{
+			{
+				ID:               "wc-stale",
+				State:            "queued",
+				DecisionRef:      "dec-stale",
+				AttentionReason:  "open longer than 24h0m0s",
+				SuggestedActions: []string{"inspect", "requeue", "cancel"},
+			},
+		},
+		CommissionAttention: []artifact.WorkCommissionStatus{
+			{
+				ID:               "wc-stale",
+				State:            "queued",
+				DecisionRef:      "dec-stale",
+				AttentionReason:  "open longer than 24h0m0s",
+				SuggestedActions: []string{"inspect", "requeue", "cancel"},
+			},
+		},
 	}
 
 	output := present.StatusResponse(data)
@@ -304,6 +368,8 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		"### Pending (1)",
 		"### Unassessed (1)",
 		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
+		"### WorkCommissions Need Attention (1)",
+		"`wc-stale` queued → dec-stale — open longer than 24h0m0s — actions: inspect, requeue, cancel",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)

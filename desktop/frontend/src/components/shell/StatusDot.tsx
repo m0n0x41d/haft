@@ -1,8 +1,12 @@
+import { taskHasTerminalOutcome, taskIsLive, taskRunState } from "../../lib/taskInput.ts";
+
 export type TaskStatus =
   | "running"
+  | "checkpointed"
   | "idle"
   | "completed"
   | "failed"
+  | "blocked"
   | "cancelled"
   | "pending"
   | (string & {}); // accepts unknown strings at the type boundary; unknown → muted
@@ -13,12 +17,15 @@ export interface StatusDotProps {
 }
 
 const STATUS_CLASSES: Record<string, string> = {
-  running: "bg-accent animate-pulse",
-  idle: "bg-accent",
+  blocked: "bg-danger",
+  cancelled: "bg-text-muted",
+  checkpointed: "bg-warning",
   completed: "bg-success",
   failed: "bg-danger",
-  cancelled: "bg-text-muted",
+  idle: "bg-accent",
   pending: "bg-warning",
+  running: "bg-accent animate-pulse",
+  unavailable: "bg-text-muted",
 };
 
 /**
@@ -27,8 +34,43 @@ const STATUS_CLASSES: Record<string, string> = {
  * streaming indicator throughout the cockpit.
  */
 export function StatusDot({ status, className = "" }: StatusDotProps) {
-  const tone = STATUS_CLASSES[status] ?? "bg-text-muted";
+  const tone = statusClassName(status);
+
   return (
     <span className={`h-2 w-2 shrink-0 rounded-full ${tone} ${className}`} />
   );
+}
+
+function statusClassName(status: string): string {
+  const state = taskRunState(status);
+
+  if (taskIsLive(state)) {
+    return state.mode === "running"
+      ? STATUS_CLASSES.running
+      : STATUS_CLASSES.idle;
+  }
+
+  if (state.kind === "needs_operator") {
+    return state.reason === "blocked"
+      ? STATUS_CLASSES.blocked
+      : STATUS_CLASSES[state.reason] ?? STATUS_CLASSES.unavailable;
+  }
+
+  if (taskHasTerminalOutcome(state, "completed")) {
+    return STATUS_CLASSES.completed;
+  }
+
+  if (taskHasTerminalOutcome(state, "failed")) {
+    return STATUS_CLASSES.failed;
+  }
+
+  if (taskHasTerminalOutcome(state, "cancelled")) {
+    return STATUS_CLASSES.cancelled;
+  }
+
+  if (state.kind === "pending") {
+    return STATUS_CLASSES.pending;
+  }
+
+  return STATUS_CLASSES.unavailable;
 }

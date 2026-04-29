@@ -17,7 +17,8 @@ import {
   resolveAdoptReopen,
   resolveAdoptWaive,
   spawnTask,
-  writeTaskInput,
+  setTaskAutoRun,
+  submitTaskFollowUp,
   type ChatTranscriptState,
   type DesktopConfig,
   type InstalledAgent,
@@ -25,6 +26,7 @@ import {
   type TaskOutputEvent,
   type TaskState,
 } from "../lib/api";
+import { mergeTaskStatusEvent, type TaskStatusEvent } from "../lib/taskState";
 import { ChatInput } from "../components/ChatInput";
 import { ChatView } from "../components/ChatView";
 import { IrreversibleActionDialog } from "../components/IrreversibleActionDialog";
@@ -38,6 +40,17 @@ import {
   type TaskExecutionLadder,
   type ExecutionLadderStep,
 } from "./taskExecutionLadder";
+import {
+  taskCanArchive,
+  taskCanCancel,
+  taskFollowUpAction,
+  taskFollowUpSubmission,
+  taskHasTerminalOutcome,
+  taskInputCapability,
+  taskIsLive,
+  taskRunState,
+} from "../lib/taskInput.ts";
+import { visibleInitialPrompt } from "../lib/taskPrompt";
 
 type AdoptResolutionMode = "drift" | "stale";
 type AdoptResolutionContext = {
@@ -221,8 +234,8 @@ export function Tasks({
       }
     });
 
-    const stopStatus = subscribe<TaskState>("task.status", (payload) => {
-      setTasks((current) => mergeTaskList(current, payload));
+    const stopStatus = subscribe<TaskStatusEvent>("task.status", (payload) => {
+      setTasks((current) => mergeTaskStatusEvent(current, payload));
     });
 
     return () => {
@@ -268,8 +281,12 @@ export function Tasks({
   const workspacePath = detail ? detail.worktree_path || detail.project_path : "";
   const adoptResolution = getAdoptResolutionContext(detail);
   const executionLadder = detail ? getTaskExecutionLadder(detail) : null;
+  const detailRunState = taskRunState(detail?.status ?? "");
+  const detailIsLive = taskIsLive(detailRunState);
   const displayStatus = executionLadder?.currentLabel ?? detail?.status ?? "";
-  const shouldShowInitialBrief = detail ? shouldRenderInitialBrief(detail) : false;
+  const initialBrief = detail
+    ? visibleInitialPrompt(detail.prompt, detail.chat_blocks)
+    : "";
 
   useEffect(() => {
     setResolutionAction("");
@@ -576,31 +593,39 @@ export function Tasks({
     }
   };
 
-  const isConversationalAgent = detail
-    ? detail.agent === "claude" || detail.agent === "codex"
-    : false;
+  const inputCapability = taskInputCapability(detailRunState);
+  const followUpAction = taskFollowUpAction(detailRunState);
 
   const handleFollowUpSubmit = async (value: string) => {
     if (!detail) {
       return;
     }
 
-    // Allow sending when running, idle (turn finished, awaiting follow-up),
-    // or for conversational agents even when completed.
-    const canSend = detail.status === "running"
-      || detail.status === "idle"
-      || isConversationalAgent;
-
-    if (!canSend) {
+    if (followUpAction.kind === "none") {
       return;
     }
 
     setIsSubmittingFollowUp(true);
 
     try {
-      await writeTaskInput(detail.id, value);
+      const submission = taskFollowUpSubmission(detail.id, detailRunState, value);
+      const result = await submitTaskFollowUp(submission);
+
+      if (result.kind === "live_input_written") {
+        scheduleTaskTranscriptSync(detail.id);
+      }
+
+      if (result.kind === "continuation_started") {
+        const { task } = result;
+
+        setTasks((current) => mergeTaskList(
+          current.filter((item) => item.id !== detail.id),
+          task,
+        ));
+        setSelectedTask(task.id);
+        await refresh();
+      }
       setFollowUpInput("");
-      scheduleTaskTranscriptSync(detail.id);
     } catch (error) {
       reportError(error, "task follow-up");
     } finally {
@@ -657,17 +682,16 @@ export function Tasks({
                   {detail.title}
                 </span>
                 <span className="text-xs text-text-muted">{detail.agent}</span>
-                {detail.status === "running" && detail.started_at && (
+                {detailIsLive && detail.started_at && (
                   <ElapsedTimer startedAt={detail.started_at} />
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* Auto-run toggle */}
-                {detail.status === "running" && (
+                {detailIsLive && (
                   <button
                     onClick={async () => {
                       try {
-                        const { setTaskAutoRun } = await import("../lib/api");
                         await setTaskAutoRun(detail.id, !detail.auto_run);
                         setTasks((prev) =>
                           prev.map((t) =>
@@ -686,7 +710,7 @@ export function Tasks({
                     {detail.auto_run ? "Auto-run" : "Checkpointed"}
                   </button>
                 )}
-                {detail.status === "running" && (
+                {taskCanCancel(detailRunState) && (
                   <button
                     onClick={() => handleCancel(detail.id)}
                     className="rounded-lg border border-danger/20 bg-danger/10 px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
@@ -694,7 +718,7 @@ export function Tasks({
                     Cancel
                   </button>
                 )}
-                {detail.status === "Ready for PR" && (
+                {taskHasTerminalOutcome(detailRunState, "ready_for_pr") && (
                   <button
                     onClick={() => void handleCreatePullRequest(detail)}
                     disabled={resolutionAction !== ""}
@@ -721,7 +745,7 @@ export function Tasks({
                 >
                   Hand off
                 </button>
-                {detail.status !== "running" && (
+                {taskCanArchive(detailRunState) && (
                   <button
                     onClick={() => handleArchive(detail.id)}
                     className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-3"
@@ -740,10 +764,10 @@ export function Tasks({
             className="flex flex-1 flex-col justify-end overflow-y-auto px-6 py-4"
           >
             <div className="space-y-3">
-              {shouldShowInitialBrief && (
+              {initialBrief !== "" && (
                 <div className="flex justify-end">
                   <div className="max-w-[70%] rounded-2xl rounded-tr-sm bg-accent/10 px-4 py-3">
-                    <p className="whitespace-pre-wrap text-sm text-text-primary">{detail.prompt}</p>
+                    <p className="whitespace-pre-wrap text-sm text-text-primary">{initialBrief}</p>
                   </div>
                 </div>
               )}
@@ -757,7 +781,7 @@ export function Tasks({
 
           {/* Input area at bottom */}
           <div className="shrink-0">
-            {adoptResolution && detail.status !== "running" && (
+            {adoptResolution && !detailIsLive && (
               <div className="border-t border-border bg-surface-1/50 px-4 pt-3">
                 <div className="mb-3 rounded-xl border border-border bg-surface-0 px-4 py-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -825,17 +849,9 @@ export function Tasks({
 
             <ChatInput
               agentLabel={detail.agent}
-              disabled={detail.status !== "running" && detail.status !== "idle" && !isConversationalAgent}
+              disabled={inputCapability.kind === "unavailable"}
               isSubmitting={isSubmittingFollowUp}
-              placeholder={
-                detail.status === "running"
-                  ? "Message..."
-                  : detail.status === "idle"
-                    ? "Continue this conversation..."
-                    : isConversationalAgent
-                      ? "Continue this conversation..."
-                      : "Task ended"
-              }
+              placeholder={inputCapability.placeholder}
               value={followUpInput}
               onChange={setFollowUpInput}
               onSubmit={handleFollowUpSubmit}
@@ -1023,7 +1039,6 @@ function NewTaskModal({
                 <>
                   <option value="claude">Claude Code</option>
                   <option value="codex">Codex</option>
-                  <option value="haft">Haft Agent</option>
                 </>
               )}
             </select>
@@ -1086,10 +1101,12 @@ function StatusBadge({ status }: { status: string }) {
     Planned: "border-border bg-surface-2 text-text-muted",
     running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
     Running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    checkpointed: "border-warning/20 bg-warning/10 text-warning",
     idle: "border-accent/30 bg-accent/10 text-accent",
     Verifying: "border-warning/20 bg-warning/10 text-warning",
     completed: "border-success/20 bg-success/10 text-success",
     failed: "border-danger/20 bg-danger/10 text-danger",
+    blocked: "border-danger/20 bg-danger/10 text-danger",
     cancelled: "border-border bg-surface-2 text-text-muted",
     interrupted: "border-warning/20 bg-warning/10 text-warning",
     "Ready for PR": "border-accent/30 bg-accent/10 text-accent",
@@ -1186,6 +1203,7 @@ function HandoffModal({
   onConfirm: () => void;
 }) {
   const availableAgents = agents.filter((agent) => agent.kind !== sourceTask.agent);
+  const sourceRunState = taskRunState(sourceTask.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -1231,14 +1249,14 @@ function HandoffModal({
 
               {availableAgents.length === 0 && (
                 <>
+                  <option value="claude">Claude Code</option>
                   <option value="codex">Codex</option>
-                  <option value="haft">Haft Agent</option>
                 </>
               )}
             </select>
           </div>
 
-          {sourceTask.status === "running" && (
+          {taskIsLive(sourceRunState) && (
             <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning">
               The source task is still marked running. The handoff will preserve context, but you should
               reconcile workspace state before treating the previous output as final.
@@ -1304,20 +1322,6 @@ function mergeTaskTranscript(
       ? transcript.error_message
       : task.error_message,
   };
-}
-
-function shouldRenderInitialBrief(task: Pick<TaskState, "prompt" | "chat_blocks">): boolean {
-  const prompt = task.prompt.trim();
-
-  if (prompt === "") {
-    return false;
-  }
-
-  const transcriptHasPrompt = task.chat_blocks.some((block) =>
-    block.role === "user" && (block.text ?? "").trim() === prompt,
-  );
-
-  return !transcriptHasPrompt;
 }
 
 function getAdoptResolutionContext(

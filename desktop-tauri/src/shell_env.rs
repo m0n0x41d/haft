@@ -32,10 +32,7 @@ pub fn resolve_user_shell_env() -> Vec<(String, String)> {
     };
 
     let text = String::from_utf8_lossy(&stdout);
-    let env: Vec<(String, String)> = text
-        .lines()
-        .filter_map(parse_env_line)
-        .collect();
+    let env: Vec<(String, String)> = text.lines().filter_map(parse_env_line).collect();
 
     if env.is_empty() {
         return std::env::vars().collect();
@@ -50,10 +47,8 @@ pub fn build_agent_env(
     base: &[(String, String)],
     extras: &[(&str, &str)],
 ) -> HashMap<String, String> {
-    let mut map: HashMap<String, String> = base
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let mut map: HashMap<String, String> =
+        base.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     for (k, v) in extras {
         map.insert(k.to_string(), v.to_string());
@@ -191,11 +186,17 @@ mod tests {
             ("PATH".into(), "/usr/bin".into()),
             ("HOME".into(), "/home/test".into()),
         ];
-        let extras = [("TERM", "xterm-256color"), ("HAFT_PROJECT_ROOT", "/tmp/proj")];
+        let extras = [
+            ("TERM", "xterm-256color"),
+            ("HAFT_PROJECT_ROOT", "/tmp/proj"),
+        ];
         let merged = build_agent_env(&base, &extras);
 
         assert_eq!(merged.get("PATH").map(String::as_str), Some("/usr/bin"));
-        assert_eq!(merged.get("TERM").map(String::as_str), Some("xterm-256color"));
+        assert_eq!(
+            merged.get("TERM").map(String::as_str),
+            Some("xterm-256color")
+        );
         assert_eq!(
             merged.get("HAFT_PROJECT_ROOT").map(String::as_str),
             Some("/tmp/proj")

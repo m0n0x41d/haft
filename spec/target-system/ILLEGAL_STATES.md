@@ -18,6 +18,22 @@
 | 8 | Note with >70% title word overlap with active DecisionRecord | Note duplicates an existing decision. | `haft_note` rejects at >70% overlap. Warns at 50-70%. |
 | 9 | Artifact with status `addressed` that is not a ProblemCard | Only problems can be "addressed." Other artifacts use superseded/deprecated. | `close` action only on ProblemCard kind. |
 
+## Project Specification & Harnessability
+
+| # | Illegal state | Why | Enforcement |
+|---|--------------|-----|-------------|
+| S1 | EnablingSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The enabling system exists to produce the target system. If the target role/boundary is not admissible, enabling mechanics will silently define product intent. | `spec check` blocks enabling readiness until required target sections pass deterministic L0/L1/L1.5 validation. |
+| S2 | SpecSection without stable id, kind, statement_type, owner, or status | The section cannot participate in coverage, staleness, authority, or evidence checks. | Strict markdown parser rejects the section. |
+| S3 | One SpecSection mixes definition, admissibility, duty, evidence, and explanation claims | Mixed statement types hide authority and evidence boundaries. | `spec check` flags mixed load-bearing language and requires split sections. |
+| S4 | Load-bearing term used in an active SpecSection without a TermMap entry | Agents and humans may use the same word differently while believing they agree. | `spec check` flags unknown terms; active readiness requires definitions for load-bearing terms. |
+| S5 | Same term defined differently in target and enabling specs without domain qualification | Target/enabling semantic drift becomes invisible. | TermMap validator requires one definition or explicit domain-qualified terms. |
+| S6 | DecisionRecord created from spec planning without SpecSection refs when a ProjectSpecificationSet is active | The decision cannot be traced back to the formal harness. | `spec plan` and decision tools require section refs unless user explicitly creates an out-of-spec exploratory decision. |
+| S7 | WorkCommission generated from a spec-linked DecisionRecord without carrying spec section refs in its snapshot | Runtime evidence would not update SpecCoverage. | Commission builder copies section refs into CommissionSnapshot and rejects missing refs for spec-linked decisions. |
+| S8 | RuntimeRun evidence accepted as satisfying a SpecSection without naming the exact section and claim | Evidence becomes generic reassurance, not coverage. | Evidence ingest requires artifact_ref + claim/section ref for spec coverage. |
+| S9 | SpecCoverage stored as a manually edited status | Coverage is derived from links and evidence. Manual status will drift. | SpecCoverage states are query-time projections only. |
+| S10 | OnboardingAgent rewrites target-system role, boundary, or acceptance without human approval | The agent would become product authority. | Load-bearing target sections require human approval before becoming active. |
+| S11 | Harness runtime starts commissioned work in a project marked `needs_onboard` for the relevant scope | Execution would proceed without the semantic architecture needed to judge correctness. | Preflight checks ProjectSpecificationSet readiness for spec-required work. Tactical explicit override records an out-of-spec commission. |
+
 ## Evidence & Trust
 
 | # | Illegal state | Why | Enforcement |
@@ -59,6 +75,26 @@
 | 24 | SQLite and `.haft/*.md` projection disagree on artifact content | Dual-truth corrupts team workflow. SQLite is runtime authority; projections are exchange format. | `WriteFile()` regenerates projection on every create/update. `haft sync` is explicit reconcile, fails closed on schema mismatch. |
 | 25 | Derived phase (Pending/Shipped/Stale) stored in database | Phases are computed from status + evidence state. Storing them creates stale-view bugs. | Phases computed at query time only. Never written to artifacts table. |
 | 26 | Advisory recommendation (`selected_ref`) treated as human choice in delegated reasoning | Violates Transformer Mandate. Agent recommends; human confirms before `/h-decide`. | Skill instructions enforce pause at Choose→Execute boundary. NavStrip shows "Available: /h-decide" not "Executing: /h-decide". |
+
+## Work Execution & External Projection (vNext)
+
+| # | Illegal state | Why | Enforcement |
+|---|--------------|-----|-------------|
+| 27 | RuntimeRun without a WorkCommission | Execution must be authorized separately from the decision. | Runner API accepts `commission_id`, not free-form decision/task text. |
+| 28 | WorkCommission running while linked DecisionRecord is stale, superseded, deprecated, or hash-mismatched | A commission cannot extend the life of the decision that authorized it. | Mandatory preflight freshness gate before `running`. |
+| 29 | WorkCommission start without an exclusive lease | Two runners can duplicate work or race on the same scope. | Atomic `claim_for_preflight` / `start_after_preflight` operation. |
+| 30 | Two running WorkCommissions with overlapping locksets under one ImplementationPlan | Parallel agents will create avoidable merge conflicts and invalid evidence. | Scheduler lockset conflict check before lease grant. |
+| 31 | YOLO/AutonomyEnvelope skipping freshness, evidence, lease, lockset, or one-way-door gates | YOLO is continuation policy, not authority expansion. | Envelope only controls auto-advance; gates remain unconditional. |
+| 32 | Agent expands an AutonomyEnvelope beyond its approved repos/paths/actions/risk ceiling | The runner would self-author authority. | Any out-of-envelope need moves commission to `needs_human_review`. |
+| 33 | ExternalProjection treated as WorkCommission/DecisionRecord authority | Linear/Jira/GitHub are carriers; their status changes are not evidence. | External observed state records drift/conflict only. Haft status changes require Haft evidence/actions. |
+| 34 | ProjectionWriterAgent deciding status, severity, scope, owner, deadline, or completion | LLM writer is prose transformation only. Truth is deterministic Haft state. | ProjectionIntent carries facts; ProjectionValidation rejects invented/missing claims. |
+| 35 | External projection required for local execution correctness | Haft must remain local-first and usable without tracker credentials. | `projection_policy=local_only` is a first-class mode; connector failure cannot invalidate RuntimeRun evidence. |
+| 36 | RuntimeRun mutates outside WorkCommission Scope but inside the allowed workspace | Workspace safety is not commission authority. An agent can stay in the repo while editing the wrong slice. | Scope carried in Session/AdapterSession; every mutating adapter call checks Scope; terminal diff validation hard-fails `mutation_outside_commission_scope`. |
+| 37 | Human approval reused after CommissionSnapshot drift | Approval applies to the exact decision/scope/base/envelope/plan state the human saw. Reusing it after drift silently expands authority. | HumanGateApproval references the snapshot hash; any snapshot mismatch invalidates approval and requires re-preflight/re-approval. |
+| 38 | ImplementationPlan revision changes after WorkCommission lease without revalidation | Batch/YOLO dependencies, locksets, and ordering assumptions may be stale. | `start_after_preflight` compares plan revision; mismatch releases or blocks the lease before Execute. |
+| 39 | `external_required` WorkCommission reaches terminal external-closed state with failed/missing publication and no ProjectionDebt | Execution evidence and external carrier closure are different facts. The system needs an explicit debt state. | Successful local evidence may produce `completed_with_projection_debt`; external closed requires debt resolution. |
+| 40 | Base SHA or admitted repo context changes after queueing without deterministic re-preflight | The selected DecisionRecord may still be active while the code context changed underneath it. | CommissionSnapshot includes base SHA; preflight compares current repo context and blocks/re-preflights on mismatch. |
+| 41 | Tracker terminal state surfaced as completion without adjacent Haft evidence state | External carrier state is a dangerous proxy for work truth. | Dashboards/projections render external state as carrier state and include Haft evidence/completion state next to it. |
 
 ## Known Gaps (not yet enforced)
 

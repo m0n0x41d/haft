@@ -52,6 +52,7 @@ Actions:
 				"action":                 map[string]any{"type": "string", "enum": []string{"frame", "adopt", "select", "characterize", "close"}, "description": "frame | adopt | select | characterize | close"},
 				"ref":                    map[string]any{"type": "string", "description": "Existing problem ID to adopt (adopt)"},
 				"title":                  map[string]any{"type": "string", "description": "Problem title (frame)"},
+				"task_context":           map[string]any{"type": "string", "description": "Optional filename slug context, e.g. task-12 (frame)"},
 				"problem_type":           map[string]any{"type": "string", "description": "optimization | diagnosis | search | synthesis (frame)"},
 				"signal":                 map[string]any{"type": "string", "description": "What's anomalous or broken (frame)"},
 				"constraints":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Hard limits (frame)"},
@@ -98,6 +99,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 	case "frame":
 		input := artifact.ProblemFrameInput{
 			Title:                 jsonStr(args, "title"),
+			TaskContext:           jsonStr(args, "task_context"),
 			ProblemType:           jsonStr(args, "problem_type"),
 			Signal:                jsonStr(args, "signal"),
 			Acceptance:            jsonStr(args, "acceptance"),
@@ -264,6 +266,7 @@ Actions:
 			"properties": map[string]any{
 				"action":        map[string]any{"type": "string", "enum": []string{"explore", "compare", "similar"}, "description": "explore | compare | similar"},
 				"query":         map[string]any{"type": "string", "description": "Search query for similar past solutions (similar)"},
+				"task_context":  map[string]any{"type": "string", "description": "Optional filename slug context, e.g. task-12 (explore)"},
 				"problem_ref":   map[string]any{"type": "string", "description": "Problem ID to solve (explore)"},
 				"portfolio_ref": map[string]any{"type": "string", "description": "Portfolio ID to compare (compare)"},
 				"variants": map[string]any{
@@ -400,6 +403,7 @@ func (t *HaftSolutionTool) Execute(ctx context.Context, argsJSON string) (agent.
 func (t *HaftSolutionTool) explore(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
 	input := artifact.ExploreInput{
 		ProblemRef:               jsonStr(args, "problem_ref"),
+		TaskContext:              jsonStr(args, "task_context"),
 		Context:                  jsonStr(args, "context"),
 		Mode:                     jsonStr(args, "mode"),
 		NoSteppingStoneRationale: jsonStr(args, "no_stepping_stone_rationale"),
@@ -944,6 +948,11 @@ Actions:
 					"items":       map[string]any{"type": "string"},
 					"description": "When to re-evaluate this decision (decide)",
 				},
+				"section_refs": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "SpecSection IDs governed by this DecisionRecord (decide)",
+				},
 				"predictions": map[string]any{
 					"type":        "array",
 					"description": "Testable predictions — measure will check each one (decide)",
@@ -962,6 +971,7 @@ Actions:
 				"governance_mode":  map[string]any{"type": "string", "enum": []string{"module", "exact"}, "description": "How affected_files relate to drift detection. 'module' (default): each file widens to its parent dir; sibling additions count as governed drift. 'exact': only listed files governed (decide)"},
 				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide/evidence)"},
 				"context":          map[string]any{"type": "string", "description": "Optional context name (decide)"},
+				"task_context":     map[string]any{"type": "string", "description": "Optional task/context text sanitized into the DecisionRecord ID filename (decide)"},
 				"search_keywords":  map[string]any{"type": "string", "description": "Space-separated synonyms and related terms for search enrichment (decide)"},
 				"decision_ref":     map[string]any{"type": "string", "description": "Decision ID (measure)"},
 				"findings":         map[string]any{"type": "string", "description": "What was observed (measure)"},
@@ -1131,6 +1141,11 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		return agent.ToolResult{}, err
 	}
 
+	sectionRefs, err := jsonStrictStringArray(args, "section_refs")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	affectedFiles, err := jsonStrictStringArray(args, "affected_files")
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -1162,6 +1177,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		WeakestLink:     jsonStr(args, "weakest_link"),
 		ValidUntil:      jsonStr(args, "valid_until"),
 		Context:         jsonStr(args, "context"),
+		TaskContext:     jsonStr(args, "task_context"),
 		Mode:            jsonStr(args, "mode"),
 		GovernanceMode:  jsonStr(args, "governance_mode"),
 		Invariants:      invariants,
@@ -1170,6 +1186,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		Admissibility:   admissibility,
 		EvidenceReqs:    evidenceReqs,
 		RefreshTriggers: refreshTriggers,
+		SectionRefs:     sectionRefs,
 		AffectedFiles:   affectedFiles,
 		SearchKeywords:  jsonStr(args, "search_keywords"),
 		WhyNotOthers:    whyNotOthers,
@@ -1576,6 +1593,7 @@ Actions:
 			"properties": map[string]any{
 				"action":           map[string]any{"type": "string", "enum": []string{"scan", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
 				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to act on (waive/reopen/supersede/deprecate)"},
+				"task_context":     map[string]any{"type": "string", "description": "Optional filename slug context for refresh reports and reopened problems"},
 				"reason":           map[string]any{"type": "string", "description": "Why this action is being taken"},
 				"new_valid_until":  map[string]any{"type": "string", "description": "(waive) New expiry date RFC3339 or YYYY-MM-DD. Default: +90 days"},
 				"evidence":         map[string]any{"type": "string", "description": "(waive) Evidence supporting the extension"},
@@ -1594,6 +1612,7 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 	}
 
 	action, _ := args["action"].(string)
+	taskContext := jsonStr(args, "task_context")
 
 	switch action {
 	case "scan":
@@ -1628,7 +1647,7 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "waive", reason, "extended")
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, t.store, t.haftDir, ref, "waive", reason, "extended", taskContext)
 		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshWaive, a, nil, "")), nil
 
 	case "reopen":
@@ -1637,11 +1656,11 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.ToolResult{}, fmt.Errorf("artifact_ref is required for reopen")
 		}
 		reason, _ := args["reason"].(string)
-		_, newProblem, err := artifact.ReopenDecision(ctx, t.store, t.haftDir, ref, reason)
+		_, newProblem, err := artifact.ReopenDecisionWithTaskContext(ctx, t.store, t.haftDir, ref, reason, taskContext)
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "reopen", reason, "reopened as "+newProblem.Meta.ID)
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, t.store, t.haftDir, ref, "reopen", reason, "reopened as "+newProblem.Meta.ID, taskContext)
 		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshReopen, nil, newProblem, "")), nil
 
 	case "supersede":
@@ -1655,7 +1674,7 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "supersede", reason, "superseded by "+newRef)
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, t.store, t.haftDir, ref, "supersede", reason, "superseded by "+newRef, taskContext)
 		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshSupersede, a, nil, "")), nil
 
 	case "deprecate":
@@ -1668,7 +1687,7 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		_, _ = artifact.CreateRefreshReport(ctx, t.store, t.haftDir, ref, "deprecate", reason, "deprecated")
+		_, _ = artifact.CreateRefreshReportWithTaskContext(ctx, t.store, t.haftDir, ref, "deprecate", reason, "deprecated", taskContext)
 		return agent.PlainResult(present.RefreshActionResponse(artifact.RefreshDeprecate, a, nil, "")), nil
 
 	default:
@@ -1700,6 +1719,7 @@ func (t *HaftNoteTool) Schema() agent.ToolSchema {
 			"type": "object",
 			"properties": map[string]any{
 				"title":          map[string]any{"type": "string", "description": "What was decided"},
+				"task_context":   map[string]any{"type": "string", "description": "Optional filename slug context, e.g. task-12"},
 				"rationale":      map[string]any{"type": "string", "description": "Why this choice (required — no rationale = rejected)"},
 				"affected_files": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected"},
 			},
@@ -1715,6 +1735,7 @@ func (t *HaftNoteTool) Execute(ctx context.Context, argsJSON string) (agent.Tool
 	}
 	input := artifact.NoteInput{
 		Title:         jsonStr(args, "title"),
+		TaskContext:   jsonStr(args, "task_context"),
 		Rationale:     jsonStr(args, "rationale"),
 		AffectedFiles: jsonStrArray(args, "affected_files"),
 	}

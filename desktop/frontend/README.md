@@ -2,6 +2,16 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## Testing
+
+Run deterministic frontend unit and contract coverage with:
+
+```bash
+npm test
+```
+
+There is not yet a real Tauri/browser onboarding smoke command in this package; the current Desktop onboarding checks are contract-level tests over readiness state, IPC argument shape, and cockpit view data.
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)

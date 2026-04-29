@@ -1,4 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  commissionIpcArgs,
+  commissionTailIpcArgs,
+  listCommissionsIpcArgs,
+  type CommissionSelector,
+} from "./harnessIpc.ts";
+import { isControlPromptText, stripControlPromptSections } from "./controlPrompt.ts";
+import {
+  taskAcceptsInput,
+  taskRunState,
+  type TaskFollowUpSubmission,
+} from "./taskInput.ts";
+import {
+  isRunnableWorkCommissionState,
+  isTerminalWorkCommissionState,
+} from "./workCommissionLifecycle.ts";
 
 // API layer — wraps Tauri invoke() with mock fallback for standalone dev.
 // When running inside Tauri, calls invoke() from @tauri-apps/api/core.
@@ -82,6 +98,7 @@ export interface DecisionDetail {
   status: string;
   mode: string;
   problem_refs: string[];
+  section_refs: string[];
   selected_title: string;
   why_selected: string;
   selection_policy: string;
@@ -372,6 +389,7 @@ export interface DecisionCreateInput {
   evidence_requirements: string[];
   rollback: DecisionRollbackInput | null;
   refresh_triggers: string[];
+  section_refs: string[];
   weakest_link: string;
   valid_until: string;
   context: string;
@@ -407,10 +425,49 @@ export interface ProjectInfo {
   path: string;
   name: string;
   id: string;
+  status?: "ready" | "needs_init" | "needs_onboard" | "missing";
+  exists?: boolean;
+  has_haft?: boolean;
+  has_specs?: boolean;
+  readiness_source?: string;
+  readiness_error?: string;
   is_active: boolean;
   problem_count: number;
   decision_count: number;
   stale_count: number;
+}
+
+export interface SpecCheckReport {
+  level: string;
+  documents: SpecCheckDocument[];
+  findings: SpecCheckFinding[];
+  summary: SpecCheckSummary;
+}
+
+export interface SpecCheckDocument {
+  path: string;
+  kind: string;
+  spec_sections: number;
+  active_spec_sections: number;
+  term_map_entries: number;
+}
+
+export interface SpecCheckFinding {
+  level: string;
+  code: string;
+  path: string;
+  field_path?: string;
+  line?: number;
+  section_id?: string;
+  message: string;
+  next_action?: string;
+}
+
+export interface SpecCheckSummary {
+  total_findings: number;
+  spec_sections: number;
+  active_spec_sections: number;
+  term_map_entries: number;
 }
 
 export interface AgentPreset {
@@ -501,15 +558,17 @@ export function hasStructuredChatBlocks(task: Pick<TaskState, "chat_blocks">): b
 
 export function taskTranscriptText(task: Pick<TaskState, "raw_output" | "output">): string {
   const rawOutput = task.raw_output.trim();
-  if (rawOutput !== "") {
-    return rawOutput;
-  }
+  const transcript = rawOutput !== ""
+    ? task.raw_output
+    : task.output;
 
-  return task.output;
+  return visibleTranscriptText(transcript);
 }
 
 export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
-  const filteredBlocks = blocks.filter((block) => !isNoiseBlock(block));
+  const filteredBlocks = blocks
+    .map(visibleChatBlock)
+    .filter((block): block is ChatBlock => block !== null);
   const mergedBlocks = coalesceNarrativeBlocks(filteredBlocks);
   const toolParentByCallID = new Map<string, string>();
   const toolResultsByParentID = new Map<string, ChatBlock[]>();
@@ -559,18 +618,143 @@ export function buildChatEntries(blocks: ChatBlock[]): ChatEntry[] {
   return groupConsecutiveToolUse(ungrouped);
 }
 
-function isNoiseBlock(block: ChatBlock): boolean {
+export function visibleTranscriptText(transcript: string): string {
+  const withoutControlPrompts = stripControlPromptSections(transcript);
+
+  return stripAuditOnlyProviderEnvelopeLines(withoutControlPrompts);
+}
+
+function visibleChatBlock(block: ChatBlock): ChatBlock | null {
   const text = (block.text ?? "").trim();
 
-  if (text.startsWith('{"type":"rate_limit_event"')) {
-    return true;
+  if (text === "") {
+    return block;
   }
 
-  if (text.startsWith('{"type":"system"')) {
-    return true;
+  const visibleText = visibleTranscriptText(block.text ?? "");
+
+  if (visibleText.trim() === "" && isControlPromptText(text)) {
+    return null;
   }
 
-  return false;
+  if (visibleText.trim() === "" && isAuditOnlyProviderEnvelope(text)) {
+    return null;
+  }
+
+  const visibleBlock = visibleText === block.text
+    ? block
+    : { ...block, text: visibleText };
+
+  if (!hasRenderableBlockValue(visibleBlock)) {
+    return null;
+  }
+
+  return visibleBlock;
+}
+
+type ProviderEnvelopeVisibility = "visible" | "audit_only";
+
+const AUDIT_ONLY_PROVIDER_ENVELOPE_TYPES = new Set([
+  "result",
+  "system",
+  "rate_limit_event",
+  "thread.started",
+  "turn.started",
+  "turn.completed",
+]);
+
+function isAuditOnlyProviderEnvelope(text: string): boolean {
+  const trimmed = text.trim();
+  const envelope = parseProviderEnvelope(trimmed);
+
+  if (envelope) {
+    const visibility = providerEnvelopeVisibility(envelope);
+
+    return visibility === "audit_only";
+  }
+
+  const lines = trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length <= 1) {
+    return false;
+  }
+
+  return lines.every(isAuditOnlyProviderEnvelopeLine);
+}
+
+function stripAuditOnlyProviderEnvelopeLines(text: string): string {
+  if (isAuditOnlyProviderEnvelope(text)) {
+    return "";
+  }
+
+  return text
+    .split("\n")
+    .filter((line) => !isAuditOnlyProviderEnvelopeLine(line.trim()))
+    .join("\n");
+}
+
+function isAuditOnlyProviderEnvelopeLine(text: string): boolean {
+  const envelope = parseProviderEnvelope(text);
+
+  if (!envelope) {
+    return false;
+  }
+
+  const visibility = providerEnvelopeVisibility(envelope);
+
+  return visibility === "audit_only";
+}
+
+function parseProviderEnvelope(text: string): Record<string, unknown> | null {
+  if (!looksLikeJsonContainer(text)) {
+    return null;
+  }
+
+  try {
+    const value: unknown = JSON.parse(text);
+
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function providerEnvelopeVisibility(envelope: Record<string, unknown>): ProviderEnvelopeVisibility {
+  const envelopeType = envelope.type;
+
+  if (typeof envelopeType !== "string") {
+    return "visible";
+  }
+
+  if (AUDIT_ONLY_PROVIDER_ENVELOPE_TYPES.has(envelopeType)) {
+    return "audit_only";
+  }
+
+  return "visible";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looksLikeJsonContainer(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (trimmed === "") {
+    return false;
+  }
+
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
 }
 
 function isGroupableEntry(entry: ChatEntry): boolean {
@@ -801,6 +985,183 @@ export interface DesktopFlow {
   updated_at: string;
 }
 
+export interface WorkCommissionScope {
+  allowed_paths?: string[];
+  affected_files?: string[];
+  lockset?: string[];
+  forbidden_paths?: string[];
+  allowed_actions?: string[];
+  allowed_modules?: string[];
+  target_branch?: string;
+  base_sha?: string;
+  repo_ref?: string;
+}
+
+export interface AutonomyEnvelopeSnapshot {
+  ref: string;
+  revision: string;
+  state: string;
+  allowed_repos: string[];
+  allowed_paths: string[];
+  forbidden_paths?: string[];
+  allowed_actions: string[];
+  allowed_modules?: string[];
+  forbidden_actions?: string[];
+  forbidden_one_way_door_actions?: string[];
+  max_concurrency: number;
+  commission_budget: number;
+  active_concurrency?: number;
+  consumed_commissions?: number;
+  on_failure: string;
+  on_stale?: string;
+  valid_until: string;
+  revoked_at?: string;
+  required_gates?: string[];
+  hash?: string;
+}
+
+export interface WorkCommissionOperator {
+  terminal?: boolean;
+  expired?: boolean;
+  attention?: boolean;
+  attention_reason?: string;
+  suggested_actions?: string[];
+}
+
+export interface WorkCommissionProjectionDebt {
+  carrier: string;
+  target: string;
+  last_error: string;
+  retry_policy: string;
+}
+
+export interface WorkCommission {
+  id: string;
+  state: string;
+  decision_ref: string;
+  problem_card_ref: string;
+  implementation_plan_ref?: string;
+  implementation_plan_revision?: string;
+  autonomy_envelope_ref?: string;
+  autonomy_envelope_revision?: string;
+  projection_policy?: string;
+  delivery_policy?: string;
+  valid_until?: string;
+  fetched_at?: string;
+  lockset?: string[];
+  scope?: WorkCommissionScope;
+  autonomy_envelope_snapshot?: AutonomyEnvelopeSnapshot;
+  local_execution?: Record<string, unknown>;
+  projection_debt?: WorkCommissionProjectionDebt;
+  operator?: WorkCommissionOperator;
+  events?: Array<Record<string, unknown>>;
+}
+
+export interface HarnessRunResult {
+  commission: WorkCommission;
+  workspace: string;
+  raw: string;
+  lines: string[];
+  changed_files: string[];
+  can_apply: boolean;
+  workspace_facts?: HarnessWorkspaceFacts;
+  runtime_facts?: HarnessRuntimeFacts;
+  evidence_facts?: HarnessEvidenceFacts;
+  operator_next?: HarnessOperatorNext;
+  runtime?: Record<string, unknown>;
+  status_updated_at?: string;
+  latest_turn?: Record<string, unknown>;
+}
+
+export interface HarnessWorkspaceFacts {
+  path: string;
+  diff_state: string;
+  git_status: string[];
+  diff_stat: string[];
+  changed_files: string[];
+  error: string;
+  authorization?: HarnessWorkspaceAuthorization | null;
+}
+
+export interface HarnessWorkspaceAuthorization {
+  verdict: string;
+  can_apply: boolean;
+  allowed_paths: string[];
+  out_of_scope_paths: string[];
+  forbidden_paths: string[];
+  unknown_scope_paths: string[];
+  operator_reason: HarnessApplyDisabledReason | null;
+}
+
+export interface HarnessRuntimeFacts {
+  active: boolean;
+  phase: string;
+  sub_state: string;
+  session_id: string;
+  task_pid: string;
+  workspace_path: string;
+  status_updated_at: string;
+  last_event: string;
+  last_event_at: string;
+  last_turn_status: string;
+  last_turn_id: string;
+  preview: string;
+}
+
+export interface HarnessEvidenceRequirement {
+  kind: string;
+  command: string;
+  description: string;
+  claim_ref: string;
+  section_ref: string;
+}
+
+export interface HarnessPhaseOutcome {
+  phase: string;
+  verdict: string;
+  next: string;
+  at: string;
+}
+
+export interface HarnessEvidenceFacts {
+  required_count: number;
+  requirements: HarnessEvidenceRequirement[];
+  latest_measure: HarnessPhaseOutcome | null;
+  terminal: HarnessPhaseOutcome | null;
+}
+
+export interface HarnessOperatorNext {
+  kind: string;
+  reason: string;
+  lines: string[];
+  apply_disabled_reason?: HarnessApplyDisabledReason | null;
+}
+
+export interface HarnessApplyDisabledReason {
+  code: string;
+  verdict: string;
+  paths: string[];
+  message: string;
+}
+
+export interface HarnessApplyResult {
+  commission_id: string;
+  workspace: string;
+  project_root: string;
+  files: string[];
+  raw: string;
+  lines: string[];
+}
+
+export interface HarnessTailResult {
+  commission_id: string;
+  log_path: string;
+  line_count: number;
+  lines: string[];
+  has_events: boolean;
+  follow_command: string;
+}
+
 export interface FlowInput {
   id: string;
   title: string;
@@ -918,6 +1279,7 @@ const INITIAL_DECISION_DETAIL: DecisionDetail = {
   status: "active",
   mode: "standard",
   problem_refs: ["prob-20260409-001"],
+  section_refs: [],
   selected_title: "Reasoning Workspace — Wails native",
   why_selected: "Desktop-native from day 1. Single binary distribution, real product identity.",
   selection_policy: "Minimize regret under solo-dev constraints.",
@@ -1242,6 +1604,38 @@ let mockFlows: DesktopFlow[] = [
     last_error: "",
     created_at: nowString(),
     updated_at: nowString(),
+  },
+];
+
+let mockCommissions: WorkCommission[] = [
+  {
+    id: "wc-mock-1",
+    state: "queued",
+    decision_ref: INITIAL_DECISION_DETAIL.id,
+    problem_card_ref: INITIAL_PROBLEM_DETAIL.id,
+    implementation_plan_ref: "plan-mock-1",
+    implementation_plan_revision: "p1",
+    projection_policy: "local_only",
+    delivery_policy: "workspace_patch_manual",
+    valid_until: nowString(),
+    fetched_at: nowString(),
+    lockset: ["desktop/frontend/src/pages/Harness.tsx"],
+    scope: {
+      allowed_paths: ["desktop/frontend/src/pages/Harness.tsx"],
+      affected_files: ["desktop/frontend/src/pages/Harness.tsx"],
+      lockset: ["desktop/frontend/src/pages/Harness.tsx"],
+      allowed_actions: ["edit_files", "run_tests"],
+      target_branch: "dev",
+      repo_ref: "local:haft",
+    },
+    operator: {
+      terminal: false,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+    events: [],
   },
 ];
 
@@ -1972,6 +2366,7 @@ export async function createDecision(input: DecisionCreateInput): Promise<Decisi
     status: "active",
     mode: input.mode.trim() || (portfolio?.comparison ? "standard" : "tactical"),
     problem_refs: compactList([input.problem_ref.trim(), ...(portfolio?.problem_ref ? [portfolio.problem_ref] : [])]),
+    section_refs: compactList(input.section_refs),
     selected_title: selectedTitle,
     why_selected: input.why_selected.trim(),
     selection_policy: input.selection_policy.trim(),
@@ -2054,6 +2449,12 @@ export async function listProjects(): Promise<ProjectInfo[]> {
       path: "/Users/demo/projects/haft",
       name: "haft",
       id: "qnt_demo1",
+      status: "ready",
+      exists: true,
+      has_haft: true,
+      has_specs: true,
+      readiness_source: "core",
+      readiness_error: "",
       is_active: true,
       problem_count: 12,
       decision_count: 8,
@@ -2065,17 +2466,21 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function addProject(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "needs_onboard", exists: true, has_haft: true, has_specs: false, readiness_source: "degraded_core_unavailable", readiness_error: "backend connection unavailable", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function addProjectSmart(path: string): Promise<ProjectInfo> {
   const result = await tauriInvoke<ProjectInfo>("add_project_smart", { path });
   if (result) return result;
-  return { path, name: path.split("/").pop() || path, id: "", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
+  return { path, name: path.split("/").pop() || path, id: "", status: "needs_onboard", exists: true, has_haft: true, has_specs: false, readiness_source: "degraded_core_unavailable", readiness_error: "backend connection unavailable", is_active: false, problem_count: 0, decision_count: 0, stale_count: 0 };
 }
 
 export async function switchProject(path: string): Promise<void> {
   await tauriInvoke<void>("switch_project", { path });
+}
+
+export async function removeProject(path: string): Promise<void> {
+  await tauriInvoke<void>("remove_project", { path });
 }
 
 export async function scanForProjects(): Promise<ProjectInfo[]> {
@@ -2096,10 +2501,81 @@ export async function initProject(path: string): Promise<ProjectInfo> {
     path,
     name: path.split("/").pop() || path,
     id: "",
+    status: "needs_onboard",
+    exists: true,
+    has_haft: true,
+    has_specs: false,
+    readiness_source: "degraded_core_unavailable",
+    readiness_error: "backend connection unavailable",
     is_active: false,
     problem_count: 0,
     decision_count: 0,
     stale_count: 0,
+  };
+}
+
+export async function runSpecCheck(projectRoot: string): Promise<SpecCheckReport> {
+  const report = await tauriInvoke<SpecCheckReport>(
+    "run_spec_check",
+    projectRootIpcArgs(projectRoot),
+  );
+  if (report) return normalizeSpecCheckReport(report);
+
+  return normalizeSpecCheckReport(mockSpecCheckReport(projectRoot));
+}
+
+export function projectRootIpcArgs(projectRoot: string): { projectRoot: string } {
+  return { projectRoot };
+}
+
+function normalizeSpecCheckReport(report: SpecCheckReport): SpecCheckReport {
+  return {
+    level: report.level || "L0/L1/L1.5",
+    documents: report.documents ?? [],
+    findings: report.findings ?? [],
+    summary: {
+      total_findings: report.summary?.total_findings ?? 0,
+      spec_sections: report.summary?.spec_sections ?? 0,
+      active_spec_sections: report.summary?.active_spec_sections ?? 0,
+      term_map_entries: report.summary?.term_map_entries ?? 0,
+    },
+  };
+}
+
+function mockSpecCheckReport(projectRoot: string): SpecCheckReport {
+  const root = projectRoot.replace(/\/+$/, "");
+
+  return {
+    level: "L0/L1/L1.5",
+    documents: [
+      specCheckDocument(`${root}/.haft/specs/target-system.md`, "target-system"),
+      specCheckDocument(`${root}/.haft/specs/enabling-system.md`, "enabling-system"),
+      specCheckDocument(`${root}/.haft/specs/term-map.md`, "term-map"),
+    ],
+    findings: [
+      {
+        level: "L0",
+        code: "desktop_spec_check_unavailable",
+        path: "",
+        message: "Run inside Haft Desktop to execute the core spec check.",
+      },
+    ],
+    summary: {
+      total_findings: 1,
+      spec_sections: 0,
+      active_spec_sections: 0,
+      term_map_entries: 0,
+    },
+  };
+}
+
+function specCheckDocument(path: string, kind: string): SpecCheckDocument {
+  return {
+    path,
+    kind,
+    spec_sections: 0,
+    active_spec_sections: 0,
+    term_map_entries: 0,
   };
 }
 
@@ -2167,20 +2643,91 @@ export async function cancelTask(id: string): Promise<void> {
   );
 }
 
-export async function writeTaskInput(id: string, data: string): Promise<void> {
-  const trimmed = data.trim();
-  if (!trimmed) {
-    return;
+type WriteLiveInputSubmission = Extract<
+  TaskFollowUpSubmission,
+  { kind: "write_live_input" }
+>;
+
+type ContinueTaskSubmission = Extract<
+  TaskFollowUpSubmission,
+  { kind: "continue_task" }
+>;
+
+export type TaskFollowUpResult =
+  | {
+      kind: "live_input_written";
+      id: string;
+    }
+  | {
+      kind: "continuation_started";
+      task: TaskState;
+    }
+  | {
+      kind: "none";
+    };
+
+export function writeTaskInputIpcArgs(
+  submission: WriteLiveInputSubmission,
+): {
+  id: string;
+  data: string;
+} {
+  return {
+    id: submission.id,
+    data: submission.data,
+  };
+}
+
+export function continueTaskIpcArgs(
+  submission: ContinueTaskSubmission,
+): {
+  id: string;
+  message: string;
+} {
+  return {
+    id: submission.id,
+    message: submission.message,
+  };
+}
+
+export async function submitTaskFollowUp(
+  submission: TaskFollowUpSubmission,
+): Promise<TaskFollowUpResult> {
+  if (submission.kind === "none") {
+    return { kind: "none" };
   }
 
-  await tauriInvoke<void>("write_task_input", { id, data: trimmed });
+  if (submission.kind === "write_live_input") {
+    await writeTaskInput(submission);
+
+    return {
+      kind: "live_input_written",
+      id: submission.id,
+    };
+  }
+
+  const task = await continueTask(submission);
+
+  return {
+    kind: "continuation_started",
+    task,
+  };
+}
+
+async function writeTaskInput(submission: WriteLiveInputSubmission): Promise<void> {
+  await tauriInvoke<void>(
+    "write_task_input",
+    writeTaskInputIpcArgs(submission),
+  );
 
   mockTasks = mockTasks.map((task) => {
-    if (task.id !== id || task.status !== "running") {
+    const state = taskRunState(task.status);
+
+    if (task.id !== submission.id || !taskAcceptsInput(state)) {
       return task;
     }
 
-    const nextOutput = [task.output, `[user] ${trimmed}`]
+    const nextOutput = [task.output, `[user] ${submission.data}`]
       .filter(Boolean)
       .join("\n");
 
@@ -2194,7 +2741,7 @@ export async function writeTaskInput(id: string, data: string): Promise<void> {
           id: nextMockID("block"),
           type: "text",
           role: "user",
-          text: trimmed,
+          text: submission.data,
         },
       ],
     };
@@ -2248,6 +2795,33 @@ export async function handoffTask(id: string, agent: string): Promise<TaskState>
   return spawnTask(agent, `Handoff for ${source.title}\n\n${source.prompt}`, source.worktree, source.branch);
 }
 
+async function continueTask(submission: ContinueTaskSubmission): Promise<TaskState> {
+  const task = await tauriInvoke<TaskState>(
+    "continue_task",
+    continueTaskIpcArgs(submission),
+  );
+  if (task) return task;
+
+  const source = mockTasks.find((item) => item.id === submission.id);
+  if (!source) {
+    throw new Error(`Task ${submission.id} not found`);
+  }
+
+  const continuationPrompt = [
+    "Continue the existing desktop task.",
+    "",
+    `Task title:\n${source.title}`,
+    "",
+    `Original prompt:\n${source.prompt}`,
+    "",
+    `Prior transcript tail:\n${source.raw_output || source.output}`,
+    "",
+    `Operator follow-up:\n${submission.message}`,
+  ].join("\n");
+
+  return spawnTask(source.agent, continuationPrompt, source.worktree, source.branch);
+}
+
 function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState {
   return {
     chat_blocks: task.chat_blocks ?? [],
@@ -2256,6 +2830,321 @@ function pickTaskTranscriptState(task: ChatTranscriptState): ChatTranscriptState
     status: task.status ?? "",
     error_message: task.error_message ?? "",
     agent: task.agent ?? "",
+  };
+}
+
+export async function listCommissions(
+  selector: CommissionSelector = "open",
+): Promise<WorkCommission[]> {
+  const result = await tauriInvoke<{ commissions?: WorkCommission[] }>(
+    "list_commissions",
+    listCommissionsIpcArgs(selector),
+  );
+  if (result) return result.commissions ?? [];
+
+  if (selector === "all") return mockCommissions;
+  if (selector === "terminal") {
+    return mockCommissions.filter((commission) => isTerminalWorkCommissionState(commission.state));
+  }
+  if (selector === "stale") {
+    return mockCommissions.filter((commission) => commission.operator?.attention);
+  }
+  if (selector === "runnable") {
+    return mockCommissions.filter((commission) => isRunnableWorkCommissionState(commission.state));
+  }
+  return mockCommissions.filter((commission) => !isTerminalWorkCommissionState(commission.state));
+}
+
+export async function showCommission(commissionID: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>(
+    "show_commission",
+    commissionIpcArgs(commissionID),
+  );
+  if (result?.commission) return result.commission;
+
+  const commission = mockCommissions.find((item) => item.id === commissionID);
+  if (!commission) {
+    throw new Error(`WorkCommission ${commissionID} not found`);
+  }
+  return commission;
+}
+
+export async function requeueCommission(commissionID: string, reason: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>("requeue_commission", {
+    ...commissionIpcArgs(commissionID),
+    reason,
+  });
+  if (result?.commission) return result.commission;
+
+  return updateMockCommission(commissionID, {
+    state: "queued",
+    operator: {
+      terminal: false,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+  });
+}
+
+export async function cancelCommission(commissionID: string, reason: string): Promise<WorkCommission> {
+  const result = await tauriInvoke<{ commission?: WorkCommission }>("cancel_commission", {
+    ...commissionIpcArgs(commissionID),
+    reason,
+  });
+  if (result?.commission) return result.commission;
+
+  return updateMockCommission(commissionID, {
+    state: "cancelled",
+    operator: {
+      terminal: true,
+      expired: false,
+      attention: false,
+      attention_reason: "",
+      suggested_actions: [],
+    },
+  });
+}
+
+export async function getHarnessResult(commissionID: string): Promise<HarnessRunResult> {
+  const result = await tauriInvoke<HarnessRunResult>(
+    "harness_result",
+    commissionIpcArgs(commissionID),
+  );
+  if (result) return normalizeHarnessResult(result);
+
+  const commission = await showCommission(commissionID);
+  return {
+    commission,
+    workspace: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+    raw: [
+      "Open-Sleigh harness result",
+      `commission: ${commission.id}`,
+      `state: ${commission.state}`,
+      `decision: ${commission.decision_ref}`,
+      "git_status:",
+      "- clean",
+      "diff_stat:",
+      "- empty",
+    ].join("\n"),
+    lines: [],
+    changed_files: [],
+    can_apply: false,
+    workspace_facts: {
+      path: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+      diff_state: "clean",
+      git_status: [],
+      diff_stat: [],
+      changed_files: [],
+      error: "",
+      authorization: null,
+    },
+    runtime_facts: {
+      active: false,
+      phase: "",
+      sub_state: "",
+      session_id: "",
+      task_pid: "",
+      workspace_path: "",
+      status_updated_at: "",
+      last_event: "",
+      last_event_at: "",
+      last_turn_status: "",
+      last_turn_id: "",
+      preview: "",
+    },
+    evidence_facts: {
+      required_count: 0,
+      requirements: [],
+      latest_measure: null,
+      terminal: null,
+    },
+  };
+}
+
+export async function getHarnessTail(
+  commissionID: string,
+  lineCount: number,
+): Promise<HarnessTailResult> {
+  const result = await tauriInvoke<HarnessTailResult>(
+    "harness_tail",
+    commissionTailIpcArgs(commissionID, lineCount),
+  );
+  if (result) return normalizeHarnessTailResult(result);
+
+  return {
+    commission_id: commissionID,
+    log_path: "/Users/demo/.open-sleigh/runtime.jsonl",
+    line_count: lineCount,
+    lines: [`No runtime events for commission ${commissionID} yet.`],
+    has_events: false,
+    follow_command: `haft harness tail ${commissionID} --follow`,
+  };
+}
+
+export async function applyHarnessResult(commissionID: string): Promise<HarnessApplyResult> {
+  const result = await tauriInvoke<HarnessApplyResult>(
+    "harness_apply",
+    commissionIpcArgs(commissionID),
+  );
+  if (result) return normalizeHarnessApplyResult(result);
+
+  return {
+    commission_id: commissionID,
+    workspace: `/Users/demo/.open-sleigh/workspaces/${commissionID}`,
+    project_root: "/Users/demo/projects/haft",
+    files: [],
+    raw: "No diff available in mock mode.",
+    lines: ["No diff available in mock mode."],
+  };
+}
+
+async function updateMockCommission(
+  commissionID: string,
+  patch: Partial<WorkCommission>,
+): Promise<WorkCommission> {
+  const current = mockCommissions.find((commission) => commission.id === commissionID);
+  if (!current) {
+    throw new Error(`WorkCommission ${commissionID} not found`);
+  }
+
+  const next = {
+    ...current,
+    ...patch,
+  };
+  mockCommissions = mockCommissions.map((commission) =>
+    commission.id === commissionID ? next : commission,
+  );
+  return next;
+}
+
+function normalizeHarnessResult(result: HarnessRunResult): HarnessRunResult {
+  return {
+    ...result,
+    lines: result.lines ?? [],
+    changed_files: result.changed_files ?? [],
+    raw: result.raw ?? "",
+    can_apply: Boolean(result.can_apply),
+    workspace_facts: normalizeHarnessWorkspaceFacts(result),
+    runtime_facts: normalizeHarnessRuntimeFacts(result.runtime_facts),
+    evidence_facts: normalizeHarnessEvidenceFacts(result.evidence_facts),
+    operator_next: normalizeHarnessOperatorNext(result.operator_next),
+  };
+}
+
+function normalizeHarnessOperatorNext(
+  operatorNext: HarnessOperatorNext | undefined,
+): HarnessOperatorNext {
+  if (!operatorNext) {
+    return {
+      kind: "",
+      reason: "",
+      lines: [],
+      apply_disabled_reason: null,
+    };
+  }
+
+  return {
+    kind: operatorNext.kind ?? "",
+    reason: operatorNext.reason ?? "",
+    lines: operatorNext.lines ?? [],
+    apply_disabled_reason: normalizeHarnessApplyDisabledReason(
+      operatorNext.apply_disabled_reason,
+    ),
+  };
+}
+
+function normalizeHarnessApplyResult(result: HarnessApplyResult): HarnessApplyResult {
+  return {
+    ...result,
+    files: result.files ?? [],
+    lines: result.lines ?? [],
+    raw: result.raw ?? "",
+  };
+}
+
+function normalizeHarnessTailResult(result: HarnessTailResult): HarnessTailResult {
+  return {
+    ...result,
+    lines: result.lines ?? [],
+    has_events: Boolean(result.has_events),
+    follow_command: result.follow_command ?? "",
+  };
+}
+
+function normalizeHarnessWorkspaceFacts(
+  result: HarnessRunResult,
+): HarnessWorkspaceFacts {
+  const facts = result.workspace_facts;
+
+  return {
+    path: facts?.path || result.workspace || "",
+    diff_state: facts?.diff_state || "unknown",
+    git_status: facts?.git_status ?? [],
+    diff_stat: facts?.diff_stat ?? [],
+    changed_files: facts?.changed_files ?? result.changed_files ?? [],
+    error: facts?.error ?? "",
+    authorization: normalizeHarnessWorkspaceAuthorization(facts?.authorization),
+  };
+}
+
+function normalizeHarnessWorkspaceAuthorization(
+  authorization: HarnessWorkspaceAuthorization | null | undefined,
+): HarnessWorkspaceAuthorization | null {
+  if (!authorization) return null;
+
+  return {
+    verdict: authorization.verdict ?? "",
+    can_apply: Boolean(authorization.can_apply),
+    allowed_paths: authorization.allowed_paths ?? [],
+    out_of_scope_paths: authorization.out_of_scope_paths ?? [],
+    forbidden_paths: authorization.forbidden_paths ?? [],
+    unknown_scope_paths: authorization.unknown_scope_paths ?? [],
+    operator_reason: normalizeHarnessApplyDisabledReason(authorization.operator_reason),
+  };
+}
+
+function normalizeHarnessApplyDisabledReason(
+  reason: HarnessApplyDisabledReason | null | undefined,
+): HarnessApplyDisabledReason | null {
+  if (!reason) return null;
+
+  return {
+    code: reason.code ?? "",
+    verdict: reason.verdict ?? "",
+    paths: reason.paths ?? [],
+    message: reason.message ?? "",
+  };
+}
+
+function normalizeHarnessRuntimeFacts(
+  facts: HarnessRuntimeFacts | undefined,
+): HarnessRuntimeFacts {
+  return {
+    active: Boolean(facts?.active),
+    phase: facts?.phase ?? "",
+    sub_state: facts?.sub_state ?? "",
+    session_id: facts?.session_id ?? "",
+    task_pid: facts?.task_pid ?? "",
+    workspace_path: facts?.workspace_path ?? "",
+    status_updated_at: facts?.status_updated_at ?? "",
+    last_event: facts?.last_event ?? "",
+    last_event_at: facts?.last_event_at ?? "",
+    last_turn_status: facts?.last_turn_status ?? "",
+    last_turn_id: facts?.last_turn_id ?? "",
+    preview: facts?.preview ?? "",
+  };
+}
+
+function normalizeHarnessEvidenceFacts(
+  facts: HarnessEvidenceFacts | undefined,
+): HarnessEvidenceFacts {
+  return {
+    required_count: facts?.required_count ?? 0,
+    requirements: facts?.requirements ?? [],
+    latest_measure: facts?.latest_measure ?? null,
+    terminal: facts?.terminal ?? null,
   };
 }
 
@@ -2294,7 +3183,7 @@ export async function listFlowTemplates(): Promise<FlowTemplate[]> {
       id: "coverage-report",
       name: "Coverage Report",
       description: "Generate a weekly governance coverage summary.",
-      agent: "haft",
+      agent: "claude",
       schedule: "0 15 * * 1",
       prompt: "Summarize module governance coverage for the current project.",
       branch: "flows/coverage-report",

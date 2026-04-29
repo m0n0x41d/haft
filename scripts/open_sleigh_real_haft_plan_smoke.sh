@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d)"
+project_id=""
+
+cleanup() {
+  rm -rf "$tmp"
+  if [[ "$project_id" == qnt_* ]]; then
+    rm -rf "$HOME/.haft/projects/$project_id"
+  fi
+}
+trap cleanup EXIT
+
+haftbin="$tmp/haft"
+project="$tmp/project"
+status_path="$tmp/status.json"
+log_path="$tmp/runtime.jsonl"
+sleigh_path="$tmp/sleigh.plan.md"
+plan_path="$tmp/implementation-plan.yaml"
+
+(cd "$repo" && go build -o "$haftbin" ./cmd/haft)
+
+mkdir -p "$project/internal/cli"
+(cd "$project" && "$haftbin" init --local >/dev/null)
+project_id="$(awk '/^id:/ {print $2}' "$project/.haft/project.yaml")"
+printf 'package cli\n' > "$project/internal/cli/commission.go"
+printf 'package cli\n' > "$project/internal/cli/serve_commission.go"
+
+extract_tool_id() {
+  local prefix="$1"
+  python3 -c '
+import json
+import re
+import sys
+
+prefix = sys.argv[1]
+payload = json.load(sys.stdin)
+text = payload["result"]["content"][0]["text"]
+match = re.search(r"ID: (" + re.escape(prefix) + r"-[A-Za-z0-9-]+)", text)
+if not match:
+    raise SystemExit("missing " + prefix + " id in tool response")
+print(match.group(1))
+' "$prefix"
+}
+
+create_decision() {
+  local title="$1"
+  local affected_file="$2"
+  local problem_call="$tmp/problem-$title.json"
+  local decision_call="$tmp/decision-$title.json"
+
+  cat > "$problem_call" <<JSON
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"haft_problem","arguments":{"action":"frame","title":"$title problem","signal":"Open-Sleigh needs plan work for $affected_file.","acceptance":"A plan-created commission is consumed.","affected_files":["$affected_file"]}}}
+JSON
+
+  problem_response="$(HAFT_PROJECT_ROOT="$project" "$haftbin" serve < "$problem_call")"
+  problem_ref="$(printf '%s' "$problem_response" | extract_tool_id prob)"
+
+  cat > "$decision_call" <<JSON
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"haft_decision","arguments":{"action":"decide","problem_ref":"$problem_ref","selected_title":"$title","why_selected":"The harness should consume WorkCommissions created from an ImplementationPlan-lite file.","selection_policy":"Prefer plan-carried batch policy with per-decision authorization.","counterargument":"Passing decision ids on the CLI is simpler.","weakest_link":"The plan dependency graph must be enforced before a commission becomes runnable.","why_not_others":[{"variant":"CLI decision list","reason":"It loses reusable plan context."}],"rollback":{"triggers":["Plan-created commissions are not consumed."]},"affected_files":["$affected_file"],"evidence_requirements":["go test ./internal/cli"]}}}
+JSON
+
+  decision_response="$(HAFT_PROJECT_ROOT="$project" "$haftbin" serve < "$decision_call")"
+  printf '%s' "$decision_response" | extract_tool_id dec
+}
+
+decision_a="$(create_decision "Plan smoke A" "internal/cli/commission.go")"
+decision_b="$(create_decision "Plan smoke B" "internal/cli/serve_commission.go")"
+
+cat > "$plan_path" <<YAML
+id: plan-smoke
+revision: p1
+title: Plan smoke
+repo_ref: local:haft-plan
+base_sha: base-r1
+target_branch: feature/plan-smoke
+projection_policy: local_only
+valid_until: "2099-01-01T00:00:00Z"
+defaults:
+  allowed_actions:
+    - edit_files
+    - run_tests
+  evidence_requirements:
+    - go test ./internal/cli
+decisions:
+  - ref: $decision_a
+    tags:
+      - cli
+  - ref: $decision_b
+    depends_on:
+      - $decision_a
+YAML
+
+(cd "$project" && "$haftbin" commission create-from-plan "$plan_path" >/dev/null)
+
+runnable_before="$(cd "$project" && "$haftbin" commission list-runnable)"
+case "$runnable_before" in
+  *"$decision_a"*)
+    ;;
+  *)
+    echo "expected root plan decision to be runnable before plan smoke" >&2
+    printf '%s\n' "$runnable_before" >&2
+    exit 1
+    ;;
+esac
+case "$runnable_before" in
+  *"$decision_b"*)
+    echo "expected dependent plan decision to wait before root completes" >&2
+    printf '%s\n' "$runnable_before" >&2
+    exit 1
+    ;;
+esac
+
+cat > "$sleigh_path" <<YAML
+---
+engine:
+  poll_interval_ms: 200
+  status_path: $status_path
+  status_interval_ms: 100
+  log_path: $log_path
+  concurrency: 2
+  status_http:
+    enabled: false
+
+commission_source:
+  kind: haft
+  selector: runnable
+  max_claims: 50
+  lease_timeout_s: 300
+  plan_ref: plan-smoke
+
+projection:
+  mode: local_only
+  targets: []
+  writer_profile: manager_plain
+
+agent:
+  kind: mock
+  version_pin: test
+  command: mock
+  max_turns: 3
+  max_tokens_per_turn: 80000
+  wall_clock_timeout_s: 60
+  max_retry_backoff_ms: 1000
+  max_concurrent_agents: 2
+
+judge:
+  kind: mock
+  adapter_version: test
+  max_tokens_per_turn: 4000
+  wall_clock_timeout_s: 60
+
+workspace:
+  root: $tmp/workspaces
+  cleanup_policy: keep
+
+hooks:
+  timeout_ms: 60000
+  failure_policy:
+    after_create: blocking
+    before_run: blocking
+    after_run: warning
+  after_create: null
+  before_run: null
+  after_run: null
+
+haft:
+  command: "HAFT_PROJECT_ROOT=$project $haftbin serve"
+  version: test
+
+external_publication:
+  branch_regex: "^(main|master|release/.*)$"
+  tracker_transition_to: []
+  approvers: ["smoke@example.com"]
+  timeout_h: 24
+
+phases:
+  preflight:
+    agent_role: preflight_checker
+    tools: [haft_query, read]
+    gates:
+      structural: []
+      semantic: []
+  frame:
+    agent_role: frame_verifier
+    tools: [haft_query, read]
+    gates:
+      structural: []
+      semantic: []
+  execute:
+    agent_role: executor
+    tools: [read, write, bash, haft_note]
+    gates:
+      structural: []
+      semantic: []
+  measure:
+    agent_role: measurer
+    tools: [haft_decision, haft_refresh]
+    gates:
+      structural: []
+      semantic: []
+---
+
+# Prompt templates
+
+## Preflight
+Check WorkCommission {{commission.id}}.
+
+## Frame
+Verify frame for {{commission.id}}.
+
+## Execute
+Execute {{commission.id}}.
+
+## Measure
+Measure {{commission.id}}.
+YAML
+
+for _ in 1 2; do
+  (cd "$repo/open-sleigh" && mix open_sleigh.start --path "$sleigh_path" --mock-agent --mock-judge --once --once-timeout-ms=8000)
+done
+
+runnable="$(cd "$project" && "$haftbin" commission list-runnable)"
+printf '%s\n' "$runnable"
+
+case "$runnable" in
+  *'"commissions":[]'*)
+    ;;
+  *)
+    echo "expected no runnable WorkCommissions after plan smoke" >&2
+    exit 1
+    ;;
+esac

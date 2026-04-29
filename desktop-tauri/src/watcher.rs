@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::Mutex;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,8 +37,8 @@ impl HaftWatcher {
         let (event_tx, event_rx) = mpsc::channel();
         let (stop_tx, stop_rx) = mpsc::channel();
 
-        let mut watcher =
-            RecommendedWatcher::new(event_tx, Config::default()).map_err(|e| format!("watcher init: {e}"))?;
+        let mut watcher = RecommendedWatcher::new(event_tx, Config::default())
+            .map_err(|e| format!("watcher init: {e}"))?;
 
         // Watch .haft/ directory recursively for governance artifact changes.
         let haft_dir = PathBuf::from(project_root).join(".haft");
@@ -99,8 +99,8 @@ fn event_loop(
                     }
                 }
             }
-            Ok(Err(_)) => {}                                    // watcher error — skip
-            Err(mpsc::RecvTimeoutError::Timeout) => {}          // no events — check timers
+            Ok(Err(_)) => {}                           // watcher error — skip
+            Err(mpsc::RecvTimeoutError::Timeout) => {} // no events — check timers
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // watcher dropped
         }
 
@@ -131,8 +131,7 @@ fn is_governance_path(path: &Path) -> bool {
 }
 
 fn is_wal_path(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|n| n == "haft.db-wal")
+    path.file_name().is_some_and(|n| n == "haft.db-wal")
 }
 
 // ─── Tauri commands ───
@@ -145,8 +144,7 @@ pub fn start_watcher(
     watcher_state: State<'_, WatcherState>,
     project_root: String,
 ) -> Result<(), String> {
-    let db_path = crate::resolve_db_path()
-        .ok_or_else(|| "no project DB found".to_string())?;
+    let db_path = crate::resolve_db_path().ok_or_else(|| "no project DB found".to_string())?;
     let mut guard = watcher_state.0.lock().map_err(|e| e.to_string())?;
     // Drop existing watcher — stops thread, releases file handles.
     *guard = None;
@@ -171,11 +169,21 @@ mod tests {
 
     #[test]
     fn classify_governance_paths() {
-        assert!(is_governance_path(Path::new("/home/user/project/.haft/decisions/dec-001.md")));
-        assert!(is_governance_path(Path::new("/home/user/project/.haft/problems/prob-001.md")));
-        assert!(is_governance_path(Path::new("/home/user/project/.haft/notes/note-001.md")));
-        assert!(!is_governance_path(Path::new("/home/user/project/.haft/workflow.md")));
-        assert!(!is_governance_path(Path::new("/home/user/project/src/main.rs")));
+        assert!(is_governance_path(Path::new(
+            "/home/user/project/.haft/decisions/dec-001.md"
+        )));
+        assert!(is_governance_path(Path::new(
+            "/home/user/project/.haft/problems/prob-001.md"
+        )));
+        assert!(is_governance_path(Path::new(
+            "/home/user/project/.haft/notes/note-001.md"
+        )));
+        assert!(!is_governance_path(Path::new(
+            "/home/user/project/.haft/workflow.md"
+        )));
+        assert!(!is_governance_path(Path::new(
+            "/home/user/project/src/main.rs"
+        )));
     }
 
     #[test]

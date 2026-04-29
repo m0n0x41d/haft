@@ -6,6 +6,7 @@ export interface RailBtnProps {
   onClick: () => void;
   active?: boolean;
   accent?: boolean;
+  label?: string;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ export function RailBtn({
   onClick,
   active = false,
   accent = false,
+  label,
   className = "",
 }: RailBtnProps) {
   const toneClasses = accent
@@ -34,9 +36,14 @@ export function RailBtn({
     <button
       onClick={onClick}
       title={tip}
-      className={`mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${toneClasses} ${className}`}
+      className={`mb-1 flex ${label ? "h-11" : "h-9"} w-9 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors ${toneClasses} ${className}`}
     >
-      <Icon size={18} />
+      <Icon size={label ? 16 : 18} />
+      {label ? (
+        <span className="font-mono text-[8px] uppercase leading-none tracking-tight">
+          {label}
+        </span>
+      ) : null}
     </button>
   );
 }

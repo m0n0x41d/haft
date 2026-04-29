@@ -1,5 +1,8 @@
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::PathBuf;
 
+use crate::project_readiness::project_is_ready;
 use crate::rpc::call_rpc;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,10 +63,7 @@ macro_rules! rpc_query {
 macro_rules! rpc_fwd_input {
     ($fn_name:ident, $rpc_cmd:expr) => {
         #[tauri::command]
-        pub fn $fn_name(
-            input: Value,
-            project_root: Option<String>,
-        ) -> Result<Value, String> {
+        pub fn $fn_name(input: Value, project_root: Option<String>) -> Result<Value, String> {
             call_rpc($rpc_cmd, Some(input), project_root.as_deref())
         }
     };
@@ -93,14 +93,94 @@ macro_rules! rpc_fwd_renamed {
 
 // ── Project management ──
 
+#[derive(Debug, Deserialize, Serialize, Default)]
+struct DesktopProjectRegistry {
+    #[serde(default)]
+    projects: Vec<DesktopRegisteredProject>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    active_path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct DesktopRegisteredProject {
+    path: String,
+    name: String,
+    id: String,
+}
+
+#[tauri::command]
+pub fn remove_project(path: String) -> Result<Value, String> {
+    let target = path.trim().to_string();
+    if target.is_empty() {
+        return Err("path is required".into());
+    }
+
+    let registry_path = desktop_project_registry_path()?;
+    let content = match std::fs::read_to_string(&registry_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({ "removed": false, "active_path": "" }));
+        }
+        Err(err) => return Err(format!("read project registry: {err}")),
+    };
+
+    let mut registry: DesktopProjectRegistry =
+        serde_json::from_str(&content).map_err(|err| format!("parse project registry: {err}"))?;
+
+    let before = registry.projects.len();
+    registry.projects.retain(|project| project.path != target);
+    let removed = registry.projects.len() != before;
+
+    if registry.active_path == target || !desktop_project_is_ready(&registry.active_path) {
+        registry.active_path = registry
+            .projects
+            .iter()
+            .find(|project| desktop_project_is_ready(&project.path))
+            .map(|project| project.path.clone())
+            .unwrap_or_default();
+    }
+
+    if let Some(parent) = registry_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("create registry dir: {err}"))?;
+    }
+
+    let payload = serde_json::to_vec_pretty(&registry)
+        .map_err(|err| format!("serialize project registry: {err}"))?;
+    std::fs::write(&registry_path, payload)
+        .map_err(|err| format!("write project registry: {err}"))?;
+
+    Ok(json!({ "removed": removed, "active_path": registry.active_path }))
+}
+
+fn desktop_project_registry_path() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|err| format!("resolve HOME: {err}"))?;
+
+    Ok(PathBuf::from(home)
+        .join(".haft")
+        .join("desktop-projects.json"))
+}
+
+fn desktop_project_is_ready(path: &str) -> bool {
+    project_is_ready(path)
+}
+
 rpc_fwd!(switch_project, "switch-project", { path: String });
 rpc_fwd!(add_project, "add-project", { path: String });
 rpc_fwd!(init_project, "init-project", { path: String });
 
 // Frontend calls add_project_smart when the path may not yet be a haft
-// project — the CLI detects-or-init's. Reuses the add-project RPC for now;
-// CLI-side heuristic is still TODO (see desktop_rpc_handlers.go).
-rpc_fwd!(add_project_smart, "add-project", { path: String });
+// project — the CLI detects-or-init's.
+rpc_fwd!(add_project_smart, "add-project-smart", { path: String });
+
+#[tauri::command]
+pub fn run_spec_check(project_root: String) -> Result<Value, String> {
+    let root = project_root.trim();
+    if root.is_empty() {
+        return Err("projectRoot is required".into());
+    }
+
+    call_rpc("spec-check", None, Some(root))
+}
 
 // ── Artifact authoring ──
 //
@@ -210,6 +290,110 @@ rpc_fwd!(delete_flow, "delete-flow", { id: String });
 // run_flow_now lives in agents.rs because it needs the shared PTY spawn
 // helper + AgentManagerState + ShellEnvState to actually launch the task.
 
+// ── Harness operator ──
+
+rpc_fwd!(
+    list_commissions,
+    "list-commissions",
+    {
+        selector: String,
+        state: String,
+        older_than: String,
+    }
+);
+
+#[tauri::command]
+pub fn show_commission(
+    commission_id: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "show-commission",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn requeue_commission(
+    commission_id: String,
+    reason: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "requeue-commission",
+        Some(commission_reason_payload(commission_id, reason)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn cancel_commission(
+    commission_id: String,
+    reason: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "cancel-commission",
+        Some(commission_reason_payload(commission_id, reason)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_result(
+    commission_id: String,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "harness-result",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_tail(
+    commission_id: String,
+    line_count: i64,
+    project_root: Option<String>,
+) -> Result<Value, String> {
+    call_rpc(
+        "harness-tail",
+        Some(harness_tail_payload(commission_id, line_count)),
+        project_root.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn harness_apply(commission_id: String, project_root: Option<String>) -> Result<Value, String> {
+    call_rpc(
+        "harness-apply",
+        Some(commission_action_payload(commission_id)),
+        project_root.as_deref(),
+    )
+}
+
+fn commission_action_payload(commission_id: String) -> Value {
+    json!({
+        "commission_id": commission_id,
+    })
+}
+
+fn commission_reason_payload(commission_id: String, reason: String) -> Value {
+    json!({
+        "commission_id": commission_id,
+        "reason": reason,
+    })
+}
+
+fn harness_tail_payload(commission_id: String, line_count: i64) -> Value {
+    json!({
+        "commission_id": commission_id,
+        "line_count": line_count,
+    })
+}
+
 // ── Governance & analysis ──
 
 rpc_query!(refresh_governance, "refresh-governance");
@@ -231,3 +415,35 @@ rpc_fwd!(
         branch: String,
     }
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commission_action_payload_uses_go_rpc_snake_case() {
+        let payload = commission_action_payload("wc-1".into());
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert!(payload.get("commissionId").is_none());
+    }
+
+    #[test]
+    fn commission_reason_payload_uses_go_rpc_snake_case() {
+        let payload = commission_reason_payload("wc-1".into(), "operator recovery".into());
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert_eq!(payload["reason"], "operator recovery");
+        assert!(payload.get("commissionId").is_none());
+    }
+
+    #[test]
+    fn harness_tail_payload_uses_go_rpc_snake_case() {
+        let payload = harness_tail_payload("wc-1".into(), 20);
+
+        assert_eq!(payload["commission_id"], "wc-1");
+        assert_eq!(payload["line_count"], 20);
+        assert!(payload.get("commissionId").is_none());
+        assert!(payload.get("lineCount").is_none());
+    }
+}

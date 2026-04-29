@@ -48,6 +48,36 @@ func TestGenerateID_FormatMatchesContract(t *testing.T) {
 	}
 }
 
+func TestGenerateID_TaskContextFormatMatchesContract(t *testing.T) {
+	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-[0-9a-f]{8}$`)
+
+	id := GenerateIDWithTaskContext(KindDecisionRecord, 1, "Task #4")
+
+	if !pattern.MatchString(id) {
+		t.Fatalf("ID with task context does not match `dec-YYYYMMDD-task-4-8hex`: got %q", id)
+	}
+}
+
+func TestGenerateID_TaskContextSanitizesFilenameSlug(t *testing.T) {
+	pattern := regexp.MustCompile(`^dec-\d{8}-api-cli-cleanup-v2-[0-9a-f]{8}$`)
+
+	id := GenerateIDWithTaskContext(KindDecisionRecord, 1, " API/CLI cleanup: v2! ")
+
+	if !pattern.MatchString(id) {
+		t.Fatalf("ID with task context did not use sanitized slug: got %q", id)
+	}
+}
+
+func TestGenerateID_InvalidTaskContextFallsBackToDefaultFormat(t *testing.T) {
+	pattern := regexp.MustCompile(`^dec-\d{8}-[0-9a-f]{8}$`)
+
+	id := GenerateIDWithTaskContext(KindDecisionRecord, 1, "///")
+
+	if !pattern.MatchString(id) {
+		t.Fatalf("invalid task context should preserve default ID format, got %q", id)
+	}
+}
+
 // TestGenerateID_SeqParameterIgnored explicitly asserts that callers passing
 // different seq values get IDs that differ only because of the random hex
 // suffix, not because of seq. Prevents regression to the old format if

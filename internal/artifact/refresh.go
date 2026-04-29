@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -30,6 +31,7 @@ type RefreshInput struct {
 	Action        RefreshAction `json:"action"`
 	ArtifactRef   string        `json:"artifact_ref,omitempty"`
 	DecisionRef   string        `json:"decision_ref,omitempty"` // deprecated: use ArtifactRef
+	TaskContext   string        `json:"task_context,omitempty"`
 	Reason        string        `json:"reason,omitempty"`
 	NewValidUntil string        `json:"new_valid_until,omitempty"`
 	Evidence      string        `json:"evidence,omitempty"`
@@ -130,6 +132,9 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 
 	staleArtifacts := collectStaleArtifacts(ctx, store, addItem)
 	for _, a := range staleArtifacts {
+		if !staleArtifactShouldSurface(ctx, store, a) {
+			continue
+		}
 		addItem(buildExpiredStaleItem(a, now))
 	}
 
@@ -293,6 +298,24 @@ func collectStaleArtifacts(ctx context.Context, store ArtifactStore, addItem fun
 	appendUnique(staleOther)
 
 	return stale
+}
+
+func staleArtifactShouldSurface(ctx context.Context, store ArtifactStore, item *Artifact) bool {
+	if item.Meta.Kind != KindWorkCommission {
+		return true
+	}
+
+	full, err := store.Get(ctx, item.Meta.ID)
+	if err != nil {
+		return true
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(full.StructuredData), &payload); err != nil {
+		return true
+	}
+
+	return !workCommissionStateTerminal(textField(payload, "state"))
 }
 
 func buildExpiredStaleItem(a *Artifact, now time.Time) StaleItem {
@@ -644,6 +667,12 @@ func BuildLineageNotes(src LineageSource) string {
 // ReopenDecision marks a decision as refresh_due and creates a new ProblemCard linked to it.
 // Orchestrates effects around BuildLineageNotes.
 func ReopenDecision(ctx context.Context, store ArtifactStore, haftDir string, decisionRef, reason string) (*Artifact, *Artifact, error) {
+	return ReopenDecisionWithTaskContext(ctx, store, haftDir, decisionRef, reason, "")
+}
+
+// ReopenDecisionWithTaskContext marks a decision refresh_due and creates a new
+// ProblemCard whose ID includes the optional task context slug.
+func ReopenDecisionWithTaskContext(ctx context.Context, store ArtifactStore, haftDir string, decisionRef, reason, taskContext string) (*Artifact, *Artifact, error) {
 	dec, err := store.Get(ctx, decisionRef)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decision %s not found: %w", decisionRef, err)
@@ -686,9 +715,10 @@ func ReopenDecision(ctx context.Context, store ArtifactStore, haftDir string, de
 	// Effect: create new ProblemCard with lineage
 	signal := fmt.Sprintf("Decision %s needs re-evaluation: %s", decisionRef, reason)
 	newProb, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title:   fmt.Sprintf("Revisit: %s", strings.TrimPrefix(dec.Meta.Title, "Decision: ")),
-		Signal:  signal,
-		Context: dec.Meta.Context,
+		Title:       fmt.Sprintf("Revisit: %s", strings.TrimPrefix(dec.Meta.Title, "Decision: ")),
+		TaskContext: taskContext,
+		Signal:      signal,
+		Context:     dec.Meta.Context,
 	})
 	if err != nil {
 		return dec, nil, fmt.Errorf("create new problem: %w", err)
@@ -789,9 +819,16 @@ func BuildRefreshReportArtifact(id string, now time.Time, decisionRef, action, r
 
 // CreateRefreshReport creates a RefreshReport artifact. Orchestrates effects.
 func CreateRefreshReport(ctx context.Context, store ArtifactStore, haftDir string, decisionRef, action, reason, outcome string) (*Artifact, error) {
+	return CreateRefreshReportWithTaskContext(ctx, store, haftDir, decisionRef, action, reason, outcome, "")
+}
+
+// CreateRefreshReportWithTaskContext creates a RefreshReport artifact with an
+// optional task-context slug in the generated ID.
+func CreateRefreshReportWithTaskContext(ctx context.Context, store ArtifactStore, haftDir string, decisionRef, action, reason, outcome, taskContext string) (*Artifact, error) {
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
-	a := BuildRefreshReportArtifact(GenerateID(KindRefreshReport, 0), time.Now().UTC(), decisionRef, action, reason, outcome)
+	id := GenerateIDWithTaskContext(KindRefreshReport, 0, taskContext)
+	a := BuildRefreshReportArtifact(id, time.Now().UTC(), decisionRef, action, reason, outcome)
 
 	if err := store.Create(ctx, a); err != nil {
 		return nil, err

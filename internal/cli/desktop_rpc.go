@@ -134,6 +134,23 @@ func makeRPCCommand(use, short string, handler func(*rpcEnv, io.Writer) error) *
 	}
 }
 
+// makeRawRPCCommand creates a desktop-rpc subcommand that does not initialize
+// a project database. Use it for project discovery/readiness calls that must
+// also classify missing or uninitialized paths.
+func makeRawRPCCommand(use, short string, handler func(io.Writer) error) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := handler(cmd.OutOrStdout()); err != nil {
+				return writeError(cmd.OutOrStdout(), err)
+			}
+			return nil
+		},
+	}
+}
+
 var desktopRPCCmd = &cobra.Command{
 	Use:    "desktop-rpc",
 	Short:  "Desktop RPC bridge — JSON stdin/stdout dispatch to Go domain functions",
@@ -171,9 +188,21 @@ func init() {
 		makeRPCCommand("delete-flow", "Delete a flow", handleDeleteFlow),
 		makeRPCCommand("run-flow-now", "Trigger a flow immediately", handleRunFlowNow),
 
+		// Harness operator
+		makeRPCCommand("list-commissions", "List WorkCommissions for the harness operator", handleListCommissions),
+		makeRPCCommand("show-commission", "Show one WorkCommission", handleShowCommission),
+		makeRPCCommand("requeue-commission", "Return a WorkCommission to the queue", handleRequeueCommission),
+		makeRPCCommand("cancel-commission", "Cancel an unfinished WorkCommission", handleCancelCommission),
+		makeRPCCommand("harness-result", "Inspect a harness run result", handleHarnessResult),
+		makeRPCCommand("harness-tail", "Inspect humanized harness runtime events", handleHarnessTail),
+		makeRPCCommand("harness-apply", "Apply a completed harness workspace diff", handleHarnessApply),
+
 		// Project management
+		makeRawRPCCommand("project-readiness", "Inspect project readiness without opening the DB", handleProjectReadiness),
+		makeRawRPCCommand("spec-check", "Run deterministic project spec checks", handleSpecCheck),
 		makeRPCCommand("switch-project", "Switch active project", handleSwitchProject),
 		makeRPCCommand("add-project", "Register a project by path", handleAddProject),
+		makeRPCCommand("add-project-smart", "Register or initialize a project by path", handleAddProjectSmart),
 		makeRPCCommand("init-project", "Initialize a new haft project", handleInitProject),
 
 		// Governance & analysis

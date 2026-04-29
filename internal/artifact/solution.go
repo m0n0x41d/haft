@@ -17,6 +17,7 @@ import (
 // ExploreInput is the input for creating a SolutionPortfolio with variants.
 type ExploreInput struct {
 	ProblemRef               string    `json:"problem_ref,omitempty"`
+	TaskContext              string    `json:"task_context,omitempty"`
 	Variants                 []Variant `json:"variants"`
 	Context                  string    `json:"context,omitempty"`
 	Mode                     string    `json:"mode,omitempty"`
@@ -59,11 +60,12 @@ type CompareValidationContext struct {
 
 // CompareValidationResult carries the pure outputs of compare-time validation.
 type CompareValidationResult struct {
-	Warnings             []string
-	EffectiveParity      *ParityPlan
-	ComparedVariants     []string
-	ComputedParetoFront  []string
-	ConstraintEliminated map[string]string // variantID -> reason (nil when none)
+	Warnings                   []string
+	EffectiveParity            *ParityPlan
+	ComparedVariants           []string
+	ComputedParetoFront        []string
+	ConstraintEliminated       map[string]string // variantID -> reason (nil when none)
+	HonorCallerNonDominatedSet bool              // true when computed Pareto produced no dominance signal and caller-supplied set should be retained
 }
 
 // ValidateExploreInput checks variant constraints. Pure.
@@ -284,7 +286,7 @@ func ExploreSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
-	id := GenerateID(KindSolutionPortfolio, 0)
+	id := GenerateIDWithTaskContext(KindSolutionPortfolio, 0, input.TaskContext)
 	var mode Mode
 	if resolvedMode == "" {
 		mode = ModeStandard
@@ -389,7 +391,9 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 	}
 
 	validatedResults := normalizeComparisonResult(input.Results, validation.ComparedVariants)
-	validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
+	if !validation.HonorCallerNonDominatedSet {
+		validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
+	}
 	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
 
 	// Merge constraint-eliminated variants into the dominated_variants list so the UI
@@ -536,53 +540,54 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	}
 	result.ComparedVariants = append([]string(nil), comparedVariants...)
 
+	expected := formatExpectedVariantList(comparedVariants)
 	for _, variantID := range rawScoredVariants {
 		if containsString(comparedVariants, variantID) {
 			continue
 		}
-		return result, fmt.Errorf("scored variant %q is outside the declared compare set", variantID)
+		return result, fmt.Errorf("scored variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
 	}
 
 	for _, variantID := range input.Results.NonDominatedSet {
 		if !containsString(comparedVariants, variantID) {
-			return result, fmt.Errorf("non_dominated_set variant %q is outside the declared compare set", variantID)
+			return result, fmt.Errorf("non_dominated_set variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
 		}
 		if _, ok := input.Results.Scores[variantID]; !ok {
-			return result, fmt.Errorf("non_dominated_set variant %q has no score entry", variantID)
+			return result, fmt.Errorf("non_dominated_set variant %q has no score entry; expected one of: %s", variantID, expected)
 		}
 	}
 	if input.Results.SelectedRef != "" {
 		if !containsString(comparedVariants, input.Results.SelectedRef) {
-			return result, fmt.Errorf("selected_ref %q is outside the declared compare set", input.Results.SelectedRef)
+			return result, fmt.Errorf("selected_ref %q is outside the declared compare set; expected one of: %s", input.Results.SelectedRef, expected)
 		}
 		if _, ok := input.Results.Scores[input.Results.SelectedRef]; !ok {
-			return result, fmt.Errorf("selected_ref %q has no score entry", input.Results.SelectedRef)
+			return result, fmt.Errorf("selected_ref %q has no score entry; expected one of: %s", input.Results.SelectedRef, expected)
 		}
 	}
 	for _, note := range input.Results.DominatedVariants {
 		variantID := strings.TrimSpace(note.Variant)
 		if variantID == "" {
-			return result, fmt.Errorf("dominated_variants entry is missing variant")
+			return result, fmt.Errorf("dominated_variants entry is missing variant; expected one of: %s", expected)
 		}
 		if !containsString(comparedVariants, variantID) {
-			return result, fmt.Errorf("dominated_variants variant %q is outside the declared compare set", variantID)
+			return result, fmt.Errorf("dominated_variants variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
 		}
 		if strings.TrimSpace(note.Summary) == "" {
 			return result, fmt.Errorf("dominated_variants variant %q is missing summary", variantID)
 		}
 		for _, dominator := range note.DominatedBy {
 			if !containsString(comparedVariants, dominator) {
-				return result, fmt.Errorf("dominated_by variant %q is outside the declared compare set", dominator)
+				return result, fmt.Errorf("dominated_by variant %q is outside the declared compare set; expected one of: %s", dominator, expected)
 			}
 		}
 	}
 	for _, note := range input.Results.ParetoTradeoffs {
 		variantID := strings.TrimSpace(note.Variant)
 		if variantID == "" {
-			return result, fmt.Errorf("pareto_tradeoffs entry is missing variant")
+			return result, fmt.Errorf("pareto_tradeoffs entry is missing variant; expected one of: %s", expected)
 		}
 		if !containsString(comparedVariants, variantID) {
-			return result, fmt.Errorf("pareto_tradeoffs variant %q is outside the declared compare set", variantID)
+			return result, fmt.Errorf("pareto_tradeoffs variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
 		}
 		if strings.TrimSpace(note.Summary) == "" {
 			return result, fmt.Errorf("pareto_tradeoffs variant %q is missing summary", variantID)
@@ -591,7 +596,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	for _, pair := range input.Results.Incomparable {
 		for _, variantID := range pair {
 			if !containsString(comparedVariants, variantID) {
-				return result, fmt.Errorf("incomparable variant %q is outside the declared compare set", variantID)
+				return result, fmt.Errorf("incomparable variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
 			}
 		}
 	}
@@ -666,12 +671,31 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	result.ComputedParetoFront = computedFront
 	result.ConstraintEliminated = paretoResult.constraintEliminated
 	warnings = append(warnings, paretoResult.warnings...)
-	if len(input.Results.NonDominatedSet) > 0 && !sameTrimmedSet(input.Results.NonDominatedSet, computedFront) {
+
+	// Honesty fallback: when the computed Pareto front carries zero dominance signal
+	// (no pair produced a comparable dimension), a "front equal to the entire compare
+	// set" is conservative noise, not authority. Silently overriding caller's
+	// non_dominated_set with this conservative full set would erase the human ranking.
+	// In that case, retain caller's set as authority for explanation coverage and emit
+	// a typed warning naming the indecisive dimensions so the user can fix the scores.
+	honorCallerSet := paretoResult.comparablePairCount == 0 &&
+		len(input.Results.NonDominatedSet) > 0 &&
+		len(paretoResult.indecisiveDimensions) > 0
+	result.HonorCallerNonDominatedSet = honorCallerSet
+
+	authoritativeFront := computedFront
+	if honorCallerSet {
+		authoritativeFront = dedupeTrimmedStrings(input.Results.NonDominatedSet)
+		warnings = append(warnings, fmt.Sprintf(
+			"Pareto computation produced no dominance signal because dimensions [%s] could not be ordered for any variant pair (scores not in the canonical ordinal vocabulary or persistently missing under the missing_data_policy). Honoring caller-supplied non_dominated_set as authority for explanation coverage; computed Pareto front kept conservative as the full compare set.",
+			strings.Join(paretoResult.indecisiveDimensions, ", "),
+		))
+	} else if len(input.Results.NonDominatedSet) > 0 && !sameTrimmedSet(input.Results.NonDominatedSet, computedFront) {
 		warnings = append(warnings,
 			fmt.Sprintf("provided non_dominated_set disagrees with the computed Pareto front; storing computed front: %s",
 				strings.Join(computedFront, ", ")))
 	}
-	if input.Results.SelectedRef != "" && !containsString(computedFront, input.Results.SelectedRef) {
+	if input.Results.SelectedRef != "" && !containsString(authoritativeFront, input.Results.SelectedRef) {
 		warnings = append(warnings,
 			fmt.Sprintf("selected_ref %q is outside the computed Pareto front; verify that the compared dimensions capture the real selection policy",
 				input.Results.SelectedRef))
@@ -692,7 +716,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 
 	if err := validateComparisonExplanationCoverage(
 		explanationVariants,
-		computedFront,
+		authoritativeFront,
 		input.Results.DominatedVariants,
 		input.Results.ParetoTradeoffs,
 	); err != nil {
@@ -946,6 +970,14 @@ func comparedVariantsFromScores(scores map[string]map[string]string) []string {
 	return variants
 }
 
+// MaterializeVariantIDs is the public alias used by surface code that needs
+// to lazy-derive canonical V1/V2/... ids on legacy portfolios whose stored
+// variants do not yet carry explicit ids. Idempotent: variants with a
+// non-empty ID are left untouched.
+func MaterializeVariantIDs(variants []Variant) []Variant {
+	return materializeVariantIDs(variants)
+}
+
 func materializeVariantIDs(variants []Variant) []Variant {
 	materialized := cloneVariants(variants)
 	for i := range materialized {
@@ -1181,6 +1213,21 @@ func displayVariantLabel(value string, labels map[string]string) string {
 	return trimmed
 }
 
+// formatExpectedVariantList renders the canonical compare-set ids inline for
+// error messages. Surfaces this so a caller hitting an "outside the declared
+// compare set" error sees, in the same string, the set it should have used.
+// Closes the discoverability gap from github issue #71.
+func formatExpectedVariantList(variants []string) string {
+	if len(variants) == 0 {
+		return "[] (no variants in the portfolio)"
+	}
+	quoted := make([]string, 0, len(variants))
+	for _, id := range variants {
+		quoted = append(quoted, fmt.Sprintf("%q", id))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func containsString(values []string, target string) bool {
 	normalizedTarget := strings.TrimSpace(target)
 	for _, value := range values {
@@ -1258,8 +1305,9 @@ func validateParetoTradeoffCoverage(expected []string, notes []ParetoTradeoffNot
 			strings.Join(duplicates, ", "))
 	}
 	if missing := missingComparisonExplanations(expected, seen); len(missing) > 0 {
-		return fmt.Errorf("pareto_tradeoffs must explain every Pareto-front variant; missing: %s",
-			strings.Join(missing, ", "))
+		return fmt.Errorf("pareto_tradeoffs must explain every Pareto-front variant; missing: %s; expected one of: %s",
+			strings.Join(missing, ", "),
+			formatExpectedVariantList(expected))
 	}
 
 	return nil
@@ -1919,6 +1967,8 @@ type paretoFrontResult struct {
 	front                []string
 	warnings             []string
 	constraintEliminated map[string]string // variantID -> reason (nil when none eliminated)
+	comparablePairCount  int               // pairs that produced at least one comparable dimension
+	indecisiveDimensions []string          // dimensions that never produced a comparable result for any pair
 }
 
 func computeParetoFront(
@@ -1950,17 +2000,25 @@ func computeParetoFront(
 		dominatedBy[variantID] = make(map[string]bool)
 	}
 
+	comparablePairCount := 0
+	comparableByDim := make(map[string]bool, len(specs))
 	for leftIndex := 0; leftIndex < len(surviving); leftIndex++ {
 		leftVariant := surviving[leftIndex]
 		for rightIndex := leftIndex + 1; rightIndex < len(surviving); rightIndex++ {
 			rightVariant := surviving[rightIndex]
-			relation := compareVariantPair(
+			relation, comparableDims := compareVariantPair(
 				leftVariant,
 				rightVariant,
 				results.Scores,
 				specs,
 				missingDataPolicy,
 			)
+			if len(comparableDims) > 0 {
+				comparablePairCount++
+				for dim := range comparableDims {
+					comparableByDim[dim] = true
+				}
+			}
 			switch relation {
 			case pairwiseLeftDominates:
 				dominatedBy[rightVariant][leftVariant] = true
@@ -1978,10 +2036,19 @@ func computeParetoFront(
 		nonDominated = append(nonDominated, variantID)
 	}
 
+	var indecisive []string
+	for _, spec := range specs {
+		if !comparableByDim[spec.Name] {
+			indecisive = append(indecisive, spec.Name)
+		}
+	}
+
 	return paretoFrontResult{
 		front:                nonDominated,
 		warnings:             warnings,
 		constraintEliminated: elimination.eliminated,
+		comparablePairCount:  comparablePairCount,
+		indecisiveDimensions: indecisive,
 	}
 }
 
@@ -2162,11 +2229,12 @@ func compareVariantPair(
 	scores map[string]map[string]string,
 	specs []charDim,
 	missingDataPolicy string,
-) pairwiseDominance {
+) (pairwiseDominance, map[string]bool) {
 	leftBetter := false
 	rightBetter := false
 	unresolved := false
 	comparableDimensions := 0
+	comparableDims := make(map[string]bool, len(specs))
 
 	for _, spec := range specs {
 		leftValue := scoreForDimension(scores[leftVariant], spec.Name)
@@ -2180,6 +2248,7 @@ func compareVariantPair(
 			continue
 		}
 
+		comparableDims[spec.Name] = true
 		comparableDimensions++
 		switch comparison {
 		case 1:
@@ -2191,17 +2260,17 @@ func compareVariantPair(
 
 	switch {
 	case comparableDimensions == 0:
-		return pairwiseIncomparable
+		return pairwiseIncomparable, comparableDims
 	case unresolved:
-		return pairwiseIncomparable
+		return pairwiseIncomparable, comparableDims
 	case leftBetter && !rightBetter:
-		return pairwiseLeftDominates
+		return pairwiseLeftDominates, comparableDims
 	case rightBetter && !leftBetter:
-		return pairwiseRightDominates
+		return pairwiseRightDominates, comparableDims
 	case !leftBetter && !rightBetter:
-		return pairwiseTie
+		return pairwiseTie, comparableDims
 	default:
-		return pairwiseIncomparable
+		return pairwiseIncomparable, comparableDims
 	}
 }
 

@@ -18,11 +18,12 @@ import (
 )
 
 type checkReport struct {
-	Stale        []checkStaleFinding       `json:"stale"`
-	Drifted      []checkDriftFinding       `json:"drifted"`
-	Unassessed   []checkDecisionFinding    `json:"unassessed"`
-	CoverageGaps []checkCoverageGapFinding `json:"coverage_gaps"`
-	Summary      checkSummary              `json:"summary"`
+	Stale        []checkStaleFinding        `json:"stale"`
+	Drifted      []checkDriftFinding        `json:"drifted"`
+	Unassessed   []checkDecisionFinding     `json:"unassessed"`
+	CoverageGaps []checkCoverageGapFinding  `json:"coverage_gaps"`
+	SpecHealth   []project.SpecCheckFinding `json:"spec_health,omitempty"`
+	Summary      checkSummary               `json:"summary"`
 }
 
 type checkSummary struct {
@@ -160,11 +161,32 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	report.Drifted = mapCheckDriftFindings(driftReports)
 	report.Unassessed = collectUnassessedFindings(ctx, store, activeDecisions)
 	report.CoverageGaps = collectCoverageGapFindings(ctx, store, activeDecisions)
+	report.SpecHealth = collectSpecHealthFindings(projectRoot)
 	report.Summary = checkSummary{
-		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps),
+		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps) + len(report.SpecHealth),
 	}
 
 	return report, nil
+}
+
+// collectSpecHealthFindings rolls SpecSection drift + staleness into the
+// `haft check` report so CI gates on the union of governance debt and
+// spec health. The single helper used here is also used by the MCP
+// haft_query(action="check") handler — JSON parity is a contract test.
+func collectSpecHealthFindings(projectRoot string) []project.SpecCheckFinding {
+	specCheckReport, err := project.CheckSpecificationSet(projectRoot)
+	if err != nil {
+		return nil
+	}
+
+	specCheckReport = appendSpecHealthFindings(specCheckReport, projectRoot)
+	if len(specCheckReport.Findings) == 0 {
+		return nil
+	}
+
+	out := make([]project.SpecCheckFinding, len(specCheckReport.Findings))
+	copy(out, specCheckReport.Findings)
+	return out
 }
 
 func filterCheckActiveDecisions(decisions []*artifact.Artifact) []*artifact.Artifact {
@@ -339,6 +361,9 @@ func normalizeCheckReport(report checkReport) checkReport {
 	if report.CoverageGaps == nil {
 		report.CoverageGaps = []checkCoverageGapFinding{}
 	}
+	if report.SpecHealth == nil {
+		report.SpecHealth = []project.SpecCheckFinding{}
+	}
 
 	return report
 }
@@ -356,11 +381,13 @@ func writeCheckSummary(w io.Writer, report checkReport) error {
 	sb.WriteString(fmt.Sprintf("drifted: %d\n", len(report.Drifted)))
 	sb.WriteString(fmt.Sprintf("unassessed: %d\n", len(report.Unassessed)))
 	sb.WriteString(fmt.Sprintf("coverage gaps: %d\n", len(report.CoverageGaps)))
+	sb.WriteString(fmt.Sprintf("spec health: %d\n", len(report.SpecHealth)))
 
 	appendStaleSection(&sb, report.Stale)
 	appendDriftSection(&sb, report.Drifted)
 	appendUnassessedSection(&sb, report.Unassessed)
 	appendCoverageSection(&sb, report.CoverageGaps)
+	appendSpecHealthSection(&sb, report.SpecHealth)
 
 	_, err := io.WriteString(w, sb.String())
 	return err
@@ -407,6 +434,24 @@ func appendCoverageSection(sb *strings.Builder, findings []checkCoverageGapFindi
 	sb.WriteString("\nCoverage Gaps\n")
 	for _, finding := range findings {
 		sb.WriteString(fmt.Sprintf("- %s [%s]: %s\n", finding.Title, finding.DecisionID, strings.Join(finding.Gaps, ", ")))
+	}
+}
+
+func appendSpecHealthSection(sb *strings.Builder, findings []project.SpecCheckFinding) {
+	if len(findings) == 0 {
+		return
+	}
+
+	sb.WriteString("\nSpec Health\n")
+	for _, finding := range findings {
+		section := finding.SectionID
+		if section == "" {
+			section = "(no section)"
+		}
+		sb.WriteString(fmt.Sprintf("- [%s/%s] %s — %s\n", finding.Level, finding.Code, section, finding.Message))
+		if finding.NextAction != "" {
+			sb.WriteString(fmt.Sprintf("  next_action: %s\n", finding.NextAction))
+		}
 	}
 }
 

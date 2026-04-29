@@ -2,9 +2,28 @@ package artifact
 
 import (
 	"context"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+func assertArtifactIDPattern(t *testing.T, id, pattern string) {
+	t.Helper()
+
+	if !regexp.MustCompile(pattern).MatchString(id) {
+		t.Fatalf("artifact ID = %q, want pattern %s", id, pattern)
+	}
+}
+
+func assertArtifactFilenameMatchesID(t *testing.T, filePath, id string) {
+	t.Helper()
+
+	filename := filepath.Base(filePath)
+	if filename != id+".md" {
+		t.Fatalf("filename = %q, want %q", filename, id+".md")
+	}
+}
 
 func TestFrameProblem_Success(t *testing.T) {
 	store := setupTestDB(t)
@@ -82,6 +101,40 @@ func TestFrameProblem_Success(t *testing.T) {
 	if len(results) == 0 {
 		t.Error("problem not found via search")
 	}
+}
+
+func TestFrameProblem_TaskContextSlugInIDAndFilename(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	a, filePath, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:       "Task-scoped problem",
+		TaskContext: "Task #12",
+		Signal:      "Problem filenames need human-readable task context.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^prob-\d{8}-task-12-[0-9a-f]{8}$`)
+	assertArtifactFilenameMatchesID(t, filePath, a.Meta.ID)
+}
+
+func TestFrameProblem_EmptyTaskContextKeepsDefaultIDShape(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	a, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:       "Default-shaped problem",
+		TaskContext: "",
+		Signal:      "Missing task context must not change the existing ID shape.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertArtifactIDPattern(t, a.Meta.ID, `^prob-\d{8}-[0-9a-f]{8}$`)
 }
 
 func TestFrameProblem_MissingTitle(t *testing.T) {

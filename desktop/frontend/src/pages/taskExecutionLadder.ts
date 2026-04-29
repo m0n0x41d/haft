@@ -1,4 +1,10 @@
 import type { TaskState } from "../lib/api";
+import {
+  taskHasTerminalOutcome,
+  taskIsLive,
+  taskRunState,
+  type TaskRunState,
+} from "../lib/taskInput.ts";
 
 export const EXECUTION_LADDER_LABELS = [
   "Planned",
@@ -30,7 +36,8 @@ export function getTaskExecutionLadder(task: TaskState): TaskExecutionLadder | n
 
   const rawStatus = task.status.trim();
   const requiresVerification = taskRequiresVerification(task);
-  const currentLabel = deriveExecutionLabel(rawStatus, requiresVerification);
+  const runState = taskRunState(task.status);
+  const currentLabel = deriveExecutionLabel(runState, requiresVerification);
 
   if (!currentLabel) {
     return null;
@@ -38,13 +45,13 @@ export function getTaskExecutionLadder(task: TaskState): TaskExecutionLadder | n
 
   const steps = EXECUTION_LADDER_LABELS.map((label) => ({
     label,
-    state: executionStepState(label, currentLabel, rawStatus, requiresVerification),
+    state: executionStepState(label, currentLabel, runState, requiresVerification),
   }));
 
   return {
     currentLabel,
     rawStatus,
-    summary: executionSummary(currentLabel, rawStatus),
+    summary: executionSummary(currentLabel, runState),
     steps,
   };
 }
@@ -52,12 +59,13 @@ export function getTaskExecutionLadder(task: TaskState): TaskExecutionLadder | n
 function isImplementationTask(task: TaskState): boolean {
   const title = task.title.trim();
   const prompt = task.prompt.trim();
+  const runState = taskRunState(task.status);
 
   return (
     title.startsWith("Implement:") ||
     prompt.includes("## Implement Decision:") ||
-    task.status === "Ready for PR" ||
-    task.status === "Needs attention"
+    taskHasTerminalOutcome(runState, "ready_for_pr") ||
+    taskHasTerminalOutcome(runState, "needs_attention")
   );
 }
 
@@ -71,34 +79,38 @@ function taskRequiresVerification(task: TaskState): boolean {
 }
 
 function deriveExecutionLabel(
-  rawStatus: string,
+  runState: TaskRunState,
   requiresVerification: boolean,
 ): ExecutionLadderLabel | null {
-  if (rawStatus === "" || rawStatus === "pending") {
+  if (runState.kind === "unavailable" || runState.kind === "pending") {
     return "Planned";
   }
 
-  if (rawStatus === "running") {
+  if (taskIsLive(runState)) {
     return "Running";
   }
 
-  if (rawStatus === "completed") {
+  if (taskHasTerminalOutcome(runState, "completed")) {
     return requiresVerification ? "Verifying" : null;
   }
 
-  if (rawStatus === "Ready for PR") {
+  if (taskHasTerminalOutcome(runState, "ready_for_pr")) {
     return "Ready for PR";
   }
 
-  if (rawStatus === "Needs attention") {
+  if (taskHasTerminalOutcome(runState, "needs_attention")) {
     return "Needs attention";
   }
 
-  if (
-    rawStatus === "failed" ||
-    rawStatus === "cancelled" ||
-    rawStatus === "interrupted"
-  ) {
+  if (taskHasTerminalOutcome(runState, "failed")) {
+    return "Needs attention";
+  }
+
+  if (taskHasTerminalOutcome(runState, "cancelled")) {
+    return "Needs attention";
+  }
+
+  if (taskHasTerminalOutcome(runState, "interrupted")) {
     return "Needs attention";
   }
 
@@ -108,7 +120,7 @@ function deriveExecutionLabel(
 function executionStepState(
   label: ExecutionLadderLabel,
   currentLabel: ExecutionLadderLabel,
-  rawStatus: string,
+  runState: TaskRunState,
   requiresVerification: boolean,
 ): ExecutionLadderStepState {
   if (currentLabel === "Planned") {
@@ -143,7 +155,7 @@ function executionStepState(
     return "current";
   }
 
-  if (rawStatus === "Needs attention") {
+  if (taskHasTerminalOutcome(runState, "needs_attention")) {
     if (label === "Ready for PR") {
       return "upcoming";
     }
@@ -168,7 +180,7 @@ function executionStepState(
 
 function executionSummary(
   currentLabel: ExecutionLadderLabel,
-  rawStatus: string,
+  runState: TaskRunState,
 ): string {
   if (currentLabel === "Planned") {
     return "Task is queued. Execution has not started yet.";
@@ -186,19 +198,19 @@ function executionSummary(
     return "Implementation and post-execution verification passed. The worktree is ready for PR handoff.";
   }
 
-  if (rawStatus === "Needs attention") {
+  if (taskHasTerminalOutcome(runState, "needs_attention")) {
     return "Post-execution verification found an issue. Review the task output before continuing.";
   }
 
-  if (rawStatus === "cancelled") {
+  if (taskHasTerminalOutcome(runState, "cancelled")) {
     return "Execution was cancelled before the task reached a verified handoff.";
   }
 
-  if (rawStatus === "interrupted") {
+  if (taskHasTerminalOutcome(runState, "interrupted")) {
     return "Execution was interrupted before the task reached a verified handoff.";
   }
 
-  if (rawStatus === "failed") {
+  if (taskHasTerminalOutcome(runState, "failed")) {
     return "Execution failed before the task reached a verified handoff.";
   }
 

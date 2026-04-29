@@ -10,6 +10,7 @@ import (
 // NoteInput is the input for creating a note.
 type NoteInput struct {
 	Title          string   `json:"title"`
+	TaskContext    string   `json:"task_context,omitempty"`
 	Rationale      string   `json:"rationale"`
 	AffectedFiles  []string `json:"affected_files,omitempty"`
 	Evidence       string   `json:"evidence,omitempty"`
@@ -284,7 +285,7 @@ func BuildNoteArtifact(id string, now time.Time, input NoteInput) *Artifact {
 func CreateNote(ctx context.Context, store ArtifactStore, haftDir string, input NoteInput) (*Artifact, string, error) {
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
-	id := GenerateID(KindNote, 0)
+	id := GenerateIDWithTaskContext(KindNote, 0, input.TaskContext)
 	a := BuildNoteArtifact(id, time.Now().UTC(), input)
 
 	if err := store.Create(ctx, a); err != nil {

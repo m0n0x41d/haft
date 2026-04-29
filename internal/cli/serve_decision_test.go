@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -64,6 +65,47 @@ func TestHandleQuintDecision_DecidePersistsPredictions(t *testing.T) {
 	}
 	if prediction.Threshold != "> 100k events/sec" {
 		t.Fatalf("prediction threshold = %q", prediction.Threshold)
+	}
+}
+
+func TestHandleQuintDecision_DecideUsesTaskContextInArtifactID(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	_, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action":           "decide",
+		"selected_title":   "Use gRPC",
+		"why_selected":     "Serve-mode decide should pass task_context into the DecisionRecord ID.",
+		"selection_policy": "Prefer a transport decision that remains traceable to the implementation task.",
+		"counterargument":  "Filename context can be mistaken for the decision's semantic authority.",
+		"weakest_link":     "The slug is metadata only and can go stale if the task changes.",
+		"task_context":     "Task #4: API/CLI cleanup",
+		"why_not_others": []map[string]any{{
+			"variant": "REST",
+			"reason":  "It does not exercise the optional DecisionRecord slug path.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"Decision IDs lose their random suffix."},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
+	if !pattern.MatchString(ref) {
+		t.Fatalf("created ref = %q, want sanitized task_context slug before 8-hex suffix", ref)
+	}
+
+	decision, err := store.Get(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TaskContext != "task-4-api-cli-cleanup" {
+		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
 	}
 }
 

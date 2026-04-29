@@ -1,0 +1,42 @@
+{
+  "commissions": [
+    {
+      "id": "wc-canary-stale-block",
+      "decision_ref": "dec-20260422-001",
+      "decision_revision_hash": "decision-r1",
+      "problem_card_ref": "pc-20260422-001",
+      "evidence_requirements": [
+        {
+          "kind": "preflight",
+          "expected": "blocked_stale"
+        }
+      ],
+      "projection_policy": "local_only",
+      "state": "ready",
+      "valid_until": "2099-01-01T00:00:00Z",
+      "fetched_at": "2026-04-22T10:00:00Z",
+      "scope": {
+        "repo_ref": "local:open-sleigh-canary",
+        "base_sha": "base-r1",
+        "target_branch": "feature/local-commission-canary",
+        "allowed_paths": [
+          "src/stale.ex"
+        ],
+        "forbidden_paths": [],
+        "allowed_actions": [
+          "edit_files",
+          "run_tests"
+        ],
+        "affected_files": [
+          "src/stale.ex"
+        ],
+        "allowed_modules": [
+          "Canary.Stale"
+        ],
+        "lockset": [
+          "src/stale.ex"
+        ]
+      }
+    }
+  ]
+}

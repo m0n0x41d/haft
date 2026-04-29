@@ -198,3 +198,140 @@ func TestEmbeddedHReasonSkill_Path5RequiresAutonomousMode(t *testing.T) {
 		}
 	}
 }
+
+func TestV7EmbeddedCommandPromptsDescribeSpecFirstSurfaceContracts(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		required []string
+	}{
+		{
+			name: "h-onboard",
+			path: "commands/h-onboard.md",
+			required: []string{
+				"TargetSystemSpec",
+				"EnablingSystemSpec",
+				"TermMap",
+				"SpecCoverage",
+				"haft spec check",
+				"needs_onboard",
+				"Claude Code and Codex",
+				`haft_spec_section(action="next_step"`,
+				`haft_spec_section(action="approve"`,
+				`haft_spec_section(action="rebaseline"`,
+				`haft_spec_section(action="reopen"`,
+				`haft_query(action="check")`,
+				"spec_section_needs_baseline",
+				"spec_section_drifted",
+				"enabling.architecture.draft",
+				"enabling.work_methods.draft",
+				"enabling.effect_boundaries.draft",
+				"enabling.agent_policy.draft",
+				"enabling.commission_policy.draft",
+				"enabling.runtime_policy.draft",
+				"enabling.evidence_policy.draft",
+				"haft spec onboard --json",
+				`haft_query(action="fpf"`,
+				"FRAME-09",
+				"CHR-10",
+				"CHR-12",
+				"X-STATEMENT-TYPE",
+				"statement_type",
+				"claim_layer",
+				"valid_until",
+				"target_refs",
+				"guard location",
+				"never write",
+			},
+		},
+		{
+			name: "h-status",
+			path: "commands/h-status.md",
+			required: []string{
+				"needs_onboard",
+				"haft spec check",
+				"WorkCommissions",
+				"stale, blocked, or running-too-long WorkCommissions",
+				`haft_commission(action="show"`,
+				"do not start Open-Sleigh",
+				`haft_query(action="check")`,
+			},
+		},
+		{
+			name: "h-verify",
+			path: "commands/h-verify.md",
+			required: []string{
+				`haft_query(action="check")`,
+				"spec_section_drifted",
+				"spec_section_stale",
+				"spec_section_needs_baseline",
+				`haft_spec_section(action="rebaseline"`,
+				`haft_spec_section(action="reopen"`,
+				`haft_spec_section(action="approve"`,
+			},
+		},
+		{
+			name: "h-commission",
+			path: "commands/h-commission.md",
+			required: []string{
+				"authorization step only",
+				"must not start Open-Sleigh",
+				"does not own runtime lifecycle",
+				"WorkCommission = bounded permission to execute",
+				"Do not requeue a commission whose `valid_until` has expired",
+				"Do not physically delete WorkCommissions",
+			},
+		},
+		{
+			name: "h-frame",
+			path: "commands/h-frame.md",
+			required: []string{
+				"Project readiness",
+				"needs_onboard",
+				"/h-onboard",
+				"tactical",
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+				"bounded context",
+			},
+		},
+		{
+			name: "h-decide",
+			path: "commands/h-decide.md",
+			required: []string{
+				"Project readiness",
+				"needs_onboard",
+				"SpecSection refs",
+				"haft_commission(create_from_decision)",
+				"/h-onboard",
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+			},
+		},
+		{
+			name: "h-note",
+			path: "commands/h-note.md",
+			required: []string{
+				"Investigation-first discipline",
+				`haft_query(action="resolve_term"`,
+				"bounded context",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			contentBytes, err := embeddedCommands.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("read command %s: %v", tc.path, err)
+			}
+
+			content := string(contentBytes)
+			for _, required := range tc.required {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s missing %q:\n%s", tc.path, required, content)
+				}
+			}
+		})
+	}
+}

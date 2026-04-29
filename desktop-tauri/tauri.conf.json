@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.haft.desktop",
   "build": {
+    "beforeDevCommand": "cd desktop/frontend && npm run dev",
+    "beforeBuildCommand": "cd desktop/frontend && npm run build",
+    "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../desktop/frontend/dist"
   },
   "app": {

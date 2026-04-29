@@ -6,7 +6,7 @@
 ## Authority hierarchy
 
 1. **This contract** — operating rules, always followed
-2. **spec/** — intended semantics of the target system
+2. **spec/** — intended semantics of Haft's target and enabling systems
 3. **Implementation** — current runtime behavior
 
 When spec and implementation diverge:
@@ -22,6 +22,7 @@ When spec and implementation diverge:
 | `internal/` Go code | Yes | Follow architecture rules below |
 | `desktop/` frontend | Yes | Follow existing component patterns |
 | `spec/` documents | Yes, but flag semantic changes | New terms → add to TERM_MAP first |
+| `.haft/specs/*.md` project specs | Yes, only through explicit user/project onboarding work | Treat as project-local spec carriers; keep strict section IDs and YAML blocks intact. |
 | `.haft/*.md` projections | **No** | Derived from database. Never edit directly. |
 | `db/migrations.go` | Yes, append only | Never modify existing migrations |
 | `CHANGELOG.md` | Yes | Add to Unreleased section |
@@ -33,10 +34,11 @@ When spec and implementation diverge:
 - R_eff — computed from evidence verdicts + CL penalties + decay
 - Pareto front — computed from comparison data
 - Module coverage — computed from knowledge graph queries
+- SpecCoverage state — derived from spec/artifact/code/test/evidence links
 
 ## Architecture rules
 
-- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`, `internal/reff`, `internal/codebase`) must NOT import `desktop/`, `internal/cli/`, or `internal/agentloop/`
+- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`, `internal/reff`, `internal/codebase`, `internal/spec` when added) must NOT import `desktop/`, `internal/cli/`, or `internal/agentloop/`
 - **Flow** may import Core. **Governor** may import Core + Flow. **Surfaces** may import anything below.
 - Side effects only at Flow layer and above. Core is pure queries + mutations through Store interface.
 
@@ -47,6 +49,7 @@ When spec and implementation diverge:
 - `selected_ref` from compare is advisory — not the decision
 - Exception: autonomous mode explicitly enabled for the session
 - Even in autonomous mode: one-way-door decisions require confirmation
+- Agents may draft TargetSystemSpec and EnablingSystemSpec sections, but the human principal approves load-bearing target-system role, boundary, acceptance, and autonomy statements.
 
 ## Verdict vocabulary
 

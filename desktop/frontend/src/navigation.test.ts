@@ -29,5 +29,5 @@ test("non-legacy pages keep their selection and title", () => {
     page: "tasks",
     selectedId: "task-123",
   });
-  assert.equal(title, "Dashboard");
+  assert.equal(title, "Core");
 });

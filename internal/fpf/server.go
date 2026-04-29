@@ -510,6 +510,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) When to re-evaluate this decision",
 					},
+					"section_refs": map[string]interface{}{
+						"type": "array", "items": map[string]string{"type": "string"},
+						"description": "(decide) SpecSection IDs governed by this DecisionRecord",
+					},
 					"predictions": map[string]interface{}{
 						"type":        "array",
 						"description": "(decide) Testable predictions — measure will check each one",
@@ -551,6 +555,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"search_keywords": map[string]string{
 						"type":        "string",
 						"description": "(decide) Space-separated synonyms and related terms for search enrichment",
+					},
+					"task_context": map[string]string{
+						"type":        "string",
+						"description": "(decide) Optional task/context text sanitized into the DecisionRecord ID filename",
 					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
@@ -660,12 +668,16 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "projection", "list", "coverage", "fpf"},
-						"description": "search=FTS5 keyword search, status=compact dashboard, board=rich health dashboard (overview/decisions/problems/coverage/evidence/full), related=by file path, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec",
+						"enum":        []interface{}{"search", "status", "board", "related", "projection", "list", "coverage", "fpf", "check", "resolve_term"},
+						"description": "search=FTS5 keyword search, status=compact dashboard (at-a-glance overview), board=rich health dashboard, related=by file path, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec, check=CI-actionable enforcement findings, resolve_term=ground an umbrella term in this project's bounded context (term-map entries + spec sections referencing it + past artifact mentions) before deciding to ask the operator. Use status for overview; use check when the operator or CI must act on debt; use resolve_term BEFORE asking 'what do you mean?' on a vague signal.",
 					},
 					"query": map[string]string{
 						"type":        "string",
 						"description": "(search, fpf) Search terms",
+					},
+					"term": map[string]string{
+						"type":        "string",
+						"description": "(resolve_term) Umbrella or load-bearing term to ground in the project's bounded context — e.g. 'auth service', 'ready', 'process'. Returned shape: term_map_entries, spec_section_refs, artifact_mentions, resolution (resolved | ambiguous | absent), next_action.",
 					},
 					"kind": map[string]string{
 						"type":        "string",
@@ -703,6 +715,9 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"required": []string{"action"},
 			},
 		})
+
+		tools = append(tools, haftCommissionTool())
+		tools = append(tools, haftSpecSectionTool())
 	}
 
 	s.sendResult(req.ID, map[string]interface{}{

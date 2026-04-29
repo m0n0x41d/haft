@@ -1,0 +1,136 @@
+---
+engine:
+  poll_interval_ms: 30000
+  status_path: ~/.open-sleigh/status.json
+  status_interval_ms: 5000
+  log_path: ~/.open-sleigh/runtime.jsonl
+  concurrency: 2
+  status_http:
+    enabled: false
+    host: 127.0.0.1
+    port: 4767
+
+commission_source:
+  # Local bootstrap mode reads WorkCommission snapshots from this fixture.
+  # It does not require Linear/Jira/GitHub credentials.
+  kind: local
+  fixture_path: fixtures/commissions/local_bootstrap.yaml
+  selector: runnable
+  lease_timeout_s: 300
+  plan_ref: null
+
+projection:
+  mode: local_only
+  targets: []
+  writer_profile: manager_plain
+
+agent:
+  kind: codex
+  version_pin: 0.14.0
+  command: codex app-server
+  max_turns: 20
+  max_tokens_per_turn: 80000
+  wall_clock_timeout_s: 600
+  max_retry_backoff_ms: 300000
+  max_concurrent_agents: 2
+
+codex:
+  approval_policy: never
+  thread_sandbox: workspace-write
+  turn_sandbox_policy:
+    type: workspaceWrite
+  read_timeout_ms: 5000
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+
+judge:
+  kind: codex
+  adapter_version: mvp1-judge
+  max_tokens_per_turn: 4000
+  wall_clock_timeout_s: 120
+
+workspace:
+  root: ~/.open-sleigh/workspaces
+  cleanup_policy: keep
+
+hooks:
+  timeout_ms: 60000
+  failure_policy:
+    after_create: blocking
+    before_run: blocking
+    after_run: warning
+  after_create: |
+    git clone --depth 1 $REPO_URL .
+    mix deps.get || true
+  before_run: |
+    git pull --ff-only origin main || true
+  after_run: null
+  before_remove: null
+
+haft:
+  command: haft serve
+  version: ">= 0.8.0"
+
+external_publication:
+  branch_regex: "^(main|master|release/.*)$"
+  tracker_transition_to: []
+  approvers: ["ivan@weareocta.com"]
+  timeout_h: 24
+
+phases:
+  preflight:
+    agent_role: preflight_checker
+    tools: [haft_query, read, grep, bash]
+    gates:
+      structural:
+        - commission_runnable
+        - decision_fresh
+        - scope_snapshot_fresh
+        - autonomy_envelope_allowed
+      semantic: []
+  frame:
+    agent_role: frame_verifier
+    tools: [haft_query, read, grep]
+    gates:
+      structural:
+        - problem_card_ref_present
+        - described_entity_field_present
+        - valid_until_field_present
+      semantic: [object_of_talk_is_specific]
+  execute:
+    agent_role: executor
+    tools: [read, write, edit, bash, haft_note]
+    gates:
+      structural: [design_runtime_split_ok]
+      semantic: [lade_quadrants_split_ok]
+  measure:
+    agent_role: measurer
+    tools: [haft_decision, haft_refresh]
+    gates:
+      structural:
+        - evidence_ref_not_self
+        - valid_until_field_present
+      semantic: [no_self_evidence_semantic]
+---
+
+# Prompt templates
+
+## Preflight
+You are the Commission Preflight checker. Given WorkCommission {{commission.id}},
+read the linked ProblemCard, DecisionRecord, scope, base branch, lockset, and
+AutonomyEnvelope. Report whether current context materially changed. You do not
+authorize execution; Haft decides after validating your PreflightReport.
+
+## Frame
+You are the Frame verifier. Given WorkCommission {{commission.id}} and linked
+ProblemCardRef {{commission.problem_card_ref}}, verify that the upstream
+ProblemCard is present, fresh, and sufficiently specific.
+
+## Execute
+You are the Executor. Given DecisionRecord {{decision.id}} and WorkCommission
+{{commission.id}}, implement only the bounded scope and produce external
+evidence.
+
+## Measure
+You are the Measurer. Given WorkCommission {{commission.id}}, assemble external
+evidence and decide whether the measured outcome passes.

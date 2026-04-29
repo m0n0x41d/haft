@@ -15,12 +15,14 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
 type checkTestProject struct {
 	root    string
 	haftDir string
 	store   *artifact.Store
+	db      *sql.DB
 }
 
 type checkSeedData struct {
@@ -223,6 +225,8 @@ func newCheckTestProject(t *testing.T) checkTestProject {
 		t.Fatalf("create project config: %v", err)
 	}
 
+	_ = cfg
+
 	dbPath, err := cfg.DBPath()
 	if err != nil {
 		t.Fatalf("resolve DB path: %v", err)
@@ -236,11 +240,30 @@ func newCheckTestProject(t *testing.T) checkTestProject {
 
 	createCheckSchema(t, db)
 
-	return checkTestProject{
+	// SpecSectionBaseline storage from migration v28 (slice 3). The bespoke
+	// fixture schema doesn't run RunMigrations; declare the table inline so
+	// writeCheckTestSpecCarriers can baseline its active sections.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS spec_section_baselines (
+		project_id TEXT NOT NULL,
+		section_id TEXT NOT NULL,
+		hash TEXT NOT NULL,
+		captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		approved_by TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (project_id, section_id)
+	)`); err != nil {
+		t.Fatalf("create spec_section_baselines: %v", err)
+	}
+
+	fixture := checkTestProject{
 		root:    root,
 		haftDir: haftDir,
 		store:   artifact.NewStore(db),
+		db:      db,
 	}
+
+	writeCheckTestSpecCarriers(t, fixture)
+
+	return fixture
 }
 
 func createCheckSchema(t *testing.T, db *sql.DB) {
@@ -462,11 +485,24 @@ func enterTestProjectRoot(t *testing.T, dir string) func() {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+	originalProjectRoot, hadProjectRoot := os.LookupEnv("HAFT_PROJECT_ROOT")
+	if err := os.Setenv("HAFT_PROJECT_ROOT", dir); err != nil {
+		t.Fatalf("set HAFT_PROJECT_ROOT: %v", err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir %s: %v", dir, err)
 	}
 
 	return func() {
+		if hadProjectRoot {
+			if err := os.Setenv("HAFT_PROJECT_ROOT", originalProjectRoot); err != nil {
+				t.Fatalf("restore HAFT_PROJECT_ROOT: %v", err)
+			}
+		} else {
+			if err := os.Unsetenv("HAFT_PROJECT_ROOT"); err != nil {
+				t.Fatalf("unset HAFT_PROJECT_ROOT: %v", err)
+			}
+		}
 		if err := os.Chdir(originalDir); err != nil {
 			t.Fatalf("restore cwd: %v", err)
 		}
@@ -497,4 +533,88 @@ func stubCheckExit(t *testing.T) *int {
 	})
 
 	return exitCode
+}
+
+// writeCheckTestSpecCarriers writes the minimum-viable spec carriers
+// (one active target section + one active enabling section + one term)
+// so `haft check` is clean by default in tests. Tests that exercise
+// spec_health findings explicitly should mutate these carriers.
+func writeCheckTestSpecCarriers(t *testing.T, fixture checkTestProject) {
+	t.Helper()
+
+	haftDir := fixture.haftDir
+	specsDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specsDir, 0o755); err != nil {
+		t.Fatalf("mkdir specs: %v", err)
+	}
+
+	target := "## TS.environment.001\n\n" +
+		"```yaml spec-section\n" +
+		"id: TS.environment.001\n" +
+		"spec: target-system\n" +
+		"kind: environment-change\n" +
+		"title: Test environment change\n" +
+		"statement_type: definition\n" +
+		"claim_layer: object\n" +
+		"owner: human\n" +
+		"status: active\n" +
+		"valid_until: 2099-12-31\n" +
+		"```\n"
+	if err := os.WriteFile(filepath.Join(specsDir, "target-system.md"), []byte(target), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	enabling := "## ES.creator.001\n\n" +
+		"```yaml spec-section\n" +
+		"id: ES.creator.001\n" +
+		"spec: enabling-system\n" +
+		"kind: creator-role\n" +
+		"title: Test creator role\n" +
+		"statement_type: explanation\n" +
+		"claim_layer: carrier\n" +
+		"owner: human\n" +
+		"status: active\n" +
+		"valid_until: 2099-12-31\n" +
+		"```\n"
+	if err := os.WriteFile(filepath.Join(specsDir, "enabling-system.md"), []byte(enabling), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	termMap := "```yaml term-map\n" +
+		"entries:\n" +
+		"  - term: TestProject\n" +
+		"    domain: target\n" +
+		"    definition: A project under check_test fixture.\n" +
+		"```\n"
+	if err := os.WriteFile(filepath.Join(specsDir, "term-map.md"), []byte(termMap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active sections need baselines so SpecSection drift detection
+	// stays clean. Tests that exercise drift will overwrite carriers
+	// after the fixture is built.
+	cfg, err := project.Load(haftDir)
+	if err != nil {
+		t.Fatalf("load project config: %v", err)
+	}
+
+	store := specflow.NewSQLiteBaselineStore(fixture.db)
+	specSet, err := project.LoadProjectSpecificationSet(fixture.root)
+	if err != nil {
+		t.Fatalf("load spec set: %v", err)
+	}
+	for _, section := range specSet.Sections {
+		if section.Status != string(project.SpecSectionStateActive) {
+			continue
+		}
+		baseline := specflow.SectionBaseline{
+			ProjectID:  cfg.ID,
+			SectionID:  section.ID,
+			Hash:       specflow.HashSection(section),
+			ApprovedBy: "check-test-fixture",
+		}
+		if err := store.Put(baseline); err != nil {
+			t.Fatalf("put baseline %s: %v", section.ID, err)
+		}
+	}
 }

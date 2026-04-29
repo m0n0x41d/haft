@@ -2951,13 +2951,19 @@ func watchHarnessDrainUntilIdle(
 		for _, commissionID := range monitor.ObservedIDs {
 			seenIDs[commissionID] = struct{}{}
 		}
-		// Auto-apply hook: any commission that's left the open set with
-		// auto_apply.allowed=true gets the workspace diff applied as a
-		// discrete revertable commit. Best-effort — failures are logged but
-		// don't abort the drain loop. Each commission is attempted at most
-		// once per drain run.
+		// Auto-apply hook: any commission that has been observed by the drain
+		// (so we know it was selected for this run or claimed by Open-Sleigh)
+		// AND is no longer in the open set (terminal or no longer runnable)
+		// AND its delivery_decision says auto_apply.allowed=true gets the
+		// workspace diff applied as a discrete revertable commit. We iterate
+		// over `seenIDs` rather than the current poll's `monitor.ObservedIDs`
+		// because terminal commissions drop out of ObservedIDs once Open-Sleigh
+		// stops reporting them as runnable/executing/stale, and the trigger
+		// must still see them after they terminate. Best-effort — failures are
+		// logged but don't abort the drain loop. Each commission is attempted
+		// at most once per drain run.
 		openSet := stringSet(monitor.OpenIDs)
-		for _, commissionID := range monitor.ObservedIDs {
+		for commissionID := range seenIDs {
 			if _, attempted := autoApplyAttempted[commissionID]; attempted {
 				continue
 			}
@@ -2970,12 +2976,11 @@ func watchHarnessDrainUntilIdle(
 			}
 			eligible, _ := attemptHarnessAutoApply(cmd, commission, projectRoot, workspaceRoot)
 			if eligible {
-				autoApplyAttempted[commissionID] = struct{}{}
 				lastProgressAt = time.Now()
-			} else {
-				// not eligible — never need to re-check
-				autoApplyAttempted[commissionID] = struct{}{}
 			}
+			// Mark attempted regardless of eligibility — non-eligible commissions
+			// (manual policy, blocked envelope, etc.) never need re-checking.
+			autoApplyAttempted[commissionID] = struct{}{}
 		}
 		tailIDs := sortedSetValues(seenIDs)
 

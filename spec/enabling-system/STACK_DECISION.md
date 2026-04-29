@@ -33,6 +33,19 @@
 | **Lint** | golangci-lint v2 | Comprehensive Go linting |
 | **Desktop build** | Tauri CLI (`cargo tauri build`) | Native app packaging for the Rust shell plus React frontend |
 
+## Harness Batch Execution
+
+Decision record: `dec-20260428-harness-drain-v3-16bf21f3`.
+
+| Component | Technology / policy | Why | Alternatives considered |
+|-----------|---------------------|-----|-------------------------|
+| **Batch drainer owner** | Open-Sleigh durable intake loop, reached through `haft harness run --drain --concurrency N` | Keeps batch execution in the commission harness that already owns queue intake, lease observation, and agent concurrency. Drain mode is opt-in, so existing single-commission `haft harness run` behavior remains unchanged. | One-shot claimed-batch execution (cannot run unattended until the runnable queue is empty); ad hoc shell loop around `haft harness run` (cannot reliably surface typed skip reasons or clean shutdown semantics). |
+| **Parallel claim safety** | Existing lockset-conflict rejection at claim time | Preserves the current invariant that overlapping WorkCommissions do not execute concurrently against the same files. Drain mode increases throughput only across non-overlapping commissions. | Relax lockset checks under drain mode (rejected: raises silent corruption risk); serialize all commissions (safe but defeats the batch throughput target). |
+| **Auto-apply policy** | `workspace_patch_auto_on_pass` applies only when verdict is `pass` and AutonomyEnvelope re-evaluation returns `allowed` | Makes the green path low-touch while keeping the envelope as the authoritative autonomy boundary. Each apply remains a discrete, revertable local git operation. | Always manual apply (too much operator burden for overnight batches); batch squash apply (rejected: weak reversibility); remote push/PR automation (out of scope for local-only drainer). |
+| **Manual fallback policy** | `workspace_patch_manual` remains the default delivery policy | Keeps autonomy explicit per decision. Commissions that fail, require a checkpoint, or use the manual policy wait for operator `haft harness apply`, `haft harness requeue`, or `haft harness cancel`. | Make auto-apply the default (rejected: changes the autonomy budget silently). |
+| **Stale lease policy** | Intake skips leases claimed longer than 24h by default with typed reason `lease_too_old` | Prevents silent revival of old claimed work while leaving an operator-visible recovery path. The age cap is an intake policy, not proof that the commission is invalid. | Resume any unexpired lease (audit gap); require manual cleanup for every claimed lease (too noisy for unattended batches). |
+| **External effects** | Local filesystem and local git only | Matches the commission projection policy and keeps the drainer out of remote authority: no push, no PR creation, no comments, no webhooks. | Merge agent or remote delivery automation (deferred until a later explicit autonomy decision). |
+
 ## What We Don't Use (and why)
 
 | Technology | Why not |

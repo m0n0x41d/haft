@@ -21,6 +21,41 @@ const (
 	StateExpired                     State = "expired"
 )
 
+type DeliveryPolicy string
+
+const (
+	DeliveryPolicyWorkspacePatchManual     DeliveryPolicy = "workspace_patch_manual"
+	DeliveryPolicyWorkspacePatchAutoOnPass DeliveryPolicy = "workspace_patch_auto_on_pass"
+)
+
+type DeliveryVerdict string
+
+const (
+	DeliveryVerdictPass    DeliveryVerdict = "pass"
+	DeliveryVerdictNonPass DeliveryVerdict = "non_pass"
+)
+
+type DeliveryGate string
+
+const (
+	DeliveryGateAllowed DeliveryGate = "allowed"
+	DeliveryGateBlocked DeliveryGate = "blocked"
+	DeliveryGateMissing DeliveryGate = "missing"
+)
+
+type DeliveryAction string
+
+const (
+	DeliveryActionAutoApply   DeliveryAction = "auto_apply"
+	DeliveryActionManualApply DeliveryAction = "manual_apply"
+)
+
+type DeliveryDecision struct {
+	Action    DeliveryAction
+	AutoApply bool
+	Reason    string
+}
+
 var knownStates = map[State]struct{}{
 	StateDraft:                       {},
 	StateQueued:                      {},
@@ -123,6 +158,57 @@ func SatisfiesDependencyState(value string) bool {
 	return IsCompletionState(value)
 }
 
+func NormalizeDeliveryPolicy(value string) DeliveryPolicy {
+	switch DeliveryPolicy(strings.TrimSpace(value)) {
+	case DeliveryPolicyWorkspacePatchAutoOnPass:
+		return DeliveryPolicyWorkspacePatchAutoOnPass
+	default:
+		return DeliveryPolicyWorkspacePatchManual
+	}
+}
+
+func NormalizeDeliveryVerdict(value string) DeliveryVerdict {
+	switch strings.TrimSpace(value) {
+	case "pass", "completed":
+		return DeliveryVerdictPass
+	default:
+		return DeliveryVerdictNonPass
+	}
+}
+
+func NormalizeDeliveryGate(value string) DeliveryGate {
+	switch DeliveryGate(strings.TrimSpace(value)) {
+	case DeliveryGateAllowed:
+		return DeliveryGateAllowed
+	case DeliveryGateBlocked:
+		return DeliveryGateBlocked
+	default:
+		return DeliveryGateMissing
+	}
+}
+
+func DeliveryAfterLocalEvidence(
+	policy DeliveryPolicy,
+	verdict DeliveryVerdict,
+	gate DeliveryGate,
+) DeliveryDecision {
+	if verdict != DeliveryVerdictPass {
+		return manualDeliveryDecision("verdict_not_pass")
+	}
+	if policy != DeliveryPolicyWorkspacePatchAutoOnPass {
+		return manualDeliveryDecision("delivery_policy_manual")
+	}
+	if gate != DeliveryGateAllowed {
+		return manualDeliveryDecision(deliveryGateManualReason(gate))
+	}
+
+	return DeliveryDecision{
+		Action:    DeliveryActionAutoApply,
+		AutoApply: true,
+		Reason:    "policy_auto_on_pass_and_envelope_allowed",
+	}
+}
+
 func RecoverableStateValues() []string {
 	return stateValues([]State{
 		StateQueued,
@@ -165,4 +251,23 @@ func stateValues(states []State) []string {
 func stateIn(state State, states map[State]struct{}) bool {
 	_, ok := states[state]
 	return ok
+}
+
+func manualDeliveryDecision(reason string) DeliveryDecision {
+	return DeliveryDecision{
+		Action:    DeliveryActionManualApply,
+		AutoApply: false,
+		Reason:    reason,
+	}
+}
+
+func deliveryGateManualReason(gate DeliveryGate) string {
+	switch gate {
+	case DeliveryGateBlocked:
+		return "autonomy_envelope_blocked"
+	case DeliveryGateMissing:
+		return "autonomy_envelope_missing"
+	default:
+		return "autonomy_envelope_not_allowed"
+	}
 }

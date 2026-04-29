@@ -27,6 +27,8 @@ const defaultCommissionOpenAttentionAfter = 24 * time.Hour
 
 const defaultCommissionLeaseAttentionAfter = 2 * time.Hour
 
+const defaultCommissionLeaseAgeCap = 24 * time.Hour
+
 type commissionFromDecisionInput struct {
 	DecisionRef          string
 	RepoRef              string
@@ -80,6 +82,11 @@ type commissionFreshnessReport struct {
 	Gaps   []commissionFreshnessGap
 }
 
+type commissionOperatorAttention struct {
+	Code   string
+	Reason string
+}
+
 var requeueWorkCommissionTransition = workCommissionTransition{
 	ErrorCode:        "commission_not_requeueable",
 	TargetState:      "queued",
@@ -119,6 +126,8 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 		return listWorkCommissions(ctx, store, args)
 	case "list_runnable":
 		return listRunnableWorkCommissions(ctx, store, args)
+	case "drain_status":
+		return drainWorkCommissionStatus(ctx, store, args)
 	case "show":
 		return showWorkCommission(ctx, store, args)
 	case "claim_for_preflight":
@@ -617,15 +626,43 @@ func listRunnableWorkCommissions(ctx context.Context, store *artifact.Store, arg
 		return "", err
 	}
 
+	leaseAgeCap, err := commissionLeaseAgeCap(args)
+	if err != nil {
+		return "", err
+	}
+
 	now := time.Now().UTC()
+	commissions, skipped := runnableAndSkippedWorkCommissions(records, args, now, leaseAgeCap)
+
+	return commissionResponseMap(map[string]any{
+		"commissions": commissions,
+		"skipped":     skipped,
+	})
+}
+
+func runnableAndSkippedWorkCommissions(
+	records []map[string]any,
+	args map[string]any,
+	now time.Time,
+	leaseAgeCap time.Duration,
+) ([]map[string]any, []map[string]any) {
 	commissions := make([]map[string]any, 0, len(records))
+	skipped := make([]map[string]any, 0)
+
 	for _, commission := range records {
-		if workCommissionRunnableForRequest(commission, records, args, now) {
+		if !workCommissionMatchesRequest(commission, args) {
+			continue
+		}
+		if skip := workCommissionIntakeSkip(commission, now, leaseAgeCap); skip != nil {
+			skipped = append(skipped, skip)
+			continue
+		}
+		if workCommissionRunnableForRequestWithLeaseCap(commission, records, args, now, leaseAgeCap) {
 			commissions = append(commissions, commission)
 		}
 	}
 
-	return commissionResponse("commissions", commissions)
+	return commissions, skipped
 }
 
 func listWorkCommissions(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
@@ -647,20 +684,55 @@ func listWorkCommissions(ctx context.Context, store *artifact.Store, args map[st
 		return "", err
 	}
 
+	leaseAgeCap, err := commissionLeaseAgeCap(args)
+	if err != nil {
+		return "", err
+	}
+
 	stateFilter := stringArg(args, "state")
 	now := time.Now().UTC()
 	commissions := make([]map[string]any, 0, len(records))
 	for _, commission := range records {
-		if !workCommissionListSelectorMatches(commission, records, selector, args, now, olderThan) {
+		if !workCommissionListSelectorMatchesWithLeaseCap(commission, records, selector, args, now, olderThan, leaseAgeCap) {
 			continue
 		}
 		if stateFilter != "" && stringField(commission, "state") != stateFilter {
 			continue
 		}
-		commissions = append(commissions, workCommissionWithOperatorFields(commission, now, olderThan))
+		commissions = append(
+			commissions,
+			workCommissionWithOperatorFieldsAndLeaseCap(commission, now, olderThan, leaseAgeCap),
+		)
 	}
 
 	return commissionResponse("commissions", commissions)
+}
+
+func drainWorkCommissionStatus(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return "", err
+	}
+
+	leaseAgeCap, err := commissionLeaseAgeCap(args)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	commissions, skipped := runnableAndSkippedWorkCommissions(records, args, now, leaseAgeCap)
+	drain := map[string]any{
+		"empty":          len(commissions) == 0,
+		"runnable_count": len(commissions),
+		"skipped_count":  len(skipped),
+		"lease_age_cap":  leaseAgeCap.String(),
+	}
+
+	return commissionResponseMap(map[string]any{
+		"drain":       drain,
+		"commissions": commissions,
+		"skipped":     skipped,
+	})
 }
 
 func showWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
@@ -674,12 +746,22 @@ func showWorkCommission(ctx context.Context, store *artifact.Store, args map[str
 		return "", err
 	}
 
+	leaseAgeCap, err := commissionLeaseAgeCap(args)
+	if err != nil {
+		return "", err
+	}
+
 	commission, err := loadWorkCommissionPayload(ctx, store, commissionID)
 	if err != nil {
 		return "", err
 	}
 
-	commission = workCommissionWithOperatorFields(commission, time.Now().UTC(), olderThan)
+	commission = workCommissionWithOperatorFieldsAndLeaseCap(
+		commission,
+		time.Now().UTC(),
+		olderThan,
+		leaseAgeCap,
+	)
 	return commissionResponse("commission", commission)
 }
 
@@ -723,6 +805,11 @@ func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store,
 		runnerID = "haft"
 	}
 
+	leaseAgeCap, err := commissionLeaseAgeCap(args)
+	if err != nil {
+		return "", err
+	}
+
 	tx, err := store.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return "", fmt.Errorf("begin WorkCommission claim: %w", err)
@@ -734,7 +821,8 @@ func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store,
 		return "", err
 	}
 
-	commission, err := selectWorkCommissionForClaim(commissions, args, time.Now().UTC())
+	now := time.Now().UTC()
+	commission, err := selectWorkCommissionForClaimWithLeaseCap(commissions, args, now, leaseAgeCap)
 	if err != nil {
 		return "", err
 	}
@@ -742,7 +830,6 @@ func claimWorkCommissionForPreflight(ctx context.Context, store *artifact.Store,
 		return "", err
 	}
 
-	now := time.Now().UTC()
 	commission["state"] = "preflighting"
 	commission["lease"] = map[string]any{
 		"runner_id":  runnerID,
@@ -1973,13 +2060,61 @@ func workCommissionRunnable(commission map[string]any, now time.Time) bool {
 	return validUntil.After(now)
 }
 
+func workCommissionIntakeSkip(
+	commission map[string]any,
+	now time.Time,
+	leaseAgeCap time.Duration,
+) map[string]any {
+	attention := workCommissionLeaseAgeCapAttention(commission, now, leaseAgeCap)
+	if attention.Code == "" {
+		return nil
+	}
+
+	lease, _ := mapArg(commission, "lease")
+	claimedAt := stringField(lease, "claimed_at")
+	return map[string]any{
+		"id":         stringField(commission, "id"),
+		"state":      stringField(commission, "state"),
+		"reason":     attention.Code,
+		"message":    attention.Reason,
+		"claimed_at": claimedAt,
+		"age_cap":    leaseAgeCap.String(),
+	}
+}
+
+func commissionIntakeSkipError(skip map[string]any) error {
+	return fmt.Errorf(
+		"%s: commission_id=%s age_cap=%s",
+		stringField(skip, "reason"),
+		stringField(skip, "id"),
+		stringField(skip, "age_cap"),
+	)
+}
+
 func workCommissionRunnableForRequest(
 	commission map[string]any,
 	commissions []map[string]any,
 	args map[string]any,
 	now time.Time,
 ) bool {
+	return workCommissionRunnableForRequestWithLeaseCap(
+		commission,
+		commissions,
+		args,
+		now,
+		defaultCommissionLeaseAgeCap,
+	)
+}
+
+func workCommissionRunnableForRequestWithLeaseCap(
+	commission map[string]any,
+	commissions []map[string]any,
+	args map[string]any,
+	now time.Time,
+	leaseAgeCap time.Duration,
+) bool {
 	return workCommissionMatchesRequest(commission, args) &&
+		workCommissionIntakeSkip(commission, now, leaseAgeCap) == nil &&
 		workCommissionRunnable(commission, now) &&
 		workCommissionDependenciesSatisfied(commission, commissions) &&
 		workCommissionAutonomyEnvelopeRunnable(commission, now)
@@ -2031,12 +2166,37 @@ func selectWorkCommissionForClaim(
 	args map[string]any,
 	now time.Time,
 ) (map[string]any, error) {
+	return selectWorkCommissionForClaimWithLeaseCap(
+		commissions,
+		args,
+		now,
+		defaultCommissionLeaseAgeCap,
+	)
+}
+
+func selectWorkCommissionForClaimWithLeaseCap(
+	commissions []map[string]any,
+	args map[string]any,
+	now time.Time,
+	leaseAgeCap time.Duration,
+) (map[string]any, error) {
 	commissionID := stringArg(args, "commission_id")
+	var firstSkip map[string]any
+
 	for _, commission := range commissions {
 		if commissionID != "" && stringField(commission, "id") != commissionID {
 			continue
 		}
-		if workCommissionRunnableForRequest(commission, commissions, args, now) {
+		if skip := workCommissionIntakeSkip(commission, now, leaseAgeCap); skip != nil {
+			if commissionID != "" {
+				return nil, commissionIntakeSkipError(skip)
+			}
+			if firstSkip == nil {
+				firstSkip = skip
+			}
+			continue
+		}
+		if workCommissionRunnableForRequestWithLeaseCap(commission, commissions, args, now, leaseAgeCap) {
 			return commission, nil
 		}
 		if commissionID != "" {
@@ -2046,6 +2206,9 @@ func selectWorkCommissionForClaim(
 
 	if commissionID != "" {
 		return nil, fmt.Errorf("commission_not_found")
+	}
+	if firstSkip != nil {
+		return nil, commissionIntakeSkipError(firstSkip)
 	}
 	return nil, fmt.Errorf("commission_not_runnable")
 }
@@ -2204,6 +2367,26 @@ func workCommissionListSelectorMatches(
 	now time.Time,
 	openAttentionAfter time.Duration,
 ) bool {
+	return workCommissionListSelectorMatchesWithLeaseCap(
+		commission,
+		commissions,
+		selector,
+		args,
+		now,
+		openAttentionAfter,
+		defaultCommissionLeaseAgeCap,
+	)
+}
+
+func workCommissionListSelectorMatchesWithLeaseCap(
+	commission map[string]any,
+	commissions []map[string]any,
+	selector string,
+	args map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+	leaseAgeCap time.Duration,
+) bool {
 	switch selector {
 	case "all":
 		return true
@@ -2212,9 +2395,9 @@ func workCommissionListSelectorMatches(
 	case "terminal":
 		return workCommissionTerminal(commission)
 	case "stale":
-		return workCommissionAttentionReason(commission, now, openAttentionAfter) != ""
+		return workCommissionAttentionWithLeaseCap(commission, now, openAttentionAfter, leaseAgeCap).Reason != ""
 	case "runnable":
-		return workCommissionRunnableForRequest(commission, commissions, args, now)
+		return workCommissionRunnableForRequestWithLeaseCap(commission, commissions, args, now, leaseAgeCap)
 	default:
 		return false
 	}
@@ -2225,14 +2408,29 @@ func workCommissionWithOperatorFields(
 	now time.Time,
 	openAttentionAfter time.Duration,
 ) map[string]any {
+	return workCommissionWithOperatorFieldsAndLeaseCap(
+		commission,
+		now,
+		openAttentionAfter,
+		defaultCommissionLeaseAgeCap,
+	)
+}
+
+func workCommissionWithOperatorFieldsAndLeaseCap(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+	leaseAgeCap time.Duration,
+) map[string]any {
 	enriched := copyStringAnyMap(commission)
-	reason := workCommissionAttentionReason(commission, now, openAttentionAfter)
+	attention := workCommissionAttentionWithLeaseCap(commission, now, openAttentionAfter, leaseAgeCap)
 	enriched["operator"] = map[string]any{
 		"terminal":          workCommissionTerminal(commission),
 		"expired":           workCommissionExpired(commission, now),
-		"attention":         reason != "",
-		"attention_reason":  reason,
-		"suggested_actions": workCommissionSuggestedActions(commission, reason, now),
+		"attention":         attention.Reason != "",
+		"attention_code":    attention.Code,
+		"attention_reason":  attention.Reason,
+		"suggested_actions": workCommissionSuggestedActions(commission, attention.Reason, now),
 	}
 	return enriched
 }
@@ -2261,38 +2459,75 @@ func workCommissionAttentionReason(
 	now time.Time,
 	openAttentionAfter time.Duration,
 ) string {
+	return workCommissionAttentionWithLeaseCap(
+		commission,
+		now,
+		openAttentionAfter,
+		defaultCommissionLeaseAgeCap,
+	).Reason
+}
+
+func workCommissionAttentionWithLeaseCap(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+	leaseAgeCap time.Duration,
+) commissionOperatorAttention {
 	state := stringField(commission, "state")
 	if workcommission.IsTerminalState(state) {
-		return ""
+		return commissionOperatorAttention{}
 	}
 	if workCommissionExpired(commission, now) {
-		return "expired before terminal state"
+		return commissionOperatorAttention{
+			Code:   "expired_before_terminal",
+			Reason: "expired before terminal state",
+		}
+	}
+
+	if attention := workCommissionLeaseAgeCapAttention(commission, now, leaseAgeCap); attention.Code != "" {
+		return attention
 	}
 
 	if workcommission.RequiresOperatorDecisionState(state) {
-		return "requires operator decision: " + state
+		return commissionOperatorAttention{
+			Code:   "operator_decision_required",
+			Reason: "requires operator decision: " + state,
+		}
 	}
 	if workcommission.IsExecutingState(state) {
-		return activeLeaseAttentionReason(commission, now)
+		return activeLeaseAttention(commission, now)
 	}
 
-	return openCommissionAttentionReason(commission, now, openAttentionAfter)
+	return openCommissionAttention(commission, now, openAttentionAfter)
 }
 
 func activeLeaseAttentionReason(commission map[string]any, now time.Time) string {
+	return activeLeaseAttention(commission, now).Reason
+}
+
+func activeLeaseAttention(commission map[string]any, now time.Time) commissionOperatorAttention {
 	lease, ok := mapArg(commission, "lease")
 	if !ok {
-		return "active state has no lease"
+		return commissionOperatorAttention{
+			Code:   "active_lease_missing",
+			Reason: "active state has no lease",
+		}
 	}
 
 	claimedAt, ok := parseRFC3339Field(lease, "claimed_at")
 	if !ok {
-		return "active lease has no claimed_at"
+		return commissionOperatorAttention{
+			Code:   "active_lease_missing_claimed_at",
+			Reason: "active lease has no claimed_at",
+		}
 	}
 	if now.Sub(claimedAt) >= defaultCommissionLeaseAttentionAfter {
-		return "active lease older than " + defaultCommissionLeaseAttentionAfter.String()
+		return commissionOperatorAttention{
+			Code:   "active_lease_old",
+			Reason: "active lease older than " + defaultCommissionLeaseAttentionAfter.String(),
+		}
 	}
-	return ""
+	return commissionOperatorAttention{}
 }
 
 func openCommissionAttentionReason(
@@ -2300,14 +2535,61 @@ func openCommissionAttentionReason(
 	now time.Time,
 	openAttentionAfter time.Duration,
 ) string {
+	return openCommissionAttention(commission, now, openAttentionAfter).Reason
+}
+
+func openCommissionAttention(
+	commission map[string]any,
+	now time.Time,
+	openAttentionAfter time.Duration,
+) commissionOperatorAttention {
 	fetchedAt, ok := parseRFC3339Field(commission, "fetched_at")
 	if !ok {
-		return "open commission has no fetched_at"
+		return commissionOperatorAttention{
+			Code:   "open_missing_fetched_at",
+			Reason: "open commission has no fetched_at",
+		}
 	}
 	if now.Sub(fetchedAt) >= openAttentionAfter {
-		return "open longer than " + openAttentionAfter.String()
+		return commissionOperatorAttention{
+			Code:   "open_too_long",
+			Reason: "open longer than " + openAttentionAfter.String(),
+		}
 	}
-	return ""
+	return commissionOperatorAttention{}
+}
+
+func workCommissionLeaseAgeCapAttention(
+	commission map[string]any,
+	now time.Time,
+	leaseAgeCap time.Duration,
+) commissionOperatorAttention {
+	age, ok := workCommissionLeaseAge(commission, now)
+	if !ok {
+		return commissionOperatorAttention{}
+	}
+	if age < leaseAgeCap {
+		return commissionOperatorAttention{}
+	}
+
+	return commissionOperatorAttention{
+		Code:   "lease_too_old",
+		Reason: "lease older than " + leaseAgeCap.String(),
+	}
+}
+
+func workCommissionLeaseAge(commission map[string]any, now time.Time) (time.Duration, bool) {
+	lease, ok := mapArg(commission, "lease")
+	if !ok {
+		return 0, false
+	}
+
+	claimedAt, ok := parseRFC3339Field(lease, "claimed_at")
+	if !ok {
+		return 0, false
+	}
+
+	return now.Sub(claimedAt), true
 }
 
 func commissionAttentionDuration(args map[string]any) (time.Duration, error) {
@@ -2322,6 +2604,28 @@ func commissionAttentionDuration(args map[string]any) (time.Duration, error) {
 	}
 	if duration <= 0 {
 		return 0, fmt.Errorf("older_than must be positive")
+	}
+	return duration, nil
+}
+
+func commissionLeaseAgeCap(args map[string]any) (time.Duration, error) {
+	value := firstStringField("lease_age_cap", args)
+	if value == "" {
+		value = firstStringField("stale_lease_age_cap", args)
+	}
+	if value == "" {
+		value = firstStringField("max_lease_age", args)
+	}
+	if value == "" {
+		return defaultCommissionLeaseAgeCap, nil
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("lease_age_cap must be a Go duration like 24h: %w", err)
+	}
+	if duration <= 0 {
+		return 0, fmt.Errorf("lease_age_cap must be positive")
 	}
 	return duration, nil
 }
@@ -3015,6 +3319,7 @@ func applyLifecycleState(commission map[string]any, args map[string]any) map[str
 		commission["state"] = "blocked_stale"
 	case action == "complete_or_block" && (verdict == "pass" || verdict == "completed"):
 		commission = completeWorkCommissionAfterLocalEvidence(commission, args)
+		commission = withWorkCommissionDeliveryDecision(commission, args, time.Now().UTC())
 	case action == "complete_or_block" && verdict == "failed":
 		commission["state"] = "failed"
 	case action == "complete_or_block" && verdict == "blocked":
@@ -3043,6 +3348,83 @@ func completeWorkCommissionAfterLocalEvidence(
 
 	commission["projection_debt"] = projectionDebtPayload(*completion.Debt)
 	return commission
+}
+
+func withWorkCommissionDeliveryDecision(
+	commission map[string]any,
+	args map[string]any,
+	now time.Time,
+) map[string]any {
+	policy := workcommission.NormalizeDeliveryPolicy(stringField(commission, "delivery_policy"))
+	verdict := workcommission.NormalizeDeliveryVerdict(stringArg(args, "verdict"))
+	gate, findings := workCommissionDeliveryGate(commission, now)
+	decision := workcommission.DeliveryAfterLocalEvidence(policy, verdict, gate)
+	payload := workCommissionDeliveryDecisionPayload(policy, verdict, gate, decision, findings, now)
+
+	commission["delivery_decision"] = payload
+	commission["auto_apply"] = workCommissionAutoApplyPayload(payload)
+	return commission
+}
+
+func workCommissionDeliveryGate(
+	commission map[string]any,
+	now time.Time,
+) (workcommission.DeliveryGate, []any) {
+	report, ok, err := workCommissionAutonomyEnvelopeReport(commission, now)
+	if err != nil {
+		return workcommission.DeliveryGateBlocked, []any{
+			map[string]any{
+				"code":   "autonomy_envelope_invalid",
+				"field":  "autonomy_envelope_snapshot",
+				"detail": err.Error(),
+			},
+		}
+	}
+	if !ok {
+		return workcommission.DeliveryGateMissing, nil
+	}
+	if report.Decision == autonomyenvelope.DecisionAllowed {
+		return workcommission.DeliveryGateAllowed, nil
+	}
+
+	return workcommission.DeliveryGateBlocked, autonomyEnvelopeFindingMaps(report.Findings)
+}
+
+func workCommissionDeliveryDecisionPayload(
+	policy workcommission.DeliveryPolicy,
+	verdict workcommission.DeliveryVerdict,
+	gate workcommission.DeliveryGate,
+	decision workcommission.DeliveryDecision,
+	findings []any,
+	now time.Time,
+) map[string]any {
+	payload := map[string]any{
+		"policy":                       string(policy),
+		"verdict":                      string(verdict),
+		"action":                       string(decision.Action),
+		"mode":                         string(decision.Action),
+		"auto_apply":                   decision.AutoApply,
+		"reason":                       decision.Reason,
+		"autonomy_envelope_decision":   string(gate),
+		"workspace_commit_granularity": "per_commission",
+		"recorded_at":                  now.Format(time.RFC3339),
+	}
+	if len(findings) > 0 {
+		payload["autonomy_envelope_findings"] = findings
+	}
+	return payload
+}
+
+func workCommissionAutoApplyPayload(delivery map[string]any) map[string]any {
+	return map[string]any{
+		"allowed":                      delivery["auto_apply"],
+		"decision":                     delivery["action"],
+		"reason":                       delivery["reason"],
+		"delivery_policy":              delivery["policy"],
+		"verdict":                      delivery["verdict"],
+		"autonomy_envelope_decision":   delivery["autonomy_envelope_decision"],
+		"workspace_commit_granularity": delivery["workspace_commit_granularity"],
+	}
 }
 
 func workCommissionProjectionPublication(args map[string]any) workcommission.ProjectionPublication {

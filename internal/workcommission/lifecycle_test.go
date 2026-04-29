@@ -73,3 +73,54 @@ func TestLifecycleSemanticsForTerminalAndRecoverableStates(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliveryAfterLocalEvidenceRequiresPassPolicyAndEnvelopeAllowed(t *testing.T) {
+	cases := []struct {
+		Name      string
+		Policy    DeliveryPolicy
+		Verdict   DeliveryVerdict
+		Gate      DeliveryGate
+		AutoApply bool
+		Reason    string
+	}{
+		{
+			Name:      "auto on pass allowed",
+			Policy:    DeliveryPolicyWorkspacePatchAutoOnPass,
+			Verdict:   DeliveryVerdictPass,
+			Gate:      DeliveryGateAllowed,
+			AutoApply: true,
+			Reason:    "policy_auto_on_pass_and_envelope_allowed",
+		},
+		{
+			Name:    "manual policy",
+			Policy:  DeliveryPolicyWorkspacePatchManual,
+			Verdict: DeliveryVerdictPass,
+			Gate:    DeliveryGateAllowed,
+			Reason:  "delivery_policy_manual",
+		},
+		{
+			Name:    "blocked envelope",
+			Policy:  DeliveryPolicyWorkspacePatchAutoOnPass,
+			Verdict: DeliveryVerdictPass,
+			Gate:    DeliveryGateBlocked,
+			Reason:  "autonomy_envelope_blocked",
+		},
+		{
+			Name:    "non pass verdict",
+			Policy:  DeliveryPolicyWorkspacePatchAutoOnPass,
+			Verdict: DeliveryVerdictNonPass,
+			Gate:    DeliveryGateAllowed,
+			Reason:  "verdict_not_pass",
+		},
+	}
+
+	for _, tc := range cases {
+		decision := DeliveryAfterLocalEvidence(tc.Policy, tc.Verdict, tc.Gate)
+		if decision.AutoApply != tc.AutoApply {
+			t.Fatalf("%s auto apply = %v, want %v", tc.Name, decision.AutoApply, tc.AutoApply)
+		}
+		if decision.Reason != tc.Reason {
+			t.Fatalf("%s reason = %s, want %s", tc.Name, decision.Reason, tc.Reason)
+		}
+	}
+}

@@ -1798,6 +1798,198 @@ func TestHandleHaftCommission_NoEnvelopeRemainsManualRunnable(t *testing.T) {
 	}
 }
 
+func TestHandleQuintCommission_AutoApply(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	commission := workCommissionFixture("wc-auto-apply", "running", "2099-01-01T00:00:00Z")
+	commission["delivery_policy"] = "workspace_patch_auto_on_pass"
+	commission["autonomy_envelope_snapshot"] = autonomyEnvelopeSnapshotFixture("2099-01-01T00:00:00Z")
+
+	_, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":     "create",
+		"commission": commission,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "complete_or_block",
+		"commission_id": "wc-auto-apply",
+		"runner_id":     "open-sleigh:test",
+		"event":         "workflow_terminal",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completed := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &completed); err != nil {
+		t.Fatal(err)
+	}
+
+	got := completed["commission"]
+	if got["state"] != "completed" {
+		t.Fatalf("state = %#v, want completed", got["state"])
+	}
+
+	decision, ok := got["delivery_decision"].(map[string]any)
+	if !ok {
+		t.Fatalf("delivery_decision = %#v, want object", got["delivery_decision"])
+	}
+	if decision["action"] != "auto_apply" {
+		t.Fatalf("delivery action = %#v, want auto_apply", decision["action"])
+	}
+	if decision["auto_apply"] != true {
+		t.Fatalf("delivery auto_apply = %#v, want true", decision["auto_apply"])
+	}
+	if decision["autonomy_envelope_decision"] != "allowed" {
+		t.Fatalf("envelope decision = %#v, want allowed", decision["autonomy_envelope_decision"])
+	}
+
+	autoApply, ok := got["auto_apply"].(map[string]any)
+	if !ok || autoApply["allowed"] != true {
+		t.Fatalf("auto_apply = %#v, want allowed", got["auto_apply"])
+	}
+}
+
+func TestStaleLeaseCap(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	stale := workCommissionFixture("wc-stale-lease", "queued", "2099-01-01T00:00:00Z")
+	stale["lease"] = map[string]any{
+		"runner_id":  "open-sleigh:old",
+		"state":      "claimed_for_preflight",
+		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
+	}
+
+	fresh := workCommissionFixture("wc-fresh-lease", "queued", "2099-01-01T00:00:00Z")
+	fresh["decision_ref"] = "dec-fresh-lease"
+
+	for _, commission := range []map[string]any{stale, fresh} {
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "list_runnable",
+		"lease_age_cap": "24h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listed := map[string][]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed["commissions"]) != 1 {
+		t.Fatalf("runnable commissions = %#v, want fresh commission only", listed["commissions"])
+	}
+	if listed["commissions"][0]["id"] != "wc-fresh-lease" {
+		t.Fatalf("runnable commission = %#v, want wc-fresh-lease", listed["commissions"][0]["id"])
+	}
+	if len(listed["skipped"]) != 1 {
+		t.Fatalf("skipped = %#v, want one stale lease", listed["skipped"])
+	}
+	if listed["skipped"][0]["reason"] != "lease_too_old" {
+		t.Fatalf("skip reason = %#v, want lease_too_old", listed["skipped"][0]["reason"])
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": "wc-stale-lease",
+		"runner_id":     "open-sleigh:test",
+		"lease_age_cap": "24h",
+	})
+	if err == nil || !strings.Contains(err.Error(), "lease_too_old") {
+		t.Fatalf("claim error = %v, want lease_too_old", err)
+	}
+
+	showResult, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "show",
+		"commission_id": "wc-stale-lease",
+		"lease_age_cap": "24h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shown := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(showResult), &shown); err != nil {
+		t.Fatal(err)
+	}
+
+	operator, ok := shown["commission"]["operator"].(map[string]any)
+	if !ok {
+		t.Fatalf("operator = %#v, want object", shown["commission"]["operator"])
+	}
+	if operator["attention_code"] != "lease_too_old" {
+		t.Fatalf("attention_code = %#v, want lease_too_old", operator["attention_code"])
+	}
+}
+
+func TestHarnessRun_Drain(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	runnable := workCommissionFixture("wc-drain-runnable", "queued", "2099-01-01T00:00:00Z")
+	stale := workCommissionFixture("wc-drain-stale", "queued", "2099-01-01T00:00:00Z")
+	stale["decision_ref"] = "dec-drain-stale"
+	stale["lease"] = map[string]any{
+		"runner_id":  "open-sleigh:old",
+		"state":      "claimed_for_preflight",
+		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
+	}
+
+	for _, commission := range []map[string]any{runnable, stale} {
+		_, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "drain_status",
+		"lease_age_cap": "24h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	status := map[string]any{}
+	if err := json.Unmarshal([]byte(result), &status); err != nil {
+		t.Fatal(err)
+	}
+
+	drain, ok := status["drain"].(map[string]any)
+	if !ok {
+		t.Fatalf("drain = %#v, want object", status["drain"])
+	}
+	if drain["empty"] != false {
+		t.Fatalf("drain empty = %#v, want false", drain["empty"])
+	}
+	if drain["runnable_count"] != float64(1) {
+		t.Fatalf("runnable_count = %#v, want 1", drain["runnable_count"])
+	}
+	if drain["skipped_count"] != float64(1) {
+		t.Fatalf("skipped_count = %#v, want 1", drain["skipped_count"])
+	}
+}
+
 func writeCommissionSpecCarriers(t *testing.T, sectionRefs ...string) string {
 	t.Helper()
 

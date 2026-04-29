@@ -2488,3 +2488,149 @@ func workCommissionFixture(id, state, validUntil string) map[string]any {
 		},
 	}
 }
+
+
+func TestHandleHaftCommission_CreateFromDecisionRequiresSliceDescriptionOnSecondCommission(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision := createCommissionDecisionFixture(t, ctx, store, haftDir, "Multi-slice decision", "internal/cli/serve_commission.go")
+
+	// First commission against the decision: succeeds without slice_description
+	// (single-commission decisions are unchanged).
+	first, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "create_from_decision",
+		"decision_ref":  decision.Meta.ID,
+		"repo_ref":      "local:haft",
+		"base_sha":      "base-r1",
+		"target_branch": "dev",
+		"valid_until":   "2099-01-01T00:00:00Z",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("first commission should succeed: %v", err)
+	}
+	firstParsed := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(first), &firstParsed); err != nil {
+		t.Fatal(err)
+	}
+	firstCommission := firstParsed["commission"]
+	if _, hasSlice := firstCommission["slice_description"]; hasSlice {
+		t.Fatalf("first commission without slice_description must not carry the field; got %#v", firstCommission["slice_description"])
+	}
+
+	// Second commission against the same decision_ref WITHOUT slice_description: rejected.
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "create_from_decision",
+		"decision_ref":  decision.Meta.ID,
+		"repo_ref":      "local:haft",
+		"base_sha":      "base-r1",
+		"target_branch": "dev",
+		"valid_until":   "2099-01-01T00:00:00Z",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test",
+		},
+	})
+	if err == nil {
+		t.Fatal("second commission without slice_description must be rejected")
+	}
+	if !strings.Contains(err.Error(), "multi_commission_requires_slice_description") {
+		t.Fatalf("error should mention multi_commission_requires_slice_description, got: %v", err)
+	}
+
+	// First-pass commission lacks slice_description, so attempting to start
+	// multi-commission flow on a decision whose existing commission is itself
+	// scope-leaky must error with a different typed reason.
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":            "create_from_decision",
+		"decision_ref":      decision.Meta.ID,
+		"repo_ref":          "local:haft",
+		"base_sha":          "base-r1",
+		"target_branch":     "dev",
+		"valid_until":       "2099-01-01T00:00:00Z",
+		"slice_description": "second-slice",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test",
+		},
+	})
+	if err == nil {
+		t.Fatal("creating slice-described commission while existing commission lacks slice_description must error")
+	}
+	if !strings.Contains(err.Error(), "multi_commission_existing_lacks_slice_description") {
+		t.Fatalf("error should mention multi_commission_existing_lacks_slice_description, got: %v", err)
+	}
+}
+
+func TestHandleHaftCommission_CreateFromDecisionAcceptsExplicitSliceDescription(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision := createCommissionDecisionFixture(t, ctx, store, haftDir, "Multi-slice decision OK", "internal/cli/serve_commission.go")
+
+	// Both commissions explicitly declare their slice_description.
+	first, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":            "create_from_decision",
+		"decision_ref":      decision.Meta.ID,
+		"repo_ref":          "local:haft",
+		"base_sha":          "base-r1",
+		"target_branch":     "dev",
+		"valid_until":       "2099-01-01T00:00:00Z",
+		"slice_description": "slice-A: helper package internals",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("first commission with slice_description should succeed: %v", err)
+	}
+	firstParsed := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(first), &firstParsed); err != nil {
+		t.Fatal(err)
+	}
+	if got := firstParsed["commission"]["slice_description"]; got != "slice-A: helper package internals" {
+		t.Fatalf("first commission slice_description = %#v, want slice-A: helper package internals", got)
+	}
+
+	second, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":            "create_from_decision",
+		"decision_ref":      decision.Meta.ID,
+		"repo_ref":          "local:haft",
+		"base_sha":          "base-r1",
+		"target_branch":     "dev",
+		"valid_until":       "2099-01-01T00:00:00Z",
+		"slice_description": "slice-B: MCP schema additions only",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("second commission with slice_description should succeed: %v", err)
+	}
+	secondParsed := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(second), &secondParsed); err != nil {
+		t.Fatal(err)
+	}
+	if got := secondParsed["commission"]["slice_description"]; got != "slice-B: MCP schema additions only" {
+		t.Fatalf("second commission slice_description = %#v, want slice-B: MCP schema additions only", got)
+	}
+}
+

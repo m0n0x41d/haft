@@ -35,6 +35,7 @@ var (
 	commissionFromDecisionState            string
 	commissionFromDecisionValidFor         string
 	commissionFromDecisionValidUntil       string
+	commissionFromDecisionSliceDescription string
 )
 
 var commissionCmd = &cobra.Command{
@@ -157,6 +158,7 @@ func registerCommissionFromDecisionFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&commissionFromDecisionState, "state", "queued", "initial commission state")
 	cmd.Flags().StringVar(&commissionFromDecisionValidFor, "valid-for", "168h", "commission validity duration when --valid-until is omitted")
 	cmd.Flags().StringVar(&commissionFromDecisionValidUntil, "valid-until", "", "explicit commission expiry timestamp (RFC3339)")
+	cmd.Flags().StringVar(&commissionFromDecisionSliceDescription, "slice-description", "", "names which slice of the decision THIS commission implements; REQUIRED when the decision already has a non-terminal commission. Multi-commission decisions without per-slice scope text leak the decision body to every codex session.")
 }
 
 func runCommissionCreate(cmd *cobra.Command, _ []string) error {
@@ -491,6 +493,7 @@ func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[stri
 		"state":                 commissionFromDecisionState,
 		"valid_for":             commissionFromDecisionValidFor,
 		"valid_until":           commissionFromDecisionValidUntil,
+		"slice_description":     commissionFromDecisionSliceDescription,
 	}, nil
 }
 
@@ -535,6 +538,7 @@ func commissionFromDecisionBaseParams(projectRoot string) (map[string]any, error
 		"state":                 commissionFromDecisionState,
 		"valid_for":             commissionFromDecisionValidFor,
 		"valid_until":           commissionFromDecisionValidUntil,
+		"slice_description":     commissionFromDecisionSliceDescription,
 	}, nil
 }
 

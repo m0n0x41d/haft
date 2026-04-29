@@ -45,6 +45,14 @@ type commissionFromDecisionInput struct {
 	DeliveryPolicy       string
 	State                string
 	ValidUntil           string
+	// SliceDescription names the specific slice of the parent DecisionRecord
+	// that THIS commission implements. Required when the same decision_ref
+	// already has at least one non-cancelled commission, to prevent the
+	// scope-leak anti-pattern documented in
+	// `.context/multi-commission-anti-pattern-retrospective.md` (each codex
+	// inheriting full decision text and independently implementing the union
+	// of slices that intersects its writeable surface).
+	SliceDescription string
 }
 
 type implementationPlanCommission struct {
@@ -161,12 +169,99 @@ func createWorkCommissionFromDecision(
 ) (string, error) {
 	now := time.Now().UTC()
 
+	if err := guardMultiCommissionDecision(ctx, store, args); err != nil {
+		return "", err
+	}
+
 	commission, err := buildWorkCommissionFromDecision(ctx, store, args, now)
 	if err != nil {
 		return "", err
 	}
 
 	return persistWorkCommission(ctx, store, commission, now)
+}
+
+// guardMultiCommissionDecision enforces that the second-or-later commission
+// against the same DecisionRecord must carry a non-empty `slice_description`.
+// Inheriting the parent decision body across multiple commissions without
+// per-slice scope text leaks scope between codex sessions: each agent reads
+// the full decision text and independently implements every slice whose
+// scope intersects its allowed_paths. See
+// `.context/multi-commission-anti-pattern-retrospective.md`.
+func guardMultiCommissionDecision(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+) error {
+	decisionRef := strings.TrimSpace(stringArg(args, "decision_ref"))
+	if decisionRef == "" {
+		return nil
+	}
+	sliceDescription := strings.TrimSpace(stringArg(args, "slice_description"))
+
+	records, err := loadWorkCommissionPayloads(ctx, store)
+	if err != nil {
+		return err
+	}
+
+	existing := liveCommissionsForDecision(records, decisionRef)
+	if len(existing) == 0 {
+		return nil
+	}
+
+	if sliceDescription == "" {
+		existingIDs := make([]string, 0, len(existing))
+		for _, commission := range existing {
+			existingIDs = append(existingIDs, stringField(commission, "id"))
+		}
+		return fmt.Errorf(
+			"multi_commission_requires_slice_description: decision %q already has %d non-terminal commission(s) (%s); subsequent commissions for the same decision must declare `slice_description` to scope which slice of the decision THIS commission implements (see .context/multi-commission-anti-pattern-retrospective.md)",
+			decisionRef,
+			len(existing),
+			strings.Join(existingIDs, ", "),
+		)
+	}
+
+	for _, commission := range existing {
+		other := strings.TrimSpace(stringField(commission, "slice_description"))
+		if other == "" {
+			otherID := stringField(commission, "id")
+			return fmt.Errorf(
+				"multi_commission_existing_lacks_slice_description: decision %q already has commission %q without a slice_description; either cancel that commission or update it before creating slice %q",
+				decisionRef,
+				otherID,
+				sliceDescription,
+			)
+		}
+	}
+
+	return nil
+}
+
+// liveCommissionsForDecision returns commissions linked to the decision_ref
+// whose state is not terminal (cancelled / expired / completed_with_projection_debt
+// / completed are excluded — those are audit records, not active claims).
+func liveCommissionsForDecision(records []map[string]any, decisionRef string) []map[string]any {
+	live := make([]map[string]any, 0)
+	for _, commission := range records {
+		if stringField(commission, "decision_ref") != decisionRef {
+			continue
+		}
+		state := stringField(commission, "state")
+		if commissionStateIsTerminal(state) {
+			continue
+		}
+		live = append(live, commission)
+	}
+	return live
+}
+
+func commissionStateIsTerminal(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "cancelled", "expired", "completed", "completed_with_projection_debt", "failed", "blocked_policy":
+		return true
+	}
+	return false
 }
 
 func createWorkCommissionsFromPlan(
@@ -594,6 +689,9 @@ func buildWorkCommissionFromDecision(
 		"valid_until":            input.ValidUntil,
 		"fetched_at":             now.Format(time.RFC3339),
 	}
+	if input.SliceDescription != "" {
+		commission["slice_description"] = input.SliceDescription
+	}
 	if len(specSectionRefs) > 0 {
 		commission["spec_section_refs"] = stringSliceToAny(specSectionRefs)
 		commission["spec_revision_hashes"] = specRevisionHashes
@@ -993,6 +1091,7 @@ func parseCommissionFromDecisionInput(
 		DeliveryPolicy:       stringArg(args, "delivery_policy"),
 		State:                stringArg(args, "state"),
 		ValidUntil:           validUntil,
+		SliceDescription:     strings.TrimSpace(stringArg(args, "slice_description")),
 	}
 
 	var parseErr error

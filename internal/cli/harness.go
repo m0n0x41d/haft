@@ -791,6 +791,9 @@ func formatHarnessResult(
 		"delivery_policy: " + presentOrUnknown(stringField(commission, "delivery_policy")),
 		"workspace: " + workspacePath,
 	}
+	if slice := strings.TrimSpace(stringField(commission, "slice_description")); slice != "" {
+		lines = append(lines, "slice: "+slice)
+	}
 
 	lines = append(lines, formatHarnessCurrentRuntime(runtimeDetail, statusUpdatedAt, runtimeSummary)...)
 	lines = append(lines, formatHarnessLatestAgentTurn(latestTurn)...)
@@ -2852,7 +2855,7 @@ func watchHarnessRunUntilTerminal(
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	if err := printHarnessRunOperatorHeader(cmd, selection, opts); err != nil {
+	if err := printHarnessRunOperatorHeader(ctx, cmd, store, selection, opts); err != nil {
 		return err
 	}
 
@@ -2931,7 +2934,7 @@ func watchHarnessDrainUntilIdle(
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	if err := printHarnessRunOperatorHeader(cmd, selection, opts); err != nil {
+	if err := printHarnessRunOperatorHeader(ctx, cmd, store, selection, opts); err != nil {
 		return err
 	}
 
@@ -3039,6 +3042,100 @@ func watchHarnessDrainUntilIdle(
 	}
 }
 
+// harnessSelectionMultiCommissionWarnings detects multi-commission anti-patterns
+// at drain start time and emits operator-facing warnings. Two patterns are
+// flagged: (1) two or more selected commissions share the same decision_ref
+// AND share at least one lockset entry — they will serialize on lockset but
+// each codex starts from base HEAD with the same decision text, producing
+// conflicting partial implementations on the shared file; (2) two or more
+// share decision_ref AND none of them carry slice_description — same scope-leak
+// risk through inherited decision body. See
+// `.context/multi-commission-anti-pattern-retrospective.md`.
+func harnessSelectionMultiCommissionWarnings(
+	ctx context.Context,
+	store *artifact.Store,
+	selection harnessRunSelection,
+) []string {
+	if store == nil || len(selection.CommissionIDs) < 2 {
+		return nil
+	}
+
+	type commissionMeta struct {
+		ID               string
+		DecisionRef      string
+		Lockset          map[string]struct{}
+		SliceDescription string
+	}
+
+	commissions := make([]commissionMeta, 0, len(selection.CommissionIDs))
+	for _, id := range selection.CommissionIDs {
+		payload, err := loadWorkCommissionPayload(ctx, store, id)
+		if err != nil {
+			continue
+		}
+		meta := commissionMeta{
+			ID:               id,
+			DecisionRef:      strings.TrimSpace(stringField(payload, "decision_ref")),
+			Lockset:          make(map[string]struct{}),
+			SliceDescription: strings.TrimSpace(stringField(payload, "slice_description")),
+		}
+		for _, entry := range stringSliceField(payload, "lockset") {
+			if trimmed := strings.TrimSpace(entry); trimmed != "" {
+				meta.Lockset[trimmed] = struct{}{}
+			}
+		}
+		commissions = append(commissions, meta)
+	}
+
+	byDecision := make(map[string][]commissionMeta, len(commissions))
+	for _, meta := range commissions {
+		if meta.DecisionRef == "" {
+			continue
+		}
+		byDecision[meta.DecisionRef] = append(byDecision[meta.DecisionRef], meta)
+	}
+
+	warnings := make([]string, 0)
+	for decisionRef, group := range byDecision {
+		if len(group) < 2 {
+			continue
+		}
+
+		// (a) Hot-file overlap: count commissions per shared lockset entry.
+		fileSets := make(map[string][]string)
+		for _, meta := range group {
+			for path := range meta.Lockset {
+				fileSets[path] = append(fileSets[path], meta.ID)
+			}
+		}
+		for path, ids := range fileSets {
+			if len(ids) < 2 {
+				continue
+			}
+			warnings = append(warnings, fmt.Sprintf(
+				"%d commissions of decision %s share lockset on %s (%s); lockset will serialize them, but each codex starts from base HEAD without awareness of other slices' work and may independently implement overlapping logic",
+				len(ids), decisionRef, path, strings.Join(ids, ", "),
+			))
+		}
+
+		// (b) Missing slice_description: any group member lacks it.
+		var missing []string
+		for _, meta := range group {
+			if meta.SliceDescription == "" {
+				missing = append(missing, meta.ID)
+			}
+		}
+		if len(missing) > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"decision %s has %d commission(s) without slice_description (%s); each codex inherits the full decision body and may scope-leak across slices — see .context/multi-commission-anti-pattern-retrospective.md",
+				decisionRef, len(missing), strings.Join(missing, ", "),
+			))
+		}
+	}
+
+	return warnings
+}
+
 func printHarnessDrainFinished(cmd *cobra.Command, monitor harnessDrainMonitor) error {
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "drain: runnable WorkCommission queue is empty"); err != nil {
 		return err
@@ -3060,7 +3157,9 @@ func printHarnessDrainFinished(cmd *cobra.Command, monitor harnessDrainMonitor) 
 }
 
 func printHarnessRunOperatorHeader(
+	ctx context.Context,
 	cmd *cobra.Command,
+	store *artifact.Store,
 	selection harnessRunSelection,
 	opts harnessRunOptions,
 ) error {
@@ -3082,6 +3181,12 @@ func printHarnessRunOperatorHeader(
 	}
 	if len(selection.DecisionRefs) > 0 {
 		lines = append(lines, formatHarnessSelectionLine("Selected decision", selection.DecisionRefs))
+	}
+	if warnings := harnessSelectionMultiCommissionWarnings(ctx, store, selection); len(warnings) > 0 {
+		lines = append(lines, "")
+		for _, warning := range warnings {
+			lines = append(lines, "WARN: "+warning)
+		}
 	}
 	lines = append(lines, "", "events:")
 

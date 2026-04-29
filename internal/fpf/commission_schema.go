@@ -115,6 +115,10 @@ func haftCommissionTool() Tool {
 					"enum":        []interface{}{"workspace_patch_manual", "workspace_patch_auto_on_pass"},
 					"description": "(create/create_from_decision/create_from_plan) How a completed workspace diff is adopted. MVP default is workspace_patch_manual.",
 				},
+				"slice_description": map[string]interface{}{
+					"type":        "string",
+					"description": "(create/create_from_decision) Names which slice of the parent DecisionRecord this commission specifically implements. REQUIRED when the same decision_ref already has a non-terminal commission — multi-commission decisions without per-slice scope text leak the full decision body to every codex session and produce conflicting partial implementations on overlapping write paths. Empty/omitted is fine when the decision has only one commission.",
+				},
 				"projection_policy": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"local_only", "external_optional", "external_required"},

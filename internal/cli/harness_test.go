@@ -2385,3 +2385,90 @@ func TestShouldAutoApplyCommission_GatesOnStateAndAutoApplyAllowed(t *testing.T)
 		})
 	}
 }
+
+func TestHarnessSelectionMultiCommissionWarnings_FlagsHotFileAndMissingSlice(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	// Two commissions of same decision_ref, overlapping lockset on serve.go.
+	commissionA := workCommissionFixture("wc-multi-a", "queued", "2099-01-01T00:00:00Z")
+	commissionA["decision_ref"] = "dec-shared-multi"
+	scopeA := commissionA["scope"].(map[string]any)
+	scopeA["lockset"] = []any{"internal/cli/serve.go"}
+	commissionA["lockset"] = []any{"internal/cli/serve.go"}
+
+	commissionB := workCommissionFixture("wc-multi-b", "queued", "2099-01-01T00:00:00Z")
+	commissionB["decision_ref"] = "dec-shared-multi"
+	scopeB := commissionB["scope"].(map[string]any)
+	scopeB["lockset"] = []any{"internal/cli/serve.go"}
+	commissionB["lockset"] = []any{"internal/cli/serve.go"}
+
+	for _, commission := range []map[string]any{commissionA, commissionB} {
+		if _, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	selection := harnessRunSelection{CommissionIDs: []string{"wc-multi-a", "wc-multi-b"}}
+	warnings := harnessSelectionMultiCommissionWarnings(ctx, store, selection)
+
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings (hot-file + missing slice_description), got %d:\n%v", len(warnings), warnings)
+	}
+
+	hotFileFound := false
+	missingSliceFound := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "share lockset on internal/cli/serve.go") {
+			hotFileFound = true
+		}
+		if strings.Contains(warning, "without slice_description") {
+			missingSliceFound = true
+		}
+	}
+	if !hotFileFound {
+		t.Errorf("missing hot-file warning in:\n%v", warnings)
+	}
+	if !missingSliceFound {
+		t.Errorf("missing slice_description warning in:\n%v", warnings)
+	}
+}
+
+func TestHarnessSelectionMultiCommissionWarnings_QuietWhenSliceDescribed(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+
+	// Two commissions of same decision, NON-overlapping lockset, both with slice_description.
+	commissionA := workCommissionFixture("wc-clean-a", "queued", "2099-01-01T00:00:00Z")
+	commissionA["decision_ref"] = "dec-shared-clean"
+	commissionA["slice_description"] = "slice A: helper internals"
+	scopeA := commissionA["scope"].(map[string]any)
+	scopeA["lockset"] = []any{"internal/foo/foo.go"}
+	commissionA["lockset"] = []any{"internal/foo/foo.go"}
+
+	commissionB := workCommissionFixture("wc-clean-b", "queued", "2099-01-01T00:00:00Z")
+	commissionB["decision_ref"] = "dec-shared-clean"
+	commissionB["slice_description"] = "slice B: MCP schema only"
+	scopeB := commissionB["scope"].(map[string]any)
+	scopeB["lockset"] = []any{"internal/bar/bar.go"}
+	commissionB["lockset"] = []any{"internal/bar/bar.go"}
+
+	for _, commission := range []map[string]any{commissionA, commissionB} {
+		if _, err := handleHaftCommission(ctx, store, map[string]any{
+			"action":     "create",
+			"commission": commission,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	selection := harnessRunSelection{CommissionIDs: []string{"wc-clean-a", "wc-clean-b"}}
+	warnings := harnessSelectionMultiCommissionWarnings(ctx, store, selection)
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings (disjoint locksets + slice_described), got %d:\n%v", len(warnings), warnings)
+	}
+}

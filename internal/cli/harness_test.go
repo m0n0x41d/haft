@@ -386,7 +386,7 @@ func TestRunHarnessRunBlocksNeedsOnboardWithClearReason(t *testing.T) {
 	}
 
 	message := err.Error()
-	for _, fragment := range []string{"needs_onboard", "ProjectSpecificationSet", "--tactical-override-reason"} {
+	for _, fragment := range []string{"needs_onboard", "ProjectSpecificationSet", "--force-skip-specs"} {
 		if !strings.Contains(message, fragment) {
 			t.Fatalf("block reason missing %q:\n%s", fragment, message)
 		}

@@ -387,7 +387,7 @@ func registerHarnessRunFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&harnessRunWorkspaceRoot, "workspace-root", "", "Open-Sleigh workspace root")
 	cmd.Flags().StringVar(&harnessRunRuntimePath, "runtime", "", "Open-Sleigh runtime directory (default: project open-sleigh or installed ~/.haft runtime)")
 	cmd.Flags().StringVar(&harnessRunRepoURL, "repo-url", "", "Repository URL/path cloned into workspaces (default: project root)")
-	cmd.Flags().StringVar(&harnessRunTacticalReason, "tactical-override-reason", "", "Allow needs_onboard harness work and record each selected commission as out-of-spec tactical with this reason")
+	cmd.Flags().StringVar(&harnessRunTacticalReason, "force-skip-specs", "", "Skip the needs_onboard readiness gate and record each selected commission as out-of-spec tactical work with this reason. Audit-only — does NOT relax scope guards, lockset enforcement, or AutonomyEnvelope.")
 }
 
 func registerHarnessStatusFlags(cmd *cobra.Command) {
@@ -2659,7 +2659,7 @@ func harnessRunReadinessBlockReason(facts project.ReadinessFacts) string {
 	case project.ReadinessNeedsInit:
 		return "haft harness run blocked: project readiness is needs_init; run `haft init` before harness execution."
 	case project.ReadinessNeedsOnboard:
-		return "haft harness run blocked: project readiness is needs_onboard; .haft exists but the ProjectSpecificationSet is missing or incomplete. Run onboarding and `haft spec check`, or pass `--tactical-override-reason \"...\"` to record out-of-spec tactical WorkCommissions."
+		return "haft harness run blocked: project readiness is needs_onboard; .haft exists but the ProjectSpecificationSet is missing or incomplete. Run onboarding and `haft spec check`, or pass `--force-skip-specs \"...\"` to record out-of-spec tactical WorkCommissions."
 	case project.ReadinessMissing:
 		return "haft harness run blocked: project readiness is missing; select an existing project before harness execution."
 	default:

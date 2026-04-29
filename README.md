@@ -190,7 +190,7 @@ haft harness apply wc-...        # apply a completed workspace patch to this che
 
 Broad harness execution is blocked for `needs_onboard` projects by default. If
 you intentionally need tactical out-of-spec work, pass
-`--tactical-override-reason "..."`; Haft records that reason on the selected
+`--force-skip-specs "..."`; Haft records that reason on the selected
 WorkCommissions.
 
 Starting Open-Sleigh is an operator/runtime action. Use the CLI Harness for

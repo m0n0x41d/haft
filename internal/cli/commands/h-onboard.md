@@ -91,7 +91,7 @@ architecture decisions, not per-section drafting.
 
 Do not start broad harness/runtime execution while readiness is
 `needs_onboard`. A tactical exception must be explicit and recorded with an
-operator reason via `haft harness run --tactical-override-reason "..."`.
+operator reason via `haft harness run --force-skip-specs "..."` (audit-only escape; does not relax scope, lockset, or envelope gates).
 
 For project-level enforcement state in plugin mode, call
 `haft_query(action="check")` — it returns the unified actionable findings

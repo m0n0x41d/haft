@@ -22,17 +22,14 @@ tool and the hand — the part that turns raw capability into formal
 specification, governed decisions, bounded commissions, and evidence-backed
 engineering work.
 
-### Three surfaces, one core
+### Two production surfaces, one core
 
-- **Desktop Cockpit** — human surface for onboarding, specs, governance, runtime visibility, and evidence
 - **MCP plugin** — embedded agent surface for Claude Code and Codex to reason, draft, query, and create commissions
 - **CLI Harness** — operator/runtime surface for prepare, run, status, result, apply, requeue, and cancel
 
-All three surfaces compile into the same Haft Core artifact graph. Desktop does
-not own semantic truth, MCP does not own long-running runtime lifecycle, and
-CLI does not become a second source of meaning.
+Both surfaces compile into the same Haft Core artifact graph. MCP does not own long-running runtime lifecycle, and CLI does not become a second source of meaning.
 
-> **Note:** The TUI (`haft agent`) and Desktop app are in **pre-alpha** and under active development. They are not recommended for production use. The MCP plugin mode (`haft serve`) is the stable, proven interface.
+> **Note:** The TUI (`haft agent`) and Desktop app exist as **alpha** tracks under active development. They are not part of the v7 production envelope and are not recommended for production use. The MCP plugin mode (`haft serve`) and `haft harness` CLI are the stable, proven interfaces.
 
 ---
 
@@ -196,10 +193,9 @@ you intentionally need tactical out-of-spec work, pass
 `--tactical-override-reason "..."`; Haft records that reason on the selected
 WorkCommissions.
 
-Starting Open-Sleigh is an operator/runtime action. Use the CLI Harness or
-Desktop Cockpit for that boundary rather than a plugin slash command. MCP may
-create or inspect WorkCommissions, but it must not own the long-running runtime
-lifecycle.
+Starting Open-Sleigh is an operator/runtime action. Use the CLI Harness for
+that boundary rather than a plugin slash command. MCP may create or inspect
+WorkCommissions, but it must not own the long-running runtime lifecycle.
 
 Commissions carry a `delivery_policy`. The default is
 `workspace_patch_manual`: Open-Sleigh changes stay in the isolated workspace
@@ -240,8 +236,8 @@ For the repeatable local E2E smoke:
 task open-sleigh:smoke-real-haft
 ```
 
-The same loop powers Desktop Cockpit workflow buttons. A button must compile to
-a typed artifact transition, not a free prompt:
+The same loop is what alpha Desktop workflow buttons compile to. A button must
+become a typed artifact transition, not a free prompt:
 
 ```text
 SpecSection(s) -> DecisionRecord -> WorkCommission -> RuntimeRun -> Evidence -> SpecCoverage
@@ -366,6 +362,21 @@ into a harnessable engineering system.
 ### v8 — Governor Signals
 
 Background detection loops (stale, drift, dependencies) with dashboard alerts. Autonomous actuation after trust is earned.
+
+### Desktop App — alpha track (no committed version)
+
+The Tauri v2 desktop app exists as an alpha exploration of a human surface
+over the same Haft Core. It is **not part of the v7 production envelope**: not
+extensively tested, not the canonical operator surface, and not load-bearing
+for any v7 acceptance criteria. The canonical surfaces for v7 are MCP plugin
+(`haft serve`) and CLI Harness (`haft harness ...`); the desktop app will
+graduate out of alpha when (a) its onboarding, harness, and verify panels each
+have end-to-end dogfood evidence on the level of CLI/MCP, and (b)
+desktop-specific contracts (Tauri IPC argument shape, transcript filtering,
+readiness projection) carry their own regression suites at the same depth as
+the Go/MCP surfaces. Until then it ships as a "preview from source" build
+behind the alpha warning. No release version is committed to it on the v7
+timeline.
 
 ---
 

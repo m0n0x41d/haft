@@ -75,6 +75,9 @@ haft init --cursor
 
 # Experimental Gemini CLI config
 haft init --gemini
+
+# Experimental OpenCode config
+haft init --opencode
 ```
 
 ### What init does per tool
@@ -93,6 +96,7 @@ Experimental/legacy hosts:
 |------|-----------|--------------------|-------|
 | Cursor | `.cursor/mcp.json` | `~/.cursor/commands/` or `.cursor/commands/` with `--local` | `~/.cursor/skills/h-reason/` or local install with `--local` |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/commands/` or local install with `--local` | — |
+| OpenCode | `opencode.json` (project root) | `~/.config/opencode/commands/` or `.opencode/commands/` with `--local` | `~/.config/opencode/skills/h-reason/` or `.opencode/skills/h-reason/` with `--local` |
 | Air | `.codex/config.toml` | project `skills/` | project `skills/h-reason/` |
 
 **Important for Cursor:** After init, open Cursor Settings → MCP → find `haft` → enable the toggle. Cursor adds MCP servers as disabled by default.

@@ -57,6 +57,18 @@ func installCommands(projectRoot string, platform string, local bool) (string, i
 		destDir = filepath.Join(homeDir, ".codex", "prompts")
 		transformer = transformCodex
 		ext = ".md"
+	case "opencode":
+		// OpenCode looks at .opencode/commands/ in the project root, with
+		// global override at ~/.config/opencode/commands/. Markdown command
+		// files are passed through unchanged — OpenCode parses the same
+		// frontmatter shape as Claude / Codex.
+		if local {
+			destDir = filepath.Join(projectRoot, ".opencode", "commands")
+		} else {
+			destDir = filepath.Join(homeDir, ".config", "opencode", "commands")
+		}
+		transformer = transformOpencode
+		ext = ".md"
 	default:
 		return "", 0, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -316,6 +328,12 @@ func transformCodex(filename, content string) (string, string) {
 	return filename, content
 }
 
+func transformOpencode(filename, content string) (string, string) {
+	// OpenCode (sst/opencode) parses the same markdown-with-frontmatter
+	// command format as Claude. Pass through unchanged.
+	return filename, content
+}
+
 func transformGemini(filename, content string) (string, string) {
 	name := strings.TrimSuffix(filename, ".md")
 	newFilename := name + ".toml"
@@ -384,6 +402,14 @@ func installSkill(platform string, local bool, projectRoot string) (string, erro
 			skillDir = filepath.Join(projectRoot, ".agents", "skills", "h-reason")
 		} else {
 			skillDir = filepath.Join(homeDir, ".agents", "skills", "h-reason")
+		}
+	case "opencode":
+		// OpenCode reads .opencode/skills/ in the project root, with global
+		// override at ~/.config/opencode/skills/.
+		if local {
+			skillDir = filepath.Join(projectRoot, ".opencode", "skills", "h-reason")
+		} else {
+			skillDir = filepath.Join(homeDir, ".config", "opencode", "skills", "h-reason")
 		}
 	default:
 		return "", nil

@@ -17,22 +17,24 @@ import (
 )
 
 var (
-	initClaude bool
-	initCursor bool
-	initGemini bool
-	initCodex  bool
-	initAir    bool
-	initAll    bool
-	initLocal  bool
+	initClaude   bool
+	initCursor   bool
+	initGemini   bool
+	initCodex    bool
+	initAir      bool
+	initOpencode bool
+	initAll      bool
+	initLocal    bool
 )
 
 type initHostOptions struct {
-	claude bool
-	cursor bool
-	gemini bool
-	codex  bool
-	air    bool
-	all    bool
+	claude   bool
+	cursor   bool
+	gemini   bool
+	codex    bool
+	air      bool
+	opencode bool
+	all      bool
 }
 
 var initCmd = &cobra.Command{
@@ -50,6 +52,7 @@ Examples:
   haft init              # Claude, global commands (~/.claude/commands/)
   haft init --local      # Claude, local commands (.claude/commands/)
   haft init --codex      # Codex MCP + skills
+  haft init --opencode   # OpenCode MCP + commands (sst/opencode)
   haft init --all        # Claude + Codex, global commands
   haft init --cursor     # Experimental Cursor config
   haft init --gemini     # Experimental Gemini CLI config
@@ -62,6 +65,7 @@ func init() {
 	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure experimental Cursor MCP")
 	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure experimental Gemini CLI MCP")
 	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
+	initCmd.Flags().BoolVar(&initOpencode, "opencode", false, "Configure for OpenCode (sst/opencode) — writes opencode.json with the haft MCP server, installs slash commands under .opencode/commands/")
 	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure experimental JetBrains Air integration")
 	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all supported host agents")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
@@ -80,7 +84,8 @@ func normalizeInitHostOptions(options initHostOptions) initHostOptions {
 		normalized.cursor ||
 		normalized.gemini ||
 		normalized.codex ||
-		normalized.air
+		normalized.air ||
+		normalized.opencode
 	if !hasHost {
 		normalized.claude = true
 	}
@@ -178,12 +183,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	binaryPath := "haft"
 
 	hosts := normalizeInitHostOptions(initHostOptions{
-		claude: initClaude,
-		cursor: initCursor,
-		gemini: initGemini,
-		codex:  initCodex,
-		air:    initAir,
-		all:    initAll,
+		claude:   initClaude,
+		cursor:   initCursor,
+		gemini:   initGemini,
+		codex:    initCodex,
+		air:      initAir,
+		opencode: initOpencode,
+		all:      initAll,
 	})
 
 	if hosts.claude {
@@ -279,6 +285,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 			} else if skillPath != "" {
 				fmt.Printf("  ✓ Installed Air skill h-reason (%s)\n", skillPath)
 			}
+		}
+	}
+
+	if hosts.opencode {
+		if err := configureMCPOpencode(cwd, binaryPath); err != nil {
+			fmt.Printf("  ⚠ Failed to configure OpenCode MCP: %v\n", err)
+		} else {
+			fmt.Printf("  ✓ Configured MCP for OpenCode (opencode.json, project: %s)\n", cwd)
+		}
+		if destPath, count, err := installCommands(cwd, "opencode", initLocal); err != nil {
+			fmt.Printf("  ⚠ Failed to install OpenCode commands: %v\n", err)
+		} else {
+			fmt.Printf("  ✓ Installed %d OpenCode commands (%s)\n", count, destPath)
+		}
+		if skillPath, err := installSkill("opencode", initLocal, cwd); err != nil {
+			fmt.Printf("  ⚠ Failed to install FPF skill: %v\n", err)
+		} else if skillPath != "" {
+			fmt.Printf("  ✓ Installed /h-reason skill (%s)\n", skillPath)
 		}
 	}
 
@@ -570,6 +594,53 @@ HAFT_PROJECT_ROOT = "%s"
 	}
 
 	return os.WriteFile(configPath, []byte(trimmed+"\n\n"+tomlSection), 0644)
+}
+
+// configureMCPOpencode merges a `mcp.haft` block into opencode.json at the
+// project root. OpenCode's MCP schema is JSON-based and uses
+// `{type, command, environment, enabled}` fields per server (per
+// https://opencode.ai/docs/mcp-servers). Existing keys outside `mcp.haft`
+// are preserved; the legacy `mcp.quint-code` key is removed if present.
+func configureMCPOpencode(projectRoot, binaryPath string) error {
+	configPath := filepath.Join(projectRoot, "opencode.json")
+
+	config := map[string]any{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if jsonErr := json.Unmarshal(data, &config); jsonErr != nil {
+			// Existing file is malformed JSON — refuse to clobber it
+			// silently. Operator must hand-resolve.
+			return fmt.Errorf("opencode.json exists but is not valid JSON; refusing to overwrite: %w", jsonErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if _, ok := config["$schema"]; !ok {
+		config["$schema"] = "https://opencode.ai/config.json"
+	}
+
+	mcpRaw, _ := config["mcp"].(map[string]any)
+	if mcpRaw == nil {
+		mcpRaw = map[string]any{}
+	}
+	delete(mcpRaw, "quint-code")
+
+	mcpRaw["haft"] = map[string]any{
+		"type":    "local",
+		"command": []string{binaryPath, "serve"},
+		"environment": map[string]string{
+			"HAFT_PROJECT_ROOT": projectRoot,
+		},
+		"enabled": true,
+	}
+	config["mcp"] = mcpRaw
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
 }
 
 // removeTomlSections removes all TOML sections whose header starts with the

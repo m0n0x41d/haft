@@ -256,7 +256,14 @@ main() {
     # Try downloading release
     local api_url="https://api.github.com/repos/${REPO}/releases/latest"
     local download_url
-    download_url=$(curl -s "$api_url" | grep "browser_download_url.*${os_arch}.tar.gz" | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+    # Anchor on `/haft-${os_arch}.tar.gz` (leading slash) so the CLI archive
+    # is picked, not `haft-desktop-${os_arch}.tar.gz` which sorts first in
+    # the GitHub API response and contains the Tauri shell binary, not
+    # the CLI `haft` binary.
+    download_url=$(curl -s "$api_url" \
+        | grep -E "\"browser_download_url\":[[:space:]]*\".*/haft-${os_arch}\.tar\.gz\"" \
+        | sed -E 's/.*"([^"]+)".*/\1/' \
+        | head -1)
 
     if [[ -n "$download_url" ]]; then
         (

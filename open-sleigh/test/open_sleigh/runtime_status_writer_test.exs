@@ -1,7 +1,7 @@
 defmodule OpenSleigh.RuntimeStatusWriterTest do
   use ExUnit.Case, async: false
 
-  alias OpenSleigh.{ObservationsBus, RuntimeStatusWriter}
+  alias OpenSleigh.{ObservationsBus, PhaseConfig, RuntimeStatusWriter}
 
   defmodule StatusServer do
     use GenServer
@@ -79,6 +79,48 @@ defmodule OpenSleigh.RuntimeStatusWriterTest do
     assert get_in(status, ["failures", Access.at(0), "commission_id"]) == "wc/local-7"
     assert get_in(status, ["failures", Access.at(0), "legacy_ticket_id"]) == "OCT-HG"
     assert get_in(status, ["failures", Access.at(0), "ticket"]) == "OCT-HG"
+  end
+
+  test "snapshot payloads can include non-enumerable structs", ctx do
+    status_root = Path.join(ctx.root, "status")
+
+    phase_config = %PhaseConfig{
+      phase: :execute,
+      agent_role: :executor,
+      tools: [:read, :edit],
+      gates: %{
+        structural: [:design_runtime_split_ok],
+        semantic: [],
+        human: [:commission_approved]
+      },
+      prompt_template_key: :execute,
+      max_turns: 20,
+      default_valid_until_days: 30
+    }
+
+    {:ok, orchestrator} =
+      StatusServer.start_link(%{
+        status: %{claimed: [], running: [phase_config], pending_human: [], retries: %{}},
+        human_gates: []
+      })
+
+    {:ok, _writer} =
+      RuntimeStatusWriter.start_link(
+        orchestrator: orchestrator,
+        path: status_root,
+        metadata: %{commission_id: "wc/struct-2"},
+        interval_ms: 0
+      )
+
+    status_path = Path.join(status_root, "wc_struct-2.json")
+    status = read_status(status_path)
+
+    assert get_in(status, ["orchestrator", "running", Access.at(0), "phase"]) == "execute"
+
+    assert get_in(status, ["orchestrator", "running", Access.at(0), "agent_role"]) ==
+             "executor"
+
+    assert get_in(status, ["orchestrator", "running", Access.at(0), "tools"]) == ["read", "edit"]
   end
 
   test "legacy metadata keeps ticket_id scoped path and snapshot", ctx do

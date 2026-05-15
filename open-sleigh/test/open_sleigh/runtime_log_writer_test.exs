@@ -1,7 +1,7 @@
 defmodule OpenSleigh.RuntimeLogWriterTest do
   use ExUnit.Case, async: true
 
-  alias OpenSleigh.RuntimeLogWriter
+  alias OpenSleigh.{PhaseConfig, RuntimeLogWriter}
 
   setup do
     root =
@@ -37,6 +37,43 @@ defmodule OpenSleigh.RuntimeLogWriterTest do
     assert Enum.all?(events, &(&1["commission_id"] == "wc/local-1"))
     assert Enum.all?(events, &(&1["legacy_ticket_id"] == "OCT-1"))
     assert Enum.any?(events, &(&1["event"] == "phase_completed"))
+  end
+
+  test "event payloads can include non-enumerable structs", ctx do
+    log_root = Path.join(ctx.root, "wal")
+
+    phase_config = %PhaseConfig{
+      phase: :execute,
+      agent_role: :executor,
+      tools: [:read, :edit],
+      gates: %{
+        structural: [:design_runtime_split_ok],
+        semantic: [],
+        human: [:commission_approved]
+      },
+      prompt_template_key: :execute,
+      max_turns: 20,
+      default_valid_until_days: 30
+    }
+
+    {:ok, writer} =
+      RuntimeLogWriter.start_link(
+        path: log_root,
+        metadata: %{commission_id: "wc/struct-1"}
+      )
+
+    :ok =
+      RuntimeLogWriter.event(writer, :session_waiting_human, %{phase_config: phase_config})
+
+    :ok = RuntimeLogWriter.stop(writer)
+
+    log_path = Path.join(log_root, "wc_struct-1.jsonl")
+    events = log_events(log_path)
+    event = Enum.find(events, &(&1["event"] == "session_waiting_human"))
+
+    assert get_in(event, ["data", "phase_config", "phase"]) == "execute"
+    assert get_in(event, ["data", "phase_config", "agent_role"]) == "executor"
+    assert get_in(event, ["data", "phase_config", "tools"]) == ["read", "edit"]
   end
 
   test "legacy metadata keeps ticket_id scoped path and payload", ctx do

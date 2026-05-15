@@ -488,15 +488,42 @@ defmodule OpenSleigh.Agent.ToolRuntime do
   @spec run_bash(String.t(), Path.t(), pos_integer()) ::
           {:ok, String.t()} | {:error, EffectError.t()}
   defp run_bash(command, workspace_path, timeout_ms) do
-    task =
-      Task.async(fn ->
-        System.cmd("bash", ["-lc", command], cd: workspace_path, stderr_to_stdout: true)
-      end)
+    with :ok <- reject_commission_lifecycle_mutation(command) do
+      task =
+        Task.async(fn ->
+          System.cmd("bash", ["-lc", command], cd: workspace_path, stderr_to_stdout: true)
+        end)
 
-    task
-    |> bash_task_result(timeout_ms)
+      task
+      |> bash_task_result(timeout_ms)
+    end
   rescue
     _ -> {:error, :tool_execution_failed}
+  end
+
+  @spec reject_commission_lifecycle_mutation(String.t()) :: :ok | {:error, EffectError.t()}
+  defp reject_commission_lifecycle_mutation(command) do
+    if commission_lifecycle_mutation_command?(command) do
+      {:error, :no_commission_mutation}
+    else
+      :ok
+    end
+  end
+
+  @spec commission_lifecycle_mutation_command?(String.t()) :: boolean()
+  defp commission_lifecycle_mutation_command?(command) do
+    normalized = String.downcase(command)
+
+    Enum.any?(commission_lifecycle_mutation_patterns(), &Regex.match?(&1, normalized))
+  end
+
+  @spec commission_lifecycle_mutation_patterns() :: [Regex.t()]
+  defp commission_lifecycle_mutation_patterns do
+    [
+      ~r/\bhaft\s+commission\s+(cancel|claim|complete-external|create|create-batch|create-from-decision|create-from-plan|requeue)\b/,
+      ~r/\bhaft_commission\b/,
+      ~r/["']action["']\s*:\s*["'](claim_for_preflight|complete_or_block|record_preflight|record_run_event|requeue|start_after_preflight)["']/
+    ]
   end
 
   @spec bash_task_result(Task.t(), pos_integer()) :: {:ok, String.t()} | {:error, EffectError.t()}

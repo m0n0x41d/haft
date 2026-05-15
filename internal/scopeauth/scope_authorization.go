@@ -269,11 +269,18 @@ func pathMatches(pattern string, changedPath string) bool {
 	case strings.HasSuffix(normalizedPattern, "/**"):
 		prefix := strings.TrimSuffix(normalizedPattern, "/**")
 		return changedPath == prefix || strings.HasPrefix(changedPath, prefix+"/")
+	case scopePatternIsDirectory(pattern):
+		return changedPath == normalizedPattern || strings.HasPrefix(changedPath, normalizedPattern+"/")
 	case strings.Contains(normalizedPattern, "*"):
 		return globRegex(normalizedPattern).MatchString(changedPath)
 	default:
 		return changedPath == normalizedPattern
 	}
+}
+
+func scopePatternIsDirectory(pattern string) bool {
+	trimmedPattern := strings.TrimSpace(filepath.ToSlash(pattern))
+	return strings.HasSuffix(trimmedPattern, "/")
 }
 
 func globRegex(pattern string) *regexp.Regexp {

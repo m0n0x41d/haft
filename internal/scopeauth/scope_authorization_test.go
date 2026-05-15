@@ -28,6 +28,26 @@ func TestAuthorizeWorkspaceDiffAllowsAllowedPath(t *testing.T) {
 	}
 }
 
+func TestAuthorizeWorkspaceDiffAllowsDirectoryCarrierWithTrailingSlash(t *testing.T) {
+	facts := testPathFacts()
+	scope := CommissionScope{
+		AllowedPaths: []string{"docs/", "test/"},
+	}
+
+	summary := AuthorizeWorkspaceDiff(
+		scope,
+		[]string{"docs/readiness.md", "test/smoke_test.go"},
+		facts,
+	)
+
+	if summary.Verdict != Allowed {
+		t.Fatalf("verdict = %s, want %s; out_of_scope=%#v", summary.Verdict, Allowed, summary.OutOfScope)
+	}
+	if !slices.Equal(summary.Allowed, []string{"docs/readiness.md", "test/smoke_test.go"}) {
+		t.Fatalf("allowed = %#v", summary.Allowed)
+	}
+}
+
 func TestAuthorizeWorkspaceDiffForbiddenOverridesBroadAllowedPath(t *testing.T) {
 	facts := testPathFacts()
 	scope := CommissionScope{

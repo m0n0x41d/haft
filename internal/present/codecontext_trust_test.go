@@ -2,9 +2,13 @@ package present
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/contextgraph"
+	"github.com/m0n0x41d/haft/internal/graph"
 )
 
 func mkDecision(t *testing.T, claims []artifact.DecisionClaim) *artifact.Artifact {
@@ -38,5 +42,38 @@ func TestDecisionVerificationTag(t *testing.T) {
 
 	if got := decisionVerificationTag(&artifact.Artifact{}); got != "" {
 		t.Errorf("no-claims = %q, want empty", got)
+	}
+}
+
+func TestCodeContextResponse_CompactsInvariantsAndFullRestoresThem(t *testing.T) {
+	invariants := make([]graph.Invariant, 0, 20)
+	for i := 1; i <= 20; i++ {
+		invariants = append(invariants, graph.Invariant{
+			Text:          fmt.Sprintf("invariant-%02d", i),
+			DecisionTitle: "Context decision",
+		})
+	}
+	cc := contextgraph.CodeContext{
+		Target:     contextgraph.Target{File: "internal/x.go"},
+		Invariants: invariants,
+	}
+
+	compact := CodeContextResponse(cc)
+	if !strings.Contains(compact, "invariant-12") {
+		t.Fatalf("compact response should include the capped visible prefix:\n%s", compact)
+	}
+	if strings.Contains(compact, "invariant-13") {
+		t.Fatalf("compact response should omit invariant 13+:\n%s", compact)
+	}
+	if !strings.Contains(compact, "8 more omitted") {
+		t.Fatalf("compact response should name omitted invariant count:\n%s", compact)
+	}
+
+	full := CodeContextResponseFull(cc)
+	if !strings.Contains(full, "invariant-20") {
+		t.Fatalf("full response should restore all invariants:\n%s", full)
+	}
+	if strings.Contains(full, "more omitted") {
+		t.Fatalf("full response must not include compact omission marker:\n%s", full)
 	}
 }

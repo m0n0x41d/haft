@@ -5,12 +5,18 @@ description: |
 when_to_use: |
   Operator wants situational awareness or session-resume context. Cheap and read-only, fire freely.
 argument-hint: "[optional: context name to filter]"
-allowed-tools: mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
+allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
 # h-status — Project FPF state dashboard
 
 You are surfacing the current FPF state via `mcp__haft__haft_query(action="status")`. Read-only — no kernel writes (Step 0's scan is a maintenance write, not a state mutation).
+
+## Compact interface discovery
+
+If you need the exact compact contract, run `haft interface query.status --json`.
+Default status output is compact; pass `full=true` only when the operator needs
+the complete module coverage list.
 
 ## Step 0 — Maintenance check (FPF B.3.4 evidence decay)
 
@@ -34,7 +40,8 @@ fix. See CLAUDE.md Critical Reminders — maintenance discipline.
 ```
 mcp__haft__haft_query(
   action="status",
-  context="<optional context filter>"
+  context="<optional context filter>",
+  full=false
 )
 ```
 
@@ -56,7 +63,9 @@ The status payload contains:
 - **Backlog** — active problems without committed decisions
 - **Addressed** — recently closed problems with their decisions
 - **Recent Notes** — last 5 micro-decisions
-- **Module Coverage** — per-module decision density (governed / blind / stale)
+- **Module Coverage Summary** — compact per-tier coverage; use
+  `mcp__haft__haft_query(action="status", full=true)` or
+  `mcp__haft__haft_query(action="coverage")` for the full module list
 
 The response also includes a navigation strip with available next actions (e.g., `/h-refresh`).
 

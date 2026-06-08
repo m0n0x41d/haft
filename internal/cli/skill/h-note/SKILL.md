@@ -1,51 +1,68 @@
 ---
 name: h-note
 description: |
-  Records a micro-decision with rationale into the haft artifact graph — lighter than a full DecisionRecord but persisted so future sessions and conflict detection can surface it. Make sure to use this skill whenever the user says "remember that", "FYI for later", "note that we chose X", "side note", "let's record we ruled out Y", "remember we decided X", "for the record", "worth noting", "TIL", "important caveat", "save this thought" — or whenever a small choice with stated rationale belongs in project memory but does not justify the full DRR ceremony. The kernel rejects content-free notes — rationale is required. For binding choices use h-decide (manual-only). For framing problems use h-frame.
+  Records a fact, observation, or small non-binding rationale into the haft artifact graph — lighter than a full DecisionRecord but persisted so future sessions and conflict detection can surface it. Make sure to use this skill whenever the user says "remember that", "FYI for later", "note that", "side note", "for the record", "worth noting", "TIL", "important caveat", "save this thought" — or whenever a project fact belongs in memory but does not justify the full DRR ceremony. The kernel rejects content-free notes. For binding choices use h-decide (manual-only). For framing problems use h-frame.
 when_to_use: |
-  Small choice or observation with rationale, worth persisting across sessions, but lighter than a binding DecisionRecord.
+  Fact, observation, or small non-binding rationale worth persisting across sessions, but lighter than a binding DecisionRecord.
 argument-hint: "[note text — what + why]"
-allowed-tools: mcp__haft__haft_problem mcp__haft__haft_query
+allowed-tools: Bash mcp__haft__haft_note mcp__haft__haft_problem mcp__haft__haft_query
 ---
 
-# h-note — Record a micro-decision
+# h-note — Record a note
 
-You are recording a Note via the kernel. Notes are lightweight artifacts in the graph — they don't have the DRR ceremony but they do require rationale per FPF DEC-01 (no rationale-free decision capture).
+You are recording a Note via `mcp__haft__haft_note(...)`. Notes are lightweight
+fact/observation carriers in the graph — they do not have the DRR ceremony,
+and they are not binding choices. The kernel rejects content-free notes.
 
-The Note tool lives under `haft_problem` action `select` does not write notes; the note-write surface is exposed through dedicated handlers in the MCP server. Check the actual tool name available — at present notes are written via the haft note CLI subcommand and via certain MCP integrations.
+## Compact interface discovery
+
+If you need the exact compact contract, run:
+
+```bash
+haft interface note.record --json
+```
+
+Use that as discovery; do not paste long MCP schemas or CLI help into the
+session. For large payloads prefer the input-file path:
+
+```bash
+haft artifact create note.record --input-file <input.json> --json
+```
+
+`mcp__haft__haft_note(...)` remains the compatible fallback when the host
+cannot write a local input file.
 
 ## Step 1 — Confirm intent
 
 The operator said something note-worthy. Before persisting:
-- Verify the note has substantive content: a fact OR a choice OR an observation with rationale
+- Verify the note has substantive content: a fact OR an observation OR non-binding rationale
 - Reject: "FYI" alone, "we should remember this" with no payload
-- Accept: "We chose X over Y because Z" / "Observation: tests run 30s slower on M1 baseline since dependency update"
+- Accept: "Observation: tests run 30s slower on M1 baseline since dependency update"
+- Reroute binding choices ("we choose X over Y") to h-decide; do not store them as notes
 
 ## Step 2 — Capture rationale explicitly
 
-Every Note must answer:
-- WHAT was decided / observed
-- WHY (the rationale)
-- WHEN (optional — kernel adds timestamp automatically; only add a domain timestamp if relevant)
+Every Note must answer at least one of:
+- WHAT was observed (atomic facts in `observations`)
+- WHERE the evidence came from (`evidence`)
+- WHY it matters (`rationale`, optional for bare facts)
 
 ## Step 3 — Persist
 
-Use the appropriate note-write tool. Currently:
+Use the dedicated note-write tool:
 
-```
-mcp__haft__haft_problem(
-  action="frame",
-  problem_type="optimization",
-  title="<short title>",
-  signal="<the observation or choice>",
-  acceptance="N/A — recorded as note for future recall",
-  mode="tactical"
-)
+```json
+{
+  "title": "<short title>",
+  "observations": ["<atomic fact>"],
+  "rationale": "<optional reason this fact matters>",
+  "anchors": [{"type": "relates_to", "ref": "<dec-/prob-/sol-/note-ref>"}]
+}
 ```
 
-(Notes use the lightweight tactical-mode problem record OR a dedicated note write surface depending on what the kernel exposes at runtime. The kernel rejects empty rationale.)
-
-For richer note support, prefer the `haft note` CLI command when available.
+Then either run `haft artifact create note.record --input-file <input.json> --json`
+or call `mcp__haft__haft_note(...)` with that payload. Do not emulate notes by
+creating tactical ProblemCards.
 
 ## Step 4 — Confirm to operator
 
@@ -60,6 +77,7 @@ Surface:
 - DO NOT use h-note for full problem framing — that's `/h-frame`.
 - DO NOT silently expand a note into a DecisionRecord. If the operator's intent is bigger than a note, recommend `/h-decide` and let them invoke it explicitly.
 - DO NOT capture meta-notes about agent behavior ("agent helped me with X") — those are session telemetry, not project knowledge.
+- DO NOT emulate notes with `haft_problem(action="frame")`; notes have a dedicated carrier.
 
 ## FPF spec references
 

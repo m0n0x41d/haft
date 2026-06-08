@@ -171,6 +171,32 @@ func TestInstallCodexSkillsWritesExplicitCommandSkills(t *testing.T) {
 	if !strings.Contains(string(decidePolicy), "allow_implicit_invocation: false") {
 		t.Fatalf("h-decide must be explicit-only per Transformer Mandate, got:\n%s", string(decidePolicy))
 	}
+	decideSkillPath := filepath.Join(skillsRoot, "h-decide", "SKILL.md")
+	decideSkill, err := os.ReadFile(decideSkillPath)
+	if err != nil {
+		t.Fatalf("failed to read h-decide skill: %v", err)
+	}
+	for _, want := range []string{"haft interface decision.decide --json", "haft artifact create decision.decide"} {
+		if !strings.Contains(string(decideSkill), want) {
+			t.Fatalf("h-decide skill should point at compact CLI path %q:\n%s", want, string(decideSkill))
+		}
+	}
+
+	noteSkillPath := filepath.Join(skillsRoot, "h-note", "SKILL.md")
+	noteSkill, err := os.ReadFile(noteSkillPath)
+	if err != nil {
+		t.Fatalf("failed to read h-note skill: %v", err)
+	}
+	noteContent := string(noteSkill)
+	for _, want := range []string{"mcp__haft__haft_note", "haft interface note.record --json", "haft artifact create note.record"} {
+		if !strings.Contains(noteContent, want) {
+			t.Fatalf("h-note skill missing %q:\n%s", want, noteContent)
+		}
+	}
+	if strings.Contains(noteContent, `haft_problem(
+  action="frame"`) {
+		t.Fatalf("h-note skill must not emulate notes with ProblemCards:\n%s", noteContent)
+	}
 
 	// Deprecated h-fpf directory must be removed (migration step —
 	// h-fpf was the v8 narrow-fallback name; it's been replaced by the

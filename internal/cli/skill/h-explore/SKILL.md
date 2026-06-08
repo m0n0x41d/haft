@@ -5,12 +5,24 @@ description: |
 when_to_use: |
   Problem is framed (or frame inline) and only one approach is on the table, OR the user explicitly asks for options. For evaluating existing variants use h-compare.
 argument-hint: "[exploration topic or problem reference]"
-allowed-tools: Agent mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_query
+allowed-tools: Bash Agent mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_query
 ---
 
 # h-explore — Generate distinct variants with NQD discipline
 
 You are running the FPF exploration workflow. The point is rivalrous candidate generation: 3-5 variants that differ in KIND, each with a named weakest_link, and at least one stepping-stone (or an explicit rationale for not having one).
+
+## Compact interface discovery
+
+If you need the exact compact contract, run `haft interface solution.explore --json`.
+Use it as discovery; do not paste long MCP schemas or CLI help into the
+session. For large payloads prefer:
+
+```bash
+haft artifact create solution.explore --input-file <input.json> --json
+```
+
+`mcp__haft__haft_solution(action="explore", ...)` remains the compatible fallback.
 
 ## Step 1 — Ensure the problem is framed (agent infers first, asks only on real ambiguity)
 

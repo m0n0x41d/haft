@@ -764,7 +764,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"full": map[string]interface{}{
 						"type":        "boolean",
-						"description": "(fpf) Show full section content instead of snippets",
+						"description": "(status/code_context/fpf) Show full detail instead of compact defaults/snippets",
 					},
 					"explain": map[string]interface{}{
 						"type":        "boolean",
@@ -783,9 +783,66 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		tools = append(tools, haftSpecSectionTool())
 	}
 
+	tools = compactToolDescriptions(tools)
+
 	s.sendResult(req.ID, map[string]interface{}{
 		"tools": tools,
 	})
+}
+
+func compactToolDescriptions(tools []Tool) []Tool {
+	compacted := make([]Tool, 0, len(tools))
+	for _, tool := range tools {
+		tool.Description = "Use `haft interface --json` for compact contracts."
+		compactSchemaDescriptions(tool.InputSchema, tool.Name)
+		compacted = append(compacted, tool)
+	}
+
+	return compacted
+}
+
+func compactSchemaDescriptions(value interface{}, toolName string) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		if description, ok := typed["description"].(string); ok {
+			if !isLoadBearingSchemaDescription(description) {
+				delete(typed, "description")
+			}
+		}
+		for _, child := range typed {
+			compactSchemaDescriptions(child, toolName)
+		}
+	case map[string]string:
+		if description, ok := typed["description"]; ok {
+			if !isLoadBearingSchemaDescription(description) {
+				delete(typed, "description")
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			compactSchemaDescriptions(child, toolName)
+		}
+	}
+}
+
+func isLoadBearingSchemaDescription(description string) bool {
+	for _, marker := range []string{
+		"C.28",
+		"DecisionRecord ID filename",
+		"Expiry date (RFC3339 or YYYY-MM-DD)",
+		"_skip_reason",
+		"currently supports tree",
+		"engineer | manager | audit | compare | delegated-agent | change-rationale",
+		"human still chooses",
+		"optimization",
+		"simulation_only",
+	} {
+		if strings.Contains(description, marker) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Server) handleToolsCall(req JSONRPCRequest) {

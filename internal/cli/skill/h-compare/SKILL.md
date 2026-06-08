@@ -5,12 +5,24 @@ description: |
 when_to_use: |
   ≥2 viable variants on the table and the operator wants a fair comparison. For new variants use h-explore. For binding the winner use /h-decide (manual-only).
 argument-hint: "[portfolio-ref or comparison topic]"
-allowed-tools: Agent mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_query
+allowed-tools: Bash Agent mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_query
 ---
 
 # h-compare — Fair comparison with Pareto front
 
 You are running the FPF compare workflow: characterize dimensions → declare parity plan → declare selection policy BEFORE scoring → dim-wise parallel scoring → compute non-dominated set → present Pareto front (NOT a scalar winner).
+
+## Compact interface discovery
+
+If you need the exact compact contract, run `haft interface solution.compare --json`.
+Use it as discovery; do not paste long MCP schemas or CLI help into the
+session. For large payloads prefer:
+
+```bash
+haft artifact create solution.compare --input-file <input.json> --json
+```
+
+`mcp__haft__haft_solution(action="compare", ...)` remains the compatible fallback.
 
 ## Step 1 — Ensure portfolio exists
 

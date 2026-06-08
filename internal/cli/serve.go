@@ -1270,7 +1270,11 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		result := present.ScanResponse(items, "")
+		verbose, _ := args["verbose"].(bool)
+		result := present.ScanResponseSummary(items, "")
+		if verbose {
+			result = present.ScanResponse(items, "")
+		}
 		governanceAttention := scanGovernanceAttention(ctx, store)
 		result += present.GovernanceAttentionResponse(governanceAttention)
 
@@ -1311,7 +1315,6 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 			}
 		}
 		if hasImpact {
-			verbose, _ := args["verbose"].(bool)
 			if verbose {
 				result += "\n" + present.DriftResponse(driftReports, "")
 			} else {
@@ -1405,6 +1408,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		// H1 (dec-20260526-9fdd33ed): pass projectRoot so /h-status
 		// surfaces drift via FetchStatusData → CheckDrift → StatusData.Drift.
 		projectRoot := filepath.Dir(haftDir)
+		full, _ := args["full"].(bool)
 		data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
 		if err != nil {
 			return "", err
@@ -1414,7 +1418,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		scanner := codebase.NewScanner(store.DB())
 		if !scanner.ModulesLastScanned(ctx).IsZero() {
 			if report, err := codebase.ComputeCoverage(ctx, store.DB()); err == nil && report.TotalModules > 0 {
-				result += "\n" + codebase.FormatCoverageResponse(report)
+				if full {
+					result += "\n" + codebase.FormatCoverageResponse(report)
+				} else {
+					result += "\n" + codebase.FormatCoverageSummary(report)
+				}
 			}
 		}
 		return result + navStrip, nil
@@ -1503,6 +1511,10 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		cc, err := contextgraph.FetchCodeContext(ctx, store, graph.NewStore(store.DB()), contextgraph.Target{File: file, Symbol: symbol, Line: line})
 		if err != nil {
 			return "", err
+		}
+		full, _ := args["full"].(bool)
+		if full {
+			return present.CodeContextResponseFull(cc) + navStrip, nil
 		}
 		return present.CodeContextResponse(cc) + navStrip, nil
 

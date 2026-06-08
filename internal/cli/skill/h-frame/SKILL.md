@@ -5,12 +5,24 @@ description: |
 when_to_use: |
   Operator is about to commit to a direction before the problem is honestly named, OR is explicitly framing. If the signal is a concrete failure with unclear cause, prefer h-diagnose. For one-line micro-decisions use h-note.
 argument-hint: "[problem signal text — what's anomalous, broken, or needs changing]"
-allowed-tools: mcp__haft__haft_problem mcp__haft__haft_query mcp__haft__haft_refresh
+allowed-tools: Bash mcp__haft__haft_problem mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
 # h-frame — Frame the problem before solving
 
 You are framing a problem via `mcp__haft__haft_problem(action="frame", ...)`. Problem quality dominates solution quality. Get the frame right; the rest follows.
+
+## Compact interface discovery
+
+If you need the exact compact contract, run `haft interface problem.frame --json`.
+Use it as discovery; do not paste long MCP schemas or CLI help into the
+session. For large payloads prefer:
+
+```bash
+haft artifact create problem.frame --input-file <input.json> --json
+```
+
+`mcp__haft__haft_problem(action="frame", ...)` remains the compatible fallback.
 
 ## Procedure
 

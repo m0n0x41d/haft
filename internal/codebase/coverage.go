@@ -237,6 +237,107 @@ func FormatCoverageResponse(report *CoverageReport) string {
 	return sb.String()
 }
 
+// FormatCoverageSummary formats a compact module coverage projection for
+// default status output. The full module list remains available through
+// FormatCoverageResponse and haft_query(action="status", full=true).
+func FormatCoverageSummary(report *CoverageReport) string {
+	if report.TotalModules == 0 {
+		return "No modules detected. Run module scan first.\n"
+	}
+
+	var sb strings.Builder
+
+	pct := 0
+	if report.TotalModules > 0 {
+		pct = (report.CoveredCount + report.PartialCount) * 100 / report.TotalModules
+	}
+
+	header := fmt.Sprintf("## Module Coverage Summary (%d modules, %d%% governed", report.TotalModules, pct)
+	if report.PartialCount > 0 {
+		header += fmt.Sprintf(", %d degraded", report.PartialCount)
+	}
+	header += ")\n\n"
+	sb.WriteString(header)
+
+	const topModulesPerTier = 5
+	for _, status := range []CoverageStatus{CoverageBlind, CoveragePartial, CoverageCovered} {
+		tier := sortedCoverageTier(report, status)
+		if len(tier) == 0 {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("### %s (%d)\n", coverageStatusLabel(status), len(tier)))
+		for i, mc := range tier {
+			if i >= topModulesPerTier {
+				break
+			}
+			sb.WriteString(formatCoverageModuleLine(mc))
+		}
+		if omitted := len(tier) - topModulesPerTier; omitted > 0 {
+			sb.WriteString(fmt.Sprintf("  ... and %d more module(s)\n", omitted))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Full module list: `haft_query(action=\"status\", full=true)` or `haft_query(action=\"coverage\")`.\n")
+
+	return sb.String()
+}
+
+func sortedCoverageTier(report *CoverageReport, status CoverageStatus) []ModuleCoverage {
+	var tier []ModuleCoverage
+	for _, mc := range report.Modules {
+		if mc.Status == status {
+			tier = append(tier, mc)
+		}
+	}
+
+	sort.Slice(tier, func(i, j int) bool {
+		if tier[i].ImpactScore != tier[j].ImpactScore {
+			return tier[i].ImpactScore > tier[j].ImpactScore
+		}
+		return tier[i].Module.Path < tier[j].Module.Path
+	})
+
+	return tier
+}
+
+func coverageStatusLabel(status CoverageStatus) string {
+	switch status {
+	case CoverageCovered:
+		return "Covered"
+	case CoveragePartial:
+		return "Degraded"
+	case CoverageBlind:
+		return "Blind"
+	default:
+		return string(status)
+	}
+}
+
+func formatCoverageModuleLine(mc ModuleCoverage) string {
+	path := mc.Module.Path
+	if path == "" {
+		path = "(root)"
+	}
+
+	impactTag := ""
+	if mc.ImpactScore > 0 {
+		impactTag = fmt.Sprintf(", impact: %d", mc.ImpactScore)
+	}
+
+	switch mc.Status {
+	case CoverageCovered:
+		return fmt.Sprintf("  ✓ %-30s — %d decision(s)%s [%s]\n", path, mc.DecisionCount, impactTag, mc.Module.Lang)
+	case CoveragePartial:
+		return fmt.Sprintf("  ~ %-30s — %d decision(s), stale%s [%s]\n", path, mc.DecisionCount, impactTag, mc.Module.Lang)
+	case CoverageBlind:
+		return fmt.Sprintf("  ✗ %-30s — no decisions (blind)%s [%s]\n", path, impactTag, mc.Module.Lang)
+	default:
+		return fmt.Sprintf("  ? %-30s — %s%s [%s]\n", path, mc.Status, impactTag, mc.Module.Lang)
+	}
+}
+
 // FindFirstDecisionModules returns touched modules that currently have no
 // active decision coverage. The caller can use this to warn that a decision is
 // establishing the first explicit architectural context for a module.

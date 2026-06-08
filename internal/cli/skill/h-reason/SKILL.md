@@ -21,6 +21,26 @@ You are running the **haft umbrella reasoning workflow**. This skill replaces th
 
 ---
 
+## Compact interface discovery
+
+When you need exact fields for an artifact operation, run the compact CLI
+contract instead of reading or pasting long MCP schemas:
+
+```bash
+haft interface <capability> --json
+```
+
+Useful capabilities: `problem.frame`, `solution.explore`,
+`solution.compare`, `decision.decide`, `note.record`, `query.status`,
+`query.code_context`, `refresh.scan`.
+
+Use the command as discovery. When the contract exposes a shipped
+`haft artifact create <capability> --input-file ... --json` path, prefer that
+for large write payloads; keep the matching `mcp__haft__*` tool as the
+compatible fallback.
+
+---
+
 ## The single most important rule: Description ≠ Work
 
 This is the failure mode this umbrella is designed to NOT fall into.

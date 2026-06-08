@@ -9,6 +9,43 @@ import (
 	"testing"
 )
 
+func mustToolsListResponseBytes(t *testing.T) []byte {
+	t.Helper()
+
+	server := NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	request := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "tools/list",
+		ID:      "req-schema-budget",
+	}
+
+	stdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Stdout = stdout
+	}()
+
+	os.Stdout = writer
+	server.handleToolsList(request)
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	responseBytes, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return responseBytes
+}
+
 func mustListToolProperties(t *testing.T, toolName string) map[string]interface{} {
 	t.Helper()
 
@@ -90,6 +127,15 @@ func mustListToolInputSchema(t *testing.T, toolName string) map[string]interface
 
 	t.Fatalf("%s tool schema not found", toolName)
 	return nil
+}
+
+func TestHandleToolsList_StaysUnderContextBudget(t *testing.T) {
+	responseBytes := mustToolsListResponseBytes(t)
+
+	const maxToolsListBytes = 15000
+	if len(responseBytes) > maxToolsListBytes {
+		t.Fatalf("tools/list response = %d bytes, want <= %d", len(responseBytes), maxToolsListBytes)
+	}
 }
 
 func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {

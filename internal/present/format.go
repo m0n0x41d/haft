@@ -158,6 +158,43 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 	return sb.String()
 }
 
+// ScanResponseSummary formats stale scan results for default agent output.
+// The full stale list remains available through ScanResponse when the caller
+// explicitly asks for verbose refresh output.
+func ScanResponseSummary(items []artifact.StaleItem, navStrip string) string {
+	var sb strings.Builder
+
+	if len(items) == 0 {
+		sb.WriteString("No stale artifacts found. All decisions, problems, and notes are current.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	const topStaleItems = 10
+	sb.WriteString(fmt.Sprintf("## Refresh Due (%d artifact(s)) — summary\n\n", len(items)))
+	for i, item := range items {
+		if i >= topStaleItems {
+			break
+		}
+		kindLabel := item.Kind
+		if kindLabel == "" {
+			kindLabel = "DecisionRecord"
+		}
+		kindLabel = UserFacingArtifactKindLabel(kindLabel)
+		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
+		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
+	}
+	if omitted := len(items) - topStaleItems; omitted > 0 {
+		sb.WriteString(fmt.Sprintf("... and %d more refresh-due artifact(s) omitted from summary\n\n", omitted))
+	}
+
+	sb.WriteString("Full stale list: pass `verbose: true` to haft_refresh(action=\"scan\").\n")
+	sb.WriteString("Actions: waive | reopen | supersede | deprecate with `artifact_ref`.\n")
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
 func GovernanceAttentionResponse(attention artifact.GovernanceAttention) string {
 	if attention.BacklogCount == 0 &&
 		attention.InProgressCount == 0 &&
@@ -264,14 +301,26 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 	}
 
 	const topModifiedPerReport = 5
+	const topDriftReports = 5
+	const topImpactReports = 3
+	const topImpactedModulesPerReport = 5
+	const topDecisionIDsPerImpact = 4
 
 	if driftCount > 0 {
 		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s)) — summary\n\n", driftCount))
 		sb.WriteString("Counts per baselined decision. For full per-file dump pass `verbose: true` to haft_refresh.\n\n")
+		renderedDriftReports := 0
+		omittedDriftReports := 0
 		for _, r := range reports {
 			if !r.HasBaseline {
 				continue
 			}
+			if renderedDriftReports >= topDriftReports {
+				omittedDriftReports++
+				continue
+			}
+			renderedDriftReports++
+
 			var modified, added, missing int
 			var modifiedPaths []string
 			var changedSymbols []string // non-added symbols across modified files — the actionable ones
@@ -313,19 +362,39 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 			}
 			sb.WriteString("\n")
 		}
+		if omittedDriftReports > 0 {
+			sb.WriteString(fmt.Sprintf("... and %d more drifted decision(s) omitted from summary\n\n", omittedDriftReports))
+		}
+		impactReports := 0
+		omittedImpactReports := 0
 		for _, r := range reports {
 			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
 				continue
 			}
+			if impactReports >= topImpactReports {
+				omittedImpactReports++
+				continue
+			}
+			impactReports++
+
 			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
-			for _, impact := range r.ImpactedModules {
+			for i, impact := range r.ImpactedModules {
+				if i >= topImpactedModulesPerReport {
+					break
+				}
 				if impact.IsBlind {
 					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
 				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionIDs(impact.DecisionIDs, topDecisionIDsPerImpact)))
 				}
 			}
+			if omitted := len(r.ImpactedModules) - topImpactedModulesPerReport; omitted > 0 {
+				sb.WriteString(fmt.Sprintf("  ... and %d more impacted module(s)\n", omitted))
+			}
 			sb.WriteString("\n")
+		}
+		if omittedImpactReports > 0 {
+			sb.WriteString(fmt.Sprintf("... and %d more decision(s) with impact propagation omitted from summary\n\n", omittedImpactReports))
 		}
 		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
 		sb.WriteString("For one specific decision use `haft_query(action=\"related\", file=...)`; for full dump pass `verbose: true` to haft_refresh.\n\n")
@@ -349,6 +418,15 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 
 	sb.WriteString(navStrip)
 	return sb.String()
+}
+
+func summarizedDecisionIDs(ids []string, limit int) string {
+	if len(ids) <= limit {
+		return strings.Join(ids, ", ")
+	}
+
+	visible := strings.Join(ids[:limit], ", ")
+	return fmt.Sprintf("%s, ... +%d", visible, len(ids)-limit)
 }
 
 // DriftResponse formats drift check results for the agent (verbose: full

@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Compact Haft interface discovery and input-file artifact creation.**
+  `haft interface <capability> --json` now exposes small machine-readable
+  contracts for agent workflows, and `haft artifact create <capability>
+  --input-file <input.json> --json` can create/update ProblemCards,
+  SolutionPortfolios, DecisionRecords, and Notes via the same artifact core as
+  MCP. Supported capabilities: `problem.frame`, `solution.explore`,
+  `solution.compare`, `decision.decide`, and `note.record`.
+
+### Changed
+
+- **MCP defaults now stay compact by default.** `tools/list` trims
+  non-load-bearing schema descriptions and points agents at `haft interface`
+  for full contracts; `haft_refresh(action="scan")`, `haft_query(status)`,
+  and `haft_query(code_context)` now return capped summaries unless callers
+  explicitly request `verbose=true` or `full=true`.
+- **Bundled haft skills now teach the compact CLI path.** The frame, explore,
+  compare, decide, note, reason, and status skills route agents through
+  `haft interface` and input-file artifact creation instead of inlining long
+  schemas; MCP write tools remain the compatible fallback.
+
 ### Fixed
 
 - Shared `haft-embed` daemons no longer inherit the first client project's

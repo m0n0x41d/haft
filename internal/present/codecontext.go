@@ -14,6 +14,36 @@ import (
 // variants, notes, and invariants that touch it, plus module coverage. Pure
 // formatting; no IO.
 func CodeContextResponse(cc contextgraph.CodeContext) string {
+	return CodeContextResponseWithOptions(cc, CodeContextRenderOptions{
+		Full:                  false,
+		InvariantLimit:        12,
+		ContextInvariantLimit: 8,
+	})
+}
+
+// CodeContextResponseFull renders the complete context projection for explicit
+// full-mode calls. Default code_context stays compact because file-level
+// invariants can grow into hundreds of bullets on governed modules.
+func CodeContextResponseFull(cc contextgraph.CodeContext) string {
+	return CodeContextResponseWithOptions(cc, CodeContextRenderOptions{
+		Full:                  true,
+		InvariantLimit:        0,
+		ContextInvariantLimit: 0,
+	})
+}
+
+// CodeContextRenderOptions controls only presentation volume. The underlying
+// contextgraph fetch remains unchanged, so compact mode is reversible by
+// re-rendering the same value with Full=true.
+type CodeContextRenderOptions struct {
+	Full                  bool
+	InvariantLimit        int
+	ContextInvariantLimit int
+}
+
+// CodeContextResponseWithOptions renders the fused code context using explicit
+// volume controls. Passing Full=true disables limits.
+func CodeContextResponseWithOptions(cc contextgraph.CodeContext, options CodeContextRenderOptions) string {
 	var b strings.Builder
 
 	target := cc.Target.File
@@ -45,23 +75,34 @@ func CodeContextResponse(cc contextgraph.CodeContext) string {
 	renderContextArtifacts(&b, "Solution variants explored", cc.Portfolios)
 	renderContextArtifacts(&b, "Notes", cc.Notes)
 
-	if len(cc.Invariants) > 0 {
-		b.WriteString("### Invariants that must hold here\n")
-		for _, inv := range cc.Invariants {
-			fmt.Fprintf(&b, "- %s _(from %s)_\n", inv.Text, inv.DecisionTitle)
-		}
-		b.WriteString("\n")
-	}
-
-	if len(cc.ContextInvariants) > 0 {
-		b.WriteString("### Module context — invariants of module-governing decisions (may not bind this symbol)\n")
-		for _, inv := range cc.ContextInvariants {
-			fmt.Fprintf(&b, "- %s _(from %s)_\n", inv.Text, inv.DecisionTitle)
-		}
-		b.WriteString("\n")
-	}
+	renderInvariantSection(&b, "### Invariants that must hold here", cc.Invariants, options.InvariantLimit, options.Full)
+	renderInvariantSection(&b, "### Module context — invariants of module-governing decisions (may not bind this symbol)", cc.ContextInvariants, options.ContextInvariantLimit, options.Full)
 
 	return b.String()
+}
+
+func renderInvariantSection(b *strings.Builder, heading string, invariants []graph.Invariant, limit int, full bool) {
+	if len(invariants) == 0 {
+		return
+	}
+
+	b.WriteString(heading)
+	b.WriteString("\n")
+
+	visible := invariants
+	if !full && limit > 0 && len(invariants) > limit {
+		visible = invariants[:limit]
+	}
+
+	for _, inv := range visible {
+		fmt.Fprintf(b, "- %s _(from %s)_\n", inv.Text, inv.DecisionTitle)
+	}
+
+	if omitted := len(invariants) - len(visible); omitted > 0 {
+		fmt.Fprintf(b, "- ... %d more omitted; re-run `haft_query(action=\"code_context\", ..., full=true)` for the complete invariant list.\n", omitted)
+	}
+
+	b.WriteString("\n")
 }
 
 // moduleDecisionList renders the module's governing decisions inline, each ID

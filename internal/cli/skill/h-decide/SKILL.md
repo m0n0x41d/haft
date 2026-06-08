@@ -6,7 +6,7 @@ when_to_use: |
   Operator typed /h-decide explicitly and is committing to a chosen variant. Never auto-fire.
 argument-hint: "[selected variant title or short choice text]"
 disable-model-invocation: true
-allowed-tools: mcp__haft__haft_decision mcp__haft__haft_query
+allowed-tools: Bash mcp__haft__haft_decision mcp__haft__haft_query
 ---
 
 # h-decide — Record a Decision (manual only, Transformer Mandate)
@@ -16,6 +16,24 @@ You are recording a `DecisionRecord` via `mcp__haft__haft_decision(action="decid
 This is the binding moment. The DecisionRecord becomes the authoritative
 choice that downstream commissions, runtime runs, and verification cycles
 reference. Take it seriously.
+
+## Compact interface discovery
+
+If you need the exact compact contract, run:
+
+```bash
+haft interface decision.decide --json
+```
+
+Use that as discovery; do not paste long MCP schemas or CLI help into the
+session. For large payloads prefer the input-file path:
+
+```bash
+haft artifact create decision.decide --input-file <input.json> --json
+```
+
+`mcp__haft__haft_decision(action="decide", ...)` remains the compatible
+fallback when the host cannot write a local input file.
 
 ## Required arguments for standard mode (default)
 

@@ -110,6 +110,52 @@ func TestDriftResponseSummary_StaysCompactOnLargeReports(t *testing.T) {
 	}
 }
 
+func TestDriftResponseSummary_StaysCompactOnImpactFanout(t *testing.T) {
+	reports := make([]artifact.DriftReport, 0, 8)
+	for r := 0; r < 8; r++ {
+		impacts := make([]artifact.ModuleImpact, 0, 20)
+		for i := 0; i < 20; i++ {
+			impacts = append(impacts, artifact.ModuleImpact{
+				ModulePath:  fmt.Sprintf("internal/mod-%02d-%02d", r, i),
+				DecisionIDs: []string{"dec-a", "dec-b", "dec-c", "dec-d", "dec-e", "dec-f"},
+			})
+		}
+		reports = append(reports, artifact.DriftReport{
+			DecisionID:        fmt.Sprintf("dec-impact-%02d", r),
+			DecisionTitle:     fmt.Sprintf("Impact %02d", r),
+			HasBaseline:       true,
+			Files:             []artifact.DriftItem{{Path: fmt.Sprintf("internal/file-%02d.go", r), Status: artifact.DriftModified}},
+			ImpactedModules:   impacts,
+			LikelyImplemented: true,
+		})
+	}
+
+	summary := present.DriftResponseSummary(reports, "")
+
+	for _, want := range []string{
+		"Impact propagation for dec-impact-00",
+		"internal/mod-00-00",
+		"... +2",
+		"... and 15 more impacted module(s)",
+		"... and 5 more decision(s) with impact propagation omitted from summary",
+		"verbose: true",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+	for _, banned := range []string{"internal/mod-00-19", "Impact propagation for dec-impact-07"} {
+		if strings.Contains(summary, banned) {
+			t.Fatalf("summary leaked uncapped impact detail %q:\n%s", banned, summary)
+		}
+	}
+
+	summaryLines := strings.Count(summary, "\n")
+	if summaryLines > 80 {
+		t.Fatalf("impact summary should stay compact; got %d lines\n%s", summaryLines, summary)
+	}
+}
+
 func TestDriftResponseSummary_EmptyAndNoBaseline(t *testing.T) {
 	if got := present.DriftResponseSummary(nil, ""); !strings.Contains(got, "No drift detected") {
 		t.Fatalf("empty reports should say so; got:\n%s", got)
@@ -127,6 +173,36 @@ func TestDriftResponseSummary_EmptyAndNoBaseline(t *testing.T) {
 	got := present.DriftResponseSummary(reports, "")
 	if !strings.Contains(got, "git activity detected after decision date") {
 		t.Fatalf("summary should preserve LikelyImplemented hint:\n%s", got)
+	}
+}
+
+func TestScanResponseSummary_StaysCompactAndKeepsVerboseRecoveryHint(t *testing.T) {
+	items := make([]artifact.StaleItem, 0, 25)
+	for i := 0; i < 25; i++ {
+		items = append(items, artifact.StaleItem{
+			ID:     fmt.Sprintf("dec-stale-%02d", i),
+			Title:  fmt.Sprintf("Stale %02d", i),
+			Kind:   string(artifact.KindDecisionRecord),
+			Reason: "evidence expired",
+		})
+	}
+
+	summary := present.ScanResponseSummary(items, "")
+
+	if !strings.Contains(summary, "Refresh Due (25 artifact(s)) — summary") {
+		t.Fatalf("summary missing heading:\n%s", summary)
+	}
+	if !strings.Contains(summary, "dec-stale-09") {
+		t.Fatalf("summary should include top stale items:\n%s", summary)
+	}
+	if strings.Contains(summary, "dec-stale-10") {
+		t.Fatalf("summary should omit stale item 11+:\n%s", summary)
+	}
+	if !strings.Contains(summary, "15 more refresh-due artifact(s)") {
+		t.Fatalf("summary should report omitted stale count:\n%s", summary)
+	}
+	if !strings.Contains(summary, "verbose: true") {
+		t.Fatalf("summary should explain full recovery:\n%s", summary)
 	}
 }
 

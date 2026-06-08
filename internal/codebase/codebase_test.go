@@ -746,6 +746,44 @@ func TestImpactRankedCoverage(t *testing.T) {
 	}
 }
 
+func TestFormatCoverageSummary_CompactsLargeTiers(t *testing.T) {
+	modules := make([]ModuleCoverage, 0, 9)
+	for i := 0; i < 9; i++ {
+		modules = append(modules, ModuleCoverage{
+			Module: Module{
+				ID:   "mod-blind",
+				Path: "internal/blind-" + string(rune('a'+i)),
+				Lang: "go",
+			},
+			Status:      CoverageBlind,
+			ImpactScore: 9 - i,
+		})
+	}
+
+	report := &CoverageReport{
+		TotalModules: 9,
+		BlindCount:   9,
+		Modules:      modules,
+	}
+
+	summary := FormatCoverageSummary(report)
+	if !strings.Contains(summary, "Module Coverage Summary") {
+		t.Fatalf("summary missing heading:\n%s", summary)
+	}
+	if !strings.Contains(summary, "internal/blind-a") {
+		t.Fatalf("summary should include highest-impact module:\n%s", summary)
+	}
+	if strings.Contains(summary, "internal/blind-i") {
+		t.Fatalf("summary should omit modules beyond top tier cap:\n%s", summary)
+	}
+	if !strings.Contains(summary, "... and 4 more module(s)") {
+		t.Fatalf("summary should report omitted modules:\n%s", summary)
+	}
+	if !strings.Contains(summary, "full=true") {
+		t.Fatalf("summary should explain how to retrieve full coverage:\n%s", summary)
+	}
+}
+
 func TestCoverageComputation(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Shared `haft-embed` daemons no longer inherit the first client project's
+  working directory; the launcher now starts them from the private socket
+  directory and resolves configured cache paths to absolute paths before launch.
+
 ## [8.1.0] — 2026-06-06 — shared embedding runtime
 
 Architectural pivot recorded in

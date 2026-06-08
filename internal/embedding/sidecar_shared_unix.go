@@ -162,6 +162,7 @@ func startSharedSidecarDaemon(
 	args = append(args, "--idle-timeout-secs", strconv.Itoa(sharedIdleTimeoutSecs()))
 
 	cmd := exec.Command(binary, args...)
+	cmd.Dir = filepath.Dir(socket)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

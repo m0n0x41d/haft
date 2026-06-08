@@ -351,6 +351,10 @@ func taskFor(role Role) string {
 
 func resolveCacheDir(configured string) string {
 	if configured != "" {
+		absolute, err := filepath.Abs(configured)
+		if err == nil {
+			return absolute
+		}
 		return configured
 	}
 	home, err := os.UserHomeDir()

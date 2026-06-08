@@ -62,6 +62,71 @@ func TestSharedSidecarReusesOneDaemon(t *testing.T) {
 	}
 }
 
+func TestSharedSidecarDaemonDoesNotInheritClientCWD(t *testing.T) {
+	helper := writeSharedSidecarHelper(t)
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	cwdLog := filepath.Join(t.TempDir(), "cwd.log")
+	clientDir := t.TempDir()
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(clientDir); err != nil {
+		t.Fatalf("chdir client dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	t.Setenv(sidecarBinaryEnv, helper)
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "1")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+	t.Setenv("HAFT_TEST_SHARED_SIDECAR_CWD_LOG", cwdLog)
+
+	embedder, err := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	if err != nil {
+		t.Fatalf("New(local): %v", err)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	data, err := os.ReadFile(cwdLog)
+	if err != nil {
+		t.Fatalf("read cwd log: %v", err)
+	}
+	got := filepath.Clean(strings.TrimSpace(string(data)))
+	want := filepath.Clean(socketDir)
+	if got != want {
+		t.Fatalf("daemon cwd = %q, want %q", got, want)
+	}
+}
+
+func TestSidecarSpecFromConfigAbsolutizesCacheDir(t *testing.T) {
+	clientDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(clientDir); err != nil {
+		t.Fatalf("chdir client dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	spec := sidecarSpecFromConfig(Config{
+		Provider: ProviderLocal,
+		Model:    "fake",
+		CacheDir: "models",
+	})
+
+	want, err := filepath.Abs("models")
+	if err != nil {
+		t.Fatalf("abs cache dir: %v", err)
+	}
+	if spec.CacheDir != want {
+		t.Fatalf("cache dir = %q, want %q", spec.CacheDir, want)
+	}
+}
+
 func writeSharedSidecarHelper(t *testing.T) string {
 	t.Helper()
 	binary, err := os.Executable()
@@ -110,6 +175,11 @@ func TestSharedSidecarHelperProcess(t *testing.T) {
 		if err == nil {
 			_, _ = fmt.Fprintln(file, os.Getpid())
 			_ = file.Close()
+		}
+	}
+	if cwdLogPath := os.Getenv("HAFT_TEST_SHARED_SIDECAR_CWD_LOG"); cwdLogPath != "" {
+		if cwd, err := os.Getwd(); err == nil {
+			_ = os.WriteFile(cwdLogPath, []byte(cwd+"\n"), 0o600)
 		}
 	}
 

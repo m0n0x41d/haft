@@ -14,7 +14,7 @@
 # Skill set per v8 governance substrate pivot
 # (dec-20260525-v8-architecture-pivot):
 #   h-fpf, h-frame, h-diagnose, h-explore, h-compare, h-decide,
-#   h-verify, h-status, h-onboard, h-spec-cover, h-note,
+#   h-verify, h-status, h-spec, h-onboard, h-spec-cover, h-note,
 #   h-commission, h-abduct, h-boundary-unpack, h-semio-review
 #
 # Manual-only (must NOT auto-fire even on matching prompts):
@@ -81,6 +81,16 @@ cases:
     expected: h-status
   - prompt: "what needs attention in haft"
     expected: h-status
+
+  # ===== h-spec =====
+  - prompt: "show me the spec lifecycle status"
+    expected: h-spec
+  - prompt: "update the target system spec from this clarification"
+    expected: h-spec
+  - prompt: "запиши это уточнение в спеки"
+    expected: h-spec
+  - prompt: "the spec section is stale, should we rebaseline or reopen it"
+    expected: h-spec
 
   # ===== h-onboard =====
   - prompt: "set up haft for this new project"

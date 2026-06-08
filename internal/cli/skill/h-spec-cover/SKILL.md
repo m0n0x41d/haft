@@ -1,16 +1,41 @@
 ---
 name: h-spec-cover
 description: |
-  Surfaces uncovered files in modules that already have recorded decisions — highlights drift before it accumulates and suggests where new decisions are needed. Make sure to use this skill whenever the user asks "is X documented", "what's covered", "spec coverage", "drift detection", "what decisions apply here", "are we tracking this module", "what's undecided in X" — or whenever they are about to modify code in a module with existing DecisionRecords and should be reminded which decisions apply. Also use when /h-status flags large counts of undecided files in a module. NOT for looking up decisions affecting one specific file (use mcp__haft__haft_query action=related). NOT for verifying one decision's predictions (use h-verify).
+  Surfaces uncovered files in modules that already have recorded decisions — highlights drift before it accumulates and suggests where new decisions are needed. Make sure to use this skill whenever the user asks "is X documented", "what's covered", "spec coverage", "drift detection", "what decisions apply here", "are we tracking this module", "what's undecided in X" — or whenever they are about to modify code in a module with existing DecisionRecords and should be reminded which decisions apply. Also use when /h-status flags large counts of undecided files in a module. NOT for spec lifecycle readiness, onboarding progress, or updating `.haft/specs/*` carriers (use h-spec). NOT for looking up decisions affecting one specific file (use mcp__haft__haft_query action=related). NOT for verifying one decision's predictions (use h-verify).
 when_to_use: |
-  Working in a module with existing decisions, OR explicit coverage question. For single-file lookup use haft_query action=related.
+  Working in a module with existing decisions, OR explicit code/decision coverage question. For spec lifecycle/update questions use h-spec. For single-file lookup use haft_query action=related.
 argument-hint: "[optional: module path]"
-allowed-tools: Bash Read Grep Glob mcp__haft__haft_query mcp__haft__haft_problem
+allowed-tools: Bash Read Grep Glob mcp__haft__haft_query mcp__haft__haft_problem mcp__haft__haft_spec_section
 ---
 
 # h-spec-cover — Spec coverage analysis
 
 You are running coverage analysis via `mcp__haft__haft_query(action="coverage")`. Identifies modules with no decisions (blind) and modules with stale decisions (degraded). Output drives the operator's triage — frame a problem for blind modules, refresh for stale ones.
+
+TRIGGER on: "spec coverage", "what's spec coverage on internal/billing", "decision coverage", "covered by decisions", "what decisions apply", "documentation coverage gaps", "show documentation coverage gaps", "coverage on internal", "undecided files", "blind module".
+
+This is **code/decision coverage**, not SpecSection lifecycle. The carrier
+question "which file/module lacks decision rationale?" is different from the
+lifecycle question "which SpecSection needs draft/approve/rebaseline?"
+
+## Step 0 — Route lifecycle questions away
+
+If the operator asks about any of these, use h-spec instead:
+
+- onboarding progress / readiness
+- `haft spec status` or `haft spec next`
+- stale/drifted SpecSections
+- updating `.haft/specs/*`
+- "запиши это в спеки"
+- approve / rebaseline / reopen for a spec section
+
+For a quick read-only lifecycle check, call:
+
+```
+mcp__haft__haft_spec_section(action="lifecycle")
+```
+
+Then recommend `/h-spec` for edits or human gates.
 
 ## Step 1 — Call coverage analysis
 
@@ -79,6 +104,7 @@ Surface:
 - DO NOT auto-frame ProblemCards for every blind module — that produces noise. Frame only when operator confirms active work in that area.
 - DO NOT auto-baseline drifted modules — baseline is a binding act tied to a decision; let /h-verify do it explicitly.
 - DO NOT recommend `/h-commission` from this skill — coverage gap is upstream of commission; the operator first frames + decides + then commissions if appropriate.
+- DO NOT use coverage output as proof that spec lifecycle is ready. Use h-spec / `haft_spec_section(action="lifecycle")`.
 - DO NOT silently filter blind modules to look better — the operator needs the raw signal.
 - DO NOT modify any code or specs from this skill; it's analysis + recommendation only.
 

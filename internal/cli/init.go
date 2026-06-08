@@ -330,8 +330,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if hasArtifacts {
 		fmt.Println("Use /h-status to see active decisions and problems.")
 	} else if detectBrownfield(cwd) {
-		fmt.Println("\nThis looks like an existing project. Run /h-onboard to discover")
-		fmt.Println("existing decisions, architecture docs, ADRs, and build a knowledge map.")
+		fmt.Println("\nThis looks like an existing project. Run /h-spec to follow")
+		fmt.Println("the typed spec lifecycle. /h-onboard remains a bootstrap alias.")
 	} else {
 		fmt.Println("Use /h-note for micro-decisions, /h-frame to start framing a problem.")
 	}

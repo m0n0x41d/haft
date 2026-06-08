@@ -13,6 +13,8 @@ allowed-tools: Bash Read Grep Glob mcp__haft__haft_query
 
 You are running the semiotic fanout audit per FPF X-FANOUT-AUDIT and the semiotics_slideument discipline. The premise: on concept rename / deprecation / spec consistency check, the change must sweep ALL carriers — prose, filenames, manifests, review bundles, provenance, tests, schemas — until fixed-point clean. Skipping carriers leaves zombie references that mislead future operators and agents.
 
+TRIGGER on explicit/manual subroutine requests: "rename", "across the codebase", "fanout audit", "deprecation sweep", "spec consistency after the rename", "audit our spec for consistency after the rename".
+
 Explicit-only — `disable-model-invocation: true`.
 
 ## Step 1 — Identify the object of talk
@@ -124,7 +126,7 @@ The operator decides what to act on. This skill stops at audit + recommendation 
 
 - DO NOT bulk-rename without operator approval per ambiguous hit. Same-name / different-thing is the catastrophic semio failure.
 - DO NOT skip the fixed-point re-check. Stopping after one pass leaves zombies.
-- DO NOT auto-update spec carriers — those are operator authorship per h-onboard discipline.
+- DO NOT auto-update spec carriers — those are operator-governed edits per h-spec discipline.
 - DO NOT use this skill for general code search — it's specifically for semio / rename / fanout audit.
 - DO NOT classify every hit identically — statement-type matters because rename semantics differ per type.
 

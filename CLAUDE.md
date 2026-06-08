@@ -124,7 +124,8 @@ compare with a kernel error.
 | **manual** | `/h-commission` | Create a WorkCommission (bounded execution authority). Cannot auto-fire. |
 | auto | `/h-verify` | Post-implementation check that a decision still holds |
 | auto | `/h-status` | Read-only dashboard of decisions, problems, refresh-due artifacts |
-| auto | `/h-onboard` | First-setup for a project without `.haft/` |
+| auto | `/h-spec` | Primary spec lifecycle surface — status, draft/clarify, "write this into specs", approve/rebaseline/reopen gates |
+| auto | `/h-onboard` | Bootstrap/compatibility entry for a project without `.haft/` or without ready SpecSections |
 | auto | `/h-spec-cover` | Coverage check — uncovered files in modules with decisions |
 | auto | `/h-note` | Micro-decision with rationale, lighter than a DRR |
 | auto | `/h-reason` | Umbrella — full FPF reasoning palette in one entry. Also the fallback for ambiguous "let's think about X" signals. |

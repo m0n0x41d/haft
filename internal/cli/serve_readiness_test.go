@@ -21,8 +21,11 @@ func TestApplyReadinessReminder_AppendsOnNeedsOnboard(t *testing.T) {
 	if !strings.Contains(result, "needs_onboard") {
 		t.Fatalf("reminder should explain needs_onboard state; got %q", result)
 	}
+	if !strings.Contains(result, "/h-spec") {
+		t.Fatalf("reminder should point at /h-spec; got %q", result)
+	}
 	if !strings.Contains(result, "/h-onboard") {
-		t.Fatalf("reminder should point at /h-onboard; got %q", result)
+		t.Fatalf("reminder should preserve /h-onboard compatibility; got %q", result)
 	}
 	// Original result is preserved in front.
 	if !strings.HasPrefix(result, "ProblemCard framed: ...") {

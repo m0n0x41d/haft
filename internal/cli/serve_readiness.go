@@ -24,8 +24,9 @@ var readinessReminderTools = map[string]struct{}{
 // project is initialized but has no active SpecSections — i.e. the
 // project is `needs_onboard`. Decisions made in this state cannot link
 // to spec refs and downstream commission/harness paths will block. The
-// reminder tells the operator to run /h-onboard or to mark the work
-// tactical with explicit reason.
+// reminder tells the operator to run /h-spec (/h-onboard routes there
+// for bootstrap compatibility) or to mark the work tactical with
+// explicit reason.
 //
 // Skipped when:
 //   - the tool is not in readinessReminderTools (avoids spamming reads,
@@ -58,8 +59,8 @@ func applyReadinessReminder(result, toolName, haftDir string) string {
 		"ProjectSpecificationSet has no active SpecSections yet. Decisions\n" +
 		"made now cannot link to spec refs and downstream\n" +
 		"WorkCommissions / harness runs will block until specs are in\n" +
-		"place. Run /h-onboard to draft TargetSystemSpec and\n" +
-		"EnablingSystemSpec, or proceed and record the work as tactical\n" +
+		"place. Run /h-spec to follow the typed spec lifecycle\n" +
+		"(/h-onboard remains a bootstrap alias), or proceed and record the work as tactical\n" +
 		"so coverage will not later confuse it with spec-driven work.\n" +
 		"────────────────────────────────"
 }

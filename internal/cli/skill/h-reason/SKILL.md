@@ -1,7 +1,7 @@
 ---
 name: h-reason
 description: |
-  Umbrella for FPF-style structured reasoning in a haft project. Carries the full reasoning palette in one place: framing, exploration, comparison, verification, notes, plus slideument patterns (NQD, Goldilocks, BLP, Scaling-Law Lens). Make sure to use this skill whenever the operator wants structured thinking but the workflow isn't pre-named — phrases like "давай подумаем", "помоги разобраться", "let's think this through", "structured approach", "apply FPF here", "FPF reasoning", "haft this" — or whenever a request is ambiguous between framing, exploration, and comparison. Also the manual entry point: /h-reason or /h-fpf alias. For sharp signals dedicated skills still fire (h-frame, h-diagnose, h-explore, h-compare, h-verify, h-status, h-note, h-onboard, h-spec-cover); binding choices use manual /h-decide; commissioning uses manual /h-commission.
+  Umbrella for FPF-style structured reasoning in a haft project. Carries the full reasoning palette in one place: framing, exploration, comparison, verification, notes, spec lifecycle routing, plus slideument patterns (NQD, Goldilocks, BLP, Scaling-Law Lens). Make sure to use this skill whenever the operator wants structured thinking but the workflow isn't pre-named — phrases like "давай подумаем", "помоги разобраться", "let's think this through", "structured approach", "apply FPF here", "FPF reasoning", "haft this" — or whenever a request is ambiguous between framing, exploration, comparison, and spec lifecycle. Also the manual entry point: /h-reason or /h-fpf alias. For sharp signals dedicated skills still fire (h-frame, h-diagnose, h-explore, h-compare, h-verify, h-status, h-note, h-spec, h-onboard, h-spec-cover); binding choices use manual /h-decide; commissioning uses manual /h-commission.
 when_to_use: |
   Operator wants haft-discipline thinking but doesn't pre-select a specific workflow, OR explicitly types /h-reason. Specialized skills auto-fire on sharper signals; this umbrella catches the rest.
 argument-hint: "[reasoning topic — what to think about / what to figure out]"
@@ -90,10 +90,40 @@ Before doing anything, read the operator's signal carefully and classify:
 | Wants to check if a past decision still holds | Verification | [Verification](#verification) |
 | Wants to record a micro-decision with rationale | Note | [Note](#note-micro-decision) |
 | Wants situational awareness ("where are we", "what's stale") | Status | Call `haft_query(action="status")` directly |
+| Wants spec lifecycle/update ("spec status", "запиши в спеки", approve/rebaseline/reopen spec) | Spec lifecycle | [Spec lifecycle](#spec-lifecycle) |
 | Repository has no `.haft/` yet | Onboarding | Delegate to `/h-onboard` |
 | General FPF question ("what is FPF", "look up pattern E.9") | FPF spec lookup | Call `haft_query(action="fpf", query=...)` |
 
 If the signal is **ambiguous** (spans multiple workflows) — start with framing. Without a framed problem, exploration / comparison float.
+
+---
+
+## Spec lifecycle
+
+Use when: the operator asks to inspect, discuss, update, approve, rebaseline, or
+reopen project specs.
+
+Spec lifecycle is not a normal "write docs" task. Keep the strict distinction:
+SpecSection = description, `.haft/specs/*.md` = carrier, project behavior =
+object, kernel lifecycle projection = method authority.
+
+Procedure:
+
+1. Call `mcp__haft__haft_spec_section(action="lifecycle")`.
+2. If the action is `draft` or `clarify`, read `workflow_intent` and follow
+   `/h-spec`: draft or fix the carrier, run `haft spec check`, then call
+   lifecycle again.
+3. If the operator says "запиши" / "write this into specs", treat that as
+   permission to edit the carrier only. It is not approval or rebaseline.
+4. If the action is `approve` or `triage`, surface the human gate. In triage,
+   `rebaseline` and `reopen` are explicit mutation choices from
+   `allowed_commands`, not autonomous lifecycle states. Only call a mutation
+   after explicit operator instruction with a reason where required.
+5. Do not create feature-local spec markdown as an authority. Decisions,
+   WorkCommissions, RuntimeRuns, code refs, and SpecSections link through the
+   graph.
+
+For a full procedure, delegate to `/h-spec`.
 
 ---
 
@@ -395,7 +425,8 @@ This umbrella covers compressed versions of the workflows. For deeper procedures
 | `/h-verify` | Full drift detection + Evidence Decay scan + FSRS-style scheduling |
 | `/h-decide` (manual) | Always — binding action |
 | `/h-commission` (manual) | Always — execution authority grant |
-| `/h-onboard` | No `.haft/` directory yet |
+| `/h-spec` | Spec lifecycle, spec carrier updates, approve/rebaseline/reopen gates |
+| `/h-onboard` | No `.haft/` directory yet, or legacy bootstrap wording |
 | `/h-status` | Cheap dashboard, can call directly |
 | `/h-spec-cover` | Module-level coverage analysis |
 

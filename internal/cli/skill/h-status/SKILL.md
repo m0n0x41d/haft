@@ -1,11 +1,11 @@
 ---
 name: h-status
 description: |
-  Project state dashboard for haft — read-only consolidation of active problems, pending decisions, refresh-due artifacts, open work commissions, recent notes, and module coverage. Make sure to use this skill whenever the user asks "where are we", "what's pending", "what's stale", "project status", "what needs attention", "show me the state", "what's in flight", "what did we decide on X recently", "haft status" — or whenever a session resumes after a break and situational awareness is needed before deciding what to work on. Cheap, read-only, zero commitments. For verifying a single decision use h-verify. For managing commission lifecycle use h-commission.
+  Project state dashboard for haft — read-only consolidation of active problems, pending decisions, refresh-due artifacts, open work commissions, recent notes, module coverage, and spec lifecycle readiness when relevant. Make sure to use this skill whenever the user asks "where are we", "what's pending", "what's stale", "project status", "what needs attention", "show me the state", "what's in flight", "what did we decide on X recently", "haft status", or "spec readiness" — or whenever a session resumes after a break and situational awareness is needed before deciding what to work on. Cheap, read-only, zero commitments. For verifying a single decision use h-verify. For managing commission lifecycle use h-commission. For editing specs use h-spec.
 when_to_use: |
   Operator wants situational awareness or session-resume context. Cheap and read-only, fire freely.
 argument-hint: "[optional: context name to filter]"
-allowed-tools: mcp__haft__haft_query mcp__haft__haft_refresh
+allowed-tools: mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
 # h-status — Project FPF state dashboard
@@ -60,7 +60,27 @@ The status payload contains:
 
 The response also includes a navigation strip with available next actions (e.g., `/h-refresh`).
 
-## Step 3 — Present to operator
+## Step 3 — Include spec lifecycle when relevant
+
+If the status response says the project is `needs_onboard`, mentions missing
+SpecSections, or the operator asked about specs/readiness/onboarding, call:
+
+```
+mcp__haft__haft_spec_section(action="lifecycle")
+```
+
+Fold the projection into the dashboard as a short strip:
+
+- `state`
+- `action`
+- `carrier`
+- `section_id` / `section_kind`
+- `human_gate`, if present
+
+This remains read-only. Do not edit carriers or call approve/rebaseline/reopen
+from h-status. Route follow-up work to `/h-spec`.
+
+## Step 4 — Present to operator
 
 Surface the response as-is — the kernel formats it already. Highlight items that need operator attention:
 
@@ -69,8 +89,9 @@ Surface the response as-is — the kernel formats it already. Highlight items th
 - Epistemic debt budget exceeded → recommend running `/h-verify` on the highest-debt decisions
 - Blind modules (no decisions) → recommend `/h-frame` if upcoming work targets that module
 - Stale decisions → recommend `/h-refresh` action=waive (with new evidence) or `action=supersede` (with replacement decision)
+- Spec lifecycle action → recommend `/h-spec` with the surfaced action and carrier
 
-## Step 4 — Optional: cross-link to related decisions when context given
+## Step 5 — Optional: cross-link to related decisions when context given
 
 If the operator's context mentions a specific file or module, also call:
 
@@ -83,6 +104,7 @@ To surface decisions whose affected_files include that path.
 ## What NOT to do
 
 - Do NOT auto-fix anything from this skill. h-status is read-only.
+- Do NOT edit spec carriers or approve/rebaseline/reopen SpecSections from this skill. Use h-spec.
 - Do NOT silently filter out refresh-due items — the operator needs to see epistemic debt to triage.
 - Do NOT use this skill for full-text search across decisions — that's h-search via `mcp__haft__haft_query(action="search", query="...")`.
 - Do NOT call this skill on every turn. Auto-trigger is fine when the operator explicitly asks; constant polling pollutes context with stale state.

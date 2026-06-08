@@ -137,6 +137,30 @@ func TestInstallCodexSkillsWritesExplicitCommandSkills(t *testing.T) {
 		t.Fatalf("h-reason should allow implicit invocation, got:\n%s", string(reasonPolicy))
 	}
 
+	specSkillPath := filepath.Join(skillsRoot, "h-spec", "SKILL.md")
+	specSkill, err := os.ReadFile(specSkillPath)
+	if err != nil {
+		t.Fatalf("failed to read h-spec skill: %v", err)
+	}
+	specContent := string(specSkill)
+	for _, want := range []string{
+		"name: h-spec",
+		`haft_spec_section(action="lifecycle")`,
+		"SpecSectionBaseline",
+	} {
+		if !strings.Contains(specContent, want) {
+			t.Fatalf("h-spec skill missing %q:\n%s", want, specContent)
+		}
+	}
+	specPolicyPath := filepath.Join(skillsRoot, "h-spec", "agents", "openai.yaml")
+	specPolicy, err := os.ReadFile(specPolicyPath)
+	if err != nil {
+		t.Fatalf("failed to read h-spec policy: %v", err)
+	}
+	if !strings.Contains(string(specPolicy), "allow_implicit_invocation: true") {
+		t.Fatalf("h-spec should allow implicit invocation, got:\n%s", string(specPolicy))
+	}
+
 	// h-decide is manual-only (Transformer Mandate via codex policy +
 	// disable-model-invocation in claude frontmatter).
 	decidePolicyPath := filepath.Join(skillsRoot, "h-decide", "agents", "openai.yaml")
@@ -244,7 +268,7 @@ func TestHReasonSkill_IsFullUmbrella(t *testing.T) {
 	content := string(embeddedHReasonSkill)
 
 	// Must reference specialized skills it can delegate heavy versions to.
-	for _, sk := range []string{"h-frame", "h-diagnose", "h-explore", "h-compare", "h-decide", "h-verify"} {
+	for _, sk := range []string{"h-frame", "h-diagnose", "h-explore", "h-compare", "h-decide", "h-verify", "h-spec"} {
 		if !strings.Contains(content, sk) {
 			t.Fatalf("h-reason must reference %q as a heavy-version delegate", sk)
 		}

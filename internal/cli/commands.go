@@ -32,6 +32,9 @@ var embeddedHVerifySkill []byte
 //go:embed skill/h-status/SKILL.md
 var embeddedHStatusSkill []byte
 
+//go:embed skill/h-spec/SKILL.md
+var embeddedHSpecSkill []byte
+
 //go:embed skill/h-onboard/SKILL.md
 var embeddedHOnboardSkill []byte
 
@@ -84,9 +87,10 @@ var allSkills = []skillManifest{
 
 	// Auto-triggering workflow skills (verify + operate)
 	{Name: "h-verify", Content: embeddedHVerifySkill, AllowImplicit: true},
+	{Name: "h-spec-cover", Content: embeddedHSpecCoverSkill, AllowImplicit: true},
+	{Name: "h-spec", Content: embeddedHSpecSkill, AllowImplicit: true},
 	{Name: "h-status", Content: embeddedHStatusSkill, AllowImplicit: true},
 	{Name: "h-onboard", Content: embeddedHOnboardSkill, AllowImplicit: true},
-	{Name: "h-spec-cover", Content: embeddedHSpecCoverSkill, AllowImplicit: true},
 	{Name: "h-note", Content: embeddedHNoteSkill, AllowImplicit: true},
 
 	// Manual-only sacred skill (execution authority — Transformer Mandate)
@@ -281,7 +285,7 @@ var deprecatedCommands = []string{
 	// or shadow it. Operators upgrading from a prior install need these
 	// names wiped from their commands directory.
 	"h-frame", "h-explore", "h-compare", "h-decide", "h-verify",
-	"h-status", "h-onboard", "h-note", "h-commission",
+	"h-status", "h-spec", "h-onboard", "h-note", "h-commission",
 	"h-diagnose", "h-fpf", "h-spec-cover", "h-abduct",
 	"h-boundary-unpack", "h-semio-review",
 }

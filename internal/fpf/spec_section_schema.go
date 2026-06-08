@@ -3,7 +3,10 @@ package fpf
 func haftSpecSectionTool() Tool {
 	return Tool{
 		Name: "haft_spec_section",
-		Description: "Drive the Haft v7 spec onboarding method one step at a time. " +
+		Description: "Drive the Haft v7 spec lifecycle method one step at a time. " +
+			"`lifecycle` returns the typed UX projection: the next admissible " +
+			"operator action, carrier, section identity, findings, and the " +
+			"underlying WorkflowIntent. " +
 			"`next_step` returns a typed WorkflowIntent (which onboarding phase is " +
 			"next, what the human should decide, what context the host agent needs " +
 			"to draft the section, which YAML fields the section must carry, " +
@@ -19,12 +22,13 @@ func haftSpecSectionTool() Tool {
 				"action": map[string]interface{}{
 					"type": "string",
 					"enum": []interface{}{
+						"lifecycle",
 						"next_step",
 						"approve",
 						"rebaseline",
 						"reopen",
 					},
-					"description": "next_step=return the next typed WorkflowIntent. approve=record a baseline for an active section that has none. rebaseline=overwrite an existing baseline after confirming the carrier change is intentional. reopen=delete a baseline so the section re-enters the onboarding loop.",
+					"description": "lifecycle=return the typed operator-facing spec lifecycle projection. next_step=return the legacy typed WorkflowIntent. approve=record a baseline for an active section that has none. rebaseline=overwrite an existing baseline after confirming the carrier change is intentional. reopen=delete a baseline so the section re-enters the onboarding loop.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",

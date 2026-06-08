@@ -29,6 +29,8 @@ func handleHaftSpecSection(_ context.Context, _ *artifact.Store, haftDir string,
 	}
 
 	switch action {
+	case "lifecycle":
+		return handleSpecSectionLifecycle(projectRoot)
 	case "next_step":
 		return handleSpecSectionNextStep(projectRoot)
 	case "approve":
@@ -40,6 +42,20 @@ func handleHaftSpecSection(_ context.Context, _ *artifact.Store, haftDir string,
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+func handleSpecSectionLifecycle(projectRoot string) (string, error) {
+	projection, err := buildSpecLifecycleProjection(projectRoot)
+	if err != nil {
+		return "", err
+	}
+
+	payload, err := json.Marshal(projection)
+	if err != nil {
+		return "", fmt.Errorf("marshal lifecycle projection: %w", err)
+	}
+
+	return string(payload), nil
 }
 
 func handleSpecSectionNextStep(projectRoot string) (string, error) {

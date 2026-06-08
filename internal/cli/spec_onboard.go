@@ -23,7 +23,7 @@ func runSpecOnboard(cmd *cobra.Command, _ []string) error {
 	}
 
 	if action, sectionID, args := specOnboardMutationArgs(); action != "" {
-		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args)
+		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args, specOnboardJSON)
 	}
 
 	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
@@ -79,7 +79,7 @@ func specOnboardMutationArgs() (action, sectionID string, args map[string]any) {
 	return "", "", nil
 }
 
-func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID string, args map[string]any) error {
+func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID string, args map[string]any, jsonOutput bool) error {
 	var (
 		raw string
 		err error
@@ -104,7 +104,7 @@ func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID s
 	}
 
 	output := cmd.OutOrStdout()
-	if specOnboardJSON {
+	if jsonOutput {
 		_, err := fmt.Fprintln(output, raw)
 		return err
 	}

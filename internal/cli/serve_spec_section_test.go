@@ -139,6 +139,34 @@ func TestHandleHaftSpecSection_NextStepReturnsFirstPhaseOnEmptyProject(t *testin
 	}
 }
 
+func TestHandleHaftSpecSection_LifecycleReturnsProjection(t *testing.T) {
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "lifecycle",
+		"project_root": root,
+	})
+	if err != nil {
+		t.Fatalf("handleHaftSpecSection returned error: %v", err)
+	}
+
+	var projection specflow.SpecLifecycleProjection
+	if err := json.Unmarshal([]byte(result), &projection); err != nil {
+		t.Fatalf("decode projection: %v\nraw: %s", err, result)
+	}
+
+	if projection.Action != specflow.LifecycleActionDraft {
+		t.Fatalf("projection.Action = %q, want %q", projection.Action, specflow.LifecycleActionDraft)
+	}
+	if projection.WorkflowIntent.Phase != specflow.PhaseTargetEnvironmentDraft {
+		t.Fatalf("projection.WorkflowIntent.Phase = %q", projection.WorkflowIntent.Phase)
+	}
+}
+
 func TestHandleHaftSpecSection_DefaultsToServerBoundProjectRoot(t *testing.T) {
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")

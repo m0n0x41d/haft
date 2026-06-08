@@ -22,12 +22,21 @@ var (
 	specCoverageJSON      bool
 	specPlanJSON          bool
 	specPlanAcceptID      string
+	specStatusJSON        bool
+	specNextJSON          bool
 	specOnboardJSON       bool
 	specOnboardApproveID  string
 	specOnboardReopenID   string
 	specOnboardRebaseline string
 	specOnboardReason     string
 	specOnboardApprovedBy string
+	specApproveJSON       bool
+	specApproveApprovedBy string
+	specRebaselineJSON    bool
+	specRebaselineReason  string
+	specRebaselineBy      string
+	specReopenJSON        bool
+	specReopenReason      string
 	specCheckExit         = os.Exit
 	specCoverageExit      = os.Exit
 )
@@ -47,6 +56,28 @@ fields and L1.5 carrier shapes, and verifies that the term-map carrier has
 parseable term entries. It does not perform L2 semantic validation or L3
 runtime/evidence validation.`,
 	RunE: runSpecCheck,
+}
+
+var specStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the next spec lifecycle action",
+	Long: `Show the next typed spec lifecycle action.
+
+The status projection is a UX layer over the canonical WorkflowIntent, spec
+carrier checks, and SpecSectionBaseline state. It does not mutate carriers,
+approve sections, or rebaseline drift.`,
+	RunE: runSpecStatus,
+}
+
+var specNextCmd = &cobra.Command{
+	Use:   "next",
+	Short: "Print the next typed spec lifecycle projection",
+	Long: `Print the next typed spec lifecycle projection.
+
+Use --json for agent/MCP-style consumption. The payload keeps the underlying
+WorkflowIntent recoverable so surfaces do not invent their own lifecycle
+semantics.`,
+	RunE: runSpecNext,
 }
 
 var specCoverageCmd = &cobra.Command{
@@ -78,6 +109,27 @@ and dispatch their own UX.`,
 	RunE: runSpecOnboard,
 }
 
+var specApproveCmd = &cobra.Command{
+	Use:   "approve SECTION_ID",
+	Short: "Record a SpecSectionBaseline for an active section",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSpecApprove,
+}
+
+var specRebaselineCmd = &cobra.Command{
+	Use:   "rebaseline SECTION_ID",
+	Short: "Overwrite a SpecSectionBaseline after intentional carrier evolution",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSpecRebaseline,
+}
+
+var specReopenCmd = &cobra.Command{
+	Use:   "reopen SECTION_ID",
+	Short: "Delete a SpecSectionBaseline so the section re-enters review",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSpecReopen,
+}
+
 var specPlanCmd = &cobra.Command{
 	Use:   "plan",
 	Short: "Show DecisionRecord draft proposals for uncovered or stale spec sections",
@@ -96,6 +148,8 @@ slice and are reported with command gaps.`,
 
 func init() {
 	specCheckCmd.Flags().BoolVar(&specCheckJSON, "json", false, "print structured JSON output")
+	specStatusCmd.Flags().BoolVar(&specStatusJSON, "json", false, "print structured JSON output")
+	specNextCmd.Flags().BoolVar(&specNextJSON, "json", false, "print structured JSON output")
 	specCoverageCmd.Flags().BoolVar(&specCoverageJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
@@ -105,10 +159,22 @@ func init() {
 	specOnboardCmd.Flags().StringVar(&specOnboardReopenID, "reopen", "", "delete the SpecSectionBaseline for the given section id so it re-enters the onboarding loop")
 	specOnboardCmd.Flags().StringVar(&specOnboardReason, "reason", "", "audit-trail rationale recorded with --rebaseline / --reopen")
 	specOnboardCmd.Flags().StringVar(&specOnboardApprovedBy, "approved-by", "", "identifier of who approved the baseline (default: human)")
+	specApproveCmd.Flags().BoolVar(&specApproveJSON, "json", false, "print structured JSON output")
+	specApproveCmd.Flags().StringVar(&specApproveApprovedBy, "approved-by", "", "identifier of who approved the baseline (default: human)")
+	specRebaselineCmd.Flags().BoolVar(&specRebaselineJSON, "json", false, "print structured JSON output")
+	specRebaselineCmd.Flags().StringVar(&specRebaselineReason, "reason", "", "audit-trail rationale explaining the baseline change")
+	specRebaselineCmd.Flags().StringVar(&specRebaselineBy, "approved-by", "", "identifier of who approved the rebaseline (default: human)")
+	specReopenCmd.Flags().BoolVar(&specReopenJSON, "json", false, "print structured JSON output")
+	specReopenCmd.Flags().StringVar(&specReopenReason, "reason", "", "audit-trail rationale explaining why the baseline is reopened")
 	specCmd.AddCommand(specCheckCmd)
+	specCmd.AddCommand(specStatusCmd)
+	specCmd.AddCommand(specNextCmd)
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specPlanCmd)
 	specCmd.AddCommand(specOnboardCmd)
+	specCmd.AddCommand(specApproveCmd)
+	specCmd.AddCommand(specRebaselineCmd)
+	specCmd.AddCommand(specReopenCmd)
 	rootCmd.AddCommand(specCmd)
 }
 

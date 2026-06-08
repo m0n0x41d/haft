@@ -163,8 +163,6 @@ func startSharedSidecarDaemon(
 
 	cmd := exec.Command(binary, args...)
 	cmd.Dir = filepath.Dir(socket)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {

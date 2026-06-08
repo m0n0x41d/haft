@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -98,6 +99,57 @@ func TestSharedSidecarDaemonDoesNotInheritClientCWD(t *testing.T) {
 	want := filepath.Clean(socketDir)
 	if got != want {
 		t.Fatalf("daemon cwd = %q, want %q", got, want)
+	}
+}
+
+func TestSharedSidecarDaemonDoesNotInheritClientStderr(t *testing.T) {
+	helper := writeSharedSidecarHelper(t)
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	t.Setenv(sidecarBinaryEnv, helper)
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "10")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	t.Cleanup(func() { _ = stderrReader.Close() })
+
+	originalStderr := os.Stderr
+	os.Stderr = stderrWriter
+	embedder, newErr := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	os.Stderr = originalStderr
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("close captured stderr writer: %v", err)
+	}
+	if newErr != nil {
+		t.Fatalf("New(local): %v", newErr)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	type readResult struct {
+		n   int
+		err error
+	}
+
+	done := make(chan readResult, 1)
+	go func() {
+		buffer := make([]byte, 1)
+		n, err := stderrReader.Read(buffer)
+		done <- readResult{n: n, err: err}
+	}()
+
+	select {
+	case result := <-done:
+		if result.err != io.EOF {
+			t.Fatalf("captured stderr read = n %d err %v, want EOF", result.n, result.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("captured stderr pipe stayed open; shared sidecar inherited client stderr")
 	}
 }
 

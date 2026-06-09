@@ -62,6 +62,36 @@ resolved results (AST + decision join); don't re-verify them with grep.
 - Don't edit a governed symbol without code_context/impact first — the decision
   you'd violate is exactly what the fusion exists to surface.`
 
+// methodPackDoctrine is emitted in MCP initialize instructions so hosts learn
+// the pull/close protocol before any tool call. Keep it short: the full method
+// cards are task-local and retrieved through haft_method(action="pull").
+const methodPackDoctrine = `# Haft MethodPack — task-local engineering gates
+
+This is the default code-work loop. Treat it as a habit trigger, not advice:
+before non-trivial code action, pull the task-local method; before claiming
+done, close the same run with evidence.
+
+1. Before non-trivial code work, call ` + "`haft_method(action=\"pull\")`" + `. Pass the
+   operator task, declared_task_kind, change_intent, intended_files, and known
+   risk_signals. Non-trivial means feature, bugfix/debug, refactor, external
+   integration, governed files, cross-module edits, behavior changes, or
+   failing tests.
+2. ` + "`pull`" + ` creates an open MethodRun (` + "`mpull-*`" + `) and returns compact cards:
+   max 3 methods, max 3 hard gates per method. It is not an internal LLM classifier;
+   the agent declares the task shape and the kernel matches methods deterministically.
+3. Keep the ` + "`pull_id`" + `. If context compacts, recover open runs with
+   ` + "`haft_method(action=\"status\")`" + ` or
+   ` + "`haft_method(action=\"show\", pull_id=\"mpull-...\")`" + `.
+4. Before claiming completion, call
+   ` + "`haft_method(action=\"close\", pull_id=\"mpull-...\")`" + ` with changed_files,
+   gate_results, verification evidence, and explicit waivers. This is a
+   checklist-style closeout; hard gates require evidence or a waiver reason.
+   Soft gates are advisory.
+
+` + "`haft init`" + ` installs the built-in method catalog by default under
+` + "`.haft/methods/swe-core`" + `; no extra setup command is needed.
+Mechanical edits should request low or no ceremony and should not get architecture gates.`
+
 // sessionStartMandate is the single loudest rule, placed FIRST in the server
 // instructions: a governed project's working memory lives in the haft graph, so
 // the agent must load that state before touching anything. Maximum weight on
@@ -84,13 +114,14 @@ treat this as optional or skippable for "small" tasks.`
 
 // composeServerInstructions builds the MCP initialize instructions, ordered by
 // weight: the mandatory session-start status rule FIRST, then the project's
-// workflow policy (when present), then the always-on code-graph doctrine. All
-// of it ships even when no workflow.md exists.
+// workflow policy (when present), then the always-on method/code doctrines.
+// All of it ships even when no workflow.md exists.
 func composeServerInstructions(w *project.Workflow) string {
 	parts := []string{sessionStartMandate}
 	if prefix := strings.TrimSpace(w.PromptPrefix()); prefix != "" { // PromptPrefix is nil-safe
 		parts = append(parts, prefix)
 	}
+	parts = append(parts, methodPackDoctrine)
 	parts = append(parts, codeIntelDoctrine)
 	return strings.Join(parts, "\n\n")
 }

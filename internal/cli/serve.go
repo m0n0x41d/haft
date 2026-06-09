@@ -331,6 +331,8 @@ func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Se
 		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
 		result, err := handleHaftCommission(ctx, store, args)
 		return result, "", err
+	case "haft_method":
+		return handleHaftMethod(ctx, store, haftDir, args)
 	case "haft_spec_section":
 		result, err := handleHaftSpecSection(ctx, store, haftDir, args)
 		return result, "", err
@@ -502,6 +504,8 @@ func refreshReminderDisabled(name string) bool {
 	case "haft_refresh":
 		return true
 	case "haft_commission":
+		return true
+	case "haft_method":
 		return true
 	default:
 		return false

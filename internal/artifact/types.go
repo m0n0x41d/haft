@@ -20,6 +20,7 @@ const (
 	KindSolutionPortfolio Kind = "SolutionPortfolio"
 	KindDecisionRecord    Kind = "DecisionRecord"
 	KindWorkCommission    Kind = "WorkCommission"
+	KindMethodRun         Kind = "MethodRun"
 	KindEvidencePack      Kind = "EvidencePack"
 	KindRefreshReport     Kind = "RefreshReport"
 )
@@ -27,11 +28,26 @@ const (
 // validKinds is the set of all valid artifact kinds (unexported — use ParseKind at boundaries).
 var validKinds = map[Kind]bool{
 	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
-	KindDecisionRecord: true, KindWorkCommission: true, KindEvidencePack: true, KindRefreshReport: true,
+	KindDecisionRecord: true, KindWorkCommission: true, KindMethodRun: true,
+	KindEvidencePack: true, KindRefreshReport: true,
 }
 
 // IsValid returns true if the kind is a recognized artifact kind.
 func (k Kind) IsValid() bool { return validKinds[k] }
+
+// ValidKindNames returns recognized artifact kind names in stable display order.
+func ValidKindNames() []string {
+	return []string{
+		string(KindNote),
+		string(KindProblemCard),
+		string(KindSolutionPortfolio),
+		string(KindDecisionRecord),
+		string(KindWorkCommission),
+		string(KindMethodRun),
+		string(KindEvidencePack),
+		string(KindRefreshReport),
+	}
+}
 
 // ParseKind validates and returns a Kind, or an error if unrecognized.
 func ParseKind(s string) (Kind, error) {
@@ -55,6 +71,8 @@ func (k Kind) IDPrefix() string {
 		return "dec"
 	case KindWorkCommission:
 		return "wc"
+	case KindMethodRun:
+		return "mpull"
 	case KindEvidencePack:
 		return "evid"
 	case KindRefreshReport:
@@ -77,6 +95,8 @@ func (k Kind) Dir() string {
 		return "decisions"
 	case KindWorkCommission:
 		return "commissions"
+	case KindMethodRun:
+		return "method-runs"
 	case KindEvidencePack:
 		return "evidence"
 	case KindRefreshReport:
@@ -97,6 +117,8 @@ func (k Kind) UserFacingLabel() string {
 		return "decision"
 	case KindWorkCommission:
 		return "work commission"
+	case KindMethodRun:
+		return "method run"
 	case KindEvidencePack:
 		return "evidence pack"
 	case KindRefreshReport:
@@ -129,6 +151,11 @@ func (k Kind) UserFacingHeading(count int) string {
 			return "Work Commission"
 		}
 		return "Work Commissions"
+	case KindMethodRun:
+		if count == 1 {
+			return "Method Run"
+		}
+		return "Method Runs"
 	case KindEvidencePack:
 		if count == 1 {
 			return "Evidence Pack"

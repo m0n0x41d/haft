@@ -28,7 +28,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"decision.decide", "note.record", "query.status", "refresh.scan"} {
+	for _, want := range []string{"decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "refresh.scan"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -76,5 +76,29 @@ func TestInterfaceCodeContextNamesCompactAndFullModes(t *testing.T) {
 	}
 	if !strings.Contains(outputVolume, "full=true") {
 		t.Fatalf("code_context interface should name full=true recovery:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.close")
+	if !ok {
+		t.Fatal("method.close capability missing")
+	}
+
+	required := strings.Join(capability.InputContract.RequiredFields, " ")
+	if !strings.Contains(required, "pull_id") {
+		t.Fatalf("method.close required fields = %q, want pull_id", required)
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"gate_results", "verification", "waivers"} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("method.close optional fields = %q, missing %q", optionals, want)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	if !strings.Contains(notes, "Hard gates require") {
+		t.Fatalf("method.close should name hard gate evidence/waiver rule:\n%s", notes)
 	}
 }

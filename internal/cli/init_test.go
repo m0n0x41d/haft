@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/m0n0x41d/haft/internal/method"
 	"github.com/m0n0x41d/haft/internal/project"
 	"gopkg.in/yaml.v3"
 )
@@ -143,6 +144,46 @@ func TestCreateDirectoryStructure_OnboardingSpecCarriersAreIdempotent(t *testing
 
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("spec carriers changed on second init:\nfirst=%#v\nsecond=%#v", first, second)
+	}
+}
+
+func TestCreateDirectoryStructure_CreatesDefaultMethodCatalogIdempotently(t *testing.T) {
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+
+	if err := createDirectoryStructure(haftDir); err != nil {
+		t.Fatalf("first createDirectoryStructure returned error: %v", err)
+	}
+
+	methodDir := filepath.Join(haftDir, "methods", method.CatalogID)
+	manifestPath := filepath.Join(methodDir, "manifest.yaml")
+	firstManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read method manifest: %v", err)
+	}
+	if !strings.Contains(string(firstManifest), "catalog_id: swe-core") {
+		t.Fatalf("method manifest missing swe-core catalog:\n%s", string(firstManifest))
+	}
+
+	for _, definition := range method.BuiltinCatalog().Methods {
+		path := filepath.Join(methodDir, definition.ID+".yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read method file %s: %v", path, err)
+		}
+		if !strings.Contains(string(data), "id: "+definition.ID) {
+			t.Fatalf("method file %s missing id:\n%s", path, string(data))
+		}
+	}
+
+	if err := createDirectoryStructure(haftDir); err != nil {
+		t.Fatalf("second createDirectoryStructure returned error: %v", err)
+	}
+	secondManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read method manifest after second run: %v", err)
+	}
+	if string(firstManifest) != string(secondManifest) {
+		t.Fatalf("method manifest changed on second init:\nfirst:\n%s\nsecond:\n%s", firstManifest, secondManifest)
 	}
 }
 

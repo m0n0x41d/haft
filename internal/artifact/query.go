@@ -454,8 +454,9 @@ type ListData struct {
 
 // FetchListData returns artifacts of a given kind.
 func FetchListData(ctx context.Context, store ArtifactStore, kindStr string, limit int) (ListData, error) {
+	validKinds := strings.Join(ValidKindNames(), ", ")
 	if kindStr == "" {
-		return ListData{}, fmt.Errorf("kind is required — use: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport")
+		return ListData{}, fmt.Errorf("kind is required — use: %s", validKinds)
 	}
 	if limit <= 0 {
 		limit = 50
@@ -463,7 +464,7 @@ func FetchListData(ctx context.Context, store ArtifactStore, kindStr string, lim
 
 	kind, err := ParseKind(kindStr)
 	if err != nil {
-		return ListData{}, fmt.Errorf("%w (valid: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport)", err)
+		return ListData{}, fmt.Errorf("%w (valid: %s)", err, validKinds)
 	}
 	artifacts, err := store.ListByKind(ctx, kind, limit)
 	if err != nil {

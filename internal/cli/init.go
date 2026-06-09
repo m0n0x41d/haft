@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/method"
 	"github.com/m0n0x41d/haft/internal/project"
 
 	"github.com/spf13/cobra"
@@ -450,6 +451,9 @@ func createDirectoryStructure(haftDir string) error {
 	}
 
 	if err := project.EnsureSpecCarriers(haftDir); err != nil {
+		return err
+	}
+	if err := method.InstallDefaultCatalog(haftDir); err != nil {
 		return err
 	}
 

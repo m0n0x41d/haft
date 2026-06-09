@@ -96,6 +96,24 @@ agent's job. See CLAUDE.md Critical Reminders.
 
 ---
 
+## Code work handoff — MethodPack
+
+If reasoning turns into non-trivial code edits, switch from advice to an
+operational method run before editing:
+
+- Call `haft_method(action="pull", ...)` with task kind, change intent,
+  intended files, and known risk signals.
+- Keep the returned `pull_id`; after context compaction recover it through
+  `haft_method(action="status")` or `haft_method(action="show", pull_id=...)`.
+- Before claiming completion, call `haft_method(action="close", pull_id=...)`
+  with changed files, gate results, verification evidence, and explicit
+  waivers for any hard gate not evidenced.
+
+Mechanical edits should request low or no ceremony and avoid architecture
+gates.
+
+---
+
 ## Quick triage — what is the operator actually asking?
 
 Before doing anything, read the operator's signal carefully and classify:

@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **MethodPack V1: task-local SWE method gates.** Added the built-in
+  `swe-core` method catalog with seven compact methods:
+  `verification-before-completion`, `systematic-debugging-before-fix`,
+  `behavior-first-testing`, `refactor-only-under-tests`,
+  `domain-port-before-adapter`, `functional-core-imperative-shell`, and
+  `make-illegal-states-unrepresentable`. New `MethodRun` artifacts use the
+  `mpull-*` prefix and persist under `.haft/method-runs`. The new
+  `haft_method` MCP tool supports `pull`, `close`, `show`, `detail`, and
+  `status`; `pull` creates compact task-local cards and `close` validates hard
+  gate evidence or explicit waivers before completion. `haft init`
+  materializes `.haft/methods/swe-core` by default, `haft interface` exposes
+  compact method contracts, generated instructions route agents through the
+  pull/close loop, and MCP initialize instructions now advertise the MethodPack
+  habit trigger before code work.
 - **Compact Haft interface discovery and input-file artifact creation.**
   `haft interface <capability> --json` now exposes small machine-readable
   contracts for agent workflows, and `haft artifact create <capability>

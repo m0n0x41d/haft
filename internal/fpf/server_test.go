@@ -138,6 +138,29 @@ func TestHandleToolsList_StaysUnderContextBudget(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
+	methodSchema := mustListToolProperties(t, "haft_method")
+
+	action, ok := methodSchema["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("haft_method action schema missing: %#v", methodSchema["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("haft_method action enum missing: %#v", action["enum"])
+	}
+	for _, want := range []string{"pull", "close", "show", "detail", "status"} {
+		if !schemaEnumContains(enum, want) {
+			t.Fatalf("haft_method action enum = %#v, missing %q", enum, want)
+		}
+	}
+	for _, key := range []string{"task", "declared_task_kind", "change_intent", "intended_files", "risk_signals", "pull_id", "gate_results", "verification", "waivers"} {
+		if _, ok := methodSchema[key]; !ok {
+			t.Fatalf("haft_method schema missing %q", key)
+		}
+	}
+}
+
 func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	compareSchema := mustListToolProperties(t, "haft_solution")
 
@@ -198,6 +221,15 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	if description != "(compare) Advisory recommendation variant ID; the human still chooses" {
 		t.Fatalf("unexpected selected_ref description: %q", description)
 	}
+}
+
+func schemaEnumContains(values []interface{}, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHandleToolsList_ProblemSchemaIncludesProblemType(t *testing.T) {

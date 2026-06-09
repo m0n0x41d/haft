@@ -41,8 +41,38 @@ func TestComposeServerInstructions_AlwaysIncludesDoctrine(t *testing.T) {
 	if !strings.Contains(withWf, "haft code graph") {
 		t.Errorf("doctrine must still be appended after the workflow policy:\n%s", withWf)
 	}
-	// Workflow policy comes first, doctrine after.
+	// Workflow policy comes first, doctrines after.
 	if strings.Index(withWf, "Project Workflow") > strings.Index(withWf, "haft code graph") {
 		t.Errorf("workflow policy should precede the code-graph doctrine:\n%s", withWf)
+	}
+}
+
+func TestComposeServerInstructions_AlwaysIncludesMethodPackProtocol(t *testing.T) {
+	got := composeServerInstructions(nil)
+
+	for _, s := range []string{
+		"Haft MethodPack",
+		"default code-work loop",
+		"habit trigger",
+		`haft_method(action="pull")`,
+		`haft_method(action="close", pull_id="mpull-...")`,
+		`haft_method(action="status")`,
+		"max 3 methods",
+		"not an internal LLM classifier",
+		"checklist-style closeout",
+		"haft init",
+		".haft/methods/swe-core",
+		"Mechanical edits should request",
+	} {
+		if !strings.Contains(got, s) {
+			t.Errorf("methodpack server instructions missing %q:\n%s", s, got)
+		}
+	}
+
+	if strings.Index(got, "MANDATORY FIRST ACTION") > strings.Index(got, "Haft MethodPack") {
+		t.Errorf("session-start mandate must stay before MethodPack instructions:\n%s", got)
+	}
+	if strings.Index(got, "Haft MethodPack") > strings.Index(got, "haft code graph") {
+		t.Errorf("MethodPack instructions should precede code-graph doctrine:\n%s", got)
 	}
 }

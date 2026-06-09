@@ -1,6 +1,6 @@
-# Haft — Project CLAUDE.md
+# Haft — Project AGENTS.md
 
-This is haft's own project CLAUDE.md. It serves two roles in one file:
+This is haft's own project AGENTS.md. It serves two roles in one file:
 
 1. **Maintainer notes** for AI agents working on haft itself live in the
    prelude below (outside the haft markers). These are preserved by
@@ -18,7 +18,7 @@ edits there flow to every haft user on next `haft init`.
 
 Haft is a **governance substrate** consumed via three surfaces sharing one
 `.haft/` artifact graph: skills + slash commands in the host AI coding agent
-(Claude Code, Codex, OpenCode, Cursor), this CLI for manual access, and the
+(Codex, Codex, OpenCode, Cursor), this CLI for manual access, and the
 MCP server (`haft serve`) for programmatic access.
 
 Standalone interactive agent (`haft agent`), TUI, and desktop wrappers were
@@ -50,12 +50,12 @@ This section is installed and maintained by `haft init`. Edits **inside** the
 haft HTML-comment markers (the start/end pair that brackets this section) will
 be overwritten on the next `haft init`. Add your own project rules **outside**
 the markers — they are preserved. To opt out entirely, run
-`haft init --no-claude-md`.
+`haft init --no-Codex-md`.
 
 This project uses [haft](https://github.com/m0n0x41d/haft) for structured
 decision recording and FPF (First Principles Framework) discipline. Haft is a
 governance substrate consumed via three surfaces sharing one `.haft/` artifact
-graph: skills/slash commands in the host AI coding agent (Claude Code, Codex,
+graph: skills/slash commands in the host AI coding agent (Codex, Codex,
 OpenCode, Cursor), the `haft` CLI, and the MCP server (`haft serve`) for
 programmatic access.
 

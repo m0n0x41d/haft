@@ -779,6 +779,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 		})
 
+		tools = append(tools, haftMethodTool())
 		tools = append(tools, haftCommissionTool())
 		tools = append(tools, haftSpecSectionTool())
 	}

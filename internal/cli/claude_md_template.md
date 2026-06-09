@@ -146,6 +146,31 @@ tested without mocking half the world?
 **Reversibility check:** Can we undo this in 2 weeks? What's the cost of being
 wrong? Are we painting ourselves into a corner?
 
+## MethodPack for code work
+
+Haft init installs the built-in SWE MethodPack carriers under
+`.haft/methods/swe-core`. The catalog becomes task-local only through the
+kernel; do not freehand generic engineering advice when a method run is needed.
+
+Before non-trivial code edits, call `haft_method(action="pull", ...)` with the
+operator task, `declared_task_kind`, `change_intent`, `intended_files`, and
+known `risk_signals`. Non-trivial means feature, bugfix/debug, refactor,
+external integration, governed files, cross-module edits, behavior changes, or
+failing tests.
+
+Mechanical edits (formatting, rename-only, comment-only, generated metadata)
+should request `ceremony_request="low"` or `"none"` and avoid architecture
+gates. Do not manufacture ceremony for work that only needs ordinary local
+verification.
+
+Keep the returned `pull_id`. If context compacts before close, recover with
+`haft_method(action="status")` or `haft_method(action="show", pull_id=...)`.
+
+Before claiming completion, call `haft_method(action="close", pull_id=...)`
+with changed files, gate results, verification evidence, and any explicit
+waivers. Hard gates require evidence or an explicit waiver reason. Soft gates
+are guidance; they do not require a waiver.
+
 ## Critical reminders
 
 1. **Description ≠ Work.** The most important rule (see top of this section).

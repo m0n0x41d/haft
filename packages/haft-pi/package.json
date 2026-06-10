@@ -1,0 +1,37 @@
+{
+  "name": "@haft/pi",
+  "version": "0.0.0-dev",
+  "private": true,
+  "description": "Pi package for Haft FPF governance tools and prompt guidance.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "haft",
+    "fpf",
+    "agent-skills"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/haft/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typebox": "latest",
+    "typescript": "^5.8.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/bridge.test.ts tests/pure.test.ts tests/cockpit.test.ts",
+    "smoke": "node --experimental-strip-types scripts/smoke-bridge.ts"
+  }
+}

@@ -1412,6 +1412,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		// H1 (dec-20260526-9fdd33ed): pass projectRoot so /h-status
 		// surfaces drift via FetchStatusData → CheckDrift → StatusData.Drift.
 		projectRoot := filepath.Dir(haftDir)
+		if view, _ := args["view"].(string); view == "governor" {
+			// Prompt-budgeted projection for host-side prompt governors;
+			// deliberately skips coverage and the navigation strip.
+			return governorStatusResponse(ctx, store, contextName, projectRoot)
+		}
 		full, _ := args["full"].(bool)
 		data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
 		if err != nil {

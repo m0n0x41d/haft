@@ -8,6 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`@haft/pi`: a Pi-native behavior package (first carrier slice).** New
+  `packages/haft-pi` ships a Pi extension that owns a small NDJSON MCP bridge
+  to `haft serve` and registers the full typed tool suite natively
+  (`haft_query`, `haft_problem`, `haft_solution`, `haft_decision`,
+  `haft_note`, `haft_refresh`, `haft_method`, `haft_commission`,
+  `haft_spec_section`). The package carries `/h-*` prompt templates
+  (including manual-gate `/h-decide` and `/h-commission`), Agent Skills for
+  the MethodPack loop (`h-method`) and the FPF knowledge layer
+  (`fpf-development`, `fpf-semiotics`), a `before_agent_start` prompt
+  governor fed by the kernel's governor projection, and cockpit surfaces
+  (session widget with overseer/decision counts and the open method run,
+  footer status per tool call). The bridge handles concurrent starts, spawn
+  failures with retry, and reports tools missing from older `haft` binaries
+  with an explicit upgrade message. Out of scope for this slice:
+  `haft init --pi`, npm publish metadata, custom TUI renderers, active-tool
+  lanes, and provider-payload interception.
+- **Kernel governor projection: `haft_query(action="status",
+  view="governor")`.** A compact, prompt-budgeted status slice for host-side
+  prompt governors: overseer signal counts,
+  pending/unassessed/refresh-due/drift decision counts, top attention items,
+  active problems, and open method runs — capped lists, no coverage section,
+  no navigation strip. Replaces client-side clipping of the full dashboard
+  in host integrations.
+- **Opt-in overseer post-commit review loop.** New `internal/overseer`
+  subsystem (packet/run/finding lifecycle, queue, maintenance classifier,
+  risk heuristics) with `haft init --overseer` and `haft overseer` commands:
+  a soft post-commit hook builds review packets, a local daemon runs reviews
+  through the project's host agent, and overseer signals surface read-only
+  in `haft_query(action="status")`. `haft init --no-claude-md` is renamed to
+  `--no-file-instructions` (the old flag remains as a deprecated alias).
+
 - **MethodPack V1: task-local SWE method gates.** Added the built-in
   `swe-core` method catalog with seven compact methods:
   `verification-before-completion`, `systematic-debugging-before-fix`,

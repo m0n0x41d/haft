@@ -19,7 +19,13 @@ var initPi bool
 
 const (
 	piPackageRelDir = ".haft/pi/haft-pi"
-	piSettingsEntry = "./" + piPackageRelDir
+	// Project-scope local package paths in .pi/settings.json are resolved by
+	// pi relative to the .pi directory itself, not the project root — hence
+	// the leading "..". A root-relative "./..." entry is silently skipped.
+	piSettingsEntry = "../" + piPackageRelDir
+	// Written by earlier haft builds; resolved to .pi/.haft/... and never
+	// loaded. Migrated in place by registerPiPackage.
+	piLegacySettingsEntry = "./" + piPackageRelDir
 )
 
 func init() {
@@ -70,20 +76,41 @@ func materializePiPackage(packageDir string) error {
 }
 
 // registerPiPackage merges the local-path package entry into .pi/settings.json,
-// preserving everything else in the file. Returns whether the entry was added.
+// preserving everything else in the file and migrating the broken legacy
+// entry in place. Returns whether the file was changed.
 func registerPiPackage(settingsPath string) (bool, error) {
 	settings, err := readPiSettings(settingsPath)
 	if err != nil {
 		return false, err
 	}
 
-	packages := piPackagesList(settings)
+	packages, migrated := migrateLegacyPiEntries(piPackagesList(settings))
 	if hasPiEntry(packages) {
-		return false, nil
+		if !migrated {
+			return false, nil
+		}
+
+		settings["packages"] = packages
+		return true, writePiSettings(settingsPath, settings)
 	}
 
 	settings["packages"] = append(packages, piSettingsEntry)
 	return true, writePiSettings(settingsPath, settings)
+}
+
+func migrateLegacyPiEntries(packages []any) ([]any, bool) {
+	migrated := false
+	result := make([]any, 0, len(packages))
+	for _, item := range packages {
+		if entry, ok := item.(string); ok && entry == piLegacySettingsEntry {
+			result = append(result, piSettingsEntry)
+			migrated = true
+			continue
+		}
+
+		result = append(result, item)
+	}
+	return result, migrated
 }
 
 func readPiSettings(settingsPath string) (map[string]any, error) {

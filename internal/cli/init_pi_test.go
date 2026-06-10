@@ -31,7 +31,7 @@ func TestRunInitPiMaterializesPackageAndRegistersSettings(t *testing.T) {
 
 	settings := readPiSettingsForTest(t, projectRoot)
 	packages, _ := settings["packages"].([]any)
-	if len(packages) != 1 || packages[0] != "./.haft/pi/haft-pi" {
+	if len(packages) != 1 || packages[0] != "../.haft/pi/haft-pi" {
 		t.Fatalf("expected single local-path package entry, got %#v", packages)
 	}
 }
@@ -58,8 +58,36 @@ func TestRunInitPiIsIdempotentAndPreservesForeignSettings(t *testing.T) {
 	if len(packages) != 2 {
 		t.Fatalf("expected exactly two package entries after double init, got %#v", packages)
 	}
-	if packages[0] != "npm:@foo/bar@1.0.0" || packages[1] != "./.haft/pi/haft-pi" {
+	if packages[0] != "npm:@foo/bar@1.0.0" || packages[1] != "../.haft/pi/haft-pi" {
 		t.Fatalf("unexpected package entries: %#v", packages)
+	}
+}
+
+func TestRegisterPiPackageMigratesLegacyEntry(t *testing.T) {
+	projectRoot := t.TempDir()
+	settingsPath := filepath.Join(projectRoot, ".pi", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Entry written by earlier haft builds: resolved relative to .pi/ by pi
+	// and silently skipped.
+	legacy := `{"packages": ["./.haft/pi/haft-pi"]}`
+	if err := os.WriteFile(settingsPath, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := registerPiPackage(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected legacy entry migration to report a change")
+	}
+
+	settings := readPiSettingsForTest(t, projectRoot)
+	packages, _ := settings["packages"].([]any)
+	if len(packages) != 1 || packages[0] != "../.haft/pi/haft-pi" {
+		t.Fatalf("expected legacy entry replaced in place, got %#v", packages)
 	}
 }
 
@@ -75,7 +103,7 @@ func TestNormalizeInitHostOptionsPiSuppressesClaudeDefault(t *testing.T) {
 
 func TestHasPiEntryRecognizesObjectForm(t *testing.T) {
 	packages := []any{
-		map[string]any{"source": "./.haft/pi/haft-pi", "skills": []any{}},
+		map[string]any{"source": "../.haft/pi/haft-pi", "skills": []any{}},
 	}
 	if !hasPiEntry(packages) {
 		t.Fatal("expected object-form entry to be recognized")

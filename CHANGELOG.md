@@ -27,7 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`haft init --pi`.** The `@haft/pi` package is embedded into the haft
   binary; `haft init --pi` materializes it under `.haft/pi/haft-pi` and
   idempotently registers the local-path entry in `.pi/settings.json`
-  (project-local, loads after Pi project trust). `--pi` counts as a host
+  (project-local, loads after Pi project trust). The entry is written as
+  `../.haft/pi/haft-pi` because pi resolves project-scope local package
+  paths relative to the `.pi` directory itself; a broken root-relative
+  entry from earlier builds is migrated in place. `--pi` counts as a host
   selection, so it does not drag in the default Claude config. No npm step:
   the extension's only runtime import (`typebox`) is a Pi-bundled core
   package resolved via `peerDependencies`.

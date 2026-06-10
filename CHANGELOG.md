@@ -22,8 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   footer status per tool call). The bridge handles concurrent starts, spawn
   failures with retry, and reports tools missing from older `haft` binaries
   with an explicit upgrade message. Out of scope for this slice:
-  `haft init --pi`, npm publish metadata, custom TUI renderers, active-tool
-  lanes, and provider-payload interception.
+  npm publish metadata, custom TUI renderers, active-tool lanes, and
+  provider-payload interception.
+- **`haft init --pi`.** The `@haft/pi` package is embedded into the haft
+  binary; `haft init --pi` materializes it under `.haft/pi/haft-pi` and
+  idempotently registers the local-path entry in `.pi/settings.json`
+  (project-local, loads after Pi project trust). `--pi` counts as a host
+  selection, so it does not drag in the default Claude config. No npm step:
+  the extension's only runtime import (`typebox`) is a Pi-bundled core
+  package resolved via `peerDependencies`.
 - **Kernel governor projection: `haft_query(action="status",
   view="governor")`.** A compact, prompt-budgeted status slice for host-side
   prompt governors: overseer signal counts,

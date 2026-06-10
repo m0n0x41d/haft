@@ -42,6 +42,7 @@ type initHostOptions struct {
 	codex    bool
 	air      bool
 	opencode bool
+	pi       bool
 	all      bool
 }
 
@@ -64,6 +65,7 @@ Examples:
   haft init --codex --overseer
   haft overseer init     # Enable overseer later, auto-detecting the project agent
   haft init --opencode   # OpenCode MCP + commands (sst/opencode)
+  haft init --pi         # Pi — bundled @haft/pi package + .pi/settings.json entry
   haft init --all        # Claude + Codex, global commands
   haft init --cursor     # Experimental Cursor config
   haft init --gemini     # Experimental Gemini CLI config
@@ -104,7 +106,8 @@ func normalizeInitHostOptions(options initHostOptions) initHostOptions {
 		normalized.gemini ||
 		normalized.codex ||
 		normalized.air ||
-		normalized.opencode
+		normalized.opencode ||
+		normalized.pi
 	if !hasHost {
 		normalized.claude = true
 	}
@@ -204,6 +207,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		codex:    initCodex,
 		air:      initAir,
 		opencode: initOpencode,
+		pi:       initPi,
 		all:      initAll,
 	})
 
@@ -333,6 +337,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else if skillPath != "" {
 			fmt.Printf("  ✓ Installed %d skills (%s)\n", count, skillPath)
 		}
+	}
+
+	if hosts.pi {
+		runInitPi(cwd)
 	}
 
 	if !initNoFileInstructions && hosts.claude {

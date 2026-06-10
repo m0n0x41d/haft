@@ -32,7 +32,22 @@ Haft remains the authority. Pi is only the host carrier. The kernel,
 governance rules; the extension routes, scaffolds, and reminds — it never
 binds decisions or commissions on its own (Transformer Mandate).
 
-## Local Install
+## Install
+
+The package is embedded into the `haft` binary. In any project:
+
+```sh
+haft init --pi
+```
+
+This materializes the package under `.haft/pi/haft-pi` and registers it in
+`.pi/settings.json` (project-local); Pi loads it after project trust. No npm
+step is required — the extension's only runtime import (`typebox`) is a
+Pi-bundled core package resolved via `peerDependencies`. Re-running
+`haft init --pi` refreshes the materialized package, keeping carriers in
+lockstep with the kernel in the same binary.
+
+## Local Install (repo development)
 
 From a project that uses Pi:
 
@@ -80,7 +95,7 @@ authority. When kernel schemas change, update the mirrors.
 
 ## Boundary
 
-Still out of scope: `haft init --pi`, publish metadata, custom
+Still out of scope: npm publish metadata, custom
 `renderCall`/`renderResult` components (needs a pinned
 `@earendil-works/pi-tui` dependency and a live Pi session to verify theme
 APIs), active-tool lane switching (D3), and provider-payload interception

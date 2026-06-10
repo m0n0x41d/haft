@@ -26,6 +26,11 @@ func TestComposeServerInstructions_AlwaysIncludesDoctrine(t *testing.T) {
 			t.Errorf("session-start mandate missing %q:\n%s", s, got)
 		}
 	}
+	for _, s := range []string{"periodically during long work", "after commits", "before claiming non-trivial work complete", "read-only cockpit"} {
+		if !strings.Contains(got, s) {
+			t.Errorf("periodic status mandate missing %q:\n%s", s, got)
+		}
+	}
 	if strings.Contains(got, "/h-status") {
 		t.Errorf("mandate should reference the tool, not the skill:\n%s", got)
 	}

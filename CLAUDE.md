@@ -50,7 +50,7 @@ This section is installed and maintained by `haft init`. Edits **inside** the
 haft HTML-comment markers (the start/end pair that brackets this section) will
 be overwritten on the next `haft init`. Add your own project rules **outside**
 the markers — they are preserved. To opt out entirely, run
-`haft init --no-claude-md`.
+`haft init --no-file-instructions`.
 
 This project uses [haft](https://github.com/m0n0x41d/haft) for structured
 decision recording and FPF (First Principles Framework) discipline. Haft is a

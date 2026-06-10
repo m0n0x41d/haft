@@ -11,6 +11,7 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/project"
 
 	"github.com/spf13/cobra"
@@ -18,15 +19,20 @@ import (
 )
 
 var (
-	initClaude     bool
-	initCursor     bool
-	initGemini     bool
-	initCodex      bool
-	initAir        bool
-	initOpencode   bool
-	initAll        bool
-	initLocal      bool
-	initNoClaudeMD bool
+	initClaude                  bool
+	initCursor                  bool
+	initGemini                  bool
+	initCodex                   bool
+	initAir                     bool
+	initOpencode                bool
+	initAll                     bool
+	initLocal                   bool
+	initNoFileInstructions      bool
+	initOverseer                bool
+	initOverseerReviewer        string
+	initOverseerReviewerCommand string
+	initOverseerReviewOnHook    bool
+	initOverseerReviewTimeout   int
 )
 
 type initHostOptions struct {
@@ -54,6 +60,9 @@ Examples:
   haft init              # Claude, global commands (~/.claude/commands/)
   haft init --local      # Claude, local commands (.claude/commands/)
   haft init --codex      # Codex MCP + skills
+  haft init --overseer   # Enable soft local overseer post-commit packet loop
+  haft init --codex --overseer
+  haft overseer init     # Enable overseer later, auto-detecting the project agent
   haft init --opencode   # OpenCode MCP + commands (sst/opencode)
   haft init --all        # Claude + Codex, global commands
   haft init --cursor     # Experimental Cursor config
@@ -71,7 +80,14 @@ func init() {
 	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure experimental JetBrains Air integration")
 	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all supported host agents")
 	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
-	initCmd.Flags().BoolVar(&initNoClaudeMD, "no-claude-md", false, "Skip installing/updating the project CLAUDE.md haft section")
+	initCmd.Flags().BoolVar(&initNoFileInstructions, "no-file-instructions", false, "Skip installing/updating project instruction files")
+	initCmd.Flags().BoolVar(&initNoFileInstructions, "no-claude-md", false, "Deprecated alias for --no-file-instructions")
+	initCmd.Flags().BoolVar(&initOverseer, "overseer", false, "Install opt-in soft overseer post-commit hook and config")
+	initCmd.Flags().StringVar(&initOverseerReviewer, "overseer-reviewer", overseer.ReviewerAuto, "Overseer reviewer preset: auto, manual, command, codex, or claude")
+	initCmd.Flags().StringVar(&initOverseerReviewerCommand, "overseer-reviewer-command", "", "Override command used by overseer reviewer; receives HAFT_OVERSEER_* env vars")
+	initCmd.Flags().BoolVar(&initOverseerReviewOnHook, "overseer-review-on-hook", false, "Run configured overseer reviewer from the post-commit hook")
+	initCmd.Flags().IntVar(&initOverseerReviewTimeout, "overseer-review-timeout", 180, "Overseer reviewer timeout in seconds")
+	_ = initCmd.Flags().MarkDeprecated("no-claude-md", "use --no-file-instructions")
 
 	rootCmd.AddCommand(initCmd)
 }
@@ -181,10 +197,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("  ✓ Database OK")
 	}
 
-	// Always use bare "haft" — let PATH resolve.
-	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
-	binaryPath := "haft"
-
 	hosts := normalizeInitHostOptions(initHostOptions{
 		claude:   initClaude,
 		cursor:   initCursor,
@@ -194,6 +206,34 @@ func runInit(cmd *cobra.Command, args []string) error {
 		opencode: initOpencode,
 		all:      initAll,
 	})
+
+	// Always use bare "haft" — let PATH resolve.
+	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
+	binaryPath := "haft"
+
+	if initOverseer || initOverseerWantsConfig() {
+		factory := func() (overseer.Config, error) {
+			return buildOverseerConfigForProject(cwd, overseerSetupOptions{
+				reviewer:     initOverseerReviewer,
+				command:      initOverseerReviewerCommand,
+				reviewOnHook: initOverseerReviewOnHook,
+				timeout:      initOverseerReviewTimeout,
+				hosts:        hosts,
+			})
+		}
+		if result, err := configureOverseer(cwd, binaryPath, factory); err != nil {
+			fmt.Printf("  ⚠ Failed to configure overseer: %v\n", err)
+		} else {
+			fmt.Println("  ✓ Wrote overseer config (.haft/overseer/config.yaml)")
+			if result.Skipped {
+				fmt.Printf("  ⚠ Skipped overseer post-commit hook: %s\n", result.Reason)
+			} else if result.Updated {
+				fmt.Println("  ✓ Updated overseer post-commit hook (.git/hooks/post-commit)")
+			} else {
+				fmt.Println("  ✓ Installed overseer post-commit hook (.git/hooks/post-commit)")
+			}
+		}
+	}
 
 	if hosts.claude {
 		if err := configureMCPClaude(cwd, binaryPath); err != nil {
@@ -295,7 +335,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !initNoClaudeMD {
+	if !initNoFileInstructions && hosts.claude {
 		if path, action, err := installClaudeMD(cwd); err != nil {
 			fmt.Printf("  ⚠ Failed to install CLAUDE.md haft section: %v\n", err)
 		} else {
@@ -337,6 +377,83 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Use /h-note for micro-decisions, /h-frame to start framing a problem.")
 	}
 	return nil
+}
+
+func initOverseerWantsConfig() bool {
+	reviewer := strings.TrimSpace(initOverseerReviewer)
+	return strings.TrimSpace(initOverseerReviewerCommand) != "" ||
+		reviewer != "" && reviewer != overseer.ReviewerManual && reviewer != overseer.ReviewerAuto ||
+		initOverseerReviewOnHook
+}
+
+type overseerSetupOptions struct {
+	reviewer     string
+	command      string
+	reviewOnHook bool
+	timeout      int
+	hosts        initHostOptions
+}
+
+func buildOverseerConfigForProject(projectRoot string, options overseerSetupOptions) (overseer.Config, error) {
+	reviewer := strings.TrimSpace(options.reviewer)
+	command := strings.TrimSpace(options.command)
+	if reviewer == "" {
+		reviewer = overseer.ReviewerAuto
+	}
+	if reviewer == overseer.ReviewerAuto {
+		reviewer = inferOverseerReviewerAgent(projectRoot, options.hosts)
+	}
+	if reviewer == overseer.ReviewerManual && command != "" {
+		reviewer = overseer.ReviewerCommand
+	}
+	reviewOnHook := options.reviewOnHook || reviewer != overseer.ReviewerManual
+	return overseer.ConfigForReviewer(reviewer, command, reviewOnHook, options.timeout)
+}
+
+func inferOverseerReviewerAgent(projectRoot string, hosts initHostOptions) string {
+	if hosts.codex || hosts.air {
+		return overseer.ReviewerCodex
+	}
+	if hosts.claude {
+		return overseer.ReviewerClaude
+	}
+	if pathExists(filepath.Join(projectRoot, ".codex", "config.toml")) {
+		return overseer.ReviewerCodex
+	}
+	if pathExists(filepath.Join(projectRoot, ".mcp.json")) || pathExists(filepath.Join(projectRoot, "CLAUDE.md")) {
+		return overseer.ReviewerClaude
+	}
+	return overseer.ReviewerManual
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func configureOverseer(
+	projectRoot string,
+	binaryPath string,
+	configFactory func() (overseer.Config, error),
+) (overseer.HookInstallResult, error) {
+	_, result, err := configureOverseerWithConfig(projectRoot, binaryPath, configFactory)
+	return result, err
+}
+
+func configureOverseerWithConfig(
+	projectRoot string,
+	binaryPath string,
+	configFactory func() (overseer.Config, error),
+) (overseer.Config, overseer.HookInstallResult, error) {
+	config, err := configFactory()
+	if err != nil {
+		return overseer.Config{}, overseer.HookInstallResult{}, err
+	}
+	if err := overseer.SaveConfig(projectRoot, config); err != nil {
+		return overseer.Config{}, overseer.HookInstallResult{}, err
+	}
+	result, err := overseer.InstallPostCommitHook(projectRoot, binaryPath)
+	return config, result, err
 }
 
 // isDBEmpty checks if a SQLite DB has zero artifacts.

@@ -36,9 +36,10 @@ const (
 //   - File present without markers → append the haft section at the end.
 //   - Section content identical to embedded template → "unchanged".
 //
-// To opt out, operators pass --no-claude-md to `haft init`. Removing the
-// markers from the file does NOT signal opt-out — the section will be
-// re-appended on next init. Edits *between* the markers are overwritten.
+// To opt out, operators pass --no-file-instructions to `haft init`.
+// Removing the markers from the file does NOT signal opt-out — the section
+// will be re-appended on next init. Edits *between* the markers are
+// overwritten.
 func installClaudeMD(projectRoot string) (string, claudeMDAction, error) {
 	path := filepath.Join(projectRoot, "CLAUDE.md")
 	haftSection := wrapHaftSection(embeddedClaudeMDTemplate)

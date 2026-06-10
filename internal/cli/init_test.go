@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/project"
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,12 @@ func TestRunInit_GeminiKeepsLegacyCommands(t *testing.T) {
 	oldInitOpencode := initOpencode
 	oldInitAll := initAll
 	oldInitLocal := initLocal
-	oldInitNoClaudeMD := initNoClaudeMD
+	oldInitNoFileInstructions := initNoFileInstructions
+	oldInitOverseer := initOverseer
+	oldInitOverseerReviewer := initOverseerReviewer
+	oldInitOverseerReviewerCommand := initOverseerReviewerCommand
+	oldInitOverseerReviewOnHook := initOverseerReviewOnHook
+	oldInitOverseerReviewTimeout := initOverseerReviewTimeout
 	defer func() {
 		initClaude = oldInitClaude
 		initCursor = oldInitCursor
@@ -56,7 +62,12 @@ func TestRunInit_GeminiKeepsLegacyCommands(t *testing.T) {
 		initOpencode = oldInitOpencode
 		initAll = oldInitAll
 		initLocal = oldInitLocal
-		initNoClaudeMD = oldInitNoClaudeMD
+		initNoFileInstructions = oldInitNoFileInstructions
+		initOverseer = oldInitOverseer
+		initOverseerReviewer = oldInitOverseerReviewer
+		initOverseerReviewerCommand = oldInitOverseerReviewerCommand
+		initOverseerReviewOnHook = oldInitOverseerReviewOnHook
+		initOverseerReviewTimeout = oldInitOverseerReviewTimeout
 	}()
 
 	tmpDir := t.TempDir()
@@ -83,13 +94,86 @@ func TestRunInit_GeminiKeepsLegacyCommands(t *testing.T) {
 	initOpencode = false
 	initAll = false
 	initLocal = false
-	initNoClaudeMD = true
+	initNoFileInstructions = true
+	initOverseer = false
+	initOverseerReviewer = overseer.ReviewerAuto
+	initOverseerReviewerCommand = ""
+	initOverseerReviewOnHook = false
+	initOverseerReviewTimeout = 180
 
 	if err := runInit(nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(legacyCommand); err != nil {
 		t.Fatalf("Gemini init removed legacy command without replacement: %v", err)
+	}
+}
+
+func TestRunInitCodexDoesNotCreateClaudeInstructionFileByDefault(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+
+	oldInitClaude := initClaude
+	oldInitCursor := initCursor
+	oldInitGemini := initGemini
+	oldInitCodex := initCodex
+	oldInitAir := initAir
+	oldInitOpencode := initOpencode
+	oldInitAll := initAll
+	oldInitLocal := initLocal
+	oldInitNoFileInstructions := initNoFileInstructions
+	oldInitOverseer := initOverseer
+	oldInitOverseerReviewer := initOverseerReviewer
+	oldInitOverseerReviewerCommand := initOverseerReviewerCommand
+	oldInitOverseerReviewOnHook := initOverseerReviewOnHook
+	oldInitOverseerReviewTimeout := initOverseerReviewTimeout
+	defer func() {
+		initClaude = oldInitClaude
+		initCursor = oldInitCursor
+		initGemini = oldInitGemini
+		initCodex = oldInitCodex
+		initAir = oldInitAir
+		initOpencode = oldInitOpencode
+		initAll = oldInitAll
+		initLocal = oldInitLocal
+		initNoFileInstructions = oldInitNoFileInstructions
+		initOverseer = oldInitOverseer
+		initOverseerReviewer = oldInitOverseerReviewer
+		initOverseerReviewerCommand = oldInitOverseerReviewerCommand
+		initOverseerReviewOnHook = oldInitOverseerReviewOnHook
+		initOverseerReviewTimeout = oldInitOverseerReviewTimeout
+	}()
+
+	tmpDir := t.TempDir()
+	homeDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", homeDir)
+
+	initClaude = false
+	initCursor = false
+	initGemini = false
+	initCodex = true
+	initAir = false
+	initOpencode = false
+	initAll = false
+	initLocal = false
+	initNoFileInstructions = false
+	initOverseer = false
+	initOverseerReviewer = overseer.ReviewerAuto
+	initOverseerReviewerCommand = ""
+	initOverseerReviewOnHook = false
+	initOverseerReviewTimeout = 180
+
+	if err := runInit(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("codex init should not create CLAUDE.md by default; err=%v", err)
 	}
 }
 
@@ -107,6 +191,125 @@ func TestCreateDirectoryStructure_CreatesWorkflowExample(t *testing.T) {
 
 	if !strings.Contains(string(data), "## Defaults") {
 		t.Fatalf("workflow example missing Defaults section:\n%s", string(data))
+	}
+}
+
+func TestCreateDirectoryStructure_DoesNotCreateOverseerByDefault(t *testing.T) {
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+
+	if err := createDirectoryStructure(haftDir); err != nil {
+		t.Fatalf("createDirectoryStructure returned error: %v", err)
+	}
+
+	overseerPath := filepath.Join(haftDir, "overseer")
+	if _, err := os.Stat(overseerPath); !os.IsNotExist(err) {
+		t.Fatalf("plain init structure should not create overseer dir; err=%v", err)
+	}
+}
+
+func TestConfigureOverseerWritesConfigAndHook(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init")
+
+	result, err := configureOverseer(root, "haft", func() (overseer.Config, error) {
+		return overseer.DefaultConfig(), nil
+	})
+	if err != nil {
+		t.Fatalf("configureOverseer returned error: %v", err)
+	}
+	if !result.Installed || result.Skipped {
+		t.Fatalf("hook result = %+v, want installed", result)
+	}
+
+	configPath := filepath.Join(root, ".haft", "overseer", "config.yaml")
+	config, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read overseer config: %v", err)
+	}
+	if !strings.Contains(string(config), "llm_review: \"off\"") && !strings.Contains(string(config), "llm_review: off") {
+		t.Fatalf("config should keep LLM review off by default:\n%s", string(config))
+	}
+
+	hookPath := filepath.Join(root, ".git", "hooks", "post-commit")
+	hook, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("read post-commit hook: %v", err)
+	}
+	if !strings.Contains(string(hook), "haft overseer hook --commit HEAD --async || true") {
+		t.Fatalf("hook missing soft overseer e2e command:\n%s", string(hook))
+	}
+}
+
+func TestConfigureOverseerWithCodexReviewerPreset(t *testing.T) {
+	root := t.TempDir()
+	git(t, root, "init")
+
+	result, err := configureOverseer(root, "haft", func() (overseer.Config, error) {
+		return overseer.ConfigForReviewer(overseer.ReviewerCodex, "", true, 45)
+	})
+	if err != nil {
+		t.Fatalf("configureOverseer returned error: %v", err)
+	}
+	if !result.Installed || result.Skipped {
+		t.Fatalf("hook result = %+v, want installed", result)
+	}
+
+	configPath := filepath.Join(root, ".haft", "overseer", "config.yaml")
+	config, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read overseer config: %v", err)
+	}
+	for _, want := range []string{
+		"llm_review: \"on\"",
+		"reviewer_agent: codex",
+		"review_on_hook: true",
+		"review_timeout_seconds: 45",
+		"codex exec",
+		"HAFT_OVERSEER_SCHEMA_FILE",
+	} {
+		if !strings.Contains(string(config), want) {
+			t.Fatalf("config missing %q:\n%s", want, string(config))
+		}
+	}
+}
+
+func TestBuildOverseerConfigForProjectAutoUsesCodexHost(t *testing.T) {
+	root := t.TempDir()
+	config, err := buildOverseerConfigForProject(root, overseerSetupOptions{
+		reviewer: overseer.ReviewerAuto,
+		hosts:    initHostOptions{codex: true},
+		timeout:  45,
+	})
+	if err != nil {
+		t.Fatalf("buildOverseerConfigForProject returned error: %v", err)
+	}
+	if config.ReviewerAgent != overseer.ReviewerCodex {
+		t.Fatalf("reviewer_agent = %q, want codex", config.ReviewerAgent)
+	}
+	if config.LLMReview != "on" || !config.ReviewOnHook {
+		t.Fatalf("codex auto should enable hook review: %+v", config)
+	}
+}
+
+func TestBuildOverseerConfigForProjectAutoDetectsCodexCarrier(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("[mcp_servers.haft]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := buildOverseerConfigForProject(root, overseerSetupOptions{
+		reviewer: overseer.ReviewerAuto,
+		timeout:  180,
+	})
+	if err != nil {
+		t.Fatalf("buildOverseerConfigForProject returned error: %v", err)
+	}
+	if config.ReviewerAgent != overseer.ReviewerCodex {
+		t.Fatalf("reviewer_agent = %q, want codex", config.ReviewerAgent)
 	}
 }
 

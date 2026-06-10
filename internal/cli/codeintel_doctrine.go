@@ -110,7 +110,14 @@ coverage gaps — lives in the haft graph, NOT only in the code. Skipping the
 status check means acting blind: re-deciding what was already decided, reopening
 closed problems, contradicting an active decision, or editing a symbol a
 recorded decision governs. Run it, READ it, and only THEN begin work. Do not
-treat this as optional or skippable for "small" tasks.`
+treat this as optional or skippable for "small" tasks.
+
+Also re-check ` + "`haft_query(action=\"status\")`" + ` periodically during long work:
+after commits or post-commit hook activity, before claiming non-trivial work complete,
+after returning from long-running tool sessions, and whenever
+overseer, refresh, drift, or spec-coverage signals may have changed. Treat
+status as the read-only cockpit for current risk; mutations still go through
+explicit typed tools with their own authority gates.`
 
 // composeServerInstructions builds the MCP initialize instructions, ordered by
 // weight: the mandatory session-start status rule FIRST, then the project's

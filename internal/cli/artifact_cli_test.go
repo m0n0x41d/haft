@@ -116,7 +116,7 @@ func newArtifactCLITestProject(t *testing.T) string {
 	oldInitOpencode := initOpencode
 	oldInitAll := initAll
 	oldInitLocal := initLocal
-	oldInitNoClaudeMD := initNoClaudeMD
+	oldInitNoFileInstructions := initNoFileInstructions
 	t.Cleanup(func() {
 		_ = os.Chdir(cwd)
 		initClaude = oldInitClaude
@@ -127,7 +127,7 @@ func newArtifactCLITestProject(t *testing.T) string {
 		initOpencode = oldInitOpencode
 		initAll = oldInitAll
 		initLocal = oldInitLocal
-		initNoClaudeMD = oldInitNoClaudeMD
+		initNoFileInstructions = oldInitNoFileInstructions
 	})
 
 	root := t.TempDir()
@@ -145,7 +145,7 @@ func newArtifactCLITestProject(t *testing.T) string {
 	initOpencode = false
 	initAll = false
 	initLocal = true
-	initNoClaudeMD = true
+	initNoFileInstructions = true
 
 	if err := runInit(&cobra.Command{}, nil); err != nil {
 		t.Fatalf("run init: %v", err)

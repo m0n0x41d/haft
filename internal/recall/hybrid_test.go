@@ -408,6 +408,7 @@ func TestHybridInvalidateDuringWarmRewarms(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	waitForHybridIdle(t, hybrid)
 
 	results, err := hybrid.Search(context.Background(), "rotate authentication credentials", 5)
 	if err != nil {

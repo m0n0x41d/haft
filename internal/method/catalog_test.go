@@ -144,6 +144,28 @@ func TestPullMechanicalEditReturnsLowCeremonyWithoutArchitectureGates(t *testing
 	}
 }
 
+func TestPullUnmatchedMediumWorkFallsBackToVerification(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task: "Update repo behavior from a PR review finding",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TaskSignature.Ceremony != "medium" {
+		t.Fatalf("ceremony = %q, want medium", run.TaskSignature.Ceremony)
+	}
+	assertMethodIDs(t, run, []string{"verification-before-completion"})
+
+	gateResults := []GateResult{{
+		GateID: "fresh_verification_before_completion",
+		Status: "satisfied",
+	}}
+	err = ValidateClose(run, CloseInput{GateResults: gateResults})
+	if err == nil {
+		t.Fatal("ValidateClose accepted fallback verification without evidence")
+	}
+}
+
 func TestPressureFixturesSelectExpectedMethods(t *testing.T) {
 	tests := []struct {
 		name          string

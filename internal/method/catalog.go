@@ -92,6 +92,7 @@ func Pull(input PullInput) (MethodRun, error) {
 	}
 
 	cards := matchCards(catalog.Methods, normalized)
+	cards = withFallbackVerificationCard(cards)
 	maxMethods := normalized.ResponseBudget.MaxMethods
 	if maxMethods <= 0 || maxMethods > 3 {
 		maxMethods = 3
@@ -179,6 +180,17 @@ func matchCards(definitions []Definition, input PullInput) []MethodCard {
 		cards = append(cards, compactCard(definition, whyApplies(definition, input)))
 	}
 	return cards
+}
+
+func withFallbackVerificationCard(cards []MethodCard) []MethodCard {
+	if len(cards) > 0 {
+		return cards
+	}
+	card := compactCard(
+		verificationBeforeCompletion(),
+		"fallback for unmatched non-trivial code work",
+	)
+	return append(cards, card)
 }
 
 func methodExcluded(definition Definition, input PullInput) bool {

@@ -387,17 +387,17 @@ func sharedSidecarEnabled() bool {
 func locateSidecar() (string, bool) {
 	if override := os.Getenv(sidecarBinaryEnv); override != "" {
 		if isExecutableFile(override) {
-			return override, true
+			return absoluteExecutablePath(override), true
 		}
 		return "", false
 	}
 	for _, candidate := range sidecarCandidates() {
 		if isExecutableFile(candidate) {
-			return candidate, true
+			return absoluteExecutablePath(candidate), true
 		}
 	}
 	if resolved, err := exec.LookPath(sidecarBinaryName); err == nil {
-		return resolved, true
+		return absoluteExecutablePath(resolved), true
 	}
 	return "", false
 }
@@ -424,4 +424,15 @@ func isExecutableFile(path string) bool {
 		return false
 	}
 	return info.Mode().Perm()&0o111 != 0
+}
+
+func absoluteExecutablePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return absolute
 }

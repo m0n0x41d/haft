@@ -102,6 +102,43 @@ func TestSharedSidecarDaemonDoesNotInheritClientCWD(t *testing.T) {
 	}
 }
 
+func TestSharedSidecarDaemonStartsRelativeDevBuildAfterChangingCWD(t *testing.T) {
+	repoDir := t.TempDir()
+	helper := filepath.Join(repoDir, "embed-sidecar", "target", "debug", sidecarBinaryName)
+	writeSharedSidecarHelperAt(t, helper)
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "home"))
+
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	startLog := filepath.Join(t.TempDir(), "starts.log")
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	t.Setenv(sidecarBinaryEnv, "")
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "1")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+	t.Setenv("HAFT_TEST_SHARED_SIDECAR_STARTS", startLog)
+
+	embedder, err := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	if err != nil {
+		t.Fatalf("New(local): %v", err)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	starts := readStartLog(t, startLog)
+	if starts != 1 {
+		t.Fatalf("daemon starts = %d, want 1", starts)
+	}
+}
+
 func TestSharedSidecarDaemonDoesNotInheritClientStderr(t *testing.T) {
 	helper := writeSharedSidecarHelper(t)
 	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
@@ -181,15 +218,22 @@ func TestSidecarSpecFromConfigAbsolutizesCacheDir(t *testing.T) {
 
 func writeSharedSidecarHelper(t *testing.T) string {
 	t.Helper()
+	return writeSharedSidecarHelperAt(t, filepath.Join(t.TempDir(), "fake-haft-embed"))
+}
+
+func writeSharedSidecarHelperAt(t *testing.T, path string) string {
+	t.Helper()
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatalf("test executable: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), "fake-haft-embed")
 	script := fmt.Sprintf(
 		"#!/usr/bin/env bash\nHAFT_TEST_SHARED_SIDECAR=1 exec %q -test.run=TestSharedSidecarHelperProcess -- \"$@\"\n",
 		binary,
 	)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir helper dir: %v", err)
+	}
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write helper script: %v", err)
 	}

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 )
@@ -117,17 +117,16 @@ func openArtifactCLIStore() (string, *artifact.Store, func(), error) {
 		return "", nil, func() {}, fmt.Errorf("get DB path: %w", err)
 	}
 
-	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)"
-	sqlDB, err := sql.Open("sqlite", dsn)
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return "", nil, func() {}, fmt.Errorf("open DB: %w", err)
 	}
 
 	closeStore := func() {
-		_ = sqlDB.Close()
+		_ = database.Close()
 	}
 
-	return projectRoot, artifact.NewStore(sqlDB), closeStore, nil
+	return projectRoot, artifact.NewStore(database.GetRawDB()), closeStore, nil
 }
 
 func createArtifactFromInput(

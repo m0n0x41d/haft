@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/project"
+	_ "modernc.org/sqlite"
 )
 
 func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
@@ -97,6 +100,83 @@ func TestArtifactCreateCLI_CreatesNote(t *testing.T) {
 	}
 	if !strings.Contains(note.File, ".haft/notes/") {
 		t.Fatalf("note file should be a note projection path, got %q", note.File)
+	}
+}
+
+func TestArtifactCreateCLI_MigratesLegacyProjectDB(t *testing.T) {
+	projectRoot := t.TempDir()
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("HOME", home)
+
+	haftDir := filepath.Join(projectRoot, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := project.Create(haftDir, projectRoot)
+	if err != nil {
+		t.Fatalf("create project config: %v", err)
+	}
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		t.Fatalf("resolve DB path: %v", err)
+	}
+	writeLegacyArtifactDB(t, dbPath)
+
+	restore := enterTestProjectRoot(t, projectRoot)
+	defer restore()
+
+	note := runArtifactCreateForTest(t, projectRoot, "note.record", artifact.NoteInput{
+		Title:        "Migrated artifact create",
+		Observations: []string{"Artifact CLI opens the migrating project store."},
+		Context:      "artifact-migration-test",
+		TaskContext:  "artifact-migration-test",
+	})
+
+	database, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open migrated db: %v", err)
+	}
+	defer database.Close()
+
+	row := database.QueryRow(
+		`SELECT search_keywords, structured_data FROM artifacts WHERE id = ?`,
+		note.ID,
+	)
+	var searchKeywords string
+	var structuredData string
+	if err := row.Scan(&searchKeywords, &structuredData); err != nil {
+		t.Fatalf("artifact create did not run migrations before write: %v", err)
+	}
+}
+
+func writeLegacyArtifactDB(t *testing.T, dbPath string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	defer database.Close()
+
+	_, err = database.Exec(`CREATE TABLE artifacts (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL,
+		version INTEGER NOT NULL DEFAULT 1,
+		status TEXT NOT NULL DEFAULT 'active',
+		context TEXT,
+		mode TEXT,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		file_path TEXT,
+		valid_until TEXT,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy artifacts table: %v", err)
 	}
 }
 

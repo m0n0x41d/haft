@@ -244,6 +244,59 @@ func TestCharacterizeProblem_Success(t *testing.T) {
 	}
 }
 
+func TestCharacterizeProblem_ProxyForColumnAndWarning(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	prob, _, _ := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Latency budget",
+		Signal: "p95 over budget on checkout",
+	})
+
+	dims := []ComparisonDimension{
+		{Name: "latency_p95", Role: "target", ScaleType: "ratio", Unit: "ms", ProxyFor: "checkout stays usable under load"},
+		{Name: "drift_count", Role: "target", ScaleType: "ratio"},
+		{Name: "memory", Role: "observation", ScaleType: "ratio", Unit: "MB"},
+	}
+
+	a, _, err := CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
+		ProblemRef: prob.Meta.ID,
+		Dimensions: dims,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(a.Body, "Proxy For (value)") {
+		t.Error("proxy_for column missing from characterization table")
+	}
+	if !strings.Contains(a.Body, "checkout stays usable under load") {
+		t.Error("proxy_for value missing from characterization table")
+	}
+
+	fields := a.UnmarshalProblemFields()
+	if got := fields.Characterizations[0].Dimensions[0].ProxyFor; got != "checkout stays usable under load" {
+		t.Errorf("structured proxy_for roundtrip = %q", got)
+	}
+
+	warn := ValueBeforeProxyWarning(dims)
+	if !strings.Contains(warn, "drift_count") {
+		t.Errorf("warning should name the target dimension missing proxy_for, got %q", warn)
+	}
+	if strings.Contains(warn, "memory") {
+		t.Errorf("observation-role dimension must not trigger the warning, got %q", warn)
+	}
+
+	covered := []ComparisonDimension{
+		{Name: "latency_p95", Role: "target", ProxyFor: "checkout stays usable under load"},
+		{Name: "memory", Role: "observation"},
+	}
+	if warn := ValueBeforeProxyWarning(covered); warn != "" {
+		t.Errorf("no warning expected when all targets name a value, got %q", warn)
+	}
+}
+
 func TestCharacterizeProblem_StoresStructuredParityPlan(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

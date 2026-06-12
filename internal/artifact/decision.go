@@ -96,6 +96,9 @@ type PredictionInput struct {
 	// forecast sampled at /h-decide time, fed into decomposed-Brier calibration
 	// once verified (dec-20260603-c3c7fa88). nil means the operator declined.
 	Probability *float64 `json:"probability,omitempty"`
+	// Command is the optional allowlist-class command form of Observable,
+	// executable by the maintenance loop (test/build/vet/grep classes only).
+	Command string `json:"command,omitempty"`
 }
 
 // RejectionReason explains why a variant was not selected.
@@ -212,6 +215,7 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
 			Realizability: strings.TrimSpace(value.Realizability),
 			Probability:   value.Probability,
+			Command:       strings.TrimSpace(value.Command),
 		}
 
 		normalized = append(normalized, prediction)
@@ -1603,6 +1607,7 @@ type EvidenceInput struct {
 	ClaimScope         []string `json:"claim_scope,omitempty"`
 	ValidUntil         string   `json:"valid_until,omitempty"`
 	CausalSupportBasis string   `json:"causal_support_basis,omitempty"` // C.28; accepts canonical or alias form
+	Provenance         string   `json:"provenance,omitempty"`           // "", "machine", "llm-review"
 }
 
 // Measure records post-implementation impact against the DRR's acceptance criteria.
@@ -1957,6 +1962,7 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		ClaimScope:         input.ClaimScope,
 		ValidUntil:         input.ValidUntil,
 		CausalSupportBasis: causalBasis,
+		Provenance:         normalizeEvidenceProvenance(input.Provenance),
 	}
 
 	if err := store.AddEvidenceItem(ctx, item, input.ArtifactRef); err != nil {

@@ -32,10 +32,11 @@ func BuildStatusSummary(
 			summary.Signals = append(summary.Signals, signal)
 		}
 		summary.SuppressedCount += len(maintenance.Suppressed)
+		summary.ExecutedActions = maintenance.Executed
 	}
 
 	summary.Signals = normalizeStatusSignals(summary.Signals)
-	summary.HasSignals = len(summary.Signals) > 0
+	summary.HasSignals = len(summary.Signals) > 0 || len(summary.ExecutedActions) > 0
 	return summary
 }
 
@@ -47,6 +48,8 @@ func FormatStatusSignals(summary StatusSummary) string {
 	var sb strings.Builder
 	sb.WriteString("## Overseer Signals\n\n")
 
+	sb.WriteString(formatExecutedDisclosure(summary))
+
 	for i, signal := range summary.Signals {
 		if i >= statusSignalLimit {
 			sb.WriteString(fmt.Sprintf("- **INFO** %d more overseer signal(s) hidden from compact status.\n", len(summary.Signals)-statusSignalLimit))
@@ -57,12 +60,39 @@ func FormatStatusSignals(summary StatusSummary) string {
 
 	if summary.SuppressedCount > 0 {
 		sb.WriteString(fmt.Sprintf(
-			"- **INFO** %d low-signal maintenance item(s) suppressed with audit trail; inspect `haft overseer maintain --json` for the latest classifier output.\n",
+			"- **INFO** %d low-signal maintenance item(s) suppressed with audit trail (triage, not improvement); inspect `haft overseer maintain --json` for the latest classifier output.\n",
 			summary.SuppressedCount,
 		))
 	}
 
 	sb.WriteString("\n")
+	return sb.String()
+}
+
+const executedDisclosureLimit = 5
+
+// formatExecutedDisclosure renders the autonomous-maintenance ledger of the
+// latest run at the top of status — the loop acts only in the open: every
+// entry names the decision, the action, and the undo path.
+func formatExecutedDisclosure(summary StatusSummary) string {
+	if len(summary.ExecutedActions) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "- **AUTONOMOUS MAINTENANCE** %d action(s) in run `%s` (undo: `haft overseer undo %s <action-id>`):\n",
+		len(summary.ExecutedActions), summary.LatestMaintenanceID, summary.LatestMaintenanceID)
+	for i, action := range summary.ExecutedActions {
+		if i >= executedDisclosureLimit {
+			fmt.Fprintf(&sb, "  - … and %d more (inspect `haft overseer maintain --json`)\n", len(summary.ExecutedActions)-executedDisclosureLimit)
+			break
+		}
+		title := action.Title
+		if title == "" {
+			title = action.DecisionRef
+		}
+		fmt.Fprintf(&sb, "  - [%s] %s — %s (%s) `%s`\n", action.ID, action.Kind, title, action.Outcome, action.DecisionRef)
+	}
 	return sb.String()
 }
 

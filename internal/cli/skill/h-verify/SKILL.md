@@ -86,6 +86,14 @@ CL impacts R_eff per FPF B.3:3 — never average across CL.
 
 ## Step 6 — Record the measurement verdict
 
+**What-got-worse check (FPF E.13).** Before recording an `accepted` or
+`partial` verdict, ask: the measured proxy improved — what got worse? Check
+the protected qualities the decision did NOT optimize (usability, footprint,
+maintainability, signal honesty, adjacent modules). Put the answer in
+`findings`: either the concrete regression you found, or a reasoned
+"none worsened: checked X, Y, Z" — a reflexive "nothing worsened" without
+named loci is the Goodhart failure mode this check exists to catch.
+
 After all evidence is attached, record the overall verdict:
 
 ```
@@ -104,6 +112,24 @@ Kernel ties the verdict back to the predictions and surfaces:
 - Accepted → decision health remains good
 - Partial → some predictions held, some didn't → consider reopen or supersede
 - Failed → decision invalidated → consider supersede or rollback per the decision's rollback spec
+
+## Step 6.5 — Loop verdict (FPF E.23)
+
+After the measure verdict, classify what the improvement loop does next. The
+admissible verdict set is exactly:
+
+- **stop** — further movement is dominated, unavailable, or out of scope.
+  "Good enough" is a legitimate terminal state: a decision measured adequate
+  does NOT owe an endless refresh cycle. Name WHY movement is dominated.
+- **continue** — evidence gathering or improvement continues on the same frame.
+- **switch-method** — same problem, different solution method → supersede.
+- **open-new-frame** — the problem itself shifted → reopen with a new ProblemCard.
+- **hold** — defer with an explicit revisit condition → waive with new_valid_until.
+
+**Narrowing is NOT a verdict.** Shrinking scan scope, suppressing signals, or
+restricting the evaluation window to make the picture look better is false
+improvement — any scope reduction must carry an explicit dominance
+justification ("movement on X is dominated because Y"), or it doesn't happen.
 
 If any verified prediction carried a `probability` forecast (set at `/h-decide`),
 the measure response also appends a **Calibration** read: the decomposed-Brier
@@ -126,7 +152,10 @@ Surface:
 - Verdict (accepted / partial / failed)
 - Evidence attached with CL
 - Drift status if baseline existed
-- Recommended next action (waive / reopen / supersede / nothing — decision still good)
+- Loop verdict (stop / continue / switch-method / open-new-frame / hold) with
+  its kernel mapping: stop → leave active with rationale recorded; continue →
+  schedule next verify; switch-method → supersede; open-new-frame → reopen;
+  hold → waive with new_valid_until
 
 **Re-grounding discipline (FPF A.7).** When you reference decision IDs
 (`dec-20260525-...`), prediction labels, or evidence refs in the verdict

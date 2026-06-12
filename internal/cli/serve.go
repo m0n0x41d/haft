@@ -791,7 +791,11 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 			return "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.ProblemResponse("characterize", a, filePath, navStrip) + present.FPFPhaseHint("characterize"), nil
+		resp := present.ProblemResponse("characterize", a, filePath, navStrip) + present.FPFPhaseHint("characterize")
+		if warn := artifact.ValueBeforeProxyWarning(input.Dimensions); warn != "" {
+			resp += "\n" + warn + "\n"
+		}
+		return resp, nil
 
 	case "select":
 		problems, err := artifact.SelectProblems(ctx, store, contextName, 20)
@@ -1327,6 +1331,14 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		}
 
 		return result + navStrip, nil
+
+	case artifact.RefreshPlan:
+		projectRoot := filepath.Dir(haftDir)
+		plan, err := artifact.BuildMaintenancePlan(ctx, store, projectRoot)
+		if err != nil {
+			return "", err
+		}
+		return present.MaintenancePlanResponse(plan, navStrip), nil
 
 	case artifact.RefreshWaive:
 		if artifactRef == "" {
@@ -2053,6 +2065,9 @@ func parseDimensions(raw any) []artifact.ComparisonDimension {
 		}
 		if v, ok := dm["role"].(string); ok {
 			dim.Role = v
+		}
+		if v, ok := dm["proxy_for"].(string); ok {
+			dim.ProxyFor = v
 		}
 		if v, ok := dm["valid_until"].(string); ok {
 			dim.ValidUntil = v

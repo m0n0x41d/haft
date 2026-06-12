@@ -416,13 +416,30 @@ func goldenE2ESourceRoot(t *testing.T) string {
 	return root
 }
 
+// goldenE2ESharedCache lazily creates a single temp directory shared
+// across all runGoldenE2EHaftCLI calls within the same test so that
+// Go build cache and module cache are reused between subprocess
+// invocations. Without sharing, each call compiles haft from scratch
+// (~70s cold), and 3+ calls exceed the default 120s test timeout.
+var goldenE2ECacheOnce struct {
+	dir string
+}
+
+func goldenE2ESharedCache(t *testing.T) string {
+	t.Helper()
+	if goldenE2ECacheOnce.dir == "" {
+		goldenE2ECacheOnce.dir = t.TempDir()
+	}
+	return goldenE2ECacheOnce.dir
+}
+
 func runGoldenE2EHaftCLI(t *testing.T, sourceRoot string, root string, args ...string) []byte {
 	t.Helper()
 
 	commandArgs := append([]string{"run", "./cmd/haft"}, args...)
 	cmd := exec.Command("go", commandArgs...)
 	cmd.Dir = sourceRoot
-	cacheRoot := t.TempDir()
+	cacheRoot := goldenE2ESharedCache(t)
 	cmd.Env = append(
 		os.Environ(),
 		"HAFT_PROJECT_ROOT="+root,

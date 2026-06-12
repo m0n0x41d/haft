@@ -689,6 +689,11 @@ type DecisionClaim struct {
 	// (supported→1 / refuted→0) it forms a Forecast for decomposed-Brier
 	// calibration (dec-20260603-c3c7fa88). Additive: nil means no forecast.
 	Probability *float64 `json:"probability,omitempty"`
+	// Command is the optional machine-checkable form of Observable: an
+	// allowlist-class command (go test/build/vet, grep/rg) the maintenance
+	// loop may execute out-of-band (dec-20260611-overseer-maintenance-executor).
+	// Empty means the observable needs judgment. Additive.
+	Command string `json:"command,omitempty"`
 }
 
 // DecisionPrediction is a compatibility projection of a stored decision claim.
@@ -715,6 +720,12 @@ type EvidenceItem struct {
 	ClaimScope         []string                   `json:"claim_scope,omitempty"`
 	ValidUntil         string                     `json:"valid_until,omitempty"`
 	CausalSupportBasis CausalEvidenceSupportBasis `json:"causal_support_basis,omitempty"` // C.28 basis for causal-use claim support
+	// Provenance distinguishes who collected this evidence: "" (human/agent in
+	// session), "machine" (maintenance loop ran an allowlisted observable), or
+	// "llm-review" (overseer reviewer proposal). Machine evidence must always
+	// be distinguishable from human-reviewed evidence (invariant of
+	// dec-20260611-overseer-maintenance-executor). Additive.
+	Provenance string `json:"provenance,omitempty"`
 }
 
 // WriteWarning is returned when the operation succeeded but with non-fatal warnings.

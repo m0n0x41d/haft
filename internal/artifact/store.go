@@ -800,6 +800,10 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 	if err != nil {
 		return err
 	}
+	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return err
+	}
 
 	scopeJSON := "[]"
 	if scope := normalizeClaimScope(item.ClaimScope); len(scope) > 0 {
@@ -841,6 +845,10 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		columns = append(columns, "claim_refs")
 		args = append(args, claimRefsJSON)
 	}
+	if hasProvenance {
+		columns = append(columns, "provenance")
+		args = append(args, normalizeEvidenceProvenance(item.Provenance))
+	}
 
 	columns = append(columns, "valid_until", "created_at")
 	args = append(args, item.ValidUntil, time.Now().UTC().Format(time.RFC3339))
@@ -875,6 +883,10 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	if err != nil {
 		return nil, err
 	}
+	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return nil, err
+	}
 
 	columns := []string{
 		"id",
@@ -891,6 +903,9 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	if hasClaimRefs {
 		columns = append(columns, "claim_refs")
 	}
+	if hasProvenance {
+		columns = append(columns, "provenance")
+	}
 	columns = append(columns, "valid_until")
 
 	query := "SELECT " +
@@ -906,7 +921,7 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	var items []EvidenceItem
 	for rows.Next() {
 		var e EvidenceItem
-		var verdict, carrierRef, claimScope, claimRefs, validUntil sql.NullString
+		var verdict, carrierRef, claimScope, claimRefs, provenance, validUntil sql.NullString
 		dest := []any{
 			&e.ID,
 			&e.Type,
@@ -922,10 +937,14 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		if hasClaimRefs {
 			dest = append(dest, &claimRefs)
 		}
+		if hasProvenance {
+			dest = append(dest, &provenance)
+		}
 		dest = append(dest, &validUntil)
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
+		e.Provenance = normalizeEvidenceProvenance(provenance.String)
 		e.Verdict = canonicalStoredEvidenceVerdict(e.Type, verdict.String)
 		e.CarrierRef = carrierRef.String
 		e.FormalityLevel = normalizeFormalityLevel(e.FormalityLevel)

@@ -228,6 +228,19 @@ Decision/Contract, Rationale, Consequences. Created only via `/h-decide`.
 - `target` — what you're optimizing
 - `observation` — watch but don't optimize (Anti-Goodhart)
 
+**Value before proxy (FPF E.13):** A `target` dimension is a proxy — name the
+intended value it serves via `proxy_for` at characterize time. When a proxy
+improves, ask what got worse (protected qualities). Haft's own numbers
+(coverage %, R_eff, drift counts, green status) are orientation cues, not
+targets — "make status green" is Goodharting, not improvement.
+
+**Loop verdicts (FPF E.23):** Improvement loops close with exactly one of
+`stop` (further movement dominated — "good enough" is a legitimate terminal
+state), `continue`, `switch-method` (supersede), `open-new-frame` (reopen),
+`hold` (waive with revisit date). Narrowing — shrinking scope or suppressing
+signals to look better — is not a verdict; scope reduction requires an
+explicit dominance justification.
+
 **Transformer Mandate:** Systems cannot transform themselves. Humans decide;
 agents document. Autonomous architectural decisions = protocol violation.
 

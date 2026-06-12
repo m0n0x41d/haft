@@ -22,6 +22,16 @@ const (
 	ReviewerClaude  = "claude"
 )
 
+// Maintenance mutation modes (dec-20260611-overseer-maintenance-executor).
+// The mode decides WHETHER the loop may act; the mutation-ladder rung decides
+// HOW. Enforcement happens at the kernel mutation gate in the executor — the
+// reviewer spawn command and its tool list are carriers, never boundaries.
+const (
+	MaintenanceModeAuto    = "auto"    // act within rung conditions, ledger + undo
+	MaintenanceModePropose = "propose" // record a proposal, never mutate
+	MaintenanceModeOff     = "off"     // classification-only (pre-decision behavior)
+)
+
 type Config struct {
 	SchemaVersion        string `json:"schema_version" yaml:"schema_version"`
 	Enabled              bool   `json:"enabled" yaml:"enabled"`
@@ -33,6 +43,13 @@ type Config struct {
 	ReviewOnHook         bool   `json:"review_on_hook" yaml:"review_on_hook"`
 	ReviewTimeoutSeconds int    `json:"review_timeout_seconds" yaml:"review_timeout_seconds"`
 	AgentReminder        bool   `json:"agent_reminder" yaml:"agent_reminder"`
+	// MaintenanceRebaseline gates re-baselining decisions whose drift the
+	// conservative gate proves additive-only (rung 1). auto|propose|off.
+	MaintenanceRebaseline string `json:"maintenance_rebaseline" yaml:"maintenance_rebaseline"`
+	// MaintenanceRevalidateStale gates extending valid_until on stale decisions
+	// whose machine observables re-ran green in the same run (rung 2 evidence
+	// required — evidence-free extension is can-kicking and stays manual).
+	MaintenanceRevalidateStale string `json:"maintenance_revalidate_stale" yaml:"maintenance_revalidate_stale"`
 }
 
 func DefaultConfig() Config {
@@ -47,6 +64,23 @@ func DefaultConfig() Config {
 		ReviewOnHook:         false,
 		ReviewTimeoutSeconds: 180,
 		AgentReminder:        true,
+		// Default ALLOW (operator product stance, note-20260611-56e06705):
+		// the loop drains itself out of the box; propose/off remain available.
+		MaintenanceRebaseline:      MaintenanceModeAuto,
+		MaintenanceRevalidateStale: MaintenanceModeAuto,
+	}
+}
+
+// NormalizeMaintenanceMode maps any input to a valid mode; unknown or empty
+// values fall back to the default-allow stance.
+func NormalizeMaintenanceMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case MaintenanceModePropose:
+		return MaintenanceModePropose
+	case MaintenanceModeOff:
+		return MaintenanceModeOff
+	default:
+		return MaintenanceModeAuto
 	}
 }
 
@@ -161,6 +195,8 @@ func normalizeConfig(config Config) Config {
 	if config.ReviewTimeoutSeconds <= 0 {
 		config.ReviewTimeoutSeconds = defaults.ReviewTimeoutSeconds
 	}
+	config.MaintenanceRebaseline = NormalizeMaintenanceMode(config.MaintenanceRebaseline)
+	config.MaintenanceRevalidateStale = NormalizeMaintenanceMode(config.MaintenanceRevalidateStale)
 	return config
 }
 

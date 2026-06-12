@@ -32,9 +32,10 @@ func BuildMaintenanceRun(input MaintenanceInput) (MaintenanceRun, error) {
 	run = appendSummaryMaintenance(run, maintenanceSourceCoverage, input.CoverageGaps)
 	run.Signals = normalizeStatusSignals(run.Signals)
 	run.Suppressed = normalizeSuppressions(run.Suppressed)
+	run.Executed = normalizeExecutedActions(input.Executed)
 	run.Summary = maintenanceSummary(run, input)
 
-	if len(run.Signals) == 0 && len(run.Suppressed) == 0 {
+	if len(run.Signals) == 0 && len(run.Suppressed) == 0 && len(run.Executed) == 0 {
 		run.Verdict = "clean"
 	}
 
@@ -115,6 +116,23 @@ func maintenanceSummaryTitle(source string, finding FindingSummary) string {
 	}
 }
 
+func normalizeExecutedActions(actions []MaintenanceAction) []MaintenanceAction {
+	out := make([]MaintenanceAction, 0, len(actions))
+	for i, action := range actions {
+		action.Kind = strings.TrimSpace(action.Kind)
+		action.DecisionRef = strings.TrimSpace(action.DecisionRef)
+		action.Outcome = strings.TrimSpace(action.Outcome)
+		if action.Kind == "" || action.DecisionRef == "" {
+			continue
+		}
+		if action.ID == "" {
+			action.ID = fmt.Sprintf("act-%03d", i+1)
+		}
+		out = append(out, action)
+	}
+	return out
+}
+
 func maintenanceSummary(run MaintenanceRun, input MaintenanceInput) MaintenanceSummary {
 	summary := MaintenanceSummary{
 		SignalCount:      len(run.Signals),
@@ -122,6 +140,7 @@ func maintenanceSummary(run MaintenanceRun, input MaintenanceInput) MaintenanceS
 		StaleCount:       len(input.Stale),
 		SpecHealthCount:  len(input.SpecHealth),
 		CoverageGapCount: len(input.CoverageGaps),
+		ExecutedCount:    len(run.Executed),
 	}
 	for _, drift := range input.Drift {
 		switch strings.TrimSpace(drift.Action) {

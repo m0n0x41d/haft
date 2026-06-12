@@ -37,8 +37,9 @@ type ComparisonDimension struct {
 	Name         string `json:"name"`
 	ScaleType    string `json:"scale_type,omitempty"` // ordinal, ratio, nominal
 	Unit         string `json:"unit,omitempty"`
-	Polarity     string `json:"polarity,omitempty"` // higher_better, lower_better
-	Role         string `json:"role,omitempty"`     // constraint, target, observation (default: target)
+	Polarity     string `json:"polarity,omitempty"`  // higher_better, lower_better
+	Role         string `json:"role,omitempty"`      // constraint, target, observation (default: target)
+	ProxyFor     string `json:"proxy_for,omitempty"` // intended value this dimension proxies (FPF E.13 — value before proxy)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
 	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339 or YYYY-MM-DD)
 }
@@ -214,54 +215,52 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Characterization v%d (%s)\n\n",
 		charVersion, time.Now().UTC().Format("2006-01-02")))
-	// Check if any dimension has valid_until — only show column if used
+	// Optional columns appear only when at least one dimension uses them.
+	hasProxyFor := false
 	hasValidUntil := false
 	for _, d := range input.Dimensions {
-		if d.ValidUntil != "" {
-			hasValidUntil = true
-			break
-		}
+		hasProxyFor = hasProxyFor || d.ProxyFor != ""
+		hasValidUntil = hasValidUntil || d.ValidUntil != ""
 	}
 
-	if hasValidUntil {
-		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement | Valid Until |\n")
-		section.WriteString("|-----------|------|-------|------|----------|-------------|-------------|\n")
-	} else {
-		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement |\n")
-		section.WriteString("|-----------|------|-------|------|----------|-------------|\n")
+	orDash := func(v string) string {
+		if v == "" {
+			return "-"
+		}
+		return v
 	}
+
+	headers := []string{"Dimension", "Role", "Scale", "Unit", "Polarity", "Measurement"}
+	if hasProxyFor {
+		headers = append(headers, "Proxy For (value)")
+	}
+	if hasValidUntil {
+		headers = append(headers, "Valid Until")
+	}
+	separators := make([]string, len(headers))
+	for i := range separators {
+		separators[i] = strings.Repeat("-", len(headers[i]))
+	}
+	section.WriteString("| " + strings.Join(headers, " | ") + " |\n")
+	section.WriteString("|" + strings.Join(separators, "|") + "|\n")
+
 	for _, d := range input.Dimensions {
 		role := d.Role
 		if role == "" {
 			role = "target"
 		}
-		scale := d.ScaleType
-		if scale == "" {
-			scale = "-"
-		}
-		unit := d.Unit
-		if unit == "" {
-			unit = "-"
-		}
-		polarity := d.Polarity
-		if polarity == "" {
-			polarity = "-"
-		}
-		measure := d.HowToMeasure
-		if measure == "" {
-			measure = "-"
+		cells := []string{d.Name, role, orDash(d.ScaleType), orDash(d.Unit), orDash(d.Polarity), orDash(d.HowToMeasure)}
+		if hasProxyFor {
+			cells = append(cells, orDash(d.ProxyFor))
 		}
 		if hasValidUntil {
 			vu := d.ValidUntil
-			if vu == "" {
-				vu = "-"
-			} else if len(vu) > 10 {
+			if len(vu) > 10 {
 				vu = vu[:10]
 			}
-			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure, vu))
-		} else {
-			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure))
+			cells = append(cells, orDash(vu))
 		}
+		section.WriteString("| " + strings.Join(cells, " | ") + " |\n")
 	}
 
 	if input.ParityRules != "" && input.ParityPlan == nil {
@@ -292,6 +291,28 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 	}
 
 	return a, filePath, nil
+}
+
+// ValueBeforeProxyWarning surfaces target-role dimensions that do not name the
+// value they proxy (FPF E.13 — value before proxy). Soft warning, not a gate:
+// field honesty is curation's job; the kernel only refuses to let the omission
+// pass silently.
+func ValueBeforeProxyWarning(dims []ComparisonDimension) string {
+	missing := make([]string, 0, len(dims))
+	for _, d := range dims {
+		role := d.Role
+		if role == "" {
+			role = "target"
+		}
+		if role == "target" && d.ProxyFor == "" {
+			missing = append(missing, d.Name)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("⚠ Value before proxy (FPF E.13): target dimension(s) %s do not name the value they proxy. A target under optimization pressure is a proxy — set proxy_for (the intended value this number serves) or re-tag as observation.",
+		strings.Join(missing, ", "))
 }
 
 func renderParityPlanSection(plan *ParityPlan) string {

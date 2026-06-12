@@ -272,8 +272,8 @@ Use when: SolutionPortfolio exists with 2+ variants, operator wants to evaluate.
      action="characterize",
      problem_ref="<prob-...>",
      dimensions=[
-       {"name": "latency", "scale_type": "ratio", "unit": "ms", "polarity": "lower_better", "role": "target"},
-       {"name": "ops_complexity", "scale_type": "ordinal", "unit": "1-5", "polarity": "lower_better", "role": "target"},
+       {"name": "latency", "scale_type": "ratio", "unit": "ms", "polarity": "lower_better", "role": "target", "proxy_for": "checkout stays usable under load"},
+       {"name": "ops_complexity", "scale_type": "ordinal", "unit": "1-5", "polarity": "lower_better", "role": "target", "proxy_for": "small team can operate it without a pager rota"},
        {"name": "compliance_OK", "scale_type": "binary", "polarity": "true_better", "role": "constraint"},
        ...
      ],
@@ -345,6 +345,11 @@ Use when: a recorded DecisionRecord needs post-implementation reality check.
    ```
    mcp__haft__haft_refresh(action="<waive|supersede|deprecate>", artifact_ref="<dec-...>")
    ```
+6. Close with a loop verdict (FPF E.23): `stop` (further movement dominated —
+   "good enough" is a legitimate terminal state), `continue`, `switch-method`
+   (supersede), `open-new-frame` (reopen), or `hold` (waive with revisit date).
+   Narrowing — shrinking scope or suppressing signals to look better — is NOT
+   a verdict; scope reduction requires an explicit dominance justification.
 
 For full verify loop (drift detection across code/affected_files, FSRS-style intervals) use `/h-verify` directly.
 

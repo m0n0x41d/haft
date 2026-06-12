@@ -256,7 +256,7 @@ func FormatCoverageSummary(report *CoverageReport) string {
 	if report.PartialCount > 0 {
 		header += fmt.Sprintf(", %d degraded", report.PartialCount)
 	}
-	header += ")\n\n"
+	header += ") — orientation cue, not a target\n\n"
 	sb.WriteString(header)
 
 	const topModulesPerTier = 5

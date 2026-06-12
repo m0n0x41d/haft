@@ -306,6 +306,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 									"unit":           map[string]string{"type": "string", "description": "Measurement unit"},
 									"polarity":       map[string]string{"type": "string", "description": "higher_better or lower_better"},
 									"role":           map[string]string{"type": "string", "description": "Indicator role: constraint (hard limit), target (optimize), observation (watch, don't optimize). Default: target"},
+									"proxy_for":      map[string]string{"type": "string", "description": "Intended value this dimension proxies (FPF E.13 value-before-proxy). Expected for target-role dimensions; kernel warns when absent"},
 									"how_to_measure": map[string]string{"type": "string", "description": "How this dimension is measured"},
 									"valid_until":    map[string]string{"type": "string", "description": "When this measurement expires (RFC3339). Compare warns on expired dimensions."},
 								},
@@ -547,6 +548,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"verify_after":  map[string]string{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims"},
 								"realizability": map[string]string{"type": "string", "description": "C.28 verdict: realizable|nonrealizable|unknown; nonrealizable caps R_eff at 0.5 per CC-B3.9"},
 								"probability":   map[string]string{"type": "number", "description": "Optional elicited p(this claim holds) in [0,1] — a noisy forecast sampled at decide time. Verified outcomes feed decomposed-Brier calibration. Sample 2-3 independent estimates and pass their consensus; never a single authoritative number."},
+								"command":       map[string]string{"type": "string", "description": "Optional machine-checkable form of observable: an allowlist-class command (go test/build/vet, grep, rg) the maintenance loop may run out-of-band. Omit when the observable needs judgment."},
 							},
 							"required": []string{"claim", "observable", "threshold"},
 						},
@@ -662,8 +664,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
-						"description": "scan=find stale/degraded, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
+						"enum":        []interface{}{"scan", "plan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
+						"description": "scan=find stale/degraded, plan=compile typed maintenance work order (rung-classified micro-tasks), waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",

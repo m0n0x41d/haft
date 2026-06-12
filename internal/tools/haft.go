@@ -75,6 +75,7 @@ Actions:
 							"unit":           map[string]any{"type": "string"},
 							"polarity":       map[string]any{"type": "string"},
 							"role":           map[string]any{"type": "string"},
+							"proxy_for":      map[string]any{"type": "string", "description": "Intended value this dimension proxies (FPF E.13). Expected for target-role dimensions"},
 							"how_to_measure": map[string]any{"type": "string"},
 							"valid_until":    map[string]any{"type": "string", "description": "Dimension freshness deadline (RFC3339 or YYYY-MM-DD)"},
 						},
@@ -1080,6 +1081,7 @@ When you present the rationale (rejected alternatives, counterargument, weakest 
 							"verify_after":  map[string]any{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims that need time before evidence is available"},
 							"realizability": map[string]any{"type": "string", "enum": []string{"realizable", "nonrealizable", "unknown"}, "description": "C.28 CounterfactualSamplingRealizabilityProfile verdict; nonrealizable caps R_eff at 0.5 per CC-B3.9"},
 							"probability":   map[string]any{"type": "number", "description": "Optional elicited p(this claim holds) in [0,1] — a noisy forecast sampled at decide time, fed into decomposed-Brier calibration once verified. Sample 2-3 independent estimates and pass their consensus; never one authoritative number."},
+							"command":       map[string]any{"type": "string", "description": "Optional machine-checkable form of observable: allowlist-class command (go test/build/vet, grep, rg) the maintenance loop may run out-of-band"},
 						},
 						"required": []string{"claim", "observable", "threshold"},
 					},
@@ -1827,7 +1829,7 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":           map[string]any{"type": "string", "enum": []string{"scan", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
+				"action":           map[string]any{"type": "string", "enum": []string{"scan", "plan", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
 				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to act on (waive/reopen/supersede/deprecate)"},
 				"task_context":     map[string]any{"type": "string", "description": "Optional filename slug context for refresh reports and reopened problems"},
 				"reason":           map[string]any{"type": "string", "description": "Why this action is being taken"},

@@ -22,6 +22,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/logger"
 )
 
 var (
@@ -125,6 +126,13 @@ var overseerMaintainCmd = &cobra.Command{
 	RunE:  runOverseerMaintain,
 }
 
+var overseerUndoCmd = &cobra.Command{
+	Use:   "undo <maintenance-id> <action-id>",
+	Short: "Restore the prior baseline recorded by an autonomous maintenance action",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runOverseerUndo,
+}
+
 var overseerDaemonCmd = &cobra.Command{
 	Use:   "daemon",
 	Short: "Manage the overseer background review daemon",
@@ -217,6 +225,7 @@ func init() {
 	overseerCmd.AddCommand(overseerShowCmd)
 	overseerCmd.AddCommand(overseerRemindCmd)
 	overseerCmd.AddCommand(overseerMaintainCmd)
+	overseerCmd.AddCommand(overseerUndoCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonStartCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonRunCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonStatusCmd)
@@ -1066,6 +1075,18 @@ func buildAndStoreOverseerMaintenance(
 	store *artifact.Store,
 	projectRoot string,
 ) (overseer.MaintenanceRun, error) {
+	config, err := overseer.LoadConfig(projectRoot)
+	if err != nil {
+		logger.Warn().Err(err).Msg("maintenance: config load failed — execute-phase disabled for this run")
+		config = overseer.DefaultConfig()
+		config.MaintenanceRebaseline = overseer.MaintenanceModeOff
+		config.MaintenanceRevalidateStale = overseer.MaintenanceModeOff
+	}
+
+	// Execute-phase runs FIRST so the classification below reflects the world
+	// after deterministic-gate rebaselines and machine evidence, not before.
+	executed := executeMaintenancePlan(ctx, store, projectRoot, config)
+
 	report, err := buildCheckReport(ctx, store, projectRoot)
 	if err != nil {
 		return overseer.MaintenanceRun{}, fmt.Errorf("build governance maintenance report: %w", err)
@@ -1077,6 +1098,7 @@ func buildAndStoreOverseerMaintenance(
 		Drift:        mapMaintenanceDrift(report.Drifted),
 		SpecHealth:   mapMaintenanceSpecHealth(report.SpecHealth),
 		CoverageGaps: mapMaintenanceCoverage(report.CoverageGaps),
+		Executed:     executed,
 	})
 	if err != nil {
 		return overseer.MaintenanceRun{}, err
@@ -1085,6 +1107,45 @@ func buildAndStoreOverseerMaintenance(
 		return overseer.MaintenanceRun{}, err
 	}
 	return run, nil
+}
+
+// runOverseerUndo restores the prior baseline recorded in a maintenance
+// ledger entry — the one-step undo every autonomous mutation must carry.
+func runOverseerUndo(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	projectRoot, store, closeStore, err := openOverseerProjectStore()
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+
+	maintenanceID, actionID := args[0], args[1]
+	run, err := overseer.LoadMaintenanceRun(projectRoot, maintenanceID)
+	if err != nil {
+		return fmt.Errorf("load maintenance run %s: %w", maintenanceID, err)
+	}
+
+	for _, action := range run.Executed {
+		if action.ID != actionID {
+			continue
+		}
+		if action.PriorState == "" {
+			return fmt.Errorf("action %s has no prior state recorded (kind=%s, outcome=%s) — nothing to undo", actionID, action.Kind, action.Outcome)
+		}
+		var prior artifact.BaselineSnapshot
+		if err := json.Unmarshal([]byte(action.PriorState), &prior); err != nil {
+			return fmt.Errorf("decode prior state: %w", err)
+		}
+		if err := artifact.RestoreBaselineSnapshot(ctx, store, action.DecisionRef, prior); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Restored prior baseline for %s (%d file(s), %d symbol(s), %d manifest(s)) from %s/%s.\n",
+			action.DecisionRef, len(prior.Files), len(prior.Symbols), len(prior.Manifests), maintenanceID, actionID); err != nil {
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("action %s not found in maintenance run %s", actionID, maintenanceID)
 }
 
 func openOverseerProjectStore() (string, *artifact.Store, func(), error) {

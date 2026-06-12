@@ -44,6 +44,7 @@ mcp__haft__haft_problem(
     {
       "name": "latency_p95",
       "role": "target",         // constraint | target | observation
+      "proxy_for": "<intended value this number serves, e.g. 'checkout stays usable under load'>",
       "polarity": "lower_better",
       "scale_type": "ratio",
       "unit": "ms",
@@ -69,6 +70,11 @@ mcp__haft__haft_problem(
 ```
 
 Per FPF CHR-01: 1-3 targets max, plus constraints (hard limits) and observations (watch but do not optimize — Anti-Goodhart).
+
+Per FPF E.13 (value before proxy): every `target` dimension is a proxy under
+optimization pressure — name the intended value it serves in `proxy_for`. The
+kernel warns on target dimensions without it. If you cannot name the value a
+number serves, the number is not a target; re-tag it as observation.
 
 ## Step 3 — Declare parity_plan (BEFORE scoring per FPF CMP-01)
 

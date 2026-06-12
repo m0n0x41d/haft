@@ -442,4 +442,11 @@ var kernelMigrations = []Migration{
 			)`,
 		},
 	},
+	{
+		Version:     30,
+		Description: "Evidence provenance: machine-collected evidence must stay distinguishable from human-reviewed (dec-20260611-overseer-maintenance-executor)",
+		Statements: []string{
+			"ALTER TABLE evidence_items ADD COLUMN provenance TEXT DEFAULT ''",
+		},
+	},
 }

@@ -272,6 +272,9 @@ type StatusSummary struct {
 	LatestPacketID      string         `json:"latest_packet_id,omitempty"`
 	LatestMaintenanceID string         `json:"latest_maintenance_id,omitempty"`
 	SuppressedCount     int            `json:"suppressed_count"`
+	// ExecutedActions surfaces the autonomous maintenance ledger of the latest
+	// run — session-start disclosure: autonomy is visible, never silent.
+	ExecutedActions []MaintenanceAction `json:"executed_actions,omitempty"`
 }
 
 type MaintenanceInput struct {
@@ -280,6 +283,22 @@ type MaintenanceInput struct {
 	Drift        []MaintenanceDriftFinding
 	SpecHealth   []FindingSummary
 	CoverageGaps []FindingSummary
+	Executed     []MaintenanceAction
+}
+
+// MaintenanceAction is one ledger entry of the maintenance execute-phase
+// (dec-20260611-overseer-maintenance-executor). Every autonomous act carries
+// its actor context (the maintenance run), prior state, and a one-step undo.
+type MaintenanceAction struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"` // auto_rebaseline | observable_run | revalidate_stale
+	DecisionRef string `json:"decision_ref"`
+	Title       string `json:"title,omitempty"`
+	Rung        int    `json:"rung"`
+	Detail      string `json:"detail,omitempty"`      // command run / what was extended / gate reason
+	Outcome     string `json:"outcome"`               // applied | proposed | evidence_attached | failed
+	PriorState  string `json:"prior_state,omitempty"` // JSON snapshot for undo (baseline files+symbols)
+	Undo        string `json:"undo,omitempty"`        // operator command restoring prior state
 }
 
 type MaintenanceDriftFinding struct {
@@ -302,6 +321,7 @@ type MaintenanceRun struct {
 	Summary       MaintenanceSummary       `json:"summary"`
 	Signals       []StatusSignal           `json:"signals"`
 	Suppressed    []MaintenanceSuppression `json:"suppressed"`
+	Executed      []MaintenanceAction      `json:"executed,omitempty"`
 }
 
 type MaintenanceSummary struct {
@@ -313,6 +333,7 @@ type MaintenanceSummary struct {
 	StaleCount           int `json:"stale_count"`
 	SpecHealthCount      int `json:"spec_health_count"`
 	CoverageGapCount     int `json:"coverage_gap_count"`
+	ExecutedCount        int `json:"executed_count,omitempty"`
 }
 
 type MaintenanceSuppression struct {

@@ -76,6 +76,16 @@ func TestRunSpecNextJSONReturnsLifecycleProjection(t *testing.T) {
 	}
 }
 
+func TestBuildSpecLifecycleProjectionPropagatesBaselineStoreError(t *testing.T) {
+	root, _ := newBaselineTestProject(t)
+	makeBaselineDBUnopenable(t)
+
+	_, err := buildSpecLifecycleProjection(root)
+	if err == nil {
+		t.Fatal("buildSpecLifecycleProjection ignored baseline store error")
+	}
+}
+
 func stubSpecStatusJSON(t *testing.T, value bool) func() {
 	t.Helper()
 	prev := specStatusJSON

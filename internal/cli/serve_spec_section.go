@@ -64,8 +64,11 @@ func handleSpecSectionNextStep(projectRoot string) (string, error) {
 		return "", err
 	}
 
-	store, projectID, closeFn, _ := projectBaseline(projectRoot)
+	store, projectID, closeFn, err := projectBaseline(projectRoot)
 	defer closeFn()
+	if err != nil {
+		return "", err
+	}
 
 	intent := specflow.NextStep(specflow.DeriveStateWithBaselines(specSet, store, projectID))
 
@@ -102,7 +105,7 @@ func handleSpecSectionApprove(projectRoot string, args map[string]any) (string, 
 func handleSpecSectionRebaseline(projectRoot string, args map[string]any) (string, error) {
 	return runBaselineMutation(projectRoot, args, baselineMutation{
 		actionLabel: "rebaseline",
-		require:     requireSectionAndReason,
+		require:     requireRebaseline,
 		apply:       applyRebaseline,
 	})
 }
@@ -110,7 +113,7 @@ func handleSpecSectionRebaseline(projectRoot string, args map[string]any) (strin
 func handleSpecSectionReopen(projectRoot string, args map[string]any) (string, error) {
 	return runBaselineMutation(projectRoot, args, baselineMutation{
 		actionLabel: "reopen",
-		require:     requireSectionID,
+		require:     requireReopen,
 		apply:       applyReopen,
 	})
 }
@@ -179,12 +182,20 @@ func requireApprove(args map[string]any) error {
 	return requireSectionID(args)
 }
 
-func requireSectionAndReason(args map[string]any) error {
+func requireRebaseline(args map[string]any) error {
+	return requireSectionReason(args, "rebaseline", "the baseline change")
+}
+
+func requireReopen(args map[string]any) error {
+	return requireSectionReason(args, "reopen", "why the baseline is reopened")
+}
+
+func requireSectionReason(args map[string]any, action string, auditSubject string) error {
 	if err := requireSectionID(args); err != nil {
 		return err
 	}
 	if strings.TrimSpace(stringArg(args, "reason")) == "" {
-		return fmt.Errorf("reason is required for rebaseline so the audit trail explains the baseline change")
+		return fmt.Errorf("reason is required for %s so the audit trail explains %s", action, auditSubject)
 	}
 	return nil
 }

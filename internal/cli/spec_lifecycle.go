@@ -103,8 +103,11 @@ func buildSpecLifecycleProjection(projectRoot string) (specflow.SpecLifecyclePro
 		return specflow.SpecLifecycleProjection{}, err
 	}
 
-	store, projectID, closeFn, _ := projectBaseline(projectRoot)
+	store, projectID, closeFn, err := projectBaseline(projectRoot)
 	defer closeFn()
+	if err != nil {
+		return specflow.SpecLifecycleProjection{}, err
+	}
 
 	state := specflow.DeriveStateWithBaselines(specSet, store, projectID)
 	return specflow.ProjectLifecycle(state), nil

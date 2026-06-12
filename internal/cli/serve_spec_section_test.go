@@ -55,6 +55,18 @@ func newBaselineTestProject(t *testing.T) (string, string) {
 	return root, haftDir
 }
 
+func makeBaselineDBUnopenable(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(os.Getenv("HOME"), ".haft", "projects", baselineTestProjectID, "haft.db")
+	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove baseline db: %v", err)
+	}
+	if err := os.MkdirAll(dbPath, 0o755); err != nil {
+		t.Fatalf("replace baseline db with directory: %v", err)
+	}
+}
+
 func writeBaselineTestSection(t *testing.T, root, title string) {
 	t.Helper()
 
@@ -136,6 +148,18 @@ func TestHandleHaftSpecSection_NextStepReturnsFirstPhaseOnEmptyProject(t *testin
 	}
 	if intent.Phase != specflow.PhaseTargetEnvironmentDraft {
 		t.Fatalf("intent.Phase = %q, want %q", intent.Phase, specflow.PhaseTargetEnvironmentDraft)
+	}
+}
+
+func TestHandleHaftSpecSection_NextStepPropagatesBaselineStoreError(t *testing.T) {
+	_, haftDir := newBaselineTestProject(t)
+	makeBaselineDBUnopenable(t)
+
+	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action": "next_step",
+	})
+	if err == nil {
+		t.Fatal("next_step ignored baseline store error")
 	}
 }
 
@@ -303,6 +327,22 @@ func TestHandleHaftSpecSection_RebaselineRequiresReason(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("rebaseline should require reason")
+	}
+}
+
+func TestHandleHaftSpecSection_ReopenRequiresReason(t *testing.T) {
+	root, haftDir := newBaselineTestProject(t)
+	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "reopen",
+		"project_root": root,
+		"section_id":   baselineTestSectionID,
+		"reason":       "   ",
+	})
+	if err == nil {
+		t.Fatal("reopen accepted empty reason")
+	}
+	if !strings.Contains(err.Error(), "reason is required for reopen") {
+		t.Fatalf("error = %v, want reopen reason requirement", err)
 	}
 }
 

@@ -31,8 +31,11 @@ func runSpecOnboard(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	store, projectID, closeFn, _ := projectBaseline(projectRoot)
+	store, projectID, closeFn, err := projectBaseline(projectRoot)
 	defer closeFn()
+	if err != nil {
+		return err
+	}
 
 	intent := specflow.NextStep(specflow.DeriveStateWithBaselines(specSet, store, projectID))
 

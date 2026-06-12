@@ -57,12 +57,14 @@ test("findHaftProjectRoot walks up to the nearest .haft", () => {
   assert.equal(findHaftProjectRoot(root), undefined);
 });
 
-test("Pi tool schemas mirror maintenance plan and prediction command fields", () => {
+test("Pi tool schemas mirror maintenance, prediction, and problem dimension fields", () => {
   const refresh = toolSpec("haft_refresh");
   const decision = toolSpec("haft_decision");
+  const problem = toolSpec("haft_problem");
 
   assert.match(JSON.stringify(refresh.parameters), /"plan"/);
   assert.match(JSON.stringify(decision.parameters), /"command"/);
+  assert.match(JSON.stringify(problem.parameters), /"proxy_for"/);
 });
 
 function toolSpec(name: string) {

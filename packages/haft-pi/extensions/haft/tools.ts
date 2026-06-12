@@ -59,6 +59,7 @@ const haftProblemParameters = Type.Object({
     name: Type.String(),
     how_to_measure: OptStr(),
     polarity: OptStr(),
+    proxy_for: OptStr(),
     role: OptStr(),
     scale_type: OptStr(),
     unit: OptStr(),

@@ -99,7 +99,7 @@ func CollectGitContextWithRunner(
 }
 
 func diffTree(ctx context.Context, runner GitRunner, sha string, mode string) (string, error) {
-	output, err := runner.RunGit(ctx, "diff-tree", "--root", "--no-commit-id", "-r", mode, sha)
+	output, err := runner.RunGit(ctx, "diff-tree", "--root", "--no-commit-id", "-r", "-m", mode, sha)
 	if err != nil {
 		return "", fmt.Errorf("read commit diff %s: %w", mode, err)
 	}

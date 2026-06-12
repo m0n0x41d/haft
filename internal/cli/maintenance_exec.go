@@ -47,6 +47,10 @@ func executeMaintenancePlan(
 	projectRoot string,
 	cfg overseer.Config,
 ) []overseer.MaintenanceAction {
+	if !cfg.Enabled {
+		return nil
+	}
+
 	rebaselineMode := overseer.NormalizeMaintenanceMode(cfg.MaintenanceRebaseline)
 	revalidateMode := overseer.NormalizeMaintenanceMode(cfg.MaintenanceRevalidateStale)
 	if rebaselineMode == overseer.MaintenanceModeOff && revalidateMode == overseer.MaintenanceModeOff {

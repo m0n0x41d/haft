@@ -53,6 +53,33 @@ func TestInstallPostCommitHookSkipsNonGitProject(t *testing.T) {
 	}
 }
 
+func TestInstallPostCommitHookResolvesGitFileHookPath(t *testing.T) {
+	root := t.TempDir()
+	gitDir := filepath.Join(root, "actual-git-dir")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("create git dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: actual-git-dir\n"), 0o644); err != nil {
+		t.Fatalf("write gitfile: %v", err)
+	}
+
+	result, err := InstallPostCommitHook(root, "haft")
+	if err != nil {
+		t.Fatalf("InstallPostCommitHook returned error: %v", err)
+	}
+
+	hookPath := filepath.Join(gitDir, "hooks", "post-commit")
+	if result.HookPath != hookPath {
+		t.Fatalf("hook path = %q, want %q", result.HookPath, hookPath)
+	}
+	if !result.Installed || result.Skipped {
+		t.Fatalf("install result = %+v, want installed", result)
+	}
+	if content := readText(t, hookPath); !strings.Contains(content, hookStartMarker) {
+		t.Fatalf("hook missing start marker:\n%s", content)
+	}
+}
+
 func readText(t *testing.T, path string) string {
 	t.Helper()
 

@@ -594,6 +594,59 @@ func TestRunOverseerDaemonLoopProcessesQueuedReviewJob(t *testing.T) {
 	}
 }
 
+func TestProcessOverseerReviewJobPreservesCanceledJobForNextDaemon(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	setupOverseerGitRepo(t, fixture.root)
+
+	initPath := filepath.Join(fixture.root, "internal", "cli", "init.go")
+	if err := os.MkdirAll(filepath.Dir(initPath), 0o755); err != nil {
+		t.Fatalf("create init dir: %v", err)
+	}
+	writeFile(t, initPath, "package cli\n\nfunc initSurface() {}\n")
+	git(t, fixture.root, "add", "internal/cli/init.go")
+	git(t, fixture.root, "commit", "-m", "touch init surface")
+
+	config := overseer.DefaultConfig()
+	config.LLMReview = "on"
+	config.ReviewOnHook = true
+	config.ReviewerAgent = "command"
+	config.ReviewerCommand = "sleep 5"
+	config.ReviewTimeoutSeconds = 30
+	if err := overseer.SaveConfig(fixture.root, config); err != nil {
+		t.Fatalf("SaveConfig returned error: %v", err)
+	}
+
+	stored, _, err := prepareOverseerHookRun(context.Background(), fixture.root, fixture.store, "HEAD")
+	if err != nil {
+		t.Fatalf("prepareOverseerHookRun returned error: %v", err)
+	}
+	job, err := overseer.EnqueueReviewJob(fixture.root, stored, "2026-06-10T00:00:00Z")
+	if err != nil {
+		t.Fatalf("EnqueueReviewJob returned error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := processOverseerReviewJob(ctx, fixture.root, config, job, nil); err != nil {
+		t.Fatalf("processOverseerReviewJob returned error: %v", err)
+	}
+
+	job, err = overseer.LoadReviewJob(fixture.root, job.JobID)
+	if err != nil {
+		t.Fatalf("LoadReviewJob returned error: %v", err)
+	}
+	if job.Status != overseer.JobStatusRunning {
+		t.Fatalf("job status = %q, want running for restart requeue", job.Status)
+	}
+	if job.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", job.Attempts)
+	}
+	if !strings.Contains(job.LastError, "daemon cancellation") {
+		t.Fatalf("last_error = %q, want cancellation preservation", job.LastError)
+	}
+}
+
 func TestRunOverseerIngestAndDispositionDriveStatusSignals(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	packet, err := overseer.BuildPacket(overseer.BuildInput{

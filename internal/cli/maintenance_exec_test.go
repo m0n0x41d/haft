@@ -143,6 +143,59 @@ func TestMaintenanceExecutePhase_GateModesAndUndo(t *testing.T) {
 	})
 }
 
+func TestMaintenanceExecutePhaseDisabledConfigSkipsMutations(t *testing.T) {
+	restore := overrideGoldenE2EFlags(t)
+	defer restore()
+
+	root := newGoldenE2ERepo(t)
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+	t.Setenv("HOME", filepath.Join(root, ".test-home"))
+
+	initLocal = true
+	if err := runInit(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	ctx := context.Background()
+	decisionID := createMaintExecDecision(t, root)
+	writeGoldenE2EFile(t, filepath.Join(root, "internal/app/extra.go"),
+		"package app\n\nfunc Extra() string {\n\treturn \"added\"\n}\n")
+
+	saveMaintenanceModes(t, root, overseer.MaintenanceModeAuto, overseer.MaintenanceModeAuto)
+	cfg, err := overseer.LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig returned error: %v", err)
+	}
+	cfg.Enabled = false
+	if err := overseer.SaveConfig(root, cfg); err != nil {
+		t.Fatalf("SaveConfig returned error: %v", err)
+	}
+
+	actions := withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		return executeMaintenancePlan(ctx, store, root, cfg)
+	})
+	if len(actions) != 0 {
+		t.Fatalf("enabled=false produced %d action(s), want 0", len(actions))
+	}
+
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		if !driftPresent(t, ctx, store, root, decisionID) {
+			t.Fatal("enabled=false must leave drift unmodified")
+		}
+		items, err := store.GetEvidenceItems(ctx, decisionID)
+		if err != nil {
+			t.Fatalf("get evidence: %v", err)
+		}
+		for _, item := range items {
+			if item.Provenance == artifact.ProvenanceMachine {
+				t.Fatalf("enabled=false must not attach machine evidence: %+v", item)
+			}
+		}
+		return nil
+	})
+}
+
 // TestMaintenanceExecutePhase_RevalidateStale proves the evidence-backed
 // revalidation gate: a calendar-stale decision whose machine observable
 // re-runs green gets valid_until extended in the same run — and only then.

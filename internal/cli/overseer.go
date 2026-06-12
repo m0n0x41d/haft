@@ -949,6 +949,9 @@ func processOverseerReviewJob(
 	result, reviewErr := overseer.RunConfiguredReviewer(ctx, projectRoot, config, stored)
 	if reviewErr != nil {
 		appendOverseerReviewLog(job.LogPath, "reviewer error: "+reviewErr.Error()+"\n")
+		if reviewContextCanceled(ctx, reviewErr) {
+			return preserveOverseerReviewJobForRestart(projectRoot, job, reviewErr)
+		}
 		return finishOverseerReviewJobFailure(projectRoot, config, stored, job, reviewErr)
 	}
 
@@ -982,6 +985,26 @@ func processOverseerReviewJob(
 		_, _ = fmt.Fprintf(output, "haft overseer daemon: reviewed %s (%s)\n", job.ReviewRunID, stored.Run.Verdict)
 	}
 	return nil
+}
+
+func reviewContextCanceled(ctx context.Context, err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return ctx.Err() != nil
+}
+
+func preserveOverseerReviewJobForRestart(
+	projectRoot string,
+	job overseer.ReviewJob,
+	err error,
+) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	job.Status = overseer.JobStatusRunning
+	job.LastError = "daemon cancellation while reviewer was running: " + err.Error()
+	job.UpdatedAt = now
+	appendOverseerReviewLog(job.LogPath, fmt.Sprintf("preserved %s for daemon restart error=%s\n", job.JobID, err.Error()))
+	return overseer.StoreReviewJob(projectRoot, job)
 }
 
 func finishOverseerReviewJobFailure(

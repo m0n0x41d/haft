@@ -21,16 +21,15 @@ type HookInstallResult struct {
 }
 
 func InstallPostCommitHook(projectRoot string, command string) (HookInstallResult, error) {
-	hookPath := filepath.Join(projectRoot, ".git", "hooks", "post-commit")
+	hookPath, ok, err := resolvePostCommitHookPath(projectRoot)
 	result := HookInstallResult{HookPath: hookPath}
-
-	if _, err := os.Stat(filepath.Join(projectRoot, ".git")); err != nil {
-		if os.IsNotExist(err) {
-			result.Skipped = true
-			result.Reason = "no .git directory"
-			return result, nil
-		}
-		return result, fmt.Errorf("inspect .git directory: %w", err)
+	if err != nil {
+		return result, err
+	}
+	if !ok {
+		result.Skipped = true
+		result.Reason = "no .git directory"
+		return result, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
@@ -57,6 +56,49 @@ func InstallPostCommitHook(projectRoot string, command string) (HookInstallResul
 	result.Installed = true
 	result.Updated = existing != ""
 	return result, nil
+}
+
+func resolvePostCommitHookPath(projectRoot string) (string, bool, error) {
+	gitPath := filepath.Join(projectRoot, ".git")
+	defaultHookPath := filepath.Join(gitPath, "hooks", "post-commit")
+
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return defaultHookPath, false, nil
+		}
+		return defaultHookPath, false, fmt.Errorf("inspect .git: %w", err)
+	}
+	if info.IsDir() {
+		return defaultHookPath, true, nil
+	}
+
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return defaultHookPath, false, fmt.Errorf("read .git file: %w", err)
+	}
+	gitDir, ok := parseGitDirFile(string(data))
+	if !ok {
+		return defaultHookPath, false, fmt.Errorf("parse .git file: missing gitdir")
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(projectRoot, gitDir)
+	}
+	return filepath.Join(filepath.Clean(gitDir), "hooks", "post-commit"), true, nil
+}
+
+func parseGitDirFile(content string) (string, bool) {
+	line := strings.TrimSpace(content)
+	prefix := "gitdir:"
+	if !strings.HasPrefix(strings.ToLower(line), prefix) {
+		return "", false
+	}
+
+	gitDir := strings.TrimSpace(line[len(prefix):])
+	if gitDir == "" {
+		return "", false
+	}
+	return filepath.Clean(gitDir), true
 }
 
 func RenderPostCommitHookBlock(command string) string {

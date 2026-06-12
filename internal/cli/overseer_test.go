@@ -15,6 +15,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/overseer"
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 func TestBuildOverseerPacket_IncludesChangedGovernedFile(t *testing.T) {
@@ -75,6 +76,94 @@ func TestBuildOverseerPacket_IncludesChangedGovernedFile(t *testing.T) {
 	}
 	if packet.ReviewRequest.Authority != "advisory_only" {
 		t.Fatalf("authority = %q, want advisory_only", packet.ReviewRequest.Authority)
+	}
+}
+
+func TestBuildOverseerPacket_IncludesRefreshDueGovernedDecision(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	setupOverseerGitRepo(t, fixture.root)
+
+	writeFile(t, filepath.Join(fixture.root, "governed.go"), "package main\n\nfunc governed() string { return \"base\" }\n")
+	git(t, fixture.root, "add", "governed.go")
+	git(t, fixture.root, "commit", "-m", "base")
+
+	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
+		SelectedTitle:   "Refresh due governed file",
+		WhySelected:     "The overseer packet must still scope refresh_due decisions.",
+		SelectionPolicy: "Prefer the decision governing the changed file.",
+		CounterArgument: "Refresh-due decisions still need review visibility.",
+		WeakestLink:     "The packet must not treat refresh_due as unrelated debt.",
+		Invariants:      []string{"governed() behavior remains explicit."},
+		AffectedFiles:   []string{"governed.go"},
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Ignore refresh_due",
+			Reason:  "Would suppress the debt that most needs review.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"The packet no longer includes refresh_due governed decisions."},
+		},
+	})
+	if _, _, err := artifact.ReopenDecision(
+		context.Background(),
+		fixture.store,
+		fixture.haftDir,
+		decision.Meta.ID,
+		"Refresh needed before accepting changed governed code.",
+	); err != nil {
+		t.Fatalf("reopen decision: %v", err)
+	}
+
+	writeFile(t, filepath.Join(fixture.root, "governed.go"), "package main\n\nfunc governed() string { return \"changed\" }\n")
+	git(t, fixture.root, "add", "governed.go")
+	git(t, fixture.root, "commit", "-m", "change refresh due governed file")
+
+	packet, err := buildOverseerPacket(context.Background(), fixture.store, fixture.root, "HEAD", "test")
+	if err != nil {
+		t.Fatalf("buildOverseerPacket returned error: %v", err)
+	}
+
+	if !packetHasDecision(packet, decision.Meta.ID) {
+		t.Fatalf("packet missing refresh_due affected decision %s: %+v", decision.Meta.ID, packet.ChangedFiles[0].Governance.AffectedDecisions)
+	}
+	if len(packet.DeterministicFindings.Stale) == 0 {
+		t.Fatalf("packet suppressed scoped stale finding for refresh_due decision: %+v", packet.DeterministicFindings)
+	}
+}
+
+func TestMapOverseerGovernanceScopesSpecHealthToAffectedSections(t *testing.T) {
+	report := checkReport{
+		SpecHealth: []project.SpecCheckFinding{
+			{
+				Code:      "spec_section_stale",
+				Path:      ".haft/specs/target-system.md",
+				SectionID: "TS.scope.001",
+				Message:   "spec section is stale",
+			},
+			{
+				Code:      "spec_section_stale",
+				Path:      ".haft/specs/enabling-system.md",
+				SectionID: "ES.unrelated.001",
+				Message:   "unrelated spec section is stale",
+			},
+		},
+	}
+	changedFiles := []overseer.ChangedFile{{
+		Path: "governed.go",
+		Governance: overseer.ChangedFileGovernance{
+			AffectedSpecSections: []string{"TS.scope.001"},
+		},
+	}}
+
+	governance := mapOverseerGovernance(report, changedFiles, map[string]bool{})
+
+	if len(governance.SpecHealth) != 1 {
+		t.Fatalf("spec health findings = %+v, want one scoped finding", governance.SpecHealth)
+	}
+	if governance.SpecHealth[0].ID != "TS.scope.001" {
+		t.Fatalf("scoped spec health ID = %q, want TS.scope.001", governance.SpecHealth[0].ID)
+	}
+	if governance.Suppressed.UnrelatedSpecHealth != 1 {
+		t.Fatalf("unrelated spec health count = %d, want 1", governance.Suppressed.UnrelatedSpecHealth)
 	}
 }
 

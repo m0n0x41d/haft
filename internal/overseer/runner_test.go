@@ -211,6 +211,9 @@ func TestReviewResultJSONSchemaIsStrictForCodexStructuredOutput(t *testing.T) {
 		`"required": ["reviewer", "verdict", "findings", "non_findings_under_scope"]`,
 		`"required": ["agent"]`,
 		`"non_findings_under_scope": {`,
+		`"line_start": {"type": "integer"}`,
+		`"line_end": {"type": "integer"}`,
+		`"evidence_ref": {"type": "string"}`,
 	} {
 		if !strings.Contains(schema, want) {
 			t.Fatalf("schema missing %q:\n%s", want, schema)

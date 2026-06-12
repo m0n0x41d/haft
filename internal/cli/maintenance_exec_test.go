@@ -53,28 +53,38 @@ func TestMaintenanceExecutePhase_GateModesAndUndo(t *testing.T) {
 		t.Fatalf("mode=off produced %d action(s), want 0", len(actions))
 	}
 
-	// Phase 2 — propose: rebaseline is recorded as a proposal, never applied;
-	// the rung-2 observable still runs and attaches provenance=machine evidence.
+	// Phase 2 — propose: rebaseline and rung-2 observables are recorded as
+	// proposals only. Viewing/planning must not mutate baselines or attach
+	// machine evidence.
 	saveMaintenanceModes(t, root, overseer.MaintenanceModePropose, overseer.MaintenanceModePropose)
 	proposeActions := withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
 		cfg, _ := overseer.LoadConfig(root)
 		return executeMaintenancePlan(ctx, store, root, cfg)
 	})
 	assertActionOutcome(t, proposeActions, maintenanceActionRebaseline, decisionID, "proposed")
-	observable := assertActionOutcome(t, proposeActions, maintenanceActionObservable, decisionID, "evidence_attached")
-	if !strings.Contains(observable.Detail, "green") {
-		t.Errorf("observable detail = %q, want green run", observable.Detail)
+	observable := assertActionOutcome(t, proposeActions, maintenanceActionObservable, decisionID, "proposed")
+	if !strings.Contains(observable.Detail, "no evidence attached") {
+		t.Errorf("observable detail = %q, want proposal without evidence attach", observable.Detail)
 	}
 	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
 		if !driftPresent(t, ctx, store, root, decisionID) {
 			t.Fatal("propose mode must NOT re-baseline — drift should persist")
 		}
+		items, err := store.GetEvidenceItems(ctx, decisionID)
+		if err != nil {
+			t.Fatalf("get evidence: %v", err)
+		}
+		for _, item := range items {
+			if item.Provenance == artifact.ProvenanceMachine {
+				t.Fatalf("propose mode must not attach machine evidence: %+v", item)
+			}
+		}
 		return nil
 	})
 
 	// Phase 3 — auto: rebaseline applies with prior state recorded; the
-	// observable is cooldown-skipped (evidence already attached today); the
-	// stored maintenance run carries the ledger.
+	// observable runs and attaches evidence; the stored maintenance run carries
+	// the ledger.
 	saveMaintenanceModes(t, root, overseer.MaintenanceModeAuto, overseer.MaintenanceModeAuto)
 	var maintenanceRun overseer.MaintenanceRun
 	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
@@ -90,11 +100,7 @@ func TestMaintenanceExecutePhase_GateModesAndUndo(t *testing.T) {
 	if rebaseline.PriorState == "" {
 		t.Fatal("applied rebaseline must record prior state for undo")
 	}
-	for _, action := range maintenanceRun.Executed {
-		if action.Kind == maintenanceActionObservable {
-			t.Errorf("observable must be cooldown-skipped (evidence attached earlier today), got %+v", action)
-		}
-	}
+	assertActionOutcome(t, maintenanceRun.Executed, maintenanceActionObservable, decisionID, "evidence_attached")
 
 	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
 		if driftPresent(t, ctx, store, root, decisionID) {

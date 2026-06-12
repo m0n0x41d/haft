@@ -82,7 +82,20 @@ func ClassifyCommand(command string) (string, bool) {
 	if len(fields) < 2 || !allowedSubs[fields[1]] {
 		return "", false
 	}
+	if !goCommandConfined(fields[2:]) {
+		return "", false
+	}
 	return fields[0] + " " + fields[1], true
+}
+
+func goCommandConfined(args []string) bool {
+	for _, arg := range args {
+		if commandArgEscapesProject(arg) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func grepLikeCommandConfined(args []string) bool {

@@ -142,22 +142,30 @@ func normalizePullInput(input PullInput) PullInput {
 }
 
 func ceremonyFor(input PullInput) (string, string) {
-	if input.CeremonyRequest == "none" || input.CeremonyRequest == "low" {
-		return input.CeremonyRequest, "agent requested low ceremony"
+	mechanical := isMechanicalPull(input)
+	if mechanical && (input.CeremonyRequest == "none" || input.CeremonyRequest == "low") {
+		return input.CeremonyRequest, "agent requested low ceremony for mechanical edit"
 	}
-	if input.DeclaredTaskKind == TaskMechanicalEdit || input.DeclaredTaskKind == TaskFormattingOnly {
-		return "low", "mechanical edit"
-	}
-	if input.ChangeIntent == TaskMechanicalEdit || input.ChangeIntent == TaskFormattingOnly {
+	if mechanical {
 		return "low", "mechanical edit"
 	}
 	if hasAnyRiskSignal(input, "external_io", "domain_boundary", "persistence", "public_api", "governed_file", "failing_test") {
 		return "medium", "risk signals require method gates"
 	}
+	if input.CeremonyRequest == "none" || input.CeremonyRequest == "low" {
+		return "medium", "low ceremony request ignored for non-mechanical code work"
+	}
 	if input.DeclaredTaskKind == "architecture" {
 		return "deep", "architecture task"
 	}
 	return "medium", "non-trivial code work"
+}
+
+func isMechanicalPull(input PullInput) bool {
+	if input.DeclaredTaskKind == TaskMechanicalEdit || input.DeclaredTaskKind == TaskFormattingOnly {
+		return true
+	}
+	return input.ChangeIntent == TaskMechanicalEdit || input.ChangeIntent == TaskFormattingOnly
 }
 
 func matchCards(definitions []Definition, input PullInput) []MethodCard {

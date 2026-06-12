@@ -144,6 +144,28 @@ func TestPullMechanicalEditReturnsLowCeremonyWithoutArchitectureGates(t *testing
 	}
 }
 
+func TestPullLowCeremonyRequestDoesNotBypassRiskGates(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task:             "Change public API behavior",
+		DeclaredTaskKind: "feature",
+		ChangeIntent:     "change_behavior",
+		CeremonyRequest:  "none",
+		RiskSignals: []RiskSignal{
+			{ID: "public_api", Source: "test"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.TaskSignature.Ceremony != "medium" {
+		t.Fatalf("ceremony = %q, want medium", run.TaskSignature.Ceremony)
+	}
+	if len(run.Methods) == 0 {
+		t.Fatal("risk-gated non-mechanical work returned no method cards")
+	}
+	assertMethodIDs(t, run, []string{"behavior-first-testing"})
+}
+
 func TestPullUnmatchedMediumWorkFallsBackToVerification(t *testing.T) {
 	run, err := Pull(PullInput{
 		Task: "Update repo behavior from a PR review finding",

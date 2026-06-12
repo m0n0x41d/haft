@@ -62,7 +62,7 @@ func executeMaintenancePlan(
 	var actions []overseer.MaintenanceAction
 	actions = append(actions, executeRebaselines(ctx, store, projectRoot, rebaselineMode, plan)...)
 
-	observableActions, greenByDecision := executeObservables(ctx, store, projectRoot, plan)
+	observableActions, greenByDecision := executeObservables(ctx, store, projectRoot, revalidateMode, plan)
 	actions = append(actions, observableActions...)
 	actions = append(actions, executeRevalidations(ctx, store, projectRoot, revalidateMode, plan, greenByDecision)...)
 
@@ -138,10 +138,16 @@ func executeObservables(
 	ctx context.Context,
 	store *artifact.Store,
 	projectRoot string,
+	mode string,
 	plan *artifact.MaintenancePlan,
 ) ([]overseer.MaintenanceAction, map[string]bool) {
 	var actions []overseer.MaintenanceAction
 	greenByDecision := make(map[string]bool)
+
+	if mode == overseer.MaintenanceModeOff {
+		return actions, greenByDecision
+	}
+
 	count := 0
 
 	tasks := executableObservableTasks(plan)
@@ -158,6 +164,13 @@ func executeObservables(
 			Title:       task.DecisionTitle,
 			Rung:        task.Rung,
 			Detail:      task.Command,
+		}
+
+		if mode == overseer.MaintenanceModePropose {
+			action.Outcome = "proposed"
+			action.Detail = fmt.Sprintf("%s — proposal only (maintenance_revalidate_stale=propose; no command executed, no evidence attached)", task.Command)
+			actions = append(actions, action)
+			continue
 		}
 
 		output, runErr := runAllowlistedObservable(ctx, projectRoot, task.Command)

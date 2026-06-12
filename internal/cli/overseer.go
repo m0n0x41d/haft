@@ -1294,7 +1294,7 @@ func decisionsForChangedPath(
 	}
 
 	for _, match := range exactMatches {
-		decision, err := loadActiveDecision(ctx, store, match.Meta.ID)
+		decision, err := loadScopedDecision(ctx, store, match.Meta.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1308,7 +1308,7 @@ func decisionsForChangedPath(
 			continue
 		}
 
-		decision, err := loadActiveDecision(ctx, store, ref.ArtifactID)
+		decision, err := loadScopedDecision(ctx, store, ref.ArtifactID)
 		if err != nil {
 			return nil, err
 		}
@@ -1337,7 +1337,7 @@ func decisionsForChangedPath(
 	return decisions, nil
 }
 
-func loadActiveDecision(ctx context.Context, store *artifact.Store, id string) (*artifact.Artifact, error) {
+func loadScopedDecision(ctx context.Context, store *artifact.Store, id string) (*artifact.Artifact, error) {
 	item, err := store.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load affected artifact %s: %w", id, err)
@@ -1345,7 +1345,7 @@ func loadActiveDecision(ctx context.Context, store *artifact.Store, id string) (
 	if item.Meta.Kind != artifact.KindDecisionRecord {
 		return nil, nil
 	}
-	if item.Meta.Status != artifact.StatusActive {
+	if item.Meta.Status != artifact.StatusActive && item.Meta.Status != artifact.StatusRefreshDue {
 		return nil, nil
 	}
 	return item, nil
@@ -1392,10 +1392,11 @@ func mapOverseerGovernance(
 	affectedDecisionIDs map[string]bool,
 ) overseer.GovernanceInput {
 	changedPathSet := changedPaths(changedFiles)
+	affectedSpecSectionIDs := changedSpecSectionIDs(changedFiles)
 
 	stale, unrelatedStale := mapScopedStale(report.Stale, affectedDecisionIDs)
 	drift, unrelatedDrift := mapScopedDrift(report.Drifted, changedPathSet, affectedDecisionIDs)
-	specHealth, unrelatedSpecHealth := mapScopedSpecHealth(report.SpecHealth)
+	specHealth, unrelatedSpecHealth := mapScopedSpecHealth(report.SpecHealth, affectedSpecSectionIDs)
 	coverage, unrelatedCoverage := mapScopedCoverage(report.CoverageGaps, affectedDecisionIDs)
 
 	return overseer.GovernanceInput{
@@ -1464,8 +1465,30 @@ func mapScopedDrift(
 	return out, suppressed
 }
 
-func mapScopedSpecHealth(findings []project.SpecCheckFinding) ([]overseer.FindingSummary, int) {
-	return nil, len(findings)
+func mapScopedSpecHealth(
+	findings []project.SpecCheckFinding,
+	affectedSpecSectionIDs map[string]bool,
+) ([]overseer.FindingSummary, int) {
+	out := make([]overseer.FindingSummary, 0, len(findings))
+	suppressed := 0
+
+	for _, finding := range findings {
+		sectionID := strings.TrimSpace(finding.SectionID)
+		if sectionID == "" || !affectedSpecSectionIDs[sectionID] {
+			suppressed++
+			continue
+		}
+
+		out = append(out, overseer.FindingSummary{
+			ID:       sectionID,
+			Kind:     "SpecSection",
+			Category: finding.Code,
+			Reason:   finding.Message,
+			Paths:    []string{finding.Path},
+		})
+	}
+
+	return out, suppressed
 }
 
 func mapScopedCoverage(
@@ -1504,6 +1527,20 @@ func mapMaintenanceStale(findings []checkStaleFinding) []overseer.FindingSummary
 		})
 	}
 	return out
+}
+
+func changedSpecSectionIDs(changedFiles []overseer.ChangedFile) map[string]bool {
+	ids := make(map[string]bool)
+	for _, changedFile := range changedFiles {
+		for _, sectionID := range changedFile.Governance.AffectedSpecSections {
+			sectionID = strings.TrimSpace(sectionID)
+			if sectionID == "" {
+				continue
+			}
+			ids[sectionID] = true
+		}
+	}
+	return ids
 }
 
 func mapMaintenanceDrift(findings []checkDriftFinding) []overseer.MaintenanceDriftFinding {

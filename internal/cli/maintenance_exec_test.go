@@ -217,6 +217,87 @@ func TestMaintenanceExecutePhase_RevalidateStale(t *testing.T) {
 	})
 }
 
+func TestMaintenanceExecutePhase_CappedObservablesPreventRevalidation(t *testing.T) {
+	restore := overrideGoldenE2EFlags(t)
+	defer restore()
+
+	root := newGoldenE2ERepo(t)
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+	t.Setenv("HOME", filepath.Join(root, ".test-home"))
+
+	initLocal = true
+	if err := runInit(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	ctx := context.Background()
+	writeGoldenE2EFile(t, filepath.Join(root, maintExecAffectedFile),
+		"package app\n\nfunc Flow() string {\n\treturn \"ready\"\n}\n")
+
+	predictions := make([]artifact.PredictionInput, 0, maxObservablesPerRun+1)
+	for index := 0; index < maxObservablesPerRun+1; index++ {
+		predictions = append(predictions, artifact.PredictionInput{
+			Claim:      "Flow function stays present",
+			Observable: "grep for Flow in the governed file",
+			Threshold:  "exit 0",
+			Command:    "grep -n Flow internal/app/maintflow.go",
+		})
+	}
+
+	database, store := openGoldenE2EStore(t, root)
+	haftDir := filepath.Join(root, ".haft")
+	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		SelectedTitle:   "Capped observable fixture decision",
+		WhySelected:     "E2E fixture for partial machine evidence.",
+		SelectionPolicy: "Fixture.",
+		CounterArgument: "Fixture.",
+		WeakestLink:     "Fixture.",
+		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:      []string{"Flow stays present"},
+		Predictions:     predictions,
+		AffectedFiles:   []string{maintExecAffectedFile},
+		ValidUntil:      stale,
+		GovernanceMode:  "exact",
+	})
+	if err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	database.Close()
+
+	saveMaintenanceModes(t, root, overseer.MaintenanceModeOff, overseer.MaintenanceModeAuto)
+	actions := withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		cfg, _ := overseer.LoadConfig(root)
+		return executeMaintenancePlan(ctx, store, root, cfg)
+	})
+
+	observableCount := 0
+	for _, action := range actions {
+		if action.Kind == maintenanceActionObservable && action.DecisionRef == decision.Meta.ID {
+			observableCount++
+		}
+		if action.Kind == maintenanceActionRevalidate && action.DecisionRef == decision.Meta.ID {
+			t.Fatalf("capped observable set must not revalidate on partial evidence: %+v", action)
+		}
+	}
+	if observableCount != maxObservablesPerRun {
+		t.Fatalf("observable actions = %d, want cap %d", observableCount, maxObservablesPerRun)
+	}
+
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		refreshed, err := store.Get(ctx, decision.Meta.ID)
+		if err != nil {
+			t.Fatalf("get decision: %v", err)
+		}
+		if refreshed.Meta.ValidUntil != stale {
+			t.Fatalf("valid_until = %q, want unchanged stale value %q", refreshed.Meta.ValidUntil, stale)
+		}
+		return nil
+	})
+}
+
 func createMaintExecDecision(t *testing.T, root string) string {
 	t.Helper()
 

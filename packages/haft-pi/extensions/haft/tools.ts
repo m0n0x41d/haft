@@ -152,6 +152,7 @@ const haftDecisionParameters = Type.Object({
     claim: Type.String(),
     observable: Type.String(),
     threshold: Type.String(),
+    command: OptStr(),
     probability: OptNum(),
     realizability: OptStr(),
     verify_after: OptStr()
@@ -194,7 +195,7 @@ const haftNoteParameters = Type.Object({
 });
 
 const haftRefreshParameters = Type.Object({
-  action: enumOf("scan", "waive", "reopen", "supersede", "deprecate", "reconcile"),
+  action: enumOf("scan", "plan", "waive", "reopen", "supersede", "deprecate", "reconcile"),
   artifact_ref: OptStr(),
   context: OptStr(),
   decision_ref: OptStr(),

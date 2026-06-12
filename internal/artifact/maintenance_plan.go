@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -73,12 +74,59 @@ func ClassifyCommand(command string) (string, bool) {
 		return "", false
 	}
 	if allowedSubs == nil {
+		if !grepLikeCommandConfined(fields[1:]) {
+			return "", false
+		}
 		return fields[0], true
 	}
 	if len(fields) < 2 || !allowedSubs[fields[1]] {
 		return "", false
 	}
 	return fields[0] + " " + fields[1], true
+}
+
+func grepLikeCommandConfined(args []string) bool {
+	for _, arg := range args {
+		if commandArgEscapesProject(arg) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func commandArgEscapesProject(arg string) bool {
+	values := []string{arg}
+	if _, value, ok := strings.Cut(arg, "="); ok {
+		values = append(values, value)
+	}
+
+	for _, value := range values {
+		if pathTokenEscapesProject(value) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func pathTokenEscapesProject(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if filepath.IsAbs(value) {
+		return true
+	}
+
+	normalized := strings.ReplaceAll(value, "\\", "/")
+	for _, segment := range strings.Split(normalized, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+
+	return false
 }
 
 // BaselineSnapshot is the prior state captured before an autonomous

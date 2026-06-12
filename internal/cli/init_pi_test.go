@@ -63,6 +63,23 @@ func TestRunInitPiIsIdempotentAndPreservesForeignSettings(t *testing.T) {
 	}
 }
 
+func TestRunInitPiRemovesStaleMaterializedPackageFiles(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	runInitPi(projectRoot)
+
+	stalePath := filepath.Join(projectRoot, ".haft", "pi", "haft-pi", "extensions", "haft", "stale.ts")
+	if err := os.WriteFile(stalePath, []byte("export const stale = true;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runInitPi(projectRoot)
+
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale generated package file to be removed, got err=%v", err)
+	}
+}
+
 func TestRegisterPiPackageMigratesLegacyEntry(t *testing.T) {
 	projectRoot := t.TempDir()
 	settingsPath := filepath.Join(projectRoot, ".pi", "settings.json")

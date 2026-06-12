@@ -144,11 +144,10 @@ func executeObservables(
 	greenByDecision := make(map[string]bool)
 	count := 0
 
-	for _, task := range plan.Tasks {
-		if task.Rung != artifact.RungMachine || task.Command == "" {
-			continue
-		}
+	tasks := executableObservableTasks(plan)
+	for index, task := range tasks {
 		if count >= maxObservablesPerRun {
+			markUnrunObservables(greenByDecision, tasks[index:])
 			break
 		}
 		count++
@@ -200,6 +199,28 @@ func executeObservables(
 		actions = append(actions, action)
 	}
 	return actions, greenByDecision
+}
+
+func executableObservableTasks(plan *artifact.MaintenancePlan) []artifact.MaintenanceTask {
+	if plan == nil {
+		return nil
+	}
+
+	tasks := make([]artifact.MaintenanceTask, 0, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		if task.Rung != artifact.RungMachine || task.Command == "" {
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+
+	return tasks
+}
+
+func markUnrunObservables(greenByDecision map[string]bool, tasks []artifact.MaintenanceTask) {
+	for _, task := range tasks {
+		greenByDecision[task.DecisionRef] = false
+	}
 }
 
 // executeRevalidations extends valid_until on decision_stale items whose

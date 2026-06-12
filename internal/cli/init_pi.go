@@ -57,6 +57,10 @@ func runInitPi(projectRoot string) {
 // materializePiPackage writes the embedded package fresh on every init so the
 // carriers stay in lockstep with the kernel inside this binary.
 func materializePiPackage(packageDir string) error {
+	if err := os.RemoveAll(packageDir); err != nil {
+		return err
+	}
+
 	return fs.WalkDir(haftpi.Assets, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

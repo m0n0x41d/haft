@@ -705,6 +705,7 @@ type DecisionPrediction struct {
 	VerifyAfter   string               `json:"verify_after,omitempty"`
 	Realizability RealizabilityVerdict `json:"realizability,omitempty"`
 	Probability   *float64             `json:"probability,omitempty"`
+	Command       string               `json:"command,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.

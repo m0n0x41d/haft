@@ -95,6 +95,7 @@ func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim 
 			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
 			Realizability: realizability,
 			Probability:   value.Probability,
+			Command:       strings.TrimSpace(value.Command),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -175,6 +176,7 @@ func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction 
 			VerifyAfter:   claim.VerifyAfter,
 			Realizability: claim.Realizability,
 			Probability:   claim.Probability,
+			Command:       claim.Command,
 		})
 	}
 

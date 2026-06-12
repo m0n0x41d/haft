@@ -161,6 +161,16 @@ func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
+	for _, name := range []string{"haft_method", "haft_commission", "haft_spec_section"} {
+		t.Run(name, func(t *testing.T) {
+			if schema := mustListToolInputSchema(t, name); schema["type"] != "object" {
+				t.Fatalf("%s input schema type = %#v, want object", name, schema["type"])
+			}
+		})
+	}
+}
+
 func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	compareSchema := mustListToolProperties(t, "haft_solution")
 

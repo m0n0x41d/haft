@@ -1,7 +1,9 @@
 package artifact
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -335,5 +337,40 @@ func TestDecisionClaimsFromPredictions_PreservesVerifyAfter(t *testing.T) {
 	}
 	if got[0].VerifyAfter != "2026-05-01" {
 		t.Fatalf("VerifyAfter = %q, want %q", got[0].VerifyAfter, "2026-05-01")
+	}
+}
+
+func TestDecisionPredictionCompatibilityPreservesCommand(t *testing.T) {
+	fields := DecisionFields{
+		Predictions: []DecisionPrediction{
+			{
+				Claim:      "artifact tests stay green",
+				Observable: "go test on artifact package",
+				Threshold:  "exit 0",
+				Command:    " go test ./internal/artifact/ ",
+			},
+		},
+	}
+
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), "\"claims\"") {
+		t.Fatalf("compatibility marshal should persist canonical claims:\n%s", encoded)
+	}
+	if !strings.Contains(string(encoded), "\"command\":\"go test ./internal/artifact/\"") {
+		t.Fatalf("compatibility marshal lost command:\n%s", encoded)
+	}
+
+	var decoded DecisionFields
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.Claims[0].Command; got != "go test ./internal/artifact/" {
+		t.Fatalf("decoded claim command = %q", got)
+	}
+	if got := decoded.Predictions[0].Command; got != "go test ./internal/artifact/" {
+		t.Fatalf("decoded compatibility prediction command = %q", got)
 	}
 }

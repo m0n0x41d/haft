@@ -1,5 +1,5 @@
 {
   "packages": [
-    "../.haft/pi/haft-pi"
+    "../packages/haft-pi"
   ]
 }

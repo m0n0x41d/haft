@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { parseResponse, toolNames, toolText } from "../extensions/haft/bridge.ts";
 import { clipText, withGovernorHeader } from "../extensions/haft/governor.ts";
 import { findHaftProjectRoot } from "../extensions/haft/project.ts";
+import { HAFT_TOOLS } from "../extensions/haft/tools.ts";
 
 test("clipText passes short text through and clips long text with a marker", () => {
   assert.equal(clipText("short", 100), "short");
@@ -55,3 +56,17 @@ test("findHaftProjectRoot walks up to the nearest .haft", () => {
   assert.equal(findHaftProjectRoot(nested), project);
   assert.equal(findHaftProjectRoot(root), undefined);
 });
+
+test("Pi tool schemas mirror maintenance plan and prediction command fields", () => {
+  const refresh = toolSpec("haft_refresh");
+  const decision = toolSpec("haft_decision");
+
+  assert.match(JSON.stringify(refresh.parameters), /"plan"/);
+  assert.match(JSON.stringify(decision.parameters), /"command"/);
+});
+
+function toolSpec(name: string) {
+  const found = HAFT_TOOLS.find((tool) => tool.name === name);
+  assert.ok(found, `missing tool spec ${name}`);
+  return found;
+}

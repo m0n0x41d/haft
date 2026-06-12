@@ -252,21 +252,10 @@ func executeRevalidations(
 		return nil
 	}
 
-	// Calendar-expired artifacts (StaleCategoryEvidenceExpired) are the
-	// revalidation class: their debt is the passed valid_until date itself,
-	// which fresh green machine evidence legitimately extends.
-	staleDecisions := make(map[string]artifact.MaintenanceTask)
-	for _, task := range plan.Tasks {
-		if task.Source == "stale" && task.Category == string(artifact.StaleCategoryEvidenceExpired) {
-			staleDecisions[task.DecisionRef] = task
-		}
-	}
+	staleDecisions := revalidatableStaleDecisions(plan, greenByDecision)
 
 	var actions []overseer.MaintenanceAction
 	for ref, task := range staleDecisions {
-		if !greenByDecision[ref] {
-			continue
-		}
 		action := overseer.MaintenanceAction{
 			Kind:        maintenanceActionRevalidate,
 			DecisionRef: ref,
@@ -297,6 +286,41 @@ func executeRevalidations(
 		actions = append(actions, action)
 	}
 	return actions
+}
+
+func revalidatableStaleDecisions(
+	plan *artifact.MaintenancePlan,
+	greenByDecision map[string]bool,
+) map[string]artifact.MaintenanceTask {
+	candidates := make(map[string]artifact.MaintenanceTask)
+	blocked := make(map[string]bool)
+	if plan == nil {
+		return candidates
+	}
+
+	for _, task := range plan.Tasks {
+		if !isEvidenceExpiredStaleTask(task) {
+			continue
+		}
+		candidates[task.DecisionRef] = task
+		if task.Rung != artifact.RungMachine || task.Command == "" {
+			blocked[task.DecisionRef] = true
+		}
+	}
+
+	for ref := range candidates {
+		if blocked[ref] || !greenByDecision[ref] {
+			delete(candidates, ref)
+		}
+	}
+	return candidates
+}
+
+func isEvidenceExpiredStaleTask(task artifact.MaintenanceTask) bool {
+	if task.Source != "stale" {
+		return false
+	}
+	return task.Category == string(artifact.StaleCategoryEvidenceExpired)
 }
 
 // runAllowlistedObservable executes a stored observable command exec-direct:

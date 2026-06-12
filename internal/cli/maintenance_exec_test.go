@@ -223,6 +223,83 @@ func TestMaintenanceExecutePhase_RevalidateStale(t *testing.T) {
 	})
 }
 
+func TestMaintenanceExecutePhase_JudgmentStaleClaimBlocksRevalidation(t *testing.T) {
+	restore := overrideGoldenE2EFlags(t)
+	defer restore()
+
+	root := newGoldenE2ERepo(t)
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+	t.Setenv("HOME", filepath.Join(root, ".test-home"))
+
+	initLocal = true
+	if err := runInit(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	ctx := context.Background()
+	writeGoldenE2EFile(t, filepath.Join(root, maintExecAffectedFile),
+		"package app\n\nfunc Flow() string {\n\treturn \"ready\"\n}\n")
+
+	database, store := openGoldenE2EStore(t, root)
+	haftDir := filepath.Join(root, ".haft")
+	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		SelectedTitle:   "Mixed stale claims fixture decision",
+		WhySelected:     "E2E fixture for the all-stale-tasks revalidation gate.",
+		SelectionPolicy: "Fixture.",
+		CounterArgument: "Fixture.",
+		WeakestLink:     "Fixture.",
+		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:      []string{"Flow stays present"},
+		Predictions: []artifact.PredictionInput{
+			{
+				Claim:      "Flow function stays present",
+				Observable: "grep for func in the governed file",
+				Threshold:  "exit 0",
+				Command:    "grep -n func internal/app/maintflow.go",
+			},
+			{
+				Claim:      "Operator confidence remains high",
+				Observable: "operator interview",
+				Threshold:  "human judgment supports",
+			},
+		},
+		AffectedFiles:  []string{maintExecAffectedFile},
+		ValidUntil:     stale,
+		GovernanceMode: "exact",
+	})
+	if err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	database.Close()
+
+	saveMaintenanceModes(t, root, overseer.MaintenanceModeOff, overseer.MaintenanceModeAuto)
+	actions := withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		cfg, _ := overseer.LoadConfig(root)
+		return executeMaintenancePlan(ctx, store, root, cfg)
+	})
+
+	assertActionOutcome(t, actions, maintenanceActionObservable, decision.Meta.ID, "evidence_attached")
+	for _, action := range actions {
+		if action.Kind == maintenanceActionRevalidate && action.DecisionRef == decision.Meta.ID {
+			t.Fatalf("judgment-only stale claim must block revalidation: %+v", action)
+		}
+	}
+
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		refreshed, err := store.Get(ctx, decision.Meta.ID)
+		if err != nil {
+			t.Fatalf("get decision: %v", err)
+		}
+		if refreshed.Meta.ValidUntil != stale {
+			t.Fatalf("valid_until = %q, want unchanged stale value %q", refreshed.Meta.ValidUntil, stale)
+		}
+		return nil
+	})
+}
+
 func TestMaintenanceExecutePhase_CappedObservablesPreventRevalidation(t *testing.T) {
 	restore := overrideGoldenE2EFlags(t)
 	defer restore()

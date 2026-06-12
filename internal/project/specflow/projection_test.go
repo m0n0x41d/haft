@@ -53,6 +53,29 @@ func TestProjectLifecycleActiveSectionWithoutBaselineRequiresApprove(t *testing.
 	}
 }
 
+func TestProjectLifecycleMixedStructuralAndBaselineFindingsRequiresClarify(t *testing.T) {
+	store := NewMemoryBaselineStore()
+	section := activeEnvironmentSection()
+	section.Title = ""
+	state := DeriveStateWithBaselines(
+		project.ProjectSpecificationSet{Sections: []project.SpecSection{section}},
+		store,
+		"proj-1",
+	)
+
+	projection := ProjectLifecycle(state)
+
+	if projection.State != LifecycleStateNeedsAction {
+		t.Fatalf("State = %q, want %q", projection.State, LifecycleStateNeedsAction)
+	}
+	if projection.Action != LifecycleActionClarify {
+		t.Fatalf("Action = %q, want %q", projection.Action, LifecycleActionClarify)
+	}
+	if slices.Contains(projection.AllowedCommands, "haft spec approve tgt-env-1") {
+		t.Fatalf("AllowedCommands = %#v, approve must stay blocked while structural findings remain", projection.AllowedCommands)
+	}
+}
+
 func TestProjectLifecycleDriftedSectionRequiresTriage(t *testing.T) {
 	store := NewMemoryBaselineStore()
 	section := activeEnvironmentSection()

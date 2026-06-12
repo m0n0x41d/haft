@@ -86,14 +86,14 @@ func lifecycleAction(intent WorkflowIntent) LifecycleAction {
 	if len(intent.BlockingFindings) == 0 {
 		return LifecycleActionDraft
 	}
-	if findingsContainCode(intent.BlockingFindings, codeSpecSectionNeedsBaseline) {
-		return LifecycleActionApprove
-	}
 	if findingsContainCode(intent.BlockingFindings, codeSpecSectionDrifted) {
 		return LifecycleActionTriage
 	}
 	if findingsContainCode(intent.BlockingFindings, codeSpecSectionStale) {
 		return LifecycleActionTriage
+	}
+	if findingsOnlyContainCode(intent.BlockingFindings, codeSpecSectionNeedsBaseline) {
+		return LifecycleActionApprove
 	}
 	return LifecycleActionClarify
 }
@@ -241,4 +241,16 @@ func findingsContainCode(findings []project.SpecCheckFinding, code string) bool 
 		}
 	}
 	return false
+}
+
+func findingsOnlyContainCode(findings []project.SpecCheckFinding, code string) bool {
+	if len(findings) == 0 {
+		return false
+	}
+	for _, finding := range findings {
+		if strings.TrimSpace(finding.Code) != code {
+			return false
+		}
+	}
+	return true
 }

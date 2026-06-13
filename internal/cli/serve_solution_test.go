@@ -161,6 +161,33 @@ func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *tes
 	}
 }
 
+func TestHandleQuintSolution_CompareRejectsDimensionFirstScoresWithShapeHint(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
+
+	_, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": portfolio.Meta.ID,
+		"dimensions":    []any{"latency"},
+		"scores": map[string]any{
+			"latency": map[string]any{
+				"REST": "42ms",
+				"gRPC": "18ms",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected dimension-first scores to fail")
+	}
+	for _, want := range []string{"scores shape", "variant_id -> dimension_name -> string score"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
 func mustExploreServeComparePortfolio(
 	t *testing.T,
 	ctx context.Context,

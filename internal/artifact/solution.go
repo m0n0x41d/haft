@@ -495,7 +495,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 
 	rawScoredVariants := comparedVariantsFromScores(input.Results.Scores)
 	if len(rawScoredVariants) == 0 {
-		return result, fmt.Errorf("scores must include at least one compared variant")
+		return result, fmt.Errorf("scores must include at least one compared variant; expected shape: %s", compareScoresShapeHint())
 	}
 
 	var warnings []string
@@ -545,7 +545,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		if containsString(comparedVariants, variantID) {
 			continue
 		}
-		return result, fmt.Errorf("scored variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
+		return result, fmt.Errorf("scored variant %q is outside the declared compare set; expected one of: %s; scores shape is %s", variantID, expected, compareScoresShapeHint())
 	}
 
 	for _, variantID := range input.Results.NonDominatedSet {
@@ -725,6 +725,10 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	}
 	result.Warnings = warnings
 	return result, nil
+}
+
+func compareScoresShapeHint() string {
+	return `{"V1":{"latency":"10ms","cost":"$5"}} (variant_id -> dimension_name -> string score)`
 }
 
 // BuildComparisonBody appends comparison results to an existing portfolio body. Pure.

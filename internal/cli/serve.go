@@ -872,7 +872,11 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			input.PortfolioRef = v
 		}
 		input.Results.Dimensions = parseStringArrayFromArgs(args, "dimensions")
-		if scores := parseNestedStringMapFromArgs(args, "scores"); scores != nil {
+		scores, _, err := parseNestedStringMapArg(args, "scores")
+		if err != nil {
+			return "", err
+		}
+		if scores != nil {
 			input.Results.Scores = scores
 		}
 		input.Results.NonDominatedSet = parseStringArrayFromArgs(args, "non_dominated_set")
@@ -1402,6 +1406,67 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	}
 }
 
+func codeContextLaneLimit(args map[string]any) (int, bool) {
+	if _, ok := args["limit"]; !ok {
+		return 20, false
+	}
+	limit := intArg(args, "limit", 20)
+	if limit < 1 {
+		return 20, true
+	}
+	if limit > 100 {
+		return 100, true
+	}
+	return limit, true
+}
+
+func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, projectRoot string, file string) ([]present.CodeContextSymbolItem, bool, error) {
+	symbolStore := codebase.NewSymbolStore(store.DB())
+	if err := symbolStore.EnsureSchema(ctx); err != nil {
+		return nil, false, err
+	}
+
+	stale, err := symbolStore.FileSymbolsStale(ctx, projectRoot, file)
+	if err != nil {
+		return nil, false, err
+	}
+
+	refreshed := false
+	if stale {
+		if err := symbolStore.IndexFileSymbols(ctx, projectRoot, file); err != nil {
+			return nil, false, err
+		}
+		refreshed = true
+	}
+
+	symbols, err := symbolStore.GetByFile(ctx, file)
+	if err != nil {
+		return nil, false, err
+	}
+
+	items := make([]present.CodeContextSymbolItem, 0, len(symbols))
+	for _, symbol := range symbols {
+		endLine := symbol.EndLine
+		if endLine == 0 {
+			endLine = symbol.StartLine
+		}
+		items = append(items, present.CodeContextSymbolItem{
+			Name:      codeContextSymbolName(symbol),
+			Kind:      symbol.Kind,
+			StartLine: symbol.StartLine,
+			EndLine:   endLine,
+		})
+	}
+	return items, refreshed, nil
+}
+
+func codeContextSymbolName(symbol codebase.CodeSymbol) string {
+	if symbol.Receiver == "" {
+		return symbol.Name
+	}
+	return symbol.Receiver + "." + symbol.Name
+}
+
 func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
@@ -1529,15 +1594,49 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if l, ok := args["line"].(float64); ok {
 			line = int(l)
 		}
-		cc, err := contextgraph.FetchCodeContext(ctx, store, graph.NewStore(store.DB()), contextgraph.Target{File: file, Symbol: symbol, Line: line})
+		target := contextgraph.Target{File: file, Symbol: symbol, Line: line}
+		lane := present.CodeContextLaneIndex
+		if rawLane, ok := args["lane"].(string); ok && strings.TrimSpace(rawLane) != "" {
+			parsed, valid := present.ParseCodeContextLane(rawLane)
+			if !valid {
+				return "", fmt.Errorf("unknown code_context lane %q — valid lanes: %s", rawLane, strings.Join(present.ValidCodeContextLaneNames(), ", "))
+			}
+			lane = parsed
+		}
+		limit, hasLimit := codeContextLaneLimit(args)
+		projectRoot := filepath.Dir(haftDir)
+		full, _ := args["full"].(bool)
+		if !full && lane == present.CodeContextLaneSymbols {
+			symbols, refreshed, err := codeContextSymbolsForFile(ctx, store, projectRoot, file)
+			if err != nil {
+				return present.CodeContextSymbolsUnavailableResponse(target, err) + navStrip, nil
+			}
+			return present.CodeContextSymbolsResponse(target, symbols, limit, refreshed) + navStrip, nil
+		}
+		cc, err := contextgraph.FetchCodeContext(ctx, store, graph.NewStore(store.DB()), target)
 		if err != nil {
 			return "", err
 		}
-		full, _ := args["full"].(bool)
 		if full {
 			return present.CodeContextResponseFull(cc) + navStrip, nil
 		}
-		return present.CodeContextResponse(cc) + navStrip, nil
+		options := present.CodeContextRenderOptions{
+			Lane:          lane,
+			ArtifactLimit: limit,
+		}
+		if hasLimit {
+			options.InvariantLimit = limit
+			options.ContextInvariantLimit = limit
+		}
+		if lane == present.CodeContextLaneIndex {
+			symbols, _, err := codeContextSymbolsForFile(ctx, store, projectRoot, file)
+			options.SymbolCountKnown = err == nil
+			options.SymbolCount = len(symbols)
+			if err != nil {
+				options.SymbolUnavailable = err.Error()
+			}
+		}
+		return present.CodeContextResponseWithOptions(cc, options) + navStrip, nil
 
 	case "callees", "callers", "impact":
 		name := firstNonEmptyQueryArg(args, "symbol", "name")
@@ -2079,33 +2178,57 @@ func parseDimensions(raw any) []artifact.ComparisonDimension {
 	return dims
 }
 
+const nestedStringMapShapeHint = `{"V1":{"latency":"10ms","cost":"$5"}} (variant_id -> dimension_name -> string score)`
+
 // parseNestedStringMapFromArgs handles MCP client serialization of map[string]map[string]string.
 // Some clients send JSON objects as parsed map[string]any, others as raw JSON strings.
 func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]map[string]string {
-	var raw map[string]any
-	if m, ok := args[key].(map[string]any); ok {
-		raw = m
-	} else if s, ok := args[key].(string); ok && len(s) > 0 && s[0] == '{' {
-		logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseNestedStringMapFromArgs: JSON string fallback")
-		if err := json.Unmarshal([]byte(s), &raw); err != nil {
-			return nil
-		}
-	}
-	if len(raw) == 0 {
+	result, _, err := parseNestedStringMapArg(args, key)
+	if err != nil {
 		return nil
 	}
+	return result
+}
+
+func parseNestedStringMapArg(args map[string]any, key string) (map[string]map[string]string, bool, error) {
+	value, present := args[key]
+	if !present {
+		return nil, false, nil
+	}
+
+	var raw map[string]any
+	if m, ok := value.(map[string]any); ok {
+		raw = m
+	} else if s, ok := value.(string); ok && len(s) > 0 && s[0] == '{' {
+		logger.Debug().Str("key", key).Str("raw_type", "string").Msg("parseNestedStringMapFromArgs: JSON string fallback")
+		if err := json.Unmarshal([]byte(s), &raw); err != nil {
+			return nil, true, fmt.Errorf("argument %q must match shape %s: %w", key, nestedStringMapShapeHint, err)
+		}
+	} else {
+		return nil, true, fmt.Errorf("argument %q must match shape %s", key, nestedStringMapShapeHint)
+	}
+	if len(raw) == 0 {
+		return nil, true, nil
+	}
+
 	result := make(map[string]map[string]string, len(raw))
 	for outerKey, innerVal := range raw {
-		if inner, ok := innerVal.(map[string]any); ok {
-			result[outerKey] = make(map[string]string, len(inner))
-			for k, v := range inner {
-				if s, ok := v.(string); ok {
-					result[outerKey][k] = s
-				}
+		inner, ok := innerVal.(map[string]any)
+		if !ok {
+			return nil, true, fmt.Errorf("argument %q entry %q must be an object; expected shape %s", key, outerKey, nestedStringMapShapeHint)
+		}
+
+		result[outerKey] = make(map[string]string, len(inner))
+		for innerKey, innerValue := range inner {
+			stringValue, ok := innerValue.(string)
+			if !ok {
+				return nil, true, fmt.Errorf("argument %q entry %q.%q must be a string score; expected shape %s", key, outerKey, innerKey, nestedStringMapShapeHint)
 			}
+			result[outerKey][innerKey] = stringValue
 		}
 	}
-	return result
+
+	return result, true, nil
 }
 
 // parseJSONArg decodes a JSON-shaped argument from the MCP args map into

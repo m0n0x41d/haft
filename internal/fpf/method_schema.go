@@ -73,17 +73,31 @@ func haftMethodTool() Tool {
 					"description": "(close) Files actually changed.",
 				},
 				"gate_results": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "object"},
+					"type": "array",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"gate_id":       map[string]interface{}{"type": "string"},
+							"status":        map[string]interface{}{"type": "string", "enum": []interface{}{"satisfied", "waived"}},
+							"evidence_refs": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+							"waiver_reason": map[string]interface{}{"type": "string"},
+						},
+						"required": []string{"gate_id", "status"},
+					},
 					"description": "(close) Gate result objects with gate_id, status=satisfied, and evidence_refs when required.",
 				},
 				"verification": map[string]interface{}{
 					"type":        "object",
+					"properties":  map[string]interface{}{"commands": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}}, "result": map[string]interface{}{"type": "string"}, "output_ref": map[string]interface{}{"type": "string"}},
 					"description": "(close) commands/result/output_ref for verification evidence.",
 				},
 				"waivers": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "object"},
+					"type": "array",
+					"items": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{"gate_id": map[string]interface{}{"type": "string"}, "reason": map[string]interface{}{"type": "string"}},
+						"required":   []string{"gate_id", "reason"},
+					},
 					"description": "(close) Explicit waiver objects with gate_id and reason.",
 				},
 				"method_ref": map[string]interface{}{

@@ -28,7 +28,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "refresh.scan"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "refresh.scan"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -64,18 +64,36 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	}
 }
 
-func TestInterfaceCodeContextNamesCompactAndFullModes(t *testing.T) {
+func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.code_context")
 	if !ok {
 		t.Fatal("query.code_context capability missing")
 	}
 
-	outputVolume := strings.Join(capability.OutputVolume, " ")
-	if !strings.Contains(outputVolume, "default: compact") {
-		t.Fatalf("code_context interface should name compact default:\n%s", outputVolume)
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `lane="index"`) {
+		t.Fatalf("code_context interface should show lane=index default:\n%#v", capability.CurrentExecution)
 	}
-	if !strings.Contains(outputVolume, "full=true") {
-		t.Fatalf("code_context interface should name full=true recovery:\n%s", outputVolume)
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"lane", "limit", "full"} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("code_context optional fields missing %q in %q", want, optionals)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"Default output is lane=index", "symbols, decisions, invariants, notes, problems, portfolios, all", "Prefer one typed lane"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("code_context notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	if !strings.Contains(outputVolume, "default: lane=index") {
+		t.Fatalf("code_context interface should name lane index default:\n%s", outputVolume)
+	}
+	if !strings.Contains(outputVolume, "typed lanes") || !strings.Contains(outputVolume, "full=true: complete audit dump") {
+		t.Fatalf("code_context interface should name typed lanes and audit dump:\n%s", outputVolume)
 	}
 }
 
@@ -98,7 +116,124 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	if !strings.Contains(notes, "Hard gates require") {
-		t.Fatalf("method.close should name hard gate evidence/waiver rule:\n%s", notes)
+	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "close_template"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("method.close notes missing %q:\n%s", want, notes)
+		}
 	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	if !strings.Contains(outputVolume, "close_template") {
+		t.Fatalf("method.close should name show close_template recovery:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceNestedContractsExposeShapesAndTemplates(t *testing.T) {
+	cases := []struct {
+		capability string
+		field      string
+		template   string
+		fragment   string
+	}{
+		{
+			capability: "problem.characterize",
+			field:      "dimensions[]",
+			template:   "characterize_problem",
+			fragment:   "parity_plan",
+		},
+		{
+			capability: "solution.explore",
+			field:      "variants[]",
+			template:   "explore_variants",
+			fragment:   "stepping_stone_basis",
+		},
+		{
+			capability: "solution.compare",
+			field:      "scores",
+			template:   "flat_compare",
+			fragment:   "dimension_name",
+		},
+		{
+			capability: "decision.decide",
+			field:      "predictions[]",
+			template:   "decide",
+			fragment:   "rollback",
+		},
+		{
+			capability: "method.close",
+			field:      "gate_results[]",
+			template:   "",
+			fragment:   "Use gate_id, not gate",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.capability, func(t *testing.T) {
+			capability, ok := findInterfaceCapability(haftInterfaceCatalog(), tc.capability)
+			if !ok {
+				t.Fatalf("%s capability missing", tc.capability)
+			}
+
+			shapes, templates := marshalContractFragments(t, capability.InputContract)
+			if !strings.Contains(shapes, tc.field) {
+				t.Fatalf("%s field_shapes missing %q:\n%s", tc.capability, tc.field, shapes)
+			}
+			if !strings.Contains(shapes, tc.fragment) && !strings.Contains(templates, tc.fragment) {
+				t.Fatalf("%s contract missing fragment %q:\nshapes=%s\ntemplates=%s", tc.capability, tc.fragment, shapes, templates)
+			}
+			if tc.template != "" && !strings.Contains(templates, tc.template) {
+				t.Fatalf("%s input_templates missing %q:\n%s", tc.capability, tc.template, templates)
+			}
+		})
+	}
+}
+
+func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
+	if !ok {
+		t.Fatal("solution.compare capability missing")
+	}
+
+	_, templates := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{`"scores"`, `"V1"`, `"latency"`, `"dominated_variants"`, `"pareto_tradeoffs"`} {
+		if !strings.Contains(templates, want) {
+			t.Fatalf("solution.compare template missing %q:\n%s", want, templates)
+		}
+	}
+	if strings.Contains(templates, `"results"`) {
+		t.Fatalf("solution.compare should advertise flat canonical fields, not legacy results carrier:\n%s", templates)
+	}
+}
+
+func TestInterfaceCompareJSONStaysUnderPlanningBudget(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
+	if !ok {
+		t.Fatal("solution.compare capability missing")
+	}
+
+	var output bytes.Buffer
+	if err := writeJSON(&output, capability); err != nil {
+		t.Fatalf("write solution.compare JSON: %v", err)
+	}
+
+	const maxInterfaceBytes = 5000
+	if output.Len() > maxInterfaceBytes {
+		t.Fatalf("solution.compare interface JSON = %d bytes, want <= %d", output.Len(), maxInterfaceBytes)
+	}
+}
+
+func marshalContractFragments(t *testing.T, contract interfaceContract) (string, string) {
+	t.Helper()
+
+	shapes, err := json.Marshal(contract.FieldShapes)
+	if err != nil {
+		t.Fatalf("marshal field shapes: %v", err)
+	}
+
+	templates, err := json.Marshal(contract.InputTemplates)
+	if err != nil {
+		t.Fatalf("marshal input templates: %v", err)
+	}
+
+	return string(shapes), string(templates)
 }

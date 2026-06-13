@@ -221,18 +221,20 @@ func renderMethodPullResponse(run methodpkg.MethodRun, filePath string) string {
 	}
 	if len(run.Methods) == 0 {
 		b.WriteString("No method gates applied. Use normal verification before completion.\n")
-		return b.String()
-	}
-	b.WriteString("\nMethods:\n")
-	for _, card := range run.Methods {
-		b.WriteString(fmt.Sprintf("- %s `%s` — %s\n", card.Title, card.ID, card.WhyApplies))
-		for _, gate := range card.HardGates {
-			b.WriteString(fmt.Sprintf("  - hard gate `%s`: %s\n", gate.ID, gate.PassCondition))
+	} else {
+		b.WriteString("\nMethods:\n")
+		for _, card := range run.Methods {
+			b.WriteString(fmt.Sprintf("- %s `%s` — %s\n", card.Title, card.ID, card.WhyApplies))
+			for _, gate := range card.HardGates {
+				b.WriteString(fmt.Sprintf("  - hard gate `%s`: %s\n", gate.ID, gate.PassCondition))
+			}
 		}
 	}
-	b.WriteString("\nBefore claiming completion, call `haft_method(action=\"close\", pull_id=\"")
+	b.WriteString("\n")
+	b.WriteString(renderMethodCloseTemplate(run))
+	b.WriteString("Before claiming completion, call `haft_method(action=\"close\", pull_id=\"")
 	b.WriteString(run.ID)
-	b.WriteString("\", ...)` with evidence or waivers.\n")
+	b.WriteString("\", ...)` using this shape, with evidence_refs or waivers for hard gates.\n")
 	return b.String()
 }
 
@@ -256,13 +258,29 @@ func renderMethodRunSummary(run methodpkg.MethodRun) string {
 	b.WriteString(fmt.Sprintf("- Task: %s\n", run.TaskSignature.Task))
 	if len(run.Methods) == 0 {
 		b.WriteString("- Methods: none\n")
+		if run.Status == "open" {
+			b.WriteString("\n")
+			b.WriteString(renderMethodCloseTemplate(run))
+		}
 		return b.String()
 	}
 	b.WriteString("- Methods:\n")
 	for _, card := range run.Methods {
 		b.WriteString(fmt.Sprintf("  - %s `%s`\n", card.Title, card.ID))
 	}
+	if run.Status == "open" {
+		b.WriteString("\n")
+		b.WriteString(renderMethodCloseTemplate(run))
+	}
 	return b.String()
+}
+
+func renderMethodCloseTemplate(run methodpkg.MethodRun) string {
+	data, err := json.MarshalIndent(methodpkg.BuildCloseTemplate(run), "", "  ")
+	if err != nil {
+		return ""
+	}
+	return "Close template:\n```json\n" + string(data) + "\n```\n"
 }
 
 func intArg(args map[string]any, key string, fallback int) int {

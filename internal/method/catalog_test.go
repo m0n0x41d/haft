@@ -341,6 +341,58 @@ func TestValidateCloseRequiresHardGateEvidenceOrWaiver(t *testing.T) {
 	}
 }
 
+func TestValidateCloseReportsExpectedGateResultShape(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		Methods: []MethodCard{{
+			ID: "test-method",
+			HardGates: []Gate{{
+				ID:               "gate-with-evidence",
+				RequiredEvidence: []string{"command_output"},
+				Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+			}},
+		}},
+	}
+
+	err := ValidateClose(run, CloseInput{
+		GateResults: []GateResult{{
+			Status: "pass",
+		}},
+	})
+	if err == nil {
+		t.Fatal("ValidateClose accepted malformed close input")
+	}
+	for _, want := range []string{"gate_results[0] missing gate_id", "gate-with-evidence missing gate result", "expected gate_results[] shape", "status", "evidence_refs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ValidateClose error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestBuildCloseTemplateNamesRequiredGateFields(t *testing.T) {
+	run := MethodRun{
+		ID: "mpull-test",
+		Methods: []MethodCard{{
+			HardGates: []Gate{{
+				ID:               "gate-with-evidence",
+				RequiredEvidence: []string{"command_output"},
+			}},
+		}},
+	}
+
+	template := BuildCloseTemplate(run)
+	if template.Action != "close" || template.PullID != "mpull-test" {
+		t.Fatalf("template identity wrong: %+v", template)
+	}
+	if len(template.GateResults) != 1 {
+		t.Fatalf("template gate count = %d, want 1", len(template.GateResults))
+	}
+	result := template.GateResults[0]
+	if result.GateID != "gate-with-evidence" || result.Status != "satisfied" || len(result.EvidenceRefs) != 1 {
+		t.Fatalf("template gate result missing required close fields: %+v", result)
+	}
+}
+
 func assertMethodIDs(t *testing.T, run MethodRun, wants []string) {
 	t.Helper()
 

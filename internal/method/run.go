@@ -123,10 +123,12 @@ func DecodeRun(a *artifact.Artifact) (MethodRun, error) {
 func ValidateClose(run MethodRun, input CloseInput) error {
 	results := map[string]GateResult{}
 	waivers := map[string]string{}
-	for _, result := range input.GateResults {
+	var invalid []string
+	for index, result := range input.GateResults {
 		result.GateID = strings.TrimSpace(result.GateID)
 		if result.GateID == "" {
-			return fmt.Errorf("gate result is missing gate_id")
+			invalid = append(invalid, fmt.Sprintf("gate_results[%d] missing gate_id", index))
+			continue
 		}
 		results[result.GateID] = result
 		status := normalizeCloseStatus(result.Status)
@@ -135,15 +137,16 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 			waivers[result.GateID] = reason
 		}
 	}
-	for _, waiver := range input.Waivers {
+	for index, waiver := range input.Waivers {
 		waiver.GateID = strings.TrimSpace(waiver.GateID)
 		if waiver.GateID == "" {
-			return fmt.Errorf("waiver is missing gate_id")
+			invalid = append(invalid, fmt.Sprintf("waivers[%d] missing gate_id", index))
+			continue
 		}
 		waivers[waiver.GateID] = strings.TrimSpace(waiver.Reason)
 	}
 
-	var missing []string
+	missing := append([]string{}, invalid...)
 	for _, card := range run.Methods {
 		for _, gate := range card.HardGates {
 			result, hasResult := results[gate.ID]
@@ -164,7 +167,7 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 				continue
 			}
 			if normalizeCloseStatus(result.Status) != "satisfied" {
-				missing = append(missing, gate.ID+" status must be satisfied or waived")
+				missing = append(missing, gate.ID+" status must be satisfied or waived (use status=\"satisfied\")")
 				continue
 			}
 			if len(gate.RequiredEvidence) > 0 && len(result.EvidenceRefs) == 0 {
@@ -173,7 +176,7 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("method close incomplete: %s", strings.Join(missing, "; "))
+		return fmt.Errorf("method close incomplete: %s; %s", strings.Join(missing, "; "), CloseInputShapeHint())
 	}
 	return nil
 }

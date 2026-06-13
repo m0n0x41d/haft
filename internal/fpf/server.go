@@ -391,6 +391,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"scores": map[string]interface{}{
 						"type":        "object",
 						"description": "(compare) Scores per variant: {\"V1\": {\"throughput\": \"100k/s\", \"cost\": \"$200\"}}",
+						"additionalProperties": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": map[string]string{"type": "string"},
+						},
 					},
 					"non_dominated_set": map[string]interface{}{
 						"type":        "array",
@@ -717,7 +721,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "resolve_term"},
-						"description": "search=FTS5 keyword search, status=compact dashboard (at-a-glance overview), board=rich health dashboard, related=decisions affecting a file, code_context=the FULL reasoning context for a file (or a symbol within it): decisions governing it, problems framed around it, solution variants explored, notes, invariants that must hold, and module coverage — call this BEFORE changing unfamiliar code to see what was already decided and why, callees=what a symbol calls (forward dependency set), callers=what calls a symbol, impact=what breaks if you change a symbol (inbound traversal) — callees/callers/impact each fuse the reasoning graph onto every reached symbol: per node you see BOTH the call/dispatch edge AND the decisions governing it (symbol-level, or module-level so a governed node never reads as safe-to-change), node=the detail page for a symbol: its byte-exact body (re-read + re-hash from disk, never stale), the decisions fused onto exactly it, its immediate caller/callee trail, and ALL same-name overloads each with their own per-overload governance — call this instead of Read when you want one symbol with its reasoning attached, ceremony=recommend a ceremony mode (tactical/standard/deep) for a change BEFORE you start: pass the files it will touch and get a risk-proportioned mode from path/content + governance signals — a deterministic floor never routes a high-risk change (migration/sql, auth/secrets, public-API, infra, destructive content) to tactical, and asks one question when it cannot tell; advisory only, you bind the mode, explore=the PRIMARY single-call answer for a symbol: the deepest connected call chain (each on-chain symbol interleaved with the decisions/invariants governing it), the blast radius (direct callers + covering decisions), and the seed's verbatim freshness-checked source — start here to understand an unfamiliar flow AND why it is shaped that way in one call; a chain that hits a dynamic-dispatch boundary it cannot resolve says so rather than implying completeness, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec, check=CI-actionable enforcement findings, resolve_term=ground an umbrella term in this project's bounded context (term-map entries + spec sections referencing it + past artifact mentions) before deciding to ask the operator. Use status for overview; use check when the operator or CI must act on debt; use impact BEFORE editing a symbol to see who depends on it and what was decided; use node to read a symbol's source WITH its governance; use resolve_term BEFORE asking 'what do you mean?' on a vague signal.",
+						"description": "search=FTS5 search; status=compact dashboard; related=decisions affecting a file; code_context=progressive code-governance context. Default code_context is lane=index, then request lane=symbols|decisions|invariants|notes|problems|portfolios|all as needed; full=true is audit/backcompat dump. callees/callers/impact traverse code graph with governance; node reads one symbol with governance; explore summarizes a flow; ceremony recommends task ceremony; projection/list/coverage/fpf/check/resolve_term are auxiliary query surfaces.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -743,6 +747,11 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "integer",
 						"description": "(code_context, callees/callers/impact, node) Optional 1-based line of the symbol — disambiguates overloaded same-name symbols so the right one is selected",
 					},
+					"lane": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
+						"description": "(code_context) Progressive disclosure lane. Default index gives counts, risks, and exact next calls. Use one typed lane at a time; lane=all restores compact all-lane view; full=true is audit dump.",
+					},
 					"depth": map[string]interface{}{
 						"type":        "integer",
 						"description": "(callees/callers/impact) Traversal depth, default 2, capped at 10 — how many call hops to follow from the seed",
@@ -762,11 +771,11 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
-						"description": fmt.Sprintf("(search) Max results, default 20; (fpf) max results, default %d", DefaultSpecSearchLimit),
+						"description": fmt.Sprintf("(search/code_context lanes) Max results, default 20; (fpf) max results, default %d", DefaultSpecSearchLimit),
 					},
 					"full": map[string]interface{}{
 						"type":        "boolean",
-						"description": "(status/code_context/fpf) Show full detail instead of compact defaults/snippets",
+						"description": "(status/code_context/fpf) Show full audit detail instead of compact defaults/snippets. For code_context, prefer lane before full=true.",
 					},
 					"explain": map[string]interface{}{
 						"type":        "boolean",
@@ -837,6 +846,8 @@ func isLoadBearingSchemaDescription(description string) bool {
 		"currently supports tree",
 		"engineer | manager | audit | compare | delegated-agent | change-rationale",
 		"human still chooses",
+		"Progressive disclosure lane",
+		"lane=index",
 		"optimization",
 		"simulation_only",
 	} {

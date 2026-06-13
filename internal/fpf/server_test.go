@@ -159,6 +159,42 @@ func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 			t.Fatalf("haft_method schema missing %q", key)
 		}
 	}
+
+	gateResults, ok := methodSchema["gate_results"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("gate_results schema missing or wrong type: %#v", methodSchema["gate_results"])
+	}
+	gateItems, ok := gateResults["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("gate_results.items missing or wrong type: %#v", gateResults["items"])
+	}
+	gateProperties, ok := gateItems["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("gate_results.items.properties missing or wrong type: %#v", gateItems["properties"])
+	}
+	for _, key := range []string{"gate_id", "status", "evidence_refs", "waiver_reason"} {
+		if _, ok := gateProperties[key]; !ok {
+			t.Fatalf("gate_results item schema missing %q", key)
+		}
+	}
+
+	waivers, ok := methodSchema["waivers"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("waivers schema missing or wrong type: %#v", methodSchema["waivers"])
+	}
+	waiverItems, ok := waivers["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("waivers.items missing or wrong type: %#v", waivers["items"])
+	}
+	waiverProperties, ok := waiverItems["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("waivers.items.properties missing or wrong type: %#v", waiverItems["properties"])
+	}
+	for _, key := range []string{"gate_id", "reason"} {
+		if _, ok := waiverProperties[key]; !ok {
+			t.Fatalf("waiver item schema missing %q", key)
+		}
+	}
 }
 
 func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
@@ -230,6 +266,31 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	description, _ := selectedRef["description"].(string)
 	if description != "(compare) Advisory recommendation variant ID; the human still chooses" {
 		t.Fatalf("unexpected selected_ref description: %q", description)
+	}
+}
+
+func TestHandleToolsList_CompareScoresSchemaExposesNestedMapShape(t *testing.T) {
+	compareSchema := mustListToolProperties(t, "haft_solution")
+
+	scores, ok := compareSchema["scores"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("scores schema missing or wrong type: %#v", compareSchema["scores"])
+	}
+
+	variantScores, ok := scores["additionalProperties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("scores.additionalProperties missing or wrong type: %#v", scores["additionalProperties"])
+	}
+	if variantScores["type"] != "object" {
+		t.Fatalf("scores additionalProperties type = %#v, want object", variantScores["type"])
+	}
+
+	dimensionScore, ok := variantScores["additionalProperties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("variant score additionalProperties missing or wrong type: %#v", variantScores["additionalProperties"])
+	}
+	if dimensionScore["type"] != "string" {
+		t.Fatalf("dimension score type = %#v, want string", dimensionScore["type"])
 	}
 }
 
@@ -618,6 +679,37 @@ func TestHandleToolsList_QuerySchemaIncludesProjectionView(t *testing.T) {
 	description, _ := view["description"].(string)
 	if description != "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale" {
 		t.Fatalf("unexpected view description: %q", description)
+	}
+}
+
+func TestHandleToolsList_QuerySchemaIncludesCodeContextLane(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+
+	lane, ok := querySchema["lane"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("lane schema missing or wrong type: %#v", querySchema["lane"])
+	}
+
+	description, _ := lane["description"].(string)
+	for _, want := range []string{"Progressive disclosure lane", "Default index", "full=true is audit dump"} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("lane description missing %q: %q", want, description)
+		}
+	}
+
+	enum, ok := lane["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("lane enum missing or wrong type: %#v", lane["enum"])
+	}
+	got := make(map[string]bool)
+	for _, value := range enum {
+		text, _ := value.(string)
+		got[text] = true
+	}
+	for _, want := range []string{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"} {
+		if !got[want] {
+			t.Fatalf("lane enum missing %q: %#v", want, enum)
+		}
 	}
 }
 

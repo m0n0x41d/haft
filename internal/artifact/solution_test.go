@@ -2459,6 +2459,9 @@ func TestValidateCompareInput_ErrorsIncludeExpectedVariantList(t *testing.T) {
 	if !strings.Contains(err.Error(), `expected one of: ["V1", "V2"]`) {
 		t.Fatalf("expected canonical compare-set list inline in error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "variant_id -> dimension_name -> string score") {
+		t.Fatalf("expected scores shape hint inline in error, got: %v", err)
+	}
 }
 
 func TestFormatExpectedVariantList_RendersJSONArrayShape(t *testing.T) {

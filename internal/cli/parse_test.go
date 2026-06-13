@@ -283,6 +283,43 @@ func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
 	}
 }
 
+func TestParseNestedStringMapArg_ReturnsShapeErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{
+			name: "string is not JSON object",
+			args: map[string]any{"scores": "not a map"},
+		},
+		{
+			name: "outer entry is not object",
+			args: map[string]any{"scores": map[string]any{"V1": "10ms"}},
+		},
+		{
+			name: "score value is not string",
+			args: map[string]any{"scores": map[string]any{"V1": map[string]any{"latency": 10}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, present, err := parseNestedStringMapArg(tc.args, "scores")
+			if !present {
+				t.Fatal("present = false, want true")
+			}
+			if err == nil {
+				t.Fatal("expected shape error")
+			}
+			for _, want := range []string{"scores", "variant_id -> dimension_name -> string score"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error missing %q: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
 // Issue #71 regression: parseJSONArg used to return only `bool`, so callers that
 // did `_, _ = parseJSONArg(...)` silently dropped JSON parse errors. Downstream
 // validators then reported "missing variant" coverage errors that pointed
@@ -294,12 +331,12 @@ func TestParseJSONArg_ReturnsErrorOnMalformedShape(t *testing.T) {
 	}
 
 	cases := []struct {
-		name     string
-		args     map[string]any
-		key      string
-		wantErr  bool
-		errFrag  string
-		present  bool
+		name    string
+		args    map[string]any
+		key     string
+		wantErr bool
+		errFrag string
+		present bool
 	}{
 		{
 			name:    "absent key",

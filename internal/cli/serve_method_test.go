@@ -42,6 +42,11 @@ func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
 	if !strings.Contains(result, "haft_method(action=\"close\"") {
 		t.Fatalf("pull response missing close instruction:\n%s", result)
 	}
+	for _, want := range []string{"Close template", `"gate_id"`, `"status": "satisfied"`, `"evidence_refs"`} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("pull response missing close template field %q:\n%s", want, result)
+		}
+	}
 
 	stored, err := store.Get(ctx, ref)
 	if err != nil {
@@ -93,6 +98,11 @@ func TestHandleHaftMethodStatusAndShowRecoverOpenRun(t *testing.T) {
 	if !strings.Contains(shown, "Status: open") {
 		t.Fatalf("show response = %q, want open status", shown)
 	}
+	for _, want := range []string{"Close template", `"gate_id"`, `"status": "satisfied"`, `"evidence_refs"`} {
+		if !strings.Contains(shown, want) {
+			t.Fatalf("show response missing close template field %q:\n%s", want, shown)
+		}
+	}
 }
 
 func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
@@ -122,6 +132,11 @@ func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("close accepted hard gates without evidence")
+	}
+	for _, want := range []string{"expected gate_results[] shape", "gate_id", "status", "evidence_refs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("close error missing %q: %v", want, err)
+		}
 	}
 
 	waivers := methodWaiversForRun(run)

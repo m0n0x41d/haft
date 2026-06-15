@@ -70,6 +70,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   SolutionPortfolios, DecisionRecords, and Notes via the same artifact core as
   MCP. Supported capabilities: `problem.frame`, `solution.explore`,
   `solution.compare`, `decision.decide`, and `note.record`.
+- **Read-only overseer status command.** `haft overseer status` now renders
+  the latest overseer signals and autonomous-maintenance ledger without
+  re-running the maintenance loop; `--json` exposes the same snapshot for
+  tooling.
 
 ### Changed
 
@@ -82,12 +86,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   compare, decide, note, reason, and status skills route agents through
   `haft interface` and input-file artifact creation instead of inlining long
   schemas; MCP write tools remain the compatible fallback.
+- **MCP initialize instructions surface autonomous maintenance explicitly.**
+  Agents are now told to relay autonomous-maintenance actions, undo commands,
+  and typed maintenance work orders instead of silently absorbing overseer
+  changes.
+- **Bundled FPF corpus refreshed.** The vendored `data/FPF` pointer and baked
+  `internal/cli/fpf.db` were regenerated for the upstream ontic/transformation
+  vocabulary update.
 
 ### Fixed
 
 - Shared `haft-embed` daemons no longer inherit the first client project's
   working directory; the launcher now starts them from the private socket
   directory and resolves configured cache paths to absolute paths before launch.
+- Shared `haft-embed` daemons no longer retain multi-gigabyte allocator arenas
+  indefinitely after cold corpus warms: hybrid recall batches corpus embedding
+  misses, the Rust sidecar disables the ORT CPU memory arena by default
+  (`--cpu-arena` restores the old allocator mode), and socket daemon idle
+  timeout now tracks active embedding requests rather than open idle clients.
 
 ## [8.1.0] — 2026-06-06 — shared embedding runtime
 

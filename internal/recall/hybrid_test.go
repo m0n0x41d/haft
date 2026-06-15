@@ -19,17 +19,21 @@ import (
 // Embed is mutex-guarded like the real sidecar adapter, so background warms race
 // cleanly under -race.
 type fakeEmbedder struct {
-	mu    sync.Mutex
-	calls int
+	mu         sync.Mutex
+	calls      int
+	roles      []embedding.Role
+	batchSizes []int
 }
 
 func (f *fakeEmbedder) Descriptor() embedding.Descriptor {
 	return embedding.Descriptor{Provider: "fake", Model: "topic-v1", Dimensions: 3}
 }
 
-func (f *fakeEmbedder) Embed(_ context.Context, _ embedding.Role, texts []string) ([][]float32, error) {
+func (f *fakeEmbedder) Embed(_ context.Context, role embedding.Role, texts []string) ([][]float32, error) {
 	f.mu.Lock()
 	f.calls++
+	f.roles = append(f.roles, role)
+	f.batchSizes = append(f.batchSizes, len(texts))
 	f.mu.Unlock()
 	out := make([][]float32, len(texts))
 	for i, text := range texts {
@@ -42,6 +46,18 @@ func (f *fakeEmbedder) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeEmbedder) documentBatchSizes() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []int{}
+	for index, role := range f.roles {
+		if role == embedding.RoleDocument {
+			out = append(out, f.batchSizes[index])
+		}
+	}
+	return out
 }
 
 func (f *fakeEmbedder) Close() error { return nil }
@@ -259,6 +275,29 @@ func TestHybridCachesCorpusEmbeddings(t *testing.T) {
 	}
 }
 
+func TestHybridBatchesCorpusMissEmbeddings(t *testing.T) {
+	count := corpusEmbeddingBatch + 3
+	corpus := make([]*artifact.Artifact, 0, count)
+	for index := 0; index < count; index++ {
+		id := "dec-" + string(rune('a'+index))
+		item := decisionArtifact(id, "Rust embedding sidecar", "fastembed gemma local vectors")
+		corpus = append(corpus, item)
+	}
+	source := fakeSource{corpus: corpus, ftsOrder: corpus}
+	embedder := &fakeEmbedder{}
+	hybrid := NewHybrid(source, staticFactory(embedder), testDB(t))
+
+	if err := hybrid.Warm(context.Background()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	got := embedder.documentBatchSizes()
+	want := []int{corpusEmbeddingBatch, 3}
+	if !sameInts(got, want) {
+		t.Fatalf("document batch sizes = %v, want %v", got, want)
+	}
+}
+
 // TestHybridDegradesWithoutEmbedder proves a nil embedder falls straight through
 // to the store's FTS ordering.
 func TestHybridDegradesWithoutEmbedder(t *testing.T) {
@@ -433,4 +472,16 @@ func orderIDs(items []*artifact.Artifact) string {
 		ids[i] = item.Meta.ID
 	}
 	return strings.Join(ids, ",")
+}
+
+func sameInts(left, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

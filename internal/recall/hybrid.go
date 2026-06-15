@@ -26,6 +26,7 @@ const (
 	candidatePoolFactor   = 4    // pull this many × limit candidates before fusing
 	minCandidatePool      = 24
 	minSemanticSimilarity = 0.15 // cosine floor — below this a doc is a non-match, not a weak hit
+	corpusEmbeddingBatch  = 16   // bound sidecar activation memory during cold corpus warm
 )
 
 // corpusKinds scopes the semantic index to decisions + notes — the prose where
@@ -312,6 +313,31 @@ func (h *Hybrid) embedMisses(
 	if len(ids) == 0 {
 		return nil
 	}
+	for start := 0; start < len(ids); start += corpusEmbeddingBatch {
+		end := min(start+corpusEmbeddingBatch, len(ids))
+		err := h.embedMissBatch(
+			ctx,
+			embedder,
+			descriptor,
+			ids[start:end],
+			hashes[start:end],
+			texts[start:end],
+			vectors,
+		)
+		if err != nil {
+			return fmt.Errorf("embed corpus misses [%d:%d]: %w", start, end, err)
+		}
+	}
+	return nil
+}
+
+func (h *Hybrid) embedMissBatch(
+	ctx context.Context,
+	embedder embedding.Embedder,
+	descriptor embedding.Descriptor,
+	ids, hashes, texts []string,
+	vectors map[string][]float32,
+) error {
 	embedded, err := embedder.Embed(ctx, embedding.RoleDocument, texts)
 	if err != nil {
 		return err

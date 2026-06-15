@@ -915,6 +915,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fastembed",
+ "ort",
  "serde",
  "serde_json",
 ]

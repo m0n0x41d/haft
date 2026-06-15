@@ -133,6 +133,14 @@ var overseerUndoCmd = &cobra.Command{
 	RunE:  runOverseerUndo,
 }
 
+var overseerStatusJSON bool
+
+var overseerStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the latest overseer signals and autonomous-maintenance ledger (read-only, never re-runs the loop)",
+	RunE:  runOverseerStatus,
+}
+
 var overseerDaemonCmd = &cobra.Command{
 	Use:   "daemon",
 	Short: "Manage the overseer background review daemon",
@@ -224,8 +232,10 @@ func init() {
 	overseerCmd.AddCommand(overseerHookCmd)
 	overseerCmd.AddCommand(overseerShowCmd)
 	overseerCmd.AddCommand(overseerRemindCmd)
+	overseerStatusCmd.Flags().BoolVar(&overseerStatusJSON, "json", false, "print structured JSON output")
 	overseerCmd.AddCommand(overseerMaintainCmd)
 	overseerCmd.AddCommand(overseerUndoCmd)
+	overseerCmd.AddCommand(overseerStatusCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonStartCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonRunCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonStatusCmd)
@@ -1130,6 +1140,39 @@ func buildAndStoreOverseerMaintenance(
 		return overseer.MaintenanceRun{}, err
 	}
 	return run, nil
+}
+
+// runOverseerStatus is the read-only viewer: latest review signals plus the
+// autonomous-maintenance ledger, WITHOUT re-running the loop (viewing must
+// never mutate — `haft overseer maintain` is the act, this is the look).
+func runOverseerStatus(cmd *cobra.Command, _ []string) error {
+	projectRoot, _, closeStore, err := openOverseerProjectStore()
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+
+	summary, err := overseer.LoadStatusSummary(projectRoot)
+	if err != nil {
+		return fmt.Errorf("load overseer status: %w", err)
+	}
+	if overseerStatusJSON {
+		return writeJSON(cmd.OutOrStdout(), summary)
+	}
+
+	rendered := overseer.FormatStatusSignals(summary)
+	if strings.TrimSpace(rendered) == "" {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "No overseer signals recorded yet — run `haft overseer maintain` or make a commit (post-commit hook).")
+		return err
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), rendered); err != nil {
+		return err
+	}
+	if summary.LatestMaintenanceID != "" {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nLatest maintenance run: %s (details: `haft overseer maintain --json` re-runs; this view is read-only)\n", summary.LatestMaintenanceID)
+		return err
+	}
+	return nil
 }
 
 // runOverseerUndo restores the prior baseline recorded in a maintenance

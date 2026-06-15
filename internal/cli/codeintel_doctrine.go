@@ -117,7 +117,28 @@ after commits or post-commit hook activity, before claiming non-trivial work com
 after returning from long-running tool sessions, and whenever
 overseer, refresh, drift, or spec-coverage signals may have changed. Treat
 status as the read-only cockpit for current risk; mutations still go through
-explicit typed tools with their own authority gates.`
+explicit typed tools with their own authority gates.
+
+## AUTONOMOUS MAINTENANCE disclosure — highest-priority status line
+
+When status contains an "AUTONOMOUS MAINTENANCE" block, the overseer loop
+MUTATED governance state on its own (re-baselined drift the conservative gate
+proved additive-only, attached machine evidence, or extended validity on green
+re-runs). This is the single most important block in the status: RELAY it to
+the operator in your first reply — what was done, to which decisions, and the
+exact undo command (` + "`haft overseer undo <run-id> <action-id>`" + `). Never
+silently absorb it: autonomy stays trustworthy only while it stays visible.
+Actions marked "proposed" await the operator's choice — surface them as
+decisions to make, not as done facts.
+
+## Maintenance work order
+
+` + "`haft_refresh(action=\"plan\")`" + ` compiles the typed maintenance work
+order: rung-1 auto-baseline candidates, rung-2 machine-checkable claims (each
+with a runnable allowlisted command), rung-3 items needing judgment. When the
+operator asks to "drain the debt", "check what's stale", or after a status
+full of refresh-due items — pull the plan and execute the rung-2 checklist
+instead of hand-picking decisions to verify.`
 
 // composeServerInstructions builds the MCP initialize instructions, ordered by
 // weight: the mandatory session-start status rule FIRST, then the project's

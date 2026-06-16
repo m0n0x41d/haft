@@ -1499,7 +1499,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if err != nil {
 			return "", err
 		}
-		result := overseerStatusPrefix(projectRoot) + present.StatusResponse(data)
+		statusBody := present.CockpitStatusResponse(data)
+		if full {
+			statusBody = present.StatusResponse(data)
+		}
+		result := overseerStatusPrefix(projectRoot) + statusBody
 		// Append module coverage if modules are scanned
 		scanner := codebase.NewScanner(store.DB())
 		if !scanner.ModulesLastScanned(ctx).IsZero() {
@@ -1507,7 +1511,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 				if full {
 					result += "\n" + codebase.FormatCoverageResponse(report)
 				} else {
-					result += "\n" + codebase.FormatCoverageSummary(report)
+					result += "\n" + codebase.FormatCoverageCockpitSummary(report)
 				}
 			}
 		}

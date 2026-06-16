@@ -488,7 +488,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 		},
 		{
 			ID:      "query.status",
-			Purpose: "Show the compact project dashboard; use full=true for complete module coverage.",
+			Purpose: "Show the compact operator cockpit; use full=true for detailed status and complete module coverage.",
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "status",
@@ -499,9 +499,13 @@ func haftInterfaceCatalog() []interfaceCapability {
 			InputContract: interfaceContract{
 				RequiredFields: []string{},
 				OptionalFields: []string{"context", "full"},
-				Notes:          []string{"Default output is compact; pass full=true for complete coverage detail."},
+				Notes: []string{
+					"Default output is a compact operator cockpit; omitted detail is not evidence of absence.",
+					"Pass full=true for detailed status, including shipped/pending/unassessed decision lists, addressed problems, recent notes, and full coverage when available.",
+					"Use haft_query(action=\"coverage\") for module coverage, haft_refresh(action=\"scan\", verbose=true) for drift/stale detail, and haft_refresh(action=\"plan\") for the maintenance work order.",
+				},
 			},
-			OutputVolume: []string{"default: compact dashboard plus coverage summary", "full=true: complete coverage projection"},
+			OutputVolume: []string{"default: compact cockpit plus one-line coverage cue", "full=true: detailed status plus complete coverage projection"},
 			Invariants:   commonInterfaceInvariants(),
 		},
 		{

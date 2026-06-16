@@ -784,6 +784,41 @@ func TestFormatCoverageSummary_CompactsLargeTiers(t *testing.T) {
 	}
 }
 
+func TestFormatCoverageCockpitSummary_UsesOneCueLine(t *testing.T) {
+	report := &CoverageReport{
+		TotalModules: 8,
+		CoveredCount: 3,
+		PartialCount: 1,
+		BlindCount:   4,
+		Modules: []ModuleCoverage{{
+			Module: Module{
+				ID:   "mod-blind",
+				Path: "internal/blind",
+				Lang: "go",
+			},
+			Status:      CoverageBlind,
+			ImpactScore: 9,
+		}},
+	}
+
+	summary := FormatCoverageCockpitSummary(report)
+
+	for _, want := range []string{
+		"## Coverage Cue",
+		"8 module(s), 50% governed; 4 blind, 1 degraded",
+		"`haft_query(action=\"coverage\")`",
+		"`haft_query(action=\"status\", full=true)`",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("cockpit coverage summary missing %q:\n%s", want, summary)
+		}
+	}
+
+	if strings.Contains(summary, "internal/blind") {
+		t.Fatalf("cockpit coverage summary should not list modules:\n%s", summary)
+	}
+}
+
 func TestCoverageComputation(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()

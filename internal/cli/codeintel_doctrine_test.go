@@ -31,6 +31,18 @@ func TestComposeServerInstructions_AlwaysIncludesDoctrine(t *testing.T) {
 			t.Errorf("periodic status mandate missing %q:\n%s", s, got)
 		}
 	}
+	for _, s := range []string{
+		"Default status is an operator cockpit",
+		"omitted detail",
+		`haft_query(action="status", full=true)`,
+		`haft_query(action="coverage")`,
+		`haft_refresh(action="scan", verbose=true)`,
+		`haft_refresh(action="plan")`,
+	} {
+		if !strings.Contains(got, s) {
+			t.Errorf("status cockpit detail guidance missing %q:\n%s", s, got)
+		}
+	}
 	if strings.Contains(got, "/h-status") {
 		t.Errorf("mandate should reference the tool, not the skill:\n%s", got)
 	}

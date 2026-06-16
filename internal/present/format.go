@@ -1014,6 +1014,162 @@ func StatusResponse(data artifact.StatusData) string {
 	return sb.String()
 }
 
+// CockpitStatusResponse formats the default operator status surface.
+// It preserves StatusResponse as the detailed renderer for explicit full=true
+// calls, while keeping the default path bounded and drill-down oriented.
+func CockpitStatusResponse(data artifact.StatusData) string {
+	var sb strings.Builder
+	sb.WriteString("## Haft Status\n\n")
+	sb.WriteString("### Operator Cockpit\n\n")
+
+	appendCockpitAttention(&sb, data)
+	appendCockpitActiveWork(&sb, data)
+	appendCockpitDecisionHealth(&sb, data)
+	appendCockpitDrillDown(&sb)
+
+	return sb.String()
+}
+
+func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
+	hasAttention := len(data.StaleItems) > 0 ||
+		len(data.Drift) > 0 ||
+		len(data.CommissionAttention) > 0
+
+	if !hasAttention {
+		sb.WriteString("- No operator-blocking refresh, drift, or commission items in this status payload.\n\n")
+		return
+	}
+
+	const staleCap = 2
+	if len(data.StaleItems) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Refresh due** (%d):\n", len(data.StaleItems)))
+		for i, stale := range data.StaleItems {
+			if i >= staleCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(data.StaleItems)-staleCap))
+				break
+			}
+			line := fmt.Sprintf("  - **%s** `%s`", stale.Title, stale.ID)
+			if health, ok := data.DecisionHealth[stale.ID]; ok {
+				line += fmt.Sprintf(" — %s", health.Label())
+			}
+			line += fmt.Sprintf(" — %s", stale.Reason)
+			sb.WriteString(line + "\n")
+		}
+	}
+
+	const driftCap = 2
+	if len(data.Drift) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Drift detected** (%d decision(s)):\n", len(data.Drift)))
+		for i, report := range data.Drift {
+			if i >= driftCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(data.Drift)-driftCap))
+				break
+			}
+			summary := formatDriftFileSummary(report.Files)
+			sb.WriteString(fmt.Sprintf("  - **%s** `%s` — %s\n", report.DecisionTitle, report.DecisionID, summary))
+		}
+	}
+
+	const commissionCap = 2
+	if len(data.CommissionAttention) > 0 {
+		sb.WriteString(fmt.Sprintf("- **WorkCommissions need attention** (%d):\n", len(data.CommissionAttention)))
+		for i, commission := range data.CommissionAttention {
+			if i >= commissionCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_commission(action=\"list\", state=\"open\")`.\n", len(data.CommissionAttention)-commissionCap))
+				break
+			}
+			sb.WriteString("  " + formatCommissionStatusEntry(commission) + "\n")
+		}
+	}
+
+	sb.WriteString("\n")
+}
+
+func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
+	if len(data.InProgressProblems) == 0 && len(data.BacklogProblems) == 0 {
+		return
+	}
+
+	sb.WriteString("### Active Work\n\n")
+
+	const progressCap = 3
+	for i, problem := range data.InProgressProblems {
+		if i >= progressCap {
+			sb.WriteString(fmt.Sprintf("- ... and %d more in progress; run `haft_query(action=\"status\", full=true)`.\n", len(data.InProgressProblems)-progressCap))
+			break
+		}
+		sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(problem), data.InProgressBy[problem.Meta.ID]))
+	}
+
+	if len(data.BacklogProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("- Backlog: %d problem(s); run `haft_query(action=\"status\", full=true)` for the list.\n", len(data.BacklogProblems)))
+	}
+
+	sb.WriteString("\n")
+}
+
+func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) {
+	totalDecisions := len(data.HealthyDecisions) +
+		len(data.PendingDecisions) +
+		len(data.UnassessedDecisions)
+
+	if totalDecisions == 0 && len(data.StaleItems) == 0 && len(data.Drift) == 0 {
+		return
+	}
+
+	sb.WriteString("### Decision Health\n\n")
+	sb.WriteString(fmt.Sprintf(
+		"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d.\n\n",
+		len(data.HealthyDecisions),
+		len(data.PendingDecisions),
+		len(data.UnassessedDecisions),
+		len(data.StaleItems),
+		len(data.Drift),
+	))
+}
+
+func appendCockpitDrillDown(sb *strings.Builder) {
+	sb.WriteString("### Drill-down\n\n")
+	sb.WriteString("- Full status: `haft_query(action=\"status\", full=true)`.\n")
+	sb.WriteString("- Coverage: `haft_query(action=\"coverage\")`.\n")
+	sb.WriteString("- Drift/stale detail: `haft_refresh(action=\"scan\", verbose=true)`.\n")
+	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")`.\n")
+	sb.WriteString("\nDefault status omits shipped/pending decision lists, full module coverage, recent notes, and full drift/stale tails.\n")
+}
+
+func formatDriftFileSummary(files []artifact.DriftItem) string {
+	modified := 0
+	added := 0
+	missing := 0
+
+	for _, file := range files {
+		switch file.Status {
+		case artifact.DriftModified:
+			modified++
+		case artifact.DriftAdded:
+			added++
+		case artifact.DriftMissing:
+			missing++
+		}
+	}
+
+	parts := []string{}
+	if modified > 0 {
+		parts = append(parts, fmt.Sprintf("%d modified", modified))
+	}
+	if added > 0 {
+		parts = append(parts, fmt.Sprintf("%d added", added))
+	}
+	if missing > 0 {
+		parts = append(parts, fmt.Sprintf("%d missing", missing))
+	}
+	if len(parts) == 0 {
+		return "no file changes"
+	}
+
+	return strings.Join(parts, ", ")
+}
+
 func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {
 	line := fmt.Sprintf("- `%s` %s", commission.ID, commission.State)
 	if commission.DecisionRef != "" {

@@ -284,6 +284,31 @@ func FormatCoverageSummary(report *CoverageReport) string {
 	return sb.String()
 }
 
+// FormatCoverageCockpitSummary formats a one-cue coverage projection for the
+// default status cockpit. Full coverage stays behind explicit drill-down calls.
+func FormatCoverageCockpitSummary(report *CoverageReport) string {
+	if report.TotalModules == 0 {
+		return "## Coverage Cue\n\n- No modules detected. Run module scan first.\n"
+	}
+
+	pct := 0
+	if report.TotalModules > 0 {
+		pct = (report.CoveredCount + report.PartialCount) * 100 / report.TotalModules
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Coverage Cue\n\n")
+	sb.WriteString(fmt.Sprintf(
+		"- %d module(s), %d%% governed; %d blind, %d degraded. Details: `haft_query(action=\"coverage\")`; full status: `haft_query(action=\"status\", full=true)`.\n",
+		report.TotalModules,
+		pct,
+		report.BlindCount,
+		report.PartialCount,
+	))
+
+	return sb.String()
+}
+
 func sortedCoverageTier(report *CoverageReport, status CoverageStatus) []ModuleCoverage {
 	var tier []ModuleCoverage
 	for _, mc := range report.Modules {

@@ -123,7 +123,7 @@ compare with a kernel error.
 | **manual** | `/h-decide` | Bind a DecisionRecord (E.9 DRR). Cannot auto-fire — Transformer Mandate. |
 | **manual** | `/h-commission` | Create a WorkCommission (bounded execution authority). Cannot auto-fire. |
 | auto | `/h-verify` | Post-implementation check that a decision still holds |
-| auto | `/h-status` | Read-only dashboard of decisions, problems, refresh-due artifacts |
+| auto | `/h-status` | Read-only cockpit of decisions, problems, refresh-due artifacts, with explicit drill-down calls |
 | auto | `/h-spec` | Primary spec lifecycle surface — status, draft/clarify, "write this into specs", approve/rebaseline/reopen gates |
 | auto | `/h-onboard` | Bootstrap/compatibility entry for a project without `.haft/` or without ready SpecSections |
 | auto | `/h-spec-cover` | Coverage check — uncovered files in modules with decisions |

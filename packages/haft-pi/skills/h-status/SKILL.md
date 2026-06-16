@@ -21,7 +21,14 @@ Read the output as project evidence:
 
 - overseer drift or stale decisions change what is safe to claim,
 - `UNDERFRAMED` means the next step is problem framing, not implementation certainty,
-- module coverage tells you whether code context or impact should be queried before edits,
+- default status is a compact cockpit, not an audit dump; omitted detail is not evidence of absence,
+- module coverage may appear only as a one-line cue; call `haft_query` with
+  `{ "action": "coverage" }` for the full module list,
+- call `haft_query` with `{ "action": "status", "full": true }` when you need
+  detailed decision/problem/note status,
+- call `haft_refresh` with `{ "action": "scan", "verbose": true }` for
+  file-level drift/stale detail,
+- call `haft_refresh` with `{ "action": "plan" }` for the maintenance work order,
 - chat summaries are not durable work unless the relevant Haft artifact exists.
 
 Do not create binding decisions or commissions unless the operator explicitly asks for that manual action.

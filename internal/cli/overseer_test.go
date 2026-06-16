@@ -367,6 +367,34 @@ func TestHandleQuintQueryStatusPrependsOverseerSignals(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQueryStatusFullUsesDetailedRenderer(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	defaultResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(default status) returned error: %v", err)
+	}
+	if !strings.Contains(defaultResult, "### Operator Cockpit") {
+		t.Fatalf("default status should use cockpit renderer:\n%s", defaultResult)
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(full status) returned error: %v", err)
+	}
+	if strings.Contains(fullResult, "### Operator Cockpit") {
+		t.Fatalf("full status should use detailed renderer, not cockpit:\n%s", fullResult)
+	}
+	if !strings.Contains(fullResult, "No artifacts found") {
+		t.Fatalf("full status should preserve detailed StatusResponse output:\n%s", fullResult)
+	}
+}
+
 func TestRunOverseerMaintainStoresMaintenanceRun(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedGovernanceDebt(t, fixture)

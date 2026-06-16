@@ -64,6 +64,43 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	}
 }
 
+func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.status")
+	if !ok {
+		t.Fatal("query.status capability missing")
+	}
+
+	if !strings.Contains(capability.Purpose, "operator cockpit") {
+		t.Fatalf("status purpose should name cockpit default:\n%s", capability.Purpose)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"compact operator cockpit",
+		"not evidence of absence",
+		"full=true for detailed status",
+		`haft_query(action="coverage")`,
+		`haft_refresh(action="scan", verbose=true)`,
+		`haft_refresh(action="plan")`,
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("status interface notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	for _, want := range []string{
+		"default: compact cockpit",
+		"one-line coverage cue",
+		"full=true: detailed status",
+		"complete coverage projection",
+	} {
+		if !strings.Contains(outputVolume, want) {
+			t.Fatalf("status output volume missing %q:\n%s", want, outputVolume)
+		}
+	}
+}
+
 func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.code_context")
 	if !ok {

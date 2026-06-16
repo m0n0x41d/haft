@@ -512,6 +512,74 @@ func TestStatusResponse_NoDriftSectionWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		PendingDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-pending", Title: "Pending decision"}},
+		},
+		UnassessedDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-unassessed", Title: "Unassessed decision"}},
+		},
+		StaleItems: []artifact.StaleItem{
+			{ID: "dec-stale-a", Title: "Stale A", Reason: "expired"},
+			{ID: "dec-stale-b", Title: "Stale B", Reason: "at risk"},
+			{ID: "dec-stale-c", Title: "Stale C", Reason: "hidden by cap"},
+		},
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-drift",
+			DecisionTitle: "Drifted decision",
+			Files: []artifact.DriftItem{
+				{Path: "internal/a.go", Status: artifact.DriftModified},
+				{Path: "internal/b.go", Status: artifact.DriftAdded},
+			},
+		}},
+		InProgressProblems: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "prob-progress", Title: "Progress problem"}},
+		},
+		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+		RecentNotes: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "note-hidden", Title: "Hidden note"}},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"### Operator Cockpit",
+		"**Refresh due** (3)",
+		"Stale A",
+		"Stale B",
+		"... and 1 more; run `haft_refresh(action=\"scan\", verbose=true)`",
+		"**Drift detected** (1 decision(s))",
+		"Drifted decision",
+		"1 modified, 1 added",
+		"**Progress problem** `prob-progress` → sol-001",
+		"Full status: `haft_query(action=\"status\", full=true)`",
+		"Coverage: `haft_query(action=\"coverage\")`",
+		"Maintenance plan: `haft_refresh(action=\"plan\")`",
+		"Default status omits shipped/pending decision lists",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+
+	for _, unwanted := range []string{
+		"### Shipped / Healthy",
+		"### Pending",
+		"### Recent Notes",
+		"Hidden note",
+		"Stale C",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("cockpit output should omit %q:\n%s", unwanted, output)
+		}
+	}
+}
+
 func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{

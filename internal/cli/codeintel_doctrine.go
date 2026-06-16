@@ -104,6 +104,13 @@ project — before reading, searching, planning, or editing ANY code — is call
 ` + "`haft_query(action=\"status\")`" + `. It returns the project's live governance
 state in one shot.
 
+Default status is an operator cockpit, not an audit dump. Treat omitted detail
+as "not shown here", never as "absent from the project". When you need detail,
+make an explicit follow-up call: ` + "`haft_query(action=\"status\", full=true)`" + `
+for detailed status, ` + "`haft_query(action=\"coverage\")`" + ` for module coverage,
+` + "`haft_refresh(action=\"scan\", verbose=true)`" + ` for drift/stale detail, and
+` + "`haft_refresh(action=\"plan\")`" + ` for the maintenance work order.
+
 This is a GOVERNED project: its working memory — active problems, pending and
 stale/refresh-due decisions, drift on files you may touch, open commissions,
 coverage gaps — lives in the haft graph, NOT only in the code. Skipping the

@@ -77,6 +77,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Default `h-status` is now an operator cockpit.** `haft_query(action="status")`
+  renders capped high-signal lanes for operator attention, active work,
+  decision-health counts, and a one-line coverage cue; detailed status remains
+  available through `full=true`, full module coverage through
+  `haft_query(action="coverage")`, drift/stale detail through
+  `haft_refresh(action="scan", verbose=true)`, and maintenance work orders
+  through `haft_refresh(action="plan")`. MCP initialize instructions, the
+  bundled `h-status` skill, the interface catalog, Pi carriers, and installed
+  instruction templates now spell out that compact omission is not evidence of
+  absence.
 - **MCP defaults now stay compact by default.** `tools/list` trims
   non-load-bearing schema descriptions and points agents at `haft interface`
   for full contracts; `haft_refresh(action="scan")`, `haft_query(status)`,

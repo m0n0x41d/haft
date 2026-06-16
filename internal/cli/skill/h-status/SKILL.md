@@ -1,7 +1,7 @@
 ---
 name: h-status
 description: |
-  Project state dashboard for haft — read-only consolidation of active problems, pending decisions, refresh-due artifacts, open work commissions, recent notes, module coverage, and spec lifecycle readiness when relevant. Make sure to use this skill whenever the user asks "where are we", "what's pending", "what's stale", "project status", "what needs attention", "show me the state", "what's in flight", "what did we decide on X recently", "haft status", or "spec readiness" — or whenever a session resumes after a break and situational awareness is needed before deciding what to work on. Cheap, read-only, zero commitments. For verifying a single decision use h-verify. For managing commission lifecycle use h-commission. For editing specs use h-spec.
+  Project state cockpit for haft — read-only summary of active problems, pending decisions, refresh/drift pressure, open work commissions, coverage cues, and spec lifecycle readiness when relevant, with explicit drill-down calls for omitted detail. Make sure to use this skill whenever the user asks "where are we", "what's pending", "what's stale", "project status", "what needs attention", "show me the state", "what's in flight", "what did we decide on X recently", "haft status", or "spec readiness" — or whenever a session resumes after a break and situational awareness is needed before deciding what to work on. Cheap, read-only, zero commitments. For verifying a single decision use h-verify. For managing commission lifecycle use h-commission. For editing specs use h-spec.
 when_to_use: |
   Operator wants situational awareness or session-resume context. Cheap and read-only, fire freely.
 argument-hint: "[optional: context name to filter]"
@@ -15,8 +15,14 @@ You are surfacing the current FPF state via `mcp__haft__haft_query(action="statu
 ## Compact interface discovery
 
 If you need the exact compact contract, run `haft interface query.status --json`.
-Default status output is compact; pass `full=true` only when the operator needs
-the complete module coverage list.
+Default status output is an operator cockpit, not an audit dump. It is allowed
+to omit detail. Omission means "not shown here", not "absent from the project".
+Use explicit follow-up calls for detail:
+
+- `mcp__haft__haft_query(action="status", full=true)` — detailed status
+- `mcp__haft__haft_query(action="coverage")` — module coverage
+- `mcp__haft__haft_refresh(action="scan", verbose=true)` — drift/stale detail
+- `mcp__haft__haft_refresh(action="plan")` — maintenance work order
 
 ## Step 0 — Maintenance check (FPF B.3.4 evidence decay)
 
@@ -53,21 +59,18 @@ mcp__haft__haft_query(action="board")
 
 ## Step 2 — Interpret the response
 
-The status payload contains:
+The default status payload is a compact cockpit. Read it as:
 
-- **Shipped / Healthy** — recent decisions that are still active and within valid_until window
-- **Pending** — decisions awaiting implementation, baseline, or measure
-- **Unassessed** — decisions without recent measurement
-- **Refresh Due** — decisions/evidence past valid_until, drift detected, or R_eff degraded; also epistemic debt budget if exceeded
-- **WorkCommissions Need Attention** — blocked, stale, or expired commissions
-- **Backlog** — active problems without committed decisions
-- **Addressed** — recently closed problems with their decisions
-- **Recent Notes** — last 5 micro-decisions
-- **Module Coverage Summary** — compact per-tier coverage; use
-  `mcp__haft__haft_query(action="status", full=true)` or
-  `mcp__haft__haft_query(action="coverage")` for the full module list
+- **Operator Cockpit** — refresh, drift, and commission items that may block or redirect work
+- **Active Work** — the most relevant in-progress problems and backlog count
+- **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions
+- **Coverage Cue** — one-line module coverage orientation when modules were scanned
+- **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, and maintenance plan
 
-The response also includes a navigation strip with available next actions (e.g., `/h-refresh`).
+`full=true` restores the detailed status renderer with shipped/pending/unassessed
+decision lists, addressed problems, recent notes, and full module coverage when
+available. The response also includes a navigation strip with available next
+actions (e.g., `/h-refresh`).
 
 ## Step 3 — Include spec lifecycle when relevant
 
@@ -93,10 +96,13 @@ from h-status. Route follow-up work to `/h-spec`.
 
 Surface the response as-is — the kernel formats it already. Highlight items that need operator attention:
 
-- Refresh-due items → recommend `/h-verify` for the specific decisions
+- Refresh-due or drift items → recommend `/h-verify` for the specific decisions,
+  or call `mcp__haft__haft_refresh(action="scan", verbose=true)` when file-level
+  detail is needed
 - Blocked work commissions → recommend `/h-commission` with `action=show` and operator review
 - Epistemic debt budget exceeded → recommend running `/h-verify` on the highest-debt decisions
-- Blind modules (no decisions) → recommend `/h-frame` if upcoming work targets that module
+- Coverage cue with blind modules → call `mcp__haft__haft_query(action="coverage")`
+  before recommending `/h-frame` for upcoming work in a specific module
 - Stale decisions → recommend `/h-refresh` action=waive (with new evidence) or `action=supersede` (with replacement decision)
 - Spec lifecycle action → recommend `/h-spec` with the surfaced action and carrier
 
@@ -115,6 +121,7 @@ To surface decisions whose affected_files include that path.
 - Do NOT auto-fix anything from this skill. h-status is read-only.
 - Do NOT edit spec carriers or approve/rebaseline/reopen SpecSections from this skill. Use h-spec.
 - Do NOT silently filter out refresh-due items — the operator needs to see epistemic debt to triage.
+- Do NOT infer that a decision, note, module, or drift item is absent merely because compact status omitted it.
 - Do NOT use this skill for full-text search across decisions — that's h-search via `mcp__haft__haft_query(action="search", query="...")`.
 - Do NOT call this skill on every turn. Auto-trigger is fine when the operator explicitly asks; constant polling pollutes context with stale state.
 

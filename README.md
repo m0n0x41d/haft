@@ -160,7 +160,7 @@ semantic judgment, no LLM review, and no L3 runtime claim.
 | **h-compare** | auto | Fair comparison with dim-wise parallel scoring + Pareto front (not a scalar winner) |
 | **h-decide** | **manual** | Record a binding DecisionRecord with full DRR — Transformer Mandate (`disable-model-invocation`) |
 | **h-verify** | auto | Baseline → measure → evidence loop with drift detection |
-| **h-status** | auto | Read-only project FPF state dashboard |
+| **h-status** | auto | Read-only project FPF cockpit with explicit drill-down calls |
 | **h-onboard** | auto | First-frame ceremony for projects new to haft |
 | **h-spec-cover** | auto | Spec-coverage check with blind/stale module triage |
 | **h-note** | auto | Lightweight micro-decision recording |
@@ -287,7 +287,9 @@ haft check          # CI-friendly governance verification (exit 0 clean / 1 find
 haft check routing  # sanity-check skill routing reliability
 ```
 
-From the host agent: `/h-status` for the full dashboard.
+From the host agent: `/h-status` for the compact cockpit; use explicit
+drill-down calls for full status, coverage, drift/stale detail, and maintenance
+plans.
 
 ---
 

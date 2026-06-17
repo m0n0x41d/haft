@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 // TestMergeMCPConfig_FreshProject is the minimum smoke check that haft init
@@ -97,6 +99,7 @@ func TestMergeMCPConfig_Idempotent(t *testing.T) {
 // HAFT_PROJECT_ROOT value suitable for committed project-scoped config.
 func TestConfigureMCPClaude_CreatesPortableProjectRootMCP(t *testing.T) {
 	tmp := t.TempDir()
+	cfg := createInitSmokeProject(t, tmp)
 
 	if err := configureMCPClaude(tmp, "haft"); err != nil {
 		t.Fatalf("configureMCPClaude: %v", err)
@@ -124,6 +127,9 @@ func TestConfigureMCPClaude_CreatesPortableProjectRootMCP(t *testing.T) {
 	if root != claudeProjectRootEnv {
 		t.Errorf("HAFT_PROJECT_ROOT = %q, want portable %q", root, claudeProjectRootEnv)
 	}
+	if got := server.Env[envExpectedProjectID]; got != cfg.ID {
+		t.Errorf("HAFT_EXPECTED_PROJECT_ID = %q, want %q", got, cfg.ID)
+	}
 	if strings.Contains(string(data), tmp) {
 		t.Errorf("committed .mcp.json contains absolute temp path %q:\n%s", tmp, string(data))
 	}
@@ -145,6 +151,7 @@ func TestConfigureMCPClaude_CreatesPortableProjectRootMCP(t *testing.T) {
 // integration writes .cursor/mcp.json (not the user-level location).
 func TestConfigureMCPCursor_CreatesProjectScopedMCP(t *testing.T) {
 	tmp := t.TempDir()
+	cfg := createInitSmokeProject(t, tmp)
 
 	if err := configureMCPCursor(tmp, "haft"); err != nil {
 		t.Fatalf("configureMCPCursor: %v", err)
@@ -168,6 +175,9 @@ func TestConfigureMCPCursor_CreatesProjectScopedMCP(t *testing.T) {
 	if root != cursorProjectRootEnv {
 		t.Errorf("HAFT_PROJECT_ROOT = %q, want portable %q", root, cursorProjectRootEnv)
 	}
+	if got := server.Env[envExpectedProjectID]; got != cfg.ID {
+		t.Errorf("HAFT_EXPECTED_PROJECT_ID = %q, want %q", got, cfg.ID)
+	}
 	if strings.Contains(string(data), tmp) {
 		t.Errorf("committed .cursor/mcp.json contains absolute temp path %q:\n%s", tmp, string(data))
 	}
@@ -177,6 +187,7 @@ func TestConfigureMCPCursor_CreatesProjectScopedMCP(t *testing.T) {
 // project-local TOML does not commit the current machine checkout path.
 func TestConfigureMCPCodex_CreatesPortableProjectRootMCP(t *testing.T) {
 	tmp := t.TempDir()
+	cfg := createInitSmokeProject(t, tmp)
 
 	if err := configureMCPCodex(tmp, "haft"); err != nil {
 		t.Fatalf("configureMCPCodex: %v", err)
@@ -195,6 +206,7 @@ func TestConfigureMCPCodex_CreatesPortableProjectRootMCP(t *testing.T) {
 		`args = ["serve"]`,
 		`[mcp_servers.haft.env]`,
 		`HAFT_PROJECT_ROOT = "."`,
+		`HAFT_EXPECTED_PROJECT_ID = "` + cfg.ID + `"`,
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("codex config missing %q:\n%s", fragment, text)
@@ -215,4 +227,20 @@ func TestConfigureMCPCodex_CreatesPortableProjectRootMCP(t *testing.T) {
 	if first != string(secondData) {
 		t.Fatalf("configureMCPCodex is not idempotent.\nfirst:\n%s\nsecond:\n%s", first, string(secondData))
 	}
+}
+
+func createInitSmokeProject(t *testing.T, root string) *project.Config {
+	t.Helper()
+
+	haftDir := filepath.Join(root, ".haft")
+	if err := createDirectoryStructure(haftDir); err != nil {
+		t.Fatalf("createDirectoryStructure: %v", err)
+	}
+
+	cfg, err := project.Create(haftDir, root)
+	if err != nil {
+		t.Fatalf("project.Create: %v", err)
+	}
+
+	return cfg
 }

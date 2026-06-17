@@ -670,18 +670,14 @@ func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]int
 func configureMCPClaude(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
-		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": claudeProjectRootEnv,
-		},
+		"env": projectEnvForRoot(projectRoot, claudeProjectRootEnv),
 	})
 }
 
 func configureMCPCursor(projectRoot, binaryPath string) error {
 	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
-		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": cursorProjectRootEnv,
-		},
+		"env": projectEnvForRoot(projectRoot, cursorProjectRootEnv),
 	})
 }
 
@@ -694,9 +690,7 @@ func configureMCPGemini(projectRoot, binaryPath string) error {
 	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
 		"timeout": 30000,
 		"cwd":     projectRoot,
-		"env": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
-		},
+		"env":     projectEnvForRoot(projectRoot, projectRoot),
 	})
 }
 
@@ -712,6 +706,13 @@ func configureMCPCodex(projectRoot, binaryPath string) error {
 		existing = string(data)
 	}
 
+	envLines := []string{
+		fmt.Sprintf(`HAFT_PROJECT_ROOT = "%s"`, codexProjectRootEnv),
+	}
+	if expectedProjectID := expectedProjectIDForRoot(projectRoot); expectedProjectID != "" {
+		envLines = append(envLines, fmt.Sprintf(`HAFT_EXPECTED_PROJECT_ID = "%s"`, expectedProjectID))
+	}
+
 	tomlSection := fmt.Sprintf(`[mcp_servers.haft]
 command = "%s"
 args = ["serve"]
@@ -719,8 +720,8 @@ startup_timeout_sec = 10
 tool_timeout_sec = 60
 
 [mcp_servers.haft.env]
-HAFT_PROJECT_ROOT = "%s"
-`, binaryPath, codexProjectRootEnv)
+%s
+`, binaryPath, strings.Join(envLines, "\n"))
 
 	// Strip all existing haft and quint-code MCP sections
 	existing = removeTomlSections(existing, "mcp_servers.quint-code")
@@ -764,12 +765,10 @@ func configureMCPOpencode(projectRoot, binaryPath string) error {
 	delete(mcpRaw, "quint-code")
 
 	mcpRaw["haft"] = map[string]any{
-		"type":    "local",
-		"command": []string{binaryPath, "serve"},
-		"environment": map[string]string{
-			"HAFT_PROJECT_ROOT": projectRoot,
-		},
-		"enabled": true,
+		"type":        "local",
+		"command":     []string{binaryPath, "serve"},
+		"environment": projectEnvForRoot(projectRoot, projectRoot),
+		"enabled":     true,
 	}
 	config["mcp"] = mcpRaw
 

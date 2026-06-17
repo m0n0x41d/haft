@@ -41,7 +41,8 @@ may remain protocol-compatible experimental integrations.
 
 The project root is determined by:
   1. HAFT_PROJECT_ROOT environment variable (if set)
-  2. Current working directory (default)`,
+  2. QUINT_PROJECT_ROOT legacy environment variable (if set)
+  3. Current working directory (default)`,
 	RunE: runServe,
 }
 
@@ -53,20 +54,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Ensure global ~/.haft/ exists (migrates from ~/.quint-code/ if needed)
 	_ = project.EnsureDir()
 
-	// Also check legacy env var
-	cwd := os.Getenv("HAFT_PROJECT_ROOT")
-	if cwd == "" {
-		cwd = os.Getenv("QUINT_PROJECT_ROOT") // fallback for old configs
-	}
-	if cwd == "" {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get working directory: %w", err)
-		}
+	rootInput, err := projectRootInputFromEnv()
+	if err != nil {
+		return fmt.Errorf("resolve project root input: %w", err)
 	}
 
-	if err := logger.Init(cwd); err != nil {
+	if err := logger.Init(rootInput.Path); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to initialize logger: %v\n", err)
 	}
 	defer logger.Close()
@@ -77,11 +70,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 		logger.Info().Str("origin", serverOrigin).Msg("HAFT_SERVER_ORIGIN set to remote — not implemented yet, using local storage")
 	}
 
-	haftDir := filepath.Join(cwd, ".haft")
-
 	server := fpf.NewServer()
+	binding, bindingErr := resolveProjectBindingFromInput(rootInput, strings.TrimSpace(os.Getenv(envExpectedProjectID)))
+	if bindingErr != nil {
+		server.SetInstructions(composeServerInstructions(nil))
+		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+			return "", projectBindingError(binding, bindingErr)
+		})
+		server.Start()
+		return nil
+	}
 
-	workflow, workflowErr := project.LoadWorkflow(cwd)
+	logger.Info().
+		Str("project_root", binding.ProjectRoot).
+		Str("project_id", binding.ProjectID).
+		Str("db_path", binding.DBPath).
+		Str("db_state", binding.DBState).
+		Msg("haft project binding resolved")
+
+	workflow, workflowErr := project.LoadWorkflow(binding.ProjectRoot)
 	if workflowErr != nil {
 		logger.Warn().Err(workflowErr).Msg("failed to load workflow policy")
 	}
@@ -90,64 +97,48 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// the agent the fused code graph exists and to consult it before editing.
 	server.SetInstructions(composeServerInstructions(workflow))
 
-	// Load project identity
-	projCfg, err := project.Load(haftDir)
+	if _, err := os.Stat(binding.DBPath); err != nil {
+		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+			return "", fmt.Errorf("haft project database is missing; run `haft init` in %s to create %s; %s", binding.ProjectRoot, binding.DBPath, formatProjectBindingDiagnostic(binding))
+		})
+		server.Start()
+		return nil
+	}
+
+	database, err := db.NewStore(binding.DBPath)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to load project config")
+		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
+			return "", fmt.Errorf("failed to open haft project database: %w; %s", err, formatProjectBindingDiagnostic(binding))
+		})
+		server.Start()
+		return nil
 	}
 
-	if projCfg != nil {
-		// Unified storage: DB in ~/.haft/projects/{id}/
-		dbPath, err := projCfg.DBPath()
-		if err != nil {
-			logger.Warn().Err(err).Msg("failed to determine DB path")
-		} else if _, err := os.Stat(dbPath); err == nil {
-			database, err := db.NewStore(dbPath)
-			if err != nil {
-				logger.Warn().Err(err).Msg("failed to open database")
-			} else {
-				artStore := artifact.NewStore(database.GetRawDB())
+	artStore := artifact.NewStore(database.GetRawDB())
 
-				// Open cross-project index
-				indexStore, indexErr := project.OpenIndex()
-				if indexErr != nil {
-					logger.Warn().Err(indexErr).Msg("failed to open cross-project index")
-				}
-
-				// Populate context_facts on startup
-				_ = project.PopulateContextFacts(context.Background(), database.GetRawDB(), projCfg.Name)
-
-				// Refresh the code graph in the background if the source tree
-				// changed since the last build — so the first code-graph query
-				// after a code change hits a fresh index without a manual
-				// rebuild. Non-blocking: the server starts immediately; the
-				// build lock serializes this with any query-time EnsureIndex.
-				codeIntelRoot := filepath.Dir(haftDir)
-				go func() {
-					if built, err := codeintel.NewService(artStore).EnsureIndex(context.Background(), codeIntelRoot); err != nil {
-						logger.Warn().Err(err).Msg("code-graph startup refresh failed")
-					} else if built {
-						logger.Info().Msg("code-graph index rebuilt on startup (source changed)")
-					}
-				}()
-
-				searcher := buildHybridSearcher(artStore, database.GetRawDB())
-				crossHybrid := buildCrossProjectHybrid(indexStore)
-
-				server.SetV5Handler(makeV5Handler(artStore, searcher, crossHybrid, haftDir, projCfg, indexStore))
-			}
-		}
-	} else {
-		// Legacy: check for old .haft/haft.db (pre-migration)
-		oldDBPath := filepath.Join(haftDir, "haft.db")
-		if _, err := os.Stat(oldDBPath); err == nil {
-			// Serve guard: block MCP and ask to re-run init
-			server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-				return "", fmt.Errorf("haft storage has been upgraded, please run `haft init` in your project directory to migrate to unified storage, your data will be preserved")
-			})
-		}
+	indexStore, indexErr := project.OpenIndex()
+	if indexErr != nil {
+		logger.Warn().Err(indexErr).Msg("failed to open cross-project index")
 	}
 
+	_ = project.PopulateContextFacts(context.Background(), database.GetRawDB(), binding.ProjectName)
+
+	go func() {
+		if built, err := codeintel.NewService(artStore).EnsureIndex(context.Background(), binding.ProjectRoot); err != nil {
+			logger.Warn().Err(err).Msg("code-graph startup refresh failed")
+		} else if built {
+			logger.Info().Msg("code-graph index rebuilt on startup (source changed)")
+		}
+	}()
+
+	searcher := buildHybridSearcher(artStore, database.GetRawDB())
+	crossHybrid := buildCrossProjectHybrid(indexStore)
+	projCfg := &project.Config{
+		ID:   binding.ProjectID,
+		Name: binding.ProjectName,
+	}
+
+	server.SetV5Handler(makeV5Handler(artStore, searcher, crossHybrid, binding.HaftDir, projCfg, indexStore))
 	server.Start()
 	return nil
 }

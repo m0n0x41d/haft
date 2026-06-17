@@ -7,13 +7,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/config"
 	"github.com/m0n0x41d/haft/internal/hooks"
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/skills"
+)
+
+var (
+	doctorMovedFrom string
+	doctorRepair    bool
 )
 
 var doctorCmd = &cobra.Command{
@@ -24,10 +29,17 @@ var doctorCmd = &cobra.Command{
 }
 
 func init() {
+	doctorCmd.Flags().StringVar(&doctorMovedFrom, "moved-from", "", "old project root to audit after a repository move")
+	doctorCmd.Flags().BoolVar(&doctorRepair, "repair", false, "repair exact stale project-root carriers found by --moved-from")
+
 	rootCmd.AddCommand(doctorCmd)
 }
 
 func runDoctor(_ *cobra.Command, _ []string) error {
+	if doctorRepair && strings.TrimSpace(doctorMovedFrom) == "" {
+		return fmt.Errorf("--repair requires --moved-from")
+	}
+
 	fmt.Println("haft doctor")
 	fmt.Println()
 
@@ -139,34 +151,24 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// --- Project ---
 	fmt.Println()
 	fmt.Println("Project:")
-	projectRoot, err := findProjectRoot()
+	binding, err := resolveProjectBinding()
 	if err != nil {
-		fmt.Printf("  \u2717 Project root: not found (run 'haft init')\n")
+		fmt.Printf("  \u2717 Project binding: %s\n", projectBindingError(binding, err))
 		failed++
 	} else {
-		fmt.Printf("  \u2713 Project root: %s\n", projectRoot)
+		fmt.Printf("  \u2713 Project root: %s\n", binding.ProjectRoot)
 		passed++
 
-		haftDir := filepath.Join(projectRoot, ".haft")
-
 		check("Project config", func() (string, error) {
-			cfg, err := project.Load(haftDir)
-			if err != nil || cfg == nil {
-				return "", fmt.Errorf("not initialized (run 'haft init')")
-			}
-			return "ok", nil
+			return fmt.Sprintf("ok id=%s name=%s", binding.ProjectID, binding.ProjectName), nil
+		})
+
+		check("Project binding", func() (string, error) {
+			return formatProjectBindingDiagnostic(binding), nil
 		})
 
 		check("Database", func() (string, error) {
-			projCfg, _ := project.Load(haftDir)
-			if projCfg == nil {
-				return "", fmt.Errorf("no project config")
-			}
-			dbPath, err := projCfg.DBPath()
-			if err != nil {
-				return "", err
-			}
-			db, err := sql.Open("sqlite", dbPath)
+			db, err := sql.Open("sqlite", binding.DBPath)
 			if err != nil {
 				return "", err
 			}
@@ -174,11 +176,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			if err := db.Ping(); err != nil {
 				return "", err
 			}
-			return dbPath, nil
+			return fmt.Sprintf("%s (%s, artifacts=%d)", binding.DBPath, binding.DBState, binding.ArtifactCount), nil
 		})
 
 		warn("Hooks", func() (string, bool) {
-			exec := hooks.NewExecutor(projectRoot)
+			exec := hooks.NewExecutor(binding.ProjectRoot)
 			if exec.HasHooks() {
 				return "configured", true
 			}
@@ -186,13 +188,48 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		})
 
 		warn("Skills", func() (string, bool) {
-			loader := skills.NewLoader(projectRoot)
+			loader := skills.NewLoader(binding.ProjectRoot)
 			list := loader.List()
 			if len(list) > 0 {
 				return fmt.Sprintf("%d loaded", len(list)), true
 			}
 			return "none loaded", true // not a failure
 		})
+
+		if strings.TrimSpace(doctorMovedFrom) != "" {
+			fmt.Println()
+			fmt.Println("Project Path Carriers:")
+			results, err := runDoctorProjectPathCarrierCheck(binding)
+			if err != nil {
+				fmt.Printf("  ✗ Moved root audit: %s\n", err)
+				failed++
+			} else {
+				for _, result := range results {
+					if result.Changed {
+						fmt.Printf("  ✓ %s: repaired %d stale reference(s) (%s)\n", result.Label, result.Occurrences, result.Path)
+						passed++
+						continue
+					}
+					if result.Occurrences == 0 {
+						fmt.Printf("  ✓ %s: clean (%s)\n", result.Label, result.Path)
+						passed++
+						continue
+					}
+					if result.Repairable && !doctorRepair {
+						fmt.Printf("  ⚠ %s: %d stale reference(s), repairable with --repair (%s)\n", result.Label, result.Occurrences, result.Path)
+						warned++
+						continue
+					}
+					if result.Repairable {
+						fmt.Printf("  ⚠ %s: %d stale reference(s), not changed: %s (%s)\n", result.Label, result.Occurrences, result.Message, result.Path)
+						warned++
+						continue
+					}
+					fmt.Printf("  ⚠ %s: %d stale reference(s), manual review required (%s)\n", result.Label, result.Occurrences, result.Path)
+					warned++
+				}
+			}
+		}
 	}
 
 	// --- Summary ---
@@ -202,6 +239,29 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("%d checks failed", failed)
 	}
 	return nil
+}
+
+func runDoctorProjectPathCarrierCheck(binding ProjectBinding) ([]projectPathCarrierResult, error) {
+	oldRoot, err := filepath.Abs(strings.TrimSpace(doctorMovedFrom))
+	if err != nil {
+		return nil, err
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	carriers := projectPathCarrierCandidates(homeDir, binding.ProjectRoot)
+	audit, err := auditProjectPathCarriers(carriers, oldRoot)
+	if err != nil {
+		return nil, err
+	}
+	if !doctorRepair {
+		return audit, nil
+	}
+
+	return repairProjectPathCarriers(audit, oldRoot, binding.ProjectRoot)
 }
 
 func trimOutput(b []byte) string {

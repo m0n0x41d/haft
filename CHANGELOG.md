@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Repository-move audit and repair in `haft doctor`.** `haft doctor
+  --moved-from <old-root>` now reports stale project-root carriers after a
+  checkout move, and `--repair` performs an explicit exact-match repair for
+  supported carriers. The repair path covers Codex user project trust entries,
+  Claude user project state exact JSON string literals, project-local MCP
+  configs, and OpenCode config; default `doctor` remains read-only and
+  `--repair` is rejected unless the old root is supplied.
+- **Project-id guarded binding diagnostics.** MCP host configs produced by
+  `haft init` now include `HAFT_EXPECTED_PROJECT_ID` alongside portable
+  `HAFT_PROJECT_ROOT` values where the project identity is available, and
+  `haft serve` resolves binding through the shared ProjectBinding path before
+  exposing mutation-capable tools. `haft doctor` now reports the resolved root,
+  project id, expected id, DB path/state, and artifact count so moved checkouts
+  can distinguish "wrong cwd" from "wrong project identity".
 - **`@haft/pi`: a Pi-native behavior package (first carrier slice).** New
   `packages/haft-pi` ships a Pi extension that owns a small NDJSON MCP bridge
   to `haft serve` and registers the full typed tool suite natively

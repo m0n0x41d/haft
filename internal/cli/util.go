@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // findProjectRoot walks up from cwd until it finds a .haft/ directory.
@@ -15,15 +14,6 @@ func findProjectRoot() (string, error) {
 	}
 
 	return findProjectRootFrom(dir)
-}
-
-func projectRootSearchStart() (string, error) {
-	envRoot := strings.TrimSpace(os.Getenv("HAFT_PROJECT_ROOT"))
-	if envRoot != "" {
-		return filepath.Abs(envRoot)
-	}
-
-	return os.Getwd()
 }
 
 func findProjectRootFrom(dir string) (string, error) {

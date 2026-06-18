@@ -76,6 +76,16 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 		packet.Summary.AbstainFindings,
 		packet.Summary.BlockedForStrongerUse,
 	))
+	if packet.Summary.ExplicitClaims > 0 {
+		builder.WriteString(fmt.Sprintf(
+			"claims: explicit=%d declared=%d mixed_unresolved=%d unclassified=%d missing_support=%d\n",
+			packet.Summary.ExplicitClaims,
+			packet.Summary.DeclaredClaims,
+			packet.Summary.MixedUnresolvedClaims,
+			packet.Summary.UnclassifiedClaims,
+			packet.Summary.MissingSupportClaims,
+		))
+	}
 	builder.WriteString("authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission\n")
 
 	if len(packet.Findings) > 0 {

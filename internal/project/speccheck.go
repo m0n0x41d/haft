@@ -91,10 +91,22 @@ type SpecSection struct {
 	DependsOn        []string                  `json:"depends_on,omitempty"`
 	TargetRefs       []string                  `json:"target_refs,omitempty"`
 	EvidenceRequired []SpecEvidenceRequirement `json:"evidence_required,omitempty"`
+	Claims           []SpecClaim               `json:"claims,omitempty"`
 	DocumentKind     string                    `json:"document_kind"`
 	Path             string                    `json:"path"`
 	Line             int                       `json:"line,omitempty"`
 	Malformed        bool                      `json:"malformed,omitempty"`
+}
+
+type SpecClaim struct {
+	ID                   string   `json:"id"`
+	Class                string   `json:"class"`
+	Statement            string   `json:"statement,omitempty"`
+	Scope                []string `json:"scope,omitempty"`
+	SupportRefs          []string `json:"support_refs,omitempty"`
+	EvidenceRefs         []string `json:"evidence_refs,omitempty"`
+	ValidUntil           string   `json:"valid_until,omitempty"`
+	GoverningPatternRefs []string `json:"governing_pattern_refs,omitempty"`
 }
 
 type SpecEvidenceRequirement struct {
@@ -661,6 +673,7 @@ func validateSpecSectionFields(
 	section.DependsOn = specSectionRefList(fields, "depends_on")
 	section.TargetRefs = specSectionRefList(fields, "target_refs")
 	section.EvidenceRequired = specSectionEvidenceRequirements(fields)
+	section.Claims = specSectionClaims(fields)
 
 	for field, allowed := range specSectionValueSets {
 		value, ok := scalarString(fields[field])
@@ -772,6 +785,77 @@ func specSectionEvidenceRequirements(fields map[string]any) []SpecEvidenceRequir
 	return requirements
 }
 
+func specSectionClaims(fields map[string]any) []SpecClaim {
+	raw, ok := fields["claims"]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	claims := make([]SpecClaim, 0, len(items))
+	for _, item := range items {
+		itemFields, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		claim := SpecClaim{}
+		if id, ok := strictString(itemFields["id"]); ok {
+			claim.ID = id
+		}
+		if class, ok := strictString(itemFields["class"]); ok {
+			claim.Class = class
+		}
+		if statement, ok := strictString(itemFields["statement"]); ok {
+			claim.Statement = statement
+		}
+		if claim.Statement == "" {
+			if statement, ok := strictString(itemFields["claim"]); ok {
+				claim.Statement = statement
+			}
+		}
+		if validUntil, ok := specSectionValidUntilString(itemFields["valid_until"]); ok {
+			claim.ValidUntil = validUntil
+		}
+		claim.Scope = specClaimStringList(itemFields, "scope")
+		claim.SupportRefs = specClaimStringList(itemFields, "support_refs")
+		claim.EvidenceRefs = specClaimStringList(itemFields, "evidence_refs")
+		claim.GoverningPatternRefs = specClaimStringList(itemFields, "governing_pattern_refs")
+
+		claims = append(claims, claim)
+	}
+
+	return claims
+}
+
+func specClaimStringList(fields map[string]any, field string) []string {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		value, ok := strictString(item)
+		if !ok {
+			continue
+		}
+
+		values = append(values, value)
+	}
+
+	return sortedUniqueStrings(values)
+}
+
 func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
@@ -779,6 +863,7 @@ func validateSpecSectionShape(path string, line int, documentKind string, fields
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "depends_on", "spec_section_invalid_depends_on")...)
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "target_refs", "spec_section_invalid_target_refs")...)
 	findings = append(findings, validateOptionalEvidenceRequired(path, line, section.ID, fields)...)
+	findings = append(findings, validateOptionalSpecClaims(path, line, section.ID, fields)...)
 	findings = append(findings, validateOptionalValidUntil(path, line, section.ID, fields, section)...)
 	findings = append(findings, validateCarrierClaimAllowance(path, line, documentKind, fields, section)...)
 
@@ -1041,6 +1126,106 @@ func validateOptionalEvidenceRequired(path string, line int, sectionID string, f
 	}
 
 	return findings
+}
+
+func validateOptionalSpecClaims(path string, line int, sectionID string, fields map[string]any) []SpecCheckFinding {
+	raw, ok := fields["claims"]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := "$.claims"
+	items, ok := raw.([]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_claims", "spec-section `claims` must be a YAML list")}
+	}
+
+	findings := make([]SpecCheckFinding, 0)
+	for index, item := range items {
+		itemPath := indexedFieldPath(fieldPath, index)
+		itemFields, ok := item.(map[string]any)
+		if !ok {
+			findings = append(findings, invalidSpecSectionShapeFinding(path, line, sectionID, itemPath, "spec_section_invalid_claims", "claim entries must be mappings with stable `id` and non-empty `class`"))
+			continue
+		}
+
+		findings = append(findings, validateSpecClaimRequiredString(path, line, sectionID, itemPath, itemFields, "id")...)
+		findings = append(findings, validateSpecClaimRequiredString(path, line, sectionID, itemPath, itemFields, "class")...)
+		findings = append(findings, validateOptionalSpecClaimString(path, line, sectionID, itemPath, itemFields, "statement")...)
+		findings = append(findings, validateOptionalSpecClaimString(path, line, sectionID, itemPath, itemFields, "claim")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "scope")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "support_refs")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "evidence_refs")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "governing_pattern_refs")...)
+		findings = append(findings, validateOptionalSpecClaimValidUntil(path, line, sectionID, itemPath, itemFields)...)
+	}
+
+	return findings
+}
+
+func validateSpecClaimRequiredString(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	value, ok := strictString(fields[field])
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a non-empty string", field))}
+	}
+	if field == "id" && !isStableSpecSectionID(value) {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", "claim `id` must be a stable non-empty token without whitespace")}
+	}
+
+	return nil
+}
+
+func validateOptionalSpecClaimString(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	if _, ok := fields[field]; !ok {
+		return nil
+	}
+	if _, ok := strictString(fields[field]); ok {
+		return nil
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a non-empty string", field))}
+}
+
+func validateOptionalSpecClaimStringList(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := joinFieldPath(itemPath, field)
+	items, ok := raw.([]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a YAML list of non-empty strings", field))}
+	}
+
+	findings := make([]SpecCheckFinding, 0)
+	for index, item := range items {
+		if _, ok := strictString(item); ok {
+			continue
+		}
+
+		findings = append(findings, invalidSpecSectionShapeFinding(
+			path,
+			line,
+			sectionID,
+			indexedFieldPath(fieldPath, index),
+			"spec_section_invalid_claims",
+			fmt.Sprintf("claim `%s` entries must be non-empty strings", field),
+		))
+	}
+
+	return findings
+}
+
+func validateOptionalSpecClaimValidUntil(path string, line int, sectionID string, itemPath string, fields map[string]any) []SpecCheckFinding {
+	if _, ok := fields["valid_until"]; !ok {
+		return nil
+	}
+	if _, ok := specSectionValidUntilString(fields["valid_until"]); ok {
+		return nil
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, "valid_until"), "spec_section_invalid_claims", "claim `valid_until` must be YYYY-MM-DD or RFC3339")}
 }
 
 func validateOptionalValidUntil(path string, line int, sectionID string, fields map[string]any, section SpecSection) []SpecCheckFinding {

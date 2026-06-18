@@ -44,6 +44,16 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if packet.Summary.CheckedSections != 2 {
 		t.Fatalf("checked_sections = %d, want 2", packet.Summary.CheckedSections)
 	}
+	if packet.Summary.ExplicitClaims != 1 {
+		t.Fatalf("explicit_claims = %d, want 1", packet.Summary.ExplicitClaims)
+	}
+	section := specReviewSectionByID(t, packet, "TS.environment.001")
+	if section.ClaimRegister.ExplicitClaims != 1 {
+		t.Fatalf("section claim register = %+v, want one explicit claim", section.ClaimRegister)
+	}
+	if len(section.Claims) != 1 || section.Claims[0].Class != specflow.ReviewClaimClassLaw {
+		t.Fatalf("section claims = %#v, want one L claim", section.Claims)
+	}
 	if strings.Contains(output.String(), `"status":"ready"`) || strings.Contains(output.String(), `"verdict":"pass"`) {
 		t.Fatalf("review JSON must not expose ready/pass authority: %s", output.String())
 	}
@@ -72,6 +82,9 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	}
 	if !strings.Contains(result, "not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission") {
 		t.Fatalf("summary missing authority disclaimer:\n%s", result)
+	}
+	if !strings.Contains(result, "claims: explicit=1 declared=1") {
+		t.Fatalf("summary missing claim register counts:\n%s", result)
 	}
 }
 
@@ -105,7 +118,7 @@ func newSpecReviewCLIProject(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	writeSpecCheckCLIFile(t, filepath.Join(specDir, "target-system.md"), reviewCLISpecSection(
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "target-system.md"), reviewCLISpecSectionWithClaims(
 		"TS.environment.001",
 		"target-system",
 		"target.environment",
@@ -124,6 +137,37 @@ func newSpecReviewCLIProject(t *testing.T) string {
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
 
 	return root
+}
+
+func reviewCLISpecSectionWithClaims(
+	id string,
+	spec string,
+	kind string,
+	title string,
+	statementType string,
+	claimLayer string,
+) string {
+	return "## " + id + " " + title + "\n\n" +
+		"```yaml spec-section\n" +
+		"id: " + id + "\n" +
+		"spec: " + spec + "\n" +
+		"kind: " + kind + "\n" +
+		"title: " + title + "\n" +
+		"statement_type: " + statementType + "\n" +
+		"claim_layer: " + claimLayer + "\n" +
+		"owner: human\n" +
+		"status: active\n" +
+		"valid_until: 2099-01-01\n" +
+		"claims:\n" +
+		"  - id: " + id + ".L1\n" +
+		"    class: L\n" +
+		"    statement: This section defines the target environment.\n" +
+		"    governing_pattern_refs:\n" +
+		"      - A.6.B\n" +
+		"evidence_required:\n" +
+		"  - kind: review\n" +
+		"    description: Human confirms this section still holds.\n" +
+		"```\n"
 }
 
 func reviewCLISpecSection(
@@ -160,4 +204,17 @@ func stubSpecReviewJSON(t *testing.T, value bool) func() {
 	return func() {
 		specReviewJSON = previous
 	}
+}
+
+func specReviewSectionByID(t *testing.T, packet specflow.ReviewPacket, sectionID string) specflow.ReviewSection {
+	t.Helper()
+
+	for _, section := range packet.Sections {
+		if section.SectionID == sectionID {
+			return section
+		}
+	}
+
+	t.Fatalf("section %q not found in %#v", sectionID, packet.Sections)
+	return specflow.ReviewSection{}
 }

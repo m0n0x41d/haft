@@ -42,20 +42,27 @@ type ReviewSummary struct {
 	AbstainFindings            int `json:"abstain_findings"`
 	BlockedForStrongerUse      int `json:"blocked_for_stronger_use_findings"`
 	StructuralFindingsObserved int `json:"structural_findings_observed"`
+	ExplicitClaims             int `json:"explicit_claims"`
+	DeclaredClaims             int `json:"declared_claims"`
+	MixedUnresolvedClaims      int `json:"mixed_unresolved_claims"`
+	UnclassifiedClaims         int `json:"unclassified_claims"`
+	MissingSupportClaims       int `json:"missing_support_claims"`
 }
 
 type ReviewSection struct {
-	SectionID     string     `json:"section_id"`
-	Title         string     `json:"title,omitempty"`
-	DocumentKind  string     `json:"document_kind"`
-	Kind          string     `json:"kind"`
-	StatementType string     `json:"statement_type"`
-	ClaimLayer    string     `json:"claim_layer"`
-	Bearer        string     `json:"bearer"`
-	Frame         string     `json:"frame"`
-	StrongerUse   string     `json:"stronger_use"`
-	Source        SourceSpan `json:"source"`
-	FindingCodes  []string   `json:"finding_codes,omitempty"`
+	SectionID     string               `json:"section_id"`
+	Title         string               `json:"title,omitempty"`
+	DocumentKind  string               `json:"document_kind"`
+	Kind          string               `json:"kind"`
+	StatementType string               `json:"statement_type"`
+	ClaimLayer    string               `json:"claim_layer"`
+	Bearer        string               `json:"bearer"`
+	Frame         string               `json:"frame"`
+	StrongerUse   string               `json:"stronger_use"`
+	ClaimRegister ClaimRegisterSummary `json:"claim_register"`
+	Claims        []ReviewClaim        `json:"claims,omitempty"`
+	Source        SourceSpan           `json:"source"`
+	FindingCodes  []string             `json:"finding_codes,omitempty"`
 }
 
 type ReviewFinding struct {
@@ -186,6 +193,7 @@ func reviewSubjectFindings(subject reviewSubject) []ReviewFinding {
 	findings = append(findings, missingFrameFindings(subject)...)
 	findings = append(findings, frameMismatchFindings(subject)...)
 	findings = append(findings, activeCarrierFindings(subject)...)
+	findings = append(findings, claimRegisterFindings(subject)...)
 	findings = append(findings, strongClaimSupportFindings(subject)...)
 	findings = append(findings, authoritySupportFindings(subject)...)
 	findings = append(findings, mixedStatementLayerFindings(subject)...)
@@ -275,6 +283,9 @@ func activeCarrierFindings(subject reviewSubject) []ReviewFinding {
 }
 
 func strongClaimSupportFindings(subject reviewSubject) []ReviewFinding {
+	if sectionHasExplicitClaims(subject.section) {
+		return nil
+	}
 	if !sectionMakesStrongClaim(subject.section) {
 		return nil
 	}
@@ -298,6 +309,9 @@ func strongClaimSupportFindings(subject reviewSubject) []ReviewFinding {
 }
 
 func authoritySupportFindings(subject reviewSubject) []ReviewFinding {
+	if sectionHasExplicitClaims(subject.section) {
+		return nil
+	}
 	if !sectionUsesAuthorityVocabulary(subject.section) {
 		return nil
 	}
@@ -373,6 +387,10 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 	for _, finding := range findings {
 		codes = append(codes, finding.RuleID)
 	}
+	claims := reviewClaims(subject)
+	for index := range claims {
+		claims[index].FindingCodes = reviewClaimFindingCodes(claims[index], findings)
+	}
 
 	return ReviewSection{
 		SectionID:     subject.section.ID,
@@ -384,9 +402,24 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 		Bearer:        subject.bearer,
 		Frame:         subject.frame,
 		StrongerUse:   sectionStrongerUse(findings),
+		ClaimRegister: claimRegisterSummary(claims, findings),
+		Claims:        claims,
 		Source:        subject.source,
 		FindingCodes:  codes,
 	}
+}
+
+func reviewClaimFindingCodes(claim ReviewClaim, findings []ReviewFinding) []string {
+	codes := make([]string, 0)
+	for _, finding := range findings {
+		if !strings.HasPrefix(finding.Source.FieldPath, claim.Source.FieldPath) {
+			continue
+		}
+
+		codes = append(codes, finding.RuleID)
+	}
+
+	return codes
 }
 
 func summarizeReview(packet ReviewPacket) ReviewSummary {
@@ -408,6 +441,13 @@ func summarizeReview(packet ReviewPacket) ReviewSummary {
 		if finding.RuleID == "structural_findings_present" {
 			summary.StructuralFindingsObserved++
 		}
+	}
+	for _, section := range packet.Sections {
+		summary.ExplicitClaims += section.ClaimRegister.ExplicitClaims
+		summary.DeclaredClaims += section.ClaimRegister.DeclaredClaims
+		summary.MixedUnresolvedClaims += section.ClaimRegister.MixedUnresolvedClaims
+		summary.UnclassifiedClaims += section.ClaimRegister.UnclassifiedClaims
+		summary.MissingSupportClaims += section.ClaimRegister.MissingSupportClaims
 	}
 
 	return summary
@@ -543,6 +583,10 @@ func sectionHasSupportRefs(section project.SpecSection) bool {
 	}
 
 	return false
+}
+
+func sectionHasExplicitClaims(section project.SpecSection) bool {
+	return len(section.Claims) > 0
 }
 
 func nonEmptyStrings(values []string) []string {

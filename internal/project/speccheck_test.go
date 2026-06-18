@@ -271,6 +271,75 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 	}
 }
 
+func TestProjectSpecificationSetParsesExplicitClaims(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.claims.001 Explicit claims\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.claims.001\n" +
+				"kind: acceptance\n" +
+				"title: Explicit claims\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"claims:\n" +
+				"  - id: TS.claims.001.A1\n" +
+				"    class: A\n" +
+				"    statement: Gate claim is admissible after review.\n" +
+				"    scope:\n" +
+				"      - target-boundary\n" +
+				"    support_refs:\n" +
+				"      - dec-20260618-example\n" +
+				"    evidence_refs:\n" +
+				"      - evid-20260618-example\n" +
+				"    valid_until: 2026-08-01\n" +
+				"    governing_pattern_refs:\n" +
+				"      - A.6.B\n" +
+				"  - id: TS.claims.001.mixed\n" +
+				"    class: A/D\n" +
+				"    claim: Mixed claim stays explicit and unresolved until review.\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none", specSet.Findings)
+	}
+	if len(specSet.Sections) != 1 {
+		t.Fatalf("sections = %#v, want one section", specSet.Sections)
+	}
+
+	claims := specSet.Sections[0].Claims
+	if len(claims) != 2 {
+		t.Fatalf("claims = %#v, want two claims", claims)
+	}
+	if claims[0].ID != "TS.claims.001.A1" || claims[0].Class != "A" {
+		t.Fatalf("first claim identity = %#v", claims[0])
+	}
+	if claims[0].Statement != "Gate claim is admissible after review." {
+		t.Fatalf("first claim statement = %q", claims[0].Statement)
+	}
+	if !sameStrings(claims[0].SupportRefs, []string{"dec-20260618-example"}) {
+		t.Fatalf("support_refs = %#v", claims[0].SupportRefs)
+	}
+	if !sameStrings(claims[0].EvidenceRefs, []string{"evid-20260618-example"}) {
+		t.Fatalf("evidence_refs = %#v", claims[0].EvidenceRefs)
+	}
+	if !sameStrings(claims[0].GoverningPatternRefs, []string{"A.6.B"}) {
+		t.Fatalf("governing_pattern_refs = %#v", claims[0].GoverningPatternRefs)
+	}
+	if claims[1].Class != "A/D" {
+		t.Fatalf("mixed class = %q", claims[1].Class)
+	}
+	if claims[1].Statement != "Mixed claim stays explicit and unresolved until review." {
+		t.Fatalf("mixed claim statement = %q", claims[1].Statement)
+	}
+}
+
 func TestProjectSpecificationSetDistinguishesSectionLifecycleStates(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{{
@@ -386,6 +455,39 @@ func TestCheckSpecDocumentsValidatesSectionOptionalFieldShapes(t *testing.T) {
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_depends_on", "$.depends_on")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_target_refs", "$.target_refs[1]")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_evidence_required", "$.evidence_required[0].description")
+}
+
+func TestCheckSpecDocumentsValidatesExplicitClaimShapes(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.claims.001\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.claims.001\n" +
+				"kind: acceptance\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"claims:\n" +
+				"  - id: bad id\n" +
+				"    class: A\n" +
+				"  - id: TS.claims.001.C2\n" +
+				"    class: \"\"\n" +
+				"  - not-a-mapping\n" +
+				"  - id: TS.claims.001.C4\n" +
+				"    class: E\n" +
+				"    support_refs: dec-20260618-example\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[0].id")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[1].class")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[2]")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[3].support_refs")
 }
 
 func TestCheckSpecDocumentsGuardsActiveTargetCarrierClaims(t *testing.T) {

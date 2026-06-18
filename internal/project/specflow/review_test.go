@@ -95,6 +95,98 @@ func TestReviewSpecificationSet_DoesNotFalseBlockLegitimateMultiView(t *testing.
 	}
 }
 
+func TestReviewSpecificationSet_UsesExplicitClaimSupport(t *testing.T) {
+	section := reviewSectionFixture(
+		"ES.gate.001",
+		"enabling-system",
+		"enabling.gate",
+		"Explicit claim support",
+		"duty",
+		"work",
+		nil,
+	)
+	section.EvidenceRequired = nil
+	section.Claims = []project.SpecClaim{
+		{
+			ID:          "ES.gate.001.A1",
+			Class:       "A",
+			Statement:   "Gate is admissible only after human review.",
+			SupportRefs: []string{"dec-20260618-example"},
+		},
+	}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	})
+
+	assertNoReviewFinding(t, packet, "strong_claim_without_support")
+	assertNoReviewFinding(t, packet, "authority_like_without_evidence_requirement")
+	if packet.Summary.ExplicitClaims != 1 || packet.Summary.DeclaredClaims != 1 {
+		t.Fatalf("claim summary = %+v, want one declared explicit claim", packet.Summary)
+	}
+	if packet.Summary.MissingSupportClaims != 0 {
+		t.Fatalf("missing_support_claims = %d, want 0", packet.Summary.MissingSupportClaims)
+	}
+	if len(packet.Sections[0].Claims) != 1 {
+		t.Fatalf("review claims = %#v, want one claim", packet.Sections[0].Claims)
+	}
+	if packet.Sections[0].Claims[0].Class != ReviewClaimClassAdmissibility {
+		t.Fatalf("claim class = %q, want %q", packet.Sections[0].Claims[0].Class, ReviewClaimClassAdmissibility)
+	}
+}
+
+func TestReviewSpecificationSet_FindsExplicitClaimPostureIssues(t *testing.T) {
+	section := reviewSectionFixture(
+		"TS.claims.001",
+		"target-system",
+		"target.claims",
+		"Explicit claim posture",
+		"definition",
+		"object",
+		nil,
+	)
+	section.Claims = []project.SpecClaim{
+		{
+			ID:        "TS.claims.001.mixed",
+			Class:     "A/D",
+			Statement: "One sentence acts as gate and duty.",
+		},
+		{
+			ID:        "TS.claims.001.unknown",
+			Class:     "promise",
+			Statement: "Unknown local class should not become canonical.",
+		},
+		{
+			ID:        "TS.claims.001.gate",
+			Class:     "A",
+			Statement: "Gate claim lacks support.",
+		},
+	}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	})
+
+	assertReviewFinding(t, packet, "mixed_claim_unresolved", ReviewSeverityWarn)
+	assertReviewFinding(t, packet, "claim_class_unresolved", ReviewSeverityAbstain)
+	assertReviewFinding(t, packet, "declared_claim_without_support", ReviewSeverityBlockedForStrongerUse)
+	if packet.Summary.ExplicitClaims != 3 {
+		t.Fatalf("explicit_claims = %d, want 3", packet.Summary.ExplicitClaims)
+	}
+	if packet.Summary.MixedUnresolvedClaims != 1 {
+		t.Fatalf("mixed_unresolved_claims = %d, want 1", packet.Summary.MixedUnresolvedClaims)
+	}
+	if packet.Summary.UnclassifiedClaims != 1 {
+		t.Fatalf("unclassified_claims = %d, want 1", packet.Summary.UnclassifiedClaims)
+	}
+	if packet.Summary.MissingSupportClaims != 1 {
+		t.Fatalf("missing_support_claims = %d, want 1", packet.Summary.MissingSupportClaims)
+	}
+	if packet.Sections[0].StrongerUse != ReviewUseBlockedForStrongerUse {
+		t.Fatalf("stronger_use = %q, want blocked", packet.Sections[0].StrongerUse)
+	}
+}
+
 func reviewSectionFixture(
 	id string,
 	documentKind string,
@@ -142,4 +234,18 @@ func assertReviewFinding(
 	}
 
 	t.Fatalf("finding %q not found in %#v", ruleID, packet.Findings)
+}
+
+func assertNoReviewFinding(
+	t *testing.T,
+	packet ReviewPacket,
+	ruleID string,
+) {
+	t.Helper()
+
+	for _, finding := range packet.Findings {
+		if finding.RuleID == ruleID {
+			t.Fatalf("unexpected finding %q in %#v", ruleID, packet.Findings)
+		}
+	}
 }

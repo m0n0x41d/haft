@@ -57,6 +57,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exposes those fields structurally, while explain/exact text views name
   route/related carriers as non-normative projections over FPF sections.
   Default search output stays compact.
+- **Spec ClaimRegister v1.** SpecSection carriers may now declare explicit
+  `claims:` entries with stable IDs, L/A/D/E class labels, claim-scoped support,
+  evidence, validity, and governing-pattern refs. `haft spec review --json`
+  exposes the read-only claim register and advisory findings for mixed,
+  unclassified, or unsupported declared claims; no prose is extracted into
+  canonical claims.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

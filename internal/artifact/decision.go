@@ -568,12 +568,14 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	choiceResult := input.ChoiceResult
 	if choiceResult == nil {
-		choiceResult = NewDecisionChoiceResult(
-			dctx.ProblemRefs,
-			input.PortfolioRef,
-			input.SelectedTitle,
-			input.WhySelected,
-		)
+		choiceResult = NewDecisionChoiceResult(DecisionChoiceResultInput{
+			ProblemRefs:     dctx.ProblemRefs,
+			PortfolioRef:    input.PortfolioRef,
+			SelectedTitle:   input.SelectedTitle,
+			WhySelected:     input.WhySelected,
+			WhyNotOthers:    input.WhyNotOthers,
+			SelectionPolicy: input.SelectionPolicy,
+		})
 	}
 
 	decisionFields := DecisionFields{

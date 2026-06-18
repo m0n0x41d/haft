@@ -70,7 +70,7 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"transformation_record", "transformed_entity", "initial_state", "post_state", "relation", "context"} {
+	for _, want := range []string{"choice_result", "option_set", "comparison_basis", "choice_rule", "next_move", "transformation_record", "transformed_entity", "initial_state", "post_state", "relation", "context"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("decision field shapes missing %q:\n%s", want, fieldShapes)
 		}
@@ -82,6 +82,9 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
+	if !strings.Contains(notes, "C.11 subject, option_set, comparison_basis, choice_rule, and next_move") {
+		t.Fatalf("decision interface notes missing C.11 choice_result warning:\n%s", notes)
+	}
 	if !strings.Contains(notes, "not a MethodRun, WorkCommission, evidence item, or publication unit") {
 		t.Fatalf("decision interface notes missing transformation separation warning:\n%s", notes)
 	}

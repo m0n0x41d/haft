@@ -779,12 +779,15 @@ func ValidChoiceNextMoveNames() []string {
 // ChoiceResult records the human-side choice outcome. ComparisonResult may
 // recommend; it does not create this object.
 type ChoiceResult struct {
-	SubjectRef   string         `json:"subject_ref"`
-	NextMove     ChoiceNextMove `json:"next_move"`
-	VariantRef   string         `json:"variant_ref,omitempty"`
-	ProblemRefs  []string       `json:"problem_refs,omitempty"`
-	PortfolioRef string         `json:"portfolio_ref,omitempty"`
-	Reason       string         `json:"reason,omitempty"`
+	SubjectRef      string         `json:"subject_ref"`
+	OptionSet       []string       `json:"option_set,omitempty"`
+	ComparisonBasis []string       `json:"comparison_basis,omitempty"`
+	ChoiceRule      string         `json:"choice_rule,omitempty"`
+	NextMove        ChoiceNextMove `json:"next_move"`
+	VariantRef      string         `json:"variant_ref,omitempty"`
+	ProblemRefs     []string       `json:"problem_refs,omitempty"`
+	PortfolioRef    string         `json:"portfolio_ref,omitempty"`
+	Reason          string         `json:"reason,omitempty"`
 }
 
 const TransformationRecordSchemaVersion = 1
@@ -863,12 +866,15 @@ func NormalizeChoiceResult(choice *ChoiceResult) *ChoiceResult {
 	}
 
 	normalized := &ChoiceResult{
-		SubjectRef:   strings.TrimSpace(choice.SubjectRef),
-		NextMove:     ChoiceNextMove(strings.TrimSpace(string(choice.NextMove))),
-		VariantRef:   strings.TrimSpace(choice.VariantRef),
-		ProblemRefs:  compactStrings(choice.ProblemRefs),
-		PortfolioRef: strings.TrimSpace(choice.PortfolioRef),
-		Reason:       strings.TrimSpace(choice.Reason),
+		SubjectRef:      strings.TrimSpace(choice.SubjectRef),
+		OptionSet:       compactStrings(choice.OptionSet),
+		ComparisonBasis: compactStrings(choice.ComparisonBasis),
+		ChoiceRule:      strings.TrimSpace(choice.ChoiceRule),
+		NextMove:        ChoiceNextMove(strings.TrimSpace(string(choice.NextMove))),
+		VariantRef:      strings.TrimSpace(choice.VariantRef),
+		ProblemRefs:     compactStrings(choice.ProblemRefs),
+		PortfolioRef:    strings.TrimSpace(choice.PortfolioRef),
+		Reason:          strings.TrimSpace(choice.Reason),
 	}
 
 	return normalized
@@ -892,22 +898,71 @@ func ValidateChoiceResult(choice *ChoiceResult) error {
 	if normalized.NextMove == ChoiceNextMoveChooseNow && normalized.VariantRef == "" {
 		return fmt.Errorf("choice_result.variant_ref is required when next_move=choose_now")
 	}
+	if len(normalized.OptionSet) > 0 && normalized.VariantRef != "" && !stringInSlice(normalized.OptionSet, normalized.VariantRef) {
+		return fmt.Errorf("choice_result.variant_ref %q is outside choice_result.option_set", normalized.VariantRef)
+	}
 
 	return nil
 }
 
+type DecisionChoiceResultInput struct {
+	ProblemRefs     []string
+	PortfolioRef    string
+	SelectedTitle   string
+	WhySelected     string
+	WhyNotOthers    []RejectionReason
+	SelectionPolicy string
+}
+
 // NewDecisionChoiceResult creates the exact choice emitted by explicit h-decide.
-func NewDecisionChoiceResult(problemRefs []string, portfolioRef string, selectedTitle string, whySelected string) *ChoiceResult {
+func NewDecisionChoiceResult(input DecisionChoiceResultInput) *ChoiceResult {
 	choice := &ChoiceResult{
-		SubjectRef:   "operator",
-		NextMove:     ChoiceNextMoveChooseNow,
-		VariantRef:   strings.TrimSpace(selectedTitle),
-		ProblemRefs:  compactStrings(problemRefs),
-		PortfolioRef: strings.TrimSpace(portfolioRef),
-		Reason:       strings.TrimSpace(whySelected),
+		SubjectRef:      "operator",
+		OptionSet:       decisionChoiceOptionSet(input),
+		ComparisonBasis: decisionChoiceComparisonBasis(input),
+		ChoiceRule:      strings.TrimSpace(input.SelectionPolicy),
+		NextMove:        ChoiceNextMoveChooseNow,
+		VariantRef:      strings.TrimSpace(input.SelectedTitle),
+		ProblemRefs:     compactStrings(input.ProblemRefs),
+		PortfolioRef:    strings.TrimSpace(input.PortfolioRef),
+		Reason:          strings.TrimSpace(input.WhySelected),
 	}
 
 	return choice
+}
+
+func decisionChoiceOptionSet(input DecisionChoiceResultInput) []string {
+	options := []string{input.SelectedTitle}
+	for _, rejected := range input.WhyNotOthers {
+		options = append(options, rejected.Variant)
+	}
+
+	return compactStrings(options)
+}
+
+func decisionChoiceComparisonBasis(input DecisionChoiceResultInput) []string {
+	basis := []string{}
+	if input.WhySelected != "" {
+		basis = append(basis, fmt.Sprintf("selected %s: %s", input.SelectedTitle, input.WhySelected))
+	}
+	for _, rejected := range input.WhyNotOthers {
+		if rejected.Variant == "" || rejected.Reason == "" {
+			continue
+		}
+		basis = append(basis, fmt.Sprintf("rejected %s: %s", rejected.Variant, rejected.Reason))
+	}
+
+	return compactStrings(basis)
+}
+
+func stringInSlice(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isValidChoiceNextMove(nextMove ChoiceNextMove) bool {

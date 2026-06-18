@@ -87,6 +87,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft interface decision.decide --json`, but no record is synthesized from
   legacy prose, post-conditions, method runs, WorkCommissions, evidence, or
   publication units.
+- **ChoiceRecord C.11 compatibility fields.** The existing `choice_result`
+  payload now carries explicit C.11 fields for subject, option set, comparison
+  basis, choice rule, and next move. Fresh h-decide DecisionRecords populate
+  option/basis/rule fields from explicit DRR inputs, while legacy or minimal
+  `choice_result` carriers continue to parse as compatibility projections and
+  no ComparisonResult `selected_ref` is promoted into a bound choice.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

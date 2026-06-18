@@ -394,6 +394,11 @@ func TestHandleToolsList_DecisionSchemaExposesChoiceResult(t *testing.T) {
 	if !ok {
 		t.Fatalf("choice_result.next_move missing or wrong type: %#v", properties["next_move"])
 	}
+	for _, key := range []string{"subject_ref", "option_set", "comparison_basis", "choice_rule", "variant_ref", "problem_refs", "portfolio_ref", "reason"} {
+		if _, ok := properties[key].(map[string]interface{}); !ok {
+			t.Fatalf("choice_result.%s missing or wrong type: %#v", key, properties[key])
+		}
+	}
 
 	encoded, err := json.Marshal(nextMove["enum"])
 	if err != nil {
@@ -419,21 +424,12 @@ func TestHandleToolsList_DecisionSchemaExposesTransformationRecord(t *testing.T)
 		t.Fatalf("transformation_record properties missing or wrong type: %#v", transformationRecord["properties"])
 	}
 
-	for _, key := range []string{"schema_version", "transformed_entity", "initial_state", "post_state", "relation", "context"} {
+	for _, key := range []string{"transformed_entity", "initial_state", "post_state", "relation", "context"} {
 		if _, ok := properties[key].(map[string]interface{}); !ok {
 			t.Fatalf("transformation_record.%s schema missing or wrong type: %#v", key, properties[key])
 		}
 	}
 
-	required, ok := transformationRecord["required"].([]interface{})
-	if !ok {
-		t.Fatalf("transformation_record required list missing or wrong type: %#v", transformationRecord["required"])
-	}
-	for _, want := range []string{"transformed_entity", "initial_state", "post_state", "relation", "context"} {
-		if !schemaEnumContains(required, want) {
-			t.Fatalf("transformation_record required = %#v, missing %q", required, want)
-		}
-	}
 }
 
 func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {

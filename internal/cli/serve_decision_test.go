@@ -117,6 +117,56 @@ func TestHandleQuintDecision_DecidePersistsTransformationRecord(t *testing.T) {
 	}
 }
 
+func TestHandleQuintDecision_DecidePersistsC11ChoiceResult(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	_, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action":           "decide",
+		"selected_title":   "Use exact choice semantics",
+		"why_selected":     "The choice payload needs subject, options, basis, rule, and next move.",
+		"selection_policy": "Prefer the payload that names C.11 fields explicitly.",
+		"counterargument":  "Legacy consumers may ignore the new optional fields.",
+		"weakest_link":     "Agents may still treat DecisionRecord as the primitive choice object.",
+		"why_not_others": []map[string]any{{
+			"variant": "Keep minimal ChoiceResult",
+			"reason":  "It does not expose the option set or choice rule.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"Legacy DecisionRecord parsing regresses."},
+		},
+		"choice_result": map[string]any{
+			"subject_ref":      "operator",
+			"option_set":       []any{"Use exact choice semantics", "Keep minimal ChoiceResult"},
+			"comparison_basis": []any{"selected Use exact choice semantics: names C.11 fields", "rejected Keep minimal ChoiceResult: leaves fields implicit"},
+			"choice_rule":      "Prefer the payload that names C.11 fields explicitly.",
+			"next_move":        string(artifact.ChoiceNextMoveChooseNow),
+			"variant_ref":      "Use exact choice semantics",
+			"reason":           "The operator invoked h-decide.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := store.Get(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	choice := decision.UnmarshalDecisionFields().ChoiceResult
+	if choice == nil {
+		t.Fatal("choice_result missing")
+	}
+	if choice.ChoiceRule != "Prefer the payload that names C.11 fields explicitly." {
+		t.Fatalf("choice_rule = %q", choice.ChoiceRule)
+	}
+	if len(choice.OptionSet) != 2 {
+		t.Fatalf("option_set = %#v, want two options", choice.OptionSet)
+	}
+}
+
 func TestHandleQuintDecision_DecideUsesTaskContextInArtifactID(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

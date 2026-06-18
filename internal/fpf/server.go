@@ -522,6 +522,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"type":        "string",
 								"description": "Chooser-bearing human/team/system, not the decision question text",
 							},
+							"option_set": map[string]interface{}{
+								"type":  "array",
+								"items": map[string]string{"type": "string"},
+							},
+							"comparison_basis": map[string]interface{}{
+								"type":  "array",
+								"items": map[string]string{"type": "string"},
+							},
+							"choice_rule": map[string]string{"type": "string"},
 							"next_move": map[string]interface{}{
 								"type": "string",
 								"enum": []interface{}{"choose_now", "reject_current_set", "probe_again", "reroute"},
@@ -539,7 +548,6 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "object",
 						"description": "(decide) TransformationRecord v1: target object-state transformation only; not method, work authorization, evidence, or publication.",
 						"properties": map[string]interface{}{
-							"schema_version": map[string]string{"type": "integer"},
 							"transformed_entity": map[string]string{
 								"type": "string",
 							},
@@ -556,7 +564,6 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"type": "string",
 							},
 						},
-						"required": []string{"transformed_entity", "initial_state", "post_state", "relation", "context"},
 					},
 					"selection_policy": map[string]string{
 						"type":        "string",

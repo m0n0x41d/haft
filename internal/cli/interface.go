@@ -335,8 +335,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "choice_result",
-						Shape: `{"subject_ref":"operator","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide"}`,
-						Note:  "Exact human choice outcome; compare never creates it.",
+						Shape: `{"subject_ref":"operator","option_set":["V1","V2"],"comparison_basis":["selected V1: ...","rejected V2: ..."],"choice_rule":"declared selection policy","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide"}`,
+						Note:  "Exact human choice outcome; compare never creates it and DecisionRecord remains a compatibility projection.",
 					},
 					{
 						Field: "transformation_record",
@@ -365,6 +365,16 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Value: map[string]any{
 							"problem_ref":   "prob-...",
 							"portfolio_ref": "sol-...",
+							"choice_result": map[string]any{
+								"subject_ref":      "operator",
+								"option_set":       []any{"Typed contract templates in haft interface", "MCP-only schema"},
+								"comparison_basis": []any{"selected Typed contract templates in haft interface: Agents can see the nested input shape before their first tool call.", "rejected MCP-only schema: Bloats tools/list and is harder for humans to inspect."},
+								"choice_rule":      "Prefer compact discoverability that does not bloat tools/list.",
+								"next_move":        "choose_now",
+								"variant_ref":      "Typed contract templates in haft interface",
+								"portfolio_ref":    "sol-...",
+								"reason":           "Agents can see the nested input shape before their first tool call.",
+							},
 							"transformation_record": map[string]any{
 								"schema_version":     1,
 								"transformed_entity": "interface contract discovery",
@@ -401,7 +411,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 						},
 					},
 				},
-				Notes: []string{"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.", "transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit."},
+				Notes: []string{"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.", "choice_result carries C.11 subject, option_set, comparison_basis, choice_rule, and next_move; DecisionRecord remains the compatibility projection.", "transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit."},
 			},
 			Invariants: append(commonInterfaceInvariants(), "Human binding remains mandatory for DecisionRecord creation."),
 		},

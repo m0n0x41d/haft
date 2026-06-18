@@ -153,6 +153,18 @@ func TestDecide_FullDRR(t *testing.T) {
 	if fields.ChoiceResult.SubjectRef != "operator" {
 		t.Fatalf("choice_result.subject_ref = %q, want operator", fields.ChoiceResult.SubjectRef)
 	}
+	if !reflect.DeepEqual(fields.ChoiceResult.OptionSet, []string{"NATS JetStream", "Kafka"}) {
+		t.Fatalf("choice_result.option_set = %#v, want selected plus rejected variants", fields.ChoiceResult.OptionSet)
+	}
+	if fields.ChoiceResult.ChoiceRule != input.SelectionPolicy {
+		t.Fatalf("choice_result.choice_rule = %q, want selection policy", fields.ChoiceResult.ChoiceRule)
+	}
+	if !stringInSlice(fields.ChoiceResult.ComparisonBasis, "selected NATS JetStream: 2x throughput headroom, minimal ops for 4-person team") {
+		t.Fatalf("choice_result.comparison_basis missing selected rationale: %#v", fields.ChoiceResult.ComparisonBasis)
+	}
+	if !stringInSlice(fields.ChoiceResult.ComparisonBasis, "rejected Kafka: Ops burden disproportionate at current scale") {
+		t.Fatalf("choice_result.comparison_basis missing rejected rationale: %#v", fields.ChoiceResult.ComparisonBasis)
+	}
 	if fields.ChoiceResult.VariantRef != "NATS JetStream" {
 		t.Fatalf("choice_result.variant_ref = %q, want selected title", fields.ChoiceResult.VariantRef)
 	}
@@ -237,6 +249,21 @@ func TestValidateChoiceResultRequiresVariantForChooseNow(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "variant_ref") {
 		t.Fatalf("expected variant_ref error, got %v", err)
+	}
+}
+
+func TestValidateChoiceResultRejectsVariantOutsideOptionSet(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		OptionSet:  []string{"V1", "V2"},
+		NextMove:   ChoiceNextMoveChooseNow,
+		VariantRef: "V3",
+	})
+	if err == nil {
+		t.Fatal("expected variant outside option_set error")
+	}
+	if !strings.Contains(err.Error(), "option_set") {
+		t.Fatalf("expected option_set error, got %v", err)
 	}
 }
 

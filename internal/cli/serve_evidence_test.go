@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -123,5 +124,95 @@ func TestHandleQuintDecision_EvidencePersistsClaimBinding(t *testing.T) {
 	}
 	if strings.Join(items[0].ClaimScope, ",") != "throughput,warmup" {
 		t.Fatalf("claim_scope = %v", items[0].ClaimScope)
+	}
+}
+
+func TestHandleQuintQuery_EvidencePathBuildsBoundedReliance(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		SelectedTitle:   "Bind evidence reliance to one claim",
+		WhySelected:     "Need a decision artifact with an explicit claim for EvidencePath projection.",
+		SelectionPolicy: "Prefer the smallest realistic decision record that still carries an explicit claim.",
+		CounterArgument: "A synthetic decision can miss lifecycle coupling from a real compared choice.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Use a raw evidence row",
+			Reason:  "EvidencePath must prove claim binding against an artifact-scoped evidence item.",
+		}},
+		WeakestLink: "The decision is synthetic and therefore only validates the projection contract.",
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"EvidencePath stops preserving authority boundaries"},
+		},
+		Predictions: []artifact.PredictionInput{{
+			Claim:      "The verifier remains deterministic",
+			Observable: "verifier result",
+			Threshold:  "same input yields same result",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := reloaded.UnmarshalDecisionFields().Claims
+	if len(claims) != 1 {
+		t.Fatalf("expected 1 claim, got %+v", claims)
+	}
+
+	validUntil := time.Now().Add(14 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	item, err := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
+		ArtifactRef:     decision.Meta.ID,
+		Content:         "Verifier replay produced the same result for the same input.",
+		Type:            "test",
+		Verdict:         "supports",
+		CarrierRef:      "internal/cli/serve_evidence_test.go",
+		CongruenceLevel: 3,
+		FormalityLevel:  7,
+		ClaimRefs:       []string{claims[0].ID},
+		ValidUntil:      validUntil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(ctx, store, nil, haftDir, map[string]any{
+		"action":        "evidence_path",
+		"artifact_ref":  decision.Meta.ID,
+		"evidence_ref":  item.ID,
+		"claim_ref":     claims[0].ID,
+		"attempted_use": "verification reliance for the declared deterministic claim",
+		"method_ref":    "mpull-test-evidence-path",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery evidence_path returned error: %v", err)
+	}
+
+	var record artifact.EvidencePathRecord
+	if err := json.Unmarshal([]byte(result), &record); err != nil {
+		t.Fatalf("decode evidence_path record: %v\n%s", err, result)
+	}
+
+	if record.RelianceDisposition.Disposition != artifact.EvidenceRelianceBounded {
+		t.Fatalf("reliance = %+v, want bounded", record.RelianceDisposition)
+	}
+	if record.ClaimBinding.Status != artifact.EvidenceClaimBindingBound {
+		t.Fatalf("claim_binding = %+v, want bound", record.ClaimBinding)
+	}
+	if record.TraceBinding.Status != artifact.EvidenceTraceBindingDeclared {
+		t.Fatalf("trace_binding = %+v, want declared", record.TraceBinding)
+	}
+	if record.AuthorityBoundary.Approval != artifact.EvidenceBoundaryNotApproval {
+		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
+	}
+	if record.AuthorityBoundary.GateDecision != artifact.EvidenceBoundaryNotGateDecision {
+		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
+	}
+	if record.AuthorityBoundary.GlobalTruth != artifact.EvidenceBoundaryNotGlobalTruth {
+		t.Fatalf("truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
 	}
 }

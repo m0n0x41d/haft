@@ -1868,11 +1868,35 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "evidence_path":
+		record, err := buildEvidencePathRecord(
+			ctx,
+			store,
+			artifact.EvidencePathInput{
+				ArtifactRef:  stringArg(args, "artifact_ref"),
+				EvidenceRef:  stringArg(args, "evidence_ref"),
+				ClaimRef:     stringArg(args, "claim_ref"),
+				AttemptedUse: stringArg(args, "attempted_use"),
+				ProducerRef:  stringArg(args, "producer_ref"),
+				MethodRef:    stringArg(args, "method_ref"),
+				WorkRef:      stringArg(args, "work_ref"),
+			},
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return "", fmt.Errorf("build evidence path record: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal evidence path record: %w", err)
+		}
+		return string(payload), nil
+
 	case "resolve_term":
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

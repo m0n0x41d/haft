@@ -642,6 +642,38 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.evidence_path",
+			Purpose: "Build a read-only EvidencePath/RelianceDisposition record for one evidence item and declared attempted use.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "evidence_path",
+				MCPCall:          `haft_query(action="evidence_path", artifact_ref="dec-...", evidence_ref="evid-...", attempted_use="verification reliance", method_ref="mpull-...")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft evidence path ARTIFACT_REF EVIDENCE_REF --attempted-use ... --method-ref ... --json",
+				DiscoveryCommand: "haft interface query.evidence_path --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"artifact_ref", "evidence_ref", "attempted_use"},
+				OptionalFields: []string{"claim_ref", "producer_ref", "method_ref", "work_ref"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
+						Note:  "Reliance is bounded to the declared use and never creates approval, gate passage, or global truth.",
+					},
+				},
+				Notes: []string{
+					"EvidencePathRecord is read-only and derived from an existing EvidenceItem.",
+					"Missing attempted use, missing trace refs, expired evidence, refuting evidence, or an unbound requested claim cannot produce bounded reliance.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON EvidencePathRecord"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Evidence presence is not approval, gate passage, or global truth.",
+				"Claim, trace, currentness, and attempted-use boundaries stay explicit in the response.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

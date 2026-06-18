@@ -801,8 +801,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/resolve_term.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "evidence_path", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/evidence_path/resolve_term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -828,6 +828,34 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"waiver_expires_at": map[string]string{
 						"type":        "string",
 						"description": "(spec_use) temporary_waiver expiry.",
+					},
+					"artifact_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Artifact id carrying the evidence item.",
+					},
+					"evidence_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Evidence item id.",
+					},
+					"claim_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Claim id/ref for the attempted use.",
+					},
+					"attempted_use": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Declared bounded use.",
+					},
+					"producer_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Producer trace ref.",
+					},
+					"method_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Method trace ref.",
+					},
+					"work_ref": map[string]string{
+						"type":        "string",
+						"description": "(evidence_path) Work trace ref.",
 					},
 					"kind": map[string]string{
 						"type":        "string",

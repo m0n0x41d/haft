@@ -112,6 +112,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `gate_decision=not_applicable_no_operational_gate` so a current baseline
   cannot masquerade as admission and a spec-use admission cannot masquerade as
   an OperationalGate pass.
+- **EvidencePath/RelianceDisposition v1.** `haft evidence path ARTIFACT_REF
+  EVIDENCE_REF` and `haft_query(action="evidence_path")` now build a read-only
+  reliance record for one existing evidence item and declared attempted use.
+  The payload binds claim refs, producer/method/work trace refs, currentness
+  windows, and authority boundaries; evidence presence cannot create approval,
+  `GateDecision`, or global truth.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

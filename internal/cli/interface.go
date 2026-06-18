@@ -737,6 +737,43 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.drift_route",
+			Purpose: "Build a read-only semantic drift taxonomy and repair-route projection.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "drift_route",
+				MCPCall:          `haft_query(action="drift_route", drift_kind="evidence_binding_drift", bearer_ref="evid-...", use_context="release reliance")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft drift route DRIFT_KIND --bearer-ref ... --use-context ... --json",
+				DiscoveryCommand: "haft interface query.drift_route --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"drift_kind"},
+				OptionalFields: []string{"bearer_ref", "use_context"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "drift_kind",
+						Shape: `"carrier_drift" | "publication_faithfulness_drift" | "episteme_claim_drift" | "transformation_realization_drift" | "implementation_correspondence_drift" | "evidence_binding_drift" | ...`,
+						Note:  "Unknown drift kinds fail closed with no_change/view and stronger-use block.",
+					},
+					{
+						Field: "response",
+						Shape: `{"drift_layer":"evidence|publication|episteme|...","candidate_repair_actions":[...],"language_state_move_kinds":[...],"authority_boundary":{"mutation":"not_mutation","gate_decision":"not_gate_decision"}}`,
+						Note:  "Routing is advisory and does not execute repair or create evidence/approval.",
+					},
+				},
+				Notes: []string{
+					"Haft does not route description/evidence/publication drift directly to code repair.",
+					"Use the route as review input; mutation still needs the governing decision/workflow.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON SemanticDriftRoute"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Repair routing is read-only.",
+				"Candidate repair actions are not performed work.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

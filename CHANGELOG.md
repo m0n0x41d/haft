@@ -131,6 +131,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   qualified by origin/source refs and `path_status=graph_path_not_proof`, so a
   graph path cannot masquerade as evidence, proof, approval, `GateDecision`, or
   global truth.
+- **Semantic drift route v1.** `haft drift route DRIFT_KIND` and
+  `haft_query(action="drift_route")` now map the semantic-spine drift taxonomy
+  to read-only candidate repair actions and language-state moves. Evidence,
+  publication, and description-layer drift do not route directly to code repair,
+  unknown drift kinds fail closed, and the route never mutates code, carriers,
+  evidence, decisions, baselines, or gates.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

@@ -1914,6 +1914,18 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "drift_route":
+		record := artifact.BuildSemanticDriftRoute(artifact.DriftRouteInput{
+			DriftKind:  stringArg(args, "drift_kind"),
+			BearerRef:  stringArg(args, "bearer_ref"),
+			UseContext: stringArg(args, "use_context"),
+		})
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal drift route: %w", err)
+		}
+		return string(payload), nil
+
 	case "evidence_path":
 		record, err := buildEvidencePathRecord(
 			ctx,
@@ -1942,7 +1954,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

@@ -801,8 +801,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "evidence_path", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/evidence_path/resolve_term.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "evidence_path", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/drift_route/evidence_path/resolve_term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -818,7 +818,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"use_context": map[string]string{
 						"type":        "string",
-						"description": "(spec_use) Declared use context.",
+						"description": "(spec_use/drift_route) Declared use context.",
 					},
 					"policy": map[string]interface{}{
 						"type":        "string",
@@ -856,6 +856,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"work_ref": map[string]string{
 						"type":        "string",
 						"description": "(evidence_path) Work trace ref.",
+					},
+					"drift_kind": map[string]string{
+						"type":        "string",
+						"description": "(drift_route) Semantic drift kind.",
+					},
+					"bearer_ref": map[string]string{
+						"type":        "string",
+						"description": "(drift_route) Artifact/object carrying drift.",
 					},
 					"kind": map[string]string{
 						"type":        "string",
@@ -931,7 +939,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 func compactToolDescriptions(tools []Tool) []Tool {
 	compacted := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		tool.Description = "Use `haft interface --json` for compact contracts."
+		tool.Description = "Use `haft interface --json`."
 		compactSchemaDescriptions(tool.InputSchema, tool.Name)
 		compacted = append(compacted, tool)
 	}
